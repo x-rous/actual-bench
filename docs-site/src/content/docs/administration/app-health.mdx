@@ -1,19 +1,18 @@
 ---
 title: App Health
-description: "Bench reporting on itself: whether its own database is writable, whether the storage will survive a restart, and whether scheduled work can run."
+description: "Check Actual Bench metadata storage, migrations, persistence, and scheduler health."
 sidebar:
   order: 4
 ---
 
-This page is Bench reporting on itself: its own metadata database, its scheduler, and whether the
-storage underneath will still be there tomorrow. It says nothing about your budget - that is
-[Budget File Health](../../user-guide/budget-file-health/). Come here if you run the server, or if
-someone who does asks you for these numbers.
+App Health reports the state of Actual Bench's metadata database, persistence, migrations, and
+scheduler. It does not check your budget file; use [Budget File Health](../../user-guide/budget-file-health/)
+for that. Use App Health after installation, upgrades, or when troubleshooting an operator issue.
 
 :::note[This is about Actual Bench, not your budget]
 This database is not a copy of your budget. It holds Bench's workflow data, and - if you turned them
 on - the two encrypted credential stores: remembered servers and unattended sync. Neither is ever
-written in plaintext. See [Work safely](../../getting-started/core-concepts/#where-data-lives).
+written in plaintext. See [Work safely](../../getting-started/core-concepts/#where-data-and-credentials-are-stored).
 :::
 
 

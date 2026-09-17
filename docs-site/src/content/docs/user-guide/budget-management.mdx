@@ -1,23 +1,22 @@
 ---
 title: Budget Management
-description: Twelve months on one screen, one measure at a time, with a details panel that follows whatever you select.
+description: View and edit twelve months of budget data in one grid, with Budget, Actuals, and Balance views.
 sidebar:
   order: 1
 ---
 
-Twelve months. One screen. One measure at a time - **Budget**, **Actuals** or **Balance**.
+Use Budget Management to review and edit a full year of budget data. Switch the grid between
+**Budget**, **Actuals**, and **Balance**. Select cells, paste values, and use fill actions to update
+multiple months.
 
-Actual Budget puts up to six months on screen with Budget, Spent and Balance side by side. That is the
-right shape for everyday work and the wrong shape for reading a year: three numbers in every cell,
-twelve times over, and the pattern disappears. Splitting them apart is what makes a year scannable.
-Tracking budgets gain the most, because the plan, the activity and the variance are separate
-questions there.
-
-And you can change what you see. Select, paste, fill - the grid edits like a spreadsheet.
+Actual Budget's compact view is designed for daily work, showing Budget, Spent, and Balance together.
+This workspace separates those measures across twelve months so you can review annual patterns. This
+is especially useful for Tracking budgets, where plan, activity, and variance answer different
+questions.
 
 Open it from **Data Management → Budget** (`/budget-management`).
 
-**Write model:** budget amounts, holds, and transfers are staged until **Save**. Notes and carryover
+**Budget impact:** Budget amounts, holds, and transfers remain staged until **Save**. Notes and carryover
 toggles are explicit immediate writes.
 
 ![The Budget workspace showing twelve months of an Envelope budget, with the details panel open beside it.](../../../assets/screenshots/user-guide/budget-envelope.png)
@@ -39,7 +38,7 @@ running against plan.*
 4. Changing the plan? Edit a cell, paste a range, or use a fill action.
 5. Read the draft, then **Save**.
 
-That is the page. Everything below is for working faster.
+Use the sections below for model-specific behavior, bulk actions, import/export, and shortcuts.
 
 ## Understand the workspace
 
@@ -113,7 +112,7 @@ whatever the toggle says.
 *The **Actuals** view: what was actually spent, month by month. A category is selected here, so the
 panel carries its history alongside.*
 
-### See spending at a glance
+### Use spending bars
 
 In the **Budget** view a thin **spending bar** sits under every editable expense cell, and under every
 group total. It fills green as you spend, turns amber near the limit, and grows a red segment past it.
@@ -200,10 +199,9 @@ The menu names what it will change and how many cells, so a group or column acti
 - **Set a value**: Set to zero, Set to fixed amount…, Apply % change…
 - **Average past budgets**: 3-, 6-, or 12-month average of what was **budgeted**.
 - **Average past actuals**: 3-, 6-, or 12-month average of what was actually **spent or received** -
-  "budget what I normally spend" rather than "what I normally budgeted".
+  Use this when you want to budget from past spending instead of past budget amounts.
 
-Anything a run cannot do is reported rather than skipped quietly: months the budget file does not
-cover, categories that did not exist yet, and read-only months are all counted and named.
+The result reports months, categories, and read-only cells it could not change.
 
 Each budget-setting action stages as one undo step. Carryover is the exception - its toggle writes
 straight away and tells you what happened.
@@ -240,7 +238,7 @@ month cell, or a whole month.
 
 :::caution[Notes save immediately]
 Notes go to the server the moment you confirm them. They have nothing to do with your staged edits or
-the **Save** button. See [Work safely](../../getting-started/core-concepts/#immediate-save-exceptions).
+the **Save** button. See [Work safely](../../getting-started/core-concepts/#immediate-budget-change-exceptions).
 :::
 
 ## Envelope budget actions

@@ -64,9 +64,15 @@ npm run build
 When writing docs:
 
 - The **running app** is the source of truth. Use its exact labels, not approximations of them.
-- Open a feature page with the situation someone is in, the problem, what this does that Actual Budget
-  does not, and the write model.
-- Shortest useful workflow first. Exhaustive options after.
+- Start with one plain sentence that says what the feature does and when to use it.
+- State requirements and budget impact before the instructions. Do not classify read-only tools or exceptions as write models.
+- Put the shortest useful workflow first. Put options, implementation details, and rationale after it.
+- Use direct verbs and name the control a reader must select. Do not make readers infer an action from
+  a metaphor, product comparison, or rhetorical question.
+- Do not remove product, safety, or capability information just to shorten a page. Consolidate duplicated
+  information in the section that owns it, or move it to a clearly linked canonical page before removing
+  the duplicate.
+- Keep paragraphs focused on one idea. Use a table or list when readers need to compare choices.
 - One task, one page. A smaller workflow is a section, not a new page.
 - Put images under `docs-site/src/assets/screenshots/` and reference them relatively.
 - No real secrets, credentials, private hostnames or personal budget data. Ever.

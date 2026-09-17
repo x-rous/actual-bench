@@ -1,12 +1,12 @@
 ---
 title: Troubleshooting
-description: First-line fixes across the whole app, and what to include when you report a bug.
+description: First checks for common Actual Bench problems and the information to include in a bug report.
 sidebar:
   order: 1
 ---
 
-First-line fixes, across the whole app. Every feature guide has its own troubleshooting section for
-anything specific to it.
+Use this page for common installation, connection, storage, and staged-change problems. Each feature
+guide also includes troubleshooting for feature-specific issues.
 
 :::caution[Don't start with destructive steps]
 Deleting the metadata database or clearing browser storage is where you end up, not where you start.
@@ -15,7 +15,7 @@ Both lose data. Know what a step removes before you take it.
 
 ## Troubleshoot safely: collect basic information
 
-Write these down before you change anything:
+Collect this information before you change settings or delete data:
 
 1. The Actual Bench **version** (sidebar footer).
 2. The **connection mode** (Direct Actual Server or HTTP API Server).
@@ -77,7 +77,7 @@ Redact secrets before you share a log with anyone.
 - **Changes did not persist** - either you did not press **Save**, or some items failed. Failures stay
   marked, with a retry.
 - **A note will not discard** - notes saved the moment you wrote them. See
-  [Work safely](../../getting-started/core-concepts/#immediate-save-exceptions).
+  [Work safely](../../getting-started/core-concepts/#immediate-budget-change-exceptions).
 - **A carryover toggle is not in the draft** - it never was. Carryover writes immediately.
 - **The wrong budget changed** - drafts are per connection. Check which one is active before you save.
 

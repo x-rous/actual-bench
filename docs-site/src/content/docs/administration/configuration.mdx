@@ -1,13 +1,13 @@
 ---
 title: Configuration
-description: Every environment variable Actual Bench reads, what it does, and whether it is a secret.
+description: Reference for Actual Bench environment variables, defaults, restart requirements, and secret handling.
 sidebar:
   order: 2
 ---
 
-Operator reference. If you only use Bench, you need none of this. A basic self-hosted install needs a
-persistent `/data` volume and no environment variables at all. Set something here only when you are
-turning a specific feature on.
+Use this reference if you operate Actual Bench. A basic self-hosted configuration needs no environment
+variables; persist `/data` so Actual Bench metadata survives restarts. See [Installation](../../getting-started/installation/)
+for the complete prerequisites. Set an environment variable when you need the feature it enables.
 
 ## How configuration is loaded
 
@@ -21,7 +21,7 @@ These are read once, at start. Change one and **restart** the container, or noth
 
 ## Environment variables
 
-Every variable below exists in the current code. Nothing aspirational.
+The table lists every environment variable supported by the current application.
 
 | Variable | Default | Purpose | Secret | Restart |
 |---|---|---|:---:|:---:|
@@ -67,7 +67,7 @@ deprecated alias - still honored (with a startup warning) for one release, but y
 
 ### Remembered-server secrets (user passphrase)
 
-When a user opts in to [remembering a server](../../getting-started/connecting/#remember-a-server-optional),
+When a user opts in to [remembering a server](../../getting-started/connecting/#remember-a-server),
 its secret is sealed **AES-256-GCM** in this database, encrypted with a key derived from a **passphrase
 the user sets** - no environment variable is involved. Credentials are server-scoped (one saved server
 opens any of its budgets); budget encryption passwords are sealed separately, per budget. The passphrase

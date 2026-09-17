@@ -1,20 +1,17 @@
 ---
 title: Bank Reconciliation
-description: Import a bank statement, compare it with one Actual account, decide every difference, and apply only what you reviewed.
+description: Import a bank statement, compare it with one Actual account, review each difference, and apply approved changes.
 sidebar:
   order: 15
 ---
 
-Your bank says one thing and your budget says another. **Bank Reconciliation** puts the two side by
-side, row by row, and proves whether they agree - then writes only the differences you approved.
-
-Come here when bank sync is unavailable, when a period needs auditing before you close it, or when
-you suspect transactions are missing, duplicated, or wrong. It complements Actual's everyday import;
-it does not replace routine transaction entry.
+Use Bank Reconciliation to compare a downloaded statement with one Actual account. Use it when bank
+sync is unavailable, when you need to audit a period, or when you need to resolve missing, duplicate,
+or incorrect transactions. It does not replace routine transaction entry.
 
 Open it from **Tools → Bank Reconciliation** (`/reconciliation`).
 
-**Write model:** decide → review → **Apply**. Nothing is written before Apply. Categories are never
+**Budget impact:** Decisions remain available for review until you **Apply**. Categories are never
 read or written by this workflow.
 
 ## What you need
@@ -24,7 +21,7 @@ read or written by this workflow.
 - One **account** in Actual to compare it against. A session covers one account.
 - Nothing else. No bank connection, no credentials, no setup.
 
-## The workflow in five steps
+## Complete a reconciliation
 
 1. **Start** a session for one account and optionally give it a memorable tag.
 2. **Import** the statement and confirm how its columns were read.
@@ -224,13 +221,11 @@ Statements from the same bank rarely change shape.
 
 ## 2. Matching
 
-Matching is deliberately conservative, and the reason is worth stating: **an exact signed amount is
-required for an automatic match**. Text never *finds* a match - it only ranks the candidates an amount
-has already produced. That is what makes every result explainable.
+Automatic matches require an **exact signed amount**. Text and dates rank transactions that already
+meet that amount requirement; they do not create a match on their own.
 
-[**How Matching Works**](../reconciliation-matching/) is the full account of the rules below - every
-tier, every score, and every figure the engine uses. Read it when a pairing surprises you; you do not
-need it to reconcile a statement.
+See [**How Matching Works**](../reconciliation-matching/) for the full scoring and configuration
+reference.
 
 ### Choose what the text is compared against
 

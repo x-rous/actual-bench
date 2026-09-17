@@ -1,21 +1,18 @@
 ---
 title: Bank Sync
-description: Actual talks to your bank. Bench decides when, runs it with nothing open, and reports what each account returned.
+description: Schedule Actual Budget bank syncs and review the result for each linked account.
 sidebar:
   order: 14
 ---
 
-Actual connects to your bank. **Actual Bench decides when that sync runs** - on a schedule, with
-nothing open - and tells you what each account came back with.
-
-That division matters, and it is the whole feature: Bench never talks to your bank, holds no bank
-credentials, and adds no provider. It asks Actual to do the thing Actual already does, at a time you
-chose, and then reports honestly.
+Actual Budget connects to your bank. Actual Bench can schedule the existing Actual bank sync and
+report its result for each account. It does not connect to your bank, store bank credentials, or add
+a bank provider.
 
 Set one up from **Tools → Automations → New automation → Bank sync** (`/automations`).
 
-**Write model:** Actual writes the transactions, as it does for any sync. Bench writes only the record
-of the run and what each account returned.
+**Budget impact:** Actual creates imported transactions. Actual Bench schedules the sync and saves its
+run record and per-account result.
 ![The bank sync dialog, warning that no account in this budget is linked to a bank.](../../../assets/screenshots/dialogs/dialog-new-bank-sync.png)
 
 *Set the schedule and Bench works out the rest - including telling you, before you save, that this
@@ -32,9 +29,13 @@ A Direct (browser) connection can pull on demand while Bench is open, but it can
 unattended: Actual's engine lives in your browser there, so with the tab closed there is nothing to
 run.
 
-## Setting one up
+## Create a bank-sync automation
 
-The dialog shows **which accounts will actually sync** before you commit to anything:
+1. Open **Tools → Automations** and select **New automation → Bank sync**.
+2. Confirm that the budget is enrolled for unattended access.
+3. Choose a schedule and save the automation.
+
+Before you save, the dialog shows **which accounts will actually sync**:
 
 - Accounts linked to a bank are listed with when each last synced.
 - Accounts with no bank link are listed too, marked **not connected to a bank - skipped**.

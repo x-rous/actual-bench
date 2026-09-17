@@ -1,25 +1,30 @@
 ---
 title: Work safely
-description: Actual Bench writes in four ways - staged, applied, immediate, or not at all - and you should know which one you are in.
+description: "Manual changes to budget data remain available for review until you confirm them."
 sidebar:
   order: 4
 ---
 
-Nothing here writes to your budget unless you say so. But "saying so" looks different depending on
-what you are doing. Bulk editing, reconciliation, diagnostics and one-off toggles each need a
-different kind of care, so each works differently. Knowing which one you are in is the whole
-difference between working confidently and hoping.
+## Review before budget data changes
 
-## The four models
+Manual changes to budget data do not reach Actual until you review and confirm them. The interface
+uses **Save** for staged edits and **Apply** for a reviewed workflow, but both follow the same rule.
 
-| Model | What happens | Used for |
+| Where you work | Review step | Confirmation |
 |---|---|---|
-| **Stage → review → Save** | Changes remain in the current browser session until you review and Save | Accounts, payees, categories, rules, schedules, tags, budget amounts, transfers, and holds |
-| **Review → Apply** | A session or preview shows the planned writes; only an explicit Apply writes them | Bank Reconciliation and Budget File Sync |
-| **Immediate explicit write** | The named action writes at once and is not part of the main staged Save | Notes and carryover toggles |
-| **Read-only** | The tool inspects data and never writes to the budget | ActualQL, Rule Diagnostics, Budget File Health, and Data Browser |
+| Data Management and Budget | Edits collect in **Draft Changes** | **Save** |
+| Bank Reconciliation and Budget File Sync | A session or preview lists planned changes | **Apply** |
 
-You do not have to memorise this. Every feature guide says which model it uses, near the top.
+Check the active budget and review the listed changes before you confirm either action.
+
+### Reviewed Apply workflows
+
+Budget File Sync classifies items in a preview before you apply them. Bank Reconciliation keeps your
+decisions in a resumable session and re-reads affected transactions immediately before it writes. Both
+workflows report partial failures and keep failed items available for retry.
+
+The re-read reduces the risk of overwriting a concurrent change, but it cannot make the write
+version-locked. Avoid changing the same transactions in Actual while reconciliation is applying.
 
 ## Staged work
 
@@ -29,25 +34,28 @@ and redo work on the draft only - once something is saved, undo cannot reach it.
 
 A draft belongs to one budget. With several open, check which one is active before you save.
 
-## Immediate-save exceptions
+## Immediate budget-change exceptions
 
 - **Notes** save the moment you confirm the editor. Discarding the rest of your draft will not take
   them back.
 - **Carryover** writes directly, through its own action in Budget Management. It was never part of
   the cell draft.
 
-Both should feel like pressing a button, not like something happening quietly in the background.
+These actions are not part of **Draft Changes**. They write when you confirm them.
 
-## Apply workflows
+## Automated budget changes
 
-Budget File Sync reads both budgets, sorts every candidate row into a bucket, and shows you the
-buckets. Bank Reconciliation keeps your decisions in a session that survives a closed tab, and
-re-reads the affected transactions from Actual immediately before it writes, which is what catches a
-change somebody made in the meantime. It narrows that window rather than closing it: the write itself
-carries no version check, so an edit landing between the re-read and the write can still be
-overwritten. When an individual item fails, both keep it and let you retry.
+Scheduled bank sync and opted-in safe sync can write later without a per-run review. They are explicit
+automation policies, not manual editing. See [Automations](../../user-guide/automations/) and
+[Budget File Sync](../../user-guide/budget-sync/#automation-opt-in).
 
-## Where data lives
+## Tools that do not change budget data
+
+ActualQL, Rule Diagnostics, Budget File Health, and Data Browser do not change budget data. Some of
+these tools can save Actual Bench workflow metadata, such as a dismissed diagnostic finding or a saved
+query.
+
+## Where data and credentials are stored
 
 | Information | Location | How long it lasts |
 |---|---|---|
@@ -59,12 +67,13 @@ overwritten. When an individual item fails, both keep it and let you retry.
 | Unattended-sync credentials, when enabled | Metadata database, encrypted with `SYNC_VAULT_KEY` | Until withdrawn or the database is removed |
 | Exported budget snapshot | Browser memory; downloadable by you | Current session or your downloaded file |
 
-Remembering credentials is opt-in. By default they live in memory and die with the tab. The two
-encrypted options are separate features with separate keys.
+Remembering credentials is opt-in. By default they live in memory and end when the tab closes. The two
+encrypted options use separate keys. See [Connect to a budget](../connecting/#how-credentials-are-handled)
+and [Configuration](../../administration/configuration/#metadata-database) for setup details.
 
-## Two habits prevent most mistakes
+## Before confirming a manual change
 
 1. Check which budget is active before you **Save** or **Apply**.
-2. Actually read the review screen. It is not a confirmation dialog.
+2. Review the listed changes before you select **Save** or **Apply**.
 
-That is the whole model. Go to the workflow that brought you here.
+Go to the workflow that brought you here.

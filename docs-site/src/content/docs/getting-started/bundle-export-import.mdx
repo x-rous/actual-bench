@@ -1,18 +1,17 @@
 ---
 title: Bundle Export / Import
-description: A budget's entire structure in one ZIP - accounts, payees, categories, tags, schedules and rules - imported back in dependency order and staged for review.
+description: Export or import a ZIP of budget structure data, including accounts, payees, categories, tags, schedules, and rules.
 sidebar:
   order: 7
 ---
 
-A budget's entire structure in one ZIP: accounts, payees, categories and groups, tags, schedules,
-rules. Use it to build a reusable template, to seed a new budget from an old one, or to take a
-snapshot before you start a cleanup you might regret.
+Use Bundle Export / Import to move budget structure data in one ZIP. Export a template or backup
+before a large cleanup, or import a structure into another budget.
 
 Open it from the **Export** and **Import** buttons in the [Overview](../budget-overview/) page header.
 
-**Write model:** export is read-only; import stages everything for review and writes only when you
-**Save**.
+**Budget impact:** Export does not modify budget data. Import stages the bundle for review and writes
+only when you **Save**.
 
 
 ![The bundle export dialog listing what the ZIP will contain.](../../../assets/screenshots/dialogs/dialog-bundle-export.png)
@@ -21,7 +20,7 @@ Open it from the **Export** and **Import** buttons in the [Overview](../budget-o
 
 ## Why use a bundle?
 
-Actual Budget has no "export all my structure" button. This is that button:
+Bundle Export / Import provides these functions:
 
 - **Everything at once** - every entity type in one ZIP, each a CSV in the same format the per-page
   exports use.
@@ -70,7 +69,7 @@ Each CSV carries the same columns as that entity's own export. The entity guides
 
 :::caution[Bundle import stages a lot at once]
 A bundle can stage hundreds of rows across six entity types in one go. Look at them before you Save.
-And export the current budget first - then a bad import costs you one re-import, not an evening.
+Export the current budget before a large import so you can restore its structure if needed.
 :::
 
 ## Common problems

@@ -1,9 +1,9 @@
 ---
 title: Actual Bench documentation
-description: "The workbench beside Actual Budget: a full year on one screen, bulk cleanup you review before it lands, rules you can audit, and backups that prove they still open."
+description: "Documentation for Actual Bench, an administration, planning, reconciliation, sync, and diagnostics companion for Actual Budget."
 template: splash
 hero:
-  tagline: The workbench beside Actual Budget. A full year on one screen, bulk cleanup you review before it lands, rules you can audit, statements you can reconcile - and backups that prove they still open.
+  tagline: Manage budget data in bulk, plan across a full year, reconcile bank statements, sync between budget files, clean up rules and payees, run Actual QL queries, automate bank sync and budget backups.
   image:
     file: ../../assets/actual-bench-icon.png
     alt: Actual Bench
@@ -17,11 +17,12 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-Keep doing your everyday budgeting in Actual Budget. **Actual Bench** is for the other jobs: the ones
-that are slow one row at a time, the ones you want to look at before they land, and the ones that
-should happen whether or not anything is open.
+**Actual Bench** is an independent companion app for Actual Budget. Use it for bulk data management,
+full-year planning, statement reconciliation, budget-file sync, diagnostics, and scheduled work.
+
+Use Actual Budget for day-to-day transaction entry, routine budgeting, reports, and bank connections.
 
 :::note[Independent companion app]
 This is not the official Actual Budget app, and not its documentation. It points at an Actual Server
@@ -32,101 +33,39 @@ you already run.
 
 ## Start from what you need to do
 
-| I want to… | Go to |
-|---|---|
-| Plan a full year, not six months | [Budget](user-guide/budget-management/) |
-| Seed a budget from a spreadsheet, or clean one up in bulk | [Editing, review and save](getting-started/editing-and-saving/) |
-| Fix the duplicate payees my bank imports keep creating | [Payee Cleanup](user-guide/payee-cleanup/) |
-| Write better rules, and audit the ones I have | [Rules](user-guide/rules/) · [Rule Diagnostics](user-guide/rule-diagnostics/) |
-| Reconcile an account against a bank statement | [Bank Reconciliation](user-guide/bank-reconciliation/) |
-| Copy data between two budget files, in two currencies | [Budget File Sync](user-guide/budget-sync/) |
-| Pull in new transactions without opening anything | [Bank Sync](user-guide/bank-sync/) |
-| Have work run on a timetable while the app is closed | [Automations](user-guide/automations/) |
-| Keep backups I can prove still open | [Backups](user-guide/backups/) |
-| Ask a question of my data that no screen answers | [ActualQL Queries](user-guide/actualql/) |
-| Find out whether a budget file is sound | [Budget File Health](user-guide/budget-file-health/) |
-| Move a whole budget structure somewhere else | [Bundle Export / Import](getting-started/bundle-export-import/) |
-
-The sidebar copies the app. **Data Management** holds your budget's records; **Tools** act on them.
-Whatever you see in Actual Bench's left navigation is filed here under the same name.
-
-## Main functions
-
-<CardGrid>
-	<Card title="Full-year Budget Workspace" icon="setting">
-		Twelve months, one screen, one measure at a time - Budget, Actuals, or Balance. Tracking budgets gain the most. Edit it like a spreadsheet: select, paste, fill.
-		[Explore the Budget Workspace →](user-guide/budget-management/)
-	</Card>
-	<Card title="Data Management" icon="list-format">
-		Create, merge, reorganise, import, export and audit accounts, payees, categories, schedules, tags and rules in bulk. Nothing lands until you press Save.
-		[Manage budget data →](getting-started/editing-and-saving/)
-	</Card>
-	<Card title="Rules and Rule Diagnostics" icon="approve-check">
-		Write rules that read like sentences. Then audit the whole set for broken references, overlaps, matches that are too broad, and outright duplicates.
-		[Build and audit rules →](user-guide/rules/)
-	</Card>
-	<Card title="Bank Reconciliation" icon="check-circle">
-		Import a statement. Bench matches it against one account, cautiously, and hands you the differences. Only what you approve is written.
-		[Explore Bank Reconciliation →](user-guide/bank-reconciliation/)
-	</Card>
-	<Card title="Budget File Sync and FX Rates" icon="random">
-		Saved flows that move transactions, payees and categories between two budget files - and convert the money if the two are kept in different currencies. Every flow previews first.
-		[Explore Budget File Sync →](user-guide/budget-sync/)
-	</Card>
-	<Card title="Scheduled Work" icon="seti:clock">
-		Bank syncs, backups and sync flows on a timetable, with nothing open. One engine runs all three, keeps every run, and backs off when something is failing.
-		[Explore Automations →](user-guide/automations/)
-	</Card>
-	<Card title="Verified Backups" icon="seti:shell">
-		Scheduled copies that Bench **opens and reads** afterwards. An untested backup is a guess. Keep them in a folder or an S3 bucket; the last good one is never deleted.
-		[Explore Backups →](user-guide/backups/)
-	</Card>
-	<Card title="ActualQL and file inspection" icon="magnifier">
-		Query your budget, inspect an exported file, check it for structural damage, or read its SQLite tables directly. All of it read-only.
-		[Explore analysis and diagnostics →](user-guide/budget-file-health/)
-	</Card>
-</CardGrid>
-
-## How it complements Actual Budget
-
-| Area | What Actual Budget already does well | What Actual Bench adds |
+| I want to… | Actual Bench provides | Go to |
 |---|---|---|
-| Budgeting | A compact working view with Budget, Spent, and Balance together for up to six months | A focused 12-month Budget, Actuals, or Balance view, annual context, and spreadsheet-style editing |
-| Budget structure | Everyday creation and maintenance inside the budgeting experience | Bulk actions, CSV, duplicate handling, dependency visibility, and staged review |
-| Rules | Executes automation as transactions arrive | Richer authoring plus a whole-rule-set diagnostics pass |
-| Reconciliation | Everyday importing and normal reconciliation | A persistent, statement-driven comparison and correction workflow |
-| Bank connections | Owns the connection to your bank and performs the sync | Decides *when* it runs, on a schedule with nothing open, and shows what each account returned |
-| Unattended work | Runs while you have Actual open | A scheduling engine with run history, health, backoff, and credentials the server can use on its own |
-| Backups | Manual export of a budget file | Scheduled copies that are opened and read to prove they work, kept in more than one place, on rules that never delete the last good one |
-| Multiple budget files | Keeps each budget independent | Controlled one-way synchronization, mappings, history, review queues, and FX conversion |
-| Investigation | Reports and normal data views | ActualQL, exported-file diagnostics, and read-only SQLite inspection |
+| Plan a full year, not six months | A 12-month Budget, Actuals, or Balance grid with spreadsheet-style editing | [Budget](user-guide/budget-management/) |
+| Seed a budget from a spreadsheet, or clean one up in bulk | Bulk creation, merge, import, export, dependency checks, and staged review for budget records | [Editing, review and save](getting-started/editing-and-saving/) |
+| Fix the duplicate payees my bank imports keep creating | Suggested duplicate groups, merge impact, and optional rules to prevent new duplicates | [Payee Cleanup](user-guide/payee-cleanup/) |
+| Write better rules, and audit the ones I have | Rule authoring, templates, formulas, CSV, and diagnostics for broken, overlapping, broad, or duplicate rules | [Rules](user-guide/rules/) · [Rule Diagnostics](user-guide/rule-diagnostics/) |
+| Reconcile an account against a bank statement | A persistent statement comparison with reviewed create, update, and delete actions | [Bank Reconciliation](user-guide/bank-reconciliation/) |
+| Copy data between two budget files, in two currencies | One-way transaction, payee, and category flows with mappings, review queues, history, and optional FX conversion | [Budget File Sync](user-guide/budget-sync/) |
+| Pull in new transactions without opening anything | Scheduled Actual bank syncs with a result for each linked account; Actual keeps the bank connection | [Bank Sync](user-guide/bank-sync/) |
+| Have work run on a timetable while the app is closed | Scheduled bank syncs, backups, and safe syncs with run history, health, backoff, and credentials for HTTP API mode | [Automations](user-guide/automations/) |
+| Create verified backups | Scheduled copies to folders or S3-compatible storage, verification, retention protection, and recovery information | [Backups](user-guide/backups/) |
+| Ask a question of my data that no screen answers | Read-only ActualQL queries, exported-file diagnostics, and SQLite inspection | [ActualQL Queries](user-guide/actualql/) |
+| Find out whether a budget file is sound | Structural checks and file metadata over an exported snapshot | [Budget File Health](user-guide/budget-file-health/) |
+| Move a whole budget structure somewhere else | A ZIP of accounts, payees, categories, tags, schedules, and rules, imported in dependency order | [Bundle Export / Import](getting-started/bundle-export-import/) |
 
-It is a companion, not a replacement. Keep Actual Budget for entering transactions, ordinary
-budgeting, reports, and your phone. Bench never talks to your bank - Actual does that - but it
-decides when the sync runs and tells you what each account sent back.
+The sidebar follows the app's navigation. Use it when you know the workspace you need.
 
-## How changes reach your budget
+Manual budget changes remain available for review until you confirm them. See
+[Work safely](getting-started/core-concepts/) for the rule and its exceptions.
 
-Different jobs get different safety models:
-
-- **Stage → review → Save** for most entity and budget edits.
-- **Preview → select → Apply** for Budget File Sync and Bank Reconciliation.
-- **Read-only** for ActualQL, Rule Diagnostics, Budget File Health, and the Data Browser.
-- **Immediate explicit actions** for notes and carryover toggles.
-- **Scheduled, with a record** for automations: they run unattended, and every run is kept with its
-  result, duration, and log. See [Automations](user-guide/automations/).
-
-Every guide states its write model before its instructions. [Work safely](getting-started/core-concepts/)
-explains all of them.
+Actual Budget remains the place for day-to-day transaction entry, routine budgeting, reports, mobile
+use, and bank connections. Actual Bench schedules Actual's existing bank sync and reports its result;
+it does not connect to a bank itself. [What Actual Bench adds](getting-started/introduction/) explains
+the boundary in more detail.
 
 ## Start using it
 
 <CardGrid>
-	<LinkCard title="See whether it fits" href="getting-started/introduction/" description="A short guide to who benefits, what Actual Bench complements, and where it adds value." />
+	<LinkCard title="See whether it fits" href="getting-started/introduction/" description="Find out which tasks Actual Bench supports and what remains in Actual Budget." />
 	<LinkCard title="Try the demo" href="https://actual-bench-demo.vercel.app" description="Explore realistic Envelope and Tracking household budgets without connecting your own data." />
 	<LinkCard title="Install Actual Bench" href="getting-started/installation/" description="Run the container and keep its metadata persistent." />
 	<LinkCard title="Connect a budget" href="getting-started/connecting/" description="Choose the connection mode your installation supports and open a budget." />
-	<LinkCard title="Protect a budget" href="user-guide/backups/" description="Take verified backups on a schedule, and know what you would get back if you needed it." />
+	<LinkCard title="Protect a budget" href="user-guide/backups/" description="Create verified backups on a schedule and inspect a copy before you need to restore it." />
 </CardGrid>
 
 ## Project and support

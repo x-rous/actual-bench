@@ -1,22 +1,20 @@
 ---
 title: Rule Diagnostics
-description: "Audit a whole rule set at once: references to deleted entities, rules that shadow each other, duplicates, and rules that cannot match your next import."
+description: "Audit the full rule set for broken references, shadowed rules, duplicates, and overly specific import matches."
 sidebar:
   order: 9
 ---
 
-One pass over the whole rule set, reporting what is broken. References to things you deleted. Broad
-rules quietly swallowing specific ones. Duplicates doing the same job twice. Rules that cannot
-possibly match your next import. Actual runs rules one transaction at a time and never shows you the
-set. This is that view.
+Use Rule Diagnostics to review the complete rule set for broken references, no-op actions,
+contradictory conditions, shadowed rules, duplicate rules, and import rules that are too specific.
+Diagnostics does not change a rule unless you explicitly start a staged fix.
 
 Open it from **Tools → Rule Diagnostics** (`/rules/diagnostics`), or the **Diagnostics** button on the
 Rules toolbar.
 
-**Write model:** read-only where your budget is concerned. It reads your staged rules too, and changes
-none of them on its own. Every fix is something you click - open the rule, confirm a merge, confirm a
-generalisation - and then goes through the normal staged **Save**. Dismissing a finding does write, but
-to Actual Bench's own database, never to your budget.
+**Budget impact:** Diagnostics includes currently staged rules and does not change budget data. A fix you start becomes a normal staged
+rule change and writes only when you **Save**. Dismissing a finding saves Actual Bench metadata, not
+budget data.
 
 ![Rule Diagnostics listing findings grouped by severity, each with the rule it concerns.](../../../assets/screenshots/user-guide/rule-diagnostics.png)
 
@@ -25,10 +23,8 @@ offers it - Merge for duplicates, Generalise for a rule matching whole import st
 
 ## Why a rule set needs auditing
 
-Rule sets rot quietly. You delete a category and three rules start pointing at nothing. You write a
-broad rule and it swallows a specific one you wrote last year. You write the same rule twice because
-you forgot the first. None of that announces itself. This page finds all of it, says what is wrong in
-a sentence, and links to the fix.
+Rule Diagnostics reports rule-set problems that are difficult to see when editing one rule at a time.
+Each finding explains the issue, shows the affected rule or rules, and links to an available fix.
 
 ## Run diagnostics and read findings
 
@@ -146,6 +142,8 @@ the time.
 created before anything is removed - so a failure leaves you with what you started with.*
 
 ## Safety
+
+It includes staged rules in the analysis, but it never changes them on its own.
 
 This page never touches a rule. Every fix is something you do deliberately - open a rule, confirm a
 merge, confirm a generalisation - and every one of those goes through the normal staged **Save**.

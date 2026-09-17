@@ -1,19 +1,16 @@
 ---
 title: How Matching Works
-description: The rules the reconciliation matcher follows - what makes a pair, what it scores, what it refuses to decide, and every setting you can change.
+description: Reference for bank-reconciliation matching rules, scoring, safeguards, and configurable settings.
 sidebar:
   order: 16
 ---
 
-[Bank Reconciliation](../bank-reconciliation/) pairs the rows on your statement with the
-transactions in your account. This page is the full account of how it does that: what makes two rows
-a pair, how they are scored, what the matcher refuses to decide on its own, and which settings
-change any of it.
+[Bank Reconciliation](../bank-reconciliation/) compares statement rows with transactions in one
+account. This reference explains automatic-match requirements, scores, safeguards, and settings.
 
-You do not need this to reconcile a statement. Read it when a pairing surprised you and you want to
-know why, or before changing a matching setting.
+Read it when a match needs explaining or before you change a matching setting.
 
-## The one rule everything follows
+## Automatic-match requirement
 
 > **The amount decides whether a pair exists. Everything else only decides how good it is.**
 
@@ -21,13 +18,8 @@ Two rows can only be matched automatically if their amounts are **exactly equal*
 creates a pair - a perfect merchant name against a different amount produces nothing. Text and dates
 rank pairs the amount has already admitted.
 
-This is deliberate, and it is the reason the feature can be trusted with your budget. A wrong match
-writes to the wrong transaction; a missed match shows up as a row you can see and create. The first
-is expensive and quiet, the second is cheap and obvious.
-
-Everything the matcher does is **deterministic**: the same statement against the same account always
-produces the same result. Nothing depends on the order your account happened to load in, on the
-time, or on chance. That is what makes a session resumable and a tolerance change safe to re-run.
+The matcher is deterministic: the same statement, account state, and settings produce the same
+result. A missed match remains visible for review instead of being matched automatically.
 
 ## The stages, in order
 
@@ -137,7 +129,7 @@ strongest claim on it.
 The order is best score first, then the closest date, then the strongest text - so ties never fall
 to whichever row happened to be listed first.
 
-## What it refuses to decide
+## Cases that require your decision
 
 The matcher stops rather than guess. Three distinct situations, each shown differently:
 
