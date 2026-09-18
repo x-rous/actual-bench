@@ -1,5 +1,6 @@
 import type { RememberedBudget, ServerCredentialMeta, ServerCredentialSecret } from "@/lib/app-db/types";
 import type { ConnectionMode } from "@/store/connection";
+import type { VaultUnlockDuration } from "@/lib/connectionVault/unlockDuration";
 
 // Re-export for consumers building UI over remembered servers.
 export type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
@@ -34,7 +35,11 @@ async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-export type VaultStatus = { supported: boolean; passphraseSet: boolean; unlocked: boolean };
+export type VaultStatus = {
+  supported: boolean;
+  passphraseSet: boolean;
+  unlocked: boolean;
+};
 
 /** Whether the feature is available here, a passphrase is set, and this session is unlocked. */
 export function getVaultStatus(): Promise<VaultStatus> {
@@ -42,18 +47,24 @@ export function getVaultStatus(): Promise<VaultStatus> {
 }
 
 /** Set the passphrase for the first time (also unlocks this session). */
-export function setVaultPassphrase(passphrase: string): Promise<{ ok: true; unlocked: true }> {
+export function setVaultPassphrase(
+  passphrase: string,
+  duration: VaultUnlockDuration
+): Promise<{ ok: true; unlocked: true }> {
   return jsonFetch("/api/connection-vault/passphrase", {
     method: "POST",
-    body: JSON.stringify({ passphrase }),
+    body: JSON.stringify({ passphrase, duration }),
   });
 }
 
 /** Unlock this session with the passphrase. */
-export function unlockVault(passphrase: string): Promise<{ ok: true; unlocked: true }> {
+export function unlockVault(
+  passphrase: string,
+  duration: VaultUnlockDuration
+): Promise<{ ok: true; unlocked: true }> {
   return jsonFetch("/api/connection-vault/unlock", {
     method: "POST",
-    body: JSON.stringify({ passphrase }),
+    body: JSON.stringify({ passphrase, duration }),
   });
 }
 
@@ -73,11 +84,12 @@ export function resetVault(): Promise<{ ok: true }> {
 /** Change the passphrase, re-sealing all remembered credentials. */
 export function changeVaultPassphrase(
   currentPassphrase: string,
-  newPassphrase: string
+  newPassphrase: string,
+  duration: VaultUnlockDuration
 ): Promise<{ ok: true; unlocked: true }> {
   return jsonFetch("/api/connection-vault/passphrase/change", {
     method: "POST",
-    body: JSON.stringify({ currentPassphrase, newPassphrase }),
+    body: JSON.stringify({ currentPassphrase, newPassphrase, duration }),
   });
 }
 

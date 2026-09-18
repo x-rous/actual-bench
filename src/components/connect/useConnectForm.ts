@@ -64,7 +64,13 @@ export type SavedBudgetRef = {
   label: string;
 };
 
-export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudgetRef[] } = {}) {
+export function useConnectForm({
+  savedBudgets = [],
+  directBrowserApiEnabled = false,
+}: {
+  savedBudgets?: SavedBudgetRef[];
+  directBrowserApiEnabled?: boolean;
+} = {}) {
   const queryClient = useQueryClient();
   const addInstance = useConnectionStore((s) => s.addInstance);
   const removeInstance = useConnectionStore((s) => s.removeInstance);
@@ -84,7 +90,9 @@ export function useConnectForm({ savedBudgets = [] }: { savedBudgets?: SavedBudg
   const confirmSwitchRef = useRef(false);
 
   // Server credentials
-  const [connectionMode, setConnectionMode] = useState<ConnectionMode>("http-api");
+  const [connectionMode, setConnectionMode] = useState<ConnectionMode>(
+    directBrowserApiEnabled ? "browser-api" : "http-api"
+  );
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [serverPassword, setServerPassword] = useState("");

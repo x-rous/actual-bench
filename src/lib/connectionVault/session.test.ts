@@ -3,6 +3,7 @@ import {
   clearAllSessions,
   clearSession,
   createSession,
+  getSessionDuration,
   getSessionKey,
   hasSession,
 } from "./session";
@@ -27,20 +28,29 @@ describe("connection vault session cache (RD-061 / PR-026b)", () => {
   });
 
   it("expires an entry once past its TTL", () => {
-    const token = createSession(randomBytes(32), 0);
+    let now = 1_000_000;
+    jest.spyOn(Date, "now").mockImplementation(() => now);
+    const token = createSession(randomBytes(32));
+    now += 8 * 60 * 60 * 1000;
     expect(getSessionKey(token)).toBeNull();
   });
 
   it("slides the idle window on access and expires only when idle", () => {
     let now = 1_000_000;
     jest.spyOn(Date, "now").mockImplementation(() => now);
-    const token = createSession(randomBytes(32), 1000); // expires at now+1000
-    now += 800;
+    const token = createSession(randomBytes(32));
+    const ttl = 8 * 60 * 60 * 1000;
+    now += ttl - 1;
     expect(getSessionKey(token)).not.toBeNull(); // alive → refresh to now+1000
-    now += 800; // 800 < 1000 since the refresh → still alive
+    now += ttl - 1;
     expect(getSessionKey(token)).not.toBeNull();
-    now += 1001; // idle beyond the TTL
+    now += ttl + 1;
     expect(getSessionKey(token)).toBeNull();
+  });
+
+  it("keeps the selected duration with the session", () => {
+    const token = createSession(randomBytes(32), "30d");
+    expect(getSessionDuration(token)).toBe("30d");
   });
 
   it("clears a single session and all sessions", () => {

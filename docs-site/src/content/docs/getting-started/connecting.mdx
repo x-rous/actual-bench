@@ -9,12 +9,14 @@ Use a connection to open an existing Actual budget. Choose **Direct Actual Serve
 installations. Choose **HTTP API Server** only when your installation already runs
 `actual-http-api`.
 
+When Direct mode is enabled, it is selected by default.
+
 :::tip[If someone else runs Actual Bench]
 Ask them which mode and which URL. None of the networking below matters to you.
 :::
 
 
-![The connect screen on a first run: choose HTTP API or Direct, then enter the server details.](../../../assets/screenshots/getting-started/connect.png)
+![The connect screen on a first run: choose Direct or HTTP API, then enter the server details.](../../../assets/screenshots/getting-started/connect.png)
 
 *Two ways in. **Direct** talks to your Actual server the way Actual does; **HTTP API** goes through
 an `actual-http-api` server if your installation already has one.*
@@ -58,8 +60,10 @@ You can save non-secret recent details or optionally save encrypted server crede
 3. Connect. The server credential is encrypted and saved; an encrypted budget's password is saved
    separately for that budget.
 
-Saved servers show up in the **Connections** list. Unlock once per restart and every remembered budget
-opens without further typing. One server is stored once, however many budgets live on it.
+Saved servers show up in the **Connections** list. Choose how long to keep the vault unlocked when you
+enter your passphrase: 8 hours, 24 hours, 7 days, or 30 days. The timer resets when you use the vault.
+Locking it, clearing browser cookies, or restarting Bench always requires your passphrase again. One server
+is stored once, however many budgets live on it.
 
 :::caution[The passphrase cannot be recovered]
 Neither the passphrase nor the key derived from it is stored anywhere. Forget it and there is no way

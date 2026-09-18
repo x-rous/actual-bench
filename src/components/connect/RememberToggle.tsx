@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
+import { readVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
 import { parseApiError } from "./utils";
 
 type Vault = ReturnType<typeof useConnectionVault>;
@@ -41,6 +42,7 @@ export function RememberToggle({
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const unlockDuration = readVaultUnlockDuration();
 
   if (!vault.status.supported) return null;
 
@@ -79,8 +81,8 @@ export function RememberToggle({
     }
     setBusy(true);
     try {
-      if (setting) await vault.setPassphrase(passphrase);
-      else await vault.unlock(passphrase);
+      if (setting) await vault.setPassphrase(passphrase, unlockDuration);
+      else await vault.unlock(passphrase, unlockDuration);
       setDialogOpen(false);
       resetDialog();
     } catch (err) {
@@ -126,8 +128,8 @@ export function RememberToggle({
             <DialogTitle>{setting ? "Protect saved credentials" : "Unlock the vault"}</DialogTitle>
             <DialogDescription>
               {setting
-                ? "Create a passphrase to encrypt your saved servers. You'll enter it once per session to reconnect. It is not stored; if you forget it, you can reset the vault and start over."
-                : "Enter your passphrase to unlock your saved servers for this session."}
+                ? "Create a passphrase to encrypt your saved servers. It is not stored; if you forget it, you can reset the vault and start over."
+                : "Enter your passphrase to unlock your saved servers."}
             </DialogDescription>
           </DialogHeader>
 

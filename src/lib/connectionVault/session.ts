@@ -1,4 +1,9 @@
 import { randomBytes } from "node:crypto";
+import {
+  DEFAULT_VAULT_UNLOCK_DURATION,
+  vaultUnlockDurationMs,
+  type VaultUnlockDuration,
+} from "./unlockDuration";
 
 /**
  * In-memory unlock-session cache for remembered connection credentials
@@ -16,9 +21,9 @@ import { randomBytes } from "node:crypto";
  * Node-only; must never be imported into client code.
  */
 
-export const SESSION_IDLE_TTL_MS = 8 * 60 * 60 * 1000; // 8h sliding idle window
+export const SESSION_IDLE_TTL_MS = vaultUnlockDurationMs(DEFAULT_VAULT_UNLOCK_DURATION);
 
-type Session = { key: Buffer; expiresAt: number; ttlMs: number };
+type Session = { key: Buffer; expiresAt: number; ttlMs: number; duration: VaultUnlockDuration };
 
 const globalStore = globalThis as unknown as { __abVaultSessions?: Map<string, Session> };
 const sessions: Map<string, Session> = (globalStore.__abVaultSessions ??= new Map());
@@ -30,11 +35,15 @@ function sweep(now: number): void {
 }
 
 /** Create a session holding `key`; returns the opaque token for the cookie. */
-export function createSession(key: Buffer, ttlMs: number = SESSION_IDLE_TTL_MS): string {
+export function createSession(
+  key: Buffer,
+  duration: VaultUnlockDuration = DEFAULT_VAULT_UNLOCK_DURATION
+): string {
   const now = Date.now();
   sweep(now);
   const token = randomBytes(32).toString("base64url");
-  sessions.set(token, { key, expiresAt: now + ttlMs, ttlMs });
+  const ttlMs = vaultUnlockDurationMs(duration);
+  sessions.set(token, { key, expiresAt: now + ttlMs, ttlMs, duration });
   return token;
 }
 
@@ -58,6 +67,14 @@ export function getSessionKey(token: string | undefined | null): Buffer | null {
 /** Whether a token maps to a live session (no key returned). */
 export function hasSession(token: string | undefined | null): boolean {
   return getSessionKey(token) !== null;
+}
+
+/** Return the configured duration for a live session without exposing its key. */
+export function getSessionDuration(token: string | undefined | null): VaultUnlockDuration | null {
+  if (!token) return null;
+  const session = sessions.get(token);
+  if (!session || session.expiresAt <= Date.now()) return null;
+  return session.duration;
 }
 
 /** Drop a single session (lock). */

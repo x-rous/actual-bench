@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
+import type { VaultUnlockDuration } from "@/lib/connectionVault/unlockDuration";
 import {
   changeVaultPassphrase,
   forgetBudget,
@@ -24,7 +25,11 @@ import {
   type VaultStatus,
 } from "./vaultApi";
 
-const CLOSED: VaultStatus = { supported: false, passphraseSet: false, unlocked: false };
+const CLOSED: VaultStatus = {
+  supported: false,
+  passphraseSet: false,
+  unlocked: false,
+};
 
 /**
  * Client state + actions for the remembered-server vault (RD-061 / RD-063).
@@ -65,16 +70,16 @@ export function useConnectionVault() {
   }, [refresh]);
 
   const setPassphrase = useCallback(
-    async (passphrase: string) => {
-      await setVaultPassphrase(passphrase);
+    async (passphrase: string, duration: VaultUnlockDuration) => {
+      await setVaultPassphrase(passphrase, duration);
       await refresh();
     },
     [refresh]
   );
 
   const unlock = useCallback(
-    async (passphrase: string) => {
-      await unlockVault(passphrase);
+    async (passphrase: string, duration: VaultUnlockDuration) => {
+      await unlockVault(passphrase, duration);
       await refresh();
     },
     [refresh]
@@ -91,8 +96,12 @@ export function useConnectionVault() {
   }, [refresh]);
 
   const changePassphrase = useCallback(
-    async (currentPassphrase: string, newPassphrase: string) => {
-      await changeVaultPassphrase(currentPassphrase, newPassphrase);
+    async (
+      currentPassphrase: string,
+      newPassphrase: string,
+      duration: VaultUnlockDuration
+    ) => {
+      await changeVaultPassphrase(currentPassphrase, newPassphrase, duration);
       await refresh();
     },
     [refresh]

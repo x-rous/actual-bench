@@ -1,5 +1,6 @@
 import type { NextRequest, NextResponse } from "next/server";
 import { SESSION_IDLE_TTL_MS } from "./session";
+import { vaultUnlockDurationMs, type VaultUnlockDuration } from "./unlockDuration";
 
 /**
  * Session cookie helpers for the remembered-connection vault (RD-061 / PR-026b).
@@ -23,13 +24,19 @@ export function readSessionToken(request: NextRequest): string | undefined {
   return request.cookies.get(VAULT_COOKIE)?.value;
 }
 
-export function setSessionCookie(request: NextRequest, response: NextResponse, token: string): void {
+export function setSessionCookie(
+  request: NextRequest,
+  response: NextResponse,
+  token: string,
+  duration?: VaultUnlockDuration
+): void {
+  const ttlMs = duration ? vaultUnlockDurationMs(duration) : SESSION_IDLE_TTL_MS;
   response.cookies.set(VAULT_COOKIE, token, {
     httpOnly: true,
     sameSite: "strict",
     secure: isSecureRequest(request),
     path: "/",
-    maxAge: Math.floor(SESSION_IDLE_TTL_MS / 1000),
+    maxAge: Math.floor(ttlMs / 1000),
   });
 }
 

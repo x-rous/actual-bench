@@ -3,8 +3,8 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { rememberedCredentialsSupported } from "@/lib/app-db/connectionCredentialRepository";
 import { isPassphraseSet } from "@/lib/connectionVault/passphrase";
-import { hasSession } from "@/lib/connectionVault/session";
-import { readSessionToken } from "@/lib/connectionVault/cookies";
+import { getSessionDuration, hasSession } from "@/lib/connectionVault/session";
+import { readSessionToken, setSessionCookie } from "@/lib/connectionVault/cookies";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,11 +20,16 @@ export function GET(request: NextRequest) {
       return NextResponse.json({ supported: false, passphraseSet: false, unlocked: false });
     }
     const db = getAppDb();
-    return NextResponse.json({
+    const token = readSessionToken(request);
+    const unlocked = hasSession(token);
+    const duration = unlocked ? getSessionDuration(token) : null;
+    const response = NextResponse.json({
       supported: true,
       passphraseSet: isPassphraseSet(db),
-      unlocked: hasSession(readSessionToken(request)),
+      unlocked,
     });
+    if (token && duration) setSessionCookie(request, response, token, duration);
+    return response;
   } catch (error) {
     return appDbErrorResponse(error);
   }
