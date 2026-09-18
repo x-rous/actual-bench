@@ -101,7 +101,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
     handleSelectBudget,
     pendingBudgetSwitch,
     dismissBudgetSwitch,
-  } = useConnectForm({ savedBudgets });
+  } = useConnectForm({ savedBudgets, directBrowserApiEnabled });
 
   // One server-grouped view of everything openable: this-session connections +
   // the saved vault. Each budget appears once, deduped by server + sync id.
@@ -178,30 +178,11 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
 
       <p className="-mt-1 text-sm leading-relaxed text-muted-foreground">
         Point Actual Bench at your budget server to review, sync, and manage it. Choose{" "}
-        <span className="font-medium text-foreground">HTTP API</span> for a hosted API server, or{" "}
-        <span className="font-medium text-foreground">Direct</span> to talk to Actual itself.
+        <span className="font-medium text-foreground">Direct</span> to talk to Actual itself, or{" "}
+        <span className="font-medium text-foreground">HTTP API</span> for a hosted API server.
       </p>
 
       <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Connection type">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={connectionMode === "http-api"}
-          disabled={anyBusy}
-          onClick={() => handleModeChange("http-api")}
-          className={cn(
-            "flex flex-col gap-1.5 rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
-            connectionMode === "http-api"
-              ? "border-action bg-action/[0.06] ring-3 ring-action/15"
-              : "border-input bg-muted/40 hover:border-muted-foreground/40"
-          )}
-        >
-          <span className="flex items-center gap-2 text-sm font-semibold">
-            <Server className="size-4 text-action" />
-            HTTP API Server
-          </span>
-          <span className="text-xs leading-snug text-muted-foreground">Through an actual-http-api server.</span>
-        </button>
         <button
           type="button"
           role="tab"
@@ -221,6 +202,25 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
             Direct Actual Server
           </span>
           <span className="text-xs leading-snug text-muted-foreground">Actual&apos;s API runs in your browser.</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={connectionMode === "http-api"}
+          disabled={anyBusy}
+          onClick={() => handleModeChange("http-api")}
+          className={cn(
+            "flex flex-col gap-1.5 rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
+            connectionMode === "http-api"
+              ? "border-action bg-action/[0.06] ring-3 ring-action/15"
+              : "border-input bg-muted/40 hover:border-muted-foreground/40"
+          )}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <Server className="size-4 text-action" />
+            HTTP API Server
+          </span>
+          <span className="text-xs leading-snug text-muted-foreground">Through an actual-http-api server.</span>
         </button>
       </div>
 

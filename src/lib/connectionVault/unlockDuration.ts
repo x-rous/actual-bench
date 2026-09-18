@@ -20,7 +20,10 @@ export const VAULT_UNLOCK_DURATION_OPTIONS: ReadonlyArray<{
 ];
 
 export function isVaultUnlockDuration(value: unknown): value is VaultUnlockDuration {
-  return typeof value === "string" && value in VAULT_UNLOCK_DURATIONS;
+  return (
+    typeof value === "string" &&
+    Object.prototype.hasOwnProperty.call(VAULT_UNLOCK_DURATIONS, value)
+  );
 }
 
 export function vaultUnlockDurationMs(duration: VaultUnlockDuration): number {

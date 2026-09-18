@@ -98,8 +98,11 @@ export function ConnectionsList({
   }
 
   function updateUnlockDuration(duration: VaultUnlockDuration) {
+    if (!saveVaultUnlockDuration(duration)) {
+      toast.error("Could not save the default unlock duration.");
+      return;
+    }
     setUnlockDuration(duration);
-    saveVaultUnlockDuration(duration);
   }
 
   async function handleLock() {

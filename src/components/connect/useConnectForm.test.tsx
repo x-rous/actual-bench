@@ -133,6 +133,26 @@ describe("useConnectForm connection activation", () => {
     });
   });
 
+  it("defaults to Direct mode when Direct connections are enabled", () => {
+    const client = new QueryClient();
+    const { result } = renderHook(
+      () => useConnectForm({ directBrowserApiEnabled: true }),
+      { wrapper: makeWrapper(client) }
+    );
+
+    expect(result.current.connectionMode).toBe("browser-api");
+  });
+
+  it("defaults to HTTP API mode when Direct connections are disabled", () => {
+    const client = new QueryClient();
+    const { result } = renderHook(
+      () => useConnectForm({ directBrowserApiEnabled: false }),
+      { wrapper: makeWrapper(client) }
+    );
+
+    expect(result.current.connectionMode).toBe("http-api");
+  });
+
   it("activates a successful Direct budget connection without navigating", async () => {
     mockLoadBrowserApiBudgetList.mockResolvedValue({
       budgets: [{ groupId: "budget-1", name: "Budget One" }],
