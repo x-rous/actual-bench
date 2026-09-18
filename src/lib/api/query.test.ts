@@ -1,4 +1,8 @@
-import { getTransactionCountsForIds, runQuery } from "./query";
+import {
+  getAllTransactionCounts,
+  getTransactionCountsForIds,
+  runQuery,
+} from "./query";
 import type { ConnectionInstance } from "@/store/connection";
 
 // ─── Mock apiRequest ──────────────────────────────────────────────────────────
@@ -162,5 +166,59 @@ describe("getTransactionCountsForIds", () => {
       (s: unknown) => typeof s === "object" && s !== null && "transactionCount" in (s as object)
     );
     expect(selectField).toEqual({ transactionCount: { $count: "$id" } });
+  });
+});
+
+describe("getAllTransactionCounts", () => {
+  beforeEach(() => {
+    mockApiRequest.mockReset();
+    mockTransportRunQuery.mockReset();
+    mockGetTransport.mockClear();
+  });
+
+  it("groups the complete transaction table without sending entity ids", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      data: [
+        { payee: "p1", "payee.name": "Amazon", transactionCount: 10 },
+        { payee: "p2", "payee.name": "Netflix", transactionCount: 3 },
+      ],
+    });
+
+    const result = await getAllTransactionCounts(connection, "payee");
+
+    expect(result).toEqual(
+      new Map([
+        ["p1", 10],
+        ["p2", 3],
+      ])
+    );
+    expect(mockApiRequest).toHaveBeenCalledWith(connection, "/run-query", {
+      method: "POST",
+      body: {
+        ActualQLquery: {
+          table: "transactions",
+          filter: { payee: { $ne: null } },
+          groupBy: ["payee", "payee.name"],
+          select: [
+            "payee",
+            "payee.name",
+            { transactionCount: { $count: "$id" } },
+          ],
+        },
+      },
+    });
+  });
+
+  it("uses the shared transport in Direct mode", async () => {
+    mockTransportRunQuery.mockResolvedValueOnce({
+      data: [{ payee: "p1", "payee.name": "Amazon", transactionCount: 4 }],
+    });
+
+    await expect(
+      getAllTransactionCounts(directConnection, "payee")
+    ).resolves.toEqual(new Map([["p1", 4]]));
+
+    expect(mockGetTransport).toHaveBeenCalledWith(directConnection);
+    expect(mockApiRequest).not.toHaveBeenCalled();
   });
 });

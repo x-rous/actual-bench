@@ -3,7 +3,10 @@
 import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
-import { getTransactionCountsForIds } from "@/lib/api/query";
+import {
+  getAllTransactionCounts,
+  getTransactionCountsForIds,
+} from "@/lib/api/query";
 import type { TransactionCountGroupField } from "@/lib/api/query";
 
 /**
@@ -43,6 +46,45 @@ export function useTransactionCountsForIds(
       return getTransactionCountsForIds(connection, groupField, sortedIds);
     },
     enabled: options.enabled && ids.length > 0 && !!connection,
+    staleTime: 30_000,
+    gcTime: 60_000,
+  });
+  const refresh = useCallback(() => void refetch(), [refetch]);
+
+  return {
+    data,
+    isLoading,
+    isFetching,
+    error,
+    refetch: refresh,
+  };
+}
+
+/**
+ * Loads one complete grouped count map without placing every entity id in the
+ * query. Use this only for a whole-budget workflow that genuinely needs to
+ * identify zero-use entities; ordinary impact dialogs should keep using the
+ * targeted hook above.
+ */
+export function useAllTransactionCounts(
+  groupField: TransactionCountGroupField,
+  options: { enabled: boolean }
+): {
+  data: Map<string, number> | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+  error: Error | null;
+  refetch: () => void;
+} {
+  const connection = useConnectionStore(selectActiveInstance);
+
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    queryKey: ["transactionCounts", groupField, connection?.id, "all"],
+    queryFn: () => {
+      if (!connection) throw new Error("No active connection");
+      return getAllTransactionCounts(connection, groupField);
+    },
+    enabled: options.enabled && !!connection,
     staleTime: 30_000,
     gcTime: 60_000,
   });

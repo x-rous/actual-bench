@@ -47,7 +47,7 @@ function suggestion(overrides: Partial<CleanupSuggestion> = {}): CleanupSuggesti
     impact: {
       transactionTotal: 12,
       transactionsLoading: false,
-      rules: { regular: 0, activeSchedule: 0, completedSchedule: 0 },
+      rules: { total: 0 },
       behavior: {
         favoriteDiffers: false,
         learnCategoriesDiffers: false,
@@ -78,7 +78,7 @@ describe("triageBadges", () => {
       suggestion({
         impact: {
           ...suggestion().impact!,
-          rules: { regular: 1, activeSchedule: 0, completedSchedule: 0 },
+          rules: { total: 1 },
         },
       })
     );

@@ -35,13 +35,12 @@ let isLoading = false;
 let candidatesError: Error | null = null;
 const refetchImpact = jest.fn();
 
-// The impact hook owns the TanStack queries (rules, schedules, transaction
-// counts); this suite is about what the view renders, so it supplies the loaded
+// The impact hook owns the TanStack queries (rules and transaction counts);
+// this suite is about what the view renders, so it supplies the loaded
 // shape directly rather than standing up a QueryClientProvider.
 jest.mock("../hooks/usePayeeCleanupImpact", () => ({
   usePayeeCleanupImpact: () => ({
     stagedRules,
-    schedules: [],
     transactionCounts,
     transactionsLoading,
     isLoading: impactLoading,
@@ -1339,11 +1338,17 @@ describe("PayeeCleanupView", () => {
     candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     candidatesFetching = true;
 
-    render(<PayeeCleanupView />);
+    const { rerender } = render(<PayeeCleanupView />);
 
     const button = screen.getByRole("button", { name: /scanning/i });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+
+    candidatesFetching = false;
+    rerender(<PayeeCleanupView />);
+
+    expect(screen.getByRole("article")).toBeInTheDocument();
   });
 
   it("re-reads every input used by the cleanup scan", () => {

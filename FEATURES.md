@@ -346,8 +346,8 @@ its changes first; nothing is written to Actual until you save.
 - **Decides on one screen.** Each suggestion is a single card in three columns — the result and the
   payees behind it, what changes, and future imports — with no dialog to open. Struck-through text
   shows exactly what each name lost, and *Reasoning* expands the detector's own account.
-- **Shows the blast radius before you decide** — transactions that will move, regular rules, active
-  and completed schedule-linked rules counted separately, and any disagreement over Favorite or
+- **Shows the blast radius before you decide** — transactions that will move, every referencing rule
+  counted once (including schedule-managed rules), and any disagreement over Favorite or
   Category learning.
 - **You correct it.** Drop a member, add one the scan missed, choose which payee survives, edit the
   final name, or mark a group as *not duplicates* — which is remembered, per budget, and reversible

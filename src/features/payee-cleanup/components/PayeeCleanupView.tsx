@@ -43,6 +43,15 @@ import { ReviewCleanupBar } from "./ReviewCleanupBar";
 import { usePayeeCleanupPlan, type StageOutcome } from "../hooks/usePayeeCleanupPlan";
 import { buildPlan, planOperationCount } from "../lib/plan";
 import { PendingChangesSummary } from "./CleanupSummaryCards";
+import type { EligibilityPartition } from "../lib/eligibility";
+import type { ImpactSources } from "../lib/impact";
+
+const EMPTY_PARTITION: EligibilityPartition = {
+  eligible: [],
+  excludedTransfer: [],
+  excludedTombstoned: [],
+};
+const EMPTY_SCAN_RESULT = scanForCleanup(EMPTY_PARTITION);
 
 /**
  * The Payee Cleanup workspace: scan, review, correct, accept, stage.
@@ -150,7 +159,7 @@ export function PayeeCleanupView() {
   const [ruleGapOverrides, setRuleGapOverrides] = useState<
     Map<string, RuleGapOverride>
   >(new Map());
-  const impact = usePayeeCleanupImpact(partition.eligible, { enabled: true });
+  const impact = usePayeeCleanupImpact({ enabled: true });
   const {
     suppressions,
     rejectCluster,
@@ -179,20 +188,53 @@ export function PayeeCleanupView() {
     [impact.stagedRules]
   );
 
+  const impactSources = useMemo<ImpactSources>(
+    () => ({
+      stagedRules: impact.stagedRules,
+      transactionCounts: impact.transactionCounts,
+      transactionsLoading: impact.transactionsLoading,
+    }),
+    [
+      impact.stagedRules,
+      impact.transactionCounts,
+      impact.transactionsLoading,
+    ]
+  );
+
+  // Any read used by the scan counts as the same operation. Partial query
+  // responses never run the detector/rule-gap pipeline; the full analysis runs
+  // once after every source has settled.
+  const scanning =
+    candidatesFetching ||
+    importedTextFetching ||
+    impact.isFetching ||
+    suppressionsFetching;
+  const readsLoading =
+    candidatesLoading ||
+    importedTextLoading ||
+    impact.isLoading ||
+    suppressionsLoading;
+  const error =
+    candidatesError ?? importedTextError ?? impact.error ?? suppressionsError;
+  const scanReady = !readsLoading && !scanning && !error;
+
   const result = useMemo(
     () =>
-      scanForCleanup(partition, {
-        impactSources: impact,
-        suppressions,
-        corrections,
-        importedText,
-        importedTextTruncated,
-        rules,
-        ruleGapOverrides,
-      }),
+      scanReady
+        ? scanForCleanup(partition, {
+            impactSources,
+            suppressions,
+            corrections,
+            importedText,
+            importedTextTruncated,
+            rules,
+            ruleGapOverrides,
+          })
+        : EMPTY_SCAN_RESULT,
     [
+      scanReady,
       partition,
-      impact,
+      impactSources,
       suppressions,
       corrections,
       importedText,
@@ -209,20 +251,7 @@ export function PayeeCleanupView() {
   // the same review → stage → Save path as every other cleanup operation.
   const [selectedOrphanIds, setSelectedOrphanIds] = useState<Set<string>>(new Set());
 
-  // Any of the reads the scan depends on still being in flight counts as
-  // scanning: the user asked for one thing, not several independent queries.
-  const scanning =
-    candidatesFetching ||
-    importedTextFetching ||
-    impact.isFetching ||
-    suppressionsFetching;
-  const isLoading =
-    candidatesLoading ||
-    importedTextLoading ||
-    impact.isLoading ||
-    suppressionsLoading;
-  const error =
-    candidatesError ?? importedTextError ?? impact.error ?? suppressionsError;
+  const isLoading = !scanReady && !error;
 
   const refetchAll = () => {
     refetch();
@@ -321,7 +350,7 @@ export function PayeeCleanupView() {
   }
 
   const candidateById = useMemo(
-    () => new Map(partition.eligible.map((c) => [c.id, c])),
+    () => new Map(partition.eligible.map((candidate) => [candidate.id, candidate])),
     [partition.eligible]
   );
 
