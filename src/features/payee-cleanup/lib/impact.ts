@@ -6,12 +6,8 @@
  * first, expressed in Actual's real concepts rather than an invented
  * "metadata conflict" bucket.
  *
- * Three findings from the native-semantics verification shape this module:
+ * Two findings from the native-semantics verification shape this module:
  *
- * - **Schedules are rules.** Actual links a schedule to a payee *through* its
- *   rule, and `getPayeeRuleCounts` deliberately skips rules belonging to
- *   completed schedules. Reporting "3 rules · 1 schedule" would count the same
- *   relationship twice, so the three kinds are separated instead.
  * - **Merge does not rewrite rules.** `db.mergePayees` never touches the rules
  *   table; conditions keep the old payee id and resolve through
  *   `payee_mapping`. The UI must say what actually happens.
@@ -21,7 +17,7 @@
  */
 
 import { buildRuleReferenceMap } from "@/lib/referenceCheck";
-import type { Rule, Schedule } from "@/types/entities";
+import type { Rule } from "@/types/entities";
 import type { StagedMap } from "@/types/staged";
 import type { PayeeCluster } from "./clusterResolver";
 import type { PayeeCleanupCandidate } from "../types";
@@ -30,15 +26,8 @@ import type { PayeeCleanupCandidate } from "../types";
 const PAYEE_FIELDS = ["payee", "imported_payee"];
 
 export type RuleImpact = {
-  /** Rules that are not attached to a schedule. */
-  regular: number;
-  /** Rules belonging to a schedule that is still running. */
-  activeSchedule: number;
-  /**
-   * Rules belonging to a completed schedule. Reported separately and excluded
-   * from the active count — the same choice Actual makes internally.
-   */
-  completedSchedule: number;
+  /** Every live rule that references a member, counted once per rule. */
+  total: number;
 };
 
 export type BehaviorImpact = {
@@ -67,30 +56,22 @@ export type ClusterImpact = {
 
 export type ImpactSources = {
   stagedRules: StagedMap<Rule>;
-  schedules: Schedule[];
   /** Undefined while loading; an empty map means "loaded, none found". */
   transactionCounts: Map<string, number> | undefined;
   transactionsLoading: boolean;
 };
 
 /**
- * Splits rule references into regular / active-schedule / completed-schedule.
- *
- * A rule is schedule-linked when a schedule names it in `ruleId`; the schedule's
- * `completed` flag then decides which bucket it lands in.
+ * Counts each live rule that references any member of a cluster exactly once.
+ * Schedule-managed payees are already represented by their linked rule, so the
+ * cleanup scan does not need a separate schedule read.
  */
-export function classifyRuleReferences(
+export function countRuleReferences(
   payeeIds: string[],
-  stagedRules: StagedMap<Rule>,
-  schedules: Schedule[]
+  stagedRules: StagedMap<Rule>
 ): RuleImpact {
-  const scheduleByRuleId = new Map<string, Schedule>();
-  for (const schedule of schedules) {
-    if (schedule.ruleId) scheduleByRuleId.set(schedule.ruleId, schedule);
-  }
-
   const ids = new Set(payeeIds);
-  const impact: RuleImpact = { regular: 0, activeSchedule: 0, completedSchedule: 0 };
+  let total = 0;
 
   for (const staged of Object.values(stagedRules)) {
     if (staged.isDeleted) continue;
@@ -102,14 +83,10 @@ export function classifyRuleReferences(
       return values.some((v) => typeof v === "string" && ids.has(v));
     });
     if (!referencesCluster) continue;
-
-    const schedule = scheduleByRuleId.get(rule.id);
-    if (!schedule) impact.regular += 1;
-    else if (schedule.completed) impact.completedSchedule += 1;
-    else impact.activeSchedule += 1;
+    total += 1;
   }
 
-  return impact;
+  return { total };
 }
 
 /**
@@ -161,7 +138,7 @@ export function buildClusterImpact(
   return {
     transactionTotal,
     transactionsLoading: sources.transactionsLoading,
-    rules: classifyRuleReferences(memberIds, sources.stagedRules, sources.schedules),
+    rules: countRuleReferences(memberIds, sources.stagedRules),
     behavior: compareBehavior(cluster.members, targetId),
     members,
   };

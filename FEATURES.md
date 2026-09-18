@@ -333,8 +333,9 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 
 ## Payee Cleanup
 
-Finds payees that are really the same merchant under different bank spellings, and helps you
-consolidate them safely. Nothing is written until you save.
+Provides three independent workflows: review possible duplicate payees, create rules for payees
+whose imported bank text will not resolve automatically, and remove unused payees. Cleanup stages
+its changes first; nothing is written to Actual until you save.
 
 - **Finds the variants for you.** Bank text carries dates, times, card numbers, reference numbers,
   store numbers, exchange rates and web addresses; cleanup removes them by *shape*, so it works the
@@ -345,8 +346,8 @@ consolidate them safely. Nothing is written until you save.
 - **Decides on one screen.** Each suggestion is a single card in three columns — the result and the
   payees behind it, what changes, and future imports — with no dialog to open. Struck-through text
   shows exactly what each name lost, and *Reasoning* expands the detector's own account.
-- **Shows the blast radius before you decide** — transactions that will move, regular rules, active
-  and completed schedule-linked rules counted separately, and any disagreement over Favorite or
+- **Shows the blast radius before you decide** — transactions that will move, every referencing rule
+  counted once (including schedule-managed rules), and any disagreement over Favorite or
   Category learning.
 - **You correct it.** Drop a member, add one the scan missed, choose which payee survives, edit the
   final name, or mark a group as *not duplicates* — which is remembered, per budget, and reversible
@@ -357,10 +358,11 @@ consolidate them safely. Nothing is written until you save.
 - **Will not create the duplicate you were removing.** Two accepted groups heading for the same payee
   name block the stage and are offered as one combined group instead.
 - **Keyboard triage** — `A` accept, `R` reasoning, `N` not duplicates on the focused card.
-- **Unused payees** — those with no transactions and no rules — are listed separately for deletion.
-- **Payees that need a rule.** Actual matches an imported payee by name alone, so a payee you rename or
-  merge stops resolving and the duplicate returns on the next import. A separate tab lists the payees
-  in that position and proposes the rule that fixes it — an exact match where the text is identical
+- **Unused payees** — those with no transactions and no rules — can be selected for deletion, rechecked immediately before staging, and saved through the shared Save action.
+- **Payees that need a rule.** Actual matches an imported payee by name alone. Any payee can need a
+  rule when its bank text differs from its saved name; renaming or merging is only one way that
+  mismatch can arise. A separate tab lists those payees and proposes the rule that fixes the mismatch
+  — an exact match where the text is identical
   every time, a backtested pattern built from the words every import shares where it varies — adding to the payee's own
   rename rule where it has one, rather than creating a second rule beside it. The condition is editable per row
   (field, `matches`/`contains`, and the pattern itself) with the backtest re-run as you type. Payees

@@ -23,7 +23,6 @@ function formatCount(value: number): string {
  */
 export function ClusterImpactPanel({ impact, targetName }: Props) {
   const { rules, behavior } = impact;
-  const totalRules = rules.regular + rules.activeSchedule;
 
   return (
     <div className="space-y-3 text-xs">
@@ -45,32 +44,15 @@ export function ClusterImpactPanel({ impact, targetName }: Props) {
 
       <section>
         <h4 className="font-medium text-foreground">Rules</h4>
-        {totalRules === 0 && rules.completedSchedule === 0 ? (
+        {rules.total === 0 ? (
           <p className="text-muted-foreground">No rules reference these payees.</p>
         ) : (
-          <ul className="space-y-0.5 text-muted-foreground">
-            {rules.regular > 0 ? (
-              <li>
-                {formatCount(rules.regular)} regular{" "}
-                {rules.regular === 1 ? "rule" : "rules"}
-              </li>
-            ) : null}
-            {rules.activeSchedule > 0 ? (
-              <li>
-                {formatCount(rules.activeSchedule)} active schedule
-                {rules.activeSchedule === 1 ? "" : "s"} (through{" "}
-                {rules.activeSchedule === 1 ? "its rule" : "their rules"})
-              </li>
-            ) : null}
-            {rules.completedSchedule > 0 ? (
-              <li>
-                {formatCount(rules.completedSchedule)} completed schedule
-                {rules.completedSchedule === 1 ? "" : "s"} - not counted as active
-              </li>
-            ) : null}
-          </ul>
+          <p className="text-muted-foreground">
+            {formatCount(rules.total)} {rules.total === 1 ? "rule references" : "rules reference"}{" "}
+            these payees.
+          </p>
         )}
-        {totalRules > 0 ? (
+        {rules.total > 0 ? (
           // The single most surprising thing about Actual's merge, and the user
           // is about to rely on it.
           <p className="mt-1 text-muted-foreground">
@@ -93,7 +75,7 @@ export function ClusterImpactPanel({ impact, targetName }: Props) {
             ]
               .filter(Boolean)
               .join(" and ")}
-            . The payee you keep decides the outcome - Actual&apos;s API does not
+            . The payee you keep decides the outcome - Actual’s API does not
             let Actual Bench change either setting.
           </p>
         ) : (

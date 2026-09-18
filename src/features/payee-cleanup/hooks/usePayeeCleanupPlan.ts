@@ -4,11 +4,15 @@ import { useCallback, useState } from "react";
 import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
+import { getTransactionCountsForIds } from "@/lib/api/query";
+import type { Rule } from "@/types/entities";
+import type { StagedMap } from "@/types/staged";
 import { getPayeeCleanupMetadata, fallbackMetadata } from "../lib/payeeMetadata";
 import { generateId } from "@/lib/uuid";
 import { buildNormalizationRule } from "../lib/ruleCandidates";
 import { buildExactMatchRule, extendExactMatchConditions } from "../lib/ruleGaps";
 import { validatePlan, type CleanupPlan, type PlanProblem } from "../lib/plan";
+import { findOrphanPayees } from "../lib/orphans";
 import type { PayeeCleanupCandidate } from "../types";
 
 export type StageOutcome =
@@ -39,6 +43,7 @@ export function usePayeeCleanupPlan() {
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const stageNew = useStagedStore((s) => s.stageNew);
   const pushUndo = useStagedStore((s) => s.pushUndo);
+  const loadPayees = useStagedStore((s) => s.loadPayees);
 
   const [isStaging, setIsStaging] = useState(false);
 
@@ -50,8 +55,13 @@ export function usePayeeCleanupPlan() {
       try {
         // ── Re-read, then re-validate against what is true *now* ────────────
         const transport = getTransport(connection);
-        const payees = await transport.getPayees();
-        const metadata = await getPayeeCleanupMetadata(connection);
+        const deletionIds = plan.deletions.map((deletion) => deletion.payeeId);
+        const [payees, metadata, transactionCounts, liveRules] = await Promise.all([
+          transport.getPayees(),
+          getPayeeCleanupMetadata(connection),
+          getTransactionCountsForIds(connection, "payee", deletionIds),
+          plan.deletions.length > 0 ? transport.getRules() : Promise.resolve([]),
+        ]);
 
         const byId = new Map<string, PayeeCleanupCandidate>(
           payees.map((payee) => [
@@ -65,7 +75,91 @@ export function usePayeeCleanupPlan() {
           ])
         );
 
+        // The cleanup route can be opened directly, without visiting the
+        // Payees page that normally initializes this store. Populate it from
+        // the same fresh read used for validation; `loadPayees` preserves any
+        // existing staged edits, which the conflict check below then catches.
+        loadPayees(payees);
+
         const problems = validatePlan(plan, { byId });
+
+        // Cleanup shares the same staged store as the Payees page. Never layer
+        // a cleanup decision over an existing unsaved payee edit: even a
+        // partial update can replace a rename the user already reviewed there.
+        const affectedPayeeIds = new Set([
+          ...plan.merges.flatMap((merge) => [merge.targetId, ...merge.mergeIds]),
+          ...plan.renames.map((rename) => rename.payeeId),
+          ...plan.deletions.map((deletion) => deletion.payeeId),
+          ...plan.rules.map((rule) => rule.targetPayeeId),
+          ...plan.ruleExtensions.map((extension) => extension.targetPayeeId),
+        ]);
+        const stagedPayees = useStagedStore.getState().payees;
+        const conflictingPayeeIds = [...affectedPayeeIds].filter((id) => {
+          const entry = stagedPayees[id];
+          return Boolean(
+            entry && (entry.isNew || entry.isUpdated || entry.isDeleted)
+          );
+        });
+        if (conflictingPayeeIds.length > 0) {
+          const names = conflictingPayeeIds
+            .map((id) => stagedPayees[id]?.entity.name ?? byId.get(id)?.name ?? id)
+            .map((name) => `"${name}"`)
+            .join(", ");
+          problems.push({
+            severity: "blocking",
+            payeeIds: conflictingPayeeIds,
+            message: `${names} already ${
+              conflictingPayeeIds.length === 1 ? "has" : "have"
+            } unsaved payee changes. Save or undo them before staging this cleanup.`,
+          });
+        }
+
+        if (plan.deletions.length > 0) {
+          // The Unused tab is a scan result, not a permanent property. Overlay
+          // local staged rule edits on a fresh server read so a rule the user is
+          // about to create also protects its payee from deletion.
+          const rulesNow = useStagedStore.getState().rules;
+          const currentRules: StagedMap<Rule> = Object.fromEntries(
+            liveRules.map((rule) => [
+              rule.id,
+              {
+                entity: rule,
+                original: rule,
+                isNew: false,
+                isUpdated: false,
+                isDeleted: false,
+                validationErrors: {},
+              },
+            ])
+          );
+          for (const [id, entry] of Object.entries(rulesNow)) {
+            if (entry.isDeleted) delete currentRules[id];
+            else if (entry.isNew || entry.isUpdated) currentRules[id] = entry;
+          }
+
+          const currentOrphanIds = new Set(
+            findOrphanPayees({
+              candidates: plan.deletions
+                .map((deletion) => byId.get(deletion.payeeId))
+                .filter((candidate): candidate is PayeeCleanupCandidate => candidate !== undefined),
+              stagedRules: currentRules,
+              transactionCounts,
+            }).map(({ payee }) => payee.id)
+          );
+
+          for (const deletion of plan.deletions) {
+            if (!currentOrphanIds.has(deletion.payeeId)) {
+              problems.push({
+                severity: "blocking",
+                payeeIds: [deletion.payeeId],
+                message:
+                  "\"" +
+                  deletion.name +
+                  "\" is no longer unused, so its deletion cannot be staged. Scan again before deciding.",
+              });
+            }
+          }
+        }
         const blocking = problems.filter((p) => p.severity === "blocking");
         if (blocking.length > 0) {
           // Report every problem, not just the first: a user fixing them one at
@@ -165,7 +259,15 @@ export function usePayeeCleanupPlan() {
         setIsStaging(false);
       }
     },
-    [connection, pushUndo, stageDelete, stageNew, stagePayeeMerge, stageUpdate]
+    [
+      connection,
+      loadPayees,
+      pushUndo,
+      stageDelete,
+      stageNew,
+      stagePayeeMerge,
+      stageUpdate,
+    ]
   );
 
   return { stage, isStaging };

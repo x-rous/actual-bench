@@ -27,18 +27,26 @@ let candidates: PayeeCleanupCandidate[] = [];
 let stagedRules: Record<string, unknown> = {};
 let transactionCounts: Map<string, number> | undefined = new Map();
 let transactionsLoading = false;
+let impactLoading = false;
+let impactFetching = false;
+let impactError: Error | null = null;
 let mode: "http-api" | "browser-api" = "http-api";
 let isLoading = false;
+let candidatesError: Error | null = null;
+const refetchImpact = jest.fn();
 
-// The impact hook owns the TanStack queries (rules, schedules, transaction
-// counts); this suite is about what the view renders, so it supplies the loaded
+// The impact hook owns the TanStack queries (rules and transaction counts);
+// this suite is about what the view renders, so it supplies the loaded
 // shape directly rather than standing up a QueryClientProvider.
 jest.mock("../hooks/usePayeeCleanupImpact", () => ({
   usePayeeCleanupImpact: () => ({
     stagedRules,
-    schedules: [],
     transactionCounts,
     transactionsLoading,
+    isLoading: impactLoading,
+    isFetching: impactFetching,
+    error: impactError,
+    refetch: refetchImpact,
   }),
 }));
 
@@ -46,14 +54,17 @@ jest.mock("../hooks/usePayeeCleanupImpact", () => ({
 // lib/suppressions); here the view just needs the calls recorded.
 let importedText: { field: "imported_payee" | "notes"; text: string; payeeId: string | null; transactionCount: number }[] = [];
 let importedTextFetching = false;
+let importedTextLoading = false;
+let importedTextError: Error | null = null;
 let candidatesFetching = false;
 const refetchCandidates = jest.fn();
 const refetchImportedText = jest.fn();
 jest.mock("../hooks/useImportedTextIndex", () => ({
   useImportedTextIndex: () => ({
     rows: importedText,
-    isLoading: false,
+    isLoading: importedTextLoading,
     isFetching: importedTextFetching,
+    error: importedTextError,
     refetch: refetchImportedText,
   }),
 }));
@@ -103,6 +114,10 @@ jest.mock("next/navigation", () => ({
 
 const rejectCluster = jest.fn();
 const rejectRuleGap = jest.fn(() => Promise.resolve("sup-1"));
+const refetchSuppressions = jest.fn();
+let suppressionsLoading = false;
+let suppressionsFetching = false;
+let suppressionsError: Error | null = null;
 const stageMock = jest.fn();
 jest.mock("../hooks/usePayeeCleanupPlan", () => ({
   usePayeeCleanupPlan: () => ({ stage: stageMock, isStaging: false }),
@@ -116,6 +131,10 @@ jest.mock("../hooks/useSuppressions", () => ({
     undo: jest.fn(),
     clearAll: jest.fn(),
     isSaving: false,
+    isLoading: suppressionsLoading,
+    isFetching: suppressionsFetching,
+    error: suppressionsError,
+    refetch: refetchSuppressions,
   }),
 }));
 
@@ -137,7 +156,7 @@ jest.mock("../hooks/usePayeeCleanupCandidates", () => ({
     capabilities: getPayeeCleanupCapabilities({ mode }),
     isLoading,
     isFetching: candidatesFetching,
-    error: null,
+    error: candidatesError,
     refetch: refetchCandidates,
   }),
 }));
@@ -149,6 +168,10 @@ beforeEach(() => {
   stagedRules = {};
   transactionCounts = new Map();
   transactionsLoading = false;
+  impactLoading = false;
+  impactFetching = false;
+  impactError = null;
+  candidatesError = null;
   rejectCluster.mockClear();
   searchParams = new URLSearchParams();
   rejectRuleGap.mockClear();
@@ -158,13 +181,20 @@ beforeEach(() => {
   stageMock.mockReset();
   stageMock.mockResolvedValue({ status: "staged", operations: 1 });
   importedText = [];
+  importedTextLoading = false;
   importedTextFetching = false;
+  importedTextError = null;
   candidatesFetching = false;
+  suppressionsLoading = false;
+  suppressionsFetching = false;
+  suppressionsError = null;
   // Reset, or the rename-rule fixture below is still in the store for every
   // later test — which then passes or fails for a reason it does not state.
   stagedRules = {};
   refetchImportedText.mockClear();
   refetchCandidates.mockClear();
+  refetchImpact.mockClear();
+  refetchSuppressions.mockClear();
 });
 
 /** Deep reasoning is behind an inline toggle; everything else is on the card. */
@@ -207,7 +237,7 @@ describe("PayeeCleanupView", () => {
     // Both live on the toolbar line now — the analyzed count had its own box
     // two inches below itself, and the exclusion note a full sentence.
     expect(
-      screen.getByText(/2 payees analyzed · 1 transfer excluded/)
+      screen.getByText(/2 payees analyzed · 1 transfer payee excluded/)
     ).toBeInTheDocument();
   });
 
@@ -237,7 +267,11 @@ describe("PayeeCleanupView", () => {
     }
 
     fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
-    expect(screen.getByText(/not written until you save/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Review payees that may be the same merchant/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 merge")).toBeInTheDocument();
+    expect(stageMock).not.toHaveBeenCalled();
   });
 
   it("records a rejection so it survives the next scan", () => {
@@ -348,6 +382,9 @@ describe("PayeeCleanupView", () => {
     expect(
       screen.getByText(/No duplicate or variant payees found/i)
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Review payees that may be the same merchant/i)
+    ).not.toBeInTheDocument();
   });
 
   it("says plainly that merging does not rewrite rules", () => {
@@ -398,6 +435,71 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/more cautious than Actual/i)).toBeInTheDocument();
   });
 
+  it("selects every visible unused payee", () => {
+    candidates = [payee("Old Test Payee"), payee("Another Old Payee")];
+    transactionCounts = new Map();
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /unused/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all unused/i })
+    );
+
+    expect(
+      screen.getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: /select Another Old Payee for deletion/i })
+    ).toBeChecked();
+    expect(screen.getAllByText("Selected for deletion")).toHaveLength(2);
+    expect(
+      screen
+        .getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
+        .closest("li")
+    ).toHaveClass("bg-amber-50/70");
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all unused/i })
+    );
+    expect(
+      screen.getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
+    ).not.toBeChecked();
+    expect(
+      screen
+        .getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
+        .closest("li")
+    ).not.toHaveClass("bg-amber-50/70");
+  });
+
+
+  it("adds an unused payee deletion to the cleanup plan without writing", async () => {
+    candidates = [payee("Old Test Payee")];
+    transactionCounts = new Map();
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /unused/i }));
+    const selection = screen.getByRole("checkbox", {
+      name: /select Old Test Payee for deletion/i,
+    });
+    fireEvent.click(selection);
+
+    expect(selection).toBeChecked();
+    expect(screen.getByText("Selected for deletion")).toBeInTheDocument();
+    expect(screen.getByText(/1 deleted/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /stage cleanup/i }));
+
+    await waitFor(() => expect(stageMock).toHaveBeenCalledTimes(1));
+    expect(stageMock.mock.calls[0][0].deletions).toEqual([
+      expect.objectContaining({ payeeId: "p-Old Test Payee", name: "Old Test Payee" }),
+    ]);
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        expect.stringMatching(/staged - use Save/),
+        undefined
+      )
+    );
+  });
+
   it("keeps the toolbar's Stage button disabled until something is accepted", () => {
     // The summary strip stays silent too: an empty "nothing accepted yet" panel
     // above every scan is noise.
@@ -408,35 +510,24 @@ describe("PayeeCleanupView", () => {
     expect(screen.queryByText(/nothing accepted yet/i)).not.toBeInTheDocument();
   });
 
-  it("stages an accepted proposal and says nothing was written", () => {
+  it("stages an accepted proposal and says nothing was written", async () => {
     candidates = [payee("AMAZON"), payee("Amazon")];
     render(<PayeeCleanupView />);
 
     fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
 
-    expect(screen.getByText(/1 payee stops existing/i)).toBeInTheDocument();
+    expect(screen.getByText("1 merge")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /stage cleanup/i }));
     expect(stageMock).toHaveBeenCalledTimes(1);
 
-    // The confirmation is a moment, not a state — it goes to a toast rather
-    // than parking a panel on the page.
-    return Promise.resolve().then(() => {
+    await waitFor(() => {
       expect(toastSuccess).toHaveBeenCalledWith(
-        expect.stringMatching(/staged - save on the Payees page/),
+        expect.stringMatching(/staged - use Save/),
         undefined
       );
-      expect(screen.queryByText(/1 change staged\./)).not.toBeInTheDocument();
     });
-  });
-
-  it("counts the payees that will stop existing, not just the operations", () => {
-    // "12 changes" tells a user nothing about whether a payee disappears.
-    candidates = [payee("AMAZON"), payee("Amazon"), payee("amazon")];
-    render(<PayeeCleanupView />);
-
-    fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
-    expect(screen.getByText(/2 payees stop existing/i)).toBeInTheDocument();
+    expect(screen.queryByText(/1 change staged\./)).not.toBeInTheDocument();
   });
 
   it("offers a rule that catches the payee, unchecked until the user opts in", () => {
@@ -595,22 +686,16 @@ describe("PayeeCleanupView", () => {
   });
 
 
-  it("keeps the safety copy with whatever is pending", () => {
-    // The line moved from under every card into the summary strip, which
-    // appears as soon as there is something to save. A disclosure repeated
-    // fifty times is wallpaper; one that never appears is worse.
+  it("shows selected cleanup work in Changes", () => {
     candidates = [payee("AMAZON", { favorite: true }), payee("Amazon")];
     render(<PayeeCleanupView />);
 
-    // The settings warning belongs to the group it affects, so it is on the card.
     expect(screen.getByText(/Favorite \/ Category learning differ/i)).toBeInTheDocument();
-    expect(screen.queryByText(/not written until you save/i)).not.toBeInTheDocument();
+    expect(screen.getByText("none")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
 
-    expect(
-      screen.getByText(/1 payee stops existing · not written until you save/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/1 merge.*1 rename/i)).toBeInTheDocument();
   });
 
 
@@ -694,6 +779,28 @@ describe("PayeeCleanupView", () => {
     expect(screen.getAllByRole("button", { name: /accepted/i })).toHaveLength(2);
   });
 
+  it("bulk-accepts only safe suggestions visible through the active search", () => {
+    candidates = [
+      payee("GROCERGO 0183"),
+      payee("GROCERGO 0291"),
+      payee("GROCERGO 8442"),
+      payee("TESCO 0001"),
+      payee("TESCO 0002"),
+      payee("TESCO 0003"),
+    ];
+    render(<PayeeCleanupView />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+      target: { value: "GROCERGO" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /accept 1 safe/i }));
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+      target: { value: "" },
+    });
+    expect(screen.getAllByRole("button", { name: /accepted/i })).toHaveLength(1);
+  });
+
   it("offers to combine groups the user has given the same name", () => {
     // Naming two groups the same thing is the user saying those payees are one
     // merchant — the scan could not see it because the names reduce to
@@ -745,7 +852,7 @@ describe("PayeeCleanupView", () => {
 
     // The sentence is built from several nodes, so read the card's text.
     const text = screen.getByRole("article").textContent ?? "";
-    expect(text).toMatch(/Matches 6 ?of this group's past transactions/);
+    expect(text).toMatch(/Matches 6 ?of this group’s past transactions/);
     expect(text).toMatch(/and 1 transaction of/);
     expect(text).toMatch(/Narrow the text, or add that payee to this group/);
   });
@@ -795,6 +902,21 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/1 change is staged and waiting/i)).toBeInTheDocument();
   });
 
+  it("counts a merge once instead of also counting its staged source deletion", () => {
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
+    pendingPayeeMerges = [
+      { targetId: "p-GROCERGO 0183", mergeIds: ["p-GROCERGO 0291"] },
+    ];
+    stagedPayeeEntries = {
+      "p-GROCERGO 0291": { isNew: false, isUpdated: false, isDeleted: true },
+    };
+
+    render(<PayeeCleanupView />);
+
+    expect(screen.getByText(/1 change is staged and waiting/i)).toBeInTheDocument();
+    expect(screen.queryByText(/2 changes are staged and waiting/i)).not.toBeInTheDocument();
+  });
+
   it("lists a curated payee whose imports will not resolve to it again", () => {
     // Actual matches an imported payee by name alone, so `FILMBOX.COM 4821`
     // will not find the payee now called `Filmbox` — it will create a duplicate.
@@ -819,7 +941,7 @@ describe("PayeeCleanupView", () => {
     ]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     // Spotify already resolves by name, so it must not be listed.
     expect(screen.getByText("Filmbox")).toBeInTheDocument();
@@ -844,7 +966,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     const row = screen.getByRole("listitem");
     expect(row.textContent).not.toMatch(/set the payee/i);
@@ -898,7 +1020,7 @@ describe("PayeeCleanupView", () => {
     } as never;
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     expect(screen.getByText(/extends existing/i)).toBeInTheDocument();
   });
@@ -916,7 +1038,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     // "Create" named something it does not do: nothing is written until save.
     const bulk = screen.getByRole("button", { name: /accept 1 safe rule/i });
@@ -941,7 +1063,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     const tick = screen.getByRole("checkbox", { name: /accept a rule for Filmbox/i });
     expect(screen.queryByText("Accepted")).not.toBeInTheDocument();
@@ -949,10 +1071,12 @@ describe("PayeeCleanupView", () => {
     fireEvent.click(tick);
     expect(tick).toBeChecked();
     expect(screen.getByText("Accepted")).toBeInTheDocument();
+    expect(tick.closest("li")).toHaveClass("bg-emerald-50/70");
 
     fireEvent.click(tick);
     expect(tick).not.toBeChecked();
     expect(screen.queryByText("Accepted")).not.toBeInTheDocument();
+    expect(tick.closest("li")).not.toHaveClass("bg-emerald-50/70");
   });
 
   it("answers the history cap on request, instead of hedging forever", () => {
@@ -993,7 +1117,7 @@ describe("PayeeCleanupView", () => {
     };
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /details for Filmbox/i }));
 
     // Not run on arrival: one query per proposed rule across hundreds of payees
@@ -1032,17 +1156,17 @@ describe("PayeeCleanupView", () => {
     ]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     const names = () =>
       screen.getAllByRole("listitem").map((row) => row.textContent?.slice(0, 4));
     expect(names()).toEqual(["Zulu", "Alph"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /payee/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Payee$/i }));
     expect(names()).toEqual(["Alph", "Zulu"]);
   });
 
-  it("offers to take back a bulk accept", () => {
+  it("keeps Clear accepted available when search hides selected rules", () => {
     // Accepting every safe row was one click and undoing it was one per row.
     candidates = [payee("Filmbox")];
     importedText = [
@@ -1056,13 +1180,16 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /accept 1 safe rule/i }));
 
+    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+      target: { value: "not Filmbox" },
+    });
+
+    expect(screen.getByText(/No payees needing a rule match this search/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /clear 1 accepted/i }));
-    expect(
-      screen.getByRole("checkbox", { name: /accept a rule for Filmbox/i })
-    ).not.toBeChecked();
+    expect(screen.getByText("none")).toBeInTheDocument();
   });
 
   it("offers an undo when a payee is dismissed, since the row leaves the list", async () => {
@@ -1078,7 +1205,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /not needed/i }));
 
     await waitFor(() =>
@@ -1112,7 +1239,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 12]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /details for Filmbox/i }));
 
     const rows = screen.getAllByRole("listitem");
@@ -1136,7 +1263,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /not needed/i }));
 
     expect(rejectRuleGap).toHaveBeenCalledWith(
@@ -1188,7 +1315,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Al Summit Credit Bureau", 6]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     // The condition is on the row itself, not only behind Details.
     expect(screen.getByText(/SUMMIT CREDIT/)).toBeInTheDocument();
@@ -1211,15 +1338,20 @@ describe("PayeeCleanupView", () => {
     candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     candidatesFetching = true;
 
-    render(<PayeeCleanupView />);
+    const { rerender } = render(<PayeeCleanupView />);
 
     const button = screen.getByRole("button", { name: /scanning/i });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+
+    candidatesFetching = false;
+    rerender(<PayeeCleanupView />);
+
+    expect(screen.getByRole("article")).toBeInTheDocument();
   });
 
-  it("re-reads the import history too, not just the payees", () => {
-    // Otherwise "Scan again" quietly reuses yesterday's history.
+  it("re-reads every input used by the cleanup scan", () => {
     candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     render(<PayeeCleanupView />);
 
@@ -1227,6 +1359,22 @@ describe("PayeeCleanupView", () => {
 
     expect(refetchCandidates).toHaveBeenCalled();
     expect(refetchImportedText).toHaveBeenCalled();
+    expect(refetchImpact).toHaveBeenCalled();
+    expect(refetchSuppressions).toHaveBeenCalled();
+  });
+
+  it("surfaces a scan-input failure and retries every input", () => {
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
+    impactError = new Error("Could not load payee rules");
+    render(<PayeeCleanupView />);
+
+    expect(screen.getByText("Could not load payee rules")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(refetchCandidates).toHaveBeenCalled();
+    expect(refetchImportedText).toHaveBeenCalled();
+    expect(refetchImpact).toHaveBeenCalled();
+    expect(refetchSuppressions).toHaveBeenCalled();
   });
 
   it("follows the link's tab when it changes, not only on first render", () => {
@@ -1252,7 +1400,7 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
   });
 
-  it("keeps unstaged work when only some groups are staged", () => {
+  it("keeps unstaged work when only some groups are staged", async () => {
     // Clearing every correction after a stage threw away renames, target
     // choices and combined groups the user was still working on — which looked
     // exactly like the work had been lost.
@@ -1274,7 +1422,7 @@ describe("PayeeCleanupView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /stage cleanup/i }));
 
-    return Promise.resolve().then(() => {
+    await waitFor(() => {
       expect(screen.getByDisplayValue("Still Editing")).toBeInTheDocument();
     });
   });
@@ -1284,5 +1432,23 @@ describe("PayeeCleanupView", () => {
     render(<PayeeCleanupView />);
 
     expect(screen.getByRole("searchbox", { name: /search payees/i })).toBeInTheDocument();
+  });
+
+  it("exposes the selected workflow and confidence filters to assistive technology", () => {
+    candidates = [payee("AMAZON"), payee("Amazon")];
+    render(<PayeeCleanupView />);
+
+    expect(screen.getByRole("button", { name: /duplicate payees/i })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: /unused payees/i })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+    expect(screen.getByRole("button", { name: /^all/i })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
   });
 });

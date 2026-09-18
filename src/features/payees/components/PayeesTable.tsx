@@ -10,7 +10,7 @@ import {
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
-import { useEditableGrid } from "@/hooks/useEditableGrid";
+import { isFormField, useEditableGrid } from "@/hooks/useEditableGrid";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import type { DoneAction } from "@/components/ui/editable-cell";
 import {
@@ -85,6 +85,20 @@ export function gapBefore(
 ): number {
   if (!previous) return 0;
   return Math.max(0, current.start - previous.end);
+}
+
+/**
+ * Paste belongs to the focused form control before it belongs to the grid.
+ *
+ * The filter bar sits inside the table's event boundary, so pasting into its
+ * search input bubbles through the same handler used for spreadsheet paste.
+ * A previously selected cell must not turn that search text into a payee edit.
+ */
+export function shouldHandlePayeeGridPaste(
+  target: EventTarget | null,
+  isEditing: boolean
+): boolean {
+  return !isEditing && !isFormField(target);
 }
 
 export function PayeesTable({
@@ -439,7 +453,7 @@ export function PayeesTable({
 
   // ── Paste from Excel / Sheets ─────────────────────────────────────────────────
   function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
-    if (editingCell) return;
+    if (!shouldHandlePayeeGridPaste(e.target, Boolean(editingCell))) return;
     const text = e.clipboardData.getData("text/plain");
     if (!text.trim()) return;
 

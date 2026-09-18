@@ -1,13 +1,13 @@
 import {
   buildClusterImpact,
-  classifyRuleReferences,
   compareBehavior,
+  countRuleReferences,
   impactSignals,
 } from "./impact";
 import { findOrphanPayees } from "./orphans";
 import type { PayeeCluster } from "./clusterResolver";
 import type { PayeeCleanupCandidate } from "../types";
-import type { Rule, Schedule } from "@/types/entities";
+import type { Rule } from "@/types/entities";
 import type { StagedMap } from "@/types/staged";
 
 function payee(
@@ -54,10 +54,6 @@ function staged(rules: Rule[]): StagedMap<Rule> {
   return map;
 }
 
-function schedule(id: string, ruleId: string, completed: boolean): Schedule {
-  return { id, ruleId, completed, postsTransaction: true };
-}
-
 function cluster(members: PayeeCleanupCandidate[]): PayeeCluster {
   return {
     id: members.map((m) => m.id).join("+"),
@@ -68,50 +64,31 @@ function cluster(members: PayeeCleanupCandidate[]): PayeeCluster {
   };
 }
 
-describe("classifyRuleReferences", () => {
-  it("separates regular rules from schedule-linked ones", () => {
-    // A schedule reaches its payee *through* a rule, so counting "3 rules and
-    // 1 schedule" would report the same relationship twice.
+describe("countRuleReferences", () => {
+  it("counts schedule-managed payee references through their rules", () => {
     const rules = staged([
       rule("r1", "p1", "condition"),
       rule("r2", "p1", "condition"),
       rule("r3", "p1", "condition"),
     ]);
-    const schedules = [schedule("s1", "r3", false)];
 
-    expect(classifyRuleReferences(["p1"], rules, schedules)).toEqual({
-      regular: 2,
-      activeSchedule: 1,
-      completedSchedule: 0,
-    });
-  });
-
-  it("keeps completed schedules out of the active count", () => {
-    // Matches Actual's own `getPayeeRuleCounts`, which skips them.
-    const rules = staged([rule("r1", "p1", "condition"), rule("r2", "p1", "condition")]);
-    const schedules = [schedule("s1", "r1", true), schedule("s2", "r2", false)];
-
-    expect(classifyRuleReferences(["p1"], rules, schedules)).toEqual({
-      regular: 0,
-      activeSchedule: 1,
-      completedSchedule: 1,
-    });
+    expect(countRuleReferences(["p1"], rules)).toEqual({ total: 3 });
   });
 
   it("counts a rule that references any member of the cluster", () => {
     const rules = staged([rule("r1", "p2", "condition")]);
-    expect(classifyRuleReferences(["p1", "p2"], rules, []).regular).toBe(1);
+    expect(countRuleReferences(["p1", "p2"], rules).total).toBe(1);
   });
 
   it("counts a rule that only sets the payee in an action", () => {
     const rules = staged([rule("r1", "p1", "action")]);
-    expect(classifyRuleReferences(["p1"], rules, []).regular).toBe(1);
+    expect(countRuleReferences(["p1"], rules).total).toBe(1);
   });
 
   it("ignores rules staged for deletion", () => {
     const rules = staged([rule("r1", "p1", "condition")]);
     rules["r1"].isDeleted = true;
-    expect(classifyRuleReferences(["p1"], rules, []).regular).toBe(0);
+    expect(countRuleReferences(["p1"], rules).total).toBe(0);
   });
 
   it("counts a rule once even when it names the payee twice", () => {
@@ -122,7 +99,7 @@ describe("classifyRuleReferences", () => {
       conditions: [{ field: "payee", op: "is", value: "p1" }],
       actions: [{ field: "payee", op: "set", value: "p1" }],
     };
-    expect(classifyRuleReferences(["p1"], staged([r]), []).regular).toBe(1);
+    expect(countRuleReferences(["p1"], staged([r])).total).toBe(1);
   });
 });
 
@@ -159,7 +136,6 @@ describe("buildClusterImpact", () => {
   it("totals transactions across the cluster", () => {
     const impact = buildClusterImpact(cluster(members), "p1", {
       stagedRules: {},
-      schedules: [],
       transactionCounts: new Map([
         ["p1", 47],
         ["p2", 23],
@@ -176,7 +152,6 @@ describe("buildClusterImpact", () => {
     // opposite of the truth and would drive a wrong decision.
     const impact = buildClusterImpact(cluster(members), "p1", {
       stagedRules: {},
-      schedules: [],
       transactionCounts: undefined,
       transactionsLoading: true,
     });
@@ -188,7 +163,6 @@ describe("buildClusterImpact", () => {
   it("treats a loaded map with no entry as a real zero", () => {
     const impact = buildClusterImpact(cluster(members), "p1", {
       stagedRules: {},
-      schedules: [],
       transactionCounts: new Map(),
       transactionsLoading: false,
     });
@@ -199,7 +173,6 @@ describe("buildClusterImpact", () => {
 describe("impactSignals", () => {
   const base = {
     stagedRules: {},
-    schedules: [],
     transactionCounts: new Map<string, number>(),
     transactionsLoading: false,
   };

@@ -45,14 +45,16 @@ export function triageBadges(suggestion: CleanupSuggestion): TriageBadge[] {
               "transaction count unavailable",
     });
 
-    const activeRules = impact.rules.regular + impact.rules.activeSchedule;
+    const ruleCount = impact.rules.total;
     badges.push(
-      activeRules === 0
+      ruleCount === 0
         ? { id: "rules", tone: "positive", label: "No rules affected" }
         : {
             id: "rules",
             tone: "neutral",
-            label: `${activeRules} ${activeRules === 1 ? "rule" : "rules"} reference these`,
+            label: `${ruleCount} ${
+              ruleCount === 1 ? "rule references" : "rules reference"
+            } these`,
           }
     );
 

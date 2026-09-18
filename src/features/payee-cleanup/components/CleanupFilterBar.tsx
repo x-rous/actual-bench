@@ -6,21 +6,13 @@ import type { ConfidenceBand } from "../lib/confidence";
 
 export type CleanupTab = "suggestions" | "unused" | "rule-gaps" | "dismissed";
 
-const CLEANUP_TABS: CleanupTab[] = ["suggestions", "unused", "rule-gaps", "dismissed"];
+const CLEANUP_TABS: CleanupTab[] = ["suggestions", "rule-gaps", "unused", "dismissed"];
 
 /** Guards the tab read out of the URL, which anyone can type anything into. */
 export function isCleanupTab(value: string | null): value is CleanupTab {
   return value !== null && (CLEANUP_TABS as string[]).includes(value);
 }
 export type BandFilter = "all" | ConfidenceBand;
-
-const BAND_FILTERS: { value: BandFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "high", label: "High" },
-  { value: "strong", label: "Likely" },
-  { value: "review", label: "Needs review" },
-  { value: "hidden", label: "Low" },
-];
 
 type Props = {
   tab: CleanupTab;
@@ -34,16 +26,21 @@ type Props = {
     unused: number;
     ruleGaps: number;
     dismissed: number;
+    high: number;
+    strong: number;
+    review: number;
+    hidden: number;
   };
 };
 
-/**
- * Search and filters in one row (F-096 follow-up).
- *
- * Deliberately the same shape as Rule Diagnostics' filter bar: same position,
- * same search affordance, same pill groups. Two tools that do the same kind of
- * job should not need to be learned twice.
- */
+const SEARCH_PLACEHOLDERS: Record<CleanupTab, string> = {
+  suggestions: "Search duplicate payees…",
+  "rule-gaps": "Search payees needing rules…",
+  unused: "Search unused payees…",
+  dismissed: "Search dismissed items…",
+};
+
+/** Search and workflow navigation stay visible while each list scrolls. */
 export function CleanupFilterBar({
   tab,
   onTabChange,
@@ -53,6 +50,14 @@ export function CleanupFilterBar({
   onSearchChange,
   counts,
 }: Props) {
+  const bandFilters: { value: BandFilter; label: string }[] = [
+    { value: "all", label: "All " + counts.suggestions },
+    { value: "high", label: "High " + counts.high },
+    { value: "strong", label: "Likely " + counts.strong },
+    { value: "review", label: "Needs review " + counts.review },
+    { value: "hidden", label: "Low " + counts.hidden },
+  ];
+
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-2">
       <div className="relative flex items-center">
@@ -61,7 +66,7 @@ export function CleanupFilterBar({
           type="search"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search payees…"
+          placeholder={SEARCH_PLACEHOLDERS[tab]}
           aria-label="Search payees"
           className="h-7 w-56 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
         />
@@ -79,23 +84,22 @@ export function CleanupFilterBar({
 
       <PillGroup
         options={[
-          { value: "suggestions" as const, label: `Suggestions ${counts.suggestions}` },
-          { value: "unused" as const, label: `Unused ${counts.unused}` },
-          // Third, not last: Dismissed is the archive and belongs at the end.
-          { value: "rule-gaps" as const, label: `Needs a rule ${counts.ruleGaps}` },
-          { value: "dismissed" as const, label: `Dismissed ${counts.dismissed}` },
+          { value: "suggestions" as const, label: "Duplicate payees " + counts.suggestions },
+          { value: "rule-gaps" as const, label: "Payees needing rules " + counts.ruleGaps },
+          { value: "unused" as const, label: "Unused payees " + counts.unused },
+          { value: "dismissed" as const, label: "Dismissed " + counts.dismissed },
         ]}
         value={tab}
         onChange={onTabChange}
       />
 
       {tab === "suggestions" ? (
-        <>
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
             Confidence
           </span>
-          <PillGroup options={BAND_FILTERS} value={band} onChange={onBandChange} />
-        </>
+          <PillGroup options={bandFilters} value={band} onChange={onBandChange} />
+        </div>
       ) : null}
     </div>
   );

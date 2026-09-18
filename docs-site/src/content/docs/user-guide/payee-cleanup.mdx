@@ -1,261 +1,174 @@
 ---
 title: Payee Cleanup
-description: Find duplicate payees, review proposed merges, and create rules that prevent new duplicates.
+description: Review duplicate payees, automate future payee assignment, and remove unused payees.
 sidebar:
   order: 5
 ---
 
-Bank imports create a payee per distinct piece of text. One shop becomes many payees, because the
-text carries a date, a card number, a store number or a location that changes every transaction:
+Use Payee Cleanup to improve your payee list and automate future imports.
 
-```text
-MARKET BOYS PTY LTD Melbourne VI AUS Card xx4534 Value Date: 12/03/2024
-MARKET BOYS PTY LTD Melbourne VI AUS Card xx9166 Value Date: 24/12/2024
-MARKET BOYS PTY LTD Sydney Value Date: 10/11/2025
-```
+It has three separate workflows:
 
-Use Payee Cleanup to find likely duplicate payees, review the proposed changes, and stage accepted
-merges, renames, deletions, and rules for the normal Payees Save flow.
+- **Duplicate payees:** find payees that likely represent the same merchant, then review and stage
+  merges or renames.
+- **Payees needing rules:** find payees whose bank text will not resolve automatically, then review and stage
+  rules that set the correct payee on future imports.
+- **Unused payees:** find payees with no transactions or rule references, then review and stage
+  deletions.
 
-Open it from **Tools → Payee Cleanup** (`/payees/cleanup`).
+You can use each workflow on its own. Open it from **Tools → Payee Cleanup** (`/payees/cleanup`).
 
-**Budget impact:** Scanning and accepting suggestions do not change budget data. **Stage cleanup**
-creates normal Payees drafts; those changes write only when you **Save** on the Payees page.
+**Writing to Actual:** Scanning, accepting, and dismissing suggestions do not write to Actual.
+**Stage cleanup** adds selected changes to Draft Changes. Use the app-wide **Save** action only after
+reviewing those changes.
 
-![Payee Cleanup proposing a merge, with the evidence behind it and the rule that would prevent a recurrence.](../../../assets/screenshots/user-guide/payee-cleanup.png)
+## Before you start
 
-*A suggestion carries its own evidence: what changes, how many transactions move, why these were
-grouped, and the rule that stops the duplicates coming back.*
+Payee Cleanup works with regular payees. Transfer payees are managed by Actual and are excluded.
 
-## Find duplicate payees
+The feature can stage payee merges, payee renames, payee rules, and unused-payee deletions. It does
+not change Favorite or Category-learning settings. When payees differ, choose the payee whose
+settings you want to keep.
 
-Payee Cleanup uses two types of detection. Review each suggestion before accepting it.
+## The workflow
 
-**Shape rules** remove text that identifies itself by its structure: dates in any common layout,
-times, card numbers, long reference and authorization numbers, `Label: value` metadata, exchange
-rates, trailing store numbers and web addresses. These work the same for any bank in any country - 
-nothing here knows about yours.
+1. Scan your payees.
+2. Review duplicate-payee suggestions, then accept, correct, or dismiss them.
+3. Review rule suggestions for payees that need import automation.
+4. Review unused payees and mark any you want to delete.
+5. Select **Stage cleanup** to add your accepted work to Draft Changes.
+6. Review the staged changes, then use **Save** to write them to Actual.
 
-**Learned boilerplate** covers what no pattern can identify. If `ASHDOWN LTD` closes forty otherwise
-unrelated payees, or `NFC - (AP-PAY)-` opens sixty of them, it is wrapping rather than a name. This
-is worked out from your own payees, so a French `CARTE … RETRAIT DAB` is found by the same rule.
+## Duplicate payees
 
-Anything learned this way is treated as a **guess**. It lowers the confidence and puts the suggestion
-in **Needs review**, because repetition proves a fragment is shared - not that removing it is safe.
-`TRANSFER FROM` also opens many payees, and it means something.
+Banks can create several payees for one merchant when their text includes details that change from
+transaction to transaction, such as dates, card endings, store locations, or reference numbers.
 
-## Working through the suggestions
+Cleanup looks for two kinds of evidence:
 
-A toolbar across the top carries the search box, the **Suggestions / Unused / Needs a rule /
-Dismissed** tabs, the confidence filters, **Scan again** and **Stage cleanup**. Under it, three boxes
-count what the scan found and a fourth - **Pending changes** - counts what you are about to do, and
-reminds you that none of it is written until you save.
+- **Structural details:** recognizable information such as dates, card numbers, references, and
+  locations.
+- **Repeated boilerplate:** text repeated around many otherwise unrelated payees in your data.
 
-![Payee Cleanup after accepting a suggestion: Pending changes reads "1 merge", and the Stage cleanup button is now live.](../../../assets/screenshots/user-guide/payee-cleanup-staged.png)
+Repeated boilerplate is a clue, not proof. Suggestions that use it stay in **Needs review**.
 
-*Accepting changes nothing on its own. It fills **Pending changes**, and **Stage cleanup** hands the
-merges, renames and new rules to the normal staged-changes flow - where **Save** on the Payees page
-is what finally writes.*
+### Review a suggestion
 
-**Accept _n_ safe** accepts, in one click, only the suggestions that need no judgement. It is
-deliberately stricter than "everything above 90%": the match must be structural rather than inferred,
-the payees must agree on Favorite and Category learning, transaction counts must have finished
-loading, and no rule - proposed or existing - may reach beyond the group. Everything else stays for
-you.
+Each suggestion shows the payee that would remain, the proposed final name, affected transactions,
+rule references, and any difference in Favorite or Category-learning settings. Schedule-managed payees
+are already represented by their linked rules, so Cleanup counts each rule reference once. Open
+**Reasoning** when you want to see why Cleanup grouped the payees.
 
-## Review a suggestion
+You can:
 
-Everything a decision needs is on the card itself; there is no dialog to open. The header names the
-result, its confidence, and how many payees collapse into one. Below it, three columns:
+- accept the suggestion;
+- choose a different payee to keep;
+- change the final name;
+- add or remove payees from the group; or
+- choose **Not duplicates**.
 
-- **Result** - the payee that survives and the name it takes, both editable, with every member listed
-  and its transaction count. The text each name loses is struck through, so you can see what was
-  removed. Drop a member, add one the scan missed, or pick a different survivor here.
-- **What changes** - transactions that move; rules, split into regular rules, active schedule-linked
-  rules and completed schedule-linked ones (a schedule reaches its payee *through* its rule, so
-  counting them separately would report the same relationship twice); and whether the payees disagree
-  on Favorite or Category learning. **Reasoning** expands the detector's own account of the grouping.
+**Not duplicates** hides the suggestion for this budget. Restore it later from **Dismissed**.
+Use **Undo my changes** to restore the suggestion's original survivor, final name, group members,
+and optional rule choice.
 
-![A suggestion card with its reasoning open: the confidence figure, why the names matched, why this payee was chosen to keep, and the pattern behind it.](../../../assets/screenshots/user-guide/payee-cleanup-reasoning.png)
+Suggestions are grouped as **High**, **Likely**, **Needs review**, or **Low** confidence. Low-confidence
+suggestions are hidden by default; show them only when you want to investigate weaker matches.
 
-*With **Reasoning** open, the card stops asserting and starts explaining: what the score is made of,
-which shared text was detected, why this payee is the one to keep, and the pattern it matched on.
-Worth opening on anything in **Needs review**.*
-- **Future imports** - the optional rule, described below.
+**Accept safe** accepts only suggestions with clear structural evidence, matching payee settings,
+loaded transaction counts, and no rule conflict. It does not write to Actual.
 
-Confidence bands: **High** and **Likely** are structural matches. **Needs review** means an
-interpreted step was involved, or nothing but spelling similarity connects the payees.
+### What a merge changes
 
-With a card focused, <kbd>A</kbd> accepts, <kbd>R</kbd> toggles the reasoning and <kbd>N</kbd> marks
-it *not duplicates* - ignored while you are typing in one of its fields.
+When you save staged changes, Actual performs the merge. Transactions follow the payee you keep.
+Existing rules are not rewritten, but continue to resolve through Actual's payee mapping after the
+merge.
 
-## Correcting a suggestion
+A duplicate-payee suggestion can include an optional rule for future imports. You choose whether to
+stage that rule; it is not required to merge the payees.
 
-Nothing is fixed. Every change you make is remembered against that group, and **Undo my changes**
-appears once there is something to undo, restoring the detector's original proposal.
+Renaming or merging a payee can let the original bank text create another duplicate on a future
+import. Cleanup proposes a rule only when the surviving name or an existing rule will not already
+handle that text.
 
-If two groups you accepted would end up with the same payee name, cleanup blocks the stage rather
-than quietly creating a second payee with that name - and offers to **combine them into one group**,
-since naming them alike is how you said they are the same merchant.
+Before staging, Cleanup re-reads the affected payees. If a payee changed since the scan, or the
+combined plan is invalid, Cleanup stops and explains what you need to correct or scan again.
 
-**Not duplicates** dismisses a group for good. It is remembered per budget and reversible from the
-**Dismissed** tab - including learned boilerplate you disagreed with, so a wrong inference stops
-being applied everywhere rather than needing rejection on every card.
+If two accepted groups would result in the same final payee name, Cleanup asks you to combine them
+rather than creating duplicate names.
 
-## Prevent new duplicates
+## Payees needing rules
 
-Cleaning up today does not stop the next import recreating the mess - but often no rule is needed.
-Actual matches an imported name that exactly equals an existing payee, so the merge alone fixes
-future imports, and an existing rule may already do the job. Cleanup checks both before proposing
-anything.
+A payee can be correct and still need a rule. Actual resolves an import automatically when its
+imported payee exactly equals an existing payee name. When a bank sends different text, a rule can
+set the correct payee automatically.
 
-Where a rule *is* worth it, cleanup builds one and backtests it against your own import history:
+A payee needs recorded import text from at least two transactions before Cleanup can suggest a
+reliable rule.
 
-> Also create a rule: when imported payee starts with "GROCERGO", set the payee.
-> Matches 92 past transactions of this payee and nothing else.
+The **Payees needing rules** tab identifies payees whose import text does not already resolve by name or by
+an existing rule, and for which Cleanup can suggest a sufficiently specific rule. This is independent
+of duplicate cleanup: a payee can appear here even when it has no duplicate.
 
-It is never pre-selected if it would also catch another payee's transactions - you are told which
-ones. The **matched text** and the **field it matches on** (imported payee or notes) are both
-editable, and changing either re-runs the backtest.
+### Review a rule suggestion
 
-## Payees that need a rule
+Cleanup can match against **Imported payee** or **Notes**, depending on where the bank text appears.
+It proposes an exact match when the text is stable, or a pattern when the text varies around a
+reliable merchant name.
 
-Actual matches an imported transaction to a payee **by name, and only by name**. It does not remember
-which bank text produced which payee. So the moment you tidy a payee - rename it, or merge variants
-into it - the next import of the original text no longer matches anything, and Actual creates the
-duplicate again.
+Cleanup tests each proposal against your recorded import history. It shows how many transactions for
+the target payee it matches and warns when it would also match transactions that belong to another
+payee.
 
-The **Needs a rule** tab lists the payees in that position, and proposes the rule that fixes it.
-Nothing on this tab changes a payee; it only adds automation.
+You can change the source field and condition. Cleanup reruns the check when you edit them.
 
-![The "Needs a rule" tab: five payees whose imports are not automated, each with the rule that would fix it.](../../../assets/screenshots/user-guide/payee-cleanup-needs-rule.png)
+When an existing rule covers only part of the payee's history, Cleanup shows it so you can decide
+whether to edit that rule or stage the proposal. If an existing exact-match rule can be extended
+safely, Cleanup adds the missing bank text to it instead of creating another rule.
 
-*These payees are not duplicates - they are correct, and unprotected. Each row carries the condition
-that would keep the next import resolving to it, and how many transactions it is based on.*
+Use **Accept safe rules** for proposals with no identified conflict, or select rules one at a time.
+**Not needed** dismisses a rule suggestion and can be undone from **Dismissed**.
 
-A payee appears only when all of these are true, which is why the list is short:
+Cleanup does not suggest a rule when the payee name already handles the imports, an existing rule
+handles them, or it cannot find a specific enough condition.
 
-- its imports **don't already equal its name** - those resolve on their own, and most payees fall out
-  here;
-- **its existing rules don't already cover it** - judged by running your rules against this payee's own
-  import text, not by comparing names, so a rule reading `notes contains "K AND M"` is recognised as
-  covering a payee called `K&M Fashion`. The rules are counted **together**: two rules catching just
-  under half the history each are between them catching nearly all of it, and the payee is not listed;
-- it has import text on record and more than one transaction;
-- **an honest rule exists.** If the text neither repeats nor shares a recognisable core, or if no
-  core can be found that catches this payee and nobody else, there is nothing to offer and the payee
-  is not listed. You will not be shown a rule that cannot be created safely.
+### Check the whole budget
 
-  Where the obvious core is shared, a longer one is tried: `Uber` and `Uber Eats` both contain
-  `UBER`, so `Uber` is identified by the longer text its own imports carry instead.
+The initial scan uses a limited amount of import history so the page stays responsive. Use **Check the
+whole budget** when you need stronger evidence for a rule.
 
-Two rule shapes, picked from your own history - on whether the text *varies*, not on how many
-different strings there are:
+The result shows:
 
-- **The same text every time, with nothing dating it,** gets an exact match - the shape Actual writes
-  itself. It cannot catch anything else, so it needs no backtest. Text carrying a `#2026-05` marker
-  never qualifies, however identical the rest of it looks: a rule matching one month would never fire
-  again.
-- **Text that varies around a core** gets a pattern built from the words every import shares, so it
-  also catches variants you have not seen yet. That one *is* backtested, and you are told if it would
-  catch another payee's transactions.
+- how much of the target payee's history the rule matches;
+- other payees whose transactions the rule would also match; and
+- transactions with no payee that the rule would newly resolve.
 
-For example, three imports reading `#API Summit Credit Bureau`, `#2026-05 Summit Credit Bureau` and
-`-84 EUR (FX rate: #2026-02 SUMMIT CREDIT BUREAU ASHDOWN LTD)` share `SUMMIT CREDIT BUREAU`, so the rule
-matches that anywhere in the text rather than listing three strings that will never arrive again.
-
-Picking those words out takes more than finding what the imports have in common, because a lot of what
-they have in common isn't the merchant:
-
-- **Hashtag markers are ignored.** `#2026-05` is a date and `#API` is a channel. Two payees whose
-  imports happen to fall in the same month would otherwise appear to share `05`.
-- **Words shared with many other payees are discounted.** `ASHDOWN` closes hundreds of imports across a
-  budget, so it says nothing about *which* payee an import belongs to, while `NOVARA` belongs to one.
-  This is measured from your own payees - no list of cities is involved, and it works anywhere.
-- **Numbers are discounted.** A phone number or an IBAN is perfectly stable and perfectly useless as a
-  name, and a rule built on one breaks the day it changes.
-- **A core stops at four words**, because a bank transfer record is mostly reference data and the
-  longest thing two of them share is nearly the whole record.
-- **A run that catches every import doesn't automatically win.** One import written `GYMGO` shouldn't
-  reduce `GYM GO FITNESS` to `FITNESS`.
-
-The same reasoning produces the rule offered on a merge suggestion, so one budget
-gets one kind of rule wherever it was proposed from.
-
-The pattern is shown on the row, and you can rewrite it: choose the field, choose **matches** or
-**contains**, and type your own. The backtest re-runs as you go, and tells you if it now catches
-nothing, will not compile, or reaches another payee. Your edits survive a re-scan.
-
-Where the payee already has a rule of this kind, cleanup **adds the missing text to it** rather than
-creating a second rule - so tidying ten payees does not mean ten new rules.
-
-Where the rules cover only *part* of a payee's history - or test something this page cannot check, like
-an amount - the payee stays listed and each rule is shown with how much it catches, drawn in the same
-colours as the Rules page and editable in place: opening one brings up the rule editor over this tab
-rather than sending you elsewhere, because the payee's import text is the evidence for the edit.
-
-**Accept _n_ safe rules** takes only the ones with nothing to judge, and **Clear _n_ accepted** takes it
-back. Everything else is ticked one at a time. **Not needed** dismisses a payee for good, with an
-**Undo** offered on the spot and the decision reversible later from the Dismissed tab.
-
-The list is ordered by history, most transactions first, since that is where a rule is worth most;
-the **Payee** heading orders it by name instead.
-
-### Checking against every transaction
-
-The initial scan reads a bounded slice of your import history so the tab answers on arrival. On a large
-budget that slice is not the whole story, and a pattern can only be promised to catch nothing unexpected
-among the text that was read.
-
-Rather than reading more of the budget on every visit, **Check the whole budget** - inside a row's
-details - runs the proposed condition as a query. The cost is the size of the answer rather than the
-size of the budget. It reports three things:
-
-- how many of this payee's transactions the rule catches;
-- **which other payees** it would take transactions from, named rather than counted, with the import
-  text behind each one;
-- how many transactions with **no payee at all** it would newly resolve. That is not a collision -
-  nothing is taken from anyone - so it is reported separately from the warning above.
-
-The check reads a bounded number of matching groups of its own. A condition broad enough to exceed
-that says so, and reports what it found as a sample: it will not tell you a rule catches nobody else
-on the strength of a partial read, which is the hedge it exists to remove. Narrowing the condition
-makes the answer complete.
-
-Each import listed under **Imports on record** says which field it came from, `imported payee` or
-`notes`, with the proposed rule's own field first: a rule reading `imported payee contains …` cannot
-match text that arrived in the notes, however similar the two look.
-
-Reachable from **Tools → Payee Cleanup**, or the **Needs a rule** button on the Rules page.
+If the result is only a sample, Cleanup says so. It does not present a partial result as proof that a
+rule is safe.
 
 ## Unused payees
 
-The **Unused** tab lists payees with no transactions and no rules pointing at them, ready to stage for
-deletion.
+The **Unused payees** tab identifies regular payees with no transactions and no rule references.
 
-![The Unused tab: nine payees with no transactions and no rules, each labelled "no transactions, no rules".](../../../assets/screenshots/user-guide/payee-cleanup-unused.png)
+Use the checkbox in the **Payee** header to choose every unused payee currently shown.
+Select a payee's checkbox to include its deletion in Changes. Then select **Stage cleanup**,
+review the Draft Changes, and use **Save** to write the deletion to Actual. Nothing is deleted when
+you select it.
 
-*A different job from merging - nothing here is a duplicate, it is simply dead weight left behind by
-an import or a payee you created once and never used.*
+Cleanup is deliberately cautious: a payee that a rule sets or checks is not shown as unused. Before
+staging, Cleanup checks the payee again so a new transaction or rule reference prevents deletion.
 
-Actual Bench applies its own check here and is slightly more cautious than Actual's: it also counts
-rules that *set* a payee, so a payee some rule writes to is never offered for deletion.
+## Stage and save
 
-## What merging actually does
+When you are ready, select **Stage cleanup**. Accepted merges, renames, rules, and selected unused
+payee deletions appear in Draft Changes.
 
-Merging uses Actual's own operation. Transactions follow automatically - Actual resolves them to the
-payee you kept. **Rules are not rewritten**: they keep pointing at the old payee, and Actual resolves
-them afterwards. Actual Bench never rewrites transactions or rules itself.
+Review the staged changes, then use the app-wide **Save** action to write them to Actual. Payee
+changes are saved before dependent rules.
 
-## Known limits
+## Limits
 
-- **Favorite and Category learning cannot be changed** from outside Actual. The payee you keep
-  decides them, which is why cleanup shows the difference and lets you choose the survivor rather
-  than offering an editor.
-- **Saved payee locations cannot be read** through Actual's API, and merging does not move them.
-  Cleanup neither reports them nor promises anything about them.
-- **Transfer payees are never touched.** Actual manages them with their accounts, and its merge
-  silently does nothing when one is involved.
-- Statements that concatenate every field with no separators, or that put the date before the
-  merchant, reduce to their transaction *type* rather than a merchant name. That still groups them
-  usefully, but it is not a merchant.
+- Transfer payees are excluded.
+- The surviving payee keeps its own Favorite and Category-learning settings.
+- Saved payee locations cannot be read or moved through Actual's API.
+- Some bank text cannot be reduced to a reliable merchant name. Cleanup may group it for review, but
+  it does not treat that as proof that the payees should be merged.

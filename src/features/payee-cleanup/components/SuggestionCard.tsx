@@ -123,7 +123,7 @@ export function SuggestionCard({
   const settingsDiffer =
     impact?.behavior.favoriteDiffers === true ||
     impact?.behavior.learnCategoriesDiffers === true;
-  const activeRules = impact ? impact.rules.regular + impact.rules.activeSchedule : 0;
+  const ruleCount = impact?.rules.total ?? 0;
   /**
    * The picker resolves the typed text back to a payee, so every option has to
    * be unique. Real budgets hold payees with identical names — the browser then
@@ -336,16 +336,10 @@ export function SuggestionCard({
                   } to the payee you keep`}
             </li>
             <li>
-              {activeRules === 0
+              {ruleCount === 0
                 ? "No rules reference these payees"
-                : `${activeRules} ${activeRules === 1 ? "rule references" : "rules reference"} these payees - merging does not rewrite them`}
+                : `${ruleCount} ${ruleCount === 1 ? "rule references" : "rules reference"} these payees - merging does not rewrite them`}
             </li>
-            {impact && impact.rules.completedSchedule > 0 ? (
-              <li>
-                {impact.rules.completedSchedule} completed schedule
-                {impact.rules.completedSchedule === 1 ? "" : "s"} - not counted as active
-              </li>
-            ) : null}
             <li
               className={
                 settingsDiffer ? "text-amber-700 dark:text-amber-400" : undefined
@@ -506,7 +500,7 @@ export function SuggestionCard({
                     <AlertTriangle className="mr-1 inline size-3" aria-hidden="true" />
                     {/* Both numbers, always: "also catches 1" alone gives no
                         sense of whether the rule is otherwise doing its job. */}
-                    Matches {future.recommended.expectedMatches} of this group&apos;s past{" "}
+                    Matches {future.recommended.expectedMatches} of this group’s past{" "}
                     {future.recommended.expectedMatches === 1 ? "transaction" : "transactions"},
                     and {future.recommended.unexpectedMatches}{" "}
                     {future.recommended.unexpectedMatches === 1 ? "transaction" : "transactions"} of{" "}

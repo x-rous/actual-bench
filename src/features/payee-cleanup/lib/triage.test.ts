@@ -47,7 +47,7 @@ function suggestion(overrides: Partial<CleanupSuggestion> = {}): CleanupSuggesti
     impact: {
       transactionTotal: 12,
       transactionsLoading: false,
-      rules: { regular: 0, activeSchedule: 0, completedSchedule: 0 },
+      rules: { total: 0 },
       behavior: {
         favoriteDiffers: false,
         learnCategoriesDiffers: false,
@@ -78,11 +78,24 @@ describe("triageBadges", () => {
       suggestion({
         impact: {
           ...suggestion().impact!,
-          rules: { regular: 1, activeSchedule: 0, completedSchedule: 0 },
+          rules: { total: 1 },
         },
       })
     );
-    expect(badges.map((b) => b.label)).toContain("1 rule reference these");
+    expect(badges.map((b) => b.label)).toContain("1 rule references these");
+  });
+
+  it("keeps the plural rule label for more than one reference", () => {
+    const badges = triageBadges(
+      suggestion({
+        impact: {
+          ...suggestion().impact!,
+          rules: { total: 2 },
+        },
+      })
+    );
+
+    expect(badges.map((badge) => badge.label)).toContain("2 rules reference these");
   });
 
   it("raises a warning when payee settings differ", () => {

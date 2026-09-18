@@ -41,6 +41,20 @@ type TransactionCountRow = Record<string, string | number> & {
   transactionCount: number;
 };
 
+function mapTransactionCounts(
+  rows: TransactionCountRow[],
+  groupField: TransactionCountGroupField
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const id = row[groupField];
+    if (typeof id === "string") {
+      map.set(id, row.transactionCount);
+    }
+  }
+  return map;
+}
+
 /**
  * Fetches transaction counts for a specific set of entity IDs via a single
  * $oneof-filtered ActualQL query. Returns Map<entityId, count>.
@@ -70,12 +84,34 @@ export async function getTransactionCountsForIds(
     },
   });
 
-  const map = new Map<string, number>();
-  for (const row of response.data) {
-    const id = row[groupField];
-    if (typeof id === "string") {
-      map.set(id, row.transactionCount);
-    }
-  }
-  return map;
+  return mapTransactionCounts(response.data, groupField);
+}
+
+/**
+ * Fetches counts for every transaction-linked entity in one grouped query.
+ *
+ * Unlike `getTransactionCountsForIds`, this does not serialize a potentially
+ * very large entity-id list into `$oneof`. It is intended for whole-budget
+ * analysis such as Payee Cleanup, where the caller needs to distinguish every
+ * used payee from payees with no transactions. An entity absent from the
+ * returned map has zero transactions.
+ */
+export async function getAllTransactionCounts(
+  connection: ConnectionInstance,
+  groupField: TransactionCountGroupField
+): Promise<Map<string, number>> {
+  const response = await runQuery<{ data: TransactionCountRow[] }>(connection, {
+    ActualQLquery: {
+      table: "transactions",
+      filter: { [groupField]: { $ne: null } },
+      groupBy: [groupField, groupField + ".name"],
+      select: [
+        groupField,
+        groupField + ".name",
+        { transactionCount: { $count: "$id" } },
+      ],
+    },
+  });
+
+  return mapTransactionCounts(response.data, groupField);
 }
