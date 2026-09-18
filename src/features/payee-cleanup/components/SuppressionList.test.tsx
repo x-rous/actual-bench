@@ -78,4 +78,19 @@ describe("SuppressionList", () => {
     fireEvent.click(screen.getByRole("button", { name: /^clear all$/i }));
     expect(onClearAll).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps Clear all available when search hides every dismissal", () => {
+    render(
+      <SuppressionList
+        suppressions={[]}
+        totalCount={2}
+        filtered
+        onUndo={jest.fn()}
+        onClearAll={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText("No dismissed items match your search.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^clear all$/i })).toBeInTheDocument();
+  });
 });

@@ -237,7 +237,7 @@ describe("PayeeCleanupView", () => {
     // Both live on the toolbar line now — the analyzed count had its own box
     // two inches below itself, and the exclusion note a full sentence.
     expect(
-      screen.getByText(/2 payees analyzed · 1 transfer payees excluded/)
+      screen.getByText(/2 payees analyzed · 1 transfer payee excluded/)
     ).toBeInTheDocument();
   });
 

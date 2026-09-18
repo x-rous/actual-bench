@@ -427,7 +427,9 @@ export function PayeeCleanupView() {
           : [
               `${result.analyzedCount.toLocaleString("en-US")} payees analyzed`,
               result.excludedTransferCount > 0
-                ? `${result.excludedTransferCount} transfer payees excluded`
+                ? `${result.excludedTransferCount} transfer payee${
+                    result.excludedTransferCount === 1 ? "" : "s"
+                  } excluded`
                 : null,
             ]
               .filter(Boolean)

@@ -52,7 +52,9 @@ export function triageBadges(suggestion: CleanupSuggestion): TriageBadge[] {
         : {
             id: "rules",
             tone: "neutral",
-            label: `${ruleCount} ${ruleCount === 1 ? "rule" : "rules"} reference these`,
+            label: `${ruleCount} ${
+              ruleCount === 1 ? "rule references" : "rules reference"
+            } these`,
           }
     );
 

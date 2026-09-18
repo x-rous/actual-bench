@@ -159,6 +159,23 @@ describe("usePayeeCleanupPlan", () => {
     expect(useStagedStore.getState().payees[target.id]?.isDeleted).toBe(false);
   });
 
+  it("uses a fresh live rule when its unchanged staged copy is stale", async () => {
+    const target = payee();
+    const staleRule = rule("rule-1", "other-payee");
+    const freshRule = rule("rule-1", target.id);
+    useStagedStore.getState().loadRules([staleRule]);
+    mockGetTransport.mockReturnValue(transport([target], [freshRule]));
+    const { result } = renderHook(() => usePayeeCleanupPlan());
+
+    let outcome: StageOutcome | undefined;
+    await act(async () => {
+      outcome = await result.current.stage(deletionPlan(target));
+    });
+
+    expect(outcome).toMatchObject({ status: "blocked" });
+    expect(useStagedStore.getState().payees[target.id]?.isDeleted).toBe(false);
+  });
+
   it("blocks deletion when an unsaved rule now references the payee", async () => {
     const target = payee();
     mockGetTransport.mockReturnValue(transport([target]));

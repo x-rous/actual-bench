@@ -38,10 +38,10 @@ export function SuppressionList({
   const [confirming, setConfirming] = useState(false);
   const hasHiddenDismissals = totalCount > suppressions.length;
 
-  if (suppressions.length === 0) {
+  if (totalCount === 0) {
     return (
       <p className="rounded-md border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
-        {filtered ? "No dismissed items match your search." : "You haven't dismissed any suggestions yet."}
+        You have not dismissed any suggestions yet.
       </p>
     );
   }
@@ -80,45 +80,51 @@ export function SuppressionList({
           </Button>
         )}
       </div>
-      <div className="overflow-hidden rounded-md border border-border/70">
-        <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          <span>Dismissed item</span>
-          <span>Dismissed from</span>
-        </div>
-        <ul className="divide-y divide-border/40">
-          {suppressions.map((suppression) => (
-            <li
-              key={suppression.id}
-              className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-            >
-              <span className="min-w-0">
-                <span className="break-words">
-                  {suppression.normalizedNames.join("  ·  ")}
-                </span>
-                {suppression.kind === "rejected-affix" ? (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    Kept as part of the name
+      {suppressions.length === 0 ? (
+        <p className="rounded-md border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
+          {filtered ? "No dismissed items match your search." : "No dismissed items to show."}
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-md border border-border/70">
+          <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <span>Dismissed item</span>
+            <span>Dismissed from</span>
+          </div>
+          <ul className="divide-y divide-border/40">
+            {suppressions.map((suppression) => (
+              <li
+                key={suppression.id}
+                className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+              >
+                <span className="min-w-0">
+                  <span className="break-words">
+                    {suppression.normalizedNames.join("  ·  ")}
                   </span>
-                ) : null}
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {DISMISSAL_SOURCES[suppression.kind]}
+                  {suppression.kind === "rejected-affix" ? (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      Kept as part of the name
+                    </span>
+                  ) : null}
                 </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Undo: ${suppression.normalizedNames.join(", ")}`}
-                  onClick={() => onUndo(suppression.id)}
-                >
-                  <Undo2 className="size-3.5" aria-hidden="true" />
-                  Undo
-                </Button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {DISMISSAL_SOURCES[suppression.kind]}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Undo: ${suppression.normalizedNames.join(", ")}`}
+                    onClick={() => onUndo(suppression.id)}
+                  >
+                    <Undo2 className="size-3.5" aria-hidden="true" />
+                    Undo
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

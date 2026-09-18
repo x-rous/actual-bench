@@ -134,7 +134,7 @@ export function usePayeeCleanupPlan() {
           );
           for (const [id, entry] of Object.entries(rulesNow)) {
             if (entry.isDeleted) delete currentRules[id];
-            else currentRules[id] = entry;
+            else if (entry.isNew || entry.isUpdated) currentRules[id] = entry;
           }
 
           const currentOrphanIds = new Set(
