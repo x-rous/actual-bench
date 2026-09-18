@@ -3,7 +3,7 @@ import type { PlanProblem } from "../lib/plan";
 import type { StageOutcome } from "../hooks/usePayeeCleanupPlan";
 
 type Props = {
-  /** Merges already staged and waiting to be saved on the Payees page. */
+  /** Changes already staged and waiting for the app-wide Save action. */
   stagedCount: number;
   outcome: StageOutcome | null;
 };
@@ -11,8 +11,8 @@ type Props = {
 /**
  * Only what needs attention (RD-078 §22, M6).
  *
- * The routine "what will be staged" counts live in the Pending changes box,
- * alongside the safety line, so this renders nothing at all on a normal pass.
+ * The routine "what will be staged" counts live in the Changes status,
+ * so this renders nothing at all on a normal pass.
  * What remains is the three things a user must not miss: work already staged
  * and waiting to be saved, a plan that cannot be staged, and a plan built on
  * payees that have since changed.
@@ -26,7 +26,7 @@ export function ReviewCleanupBar({ stagedCount, outcome }: Props) {
   const hasSomethingToSay =
     stagedCount > 0 || blocking.length > 0 || outcome?.status === "stale";
 
-  // Routine counts moved into the Pending changes box. What is left is only
+  // Routine counts moved into the Changes status. What is left is only
   // what needs attention, so on a normal pass this renders nothing at all.
   if (!hasSomethingToSay) return null;
 
@@ -38,7 +38,7 @@ export function ReviewCleanupBar({ stagedCount, outcome }: Props) {
         // list, and close the tab believing they were done.
         <p className="rounded border border-emerald-600/40 bg-emerald-500/5 p-2 text-xs font-medium text-emerald-700 dark:text-emerald-400">
           {stagedCount} {stagedCount === 1 ? "change is" : "changes are"} staged and
-          waiting - open the Payees page and save to apply them.
+          waiting - use Save to apply them.
         </p>
       ) : null}
 

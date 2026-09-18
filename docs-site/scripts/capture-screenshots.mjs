@@ -411,7 +411,7 @@ const SHOTS = [
     // a toggle in the app, so a reader never sees it unless the page shows it.
     element: "article",
     prepare: async (page) => {
-      await openCleanupTab(page, /^Suggestions \d+$/);
+      await openCleanupTab(page, /^Duplicate payees \d+$/);
       const reasoning = page.getByRole("button", { name: /Reasoning/ }).first();
       await reasoning.waitFor({ timeout: 60000 });
       await reasoning.click();
@@ -428,7 +428,7 @@ const SHOTS = [
     trimTo: "tbody tr, li",
     // Payees nothing points at any more - a different job from merging, and the
     // page never pictured it.
-    prepare: async (page) => openCleanupTab(page, /^Unused \d+$/),
+    prepare: async (page) => openCleanupTab(page, /^Unused payees \d+$/),
   },
   {
     name: "payee-cleanup-staged",
@@ -439,12 +439,12 @@ const SHOTS = [
     element: "main",
     trimTo: "article",
     /*
-     * Accepting a suggestion does not change anything yet - it fills the staging
-     * bar, and Save on the Payees page is what writes. That is the whole safety
+     * Accepting a suggestion does not change anything yet - it updates the Changes
+     * bar, and the app-wide Save action is what writes. That is the whole safety
      * model of the feature and it had no picture.
      */
     prepare: async (page) => {
-      await openCleanupTab(page, /^Suggestions \d+$/);
+      await openCleanupTab(page, /^Duplicate payees \d+$/);
       const accept = page.getByRole("button", { name: "Accept", exact: true }).first();
       await accept.waitFor({ timeout: 60000 });
       await accept.click();
@@ -916,7 +916,7 @@ const SHOTS = [
     url: /\/payees\/cleanup/,
     budget: "Envelope",
     prepare: async (page) => {
-      await page.getByRole("button", { name: /Needs a rule/ }).click();
+      await page.getByRole("button", { name: /Payees needing rules/ }).click();
       await page.waitForTimeout(4000);
     },
   },

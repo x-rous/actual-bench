@@ -5,6 +5,7 @@ import type { PayeeCleanupSuppressionRecord } from "@/lib/app-db/types";
 
 type Props = {
   suppressions: PayeeCleanupSuppressionRecord[];
+  filtered?: boolean;
   onUndo: (id: string) => void;
   onClearAll: () => void;
 };
@@ -16,7 +17,7 @@ type Props = {
  * reversible — otherwise a mis-click quietly removes a real duplicate from
  * every future scan and there is no way to find out why.
  */
-export function SuppressionList({ suppressions, onUndo, onClearAll }: Props) {
+export function SuppressionList({ suppressions, filtered = false, onUndo, onClearAll }: Props) {
   // Two-step rather than one click. Undoing a single row is reversible; clearing
   // the list discards every decision the user has made about this budget and
   // cannot be recovered from anywhere.
@@ -25,7 +26,7 @@ export function SuppressionList({ suppressions, onUndo, onClearAll }: Props) {
   if (suppressions.length === 0) {
     return (
       <p className="rounded-md border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
-        You haven&apos;t dismissed any suggestions yet.
+        {filtered ? "No dismissed items match your search." : "You haven't dismissed any suggestions yet."}
       </p>
     );
   }

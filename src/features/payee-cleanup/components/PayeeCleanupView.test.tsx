@@ -237,7 +237,11 @@ describe("PayeeCleanupView", () => {
     }
 
     fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
-    expect(screen.getByText(/not written until you save/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Review payees that may be the same merchant/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 merge")).toBeInTheDocument();
+    expect(stageMock).not.toHaveBeenCalled();
   });
 
   it("records a rejection so it survives the next scan", () => {
@@ -398,6 +402,58 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/more cautious than Actual/i)).toBeInTheDocument();
   });
 
+  it("selects every visible unused payee", () => {
+    candidates = [payee("Old Test Payee"), payee("Another Old Payee")];
+    transactionCounts = new Map();
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /unused/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^select all$/i }));
+
+    expect(
+      screen.getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: /select Another Old Payee for deletion/i })
+    ).toBeChecked();
+    expect(screen.getAllByText("Selected for deletion")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /^clear selection$/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^clear selection$/i }));
+    expect(
+      screen.getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
+    ).not.toBeChecked();
+  });
+
+
+  it("adds an unused payee deletion to the cleanup plan without writing", async () => {
+    candidates = [payee("Old Test Payee")];
+    transactionCounts = new Map();
+
+    render(<PayeeCleanupView />);
+    fireEvent.click(screen.getByRole("button", { name: /unused/i }));
+    const selection = screen.getByRole("checkbox", {
+      name: /select Old Test Payee for deletion/i,
+    });
+    fireEvent.click(selection);
+
+    expect(selection).toBeChecked();
+    expect(screen.getByText("Selected for deletion")).toBeInTheDocument();
+    expect(screen.getByText(/1 deleted/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /stage cleanup/i }));
+
+    await waitFor(() => expect(stageMock).toHaveBeenCalledTimes(1));
+    expect(stageMock.mock.calls[0][0].deletions).toEqual([
+      expect.objectContaining({ payeeId: "p-Old Test Payee", name: "Old Test Payee" }),
+    ]);
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        expect.stringMatching(/staged - use Save/),
+        undefined
+      )
+    );
+  });
+
   it("keeps the toolbar's Stage button disabled until something is accepted", () => {
     // The summary strip stays silent too: an empty "nothing accepted yet" panel
     // above every scan is noise.
@@ -408,35 +464,24 @@ describe("PayeeCleanupView", () => {
     expect(screen.queryByText(/nothing accepted yet/i)).not.toBeInTheDocument();
   });
 
-  it("stages an accepted proposal and says nothing was written", () => {
+  it("stages an accepted proposal and says nothing was written", async () => {
     candidates = [payee("AMAZON"), payee("Amazon")];
     render(<PayeeCleanupView />);
 
     fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
 
-    expect(screen.getByText(/1 payee stops existing/i)).toBeInTheDocument();
+    expect(screen.getByText("1 merge")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /stage cleanup/i }));
     expect(stageMock).toHaveBeenCalledTimes(1);
 
-    // The confirmation is a moment, not a state — it goes to a toast rather
-    // than parking a panel on the page.
-    return Promise.resolve().then(() => {
+    await waitFor(() => {
       expect(toastSuccess).toHaveBeenCalledWith(
-        expect.stringMatching(/staged - save on the Payees page/),
+        expect.stringMatching(/staged - use Save/),
         undefined
       );
-      expect(screen.queryByText(/1 change staged\./)).not.toBeInTheDocument();
     });
-  });
-
-  it("counts the payees that will stop existing, not just the operations", () => {
-    // "12 changes" tells a user nothing about whether a payee disappears.
-    candidates = [payee("AMAZON"), payee("Amazon"), payee("amazon")];
-    render(<PayeeCleanupView />);
-
-    fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
-    expect(screen.getByText(/2 payees stop existing/i)).toBeInTheDocument();
+    expect(screen.queryByText(/1 change staged\./)).not.toBeInTheDocument();
   });
 
   it("offers a rule that catches the payee, unchecked until the user opts in", () => {
@@ -595,22 +640,16 @@ describe("PayeeCleanupView", () => {
   });
 
 
-  it("keeps the safety copy with whatever is pending", () => {
-    // The line moved from under every card into the summary strip, which
-    // appears as soon as there is something to save. A disclosure repeated
-    // fifty times is wallpaper; one that never appears is worse.
+  it("shows selected cleanup work in Changes", () => {
     candidates = [payee("AMAZON", { favorite: true }), payee("Amazon")];
     render(<PayeeCleanupView />);
 
-    // The settings warning belongs to the group it affects, so it is on the card.
     expect(screen.getByText(/Favorite \/ Category learning differ/i)).toBeInTheDocument();
-    expect(screen.queryByText(/not written until you save/i)).not.toBeInTheDocument();
+    expect(screen.getByText("none")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
 
-    expect(
-      screen.getByText(/1 payee stops existing · not written until you save/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/1 merge.*1 rename/i)).toBeInTheDocument();
   });
 
 
@@ -819,7 +858,7 @@ describe("PayeeCleanupView", () => {
     ]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     // Spotify already resolves by name, so it must not be listed.
     expect(screen.getByText("Filmbox")).toBeInTheDocument();
@@ -844,7 +883,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     const row = screen.getByRole("listitem");
     expect(row.textContent).not.toMatch(/set the payee/i);
@@ -898,7 +937,7 @@ describe("PayeeCleanupView", () => {
     } as never;
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     expect(screen.getByText(/extends existing/i)).toBeInTheDocument();
   });
@@ -916,7 +955,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     // "Create" named something it does not do: nothing is written until save.
     const bulk = screen.getByRole("button", { name: /accept 1 safe rule/i });
@@ -941,7 +980,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     const tick = screen.getByRole("checkbox", { name: /accept a rule for Filmbox/i });
     expect(screen.queryByText("Accepted")).not.toBeInTheDocument();
@@ -993,7 +1032,7 @@ describe("PayeeCleanupView", () => {
     };
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /details for Filmbox/i }));
 
     // Not run on arrival: one query per proposed rule across hundreds of payees
@@ -1032,17 +1071,17 @@ describe("PayeeCleanupView", () => {
     ]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     const names = () =>
       screen.getAllByRole("listitem").map((row) => row.textContent?.slice(0, 4));
     expect(names()).toEqual(["Zulu", "Alph"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /payee/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Payee$/i }));
     expect(names()).toEqual(["Alph", "Zulu"]);
   });
 
-  it("offers to take back a bulk accept", () => {
+  it("keeps Clear accepted available when search hides selected rules", () => {
     // Accepting every safe row was one click and undoing it was one per row.
     candidates = [payee("Filmbox")];
     importedText = [
@@ -1056,13 +1095,16 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /accept 1 safe rule/i }));
 
+    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+      target: { value: "not Filmbox" },
+    });
+
+    expect(screen.getByText(/No payees needing a rule match this search/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /clear 1 accepted/i }));
-    expect(
-      screen.getByRole("checkbox", { name: /accept a rule for Filmbox/i })
-    ).not.toBeChecked();
+    expect(screen.getByText("none")).toBeInTheDocument();
   });
 
   it("offers an undo when a payee is dismissed, since the row leaves the list", async () => {
@@ -1078,7 +1120,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /not needed/i }));
 
     await waitFor(() =>
@@ -1112,7 +1154,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 12]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /details for Filmbox/i }));
 
     const rows = screen.getAllByRole("listitem");
@@ -1136,7 +1178,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Filmbox", 9]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /not needed/i }));
 
     expect(rejectRuleGap).toHaveBeenCalledWith(
@@ -1188,7 +1230,7 @@ describe("PayeeCleanupView", () => {
     transactionCounts = new Map([["p-Al Summit Credit Bureau", 6]]);
 
     render(<PayeeCleanupView />);
-    fireEvent.click(screen.getByRole("button", { name: /needs a rule/i }));
+    fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
 
     // The condition is on the row itself, not only behind Details.
     expect(screen.getByText(/SUMMIT CREDIT/)).toBeInTheDocument();
@@ -1252,7 +1294,7 @@ describe("PayeeCleanupView", () => {
     expect(screen.getByText(/nothing here changes a payee/i)).toBeInTheDocument();
   });
 
-  it("keeps unstaged work when only some groups are staged", () => {
+  it("keeps unstaged work when only some groups are staged", async () => {
     // Clearing every correction after a stage threw away renames, target
     // choices and combined groups the user was still working on — which looked
     // exactly like the work had been lost.
@@ -1274,7 +1316,7 @@ describe("PayeeCleanupView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /stage cleanup/i }));
 
-    return Promise.resolve().then(() => {
+    await waitFor(() => {
       expect(screen.getByDisplayValue("Still Editing")).toBeInTheDocument();
     });
   });

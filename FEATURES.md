@@ -357,7 +357,7 @@ consolidate them safely. Nothing is written until you save.
 - **Will not create the duplicate you were removing.** Two accepted groups heading for the same payee
   name block the stage and are offered as one combined group instead.
 - **Keyboard triage** — `A` accept, `R` reasoning, `N` not duplicates on the focused card.
-- **Unused payees** — those with no transactions and no rules — are listed separately for deletion.
+- **Unused payees** — those with no transactions and no rules — can be selected for deletion, rechecked immediately before staging, and saved through the shared Save action.
 - **Payees that need a rule.** Actual matches an imported payee by name alone, so a payee you rename or
   merge stops resolving and the duplicate returns on the next import. A separate tab lists the payees
   in that position and proposes the rule that fixes it — an exact match where the text is identical

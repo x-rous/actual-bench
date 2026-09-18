@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -32,6 +32,7 @@ type Props = {
   loading: boolean;
   /** True when a search is hiding rows that do exist. */
   filtered: boolean;
+  actions?: ReactNode;
 };
 
 /**
@@ -336,6 +337,7 @@ export function RuleGapList({
   onOverride,
   loading,
   filtered,
+  actions,
 }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   /*
@@ -360,13 +362,16 @@ export function RuleGapList({
     // payee will survive while the history is still loading, or while a search
     // is hiding the rows, is a claim the tab has not earned.
     return (
-      <p className="rounded-md border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
-        {loading
-          ? "Reading your import history…"
-          : filtered
-            ? "No payees needing a rule match this search."
-            : "Every payee will survive the next import. Nothing needs a rule."}
-      </p>
+      <div className="space-y-2">
+        {actions ? <div className="flex justify-end">{actions}</div> : null}
+        <p className="rounded-md border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
+          {loading
+            ? "Reading your import history…"
+            : filtered
+              ? "No payees needing a rule match this search."
+              : "Every payee will survive the next import. Nothing needs a rule."}
+        </p>
+      </div>
     );
   }
 
@@ -374,11 +379,14 @@ export function RuleGapList({
     <div className="space-y-2">
       {/* A tab that changes no payees, inside a page called Cleanup, is
           otherwise a surprise. */}
-      <p className="text-xs text-muted-foreground">
-        These payees are fine - their imports just aren&apos;t automated. Actual
-        matches an imported payee <em>by name only</em>, so the next import of the
-        original bank text would create a duplicate. Nothing here changes a payee.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          These payees are fine - their imports just are not automated. Actual
+          matches an imported payee <em>by name only</em>, so the next import of the
+          original bank text would create a duplicate. Nothing here changes a payee.
+        </p>
+        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      </div>
 
       <div className="overflow-hidden rounded-md border border-border/70">
         {/* Names the columns, so a bare payee-then-number-then-chips row stops

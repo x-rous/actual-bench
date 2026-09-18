@@ -68,7 +68,7 @@ No setup, no account. A year of household Envelope and Tracking budgets to poke 
 
 **Clean up and audit**
 
-- **[Payee Cleanup](https://x-rous.github.io/actual-bench/user-guide/payee-cleanup/)** - finds duplicate payees, shows the evidence for each grouping, and proposes the import rules that stop them coming back.
+- **[Payee Cleanup](https://x-rous.github.io/actual-bench/user-guide/payee-cleanup/)** - finds duplicate payees, proposes rules that prevent their return, and lets you select unused payees for a reviewed cleanup plan.
 - **[Rule Diagnostics](https://x-rous.github.io/actual-bench/user-guide/rule-diagnostics/)** - reads your rules as a set: what shadows what, what can never fire, what duplicates what. Read-only; it never edits your budget.
 - **[Budget File Health](https://x-rous.github.io/actual-bench/user-guide/budget-file-health/)** and **[Data Browser](https://x-rous.github.io/actual-bench/user-guide/data-browser/)** - open a budget snapshot in your browser, run health checks, and browse its tables directly.
 - **[ActualQL](https://x-rous.github.io/actual-bench/user-guide/actualql/)** - a query console with saved queries, plain-English explain, and table, JSON, scalar and tree result views.
