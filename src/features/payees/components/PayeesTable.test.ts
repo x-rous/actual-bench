@@ -1,4 +1,30 @@
-import { gapBefore, withEditingRow } from "./PayeesTable";
+/** @jest-environment jsdom */
+
+import {
+  gapBefore,
+  shouldHandlePayeeGridPaste,
+  withEditingRow,
+} from "./PayeesTable";
+
+describe("shouldHandlePayeeGridPaste", () => {
+  it("leaves paste in the search input instead of treating it as a payee edit", () => {
+    const search = document.createElement("input");
+
+    expect(shouldHandlePayeeGridPaste(search, false)).toBe(false);
+  });
+
+  it("handles spreadsheet paste when focus is on the grid", () => {
+    const grid = document.createElement("div");
+
+    expect(shouldHandlePayeeGridPaste(grid, false)).toBe(true);
+  });
+
+  it("leaves paste in the active cell editor", () => {
+    const grid = document.createElement("div");
+
+    expect(shouldHandlePayeeGridPaste(grid, true)).toBe(false);
+  });
+});
 
 /*
  * The payees table renders only the rows in view. The row being edited is the
