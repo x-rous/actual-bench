@@ -6,6 +6,10 @@ import { changePassphrase, isPassphraseSet, verifyPassphrase } from "@/lib/conne
 import { clearAllSessions, createSession } from "@/lib/connectionVault/session";
 import { setSessionCookie } from "@/lib/connectionVault/cookies";
 import { recordUnlockFailure, recordUnlockSuccess, unlockRetryAfterMs } from "@/lib/connectionVault/throttle";
+import {
+  DEFAULT_VAULT_UNLOCK_DURATION,
+  isVaultUnlockDuration,
+} from "@/lib/connectionVault/unlockDuration";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,9 +29,16 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const body = (await readJsonBody(request)) as { currentPassphrase?: unknown; newPassphrase?: unknown };
+    const body = (await readJsonBody(request)) as {
+      currentPassphrase?: unknown;
+      newPassphrase?: unknown;
+      duration?: unknown;
+    };
     if (typeof body?.currentPassphrase !== "string" || typeof body?.newPassphrase !== "string") {
       return NextResponse.json({ error: "currentPassphrase and newPassphrase are required." }, { status: 400 });
+    }
+    if (body.duration !== undefined && !isVaultUnlockDuration(body.duration)) {
+      return NextResponse.json({ error: "Unsupported vault unlock duration." }, { status: 400 });
     }
     if (body.newPassphrase.length < MIN_PASSPHRASE_LENGTH) {
       return NextResponse.json(
@@ -56,7 +67,8 @@ export async function POST(request: NextRequest) {
     const key = verifyPassphrase(db, body.newPassphrase);
     if (!key) return NextResponse.json({ error: "Failed to re-establish the passphrase." }, { status: 500 });
     const response = NextResponse.json({ ok: true, unlocked: true });
-    setSessionCookie(request, response, createSession(key));
+    const duration = body.duration ?? DEFAULT_VAULT_UNLOCK_DURATION;
+    setSessionCookie(request, response, createSession(key, duration), duration);
     return response;
   } catch (error) {
     return appDbErrorResponse(error);

@@ -19,9 +19,13 @@ import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types"
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
 import type { MergedBudget, MergedServer } from "./mergeConnections";
 import { deriveLabel, parseApiError } from "./utils";
+import {
+  VAULT_UNLOCK_DURATION_OPTIONS,
+  type VaultUnlockDuration,
+} from "@/lib/connectionVault/unlockDuration";
+import { readVaultUnlockDuration, saveVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
 
 const MIN_PASSPHRASE_LENGTH = 8;
-
 type Vault = ReturnType<typeof useConnectionVault>;
 
 /**
@@ -58,12 +62,14 @@ export function ConnectionsList({
   busy: boolean;
 }) {
   const [passphrase, setPassphrase] = useState("");
+  const [unlockDuration, setUnlockDuration] = useState<VaultUnlockDuration>(readVaultUnlockDuration);
   const [unlocking, setUnlocking] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [locking, setLocking] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [changeOpen, setChangeOpen] = useState(false);
   const [currentPass, setCurrentPass] = useState("");
   const [nextPass, setNextPass] = useState("");
@@ -82,13 +88,18 @@ export function ConnectionsList({
     setUnlocking(true);
     setError(null);
     try {
-      await vault.unlock(passphrase);
+      await vault.unlock(passphrase, unlockDuration);
       setPassphrase("");
     } catch (err) {
       setError(parseApiError(err));
     } finally {
       setUnlocking(false);
     }
+  }
+
+  function updateUnlockDuration(duration: VaultUnlockDuration) {
+    setUnlockDuration(duration);
+    saveVaultUnlockDuration(duration);
   }
 
   async function handleLock() {
@@ -126,6 +137,10 @@ export function ConnectionsList({
     setChangeOpen(true);
   }
 
+  function openVaultSettings() {
+    setSettingsOpen(true);
+  }
+
   async function handleChangePassphrase() {
     setChangeError(null);
     if (!currentPass) {
@@ -142,7 +157,7 @@ export function ConnectionsList({
     }
     setChanging(true);
     try {
-      await vault.changePassphrase(currentPass, nextPass);
+      await vault.changePassphrase(currentPass, nextPass, unlockDuration);
       setChangeOpen(false);
       toast.success("Passphrase changed. Your saved servers were re-encrypted.");
     } catch (err) {
@@ -250,15 +265,24 @@ export function ConnectionsList({
               )}
             </div>
             {!locked && (
-              <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  onClick={openVaultSettings}
+                  aria-label="Settings"
+                >
+                  <Settings2 className="size-3.5" />
+                  <span className="hidden sm:inline">Settings</span>
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-8 gap-1.5"
                   onClick={openChangePassphrase}
-                  aria-label="Change passphrase"
                 >
-                  <Settings2 className="size-3.5" />
+                  <KeyRound className="size-3.5" />
                   <span className="hidden sm:inline">Change passphrase</span>
                 </Button>
                 <Button
@@ -317,13 +341,29 @@ export function ConnectionsList({
                   </div>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmReset(true)}
-                  className="mt-2.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                >
-                  Forgot passphrase?
-                </button>
+                <div className="mt-2.5 flex items-center justify-between gap-3">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Keep unlocked for</span>
+                    <select
+                      value={unlockDuration}
+                      onChange={(event) => updateUnlockDuration(event.target.value as VaultUnlockDuration)}
+                      disabled={unlocking}
+                      aria-label="Keep vault unlocked for"
+                      className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-50"
+                    >
+                      {VAULT_UNLOCK_DURATION_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmReset(true)}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    Forgot passphrase?
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -446,6 +486,39 @@ export function ConnectionsList({
           );
         })}
       </div>
+
+      {/* ── Vault settings dialog ──────────────────────────────────────────── */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>
+              Choose how long future vault unlocks can stay inactive before they lock.
+            </DialogDescription>
+          </DialogHeader>
+
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
+            Default unlock duration
+            <select
+              value={unlockDuration}
+              onChange={(event) => updateUnlockDuration(event.target.value as VaultUnlockDuration)}
+              aria-label="Default vault unlock duration"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal text-foreground"
+            >
+              {VAULT_UNLOCK_DURATION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <span className="text-xs font-normal text-muted-foreground">
+              Server restarts and Lock always require your passphrase.
+            </span>
+          </label>
+
+          <DialogFooter>
+            <Button onClick={() => setSettingsOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Change-passphrase dialog ───────────────────────────────────────── */}
       <Dialog

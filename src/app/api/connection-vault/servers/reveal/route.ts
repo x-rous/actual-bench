@@ -7,7 +7,8 @@ import {
   getServerCredential,
 } from "@/lib/app-db/serverCredentialRepository";
 import { getSessionKey } from "@/lib/connectionVault/session";
-import { readSessionToken } from "@/lib/connectionVault/cookies";
+import { readSessionToken, setSessionCookie } from "@/lib/connectionVault/cookies";
+import { getSessionDuration } from "@/lib/connectionVault/session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
     if (!cred) {
       return NextResponse.json({ error: "Remembered server not found." }, { status: 404 });
     }
-    return NextResponse.json({
+    const response = NextResponse.json({
       mode: cred.mode,
       baseUrl: cred.baseUrl,
       label: cred.label,
@@ -63,6 +64,10 @@ export async function POST(request: NextRequest) {
         encryptionPassword,
       },
     });
+    const token = readSessionToken(request);
+    const duration = getSessionDuration(token);
+    if (token && duration) setSessionCookie(request, response, token, duration);
+    return response;
   } catch (error) {
     return appDbErrorResponse(error);
   }

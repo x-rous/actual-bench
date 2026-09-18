@@ -2,6 +2,7 @@
  * @jest-environment node
  */
 const cookieJar = new Map<string, string>();
+const cookieOptions = new Map<string, { maxAge?: number }>();
 
 jest.mock("next/server", () => ({
   NextResponse: {
@@ -9,9 +10,14 @@ jest.mock("next/server", () => ({
       status: init?.status ?? 200,
       json: async () => body,
       cookies: {
-        set: (name: string, value: string) => {
-          if (value === "") cookieJar.delete(name);
-          else cookieJar.set(name, value);
+        set: (name: string, value: string, options?: { maxAge?: number }) => {
+          if (value === "") {
+            cookieJar.delete(name);
+            cookieOptions.delete(name);
+          } else {
+            cookieJar.set(name, value);
+            cookieOptions.set(name, options ?? {});
+          }
         },
       },
     }),
@@ -46,7 +52,11 @@ function req(body?: unknown): never {
 }
 
 async function status() {
-  return (await GET(req()).json()) as { supported: boolean; passphraseSet: boolean; unlocked: boolean };
+  return (await GET(req()).json()) as {
+    supported: boolean;
+    passphraseSet: boolean;
+    unlocked: boolean;
+  };
 }
 
 describe("connection-vault routes (RD-061 / PR-026b)", () => {
@@ -58,6 +68,7 @@ describe("connection-vault routes (RD-061 / PR-026b)", () => {
     process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
     getAppDb();
     cookieJar.clear();
+    cookieOptions.clear();
     clearAllSessions();
     resetUnlockThrottle();
   });
@@ -65,6 +76,7 @@ describe("connection-vault routes (RD-061 / PR-026b)", () => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     cookieJar.clear();
+    cookieOptions.clear();
     clearAllSessions();
     resetUnlockThrottle();
     if (originalDbPath === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
@@ -98,6 +110,15 @@ describe("connection-vault routes (RD-061 / PR-026b)", () => {
 
     expect((await unlock(req({ passphrase: "unlock-me-please" }))).status).toBe(200);
     expect((await status()).unlocked).toBe(true);
+  });
+
+  it("uses an approved duration for a new unlock", async () => {
+    await setPassphrase(req({ passphrase: "unlock-me-please" }));
+    await lock(req());
+
+    expect((await unlock(req({ passphrase: "unlock-me-please", duration: "30d" }))).status).toBe(200);
+    expect(cookieOptions.get(VAULT_COOKIE)?.maxAge).toBe(30 * 24 * 60 * 60);
+    expect((await unlock(req({ passphrase: "unlock-me-please", duration: "forever" }))).status).toBe(400);
   });
 
   it("throttles repeated failed unlock attempts", async () => {
