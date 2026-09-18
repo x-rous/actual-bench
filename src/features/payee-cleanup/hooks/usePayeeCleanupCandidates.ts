@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getTransport } from "@/lib/actual";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
+import { useStagedStore } from "@/store/staged";
 import { getPayeeCleanupMetadata, fallbackMetadata } from "../lib/payeeMetadata";
 import { partitionByEligibility } from "../lib/eligibility";
 import { getPayeeCleanupCapabilities } from "../lib/capabilities";
@@ -35,6 +36,7 @@ export function usePayeeCleanupCandidates(options: { enabled: boolean }): {
   refetch: () => void;
 } {
   const connection = useConnectionStore(selectActiveInstance);
+  const loadPayees = useStagedStore((state) => state.loadPayees);
 
   const query = useQuery({
     queryKey: ["payeeCleanupCandidates", connection?.id],
@@ -61,6 +63,27 @@ export function usePayeeCleanupCandidates(options: { enabled: boolean }): {
     () => partitionByEligibility(query.data ?? []),
     [query.data]
   );
+
+  // Cleanup stages through the shared payee store. Loading this page directly
+  // must initialize that store too; otherwise a staged rename or deletion is a
+  // no-op until the user happens to visit the Payees page first. `loadPayees`
+  // preserves existing edits, so this also gives conflict checks a complete
+  // working set without overwriting unsaved work.
+  useEffect(() => {
+    if (!query.data) return;
+    loadPayees(
+      query.data.map(
+        ({ id, name, categoryId, transferAccountId, rulesCount, duplicateFlag }) => ({
+          id,
+          name,
+          categoryId,
+          transferAccountId,
+          rulesCount,
+          duplicateFlag,
+        })
+      )
+    );
+  }, [loadPayees, query.data]);
 
   const capabilities = useMemo(
     () => (connection ? getPayeeCleanupCapabilities(connection) : null),

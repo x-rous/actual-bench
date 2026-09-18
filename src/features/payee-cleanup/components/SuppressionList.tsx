@@ -5,9 +5,17 @@ import type { PayeeCleanupSuppressionRecord } from "@/lib/app-db/types";
 
 type Props = {
   suppressions: PayeeCleanupSuppressionRecord[];
+  /** Every dismissal in the budget, including rows hidden by search. */
+  totalCount: number;
   filtered?: boolean;
   onUndo: (id: string) => void;
   onClearAll: () => void;
+};
+
+const DISMISSAL_SOURCES: Record<PayeeCleanupSuppressionRecord["kind"], string> = {
+  "not-duplicates": "Duplicate payees",
+  "rule-not-needed": "Payees needing rules",
+  "rejected-affix": "Payee name pattern",
 };
 
 /**
@@ -17,11 +25,18 @@ type Props = {
  * reversible — otherwise a mis-click quietly removes a real duplicate from
  * every future scan and there is no way to find out why.
  */
-export function SuppressionList({ suppressions, filtered = false, onUndo, onClearAll }: Props) {
+export function SuppressionList({
+  suppressions,
+  totalCount,
+  filtered = false,
+  onUndo,
+  onClearAll,
+}: Props) {
   // Two-step rather than one click. Undoing a single row is reversible; clearing
   // the list discards every decision the user has made about this budget and
   // cannot be recovered from anywhere.
   const [confirming, setConfirming] = useState(false);
+  const hasHiddenDismissals = totalCount > suppressions.length;
 
   if (suppressions.length === 0) {
     return (
@@ -40,7 +55,10 @@ export function SuppressionList({ suppressions, filtered = false, onUndo, onClea
         {confirming ? (
           <span className="flex shrink-0 items-center gap-1">
             <span className="text-xs text-muted-foreground">
-              Clear all {suppressions.length}?
+              Clear all {totalCount}
+              {hasHiddenDismissals
+                ? " dismissals, including hidden matches?"
+                : " dismissals?"}
             </span>
             <Button
               size="sm"
@@ -62,36 +80,45 @@ export function SuppressionList({ suppressions, filtered = false, onUndo, onClea
           </Button>
         )}
       </div>
-      <ul className="divide-y divide-border/40 rounded-md border border-border/70">
-        {suppressions.map((suppression) => (
-          <li
-            key={suppression.id}
-            className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-          >
-            <span className="min-w-0">
-              <span className="break-words">
-                {suppression.normalizedNames.join("  ·  ")}
-              </span>
-              <span className="ml-2 text-xs text-muted-foreground">
-                {suppression.kind === "rejected-affix"
-                  ? "kept as part of the name"
-                  : suppression.kind === "rule-not-needed"
-                    ? "no rule needed"
-                    : "not duplicates"}
-              </span>
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label={`Undo: ${suppression.normalizedNames.join(", ")}`}
-              onClick={() => onUndo(suppression.id)}
+      <div className="overflow-hidden rounded-md border border-border/70">
+        <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <span>Dismissed item</span>
+          <span>Dismissed from</span>
+        </div>
+        <ul className="divide-y divide-border/40">
+          {suppressions.map((suppression) => (
+            <li
+              key={suppression.id}
+              className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
             >
-              <Undo2 className="size-3.5" aria-hidden="true" />
-              Undo
-            </Button>
-          </li>
-        ))}
-      </ul>
+              <span className="min-w-0">
+                <span className="break-words">
+                  {suppression.normalizedNames.join("  ·  ")}
+                </span>
+                {suppression.kind === "rejected-affix" ? (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    Kept as part of the name
+                  </span>
+                ) : null}
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {DISMISSAL_SOURCES[suppression.kind]}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Undo: ${suppression.normalizedNames.join(", ")}`}
+                  onClick={() => onUndo(suppression.id)}
+                >
+                  <Undo2 className="size-3.5" aria-hidden="true" />
+                  Undo
+                </Button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

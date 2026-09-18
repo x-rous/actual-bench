@@ -31,7 +31,7 @@ export function useSuppressions(options: { enabled: boolean }) {
     [budgetSyncId]
   );
 
-  const { data } = useQuery({
+  const query = useQuery({
     queryKey,
     queryFn: async (): Promise<PayeeCleanupSuppressionRecord[]> => {
       const response = await fetch(
@@ -102,7 +102,11 @@ export function useSuppressions(options: { enabled: boolean }) {
   });
 
   return {
-    suppressions: data ?? [],
+    suppressions: query.data ?? [],
+    isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    error: query.error,
+    refetch: () => void query.refetch(),
     /** Records the whole grouping, not the individual payees (see lib/suppressions). */
     rejectCluster: (cluster: PayeeCluster) => {
       if (!budgetSyncId) return;

@@ -19,11 +19,12 @@ export function useImportedTextIndex(options: { enabled: boolean }): {
   truncated: boolean;
   isLoading: boolean;
   isFetching: boolean;
+  error: Error | null;
   refetch: () => void;
 } {
   const connection = useConnectionStore(selectActiveInstance);
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ["payeeCleanupImportedText", connection?.id],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
@@ -40,6 +41,7 @@ export function useImportedTextIndex(options: { enabled: boolean }): {
     truncated: data?.truncated ?? false,
     isLoading,
     isFetching,
+    error,
     refetch: () => void refetch(),
   };
 }

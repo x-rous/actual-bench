@@ -506,7 +506,7 @@ export function SuggestionCard({
                     <AlertTriangle className="mr-1 inline size-3" aria-hidden="true" />
                     {/* Both numbers, always: "also catches 1" alone gives no
                         sense of whether the rule is otherwise doing its job. */}
-                    Matches {future.recommended.expectedMatches} of this group's past{" "}
+                    Matches {future.recommended.expectedMatches} of this group’s past{" "}
                     {future.recommended.expectedMatches === 1 ? "transaction" : "transactions"},
                     and {future.recommended.unexpectedMatches}{" "}
                     {future.recommended.unexpectedMatches === 1 ? "transaction" : "transactions"} of{" "}

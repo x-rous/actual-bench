@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useStagedStore } from "@/store/staged";
 import { useRules } from "@/features/rules/hooks/useRules";
 import { useSchedules } from "@/features/schedules/hooks/useSchedules";
@@ -22,20 +22,35 @@ import type { PayeeCleanupCandidate } from "../types";
 export function usePayeeCleanupImpact(
   candidates: PayeeCleanupCandidate[],
   options: { enabled: boolean }
-): ImpactSources {
-  useRules({ enabled: options.enabled });
-  useSchedules({ enabled: options.enabled });
+): ImpactSources & {
+  isLoading: boolean;
+  isFetching: boolean;
+  error: Error | null;
+  refetch: () => void;
+} {
+  const rulesQuery = useRules({ enabled: options.enabled });
+  const schedulesQuery = useSchedules({ enabled: options.enabled });
 
   const stagedRules = useStagedStore((s) => s.rules);
   const stagedSchedules = useStagedStore((s) => s.schedules);
 
   const payeeIds = useMemo(() => candidates.map((c) => c.id), [candidates]);
 
-  const { data: transactionCounts, isLoading } = useTransactionCountsForIds(
-    "payee",
-    payeeIds,
-    { enabled: options.enabled && payeeIds.length > 0 }
-  );
+  const transactionQuery = useTransactionCountsForIds("payee", payeeIds, {
+    enabled: options.enabled && payeeIds.length > 0,
+  });
+
+  const refetchRules = rulesQuery.refetch;
+  const refetchSchedules = schedulesQuery.refetch;
+  const refetchTransactions = transactionQuery.refetch;
+
+  const refetch = useCallback(() => {
+    void Promise.all([
+      refetchRules(),
+      refetchSchedules(),
+      ...(payeeIds.length > 0 ? [refetchTransactions()] : []),
+    ]);
+  }, [payeeIds.length, refetchRules, refetchSchedules, refetchTransactions]);
 
   const schedules = useMemo(
     () =>
@@ -52,9 +67,34 @@ export function usePayeeCleanupImpact(
     () => ({
       stagedRules,
       schedules,
-      transactionCounts,
-      transactionsLoading: isLoading,
+      transactionCounts: transactionQuery.data,
+      transactionsLoading: transactionQuery.isLoading,
+      isLoading:
+        rulesQuery.isLoading ||
+        schedulesQuery.isLoading ||
+        transactionQuery.isLoading,
+      isFetching:
+        rulesQuery.isFetching ||
+        schedulesQuery.isFetching ||
+        transactionQuery.isFetching,
+      error:
+        rulesQuery.error ?? schedulesQuery.error ?? transactionQuery.error,
+      refetch,
     }),
-    [stagedRules, schedules, transactionCounts, isLoading]
+    [
+      stagedRules,
+      schedules,
+      transactionQuery.data,
+      transactionQuery.isLoading,
+      transactionQuery.isFetching,
+      transactionQuery.error,
+      rulesQuery.isLoading,
+      rulesQuery.isFetching,
+      rulesQuery.error,
+      schedulesQuery.isLoading,
+      schedulesQuery.isFetching,
+      schedulesQuery.error,
+      refetch,
+    ]
   );
 }

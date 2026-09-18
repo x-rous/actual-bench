@@ -93,7 +93,7 @@ export function ClusterImpactPanel({ impact, targetName }: Props) {
             ]
               .filter(Boolean)
               .join(" and ")}
-            . The payee you keep decides the outcome - Actual's API does not
+            . The payee you keep decides the outcome - Actual’s API does not
             let Actual Bench change either setting.
           </p>
         ) : (

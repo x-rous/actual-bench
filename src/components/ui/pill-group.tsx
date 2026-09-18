@@ -84,6 +84,8 @@ export function PillGroup<T extends string>({
       {options.map((opt) => (
         <button
           key={opt.value}
+          type="button"
+          aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
             "rounded px-2 py-0.5 text-xs transition-colors",

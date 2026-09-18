@@ -4,7 +4,7 @@ type Props = {
   plan: CleanupPlan;
 };
 
-/** One-line staged-work status for the Cleanup toolbar. */
+/** One-line summary of the cleanup choices that would be staged. */
 export function PendingChangesSummary({ plan }: Props) {
   const parts = [
     plan.merges.length > 0

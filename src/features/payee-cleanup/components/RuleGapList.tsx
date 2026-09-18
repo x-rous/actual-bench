@@ -433,7 +433,13 @@ export function RuleGapList({
           });
 
           return (
-            <li key={gap.payee.id} className="px-3 py-2 text-sm">
+            <li
+              key={gap.payee.id}
+              className={cn(
+                "px-3 py-2 text-sm",
+                isAccepted && "bg-emerald-50/70 dark:bg-emerald-950/20"
+              )}
+            >
               {/* The condition sits on the row rather than behind the expander:
                   it is the thing worth checking before accepting, and the
                   boilerplate around it is gone - every rule here sets the payee,

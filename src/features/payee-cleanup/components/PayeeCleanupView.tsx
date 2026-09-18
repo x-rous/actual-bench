@@ -42,6 +42,7 @@ import { SuppressionList } from "./SuppressionList";
 import { ReviewCleanupBar } from "./ReviewCleanupBar";
 import { usePayeeCleanupPlan, type StageOutcome } from "../hooks/usePayeeCleanupPlan";
 import { buildPlan, planOperationCount } from "../lib/plan";
+import { PendingChangesSummary } from "./CleanupSummaryCards";
 
 /**
  * The Payee Cleanup workspace: scan, review, correct, accept, stage.
@@ -55,9 +56,9 @@ import { buildPlan, planOperationCount } from "../lib/plan";
 export function PayeeCleanupView() {
   const {
     partition: scanned,
-    isLoading,
+    isLoading: candidatesLoading,
     isFetching: candidatesFetching,
-    error,
+    error: candidatesError,
     refetch,
   } = usePayeeCleanupCandidates({ enabled: true });
 
@@ -83,11 +84,20 @@ export function PayeeCleanupView() {
    * changes waiting on a page where nothing had been touched.
    */
   const stagedCount = useMemo(() => {
-    const changed = (
-      map: Record<string, { isNew: boolean; isUpdated: boolean; isDeleted: boolean }>
-    ) => Object.values(map).filter((e) => e.isNew || e.isUpdated || e.isDeleted).length;
+    const changedRules = Object.values(stagedRules).filter(
+      (entry) => entry.isNew || entry.isUpdated || entry.isDeleted
+    ).length;
+    const mergedSourceIds = new Set(pendingMerges.flatMap((merge) => merge.mergeIds));
+    const changedPayees = Object.entries(stagedPayees).filter(
+      ([id, entry]) =>
+        !mergedSourceIds.has(id) &&
+        (entry.isNew || entry.isUpdated || entry.isDeleted)
+    ).length;
 
-    return pendingMerges.length + changed(stagedPayees) + changed(stagedRules);
+    // A pending merge also marks every source payee deleted. Those deletes are
+    // implementation details of the single merge operation and must not be
+    // counted a second time in the user-facing total.
+    return pendingMerges.length + changedPayees + changedRules;
   }, [pendingMerges, stagedPayees, stagedRules]);
 
   const stagedAwayIds = useMemo(() => {
@@ -109,8 +119,6 @@ export function PayeeCleanupView() {
     [scanned, stagedAwayIds]
   );
 
-  // `?tab=rule-gaps` so the Rules page can link straight to the rule tab, the
-  // same way Rule Diagnostics is reachable from there.
   // `?tab=rule-gaps`, so the Rules page can link straight to the rule tab.
   //
   // The link decides the tab whenever it changes, not only on mount: arriving
@@ -143,14 +151,24 @@ export function PayeeCleanupView() {
     Map<string, RuleGapOverride>
   >(new Map());
   const impact = usePayeeCleanupImpact(partition.eligible, { enabled: true });
-  const { suppressions, rejectCluster, rejectRuleGap, undo, clearAll } = useSuppressions({
-    enabled: true,
-  });
+  const {
+    suppressions,
+    rejectCluster,
+    rejectRuleGap,
+    undo,
+    clearAll,
+    isLoading: suppressionsLoading,
+    isFetching: suppressionsFetching,
+    error: suppressionsError,
+    refetch: refetchSuppressions,
+  } = useSuppressions({ enabled: true });
 
   const {
     rows: importedText,
     truncated: importedTextTruncated,
+    isLoading: importedTextLoading,
     isFetching: importedTextFetching,
+    error: importedTextError,
     refetch: refetchImportedText,
   } = useImportedTextIndex({ enabled: true });
   const rules = useMemo(
@@ -192,8 +210,26 @@ export function PayeeCleanupView() {
   const [selectedOrphanIds, setSelectedOrphanIds] = useState<Set<string>>(new Set());
 
   // Any of the reads the scan depends on still being in flight counts as
-  // scanning: the user asked for one thing, not three.
-  const scanning = candidatesFetching || importedTextFetching;
+  // scanning: the user asked for one thing, not several independent queries.
+  const scanning =
+    candidatesFetching ||
+    importedTextFetching ||
+    impact.isFetching ||
+    suppressionsFetching;
+  const isLoading =
+    candidatesLoading ||
+    importedTextLoading ||
+    impact.isLoading ||
+    suppressionsLoading;
+  const error =
+    candidatesError ?? importedTextError ?? impact.error ?? suppressionsError;
+
+  const refetchAll = () => {
+    refetch();
+    refetchImportedText();
+    impact.refetch();
+    refetchSuppressions();
+  };
 
   const { stage, isStaging } = usePayeeCleanupPlan();
   const [stageOutcome, setStageOutcome] = useState<StageOutcome | null>(null);
@@ -224,11 +260,6 @@ export function PayeeCleanupView() {
   // for a failed staging attempt to explain it.
   const collisions = useMemo(
     () => findNameCollisions(result.suggestions),
-    [result.suggestions]
-  );
-
-  const safeToAccept = useMemo(
-    () => result.suggestions.filter(isSafeForBulkAccept),
     [result.suggestions]
   );
 
@@ -351,6 +382,13 @@ export function PayeeCleanupView() {
     });
   }, [result.suggestions, band, search]);
 
+  // Bulk acceptance is scoped to exactly what is visible. A search or
+  // confidence filter must never accept suggestions the user cannot see.
+  const safeToAccept = useMemo(
+    () => visible.filter(isSafeForBulkAccept),
+    [visible]
+  );
+
   return (
     <PageLayout
       title="Payee Cleanup"
@@ -360,7 +398,7 @@ export function PayeeCleanupView() {
           : [
               `${result.analyzedCount.toLocaleString("en-US")} payees analyzed`,
               result.excludedTransferCount > 0
-                ? `${result.excludedTransferCount} transfer excluded`
+                ? `${result.excludedTransferCount} transfer payees excluded`
                 : null,
             ]
               .filter(Boolean)
@@ -368,18 +406,14 @@ export function PayeeCleanupView() {
       }
       actions={
         <div className="flex items-center gap-2">
+          <PendingChangesSummary plan={plan} />
           {/* `isLoading` is only true before there is any data, so a re-scan
               left the button looking inert while the work happened. `isFetching`
               covers both, and the label says which of the two is going on. */}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              // Everything the scan reads, not just the payee list — otherwise
-              // "Scan again" quietly reuses yesterday's import history.
-              refetch();
-              refetchImportedText();
-            }}
+            onClick={refetchAll}
             disabled={scanning}
             aria-busy={scanning}
           >
@@ -406,7 +440,7 @@ export function PayeeCleanupView() {
       isLoading={isLoading}
       isError={Boolean(error)}
       error={error}
-      onRetry={() => refetch()}
+      onRetry={refetchAll}
       emptyState={
         result.analyzedCount === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
@@ -438,7 +472,6 @@ export function PayeeCleanupView() {
           review: result.counts.review,
           hidden: result.counts.hidden,
         }}
-        plan={plan}
       />
 
       <ReviewCleanupBar
@@ -479,6 +512,7 @@ export function PayeeCleanupView() {
         {tab === "dismissed" ? (
           <SuppressionList
             suppressions={visibleSuppressions}
+            totalCount={suppressions.length}
             filtered={search.trim().length > 0}
             onUndo={undo}
             onClearAll={clearAll}
@@ -567,10 +601,12 @@ export function PayeeCleanupView() {
         ) : (
         <>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">
-            Review payees that may be the same merchant. Accept a suggestion,
-            adjust it, or mark it as not duplicates.
-          </p>
+          {result.suggestions.length > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Review payees that may be the same merchant. Accept a suggestion,
+              adjust it, or mark it as not duplicates.
+            </p>
+          ) : null}
           {safeToAccept.length > 0 ? (
             <Button
               variant="outline"

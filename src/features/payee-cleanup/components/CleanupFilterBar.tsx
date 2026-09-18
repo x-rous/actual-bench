@@ -2,9 +2,7 @@
 
 import { Search, X } from "lucide-react";
 import { PillGroup } from "@/components/ui/pill-group";
-import type { CleanupPlan } from "../lib/plan";
 import type { ConfidenceBand } from "../lib/confidence";
-import { PendingChangesSummary } from "./CleanupSummaryCards";
 
 export type CleanupTab = "suggestions" | "unused" | "rule-gaps" | "dismissed";
 
@@ -33,7 +31,6 @@ type Props = {
     review: number;
     hidden: number;
   };
-  plan: CleanupPlan;
 };
 
 const SEARCH_PLACEHOLDERS: Record<CleanupTab, string> = {
@@ -43,7 +40,7 @@ const SEARCH_PLACEHOLDERS: Record<CleanupTab, string> = {
   dismissed: "Search dismissed items…",
 };
 
-/** Search, workflow navigation, and staged work stay together while each list scrolls. */
+/** Search and workflow navigation stay visible while each list scrolls. */
 export function CleanupFilterBar({
   tab,
   onTabChange,
@@ -52,7 +49,6 @@ export function CleanupFilterBar({
   search,
   onSearchChange,
   counts,
-  plan,
 }: Props) {
   const bandFilters: { value: BandFilter; label: string }[] = [
     { value: "all", label: "All " + counts.suggestions },
@@ -105,10 +101,6 @@ export function CleanupFilterBar({
           <PillGroup options={bandFilters} value={band} onChange={onBandChange} />
         </div>
       ) : null}
-
-      <div className="ml-auto">
-        <PendingChangesSummary plan={plan} />
-      </div>
     </div>
   );
 }

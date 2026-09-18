@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { getTransactionCountsForIds } from "@/lib/api/query";
@@ -24,12 +25,18 @@ export function useTransactionCountsForIds(
   groupField: TransactionCountGroupField,
   ids: string[],
   options: { enabled: boolean }
-): { data: Map<string, number> | undefined; isLoading: boolean } {
+): {
+  data: Map<string, number> | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+  error: Error | null;
+  refetch: () => void;
+} {
   const connection = useConnectionStore(selectActiveInstance);
 
   const sortedIds = [...ids].sort();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ["transactionCounts", groupField, connection?.id, sortedIds],
     queryFn: () => {
       if (!connection) throw new Error("No active connection");
@@ -39,6 +46,13 @@ export function useTransactionCountsForIds(
     staleTime: 30_000,
     gcTime: 60_000,
   });
+  const refresh = useCallback(() => void refetch(), [refetch]);
 
-  return { data, isLoading };
+  return {
+    data,
+    isLoading,
+    isFetching,
+    error,
+    refetch: refresh,
+  };
 }

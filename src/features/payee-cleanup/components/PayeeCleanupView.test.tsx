@@ -27,8 +27,13 @@ let candidates: PayeeCleanupCandidate[] = [];
 let stagedRules: Record<string, unknown> = {};
 let transactionCounts: Map<string, number> | undefined = new Map();
 let transactionsLoading = false;
+let impactLoading = false;
+let impactFetching = false;
+let impactError: Error | null = null;
 let mode: "http-api" | "browser-api" = "http-api";
 let isLoading = false;
+let candidatesError: Error | null = null;
+const refetchImpact = jest.fn();
 
 // The impact hook owns the TanStack queries (rules, schedules, transaction
 // counts); this suite is about what the view renders, so it supplies the loaded
@@ -39,6 +44,10 @@ jest.mock("../hooks/usePayeeCleanupImpact", () => ({
     schedules: [],
     transactionCounts,
     transactionsLoading,
+    isLoading: impactLoading,
+    isFetching: impactFetching,
+    error: impactError,
+    refetch: refetchImpact,
   }),
 }));
 
@@ -46,14 +55,17 @@ jest.mock("../hooks/usePayeeCleanupImpact", () => ({
 // lib/suppressions); here the view just needs the calls recorded.
 let importedText: { field: "imported_payee" | "notes"; text: string; payeeId: string | null; transactionCount: number }[] = [];
 let importedTextFetching = false;
+let importedTextLoading = false;
+let importedTextError: Error | null = null;
 let candidatesFetching = false;
 const refetchCandidates = jest.fn();
 const refetchImportedText = jest.fn();
 jest.mock("../hooks/useImportedTextIndex", () => ({
   useImportedTextIndex: () => ({
     rows: importedText,
-    isLoading: false,
+    isLoading: importedTextLoading,
     isFetching: importedTextFetching,
+    error: importedTextError,
     refetch: refetchImportedText,
   }),
 }));
@@ -103,6 +115,10 @@ jest.mock("next/navigation", () => ({
 
 const rejectCluster = jest.fn();
 const rejectRuleGap = jest.fn(() => Promise.resolve("sup-1"));
+const refetchSuppressions = jest.fn();
+let suppressionsLoading = false;
+let suppressionsFetching = false;
+let suppressionsError: Error | null = null;
 const stageMock = jest.fn();
 jest.mock("../hooks/usePayeeCleanupPlan", () => ({
   usePayeeCleanupPlan: () => ({ stage: stageMock, isStaging: false }),
@@ -116,6 +132,10 @@ jest.mock("../hooks/useSuppressions", () => ({
     undo: jest.fn(),
     clearAll: jest.fn(),
     isSaving: false,
+    isLoading: suppressionsLoading,
+    isFetching: suppressionsFetching,
+    error: suppressionsError,
+    refetch: refetchSuppressions,
   }),
 }));
 
@@ -137,7 +157,7 @@ jest.mock("../hooks/usePayeeCleanupCandidates", () => ({
     capabilities: getPayeeCleanupCapabilities({ mode }),
     isLoading,
     isFetching: candidatesFetching,
-    error: null,
+    error: candidatesError,
     refetch: refetchCandidates,
   }),
 }));
@@ -149,6 +169,10 @@ beforeEach(() => {
   stagedRules = {};
   transactionCounts = new Map();
   transactionsLoading = false;
+  impactLoading = false;
+  impactFetching = false;
+  impactError = null;
+  candidatesError = null;
   rejectCluster.mockClear();
   searchParams = new URLSearchParams();
   rejectRuleGap.mockClear();
@@ -158,13 +182,20 @@ beforeEach(() => {
   stageMock.mockReset();
   stageMock.mockResolvedValue({ status: "staged", operations: 1 });
   importedText = [];
+  importedTextLoading = false;
   importedTextFetching = false;
+  importedTextError = null;
   candidatesFetching = false;
+  suppressionsLoading = false;
+  suppressionsFetching = false;
+  suppressionsError = null;
   // Reset, or the rename-rule fixture below is still in the store for every
   // later test — which then passes or fails for a reason it does not state.
   stagedRules = {};
   refetchImportedText.mockClear();
   refetchCandidates.mockClear();
+  refetchImpact.mockClear();
+  refetchSuppressions.mockClear();
 });
 
 /** Deep reasoning is behind an inline toggle; everything else is on the card. */
@@ -207,7 +238,7 @@ describe("PayeeCleanupView", () => {
     // Both live on the toolbar line now — the analyzed count had its own box
     // two inches below itself, and the exclusion note a full sentence.
     expect(
-      screen.getByText(/2 payees analyzed · 1 transfer excluded/)
+      screen.getByText(/2 payees analyzed · 1 transfer payees excluded/)
     ).toBeInTheDocument();
   });
 
@@ -352,6 +383,9 @@ describe("PayeeCleanupView", () => {
     expect(
       screen.getByText(/No duplicate or variant payees found/i)
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Review payees that may be the same merchant/i)
+    ).not.toBeInTheDocument();
   });
 
   it("says plainly that merging does not rewrite rules", () => {
@@ -408,7 +442,9 @@ describe("PayeeCleanupView", () => {
 
     render(<PayeeCleanupView />);
     fireEvent.click(screen.getByRole("button", { name: /unused/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^select all$/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all unused/i })
+    );
 
     expect(
       screen.getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
@@ -417,12 +453,23 @@ describe("PayeeCleanupView", () => {
       screen.getByRole("checkbox", { name: /select Another Old Payee for deletion/i })
     ).toBeChecked();
     expect(screen.getAllByText("Selected for deletion")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: /^clear selection$/i })).toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
+        .closest("li")
+    ).toHaveClass("bg-amber-50/70");
 
-    fireEvent.click(screen.getByRole("button", { name: /^clear selection$/i }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /select all unused/i })
+    );
     expect(
       screen.getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
     ).not.toBeChecked();
+    expect(
+      screen
+        .getByRole("checkbox", { name: /select Old Test Payee for deletion/i })
+        .closest("li")
+    ).not.toHaveClass("bg-amber-50/70");
   });
 
 
@@ -733,6 +780,28 @@ describe("PayeeCleanupView", () => {
     expect(screen.getAllByRole("button", { name: /accepted/i })).toHaveLength(2);
   });
 
+  it("bulk-accepts only safe suggestions visible through the active search", () => {
+    candidates = [
+      payee("GROCERGO 0183"),
+      payee("GROCERGO 0291"),
+      payee("GROCERGO 8442"),
+      payee("TESCO 0001"),
+      payee("TESCO 0002"),
+      payee("TESCO 0003"),
+    ];
+    render(<PayeeCleanupView />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+      target: { value: "GROCERGO" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /accept 1 safe/i }));
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+      target: { value: "" },
+    });
+    expect(screen.getAllByRole("button", { name: /accepted/i })).toHaveLength(1);
+  });
+
   it("offers to combine groups the user has given the same name", () => {
     // Naming two groups the same thing is the user saying those payees are one
     // merchant — the scan could not see it because the names reduce to
@@ -784,7 +853,7 @@ describe("PayeeCleanupView", () => {
 
     // The sentence is built from several nodes, so read the card's text.
     const text = screen.getByRole("article").textContent ?? "";
-    expect(text).toMatch(/Matches 6 ?of this group's past transactions/);
+    expect(text).toMatch(/Matches 6 ?of this group’s past transactions/);
     expect(text).toMatch(/and 1 transaction of/);
     expect(text).toMatch(/Narrow the text, or add that payee to this group/);
   });
@@ -832,6 +901,21 @@ describe("PayeeCleanupView", () => {
     render(<PayeeCleanupView />);
 
     expect(screen.getByText(/1 change is staged and waiting/i)).toBeInTheDocument();
+  });
+
+  it("counts a merge once instead of also counting its staged source deletion", () => {
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
+    pendingPayeeMerges = [
+      { targetId: "p-GROCERGO 0183", mergeIds: ["p-GROCERGO 0291"] },
+    ];
+    stagedPayeeEntries = {
+      "p-GROCERGO 0291": { isNew: false, isUpdated: false, isDeleted: true },
+    };
+
+    render(<PayeeCleanupView />);
+
+    expect(screen.getByText(/1 change is staged and waiting/i)).toBeInTheDocument();
+    expect(screen.queryByText(/2 changes are staged and waiting/i)).not.toBeInTheDocument();
   });
 
   it("lists a curated payee whose imports will not resolve to it again", () => {
@@ -988,10 +1072,12 @@ describe("PayeeCleanupView", () => {
     fireEvent.click(tick);
     expect(tick).toBeChecked();
     expect(screen.getByText("Accepted")).toBeInTheDocument();
+    expect(tick.closest("li")).toHaveClass("bg-emerald-50/70");
 
     fireEvent.click(tick);
     expect(tick).not.toBeChecked();
     expect(screen.queryByText("Accepted")).not.toBeInTheDocument();
+    expect(tick.closest("li")).not.toHaveClass("bg-emerald-50/70");
   });
 
   it("answers the history cap on request, instead of hedging forever", () => {
@@ -1260,8 +1346,7 @@ describe("PayeeCleanupView", () => {
     expect(button).toHaveAttribute("aria-busy", "true");
   });
 
-  it("re-reads the import history too, not just the payees", () => {
-    // Otherwise "Scan again" quietly reuses yesterday's history.
+  it("re-reads every input used by the cleanup scan", () => {
     candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
     render(<PayeeCleanupView />);
 
@@ -1269,6 +1354,22 @@ describe("PayeeCleanupView", () => {
 
     expect(refetchCandidates).toHaveBeenCalled();
     expect(refetchImportedText).toHaveBeenCalled();
+    expect(refetchImpact).toHaveBeenCalled();
+    expect(refetchSuppressions).toHaveBeenCalled();
+  });
+
+  it("surfaces a scan-input failure and retries every input", () => {
+    candidates = [payee("GROCERGO 0183"), payee("GROCERGO 0291")];
+    impactError = new Error("Could not load payee rules");
+    render(<PayeeCleanupView />);
+
+    expect(screen.getByText("Could not load payee rules")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(refetchCandidates).toHaveBeenCalled();
+    expect(refetchImportedText).toHaveBeenCalled();
+    expect(refetchImpact).toHaveBeenCalled();
+    expect(refetchSuppressions).toHaveBeenCalled();
   });
 
   it("follows the link's tab when it changes, not only on first render", () => {
@@ -1326,5 +1427,23 @@ describe("PayeeCleanupView", () => {
     render(<PayeeCleanupView />);
 
     expect(screen.getByRole("searchbox", { name: /search payees/i })).toBeInTheDocument();
+  });
+
+  it("exposes the selected workflow and confidence filters to assistive technology", () => {
+    candidates = [payee("AMAZON"), payee("Amazon")];
+    render(<PayeeCleanupView />);
+
+    expect(screen.getByRole("button", { name: /duplicate payees/i })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: /unused payees/i })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+    expect(screen.getByRole("button", { name: /^all/i })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
   });
 });

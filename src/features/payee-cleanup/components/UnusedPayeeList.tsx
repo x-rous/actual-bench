@@ -1,5 +1,4 @@
 import type { OrphanPayee } from "../lib/orphans";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
@@ -36,61 +35,62 @@ export function UnusedPayeeList({
   }
 
   const allSelected = orphans.every(({ payee }) => selectedPayeeIds.has(payee.id));
-  const selectAllLabel = allSelected
-    ? filtered
-      ? "Clear visible selection"
-      : "Clear selection"
-    : filtered
-      ? "Select all visible"
-      : "Select all";
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          These payees have no transactions or rule references. Bench also checks
-          rule actions, so it may be more cautious than Actual. Select payees to
-          include in the cleanup plan.
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => onSelectAllChange(!allSelected)}
-        >
-          {selectAllLabel}
-        </Button>
-      </div>
-      <ul className="divide-y divide-border/40 rounded-md border border-border/70">
-        {orphans.map(({ payee, reason }) => {
+      <p className="text-xs text-muted-foreground">
+        These payees have no transactions or rule references. Bench also checks
+        rule actions, so it may be more cautious than Actual. Select payees to
+        include in the cleanup plan.
+      </p>
+      <div className="overflow-hidden rounded-md border border-border/70">
+        <div className="flex items-center gap-2 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          <Checkbox
+            id="select-all-unused-payees"
+            checked={allSelected}
+            onCheckedChange={(value) => onSelectAllChange(value === true)}
+            aria-label={filtered ? "Select all visible unused payees" : "Select all unused payees"}
+          />
+          <label htmlFor="select-all-unused-payees" className="cursor-pointer">
+            <span className="sr-only">
+              {filtered ? "Select all visible unused " : "Select all unused "}
+            </span>
+            Payee
+          </label>
+        </div>
+        <ul className="divide-y divide-border/40">
+        {orphans.map(({ payee }) => {
           const selected = selectedPayeeIds.has(payee.id);
+          const checkboxId = `delete-unused-payee-${payee.id}`;
           return (
             <li
               key={payee.id}
               className={cn(
                 "flex items-center justify-between gap-3 px-3 py-2 text-sm",
-                selected && "bg-muted/40"
+                selected && "bg-amber-50/70 dark:bg-amber-950/20"
               )}
             >
-              <span className="flex min-w-0 items-center gap-2">
+              <label htmlFor={checkboxId} className="flex min-w-0 cursor-pointer items-center gap-2">
                 <Checkbox
+                  id={checkboxId}
                   checked={selected}
                   onCheckedChange={(value) => onDeletionChange(payee.id, value === true)}
                   aria-label={`Select ${payee.name} for deletion`}
                 />
                 <span className="truncate">{payee.name}</span>
-              </span>
+              </label>
               <span className="flex shrink-0 items-center gap-2">
                 {selected ? (
                   <span className="rounded-full border border-amber-600/40 bg-amber-500/5 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
                     Selected for deletion
                   </span>
                 ) : null}
-                <span className="text-xs text-muted-foreground">{reason}</span>
               </span>
             </li>
           );
         })}
-      </ul>
+        </ul>
+      </div>
     </div>
   );
 }

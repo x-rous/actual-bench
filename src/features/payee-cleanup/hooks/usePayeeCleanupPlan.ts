@@ -43,6 +43,7 @@ export function usePayeeCleanupPlan() {
   const stageDelete = useStagedStore((s) => s.stageDelete);
   const stageNew = useStagedStore((s) => s.stageNew);
   const pushUndo = useStagedStore((s) => s.pushUndo);
+  const loadPayees = useStagedStore((s) => s.loadPayees);
 
   const [isStaging, setIsStaging] = useState(false);
 
@@ -74,7 +75,44 @@ export function usePayeeCleanupPlan() {
           ])
         );
 
+        // The cleanup route can be opened directly, without visiting the
+        // Payees page that normally initializes this store. Populate it from
+        // the same fresh read used for validation; `loadPayees` preserves any
+        // existing staged edits, which the conflict check below then catches.
+        loadPayees(payees);
+
         const problems = validatePlan(plan, { byId });
+
+        // Cleanup shares the same staged store as the Payees page. Never layer
+        // a cleanup decision over an existing unsaved payee edit: even a
+        // partial update can replace a rename the user already reviewed there.
+        const affectedPayeeIds = new Set([
+          ...plan.merges.flatMap((merge) => [merge.targetId, ...merge.mergeIds]),
+          ...plan.renames.map((rename) => rename.payeeId),
+          ...plan.deletions.map((deletion) => deletion.payeeId),
+          ...plan.rules.map((rule) => rule.targetPayeeId),
+          ...plan.ruleExtensions.map((extension) => extension.targetPayeeId),
+        ]);
+        const stagedPayees = useStagedStore.getState().payees;
+        const conflictingPayeeIds = [...affectedPayeeIds].filter((id) => {
+          const entry = stagedPayees[id];
+          return Boolean(
+            entry && (entry.isNew || entry.isUpdated || entry.isDeleted)
+          );
+        });
+        if (conflictingPayeeIds.length > 0) {
+          const names = conflictingPayeeIds
+            .map((id) => stagedPayees[id]?.entity.name ?? byId.get(id)?.name ?? id)
+            .map((name) => `"${name}"`)
+            .join(", ");
+          problems.push({
+            severity: "blocking",
+            payeeIds: conflictingPayeeIds,
+            message: `${names} already ${
+              conflictingPayeeIds.length === 1 ? "has" : "have"
+            } unsaved payee changes. Save or undo them before staging this cleanup.`,
+          });
+        }
 
         if (plan.deletions.length > 0) {
           // The Unused tab is a scan result, not a permanent property. Overlay
@@ -221,7 +259,15 @@ export function usePayeeCleanupPlan() {
         setIsStaging(false);
       }
     },
-    [connection, pushUndo, stageDelete, stageNew, stagePayeeMerge, stageUpdate]
+    [
+      connection,
+      loadPayees,
+      pushUndo,
+      stageDelete,
+      stageNew,
+      stagePayeeMerge,
+      stageUpdate,
+    ]
   );
 
   return { stage, isStaging };
