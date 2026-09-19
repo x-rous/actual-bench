@@ -19,8 +19,8 @@ they are created.
 ## Before you start
 
 You need a statement file and the Actual account to compare it with. Supported files are CSV, TSV,
-OFX, QFX, and QIF. The file format is detected from its contents, so an OFX export saved as `.txt`
-still imports as OFX.
+OFX, QFX, QIF, and text-based PDF statements. OFX and QIF are detected from their contents, so an
+OFX export saved as `.txt` still imports as OFX.
 
 Each session covers one account. It is stored in Actual Bench, so you can close the tab and return
 later. No bank connection, bank credentials, or separate setup is required.
@@ -28,7 +28,8 @@ later. No bank connection, bank credentials, or separate setup is required.
 ## The workflow
 
 1. Start a session and select the Actual account. Add a tag if it will help you find the session later.
-2. Import the statement. For CSV or TSV, confirm the date, amount, payee, and notes columns.
+2. Import the statement. For CSV or TSV, confirm the date, amount, payee, and notes columns. For a
+   PDF, review and correct the extracted transactions before importing them.
 3. Review automatic matches and decide what to do with every difference.
 4. Check the planned changes on **Review**.
 5. Select **Apply** to write the approved changes. Actual Bench checks affected transactions again
@@ -51,6 +52,105 @@ Paste a statement or upload a file. The import screen shows the parsed rows befo
 For CSV and TSV files, correct the mapping if needed. For example, map separate debit and credit
 columns when the bank does not supply one signed amount column. Check the date format and sign
 convention before matching.
+
+### Import a PDF statement
+
+Select a PDF to read it in your browser. Actual Bench uses PDF.js locally. It does not upload or
+store the PDF. If the file has a password, enter it when prompted; the password remains in memory
+only.
+
+The review workbench has three sections:
+
+- **Adjust detection settings** shows the positioned PDF text, detected transaction regions, and column
+  boundaries. Each mapped column uses a separate color and role label. Include or exclude regions,
+  draw a missed transaction region, change a column role, or drag its boundaries. The examples under
+  each mapping update from matching values inside its current boundary. You can also set the account
+  type, statement currency and period, date and number formats, import date, and the direction rule
+  for unsigned amounts. Select **Preview changes**, then **Apply detection changes**. This reuses the
+  extracted file and preserves your row corrections.
+- **Review transactions** shows the extracted rows. Negative amounts are money out and positive
+  amounts are money in. Edit a date, description, amount, or currency directly. Select the sign to
+  reverse one row, or select several rows to set their direction, mark valid warnings as reviewed,
+  merge them, or ignore them. Actions for selected rows appear in the fixed footer. Rows with missing
+  or invalid required values cannot be marked reviewed.
+- **Diagnostics** shows aggregate parser events and profile match details. It does not show statement
+  text.
+
+Actual Bench opens **Review transactions** when the initial result is mostly usable and no saved
+profile needs confirmation. If more than half of the proposed transactions are rejected, or a saved
+profile match needs checking, it opens **Adjust detection settings** first. After you apply detection
+changes, it moves to transaction review.
+
+Detection profiles are grouped by bank and shared across budgets and accounts. For example, **HSBC
+Bank** can have separate **Credit card** and **Checking** profiles. The bank name organizes the list;
+Actual does not identify which bank owns an account. Assign the required profile directly to each
+account. Selecting a profile applies it to the current statement only. Select **Use for this
+account** to save that assignment. A strong assigned profile is applied before the initial
+result is shown. If it is only a possible match, the workbench opens detection settings and asks you
+to check the differences. Weak or conflicting matches stay unapplied instead of forcing the saved
+mapping onto the statement.
+
+To create or update a profile, apply the detection changes, select **Save profile**, and enter the
+bank and profile names. You can assign it to the current account when you save it. A profile can be
+saved only when it has no rejected transactions. Select **Manage profiles** to change
+an account assignment, rename a bank or profile, or delete a profile. Removing an assignment returns
+the account to automatic detection. A profile stores parser settings, geometry, and privacy-safe
+layout information; it does not store the PDF or transaction text.
+
+Transaction date is the default import date. If the statement has posting or value dates, they stay
+separate and appear when those columns are mapped. Posting and value dates are optional. If you
+remove one of their mappings, it is no longer validated or included in row warnings. The check in a
+date-column header identifies the date that will be imported. The Balance column appears only when a
+balance column is mapped and at least one balance was read.
+
+Use the row status icon and review filters to find structural, date, amount, direction, balance, and
+duplicate issues. Select an eye icon to see the source text for a field. A rejected row is missing a
+required value and cannot be imported. A review row contains a visible assumption or warning; select
+**Mark reviewed** only after checking it against the statement. Correcting a required field removes
+that error as soon as the row is valid. A row cannot be marked reviewed while a required field is
+still invalid.
+
+Possible duplicates remain included. Mark both reviewed when they are separate transactions, or
+ignore the repeated row. Ignored rows can be restored from **Adjust detection**. A dated row inside a
+detected or manually selected transaction table remains available for correction even when its amount
+cannot be read.
+
+The parser recognizes signed and parenthesized amounts, mixed-case `DR` and `CR` markers, separate
+debit and credit columns, and one **Amount** column where a suffix such as `113.61CR` marks money in
+and an unmarked value means money out. Choose the matching amount-direction rule before previewing
+the change. Automatic column mapping first identifies the transaction table. It uses the table's own
+printed header when available; content-based roles require supporting values across repeated
+transaction rows. Account details, credit limits, payment summaries, opening and closing balances,
+balance-forward rows, totals, and other page content
+do not create transaction-column mappings. An uncertain role remains unmapped for you to set in
+**Adjust detection**. A valid date in the mapped date column starts a transaction block. When a
+statement prints a date once for several transactions, a later complete transaction row can inherit
+that date and is marked for review. Description, original-amount, fee, VAT, and final-total lines stay
+in the current block until the next transaction starts. Standalone fee or tax rows remain separate
+when their amount and balance show that they changed the account. The parser uses the mapped final
+account amount and flags competing candidates for review. It also combines multiple mapped narrative
+columns, recognizes explicit debit and credit sections, and uses only running balances for
+reconciliation; available or periodic balances are not treated as ledger movements. It supports
+common US, European,
+space-grouped, Indian, Swiss, Arabic-digit, and East Asian number layouts. Ambiguous dates, signs,
+currencies, and row boundaries
+require review only when the statement-level evidence cannot resolve them. For example, unambiguous
+dates in each mapped date column establish whether later values use day/month or month/day order.
+Statement periods can supply missing years across December and January. The account type alone is
+never used to guess whether an amount is money in or money out.
+
+Actual transactions use two decimal places. The parser preserves higher precision from the PDF, but
+blocks import when converting it would lose a meaningful decimal digit. Correct the amount using the
+value that should be stored in Actual before continuing.
+
+Select **Use reviewed transactions** only after every row is ready. The rows then use the same import
+preview, matching, review, and Apply steps as other statement formats. Select **Review PDF parsing**
+on the import page to reopen the workbench before continuing.
+
+Scanned or image-only PDFs have no usable text layer, and OCR is not included. A damaged page is
+reported instead of being silently ignored. Large files are limited by file size, page count, text
+item count, and processing time so they cannot keep the browser busy indefinitely. Use CSV, OFX,
+QFX, or QIF when the bank can provide a structured export.
 
 ![The import screen: statement source, date and amount conventions and matching options on the left, the whole parsed statement on the right with its column mapping.](../../../assets/screenshots/user-guide/recon-import.png)
 
@@ -83,8 +183,10 @@ mapping; matching always compares the statement with the current state of Actual
 
 ### Reconciliation profiles
 
-Save an account-specific profile when you import the same statement layout regularly. A profile keeps
-the column mapping, date and amount conventions, payee and memo choices, and matching options.
+For CSV and other structured files, save an account-specific reconciliation profile to keep the
+column mapping, date and amount conventions, payee and memo choices, and matching options. PDF
+detection profiles are separate: they are global, grouped by bank, and configured in **Adjust
+detection settings** as described above.
 
 ### Import details
 

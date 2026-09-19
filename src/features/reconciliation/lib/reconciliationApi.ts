@@ -14,6 +14,11 @@ import type {
   ReconciliationStatementFormat,
   ReconciliationStatementRowRecord,
 } from "@/lib/app-db/reconciliationRepository";
+import type {
+  PdfDetectionBankRecord,
+  PdfDetectionProfileCatalog,
+  PdfDetectionProfileRecord,
+} from "@/lib/app-db/pdfDetectionProfileRepository";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -132,7 +137,73 @@ export function saveProfile(payload: {
   });
 }
 
+export function listPdfDetectionProfiles(budgetSyncId: string, accountId: string) {
+  const params = new URLSearchParams({ budgetSyncId, accountId });
+  return request<PdfDetectionProfileCatalog>(
+    `/api/reconciliation/pdf-detection-profiles?${params.toString()}`
+  );
+}
+
+export function savePdfDetectionProfile(payload: {
+  budgetSyncId: string;
+  accountId: string;
+  bankName: string;
+  profileName: string;
+  profile: unknown;
+  assignToAccount?: boolean;
+}) {
+  return request<{ bank: PdfDetectionBankRecord; profile: PdfDetectionProfileRecord }>(
+    "/api/reconciliation/pdf-detection-profiles",
+    { method: "POST", body: JSON.stringify(payload) }
+  );
+}
+
+export function assignPdfDetectionProfile(payload: {
+  budgetSyncId: string;
+  accountId: string;
+  profileId: string;
+}) {
+  return request<void>("/api/reconciliation/pdf-detection-profiles", {
+    method: "PATCH",
+    body: JSON.stringify({ action: "associate-profile", ...payload }),
+  });
+}
+
+export function removePdfDetectionAccountAssociation(payload: {
+  budgetSyncId: string;
+  accountId: string;
+}) {
+  return request<void>("/api/reconciliation/pdf-detection-profiles", {
+    method: "PATCH",
+    body: JSON.stringify({ action: "remove-account-association", ...payload }),
+  });
+}
+
+export function renamePdfDetectionBank(payload: { bankId: string; name: string }) {
+  return request<{ bank: PdfDetectionBankRecord }>(
+    "/api/reconciliation/pdf-detection-profiles",
+    { method: "PATCH", body: JSON.stringify({ action: "rename-bank", ...payload }) }
+  );
+}
+
+export function renamePdfDetectionProfile(payload: { profileId: string; name: string }) {
+  return request<{ profile: PdfDetectionProfileRecord }>(
+    "/api/reconciliation/pdf-detection-profiles",
+    { method: "PATCH", body: JSON.stringify({ action: "rename-profile", ...payload }) }
+  );
+}
+
+export function deletePdfDetectionProfile(profileId: string) {
+  const params = new URLSearchParams({ profileId });
+  return request<void>(`/api/reconciliation/pdf-detection-profiles?${params.toString()}`, {
+    method: "DELETE",
+  });
+}
+
 export type {
+  PdfDetectionBankRecord,
+  PdfDetectionProfileCatalog,
+  PdfDetectionProfileRecord,
   ReconciliationItemRecord,
   ReconciliationProfileRecord,
   ReconciliationSessionRecord,

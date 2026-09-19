@@ -29,7 +29,7 @@ export type StatementDateFormat =
 export type SignConvention = "signed" | "debit-credit" | "signed-inverted";
 
 /** Which source format a statement was read from (RD-072 §2.5). */
-export type StatementFormat = "delimited" | "ofx" | "qif";
+export type StatementFormat = "delimited" | "ofx" | "qif" | "pdf";
 
 /**
  * Which column carries what, for a delimited statement.
@@ -127,7 +127,7 @@ export const DEFAULT_PARSE_CONFIG: StatementParseConfig = {
   fallbackPayeeToMemo: true,
 };
 
-const STATEMENT_FORMATS: StatementFormat[] = ["delimited", "ofx", "qif"];
+const STATEMENT_FORMATS: StatementFormat[] = ["delimited", "ofx", "qif", "pdf"];
 const STATEMENT_DATE_FORMATS: StatementDateFormat[] = [
   "iso",
   "dmy",

@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
+import { DEFAULT_PDF_PARSER_GUIDANCE } from "@/lib/reconciliation/statement/pdf/model";
 import { getAppDb, resetAppDbForTests } from "./connection";
 import { getBackupCredential, upsertBackupCredential } from "./backupCredentialRepository";
-import { LATEST_SCHEMA_VERSION } from "./migrations";
+import { LATEST_SCHEMA_VERSION, runMigrations } from "./migrations";
 import {
   getReconciliationSession,
   listReconciliationProfiles,
@@ -30,6 +31,10 @@ import {
   listBackupDestinations,
   recordArtifactLocation,
 } from "./backupRepository";
+import {
+  listPdfDetectionProfileCatalog,
+  savePdfDetectionProfile,
+} from "./pdfDetectionProfileRepository";
 
 /**
  * Upgrading a database that already holds real work.
@@ -485,6 +490,95 @@ describe("upgrading an existing database", () => {
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds direct account PDF profile assignments without changing existing reconciliation work (v28)", () => {
+    const { root, path } = olderDatabase();
+    try {
+      const db = getAppDb(path);
+      const envelope = {
+        kind: "pdf-layout-v2",
+        profile: {
+          id: "layout-1",
+          name: "Credit card",
+          parserVersion: 2,
+          profileVersion: 1,
+          fingerprint: "privacy-safe-shape",
+          guidance: DEFAULT_PDF_PARSER_GUIDANCE,
+          createdAt: "2026-09-19T00:00:00.000Z",
+          supersedesProfileId: null,
+          sourcePage: { width: 600, height: 800 },
+        },
+      };
+      savePdfDetectionProfile(db, {
+        budgetSyncId: "budget-1",
+        accountId: "acct-1",
+        bankName: "HSBC Bank",
+        profileName: "Credit card",
+        profile: envelope,
+        assignToAccount: true,
+      });
+
+      const catalog = listPdfDetectionProfileCatalog(db, "budget-1", "acct-1");
+      expect(catalog.profiles).toHaveLength(1);
+      expect(catalog.accountProfileId).toBe(catalog.profiles[0]?.id);
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("freezes legacy bank-default associations to direct profile assignments (v28)", () => {
+    const db = new Database(":memory:");
+    try {
+      db.pragma("foreign_keys = ON");
+      db.exec(`
+        CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+        CREATE TABLE pdf_detection_banks (
+          id text PRIMARY KEY,
+          name text NOT NULL,
+          default_profile_id text,
+          created_at text NOT NULL,
+          updated_at text NOT NULL
+        );
+        CREATE TABLE pdf_detection_profiles (
+          id text PRIMARY KEY,
+          bank_id text NOT NULL REFERENCES pdf_detection_banks(id) ON DELETE CASCADE,
+          name text NOT NULL,
+          profile_json text NOT NULL,
+          created_at text NOT NULL,
+          updated_at text NOT NULL
+        );
+        CREATE TABLE pdf_detection_account_banks (
+          budget_sync_id text NOT NULL,
+          account_id text NOT NULL,
+          bank_id text NOT NULL REFERENCES pdf_detection_banks(id) ON DELETE CASCADE,
+          preferred_profile_id text REFERENCES pdf_detection_profiles(id) ON DELETE SET NULL,
+          updated_at text NOT NULL,
+          PRIMARY KEY(budget_sync_id, account_id)
+        );
+        INSERT INTO app_meta VALUES ('schema_version', '27', '2026-09-19T00:00:00.000Z');
+        INSERT INTO pdf_detection_banks VALUES ('bank', 'HSBC Bank', 'card', '2026-09-19T00:00:00.000Z', '2026-09-19T00:00:00.000Z');
+        INSERT INTO pdf_detection_profiles VALUES ('card', 'bank', 'Credit card', '{}', '2026-09-19T00:00:00.000Z', '2026-09-19T00:00:00.000Z');
+        INSERT INTO pdf_detection_profiles VALUES ('checking', 'bank', 'Checking', '{}', '2026-09-19T00:00:00.000Z', '2026-09-19T00:00:00.000Z');
+        INSERT INTO pdf_detection_account_banks VALUES ('budget-a', 'card-account', 'bank', NULL, '2026-09-19T00:00:00.000Z');
+        INSERT INTO pdf_detection_account_banks VALUES ('budget-b', 'checking-account', 'bank', 'checking', '2026-09-19T00:00:00.000Z');
+      `);
+
+      runMigrations(db);
+
+      expect(db.prepare(
+        `SELECT budget_sync_id, account_id, profile_id
+           FROM pdf_detection_account_profiles
+          ORDER BY budget_sync_id`
+      ).all()).toEqual([
+        { budget_sync_id: "budget-a", account_id: "card-account", profile_id: "card" },
+        { budget_sync_id: "budget-b", account_id: "checking-account", profile_id: "checking" },
+      ]);
+    } finally {
+      db.close();
     }
   });
 

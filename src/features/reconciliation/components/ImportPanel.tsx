@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InfoHint } from "@/components/ui/info-hint";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, FileText, Upload, X } from "lucide-react";
+import { AlertTriangle, FileText, LoaderCircle, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,6 +17,7 @@ import { CSV_MAX_BYTES } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
 import {
   fingerprintStatement,
+  DEFAULT_PARSE_CONFIG,
   normalizeParseConfig,
   type NormalizedStatement,
   type SignConvention,
@@ -30,15 +31,40 @@ import {
   detectStatementFormat,
   hasAmbiguousDates,
   parseStatement,
+  type ParsedStatement,
 } from "@/lib/reconciliation/statement/source";
+import {
+  extractPdfStatement,
+  parsePdfStatementOffMainThread,
+  PDF_MAX_BYTES,
+  type PdfExtractionProgress,
+} from "@/lib/reconciliation/statement/pdfClient";
+import {
+  createPdfLayoutProfile,
+  guidanceFromPdfLayoutProfile,
+  isPdfLayoutProfileEnvelope,
+  matchPdfLayoutProfile,
+  type PdfLayoutProfileEnvelope,
+  type PdfStatementParseResult,
+} from "@/lib/reconciliation/statement/pdf";
+import {
+  normalizeReviewedPdfStatement,
+  type ReviewedPdfTransaction,
+} from "@/lib/reconciliation/statement/pdfNormalize";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import { composeNotes } from "@/lib/reconciliation/session/prospective";
 import type { MatchConfig, StatementRow } from "@/lib/reconciliation/types";
 import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
-import type { ReconciliationProfileRecord } from "../lib/reconciliationApi";
+import type {
+  PdfDetectionBankRecord,
+  PdfDetectionProfileCatalog,
+  PdfDetectionProfileRecord,
+  ReconciliationProfileRecord,
+} from "../lib/reconciliationApi";
 import type { ReconciliationSessionStatus } from "@/lib/app-db/reconciliationRepository";
 import { MatchOptions } from "./MatchOptions";
 import { NewTransactionOptions } from "./NewTransactionOptions";
+import { PdfStatementReviewDialog } from "./PdfStatementReviewDialog";
 import { formatMinorUnits } from "../lib/format";
 
 /**
@@ -72,7 +98,7 @@ const SIGN_CONVENTIONS: { value: SignConvention; label: string }[] = [
 ];
 
 /** What the file picker offers, and what the paste box can also be. */
-const ACCEPTED_EXTENSIONS = ".csv,.tsv,.txt,.ofx,.qfx,.qif";
+const ACCEPTED_EXTENSIONS = ".csv,.tsv,.txt,.ofx,.qfx,.qif,.pdf";
 
 /**
  * Where the Notes column is headed, in three words.
@@ -210,8 +236,23 @@ export type ImportPanelProps = {
   profiles: ReconciliationProfileRecord[];
   onMatchConfigChange: (preset: TextTargetPreset, config: MatchConfig) => void;
   onApplyProfile: (profile: ReconciliationProfileRecord) => void;
-  onSaveProfile: (name: string, parseConfig: StatementParseConfig) => void;
+  onSaveProfile: (name: string, mapping: unknown) => void;
   isSavingProfile?: boolean;
+  /** Global bank layouts and this account's optional bank association. */
+  pdfDetectionCatalog?: PdfDetectionProfileCatalog;
+  onSavePdfDetectionProfile?: (input: {
+    bankName: string;
+    profileName: string;
+    profile: PdfLayoutProfileEnvelope;
+    assignToAccount?: boolean;
+  }) => Promise<{ bank: PdfDetectionBankRecord; profile: PdfDetectionProfileRecord }>;
+  onAssignPdfDetectionProfile?: (profileId: string) => Promise<unknown>;
+  onRemovePdfDetectionAccountAssociation?: () => Promise<unknown>;
+  onRenamePdfDetectionBank?: (bankId: string, name: string) => Promise<unknown>;
+  onRenamePdfDetectionProfile?: (profileId: string, name: string) => Promise<unknown>;
+  onDeletePdfDetectionProfile?: (profileId: string) => Promise<unknown>;
+  isSavingPdfDetectionProfile?: boolean;
+  isLoadingPdfDetectionProfiles?: boolean;
   /**
    * The statement this session already holds, when re-importing.
    *
@@ -262,6 +303,15 @@ export function ImportPanel({
   onApplyProfile,
   onSaveProfile,
   isSavingProfile,
+  pdfDetectionCatalog,
+  onSavePdfDetectionProfile,
+  onAssignPdfDetectionProfile,
+  onRemovePdfDetectionAccountAssociation,
+  onRenamePdfDetectionBank,
+  onRenamePdfDetectionProfile,
+  onDeletePdfDetectionProfile,
+  isSavingPdfDetectionProfile,
+  isLoadingPdfDetectionProfiles = false,
   previousStatement,
   onReadyChange,
   knownStatements,
@@ -273,27 +323,74 @@ export function ImportPanel({
   const [appliedProfileId, setAppliedProfileId] = useState<string | null>(null);
   const [profileName, setProfileName] = useState("");
   const [rawOpen, setRawOpen] = useState(false);
+  const [pdfStatement, setPdfStatement] = useState<NormalizedStatement | null>(null);
+  const [pdfDraft, setPdfDraft] = useState<PdfStatementParseResult | null>(null);
+  const [pdfDraftName, setPdfDraftName] = useState("");
+  const [pdfDraftSequence, setPdfDraftSequence] = useState(0);
+  const [appliedPdfProfileId, setAppliedPdfProfileId] = useState<string | null>(null);
+  const [pdfProfileNotice, setPdfProfileNotice] = useState<string | null>(null);
+  const [pdfReviewOpen, setPdfReviewOpen] = useState(false);
+  const [isReadingPdf, setIsReadingPdf] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<PdfExtractionProgress | null>(null);
+  const pdfAbortRef = useRef<AbortController | null>(null);
+  const [passwordPrompt, setPasswordPrompt] = useState<{
+    reason: "required" | "incorrect";
+    resolve: (password: string | null) => void;
+  } | null>(null);
+  const [pdfPassword, setPdfPassword] = useState("");
 
-  const source = useMemo(() => (text.trim() ? { text, fileName } : null), [text, fileName]);
+  useEffect(() => () => {
+    pdfAbortRef.current?.abort();
+  }, []);
+  const pdfProfileOptions = useMemo(() => (pdfDetectionCatalog?.profiles ?? []).flatMap((record) => {
+    if (!isPdfLayoutProfileEnvelope(record.profile)) return [];
+    const bank = pdfDetectionCatalog?.banks.find((entry) => entry.id === record.bankId);
+    if (!bank) return [];
+    return [{
+      recordId: record.id,
+      bankId: bank.id,
+      bankName: bank.name,
+      envelope: record.profile,
+    }];
+  }), [pdfDetectionCatalog]);
+  const importProfiles = useMemo(
+    () => profiles.filter((profile) => !isPdfLayoutProfileEnvelope(profile.mapping)),
+    [profiles]
+  );
+
+  const accountPdfProfile = useMemo(() => {
+    const profileId = pdfDetectionCatalog?.accountProfileId;
+    return pdfProfileOptions.find((entry) => entry.recordId === profileId) ?? null;
+  }, [pdfDetectionCatalog, pdfProfileOptions]);
+
+  const source = useMemo(
+    () => (pdfStatement ? null : text.trim() ? { text, fileName } : null),
+    [pdfStatement, text, fileName]
+  );
 
   // What the file *is*, decided from its content and name — not from whatever
   // the last profile happened to be about. A saved CSV profile applied to an
   // OFX export must not read it as a table of one enormous column.
-  const detectedFormat = useMemo(() => (source ? detectStatementFormat(source) : null), [source]);
+  const detectedFormat = useMemo(
+    () => (pdfStatement ? "pdf" : source ? detectStatementFormat(source) : null),
+    [pdfStatement, source]
+  );
 
   // Seeded by detection the first time a statement appears. Getting the
   // debit/credit case wrong here signs every outflow positive, and since
   // matching requires the exact signed amount, nothing would match at all.
   const effectiveConfig = useMemo<StatementParseConfig | null>(() => {
+    if (pdfStatement) return { ...DEFAULT_PARSE_CONFIG, format: "pdf" };
     if (!source || !detectedFormat) return null;
     if (config && config.format === detectedFormat) return config;
     return detectParseConfig(source);
-  }, [source, detectedFormat, config]);
+  }, [pdfStatement, source, detectedFormat, config]);
 
-  const parsed = useMemo(() => {
+  const parsed = useMemo<ParsedStatement | null>(() => {
+    if (pdfStatement) return { ...pdfStatement, format: "pdf", table: null };
     if (!source || !effectiveConfig) return null;
     return parseStatement(source, effectiveConfig, () => generateId());
-  }, [source, effectiveConfig]);
+  }, [pdfStatement, source, effectiveConfig]);
 
   const table = parsed?.table ?? null;
   const isDelimited = effectiveConfig?.format === "delimited";
@@ -354,22 +451,101 @@ export function ImportPanel({
     onApplyProfile(profile);
   }
 
-  const appliedProfile = profiles.find((profile) => profile.id === appliedProfileId) ?? null;
-  const suggestedProfile = profiles[0] ?? null;
+  const appliedProfile = importProfiles.find((profile) => profile.id === appliedProfileId) ?? null;
+  const suggestedProfile = importProfiles[0] ?? null;
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
     setFileError(null);
-    if (file.size > CSV_MAX_BYTES) {
-      setFileError(`That file is larger than ${Math.round(CSV_MAX_BYTES / 1024 / 1024)} MB.`);
+    const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+    const maxBytes = isPdf ? PDF_MAX_BYTES : CSV_MAX_BYTES;
+    if (file.size > maxBytes) {
+      setFileError(`That file is larger than ${Math.round(maxBytes / 1024 / 1024)} MB.`);
       return;
     }
+    if (isPdf) {
+      pdfAbortRef.current?.abort();
+      const controller = new AbortController();
+      pdfAbortRef.current = controller;
+      setIsReadingPdf(true);
+      setPdfProfileNotice(null);
+      try {
+        let draft = await extractPdfStatement(file, {
+          signal: controller.signal,
+          onProgress: setPdfProgress,
+          requestPassword: (reason) => new Promise((resolve) => {
+            setPdfPassword("");
+            setPasswordPrompt({ reason, resolve });
+          }),
+        });
+        let initialPdfProfileId: string | null = null;
+        if (accountPdfProfile) {
+          const match = matchPdfLayoutProfile(
+            accountPdfProfile.envelope.profile,
+            draft.reconstructedPages,
+            draft.activeSchema
+          );
+          if (match.outcome === "strong" || match.outcome === "possible") {
+            draft = await parsePdfStatementOffMainThread(draft.document, {
+              guidance: guidanceFromPdfLayoutProfile(accountPdfProfile.envelope.profile, draft),
+            }, controller.signal);
+            initialPdfProfileId = accountPdfProfile.recordId;
+            if (match.outcome === "possible") {
+              setPdfProfileNotice(
+                `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name} was applied, but the layout differs from the saved version. Check the detection settings.`
+              );
+            }
+          } else {
+            setPdfProfileNotice(
+              `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name} was not applied because this statement does not match it closely enough.`
+            );
+          }
+        }
+        setPdfDraft(draft);
+        setAppliedPdfProfileId(initialPdfProfileId);
+        setPdfDraftName(file.name);
+        setPdfDraftSequence((current) => current + 1);
+        setPdfReviewOpen(true);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setFileError(error instanceof Error ? `Could not read that PDF: ${error.message}` : "Could not read that PDF.");
+        }
+      } finally {
+        if (pdfAbortRef.current === controller) pdfAbortRef.current = null;
+        setPdfProgress(null);
+        setIsReadingPdf(false);
+      }
+      return;
+    }
+
     setText(await file.text());
     setFileName(file.name);
+    setPdfStatement(null);
     // A new file is a new shape: settings chosen for the previous one — column
     // indexes above all — would silently mis-read it.
     setConfig(null);
     setAppliedProfileId(null);
+  }
+
+  function importReviewedPdf(
+    rows: ReviewedPdfTransaction[],
+    reviewedResult: PdfStatementParseResult
+  ) {
+    const normalized = normalizeReviewedPdfStatement(rows, () => generateId());
+    // The dialog prevents invalid rows. Keep the boundary result defensive in
+    // case a future caller bypasses it, rather than replacing a working import
+    // with an unusable statement.
+    if (normalized.errors.length > 0 || normalized.rows.length === 0) {
+      setFileError("Check every PDF row before importing it.");
+      return;
+    }
+    setPdfStatement(normalized);
+    setPdfDraft(reviewedResult);
+    setText("");
+    setFileName(pdfDraftName);
+    setConfig(null);
+    setAppliedProfileId(null);
+    setPdfReviewOpen(false);
   }
 
   const totals = parsed?.totals;
@@ -465,13 +641,14 @@ export function ImportPanel({
   const columnCount = splitAmounts ? 6 : 5;
 
   const uploadControl = (
-    <label className="inline-flex h-7 cursor-pointer items-center rounded-md border border-input px-2.5 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-within:ring-2 focus-within:ring-ring">
+    <label className={cn("inline-flex h-7 items-center rounded-md border border-input px-2.5 text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-ring", isLoadingPdfDetectionProfiles ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground")}>
       <Upload className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-      {statementLabel ? "Change statement" : "Upload a statement"}
+      {isReadingPdf ? "Reading PDF…" : statementLabel ? "Change statement" : "Upload a statement"}
       <input
         type="file"
         accept={ACCEPTED_EXTENSIONS}
         className="sr-only"
+        disabled={isReadingPdf || isLoadingPdfDetectionProfiles}
         onChange={(event) => void handleFile(event.target.files?.[0])}
       />
     </label>
@@ -510,6 +687,55 @@ export function ImportPanel({
     </Dialog>
   );
 
+  const passwordDialog = (
+    <Dialog
+      open={Boolean(passwordPrompt)}
+      onOpenChange={(open) => {
+        if (open || !passwordPrompt) return;
+        passwordPrompt.resolve(null);
+        setPasswordPrompt(null);
+      }}
+    >
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Unlock PDF statement</DialogTitle>
+          <DialogDescription>
+            {passwordPrompt?.reason === "incorrect"
+              ? "That password did not open the PDF. Try again."
+              : "Enter the statement password. It stays in memory and is not saved."}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!passwordPrompt || !pdfPassword) return;
+            passwordPrompt.resolve(pdfPassword);
+            setPasswordPrompt(null);
+            setPdfPassword("");
+          }}
+        >
+          <Label htmlFor="pdf-password">PDF password</Label>
+          <input
+            id="pdf-password"
+            type="password"
+            autoFocus
+            value={pdfPassword}
+            onChange={(event) => setPdfPassword(event.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3"
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => {
+              passwordPrompt?.resolve(null);
+              setPasswordPrompt(null);
+            }}>Cancel</Button>
+            <Button type="submit" disabled={!pdfPassword}>Unlock</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+
   const sourceSection = (
     <Section
       title="Statement source"
@@ -543,17 +769,36 @@ export function ImportPanel({
           )}
           <div className="flex flex-wrap items-center gap-2">
             {uploadControl}
-            <Button variant="ghost" size="sm" className="h-7" onClick={() => setRawOpen(true)}>
-              <FileText className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-              {fileName ? "View raw statement" : "Edit pasted statement"}
-            </Button>
+            {effectiveConfig?.format !== "pdf" && (
+              <Button variant="ghost" size="sm" className="h-7" onClick={() => setRawOpen(true)}>
+                <FileText className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                {fileName ? "View raw statement" : "Edit pasted statement"}
+              </Button>
+            )}
+            {effectiveConfig?.format === "pdf" && pdfDraft && (
+              <Button variant="ghost" size="sm" className="h-7" onClick={() => setPdfReviewOpen(true)}>
+                <FileText className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+                Review PDF parsing
+              </Button>
+            )}
           </div>
         </>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
             {uploadControl}
-            <span className="text-[11px] text-muted-foreground">CSV, TSV, OFX, QFX or QIF</span>
+            {isReadingPdf && (
+              <>
+                <LoaderCircle className="size-3.5 animate-spin text-muted-foreground" aria-label="Reading PDF" />
+                <span className="text-[11px] text-muted-foreground">
+                  {pdfProgress?.phase === "extracting" && pdfProgress.totalPages > 0
+                    ? `Page ${pdfProgress.completedPages} of ${pdfProgress.totalPages}`
+                    : pdfProgress?.phase === "parsing" ? "Building transactions…" : "Opening PDF…"}
+                </span>
+                <Button size="xs" variant="ghost" onClick={() => pdfAbortRef.current?.abort()}>Cancel</Button>
+              </>
+            )}
+            <span className="text-[11px] text-muted-foreground">CSV, TSV, OFX, QFX, QIF or PDF</span>
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="statement-text" className="text-xs">
@@ -564,6 +809,7 @@ export function ImportPanel({
               value={text}
               onChange={(event) => {
                 setText(event.target.value);
+                setPdfStatement(null);
                 setConfig(null);
                 setFileName(null);
               }}
@@ -584,7 +830,7 @@ export function ImportPanel({
     </Section>
   );
 
-  const readingSection = effectiveConfig && (
+  const readingSection = effectiveConfig && effectiveConfig.format !== "pdf" && (
     <Section title="How this file is read">
       {effectiveConfig.format !== "ofx" && (
         <FieldRow
@@ -798,11 +1044,67 @@ export function ImportPanel({
       )}
 
       {rawStatementDialog}
+      {passwordDialog}
+      <PdfStatementReviewDialog
+        key={pdfDraftSequence}
+        fileName={pdfDraftName}
+        result={pdfDraft}
+        accountName={accountName}
+        banks={pdfDetectionCatalog?.banks ?? []}
+        profiles={pdfProfileOptions}
+        activeProfileId={appliedPdfProfileId}
+        accountProfileId={pdfDetectionCatalog?.accountProfileId ?? null}
+        profileNotice={pdfProfileNotice}
+        open={pdfReviewOpen}
+        onOpenChange={setPdfReviewOpen}
+        onImport={importReviewedPdf}
+        onProfileChange={(option) => {
+          setAppliedPdfProfileId(option?.recordId ?? null);
+          setPdfProfileNotice(null);
+        }}
+        onAssignProfile={onAssignPdfDetectionProfile}
+        onRemoveAccountAssignment={onRemovePdfDetectionAccountAssociation}
+        onRenameBank={onRenamePdfDetectionBank}
+        onRenameProfile={onRenamePdfDetectionProfile}
+        onDeleteProfile={onDeletePdfDetectionProfile}
+        isSavingProfile={isSavingPdfDetectionProfile}
+        onSaveProfile={async ({ bankName, profileName, assignToAccount, result }) => {
+          if (!onSavePdfDetectionProfile) return;
+          const existingOption = pdfProfileOptions.find((option) =>
+            option.bankName.localeCompare(bankName, undefined, { sensitivity: "accent" }) === 0
+            && option.envelope.profile.name.localeCompare(profileName, undefined, { sensitivity: "accent" }) === 0
+          );
+          const existing = existingOption?.envelope ?? null;
+          const profile = createPdfLayoutProfile({
+            id: generateId(),
+            name: profileName,
+            result,
+            profileVersion: existing ? existing.profile.profileVersion + 1 : 1,
+            supersedesProfileId: existing?.profile.id ?? null,
+          });
+          const saved = await onSavePdfDetectionProfile({
+            bankName,
+            profileName,
+            assignToAccount,
+            profile: {
+              kind: "pdf-layout-v2",
+              profile,
+              history: existing ? [existing.profile, ...(existing.history ?? [])] : [],
+            },
+          });
+          setAppliedPdfProfileId(saved.profile.id);
+          return {
+            bankId: saved.bank.id,
+            profileId: saved.profile.id,
+            profileVersion: profile.profileVersion,
+          };
+        }}
+      />
 
       {!effectiveConfig ? (
         <div className="flex max-w-2xl flex-col gap-3">
           {sourceSection}
-          {profiles.length > 0 && profileSection}
+          {importProfiles.length > 0 && profileSection}
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,32fr)_minmax(0,68fr)]">
@@ -836,7 +1138,7 @@ export function ImportPanel({
                 disabled={writeSettingsLocked}
               />
             </Section>
-            {profileSection}
+            {effectiveConfig.format !== "pdf" && profileSection}
           </div>
 
           {/* The parsed statement: the one scrolling surface on this screen. */}

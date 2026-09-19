@@ -35,9 +35,9 @@ import type { SqliteDatabase } from "./types";
  * the workbench renders the same write-settings control as the import panel and
  * has no parse config of its own.
  */
-export type ReconciliationStatementFormat = "delimited" | "ofx" | "qif";
+export type ReconciliationStatementFormat = "delimited" | "ofx" | "qif" | "pdf";
 
-const STATEMENT_FORMATS: readonly ReconciliationStatementFormat[] = ["delimited", "ofx", "qif"];
+const STATEMENT_FORMATS: readonly ReconciliationStatementFormat[] = ["delimited", "ofx", "qif", "pdf"];
 
 export type ReconciliationSessionStatus =
   | "draft"
