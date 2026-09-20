@@ -778,7 +778,7 @@ export function ImportPanel({
             {effectiveConfig?.format === "pdf" && pdfDraft && (
               <Button variant="ghost" size="sm" className="h-7" onClick={() => setPdfReviewOpen(true)}>
                 <FileText className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-                Review PDF parsing
+                Review PDF import
               </Button>
             )}
           </div>

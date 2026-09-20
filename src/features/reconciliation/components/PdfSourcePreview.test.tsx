@@ -96,16 +96,16 @@ describe("PdfSourcePreview", () => {
     expect(pageElement).toHaveStyle({ width: "100%" });
 
     fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF" }));
-    expect(pageElement).toHaveStyle({ width: "125%" });
-    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (125%)");
+    expect(pageElement).toHaveStyle({ width: "120%" });
+    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (120%)");
     expect(screen.getByRole("button", { name: "Zoom in PDF" }).parentElement).toHaveClass("left-2", "top-2");
 
     fireEvent.click(screen.getByRole("button", { name: "Fit PDF to width" }));
     expect(pageElement).toHaveStyle({ width: "100%" });
     expect(screen.getByRole("button", { name: "Fit PDF to width" })).toBeDisabled();
 
-    for (let index = 0; index < 4; index += 1) fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF" }));
-    expect(pageElement).toHaveStyle({ width: "200%" });
+    for (let index = 0; index < 3; index += 1) fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF" }));
+    expect(pageElement).toHaveStyle({ width: "160%" });
     expect(screen.getByRole("button", { name: "Zoom in PDF" })).toBeDisabled();
   });
 

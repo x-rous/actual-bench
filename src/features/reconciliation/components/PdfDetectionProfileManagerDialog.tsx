@@ -61,7 +61,7 @@ export function PdfDetectionProfileManagerDialog({
       await action();
       return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The profile change could not be saved.");
+      setError(reason instanceof Error ? reason.message : "The statement layout change could not be saved.");
       return false;
     } finally {
       setBusy(null);
@@ -86,9 +86,9 @@ export function PdfDetectionProfileManagerDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Manage detection profiles</DialogTitle>
+            <DialogTitle>Manage statement layouts</DialogTitle>
             <DialogDescription>
-              Profiles are global. Account assignments are specific to this budget file and account.
+              Layouts are global. Account assignments are specific to this budget file and account.
             </DialogDescription>
           </DialogHeader>
 
@@ -96,7 +96,7 @@ export function PdfDetectionProfileManagerDialog({
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{accountName}</span>
               <span className="text-muted-foreground">
-                {assignment ? `uses ${assignment}` : "has no saved detection profile"}
+                {assignment ? `uses ${assignment}` : "has no assigned statement layout"}
               </span>
               {assignment && (
                 <Button
@@ -147,7 +147,7 @@ export function PdfDetectionProfileManagerDialog({
                         {editing?.kind === "profile" && editing.id === profile.recordId ? (
                           <>
                             <Input
-                              aria-label="Profile name"
+                              aria-label="Layout name"
                               value={editing.value}
                               onChange={(event) => setEditing({ ...editing, value: event.target.value })}
                               onKeyDown={(event) => {
@@ -156,7 +156,7 @@ export function PdfDetectionProfileManagerDialog({
                               }}
                               autoFocus
                             />
-                            <Button size="icon-xs" aria-label="Save profile name" disabled={!editing.value.trim() || busy !== null} onClick={() => void saveEdit()}><Check /></Button>
+                            <Button size="icon-xs" aria-label="Save layout name" disabled={!editing.value.trim() || busy !== null} onClick={() => void saveEdit()}><Check /></Button>
                           </>
                         ) : (
                           <>
@@ -176,11 +176,11 @@ export function PdfDetectionProfileManagerDialog({
                             aria-label={`Delete ${profile.envelope.profile.name}`}
                             disabled={busy !== null}
                             onClick={() => setConfirm({
-                              title: "Delete detection profile?",
+                              title: "Delete statement layout?",
                               message: bankProfiles.length === 1
                                 ? `This will also remove ${bank.name} and any account assignments that use it.`
                                 : `Delete ${profile.envelope.profile.name} from ${bank.name}? Account assignments that use it will be removed.`,
-                              destructiveLabel: "Delete profile",
+                              destructiveLabel: "Delete layout",
                               onConfirm: () => void run(`delete-${profile.recordId}`, () => onDeleteProfile(profile.recordId)),
                             })}
                           >
@@ -193,7 +193,7 @@ export function PdfDetectionProfileManagerDialog({
                 </div>
               </section>
             ))}
-            {banks.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No detection profiles have been saved.</p>}
+            {banks.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No statement layouts have been saved.</p>}
           </div>
 
           <DialogFooter>

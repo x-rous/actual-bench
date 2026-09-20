@@ -8,6 +8,7 @@ export type PdfLayoutProfile = {
   parserVersion: 2;
   profileVersion: number;
   fingerprint: string;
+  sourceFingerprint?: string;
   guidance: PdfParserGuidance;
   createdAt: string;
   supersedesProfileId: string | null;
@@ -52,6 +53,9 @@ export function matchPdfLayoutProfile(
   pages: PdfReconstructedPage[],
   schema: PdfTableSchema | null
 ): PdfProfileMatch {
+  if (profile.sourceFingerprint === createPdfSourceLayoutFingerprint(pages)) {
+    return { outcome: "strong", score: 1, reasons: ["statement layout matches"], drift: false };
+  }
   const fingerprint = createPdfLayoutFingerprint(pages, schema);
   if (fingerprint === profile.fingerprint) return { outcome: "strong", score: 1, reasons: ["layout fingerprint matches"], drift: false };
   const expectedRoles = new Set(profile.guidance.columns.map((column) => column.role));
@@ -61,6 +65,14 @@ export function matchPdfLayoutProfile(
   const geometryScore = Math.max(0, 1 - geometryDistance * 4);
   const score = overlap * 0.7 + geometryScore * 0.3;
   const drift = overlap < 0.8 || geometryDistance > 0.06;
+  if (!drift && overlap >= 0.9) {
+    return {
+      outcome: "strong",
+      score,
+      reasons: ["roles and column geometry match"],
+      drift: false,
+    };
+  }
   if (overlap >= 0.9 && geometryDistance <= 0.12) {
     return {
       outcome: "possible",
@@ -109,6 +121,7 @@ export function createPdfLayoutProfile(input: {
     parserVersion: 2,
     profileVersion: input.profileVersion ?? 1,
     fingerprint: createPdfLayoutFingerprint(input.result.reconstructedPages, input.result.activeSchema),
+    sourceFingerprint: createPdfSourceLayoutFingerprint(input.result.reconstructedPages),
     guidance: {
       ...input.result.guidance,
       // A statement period is evidence for this document, not a reusable
@@ -190,6 +203,7 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
   const guidance = profile.guidance;
   if (!guidance || guidance.version !== 1) return null;
   if (!profile.id || !profile.name || !profile.fingerprint || typeof profile.createdAt !== "string") return null;
+  if (profile.sourceFingerprint !== undefined && typeof profile.sourceFingerprint !== "string") return null;
   if (profile.supersedesProfileId !== null && typeof profile.supersedesProfileId !== "string") return null;
   if (!new Set(["auto", "credit-card", "checking", "savings", "prepaid", "multi-currency", "business-cash", "loan", "investment", "unknown"]).has(guidance.accountType)) return null;
   if (!new Set(["auto", "iso", "dmy", "mdy", "dmy-name", "ymd-compact", "ymd"]).has(guidance.dateFormat)) return null;
@@ -235,6 +249,7 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
     parserVersion: 2,
     profileVersion: profile.profileVersion,
     fingerprint: profile.fingerprint,
+    ...(profile.sourceFingerprint === undefined ? {} : { sourceFingerprint: profile.sourceFingerprint }),
     guidance: {
       version: 1,
       accountType: guidance.accountType,
@@ -274,4 +289,24 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
     supersedesProfileId: profile.supersedesProfileId,
     sourcePage: { width: profile.sourcePage.width, height: profile.sourcePage.height },
   };
+}
+
+function createPdfSourceLayoutFingerprint(pages: PdfReconstructedPage[]) {
+  const page = pages[0];
+  if (!page) return fnv1aHex("empty");
+  const rows = page.rows
+    .slice(0, 80)
+    .map((row) => ({
+      y: Math.round(row.y / Math.max(1, page.height) * 100),
+      cells: row.cells.map((cell) => ({
+        shape: sourceSafeShape(cell.text),
+        x: Math.round(cell.x / Math.max(1, page.width) * 100),
+        width: Math.round(cell.width / Math.max(1, page.width) * 100),
+      })),
+    }));
+  return fnv1aHex(JSON.stringify({
+    aspect: Math.round(page.width / Math.max(1, page.height) * 100),
+    rotation: page.rotation,
+    rows,
+  }));
 }

@@ -59,42 +59,44 @@ Select a PDF to read it in your browser. Actual Bench uses PDF.js locally. It do
 store the PDF. If the file has a password, enter it when prompted; the password remains in memory
 only.
 
-The review workbench has three sections:
+The workbench has two steps:
 
-- **Adjust detection settings** shows the positioned PDF text, detected transaction regions, and column
-  boundaries. Each mapped column uses a separate color and role label. Include or exclude regions,
-  draw a missed transaction region, change a column role, or drag its boundaries. The examples under
-  each mapping update from matching values inside its current boundary. You can also set the account
-  type, statement currency and period, date and number formats, import date, and the direction rule
-  for unsigned amounts. Select **Preview changes**, then **Apply detection changes**. This reuses the
-  extracted file and preserves your row corrections.
+- **Check detection** shows the positioned PDF text, transaction areas, and column boundaries. Each
+  mapped column uses a separate color and role label. Include or ignore an area, select a missed
+  transaction area, change a column role, or drag its boundaries. The examples under each mapping
+  come from values inside its current boundary. Open **Statement interpretation** when you need to
+  change the account type, currency, statement period, date or number format, import date, or unsigned
+  amount direction. Select **Preview updated transactions**, then **Apply changes and review**. This
+  reuses the extracted file and preserves your row corrections.
 - **Review transactions** shows the extracted rows. Negative amounts are money out and positive
   amounts are money in. Edit a date, description, amount, or currency directly. Select the sign to
   reverse one row, or select several rows to set their direction, mark valid warnings as reviewed,
   merge them, or ignore them. Actions for selected rows appear in the fixed footer. Rows with missing
   or invalid required values cannot be marked reviewed.
-- **Diagnostics** shows aggregate parser events and profile match details. It does not show statement
-  text.
+
+Select **Parser details** for page counts, parsing warnings, saved-layout validation, and technical
+diagnostics. Technical diagnostics contain aggregate events, counts, and page numbers, not statement
+text or source IDs.
 
 Actual Bench opens **Review transactions** when the initial result is mostly usable and no saved
-profile needs confirmation. If more than half of the proposed transactions are rejected, or a saved
-profile match needs checking, it opens **Adjust detection settings** first. After you apply detection
-changes, it moves to transaction review.
+layout needs confirmation. If more than half of the proposed transactions are rejected, or a saved
+layout needs checking, it opens **Check detection** and states what needs attention. After you apply
+detection changes, it moves to transaction review.
 
-Detection profiles are grouped by bank and shared across budgets and accounts. For example, **HSBC
-Bank** can have separate **Credit card** and **Checking** profiles. The bank name organizes the list;
-Actual does not identify which bank owns an account. Assign the required profile directly to each
-account. Selecting a profile applies it to the current statement only. Select **Use for this
-account** to save that assignment. A strong assigned profile is applied before the initial
+Statement layouts are grouped by bank and shared across budgets and accounts. For example, **HSBC
+Bank** can have separate **Credit card** and **Checking** layouts. The bank name organizes the list;
+Actual does not identify which bank owns an account. Assign the required layout directly to each
+account. Selecting a layout applies it to the current statement only. Select **Use for this
+account** to save that assignment. A strong assigned layout is applied before the initial
 result is shown. If it is only a possible match, the workbench opens detection settings and asks you
 to check the differences. Weak or conflicting matches stay unapplied instead of forcing the saved
 mapping onto the statement.
 
-To create or update a profile, apply the detection changes, select **Save profile**, and enter the
-bank and profile names. You can assign it to the current account when you save it. A profile can be
-saved only when it has no rejected transactions. Select **Manage profiles** to change
-an account assignment, rename a bank or profile, or delete a profile. Removing an assignment returns
-the account to automatic detection. A profile stores parser settings, geometry, and privacy-safe
+To create or update a layout, apply the detection changes, select **Save layout**, and enter the bank
+and layout names. You can assign it to the current account when you save it. A layout can be saved
+only when it has no rejected transactions. Select **Manage layouts** to change an account assignment,
+rename a bank or layout, or delete a layout. Removing an assignment returns the account to automatic
+detection. A layout stores parser settings, geometry, and privacy-safe
 layout information; it does not store the PDF or transaction text.
 
 Transaction date is the default import date. If the statement has posting or value dates, they stay
@@ -103,9 +105,9 @@ remove one of their mappings, it is no longer validated or included in row warni
 date-column header identifies the date that will be imported. The Balance column appears only when a
 balance column is mapped and at least one balance was read.
 
-Use the row status icon and review filters to find structural, date, amount, direction, balance, and
-duplicate issues. Select an eye icon to see the source text for a field. A rejected row is missing a
-required value and cannot be imported. A review row contains a visible assumption or warning; select
+Use the row status and review filters to find structural, date, amount, direction, balance, and
+duplicate issues. **Ready** can continue, **Review** needs confirmation, and **Fix** is missing a
+required value. Select an eye icon to see the source text for a field. A review row contains a visible assumption or warning; select
 **Mark reviewed** only after checking it against the statement. Correcting a required field removes
 that error as soon as the row is valid. A row cannot be marked reviewed while a required field is
 still invalid.
@@ -114,14 +116,14 @@ The PDF viewer fits the available width by default. Use its floating **−**, **
 controls to zoom from 75% to 200%, or press **0** to return to fit width. The viewer keeps the zoom
 level while you move between pages and workbench sections. Selecting a field's eye icon opens the
 page containing its source and scrolls to the highlighted text when it is outside the visible area.
-In **Adjust detection settings**, select **Columns** to show or hide mappings; selecting a mapping
+In **Check detection**, select **Columns** to show or hide mappings; selecting a mapping
 centers that column in the viewer.
 
-The filters above the transaction table group structural, date, amount, reconciliation, and duplicate
-issues under **Needs review**. Select **Needs review** to see every row that is not ready, or select a
-specific issue filter to narrow the list. Filters with no matching rows are hidden. **Correction
-scope** controls whether an edit applies only to the selected row, rows with the same issue, or every
-transaction in the PDF; hover over its label for an explanation before choosing a scope.
+Use **All**, **Needs review**, and **Ready** above the transaction table to change the view. Selecting
+**Needs review** shows non-empty structural, date, amount, reconciliation, and duplicate filters.
+Direct edits change one row. After an eligible edit, the footer can offer to apply the same correction
+to a stated number of similar rows or all remaining rows. Use row selection for intentional bulk
+changes.
 
 Possible duplicates remain included. Mark both reviewed when they are separate transactions, or
 ignore the repeated row. Ignored rows can be restored from **Adjust detection**. A dated row inside a
@@ -156,8 +158,8 @@ Actual transactions use two decimal places. The parser preserves higher precisio
 blocks import when converting it would lose a meaningful decimal digit. Correct the amount using the
 value that should be stored in Actual before continuing.
 
-Select **Use reviewed transactions** only after every row is ready. The rows then use the same import
-preview, matching, review, and Apply steps as other statement formats. Select **Review PDF parsing**
+Select **Use transactions** only after every row is ready. The rows then use the same import preview,
+matching, review, and Apply steps as other statement formats. Select **Review PDF import**
 on the import page to reopen the workbench before continuing.
 
 Scanned or image-only PDFs have no usable text layer, and OCR is not included. A damaged page is
@@ -198,8 +200,8 @@ mapping; matching always compares the statement with the current state of Actual
 
 For CSV and other structured files, save an account-specific reconciliation profile to keep the
 column mapping, date and amount conventions, payee and memo choices, and matching options. PDF
-detection profiles are separate: they are global, grouped by bank, and configured in **Adjust
-detection settings** as described above.
+statement layouts are separate: they are global, grouped by bank, and configured in **Check
+detection** as described above.
 
 ### Import details
 

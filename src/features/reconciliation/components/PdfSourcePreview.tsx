@@ -101,7 +101,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   }
 
   function changeZoom(nextZoom: number) {
-    const normalized = Math.max(PDF_MIN_ZOOM, Math.min(PDF_MAX_ZOOM, nextZoom));
+    const normalized = Math.round(Math.max(PDF_MIN_ZOOM, Math.min(PDF_MAX_ZOOM, nextZoom)) * 100) / 100;
     if (normalized === zoom) return;
     pendingZoomAnchor.current = { ...pagePointAtViewportCenter(), zoom: normalized };
     onZoomChange(normalized);
@@ -192,14 +192,14 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
         </div>
       )}
       {calibration && (
-        <section aria-label="Page sections" className="flex shrink-0 items-center gap-2 overflow-x-auto rounded-md border bg-muted/20 px-2 py-1.5">
-          <h4 className="shrink-0 text-xs font-medium">Sections</h4>
-          {regions.length === 0 && <p className="whitespace-nowrap text-[11px] text-muted-foreground">No sections detected. Draw a transaction region to add one.</p>}
+        <section aria-label="Transaction areas" className="flex shrink-0 items-center gap-2 overflow-x-auto rounded-md border bg-muted/20 px-2 py-1.5">
+          <h4 className="shrink-0 text-xs font-medium">Transaction areas</h4>
+          {regions.length === 0 && <p className="whitespace-nowrap text-[11px] text-muted-foreground">No transaction areas detected. Select one in the PDF above.</p>}
           {regions.map((region, index) => (
             <button
               key={region.id}
               type="button"
-              aria-label={`${region.included ? "Ignore" : "Include"} section ${index + 1} from page sections`}
+              aria-label={`${region.included ? "Ignore" : "Include"} transaction area ${index + 1} from transaction areas`}
               aria-pressed={region.included}
               onClick={() => onToggleRegion(region.id)}
               className={cn(
@@ -244,8 +244,8 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
             variant="outline"
             aria-label="Fit PDF to width"
             title={`Fit PDF to width (currently ${Math.round(zoom * 100)}%)`}
-            disabled={zoom === PDF_DEFAULT_ZOOM}
-            onClick={() => changeZoom(PDF_DEFAULT_ZOOM)}
+            disabled={zoom === PDF_FIT_WIDTH_ZOOM}
+            onClick={() => changeZoom(PDF_FIT_WIDTH_ZOOM)}
           >
             <Maximize2 aria-hidden="true" className="size-3.5" />
           </Button>
@@ -279,7 +279,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
               changeZoom(zoom - PDF_ZOOM_STEP);
             } else if (event.key === "0") {
               event.preventDefault();
-              changeZoom(PDF_DEFAULT_ZOOM);
+              changeZoom(PDF_FIT_WIDTH_ZOOM);
             }
           }}
         >
@@ -428,7 +428,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
             <button
               key={`region-control-${region.id}`}
               type="button"
-              aria-label={`${region.included ? "Ignore" : "Include"} section ${index + 1} in PDF`}
+              aria-label={`${region.included ? "Ignore" : "Include"} transaction area ${index + 1} in PDF`}
               aria-pressed={region.included}
               onClick={() => onToggleRegion(region.id)}
               className={cn(
@@ -443,7 +443,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
                 transform: "translate(0.25rem, 0.25rem)",
               }}
             >
-              Section {index + 1} · {region.included ? "Included" : "Ignored"}
+              Area {index + 1} · {region.included ? "Included" : "Ignored"}
             </button>
           ))}
           {regionDraft && (
@@ -464,10 +464,11 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   );
 });
 
-export const PDF_MIN_ZOOM = 0.75;
-export const PDF_DEFAULT_ZOOM = 1;
-export const PDF_MAX_ZOOM = 2;
-export const PDF_ZOOM_STEP = 0.25;
+export const PDF_MIN_ZOOM = 0.8;
+export const PDF_DEFAULT_ZOOM = 0.8;
+export const PDF_FIT_WIDTH_ZOOM = 1;
+export const PDF_MAX_ZOOM = 1.6;
+export const PDF_ZOOM_STEP = 0.2;
 
 function clamp(value: number) {
   return Math.max(0, Math.min(1, value));

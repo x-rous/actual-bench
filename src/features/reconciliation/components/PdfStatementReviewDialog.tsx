@@ -10,7 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleHelp,
-  Columns3,
+  Copy,
   Eye,
   GitMerge,
   ListPlus,
@@ -19,6 +19,7 @@ import {
   Save,
   Search,
   Settings2,
+  ShieldCheck,
   Split,
   SquareDashedMousePointer,
   Trash2,
@@ -62,13 +63,20 @@ import { PDF_DEFAULT_ZOOM, PdfSourcePreview, pdfColumnColor } from "./PdfSourceP
 import { PdfDetectionProfileManagerDialog } from "./PdfDetectionProfileManagerDialog";
 import type { PdfDetectionBankRecord } from "../lib/reconciliationApi";
 
-type ReviewCategory = "all" | "needs-review" | "structure" | "dates" | "amounts" | "reconciliation" | "duplicates" | "manual";
+type ReviewCategory = "all" | "needs-review" | "ready" | "structure" | "dates" | "amounts" | "reconciliation" | "duplicates" | "manual";
 type WorkbenchMode = "review" | "adjust" | "diagnostics";
 type PdfCorrectionInput = PdfCorrection extends infer Correction
   ? Correction extends PdfCorrection
     ? Omit<Correction, "id" | "createdAt" | "scope">
     : never
   : never;
+
+type ScopedCorrectionOffer = {
+  label: string;
+  similarIds: string[];
+  remainingIds: string[];
+  build: (transactionIds: string[]) => PdfCorrectionInput[];
+};
 
 const COLUMN_ROLE_GROUPS: { label: string; roles: { value: PdfColumnRole; label: string }[] }[] = [
   { label: "Dates", roles: [
@@ -183,10 +191,10 @@ export function PdfStatementReviewDialog({
   const [mode, setMode] = useState<WorkbenchMode>(() =>
     initialModeForResult(result, Boolean(profileNotice))
   );
-  const [filter, setFilter] = useState<ReviewCategory>("all");
+  const [filter, setFilter] = useState<ReviewCategory>(() => initialReviewFilter(result));
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [scope, setScope] = useState<PdfCorrectionScope>("row");
+  const [scopedCorrectionOffer, setScopedCorrectionOffer] = useState<ScopedCorrectionOffer | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [highlightedSourceIds, setHighlightedSourceIds] = useState<Set<string>>(new Set());
   const [selectedSourceRowId, setSelectedSourceRowId] = useState<string | null>(null);
@@ -268,6 +276,13 @@ export function PdfStatementReviewDialog({
       parsed ? columnExamplesForRegions(parsed.reconstructedPages, draftGuidance?.regions ?? [], column) : [],
     ])
   ), [draftGuidance?.columns, draftGuidance?.regions, parsed]);
+  const detectionIssues = useMemo(
+    () => detectionIssuesFor(parsed, draftGuidance, profileNotice),
+    [draftGuidance, parsed, profileNotice]
+  );
+  const parserDetailCount = parsed
+    ? new Set([...parsed.warnings, ...detectionIssues]).size
+    : 0;
 
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = selectedVisible > 0 && !allVisibleSelected;
@@ -347,35 +362,45 @@ export function PdfStatementReviewDialog({
     });
   }
 
-  function structuralCorrection(correction: PdfCorrectionInput) {
-    applyCorrection({ ...correction, id: generateId(), createdAt: new Date().toISOString(), scope } as PdfCorrection);
+  function structuralCorrection(correction: PdfCorrectionInput, correctionScope: PdfCorrectionScope = "row") {
+    applyCorrection({ ...correction, id: generateId(), createdAt: new Date().toISOString(), scope: correctionScope } as PdfCorrection);
   }
 
-  function structuralCorrections(items: PdfCorrectionInput[]) {
+  function structuralCorrections(items: PdfCorrectionInput[], correctionScope: PdfCorrectionScope = "row") {
     const createdAt = new Date().toISOString();
     applyCorrections(items.map((correction) => ({
       ...correction,
       id: generateId(),
       createdAt,
-      scope,
+      scope: correctionScope,
     } as PdfCorrection)));
   }
 
-  function targetIds(row: PdfTransactionProposal) {
-    if (scope === "row") return [row.id];
-    if (scope === "file" || scope === "profile") return rows.map((entry) => entry.id);
+  function similarTargetIds(row: PdfTransactionProposal) {
     const reasons = new Set(row.issueCodes.filter(isActionableReason));
-    if (!reasons.size) return [row.id];
+    if (!reasons.size) return [];
     return rows.filter((entry) => entry.issueCodes.some((reason) => isActionableReason(reason) && reasons.has(reason))).map((entry) => entry.id);
   }
 
+  function offerBroaderCorrection(
+    row: PdfTransactionProposal,
+    label: string,
+    build: ScopedCorrectionOffer["build"]
+  ) {
+    const similarIds = similarTargetIds(row).filter((id) => id !== row.id);
+    const remainingIds = rows.map((entry) => entry.id).filter((id) => id !== row.id && !similarIds.includes(id));
+    setScopedCorrectionOffer(similarIds.length || remainingIds.length ? { label, similarIds, remainingIds, build } : null);
+  }
+
   function setDirection(row: PdfTransactionProposal, direction: "debit" | "credit") {
-    structuralCorrection({ kind: "set-direction", transactionIds: targetIds(row), direction });
+    structuralCorrection({ kind: "set-direction", transactionIds: [row.id], direction });
+    offerBroaderCorrection(row, direction === "debit" ? "Money out" : "Money in", (transactionIds) => [
+      { kind: "set-direction", transactionIds, direction },
+    ]);
   }
 
   function setField(row: PdfTransactionProposal, field: "transactionDate" | "postedDate" | "valueDate" | "importDate" | "description" | "reference" | "amount" | "currency", value: string | null) {
-    const targets = field === "description" || field === "amount" || field === "currency" ? targetIds(row) : [row.id];
-    const corrections: PdfCorrectionInput[] = [{ kind: "set-field", transactionIds: targets, field, value }];
+    const corrections: PdfCorrectionInput[] = [{ kind: "set-field", transactionIds: [row.id], field, value }];
     const selectedImportField = parsed?.guidance.importDate === "transaction"
       ? "transactionDate"
       : parsed?.guidance.importDate === "posting"
@@ -385,6 +410,12 @@ export function PdfStatementReviewDialog({
       corrections.push({ kind: "set-field", transactionIds: [row.id], field: "importDate", value });
     }
     structuralCorrections(corrections);
+    if (["description", "amount", "currency"].includes(field)) {
+      const label = field === "description" ? "Description" : field === "amount" ? "Amount" : "Currency";
+      offerBroaderCorrection(row, label, (transactionIds) => [{ kind: "set-field", transactionIds, field, value }]);
+    } else {
+      setScopedCorrectionOffer(null);
+    }
   }
 
   function showSource(row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) {
@@ -393,6 +424,7 @@ export function PdfStatementReviewDialog({
       ? confidence.flatMap((entry) => entry.sourceIds)
       : confidence?.sourceIds ?? row.raw.sourceIds;
     setHighlightedSourceIds(new Set(sourceIds));
+    setSelectedSourceRowId(row.id);
     setPageNumber(pageForSourceIds(parsed, sourceIds, row.raw.pageNumber));
     setSourceOpen(true);
   }
@@ -423,6 +455,7 @@ export function PdfStatementReviewDialog({
     setDraftGuidance(output.guidance);
     setPreview(null);
     setMode("review");
+    setFilter(output.metrics.review + output.metrics.rejected > 0 ? "needs-review" : "all");
     setSelectedIds(new Set());
     toast.success("Detection changes applied", {
       description: `${diff.after} ${diff.after === 1 ? "transaction" : "transactions"} found · ${diff.afterReview} ${diff.afterReview === 1 ? "needs" : "need"} review`,
@@ -486,7 +519,7 @@ export function PdfStatementReviewDialog({
       parsed.activeSchema
     );
     if (profileMatch.outcome === "conflicting") {
-      setParserError("That profile conflicts with the detected table. Adjust the mapping or choose another profile.");
+      setParserError("That layout conflicts with the detected table. Adjust the mapping or choose another layout.");
       return;
     }
     const profileGuidance = guidanceFromPdfLayoutProfile(profile, parsed);
@@ -521,12 +554,35 @@ export function PdfStatementReviewDialog({
     if (!selectedProfile || !onAssignProfile) return;
     try {
       await onAssignProfile(selectedProfile.recordId);
-      toast.success("Account detection profile updated", {
+      toast.success("Account statement layout updated", {
         description: `${selectedProfile.bankName} · ${selectedProfile.envelope.profile.name}`,
       });
     } catch (error) {
-      setParserError(error instanceof Error ? error.message : "The account profile could not be updated.");
+      setParserError(error instanceof Error ? error.message : "The account statement layout could not be updated.");
     }
+  }
+
+  function copyDiagnostics() {
+    const payload = JSON.stringify({
+      modelVersion: parsed?.modelVersion,
+      metrics: parsed?.metrics,
+      accountType: parsed?.accountType,
+      balanceBehavior: parsed?.balanceBehavior,
+      warnings: parsed?.warnings,
+      diagnostics: parsed?.diagnostics.map(({ stage, code, pageNumber: diagnosticPage, metrics }) => ({
+        stage,
+        code,
+        pageNumber: diagnosticPage,
+        metrics,
+      })),
+    }, null, 2);
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      toast.error("Clipboard access is unavailable");
+      return;
+    }
+    void navigator.clipboard.writeText(payload)
+      .then(() => toast.success("Parser diagnostics copied"))
+      .catch(() => toast.error("Could not copy parser diagnostics"));
   }
 
   if (!parsed || !draftGuidance) return null;
@@ -534,11 +590,11 @@ export function PdfStatementReviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-busy={isParsing} className="flex h-[94vh] max-h-[94vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[calc(100vw-2rem)]">
-        <DialogHeader className="shrink-0 border-b px-4 py-3 pr-12">
+        <DialogHeader className="shrink-0 border-b px-4 py-2.5 pr-12">
           <div className="flex min-w-0 items-center gap-3">
             <DialogTitle>Review PDF statement</DialogTitle>
             <DialogDescription className="min-w-0 flex-1 truncate" title={fileName}>{fileName}</DialogDescription>
-            <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">Processed locally in your browser</span>
+            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground" title="The PDF is processed locally in your browser and is not uploaded."><ShieldCheck aria-hidden="true" className="size-3.5" />Local only</span>
           </div>
         </DialogHeader>
 
@@ -549,17 +605,35 @@ export function PdfStatementReviewDialog({
           </div>
         ) : (
           <>
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/10 px-4 py-2">
-              <div className="flex min-w-0 flex-1 items-center gap-1" role="tablist" aria-label="PDF review sections">
-                <ModeButton active={mode === "adjust"} onClick={() => setMode("adjust")}><Columns3 className="mr-1 size-3.5" />Adjust detection settings</ModeButton>
-                <ModeButton active={mode === "review"} onClick={() => setMode("review")}>Review transactions</ModeButton>
-                <SummaryBar result={parsed} totals={totals} />
-                <ModeButton active={mode === "diagnostics"} onClick={() => setMode("diagnostics")}><CircleHelp className="mr-1 size-3.5" />Diagnostics</ModeButton>
-              </div>
-              <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b bg-muted/10 px-4 py-1.5">
+              <nav className="flex shrink-0 items-center gap-1" aria-label="PDF import steps">
+                <WorkflowStepButton
+                  step={1}
+                  active={mode === "adjust"}
+                  label="Check detection"
+                  onClick={() => { setScopedCorrectionOffer(null); setMode("adjust"); }}
+                />
+                <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                <WorkflowStepButton
+                  step={2}
+                  active={mode === "review"}
+                  label="Review transactions"
+                  onClick={() => setMode("review")}
+                />
+              </nav>
+              <SummaryBar result={parsed} totals={totals} />
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                <Button
+                  size="xs"
+                  variant={mode === "diagnostics" ? "secondary" : "ghost"}
+                  title={parserDetailCount > 0 ? [...new Set([...detectionIssues, ...parsed.warnings])].join("\n") : "View parsing summary and technical diagnostics"}
+                  onClick={() => { setScopedCorrectionOffer(null); setMode("diagnostics"); }}
+                >
+                  <CircleHelp aria-hidden="true" className="mr-1 size-3.5" />Parser details{parserDetailCount > 0 ? ` (${parserDetailCount})` : ""}
+                </Button>
                 {isParsing && <span role="status" className="mr-2 text-xs text-muted-foreground">Re-running parser…</span>}
-                <Button size="xs" variant="ghost" disabled={isParsing || !corrections.length} onClick={undo}><Undo2 className="mr-1 size-3" />Undo</Button>
-                <Button size="xs" variant="ghost" disabled={isParsing || !redoCorrections.length} onClick={redo}><RotateCcw className="mr-1 size-3" />Redo</Button>
+                <Button size="icon-sm" variant="ghost" aria-label="Undo PDF correction" title="Undo" disabled={isParsing || !corrections.length} onClick={undo}><Undo2 className="size-3.5" /></Button>
+                <Button size="icon-sm" variant="ghost" aria-label="Redo PDF correction" title="Redo" disabled={isParsing || !redoCorrections.length} onClick={redo}><RotateCcw className="size-3.5" /></Button>
               </div>
             </div>
 
@@ -570,7 +644,7 @@ export function PdfStatementReviewDialog({
             )}
 
             {mode === "review" && (
-              <div className="flex min-h-0 flex-1">
+              <div className="relative flex min-h-0 flex-1">
                 <div className="flex min-w-0 flex-1 flex-col">
                   <ReviewToolbar
                     rows={rows}
@@ -578,28 +652,30 @@ export function PdfStatementReviewDialog({
                     setFilter={setFilter}
                     search={search}
                     setSearch={setSearch}
-                    scope={scope}
-                    setScope={setScope}
                   />
                   <TransactionTable
                     rows={tableRows}
                     result={parsed}
                     selectedIds={selectedIds}
-                    actionScope={scope}
-                    isParsing={isParsing}
                     allVisibleSelected={allVisibleSelected}
                     selectAllRef={selectAllRef}
-                    onToggleAll={() => setSelectedIds((current) => {
-                      const next = new Set(current);
-                      visibleIds.forEach((id) => allVisibleSelected ? next.delete(id) : next.add(id));
-                      return next;
-                    })}
-                    onToggle={(id, checked) => setSelectedIds((current) => {
-                      const next = new Set(current);
-                      if (checked) next.add(id);
-                      else next.delete(id);
-                      return next;
-                    })}
+                    onToggleAll={() => {
+                      setScopedCorrectionOffer(null);
+                      setSelectedIds((current) => {
+                        const next = new Set(current);
+                        visibleIds.forEach((id) => allVisibleSelected ? next.delete(id) : next.add(id));
+                        return next;
+                      });
+                    }}
+                    onToggle={(id, checked) => {
+                      setScopedCorrectionOffer(null);
+                      setSelectedIds((current) => {
+                        const next = new Set(current);
+                        if (checked) next.add(id);
+                        else next.delete(id);
+                        return next;
+                      });
+                    }}
                     onDirection={setDirection}
                     onField={(row, field, value) => setField(
                       row,
@@ -607,7 +683,7 @@ export function PdfStatementReviewDialog({
                       field === "amount" && value ? normalizeTableAmountInput(value) : value
                     )}
                     onSource={showSource}
-                    onAccept={(row) => structuralCorrection({ kind: "accept-transaction", transactionIds: targetIds(row) })}
+                    onAccept={(row) => structuralCorrection({ kind: "accept-transaction", transactionIds: [row.id] })}
                     onIgnore={(row) => structuralCorrection({ kind: "ignore-block", blockId: row.id })}
                     onSplit={(row) => {
                       const block = parsed.blocks.find((entry) => entry.id === row.id);
@@ -616,10 +692,10 @@ export function PdfStatementReviewDialog({
                   />
                 </div>
                 {sourceOpen && page && (
-                  <aside className="flex w-[42%] min-w-[26rem] flex-col border-l p-3">
+                  <aside className="flex w-[42%] min-w-[26rem] flex-col border-l p-3 max-lg:absolute max-lg:inset-0 max-lg:z-30 max-lg:w-full max-lg:min-w-0 max-lg:bg-background">
                     <div className="mb-2 flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
                       <h3 className="text-sm font-medium">Source</h3>
-                      <span className="text-xs text-muted-foreground">Highlighted text supports this field.</span>
+                      <span className="text-xs text-muted-foreground">Highlighted text supports the selected field.</span>
                       <PageControls pageNumber={page.pageNumber} pageCount={parsed.reconstructedPages.length} onChange={setPageNumber} />
                       <span className="text-xs text-muted-foreground">{Math.round(page.coverage * 1000) / 10}% text coverage</span>
                       <Button className="ml-auto" size="xs" variant="ghost" onClick={() => setSourceOpen(false)}>Close</Button>
@@ -632,8 +708,8 @@ export function PdfStatementReviewDialog({
 
             {mode === "adjust" && page && (
               <div className="flex min-h-0 flex-1 flex-col">
-                <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/10 px-4 py-2 text-xs">
-                  <label htmlFor="pdf-detection-profile" className="font-medium">Detection profile</label>
+                <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b bg-muted/10 px-4 py-1.5 text-xs whitespace-nowrap">
+                  <label htmlFor="pdf-detection-profile" className="font-medium">Statement layout</label>
                   <select
                     id="pdf-detection-profile"
                     value={selectedProfileId ?? ""}
@@ -641,7 +717,7 @@ export function PdfStatementReviewDialog({
                     onChange={(event) => selectProfile(event.target.value)}
                     className="h-8 min-w-64 rounded-md border bg-background px-2 text-xs"
                   >
-                    <option value="">Auto-detect from this statement</option>
+                    <option value="">Automatic</option>
                     {[...profilesByBank.entries()]
                       .sort(([left], [right]) => left.localeCompare(right))
                       .map(([bankName, bankProfiles]) => (
@@ -664,13 +740,19 @@ export function PdfStatementReviewDialog({
                       Use for this account
                     </Button>
                   )}
-                  <span className="text-muted-foreground">
+                  <span className="text-muted-foreground" title={selectedProfile
+                    ? `${selectedProfile.bankName} · ${selectedProfile.envelope.profile.name}${appliedProfileVersion ? ` v${appliedProfileVersion}` : ""}${selectedIsAccountProfile ? " · assigned to this account" : " · this statement only"}`
+                    : "Automatic detection applies to this statement only"}>
                     {selectedProfile
-                      ? `${selectedProfile.bankName} · ${selectedProfile.envelope.profile.name}${appliedProfileVersion ? ` v${appliedProfileVersion}` : ""}${selectedIsAccountProfile ? " · account profile" : " · this statement only"}`
-                      : "Auto-detect applies to this statement only"}
+                      ? `${selectedProfile.bankName}${selectedIsAccountProfile ? " · assigned" : " · statement only"}`
+                      : "Statement only"}
                   </span>
-                  {profileNotice && (
-                    <span className="text-amber-700 dark:text-amber-300">{profileNotice}</span>
+                  {detectionIssues.length > 0 && (
+                    <button type="button" className="inline-flex max-w-72 items-center gap-1 text-amber-700 dark:text-amber-300" title={detectionIssues.join("\n")} onClick={() => setMode("diagnostics")}>
+                      <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
+                      <span className="truncate">{detectionIssues[0]}</span>
+                      {detectionIssues.length > 1 && <span className="shrink-0">+{detectionIssues.length - 1}</span>}
+                    </button>
                   )}
                   {onAssignProfile && onRemoveAccountAssignment && onRenameBank && onRenameProfile && onDeleteProfile && (
                     <Button
@@ -680,7 +762,7 @@ export function PdfStatementReviewDialog({
                       disabled={isParsing}
                       onClick={() => setManageProfilesOpen(true)}
                     >
-                      <Settings2 className="mr-1 size-3.5" />Manage profiles
+                      <Settings2 className="mr-1 size-3.5" />Manage layouts
                     </Button>
                   )}
                   {onSaveProfile && (
@@ -694,17 +776,17 @@ export function PdfStatementReviewDialog({
                         : detectionDirty ? "Preview and apply detection changes before saving this layout" : undefined}
                       onClick={() => setSaveProfileOpen(true)}
                     >
-                      <Save className="mr-1 size-3.5" />Save profile
+                      <Save className="mr-1 size-3.5" />Save layout
                     </Button>
                   )}
                 </div>
-                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,58fr)_minmax(24rem,42fr)] gap-0">
-                <div className="flex min-h-0 flex-col border-r p-3">
+                <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-auto lg:grid-cols-[minmax(0,58fr)_minmax(24rem,42fr)] lg:overflow-hidden">
+                <div className="flex min-h-[26rem] flex-col border-b p-3 lg:min-h-0 lg:border-r lg:border-b-0">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <PageControls pageNumber={page.pageNumber} pageCount={parsed.reconstructedPages.length} onChange={setPageNumber} />
                     <Button size="xs" variant={drawingRegion ? "default" : "outline"} onClick={() => setDrawingRegion((current) => !current)}>
                       <SquareDashedMousePointer aria-hidden="true" className="mr-1 size-3.5" />
-                      {drawingRegion ? "Drag on the page" : "Draw transaction region"}
+                      {drawingRegion ? "Drag on the page" : "Select transaction area"}
                     </Button>
                     {selectedSourceRowId && !parsed.blocks.some((block) => block.rowIds.includes(selectedSourceRowId)) && (
                       <Button size="xs" variant="outline" onClick={() => structuralCorrection({ kind: "mark-row", rowId: selectedSourceRowId, pageNumber: page.pageNumber })}>
@@ -759,9 +841,9 @@ export function PdfStatementReviewDialog({
                     <DetectionControls guidance={draftGuidance} accountType={parsed.accountType} onChange={updateDraft} />
                     <div className="mt-4 flex items-center justify-between">
                       <h3 className="text-sm font-medium">Column mapping</h3>
-                      <Button size="xs" variant="outline" onClick={addColumn}>Add column</Button>
+                      <Button size="xs" variant="outline" onClick={addColumn}>Map another column</Button>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">Assign what each physical column means. Match its color to the PDF, move it left or right, or drag its edges to correct the boundary.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Tell Actual Bench what each statement column contains. Select a mapping to find it in the PDF, or drag its boundaries to correct it.</p>
                     <div className="mt-2 space-y-2">
                       {draftGuidance.columns.map((column, columnIndex) => (
                         <div
@@ -793,9 +875,9 @@ export function PdfStatementReviewDialog({
                       <DetectionChangePreview diff={previewDiff} />
                     )}
                     <div className="flex items-center justify-end gap-2">
-                      <Button size="xs" variant="ghost" disabled={isParsing} onClick={resetDetection}><ListRestart className="mr-1 size-3" />Reset</Button>
-                      <Button size="xs" variant="outline" disabled={isParsing} onClick={previewDetection}>{isParsing ? "Re-running…" : "Preview changes"}</Button>
-                      <Button size="xs" disabled={isParsing || !preview} onClick={applyDetection}>Apply detection changes</Button>
+                      <Button size="xs" variant="ghost" disabled={isParsing} onClick={resetDetection}><ListRestart className="mr-1 size-3" />Reset detection</Button>
+                      <Button size="xs" variant="outline" disabled={isParsing} onClick={previewDetection}>{isParsing ? "Re-running…" : "Preview updated transactions"}</Button>
+                      <Button size="xs" disabled={isParsing || !preview} onClick={applyDetection}>Apply changes and review</Button>
                     </div>
                   </div>
                 </div>
@@ -804,27 +886,55 @@ export function PdfStatementReviewDialog({
             )}
 
             {mode === "diagnostics" && (
-              <div className="grid min-h-0 flex-1 grid-cols-2 gap-4 overflow-auto p-4">
-                <section className="rounded-md border p-3">
-                  <h3 className="font-medium">Parser diagnostics</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Contains stage names, counts, and source IDs only. Statement text is not logged.</p>
-                  <ol className="mt-3 space-y-1 font-mono text-[11px]">
-                    {parsed.diagnostics.map((event, index) => <li key={`${event.stage}-${event.code}-${index}`}>{event.stage}: {event.code} {JSON.stringify(event.metrics ?? {})}</li>)}
-                  </ol>
-                </section>
-                <section className="rounded-md border p-3">
-                  <h3 className="font-medium">Saved layouts</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Layouts contain geometry and roles, not customer names, account numbers, or transaction text.</p>
-                  <div className="mt-3 space-y-2">
-                    {profileMatches.map(({ option, profile, current, match }) => (
-                      <div key={`${option.recordId}-${profile.id}`} className="rounded border p-2 text-xs">
-                        <div className="flex items-center gap-2"><span className="font-medium">{option.bankName} · {profile.name} v{profile.profileVersion}{current ? " (current)" : ""}</span><span className="text-muted-foreground">{match?.outcome} · {Math.round((match?.score ?? 0) * 100)}%</span><Button className="ml-auto" size="xs" variant="outline" disabled={match?.outcome === "conflicting"} onClick={() => applyProfile(option, profile)}>Apply and validate</Button></div>
-                        <p className="mt-1 text-muted-foreground">{match?.reasons.join("; ")}</p>
+              <div className="min-h-0 flex-1 overflow-auto p-4">
+                <div className="mx-auto max-w-5xl space-y-3">
+                  <section className="rounded-md border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-medium">Parsing summary</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">What Actual Bench used to read this statement.</p>
                       </div>
-                    ))}
-                    {profiles.length === 0 && <p className="text-sm text-muted-foreground">No saved PDF detection profiles.</p>}
-                  </div>
-                </section>
+                      <Button size="xs" variant="outline" onClick={() => setMode(detectionIssues.length ? "adjust" : "review")}>Back to {detectionIssues.length ? "detection" : "transactions"}</Button>
+                    </div>
+                    <dl className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+                      <Metric label="Pages read" value={`${parsed.metrics.transactionPages} of ${parsed.metrics.pages}`} />
+                      <Metric label="Transactions" value={String(parsed.metrics.transactions)} />
+                      <Metric label="Ready" value={String(parsed.metrics.accepted)} tone="positive" />
+                      <Metric label="Needs review" value={String(parsed.metrics.review + parsed.metrics.rejected)} tone={parsed.metrics.review + parsed.metrics.rejected ? "warning" : "normal"} />
+                      <Metric label="Account type" value={accountTypeLabel(parsed.accountType)} />
+                    </dl>
+                    {(parsed.warnings.length > 0 || detectionIssues.length > 0) && (
+                      <ul className="mt-3 space-y-1 border-t pt-2 text-xs">
+                        {[...new Set([...detectionIssues, ...parsed.warnings])].map((warning) => (
+                          <li key={warning} className="flex items-start gap-1.5 text-amber-700 dark:text-amber-300"><AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{warning}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                  <details className="rounded-md border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">Layout versions and validation</summary>
+                    <p className="mt-1 text-xs text-muted-foreground">Saved layouts contain geometry and roles, not customer names, account numbers, or transaction text.</p>
+                    <div className="mt-3 space-y-2">
+                      {profileMatches.map(({ option, profile, current, match }) => (
+                        <div key={`${option.recordId}-${profile.id}`} className="rounded border p-2 text-xs">
+                          <div className="flex items-center gap-2"><span className="font-medium">{option.bankName} · {profile.name} v{profile.profileVersion}{current ? " (current)" : ""}</span><span className="text-muted-foreground">{match?.outcome} · {Math.round((match?.score ?? 0) * 100)}%</span><Button className="ml-auto" size="xs" variant="outline" disabled={match?.outcome === "conflicting"} onClick={() => applyProfile(option, profile)}>Apply and validate</Button></div>
+                          <p className="mt-1 text-muted-foreground">{match?.reasons.join("; ")}</p>
+                        </div>
+                      ))}
+                      {profiles.length === 0 && <p className="text-sm text-muted-foreground">No saved statement layouts.</p>}
+                    </div>
+                  </details>
+                  <details className="rounded-md border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">Technical diagnostics</summary>
+                    <div className="mt-1 flex items-center gap-2">
+                      <p className="text-xs text-muted-foreground">Contains stage names, counts, and page numbers only. Statement text and source IDs are not copied.</p>
+                      <Button className="ml-auto" size="xs" variant="outline" onClick={copyDiagnostics}><Copy aria-hidden="true" className="mr-1 size-3" />Copy diagnostics</Button>
+                    </div>
+                    <ol className="mt-3 space-y-1 font-mono text-[11px]">
+                      {parsed.diagnostics.map((event, index) => <li key={`${event.stage}-${event.code}-${index}`}>{event.stage}: {event.code} {JSON.stringify(event.metrics ?? {})}</li>)}
+                    </ol>
+                  </details>
+                </div>
               </div>
             )}
 
@@ -846,11 +956,11 @@ export function PdfStatementReviewDialog({
                       setAppliedProfileVersion(saved.profileVersion);
                     }
                     setSaveProfileOpen(false);
-                    toast.success("Detection profile saved", {
+                    toast.success("Statement layout saved", {
                       description: `${bankName} · ${profileName}`,
                     });
                   } catch (error) {
-                    setParserError(error instanceof Error ? error.message : "The detection profile could not be saved.");
+                    setParserError(error instanceof Error ? error.message : "The statement layout could not be saved.");
                   }
                 }}
               />
@@ -885,6 +995,24 @@ export function PdfStatementReviewDialog({
               <Button className="shrink-0" size="xs" variant="outline" onClick={() => structuralCorrections([...selectedIds].map((blockId) => ({ kind: "ignore-block", blockId })))}><Trash2 className="mr-1 size-3" />Ignore</Button>
               <Button className="shrink-0" size="xs" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear</Button>
             </div>
+          ) : mode === "review" && scopedCorrectionOffer ? (
+            <div aria-label="Apply correction to more transactions" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap text-xs">
+              <span className="mr-1 shrink-0"><strong>{scopedCorrectionOffer.label}</strong> changed for this row.</span>
+              {scopedCorrectionOffer.similarIds.length > 0 && (
+                <Button size="xs" variant="outline" disabled={isParsing} onClick={() => {
+                  structuralCorrections(scopedCorrectionOffer.build(scopedCorrectionOffer.similarIds), "similar-rows");
+                  setScopedCorrectionOffer(null);
+                }}>Apply to {scopedCorrectionOffer.similarIds.length} similar</Button>
+              )}
+              {scopedCorrectionOffer.remainingIds.length > 0 && (
+                <Button size="xs" variant="outline" disabled={isParsing} onClick={() => {
+                  const transactionIds = [...scopedCorrectionOffer.similarIds, ...scopedCorrectionOffer.remainingIds];
+                  structuralCorrections(scopedCorrectionOffer.build(transactionIds), "file");
+                  setScopedCorrectionOffer(null);
+                }}>Apply to all {scopedCorrectionOffer.similarIds.length + scopedCorrectionOffer.remainingIds.length} remaining</Button>
+              )}
+              <Button size="xs" variant="ghost" onClick={() => setScopedCorrectionOffer(null)}>Dismiss</Button>
+            </div>
           ) : (
             <div className="min-w-0 flex-1 text-xs">
               {blockingCount > 0 ? <span className="text-destructive">Resolve {blockingCount} rejected {blockingCount === 1 ? "transaction" : "transactions"}.</span>
@@ -894,7 +1022,7 @@ export function PdfStatementReviewDialog({
           )}
           <div className="flex shrink-0 gap-2">
             <Button variant="outline" disabled={isParsing} onClick={() => onOpenChange(false)}>Cancel</Button>
-            {!parsed.likelyScanned && <Button disabled={isParsing || rows.length === 0 || blockingCount > 0 || reviewCount > 0} onClick={() => onImport(rows, parsed)}>Use {rows.length} reviewed {rows.length === 1 ? "transaction" : "transactions"}</Button>}
+            {!parsed.likelyScanned && <Button disabled={isParsing || rows.length === 0 || blockingCount > 0 || reviewCount > 0} onClick={() => onImport(rows, parsed)}>Use {rows.length} {rows.length === 1 ? "transaction" : "transactions"}</Button>}
           </div>
         </DialogFooter>
       </DialogContent>
@@ -908,6 +1036,33 @@ function initialModeForResult(
 ): WorkbenchMode {
   if (profileNeedsReview || !result || result.transactions.length === 0) return "adjust";
   return result.metrics.rejected / result.transactions.length > 0.5 ? "adjust" : "review";
+}
+
+function initialReviewFilter(result: PdfStatementParseResult | null): ReviewCategory {
+  return result && result.metrics.review + result.metrics.rejected > 0 ? "needs-review" : "all";
+}
+
+function detectionIssuesFor(
+  result: PdfStatementParseResult | null,
+  guidance: PdfParserGuidance | null,
+  profileNotice: string | null
+) {
+  if (!result || !guidance) return ["No detection result is available."];
+  const issues: string[] = [];
+  if (profileNotice) issues.push(profileNotice);
+  if (!guidance.regions.some((region) => region.included && region.kind === "transactions")) {
+    issues.push("Select at least one transaction area.");
+  }
+  if (!guidance.columns.some((column) => ["transaction-date", "posting-date", "value-date"].includes(column.role))) {
+    issues.push("Map the statement date column.");
+  }
+  if (!guidance.columns.some((column) => ["amount", "debit", "credit"].includes(column.role))) {
+    issues.push("Map the account amount, money-out, or money-in column.");
+  }
+  if (result.transactions.length > 0 && result.metrics.rejected / result.transactions.length > 0.5) {
+    issues.push("Most detected transactions have unresolved required fields.");
+  }
+  return [...new Set(issues)];
 }
 
 function PdfProfileSaveDialog({
@@ -938,9 +1093,9 @@ function PdfProfileSaveDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Save detection profile</DialogTitle>
+          <DialogTitle>Save statement layout</DialogTitle>
           <DialogDescription>
-            Profiles are shared across budgets and accounts. They store layout settings only, not statement data.
+            Layouts are shared across budgets and accounts. They store detection settings only, not statement data.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -959,7 +1114,7 @@ function PdfProfileSaveDialog({
             </datalist>
           </label>
           <label className="grid gap-1.5 text-sm">
-            <span className="font-medium">Profile name</span>
+            <span className="font-medium">Layout name</span>
             <input
               value={profileName}
               onChange={(event) => setProfileName(event.target.value)}
@@ -972,7 +1127,7 @@ function PdfProfileSaveDialog({
               checked={assignToAccount}
               onCheckedChange={(checked) => setAssignToAccount(checked === true)}
             />
-            Use this profile for {accountName}
+            Use this layout for {accountName}
           </label>
         </div>
         <DialogFooter>
@@ -981,15 +1136,28 @@ function PdfProfileSaveDialog({
             bankName: bankName.trim(),
             profileName: profileName.trim(),
             assignToAccount,
-          })}>{isSaving ? "Saving…" : "Save profile"}</Button>
+          })}>{isSaving ? "Saving…" : "Save layout"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ModeButton({ active, onClick, children, className }: { active: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
-  return <button type="button" role="tab" aria-selected={active} onClick={onClick} className={cn("inline-flex h-7 items-center rounded-md px-2.5 text-xs", active ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:bg-background/60", className)}>{children}</button>;
+function WorkflowStepButton({ step, active, label, onClick }: { step: number; active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-current={active ? "step" : undefined}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs",
+        active ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+      )}
+    >
+      <span className={cn("inline-flex size-4 items-center justify-center rounded-full border text-[10px]", active && "border-foreground")}>{step}</span>
+      <span>{label}</span>
+    </button>
+  );
 }
 
 const SummaryBar = memo(function SummaryBar({ result, totals }: { result: PdfStatementParseResult; totals: { credits: number; debits: number } }) {
@@ -1075,7 +1243,7 @@ function DetectionChangePreview({ diff }: { diff: ReturnType<typeof resultDiff> 
   );
 }
 
-const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, search, setSearch, scope, setScope }: { rows: PdfTransactionProposal[]; filter: ReviewCategory; setFilter: (filter: ReviewCategory) => void; search: string; setSearch: (value: string) => void; scope: PdfCorrectionScope; setScope: (scope: PdfCorrectionScope) => void }) {
+const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, search, setSearch }: { rows: PdfTransactionProposal[]; filter: ReviewCategory; setFilter: (filter: ReviewCategory) => void; search: string; setSearch: (value: string) => void }) {
   const reviewCategories: [ReviewCategory, string][] = [
     ["structure", "Structure"],
     ["dates", "Dates"],
@@ -1087,14 +1255,16 @@ const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, sea
   const needsReviewCount = count("needs-review");
   const visibleReviewCategories = reviewCategories.map(([value, label]) => ({ value, label, count: count(value) })).filter((category) => category.count > 0);
   const manualCount = count("manual");
+  const issueFilterActive = filter === "needs-review" || visibleReviewCategories.some((category) => category.value === filter);
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
-      <div className="flex flex-wrap items-center gap-1" aria-label="Review filters">
+    <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b px-4 py-1.5">
+      <div className="flex shrink-0 items-center gap-1" aria-label="Review filters">
         <ReviewFilterButton label="All" count={count("all")} active={filter === "all"} onClick={() => setFilter("all")} />
-        {needsReviewCount > 0 && (
-          <div role="group" aria-label="Needs review filters" className="flex flex-wrap items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/5 p-1">
-            <ReviewFilterButton label="Needs review" count={needsReviewCount} active={filter === "needs-review"} onClick={() => setFilter("needs-review")} />
-            {visibleReviewCategories.length > 0 && <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-amber-500/30" />}
+        <ReviewFilterButton label="Needs review" count={needsReviewCount} active={filter === "needs-review"} onClick={() => setFilter("needs-review")} />
+        <ReviewFilterButton label="Ready" count={count("ready")} active={filter === "ready"} onClick={() => setFilter("ready")} />
+        {issueFilterActive && visibleReviewCategories.length > 0 && (
+          <div role="group" aria-label="Needs review filters" className="flex items-center gap-1">
+            <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-border" />
             {visibleReviewCategories.map((category) => (
               <ReviewFilterButton key={category.value} label={category.label} count={category.count} active={filter === category.value} onClick={() => setFilter(category.value)} />
             ))}
@@ -1102,21 +1272,7 @@ const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, sea
         )}
         {manualCount > 0 && <ReviewFilterButton label="Manual changes" count={manualCount} active={filter === "manual"} onClick={() => setFilter("manual")} />}
       </div>
-      <label className="group relative ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
-        <span className="inline-flex cursor-help items-center gap-1" tabIndex={0} aria-describedby="pdf-correction-scope-help">
-          Correction scope
-          <CircleHelp aria-hidden="true" className="size-3" />
-        </span>
-        <span id="pdf-correction-scope-help" role="tooltip" className="pointer-events-none absolute bottom-full right-0 z-50 mb-1 hidden w-72 rounded-md border bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-md group-hover:block group-focus-within:block">
-          Choose whether a correction changes only this row, rows with the same issue, or every transaction in this PDF.
-        </span>
-        <select aria-label="Correction scope" aria-describedby="pdf-correction-scope-help" value={scope} onChange={(event) => setScope(event.target.value as PdfCorrectionScope)} className="h-8 rounded-md border bg-background px-2 text-xs text-foreground">
-          <option value="row">This row</option>
-          <option value="similar-rows">Similar rows</option>
-          <option value="file">This file</option>
-        </select>
-      </label>
-      <label className="relative min-w-48 flex-1 sm:max-w-72">
+      <label className="relative ml-auto min-w-48 flex-1 sm:max-w-72">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <span className="sr-only">Search parsed transactions</span>
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search transactions" className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs" />
@@ -1147,8 +1303,6 @@ type TransactionTableProps = {
   rows: PdfTransactionProposal[];
   result: PdfStatementParseResult;
   selectedIds: Set<string>;
-  actionScope: PdfCorrectionScope;
-  isParsing: boolean;
   allVisibleSelected: boolean;
   selectAllRef: React.RefObject<HTMLInputElement | null>;
   onToggleAll: () => void;
@@ -1161,7 +1315,7 @@ type TransactionTableProps = {
   onSplit: (row: PdfTransactionProposal) => void;
 };
 
-function TransactionTable({ rows, result, selectedIds, actionScope, isParsing, allVisibleSelected, selectAllRef, onToggleAll, onToggle, onDirection, onField, onSource, onAccept, onIgnore, onSplit }: TransactionTableProps) {
+function TransactionTable({ rows, result, selectedIds, allVisibleSelected, selectAllRef, onToggleAll, onToggle, onDirection, onField, onSource, onAccept, onIgnore, onSplit }: TransactionTableProps) {
   const showPosting = result.guidance.columns.some((column) => column.role === "posting-date") || rows.some((row) => row.postedDate);
   const showValue = result.guidance.columns.some((column) => column.role === "value-date") || rows.some((row) => row.valueDate);
   const showBalance = result.guidance.columns.some((column) => column.role === "balance") && rows.some((row) => row.balance);
@@ -1171,7 +1325,7 @@ function TransactionTable({ rows, result, selectedIds, actionScope, isParsing, a
       <table className="w-full min-w-[1060px] table-fixed text-xs">
         <caption className="sr-only">Transactions extracted from the PDF statement</caption>
         <colgroup>
-          <col className="w-9" /><col className="w-8" /><col className="w-32" />
+          <col className="w-9" /><col className="w-16" /><col className="w-32" />
           {showPosting && <col className="w-32" />}
           {showValue && <col className="w-32" />}
           <col /><col className="w-40" /><col className="w-24" />
@@ -1181,7 +1335,7 @@ function TransactionTable({ rows, result, selectedIds, actionScope, isParsing, a
         <thead className="sticky top-0 z-20 bg-muted text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
           <tr className="[&>th]:bg-muted [&>th]:px-3 [&>th]:py-1.5 [&>th]:font-medium">
             <th><input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={onToggleAll} aria-label={allVisibleSelected ? "Deselect all visible PDF rows" : "Select all visible PDF rows"} /></th>
-            <th><span className="sr-only">Status</span></th>
+            <th>Status</th>
             <DateHeader label="Transaction date" selected={result.guidance.importDate === "transaction"} />
             {showPosting && <DateHeader label="Posting date" selected={result.guidance.importDate === "posting"} />}
             {showValue && <DateHeader label="Value date" selected={result.guidance.importDate === "value"} />}
@@ -1199,8 +1353,6 @@ function TransactionTable({ rows, result, selectedIds, actionScope, isParsing, a
               row={row}
               block={blocksById.get(row.id)}
               selected={selectedIds.has(row.id)}
-              actionScope={actionScope}
-              isParsing={isParsing}
               showPosting={showPosting}
               showValue={showValue}
               showBalance={showBalance}
@@ -1220,7 +1372,7 @@ function TransactionTable({ rows, result, selectedIds, actionScope, isParsing, a
   );
 }
 
-type TransactionRowProps = Pick<TransactionTableProps, "actionScope" | "isParsing" | "onToggle" | "onDirection" | "onField" | "onSource" | "onAccept" | "onIgnore" | "onSplit"> & {
+type TransactionRowProps = Pick<TransactionTableProps, "onToggle" | "onDirection" | "onField" | "onSource" | "onAccept" | "onIgnore" | "onSplit"> & {
   row: PdfTransactionProposal;
   block: PdfStatementParseResult["blocks"][number] | undefined;
   selected: boolean;
@@ -1234,13 +1386,13 @@ const TransactionRow = memo(function TransactionRow({ row, block, selected, show
   return (
     <tr className={cn("border-b", selected && "bg-accent/60", !selected && row.status === "rejected" && "bg-destructive/5", !selected && row.status === "review" && "bg-amber-500/5")}>
       <td className="px-2 py-0.5 text-center"><Checkbox checked={selected} onCheckedChange={(value) => onToggle(row.id, value === true)} aria-label={`Select PDF row ${row.sourceRowNumber}`} /></td>
-      <td className="px-1 text-center">{row.status === "accepted" ? <CheckCircle2 className="mx-auto size-3.5 text-emerald-600" aria-label="Row is ready" /> : <span aria-label={reasonText(row.issueCodes)} title={reasonText(row.issueCodes)}><AlertTriangle aria-hidden="true" className={cn("mx-auto size-3.5", row.status === "rejected" ? "text-destructive" : "text-amber-600")} /></span>}</td>
+      <td className="px-1 text-center"><TransactionStatus status={row.status} reasons={row.issueCodes} /></td>
       <EditableDate row={row} field="transactionDate" value={row.transactionDate} confidence="transactionDate" onField={onField} onSource={onSource} />
       {showPosting && <EditableDate row={row} field="postedDate" value={row.postedDate} confidence="postingDate" onField={onField} onSource={onSource} />}
       {showValue && <EditableDate row={row} field="valueDate" value={row.valueDate} confidence="valueDate" onField={onField} onSource={onSource} />}
-      <td className="p-0.5"><div className="flex"><input aria-label={`Description for PDF row ${row.sourceRowNumber}`} defaultValue={row.description} onBlur={(event) => event.target.value !== row.description && onField(row, "description", event.target.value)} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 focus:border-input focus:bg-background" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show description source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "description")}><Eye className="size-3.5" /></button></div>{details && <p className="truncate px-1 text-[10px] text-muted-foreground" title={details}>{details}</p>}</td>
-      <td className="p-0.5"><div className="flex h-7 overflow-hidden rounded border border-transparent focus-within:border-input focus-within:bg-background"><button type="button" onClick={() => onDirection(row, row.direction === "debit" ? "credit" : "debit")} aria-label={row.direction === "debit" ? `Change row ${row.sourceRowNumber} to money in` : `Change row ${row.sourceRowNumber} to money out`} className={cn("w-7 border-r font-semibold", row.direction === "debit" ? "text-red-600" : row.direction === "credit" ? "text-emerald-700" : "text-amber-700")}>{row.direction === "debit" ? "−" : row.direction === "credit" ? "+" : "?"}</button><input aria-label={`Amount for PDF row ${row.sourceRowNumber}`} defaultValue={row.amount.replace(/^[+-]/, "")} onBlur={(event) => event.target.value !== row.amount.replace(/^[+-]/, "") && onField(row, "amount", `${row.direction === "debit" ? "-" : ""}${event.target.value}`)} className="min-w-0 flex-1 bg-transparent px-2 text-right tabular-nums outline-none" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show amount source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "accountAmount")}><Eye className="size-3.5" /></button></div></td>
-      <td className="p-0.5"><div className="flex"><input aria-label={`Currency for PDF row ${row.sourceRowNumber}`} defaultValue={row.currency ?? ""} maxLength={3} onBlur={(event) => event.target.value.toUpperCase() !== (row.currency ?? "") && onField(row, "currency", event.target.value.toUpperCase() || null)} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-center uppercase focus:border-input focus:bg-background" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show currency source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "currency")}><Eye className="size-3.5" /></button></div></td>
+      <td className="p-0.5"><div className="flex"><input key={`${row.id}-description-${row.description}`} aria-label={`Description for PDF row ${row.sourceRowNumber}`} defaultValue={row.description} onBlur={(event) => event.target.value !== row.description && onField(row, "description", event.target.value)} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 focus:border-input focus:bg-background" /><button type="button" title="Show description in statement" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show description in statement for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "description")}><Eye className="size-3.5" /></button></div>{details && <p className="truncate px-1 text-[10px] text-muted-foreground" title={details}>{details}</p>}</td>
+      <td className="p-0.5"><div className="flex h-7 overflow-hidden rounded border border-transparent focus-within:border-input focus-within:bg-background"><button type="button" onClick={() => onDirection(row, row.direction === "debit" ? "credit" : "debit")} aria-label={row.direction === "debit" ? `Change row ${row.sourceRowNumber} to money in` : `Change row ${row.sourceRowNumber} to money out`} className={cn("w-7 border-r font-semibold", row.direction === "debit" ? "text-red-600" : row.direction === "credit" ? "text-emerald-700" : "text-amber-700")}>{row.direction === "debit" ? "−" : row.direction === "credit" ? "+" : "?"}</button><input key={`${row.id}-amount-${row.amount}`} aria-label={`Amount for PDF row ${row.sourceRowNumber}`} defaultValue={row.amount.replace(/^[+-]/, "")} onBlur={(event) => event.target.value !== row.amount.replace(/^[+-]/, "") && onField(row, "amount", `${row.direction === "debit" ? "-" : ""}${event.target.value}`)} className="min-w-0 flex-1 bg-transparent px-2 text-right tabular-nums outline-none" /><button type="button" title="Show amount in statement" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show amount in statement for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "accountAmount")}><Eye className="size-3.5" /></button></div></td>
+      <td className="p-0.5"><div className="flex"><input key={`${row.id}-currency-${row.currency ?? ""}`} aria-label={`Currency for PDF row ${row.sourceRowNumber}`} defaultValue={row.currency ?? ""} maxLength={3} onBlur={(event) => event.target.value.toUpperCase() !== (row.currency ?? "") && onField(row, "currency", event.target.value.toUpperCase() || null)} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-center uppercase focus:border-input focus:bg-background" /><button type="button" title="Show currency in statement" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show currency in statement for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "currency")}><Eye className="size-3.5" /></button></div></td>
       {showBalance && <td className="px-2 text-right tabular-nums text-muted-foreground">{row.balance ? formatGroupedDecimal(row.balance) : "-"}</td>}
       <td className="p-0.5"><div className="flex justify-end gap-1">{row.status === "review" && <Button size="xs" variant="outline" onClick={() => onAccept(row)}>Mark reviewed</Button>}{block && block.rowIds.length > 1 && <Button size="icon-sm" variant="ghost" aria-label={`Split PDF row ${row.sourceRowNumber}`} onClick={() => onSplit(row)}><Split className="size-3.5" /></Button>}<Button size="icon-sm" variant="ghost" aria-label={`Ignore PDF row ${row.sourceRowNumber}`} onClick={() => onIgnore(row)}><Trash2 className="size-3.5" /></Button></div></td>
     </tr>
@@ -1250,19 +1402,57 @@ const TransactionRow = memo(function TransactionRow({ row, block, selected, show
   && previous.selected === next.selected
   && previous.showPosting === next.showPosting
   && previous.showValue === next.showValue
-  && previous.showBalance === next.showBalance
-  && previous.actionScope === next.actionScope
-  && previous.isParsing === next.isParsing);
+  && previous.showBalance === next.showBalance);
 
 function EditableDate({ row, field, value, confidence, onField, onSource }: { row: PdfTransactionProposal; field: "transactionDate" | "postedDate" | "valueDate"; value: string | null; confidence: keyof PdfTransactionProposal["confidence"]; onField: (row: PdfTransactionProposal, field: "transactionDate" | "postedDate" | "valueDate" | "importDate", value: string | null) => void; onSource: (row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) => void }) {
   const label = field === "transactionDate" ? "Transaction" : field === "postedDate" ? "Posting" : "Value";
-  return <td className="p-0.5"><div className="flex"><input aria-label={`${label} date for PDF row ${row.sourceRowNumber}`} type="date" defaultValue={value ?? ""} onBlur={(event) => { const next = event.target.value || null; if (next !== value) onField(row, field, next); }} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 tabular-nums focus:border-input focus:bg-background" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show ${field} source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, confidence)}><Eye className="size-3.5" /></button></div></td>;
+  return <td className="p-0.5"><div className="flex"><input key={`${row.id}-${field}-${value ?? ""}`} aria-label={`${label} date for PDF row ${row.sourceRowNumber}`} type="date" defaultValue={value ?? ""} onBlur={(event) => { const next = event.target.value || null; if (next !== value) onField(row, field, next); }} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 tabular-nums focus:border-input focus:bg-background" /><button type="button" title={`Show ${label.toLowerCase()} date in statement`} className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show ${field} in statement for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, confidence)}><Eye className="size-3.5" /></button></div></td>;
+}
+
+function TransactionStatus({ status, reasons }: { status: PdfTransactionProposal["status"]; reasons: PdfConfidenceReason[] }) {
+  const label = status === "accepted" ? "Ready" : status === "rejected" ? "Fix" : "Review";
+  const title = status === "accepted" ? "Transaction is ready" : reasonText(reasons);
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+        status === "accepted" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+        status === "review" && "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+        status === "rejected" && "bg-destructive/10 text-destructive"
+      )}
+    >
+      {status === "accepted" ? <CheckCircle2 aria-hidden="true" className="size-3" /> : <AlertTriangle aria-hidden="true" className="size-3" />}
+      {label}
+    </span>
+  );
 }
 
 function DateHeader({ label, selected }: { label: string; selected: boolean }) { return <th className="text-left"><span className="inline-flex items-center gap-1">{selected && <CalendarCheck className="size-3.5 text-foreground" />}{label}</span></th>; }
 
 function DetectionControls({ guidance, accountType, onChange }: { guidance: PdfParserGuidance; accountType: PdfAccountType; onChange: (patch: Partial<PdfParserGuidance>) => void }) {
-  return <section><h3 className="text-sm font-medium">Document interpretation</h3><p className="mt-1 text-xs text-muted-foreground">These choices explain the statement. Import date is a separate preference and does not change what the printed columns mean.</p><div className="mt-3 grid grid-cols-2 gap-3"><Control label="Account type"><select value={guidance.accountType} onChange={(event) => onChange({ accountType: event.target.value as PdfParserGuidance["accountType"] })} className="h-8 rounded border bg-background px-2"><option value="auto">Auto-detect ({accountTypeLabel(accountType)})</option>{["checking", "savings", "credit-card", "prepaid", "multi-currency", "business-cash", "loan", "investment"].map((value) => <option key={value} value={value}>{accountTypeLabel(value as PdfAccountType)}</option>)}</select></Control><Control label="Statement currency"><input value={guidance.currency ?? ""} maxLength={3} placeholder="Detect or enter ISO code" onChange={(event) => onChange({ currency: event.target.value.toUpperCase() || null })} className="h-8 rounded border bg-background px-2 uppercase" /></Control><Control label="Statement starts"><input type="date" value={guidance.statementPeriod.start ?? ""} onChange={(event) => onChange({ statementPeriod: { ...guidance.statementPeriod, start: event.target.value || null } })} className="h-8 rounded border bg-background px-2" /></Control><Control label="Statement ends"><input type="date" value={guidance.statementPeriod.end ?? ""} onChange={(event) => onChange({ statementPeriod: { ...guidance.statementPeriod, end: event.target.value || null } })} className="h-8 rounded border bg-background px-2" /></Control><Control label="Date format"><select value={guidance.dateFormat} onChange={(event) => onChange({ dateFormat: event.target.value as PdfDateFormatOption })} className="h-8 rounded border bg-background px-2">{DATE_FORMATS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control><Control label="Number format"><select value={guidance.numberFormat} onChange={(event) => onChange({ numberFormat: event.target.value as PdfNumberFormat })} className="h-8 rounded border bg-background px-2">{NUMBER_FORMATS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control><Control label="Use as import date"><select value={guidance.importDate} onChange={(event) => onChange({ importDate: event.target.value as PdfImportDate })} className="h-8 rounded border bg-background px-2"><option value="transaction">Transaction date</option><option value="posting">Posting date</option><option value="value">Value date</option></select></Control><Control label="Amount direction"><select value={guidance.unsignedDirection} onChange={(event) => onChange({ unsignedDirection: event.target.value as PdfParserGuidance["unsignedDirection"] })} className="h-8 rounded border bg-background px-2"><option value="review">Use signs or DR/CR; review unmarked</option><option value="debit">CR = money in; unmarked = money out</option><option value="credit">DR = money out; unmarked = money in</option></select></Control></div></section>;
+  const [open, setOpen] = useState(true);
+  const importDateLabel = guidance.importDate === "transaction" ? "Transaction date" : guidance.importDate === "posting" ? "Posting date" : "Value date";
+  return (
+    <details className="rounded-md border px-3 py-2" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="cursor-pointer text-sm font-medium">
+        <span>Statement interpretation</span>
+        <span className="ml-2 text-[11px] font-normal text-muted-foreground">{accountTypeLabel(accountType)} · {guidance.currency ?? "currency automatic"} · import {importDateLabel.toLowerCase()}</span>
+      </summary>
+      <p className="mt-2 text-xs text-muted-foreground">Use these controls when the automatic date, number, account, or amount interpretation is wrong.</p>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <Control label="Account type"><select value={guidance.accountType} onChange={(event) => onChange({ accountType: event.target.value as PdfParserGuidance["accountType"] })} className="h-8 rounded border bg-background px-2"><option value="auto">Auto-detect ({accountTypeLabel(accountType)})</option>{["checking", "savings", "credit-card", "prepaid", "multi-currency", "business-cash", "loan", "investment"].map((value) => <option key={value} value={value}>{accountTypeLabel(value as PdfAccountType)}</option>)}</select></Control>
+        <Control label="Statement currency"><input value={guidance.currency ?? ""} maxLength={3} placeholder="Detect or enter ISO code" onChange={(event) => onChange({ currency: event.target.value.toUpperCase() || null })} className="h-8 rounded border bg-background px-2 uppercase" /></Control>
+        <Control label="Use as import date"><select value={guidance.importDate} onChange={(event) => onChange({ importDate: event.target.value as PdfImportDate })} className="h-8 rounded border bg-background px-2"><option value="transaction">Transaction date</option><option value="posting">Posting date</option><option value="value">Value date</option></select></Control>
+        <Control label="Amount direction"><select value={guidance.unsignedDirection} onChange={(event) => onChange({ unsignedDirection: event.target.value as PdfParserGuidance["unsignedDirection"] })} className="h-8 rounded border bg-background px-2"><option value="review">Use signs or DR/CR; review unmarked</option><option value="debit">CR = money in; unmarked = money out</option><option value="credit">DR = money out; unmarked = money in</option></select></Control>
+        <Control label="Statement starts"><input type="date" value={guidance.statementPeriod.start ?? ""} onChange={(event) => onChange({ statementPeriod: { ...guidance.statementPeriod, start: event.target.value || null } })} className="h-8 rounded border bg-background px-2" /></Control>
+        <Control label="Statement ends"><input type="date" value={guidance.statementPeriod.end ?? ""} onChange={(event) => onChange({ statementPeriod: { ...guidance.statementPeriod, end: event.target.value || null } })} className="h-8 rounded border bg-background px-2" /></Control>
+        <Control label="Date format"><select value={guidance.dateFormat} onChange={(event) => onChange({ dateFormat: event.target.value as PdfDateFormatOption })} className="h-8 rounded border bg-background px-2">{DATE_FORMATS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control>
+        <Control label="Number format"><select value={guidance.numberFormat} onChange={(event) => onChange({ numberFormat: event.target.value as PdfNumberFormat })} className="h-8 rounded border bg-background px-2">{NUMBER_FORMATS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control>
+      </div>
+    </details>
+  );
 }
 
 function Control({ label, children }: { label: string; children: React.ReactNode }) { return <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted-foreground">{label}{children}</label>; }
@@ -1272,6 +1462,7 @@ function PageControls({ pageNumber, pageCount, onChange }: { pageNumber: number;
 function matchesCategory(row: PdfTransactionProposal, category: ReviewCategory) {
   if (category === "all") return true;
   if (category === "needs-review") return row.status !== "accepted";
+  if (category === "ready") return row.status === "accepted";
   if (category === "manual") return row.issueCodes.includes("ROW_MANUALLY_CHANGED");
   if (row.status === "accepted") return false;
   if (category === "structure") return row.issueCodes.some((reason) => (reason.startsWith("ROW_") && reason !== "ROW_MANUALLY_CHANGED") || reason === "PAGE_IMAGE_ONLY");
