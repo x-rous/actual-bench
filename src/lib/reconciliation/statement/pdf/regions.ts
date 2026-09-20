@@ -1,6 +1,8 @@
 import { diagnostic } from "./diagnostics";
-import { dateCandidates, looksLikeDate, moneyCandidates } from "./candidates";
+import { dateCandidates, looksLikeDate, looksLikeMoney, moneyCandidates } from "./candidates";
+import { rowValuesForColumn } from "./columns";
 import type {
+  PdfColumn,
   PdfDiagnosticEvent,
   PdfParserGuidance,
   PdfReconstructedPage,
@@ -28,11 +30,15 @@ export function classifyPdfRegions(
     };
   }
   const regions: PdfRegion[] = [];
-  let previousPageHadTransactions = false;
+  // Once a statement has shown its transaction table, later pages continue it
+  // even when a summary page interrupts them, so the evidence is kept for the
+  // whole document rather than only for the page before.
+  let documentHasTransactions = false;
   pages.forEach((page) => {
-    const proposed = proposePageRegions(page, previousPageHadTransactions);
+    const proposed = proposePageRegions(page, documentHasTransactions);
     regions.push(...proposed);
-    previousPageHadTransactions = proposed.some((region) => region.kind === "transactions" && region.included);
+    documentHasTransactions = documentHasTransactions
+      || proposed.some((region) => region.kind === "transactions" && region.included);
   });
   return {
     regions,
@@ -48,7 +54,7 @@ export function classifyPdfRegions(
 
 function proposePageRegions(
   page: PdfReconstructedPage,
-  previousPageHadTransactions: boolean
+  documentHasTransactions: boolean
 ): PdfRegion[] {
   const usable = page.rows.filter((row) => !row.repeatedHeaderFooter);
   const transactionHeader = page.rows.find(isTransactionHeader);
@@ -61,7 +67,11 @@ function proposePageRegions(
   const anchors = hasTransactionHeader
     ? anchorCandidates
     : anchorsInDominantDateColumn(anchorCandidates);
-  if (anchors.length === 0 || (!hasTransactionHeader && !previousPageHadTransactions && anchors.length < 3)) {
+  // The first transaction area has to prove itself. Once the statement has
+  // shown one, a later page continues it on a single dated row, which is what
+  // a wrapped last transaction looks like at the top of the next page.
+  const requiredAnchors = documentHasTransactions ? 1 : 3;
+  if (anchors.length === 0 || (!hasTransactionHeader && anchors.length < requiredAnchors)) {
     const kind = page.imageOnlyLikelihood >= 0.75 ? "other" : classifyText(usable.map((row) => row.text).join(" "));
     return [regionFromRows(page, usable, kind, false, kind === "other" ? 0.4 : 0.75)];
   }
@@ -70,9 +80,14 @@ function proposePageRegions(
     ?? Math.max(0, Math.min(...anchors.map((row) => row.y)) - medianRowHeight(usable) * 3);
   const lastAnchorEnd = Math.max(...anchors.map((row) => row.y + row.height));
   const nextSection = usable.find((row) => row.y > lastAnchorEnd && isNonTransactionSection(row.text));
-  const maxY = nextSection
-    ? Math.max(minY, nextSection.y - 0.01)
-    : page.height;
+  // Page furniture sits well below the table. Wrapped description lines follow
+  // their transaction within the table's own line pitch, so the first row
+  // separated by a clear gap ends the area.
+  const tailBreak = firstRowBelowGap(usable, lastAnchorEnd, medianRowPitch(usable));
+  const maxY = Math.min(
+    nextSection ? Math.max(minY, nextSection.y - 0.01) : page.height,
+    tailBreak ? Math.max(minY, tailBreak.y - 0.01) : page.height
+  );
   const before = usable.filter((row) => row.y + row.height < minY);
   const transactionRows = usable.filter((row) => row.y + row.height >= minY && row.y <= maxY);
   const after = usable.filter((row) => row.y > maxY);
@@ -114,7 +129,7 @@ function hasLikelyDateAnchor(
   ));
 }
 
-function isTransactionHeader(row: PdfReconstructedPage["rows"][number]) {
+export function isTransactionHeader(row: PdfReconstructedPage["rows"][number]) {
   const isCompactHeader = row.cells.length >= 2 || row.text.length <= 90;
   return isCompactHeader
     && /(?:transaction|trans\.?|posting|post(?:ed)?|processed|booking|entry|registration|value)?\s*date|date\s+of\s+transaction/i.test(row.text)
@@ -156,7 +171,86 @@ function regionFromRows(
   };
 }
 
+function firstRowBelowGap(
+  rows: PdfReconstructedPage["rows"],
+  fromY: number,
+  rowPitch: number
+) {
+  const below = rows
+    .filter((row) => row.y > fromY)
+    .sort((left, right) => left.y - right.y);
+  let previousEnd = fromY;
+  for (const row of below) {
+    if (row.y - previousEnd > rowPitch * 2) return row;
+    previousEnd = row.y + row.height;
+  }
+  return null;
+}
+
+function medianRowPitch(rows: PdfReconstructedPage["rows"]) {
+  const centers = rows.map((row) => row.y).sort((left, right) => left - right);
+  const gaps = centers
+    .slice(1)
+    .map((value, index) => value - centers[index])
+    .filter((gap) => gap > 1)
+    .sort((left, right) => left - right);
+  return gaps[Math.floor(gaps.length / 2)] ?? medianRowHeight(rows) * 2;
+}
+
 function medianRowHeight(rows: PdfReconstructedPage["rows"]) {
   const values = rows.map((row) => row.height).sort((a, b) => a - b);
   return values[Math.floor(values.length / 2)] ?? 12;
+}
+
+/**
+ * Include pages whose rows line up with the mapped date and amount columns.
+ *
+ * A saved layout describes a table, not a page count: next month's statement
+ * can carry that table onto pages the layout has never seen. Pages that
+ * already have a transaction area are left alone, including one the user
+ * deliberately excluded.
+ */
+export function extendRegionsWithMappedColumns(
+  pages: PdfReconstructedPage[],
+  regions: PdfRegion[],
+  columns: PdfColumn[]
+): PdfRegionResult {
+  const dateColumn = columns.find((column) => ["transaction-date", "posting-date", "value-date"].includes(column.role));
+  const amountColumns = columns.filter((column) => ["amount", "debit", "credit"].includes(column.role));
+  if (!dateColumn || !amountColumns.length) return { regions, diagnostics: [] };
+
+  const pagesWithTransactionArea = new Set(regions
+    .filter((region) => region.kind === "transactions")
+    .map((region) => region.pageNumber));
+  const added: PdfRegion[] = [];
+  pages.forEach((page) => {
+    if (pagesWithTransactionArea.has(page.pageNumber)) return;
+    const aligned = page.rows.filter((row) => !row.repeatedHeaderFooter
+      && rowValuesForColumn(row, dateColumn, page.width).some((cell) => looksLikeDate(cell.text))
+      && amountColumns.some((column) => rowValuesForColumn(row, column, page.width).some((cell) => looksLikeMoney(cell.text))));
+    if (aligned.length < 2) return;
+    const firstY = Math.min(...aligned.map((row) => row.y));
+    const lastY = Math.max(...aligned.map((row) => row.y + row.height));
+    const rows = page.rows.filter((row) => !row.repeatedHeaderFooter
+      && row.y + row.height >= firstY
+      && row.y <= lastY);
+    added.push({
+      ...regionFromRows(page, rows, "transactions", true, 0.8),
+      id: `p${page.pageNumber}-transactions-mapped`,
+      reasons: ["rows align with the mapped columns"],
+    });
+  });
+
+  if (!added.length) return { regions, diagnostics: [] };
+  const merged = [...regions.filter((region) => !added.some((entry) => entry.pageNumber === region.pageNumber && !region.included && region.kind === "other")), ...added]
+    .sort((left, right) => left.pageNumber - right.pageNumber || left.y - right.y);
+  return {
+    regions: merged,
+    diagnostics: added.map((region) => diagnostic({
+      stage: "region",
+      code: "REGION_FROM_MAPPED_COLUMNS",
+      pageNumber: region.pageNumber,
+      metrics: { rows: region.rowIds.length },
+    })),
+  };
 }

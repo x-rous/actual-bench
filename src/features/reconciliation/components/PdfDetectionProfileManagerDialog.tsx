@@ -161,7 +161,6 @@ export function PdfDetectionProfileManagerDialog({
                         ) : (
                           <>
                             <span className="font-medium">{profile.envelope.profile.name}</span>
-                            <span className="text-xs text-muted-foreground">v{profile.envelope.profile.profileVersion}</span>
                             {isAssigned && <Badge variant="status-active">This account</Badge>}
                             <Button size="icon-xs" variant="ghost" aria-label={`Rename ${profile.envelope.profile.name}`} disabled={busy !== null} onClick={() => setEditing({ kind: "profile", id: profile.recordId, value: profile.envelope.profile.name })}><Pencil /></Button>
                           </>

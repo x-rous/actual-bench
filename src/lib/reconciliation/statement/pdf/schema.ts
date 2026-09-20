@@ -1,4 +1,4 @@
-import { looksLikeDate, moneyCandidates } from "./candidates";
+import { looksLikeDate, looksLikeMoney, moneyCandidates } from "./candidates";
 import { columnExamplesForRegions } from "./columns";
 import { diagnostic } from "./diagnostics";
 import type {
@@ -154,7 +154,7 @@ function columnsFromContent(
       samples,
       support: new Set(transactionCells.map(rowKey)).size,
       dateRatio: ratio(samples, looksLikeDate),
-      moneyRatio: ratio(samples, (value) => moneyCandidates(value).length === 1),
+      moneyRatio: ratio(samples, (value) => looksLikeMoney(value) && moneyCandidates(value).length === 1),
       directionRatio: ratio(samples, (value) => /^(?:CR|DR|C|D|CREDIT|DEBIT)$/i.test(value.trim())),
     };
   }).filter((candidate) => candidate.support >= 2);
@@ -186,17 +186,31 @@ function rowKey(cell: PdfVisualCell) {
 }
 
 function clusterCellsByX(cells: PdfVisualCell[]) {
-  const clusters: PdfVisualCell[][] = [];
+  // Cells are visited left to right and each cluster keeps a running centre,
+  // so a long statement costs one pass instead of re-averaging every cluster
+  // for every cell.
+  const clusters: { cells: PdfVisualCell[]; centerSum: number }[] = [];
   for (const cell of [...cells].sort((a, b) => a.x - b.x)) {
     const center = cell.x + cell.width / 2;
-    const cluster = clusters.find((candidate) => {
-      const candidateCenter = average(candidate.map((entry) => entry.x + entry.width / 2));
-      return Math.abs(candidateCenter - center) <= Math.max(18, cell.width * 0.35);
-    });
-    if (cluster) cluster.push(cell);
-    else clusters.push([cell]);
+    const tolerance = Math.max(18, cell.width * 0.35);
+    let cluster: { cells: PdfVisualCell[]; centerSum: number } | undefined;
+    for (let index = clusters.length - 1; index >= 0; index -= 1) {
+      const candidate = clusters[index];
+      const candidateCenter = candidate.centerSum / candidate.cells.length;
+      if (Math.abs(candidateCenter - center) <= tolerance) {
+        cluster = candidate;
+        break;
+      }
+      if (candidateCenter < center - tolerance * 3) break;
+    }
+    if (cluster) {
+      cluster.cells.push(cell);
+      cluster.centerSum += center;
+    } else {
+      clusters.push({ cells: [cell], centerSum: center });
+    }
   }
-  return clusters.sort((a, b) => minX(a) - minX(b));
+  return clusters.map((cluster) => cluster.cells).sort((a, b) => minX(a) - minX(b));
 }
 
 function columnFromCluster(

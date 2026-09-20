@@ -36,6 +36,7 @@ import {
 import {
   extractPdfStatement,
   parsePdfStatementOffMainThread,
+  releasePdfStatementPreviews,
   PDF_MAX_BYTES,
   type PdfExtractionProgress,
 } from "@/lib/reconciliation/statement/pdfClient";
@@ -244,6 +245,7 @@ export type ImportPanelProps = {
     bankName: string;
     profileName: string;
     profile: PdfLayoutProfileEnvelope;
+    mode: "create" | "update";
     assignToAccount?: boolean;
   }) => Promise<{ bank: PdfDetectionBankRecord; profile: PdfDetectionProfileRecord }>;
   onAssignPdfDetectionProfile?: (profileId: string) => Promise<unknown>;
@@ -339,8 +341,11 @@ export function ImportPanel({
   } | null>(null);
   const [pdfPassword, setPdfPassword] = useState("");
 
+  const pdfDraftRef = useRef<PdfStatementParseResult | null>(null);
+  pdfDraftRef.current = pdfDraft;
   useEffect(() => () => {
     pdfAbortRef.current?.abort();
+    releasePdfStatementPreviews(pdfDraftRef.current);
   }, []);
   const pdfProfileOptions = useMemo(() => (pdfDetectionCatalog?.profiles ?? []).flatMap((record) => {
     if (!isPdfLayoutProfileEnvelope(record.profile)) return [];
@@ -465,6 +470,7 @@ export function ImportPanel({
     }
     if (isPdf) {
       pdfAbortRef.current?.abort();
+      releasePdfStatementPreviews(pdfDraft);
       const controller = new AbortController();
       pdfAbortRef.current = controller;
       setIsReadingPdf(true);
@@ -490,9 +496,20 @@ export function ImportPanel({
               guidance: guidanceFromPdfLayoutProfile(accountPdfProfile.envelope.profile, draft),
             }, controller.signal);
             initialPdfProfileId = accountPdfProfile.recordId;
+            const savedGuidance = accountPdfProfile.envelope.profile.guidance;
+            // A saved layout can carry the settings that decide money in from
+            // money out. Those are confirmed against this statement rather
+            // than applied on a geometric match alone.
+            const carriesSignPolicy = savedGuidance.unsignedDirection !== "review"
+              || savedGuidance.accountType !== "auto"
+              || (savedGuidance.printedSign ?? "auto") !== "auto";
             if (match.outcome === "possible") {
               setPdfProfileNotice(
                 `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name} was applied, but the layout differs from the saved version. Check the detection settings.`
+              );
+            } else if (carriesSignPolicy) {
+              setPdfProfileNotice(
+                `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name} was applied, including its amount-direction settings. Confirm they match this statement.`
               );
             }
           } else {
@@ -514,6 +531,13 @@ export function ImportPanel({
         if (pdfAbortRef.current === controller) pdfAbortRef.current = null;
         setPdfProgress(null);
         setIsReadingPdf(false);
+        // A cancelled or failed read leaves no document to unlock, so the
+        // password prompt must not stay open waiting for one.
+        setPasswordPrompt((current) => {
+          current?.resolve(null);
+          return null;
+        });
+        setPdfPassword("");
       }
       return;
     }
@@ -639,6 +663,18 @@ export function ImportPanel({
    */
   const splitAmounts = effectiveConfig?.signConvention === "debit-credit";
   const columnCount = splitAmounts ? 6 : 5;
+
+  const pdfProgressControl = isReadingPdf ? (
+    <>
+      <LoaderCircle className="size-3.5 animate-spin text-muted-foreground" aria-label="Reading PDF" />
+      <span className="text-[11px] text-muted-foreground">
+        {pdfProgress?.phase === "extracting" && pdfProgress.totalPages > 0
+          ? `Page ${pdfProgress.completedPages} of ${pdfProgress.totalPages}`
+          : pdfProgress?.phase === "parsing" ? "Building transactions…" : "Opening PDF…"}
+      </span>
+      <Button size="xs" variant="ghost" onClick={() => pdfAbortRef.current?.abort()}>Cancel</Button>
+    </>
+  ) : null;
 
   const uploadControl = (
     <label className={cn("inline-flex h-7 items-center rounded-md border border-input px-2.5 text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-ring", isLoadingPdfDetectionProfiles ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground")}>
@@ -769,6 +805,7 @@ export function ImportPanel({
           )}
           <div className="flex flex-wrap items-center gap-2">
             {uploadControl}
+            {pdfProgressControl}
             {effectiveConfig?.format !== "pdf" && (
               <Button variant="ghost" size="sm" className="h-7" onClick={() => setRawOpen(true)}>
                 <FileText className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
@@ -787,17 +824,7 @@ export function ImportPanel({
         <>
           <div className="flex flex-wrap items-center gap-2">
             {uploadControl}
-            {isReadingPdf && (
-              <>
-                <LoaderCircle className="size-3.5 animate-spin text-muted-foreground" aria-label="Reading PDF" />
-                <span className="text-[11px] text-muted-foreground">
-                  {pdfProgress?.phase === "extracting" && pdfProgress.totalPages > 0
-                    ? `Page ${pdfProgress.completedPages} of ${pdfProgress.totalPages}`
-                    : pdfProgress?.phase === "parsing" ? "Building transactions…" : "Opening PDF…"}
-                </span>
-                <Button size="xs" variant="ghost" onClick={() => pdfAbortRef.current?.abort()}>Cancel</Button>
-              </>
-            )}
+            {pdfProgressControl}
             <span className="text-[11px] text-muted-foreground">CSV, TSV, OFX, QFX, QIF or PDF</span>
           </div>
           <div className="flex flex-col gap-1">
@@ -1068,36 +1095,29 @@ export function ImportPanel({
         onRenameProfile={onRenamePdfDetectionProfile}
         onDeleteProfile={onDeletePdfDetectionProfile}
         isSavingProfile={isSavingPdfDetectionProfile}
-        onSaveProfile={async ({ bankName, profileName, assignToAccount, result }) => {
+        onSaveProfile={async ({ bankName, profileName, mode, assignToAccount, result }) => {
           if (!onSavePdfDetectionProfile) return;
-          const existingOption = pdfProfileOptions.find((option) =>
+          // Updating keeps the layout's identity and creation date; saving a
+          // new one is a new layout. Nothing is versioned either way.
+          const existing = pdfProfileOptions.find((option) =>
             option.bankName.localeCompare(bankName, undefined, { sensitivity: "accent" }) === 0
             && option.envelope.profile.name.localeCompare(profileName, undefined, { sensitivity: "accent" }) === 0
-          );
-          const existing = existingOption?.envelope ?? null;
+          )?.envelope.profile;
           const profile = createPdfLayoutProfile({
-            id: generateId(),
+            id: mode === "update" && existing ? existing.id : generateId(),
             name: profileName,
             result,
-            profileVersion: existing ? existing.profile.profileVersion + 1 : 1,
-            supersedesProfileId: existing?.profile.id ?? null,
+            createdAt: mode === "update" ? existing?.createdAt : undefined,
           });
           const saved = await onSavePdfDetectionProfile({
             bankName,
             profileName,
+            mode,
             assignToAccount,
-            profile: {
-              kind: "pdf-layout-v2",
-              profile,
-              history: existing ? [existing.profile, ...(existing.history ?? [])] : [],
-            },
+            profile: { kind: "pdf-layout-v2", profile },
           });
           setAppliedPdfProfileId(saved.profile.id);
-          return {
-            bankId: saved.bank.id,
-            profileId: saved.profile.id,
-            profileVersion: profile.profileVersion,
-          };
+          return { bankId: saved.bank.id, profileId: saved.profile.id };
         }}
       />
 

@@ -17,6 +17,7 @@ jest.mock("@/lib/reconciliation/statement/pdfClient", () => ({
   PDF_MAX_BYTES: 25 * 1024 * 1024,
   extractPdfStatement: (...args: unknown[]) => mockExtractPdfStatement(...args),
   parsePdfStatementOffMainThread: (...args: unknown[]) => mockParsePdfStatementOffMainThread(...args),
+  releasePdfStatementPreviews: () => {},
 }));
 
 jest.mock("./PdfStatementReviewDialog", () => ({

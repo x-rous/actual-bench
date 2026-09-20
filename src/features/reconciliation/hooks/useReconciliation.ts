@@ -125,6 +125,7 @@ export function useReconciliationMutations() {
       bankName: string;
       profileName: string;
       profile: unknown;
+      mode: "create" | "update";
       assignToAccount?: boolean;
     }) => api.savePdfDetectionProfile({ budgetSyncId: budgetSyncId!, ...payload }),
     onSuccess: invalidatePdfDetectionProfiles,

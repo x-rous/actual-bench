@@ -8,8 +8,9 @@ import type {
   PdfVisualCell,
   PdfVisualRow,
 } from "./model";
-import { normalizePdfText, sourceSafeShape } from "./text";
-import { looksLikeDate, moneyCandidates } from "./candidates";
+import { normalizePdfText } from "./text";
+import { looksLikeDate, looksLikeMoney, moneyCandidates } from "./candidates";
+import { isTransactionHeader } from "./regions";
 
 type TokenDraft = PdfPositionedToken & { sourceOrder: number };
 
@@ -159,18 +160,31 @@ function clusterRows(tokens: PdfPositionedToken[], pageNumber: number): PdfVisua
   const fontHeights = tokens.map((token) => token.fontHeight).sort((a, b) => a - b);
   const medianHeight = median(fontHeights) || 10;
   const baselineTolerance = Math.max(1.5, medianHeight * 0.34);
-  const groups: PdfPositionedToken[][] = [];
+  // Tokens arrive in reading order, so the matching baseline is one of the
+  // last groups. Scanning from the end with a running centre keeps row
+  // clustering linear instead of quadratic on long statements.
+  const groups: { tokens: PdfPositionedToken[]; centerSum: number }[] = [];
   for (const token of [...tokens].sort((a, b) => a.y - b.y || a.x - b.x)) {
     const center = token.y + token.height / 2;
-    const group = groups.find((candidate) => {
-      const candidateCenter = median(candidate.map((entry) => entry.y + entry.height / 2));
-      return Math.abs(center - candidateCenter) <= baselineTolerance;
-    });
-    if (group) group.push(token);
-    else groups.push([token]);
+    let group: { tokens: PdfPositionedToken[]; centerSum: number } | undefined;
+    for (let index = groups.length - 1; index >= 0; index -= 1) {
+      const candidate = groups[index];
+      const candidateCenter = candidate.centerSum / candidate.tokens.length;
+      if (Math.abs(center - candidateCenter) <= baselineTolerance) {
+        group = candidate;
+        break;
+      }
+      if (candidateCenter < center - baselineTolerance * 3) break;
+    }
+    if (group) {
+      group.tokens.push(token);
+      group.centerSum += center;
+    } else {
+      groups.push({ tokens: [token], centerSum: center });
+    }
   }
 
-  return groups.map((group, rowIndex) => {
+  return groups.map(({ tokens: group }, rowIndex) => {
     const ordered = [...group].sort((a, b) => a.x - b.x);
     const cells = clusterCells(ordered, pageNumber, rowIndex, medianHeight);
     const x = Math.min(...ordered.map((token) => token.x));
@@ -229,22 +243,58 @@ function markRepeatedHeadersAndFooters(pages: PdfReconstructedPage[]) {
   if (pages.length < 2) return;
   const occurrences = new Map<string, PdfVisualRow[]>();
   pages.forEach((page) => {
-    page.rows.forEach((row) => {
+    const ordered = [...page.rows].sort((left, right) => left.y - right.y);
+    const pitch = medianRowPitch(ordered);
+    ordered.forEach((row, rowIndex) => {
+      // A line printed directly under a dated transaction row is that
+      // transaction's wrapped text, not page furniture, however often the
+      // same words happen to repeat.
+      const above = ordered[rowIndex - 1];
+      const continuesTransaction = Boolean(above)
+        && row.y - (above.y + above.height) <= pitch * 1.2
+        && looksLikeDate(above.text)
+        && moneyCandidates(above.text).length > 0;
+      if (continuesTransaction) return;
       const edge = row.y <= page.height * 0.14 || row.y + row.height >= page.height * 0.86;
-      const shape = sourceSafeShape(row.text);
-      // Repeated transaction shapes (date + description + amount) are data,
-      // even when a page starts with a transaction instead of a repeated table
-      // header. Never discard them as page furniture.
-      if (!edge || shape.length < 3 || (looksLikeDate(row.text) && moneyCandidates(row.text).length > 0)) return;
-      const list = occurrences.get(shape) ?? [];
+      // Furniture repeats the same words, with at most a changing number such
+      // as a page or statement number. Matching on letter shape instead also
+      // caught unrelated wrapped description lines - every two-word line has
+      // the same shape - and silently deleted statement text.
+      // Furniture also repeats at the same height on every page, while a
+      // wrapped description lands wherever its transaction happens to fall.
+      const band = Math.round(row.y / Math.max(1, page.height) * 50);
+      const key = `${normalizePdfText(row.text).replace(/\d+/g, "#")}@${band}`;
+      // A row that carries both a date and a money-shaped value is transaction
+      // data even when a page starts or ends with one, and is never discarded
+      // as furniture. A bare number is not money: "Page 3 of 6" must stay
+      // eligible, or the footer ends up inside the transaction area.
+      // The table header repeats on every page by design. Removing it as
+      // furniture would take the statement's own column names away from
+      // schema detection, which is where they are most useful.
+      if (!edge || key.length < 3 || isTransactionHeader(row) || (looksLikeDate(row.text) && looksLikeMoney(row.text))) return;
+      const list = occurrences.get(key) ?? [];
       list.push(row);
-      occurrences.set(shape, list);
+      occurrences.set(key, list);
     });
   });
+
+  // Furniture repeats on most pages. A line that happens to appear on two
+  // pages of a longer statement - the same summary label, the same wrapped
+  // city - is content, and removing it would delete statement text.
+  const requiredPages = Math.max(2, Math.ceil(pages.length * 0.6));
   occurrences.forEach((rows) => {
-    if (new Set(rows.map((row) => row.pageNumber)).size < 2) return;
+    if (new Set(rows.map((row) => row.pageNumber)).size < requiredPages) return;
     rows.forEach((row) => { row.repeatedHeaderFooter = true; });
   });
+}
+
+function medianRowPitch(rows: PdfVisualRow[]) {
+  const gaps = rows
+    .slice(1)
+    .map((row, index) => row.y - rows[index].y)
+    .filter((gap) => gap > 1)
+    .sort((left, right) => left - right);
+  return median(gaps) || rows[0]?.height || 12;
 }
 
 function positionedBox(

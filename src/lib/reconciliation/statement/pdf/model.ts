@@ -148,6 +148,19 @@ export type PdfBalanceBehavior =
   | "periodic"
   | "unknown";
 
+/**
+ * How a balance column moves for this statement. `deposit` means a credit
+ * raises the balance; `liability` means a credit lowers what is owed. The
+ * source records how far the parser may trust it: printed directions that
+ * already agree with the balance column are evidence, a user-chosen or
+ * profile-chosen account type is confirmed, and a keyword-detected account
+ * type is a guess that keeps derived directions in review.
+ */
+export type PdfBalancePolarity = {
+  direction: "deposit" | "liability";
+  source: "evidence" | "confirmed-type" | "detected-type";
+};
+
 export type PdfBalanceCheckpoint = {
   kind: "opening" | "carry-forward" | "closing";
   pageNumber: number;
@@ -161,6 +174,13 @@ export type PdfDateFormatOption = "auto" | StatementDateFormat | "ymd";
 export type PdfNumberFormat = "auto" | "us" | "european" | "space" | "indian" | "swiss";
 export type PdfImportDate = "transaction" | "posting" | "value";
 export type PdfUnsignedDirection = "review" | "debit" | "credit";
+/**
+ * Whose perspective the printed sign uses. Deposit accounts print from the
+ * account holder's side, where a minus is money out. Card and loan issuers
+ * print from their own side, where a minus reduces what is owed and is money
+ * in for the Actual account.
+ */
+export type PdfPrintedSign = "auto" | "account-holder" | "issuer";
 export type PdfCorrectionScope = "row" | "similar-rows" | "file" | "profile";
 
 export type PdfParserGuidance = {
@@ -172,6 +192,7 @@ export type PdfParserGuidance = {
   numberFormat: PdfNumberFormat;
   importDate: PdfImportDate;
   unsignedDirection: PdfUnsignedDirection;
+  printedSign: PdfPrintedSign;
   regions: PdfRegion[];
   columns: PdfColumn[];
   transactionAnchorRole: "transaction-date" | "posting-date" | "value-date";
@@ -186,6 +207,7 @@ export const DEFAULT_PDF_PARSER_GUIDANCE: PdfParserGuidance = {
   numberFormat: "auto",
   importDate: "transaction",
   unsignedDirection: "review",
+  printedSign: "auto",
   regions: [],
   columns: [],
   transactionAnchorRole: "transaction-date",
@@ -212,7 +234,9 @@ export type PdfConfidenceReason =
   | "DIRECTION_FROM_CREDIT_COLUMN"
   | "DIRECTION_FROM_MARKER"
   | "DIRECTION_FROM_SIGN"
+  | "SIGN_CONVENTION_UNCONFIRMED"
   | "DIRECTION_FROM_BALANCE"
+  | "ACCOUNT_TYPE_UNCONFIRMED"
   | "DIRECTION_FROM_SECTION"
   | "DIRECTION_EXPLICIT_POLICY"
   | "DIRECTION_UNRESOLVED"
@@ -330,6 +354,12 @@ export type PdfParseMetrics = {
   rejected: number;
   duplicates: number;
   skippedRegions: number;
+  /** Rows inside an included transaction area that no block claimed. */
+  unassignedRows: number;
+  /** Pages whose text layer is unusable while other pages parsed normally. */
+  imageOnlyPages: number;
+  /** Pages the extraction stage could not read at all. Set by the PDF.js bridge. */
+  unreadablePages: number;
 };
 
 export type PdfStatementParseResult = {
@@ -344,6 +374,8 @@ export type PdfStatementParseResult = {
   detectedGuidance: PdfParserGuidance;
   accountType: PdfAccountType;
   balanceBehavior: PdfBalanceBehavior;
+  /** How the balance column was read, and how far that reading can be trusted. */
+  balancePolarity: PdfBalancePolarity | null;
   transactions: PdfTransactionProposal[];
   diagnostics: PdfDiagnosticEvent[];
   metrics: PdfParseMetrics;

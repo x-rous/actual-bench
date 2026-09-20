@@ -150,6 +150,7 @@ export function savePdfDetectionProfile(payload: {
   bankName: string;
   profileName: string;
   profile: unknown;
+  mode: "create" | "update";
   assignToAccount?: boolean;
 }) {
   return request<{ bank: PdfDetectionBankRecord; profile: PdfDetectionProfileRecord }>(

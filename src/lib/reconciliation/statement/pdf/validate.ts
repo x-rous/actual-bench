@@ -4,6 +4,7 @@ import type {
   PdfAccountType,
   PdfBalanceBehavior,
   PdfBalanceCheckpoint,
+  PdfBalancePolarity,
   PdfConfidenceReason,
   PdfDiagnosticEvent,
   PdfParserGuidance,
@@ -26,12 +27,15 @@ export function validatePdfTransactions(
     accountType: PdfAccountType;
     balanceBehavior: PdfBalanceBehavior;
     balanceCheckpoints: PdfBalanceCheckpoint[];
+    balancePolarity: PdfBalancePolarity | null;
   }
 ): PdfValidationResult {
   validatePeriod(transactions, guidance.statementPeriod);
   validateImportPrecision(transactions);
-  if (context?.balanceBehavior === "running") {
-    validateBalanceSequences(transactions, context.accountType, context.balanceCheckpoints);
+  // Without a known balance polarity the balance column cannot say whether a
+  // transaction reconciles, so it stays out of the row status entirely.
+  if (context?.balanceBehavior === "running" && context.balancePolarity) {
+    validateBalanceSequences(transactions, context.balancePolarity, context.balanceCheckpoints);
   }
   validateDuplicates(transactions);
   validateStatementSummary(transactions, context?.pages ?? [], context?.regions ?? []);
@@ -175,12 +179,10 @@ function validatePeriod(
 
 function validateBalanceSequences(
   transactions: PdfTransactionProposal[],
-  accountType: PdfAccountType,
+  polarity: PdfBalancePolarity,
   checkpoints: PdfBalanceCheckpoint[]
 ) {
-  const liability = accountType === "credit-card" || accountType === "loan";
-  const deposit = ["checking", "savings", "prepaid", "multi-currency", "business-cash"].includes(accountType);
-  if (!liability && !deposit) return;
+  const liability = polarity.direction === "liability";
   const opening = checkpoints.find((checkpoint) => checkpoint.kind === "opening");
   const first = transactions[0];
   if (opening && first?.balance && first.exactAmount) {

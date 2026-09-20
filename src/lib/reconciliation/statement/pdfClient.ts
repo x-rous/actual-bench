@@ -11,6 +11,20 @@ export const PDF_MAX_TEXT_ITEMS_PER_PAGE = 20_000;
 export const PDF_MAX_TEXT_ITEMS = 300_000;
 export const PDF_MAX_PROCESSING_MS = 60_000;
 
+/**
+ * Extraction limits and the processing budget are reported as typed errors so
+ * callers never have to match on message text to tell them apart.
+ */
+export class PdfExtractionError extends Error {
+  constructor(
+    message: string,
+    readonly code: "too-large" | "too-many-pages" | "too-many-items" | "time-limit" | "password"
+  ) {
+    super(message);
+    this.name = "PdfExtractionError";
+  }
+}
+
 export type PdfExtractionProgress = {
   phase: "opening" | "extracting" | "parsing";
   completedPages: number;
@@ -30,7 +44,7 @@ export async function extractPdfStatement(
 ): Promise<PdfStatementParseResult> {
   const startedAt = Date.now();
   if (file.size > PDF_MAX_BYTES) {
-    throw new Error(`The PDF is larger than ${Math.round(PDF_MAX_BYTES / 1024 / 1024)} MB.`);
+    throw new PdfExtractionError(`The PDF is larger than ${Math.round(PDF_MAX_BYTES / 1024 / 1024)} MB.`, "too-large");
   }
   throwIfAborted(options.signal);
   options.onProgress?.({ phase: "opening", completedPages: 0, totalPages: 0 });
@@ -69,7 +83,7 @@ export async function extractPdfStatement(
 
   try {
     if (document.numPages > PDF_MAX_PAGES) {
-      throw new Error(`The PDF has ${document.numPages} pages; the limit is ${PDF_MAX_PAGES}.`);
+      throw new PdfExtractionError(`The PDF has ${document.numPages} pages; the limit is ${PDF_MAX_PAGES}.`, "too-many-pages");
     }
     const pages = [];
     const pagePreviews: (string | null)[] = [];
@@ -79,8 +93,10 @@ export async function extractPdfStatement(
       throwIfAborted(options.signal);
       throwIfTimedOut(startedAt);
       try {
-        const page = await document.getPage(index);
-        const content = await page.getTextContent();
+        // Each step races the remaining budget: a PDF.js call that never
+        // settles used to hang the import with no way out but the tab.
+        const page = await withBudget(document.getPage(index), startedAt);
+        const content = await withBudget(page.getTextContent(), startedAt);
         const viewport = page.getViewport({ scale: 1 });
         const items = content.items
           .filter((item): item is typeof item & { str: string; transform: number[] } => "str" in item)
@@ -95,11 +111,11 @@ export async function extractPdfStatement(
             hasEOL: "hasEOL" in item ? item.hasEOL : undefined,
           } satisfies PdfTextItem));
         if (items.length > PDF_MAX_TEXT_ITEMS_PER_PAGE) {
-          throw new Error(`PDF page ${index} contains more than ${PDF_MAX_TEXT_ITEMS_PER_PAGE.toLocaleString()} text items.`);
+          throw new PdfExtractionError(`PDF page ${index} contains more than ${PDF_MAX_TEXT_ITEMS_PER_PAGE.toLocaleString()} text items.`, "too-many-items");
         }
         textItemCount += items.length;
         if (textItemCount > PDF_MAX_TEXT_ITEMS) {
-          throw new Error(`The PDF contains more than ${PDF_MAX_TEXT_ITEMS.toLocaleString()} text items.`);
+          throw new PdfExtractionError(`The PDF contains more than ${PDF_MAX_TEXT_ITEMS.toLocaleString()} text items.`, "too-many-items");
         }
         pages.push({
           pageNumber: index,
@@ -109,11 +125,11 @@ export async function extractPdfStatement(
           viewportTransform: [...viewport.transform],
           items,
         });
-        pagePreviews.push(await renderPdfPagePreview(page));
+        pagePreviews.push(await renderPdfPagePreview(page, startedAt));
         page.cleanup();
       } catch (error) {
         if (options.signal?.aborted) throw abortError();
-        if (error instanceof Error && (error.message.includes("text items") || error.message.includes("time limit"))) throw error;
+        if (error instanceof PdfExtractionError) throw error;
         failedPages.push(index);
         pages.push({ pageNumber: index, width: 612, height: 792, items: [] });
         pagePreviews.push(null);
@@ -127,6 +143,7 @@ export async function extractPdfStatement(
       const previewDataUrl = pagePreviews[index];
       if (previewDataUrl) page.previewDataUrl = previewDataUrl;
     });
+    result.metrics.unreadablePages = failedPages.length;
     if (failedPages.length) {
       result.warnings.push(`${failedPages.length} PDF ${failedPages.length === 1 ? "page could" : "pages could"} not be read. Review the remaining pages before importing.`);
       failedPages.forEach((pageNumber) => result.diagnostics.push({
@@ -152,27 +169,91 @@ function abortError() {
 }
 
 function throwIfTimedOut(startedAt: number) {
-  if (Date.now() - startedAt > PDF_MAX_PROCESSING_MS) {
-    throw new Error(`PDF processing exceeded the ${PDF_MAX_PROCESSING_MS / 1000}-second time limit.`);
-  }
+  if (remainingBudget(startedAt) <= 0) throw timeLimitError();
 }
 
-async function renderPdfPagePreview(page: PDFPageProxy) {
+function remainingBudget(startedAt: number) {
+  return PDF_MAX_PROCESSING_MS - (Date.now() - startedAt);
+}
+
+function timeLimitError() {
+  return new PdfExtractionError(
+    `PDF processing exceeded the ${PDF_MAX_PROCESSING_MS / 1000}-second time limit.`,
+    "time-limit"
+  );
+}
+
+function withBudget<T>(work: Promise<T>, startedAt: number): Promise<T> {
+  const remaining = remainingBudget(startedAt);
+  if (remaining <= 0) return Promise.reject(timeLimitError());
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(timeLimitError()), remaining);
+    work.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error: unknown) => { clearTimeout(timer); reject(error as Error); }
+    );
+  });
+}
+
+async function renderPdfPagePreview(page: PDFPageProxy, startedAt: number) {
+  // A preview is a convenience. Text extraction owns the processing budget, so
+  // previews stop once most of it is gone rather than failing the import.
+  if (remainingBudget(startedAt) < PDF_MAX_PROCESSING_MS * 0.25) return null;
+  const canvas = globalThis.document.createElement("canvas");
   try {
     const base = page.getViewport({ scale: 1 });
     const scale = Math.min(1.5, 1100 / Math.max(1, base.width), 1600 / Math.max(1, base.height));
     const viewport = page.getViewport({ scale });
-    const canvas = globalThis.document.createElement("canvas");
     canvas.width = Math.max(1, Math.ceil(viewport.width));
     canvas.height = Math.max(1, Math.ceil(viewport.height));
     const canvasContext = canvas.getContext("2d");
     if (!canvasContext) return null;
-    await page.render({ canvasContext, viewport }).promise;
-    return canvas.toDataURL("image/webp", 0.72);
+    await withBudget(page.render({ canvasContext, viewport }).promise, startedAt);
+    return await canvasPreviewUrl(canvas);
   } catch {
     // Text extraction remains usable when a browser cannot render a preview.
     return null;
+  } finally {
+    // Free the backing store immediately. Browsers cap total canvas memory,
+    // and a long statement would otherwise hold every rendered page.
+    canvas.width = 0;
+    canvas.height = 0;
   }
+}
+
+/**
+ * An object URL keeps the rendered bytes out of the JavaScript heap, where a
+ * base64 data URL for every page of a long statement added up quickly. Callers
+ * release them with `releasePdfStatementPreviews`.
+ */
+function canvasPreviewUrl(canvas: HTMLCanvasElement): Promise<string | null> {
+  if (typeof canvas.toBlob !== "function") {
+    return Promise.resolve(safeDataUrl(canvas));
+  }
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => resolve(blob ? URL.createObjectURL(blob) : safeDataUrl(canvas)),
+      "image/webp",
+      0.72
+    );
+  });
+}
+
+function safeDataUrl(canvas: HTMLCanvasElement) {
+  try {
+    return canvas.toDataURL("image/webp", 0.72);
+  } catch {
+    return null;
+  }
+}
+
+/** Release rendered page previews once a parse result is no longer displayed. */
+export function releasePdfStatementPreviews(result: PdfStatementParseResult | null | undefined) {
+  if (!result || typeof URL === "undefined" || typeof URL.revokeObjectURL !== "function") return;
+  result.document.pages.forEach((page) => {
+    if (page.previewDataUrl?.startsWith("blob:")) URL.revokeObjectURL(page.previewDataUrl);
+    delete page.previewDataUrl;
+  });
 }
 
 export function parsePdfStatementOffMainThread(

@@ -51,8 +51,11 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.queryByLabelText("Number format")).toBeNull();
     expect(screen.getByRole("table", { name: /Transactions extracted/ })).toBeInTheDocument();
     const summary = screen.getByRole("region", { name: "PDF parse summary" });
-    const netChange = within(summary).getByText("Net change").parentElement!;
-    expect(within(netChange).getByText("-12.50")).toBeInTheDocument();
+    expect(summary.textContent).toContain("1 transaction");
+    const net = within(summary).getByText("Net").parentElement!;
+    expect(within(net).getByText("-12.50")).toBeInTheDocument();
+    // The state of the statement is a single pill rather than a raw count.
+    expect(within(summary).getByText("All ready")).toBeInTheDocument();
     const reviewStep = screen.getByRole("button", { name: /Review transactions/ });
     expect(reviewStep.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("button", { name: "Needs review 0" })).toBeInTheDocument();
@@ -109,11 +112,11 @@ describe("PdfStatementReviewDialog v2", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
     fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF" }));
-    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (125%)");
+    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (100%)");
 
     fireEvent.click(screen.getByRole("button", { name: /Review transactions/ }));
     fireEvent.click(screen.getByRole("button", { name: "Show amount in statement for PDF row 1" }));
-    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (125%)");
+    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (100%)");
   });
 
   it("opens the PDF page containing the selected field evidence", () => {
@@ -181,7 +184,7 @@ describe("PdfStatementReviewDialog v2", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} profiles={[option]} activeProfileId="record-1" open onOpenChange={() => {}} onImport={() => {}} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
-    const selector = screen.getByLabelText("Statement layout") as HTMLSelectElement;
+    const selector = screen.getByLabelText("Use layout") as HTMLSelectElement;
     expect(selector.value).toBe("record-1");
     expect(selector.querySelector("optgroup")?.label).toBe("HSBC Bank");
     expect(within(selector).getByRole("option", { name: "Credit card" })).toBeInTheDocument();
@@ -217,13 +220,13 @@ describe("PdfStatementReviewDialog v2", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
-    fireEvent.change(screen.getByLabelText("Statement layout"), { target: { value: "record-1" } });
+    fireEvent.change(screen.getByLabelText("Use layout"), { target: { value: "record-1" } });
     await waitFor(() => expect(screen.getByText(/statement only/i)).toBeInTheDocument());
     expect(onAssignProfile).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Use for this account" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use for HSBC card" }));
     expect(onAssignProfile).toHaveBeenCalledWith("record-1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Manage layouts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
     expect(screen.getByRole("dialog", { name: "Manage statement layouts" })).toBeInTheDocument();
     expect(screen.getByText("HSBC card")).toBeInTheDocument();
   });
@@ -363,7 +366,12 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(sourceHeader).toHaveClass("whitespace-nowrap");
     expect(within(sourceHeader).getByText("Page 1 of 1")).toBeInTheDocument();
     expect(screen.queryByText("Page 1", { exact: true })).not.toBeInTheDocument();
-    expect(within(sourceHeader).getByText(/% text coverage/)).toBeInTheDocument();
+    // Paging comes first, and text coverage is a detection concern that does
+    // not belong beside the evidence for one field.
+    const paging = within(sourceHeader).getByText("Page 1 of 1");
+    const heading = screen.getByRole("heading", { name: "Source" });
+    expect(paging.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(sourceHeader).queryByText(/% text coverage/)).toBeNull();
     const source = screen.getAllByText("-12.50").find((element) => element.className.includes("bg-sky-300"));
     expect(source).toBeDefined();
     expect(source!.className).toContain("bg-sky-300");
@@ -445,18 +453,13 @@ describe("PdfStatementReviewDialog v2", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Preview updated transactions" }));
     const comparison = screen.getByRole("region", { name: "Detection change preview" });
+    // Each measurement reads now → after, with the change called out, and the
+    // row-level edits are summarized underneath.
+    expect(within(comparison).getByText("If you apply these changes")).toBeInTheDocument();
     expect(within(comparison).getByText("Transactions")).toBeInTheDocument();
-    expect(within(comparison).getByText("Needs review")).toBeInTheDocument();
-    expect(within(comparison).getByText("Money in")).toBeInTheDocument();
-    expect(within(comparison).getByText("Money out")).toBeInTheDocument();
-    expect(within(comparison).queryByText("Net change")).toBeNull();
-    expect(within(comparison).getByText("Rows changed")).toBeInTheDocument();
-    expect(within(comparison).getByLabelText("Detection count comparison").children).toHaveLength(3);
-    expect(within(comparison).getByLabelText("Detection amount comparison").children).toHaveLength(2);
-    expect(within(comparison).getByText("Preview impact")).toBeInTheDocument();
-    expect(within(comparison).getAllByTitle(/Current .*; preview/)).toHaveLength(4);
-    expect(within(comparison).getByText("Money in")).toHaveClass("text-emerald-700");
-    expect(within(comparison).getByText("Money out")).toHaveClass("text-rose-700");
+    expect(within(comparison).getByText("Ready to import")).toBeInTheDocument();
+    expect(within(comparison).getByText("Net change")).toBeInTheDocument();
+    expect(within(comparison).getByText(/Row changes:|No row would change\./)).toBeInTheDocument();
     const applyDetection = screen.getByRole("button", { name: "Apply changes and review" });
     expect(applyDetection).toBeEnabled();
     fireEvent.click(applyDetection);
@@ -533,8 +536,37 @@ describe("PdfStatementReviewDialog v2", () => {
     ], { importDate: "value" });
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={withValueDate} open onOpenChange={() => {}} onImport={() => {}} />);
 
-    expect(screen.getByRole("columnheader", { name: "Value date" })).toBeInTheDocument();
+    // The header states which date is imported instead of relying on an icon.
+    expect(screen.getByRole("columnheader", { name: /Value date \(used as the import date\)/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Value date for PDF row 1")).toHaveValue("2026-08-15");
+  });
+
+  it("sorts the review table by a column and back to statement order", () => {
+    const parsed = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON BRAVO" }, { x: 480, text: "USD -30.00" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON ALPHA" }, { x: 480, text: "USD -10.00" }] },
+      { y: 660, cells: [{ x: 20, text: "08/17/2026" }, { x: 120, text: "ANON CHARLIE" }, { x: 480, text: "USD -20.00" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    const descriptions = () => screen.getAllByRole("textbox", { name: /Description for PDF row/ })
+      .map((input) => (input as HTMLInputElement).value);
+    expect(descriptions()).toEqual(["ANON BRAVO", "ANON ALPHA", "ANON CHARLIE"]);
+
+    const header = screen.getByRole("button", { name: /Description/ });
+    fireEvent.click(header);
+    expect(descriptions()).toEqual(["ANON ALPHA", "ANON BRAVO", "ANON CHARLIE"]);
+    expect(screen.getByRole("columnheader", { name: /Description/ })).toHaveAttribute("aria-sort", "ascending");
+
+    fireEvent.click(header);
+    expect(descriptions()).toEqual(["ANON CHARLIE", "ANON BRAVO", "ANON ALPHA"]);
+    expect(screen.getByRole("columnheader", { name: /Description/ })).toHaveAttribute("aria-sort", "descending");
+
+    // A third selection returns to the order the statement itself prints.
+    fireEvent.click(header);
+    expect(descriptions()).toEqual(["ANON BRAVO", "ANON ALPHA", "ANON CHARLIE"]);
+    expect(screen.getByRole("columnheader", { name: /Description/ })).toHaveAttribute("aria-sort", "none");
   });
 
   it("offers a restore action after a row is ignored", () => {
@@ -560,6 +592,114 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("button", { name: /Use 2 transactions/ })).toBeEnabled();
   });
 
+
+  it("asks whether to replace a layout whose name is taken", async () => {
+    const parsed = ordinaryResult();
+    const layout = createPdfLayoutProfile({ id: "layout-1", name: "Credit card", result: parsed });
+    const option: PdfDetectionProfileOption = {
+      recordId: "record-1",
+      bankId: "bank-1",
+      bankName: "HSBC Bank",
+      envelope: { kind: "pdf-layout-v2", profile: layout },
+    };
+    const onSaveProfile = jest.fn().mockResolvedValue({ bankId: "bank-1", profileId: "record-1" });
+    render(
+      <PdfStatementReviewDialog
+        fileName="statement.pdf"
+        result={parsed}
+        profiles={[option]}
+        accountName="HSBC card"
+        open
+        onOpenChange={() => {}}
+        onImport={() => {}}
+        onSaveProfile={onSaveProfile}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save layout" }));
+    fireEvent.change(screen.getByLabelText("Bank"), { target: { value: "HSBC Bank" } });
+    fireEvent.change(screen.getByLabelText("Layout name"), { target: { value: "Credit card" } });
+
+    // The name is taken, so saving is a choice rather than a silent overwrite.
+    expect(screen.getByText("HSBC Bank already has this layout")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Keep it and save a new layout/));
+    expect(screen.getByRole("button", { name: "Save layout" })).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText(/Update Credit card/));
+    fireEvent.click(screen.getByRole("button", { name: "Update layout" }));
+
+    await waitFor(() => expect(onSaveProfile).toHaveBeenCalledWith(expect.objectContaining({
+      bankName: "HSBC Bank",
+      profileName: "Credit card",
+      mode: "update",
+    })));
+    expect(toastSuccess).toHaveBeenCalledWith("Statement layout updated", expect.anything());
+  });
+
+  it("keeps the statement layout controls with the detection settings", () => {
+    const parsed = ordinaryResult();
+    render(
+      <PdfStatementReviewDialog
+        fileName="statement.pdf"
+        result={parsed}
+        open
+        onOpenChange={() => {}}
+        onImport={() => {}}
+        onSaveProfile={jest.fn()}
+      />
+    );
+
+    // Nothing layout-related sits in the workbench toolbar.
+    expect(screen.queryByLabelText("Use layout")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+    const layoutSection = screen.getByRole("region", { name: "Statement layout" });
+    expect(within(layoutSection).getByLabelText("Use layout")).toBeInTheDocument();
+    expect(within(layoutSection).getByRole("button", { name: "Save layout" })).toBeInTheDocument();
+  });
+
+  it("blocks import until unreadable pages are acknowledged", () => {
+    const parsed = ordinaryResult();
+    parsed.metrics = { ...parsed.metrics, unreadablePages: 1 };
+    parsed.warnings = [...parsed.warnings, "1 PDF page could not be read. Review the remaining pages before importing."];
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("could not be read");
+    expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "I checked these pages" }));
+
+    // Acknowledging dismisses the banner and leaves a way back to it.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /1 page unreadable/ }));
+    expect(screen.getByRole("alert")).toHaveTextContent("could not be read");
+  });
+
+  it("selects the source row behind a transaction instead of the transaction id", () => {
+    const parsed = ordinaryResult();
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show amount in statement for PDF row 1" }));
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    // The selection is a real reconstructed row that already belongs to a
+    // transaction, so marking it again is not offered.
+    expect(screen.queryByRole("button", { name: /Mark selected row as transaction/ })).toBeNull();
+  });
+
+  it("offers the printed-sign convention next to the amount-direction rule", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    const printedSign = screen.getByLabelText("Printed sign means");
+    expect(printedSign).toHaveValue("auto");
+    fireEvent.change(printedSign, { target: { value: "issuer" } });
+    expect(screen.getByLabelText("Printed sign means")).toHaveValue("issuer");
+  });
+
   it("marks multiple selected review rows as reviewed in one bulk action", () => {
     const duplicate = result([
       { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
@@ -570,6 +710,15 @@ describe("PdfStatementReviewDialog v2", () => {
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all visible PDF rows" }));
     fireEvent.click(screen.getByRole("button", { name: "Mark 2 reviewed" }));
+
+    // Accepting warnings that are still unresolved is confirmed first, and the
+    // confirmation names them.
+    expect(screen.getByText(/Possible duplicate/)).toBeInTheDocument();
+    // The confirmation renders inside a paragraph, so it must not introduce
+    // block elements that cannot legally nest there.
+    expect(document.querySelector("[data-slot='dialog-description'] ul, [data-slot='dialog-description'] div"))
+      .toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed anyway" }));
 
     expect(screen.getByRole("button", { name: /Use 2 transactions/ })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull();

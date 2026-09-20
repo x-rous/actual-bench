@@ -6,19 +6,21 @@ export type PdfLayoutProfile = {
   id: string;
   name: string;
   parserVersion: 2;
-  profileVersion: number;
   fingerprint: string;
   sourceFingerprint?: string;
   guidance: PdfParserGuidance;
   createdAt: string;
-  supersedesProfileId: string | null;
+  updatedAt: string;
   sourcePage: { width: number; height: number };
 };
 
+/**
+ * A saved layout is the current answer, not a version chain. Updating one
+ * replaces it; keeping the old settings means saving under another name.
+ */
 export type PdfLayoutProfileEnvelope = {
   kind: "pdf-layout-v2";
   profile: PdfLayoutProfile;
-  history?: PdfLayoutProfile[];
 };
 
 export type PdfProfileMatch = {
@@ -111,15 +113,14 @@ export function createPdfLayoutProfile(input: {
   id: string;
   name: string;
   result: { reconstructedPages: PdfReconstructedPage[]; activeSchema: PdfTableSchema | null; guidance: PdfParserGuidance };
-  supersedesProfileId?: string | null;
-  profileVersion?: number;
+  createdAt?: string;
 }): PdfLayoutProfile {
   const firstPage = input.result.reconstructedPages[0];
+  const now = new Date().toISOString();
   return {
     id: input.id,
     name: input.name,
     parserVersion: 2,
-    profileVersion: input.profileVersion ?? 1,
     fingerprint: createPdfLayoutFingerprint(input.result.reconstructedPages, input.result.activeSchema),
     sourceFingerprint: createPdfSourceLayoutFingerprint(input.result.reconstructedPages),
     guidance: {
@@ -131,8 +132,8 @@ export function createPdfLayoutProfile(input: {
       columns: input.result.guidance.columns.map((column) => ({ ...column, header: null, examples: [] })),
       regions: input.result.guidance.regions.map((region) => ({ ...region, rowIds: [], reasons: [] })),
     },
-    createdAt: new Date().toISOString(),
-    supersedesProfileId: input.supersedesProfileId ?? null,
+    createdAt: input.createdAt ?? now,
+    updatedAt: now,
     sourcePage: { width: firstPage?.width ?? 1, height: firstPage?.height ?? 1 },
   };
 }
@@ -190,28 +191,23 @@ export function sanitizePdfLayoutProfileEnvelope(value: unknown): PdfLayoutProfi
   if (!isPdfLayoutProfileEnvelope(value)) return null;
   const current = sanitizeProfile(value.profile);
   if (!current) return null;
-  const history = (value.history ?? []).map(sanitizeProfile);
-  if (history.some((profile) => profile === null)) return null;
-  return {
-    kind: "pdf-layout-v2",
-    profile: current,
-    ...(history.length ? { history: history as PdfLayoutProfile[] } : {}),
-  };
+  return { kind: "pdf-layout-v2", profile: current };
 }
 
 function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
   const guidance = profile.guidance;
   if (!guidance || guidance.version !== 1) return null;
   if (!profile.id || !profile.name || !profile.fingerprint || typeof profile.createdAt !== "string") return null;
+  if (profile.updatedAt !== undefined && typeof profile.updatedAt !== "string") return null;
   if (profile.sourceFingerprint !== undefined && typeof profile.sourceFingerprint !== "string") return null;
-  if (profile.supersedesProfileId !== null && typeof profile.supersedesProfileId !== "string") return null;
   if (!new Set(["auto", "credit-card", "checking", "savings", "prepaid", "multi-currency", "business-cash", "loan", "investment", "unknown"]).has(guidance.accountType)) return null;
   if (!new Set(["auto", "iso", "dmy", "mdy", "dmy-name", "ymd-compact", "ymd"]).has(guidance.dateFormat)) return null;
   if (!new Set(["auto", "us", "european", "space", "indian", "swiss"]).has(guidance.numberFormat)) return null;
   if (!new Set(["transaction", "posting", "value"]).has(guidance.importDate)) return null;
   if (!new Set(["review", "debit", "credit"]).has(guidance.unsignedDirection)) return null;
+  // Layouts saved before the printed-sign setting existed default to automatic.
+  if (guidance.printedSign !== undefined && !new Set(["auto", "account-holder", "issuer"]).has(guidance.printedSign)) return null;
   if (!new Set(["transaction-date", "posting-date", "value-date"]).has(guidance.transactionAnchorRole)) return null;
-  if (!Number.isInteger(profile.profileVersion) || profile.profileVersion < 1) return null;
   if (!Number.isFinite(profile.sourcePage.width) || profile.sourcePage.width <= 0
     || !Number.isFinite(profile.sourcePage.height) || profile.sourcePage.height <= 0) return null;
   if (!Array.isArray(guidance.columns) || !Array.isArray(guidance.regions)) return null;
@@ -247,7 +243,6 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
     id: profile.id,
     name: profile.name,
     parserVersion: 2,
-    profileVersion: profile.profileVersion,
     fingerprint: profile.fingerprint,
     ...(profile.sourceFingerprint === undefined ? {} : { sourceFingerprint: profile.sourceFingerprint }),
     guidance: {
@@ -259,6 +254,7 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
       numberFormat: guidance.numberFormat,
       importDate: guidance.importDate,
       unsignedDirection: guidance.unsignedDirection,
+      printedSign: guidance.printedSign ?? "auto",
       transactionAnchorRole: guidance.transactionAnchorRole,
       columns: guidance.columns.map((column) => ({
         id: column.id,
@@ -286,7 +282,7 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
       })),
     },
     createdAt: profile.createdAt,
-    supersedesProfileId: profile.supersedesProfileId,
+    updatedAt: profile.updatedAt ?? profile.createdAt,
     sourcePage: { width: profile.sourcePage.width, height: profile.sourcePage.height },
   };
 }

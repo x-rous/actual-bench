@@ -18,18 +18,17 @@ function createDb() {
   return db;
 }
 
-function profile(name: string, version = 1) {
+function profile(name: string, revision = 1) {
   return {
     kind: "pdf-layout-v2",
     profile: {
-      id: `${name}-${version}`,
+      id: `${name}-${revision}`,
       name,
       parserVersion: 2,
-      profileVersion: version,
-      fingerprint: "safe-layout-shape",
+      fingerprint: `safe-layout-shape-${revision}`,
       guidance: DEFAULT_PDF_PARSER_GUIDANCE,
       createdAt: "2026-09-19T00:00:00.000Z",
-      supersedesProfileId: null,
+      updatedAt: "2026-09-19T00:00:00.000Z",
       sourcePage: { width: 600, height: 800 },
     },
   };
@@ -67,7 +66,7 @@ describe("PDF detection profile repository", () => {
     expect(checkingCatalog.accountProfileId).toBe(checking.profile.id);
   });
 
-  it("updates a profile in place without changing account assignments", () => {
+  it("updates a layout in place only when the caller asks to replace it", () => {
     const db = createDb();
     const first = savePdfDetectionProfile(db, {
       budgetSyncId: "budget",
@@ -75,18 +74,44 @@ describe("PDF detection profile repository", () => {
       bankName: "HSBC Bank",
       profileName: "Credit card",
       profile: profile("Credit card"),
+      mode: "create",
     });
+
+    // Saving under a name that is taken is a mistake worth stopping, because
+    // the alternative is silently replacing someone else's layout.
+    expect(() => savePdfDetectionProfile(db, {
+      budgetSyncId: "budget",
+      accountId: "account",
+      bankName: "hsbc bank",
+      profileName: "credit CARD",
+      profile: profile("Credit card", 2),
+      mode: "create",
+    })).toThrow(/already has a layout named/);
+
     const updated = savePdfDetectionProfile(db, {
       budgetSyncId: "budget",
       accountId: "account",
       bankName: "hsbc bank",
       profileName: "credit CARD",
       profile: profile("Credit card", 2),
+      mode: "update",
     });
 
     expect(updated.profile.id).toBe(first.profile.id);
     expect(updated.profile.profile).toEqual(profile("Credit card", 2));
     expect(listPdfDetectionProfileCatalog(db, "budget", "account").accountProfileId).toBeNull();
+  });
+
+  it("refuses to update a layout that does not exist", () => {
+    const db = createDb();
+    expect(() => savePdfDetectionProfile(db, {
+      budgetSyncId: "budget",
+      accountId: "account",
+      bankName: "HSBC Bank",
+      profileName: "Credit card",
+      profile: profile("Credit card"),
+      mode: "update",
+    })).toThrow(/was not found/);
   });
 
   it("assigns an existing profile directly without copying it", () => {

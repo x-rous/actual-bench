@@ -1,6 +1,6 @@
 import { looksLikeDate, moneyCandidates } from "./candidates";
 import { diagnostic } from "./diagnostics";
-import { columnAppliesToPage, columnBoundsForPage } from "./columns";
+import { rowValuesForColumn } from "./columns";
 import type {
   PdfColumn,
   PdfDiagnosticEvent,
@@ -14,6 +14,8 @@ import type {
 
 export type PdfBlockResult = {
   blocks: PdfTransactionBlock[];
+  /** Rows inside an included transaction area that no block claimed. */
+  unassignedRows: PdfVisualRow[];
   diagnostics: PdfDiagnosticEvent[];
 };
 
@@ -41,22 +43,37 @@ export function assemblePdfTransactionBlocks(
   )]));
   const blocks: PdfTransactionBlock[] = [];
   const controlRows: PdfVisualRow[] = [];
+  const unassignedRows: PdfVisualRow[] = [];
+  const widthByPage = new Map(pages.map((page) => [page.pageNumber, page.width]));
+  const rowsById = new Map(pages.flatMap((page) => page.rows.map((row) => [row.id, row] as const)));
   let sectionId = "section-1";
   let sectionDirection: "debit" | "credit" | undefined;
   let sectionIndex = 1;
   let pendingRows: PdfVisualRow[] = [];
+  let previousRow: PdfVisualRow | undefined;
 
   const appendPendingToPrevious = (pending: PdfVisualRow[]) => {
     const previous = blocks.at(-1);
-    if (!previous) return;
     pending.forEach((pendingRow) => {
-      if (isContinuation(previous, pendingRow, pages)) appendRow(previous, pendingRow);
+      if (previous && isContinuation(previous, pendingRow, pages)) appendRow(previous, pendingRow);
+      // A row inside an included transaction area that belongs to no block is
+      // reported rather than dropped: the review screen counts it and the user
+      // can mark it as a transaction.
+      else unassignedRows.push(pendingRow);
     });
   };
 
   for (const row of rows) {
+    const pitch = rowPitchByPage.get(row.pageNumber) ?? Math.max(row.height * 2, 1);
+    const separated = standsApartFromPreviousRow(row, previousRow, pitch);
+    previousRow = row;
+    const pageWidth = widthByPage.get(row.pageNumber) ?? 1;
+    const anchorCells = anchorSources(row, anchorColumn, pageWidth);
     const declaredDirection = directionForSection(row.text);
-    if (declaredDirection && !looksLikeDate(row.text) && moneyCandidates(row.text).length === 0) {
+    // A heading owns the rows under it, so it must look like a heading: a
+    // wrapped description line such as "PAYMENT" sits one line under its own
+    // transaction and must stay part of it.
+    if (declaredDirection && separated && !looksLikeDate(row.text) && moneyCandidates(row.text).length === 0) {
       appendPendingToPrevious(pendingRows);
       pendingRows = [];
       sectionIndex += 1;
@@ -64,7 +81,7 @@ export function assemblePdfTransactionBlocks(
       sectionDirection = declaredDirection;
       continue;
     }
-    if (SECTION_HEADER.test(row.text) && !looksLikeDate(row.text)) {
+    if (SECTION_HEADER.test(row.text) && separated && !looksLikeDate(row.text)) {
       appendPendingToPrevious(pendingRows);
       pendingRows = [];
       sectionIndex += 1;
@@ -72,14 +89,16 @@ export function assemblePdfTransactionBlocks(
       sectionDirection = undefined;
       continue;
     }
-    const pageWidth = pages.find((page) => page.pageNumber === row.pageNumber)?.width ?? 1;
-    if (isControlRow(row)) {
+    // A dated row carrying its own account amount is a transaction even when
+    // its description starts with a control word, so merchants such as
+    // "TOTAL ENERGIES" are not discarded. A balance-forward or total line
+    // prints no amount of its own and stays a control row.
+    if (isControlRow(row) && (!anchorCells.length || !hasMappedAccountAmount(row, schema?.columns ?? [], pageWidth))) {
       appendPendingToPrevious(pendingRows);
       pendingRows = [];
       controlRows.push(row);
       continue;
     }
-    const anchorCells = anchorSources(row, anchorColumn, pageWidth);
     if (anchorCells.length) {
       // PDF text on one printed line can be emitted on slightly different
       // baselines. Delay continuation assignment until the next anchor is
@@ -107,7 +126,7 @@ export function assemblePdfTransactionBlocks(
       previousTransactionHasAccountAmount(
         blocks.at(-1),
         pendingRows,
-        pages,
+        { rowsById, widthByPage },
         schema?.columns ?? []
       )
     )) {
@@ -122,6 +141,7 @@ export function assemblePdfTransactionBlocks(
 
   return {
     blocks,
+    unassignedRows,
     diagnostics: [
       ...blocks.map((block) => diagnostic({
         stage: "block",
@@ -140,14 +160,14 @@ export function assemblePdfTransactionBlocks(
         pageNumber: row.pageNumber,
         sourceIds: row.cells.flatMap((cell) => cell.tokenIds),
       })),
+      ...unassignedRows.map((row) => diagnostic({
+        stage: "block",
+        code: "ROW_UNASSIGNED",
+        pageNumber: row.pageNumber,
+        sourceIds: row.cells.flatMap((cell) => cell.tokenIds),
+      })),
     ],
   };
-}
-
-export function rowValuesForColumn(row: PdfVisualRow, column: PdfColumn | undefined, pageWidth: number) {
-  if (!column || !columnAppliesToPage(column, row.pageNumber)) return [];
-  const bounds = columnBoundsForPage(column, pageWidth);
-  return row.cells.filter((cell) => horizontalOverlap(cell.x, cell.x + cell.width, bounds.xStart, bounds.xEnd) >= 0.25);
 }
 
 function anchorSources(row: PdfVisualRow, column: PdfColumn | undefined, pageWidth: number) {
@@ -251,23 +271,21 @@ function isSuppressedDateTransaction(
 function previousTransactionHasAccountAmount(
   previous: PdfTransactionBlock | undefined,
   pendingRows: PdfVisualRow[],
-  pages: PdfReconstructedPage[],
+  index: { rowsById: Map<string, PdfVisualRow>; widthByPage: Map<number, number> },
   columns: PdfColumn[]
 ) {
   if (!previous) return false;
-  const existing = rowsForBlockIds(pages, previous.rowIds);
+  const existing = previous.rowIds.flatMap((rowId) => {
+    const row = index.rowsById.get(rowId);
+    return row ? [row] : [];
+  });
   return [...existing, ...pendingRows].some((row) => {
-    const pageWidth = pages.find((page) => page.pageNumber === row.pageNumber)?.width ?? 1;
+    const pageWidth = index.widthByPage.get(row.pageNumber) ?? 1;
     return columns
       .filter((column) => ["amount", "debit", "credit"].includes(column.role))
       .flatMap((column) => rowValuesForColumn(row, column, pageWidth))
       .some((cell) => moneyCandidates(cell.text).length > 0);
   });
-}
-
-function rowsForBlockIds(pages: PdfReconstructedPage[], rowIds: string[]) {
-  const ids = new Set(rowIds);
-  return pages.flatMap((page) => page.rows.filter((row) => ids.has(row.id)));
 }
 
 function appendRow(block: PdfTransactionBlock, row: PdfVisualRow) {
@@ -286,11 +304,6 @@ function rowsForRegion(pages: PdfReconstructedPage[], region: PdfRegion) {
   return pages.find((page) => page.pageNumber === region.pageNumber)?.rows.filter((row) => rowIds.has(row.id)) ?? [];
 }
 
-function horizontalOverlap(startA: number, endA: number, startB: number, endB: number) {
-  const overlap = Math.max(0, Math.min(endA, endB) - Math.max(startA, startB));
-  return overlap / Math.max(1, Math.min(endA - startA, endB - startB));
-}
-
 function verticalOverlap(startA: number, endA: number, startB: number, endB: number) {
   const overlap = Math.max(0, Math.min(endA, endB) - Math.max(startA, startB));
   return overlap / Math.max(1, Math.min(endA - startA, endB - startB));
@@ -306,6 +319,30 @@ function sharesAnchorBand(
   const fontMetricTolerance = Math.max(row.height, anchor.height) * 1.25;
   const anchorBand = Math.min(rowPitch * 0.75, Math.max(fontMetricTolerance, rowPitch * 0.7));
   return centerDistance <= anchorBand;
+}
+
+/**
+ * A heading is preceded by white space, starts a page, or opens the area. A
+ * continuation line sits inside the previous row's line pitch.
+ */
+function standsApartFromPreviousRow(
+  row: PdfVisualRow,
+  previous: PdfVisualRow | undefined,
+  rowPitch: number
+) {
+  if (!previous || previous.pageNumber !== row.pageNumber) return true;
+  // Nothing to continue: the line above is a table header or another heading,
+  // not a transaction whose description could wrap onto this line.
+  if (!looksLikeDate(previous.text) || moneyCandidates(previous.text).length === 0) return true;
+  const gap = row.y - (previous.y + previous.height);
+  return gap >= Math.max(2, rowPitch * 0.5);
+}
+
+function hasMappedAccountAmount(row: PdfVisualRow, columns: PdfColumn[], pageWidth: number) {
+  return columns
+    .filter((column) => ["amount", "debit", "credit"].includes(column.role))
+    .flatMap((column) => rowValuesForColumn(row, column, pageWidth))
+    .some((cell) => moneyCandidates(cell.text).length > 0);
 }
 
 function trailingRowsMatching(rows: PdfVisualRow[], predicate: (row: PdfVisualRow) => boolean) {

@@ -1,5 +1,5 @@
 import { CURRENCY_CANDIDATE, looksLikeDate, moneyCandidates } from "./candidates";
-import type { PdfColumn, PdfColumnRole, PdfReconstructedPage, PdfRegion } from "./model";
+import type { PdfColumn, PdfColumnRole, PdfReconstructedPage, PdfRegion, PdfVisualRow } from "./model";
 
 export function columnBoundsForPage(column: PdfColumn, pageWidth: number) {
   const referenceWidth = column.referencePageWidth;
@@ -54,4 +54,17 @@ function supportsExample(role: PdfColumnRole, value: string) {
   }
   if (role === "description" || role === "reference") return /[\p{L}\p{N}]/u.test(value);
   return false;
+}
+
+/** The cells of one row that fall inside a mapped column on that row's page. */
+export function rowValuesForColumn(row: PdfVisualRow, column: PdfColumn | undefined, pageWidth: number) {
+  if (!column || !columnAppliesToPage(column, row.pageNumber)) return [];
+  const bounds = columnBoundsForPage(column, pageWidth);
+  return row.cells.filter((cell) =>
+    horizontalOverlap(cell.x, cell.x + cell.width, bounds.xStart, bounds.xEnd) >= 0.25);
+}
+
+function horizontalOverlap(startA: number, endA: number, startB: number, endB: number) {
+  const overlap = Math.max(0, Math.min(endA, endB) - Math.max(startA, startB));
+  return overlap / Math.max(1, Math.min(endA - startA, endB - startB));
 }

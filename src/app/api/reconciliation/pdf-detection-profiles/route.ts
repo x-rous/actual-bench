@@ -48,6 +48,7 @@ export async function POST(request: Request) {
       bankName: String(body.bankName ?? ""),
       profileName: String(body.profileName ?? ""),
       profile: body.profile,
+      mode: body.mode === "update" ? "update" : "create",
       assignToAccount: body.assignToAccount === true,
     });
     return NextResponse.json(result, { status: 201 });

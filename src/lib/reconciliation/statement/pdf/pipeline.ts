@@ -1,4 +1,5 @@
-import { assemblePdfTransactionBlocks, rowValuesForColumn } from "./blocks";
+import { assemblePdfTransactionBlocks } from "./blocks";
+import { rowValuesForColumn } from "./columns";
 import { dateCandidates } from "./candidates";
 import { applyBlockCorrections, applyFieldCorrections, applyGuidanceCorrections, type PdfCorrection } from "./corrections";
 import { inferPdfDateFormat, parsePdfDateCandidate } from "./dates";
@@ -11,7 +12,7 @@ import {
   type PdfStatementDocument,
   type PdfStatementParseResult,
 } from "./model";
-import { classifyPdfRegions } from "./regions";
+import { classifyPdfRegions, extendRegionsWithMappedColumns } from "./regions";
 import { detectPdfTableSchemas } from "./schema";
 import { validatePdfTransactions } from "./validate";
 
@@ -34,15 +35,22 @@ export function parsePdfStatementDocumentV2(
   };
   const corrections = options.corrections ?? [];
   const guidance = applyGuidanceCorrections(baseGuidance, corrections);
-  const detectedRegions = classifyPdfRegions(layout.pages, guidance.regions.length ? guidance : undefined);
-  const schemas = detectPdfTableSchemas(layout.pages, detectedRegions.regions, guidance.columns.length ? guidance : undefined);
+  // Detection always runs on its own so `detectedGuidance` stays the answer to
+  // "what would Actual Bench do without help", which is what Reset detection
+  // returns to. Guidance is layered on top of it rather than replacing it.
+  const detectedRegions = classifyPdfRegions(layout.pages);
+  const guidedRegions = guidance.regions.length ? guidance.regions : detectedRegions.regions;
+  const schemas = detectPdfTableSchemas(layout.pages, guidedRegions, guidance.columns.length ? guidance : undefined);
   const detectedColumns = guidance.columns.length ? guidance.columns : schemas.active?.columns ?? [];
+  // A layout describes a table, not a page count: pages the layout never saw
+  // still belong to the statement when their rows line up with its columns.
+  const extendedRegions = extendRegionsWithMappedColumns(layout.pages, guidedRegions, detectedColumns);
   const detectedPeriod = detectStatementPeriod(layout.pages);
   const statementPeriod = {
     start: guidance.statementPeriod.start ?? detectedPeriod.start,
     end: guidance.statementPeriod.end ?? detectedPeriod.end,
   };
-  const samplesByRole = dateSamples(layout.pages, detectedRegions.regions, detectedColumns);
+  const samplesByRole = dateSamples(layout.pages, extendedRegions.regions, detectedColumns);
   const inferredFormats = Object.fromEntries(Object.entries(samplesByRole).map(([role, samples]) => [
     role,
     guidance.dateFormat === "auto"
@@ -71,7 +79,7 @@ export function parsePdfStatementDocumentV2(
     currency: options.guidance?.currency !== undefined ? guidance.currency : detectedGuidance.currency,
     dateFormat: guidance.dateFormat === "auto" ? displayedDateFormat : guidance.dateFormat,
     statementPeriod,
-    regions: guidance.regions.length ? guidance.regions : detectedRegions.regions,
+    regions: extendedRegions.regions,
     columns: guidance.columns.length ? guidance.columns : schemas.active?.columns ?? [],
   };
   effectiveGuidance.importDate = availableImportDate(effectiveGuidance.importDate, effectiveGuidance.columns);
@@ -115,12 +123,14 @@ export function parsePdfStatementDocumentV2(
     accountType: interpreted.accountType,
     balanceBehavior: interpreted.balanceBehavior,
     balanceCheckpoints: interpreted.balanceCheckpoints,
+    balancePolarity: interpreted.balancePolarity,
   });
   const transactions = applyFieldCorrections(
     validated.transactions,
     corrections.filter((correction) => correction.kind === "accept-transaction")
   );
   const likelyScanned = layout.pages.length > 0 && layout.pages.every((page) => page.imageOnlyLikelihood >= 0.75);
+  const imageOnlyPages = layout.pages.filter((page) => page.imageOnlyLikelihood >= 0.75);
   const metrics = {
     pages: layout.pages.length,
     transactionPages: new Set(effectiveGuidance.regions.filter((region) => region.kind === "transactions" && region.included).map((region) => region.pageNumber)).size,
@@ -130,11 +140,25 @@ export function parsePdfStatementDocumentV2(
     rejected: transactions.filter((transaction) => transaction.status === "rejected").length,
     duplicates: transactions.filter((transaction) => transaction.issueCodes.includes("POSSIBLE_DUPLICATE")).length,
     skippedRegions: effectiveGuidance.regions.filter((region) => !region.included).length,
+    unassignedRows: assembled.unassignedRows.length,
+    imageOnlyPages: likelyScanned ? 0 : imageOnlyPages.length,
+    // Extraction owns this count; the parser never sees a page it could not read.
+    unreadablePages: 0,
   };
   const warnings = [
     ...(likelyScanned ? ["The document does not contain enough selectable text to parse safely."] : []),
+    ...(metrics.imageOnlyPages
+      ? [`${pageList(imageOnlyPages.map((page) => page.pageNumber))} has no readable text layer, so any transactions printed there are missing.`]
+      : []),
+    ...(metrics.unassignedRows
+      ? [`${metrics.unassignedRows} ${metrics.unassignedRows === 1 ? "row" : "rows"} inside the transaction area did not become a transaction. Check detection and mark any that are transactions.`]
+      : []),
+    ...(effectiveGuidance.currency ? [] : ["The statement currency was not detected. Set it in Statement interpretation."]),
     ...(metrics.rejected ? [`${metrics.rejected} transaction ${metrics.rejected === 1 ? "has" : "have"} unresolved required fields.`] : []),
     ...(["loan", "investment"].includes(interpreted.accountType) ? ["This statement type needs specialized review before import."] : []),
+    ...(interpreted.balancePolarity?.source === "detected-type"
+      ? ["Money in and money out were derived from the balance column using a detected account type. Confirm the account type in Statement interpretation."]
+      : []),
   ];
   return {
     modelVersion: PDF_PARSER_MODEL_VERSION,
@@ -148,12 +172,18 @@ export function parsePdfStatementDocumentV2(
     detectedGuidance,
     accountType: interpreted.accountType,
     balanceBehavior: interpreted.balanceBehavior,
+    balancePolarity: interpreted.balancePolarity,
     transactions,
-    diagnostics: [...layout.diagnostics, ...detectedRegions.diagnostics, ...schemas.diagnostics, ...assembled.diagnostics, ...interpreted.diagnostics, ...validated.diagnostics],
+    diagnostics: [...layout.diagnostics, ...detectedRegions.diagnostics, ...extendedRegions.diagnostics, ...schemas.diagnostics, ...assembled.diagnostics, ...interpreted.diagnostics, ...validated.diagnostics],
     metrics,
     likelyScanned,
     warnings,
   };
+}
+
+function pageList(pageNumbers: number[]) {
+  if (pageNumbers.length === 1) return `Page ${pageNumbers[0]}`;
+  return `Pages ${pageNumbers.slice(0, -1).join(", ")} and ${pageNumbers.at(-1)}`;
 }
 
 function detectDocumentCurrency(pages: PdfStatementParseResult["reconstructedPages"]) {

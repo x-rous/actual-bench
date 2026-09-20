@@ -124,6 +124,13 @@ export function listPdfDetectionProfileCatalog(
   };
 }
 
+/**
+ * Save a statement layout.
+ *
+ * Layouts are not versioned: `create` refuses to write over a name that is
+ * already taken, and `update` replaces that layout in place. Keeping the old
+ * settings is done by saving under a different name.
+ */
 export function savePdfDetectionProfile(
   db: SqliteDatabase,
   input: {
@@ -132,6 +139,7 @@ export function savePdfDetectionProfile(
     bankName: string;
     profileName: string;
     profile: unknown;
+    mode?: "create" | "update";
     assignToAccount?: boolean;
   }
 ): { bank: PdfDetectionBankRecord; profile: PdfDetectionProfileRecord } {
@@ -170,6 +178,12 @@ export function savePdfDetectionProfile(
     let profile = db.prepare(
       "SELECT * FROM pdf_detection_profiles WHERE bank_id = ? AND name = ? COLLATE NOCASE"
     ).get<ProfileRow>(bank.id, profileName);
+    if (profile && input.mode !== "update") {
+      throw new AppDbValidationError(`${bankName} already has a layout named "${profileName}". Choose another name or update the existing layout.`);
+    }
+    if (!profile && input.mode === "update") {
+      throw new AppDbValidationError("The statement layout to update was not found");
+    }
     if (profile) {
       db.prepare(
         "UPDATE pdf_detection_profiles SET profile_json = ?, updated_at = ? WHERE id = ?"
@@ -273,13 +287,7 @@ export function renamePdfDetectionProfile(
   }
   const safeProfile = sanitizePdfLayoutProfileEnvelope(storedProfile);
   if (!safeProfile) throw new AppDbValidationError("PDF detection profile data is invalid");
-  const renamed = {
-    ...safeProfile,
-    profile: { ...safeProfile.profile, name },
-    ...(safeProfile.history
-      ? { history: safeProfile.history.map((profile) => ({ ...profile, name })) }
-      : {}),
-  };
+  const renamed = { ...safeProfile, profile: { ...safeProfile.profile, name } };
   const profileJson = serializedProfile(renamed);
   const timestamp = new Date().toISOString();
   db.prepare(

@@ -1004,6 +1004,259 @@ describe("PDF parser v2 financial interpretation and validation", () => {
   });
 });
 
+describe("PDF parser v2 sign and structure safeguards", () => {
+  const checkingWithCardPayment = [
+    { y: 775, cells: [{ x: 20, text: "Checking account statement" }] },
+    { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }, { x: 580, text: "Balance" }] },
+    { y: 700, cells: [{ x: 20, text: "08/01/2026" }, { x: 120, text: "PAYROLL" }, { x: 480, text: "100.00" }, { x: 580, text: "1,000.00" }] },
+    { y: 680, cells: [{ x: 20, text: "08/02/2026" }, { x: 120, text: "CREDIT CARD PAYMENT" }, { x: 480, text: "50.00" }, { x: 580, text: "950.00" }] },
+    { y: 660, cells: [{ x: 20, text: "08/03/2026" }, { x: 120, text: "REFUND" }, { x: 480, text: "5.00" }, { x: 580, text: "955.00" }] },
+  ];
+
+  it("reads the account type from the statement heading, not from its transactions", () => {
+    const result = parsePdfStatementPages([page(checkingWithCardPayment)], { guidance: guidance() });
+
+    expect(result.accountType).toBe("checking");
+    expect(result.transactions.map((row) => [row.description, row.amount])).toEqual(expect.arrayContaining([
+      ["CREDIT CARD PAYMENT", "-50.00"],
+      ["REFUND", "5.00"],
+    ]));
+  });
+
+  it("keeps balance-derived directions in review while the account type is only detected", () => {
+    const detected = parsePdfStatementPages([page(checkingWithCardPayment)], { guidance: guidance() });
+    const derived = detected.transactions.filter((row) => row.directionEvidence === "balance");
+
+    expect(derived.length).toBeGreaterThan(0);
+    expect(derived.every((row) => row.status === "review")).toBe(true);
+    expect(derived[0].issueCodes).toContain("ACCOUNT_TYPE_UNCONFIRMED");
+
+    const confirmed = parsePdfStatementPages([page(checkingWithCardPayment)], { guidance: guidance({ accountType: "checking" }) });
+    const confirmedDerived = confirmed.transactions.filter((row) => row.directionEvidence === "balance");
+    expect(confirmedDerived.map((row) => [row.description, row.amount, row.status])).toEqual([
+      ["CREDIT CARD PAYMENT", "-50.00", "accepted"],
+      ["REFUND", "5.00", "accepted"],
+    ]);
+  });
+
+  it("refuses to sign balance movement when the heading is ambiguous and nothing is printed", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 775, cells: [{ x: 20, text: "Checking account statement with a credit card offer" }] },
+      ...checkingWithCardPayment.slice(1),
+    ])], { guidance: guidance() });
+
+    expect(result.accountType).toBe("unknown");
+    expect(result.balancePolarity).toBeNull();
+    expect(result.transactions.every((row) => row.direction === "unknown")).toBe(true);
+  });
+
+  it("uses printed directions, not the account type, to read the balance column", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 775, cells: [{ x: 20, text: "Card statement with a linked checking account" }] },
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 400, text: "Debit" }, { x: 480, text: "Credit" }, { x: 580, text: "Balance" }] },
+      { y: 700, cells: [{ x: 20, text: "08/01/2026" }, { x: 120, text: "FIRST" }, { x: 400, text: "10.00" }, { x: 580, text: "990.00" }] },
+      { y: 680, cells: [{ x: 20, text: "08/02/2026" }, { x: 120, text: "SECOND" }, { x: 480, text: "20.00" }, { x: 580, text: "1,010.00" }] },
+      { y: 660, cells: [{ x: 20, text: "08/03/2026" }, { x: 120, text: "THIRD" }, { x: 400, text: "5.00" }, { x: 580, text: "1,005.00" }] },
+    ])], { guidance: guidance() });
+
+    expect(result.balancePolarity).toMatchObject({ direction: "deposit", source: "evidence" });
+    expect(result.transactions.every((row) => !row.issueCodes.includes("BALANCE_MISMATCH"))).toBe(true);
+  });
+
+  const cardWithPrintedPayment = [
+    { y: 770, cells: [{ x: 20, text: "Credit Card Statement" }] },
+    { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+    { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "COFFEE" }, { x: 480, text: "4.50" }] },
+    { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "PAYMENT THANK YOU" }, { x: 480, text: "-500.00" }] },
+  ];
+
+  it("does not read a card issuer's printed minus as money out without confirmation", () => {
+    const result = parsePdfStatementPages([page(cardWithPrintedPayment)], { guidance: guidance({ unsignedDirection: "debit" }) });
+    const payment = result.transactions.find((row) => row.description.includes("PAYMENT"))!;
+
+    expect(payment.status).toBe("review");
+    expect(payment.issueCodes).toContain("SIGN_CONVENTION_UNCONFIRMED");
+  });
+
+  it("reads a printed minus as money in once the statement is known to print from the issuer's side", () => {
+    const result = parsePdfStatementPages([page(cardWithPrintedPayment)], {
+      guidance: guidance({ unsignedDirection: "debit", printedSign: "issuer" }),
+    });
+
+    expect(result.transactions.map((row) => [row.description, row.amount, row.status])).toEqual([
+      ["COFFEE", "-4.50", "accepted"],
+      ["PAYMENT THANK YOU", "500.00", "accepted"],
+    ]);
+  });
+
+  it("reads a trailing minus as money out", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "SHOP" }, { x: 480, text: "45,00-" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "SALARY" }, { x: 480, text: "900,00" }] },
+    ])], { guidance: guidance({ numberFormat: "european", unsignedDirection: "credit" }) });
+
+    expect(result.transactions.map((row) => [row.description, row.amount])).toEqual([
+      ["SHOP", "-45.00"],
+      ["SALARY", "900.00"],
+    ]);
+  });
+
+  it("keeps a wrapped description line that reads like a section heading inside its transaction", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 735, cells: [{ x: 120, text: "Purchases" }] },
+      { y: 710, cells: [{ x: 20, text: "08/01/2026" }, { x: 120, text: "ONLINE BILL" }, { x: 480, text: "10.00" }] },
+      { y: 698, cells: [{ x: 120, text: "PAYMENT" }] },
+      { y: 680, cells: [{ x: 20, text: "08/02/2026" }, { x: 120, text: "GROCERY" }, { x: 480, text: "20.00" }] },
+    ])], { guidance: guidance() });
+
+    expect(result.transactions.map((row) => [row.description, row.amount])).toEqual([
+      ["ONLINE BILL PAYMENT", "-10.00"],
+      ["GROCERY", "-20.00"],
+    ]);
+  });
+
+  it("keeps a merchant whose description starts with a control word", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Description" }, { x: 300, text: "Date" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "TOTAL ENERGIES DUBAI" }, { x: 300, text: "08/15/2026" }, { x: 480, text: "-45.00" }] },
+      { y: 680, cells: [{ x: 20, text: "CAFE" }, { x: 300, text: "08/16/2026" }, { x: 480, text: "-4.00" }] },
+    ])], { guidance: guidance() });
+
+    expect(result.transactions.map((row) => row.description)).toEqual(["TOTAL ENERGIES DUBAI", "CAFE"]);
+  });
+
+  it("reports rows inside the transaction area that became no transaction", () => {
+    const result = parsePdfStatementPages([
+      page([
+        { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+        { y: 700, cells: [{ x: 20, text: "08/01/2026" }, { x: 120, text: "A" }, { x: 480, text: "-1.00" }] },
+        { y: 680, cells: [{ x: 20, text: "08/02/2026" }, { x: 120, text: "B" }, { x: 480, text: "-2.00" }] },
+        { y: 660, cells: [{ x: 20, text: "08/03/2026" }, { x: 120, text: "C" }, { x: 480, text: "-3.00" }] },
+      ], 1),
+      page([
+        { y: 500, cells: [{ x: 20, text: "3 Aout" }, { x: 120, text: "UNREADABLE DATE ROW" }, { x: 480, text: "-9.00" }] },
+        { y: 480, cells: [{ x: 20, text: "08/05/2026" }, { x: 120, text: "D" }, { x: 480, text: "-4.00" }] },
+      ], 2),
+    ], { guidance: guidance() });
+
+    expect(result.metrics.unassignedRows).toBeGreaterThan(0);
+    expect(result.diagnostics.some((event) => event.code === "ROW_UNASSIGNED")).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes("did not become a transaction"))).toBe(true);
+  });
+
+  it("keeps a wrapped description that repeats at a page edge", () => {
+    const pageWith = (pageNumber: number) => page([
+      { y: 780, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 760, cells: [{ x: 20, text: `08/0${pageNumber}/2026` }, { x: 120, text: `SHOP ${pageNumber}` }, { x: 480, text: `-1${pageNumber}.00` }] },
+      { y: 110 + pageNumber * 6, cells: [{ x: 20, text: `08/2${pageNumber}/2026` }, { x: 120, text: "ANON MARKETPLACE" }, { x: 480, text: `-3${pageNumber}.00` }] },
+      { y: 98 + pageNumber * 6, cells: [{ x: 120, text: "ANON CITY" }] },
+    ], pageNumber);
+    const result = parsePdfStatementPages([pageWith(1), pageWith(2)], { guidance: guidance() });
+
+    expect(result.transactions.filter((row) => row.description.includes("ANON MARKETPLACE ANON CITY"))).toHaveLength(2);
+  });
+
+  it("asks for the statement currency once instead of on every row", () => {
+    const rows = [
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "$-12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON CAFE" }, { x: 480, text: "$-4.00" }] },
+    ];
+    const undeclared = parsePdfStatementPages([page(rows)], { guidance: { ...DEFAULT_PDF_PARSER_GUIDANCE, dateFormat: "mdy" } });
+
+    expect(undeclared.transactions.every((row) => !row.issueCodes.includes("CURRENCY_AMBIGUOUS"))).toBe(true);
+    expect(undeclared.warnings.some((warning) => warning.includes("statement currency"))).toBe(true);
+
+    const foreign = parsePdfStatementPages([page([
+      ...rows,
+      { y: 660, cells: [{ x: 20, text: "08/17/2026" }, { x: 120, text: "ANON TRIP" }, { x: 480, text: "EUR -9.00" }] },
+    ])], { guidance: guidance() });
+    expect(foreign.transactions.find((row) => row.currency === "EUR")?.issueCodes).toContain("CURRENCY_AMBIGUOUS");
+  });
+
+  it("treats an ordinary wrapped description as readable rather than uncertain", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON MARKETPLACE" }, { x: 480, text: "USD -12.50" }] },
+      { y: 688, cells: [{ x: 120, text: "ANON CITY" }] },
+    ])], { guidance: guidance() });
+
+    expect(result.transactions[0].description).toBe("ANON MARKETPLACE ANON CITY");
+    expect(result.transactions[0].issueCodes).not.toContain("ROW_CONTINUATION_UNCERTAIN");
+    expect(result.transactions[0].status).toBe("accepted");
+  });
+
+  it("keeps a page footer out of the transaction area", () => {
+    const statementPage = (pageNumber: number) => page([
+      { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 730, cells: [{ x: 20, text: `08/0${pageNumber}/2026` }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "-10.00" }] },
+      { y: 710, cells: [{ x: 20, text: `08/1${pageNumber}/2026` }, { x: 120, text: "ANON CAFE" }, { x: 480, text: "-20.00" }] },
+      { y: 60, cells: [{ x: 300, text: `Page ${pageNumber} of 2` }] },
+    ], pageNumber);
+    const result = parsePdfStatementPages([statementPage(1), statementPage(2)], { guidance: guidance() });
+
+    const areaRowIds = new Set(result.regions
+      .filter((region) => region.kind === "transactions" && region.included)
+      .flatMap((region) => region.rowIds));
+    const footerRows = result.reconstructedPages
+      .flatMap((entry) => entry.rows)
+      .filter((row) => row.text.startsWith("Page "));
+
+    expect(footerRows).toHaveLength(2);
+    expect(footerRows.every((row) => !areaRowIds.has(row.id))).toBe(true);
+    expect(result.transactions).toHaveLength(4);
+    expect(result.transactions.every((row) => !row.description.includes("Page"))).toBe(true);
+  });
+
+  it("keeps reading the transaction table after a summary page interrupts it", () => {
+    const summary = (pageNumber: number) => page([
+      { y: 770, cells: [{ x: 20, text: "Checking account statement" }] },
+      { y: 700, cells: [{ x: 20, text: "Opening balance" }, { x: 480, text: "1,000.00" }] },
+    ], pageNumber);
+    const table = (pageNumber: number, day: number, rows: number) => page([
+      { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      ...Array.from({ length: rows }, (_, index) => ({
+        y: 730 - index * 20,
+        cells: [
+          { x: 20, text: `08/${String(day + index).padStart(2, "0")}/2026` },
+          { x: 120, text: `ANON ${index}` },
+          { x: 480, text: `-${10 + index}.00` },
+        ],
+      })),
+    ], pageNumber);
+    const result = parsePdfStatementPages([summary(1), table(2, 1, 3), summary(3), table(4, 10, 2)], { guidance: guidance() });
+
+    expect(result.regions.filter((region) => region.kind === "transactions" && region.included).map((region) => region.pageNumber))
+      .toEqual([2, 4]);
+    expect(result.transactions).toHaveLength(5);
+  });
+
+  it("stores a manually corrected amount in the parser's own format", () => {
+    const document = { pages: [page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON" }, { x: 480, text: "USD -12.50" }] },
+    ])] };
+    const first = parsePdfStatementDocument(document, { guidance: guidance() });
+    const corrected = parsePdfStatementDocument(document, {
+      guidance: guidance(),
+      corrections: [{
+        id: "amount",
+        kind: "set-field",
+        scope: "row",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        transactionIds: [first.transactions[0].id],
+        field: "amount",
+        value: "-1 234,50",
+      }],
+    });
+
+    expect(corrected.transactions[0].amount).toBe("-1234.50");
+    expect(parsePdfMoneyToMinorUnits(corrected.transactions[0].amount)).toBe(-123450);
+  });
+});
+
 describe("PDF layout profiles", () => {
   function parsedWithDescription(description: string) {
     return parsePdfStatementPages([page([
@@ -1021,6 +1274,54 @@ describe("PDF layout profiles", () => {
     expect(profile.guidance.statementPeriod).toEqual({ start: null, end: null });
     expect(profile.guidance.columns.every((column) => column.header === null && column.examples.length === 0)).toBe(true);
     expect(profile.guidance.regions.every((region) => region.rowIds.length === 0 && region.reasons.length === 0)).toBe(true);
+  });
+
+  it("reads transaction pages the saved layout never saw", () => {
+    const summary = (pageNumber: number) => page([
+      { y: 770, cells: [{ x: 20, text: "Checking account statement" }] },
+      { y: 700, cells: [{ x: 20, text: "Opening balance" }, { x: 480, text: "1,000.00" }] },
+    ], pageNumber);
+    const table = (pageNumber: number, day: number) => page([
+      { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      ...Array.from({ length: 3 }, (_, index) => ({
+        y: 730 - index * 20,
+        cells: [
+          { x: 20, text: `08/${String(day + index).padStart(2, "0")}/2026` },
+          { x: 120, text: `ANON ${index}` },
+          { x: 480, text: `-${10 + index}.00` },
+        ],
+      })),
+    ], pageNumber);
+
+    const lastMonth = parsePdfStatementPages([summary(1), table(2, 1)], { guidance: guidance() });
+    const layout = createPdfLayoutProfile({ id: "profile-1", name: "Checking", result: lastMonth });
+
+    // This month the same table runs onto pages the layout has never seen.
+    const thisMonth = parsePdfStatementPages([summary(1), table(2, 1), table(3, 10), table(4, 20)], { guidance: guidance() });
+    const applied = parsePdfStatementPages([summary(1), table(2, 1), table(3, 10), table(4, 20)], {
+      guidance: guidanceFromPdfLayoutProfile(layout, thisMonth),
+    });
+
+    expect(applied.regions.filter((region) => region.kind === "transactions" && region.included).map((region) => region.pageNumber))
+      .toEqual([2, 3, 4]);
+    expect(applied.transactions).toHaveLength(9);
+  });
+
+  it("keeps automatic detection available after a layout is applied", () => {
+    const rows = [
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+    ];
+    const detected = parsePdfStatementPages([page(rows)], { guidance: guidance() });
+    const layout = createPdfLayoutProfile({ id: "profile-1", name: "Card layout", result: detected });
+    const applied = parsePdfStatementPages([page(rows)], {
+      guidance: { ...guidanceFromPdfLayoutProfile(layout, detected), regions: [] },
+    });
+
+    // `detectedGuidance` is what Reset detection returns to, so it has to stay
+    // the automatic answer rather than echoing the applied layout.
+    expect(applied.detectedGuidance.regions.length).toBeGreaterThan(0);
+    expect(applied.detectedGuidance.accountType).toBe("auto");
   });
 
   it("reports moved amount-column geometry as layout drift", () => {

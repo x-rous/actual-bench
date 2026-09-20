@@ -5,7 +5,7 @@ import type {
   PdfTransactionBlock,
   PdfTransactionProposal,
 } from "./model";
-import { parseExactDecimal } from "./candidates";
+import { formatExactDecimal, parseExactDecimal } from "./candidates";
 
 export type PdfCorrection = {
   id: string;
@@ -102,15 +102,25 @@ export function applyFieldCorrections(
         }
         if (correction.field === "amount") {
           const decimal = correction.value ? parseExactDecimal(correction.value, "auto") : null;
-          output.exactAmount = decimal && decimal.coefficient !== BigInt(0)
+          const entered = decimal && decimal.coefficient !== BigInt(0) ? decimal : null;
+          output.exactAmount = entered
             ? {
-                coefficient: decimal.coefficient.toString(),
-                scale: decimal.scale,
+                coefficient: entered.coefficient.toString(),
+                scale: entered.scale,
                 currency: output.currency,
                 raw: correction.value ?? "",
                 sourceIds: [],
               }
             : null;
+          // Store the edited amount in the parser's own format. A value typed
+          // with grouping or a decimal comma would otherwise stay a free-form
+          // string that the review totals and the preview comparison skip.
+          output.amount = entered
+            ? formatExactDecimal(
+              { ...entered, coefficient: entered.coefficient < BigInt(0) ? -entered.coefficient : entered.coefficient },
+              output.direction === "debit" ? "debit" : "credit"
+            )
+            : correction.value ?? "";
           output.confidence = {
             ...output.confidence,
             accountAmount: output.exactAmount

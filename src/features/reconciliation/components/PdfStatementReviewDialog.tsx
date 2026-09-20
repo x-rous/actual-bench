@@ -7,8 +7,11 @@ import {
   ArrowRight,
   CalendarCheck,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronsUpDown,
   CircleHelp,
   Copy,
   Eye,
@@ -16,9 +19,7 @@ import {
   ListPlus,
   ListRestart,
   RotateCcw,
-  Save,
   Search,
-  Settings2,
   ShieldCheck,
   Split,
   SquareDashedMousePointer,
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +55,7 @@ import {
   type PdfLayoutProfile,
   type PdfNumberFormat,
   type PdfParserGuidance,
+  type PdfPrintedSign,
   type PdfRegion,
   type PdfStatementParseResult,
   type PdfTransactionProposal,
@@ -61,7 +64,19 @@ import { parsePdfStatementOffMainThread } from "@/lib/reconciliation/statement/p
 import { formatMinorUnits } from "../lib/format";
 import { PDF_DEFAULT_ZOOM, PdfSourcePreview, pdfColumnColor } from "./PdfSourcePreview";
 import { PdfDetectionProfileManagerDialog } from "./PdfDetectionProfileManagerDialog";
+import { PdfLayoutSaveDialog, PdfStatementLayoutPanel, type PdfLayoutSaveRequest } from "./PdfStatementLayoutPanel";
 import type { PdfDetectionBankRecord } from "../lib/reconciliationApi";
+
+type SortColumn =
+  | "status"
+  | "transactionDate"
+  | "postedDate"
+  | "valueDate"
+  | "description"
+  | "amount"
+  | "currency"
+  | "balance";
+type SortState = { column: SortColumn; direction: "asc" | "desc" };
 
 type ReviewCategory = "all" | "needs-review" | "ready" | "structure" | "dates" | "amounts" | "reconciliation" | "duplicates" | "manual";
 type WorkbenchMode = "review" | "adjust" | "diagnostics";
@@ -129,6 +144,26 @@ const NUMBER_FORMATS: { value: PdfNumberFormat; label: string }[] = [
   { value: "swiss", label: "1'234.56" },
 ];
 
+const PRINTED_SIGNS: { value: PdfPrintedSign; label: string }[] = [
+  { value: "auto", label: "Detect from the account type" },
+  { value: "account-holder", label: "Minus is money out (bank account)" },
+  { value: "issuer", label: "Minus is money in (card or loan issuer)" },
+];
+
+/**
+ * Warnings that a bulk "mark reviewed" would clear without resolving. They are
+ * named in a confirmation so accepting them stays a decision, not a reflex.
+ */
+const UNRESOLVED_REVIEW_REASONS: PdfConfidenceReason[] = [
+  "POSSIBLE_DUPLICATE",
+  "BALANCE_MISMATCH",
+  "STATEMENT_SUMMARY_MISMATCH",
+  "DATE_OUTSIDE_STATEMENT_PERIOD",
+  "DATE_AMBIGUOUS_ORDER",
+  "SIGN_CONVENTION_UNCONFIRMED",
+  "ACCOUNT_TYPE_UNCONFIRMED",
+];
+
 const NOOP = () => {};
 
 export type PdfDetectionProfileOption = {
@@ -149,7 +184,7 @@ export function PdfStatementReviewDialog({
   onImport,
   onSaveProfile,
   onProfileChange,
-  accountName = "This account",
+  accountName = "this account",
   banks = [],
   accountProfileId = null,
   onAssignProfile,
@@ -167,12 +202,9 @@ export function PdfStatementReviewDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImport: (rows: PdfTransactionProposal[], result: PdfStatementParseResult) => void;
-  onSaveProfile?: (input: {
-    bankName: string;
-    profileName: string;
-    assignToAccount: boolean;
+  onSaveProfile?: (input: PdfLayoutSaveRequest & {
     result: PdfStatementParseResult;
-  }) => Promise<{ bankId: string; profileId: string; profileVersion: number } | void>;
+  }) => Promise<{ bankId: string; profileId: string } | void>;
   onProfileChange?: (profile: PdfDetectionProfileOption | null) => void;
   accountName?: string;
   banks?: PdfDetectionBankRecord[];
@@ -193,6 +225,7 @@ export function PdfStatementReviewDialog({
   );
   const [filter, setFilter] = useState<ReviewCategory>(() => initialReviewFilter(result));
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortState | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [scopedCorrectionOffer, setScopedCorrectionOffer] = useState<ScopedCorrectionOffer | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
@@ -208,10 +241,10 @@ export function PdfStatementReviewDialog({
   const [parserError, setParserError] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(activeProfileId);
   const [manageProfilesOpen, setManageProfilesOpen] = useState(false);
-  const [appliedProfileVersion, setAppliedProfileVersion] = useState<number | null>(() =>
-    profiles.find((profile) => profile.recordId === activeProfileId)?.envelope.profile.profileVersion ?? null
-  );
   const [saveProfileOpen, setSaveProfileOpen] = useState(false);
+  const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [pageWarningsAcknowledged, setPageWarningsAcknowledged] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const rows = useMemo(() => parsed?.transactions ?? [], [parsed]);
@@ -220,10 +253,11 @@ export function PdfStatementReviewDialog({
     return matchesCategory(row, filter)
       && (!query || row.description.toLowerCase().includes(query) || row.amount.includes(query) || row.importDate?.includes(query));
   }), [filter, rows, search]);
-  const tableRows = useMemo(() => visibleRows.map((row) => ({
+  const sortedRows = useMemo(() => sortTransactions(visibleRows, sort), [sort, visibleRows]);
+  const tableRows = useMemo(() => sortedRows.map((row) => ({
     ...row,
     amount: formatTableAmount(row.amount),
-  })), [visibleRows]);
+  })), [sortedRows]);
   const visibleIds = useMemo(() => visibleRows.map((row) => row.id), [visibleRows]);
   const selectedVisible = visibleIds.filter((id) => selectedIds.has(id)).length;
   const allVisibleSelected = visibleIds.length > 0 && selectedVisible === visibleIds.length;
@@ -243,25 +277,12 @@ export function PdfStatementReviewDialog({
     () => parsed?.blocks.filter((block) => block.pageNumber === page?.pageNumber && block.excluded) ?? [],
     [page?.pageNumber, parsed?.blocks]
   );
-  const profileMatches = useMemo(() => profiles.flatMap((option) => [
-    option.envelope.profile,
-    ...(option.envelope.history ?? []),
-  ].map((profile) => ({
+  const profileMatches = useMemo(() => profiles.map((option) => ({
     option,
-    profile,
-    current: profile.id === option.envelope.profile.id,
-    match: parsed ? matchPdfLayoutProfile(profile, parsed.reconstructedPages, parsed.activeSchema) : null,
-  }))), [parsed, profiles]);
+    profile: option.envelope.profile,
+    match: parsed ? matchPdfLayoutProfile(option.envelope.profile, parsed.reconstructedPages, parsed.activeSchema) : null,
+  })), [parsed, profiles]);
   const selectedProfile = profiles.find((profile) => profile.recordId === selectedProfileId) ?? null;
-  const selectedIsAccountProfile = accountProfileId === selectedProfile?.recordId;
-  const profilesByBank = useMemo(() => profiles.reduce<Map<string, PdfDetectionProfileOption[]>>(
-    (groups, profile) => {
-      const current = groups.get(profile.bankName) ?? [];
-      groups.set(profile.bankName, [...current, profile]);
-      return groups;
-    },
-    new Map()
-  ), [profiles]);
   const previewDiff = useMemo(
     () => parsed && preview ? resultDiff(parsed, preview) : null,
     [parsed, preview]
@@ -283,6 +304,14 @@ export function PdfStatementReviewDialog({
   const parserDetailCount = parsed
     ? new Set([...parsed.warnings, ...detectionIssues]).size
     : 0;
+  // Pages the parser could not read are missing transactions, not a detail in
+  // a secondary view: import stays disabled until they are acknowledged.
+  const unreadablePageCount = (parsed?.metrics.unreadablePages ?? 0) + (parsed?.metrics.imageOnlyPages ?? 0);
+  const pageWarnings = useMemo(
+    () => (parsed?.warnings ?? []).filter((warning) => /readable text layer|could not be read/.test(warning)),
+    [parsed?.warnings]
+  );
+  const importBlockedByPages = unreadablePageCount > 0 && !pageWarningsAcknowledged;
 
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = selectedVisible > 0 && !allVisibleSelected;
@@ -418,13 +447,46 @@ export function PdfStatementReviewDialog({
     }
   }
 
+  function acceptSelectedRows() {
+    if (!selectedReviewIds.length) return;
+    const counts = new Map<PdfConfidenceReason, number>();
+    rows
+      .filter((row) => selectedReviewIds.includes(row.id))
+      .forEach((row) => row.issueCodes
+        .filter((reason) => UNRESOLVED_REVIEW_REASONS.includes(reason))
+        .forEach((reason) => counts.set(reason, (counts.get(reason) ?? 0) + 1)));
+    const accept = () => structuralCorrection({ kind: "accept-transaction", transactionIds: selectedReviewIds });
+    if (counts.size === 0) {
+      accept();
+      return;
+    }
+    setConfirm({
+      title: `Mark ${selectedReviewIds.length} ${selectedReviewIds.length === 1 ? "transaction" : "transactions"} reviewed?`,
+      destructive: false,
+      destructiveLabel: "Mark reviewed anyway",
+      // The confirmation renders inside the dialog description, which is a
+      // paragraph, so the breakdown uses block spans rather than a list.
+      message: (
+        <span className="block">
+          This accepts warnings that are still unresolved:
+          {[...counts.entries()].map(([reason, count]) => (
+            <span key={reason} className="mt-1 block">• {count} × {reasonText([reason])}</span>
+          ))}
+        </span>
+      ),
+      onConfirm: accept,
+    });
+  }
+
   function showSource(row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) {
     const confidence = row.confidence[field];
     const sourceIds = Array.isArray(confidence)
       ? confidence.flatMap((entry) => entry.sourceIds)
       : confidence?.sourceIds ?? row.raw.sourceIds;
     setHighlightedSourceIds(new Set(sourceIds));
-    setSelectedSourceRowId(row.id);
+    // The preview selects reconstructed rows, so highlight the block's own
+    // anchor row rather than the transaction id, which belongs to no row.
+    setSelectedSourceRowId(parsed?.blocks.find((block) => block.id === row.id)?.rowIds[0] ?? null);
     setPageNumber(pageForSourceIds(parsed, sourceIds, row.raw.pageNumber));
     setSourceOpen(true);
   }
@@ -457,8 +519,17 @@ export function PdfStatementReviewDialog({
     setMode("review");
     setFilter(output.metrics.review + output.metrics.rejected > 0 ? "needs-review" : "all");
     setSelectedIds(new Set());
+    // Applying moves to the review step, so the chance to keep these settings
+    // travels with the confirmation rather than being left behind on the
+    // detection screen.
+    if (selectedProfile) {
+      setLayoutNotice(`These settings differ from ${selectedProfile.envelope.profile.name}. Save the layout to reuse them next month.`);
+    }
     toast.success("Detection changes applied", {
       description: `${diff.after} ${diff.after === 1 ? "transaction" : "transactions"} found · ${diff.afterReview} ${diff.afterReview === 1 ? "needs" : "need"} review`,
+      ...(onSaveProfile && output.metrics.rejected === 0
+        ? { action: { label: "Save layout", onClick: () => setSaveProfileOpen(true) } }
+        : {}),
     });
   }
 
@@ -466,6 +537,7 @@ export function PdfStatementReviewDialog({
     if (!parsed) return;
     setDraftGuidance(parsed.detectedGuidance);
     setPreview(null);
+    setLayoutNotice(null);
   }
 
   function updateColumn(id: string, patch: Partial<PdfColumn>) {
@@ -528,7 +600,7 @@ export function PdfStatementReviewDialog({
       setDraftGuidance(output.guidance);
       setPreview(null);
       setSelectedProfileId(option.recordId);
-      setAppliedProfileVersion(profile.profileVersion);
+      setLayoutNotice(null);
       onProfileChange?.(option);
     });
   }
@@ -541,7 +613,6 @@ export function PdfStatementReviewDialog({
         setDraftGuidance(output.guidance);
         setPreview(null);
         setSelectedProfileId(null);
-        setAppliedProfileVersion(null);
         onProfileChange?.(null);
       });
       return;
@@ -605,41 +676,70 @@ export function PdfStatementReviewDialog({
           </div>
         ) : (
           <>
-            <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b bg-muted/10 px-4 py-1.5">
-              <nav className="flex shrink-0 items-center gap-1" aria-label="PDF import steps">
-                <WorkflowStepButton
-                  step={1}
-                  active={mode === "adjust"}
-                  label="Check detection"
-                  onClick={() => { setScopedCorrectionOffer(null); setMode("adjust"); }}
-                />
-                <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-                <WorkflowStepButton
-                  step={2}
-                  active={mode === "review"}
-                  label="Review transactions"
-                  onClick={() => setMode("review")}
-                />
-              </nav>
-              <SummaryBar result={parsed} totals={totals} />
-              <div className="ml-auto flex shrink-0 items-center gap-1">
-                <Button
-                  size="xs"
-                  variant={mode === "diagnostics" ? "secondary" : "ghost"}
-                  title={parserDetailCount > 0 ? [...new Set([...detectionIssues, ...parsed.warnings])].join("\n") : "View parsing summary and technical diagnostics"}
-                  onClick={() => { setScopedCorrectionOffer(null); setMode("diagnostics"); }}
-                >
-                  <CircleHelp aria-hidden="true" className="mr-1 size-3.5" />Parser details{parserDetailCount > 0 ? ` (${parserDetailCount})` : ""}
-                </Button>
-                {isParsing && <span role="status" className="mr-2 text-xs text-muted-foreground">Re-running parser…</span>}
-                <Button size="icon-sm" variant="ghost" aria-label="Undo PDF correction" title="Undo" disabled={isParsing || !corrections.length} onClick={undo}><Undo2 className="size-3.5" /></Button>
-                <Button size="icon-sm" variant="ghost" aria-label="Redo PDF correction" title="Redo" disabled={isParsing || !redoCorrections.length} onClick={redo}><RotateCcw className="size-3.5" /></Button>
+            <div className="shrink-0 border-b bg-muted/10">
+              <div className="flex items-center gap-2 px-4 py-1.5">
+                <nav className="flex shrink-0 items-center gap-1" aria-label="PDF import steps">
+                  <WorkflowStepButton
+                    step={1}
+                    active={mode === "adjust"}
+                    label="Check detection"
+                    onClick={() => { setScopedCorrectionOffer(null); setMode("adjust"); }}
+                  />
+                  <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <WorkflowStepButton
+                    step={2}
+                    active={mode === "review"}
+                    label="Review transactions"
+                    onClick={() => setMode("review")}
+                  />
+                </nav>
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                  {isParsing && <span role="status" className="mr-1 text-xs text-muted-foreground">Re-running parser…</span>}
+                  {unreadablePageCount > 0 && pageWarningsAcknowledged && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="text-amber-700 dark:text-amber-300"
+                      title="Show the pages that could not be read"
+                      onClick={() => setPageWarningsAcknowledged(false)}
+                    >
+                      <AlertTriangle aria-hidden="true" className="mr-1 size-3.5" />
+                      {unreadablePageCount} {unreadablePageCount === 1 ? "page" : "pages"} unreadable
+                    </Button>
+                  )}
+                  <Button
+                    size="xs"
+                    variant={mode === "diagnostics" ? "secondary" : "ghost"}
+                    title={parserDetailCount > 0 ? [...new Set([...detectionIssues, ...parsed.warnings])].join("\n") : "View parsing summary and technical diagnostics"}
+                    onClick={() => { setScopedCorrectionOffer(null); setMode("diagnostics"); }}
+                  >
+                    <CircleHelp aria-hidden="true" className="mr-1 size-3.5" />Parser details{parserDetailCount > 0 ? ` (${parserDetailCount})` : ""}
+                  </Button>
+                  <Button size="icon-sm" variant="ghost" aria-label="Undo PDF correction" title="Undo" disabled={isParsing || !corrections.length} onClick={undo}><Undo2 className="size-3.5" /></Button>
+                  <Button size="icon-sm" variant="ghost" aria-label="Redo PDF correction" title="Redo" disabled={isParsing || !redoCorrections.length} onClick={redo}><RotateCcw className="size-3.5" /></Button>
+                </div>
               </div>
+              <SummaryBar result={parsed} totals={totals} />
             </div>
 
             {parserError && (
               <div role="alert" className="shrink-0 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
                 Re-run failed: {parserError}
+              </div>
+            )}
+
+            {pageWarnings.length > 0 && !pageWarningsAcknowledged && (
+              <div role="alert" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-amber-500/40 bg-amber-500/5 px-4 py-2 text-xs">
+                <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                <span className="min-w-0 flex-1">{pageWarnings.join(" ")}</span>
+                <Button
+                  className="shrink-0"
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setPageWarningsAcknowledged(true)}
+                >
+                  I checked these pages
+                </Button>
               </div>
             )}
 
@@ -656,6 +756,8 @@ export function PdfStatementReviewDialog({
                   <TransactionTable
                     rows={tableRows}
                     result={parsed}
+                    sort={sort}
+                    onSort={(column) => setSort((current) => nextSortState(current, column))}
                     selectedIds={selectedIds}
                     allVisibleSelected={allVisibleSelected}
                     selectAllRef={selectAllRef}
@@ -694,10 +796,9 @@ export function PdfStatementReviewDialog({
                 {sourceOpen && page && (
                   <aside className="flex w-[42%] min-w-[26rem] flex-col border-l p-3 max-lg:absolute max-lg:inset-0 max-lg:z-30 max-lg:w-full max-lg:min-w-0 max-lg:bg-background">
                     <div className="mb-2 flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
+                      <PageControls pageNumber={page.pageNumber} pageCount={parsed.reconstructedPages.length} onChange={setPageNumber} />
                       <h3 className="text-sm font-medium">Source</h3>
                       <span className="text-xs text-muted-foreground">Highlighted text supports the selected field.</span>
-                      <PageControls pageNumber={page.pageNumber} pageCount={parsed.reconstructedPages.length} onChange={setPageNumber} />
-                      <span className="text-xs text-muted-foreground">{Math.round(page.coverage * 1000) / 10}% text coverage</span>
                       <Button className="ml-auto" size="xs" variant="ghost" onClick={() => setSourceOpen(false)}>Close</Button>
                     </div>
                     <PdfSourcePreview page={page} previewDataUrl={pagePreviewDataUrl} regions={pageRegions} columns={parsed.guidance.columns} highlightedSourceIds={highlightedSourceIds} selectedRowId={selectedSourceRowId} calibration={false} showPageMetadata={false} zoom={pdfZoom} onZoomChange={setPdfZoom} onSelectRow={setSelectedSourceRowId} onToggleRegion={NOOP} onColumnChange={NOOP} />
@@ -708,78 +809,6 @@ export function PdfStatementReviewDialog({
 
             {mode === "adjust" && page && (
               <div className="flex min-h-0 flex-1 flex-col">
-                <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b bg-muted/10 px-4 py-1.5 text-xs whitespace-nowrap">
-                  <label htmlFor="pdf-detection-profile" className="font-medium">Statement layout</label>
-                  <select
-                    id="pdf-detection-profile"
-                    value={selectedProfileId ?? ""}
-                    disabled={isParsing}
-                    onChange={(event) => selectProfile(event.target.value)}
-                    className="h-8 min-w-64 rounded-md border bg-background px-2 text-xs"
-                  >
-                    <option value="">Automatic</option>
-                    {[...profilesByBank.entries()]
-                      .sort(([left], [right]) => left.localeCompare(right))
-                      .map(([bankName, bankProfiles]) => (
-                      <optgroup key={bankName} label={bankName}>
-                        {[...bankProfiles].sort((left, right) => left.envelope.profile.name.localeCompare(right.envelope.profile.name)).map((profile) => (
-                          <option key={profile.recordId} value={profile.recordId}>
-                            {profile.envelope.profile.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  {selectedProfile && !selectedIsAccountProfile && onAssignProfile && (
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={isParsing}
-                      onClick={() => void assignSelectedProfile()}
-                    >
-                      Use for this account
-                    </Button>
-                  )}
-                  <span className="text-muted-foreground" title={selectedProfile
-                    ? `${selectedProfile.bankName} · ${selectedProfile.envelope.profile.name}${appliedProfileVersion ? ` v${appliedProfileVersion}` : ""}${selectedIsAccountProfile ? " · assigned to this account" : " · this statement only"}`
-                    : "Automatic detection applies to this statement only"}>
-                    {selectedProfile
-                      ? `${selectedProfile.bankName}${selectedIsAccountProfile ? " · assigned" : " · statement only"}`
-                      : "Statement only"}
-                  </span>
-                  {detectionIssues.length > 0 && (
-                    <button type="button" className="inline-flex max-w-72 items-center gap-1 text-amber-700 dark:text-amber-300" title={detectionIssues.join("\n")} onClick={() => setMode("diagnostics")}>
-                      <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0" />
-                      <span className="truncate">{detectionIssues[0]}</span>
-                      {detectionIssues.length > 1 && <span className="shrink-0">+{detectionIssues.length - 1}</span>}
-                    </button>
-                  )}
-                  {onAssignProfile && onRemoveAccountAssignment && onRenameBank && onRenameProfile && onDeleteProfile && (
-                    <Button
-                      className="ml-auto"
-                      size="xs"
-                      variant="ghost"
-                      disabled={isParsing}
-                      onClick={() => setManageProfilesOpen(true)}
-                    >
-                      <Settings2 className="mr-1 size-3.5" />Manage layouts
-                    </Button>
-                  )}
-                  {onSaveProfile && (
-                    <Button
-                      className={onAssignProfile ? undefined : "ml-auto"}
-                      size="xs"
-                      variant="outline"
-                      disabled={isParsing || parsed.metrics.rejected > 0 || detectionDirty}
-                      title={parsed.metrics.rejected > 0
-                        ? "Resolve rejected transactions before saving this layout"
-                        : detectionDirty ? "Preview and apply detection changes before saving this layout" : undefined}
-                      onClick={() => setSaveProfileOpen(true)}
-                    >
-                      <Save className="mr-1 size-3.5" />Save layout
-                    </Button>
-                  )}
-                </div>
                 <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-auto lg:grid-cols-[minmax(0,58fr)_minmax(24rem,42fr)] lg:overflow-hidden">
                 <div className="flex min-h-[26rem] flex-col border-b p-3 lg:min-h-0 lg:border-r lg:border-b-0">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -837,9 +866,27 @@ export function PdfStatementReviewDialog({
                   />
                 </div>
                 <div className="flex min-h-0 flex-col">
-                  <div className="min-h-0 flex-1 overflow-auto p-4">
+                  <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+                    <PdfStatementLayoutPanel
+                      profiles={profiles}
+                      selectedProfileId={selectedProfileId}
+                      accountProfileId={accountProfileId}
+                      accountName={accountName}
+                      notice={profileNotice ?? layoutNotice}
+                      disabled={isParsing}
+                      canSave={Boolean(onSaveProfile) && parsed.metrics.rejected === 0 && !detectionDirty}
+                      saveBlockedReason={parsed.metrics.rejected > 0
+                        ? "Resolve rejected transactions before saving this layout"
+                        : detectionDirty ? "Preview and apply the detection changes before saving this layout" : null}
+                      onSelect={selectProfile}
+                      onAssign={onAssignProfile ? () => void assignSelectedProfile() : undefined}
+                      onManage={onAssignProfile && onRemoveAccountAssignment && onRenameBank && onRenameProfile && onDeleteProfile
+                        ? () => setManageProfilesOpen(true)
+                        : undefined}
+                      onSave={onSaveProfile ? () => setSaveProfileOpen(true) : undefined}
+                    />
                     <DetectionControls guidance={draftGuidance} accountType={parsed.accountType} onChange={updateDraft} />
-                    <div className="mt-4 flex items-center justify-between">
+                    <div className="flex items-center justify-between">
                       <h3 className="text-sm font-medium">Column mapping</h3>
                       <Button size="xs" variant="outline" onClick={addColumn}>Map another column</Button>
                     </div>
@@ -912,12 +959,12 @@ export function PdfStatementReviewDialog({
                     )}
                   </section>
                   <details className="rounded-md border p-3">
-                    <summary className="cursor-pointer text-sm font-medium">Layout versions and validation</summary>
+                    <summary className="cursor-pointer text-sm font-medium">Saved layouts and validation</summary>
                     <p className="mt-1 text-xs text-muted-foreground">Saved layouts contain geometry and roles, not customer names, account numbers, or transaction text.</p>
                     <div className="mt-3 space-y-2">
-                      {profileMatches.map(({ option, profile, current, match }) => (
-                        <div key={`${option.recordId}-${profile.id}`} className="rounded border p-2 text-xs">
-                          <div className="flex items-center gap-2"><span className="font-medium">{option.bankName} · {profile.name} v{profile.profileVersion}{current ? " (current)" : ""}</span><span className="text-muted-foreground">{match?.outcome} · {Math.round((match?.score ?? 0) * 100)}%</span><Button className="ml-auto" size="xs" variant="outline" disabled={match?.outcome === "conflicting"} onClick={() => applyProfile(option, profile)}>Apply and validate</Button></div>
+                      {profileMatches.map(({ option, profile, match }) => (
+                        <div key={option.recordId} className="rounded border p-2 text-xs">
+                          <div className="flex items-center gap-2"><span className="font-medium">{option.bankName} · {profile.name}</span><span className="text-muted-foreground">{match?.outcome} · {Math.round((match?.score ?? 0) * 100)}%</span><Button className="ml-auto" size="xs" variant="outline" disabled={match?.outcome === "conflicting"} onClick={() => applyProfile(option, profile)}>Apply and validate</Button></div>
                           <p className="mt-1 text-muted-foreground">{match?.reasons.join("; ")}</p>
                         </div>
                       ))}
@@ -939,25 +986,23 @@ export function PdfStatementReviewDialog({
             )}
 
             {saveProfileOpen && (
-              <PdfProfileSaveDialog
+              <PdfLayoutSaveDialog
                 open
                 onOpenChange={setSaveProfileOpen}
-                banks={[...profilesByBank.keys()]}
+                profiles={profiles}
                 initialBankName={selectedProfile?.bankName ?? ""}
                 initialProfileName={selectedProfile?.envelope.profile.name ?? ""}
                 accountName={accountName}
                 isSaving={isSavingProfile}
-                onSave={async ({ bankName, profileName, assignToAccount }) => {
+                onSave={async (request) => {
                   if (!onSaveProfile) return;
                   try {
-                    const saved = await onSaveProfile({ bankName, profileName, assignToAccount, result: parsed });
-                    if (saved) {
-                      setSelectedProfileId(saved.profileId);
-                      setAppliedProfileVersion(saved.profileVersion);
-                    }
+                    const saved = await onSaveProfile({ ...request, result: parsed });
+                    if (saved) setSelectedProfileId(saved.profileId);
                     setSaveProfileOpen(false);
-                    toast.success("Statement layout saved", {
-                      description: `${bankName} · ${profileName}`,
+                    setLayoutNotice(null);
+                    toast.success(request.mode === "update" ? "Statement layout updated" : "Statement layout saved", {
+                      description: `${request.bankName} · ${request.profileName}`,
                     });
                   } catch (error) {
                     setParserError(error instanceof Error ? error.message : "The statement layout could not be saved.");
@@ -965,6 +1010,7 @@ export function PdfStatementReviewDialog({
                 }}
               />
             )}
+            <ConfirmDialog open={confirm !== null} onOpenChange={(next) => { if (!next) setConfirm(null); }} state={confirm} />
             {manageProfilesOpen && onAssignProfile && onRemoveAccountAssignment && onRenameBank && onRenameProfile && onDeleteProfile && (
               <PdfDetectionProfileManagerDialog
                 open
@@ -987,7 +1033,7 @@ export function PdfStatementReviewDialog({
           {mode === "review" && selectedIds.size > 0 ? (
             <div aria-label="Selected transaction actions" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap text-xs">
               <span className="mr-1 shrink-0 font-medium">{selectedIds.size} selected</span>
-              <Button className="shrink-0" size="xs" variant="outline" disabled={selectedHasRejected || selectedReviewIds.length === 0} onClick={() => structuralCorrection({ kind: "accept-transaction", transactionIds: selectedReviewIds })}>Mark {selectedReviewIds.length} reviewed</Button>
+              <Button className="shrink-0" size="xs" variant="outline" disabled={selectedHasRejected || selectedReviewIds.length === 0} onClick={acceptSelectedRows}>Mark {selectedReviewIds.length} reviewed</Button>
               <Button className="shrink-0" size="xs" variant="outline" onClick={() => structuralCorrection({ kind: "set-direction", transactionIds: [...selectedIds], direction: "debit" })}>Money out</Button>
               <Button className="shrink-0" size="xs" variant="outline" onClick={() => structuralCorrection({ kind: "set-direction", transactionIds: [...selectedIds], direction: "credit" })}>Money in</Button>
               <Button className="shrink-0" size="xs" variant="outline" disabled={[...selectedIds].some((id) => rows.find((row) => row.id === id)?.direction === "unknown")} onClick={() => structuralCorrections([...selectedIds].flatMap((id) => { const row = rows.find((entry) => entry.id === id); return row && row.direction !== "unknown" ? [{ kind: "set-direction" as const, transactionIds: [id], direction: row.direction === "debit" ? "credit" as const : "debit" as const }] : []; }))}>Reverse</Button>
@@ -1015,14 +1061,23 @@ export function PdfStatementReviewDialog({
             </div>
           ) : (
             <div className="min-w-0 flex-1 text-xs">
-              {blockingCount > 0 ? <span className="text-destructive">Resolve {blockingCount} rejected {blockingCount === 1 ? "transaction" : "transactions"}.</span>
+              {importBlockedByPages ? <span className="text-amber-700 dark:text-amber-300">Confirm the pages that could not be read before importing.</span>
+                : blockingCount > 0 ? <span className="text-destructive">Resolve {blockingCount} rejected {blockingCount === 1 ? "transaction" : "transactions"}.</span>
                 : reviewCount > 0 ? <span className="text-amber-700 dark:text-amber-300">Check and mark {reviewCount} {reviewCount === 1 ? "transaction" : "transactions"} reviewed.</span>
                   : <span className="text-muted-foreground">All transactions are ready.</span>}
             </div>
           )}
           <div className="flex shrink-0 gap-2">
             <Button variant="outline" disabled={isParsing} onClick={() => onOpenChange(false)}>Cancel</Button>
-            {!parsed.likelyScanned && <Button disabled={isParsing || rows.length === 0 || blockingCount > 0 || reviewCount > 0} onClick={() => onImport(rows, parsed)}>Use {rows.length} {rows.length === 1 ? "transaction" : "transactions"}</Button>}
+            {!parsed.likelyScanned && (
+              <Button
+                disabled={isParsing || rows.length === 0 || blockingCount > 0 || reviewCount > 0 || importBlockedByPages}
+                title={importBlockedByPages ? "Confirm that you checked the pages that could not be read" : undefined}
+                onClick={() => onImport(rows, parsed)}
+              >
+                Use {rows.length} {rows.length === 1 ? "transaction" : "transactions"}
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>
@@ -1059,88 +1114,15 @@ function detectionIssuesFor(
   if (!guidance.columns.some((column) => ["amount", "debit", "credit"].includes(column.role))) {
     issues.push("Map the account amount, money-out, or money-in column.");
   }
+  // Worded exactly like the parser's own warning so the two are one item in
+  // the Parser details list rather than the same question asked twice.
+  if (!guidance.currency) {
+    issues.push("The statement currency was not detected. Set it in Statement interpretation.");
+  }
   if (result.transactions.length > 0 && result.metrics.rejected / result.transactions.length > 0.5) {
     issues.push("Most detected transactions have unresolved required fields.");
   }
   return [...new Set(issues)];
-}
-
-function PdfProfileSaveDialog({
-  open,
-  onOpenChange,
-  banks,
-  initialBankName,
-  initialProfileName,
-  accountName,
-  isSaving,
-  onSave,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  banks: string[];
-  initialBankName: string;
-  initialProfileName: string;
-  accountName: string;
-  isSaving: boolean;
-  onSave: (input: { bankName: string; profileName: string; assignToAccount: boolean }) => Promise<void>;
-}) {
-  const [bankName, setBankName] = useState(initialBankName);
-  const [profileName, setProfileName] = useState(initialProfileName);
-  const [assignToAccount, setAssignToAccount] = useState(true);
-
-  const valid = Boolean(bankName.trim() && profileName.trim());
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Save statement layout</DialogTitle>
-          <DialogDescription>
-            Layouts are shared across budgets and accounts. They store detection settings only, not statement data.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <label className="grid gap-1.5 text-sm">
-            <span className="font-medium">Bank</span>
-            <input
-              list="pdf-detection-bank-names"
-              value={bankName}
-              onChange={(event) => setBankName(event.target.value)}
-              placeholder="For example, HSBC Bank"
-              className="h-9 rounded-md border bg-background px-3"
-              autoFocus
-            />
-            <datalist id="pdf-detection-bank-names">
-              {banks.map((bank) => <option key={bank} value={bank} />)}
-            </datalist>
-          </label>
-          <label className="grid gap-1.5 text-sm">
-            <span className="font-medium">Layout name</span>
-            <input
-              value={profileName}
-              onChange={(event) => setProfileName(event.target.value)}
-              placeholder="For example, Credit card"
-              className="h-9 rounded-md border bg-background px-3"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={assignToAccount}
-              onCheckedChange={(checked) => setAssignToAccount(checked === true)}
-            />
-            Use this layout for {accountName}
-          </label>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" disabled={isSaving} onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={!valid || isSaving} onClick={() => void onSave({
-            bankName: bankName.trim(),
-            profileName: profileName.trim(),
-            assignToAccount,
-          })}>{isSaving ? "Saving…" : "Save layout"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 function WorkflowStepButton({ step, active, label, onClick }: { step: number; active: boolean; label: string; onClick: () => void }) {
@@ -1162,22 +1144,53 @@ function WorkflowStepButton({ step, active, label, onClick }: { step: number; ac
 
 const SummaryBar = memo(function SummaryBar({ result, totals }: { result: PdfStatementParseResult; totals: { credits: number; debits: number } }) {
   const dates = result.transactions.map((row) => row.importDate).filter((date): date is string => Boolean(date)).sort();
+  const outstanding = result.metrics.review + result.metrics.rejected;
+  const net = totals.credits - totals.debits;
   return (
-    <section aria-label="PDF parse summary" className="ml-2 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap border-l pl-3 text-[11px]">
-      <div className="flex items-center gap-3">
-        <Metric label="Transactions" value={String(result.transactions.length)} />
-        <Metric label="Import dates" value={dates.length ? `${dates[0]}${dates.length > 1 ? ` to ${dates.at(-1)}` : ""}` : "Unresolved"} />
-      </div>
+    <section
+      aria-label="PDF parse summary"
+      className="flex items-center gap-x-4 gap-y-1 overflow-x-auto border-t px-4 py-1.5 text-[11px] whitespace-nowrap"
+    >
+      <span className="shrink-0">
+        <strong className="tabular-nums">{result.transactions.length}</strong>{" "}
+        <span className="text-muted-foreground">{result.transactions.length === 1 ? "transaction" : "transactions"}</span>
+        {dates.length > 0 && (
+          <span className="text-muted-foreground">
+            {" · "}{dates[0]}{dates.length > 1 && dates.at(-1) !== dates[0] ? ` to ${dates.at(-1)}` : ""}
+          </span>
+        )}
+      </span>
+
       <SummaryDivider />
-      <div className="flex items-center gap-3">
-        <Metric label="Money in" value={`+${formatMinorUnits(totals.credits)}`} tone="positive" />
-        <Metric label="Money out" value={formatMinorUnits(-totals.debits)} tone="negative" />
-        <Metric label="Net change" value={formatSignedMinorUnits(totals.credits - totals.debits)} tone={totals.credits - totals.debits > 0 ? "positive" : totals.credits - totals.debits < 0 ? "negative" : "normal"} />
-      </div>
-      <SummaryDivider />
-      <Metric label="Needs review" value={String(result.metrics.review + result.metrics.rejected)} tone={result.metrics.review + result.metrics.rejected ? "warning" : "normal"} />
-      <SummaryDivider />
-      <span className="text-muted-foreground">{accountTypeLabel(result.accountType)} · {result.metrics.transactionPages} of {result.metrics.pages} pages used</span>
+
+      <span className="flex shrink-0 items-baseline gap-3">
+        <Metric label="In" value={`+${formatMinorUnits(totals.credits)}`} tone="positive" />
+        <Metric label="Out" value={formatMinorUnits(-totals.debits)} tone="negative" />
+        <span className="flex items-baseline gap-1">
+          <span className="text-muted-foreground">Net</span>
+          <strong className={cn(
+            "text-xs tabular-nums",
+            net > 0 && "text-emerald-700 dark:text-emerald-400",
+            net < 0 && "text-red-600 dark:text-red-400"
+          )}>{formatSignedMinorUnits(net)}</strong>
+        </span>
+      </span>
+
+      <span className="ml-auto flex shrink-0 items-center gap-3">
+        <span className="text-muted-foreground">{result.metrics.transactionPages} of {result.metrics.pages} pages</span>
+        <span className={cn(
+          "rounded-full px-2 py-0.5 font-medium",
+          result.metrics.rejected > 0 && "bg-destructive/10 text-destructive",
+          result.metrics.rejected === 0 && result.metrics.review > 0 && "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+          outstanding === 0 && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+        )}>
+          {result.metrics.rejected > 0
+            ? `${result.metrics.rejected} to fix`
+            : result.metrics.review > 0
+              ? `${result.metrics.review} to review`
+              : "All ready"}
+        </span>
+      </span>
     </section>
   );
 });
@@ -1190,56 +1203,99 @@ function Metric({ label, value, tone = "normal" }: { label: string; value: strin
   return <div className="flex items-baseline gap-1 whitespace-nowrap"><dt className="text-[11px] text-muted-foreground">{label}</dt><dd className={cn("font-semibold tabular-nums", tone === "positive" && "text-emerald-700 dark:text-emerald-400", tone === "negative" && "text-red-600 dark:text-red-400", tone === "warning" && "text-amber-700 dark:text-amber-300")}>{value}</dd></div>;
 }
 
-function PreviewComparisonMetric({
-  label,
-  before,
-  after,
-  tone = "normal",
-}: {
-  label: string;
-  before: string;
-  after?: string;
-  tone?: "normal" | "info" | "positive" | "negative" | "warning";
-}) {
+function DetectionChangePreview({ diff }: { diff: ReturnType<typeof resultDiff> }) {
+  const edits = [
+    diff.added ? `${diff.added} added` : null,
+    diff.removed ? `${diff.removed} removed` : null,
+    diff.amounts ? `${diff.amounts} ${diff.amounts === 1 ? "amount" : "amounts"}` : null,
+    diff.dates ? `${diff.dates} ${diff.dates === 1 ? "date" : "dates"}` : null,
+    diff.descriptions ? `${diff.descriptions} ${diff.descriptions === 1 ? "description" : "descriptions"}` : null,
+  ].filter(Boolean) as string[];
+  const newlyUnreadable = diff.afterRejected - diff.beforeRejected;
+
   return (
-    <div className="flex min-w-0 items-center gap-2 px-3 py-1.5">
-      <span className={cn(
-        "mr-auto whitespace-nowrap font-medium",
-        tone === "info" && "text-sky-700 dark:text-sky-300",
-        tone === "positive" && "text-emerald-700 dark:text-emerald-300",
-        tone === "negative" && "text-rose-700 dark:text-rose-300",
-        tone === "warning" && "text-amber-700 dark:text-amber-300"
-      )}>{label}</span>
-      {after === undefined ? (
-        <strong className="tabular-nums">{before}</strong>
-      ) : (
-        <span className="flex min-w-0 items-center gap-1.5 tabular-nums" title={`Current ${before}; preview ${after}`}>
-          <span className="text-muted-foreground"><span className="sr-only">Current </span>{before}</span>
-          <ArrowRight aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
-          <strong><span className="sr-only">Preview </span>{after}</strong>
-        </span>
+    <section aria-label="Detection change preview" className="mb-2 overflow-hidden rounded-md border bg-background/70">
+      <p className="border-b px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        If you apply these changes
+      </p>
+
+      <div className="divide-y text-[11px]">
+        <PreviewRow
+          label="Transactions"
+          before={String(diff.before)}
+          after={String(diff.after)}
+          delta={diff.after - diff.before}
+        />
+        <PreviewRow
+          label="Ready to import"
+          before={String(diff.beforeReady)}
+          after={String(diff.afterReady)}
+          delta={diff.afterReady - diff.beforeReady}
+        />
+        <PreviewRow
+          label="Net change"
+          before={formatSignedMinorUnits(diff.beforeNet)}
+          after={formatSignedMinorUnits(diff.afterNet)}
+          delta={diff.afterNet - diff.beforeNet}
+          deltaLabel={diff.afterNet === diff.beforeNet ? "unchanged" : formatSignedMinorUnits(diff.afterNet - diff.beforeNet)}
+          emphasis
+        />
+      </div>
+
+      <p className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
+        {edits.length ? `Row changes: ${edits.join(" · ")}` : "No row would change."}
+      </p>
+
+      {newlyUnreadable > 0 && (
+        <p role="status" className="flex items-start gap-1.5 border-t bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+          {newlyUnreadable} {newlyUnreadable === 1 ? "transaction" : "transactions"} would lose a required value and block import.
+        </p>
       )}
-    </div>
+    </section>
   );
 }
 
-function DetectionChangePreview({ diff }: { diff: ReturnType<typeof resultDiff> }) {
+/**
+ * One measurement, read left to right: what it is now, what it becomes, and by
+ * how much. The delta carries the colour because it is the part that answers
+ * "is this change what I wanted".
+ */
+function PreviewRow({
+  label,
+  before,
+  after,
+  delta,
+  deltaLabel,
+  emphasis = false,
+}: {
+  label: string;
+  before: string;
+  after: string;
+  delta: number;
+  deltaLabel?: string;
+  emphasis?: boolean;
+}) {
+  const unchanged = delta === 0;
   return (
-    <section aria-label="Detection change preview" className="mb-2 overflow-hidden rounded-md bg-background/70 text-[11px]">
-      <div className="flex items-center justify-between px-3 py-1 text-[10px] text-muted-foreground">
-        <span className="font-semibold uppercase tracking-wide text-foreground">Preview impact</span>
-        <span>Current <ArrowRight aria-hidden="true" className="mx-1 inline size-3" /> Preview</span>
-      </div>
-      <div aria-label="Detection count comparison" className="grid grid-cols-3 divide-x divide-border/60 bg-muted/25">
-        <PreviewComparisonMetric label="Rows changed" before={String(diff.changed)} />
-        <PreviewComparisonMetric label="Transactions" before={String(diff.before)} after={String(diff.after)} tone="info" />
-        <PreviewComparisonMetric label="Needs review" before={String(diff.beforeReview)} after={String(diff.afterReview)} tone="warning" />
-      </div>
-      <div aria-label="Detection amount comparison" className="grid grid-cols-2 divide-x divide-border/60 bg-muted/10">
-        <PreviewComparisonMetric label="Money in" before={formatSignedMinorUnits(diff.beforeCredits)} after={formatSignedMinorUnits(diff.afterCredits)} tone="positive" />
-        <PreviewComparisonMetric label="Money out" before={formatMinorUnits(-diff.beforeDebits)} after={formatMinorUnits(-diff.afterDebits)} tone="negative" />
-      </div>
-    </section>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-3 py-1.5">
+      <span className={cn("truncate", emphasis ? "font-medium" : "text-muted-foreground")}>{label}</span>
+      <span className="flex items-baseline gap-1.5 tabular-nums">
+        <span className="text-muted-foreground line-through decoration-muted-foreground/40">{before}</span>
+        <ArrowRight aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
+        <strong className={cn(emphasis && "text-sm")}>{after}</strong>
+        <span
+          className={cn(
+            "min-w-10 text-right text-[10px]",
+            unchanged && "text-muted-foreground",
+            !unchanged && delta > 0 && "text-emerald-700 dark:text-emerald-300",
+            !unchanged && delta < 0 && "text-rose-700 dark:text-rose-300"
+          )}
+        >
+          {deltaLabel ?? (unchanged ? "same" : `${delta > 0 ? "+" : ""}${delta}`)}
+        </span>
+      </span>
+    </div>
   );
 }
 
@@ -1302,6 +1358,8 @@ type TransactionField = "transactionDate" | "postedDate" | "valueDate" | "import
 type TransactionTableProps = {
   rows: PdfTransactionProposal[];
   result: PdfStatementParseResult;
+  sort: SortState | null;
+  onSort: (column: SortColumn) => void;
   selectedIds: Set<string>;
   allVisibleSelected: boolean;
   selectAllRef: React.RefObject<HTMLInputElement | null>;
@@ -1315,7 +1373,7 @@ type TransactionTableProps = {
   onSplit: (row: PdfTransactionProposal) => void;
 };
 
-function TransactionTable({ rows, result, selectedIds, allVisibleSelected, selectAllRef, onToggleAll, onToggle, onDirection, onField, onSource, onAccept, onIgnore, onSplit }: TransactionTableProps) {
+function TransactionTable({ rows, result, sort, onSort, selectedIds, allVisibleSelected, selectAllRef, onToggleAll, onToggle, onDirection, onField, onSource, onAccept, onIgnore, onSplit }: TransactionTableProps) {
   const showPosting = result.guidance.columns.some((column) => column.role === "posting-date") || rows.some((row) => row.postedDate);
   const showValue = result.guidance.columns.some((column) => column.role === "value-date") || rows.some((row) => row.valueDate);
   const showBalance = result.guidance.columns.some((column) => column.role === "balance") && rows.some((row) => row.balance);
@@ -1333,16 +1391,38 @@ function TransactionTable({ rows, result, selectedIds, allVisibleSelected, selec
           <col className="w-44" />
         </colgroup>
         <thead className="sticky top-0 z-20 bg-muted text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
-          <tr className="[&>th]:bg-muted [&>th]:px-3 [&>th]:py-1.5 [&>th]:font-medium">
-            <th><input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={onToggleAll} aria-label={allVisibleSelected ? "Deselect all visible PDF rows" : "Select all visible PDF rows"} /></th>
-            <th>Status</th>
-            <DateHeader label="Transaction date" selected={result.guidance.importDate === "transaction"} />
-            {showPosting && <DateHeader label="Posting date" selected={result.guidance.importDate === "posting"} />}
-            {showValue && <DateHeader label="Value date" selected={result.guidance.importDate === "value"} />}
-            <th className="text-left">Description</th>
-            <th className="text-right">Amount <span className="block text-[10px] font-normal">Click sign to reverse</span></th>
-            <th>Currency</th>
-            {showBalance && <th className="text-right">Balance</th>}
+          <tr className="[&>th]:bg-muted [&>th]:px-2 [&>th]:py-1 [&>th]:text-[11px] [&>th]:font-medium">
+            <th className="px-2"><input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={onToggleAll} aria-label={allVisibleSelected ? "Deselect all visible PDF rows" : "Select all visible PDF rows"} /></th>
+            <SortableHeader column="status" label="Status" sort={sort} onSort={onSort} />
+            <SortableHeader
+              column="transactionDate"
+              label="Transaction date"
+              importDate={result.guidance.importDate === "transaction"}
+              sort={sort}
+              onSort={onSort}
+            />
+            {showPosting && (
+              <SortableHeader
+                column="postedDate"
+                label="Posting date"
+                importDate={result.guidance.importDate === "posting"}
+                sort={sort}
+                onSort={onSort}
+              />
+            )}
+            {showValue && (
+              <SortableHeader
+                column="valueDate"
+                label="Value date"
+                importDate={result.guidance.importDate === "value"}
+                sort={sort}
+                onSort={onSort}
+              />
+            )}
+            <SortableHeader column="description" label="Description" sort={sort} onSort={onSort} />
+            <SortableHeader column="amount" label="Amount" align="right" sort={sort} onSort={onSort} />
+            <SortableHeader column="currency" label="Currency" align="center" sort={sort} onSort={onSort} />
+            {showBalance && <SortableHeader column="balance" label="Balance" align="right" sort={sort} onSort={onSort} />}
             <th><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -1429,7 +1509,107 @@ function TransactionStatus({ status, reasons }: { status: PdfTransactionProposal
   );
 }
 
-function DateHeader({ label, selected }: { label: string; selected: boolean }) { return <th className="text-left"><span className="inline-flex items-center gap-1">{selected && <CalendarCheck className="size-3.5 text-foreground" />}{label}</span></th>; }
+/**
+ * A column header that also sorts. Selecting it cycles ascending, descending,
+ * and back to the statement's own order, so the printed order is always one
+ * click away rather than something to rebuild by hand.
+ */
+function SortableHeader({
+  column,
+  label,
+  sort,
+  onSort,
+  align = "left",
+  importDate = false,
+}: {
+  column: SortColumn;
+  label: string;
+  sort: SortState | null;
+  onSort: (column: SortColumn) => void;
+  align?: "left" | "right" | "center";
+  importDate?: boolean;
+}) {
+  const active = sort?.column === column ? sort.direction : null;
+  const Icon = active === "asc" ? ChevronUp : active === "desc" ? ChevronDown : ChevronsUpDown;
+  return (
+    <th
+      aria-sort={active === "asc" ? "ascending" : active === "desc" ? "descending" : "none"}
+      className={cn(align === "right" && "text-right", align === "center" && "text-center")}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        title={active ? "Sort the other way, then back to statement order" : `Sort by ${label.toLowerCase()}`}
+        className={cn(
+          "group inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          align === "right" && "flex-row-reverse",
+          active && "text-foreground"
+        )}
+      >
+        {importDate && <CalendarCheck aria-hidden="true" className="size-3.5 shrink-0 text-foreground" />}
+        <span className="truncate">{label}</span>
+        <Icon
+          aria-hidden="true"
+          className={cn("size-3 shrink-0", active ? "opacity-100" : "opacity-0 group-hover:opacity-60")}
+        />
+        {importDate && <span className="sr-only">(used as the import date)</span>}
+      </button>
+    </th>
+  );
+}
+
+const STATUS_SORT_ORDER: Record<PdfTransactionProposal["status"], number> = { rejected: 0, review: 1, accepted: 2 };
+
+function nextSortState(current: SortState | null, column: SortColumn): SortState | null {
+  if (current?.column !== column) return { column, direction: "asc" };
+  if (current.direction === "asc") return { column, direction: "desc" };
+  return null;
+}
+
+function sortTransactions(rows: PdfTransactionProposal[], sort: SortState | null) {
+  if (!sort) return rows;
+  const factor = sort.direction === "asc" ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    // A row with nothing to compare stays at the end in both directions, so
+    // reversing the sort never hides the rows that still need a value.
+    const missingLeft = isMissingForSort(left, sort.column);
+    const missingRight = isMissingForSort(right, sort.column);
+    if (missingLeft !== missingRight) return missingLeft ? 1 : -1;
+    const compared = compareTransactions(left, right, sort.column);
+    // Rows the sort cannot separate keep the statement's own order.
+    return compared === 0 ? left.sourceRowNumber - right.sourceRowNumber : compared * factor;
+  });
+}
+
+function isMissingForSort(row: PdfTransactionProposal, column: SortColumn) {
+  if (column === "status" || column === "description" || column === "amount") return false;
+  if (column === "currency") return !row.currency;
+  if (column === "balance") return !row.balance;
+  return !row[column];
+}
+
+function compareTransactions(left: PdfTransactionProposal, right: PdfTransactionProposal, column: SortColumn) {
+  if (column === "status") return STATUS_SORT_ORDER[left.status] - STATUS_SORT_ORDER[right.status];
+  if (column === "amount") return minorUnits(left.amount) - minorUnits(right.amount);
+  if (column === "balance") return compareOptionalNumbers(left.balance, right.balance);
+  if (column === "description") return left.description.localeCompare(right.description);
+  if (column === "currency") return compareOptionalText(left.currency, right.currency);
+  return compareOptionalText(left[column], right[column]);
+}
+
+function compareOptionalText(left: string | null, right: string | null) {
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right);
+}
+
+function compareOptionalNumbers(left: string | null, right: string | null) {
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return minorUnits(left) - minorUnits(right);
+}
 
 function DetectionControls({ guidance, accountType, onChange }: { guidance: PdfParserGuidance; accountType: PdfAccountType; onChange: (patch: Partial<PdfParserGuidance>) => void }) {
   const [open, setOpen] = useState(true);
@@ -1445,7 +1625,7 @@ function DetectionControls({ guidance, accountType, onChange }: { guidance: PdfP
         <Control label="Account type"><select value={guidance.accountType} onChange={(event) => onChange({ accountType: event.target.value as PdfParserGuidance["accountType"] })} className="h-8 rounded border bg-background px-2"><option value="auto">Auto-detect ({accountTypeLabel(accountType)})</option>{["checking", "savings", "credit-card", "prepaid", "multi-currency", "business-cash", "loan", "investment"].map((value) => <option key={value} value={value}>{accountTypeLabel(value as PdfAccountType)}</option>)}</select></Control>
         <Control label="Statement currency"><input value={guidance.currency ?? ""} maxLength={3} placeholder="Detect or enter ISO code" onChange={(event) => onChange({ currency: event.target.value.toUpperCase() || null })} className="h-8 rounded border bg-background px-2 uppercase" /></Control>
         <Control label="Use as import date"><select value={guidance.importDate} onChange={(event) => onChange({ importDate: event.target.value as PdfImportDate })} className="h-8 rounded border bg-background px-2"><option value="transaction">Transaction date</option><option value="posting">Posting date</option><option value="value">Value date</option></select></Control>
-        <Control label="Amount direction"><select value={guidance.unsignedDirection} onChange={(event) => onChange({ unsignedDirection: event.target.value as PdfParserGuidance["unsignedDirection"] })} className="h-8 rounded border bg-background px-2"><option value="review">Use signs or DR/CR; review unmarked</option><option value="debit">CR = money in; unmarked = money out</option><option value="credit">DR = money out; unmarked = money in</option></select></Control>
+        <Control label="Printed sign means"><select value={guidance.printedSign} onChange={(event) => onChange({ printedSign: event.target.value as PdfPrintedSign })} className="h-8 rounded border bg-background px-2">{PRINTED_SIGNS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control><Control label="Amount direction"><select value={guidance.unsignedDirection} onChange={(event) => onChange({ unsignedDirection: event.target.value as PdfParserGuidance["unsignedDirection"] })} className="h-8 rounded border bg-background px-2"><option value="review">Use signs or DR/CR; review unmarked</option><option value="debit">CR = money in; unmarked = money out</option><option value="credit">DR = money out; unmarked = money in</option></select></Control>
         <Control label="Statement starts"><input type="date" value={guidance.statementPeriod.start ?? ""} onChange={(event) => onChange({ statementPeriod: { ...guidance.statementPeriod, start: event.target.value || null } })} className="h-8 rounded border bg-background px-2" /></Control>
         <Control label="Statement ends"><input type="date" value={guidance.statementPeriod.end ?? ""} onChange={(event) => onChange({ statementPeriod: { ...guidance.statementPeriod, end: event.target.value || null } })} className="h-8 rounded border bg-background px-2" /></Control>
         <Control label="Date format"><select value={guidance.dateFormat} onChange={(event) => onChange({ dateFormat: event.target.value as PdfDateFormatOption })} className="h-8 rounded border bg-background px-2">{DATE_FORMATS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control>
@@ -1488,7 +1668,7 @@ function isActionableReason(reason: PdfConfidenceReason) {
   ].includes(reason);
 }
 
-function reasonText(reasons: PdfConfidenceReason[]) { return reasons.map((reason) => ({ DATE_AMBIGUOUS_ORDER: "Date order is ambiguous", DATE_YEAR_INFERRED_FROM_PERIOD: "Year was inferred from the statement period", DATE_INHERITED_FROM_PREVIOUS_ROW: "Date was inherited from the previous statement row", DATE_OUTSIDE_STATEMENT_PERIOD: "Date is outside the statement period", DATE_INVALID: "Date could not be read", AMOUNT_MULTIPLE_CANDIDATES: "More than one amount could apply", AMOUNT_DEBIT_CREDIT_CONFLICT: "Both money-out and money-in columns contain values", AMOUNT_FROM_MAPPED_COLUMN: "Amount came from the mapped column", AMOUNT_FORMAT_AMBIGUOUS: "Number format is ambiguous", AMOUNT_MISSING: "Amount is missing", AMOUNT_ZERO: "Amount must not be zero", CURRENCY_AMBIGUOUS: "Currency is not confirmed", CURRENCY_MINOR_UNIT_MISMATCH: "Amount precision does not match the currency", ACTUAL_PRECISION_UNSUPPORTED: "Actual cannot import this amount without losing decimal precision", DIRECTION_FROM_DEBIT_COLUMN: "Direction came from the money-out column", DIRECTION_FROM_CREDIT_COLUMN: "Direction came from the money-in column", DIRECTION_FROM_MARKER: "Direction came from a DR/CR marker", DIRECTION_FROM_SIGN: "Direction came from the printed sign", DIRECTION_FROM_BALANCE: "Direction came from the balance change", DIRECTION_FROM_SECTION: "Direction came from the statement section", DIRECTION_EXPLICIT_POLICY: "Direction follows your unsigned-amount policy", DIRECTION_UNRESOLVED: "Money in or money out is unresolved", DIRECTION_EVIDENCE_CONFLICT: "Printed direction evidence conflicts", BALANCE_RECONCILED: "Amount reconciles to the running balance", BALANCE_MISMATCH: "Amount does not reconcile to the running balance", ROW_CONTINUATION_UNCERTAIN: "Transaction grouping needs confirmation", ROW_IN_NON_TRANSACTION_SECTION: "Row may be outside the transaction table", ROW_MANUALLY_CHANGED: "Manually changed", PROFILE_LAYOUT_DRIFT: "Saved layout no longer aligns", PAGE_IMAGE_ONLY: "Page has no usable text", POSSIBLE_DUPLICATE: "Possible duplicate", STATEMENT_SUMMARY_MISMATCH: "Parsed totals do not match the statement summary", CROSS_PAGE_SEQUENCE_CHANGED: "Date order changes across pages", ACCOUNT_TYPE_SPECIALIZED: "This account type needs specialized review", DESCRIPTION_MISSING: "Description is missing" } satisfies Record<PdfConfidenceReason, string>)[reason]).join("; "); }
+function reasonText(reasons: PdfConfidenceReason[]) { return reasons.map((reason) => ({ DATE_AMBIGUOUS_ORDER: "Date order is ambiguous", DATE_YEAR_INFERRED_FROM_PERIOD: "Year was inferred from the statement period", DATE_INHERITED_FROM_PREVIOUS_ROW: "Date was inherited from the previous statement row", DATE_OUTSIDE_STATEMENT_PERIOD: "Date is outside the statement period", DATE_INVALID: "Date could not be read", AMOUNT_MULTIPLE_CANDIDATES: "More than one amount could apply", AMOUNT_DEBIT_CREDIT_CONFLICT: "Both money-out and money-in columns contain values", AMOUNT_FROM_MAPPED_COLUMN: "Amount came from the mapped column", AMOUNT_FORMAT_AMBIGUOUS: "Number format is ambiguous", AMOUNT_MISSING: "Amount is missing", AMOUNT_ZERO: "Amount must not be zero", CURRENCY_AMBIGUOUS: "Currency is not confirmed", CURRENCY_MINOR_UNIT_MISMATCH: "Amount precision does not match the currency", ACTUAL_PRECISION_UNSUPPORTED: "Actual cannot import this amount without losing decimal precision", DIRECTION_FROM_DEBIT_COLUMN: "Direction came from the money-out column", DIRECTION_FROM_CREDIT_COLUMN: "Direction came from the money-in column", DIRECTION_FROM_MARKER: "Direction came from a DR/CR marker", DIRECTION_FROM_SIGN: "Direction came from the printed sign", SIGN_CONVENTION_UNCONFIRMED: "Confirm whether the statement prints signs from your side or the card issuer's side", DIRECTION_FROM_BALANCE: "Direction came from the balance change", ACCOUNT_TYPE_UNCONFIRMED: "Confirm the account type: the balance column was read using a detected type", DIRECTION_FROM_SECTION: "Direction came from the statement section", DIRECTION_EXPLICIT_POLICY: "Direction follows your unsigned-amount policy", DIRECTION_UNRESOLVED: "Money in or money out is unresolved", DIRECTION_EVIDENCE_CONFLICT: "Printed direction evidence conflicts", BALANCE_RECONCILED: "Amount reconciles to the running balance", BALANCE_MISMATCH: "Amount does not reconcile to the running balance", ROW_CONTINUATION_UNCERTAIN: "Transaction grouping needs confirmation", ROW_IN_NON_TRANSACTION_SECTION: "Row may be outside the transaction table", ROW_MANUALLY_CHANGED: "Manually changed", PROFILE_LAYOUT_DRIFT: "Saved layout no longer aligns", PAGE_IMAGE_ONLY: "Page has no usable text", POSSIBLE_DUPLICATE: "Possible duplicate", STATEMENT_SUMMARY_MISMATCH: "Parsed totals do not match the statement summary", CROSS_PAGE_SEQUENCE_CHANGED: "Date order changes across pages", ACCOUNT_TYPE_SPECIALIZED: "This account type needs specialized review", DESCRIPTION_MISSING: "Description is missing" } satisfies Record<PdfConfidenceReason, string>)[reason]).join("; "); }
 
 function transactionTotals(rows: PdfTransactionProposal[]) { return rows.reduce((total, row) => { const units = minorUnits(row.amount); if (units > 0) total.credits += units; if (units < 0) total.debits += Math.abs(units); return total; }, { credits: 0, debits: 0 }); }
 function formatSignedMinorUnits(value: number) { return `${value > 0 ? "+" : ""}${formatMinorUnits(value)}`; }
@@ -1508,7 +1688,52 @@ function pageForSourceIds(result: PdfStatementParseResult | null, sourceIds: str
 }
 function financialDetails(row: PdfTransactionProposal) { const values = [row.originalAmount ? `Original ${formatExactMoney(row.originalAmount)}` : null, row.exchangeRate ? `Rate ${row.exchangeRate}` : null, row.fees.length ? `Fees ${row.fees.map(formatExactMoney).join(" + ")}` : null, row.vat.length ? `VAT ${row.vat.map(formatExactMoney).join(" + ")}` : null].filter(Boolean); return values.join(" · "); }
 function formatExactMoney(value: NonNullable<PdfTransactionProposal["exactAmount"]>) { const coefficient = BigInt(value.coefficient); const magnitude = (coefficient < BigInt(0) ? -coefficient : coefficient).toString().padStart(value.scale + 1, "0"); const decimal = value.scale ? `${magnitude.slice(0, -value.scale)}.${magnitude.slice(-value.scale)}` : magnitude; return `${value.currency ? `${value.currency} ` : ""}${decimal}`; }
-function resultDiff(before: PdfStatementParseResult, after: PdfStatementParseResult) { const beforeRows = new Map(before.transactions.map((row) => [row.id, row])); const afterRows = new Map(after.transactions.map((row) => [row.id, row])); const ids = new Set([...beforeRows.keys(), ...afterRows.keys()]); const changed = [...ids].filter((id) => { const left = beforeRows.get(id); const right = afterRows.get(id); return !left || !right || left.transactionDate !== right.transactionDate || left.postedDate !== right.postedDate || left.valueDate !== right.valueDate || left.description !== right.description || left.amount !== right.amount || left.currency !== right.currency || left.status !== right.status; }).length; const beforeTotals = transactionTotals(before.transactions); const afterTotals = transactionTotals(after.transactions); return { before: before.transactions.length, after: after.transactions.length, changed, beforeReview: before.metrics.review + before.metrics.rejected, afterReview: after.metrics.review + after.metrics.rejected, beforeCredits: beforeTotals.credits, afterCredits: afterTotals.credits, beforeDebits: beforeTotals.debits, afterDebits: afterTotals.debits }; }
+function resultDiff(before: PdfStatementParseResult, after: PdfStatementParseResult) {
+  const beforeRows = new Map(before.transactions.map((row) => [row.id, row]));
+  const afterRows = new Map(after.transactions.map((row) => [row.id, row]));
+  let added = 0;
+  let removed = 0;
+  let amounts = 0;
+  let dates = 0;
+  let descriptions = 0;
+  for (const id of new Set([...beforeRows.keys(), ...afterRows.keys()])) {
+    const left = beforeRows.get(id);
+    const right = afterRows.get(id);
+    if (!left) { added += 1; continue; }
+    if (!right) { removed += 1; continue; }
+    if (left.amount !== right.amount || left.currency !== right.currency) amounts += 1;
+    if (left.importDate !== right.importDate
+      || left.transactionDate !== right.transactionDate
+      || left.postedDate !== right.postedDate
+      || left.valueDate !== right.valueDate) dates += 1;
+    if (left.description !== right.description) descriptions += 1;
+  }
+  const beforeTotals = transactionTotals(before.transactions);
+  const afterTotals = transactionTotals(after.transactions);
+  return {
+    before: before.transactions.length,
+    after: after.transactions.length,
+    added,
+    removed,
+    amounts,
+    dates,
+    descriptions,
+    changed: added + removed + amounts + dates + descriptions,
+    beforeReady: before.metrics.accepted,
+    afterReady: after.metrics.accepted,
+    beforeReview: before.metrics.review + before.metrics.rejected,
+    afterReview: after.metrics.review + after.metrics.rejected,
+    beforeRejected: before.metrics.rejected,
+    afterRejected: after.metrics.rejected,
+    beforeCredits: beforeTotals.credits,
+    afterCredits: afterTotals.credits,
+    beforeDebits: beforeTotals.debits,
+    afterDebits: afterTotals.debits,
+    beforeNet: beforeTotals.credits - beforeTotals.debits,
+    afterNet: afterTotals.credits - afterTotals.debits,
+  };
+}
+
 function newColumnBounds(columns: PdfColumn[], pageNumber: number, pageWidth: number) {
   const edgePadding = Math.max(6, pageWidth * 0.01);
   const gap = Math.max(8, pageWidth * 0.012);

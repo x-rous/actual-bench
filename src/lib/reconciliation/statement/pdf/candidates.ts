@@ -3,7 +3,10 @@ import { normalizePdfText } from "./text";
 
 export const DATE_CANDIDATE = /\b(?:\d{8}|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?|\d{1,2}(?:st|nd|rd|th)?[-\s][\p{L}]{3,}\.?(?:[-\s]\d{2,4})?|[\p{L}]{3,}\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{2,4})?)\b/iu;
 export const CURRENCY_CANDIDATE = /\b(?:AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR)\b|[$£€¥₹]/iu;
-export const MONEY_CANDIDATE = /(?:\(\s*)?[+-]?\s*(?:(?:AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR|[$£€¥₹])\s*)?(?:\d{1,3}(?:[\s,'’.,]\d{2,3})+|\d+)(?:[.,]\d{1,6})?\s*(?:CR|DR)?\s*\)?/giu;
+// A trailing minus is a real negative notation in German, Nordic, and many
+// SAP-generated statements. It is only consumed when nothing numeric follows,
+// so a printed range such as 12-15 still reads as two separate values.
+export const MONEY_CANDIDATE = /(?:\(\s*)?[+-]?\s*(?:(?:AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR|[$£€¥₹])\s*)?[+-]?\s*(?:\d{1,3}(?:[\s,'’.,]\d{2,3})+|\d+)(?:[.,]\d{1,6})?(?:-(?!\d))?\s*(?:CR|DR)?\s*\)?/giu;
 
 export type ExactDecimal = {
   coefficient: bigint;
@@ -79,9 +82,34 @@ export function moneyCandidates(value: string) {
     .filter((candidate) => /\d/.test(candidate));
 }
 
+/**
+ * A value printed the way money is printed: decimals, digit grouping, or an
+ * explicit currency. A bare integer such as a store or card number is not
+ * money, and treating it as money used to hide the description column.
+ */
+export function looksLikeMoney(value: string) {
+  const text = normalizePdfText(value);
+  if (!moneyCandidates(text).length) return false;
+  return /\d[\d\s,'’.]*[.,]\d{2}(?!\d)/u.test(text)
+    || /\d{1,3}(?:[.,\s'’]\d{3})+(?:[.,]\d+)?/u.test(text)
+    || CURRENCY_CANDIDATE.test(text);
+}
+
+/**
+ * Which sign a value prints, independent of what that sign means. The currency
+ * is removed first so "EUR -9.00" and "-EUR 9.00" read the same way.
+ */
+export function printedSignOf(value: string): "negative" | "positive" | null {
+  const text = normalizePdfText(value).replace(CURRENCY_CANDIDATE, "").trim();
+  if (/^-|^\(|-\s*\)?\s*$/.test(text)) return "negative";
+  if (/^\+/.test(text)) return "positive";
+  return null;
+}
+
 export function parseExactDecimal(value: string, format: PdfNumberFormat): ExactDecimal | null {
   const raw = normalizePdfText(value);
-  const negative = /^\s*-/.test(raw) || /^\s*\(/.test(raw) || /(?<!\p{L})DR(?!\p{L})/iu.test(raw);
+  const negative = printedSignOf(raw) === "negative"
+    || /(?<!\p{L})DR(?!\p{L})/iu.test(raw);
   let numeric = raw
     .replace(CURRENCY_CANDIDATE, "")
     .replace(/(?<!\p{L})(?:CR|DR)(?!\p{L})/giu, "")
