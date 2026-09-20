@@ -107,6 +107,10 @@ function buildTokens(
 }
 
 function splitItem(text: string, rawText: string, width: number, rtl: boolean) {
+  // PDF.js already exposes the logical reading order inside one RTL text item.
+  // Mirroring its words into separate positioned tokens and then sorting them
+  // by x reverses that logical order during row reconstruction.
+  if (rtl) return [{ text, raw: rawText, offset: 0, width }];
   const matches = [...text.matchAll(/\S+/g)];
   if (matches.length <= 1) return [{ text, raw: rawText, offset: 0, width }];
   const length = Math.max(text.length, 1);

@@ -25,6 +25,13 @@ export const PDF_FIXTURE_TEST_NAMES = {
   singleAmountCr: "uses one Amount column with an attached CR suffix and an explicit unmarked direction rule",
   runningBalance: "reconciles running balances for multiple transactions on the same date",
   availableBalance: "does not use an available-balance column as running-balance evidence",
+  withdrawalDeposit: "maps withdrawal and deposit columns to money out and money in",
+  dualDateReference: "keeps transaction date, posting date, reference, and amount separate",
+  valueDateDebitCredit: "keeps booking and value dates separate with debit and credit columns",
+  multiSection: "keeps primary and supplementary card transactions in separate sections",
+  periodicBalance: "classifies sparse daily balances without using them as running evidence",
+  rtlTransaction: "parses a complete mixed RTL/LTR transaction with Arabic digits",
+  dateLikeNarrative: "keeps date-like description text out of mapped date fields",
 } as const;
 
 export const PDF_SCHEMA_FAMILY_IDS = [
@@ -33,7 +40,7 @@ export const PDF_SCHEMA_FAMILY_IDS = [
 ] as const;
 
 export type PdfSchemaFamilyId = typeof PDF_SCHEMA_FAMILY_IDS[number];
-export type PdfFixtureCoverageStatus = "covered" | "partial" | "pending";
+export type PdfFixtureCoverageStatus = "covered" | "partial" | "pending" | "deferred";
 export type PdfFixtureTestName = typeof PDF_FIXTURE_TEST_NAMES[keyof typeof PDF_FIXTURE_TEST_NAMES];
 
 export type PdfFixtureManifestEntry = {
@@ -140,7 +147,7 @@ export const PDF_FIXTURE_MANIFEST = [
     currencies: ["USD"],
     localeFamilies: ["International"],
     expected: { transactions: 1, sections: ["transactions"], outcome: "accepted" },
-    challenges: ["multiple description columns", "deterministic source order", "source traceability"],
+    challenges: ["counterparty and description columns", "independent reference", "deterministic source order", "source traceability"],
   },
   {
     id: "independent-dual-date-inference",
@@ -201,7 +208,7 @@ export const PDF_FIXTURE_MANIFEST = [
     id: "section-derived-direction",
     stage: "parser",
     testName: PDF_FIXTURE_TEST_NAMES.sectionDirection,
-    schemaFamilies: ["F16", "F17"],
+    schemaFamilies: ["F16"],
     accountTypes: ["credit-card"],
     currencies: ["USD"],
     localeFamilies: ["International"],
@@ -241,6 +248,83 @@ export const PDF_FIXTURE_MANIFEST = [
     expected: { transactions: 3, sections: ["transactions"], outcome: "rejected" },
     challenges: ["available balance", "unsafe running-balance inference", "unresolved direction"],
   },
+  {
+    id: "withdrawal-deposit-columns",
+    stage: "parser",
+    testName: PDF_FIXTURE_TEST_NAMES.withdrawalDeposit,
+    schemaFamilies: ["F4"],
+    accountTypes: ["checking"],
+    currencies: ["USD"],
+    localeFamilies: ["North America", "South Asia"],
+    expected: { transactions: 2, sections: ["transactions"], outcome: "accepted" },
+    challenges: ["withdrawal synonym", "deposit synonym", "running balance column"],
+  },
+  {
+    id: "dual-date-reference-amount",
+    stage: "parser",
+    testName: PDF_FIXTURE_TEST_NAMES.dualDateReference,
+    schemaFamilies: ["F6"],
+    accountTypes: ["credit-card"],
+    currencies: ["USD"],
+    localeFamilies: ["North America", "International"],
+    expected: { transactions: 1, sections: ["transactions"], outcome: "accepted" },
+    challenges: ["transaction date", "posting date", "reference", "signed amount"],
+  },
+  {
+    id: "booking-value-debit-credit",
+    stage: "parser",
+    testName: PDF_FIXTURE_TEST_NAMES.valueDateDebitCredit,
+    schemaFamilies: ["F7"],
+    accountTypes: ["checking"],
+    currencies: ["EUR"],
+    localeFamilies: ["Europe", "International"],
+    expected: { transactions: 2, sections: ["transactions"], outcome: "accepted" },
+    challenges: ["booking date", "value date", "debit column", "credit column"],
+  },
+  {
+    id: "multiple-card-sections",
+    stage: "parser",
+    testName: PDF_FIXTURE_TEST_NAMES.multiSection,
+    schemaFamilies: ["F17"],
+    accountTypes: ["credit-card"],
+    currencies: ["USD"],
+    localeFamilies: ["International"],
+    expected: { transactions: 2, sections: ["primary card", "supplementary card"], outcome: "accepted" },
+    challenges: ["primary card section", "supplementary card section", "section identity"],
+  },
+  {
+    id: "periodic-daily-balance",
+    stage: "parser",
+    testName: PDF_FIXTURE_TEST_NAMES.periodicBalance,
+    schemaFamilies: ["F18"],
+    accountTypes: ["checking"],
+    currencies: ["USD"],
+    localeFamilies: ["International"],
+    expected: { transactions: 3, sections: ["transactions"], outcome: "accepted" },
+    challenges: ["daily balance", "sparse balance cells", "non-running validation"],
+  },
+  {
+    id: "rtl-bilingual-transaction",
+    stage: "parser",
+    testName: PDF_FIXTURE_TEST_NAMES.rtlTransaction,
+    schemaFamilies: ["F19"],
+    accountTypes: ["credit-card"],
+    currencies: ["AED"],
+    localeFamilies: ["GCC / Middle East"],
+    expected: { transactions: 1, sections: ["transactions"], outcome: "accepted" },
+    challenges: ["mixed RTL/LTR transaction", "Arabic digits", "mapped direction"],
+  },
+  {
+    id: "date-like-description-text",
+    stage: "parser",
+    testName: PDF_FIXTURE_TEST_NAMES.dateLikeNarrative,
+    schemaFamilies: ["F26"],
+    accountTypes: ["checking"],
+    currencies: ["GBP"],
+    localeFamilies: ["Europe", "International"],
+    expected: { transactions: 1, sections: ["transactions"], outcome: "accepted" },
+    challenges: ["time in description", "date in description", "mapped date authority"],
+  },
 ] as const satisfies readonly PdfFixtureManifestEntry[];
 
 export type PdfSchemaFamilyCoverage = {
@@ -251,32 +335,36 @@ export type PdfSchemaFamilyCoverage = {
   remaining?: string;
 };
 
-/** Coverage against the F1-F26 matrix. Pending entries are explicit release work, not implied support. */
+/**
+ * Parser-fixture coverage against the F1-F26 matrix. "Covered" means a named,
+ * active synthetic parser regression exists; it does not override separate
+ * release-readiness findings about safety, extraction, or downstream mapping.
+ */
 export const PDF_SCHEMA_FAMILY_COVERAGE = [
   { id: "F1", name: "Single amount", status: "covered", fixtureIds: ["international-number-formats", "single-amount-cr-policy"] },
   { id: "F2", name: "Single amount with running balance", status: "covered", fixtureIds: ["running-balance-reconciliation"] },
   { id: "F3", name: "Debit / credit", status: "covered", fixtureIds: ["dual-date-debit-credit-wrapped"] },
-  { id: "F4", name: "Withdrawal / deposit", status: "pending", fixtureIds: [], remaining: "Add a dedicated synonym-and-geometry fixture." },
+  { id: "F4", name: "Withdrawal / deposit", status: "covered", fixtureIds: ["withdrawal-deposit-columns"] },
   { id: "F5", name: "Dual date with amount", status: "covered", fixtureIds: ["dual-date-debit-credit-wrapped", "independent-dual-date-inference"] },
-  { id: "F6", name: "Dual date with reference and amount", status: "pending", fixtureIds: [], remaining: "Add a fixture with an independently mapped reference column." },
-  { id: "F7", name: "Value date with debit / credit", status: "pending", fixtureIds: [], remaining: "Add a value-date parser fixture using split amount columns." },
+  { id: "F6", name: "Dual date with reference and amount", status: "covered", fixtureIds: ["dual-date-reference-amount"] },
+  { id: "F7", name: "Value date with debit / credit", status: "covered", fixtureIds: ["booking-value-debit-credit"] },
   { id: "F8", name: "Amount with debit / credit indicator", status: "covered", fixtureIds: ["amount-direction-indicator"] },
   { id: "F9", name: "Amount with CR / DR marker", status: "covered", fixtureIds: ["single-amount-cr-policy"] },
   { id: "F10", name: "Original amount with account amount", status: "covered", fixtureIds: ["multiline-financial-final-amount", "original-and-account-amount"] },
   { id: "F11", name: "Original amount with fee, tax, and final amount", status: "covered", fixtureIds: ["multiline-financial-final-amount"] },
-  { id: "F12", name: "Three temporal fields", status: "pending", fixtureIds: [], remaining: "Transaction time remains advanced source metadata." },
+  { id: "F12", name: "Three temporal fields", status: "deferred", fixtureIds: [], remaining: "Transaction time is intentionally deferred advanced source metadata and is not required for Actual import." },
   { id: "F13", name: "Rich reference / narrative schema", status: "partial", fixtureIds: ["multi-column-description"], remaining: "Add counterparty, reference, and other-details columns together." },
   { id: "F14", name: "Suppressed repeated date", status: "covered", fixtureIds: ["suppressed-date-running-balance"] },
   { id: "F15", name: "Pending / undated transaction", status: "pending", fixtureIds: [], remaining: "Pending-date import policy is not implemented." },
   { id: "F16", name: "Section-derived direction", status: "covered", fixtureIds: ["section-derived-direction"] },
-  { id: "F17", name: "Multiple accounts, cards, or currencies", status: "partial", fixtureIds: ["section-derived-direction"], remaining: "Add distinct account/card and currency sections." },
-  { id: "F18", name: "Sparse / daily balance", status: "partial", fixtureIds: ["available-balance-safety"], remaining: "Available-balance safety is covered; sparse and daily reconciliation still need fixtures." },
-  { id: "F19", name: "RTL / bilingual", status: "partial", fixtureIds: ["rtl-bilingual-positioned-text"], remaining: "Positioned-text reconstruction is covered; add an end-to-end transaction fixture." },
+  { id: "F17", name: "Multiple accounts, cards, or currencies", status: "partial", fixtureIds: ["multiple-card-sections"], remaining: "Card sections are covered; distinct account and currency-section semantics remain partial." },
+  { id: "F18", name: "Sparse / daily balance", status: "partial", fixtureIds: ["available-balance-safety", "periodic-daily-balance"], remaining: "Available and periodic classification are covered; group-level sparse/daily reconciliation remains partial." },
+  { id: "F19", name: "RTL / bilingual", status: "partial", fixtureIds: ["rtl-bilingual-positioned-text", "rtl-bilingual-transaction"], remaining: "Positioned and parser stages are covered synthetically; real PDF CID/CMap extraction remains partial." },
   { id: "F20", name: "Multiline multi-column description", status: "covered", fixtureIds: ["dual-date-debit-credit-wrapped", "cross-page-transaction-block", "multi-column-description"] },
   { id: "F21", name: "Independent fee direction", status: "pending", fixtureIds: [], remaining: "Charge direction is not represented independently yet." },
   { id: "F22", name: "Cross-page transaction", status: "covered", fixtureIds: ["cross-page-transaction-block"] },
   { id: "F23", name: "Partial dates without year", status: "covered", fixtureIds: ["suppressed-date-running-balance", "independent-dual-date-inference", "cross-year-partial-dates"] },
   { id: "F24", name: "Balance control rows inside activity", status: "covered", fixtureIds: ["balance-control-rows"] },
   { id: "F25", name: "Standalone fee / tax versus component", status: "covered", fixtureIds: ["fee-tax-component-versus-ledger-row"] },
-  { id: "F26", name: "Date-like narrative text", status: "pending", fixtureIds: [], remaining: "Add a negative fixture proving mapped dates remain authoritative." },
+  { id: "F26", name: "Date-like narrative text", status: "covered", fixtureIds: ["date-like-description-text"] },
 ] as const satisfies readonly PdfSchemaFamilyCoverage[];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -12,7 +12,6 @@ import {
   CircleHelp,
   Columns3,
   Eye,
-  EyeOff,
   GitMerge,
   ListPlus,
   ListRestart,
@@ -59,11 +58,11 @@ import {
 } from "@/lib/reconciliation/statement/pdf";
 import { parsePdfStatementOffMainThread } from "@/lib/reconciliation/statement/pdfClient";
 import { formatMinorUnits } from "../lib/format";
-import { PdfSourcePreview, pdfColumnColor } from "./PdfSourcePreview";
+import { PDF_DEFAULT_ZOOM, PdfSourcePreview, pdfColumnColor } from "./PdfSourcePreview";
 import { PdfDetectionProfileManagerDialog } from "./PdfDetectionProfileManagerDialog";
 import type { PdfDetectionBankRecord } from "../lib/reconciliationApi";
 
-type ReviewCategory = "all" | "structure" | "dates" | "amounts" | "reconciliation" | "duplicates" | "manual";
+type ReviewCategory = "all" | "needs-review" | "structure" | "dates" | "amounts" | "reconciliation" | "duplicates" | "manual";
 type WorkbenchMode = "review" | "adjust" | "diagnostics";
 type PdfCorrectionInput = PdfCorrection extends infer Correction
   ? Correction extends PdfCorrection
@@ -121,6 +120,8 @@ const NUMBER_FORMATS: { value: PdfNumberFormat; label: string }[] = [
   { value: "indian", label: "1,23,456.78" },
   { value: "swiss", label: "1'234.56" },
 ];
+
+const NOOP = () => {};
 
 export type PdfDetectionProfileOption = {
   recordId: string;
@@ -193,6 +194,8 @@ export function PdfStatementReviewDialog({
   const [preview, setPreview] = useState<PdfStatementParseResult | null>(null);
   const [drawingRegion, setDrawingRegion] = useState(false);
   const [showColumnMappings, setShowColumnMappings] = useState(true);
+  const [pdfZoom, setPdfZoom] = useState(PDF_DEFAULT_ZOOM);
+  const [columnFocusRequest, setColumnFocusRequest] = useState<{ columnId: string; requestId: number } | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [parserError, setParserError] = useState<string | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(activeProfileId);
@@ -213,7 +216,7 @@ export function PdfStatementReviewDialog({
     ...row,
     amount: formatTableAmount(row.amount),
   })), [visibleRows]);
-  const visibleIds = visibleRows.map((row) => row.id);
+  const visibleIds = useMemo(() => visibleRows.map((row) => row.id), [visibleRows]);
   const selectedVisible = visibleIds.filter((id) => selectedIds.has(id)).length;
   const allVisibleSelected = visibleIds.length > 0 && selectedVisible === visibleIds.length;
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
@@ -221,11 +224,17 @@ export function PdfStatementReviewDialog({
   const selectedHasRejected = selectedRows.some((row) => row.status === "rejected");
   const blockingCount = rows.filter((row) => row.status === "rejected").length;
   const reviewCount = rows.filter((row) => row.status === "review").length;
-  const totals = transactionTotals(rows);
+  const totals = useMemo(() => transactionTotals(rows), [rows]);
   const page = parsed?.reconstructedPages.find((entry) => entry.pageNumber === pageNumber) ?? parsed?.reconstructedPages[0] ?? null;
   const pagePreviewDataUrl = parsed?.document.pages.find((entry) => entry.pageNumber === page?.pageNumber)?.previewDataUrl ?? null;
-  const pageRegions = parsed?.regions.filter((region) => region.pageNumber === page?.pageNumber) ?? [];
-  const ignoredPageBlocks = parsed?.blocks.filter((block) => block.pageNumber === page?.pageNumber && block.excluded) ?? [];
+  const pageRegions = useMemo(
+    () => parsed?.regions.filter((region) => region.pageNumber === page?.pageNumber) ?? [],
+    [page?.pageNumber, parsed?.regions]
+  );
+  const ignoredPageBlocks = useMemo(
+    () => parsed?.blocks.filter((block) => block.pageNumber === page?.pageNumber && block.excluded) ?? [],
+    [page?.pageNumber, parsed?.blocks]
+  );
   const profileMatches = useMemo(() => profiles.flatMap((option) => [
     option.envelope.profile,
     ...(option.envelope.history ?? []),
@@ -263,6 +272,15 @@ export function PdfStatementReviewDialog({
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = selectedVisible > 0 && !allVisibleSelected;
   }, [allVisibleSelected, selectedVisible]);
+
+  useEffect(() => {
+    if (filter !== "all" && !rows.some((row) => matchesCategory(row, filter))) setFilter("all");
+  }, [filter, rows]);
+
+  useEffect(() => {
+    setPdfZoom(PDF_DEFAULT_ZOOM);
+    setColumnFocusRequest(null);
+  }, [fileName, result?.document]);
 
   function rerun(
     nextGuidance: PdfParserGuidance,
@@ -375,8 +393,16 @@ export function PdfStatementReviewDialog({
       ? confidence.flatMap((entry) => entry.sourceIds)
       : confidence?.sourceIds ?? row.raw.sourceIds;
     setHighlightedSourceIds(new Set(sourceIds));
-    setPageNumber(row.raw.pageNumber);
+    setPageNumber(pageForSourceIds(parsed, sourceIds, row.raw.pageNumber));
     setSourceOpen(true);
+  }
+
+  function focusMappedColumn(column: PdfColumn) {
+    if (column.pageNumber !== null) setPageNumber(column.pageNumber);
+    setColumnFocusRequest((current) => ({
+      columnId: column.id,
+      requestId: (current?.requestId ?? 0) + 1,
+    }));
   }
 
   function updateDraft(patch: Partial<PdfParserGuidance>) {
@@ -527,7 +553,8 @@ export function PdfStatementReviewDialog({
               <div className="flex min-w-0 flex-1 items-center gap-1" role="tablist" aria-label="PDF review sections">
                 <ModeButton active={mode === "adjust"} onClick={() => setMode("adjust")}><Columns3 className="mr-1 size-3.5" />Adjust detection settings</ModeButton>
                 <ModeButton active={mode === "review"} onClick={() => setMode("review")}>Review transactions</ModeButton>
-                <ModeButton className="ml-auto" active={mode === "diagnostics"} onClick={() => setMode("diagnostics")}><CircleHelp className="mr-1 size-3.5" />Diagnostics</ModeButton>
+                <SummaryBar result={parsed} totals={totals} />
+                <ModeButton active={mode === "diagnostics"} onClick={() => setMode("diagnostics")}><CircleHelp className="mr-1 size-3.5" />Diagnostics</ModeButton>
               </div>
               <div className="flex items-center gap-1">
                 {isParsing && <span role="status" className="mr-2 text-xs text-muted-foreground">Re-running parser…</span>}
@@ -541,8 +568,6 @@ export function PdfStatementReviewDialog({
                 Re-run failed: {parserError}
               </div>
             )}
-
-            <SummaryBar result={parsed} totals={totals} />
 
             {mode === "review" && (
               <div className="flex min-h-0 flex-1">
@@ -560,6 +585,8 @@ export function PdfStatementReviewDialog({
                     rows={tableRows}
                     result={parsed}
                     selectedIds={selectedIds}
+                    actionScope={scope}
+                    isParsing={isParsing}
                     allVisibleSelected={allVisibleSelected}
                     selectAllRef={selectAllRef}
                     onToggleAll={() => setSelectedIds((current) => {
@@ -590,13 +617,14 @@ export function PdfStatementReviewDialog({
                 </div>
                 {sourceOpen && page && (
                   <aside className="flex w-[42%] min-w-[26rem] flex-col border-l p-3">
-                    <div className="mb-2 flex items-center gap-2">
+                    <div className="mb-2 flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
                       <h3 className="text-sm font-medium">Source</h3>
-                      <span className="text-xs text-muted-foreground">Highlighted text supports the selected field.</span>
+                      <span className="text-xs text-muted-foreground">Highlighted text supports this field.</span>
+                      <PageControls pageNumber={page.pageNumber} pageCount={parsed.reconstructedPages.length} onChange={setPageNumber} />
+                      <span className="text-xs text-muted-foreground">{Math.round(page.coverage * 1000) / 10}% text coverage</span>
                       <Button className="ml-auto" size="xs" variant="ghost" onClick={() => setSourceOpen(false)}>Close</Button>
                     </div>
-                    <PageControls pageNumber={page.pageNumber} pageCount={parsed.reconstructedPages.length} onChange={setPageNumber} />
-                    <PdfSourcePreview page={page} previewDataUrl={pagePreviewDataUrl} regions={pageRegions} columns={parsed.guidance.columns} highlightedSourceIds={highlightedSourceIds} selectedRowId={selectedSourceRowId} calibration={false} onSelectRow={setSelectedSourceRowId} onToggleRegion={() => {}} onColumnChange={() => {}} />
+                    <PdfSourcePreview page={page} previewDataUrl={pagePreviewDataUrl} regions={pageRegions} columns={parsed.guidance.columns} highlightedSourceIds={highlightedSourceIds} selectedRowId={selectedSourceRowId} calibration={false} showPageMetadata={false} zoom={pdfZoom} onZoomChange={setPdfZoom} onSelectRow={setSelectedSourceRowId} onToggleRegion={NOOP} onColumnChange={NOOP} />
                   </aside>
                 )}
               </div>
@@ -690,15 +718,6 @@ export function PdfStatementReviewDialog({
                       </Button>
                     ))}
                     <span className="ml-auto text-xs text-muted-foreground">{Math.round(page.coverage * 1000) / 10}% text coverage</span>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      aria-pressed={showColumnMappings}
-                      onClick={() => setShowColumnMappings((current) => !current)}
-                    >
-                      {showColumnMappings ? <EyeOff aria-hidden="true" className="mr-1 size-3.5" /> : <Eye aria-hidden="true" className="mr-1 size-3.5" />}
-                      {showColumnMappings ? "Hide column mappings" : "Show column mappings"}
-                    </Button>
                   </div>
                   <PdfSourcePreview
                     page={page}
@@ -710,6 +729,11 @@ export function PdfStatementReviewDialog({
                     calibration
                     showPageMetadata={false}
                     drawRegion={drawingRegion}
+                    zoom={pdfZoom}
+                    onZoomChange={setPdfZoom}
+                    columnMappingsVisible={showColumnMappings}
+                    onToggleColumnMappings={() => setShowColumnMappings((current) => !current)}
+                    focusColumnRequest={columnFocusRequest}
                     onSelectRow={setSelectedSourceRowId}
                     onToggleRegion={(regionId) => updateDraft({ regions: draftGuidance.regions.map((region) => region.id === regionId ? { ...region, included: !region.included, kind: !region.included ? "transactions" : region.kind } : region) })}
                     onColumnChange={(columnId, edge, value) => updateColumn(columnId, edge === "start" ? { xStart: Math.min(value, draftGuidance.columns.find((column) => column.id === columnId)?.xEnd ?? value) } : { xEnd: Math.max(value, draftGuidance.columns.find((column) => column.id === columnId)?.xStart ?? value) })}
@@ -740,7 +764,12 @@ export function PdfStatementReviewDialog({
                     <p className="mt-1 text-xs text-muted-foreground">Assign what each physical column means. Match its color to the PDF, move it left or right, or drag its edges to correct the boundary.</p>
                     <div className="mt-2 space-y-2">
                       {draftGuidance.columns.map((column, columnIndex) => (
-                        <div key={column.id} className="grid grid-cols-[0.25rem_minmax(10rem,1fr)_minmax(0,0.8fr)_auto] items-center gap-2 rounded-md border px-2 py-1">
+                        <div
+                          key={column.id}
+                          className="grid grid-cols-[0.25rem_minmax(10rem,1fr)_minmax(0,0.8fr)_auto] items-center gap-2 rounded-md border px-2 py-1"
+                          onPointerDownCapture={() => focusMappedColumn(column)}
+                          onFocusCapture={() => focusMappedColumn(column)}
+                        >
                           <span aria-hidden="true" className="h-7 w-1 rounded-full" style={{ backgroundColor: pdfColumnColor(columnIndex).border }} />
                           <select aria-label={`Role for mapped column ${columnIndex + 1}`} value={column.role} onChange={(event) => updateColumn(column.id, { role: event.target.value as PdfColumnRole })} className="h-8 w-full rounded border bg-background px-2 text-xs font-medium">
                             {COLUMN_ROLE_GROUPS.map((group) => (
@@ -963,19 +992,30 @@ function ModeButton({ active, onClick, children, className }: { active: boolean;
   return <button type="button" role="tab" aria-selected={active} onClick={onClick} className={cn("inline-flex h-7 items-center rounded-md px-2.5 text-xs", active ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:bg-background/60", className)}>{children}</button>;
 }
 
-function SummaryBar({ result, totals }: { result: PdfStatementParseResult; totals: { credits: number; debits: number } }) {
+const SummaryBar = memo(function SummaryBar({ result, totals }: { result: PdfStatementParseResult; totals: { credits: number; debits: number } }) {
   const dates = result.transactions.map((row) => row.importDate).filter((date): date is string => Boolean(date)).sort();
   return (
-    <section aria-label="PDF parse summary" className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b px-4 py-1.5 text-xs">
-      <Metric label="Transactions" value={String(result.transactions.length)} />
-      <Metric label="Import dates" value={dates.length ? `${dates[0]}${dates.length > 1 ? ` to ${dates.at(-1)}` : ""}` : "Unresolved"} />
-      <Metric label="Money in" value={`+${formatMinorUnits(totals.credits)}`} tone="positive" />
-      <Metric label="Money out" value={formatMinorUnits(-totals.debits)} tone="negative" />
-      <Metric label="Net change" value={formatSignedMinorUnits(totals.credits - totals.debits)} tone={totals.credits - totals.debits > 0 ? "positive" : totals.credits - totals.debits < 0 ? "negative" : "normal"} />
+    <section aria-label="PDF parse summary" className="ml-2 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap border-l pl-3 text-[11px]">
+      <div className="flex items-center gap-3">
+        <Metric label="Transactions" value={String(result.transactions.length)} />
+        <Metric label="Import dates" value={dates.length ? `${dates[0]}${dates.length > 1 ? ` to ${dates.at(-1)}` : ""}` : "Unresolved"} />
+      </div>
+      <SummaryDivider />
+      <div className="flex items-center gap-3">
+        <Metric label="Money in" value={`+${formatMinorUnits(totals.credits)}`} tone="positive" />
+        <Metric label="Money out" value={formatMinorUnits(-totals.debits)} tone="negative" />
+        <Metric label="Net change" value={formatSignedMinorUnits(totals.credits - totals.debits)} tone={totals.credits - totals.debits > 0 ? "positive" : totals.credits - totals.debits < 0 ? "negative" : "normal"} />
+      </div>
+      <SummaryDivider />
       <Metric label="Needs review" value={String(result.metrics.review + result.metrics.rejected)} tone={result.metrics.review + result.metrics.rejected ? "warning" : "normal"} />
-      <span className="text-[11px] text-muted-foreground">{accountTypeLabel(result.accountType)} · {result.metrics.transactionPages} of {result.metrics.pages} pages used</span>
+      <SummaryDivider />
+      <span className="text-muted-foreground">{accountTypeLabel(result.accountType)} · {result.metrics.transactionPages} of {result.metrics.pages} pages used</span>
     </section>
   );
+});
+
+function SummaryDivider() {
+  return <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />;
 }
 
 function Metric({ label, value, tone = "normal" }: { label: string; value: string; tone?: "normal" | "positive" | "negative" | "warning" }) {
@@ -1035,36 +1075,184 @@ function DetectionChangePreview({ diff }: { diff: ReturnType<typeof resultDiff> 
   );
 }
 
-function ReviewToolbar({ rows, filter, setFilter, search, setSearch, scope, setScope }: { rows: PdfTransactionProposal[]; filter: ReviewCategory; setFilter: (filter: ReviewCategory) => void; search: string; setSearch: (value: string) => void; scope: PdfCorrectionScope; setScope: (scope: PdfCorrectionScope) => void }) {
-  const categories: [ReviewCategory, string][] = [["all", "All"], ["structure", "Structure"], ["dates", "Dates"], ["amounts", "Amounts & direction"], ["reconciliation", "Reconciliation"], ["duplicates", "Duplicates"], ["manual", "Manual changes"]];
-  return <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2"><div className="flex flex-wrap gap-1" aria-label="Review filters">{categories.map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={cn("rounded-full border px-2.5 py-1 text-xs", filter === value ? "border-foreground bg-foreground text-background" : "text-muted-foreground hover:bg-muted")}>{label} <span className="tabular-nums">{rows.filter((row) => matchesCategory(row, value)).length}</span></button>)}</div><label className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">Correction scope<select aria-label="Correction scope" value={scope} onChange={(event) => setScope(event.target.value as PdfCorrectionScope)} className="h-8 rounded-md border bg-background px-2 text-xs text-foreground"><option value="row">This row</option><option value="similar-rows">Similar rows</option><option value="file">This file</option></select></label><label className="relative min-w-48 flex-1 sm:max-w-72"><Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /><span className="sr-only">Search parsed transactions</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search transactions" className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs" /></label></div>;
+const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, search, setSearch, scope, setScope }: { rows: PdfTransactionProposal[]; filter: ReviewCategory; setFilter: (filter: ReviewCategory) => void; search: string; setSearch: (value: string) => void; scope: PdfCorrectionScope; setScope: (scope: PdfCorrectionScope) => void }) {
+  const reviewCategories: [ReviewCategory, string][] = [
+    ["structure", "Structure"],
+    ["dates", "Dates"],
+    ["amounts", "Amounts & direction"],
+    ["reconciliation", "Reconciliation"],
+    ["duplicates", "Duplicates"],
+  ];
+  const count = (category: ReviewCategory) => rows.filter((row) => matchesCategory(row, category)).length;
+  const needsReviewCount = count("needs-review");
+  const visibleReviewCategories = reviewCategories.map(([value, label]) => ({ value, label, count: count(value) })).filter((category) => category.count > 0);
+  const manualCount = count("manual");
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
+      <div className="flex flex-wrap items-center gap-1" aria-label="Review filters">
+        <ReviewFilterButton label="All" count={count("all")} active={filter === "all"} onClick={() => setFilter("all")} />
+        {needsReviewCount > 0 && (
+          <div role="group" aria-label="Needs review filters" className="flex flex-wrap items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/5 p-1">
+            <ReviewFilterButton label="Needs review" count={needsReviewCount} active={filter === "needs-review"} onClick={() => setFilter("needs-review")} />
+            {visibleReviewCategories.length > 0 && <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-amber-500/30" />}
+            {visibleReviewCategories.map((category) => (
+              <ReviewFilterButton key={category.value} label={category.label} count={category.count} active={filter === category.value} onClick={() => setFilter(category.value)} />
+            ))}
+          </div>
+        )}
+        {manualCount > 0 && <ReviewFilterButton label="Manual changes" count={manualCount} active={filter === "manual"} onClick={() => setFilter("manual")} />}
+      </div>
+      <label className="group relative ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="inline-flex cursor-help items-center gap-1" tabIndex={0} aria-describedby="pdf-correction-scope-help">
+          Correction scope
+          <CircleHelp aria-hidden="true" className="size-3" />
+        </span>
+        <span id="pdf-correction-scope-help" role="tooltip" className="pointer-events-none absolute bottom-full right-0 z-50 mb-1 hidden w-72 rounded-md border bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-md group-hover:block group-focus-within:block">
+          Choose whether a correction changes only this row, rows with the same issue, or every transaction in this PDF.
+        </span>
+        <select aria-label="Correction scope" aria-describedby="pdf-correction-scope-help" value={scope} onChange={(event) => setScope(event.target.value as PdfCorrectionScope)} className="h-8 rounded-md border bg-background px-2 text-xs text-foreground">
+          <option value="row">This row</option>
+          <option value="similar-rows">Similar rows</option>
+          <option value="file">This file</option>
+        </select>
+      </label>
+      <label className="relative min-w-48 flex-1 sm:max-w-72">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <span className="sr-only">Search parsed transactions</span>
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search transactions" className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs" />
+      </label>
+    </div>
+  );
+});
+
+function ReviewFilterButton({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-2.5 py-1 text-xs",
+        active ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:bg-muted"
+      )}
+    >
+      {label} <span className="tabular-nums">{count}</span>
+    </button>
+  );
 }
 
-function TransactionTable({ rows, result, selectedIds, allVisibleSelected, selectAllRef, onToggleAll, onToggle, onDirection, onField, onSource, onAccept, onIgnore, onSplit }: {
+type TransactionField = "transactionDate" | "postedDate" | "valueDate" | "importDate" | "description" | "reference" | "amount" | "currency";
+
+type TransactionTableProps = {
   rows: PdfTransactionProposal[];
   result: PdfStatementParseResult;
   selectedIds: Set<string>;
+  actionScope: PdfCorrectionScope;
+  isParsing: boolean;
   allVisibleSelected: boolean;
   selectAllRef: React.RefObject<HTMLInputElement | null>;
   onToggleAll: () => void;
   onToggle: (id: string, checked: boolean) => void;
   onDirection: (row: PdfTransactionProposal, direction: "debit" | "credit") => void;
-  onField: (row: PdfTransactionProposal, field: "transactionDate" | "postedDate" | "valueDate" | "importDate" | "description" | "reference" | "amount" | "currency", value: string | null) => void;
+  onField: (row: PdfTransactionProposal, field: TransactionField, value: string | null) => void;
   onSource: (row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) => void;
   onAccept: (row: PdfTransactionProposal) => void;
   onIgnore: (row: PdfTransactionProposal) => void;
   onSplit: (row: PdfTransactionProposal) => void;
-}) {
+};
+
+function TransactionTable({ rows, result, selectedIds, actionScope, isParsing, allVisibleSelected, selectAllRef, onToggleAll, onToggle, onDirection, onField, onSource, onAccept, onIgnore, onSplit }: TransactionTableProps) {
   const showPosting = result.guidance.columns.some((column) => column.role === "posting-date") || rows.some((row) => row.postedDate);
   const showValue = result.guidance.columns.some((column) => column.role === "value-date") || rows.some((row) => row.valueDate);
   const showBalance = result.guidance.columns.some((column) => column.role === "balance") && rows.some((row) => row.balance);
-  return <div className="min-h-0 flex-1 overflow-auto"><table className="w-full min-w-[1060px] table-fixed text-xs"><caption className="sr-only">Transactions extracted from the PDF statement</caption><colgroup><col className="w-9" /><col className="w-8" /><col className="w-32" />{showPosting && <col className="w-32" />}{showValue && <col className="w-32" />}<col /><col className="w-40" /><col className="w-24" />{showBalance && <col className="w-24" />}<col className="w-44" /></colgroup><thead className="sticky top-0 z-20 bg-muted text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]"><tr className="[&>th]:bg-muted [&>th]:px-3 [&>th]:py-1.5 [&>th]:font-medium"><th><input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={onToggleAll} aria-label={allVisibleSelected ? "Deselect all visible PDF rows" : "Select all visible PDF rows"} /></th><th><span className="sr-only">Status</span></th><DateHeader label="Transaction date" selected={result.guidance.importDate === "transaction"} />{showPosting && <DateHeader label="Posting date" selected={result.guidance.importDate === "posting"} />}{showValue && <DateHeader label="Value date" selected={result.guidance.importDate === "value"} />}<th className="text-left">Description</th><th className="text-right">Amount <span className="block text-[10px] font-normal">Click sign to reverse</span></th><th>Currency</th>{showBalance && <th className="text-right">Balance</th>}<th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => {
-    const selected = selectedIds.has(row.id);
-    const block = result.blocks.find((entry) => entry.id === row.id);
-    const details = financialDetails(row);
-    return <tr key={row.id} className={cn("border-b", selected && "bg-accent/60", !selected && row.status === "rejected" && "bg-destructive/5", !selected && row.status === "review" && "bg-amber-500/5")}><td className="px-2 py-0.5 text-center"><Checkbox checked={selected} onCheckedChange={(value) => onToggle(row.id, value === true)} aria-label={`Select PDF row ${row.sourceRowNumber}`} /></td><td className="px-1 text-center">{row.status === "accepted" ? <CheckCircle2 className="mx-auto size-3.5 text-emerald-600" aria-label="Row is ready" /> : <span aria-label={reasonText(row.issueCodes)} title={reasonText(row.issueCodes)}><AlertTriangle aria-hidden="true" className={cn("mx-auto size-3.5", row.status === "rejected" ? "text-destructive" : "text-amber-600")} /></span>}</td><EditableDate row={row} field="transactionDate" value={row.transactionDate} confidence="transactionDate" onField={onField} onSource={onSource} />{showPosting && <EditableDate row={row} field="postedDate" value={row.postedDate} confidence="postingDate" onField={onField} onSource={onSource} />}{showValue && <EditableDate row={row} field="valueDate" value={row.valueDate} confidence="valueDate" onField={onField} onSource={onSource} />}<td className="p-0.5"><div className="flex"><input aria-label={`Description for PDF row ${row.sourceRowNumber}`} defaultValue={row.description} onBlur={(event) => event.target.value !== row.description && onField(row, "description", event.target.value)} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 focus:border-input focus:bg-background" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show description source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "description")}><Eye className="size-3.5" /></button></div>{details && <p className="truncate px-1 text-[10px] text-muted-foreground" title={details}>{details}</p>}</td><td className="p-0.5"><div className="flex h-7 overflow-hidden rounded border border-transparent focus-within:border-input focus-within:bg-background"><button type="button" onClick={() => onDirection(row, row.direction === "debit" ? "credit" : "debit")} aria-label={row.direction === "debit" ? `Change row ${row.sourceRowNumber} to money in` : `Change row ${row.sourceRowNumber} to money out`} className={cn("w-7 border-r font-semibold", row.direction === "debit" ? "text-red-600" : row.direction === "credit" ? "text-emerald-700" : "text-amber-700")}>{row.direction === "debit" ? "−" : row.direction === "credit" ? "+" : "?"}</button><input aria-label={`Amount for PDF row ${row.sourceRowNumber}`} defaultValue={row.amount.replace(/^[+-]/, "")} onBlur={(event) => event.target.value !== row.amount.replace(/^[+-]/, "") && onField(row, "amount", `${row.direction === "debit" ? "-" : ""}${event.target.value}`)} className="min-w-0 flex-1 bg-transparent px-2 text-right tabular-nums outline-none" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show amount source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "accountAmount")}><Eye className="size-3.5" /></button></div></td><td className="p-0.5"><div className="flex"><input aria-label={`Currency for PDF row ${row.sourceRowNumber}`} defaultValue={row.currency ?? ""} maxLength={3} onBlur={(event) => event.target.value.toUpperCase() !== (row.currency ?? "") && onField(row, "currency", event.target.value.toUpperCase() || null)} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-center uppercase focus:border-input focus:bg-background" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show currency source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "currency")}><Eye className="size-3.5" /></button></div></td>{showBalance && <td className="px-2 text-right tabular-nums text-muted-foreground">{row.balance ? formatGroupedDecimal(row.balance) : "-"}</td>}<td className="p-0.5"><div className="flex justify-end gap-1">{row.status === "review" && <Button size="xs" variant="outline" onClick={() => onAccept(row)}>Mark reviewed</Button>}{block && block.rowIds.length > 1 && <Button size="icon-sm" variant="ghost" aria-label={`Split PDF row ${row.sourceRowNumber}`} onClick={() => onSplit(row)}><Split className="size-3.5" /></Button>}<Button size="icon-sm" variant="ghost" aria-label={`Ignore PDF row ${row.sourceRowNumber}`} onClick={() => onIgnore(row)}><Trash2 className="size-3.5" /></Button></div></td></tr>;
-  })}</tbody></table>{rows.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">No transactions match this view.</p>}</div>;
+  const blocksById = useMemo(() => new Map(result.blocks.map((block) => [block.id, block])), [result.blocks]);
+  return (
+    <div className="min-h-0 flex-1 overflow-auto">
+      <table className="w-full min-w-[1060px] table-fixed text-xs">
+        <caption className="sr-only">Transactions extracted from the PDF statement</caption>
+        <colgroup>
+          <col className="w-9" /><col className="w-8" /><col className="w-32" />
+          {showPosting && <col className="w-32" />}
+          {showValue && <col className="w-32" />}
+          <col /><col className="w-40" /><col className="w-24" />
+          {showBalance && <col className="w-24" />}
+          <col className="w-44" />
+        </colgroup>
+        <thead className="sticky top-0 z-20 bg-muted text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+          <tr className="[&>th]:bg-muted [&>th]:px-3 [&>th]:py-1.5 [&>th]:font-medium">
+            <th><input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={onToggleAll} aria-label={allVisibleSelected ? "Deselect all visible PDF rows" : "Select all visible PDF rows"} /></th>
+            <th><span className="sr-only">Status</span></th>
+            <DateHeader label="Transaction date" selected={result.guidance.importDate === "transaction"} />
+            {showPosting && <DateHeader label="Posting date" selected={result.guidance.importDate === "posting"} />}
+            {showValue && <DateHeader label="Value date" selected={result.guidance.importDate === "value"} />}
+            <th className="text-left">Description</th>
+            <th className="text-right">Amount <span className="block text-[10px] font-normal">Click sign to reverse</span></th>
+            <th>Currency</th>
+            {showBalance && <th className="text-right">Balance</th>}
+            <th><span className="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <TransactionRow
+              key={row.id}
+              row={row}
+              block={blocksById.get(row.id)}
+              selected={selectedIds.has(row.id)}
+              actionScope={actionScope}
+              isParsing={isParsing}
+              showPosting={showPosting}
+              showValue={showValue}
+              showBalance={showBalance}
+              onToggle={onToggle}
+              onDirection={onDirection}
+              onField={onField}
+              onSource={onSource}
+              onAccept={onAccept}
+              onIgnore={onIgnore}
+              onSplit={onSplit}
+            />
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">No transactions match this view.</p>}
+    </div>
+  );
 }
+
+type TransactionRowProps = Pick<TransactionTableProps, "actionScope" | "isParsing" | "onToggle" | "onDirection" | "onField" | "onSource" | "onAccept" | "onIgnore" | "onSplit"> & {
+  row: PdfTransactionProposal;
+  block: PdfStatementParseResult["blocks"][number] | undefined;
+  selected: boolean;
+  showPosting: boolean;
+  showValue: boolean;
+  showBalance: boolean;
+};
+
+const TransactionRow = memo(function TransactionRow({ row, block, selected, showPosting, showValue, showBalance, onToggle, onDirection, onField, onSource, onAccept, onIgnore, onSplit }: TransactionRowProps) {
+  const details = financialDetails(row);
+  return (
+    <tr className={cn("border-b", selected && "bg-accent/60", !selected && row.status === "rejected" && "bg-destructive/5", !selected && row.status === "review" && "bg-amber-500/5")}>
+      <td className="px-2 py-0.5 text-center"><Checkbox checked={selected} onCheckedChange={(value) => onToggle(row.id, value === true)} aria-label={`Select PDF row ${row.sourceRowNumber}`} /></td>
+      <td className="px-1 text-center">{row.status === "accepted" ? <CheckCircle2 className="mx-auto size-3.5 text-emerald-600" aria-label="Row is ready" /> : <span aria-label={reasonText(row.issueCodes)} title={reasonText(row.issueCodes)}><AlertTriangle aria-hidden="true" className={cn("mx-auto size-3.5", row.status === "rejected" ? "text-destructive" : "text-amber-600")} /></span>}</td>
+      <EditableDate row={row} field="transactionDate" value={row.transactionDate} confidence="transactionDate" onField={onField} onSource={onSource} />
+      {showPosting && <EditableDate row={row} field="postedDate" value={row.postedDate} confidence="postingDate" onField={onField} onSource={onSource} />}
+      {showValue && <EditableDate row={row} field="valueDate" value={row.valueDate} confidence="valueDate" onField={onField} onSource={onSource} />}
+      <td className="p-0.5"><div className="flex"><input aria-label={`Description for PDF row ${row.sourceRowNumber}`} defaultValue={row.description} onBlur={(event) => event.target.value !== row.description && onField(row, "description", event.target.value)} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 focus:border-input focus:bg-background" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show description source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "description")}><Eye className="size-3.5" /></button></div>{details && <p className="truncate px-1 text-[10px] text-muted-foreground" title={details}>{details}</p>}</td>
+      <td className="p-0.5"><div className="flex h-7 overflow-hidden rounded border border-transparent focus-within:border-input focus-within:bg-background"><button type="button" onClick={() => onDirection(row, row.direction === "debit" ? "credit" : "debit")} aria-label={row.direction === "debit" ? `Change row ${row.sourceRowNumber} to money in` : `Change row ${row.sourceRowNumber} to money out`} className={cn("w-7 border-r font-semibold", row.direction === "debit" ? "text-red-600" : row.direction === "credit" ? "text-emerald-700" : "text-amber-700")}>{row.direction === "debit" ? "−" : row.direction === "credit" ? "+" : "?"}</button><input aria-label={`Amount for PDF row ${row.sourceRowNumber}`} defaultValue={row.amount.replace(/^[+-]/, "")} onBlur={(event) => event.target.value !== row.amount.replace(/^[+-]/, "") && onField(row, "amount", `${row.direction === "debit" ? "-" : ""}${event.target.value}`)} className="min-w-0 flex-1 bg-transparent px-2 text-right tabular-nums outline-none" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show amount source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "accountAmount")}><Eye className="size-3.5" /></button></div></td>
+      <td className="p-0.5"><div className="flex"><input aria-label={`Currency for PDF row ${row.sourceRowNumber}`} defaultValue={row.currency ?? ""} maxLength={3} onBlur={(event) => event.target.value.toUpperCase() !== (row.currency ?? "") && onField(row, "currency", event.target.value.toUpperCase() || null)} className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-center uppercase focus:border-input focus:bg-background" /><button type="button" className="px-1 text-muted-foreground hover:text-foreground" aria-label={`Show currency source for PDF row ${row.sourceRowNumber}`} onClick={() => onSource(row, "currency")}><Eye className="size-3.5" /></button></div></td>
+      {showBalance && <td className="px-2 text-right tabular-nums text-muted-foreground">{row.balance ? formatGroupedDecimal(row.balance) : "-"}</td>}
+      <td className="p-0.5"><div className="flex justify-end gap-1">{row.status === "review" && <Button size="xs" variant="outline" onClick={() => onAccept(row)}>Mark reviewed</Button>}{block && block.rowIds.length > 1 && <Button size="icon-sm" variant="ghost" aria-label={`Split PDF row ${row.sourceRowNumber}`} onClick={() => onSplit(row)}><Split className="size-3.5" /></Button>}<Button size="icon-sm" variant="ghost" aria-label={`Ignore PDF row ${row.sourceRowNumber}`} onClick={() => onIgnore(row)}><Trash2 className="size-3.5" /></Button></div></td>
+    </tr>
+  );
+}, (previous, next) => previous.row === next.row
+  && previous.block === next.block
+  && previous.selected === next.selected
+  && previous.showPosting === next.showPosting
+  && previous.showValue === next.showValue
+  && previous.showBalance === next.showBalance
+  && previous.actionScope === next.actionScope
+  && previous.isParsing === next.isParsing);
 
 function EditableDate({ row, field, value, confidence, onField, onSource }: { row: PdfTransactionProposal; field: "transactionDate" | "postedDate" | "valueDate"; value: string | null; confidence: keyof PdfTransactionProposal["confidence"]; onField: (row: PdfTransactionProposal, field: "transactionDate" | "postedDate" | "valueDate" | "importDate", value: string | null) => void; onSource: (row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) => void }) {
   const label = field === "transactionDate" ? "Transaction" : field === "postedDate" ? "Posting" : "Value";
@@ -1083,12 +1271,15 @@ function PageControls({ pageNumber, pageCount, onChange }: { pageNumber: number;
 
 function matchesCategory(row: PdfTransactionProposal, category: ReviewCategory) {
   if (category === "all") return true;
-  if (category === "structure") return row.issueCodes.some((reason) => reason.startsWith("ROW_") || reason === "PAGE_IMAGE_ONLY");
+  if (category === "needs-review") return row.status !== "accepted";
+  if (category === "manual") return row.issueCodes.includes("ROW_MANUALLY_CHANGED");
+  if (row.status === "accepted") return false;
+  if (category === "structure") return row.issueCodes.some((reason) => (reason.startsWith("ROW_") && reason !== "ROW_MANUALLY_CHANGED") || reason === "PAGE_IMAGE_ONLY");
   if (category === "dates") return row.issueCodes.some((reason) => reason.startsWith("DATE_"));
   if (category === "amounts") return row.issueCodes.some((reason) => reason.startsWith("AMOUNT_") || reason.startsWith("DIRECTION_") || reason.startsWith("CURRENCY_"));
   if (category === "reconciliation") return row.issueCodes.some((reason) => reason.startsWith("BALANCE_"));
   if (category === "duplicates") return row.issueCodes.includes("POSSIBLE_DUPLICATE");
-  return row.issueCodes.includes("ROW_MANUALLY_CHANGED");
+  return false;
 }
 
 function isActionableReason(reason: PdfConfidenceReason) {
@@ -1115,6 +1306,15 @@ function formatGroupedDecimal(value: string) { const match = value.match(/^([+-]
 function formatTableAmount(value: string) { return formatGroupedDecimal(value.replace(/^[+-]/, "")); }
 function normalizeTableAmountInput(value: string) { const sign = value.startsWith("-") ? "-" : ""; const unsigned = value.replace(/^[+-]/, "").trim(); return /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(unsigned) ? `${sign}${unsigned.replaceAll(",", "")}` : value; }
 function accountTypeLabel(type: PdfAccountType) { return ({ "credit-card": "Credit card", checking: "Checking / current", savings: "Savings", prepaid: "Prepaid card / wallet", "multi-currency": "Multi-currency account", "business-cash": "Business cash account", loan: "Loan / line of credit", investment: "Investment statement", unknown: "Account type not identified" } satisfies Record<PdfAccountType, string>)[type]; }
+function pageForSourceIds(result: PdfStatementParseResult | null, sourceIds: string[], fallback: number) {
+  if (!result || sourceIds.length === 0) return fallback;
+  const ids = new Set(sourceIds);
+  const matches = result.reconstructedPages.map((page) => ({
+    pageNumber: page.pageNumber,
+    matches: page.tokens.filter((token) => ids.has(token.id)).length,
+  })).filter((page) => page.matches > 0).sort((left, right) => right.matches - left.matches || left.pageNumber - right.pageNumber);
+  return matches[0]?.pageNumber ?? fallback;
+}
 function financialDetails(row: PdfTransactionProposal) { const values = [row.originalAmount ? `Original ${formatExactMoney(row.originalAmount)}` : null, row.exchangeRate ? `Rate ${row.exchangeRate}` : null, row.fees.length ? `Fees ${row.fees.map(formatExactMoney).join(" + ")}` : null, row.vat.length ? `VAT ${row.vat.map(formatExactMoney).join(" + ")}` : null].filter(Boolean); return values.join(" · "); }
 function formatExactMoney(value: NonNullable<PdfTransactionProposal["exactAmount"]>) { const coefficient = BigInt(value.coefficient); const magnitude = (coefficient < BigInt(0) ? -coefficient : coefficient).toString().padStart(value.scale + 1, "0"); const decimal = value.scale ? `${magnitude.slice(0, -value.scale)}.${magnitude.slice(-value.scale)}` : magnitude; return `${value.currency ? `${value.currency} ` : ""}${decimal}`; }
 function resultDiff(before: PdfStatementParseResult, after: PdfStatementParseResult) { const beforeRows = new Map(before.transactions.map((row) => [row.id, row])); const afterRows = new Map(after.transactions.map((row) => [row.id, row])); const ids = new Set([...beforeRows.keys(), ...afterRows.keys()]); const changed = [...ids].filter((id) => { const left = beforeRows.get(id); const right = afterRows.get(id); return !left || !right || left.transactionDate !== right.transactionDate || left.postedDate !== right.postedDate || left.valueDate !== right.valueDate || left.description !== right.description || left.amount !== right.amount || left.currency !== right.currency || left.status !== right.status; }).length; const beforeTotals = transactionTotals(before.transactions); const afterTotals = transactionTotals(after.transactions); return { before: before.transactions.length, after: after.transactions.length, changed, beforeReview: before.metrics.review + before.metrics.rejected, afterReview: after.metrics.review + after.metrics.rejected, beforeCredits: beforeTotals.credits, afterCredits: afterTotals.credits, beforeDebits: beforeTotals.debits, afterDebits: afterTotals.debits }; }

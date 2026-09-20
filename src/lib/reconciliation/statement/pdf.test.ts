@@ -356,13 +356,109 @@ describe("PDF parser v2 regions, schema, and blocks", () => {
   });
 
   it(PDF_FIXTURE_TEST_NAMES.multiColumnDescription, () => {
+    const columns = [
+      { id: "date", pageNumber: null, xStart: 15, xEnd: 85, role: "transaction-date" as const, header: "Date", examples: [], confidence: 1 },
+      { id: "counterparty", pageNumber: null, xStart: 90, xEnd: 205, role: "description" as const, header: "Counterparty", examples: [], confidence: 1 },
+      { id: "reference", pageNumber: null, xStart: 210, xEnd: 300, role: "reference" as const, header: "Reference", examples: [], confidence: 1 },
+      { id: "details", pageNumber: null, xStart: 305, xEnd: 410, role: "description" as const, header: "Other details", examples: [], confidence: 1 },
+      { id: "description", pageNumber: null, xStart: 415, xEnd: 535, role: "description" as const, header: "Description", examples: [], confidence: 1 },
+      { id: "debit", pageNumber: null, xStart: 540, xEnd: 695, role: "debit" as const, header: "Debit", examples: [], confidence: 1 },
+    ];
     const result = parsePdfStatementPages([page([
-      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 310, text: "Payment details" }, { x: 540, text: "Debit" }] },
-      { y: 700, cells: [{ x: 20, text: "15/08/2026" }, { x: 120, text: "ANON COUNTERPARTY" }, { x: 310, text: "ANON REFERENCE" }, { x: 540, text: "10.00" }] },
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 100, text: "Counterparty" }, { x: 220, text: "Reference" }, { x: 320, text: "Other details" }, { x: 430, text: "Description" }, { x: 580, text: "Debit" }] },
+      { y: 700, cells: [{ x: 20, text: "15/08/2026" }, { x: 100, text: "ANON COUNTERPARTY" }, { x: 220, text: "REF-001" }, { x: 320, text: "DETAIL A" }, { x: 430, text: "PURCHASE" }, { x: 580, text: "10.00" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy", columns }) });
+
+    expect(result.activeSchema?.columns.filter((column) => column.role === "description")).toHaveLength(3);
+    expect(result.transactions[0].description).toBe("ANON COUNTERPARTY DETAIL A PURCHASE");
+    expect(result.transactions[0].reference).toBe("REF-001");
+    expect(result.transactions[0].status).toBe("accepted");
+  });
+
+  it(PDF_FIXTURE_TEST_NAMES.withdrawalDeposit, () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 430, text: "Withdrawal" }, { x: 520, text: "Deposit" }, { x: 610, text: "Balance" }] },
+      { y: 700, cells: [{ x: 20, text: "15/08/2026" }, { x: 120, text: "ANON PURCHASE" }, { x: 450, text: "25.00" }, { x: 610, text: "975.00" }] },
+      { y: 680, cells: [{ x: 20, text: "16/08/2026" }, { x: 120, text: "ANON CREDIT" }, { x: 540, text: "50.00" }, { x: 610, text: "1,025.00" }] },
     ])], { guidance: guidance({ dateFormat: "dmy" }) });
 
-    expect(result.activeSchema?.columns.filter((column) => column.role === "description")).toHaveLength(2);
-    expect(result.transactions[0].description).toBe("ANON COUNTERPARTY ANON REFERENCE");
+    expect(result.activeSchema?.columns.map((column) => column.role)).toEqual(expect.arrayContaining(["debit", "credit", "balance"]));
+    expect(result.transactions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ description: "ANON PURCHASE", amount: "-25.00", direction: "debit" }),
+      expect.objectContaining({ description: "ANON CREDIT", amount: "50.00", direction: "credit" }),
+    ]));
+    expect(result.transactions.every((transaction) => transaction.status === "accepted")).toBe(true);
+  });
+
+  it(PDF_FIXTURE_TEST_NAMES.dualDateReference, () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 125, text: "Posting Date" }, { x: 225, text: "Reference" }, { x: 330, text: "Description" }, { x: 580, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "15/08/2026" }, { x: 125, text: "16/08/2026" }, { x: 225, text: "REF-001" }, { x: 330, text: "ANON PURCHASE" }, { x: 580, text: "-10.00" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy" }) });
+
+    expect(result.transactions[0]).toMatchObject({
+      transactionDate: "2026-08-15",
+      postedDate: "2026-08-16",
+      reference: "REF-001",
+      amount: "-10.00",
+      status: "accepted",
+    });
+  });
+
+  it(PDF_FIXTURE_TEST_NAMES.valueDateDebitCredit, () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Booking Date" }, { x: 130, text: "Value Date" }, { x: 240, text: "Description" }, { x: 500, text: "Debit" }, { x: 590, text: "Credit" }] },
+      { y: 700, cells: [{ x: 20, text: "15/08/2026" }, { x: 130, text: "16/08/2026" }, { x: 240, text: "ANON PURCHASE" }, { x: 500, text: "10.00" }] },
+      { y: 680, cells: [{ x: 20, text: "17/08/2026" }, { x: 130, text: "18/08/2026" }, { x: 240, text: "ANON CREDIT" }, { x: 590, text: "20.00" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy", currency: "EUR", importDate: "posting" }) });
+
+    expect(result.activeSchema?.columns.map((column) => column.role)).toEqual(expect.arrayContaining(["posting-date", "value-date", "debit", "credit"]));
+    expect(result.transactions[0]).toMatchObject({ postedDate: "2026-08-15", valueDate: "2026-08-16", amount: "-10.00" });
+    expect(result.transactions[1]).toMatchObject({ postedDate: "2026-08-17", valueDate: "2026-08-18", amount: "20.00" });
+    expect(result.transactions.every((transaction) => transaction.status === "accepted")).toBe(true);
+  });
+
+  it(PDF_FIXTURE_TEST_NAMES.multiSection, () => {
+    const result = parsePdfStatementPages([page([
+      { y: 780, cells: [{ x: 20, text: "Primary Card" }] },
+      { y: 750, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 500, text: "Debit" }, { x: 590, text: "Credit" }] },
+      { y: 720, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON PRIMARY" }, { x: 500, text: "10.00" }] },
+      { y: 680, cells: [{ x: 20, text: "Supplementary Card" }] },
+      { y: 650, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON SUPPLEMENTARY" }, { x: 590, text: "20.00" }] },
+    ])], { guidance: guidance() });
+
+    expect(result.transactions).toHaveLength(2);
+    expect(new Set(result.transactions.map((transaction) => transaction.sectionId)).size).toBe(2);
+    expect(result.transactions.every((transaction) => transaction.status === "accepted")).toBe(true);
+  });
+
+  it(PDF_FIXTURE_TEST_NAMES.rtlTransaction, () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 150, text: "Description" }, { x: 520, text: "Debit" }] },
+      { y: 700, cells: [{ x: 20, text: "١٥/٠٨/٢٠٢٦" }, { x: 150, text: "متجر تجريبي", dir: "rtl" }, { x: 520, text: "١٢٣٫٤٥ DR" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy", currency: "AED" }) });
+
+    expect(result.transactions[0]).toMatchObject({
+      transactionDate: "2026-08-15",
+      description: "متجر تجريبي",
+      amount: "-123.45",
+      status: "accepted",
+    });
+  });
+
+  it(PDF_FIXTURE_TEST_NAMES.dateLikeNarrative, () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 560, text: "Debit" }] },
+      { y: 700, cells: [{ x: 20, text: "15/08/2026" }, { x: 120, text: "ANON TRANSFER TIMED 17:30 31 JAN" }, { x: 560, text: "10.00" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy", currency: "GBP" }) });
+
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0]).toMatchObject({
+      transactionDate: "2026-08-15",
+      description: "ANON TRANSFER TIMED 17:30 31 JAN",
+      amount: "-10.00",
+      status: "accepted",
+    });
   });
 });
 
@@ -775,6 +871,21 @@ describe("PDF parser v2 financial interpretation and validation", () => {
     expect(result.transactions.every((row) => !row.issueCodes.includes("BALANCE_RECONCILED"))).toBe(true);
   });
 
+  it(PDF_FIXTURE_TEST_NAMES.periodicBalance, () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Debit" }, { x: 580, text: "Daily Balance" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON FIRST" }, { x: 480, text: "10.00" }] },
+      { y: 680, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SECOND" }, { x: 480, text: "20.00" }] },
+      { y: 660, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON THIRD" }, { x: 480, text: "5.00" }, { x: 580, text: "965.00" }] },
+    ])], { guidance: guidance() });
+
+    expect(result.balanceBehavior).toBe("periodic");
+    expect(result.transactions).toHaveLength(3);
+    expect(result.transactions.every((row) => row.direction === "debit")).toBe(true);
+    expect(result.transactions.every((row) => row.status === "accepted")).toBe(true);
+    expect(result.transactions.every((row) => !row.issueCodes.includes("BALANCE_MISMATCH"))).toBe(true);
+  });
+
   it("preserves negative running-balance signs during reconciliation", () => {
     const result = parsePdfStatementPages([page([
       { y: 775, cells: [{ x: 20, text: "Checking account statement USD" }] },
@@ -868,10 +979,15 @@ describe("PDF parser v2 financial interpretation and validation", () => {
     expect(new Set(fixtureTestNames)).toEqual(new Set(Object.values(PDF_FIXTURE_TEST_NAMES)));
     expect(coverageIds).toEqual(PDF_SCHEMA_FAMILY_IDS);
     expect(PDF_FIXTURE_MANIFEST.every((fixture) => fixture.challenges.length > 0)).toBe(true);
+    expect(Object.fromEntries(["covered", "partial", "pending", "deferred"].map((status) => [
+      status,
+      PDF_SCHEMA_FAMILY_COVERAGE.filter((family) => family.status === status).length,
+    ]))).toEqual({ covered: 19, partial: 4, pending: 2, deferred: 1 });
 
     const fixturesById = new Map(PDF_FIXTURE_MANIFEST.map((fixture) => [fixture.id, fixture]));
     for (const family of PDF_SCHEMA_FAMILY_COVERAGE) {
       if (family.status === "covered") expect(family.fixtureIds.length).toBeGreaterThan(0);
+      if (family.status === "partial") expect(family.fixtureIds.length).toBeGreaterThan(0);
       if (family.status !== "covered") expect(family.remaining).toBeTruthy();
       for (const fixtureId of family.fixtureIds) {
         const fixture = fixturesById.get(fixtureId);

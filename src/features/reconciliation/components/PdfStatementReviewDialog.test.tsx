@@ -53,6 +53,116 @@ describe("PdfStatementReviewDialog v2", () => {
     const summary = screen.getByRole("region", { name: "PDF parse summary" });
     const netChange = within(summary).getByText("Net change").parentElement!;
     expect(within(netChange).getByText("-12.50")).toBeInTheDocument();
+    const reviewTab = screen.getByRole("tab", { name: /Review transactions/ });
+    expect(reviewTab.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reviewTab.parentElement).toBe(summary.parentElement);
+    expect(screen.queryByRole("button", { name: /Needs review/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Manual changes/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("tooltip")).toHaveTextContent(/only this row, rows with the same issue, or every transaction/i);
+  });
+
+  it("groups issue filters under a clickable Needs review filter", () => {
+    const parsed = ordinaryResult();
+    const accepted = parsed.transactions[0];
+    const withReviewRows = {
+      ...parsed,
+      transactions: [
+        { ...accepted, id: "accepted", description: "READY ROW", sourceRowNumber: 1 },
+        {
+          ...accepted,
+          id: "review-date",
+          description: "DATE REVIEW ROW",
+          sourceRowNumber: 2,
+          status: "review" as const,
+          issueCodes: ["DATE_AMBIGUOUS_ORDER"] as typeof accepted.issueCodes,
+        },
+        {
+          ...accepted,
+          id: "rejected-amount",
+          description: "AMOUNT REVIEW ROW",
+          sourceRowNumber: 3,
+          status: "rejected" as const,
+          issueCodes: ["AMOUNT_MISSING"] as typeof accepted.issueCodes,
+        },
+      ],
+      metrics: { ...parsed.metrics, transactions: 3, accepted: 1, review: 1, rejected: 1 },
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={withReviewRows} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    expect(screen.getByRole("group", { name: "Needs review filters" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Structure/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Reconciliation/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Duplicates/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Manual changes/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Needs review 2" }));
+    expect(screen.queryByDisplayValue("READY ROW")).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("DATE REVIEW ROW")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("AMOUNT REVIEW ROW")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dates 1" }));
+    expect(screen.getByDisplayValue("DATE REVIEW ROW")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("AMOUNT REVIEW ROW")).not.toBeInTheDocument();
+  });
+
+  it("preserves PDF zoom between detection and source review", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: /Adjust detection/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF" }));
+    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (125%)");
+
+    fireEvent.click(screen.getByRole("tab", { name: /Review transactions/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Show amount source for PDF row 1" }));
+    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (125%)");
+  });
+
+  it("opens the PDF page containing the selected field evidence", () => {
+    const parsed = ordinaryResult();
+    const firstPage = parsed.reconstructedPages[0];
+    const prefix = (value: string) => `page-2-${value}`;
+    const secondPage = {
+      ...firstPage,
+      pageNumber: 2,
+      tokens: firstPage.tokens.map((token) => ({ ...token, id: prefix(token.id), pageNumber: 2 })),
+      rows: firstPage.rows.map((row) => ({
+        ...row,
+        id: prefix(row.id),
+        pageNumber: 2,
+        cells: row.cells.map((cell) => ({
+          ...cell,
+          id: prefix(cell.id),
+          pageNumber: 2,
+          tokenIds: cell.tokenIds.map(prefix),
+        })),
+      })),
+    };
+    const amountToken = secondPage.tokens.find((token) => token.text.includes("-12.50"))!;
+    const multipage = {
+      ...parsed,
+      document: {
+        ...parsed.document,
+        pages: [
+          ...parsed.document.pages,
+          { ...parsed.document.pages[0], pageNumber: 2 },
+        ],
+      },
+      reconstructedPages: [...parsed.reconstructedPages, secondPage],
+      transactions: parsed.transactions.map((transaction) => ({
+        ...transaction,
+        confidence: {
+          ...transaction.confidence,
+          accountAmount: {
+            ...transaction.confidence.accountAmount,
+            sourceIds: [amountToken.id],
+          },
+        },
+      })),
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={multipage} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show amount source for PDF row 1" }));
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+    expect(screen.getByLabelText("PDF page 2 viewer")).toBeInTheDocument();
   });
 
   it("groups global profiles by bank", () => {
@@ -230,6 +340,11 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show amount source for PDF row 1" }));
 
     expect(screen.getByRole("heading", { name: "Source" })).toBeInTheDocument();
+    const sourceHeader = screen.getByRole("heading", { name: "Source" }).parentElement!;
+    expect(sourceHeader).toHaveClass("whitespace-nowrap");
+    expect(within(sourceHeader).getByText("Page 1 of 1")).toBeInTheDocument();
+    expect(screen.queryByText("Page 1", { exact: true })).not.toBeInTheDocument();
+    expect(within(sourceHeader).getByText(/% text coverage/)).toBeInTheDocument();
     const source = screen.getAllByText("-12.50").find((element) => element.className.includes("bg-sky-300"));
     expect(source).toBeDefined();
     expect(source!.className).toContain("bg-sky-300");
@@ -439,6 +554,29 @@ describe("PdfStatementReviewDialog v2", () => {
 
     expect(screen.getByRole("button", { name: /Use 2 reviewed transactions/ })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull();
+  });
+
+  it("keeps row selection usable for a large parsed statement", () => {
+    const parsed = ordinaryResult();
+    const template = parsed.transactions[0];
+    const transactions = Array.from({ length: 220 }, (_, index) => ({
+      ...template,
+      id: `transaction-${index + 1}`,
+      sourceRowNumber: index + 1,
+      description: `ANON ROW ${index + 1}`,
+    }));
+    const largeResult = {
+      ...parsed,
+      transactions,
+      metrics: { ...parsed.metrics, transactions: transactions.length, accepted: transactions.length },
+    };
+    render(<PdfStatementReviewDialog fileName="large-statement.pdf" result={largeResult} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF row 220" }));
+
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select PDF row 220" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select PDF row 1" })).not.toBeChecked();
   });
 
   it("shows diagnostics without exposing source text", () => {
