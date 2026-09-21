@@ -10,10 +10,10 @@ import { pdfColumnColor } from "./PdfSourcePreview";
 /**
  * What each column of the statement holds.
  *
- * Each mapping reads as a card rather than a table row: the role and its
- * controls on one line, and underneath, the values actually read from the
- * page - which is the only evidence that the mapping is right, and so should
- * not be the part that gets truncated first.
+ * One row per mapping. A statement can carry a dozen columns, and a list that
+ * needs two rows each is a list you scroll instead of read: the whole point of
+ * this panel is seeing the mapping as a set, against the coloured columns
+ * drawn on the page beside it.
  */
 export function PdfColumnMappingList({
   columns,
@@ -40,13 +40,13 @@ export function PdfColumnMappingList({
         return (
           <div
             key={column.id}
-            className="grid grid-cols-[0.25rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 rounded-md border px-2 py-1.5"
+            className="grid grid-cols-[0.25rem_minmax(10rem,1fr)_minmax(0,0.8fr)_auto] items-center gap-2 rounded-md border px-2 py-1"
             onPointerDownCapture={() => onFocusColumn(column)}
             onFocusCapture={() => onFocusColumn(column)}
           >
             <span
               aria-hidden="true"
-              className="row-span-2 h-full min-h-7 w-1 rounded-full"
+              className="h-7 w-1 rounded-full"
               style={{ backgroundColor: pdfColumnColor(columnIndex).border }}
             />
             <SelectField
@@ -64,6 +64,12 @@ export function PdfColumnMappingList({
                 </optgroup>
               ))}
             </SelectField>
+            <p
+              className="min-w-0 truncate text-[10px] text-muted-foreground"
+              title={values.join(" · ")}
+            >
+              Examples: {values.join(" · ") || "No matching value read yet"}
+            </p>
             <div className="flex items-center">
               {/*
                 These swap two mappings, and the columns they describe swap
@@ -101,12 +107,6 @@ export function PdfColumnMappingList({
                 <Trash2 className="size-3.5" />
               </Button>
             </div>
-            <p
-              className="col-start-2 col-end-4 min-w-0 truncate text-[11px] text-muted-foreground"
-              title={values.join(" · ")}
-            >
-              Examples: {values.join(" · ") || "No matching value read yet"}
-            </p>
           </div>
         );
       })}

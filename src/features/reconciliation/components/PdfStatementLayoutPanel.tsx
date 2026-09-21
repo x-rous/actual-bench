@@ -27,7 +27,7 @@ export function PdfStatementLayoutPanel({
   selectedProfileId,
   accountProfileId,
   accountName,
-  notice,
+  notices,
   disabled,
   canSave,
   saveBlockedReason,
@@ -40,7 +40,12 @@ export function PdfStatementLayoutPanel({
   selectedProfileId: string | null;
   accountProfileId: string | null;
   accountName: string;
-  notice: string | null;
+  /**
+   * What is worth saying about the layout in force: that a saved one did not
+   * match, that it was applied with settings to confirm, that the current
+   * settings have drifted from it. More than one can be true at once.
+   */
+  notices: string[];
   disabled: boolean;
   canSave: boolean;
   saveBlockedReason: string | null;
@@ -94,13 +99,21 @@ export function PdfStatementLayoutPanel({
             size="xs"
             variant="outline"
             disabled={disabled || !canSave}
-            title={saveBlockedReason ?? undefined}
             onClick={onSave}
           >
             <Save aria-hidden="true" className="mr-1 size-3.5" />Save layout
           </Button>
         )}
       </div>
+
+      {/*
+        Said in the panel rather than in a `title` on the disabled button: a
+        tooltip on a control that cannot be focused or hovered on touch is a
+        reason nobody reads.
+      */}
+      {onSave && !canSave && saveBlockedReason && (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{saveBlockedReason}</p>
+      )}
 
       <p className="mt-1.5 text-[11px] text-muted-foreground">
         {selected
@@ -116,12 +129,12 @@ export function PdfStatementLayoutPanel({
         </Button>
       )}
 
-      {notice && (
-        <p className={cn("mt-2 flex items-start gap-1.5 text-[11px]", "text-amber-700 dark:text-amber-300")}>
+      {notices.map((notice) => (
+        <p key={notice} className={cn("mt-2 flex items-start gap-1.5 text-[11px]", "text-amber-700 dark:text-amber-300")}>
           <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
           <span>{notice}</span>
         </p>
-      )}
+      ))}
     </section>
   );
 }

@@ -230,8 +230,8 @@ export function PdfStatementReviewDialog({
     ])
   ), [draftGuidance?.columns, draftGuidance?.regions, parsed]);
   const detectionIssues = useMemo(
-    () => detectionIssuesFor(parsed, draftGuidance, profileNotice),
-    [draftGuidance, parsed, profileNotice]
+    () => detectionIssuesFor(parsed, draftGuidance),
+    [draftGuidance, parsed]
   );
   const parserDetailCount = useMemo(
     () => new Set([...detectionIssues.map((issue) => issue.message), ...(parsed?.warnings ?? [])]).size,
@@ -769,7 +769,7 @@ export function PdfStatementReviewDialog({
                   selectedProfileId,
                   accountProfileId,
                   accountName,
-                  notice: profileNotice ?? layoutNotice,
+                  notices: [profileNotice, layoutNotice].filter((notice): notice is string => Boolean(notice)),
                   disabled: isParsing,
                   canSave: Boolean(onSaveProfile) && parsed.metrics.rejected === 0 && !detectionDirty,
                   saveBlockedReason: parsed.metrics.rejected > 0
@@ -948,12 +948,12 @@ function initialReviewFilter(result: PdfStatementParseResult | null): PdfReviewC
  */
 function detectionIssuesFor(
   result: PdfStatementParseResult | null,
-  guidance: PdfParserGuidance | null,
-  profileNotice: string | null
+  guidance: PdfParserGuidance | null
 ): PdfDetectionIssue[] {
   if (!result || !guidance) return [{ message: "No detection result is available." }];
   const issues: PdfDetectionIssue[] = [];
-  if (profileNotice) issues.push({ message: profileNotice });
+  // Not the statement-layout notice: that is about the layout in force, and it
+  // is said in the panel that holds the control for it, immediately below.
   if (!guidance.regions.some((region) => region.included && region.kind === "transactions")) {
     issues.push({ message: "Select at least one transaction area." });
   }

@@ -218,8 +218,8 @@ export function PdfDetectionStep({
                 <Button size="xs" variant="outline" disabled={busy} onClick={onAddColumn}>Map another column</Button>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Tell Actual Bench what each statement column contains. Select a mapping to find it in the PDF, or drag
-                its boundaries to correct it.
+                Assign what each physical column means. Match its color to the PDF, move it left or right, or drag its
+                edges to correct the boundary.
               </p>
               <div className="mt-2">
                 <PdfColumnMappingList

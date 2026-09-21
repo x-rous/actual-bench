@@ -746,6 +746,49 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(within(layoutSection).getByRole("button", { name: "Save layout" })).toBeInTheDocument();
   });
 
+  it("states a layout notice once, with the layout control it is about", () => {
+    const notice = "General Bank · Sample Statement 3 was not applied because this statement does not match it closely enough.";
+    render(
+      <PdfStatementReviewDialog
+        fileName="statement.pdf"
+        result={ordinaryResult()}
+        profileNotice={notice}
+        open
+        onOpenChange={() => {}}
+        onImport={() => {}}
+      />
+    );
+
+    // Not in the attention list as well: the control that answers it is in the
+    // layout panel, which says it.
+    expect(screen.getAllByText(notice)).toHaveLength(1);
+    const layoutSection = screen.getByRole("region", { name: "Statement layout" });
+    expect(within(layoutSection).getByText(notice)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "What needs attention" })).toBeNull();
+  });
+
+  it("says why a layout cannot be saved instead of hiding it in a tooltip", () => {
+    const blocked = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "03/04/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+    ], { dateFormat: "auto" });
+    render(
+      <PdfStatementReviewDialog
+        fileName="statement.pdf"
+        result={blocked}
+        open
+        onOpenChange={() => {}}
+        onImport={() => {}}
+        onSaveProfile={jest.fn()}
+      />
+    );
+
+    const layoutSection = screen.getByRole("region", { name: "Statement layout" });
+    expect(within(layoutSection).getByRole("button", { name: "Save layout" })).toBeDisabled();
+    expect(within(layoutSection).getByText("Resolve rejected transactions before saving this layout"))
+      .toBeInTheDocument();
+  });
+
   it("blocks import until unreadable pages are acknowledged", () => {
     const parsed = ordinaryResult();
     parsed.metrics = { ...parsed.metrics, unreadablePages: 1 };
