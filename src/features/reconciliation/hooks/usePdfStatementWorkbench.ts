@@ -123,8 +123,20 @@ export function usePdfStatementWorkbench(
     });
   }
 
-  function updateDraft(patch: Partial<PdfParserGuidance>) {
-    setDraftGuidance((current) => (current ? { ...current, ...patch } : current));
+  /**
+   * A patch, or a function of what the draft is now.
+   *
+   * The function form matters when one gesture makes two changes - moving a
+   * column and then putting the list back in order - because both would
+   * otherwise read the same state and the second would undo the first.
+   */
+  function updateDraft(
+    patch: Partial<PdfParserGuidance> | ((current: PdfParserGuidance) => Partial<PdfParserGuidance>)
+  ) {
+    setDraftGuidance((current) => {
+      if (!current) return current;
+      return { ...current, ...(typeof patch === "function" ? patch(current) : patch) };
+    });
     setPreview(null);
   }
 

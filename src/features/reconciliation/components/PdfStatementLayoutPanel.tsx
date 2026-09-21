@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { PdfPanelNote, PdfPanelSection } from "./PdfPanelSection";
 import type { PdfDetectionProfileOption } from "./PdfStatementReviewDialog";
 
 /**
@@ -56,23 +56,41 @@ export function PdfStatementLayoutPanel({
 }) {
   const selected = profiles.find((profile) => profile.recordId === selectedProfileId) ?? null;
   const isAccountLayout = Boolean(selected) && selected?.recordId === accountProfileId;
+  /*
+    A statement that already arrived with its layout applied has nothing to ask
+    here, so the panel starts out of the way and the mapping below it gets the
+    room. Only the starting state: a reader who opens it, or who picks a layout
+    in this session, keeps it open to see what they did.
+  */
+  const [open, setOpen] = useState(() => !selectedProfileId);
   const byBank = profiles.reduce<Map<string, PdfDetectionProfileOption[]>>((groups, profile) => {
     groups.set(profile.bankName, [...(groups.get(profile.bankName) ?? []), profile]);
     return groups;
   }, new Map());
 
   return (
-    <section aria-labelledby="pdf-statement-layout-heading" className="rounded-md border px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <h3 id="pdf-statement-layout-heading" className="text-sm font-medium">Statement layout</h3>
-        {onManage && (
-          <Button size="xs" variant="ghost" disabled={disabled} onClick={onManage}>
-            <Settings2 aria-hidden="true" className="mr-1 size-3.5" />Manage
-          </Button>
-        )}
-      </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+    <PdfPanelSection
+      title="Statement layout"
+      open={open}
+      onOpenChange={setOpen}
+      summary={open ? undefined : selected ? `${selected.bankName} · ${selected.envelope.profile.name}` : "Automatic detection"}
+      action={onManage && (
+        <Button size="xs" variant="ghost" disabled={disabled} onClick={onManage}>
+          <Settings2 aria-hidden="true" className="mr-1 size-3.5" />Manage
+        </Button>
+      )}
+      footer={notices.length > 0 && (
+        <div className="space-y-1.5">
+          {notices.map((notice) => (
+            <p key={notice} className="flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+              <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+              <span>{notice}</span>
+            </p>
+          ))}
+        </div>
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2">
         <label htmlFor="pdf-statement-layout" className="sr-only">Use layout</label>
         <SelectField
           id="pdf-statement-layout"
@@ -112,30 +130,23 @@ export function PdfStatementLayoutPanel({
         reason nobody reads.
       */}
       {onSave && !canSave && saveBlockedReason && (
-        <p className="mt-1.5 text-[11px] text-muted-foreground">{saveBlockedReason}</p>
+        <PdfPanelNote>{saveBlockedReason}</PdfPanelNote>
       )}
 
-      <p className="mt-1.5 text-[11px] text-muted-foreground">
+      <PdfPanelNote>
         {selected
           ? isAccountLayout
             ? `${selected.bankName} · assigned to ${accountName}`
             : `${selected.bankName} · used for this statement only`
           : "Detected from this statement only. Save a layout to reuse it next month."}
-      </p>
+      </PdfPanelNote>
 
       {selected && !isAccountLayout && onAssign && (
-        <Button className="mt-1.5" size="xs" variant="ghost" disabled={disabled} onClick={onAssign}>
+        <Button size="xs" variant="ghost" disabled={disabled} onClick={onAssign}>
           Use for {accountName}
         </Button>
       )}
-
-      {notices.map((notice) => (
-        <p key={notice} className={cn("mt-2 flex items-start gap-1.5 text-[11px]", "text-amber-700 dark:text-amber-300")}>
-          <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-          <span>{notice}</span>
-        </p>
-      ))}
-    </section>
+    </PdfPanelSection>
   );
 }
 

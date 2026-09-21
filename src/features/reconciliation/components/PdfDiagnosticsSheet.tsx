@@ -49,7 +49,13 @@ export function PdfDiagnosticsSheet({
     // Not modal: reading a warning is something you do while looking at the
     // rows it is about, so the workbench behind stays live rather than inert.
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
-      <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-2xl">
+      {/*
+        The width has to carry the same variant as the sheet's own
+        `data-[side=right]:sm:max-w-sm`, or both survive the class merge and
+        the data-attribute selector wins on specificity - which is how this
+        panel stayed narrow while claiming to be wide.
+      */}
+      <SheetContent side="right" className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-3xl">
         <SheetHeader>
           <SheetTitle>Parser details</SheetTitle>
           <SheetDescription>What Actual Bench used to read this statement.</SheetDescription>
@@ -85,7 +91,7 @@ export function PdfDiagnosticsSheet({
             <div className="mt-3 space-y-2">
               {profiles.map((option) => {
                 const profile = option.envelope.profile;
-                const match = matchPdfLayoutProfile(profile, result.reconstructedPages, result.activeSchema);
+                const match = matchPdfLayoutProfile(profile, result.reconstructedPages, result.activeSchema, result.detectionSignature);
                 return (
                   <div key={option.recordId} className="rounded border p-2 text-xs">
                     <div className="flex items-center gap-2">

@@ -64,14 +64,45 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(summary.textContent).toContain("1 transaction");
     const net = within(summary).getByText("Net").parentElement!;
     expect(within(net).getByText("-12.50")).toBeInTheDocument();
-    // The state of the statement is a single pill rather than a raw count.
-    expect(within(summary).getByText("All ready")).toBeInTheDocument();
+    // Readiness is a composition drawn the way the reconcile stage draws
+    // coverage: a track whose parts sum to the total, each named beside its
+    // colour rather than carried by the colour alone.
+    const readiness = within(summary).getByRole("img", { name: "1 ready" });
+    expect(readiness).toBeInTheDocument();
+    const ready = within(summary).getByText("Ready").parentElement!;
+    expect(within(ready).getByText("1")).toBeInTheDocument();
+    expect(within(summary).queryByText("Review")).toBeNull();
     const reviewStep = screen.getByRole("button", { name: /Review transactions/ });
     expect(reviewStep.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByRole("button", { name: "Needs review 0" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ready 1" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Manual changes/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Correction scope")).not.toBeInTheDocument();
+  });
+
+  it("shows readiness as a composition, in the colours the reconcile stage uses", () => {
+    const parsed = ordinaryResult();
+    const accepted = parsed.transactions[0];
+    const mixed = {
+      ...parsed,
+      transactions: [
+        { ...accepted, id: "ready", description: "READY", sourceRowNumber: 1 },
+        { ...accepted, id: "review", description: "REVIEW", sourceRowNumber: 2, status: "review" as const, issueCodes: ["DATE_AMBIGUOUS_ORDER"] as typeof accepted.issueCodes },
+        { ...accepted, id: "fix", description: "FIX", sourceRowNumber: 3, status: "rejected" as const, issueCodes: ["AMOUNT_MISSING"] as typeof accepted.issueCodes },
+      ],
+      metrics: { ...parsed.metrics, transactions: 3, accepted: 1, review: 1, rejected: 1 },
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={mixed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    const summary = screen.getByRole("region", { name: "PDF parse summary" });
+    // The whole statement in one reading, not only the worst thing in it.
+    expect(within(summary).getByRole("img", { name: "1 ready, 1 review, 1 fix" })).toBeInTheDocument();
+    ["Ready", "Review", "Fix"].forEach((label) => {
+      expect(within(summary).getByText(label)).toBeInTheDocument();
+    });
+
+    // Dates read the way every other date in the workbench reads.
+    expect(within(summary).getByText(/15\/08\/2026/)).toBeInTheDocument();
   });
 
   it("groups issue filters under a clickable Needs review filter", () => {
@@ -194,6 +225,10 @@ describe("PdfStatementReviewDialog v2", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} profiles={[option]} activeProfileId="record-1" open onOpenChange={() => {}} onImport={() => {}} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+    // A layout was already in force when the PDF was read, so the panel starts
+    // out of the way.
+    expect(screen.queryByLabelText("Use layout")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Statement layout/ }));
     const selector = screen.getByLabelText("Use layout") as HTMLSelectElement;
     expect(selector.value).toBe("record-1");
     expect(selector.querySelector("optgroup")?.label).toBe("HSBC Bank");
@@ -328,26 +363,20 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("button", { name: /Check detection/ })).toHaveAttribute("aria-current", "step");
     fireEvent.click(screen.getByRole("button", { name: /Review transactions/ }));
     expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mark PDF row \d+ reviewed/ })).toBeNull();
     const date = screen.getByLabelText("Transaction date for PDF row 1");
-    fireEvent.change(date, { target: { value: "2026-03-04" } });
+    fireEvent.change(date, { target: { value: "04/03/2026" } });
     fireEvent.blur(date);
     expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeEnabled();
   });
 
-  it("lets the user correct a row currency and preserves it with the exact amount", () => {
-    const onImport = jest.fn();
-    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={onImport} />);
+  it("states the statement currency over the amounts rather than on every row", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
 
-    const currency = screen.getByLabelText("Currency for PDF row 1");
-    fireEvent.change(currency, { target: { value: "EUR" } });
-    fireEvent.blur(currency);
-    fireEvent.click(screen.getByRole("button", { name: /Use 1 transaction/ }));
-
-    expect(onImport).toHaveBeenCalledWith(
-      [expect.objectContaining({ currency: "EUR", exactAmount: expect.objectContaining({ currency: "EUR" }) })],
-      expect.anything()
-    );
+    // Actual holds one currency per budget file and the import carries no
+    // currency at all, so a per-row field would be an edit with no consequence.
+    expect(screen.queryByLabelText("Currency for PDF row 1")).toBeNull();
+    expect(screen.getByRole("columnheader", { name: /Amount \(USD\)/ })).toBeInTheDocument();
   });
 
   it("applies a selected bulk ignore as one correction batch", () => {
@@ -409,7 +438,10 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(within(dateMapping).queryByText(/ANON SHOP/)).toBeNull();
     const boundary = screen.getByRole("button", { name: /Move transaction-date column start boundary/ });
     expect(boundary).toHaveClass("w-3", "bg-transparent");
-    expect(screen.getByText("Transaction date", { selector: "span" })).toHaveClass("text-white");
+    // The label on the page is also the handle that moves the whole column.
+    const pageLabel = screen.getByRole("button", { name: "Move the transaction-date column" });
+    expect(pageLabel).toHaveTextContent("Transaction date");
+    expect(pageLabel).toHaveClass("text-white", "cursor-grab");
     const firstSwatch = screen.getByLabelText("Role for mapped column 1").previousElementSibling as HTMLElement;
     const secondSwatch = screen.getByLabelText("Role for mapped column 2").previousElementSibling as HTMLElement;
     expect(firstSwatch.style.backgroundColor).toBeTruthy();
@@ -428,7 +460,8 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(sectionOverviewControl).toHaveClass("bg-emerald-500/10");
     const previewChanges = screen.getByRole("button", { name: "Preview updated transactions" });
     expect(previewChanges.closest(".border-t")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply changes and review" })).toBeDisabled();
+    // Previewing is an offer, not a gate: nothing is written by applying.
+    expect(screen.getByRole("button", { name: "Apply changes and review" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Select transaction area" })).toBeInTheDocument();
     expect(screen.queryByText("Page 1")).not.toBeInTheDocument();
     // Paging and page-level actions above the viewer; zoom and the mapping
@@ -492,7 +525,7 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(colors).not.toContain("#d97706");
   });
 
-  it("moves a column and its selected PDF area left or right", () => {
+  it("moves a column down the list and right across the page, together", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
 
@@ -501,7 +534,8 @@ describe("PdfStatementReviewDialog v2", () => {
     const originalDateWidth = Number.parseFloat(originalDateArea.style.width);
     expect(Number.parseFloat(originalDateArea.style.left)).toBeLessThan(Number.parseFloat(originalDescriptionArea.style.left));
 
-    fireEvent.click(screen.getByRole("button", { name: "Move transaction-date column right" }));
+    // The list runs down, the page runs across, and the two stay in step.
+    fireEvent.click(screen.getByRole("button", { name: "Move transaction-date column down" }));
 
     expect(screen.getByLabelText("Role for mapped column 1")).toHaveValue("description");
     expect(screen.getByLabelText("Role for mapped column 2")).toHaveValue("transaction-date");
@@ -509,6 +543,43 @@ describe("PdfStatementReviewDialog v2", () => {
     const movedDescriptionArea = screen.getByRole("button", { name: "Move description column start boundary" }).parentElement!;
     expect(Number.parseFloat(movedDateArea.style.left)).toBeGreaterThan(Number.parseFloat(movedDescriptionArea.style.left));
     expect(Number.parseFloat(movedDateArea.style.width)).toBeCloseTo(originalDateWidth);
+  });
+
+  it("inserts a mapping between two columns and keeps the list in page order", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    const rolesInOrder = () => screen.getAllByRole("combobox", { name: /Role for mapped column/ })
+      .map((select) => (select as HTMLSelectElement).value);
+    expect(rolesInOrder()).toEqual(["transaction-date", "description", "amount"]);
+
+    // A column the detection missed belongs where the statement prints it,
+    // not at the end of the list.
+    fireEvent.click(screen.getByRole("button", { name: "Add a column after transaction-date" }));
+    expect(rolesInOrder()).toEqual(["transaction-date", "ignore", "description", "amount"]);
+
+    const inserted = screen.getByRole("button", { name: "Move the ignore column" }).parentElement!;
+    const date = screen.getByRole("button", { name: "Move the transaction-date column" }).parentElement!;
+    const description = screen.getByRole("button", { name: "Move the description column" }).parentElement!;
+    expect(Number.parseFloat(inserted.style.left)).toBeGreaterThan(Number.parseFloat(date.style.left));
+    expect(Number.parseFloat(inserted.style.left)).toBeLessThan(Number.parseFloat(description.style.left));
+  });
+
+  it("moves a whole column with its label, and reorders the list once it lands", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    const handle = screen.getByRole("button", { name: "Move the transaction-date column" });
+    // Read before the move: React keeps the same element, so the old values
+    // have to be captured rather than re-read afterwards.
+    const width = Number.parseFloat(handle.parentElement!.style.width);
+    const left = Number.parseFloat(handle.parentElement!.style.left);
+
+    // Both edges travel together, so the column keeps its width.
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+    const moved = screen.getByRole("button", { name: "Move the transaction-date column" }).parentElement!;
+    expect(Number.parseFloat(moved.style.width)).toBeCloseTo(width);
+    expect(Number.parseFloat(moved.style.left)).toBeGreaterThan(left);
   });
 
   it("temporarily hides section fills while a column boundary is dragged", () => {
@@ -554,7 +625,9 @@ describe("PdfStatementReviewDialog v2", () => {
 
     // The header states which date is imported instead of relying on an icon.
     expect(screen.getByRole("columnheader", { name: /Value date \(used as the import date\)/ })).toBeInTheDocument();
-    expect(screen.getByLabelText("Value date for PDF row 1")).toHaveValue("2026-08-15");
+    // Dates are written one way across the workbench, whatever the statement
+    // prints and whatever locale the browser would prefer.
+    expect(screen.getByLabelText("Value date for PDF row 1")).toHaveValue("15/08/2026");
   });
 
   const descriptionsOf = () => screen.getAllByRole("textbox", { name: /Description for PDF row/ })
@@ -656,8 +729,8 @@ describe("PdfStatementReviewDialog v2", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={duplicate} open onOpenChange={() => {}} onImport={() => {}} />);
 
     expect(screen.getByRole("button", { name: /Use 2 transactions/ })).toBeDisabled();
-    fireEvent.click(screen.getAllByRole("button", { name: "Mark reviewed" })[0]);
-    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Mark PDF row \d+ reviewed/ })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Mark PDF row \d+ reviewed/ }));
     expect(screen.getByRole("button", { name: /Use 2 transactions/ })).toBeEnabled();
   });
 
@@ -820,6 +893,21 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.queryByRole("button", { name: /Mark selected row as transaction/ })).toBeNull();
   });
 
+  it("keeps the statement period out of the settings a layout saves", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    // It is a fact about this document, not a property of the bank's layout,
+    // and the panel says so where someone deciding what to save will read it.
+    const period = screen.getByRole("group", { name: "Statement period" });
+    expect(within(period).getByText(/Not kept in a saved layout/)).toBeInTheDocument();
+
+    const start = within(period).getByLabelText("Statement period start");
+    fireEvent.change(start, { target: { value: "21/09/2026" } });
+    fireEvent.blur(start);
+    expect(screen.getByLabelText("Statement period start")).toHaveValue("21/09/2026");
+  });
+
   it("offers the printed-sign convention next to the amount-direction rule", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
@@ -852,7 +940,7 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mark reviewed anyway" }));
 
     expect(screen.getByRole("button", { name: /Use 2 transactions/ })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mark PDF row \d+ reviewed/ })).toBeNull();
   });
 
   it("keeps row selection usable for a large parsed statement", () => {
@@ -944,19 +1032,169 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeInTheDocument();
   });
 
-  it("says what a row is waiting on in the table, not only in a tooltip", () => {
+  it("moves down a column on Enter and marks a row reviewed with the modifier", () => {
+    // Two rows the parser cannot tell apart: both stay in review until someone
+    // says they are separate transactions.
+    const duplicate = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={duplicate} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    const first = screen.getByLabelText("Description for PDF row 1");
+    first.focus();
+    fireEvent.keyDown(first, { key: "Enter" });
+    expect(screen.getByLabelText("Description for PDF row 2")).toHaveFocus();
+
+    // The modifier accepts the row before moving on, so a run of rows can be
+    // cleared without returning to the mouse.
+    expect(screen.getAllByRole("button", { name: /Mark PDF row \d+ reviewed/ })).toHaveLength(2);
+    fireEvent.keyDown(screen.getByLabelText("Description for PDF row 2"), { key: "Enter", ctrlKey: true });
+    expect(screen.getAllByRole("button", { name: /Mark PDF row \d+ reviewed/ })).toHaveLength(1);
+  });
+
+  it("asks before throwing away the detection settings", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    // Nothing has changed yet, so there is nothing to ask about.
+    fireEvent.click(screen.getByRole("button", { name: "Reset detection" }));
+    expect(screen.queryByRole("dialog", { name: /Reset the detection settings/ })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Role for mapped column 1"), { target: { value: "amount" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reset detection" }));
+    expect(screen.getByRole("dialog", { name: /Reset the detection settings/ })).toBeInTheDocument();
+
+    const confirmation = screen.getByRole("dialog", { name: /Reset the detection settings/ });
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Reset detection" }));
+    expect(screen.getByLabelText("Role for mapped column 1")).toHaveValue("transaction-date");
+  });
+
+  it("says what a row is waiting on in the table, and keeps the rest behind its status", async () => {
     const parsed = ordinaryResult();
     const row = parsed.transactions[0];
     const needsReview = {
       ...parsed,
-      transactions: [{ ...row, status: "review" as const, issueCodes: ["BALANCE_MISMATCH"] as typeof row.issueCodes }],
+      transactions: [{
+        ...row,
+        status: "review" as const,
+        issueCodes: ["DATE_INHERITED_FROM_PREVIOUS_ROW", "BALANCE_MISMATCH", "BALANCE_RECONCILED"] as typeof row.issueCodes,
+        confidence: {
+          ...row.confidence,
+          transactionDate: { ...row.confidence.transactionDate, status: "review" as const, reasons: ["DATE_INHERITED_FROM_PREVIOUS_ROW"] as typeof row.issueCodes },
+          accountAmount: { ...row.confidence.accountAmount, status: "rejected" as const, reasons: ["BALANCE_MISMATCH"] as typeof row.issueCodes },
+          direction: { ...row.confidence.direction, status: "accepted" as const, reasons: ["BALANCE_RECONCILED"] as typeof row.issueCodes },
+        },
+      }],
       metrics: { ...parsed.metrics, accepted: 0, review: 1 },
     };
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={needsReview} open onOpenChange={() => {}} onImport={() => {}} />);
 
+    // The line goes to the reason that blocks the row, not the first one read,
+    // and it stays on screen so a column of them can be scanned.
     expect(screen.getByText("Amount does not reconcile to the running balance")).toBeInTheDocument();
-    // The status keeps the full list for anyone who wants all of it.
-    expect(screen.getByLabelText("Amount does not reconcile to the running balance")).toHaveTextContent("Review");
+    expect(screen.queryByText("Date was inherited from the previous statement row")).toBeNull();
+
+    // The description cell carries no controls: the notes live on the status,
+    // which is in the same place on every row.
+    const status = screen.getByRole("button", { name: /Review: show the notes on PDF row 1/ });
+    expect(status).toHaveAttribute("aria-haspopup");
+    expect(screen.queryByText("Needs attention")).toBeNull();
+
+    fireEvent.click(status);
+    await waitFor(() => expect(screen.getByText("Needs attention")).toBeInTheDocument());
+    expect(screen.getByText("Date was inherited from the previous statement row")).toBeInTheDocument();
+    expect(screen.getByText("How this was read")).toBeInTheDocument();
+    expect(screen.getByText("Amount reconciles to the running balance")).toBeInTheDocument();
+
+    // The notes are on the app's popover layer, which sits above the dialog
+    // rather than level with it. This says where they are rendered, not that
+    // they are visible - jsdom paints nothing.
+    const notes = screen.getByText("Needs attention").closest("[data-slot='popover-content']");
+    expect(notes).not.toBeNull();
+    expect(notes!.parentElement).toHaveClass("z-[80]");
+
+    fireEvent.keyDown(notes!, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByText("Needs attention")).toBeNull());
+  });
+
+  it("says how a ready row was read, without claiming it needs attention", async () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    // Nothing is wrong with the row, so nothing is printed under it.
+    expect(screen.queryByText(/Amount came from the mapped column/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Ready: show the notes on PDF row 1/ }));
+    await waitFor(() => expect(screen.getByText("How this was read")).toBeInTheDocument());
+    expect(screen.queryByText("Needs attention")).toBeNull();
+  });
+
+  it("keeps undo beside the table, and the parse summary beside the steps", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    // Undo acts on corrections made to these rows, so it sits with them rather
+    // than in the statement's own header.
+    const undo = screen.getByRole("button", { name: "Undo PDF correction" });
+    expect(undo).toBeDisabled();
+    expect(undo.closest("div")).toBe(screen.getByRole("button", { name: /Export/ }).closest("div"));
+    expect(undo).toHaveTextContent("");
+
+    // The summary shares the step bar's row instead of taking one of its own.
+    const summary = screen.getByRole("region", { name: "PDF parse summary" });
+    const steps = screen.getByRole("navigation", { name: "PDF import steps" });
+    expect(summary.parentElement).toBe(steps.parentElement);
+
+    // Parser details belongs with the file it is about.
+    const details = screen.getByRole("button", { name: /Parser details/ });
+    expect(details.closest("[data-slot='dialog-header']")).not.toBeNull();
+  });
+
+  it("keeps the row actions in one place whether or not a row can be split", () => {
+    const parsed = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    // One value, one cell, one way to see where it came from.
+    expect(screen.queryByRole("columnheader", { name: /^Sort by Currency/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Show currency in statement/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Show amount in statement for PDF row 1" })).toBeInTheDocument();
+
+    // The icons keep their own slot, so a row without a split button does not
+    // let the other controls slide across.
+    const ignore = screen.getByRole("button", { name: "Ignore PDF row 1" });
+    expect(ignore.parentElement).toHaveClass("w-14", "justify-end");
+
+    // The date column heads a narrow column, so it carries a name that fits.
+    expect(screen.getByRole("columnheader", { name: /Trans\. date/ })).toBeInTheDocument();
+  });
+
+  it("writes dates one way and keeps an unreadable one on screen", () => {
+    const onImport = jest.fn();
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={onImport} />);
+
+    const date = screen.getByLabelText("Transaction date for PDF row 1");
+    expect(date).toHaveValue("15/08/2026");
+
+    fireEvent.change(date, { target: { value: "01/09/2026" } });
+    fireEvent.blur(date);
+    expect(screen.getByLabelText("Transaction date for PDF row 1")).toHaveValue("01/09/2026");
+
+    // Something that is not a date is kept and marked, not discarded and not
+    // written to the row as a guess.
+    const corrected = screen.getByLabelText("Transaction date for PDF row 1");
+    fireEvent.change(corrected, { target: { value: "not a date" } });
+    fireEvent.blur(corrected);
+    expect(screen.getByLabelText("Transaction date for PDF row 1")).toHaveValue("not a date");
+    expect(screen.getByLabelText("Transaction date for PDF row 1")).toHaveAttribute("aria-invalid", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /Use 1 transaction/ }));
+    expect(onImport).toHaveBeenCalledWith(
+      [expect.objectContaining({ transactionDate: "2026-09-01" })],
+      expect.anything()
+    );
   });
 
   it("offers a way back when a filter leaves nothing on screen", () => {

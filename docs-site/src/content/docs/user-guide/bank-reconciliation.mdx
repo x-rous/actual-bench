@@ -122,28 +122,52 @@ account assignment, rename a bank or layout, or delete a layout. Removing an ass
 detection. A layout stores parser settings, geometry, and privacy-safe
 layout information; it does not store the PDF or transaction text.
 
+The amount column states the statement's currency in its header. Currency is a statement-level reading,
+not a per-row value: Actual holds one currency per budget file and the import carries no currency code,
+so what the currency decides here is how many decimal places an amount may have. A row that prints a
+different currency from the statement is flagged, because it usually means the original amount was read
+instead of the amount charged to the account.
+
+A date cell takes whatever the statement prints - `15 Jun 19`, `15/06/2019`, `2019-06-15` - and reads it
+the way the page was read, using the **Date format** setting, then stores the date it means. A value it
+cannot read stays on screen and is marked, rather than being discarded or guessed at.
+
 Transaction date is the default import date. If the statement has posting or value dates, they stay
 separate and appear when those columns are mapped. Posting and value dates are optional. If you
 remove one of their mappings, it is no longer validated or included in row warnings. The check in a
 date-column header identifies the date that will be imported. The Balance column appears only when a
 balance column is mapped and at least one balance was read.
 
+The bar beside the two steps summarizes the statement: its transaction count and date range, a track
+showing how the rows divide into Ready, Review, and Fix with each part named beside its colour, the
+money in and out, the net, and how many pages held transactions. The track is a composition, so it
+shows progress as rows are resolved rather than only naming the worst problem left.
+
 Use the row status and review filters to find structural, date, amount, direction, balance, and
 duplicate issues. **Ready** can continue, **Review** needs confirmation, and **Fix** is missing a
-required value. A row that is not ready states underneath its description what it is waiting on. Select an eye icon to see the source text for a field. A review row contains a visible assumption or warning; select
+required value. A row that is not ready states underneath its description the most serious thing it is
+waiting on, so a repeated reason can be spotted down the column. A status with a chevron opens the row's
+full notes, on hover or selection, separating what needs attention from how a value was read. Ready rows
+carry the second part only, which is how each of their values was arrived at. Select an eye icon to see the source text for a field. A review row contains a visible assumption or warning; select
 **Mark reviewed** only after checking it against the statement. Correcting a required field removes
 that error as soon as the row is valid. A row cannot be marked reviewed while a required field is
 still invalid.
 
-The PDF viewer opens at 80%, which keeps a full statement page in view. Its **−**, **+**, and
-fit-width controls stack down the left of the page and zoom between 80% and 160%; with the page
-focused, **-**, **+**, and **0** do the same. Paging sits above the viewer, and a statement of more
+The PDF viewer opens at 80%, which keeps a full statement page in view. Its **+**, **−**, and
+fit-width controls stack down the left of the page and zoom between 60% and 160%; with the page
+focused, **+**, **-**, and **0** do the same. Paging sits above the viewer, and a statement of more
 than five pages replaces the page label with a box you can type a page number into. The viewer keeps
 the zoom level while you move between pages and workbench sections. Selecting a field's eye icon opens the
 page containing its source and scrolls to the highlighted text when it is outside the visible area.
 In **Check detection**, the columns button under the zoom controls shows or hides the mappings drawn
 over the page and stays lit while they are shown; selecting a mapping centers that column in the
 viewer.
+
+The mapping list is always in the order the statement prints its columns, left to right, so it never
+disagrees with the page. Drag a column's label to move the whole column, or its edges to change one
+boundary; the arrow keys do the same from the keyboard. The **+** on a mapping adds a column between it
+and the one to its right, for a column the detection missed, and the up and down arrows swap a mapping
+with its neighbour, moving it left or right on the page.
 
 **Export**, beside the search box, saves the transactions to CSV exactly as the table currently shows
 them: the same rows, the same order, and the corrections made so far, with each row's status and any

@@ -349,6 +349,24 @@ export type PdfTransactionProposal = {
   raw: { pageNumber: number; lines: string[]; sourceIds: string[] };
 };
 
+/**
+ * What identifies a bank's statement template, as opposed to one statement.
+ *
+ * The table's own header row: the words a bank prints above its columns repeat
+ * every month while everything below them changes, so their masked shapes and
+ * positions say "this is that bank's table" without carrying a single value
+ * from the document.
+ *
+ * Read before any guidance is applied, so it describes what the statement is
+ * rather than what anyone has corrected about it.
+ */
+export type PdfLayoutSignature = {
+  /** Page width over height, times 100. */
+  aspect: number;
+  rotation: number;
+  header: { shape: string; x: number; width: number }[];
+};
+
 export type PdfDiagnosticEvent = {
   stage: "extract" | "normalize" | "layout" | "region" | "schema" | "block" | "interpret" | "validate" | "profile";
   code: string;
@@ -381,6 +399,8 @@ export type PdfStatementParseResult = {
   regions: PdfRegion[];
   schemaHypotheses: PdfTableSchema[];
   activeSchema: PdfTableSchema | null;
+  /** What identifies this statement's template, read before any guidance. */
+  detectionSignature: PdfLayoutSignature;
   blocks: PdfTransactionBlock[];
   guidance: PdfParserGuidance;
   detectedGuidance: PdfParserGuidance;

@@ -50,7 +50,9 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   onSelectRow,
   onToggleRegion,
   onColumnChange,
+  onColumnMove,
   onDrawRegion,
+  onColumnsSettled,
   toolbarStart,
   toolbarEnd,
 }: {
@@ -71,7 +73,11 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   onSelectRow: (rowId: string) => void;
   onToggleRegion: (regionId: string) => void;
   onColumnChange: (columnId: string, edge: "start" | "end", value: number) => void;
+  /** Both edges at once, so a move lands as a single change. */
+  onColumnMove?: (columnId: string, bounds: { xStart: number; xEnd: number }) => void;
   onDrawRegion?: (box: { x: number; y: number; width: number; height: number }) => void;
+  /** A boundary has stopped moving, so the mappings can be put back in order. */
+  onColumnsSettled?: () => void;
   /** Controls that belong with the viewer's own, before and after them. */
   toolbarStart?: React.ReactNode;
   toolbarEnd?: React.ReactNode;
@@ -79,7 +85,11 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   const pageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingZoomAnchor = useRef<{ x: number; y: number; zoom: number } | null>(null);
-  const [drag, setDrag] = useState<{ columnId: string; edge: "start" | "end" } | null>(null);
+  const [drag, setDrag] = useState<
+    | { columnId: string; edge: "start" | "end" }
+    | { columnId: string; edge: "move"; grabbedAt: number; from: { xStart: number; xEnd: number } }
+    | null
+  >(null);
   const [regionStart, setRegionStart] = useState<{ x: number; y: number } | null>(null);
   const [regionDraft, setRegionDraft] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
@@ -153,13 +163,13 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
     return () => cancelAnimationFrame(frame);
   }, [columns, focusColumnRequest, page.pageNumber, page.width]);
 
-  function position(event: React.PointerEvent<HTMLDivElement>) {
+  function position(event: React.PointerEvent<Element>) {
     const rect = pageRef.current?.getBoundingClientRect();
     if (!rect) return 0;
     return Math.max(0, Math.min(page.width, ((event.clientX - rect.left) / rect.width) * page.width));
   }
 
-  function point(event: React.PointerEvent<HTMLDivElement>) {
+  function point(event: React.PointerEvent<Element>) {
     const rect = pageRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
     return {
@@ -168,7 +178,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
     };
   }
 
-  function move(event: React.PointerEvent<HTMLDivElement>) {
+  function move(event: React.PointerEvent<Element>) {
     if (drawRegion && regionStart) {
       const current = point(event);
       setRegionDraft({
@@ -182,6 +192,15 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
     if (!drag) return;
     const column = columns.find((entry) => entry.id === drag.columnId);
     const value = position(event);
+    if (drag.edge === "move") {
+      // Both edges by the same amount, and no further than the page: a column
+      // dragged off the edge would have nothing left to grab.
+      const width = drag.from.xEnd - drag.from.xStart;
+      const shifted = Math.max(0, Math.min(page.width - width, drag.from.xStart + (value - drag.grabbedAt)));
+      const toReference = (next: number) => (column ? columnCoordinateToReference(column, page.width, next) : next);
+      onColumnMove?.(drag.columnId, { xStart: toReference(shifted), xEnd: toReference(shifted + width) });
+      return;
+    }
     onColumnChange(
       drag.columnId,
       drag.edge,
@@ -243,23 +262,23 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
             type="button"
             size="icon-sm"
             variant="outline"
-            aria-label="Zoom out PDF"
-            title={`Zoom out PDF (${Math.round(zoom * 100)}%, or press -)`}
-            disabled={zoom <= PDF_MIN_ZOOM}
-            onClick={() => changeZoom(zoom - PDF_ZOOM_STEP)}
-          >
-            <Minus aria-hidden="true" className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
             aria-label="Zoom in PDF"
             title={`Zoom in PDF (${Math.round(zoom * 100)}%, or press +)`}
             disabled={zoom >= PDF_MAX_ZOOM}
             onClick={() => changeZoom(zoom + PDF_ZOOM_STEP)}
           >
             <Plus aria-hidden="true" className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Zoom out PDF"
+            title={`Zoom out PDF (${Math.round(zoom * 100)}%, or press -)`}
+            disabled={zoom <= PDF_MIN_ZOOM}
+            onClick={() => changeZoom(zoom - PDF_ZOOM_STEP)}
+          >
+            <Minus aria-hidden="true" className="size-3.5" />
           </Button>
           <Button
             type="button"
@@ -332,6 +351,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
             setRegionDraft({ ...start, width: 0, height: 0 });
           }}
           onPointerUp={() => {
+            if (drag) onColumnsSettled?.();
             setDrag(null);
             if (drawRegion && regionDraft && regionDraft.width > 8 && regionDraft.height > 8) onDrawRegion?.(regionDraft);
             setRegionStart(null);
@@ -427,13 +447,37 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
                   backgroundColor: color.fill,
                 }}
               >
-                <span
-                  aria-hidden="true"
-                  className="absolute left-1 top-1 max-w-[calc(100%-0.5rem)] truncate rounded px-1 py-0.5 text-[9px] font-semibold text-white shadow-sm"
+                {/*
+                  The label is also how the whole column is moved. Dragging one
+                  edge at a time to shift a mapping means doing the same work
+                  twice and getting the width slightly wrong in between; this
+                  takes both edges at once, and the arrow keys do it without a
+                  pointer at all.
+                */}
+                <button
+                  type="button"
+                  aria-label={`Move the ${column.role} column`}
+                  title={`Drag to move the ${columnRoleLabel(column.role).toLowerCase()} column, or use the arrow keys`}
+                  className="pointer-events-auto absolute left-1 top-1 max-w-[calc(100%-0.5rem)] cursor-grab truncate rounded px-1 py-0.5 text-[9px] font-semibold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
                   style={{ backgroundColor: color.border }}
+                  onPointerDown={(event) => {
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
+                    setDrag({ columnId: column.id, edge: "move", grabbedAt: position(event), from: bounds });
+                  }}
+                  onLostPointerCapture={() => {
+                    if (drag) onColumnsSettled?.();
+                    setDrag(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                    event.preventDefault();
+                    const step = event.key === "ArrowLeft" ? -2 : 2;
+                    onColumnMove?.(column.id, { xStart: column.xStart + step, xEnd: column.xEnd + step });
+                    onColumnsSettled?.();
+                  }}
                 >
                   {columnRoleLabel(column.role)}
-                </span>
+                </button>
                 {(["start", "end"] as const).map((edge) => (
                   <button
                     key={edge}
@@ -447,12 +491,16 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
                       event.currentTarget.setPointerCapture?.(event.pointerId);
                       setDrag({ columnId: column.id, edge });
                     }}
-                    onLostPointerCapture={() => setDrag(null)}
+                    onLostPointerCapture={() => {
+                      if (drag) onColumnsSettled?.();
+                      setDrag(null);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
                       event.preventDefault();
                       const current = edge === "start" ? column.xStart : column.xEnd;
                       onColumnChange(column.id, edge, current + (event.key === "ArrowLeft" ? -2 : 2));
+                      onColumnsSettled?.();
                     }}
                   />
                 ))}
@@ -499,7 +547,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   );
 });
 
-export const PDF_MIN_ZOOM = 0.8;
+export const PDF_MIN_ZOOM = 0.6;
 export const PDF_DEFAULT_ZOOM = 0.8;
 export const PDF_FIT_WIDTH_ZOOM = 1;
 export const PDF_MAX_ZOOM = 1.6;

@@ -1013,6 +1013,68 @@ describe("PDF parser v2 sign and structure safeguards", () => {
     { y: 660, cells: [{ x: 20, text: "08/03/2026" }, { x: 120, text: "REFUND" }, { x: 480, text: "5.00" }, { x: 580, text: "955.00" }] },
   ];
 
+  it("reads a statement the same way whatever order its columns are listed in", () => {
+    // The mapping list keeps its columns in the order the page prints them, so
+    // the array the parser receives can be reordered by the reader at any
+    // time. Cell division sorts by position itself; this pins that the rest of
+    // the parser does not read anything from the array's order either.
+    const rows = [
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 420, text: "Amount" }, { x: 540, text: "Balance" }] },
+      { y: 700, cells: [{ x: 20, text: "08/01/2026" }, { x: 120, text: "ANON SHOP" }, { x: 420, text: "-12.50" }, { x: 540, text: "987.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/02/2026" }, { x: 120, text: "ANON CAFE" }, { x: 420, text: "40.00" }, { x: 540, text: "1,027.50" }] },
+    ];
+    const detected = parsePdfStatementPages([page(rows)], { guidance: guidance() });
+    const compare = (result: typeof detected) => result.transactions.map((row) => [
+      row.sourceRowNumber, row.importDate, row.amount, row.direction, row.balance, row.status, row.description,
+    ]);
+
+    const reversed = parsePdfStatementPages([page(rows)], {
+      guidance: { ...detected.guidance, columns: [...detected.guidance.columns].reverse() },
+    });
+    const sorted = parsePdfStatementPages([page(rows)], {
+      guidance: {
+        ...detected.guidance,
+        columns: [...detected.guidance.columns].sort((left, right) => left.xStart - right.xStart),
+      },
+    });
+
+    expect(compare(reversed)).toEqual(compare(detected));
+    expect(compare(sorted)).toEqual(compare(detected));
+  });
+
+  it("reads a printed currency symbol rather than leaving the currency unknown", () => {
+    const dollars = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "$ -12.50" }] },
+    ])], { guidance: guidance({ currency: undefined }) });
+
+    expect(dollars.guidance.currency).toBe("USD");
+    // A dollar sign is shared, so the reading is stated rather than assumed
+    // silently, and the "currency not detected" warning is gone.
+    expect(dollars.warnings.join(" ")).toContain("read as USD");
+    expect(dollars.warnings.join(" ")).not.toContain("currency was not detected");
+
+    const pounds = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "£ -12.50" }] },
+    ])], { guidance: guidance({ currency: undefined }) });
+
+    expect(pounds.guidance.currency).toBe("GBP");
+    // A pound sign is not shared, so there is nothing to warn about.
+    expect(pounds.warnings.join(" ")).not.toContain("read as GBP");
+  });
+
+  it("leaves the currency unknown when a statement prints two symbols", () => {
+    const mixed = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "$ -12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON EURO" }, { x: 480, text: "€ -8.00" }] },
+    ])], { guidance: guidance({ currency: undefined }) });
+
+    expect(mixed.guidance.currency).toBeNull();
+    expect(mixed.warnings.join(" ")).toContain("currency was not detected");
+  });
+
   it("reads the account type from the statement heading, not from its transactions", () => {
     const result = parsePdfStatementPages([page(checkingWithCardPayment)], { guidance: guidance() });
 
@@ -1450,6 +1512,78 @@ describe("PDF parser v2 sign and structure safeguards", () => {
 });
 
 describe("PDF layout profiles", () => {
+  it("recognizes its own statement however much the mapping was corrected", () => {
+    const rows = [
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 200, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 200, text: "ANON SHOP" }, { x: 480, text: "-12.50" }] },
+    ];
+    const detected = parsePdfStatementPages([page(rows)], { guidance: guidance() });
+    // A layout is saved after its mapping has been put right, which is the
+    // whole point of saving one. Matching used to compare those corrections
+    // against bare detection, so the corrections themselves counted against
+    // the layout; the statement's own header does not move when they are made.
+    const corrected = createPdfLayoutProfile({
+      id: "layout-1",
+      name: "Corrected",
+      result: {
+        ...detected,
+        guidance: {
+          ...detected.guidance,
+          columns: [
+            ...detected.guidance.columns,
+            { ...detected.guidance.columns[0], id: "added-value-date", role: "value-date" },
+            { ...detected.guidance.columns[0], id: "added-reference", role: "reference" },
+            { ...detected.guidance.columns[0], id: "added-balance", role: "balance" },
+          ],
+        },
+      },
+    });
+
+    const match = matchPdfLayoutProfile(
+      corrected,
+      detected.reconstructedPages,
+      detected.activeSchema,
+      detected.detectionSignature
+    );
+
+    expect(match.outcome).toBe("strong");
+  });
+
+  it("does not recognize a layout saved from another bank's table", () => {
+    const detected = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 200, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 200, text: "ANON SHOP" }, { x: 480, text: "-12.50" }] },
+    ])], { guidance: guidance() });
+    const elsewhere = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 30, text: "Buchungstag" }, { x: 210, text: "Verwendungszweck" }, { x: 470, text: "Betrag EUR" }] },
+      { y: 700, cells: [{ x: 30, text: "15/08/2026" }, { x: 210, text: "ANON LADEN" }, { x: 470, text: "-12,50" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy", currency: "EUR", numberFormat: "european" }) });
+
+    const match = matchPdfLayoutProfile(
+      createPdfLayoutProfile({ id: "layout-2", name: "Elsewhere", result: elsewhere }),
+      detected.reconstructedPages,
+      detected.activeSchema,
+      detected.detectionSignature
+    );
+
+    expect(match.outcome).toBe("conflicting");
+  });
+
+  it("carries no statement text into the signature it saves", () => {
+    const detected = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 200, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 200, text: "ANON SHOP" }, { x: 480, text: "-12.50" }] },
+    ])], { guidance: guidance() });
+
+    const serialized = JSON.stringify(detected.detectionSignature);
+
+    expect(serialized).not.toContain("ANON SHOP");
+    expect(serialized).not.toContain("Transaction");
+    expect(serialized).not.toContain("12.50");
+    // Letters and digits are masked, so only the shape of the header survives.
+    expect(serialized).toContain("A");
+  });
+
   function parsedWithDescription(description: string) {
     return parsePdfStatementPages([page([
       { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },

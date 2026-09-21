@@ -24,6 +24,7 @@ import { PdfColumnMappingList } from "./PdfColumnMappingList";
 import { PdfDetectionControls } from "./PdfDetectionControls";
 import { PdfDetectionIssueList, type PdfDetectionIssue } from "./PdfDetectionIssueList";
 import { PdfPageControls } from "./PdfPageControls";
+import { PdfPanelNote, PdfPanelSection } from "./PdfPanelSection";
 import { PdfSourcePreview } from "./PdfSourcePreview";
 import { PdfStatementLayoutPanel } from "./PdfStatementLayoutPanel";
 
@@ -62,6 +63,7 @@ export function PdfDetectionStep({
   onUpdateDraft,
   onUpdateColumn,
   onAddColumn,
+  onSettleColumns,
   onMoveColumn,
   onRemoveColumn,
   onFocusColumn,
@@ -98,7 +100,9 @@ export function PdfDetectionStep({
   onResolveIssue: (issue: PdfDetectionIssue) => void;
   onUpdateDraft: (patch: Partial<PdfParserGuidance>) => void;
   onUpdateColumn: (id: string, patch: Partial<PdfColumn>) => void;
-  onAddColumn: () => void;
+  onAddColumn: (afterId?: string) => void;
+  /** Called once a boundary drag or nudge has finished. */
+  onSettleColumns: () => void;
   onMoveColumn: (id: string, offset: -1 | 1) => void;
   onRemoveColumn: (id: string) => void;
   onFocusColumn: (column: PdfColumn) => void;
@@ -132,6 +136,8 @@ export function PdfDetectionStep({
             onToggleColumnMappings={onToggleColumnMappings}
             focusColumnRequest={columnFocusRequest}
             onSelectRow={onSelectSourceRow}
+            onColumnsSettled={onSettleColumns}
+            onColumnMove={(columnId, bounds) => onUpdateColumn(columnId, bounds)}
             toolbarStart={
               <>
                 <PdfPageControls
@@ -212,31 +218,40 @@ export function PdfDetectionStep({
               onChange={onUpdateDraft}
             />
 
-            <section className="rounded-md border px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-medium">Column mapping</h3>
-                <Button size="xs" variant="outline" disabled={busy} onClick={onAddColumn}>Map another column</Button>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
+            <PdfPanelSection
+              title="Column mapping"
+              summary={`${guidance.columns.length} ${guidance.columns.length === 1 ? "column" : "columns"}`}
+              action={
+                <Button size="xs" variant="outline" disabled={busy} onClick={() => onAddColumn()}>Map another column</Button>
+              }
+            >
+              <PdfPanelNote>
                 Assign what each physical column means. Match its color to the PDF, move it left or right, or drag its
                 edges to correct the boundary.
-              </p>
-              <div className="mt-2">
+              </PdfPanelNote>
+              <div>
                 <PdfColumnMappingList
                   columns={guidance.columns}
                   examples={columnExamples}
                   disabled={busy}
                   onChangeRole={(id, role: PdfColumnRole) => onUpdateColumn(id, { role })}
                   onMove={onMoveColumn}
+                  onInsertAfter={onAddColumn}
                   onRemove={onRemoveColumn}
                   onFocusColumn={onFocusColumn}
                 />
               </div>
-            </section>
+            </PdfPanelSection>
           </div>
 
           <div className="shrink-0 border-t bg-muted/20 px-4 py-3 text-xs">
             {preview && previewDiff && <PdfDetectionChangePreview diff={previewDiff} />}
+            {/*
+              Applying is not a commitment: nothing reaches the budget file
+              until the import at the end, and every correction is re-read from
+              the document anyway. So previewing is an offer, not a gate - the
+              reader who already knows what they changed can apply it.
+            */}
             <div className="flex items-center justify-end gap-2">
               <Button size="xs" variant="ghost" disabled={busy} onClick={onReset}>
                 <ListRestart className="mr-1 size-3" />Reset detection
@@ -244,7 +259,7 @@ export function PdfDetectionStep({
               <Button size="xs" variant="outline" disabled={busy} onClick={onPreview}>
                 {busy ? "Re-running…" : "Preview updated transactions"}
               </Button>
-              <Button size="xs" disabled={busy || !preview} onClick={onApply}>Apply changes and review</Button>
+              <Button size="xs" disabled={busy} onClick={onApply}>Apply changes and review</Button>
             </div>
           </div>
         </div>

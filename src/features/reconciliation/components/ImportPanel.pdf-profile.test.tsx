@@ -3,6 +3,7 @@ import { DEFAULT_MATCH_CONFIG, DEFAULT_TEXT_PRESET } from "@/lib/reconciliation/
 import { DEFAULT_APPLY_CONFIG } from "@/lib/reconciliation/session/plan";
 import {
   createPdfLayoutProfile,
+  type PdfLayoutProfileEnvelope,
   DEFAULT_PDF_PARSER_GUIDANCE,
   parsePdfStatementPages,
   type PdfStatementPage,
@@ -145,6 +146,67 @@ describe("ImportPanel PDF detection profiles", () => {
     });
 
     expect(await screen.findByText("Active profile: record-2")).toBeInTheDocument();
+  });
+
+  it("still recognizes its own statement after the mapping has been corrected", async () => {
+    const parsed = parsedStatement();
+    const catalog = catalogFor(parsed);
+    // Correcting the mapping is what a layout is for, and it used to be what
+    // stopped the layout being recognized: matching compared the corrections
+    // against bare detection, so the better the layout, the worse it scored.
+    const saved = (catalog.profiles[0].profile as PdfLayoutProfileEnvelope).profile;
+    saved.guidance.columns = [
+      ...saved.guidance.columns,
+      { ...saved.guidance.columns[0], id: "hand-added", role: "value-date" },
+      { ...saved.guidance.columns[0], id: "hand-added-2", role: "reference" },
+    ];
+    saved.fingerprint = "not-this-statement";
+    saved.sourceFingerprint = "not-this-statement";
+    mockExtractPdfStatement.mockResolvedValue(parsed);
+    mockParsePdfStatementOffMainThread.mockImplementation(async (_document, options) => ({
+      ...parsed,
+      guidance: options.guidance,
+    }));
+    renderPanel(catalog);
+
+    fireEvent.change(screen.getByLabelText("Upload a statement"), {
+      target: { files: [new File(["pdf"], "statement.pdf", { type: "application/pdf" })] },
+    });
+
+    expect(await screen.findByText("Active profile: record-1")).toBeInTheDocument();
+    expect(screen.queryByText(/was not applied/)).toBeNull();
+    expect(screen.queryByText(/looks different from the saved layout/)).toBeNull();
+  });
+
+  it("refuses a layout saved from a different statement template", async () => {
+    const parsed = parsedStatement();
+    const catalog = catalogFor(parsed);
+    const saved = (catalog.profiles[0].profile as PdfLayoutProfileEnvelope).profile;
+    // Another bank's table: the same roles in the same kind of place, but its
+    // header says something else.
+    saved.signature = {
+      aspect: saved.signature?.aspect ?? 88,
+      rotation: 0,
+      header: [
+        { shape: "A9 A9", x: 40, width: 10 },
+        { shape: "9A9", x: 60, width: 10 },
+      ],
+    };
+    saved.fingerprint = "not-this-statement";
+    saved.sourceFingerprint = "not-this-statement";
+    mockExtractPdfStatement.mockResolvedValue(parsed);
+    mockParsePdfStatementOffMainThread.mockImplementation(async (_document, options) => ({
+      ...parsed,
+      guidance: options.guidance,
+    }));
+    renderPanel(catalog);
+
+    fireEvent.change(screen.getByLabelText("Upload a statement"), {
+      target: { files: [new File(["pdf"], "statement.pdf", { type: "application/pdf" })] },
+    });
+
+    expect(await screen.findByText(/its columns conflict with the table on this statement/)).toBeInTheDocument();
+    expect(screen.getByText("Active profile: none")).toBeInTheDocument();
   });
 
   it("does not enable PDF upload until the global profile catalog is ready", () => {

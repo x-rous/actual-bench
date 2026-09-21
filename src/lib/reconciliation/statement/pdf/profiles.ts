@@ -1,5 +1,5 @@
 import { fnv1aHex } from "@/lib/sync/hash";
-import type { PdfParserGuidance, PdfReconstructedPage, PdfTableSchema } from "./model";
+import type { PdfLayoutSignature, PdfParserGuidance, PdfReconstructedPage, PdfTableSchema } from "./model";
 import { sourceSafeShape } from "./text";
 
 export type PdfLayoutProfile = {
@@ -9,6 +9,8 @@ export type PdfLayoutProfile = {
   fingerprint: string;
   sourceFingerprint?: string;
   guidance: PdfParserGuidance;
+  /** The template this layout was captured from, for recognizing it again. */
+  signature?: PdfLayoutSignature;
   createdAt: string;
   updatedAt: string;
   sourcePage: { width: number; height: number };
@@ -29,6 +31,51 @@ export type PdfProfileMatch = {
   reasons: string[];
   drift: boolean;
 };
+
+/**
+ * The statement's template, taken from its table header.
+ *
+ * Computed from the reconstructed layout before columns are mapped or cells
+ * divided, which is what makes it comparable across months and across
+ * corrections: the same signature comes out whether the reader has fixed the
+ * mapping or not.
+ */
+export function createPdfLayoutSignature(pages: PdfReconstructedPage[]): PdfLayoutSignature {
+  const page = pages.find((entry) => entry.rows.some((row) => row.tableHeader)) ?? pages[0];
+  const headerRow = page?.rows.find((row) => row.tableHeader);
+  return {
+    aspect: page ? Math.round((page.width / Math.max(1, page.height)) * 100) : 0,
+    rotation: page?.rotation ?? 0,
+    header: (headerRow?.cells ?? [])
+      .map((cell) => ({
+        shape: sourceSafeShape(cell.text),
+        x: Math.round((cell.x / Math.max(1, page?.width ?? 1)) * 100),
+        width: Math.round((cell.width / Math.max(1, page?.width ?? 1)) * 100),
+      }))
+      .filter((cell) => cell.shape.length > 0),
+  };
+}
+
+/**
+ * How much of one statement's header is the other's.
+ *
+ * A cell counts as the same when it prints the same shape within three percent
+ * of the page width of the same place: a bank moving a column slightly between
+ * statement runs is still the same template, a different bank is not.
+ */
+function headerSimilarity(saved: PdfLayoutSignature | null, current: PdfLayoutSignature) {
+  if (!saved?.header.length || !current.header.length) return null;
+  if (Math.abs(saved.aspect - current.aspect) > 3) return 0;
+  const remaining = [...current.header];
+  let matched = 0;
+  for (const cell of saved.header) {
+    const index = remaining.findIndex((entry) => entry.shape === cell.shape && Math.abs(entry.x - cell.x) <= 3);
+    if (index < 0) continue;
+    remaining.splice(index, 1);
+    matched += 1;
+  }
+  return matched / Math.max(saved.header.length, current.header.length);
+}
 
 export function createPdfLayoutFingerprint(
   pages: PdfReconstructedPage[],
@@ -53,8 +100,26 @@ export function createPdfLayoutFingerprint(
 export function matchPdfLayoutProfile(
   profile: PdfLayoutProfile,
   pages: PdfReconstructedPage[],
-  schema: PdfTableSchema | null
+  schema: PdfTableSchema | null,
+  signature?: PdfLayoutSignature
 ): PdfProfileMatch {
+  /*
+    The table header first, when both sides have one.
+
+    Everything below it compares a saved layout's *corrected* columns against
+    this statement's *detected* ones, which measures how much correcting was
+    needed rather than whether this is the same statement - so a layout scored
+    worse the more carefully it had been fixed, and the ones worth keeping were
+    the ones most likely to be refused. The header is the same on both sides
+    whatever anyone has corrected.
+  */
+  const headerScore = signature ? headerSimilarity(profile.signature ?? null, signature) : null;
+  if (headerScore !== null) {
+    if (headerScore >= 0.85) return { outcome: "strong", score: headerScore, reasons: ["statement header matches the saved layout"], drift: false };
+    if (headerScore >= 0.6) return { outcome: "possible", score: headerScore, reasons: ["most of the statement header matches the saved layout"], drift: true };
+    if (headerScore >= 0.25) return { outcome: "weak", score: headerScore, reasons: ["only part of the statement header matches the saved layout"], drift: true };
+    return { outcome: "conflicting", score: headerScore, reasons: ["this statement's table header is not the one the layout was saved from"], drift: true };
+  }
   if (profile.sourceFingerprint === createPdfSourceLayoutFingerprint(pages)) {
     return { outcome: "strong", score: 1, reasons: ["statement layout matches"], drift: false };
   }
@@ -112,7 +177,12 @@ function columnGeometryDistance(
 export function createPdfLayoutProfile(input: {
   id: string;
   name: string;
-  result: { reconstructedPages: PdfReconstructedPage[]; activeSchema: PdfTableSchema | null; guidance: PdfParserGuidance };
+  result: {
+    reconstructedPages: PdfReconstructedPage[];
+    activeSchema: PdfTableSchema | null;
+    guidance: PdfParserGuidance;
+    detectionSignature?: PdfLayoutSignature;
+  };
   createdAt?: string;
 }): PdfLayoutProfile {
   const firstPage = input.result.reconstructedPages[0];
@@ -123,6 +193,7 @@ export function createPdfLayoutProfile(input: {
     parserVersion: 2,
     fingerprint: createPdfLayoutFingerprint(input.result.reconstructedPages, input.result.activeSchema),
     sourceFingerprint: createPdfSourceLayoutFingerprint(input.result.reconstructedPages),
+    ...(input.result.detectionSignature ? { signature: input.result.detectionSignature } : {}),
     guidance: {
       ...input.result.guidance,
       // A statement period is evidence for this document, not a reusable

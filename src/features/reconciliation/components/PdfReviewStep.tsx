@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Download, Search, X } from "lucide-react";
+import { Download, Redo2, Search, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 import type { SortDirection } from "@/components/ui/sortable-header";
@@ -29,6 +29,10 @@ export function PdfReviewStep({
   busy,
   exportCount,
   onExport,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onToggleAll,
   onToggle,
   onDirection,
@@ -54,6 +58,10 @@ export function PdfReviewStep({
   busy: boolean;
   exportCount: number;
   onExport: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onToggleAll: () => void;
   onToggle: (id: string, checked: boolean) => void;
   onDirection: (row: PdfTransactionProposal, direction: "debit" | "credit") => void;
@@ -76,6 +84,12 @@ export function PdfReviewStep({
           setSearch={setSearch}
           exportCount={exportCount}
           onExport={onExport}
+          shownCount={tableRows.length}
+          busy={busy}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={onUndo}
+          onRedo={onRedo}
         />
         <PdfTransactionTable
           rows={tableRows}
@@ -120,6 +134,12 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
   setSearch,
   onExport,
   exportCount,
+  shownCount,
+  busy,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }: {
   rows: PdfTransactionProposal[];
   filter: PdfReviewCategory;
@@ -128,6 +148,12 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
   setSearch: (value: string) => void;
   onExport: () => void;
   exportCount: number;
+  shownCount: number;
+  busy: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }) {
   const count = (category: PdfReviewCategory) => rows.filter((row) => matchesCategory(row, category)).length;
   const issueCategories = REVIEW_CATEGORIES
@@ -136,11 +162,13 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
   const manualCount = count("manual");
   const issueFilterActive = filter === "needs-review" || issueCategories.some((category) => category.value === filter);
 
+  // The filters wrap onto another line rather than scrolling sideways. A
+  // scrollbar over a set of filters hides some of them behind a gesture,
+  // which is the opposite of what a filter strip is for: they are meant to be
+  // read at a glance to see what this statement's problems are.
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5">
-      {/* The filters scroll within their own space so that searching and
-          exporting stay reachable however many filters are showing. */}
-      <div role="group" aria-label="Review filters" className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+    <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b px-4 py-1.5">
+      <div role="group" aria-label="Review filters" className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">
         <PillGroup
           className="shrink-0"
           value={filter}
@@ -165,13 +193,20 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
           />
         )}
       </div>
-      <label className="relative flex shrink-0 items-center">
+      {/* Searching, exporting and undoing stay together on the first line,
+          whatever the filters do. */}
+      <div className="flex shrink-0 items-center gap-2">
+      <span className="text-[11px] text-muted-foreground tabular-nums" aria-live="polite">
+        Showing {shownCount} of {rows.length}
+      </span>
+      <label className="relative flex items-center">
         <Search className="pointer-events-none absolute left-1.5 size-3.5 text-muted-foreground" />
         <span className="sr-only">Search parsed transactions</span>
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search…"
+          title="Searches the description, reference, amount, and import date"
           className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
         />
         {search && (
@@ -195,6 +230,31 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
       >
         <Download aria-hidden="true" className="mr-1 size-3.5" />Export
       </Button>
+      {/* Beside the table they act on. Undo reverses a correction made to
+          these rows, which is not a thing the statement's own header does. */}
+      <Button
+        size="icon-sm"
+        variant="outline"
+        className="shrink-0"
+        aria-label="Undo PDF correction"
+        title="Undo the last correction"
+        disabled={busy || !canUndo}
+        onClick={onUndo}
+      >
+        <Undo2 className="size-3.5" />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="outline"
+        className="shrink-0"
+        aria-label="Redo PDF correction"
+        title="Redo the correction just undone"
+        disabled={busy || !canRedo}
+        onClick={onRedo}
+      >
+        <Redo2 className="size-3.5" />
+      </Button>
+      </div>
     </div>
   );
 });

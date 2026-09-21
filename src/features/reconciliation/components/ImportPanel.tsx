@@ -489,9 +489,20 @@ export function ImportPanel({
           const match = matchPdfLayoutProfile(
             accountPdfProfile.envelope.profile,
             draft.reconstructedPages,
-            draft.activeSchema
+            draft.activeSchema,
+            draft.detectionSignature
           );
-          if (match.outcome === "strong" || match.outcome === "possible") {
+          const layoutName = `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name}`;
+          // An assignment is an instruction, so it is carried out. Only a
+          // layout whose columns cannot sit on this statement's table is
+          // refused; anything short of that is applied and said out loud,
+          // because a layout withheld leaves the reader mapping the statement
+          // by hand for reasons they cannot see.
+          if (match.outcome === "conflicting") {
+            setPdfProfileNotice(
+              `${layoutName} was not applied: its columns conflict with the table on this statement. Check the mapping, or choose another layout.`
+            );
+          } else {
             draft = await parsePdfStatementOffMainThread(draft.document, {
               guidance: guidanceFromPdfLayoutProfile(accountPdfProfile.envelope.profile, draft),
             }, controller.signal);
@@ -503,19 +514,19 @@ export function ImportPanel({
             const carriesSignPolicy = savedGuidance.unsignedDirection !== "review"
               || savedGuidance.accountType !== "auto"
               || (savedGuidance.printedSign ?? "auto") !== "auto";
-            if (match.outcome === "possible") {
+            if (match.outcome === "weak") {
               setPdfProfileNotice(
-                `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name} was applied, but the layout differs from the saved version. Check the detection settings.`
+                `${layoutName} was applied, but this statement's table looks different from the saved layout. Check the column mapping.`
+              );
+            } else if (match.outcome === "possible") {
+              setPdfProfileNotice(
+                `${layoutName} was applied, but the layout differs from the saved version. Check the detection settings.`
               );
             } else if (carriesSignPolicy) {
               setPdfProfileNotice(
-                `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name} was applied, including its amount-direction settings. Confirm they match this statement.`
+                `${layoutName} was applied, including its amount-direction settings. Confirm they match this statement.`
               );
             }
-          } else {
-            setPdfProfileNotice(
-              `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name} was not applied because this statement does not match it closely enough.`
-            );
           }
         }
         setPdfDraft(draft);

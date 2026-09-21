@@ -123,6 +123,7 @@ export function matchesSearch(row: PdfTransactionProposal, search: string) {
   const query = search.trim().toLowerCase();
   if (!query) return true;
   return row.description.toLowerCase().includes(query)
+    || Boolean(row.reference?.toLowerCase().includes(query))
     || row.amount.includes(query)
     || Boolean(row.importDate?.includes(query));
 }
@@ -157,6 +158,39 @@ export function normalizeTableAmountInput(value: string) {
   const sign = value.startsWith("-") ? "-" : "";
   const unsigned = value.replace(/^[+-]/, "").trim();
   return /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(unsigned) ? `${sign}${unsigned.replaceAll(",", "")}` : value;
+}
+
+/**
+ * Dates are shown and typed as `21/09/2026`, wherever one appears in the
+ * workbench.
+ *
+ * One format, whatever the statement prints and whatever the browser's locale
+ * would prefer: the reviewer is comparing a column of dates against a page,
+ * and a field that shows `09/21/2026` to one person and `21/09/2026` to
+ * another turns a check into a translation. ISO is what gets stored, and is
+ * accepted on the way in so a pasted `2026-09-21` still works.
+ */
+export function formatDateInput(iso: string | null) {
+  const match = (iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : iso ?? "";
+}
+
+export function parseDateInput(text: string): string | null {
+  const value = text.trim();
+  if (!value) return null;
+  const iso = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const dmy = value.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/);
+  const parts = iso
+    ? { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) }
+    : dmy
+      ? { year: Number(dmy[3]), month: Number(dmy[2]), day: Number(dmy[1]) }
+      : null;
+  if (!parts) return null;
+  if (parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31) return null;
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  // Rejects the days a month does not have, which the range check above lets by.
+  if (date.getUTCMonth() !== parts.month - 1 || date.getUTCDate() !== parts.day) return null;
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
 /** The statement's own name, with a csv extension and no directory parts. */
@@ -363,6 +397,59 @@ export function pageForSourceIds(
     .filter((page) => page.matches > 0)
     .sort((left, right) => right.matches - left.matches || left.pageNumber - right.pageNumber);
   return matches[0]?.pageNumber ?? fallback;
+}
+
+/**
+ * The mapped columns in the order they are printed, left to right.
+ *
+ * The list of mappings is meant to be the page read across, so it is kept in
+ * that order rather than in the order the mappings happened to be created:
+ * a column added into a gap belongs where it sits, not at the end, and a
+ * boundary dragged past its neighbour has changed which column comes first.
+ *
+ * Compared on the page's own scale, since a column saved against a different
+ * page width carries that width with it.
+ */
+export function sortColumnsByPosition(columns: PdfColumn[]) {
+  return [...columns].sort((left, right) => normalizedStart(left) - normalizedStart(right));
+}
+
+function normalizedStart(column: PdfColumn) {
+  const width = column.referencePageWidth && column.referencePageWidth > 0 ? column.referencePageWidth : 1;
+  return column.xStart / width;
+}
+
+/**
+ * Room for a column between this one and the next, for inserting a mapping
+ * where the statement has one rather than at the end of the list.
+ *
+ * Never takes space from a neighbour: a gap too small for a comfortable
+ * column still gets the column, at the size the gap allows, for the reader to
+ * widen by dragging. Moving a boundary is an edit they can see; quietly
+ * resizing the mapping next door is not.
+ */
+export function columnBoundsAfter(columns: PdfColumn[], id: string, pageNumber: number, pageWidth: number) {
+  const ordered = sortColumnsByPosition(columns)
+    .filter((column) => column.pageNumber === null || column.pageNumber === pageNumber);
+  const index = ordered.findIndex((column) => column.id === id);
+  const current = ordered[index];
+  const next = ordered[index + 1];
+  if (!current) return newColumnBounds(columns, pageNumber, pageWidth);
+
+  const scale = (column: PdfColumn) => (column.referencePageWidth && column.referencePageWidth > 0
+    ? pageWidth / column.referencePageWidth
+    : 1);
+  if (!next) return newColumnBounds(columns, pageNumber, pageWidth);
+
+  const currentStart = current.xStart * scale(current);
+  const currentEnd = current.xEnd * scale(current);
+  const nextStart = next.xStart * scale(next);
+  const padding = Math.min(4, Math.max(0, (nextStart - currentEnd) / 4));
+  // Where it starts is what puts it between these two in the list, so that is
+  // held to even when the two columns leave no room between them.
+  const xStart = Math.min(Math.max(currentEnd + padding, currentStart + 2), Math.max(currentStart + 2, nextStart - 2));
+  const xEnd = Math.max(xStart + 6, Math.min(nextStart - padding, xStart + 24));
+  return { xStart, xEnd };
 }
 
 /**

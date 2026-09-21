@@ -6,13 +6,10 @@ import {
   ChevronRight,
   CircleHelp,
   GitMerge,
-  RotateCcw,
   ShieldCheck,
   Trash2,
   TriangleAlert,
-  Undo2,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import {
@@ -43,14 +40,17 @@ import { formatMinorUnits } from "../lib/format";
 import { isActionableReason, reasonText } from "../lib/pdfReasonText";
 import {
   csvFileNameFor,
+  formatDateInput,
   formatTableAmount,
   matchesCategory,
   matchesSearch,
+  columnBoundsAfter,
   newColumnBounds,
   nextSortState,
   normalizeTableAmountInput,
   pageForSourceIds,
   resultDiff,
+  sortColumnsByPosition,
   sortTransactions,
   transactionTotals,
   type PdfReviewCategory,
@@ -362,11 +362,25 @@ export function PdfStatementReviewDialog({
     setColumnFocusRequest((current) => ({ columnId: column.id, requestId: (current?.requestId ?? 0) + 1 }));
   }
 
+  /**
+   * Take the detection settings as they stand, whether or not they have been
+   * previewed. The preview is worth offering - a change can quietly halve the
+   * transaction count - but nothing is written anywhere by applying it, so
+   * requiring it first was a gate in front of an open door.
+   */
   function applyDetection() {
-    if (!draftGuidance || !parsed || !preview || isParsing) return;
-    const output = preview;
-    const diff = resultDiff(parsed, output);
-    adopt(output);
+    if (!draftGuidance || !parsed || isParsing) return;
+    const before = parsed;
+    if (preview) {
+      adopt(preview);
+      finishDetection(before, preview);
+      return;
+    }
+    applyGuidance(draftGuidance, (output) => finishDetection(before, output));
+  }
+
+  function finishDetection(before: PdfStatementParseResult, output: PdfStatementParseResult) {
+    const diff = resultDiff(before, output);
     setMode("review");
     setFilter(output.metrics.review + output.metrics.rejected > 0 ? "needs-review" : "all");
     clearSelection();
@@ -384,23 +398,44 @@ export function PdfStatementReviewDialog({
     });
   }
 
+  /**
+   * Throws away every mapping change made since the statement was read, which
+   * undo does not cover - undo is a list of corrections, and these are
+   * settings. So it is asked for rather than taken.
+   */
   function resetDetection() {
     if (!parsed) return;
-    setDraftGuidance(parsed.detectedGuidance);
-    setPreview(null);
-    setLayoutNotice(null);
+    const reset = () => {
+      setDraftGuidance(parsed.detectedGuidance);
+      setPreview(null);
+      setLayoutNotice(null);
+    };
+    if (!detectionDirty) {
+      reset();
+      return;
+    }
+    setConfirm({
+      title: "Reset the detection settings?",
+      destructive: true,
+      destructiveLabel: "Reset detection",
+      message: "The transaction areas, column mappings, and statement interpretation go back to what was detected when this PDF was read. Corrections made to individual transactions are kept.",
+      onConfirm: reset,
+    });
   }
 
   function updateColumn(id: string, patch: Partial<PdfColumn>) {
-    if (!draftGuidance) return;
-    updateDraft({ columns: draftGuidance.columns.map((column) => (column.id === id ? { ...column, ...patch } : column)) });
+    updateDraft((current) => ({
+      columns: current.columns.map((column) => (column.id === id ? { ...column, ...patch } : column)),
+    }));
   }
 
-  function addColumn() {
+  function addColumn(afterId?: string) {
     if (!draftGuidance || !page) return;
-    const bounds = newColumnBounds(draftGuidance.columns, page.pageNumber, page.width);
+    const bounds = afterId
+      ? columnBoundsAfter(draftGuidance.columns, afterId, page.pageNumber, page.width)
+      : newColumnBounds(draftGuidance.columns, page.pageNumber, page.width);
     updateDraft({
-      columns: [...draftGuidance.columns, {
+      columns: sortColumnsByPosition([...draftGuidance.columns, {
         id: generateId(),
         pageNumber: null,
         referencePageWidth: page.width,
@@ -409,14 +444,26 @@ export function PdfStatementReviewDialog({
         header: null,
         examples: [],
         confidence: 1,
-      }],
+      }]),
     });
   }
 
   /**
-   * Swap two mappings, and the parts of the page they describe with them. The
-   * list is the page read left to right, so reordering it without moving the
-   * columns would leave the two disagreeing.
+   * Put the list back in the page's order once a boundary has settled.
+   *
+   * Not while it is being dragged: reordering mid-drag recolours the bands and
+   * moves the handle out from under the pointer.
+   */
+  function settleColumns() {
+    updateDraft((current) => ({ columns: sortColumnsByPosition(current.columns) }));
+  }
+
+  /**
+   * Swap two mappings, and the parts of the page they describe with them.
+   *
+   * The list is the page read across, so the mapping moves because its column
+   * moved - not the other way round. Sorting afterwards is what makes the two
+   * agree; the swap itself only changes geometry.
    */
   function moveColumn(id: string, offset: -1 | 1) {
     if (!draftGuidance || !page) return;
@@ -443,13 +490,12 @@ export function PdfStatementReviewDialog({
     const nextColumns = [...draftGuidance.columns];
     nextColumns[currentIndex] = { ...current, ...currentNext, referencePageWidth: page.width };
     nextColumns[adjacentIndex] = { ...adjacent, ...adjacentNext, referencePageWidth: page.width };
-    [nextColumns[currentIndex], nextColumns[adjacentIndex]] = [nextColumns[adjacentIndex], nextColumns[currentIndex]];
-    updateDraft({ columns: nextColumns });
+    updateDraft({ columns: sortColumnsByPosition(nextColumns) });
   }
 
   function applyProfile(option: PdfDetectionProfileOption, profile: PdfLayoutProfile = option.envelope.profile) {
     if (!parsed || isParsing) return;
-    const profileMatch = matchPdfLayoutProfile(profile, parsed.reconstructedPages, parsed.activeSchema);
+    const profileMatch = matchPdfLayoutProfile(profile, parsed.reconstructedPages, parsed.activeSchema, parsed.detectionSignature);
     if (profileMatch.outcome === "conflicting") {
       setParserError("That layout conflicts with the detected table. Adjust the mapping or choose another layout.");
       return;
@@ -570,6 +616,18 @@ export function PdfStatementReviewDialog({
             >
               <ShieldCheck aria-hidden="true" className="size-3.5" />Local only
             </span>
+            {!parsed.likelyScanned && (
+              <Button
+                className="shrink-0"
+                size="xs"
+                variant={diagnosticsOpen ? "secondary" : "ghost"}
+                title="View parsing summary and technical diagnostics"
+                onClick={() => setDiagnosticsOpen(true)}
+              >
+                <CircleHelp aria-hidden="true" className="mr-1 size-3.5" />
+                Parser details{parserDetailCount > 0 ? ` (${parserDetailCount})` : ""}
+              </Button>
+            )}
           </div>
         </DialogHeader>
 
@@ -597,52 +655,23 @@ export function PdfStatementReviewDialog({
                     onClick={() => setMode("review")}
                   />
                 </nav>
-                <div className="ml-auto flex shrink-0 items-center gap-1">
-                  {isParsing && <span role="status" className="mr-1 text-xs text-muted-foreground">Re-running parser…</span>}
-                  {unreadablePageCount > 0 && pageWarningsAcknowledged && (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="text-amber-700 dark:text-amber-300"
-                      title="Show the pages that could not be read"
-                      onClick={() => setPageWarningsAcknowledged(false)}
-                    >
-                      <TriangleAlert aria-hidden="true" className="mr-1 size-3.5" />
-                      {unreadablePageCount} {unreadablePageCount === 1 ? "page" : "pages"} unreadable
-                    </Button>
-                  )}
+                {isParsing && <span role="status" className="shrink-0 text-xs text-muted-foreground">Re-running parser…</span>}
+                {unreadablePageCount > 0 && pageWarningsAcknowledged && (
                   <Button
                     size="xs"
-                    variant={diagnosticsOpen ? "secondary" : "ghost"}
-                    title="View parsing summary and technical diagnostics"
-                    onClick={() => setDiagnosticsOpen(true)}
-                  >
-                    <CircleHelp aria-hidden="true" className="mr-1 size-3.5" />
-                    Parser details{parserDetailCount > 0 ? ` (${parserDetailCount})` : ""}
-                  </Button>
-                  <Button
-                    size="icon-sm"
                     variant="ghost"
-                    aria-label="Undo PDF correction"
-                    title="Undo"
-                    disabled={isParsing || !workbench.canUndo}
-                    onClick={undo}
+                    className="shrink-0 text-amber-700 dark:text-amber-300"
+                    title="Show the pages that could not be read"
+                    onClick={() => setPageWarningsAcknowledged(false)}
                   >
-                    <Undo2 className="size-3.5" />
+                    <TriangleAlert aria-hidden="true" className="mr-1 size-3.5" />
+                    {unreadablePageCount} {unreadablePageCount === 1 ? "page" : "pages"} unreadable
                   </Button>
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Redo PDF correction"
-                    title="Redo"
-                    disabled={isParsing || !workbench.canRedo}
-                    onClick={redo}
-                  >
-                    <RotateCcw className="size-3.5" />
-                  </Button>
-                </div>
+                )}
+                {/* Beside the steps rather than under them: the same facts, a
+                    row of height back for the table. */}
+                <SummaryBar result={parsed} totals={totals} />
               </div>
-              <SummaryBar result={parsed} totals={totals} />
             </div>
 
             {parserError && (
@@ -683,6 +712,10 @@ export function PdfStatementReviewDialog({
                 busy={isParsing}
                 exportCount={sortedRows.length}
                 onExport={exportVisibleRows}
+                canUndo={workbench.canUndo}
+                canRedo={workbench.canRedo}
+                onUndo={undo}
+                onRedo={redo}
                 onToggleAll={() => {
                   setScopedCorrectionOffer(null);
                   setSelectedIds((current) => {
@@ -714,8 +747,10 @@ export function PdfStatementReviewDialog({
                   if (block?.rowIds[1]) structuralCorrection({ kind: "split-block", blockId: block.id, beforeRowId: block.rowIds[1] });
                 }}
                 sourcePanel={sourceOpen && page ? (
-                  <aside className="flex w-[42%] min-w-[26rem] flex-col border-l p-3 max-lg:absolute max-lg:inset-0 max-lg:z-30 max-lg:w-full max-lg:min-w-0 max-lg:bg-background">
-                    <div className="mb-2 flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
+                  <aside className="flex w-[42%] min-w-[26rem] flex-col border-l max-lg:absolute max-lg:inset-0 max-lg:z-30 max-lg:w-full max-lg:min-w-0 max-lg:bg-background">
+                    {/* Same height and rule as the table's toolbar, so the two
+                        panels start on one line. */}
+                    <div className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto px-3 whitespace-nowrap">
                       <PdfPageControls
                         pageNumber={page.pageNumber}
                         pageCount={parsed.reconstructedPages.length}
@@ -725,6 +760,7 @@ export function PdfStatementReviewDialog({
                       <span className="text-xs text-muted-foreground">Highlighted text supports the selected field.</span>
                       <Button className="ml-auto" size="xs" variant="ghost" onClick={() => setSourceOpen(false)}>Close</Button>
                     </div>
+                    <div className="flex min-h-0 flex-1 flex-col p-3">
                     <PdfSourcePreview
                       page={page}
                       previewDataUrl={pagePreviewDataUrl}
@@ -740,6 +776,7 @@ export function PdfStatementReviewDialog({
                       onToggleRegion={NOOP}
                       onColumnChange={NOOP}
                     />
+                    </div>
                   </aside>
                 ) : null}
               />
@@ -792,6 +829,7 @@ export function PdfStatementReviewDialog({
                 onUpdateDraft={updateDraft}
                 onUpdateColumn={updateColumn}
                 onAddColumn={addColumn}
+                onSettleColumns={settleColumns}
                 onMoveColumn={moveColumn}
                 onRemoveColumn={(id) => updateDraft({ columns: draftGuidance.columns.filter((entry) => entry.id !== id) })}
                 onFocusColumn={focusMappedColumn}
@@ -907,14 +945,17 @@ export function PdfStatementReviewDialog({
               <Button size="xs" variant="ghost" onClick={() => setScopedCorrectionOffer(null)}>Dismiss</Button>
             </div>
           ) : (
-            <div className="min-w-0 flex-1 text-xs">
+            <div className="min-w-0 flex-1" />
+          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Beside the button it is about, so the reason and the disabled
+                control are read together rather than at opposite ends. */}
+            <span className="mr-1 text-xs">
               {importBlockedByPages ? <span className="text-amber-700 dark:text-amber-300">Confirm the pages that could not be read before importing.</span>
                 : blockingCount > 0 ? <span className="text-destructive">Resolve {blockingCount} rejected {blockingCount === 1 ? "transaction" : "transactions"}.</span>
                 : reviewCount > 0 ? <span className="text-amber-700 dark:text-amber-300">Check and mark {reviewCount} {reviewCount === 1 ? "transaction" : "transactions"} reviewed.</span>
                   : <span className="text-muted-foreground">All transactions are ready.</span>}
-            </div>
-          )}
-          <div className="flex shrink-0 gap-2">
+            </span>
             <Button variant="outline" disabled={isParsing} onClick={() => onOpenChange(false)}>Cancel</Button>
             {!parsed.likelyScanned && (
               <Button
@@ -1007,6 +1048,22 @@ function WorkflowStepButton({ step, active, label, onClick }: { step: number; ac
   );
 }
 
+/**
+ * The statement in one line: how much of it there is, what it comes to, and
+ * how much of it is ready.
+ *
+ * Readiness is a composition, not a verdict, and it is drawn the way the
+ * reconcile stage draws its coverage: one track whose segments sum to the
+ * total, with a legend that names each colour beside its count. The pill that
+ * stood here before could only say the worst thing true of the statement -
+ * "2 to fix" - which is the right thing to act on but says nothing about the
+ * other fifty-one rows, so there was no way to see progress without counting
+ * the table.
+ *
+ * Colours carry the same meaning as they do there, and never carry it alone:
+ * emerald for what is settled, amber for what wants a look, destructive for
+ * what cannot be imported as it stands.
+ */
 const SummaryBar = memo(function SummaryBar({
   result,
   totals,
@@ -1015,62 +1072,93 @@ const SummaryBar = memo(function SummaryBar({
   totals: { credits: number; debits: number };
 }) {
   const dates = result.transactions.map((row) => row.importDate).filter((date): date is string => Boolean(date)).sort();
-  const outstanding = result.metrics.review + result.metrics.rejected;
+  const period = dates.length === 0
+    ? null
+    : dates.at(-1) === dates[0]
+      ? formatDateInput(dates[0])
+      : `${formatDateInput(dates[0])} → ${formatDateInput(dates.at(-1) ?? null)}`;
+  const total = result.transactions.length;
   const net = totals.credits - totals.debits;
+  const segments = [
+    { key: "ready", label: "Ready", value: result.metrics.accepted, tone: "bg-emerald-500/70" },
+    { key: "review", label: "Review", value: result.metrics.review, tone: "bg-amber-500/70" },
+    { key: "fix", label: "Fix", value: result.metrics.rejected, tone: "bg-destructive/70" },
+  ].filter((segment) => segment.value > 0);
+
   return (
     <section
       aria-label="PDF parse summary"
-      className="flex items-center gap-x-4 gap-y-1 overflow-x-auto border-t px-4 py-1.5 text-[11px] whitespace-nowrap"
+      className="ml-auto flex min-w-0 items-center gap-3 overflow-x-auto text-xs whitespace-nowrap"
     >
-      <span className="shrink-0">
-        <strong className="tabular-nums">{result.transactions.length}</strong>{" "}
-        <span className="text-muted-foreground">{result.transactions.length === 1 ? "transaction" : "transactions"}</span>
-        {dates.length > 0 && (
-          <span className="text-muted-foreground">
-            {" · "}{dates[0]}{dates.length > 1 && dates.at(-1) !== dates[0] ? ` to ${dates.at(-1)}` : ""}
-          </span>
-        )}
+      <span className="flex shrink-0 items-baseline gap-1.5">
+        {/* One text node, so it is read and searched as a phrase. */}
+        <span>
+          <strong className="text-sm tabular-nums">{total}</strong>{" "}
+          <span className="text-muted-foreground">{total === 1 ? "transaction" : "transactions"}</span>
+        </span>
+        {period && <span className="tabular-nums text-muted-foreground">{period}</span>}
       </span>
 
-      <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />
+      <SummaryRule />
+
+      <span className="flex shrink-0 items-center gap-2">
+        <span
+          role="img"
+          aria-label={segments.length
+            ? segments.map((segment) => `${segment.value} ${segment.label.toLowerCase()}`).join(", ")
+            : "No transactions"}
+          className="flex h-1.5 w-20 overflow-hidden rounded-full bg-muted"
+        >
+          {segments.map((segment) => (
+            <span
+              key={segment.key}
+              className={cn("h-full", segment.tone)}
+              style={{ width: `${total === 0 ? 0 : (segment.value / total) * 100}%` }}
+            />
+          ))}
+        </span>
+        <dl className="flex items-center gap-x-3">
+          {segments.map((segment) => (
+            <div key={segment.key} className="flex items-center gap-1.5">
+              <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", segment.tone)} />
+              <dt className="text-muted-foreground">{segment.label}</dt>
+              <dd className="font-medium tabular-nums">{segment.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </span>
+
+      <SummaryRule />
 
       <span className="flex shrink-0 items-baseline gap-3">
         <SummaryMetric label="In" value={`+${formatMinorUnits(totals.credits)}`} tone="positive" />
         <SummaryMetric label="Out" value={formatMinorUnits(-totals.debits)} tone="negative" />
-        <span className="flex items-baseline gap-1">
-          <span className="text-muted-foreground">Net</span>
-          <strong className={cn(
-            "text-xs tabular-nums",
-            net > 0 && "text-emerald-700 dark:text-emerald-400",
-            net < 0 && "text-red-600 dark:text-red-400"
-          )}>{`${net > 0 ? "+" : ""}${formatMinorUnits(net)}`}</strong>
-        </span>
+        <SummaryMetric
+          label="Net"
+          value={`${net > 0 ? "+" : ""}${formatMinorUnits(net)}`}
+          tone={net < 0 ? "negative" : "positive"}
+        />
       </span>
 
-      <span className="ml-auto flex shrink-0 items-center gap-3">
-        <span className="text-muted-foreground">{result.metrics.transactionPages} of {result.metrics.pages} pages</span>
-        <Badge
-          variant={result.metrics.rejected > 0
-            ? "status-error"
-            : result.metrics.review > 0 ? "status-warning" : "status-active"}
-        >
-          {result.metrics.rejected > 0
-            ? `${result.metrics.rejected} to fix`
-            : result.metrics.review > 0
-              ? `${result.metrics.review} to review`
-              : outstanding === 0 ? "All ready" : `${outstanding} to review`}
-        </Badge>
+      <SummaryRule />
+
+      <span className="shrink-0 tabular-nums text-muted-foreground">
+        {result.metrics.transactionPages}/{result.metrics.pages} pages
       </span>
     </section>
   );
 });
 
+function SummaryRule() {
+  return <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />;
+}
+
 function SummaryMetric({ label, value, tone }: { label: string; value: string; tone: "positive" | "negative" }) {
   return (
     <span className="flex items-baseline gap-1 whitespace-nowrap">
-      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
       <span className={cn(
-        "font-semibold tabular-nums",
+        "text-xs font-semibold tabular-nums",
         tone === "positive" && "text-emerald-700 dark:text-emerald-400",
         tone === "negative" && "text-red-600 dark:text-red-400"
       )}>{value}</span>

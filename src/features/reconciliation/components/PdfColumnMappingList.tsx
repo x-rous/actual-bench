@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
 import type { PdfColumn, PdfColumnRole } from "@/lib/reconciliation/statement/pdf";
@@ -21,6 +21,7 @@ export function PdfColumnMappingList({
   disabled,
   onChangeRole,
   onMove,
+  onInsertAfter,
   onRemove,
   onFocusColumn,
 }: {
@@ -29,6 +30,7 @@ export function PdfColumnMappingList({
   disabled: boolean;
   onChangeRole: (id: string, role: PdfColumnRole) => void;
   onMove: (id: string, offset: -1 | 1) => void;
+  onInsertAfter: (afterId: string) => void;
   onRemove: (id: string) => void;
   onFocusColumn: (column: PdfColumn) => void;
 }) {
@@ -72,29 +74,41 @@ export function PdfColumnMappingList({
             </p>
             <div className="flex items-center">
               {/*
-                These swap two mappings, and the columns they describe swap
-                places on the page with them - which is the point, but is not
-                what "move left" says on its own, so the title says it.
+                The list runs down the panel while the columns run across the
+                page, so the arrows follow the axis the reader is looking at
+                and the title says what happens to the page.
               */}
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label={`Move ${column.role} column left`}
-                title={`Swap ${label} with the mapping to its left, on the page too`}
+                aria-label={`Move ${column.role} column up`}
+                title={`Swap ${label} with the mapping above, moving it left on the page`}
                 disabled={disabled || columnIndex === 0}
                 onClick={() => onMove(column.id, -1)}
               >
-                <ChevronLeft className="size-3.5" />
+                <ChevronUp className="size-3.5" />
               </Button>
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label={`Move ${column.role} column right`}
-                title={`Swap ${label} with the mapping to its right, on the page too`}
+                aria-label={`Move ${column.role} column down`}
+                title={`Swap ${label} with the mapping below, moving it right on the page`}
                 disabled={disabled || columnIndex === columns.length - 1}
                 onClick={() => onMove(column.id, 1)}
               >
-                <ChevronRight className="size-3.5" />
+                <ChevronDown className="size-3.5" />
+              </Button>
+              {/* A statement often has a column the detection missed between
+                  two it found, and the place to say so is between them. */}
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={`Add a column after ${column.role}`}
+                title={`Map a column between ${label} and the one to its right`}
+                disabled={disabled}
+                onClick={() => onInsertAfter(column.id)}
+              >
+                <Plus className="size-3.5" />
               </Button>
               <Button
                 size="icon-sm"

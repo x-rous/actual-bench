@@ -2,6 +2,7 @@ import type { PdfStatementParseResult, PdfTransactionProposal } from "@/lib/reco
 import {
   columnRoleLabel,
   csvFileNameFor,
+  formatDateInput,
   formatGroupedDecimal,
   matchesCategory,
   matchesSearch,
@@ -9,7 +10,10 @@ import {
   newColumnBounds,
   nextSortState,
   normalizeTableAmountInput,
+  parseDateInput,
   regionKindLabel,
+  sortColumnsByPosition,
+  columnBoundsAfter,
   resultDiff,
   sortTransactions,
   transactionTotals,
@@ -219,6 +223,28 @@ describe("pdfReviewTable", () => {
     });
   });
 
+  describe("date fields", () => {
+    it("shows a stored date the way the workbench writes dates", () => {
+      expect(formatDateInput("2026-09-21")).toBe("21/09/2026");
+      expect(formatDateInput(null)).toBe("");
+    });
+
+    it("takes a typed date back, and a pasted ISO one", () => {
+      expect(parseDateInput("21/09/2026")).toBe("2026-09-21");
+      expect(parseDateInput("1/9/2026")).toBe("2026-09-01");
+      expect(parseDateInput("21-09-2026")).toBe("2026-09-21");
+      expect(parseDateInput("2026-09-21")).toBe("2026-09-21");
+      expect(parseDateInput("  ")).toBeNull();
+    });
+
+    it("refuses a date that does not exist rather than rolling it forward", () => {
+      expect(parseDateInput("31/02/2026")).toBeNull();
+      expect(parseDateInput("21/13/2026")).toBeNull();
+      expect(parseDateInput("09/21/2026")).toBeNull();
+      expect(parseDateInput("not a date")).toBeNull();
+    });
+  });
+
   describe("labels", () => {
     it("gives a column role the same name everywhere it appears", () => {
       expect(columnRoleLabel("debit")).toBe("Money out");
@@ -236,6 +262,64 @@ describe("pdfReviewTable", () => {
       expect(csvFileNameFor("march-statement.pdf")).toBe("march-statement.csv");
       expect(csvFileNameFor("folder/statement.PDF")).toBe("folder-statement.csv");
       expect(csvFileNameFor("  ")).toBe("pdf-statement.csv");
+    });
+  });
+
+  describe("column order", () => {
+    const column = (id: string, xStart: number, xEnd: number, referencePageWidth = 700) =>
+      ({ id, pageNumber: null, referencePageWidth, xStart, xEnd, role: "ignore" }) as never;
+
+    it("reads the mappings in the order the page prints them", () => {
+      const ordered = sortColumnsByPosition([
+        column("amount", 480, 560),
+        column("date", 20, 90),
+        column("description", 120, 400),
+      ]);
+
+      expect(ordered.map((entry) => entry.id)).toEqual(["date", "description", "amount"]);
+    });
+
+    it("compares columns saved against different page widths on the same scale", () => {
+      const ordered = sortColumnsByPosition([
+        // Half way across a 1400-unit page.
+        column("wide-page-middle", 700, 800, 1400),
+        // A third of the way across a 700-unit one.
+        column("narrow-page-third", 233, 300, 700),
+      ]);
+
+      expect(ordered.map((entry) => entry.id)).toEqual(["narrow-page-third", "wide-page-middle"]);
+    });
+  });
+
+  describe("columnBoundsAfter", () => {
+    const column = (id: string, xStart: number, xEnd: number) =>
+      ({ id, pageNumber: null, referencePageWidth: 700, xStart, xEnd, role: "ignore" }) as never;
+
+    it("puts a new column in the gap after the one chosen", () => {
+      const bounds = columnBoundsAfter(
+        [column("a", 20, 90), column("b", 300, 400)],
+        "a",
+        1,
+        700
+      );
+
+      expect(bounds.xStart).toBeGreaterThanOrEqual(90);
+      expect(bounds.xEnd).toBeLessThanOrEqual(300);
+    });
+
+    it("still lands between the two when they leave no room", () => {
+      const bounds = columnBoundsAfter([column("a", 20, 94), column("b", 96, 400)], "a", 1, 700);
+
+      // What decides where it appears in the list is where it starts, so that
+      // stays between the two columns even when the gap cannot hold it.
+      expect(bounds.xStart).toBeGreaterThan(20);
+      expect(bounds.xStart).toBeLessThan(96);
+    });
+
+    it("falls back to the end of the row for the last column", () => {
+      const bounds = columnBoundsAfter([column("a", 20, 90)], "a", 1, 700);
+
+      expect(bounds.xStart).toBeGreaterThan(90);
     });
   });
 

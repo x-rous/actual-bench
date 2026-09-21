@@ -1,4 +1,8 @@
-import type { PdfConfidenceReason } from "@/lib/reconciliation/statement/pdf";
+import type {
+  PdfConfidenceReason,
+  PdfConfidenceStatus,
+  PdfTransactionProposal,
+} from "@/lib/reconciliation/statement/pdf";
 
 /**
  * What each parser reason means, in the reader's words rather than the
@@ -20,7 +24,7 @@ export const PDF_REASON_TEXT = {
   AMOUNT_FORMAT_AMBIGUOUS: "Number format is ambiguous",
   AMOUNT_MISSING: "Amount is missing",
   AMOUNT_ZERO: "Amount must not be zero",
-  CURRENCY_AMBIGUOUS: "Currency is not confirmed",
+  CURRENCY_AMBIGUOUS: "This row prints a different currency, so it may be the original amount rather than the amount charged to the account",
   CURRENCY_MINOR_UNIT_MISMATCH: "Amount precision does not match the currency",
   ACTUAL_PRECISION_UNSUPPORTED: "Actual cannot import this amount without losing decimal precision",
   DIRECTION_FROM_DEBIT_COLUMN: "Direction came from the money-out column",
@@ -76,12 +80,63 @@ export function isActionableReason(reason: PdfConfidenceReason) {
   return !EXPLANATORY_REASONS.includes(reason);
 }
 
+export type PdfRowReasons = {
+  /** Reasons that stop the row being imported at all. */
+  blocking: PdfConfidenceReason[];
+  /** Reasons that ask the reader to look. */
+  attention: PdfConfidenceReason[];
+  /** How a value was read, which is context rather than a problem. */
+  evidence: PdfConfidenceReason[];
+  /** The one sentence worth the row's own line. */
+  primary: string | null;
+  /** How many reasons that line is standing in front of. */
+  extraCount: number;
+};
+
 /**
- * The single sentence a row is waiting on, for the caption under a row that is
- * not ready. The full list stays available on the status chip; what belongs in
- * the table is the first thing to do about it.
+ * What a row is waiting on, in the order it matters.
+ *
+ * Severity is taken from the row itself rather than from a second table of
+ * which reasons are serious: each reason sits on a field, and that field
+ * already carries the status the parser gave it. A list built from a private
+ * ranking would drift from the parser's the first time a rule changed.
+ *
+ * Ordering matters because only one reason gets the row's own line. Taking the
+ * first reason in the list meant taking whichever validator happened to run
+ * first, so a row blocked on a missing amount could spend its one line saying
+ * its date was inherited.
  */
-export function primaryReasonText(reasons: PdfConfidenceReason[]) {
-  const actionable = reasons.filter(isActionableReason);
-  return actionable.length ? PDF_REASON_TEXT[actionable[0]] : null;
+export function groupRowReasons(row: PdfTransactionProposal): PdfRowReasons {
+  const statuses = new Map<PdfConfidenceReason, PdfConfidenceStatus>();
+  for (const field of Object.values(row.confidence)) {
+    for (const confidence of field == null ? [] : Array.isArray(field) ? field : [field]) {
+      for (const reason of confidence.reasons) {
+        // A reason carried by two fields takes the worse of the two.
+        const current = statuses.get(reason);
+        if (!current || rank(confidence.status) > rank(current)) statuses.set(reason, confidence.status);
+      }
+    }
+  }
+
+  const blocking: PdfConfidenceReason[] = [];
+  const attention: PdfConfidenceReason[] = [];
+  const evidence: PdfConfidenceReason[] = [];
+  for (const reason of row.issueCodes) {
+    if (!isActionableReason(reason)) evidence.push(reason);
+    else if (statuses.get(reason) === "rejected") blocking.push(reason);
+    else attention.push(reason);
+  }
+
+  const ordered = [...blocking, ...attention];
+  return {
+    blocking,
+    attention,
+    evidence,
+    primary: ordered.length ? PDF_REASON_TEXT[ordered[0]] : null,
+    extraCount: Math.max(0, ordered.length - 1) + evidence.length,
+  };
+}
+
+function rank(status: PdfConfidenceStatus) {
+  return status === "rejected" ? 2 : status === "review" ? 1 : 0;
 }

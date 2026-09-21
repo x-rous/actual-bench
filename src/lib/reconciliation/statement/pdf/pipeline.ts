@@ -12,6 +12,7 @@ import {
   type PdfStatementDocument,
   type PdfStatementParseResult,
 } from "./model";
+import { createPdfLayoutSignature } from "./profiles";
 import { classifyPdfRegions, extendRegionsWithMappedColumns } from "./regions";
 import { detectPdfTableSchemas } from "./schema";
 import { validatePdfTransactions } from "./validate";
@@ -38,6 +39,9 @@ export function parsePdfStatementDocumentV2(
   // Detection always runs on its own so `detectedGuidance` stays the answer to
   // "what would Actual Bench do without help", which is what Reset detection
   // returns to. Guidance is layered on top of it rather than replacing it.
+  // Read from the reconstructed layout, before any guidance or cell division,
+  // so the same statement signs the same whoever has corrected it.
+  const detectionSignature = createPdfLayoutSignature(layout.pages);
   const detectedRegions = classifyPdfRegions(layout.pages);
   const guidedRegions = guidance.regions.length ? guidance.regions : detectedRegions.regions;
   const schemas = detectPdfTableSchemas(layout.pages, guidedRegions, guidance.columns.length ? guidance : undefined);
@@ -64,10 +68,14 @@ export function parsePdfStatementDocumentV2(
   const displayedDateFormat = guidance.dateFormat === "auto" && inferredDateFormats.length > 1
     ? "auto"
     : inferredDateFormat;
+  const symbolCurrency = currencyFromSymbols(layout.pages);
   const detectedGuidance: PdfParserGuidance = {
     ...DEFAULT_PDF_PARSER_GUIDANCE,
     accountType: "auto",
-    currency: currencyFromAmountColumn(detectedColumns) ?? detectDocumentCurrency(layout.pages),
+    currency: currencyFromAmountColumn(detectedColumns)
+      ?? detectDocumentCurrency(layout.pages)
+      ?? symbolCurrency?.currency
+      ?? null,
     dateFormat: displayedDateFormat,
     statementPeriod: detectedPeriod,
     regions: detectedRegions.regions,
@@ -157,6 +165,11 @@ export function parsePdfStatementDocumentV2(
       ? [`${metrics.unassignedRows} ${metrics.unassignedRows === 1 ? "row" : "rows"} inside the transaction area did not become a transaction. Check detection and mark any that are transactions.`]
       : []),
     ...(effectiveGuidance.currency ? [] : ["The statement currency was not detected. Set it in Statement interpretation."]),
+    ...(symbolCurrency?.ambiguous
+      && options.guidance?.currency === undefined
+      && effectiveGuidance.currency === symbolCurrency.currency
+      ? [`The statement prints ${symbolCurrency.symbol} without a currency code, and was read as ${symbolCurrency.currency}. Change it in Statement interpretation if this account is in another ${symbolCurrency.symbol} currency.`]
+      : []),
     ...(metrics.rejected ? [`${metrics.rejected} transaction ${metrics.rejected === 1 ? "has" : "have"} unresolved required fields.`] : []),
     ...(["loan", "investment"].includes(interpreted.accountType) ? ["This statement type needs specialized review before import."] : []),
     ...(interpreted.balancePolarity?.source === "detected-type"
@@ -170,6 +183,7 @@ export function parsePdfStatementDocumentV2(
     regions: effectiveGuidance.regions,
     schemaHypotheses: schemas.hypotheses,
     activeSchema,
+    detectionSignature,
     blocks: correctedBlocks,
     guidance: effectiveGuidance,
     detectedGuidance,
@@ -203,6 +217,34 @@ function currencyFromAmountColumn(columns: PdfParserGuidance["columns"]) {
 function pageList(pageNumbers: number[]) {
   if (pageNumbers.length === 1) return `Page ${pageNumbers[0]}`;
   return `Pages ${pageNumbers.slice(0, -1).join(", ")} and ${pageNumbers.at(-1)}`;
+}
+
+/**
+ * The currency a statement prints as a symbol rather than a code.
+ *
+ * A symbol is weaker evidence than a code, and some are shared: a dollar sign
+ * is as much Canadian or Australian as it is American. Rather than leave the
+ * currency unknown - which asks the reader a question the page cannot answer
+ * any better than this can - the common reading is taken and said out loud,
+ * so it can be corrected in one place instead of confirmed in every statement.
+ */
+const CURRENCY_SYMBOLS: Record<string, { currency: string; ambiguous: boolean }> = {
+  "$": { currency: "USD", ambiguous: true },
+  "¥": { currency: "JPY", ambiguous: true },
+  "£": { currency: "GBP", ambiguous: false },
+  "€": { currency: "EUR", ambiguous: false },
+  "₹": { currency: "INR", ambiguous: false },
+};
+
+function currencyFromSymbols(pages: PdfStatementParseResult["reconstructedPages"]) {
+  const symbols = [...new Set(pages.flatMap((page) => page.rows.flatMap((row) =>
+    row.text.match(/[$£€¥₹]/gu) ?? []
+  )))];
+  // Two symbols on one statement is a foreign-currency section, not a
+  // statement currency: that stays a question for the reader.
+  if (symbols.length !== 1) return null;
+  const match = CURRENCY_SYMBOLS[symbols[0]];
+  return match ? { symbol: symbols[0], ...match } : null;
 }
 
 function detectDocumentCurrency(pages: PdfStatementParseResult["reconstructedPages"]) {
