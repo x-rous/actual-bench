@@ -880,6 +880,24 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("button", { name: /Restore ignored rows \(2\)/ })).toBeInTheDocument();
   });
 
+  it("drops a selection that a correction has re-assembled", () => {
+    const duplicate = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "FIRST" }, { x: 480, text: "USD -12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "SECOND" }, { x: 480, text: "USD -8.00" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={duplicate} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all visible PDF rows" }));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    // One of the selected rows is now gone, so a count including it would be
+    // a count of rows that no longer exist.
+    fireEvent.click(screen.getByRole("button", { name: "Ignore PDF row 1" }));
+    expect(screen.queryByText(/selected/)).toBeNull();
+    expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeInTheDocument();
+  });
+
   it("says what a row is waiting on in the table, not only in a tooltip", () => {
     const parsed = ordinaryResult();
     const row = parsed.transactions[0];

@@ -142,7 +142,8 @@ export function PdfStatementReviewDialog({
   onDeleteProfile?: (profileId: string) => Promise<unknown>;
   isSavingProfile?: boolean;
 }) {
-  const workbench = usePdfStatementWorkbench(result);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const workbench = usePdfStatementWorkbench(result, () => setSelectedIds(new Set()));
   const {
     parsed,
     draftGuidance,
@@ -167,7 +168,6 @@ export function PdfStatementReviewDialog({
   const [filter, setFilter] = useState<PdfReviewCategory>(() => initialReviewFilter(result));
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<PdfSortState>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [scopedCorrectionOffer, setScopedCorrectionOffer] = useState<ScopedCorrectionOffer | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [highlightedSourceIds, setHighlightedSourceIds] = useState<Set<string>>(new Set());
@@ -288,7 +288,7 @@ export function PdfStatementReviewDialog({
   }
 
   function setDirection(row: PdfTransactionProposal, direction: "debit" | "credit") {
-    structuralCorrection({ kind: "set-direction", transactionIds: [row.id], direction }, "row", clearSelection);
+    structuralCorrection({ kind: "set-direction", transactionIds: [row.id], direction });
     offerBroaderCorrection(row, direction === "debit" ? "Money out" : "Money in", (transactionIds) => [
       { kind: "set-direction", transactionIds, direction },
     ]);
@@ -304,7 +304,7 @@ export function PdfStatementReviewDialog({
     if (field === selectedImportField) {
       edits.push({ kind: "set-field", transactionIds: [row.id], field: "importDate", value });
     }
-    structuralCorrections(edits, "row", clearSelection);
+    structuralCorrections(edits);
     if (["description", "amount", "currency"].includes(field)) {
       const label = field === "description" ? "Description" : field === "amount" ? "Amount" : "Currency";
       offerBroaderCorrection(row, label, (transactionIds) => [{ kind: "set-field", transactionIds, field, value }]);
@@ -321,11 +321,7 @@ export function PdfStatementReviewDialog({
       .forEach((row) => row.issueCodes
         .filter((reason) => UNRESOLVED_REVIEW_REASONS.includes(reason))
         .forEach((reason) => counts.set(reason, (counts.get(reason) ?? 0) + 1)));
-    const accept = () => structuralCorrection(
-      { kind: "accept-transaction", transactionIds: selectedReviewIds },
-      "row",
-      clearSelection
-    );
+    const accept = () => structuralCorrection({ kind: "accept-transaction", transactionIds: selectedReviewIds });
     if (counts.size === 0) {
       accept();
       return;
@@ -640,7 +636,7 @@ export function PdfStatementReviewDialog({
                     aria-label="Redo PDF correction"
                     title="Redo"
                     disabled={isParsing || !workbench.canRedo}
-                    onClick={() => redo(clearSelection)}
+                    onClick={redo}
                   >
                     <RotateCcw className="size-3.5" />
                   </Button>
@@ -868,8 +864,8 @@ export function PdfStatementReviewDialog({
             <div aria-label="Selected transaction actions" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap text-xs">
               <span className="mr-1 shrink-0 font-medium">{selectedIds.size} selected</span>
               <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing || selectedHasRejected || selectedReviewIds.length === 0} onClick={acceptSelectedRows}>Mark {selectedReviewIds.length} reviewed</Button>
-              <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing} onClick={() => structuralCorrection({ kind: "set-direction", transactionIds: [...selectedIds], direction: "debit" }, "row", clearSelection)}>Money out</Button>
-              <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing} onClick={() => structuralCorrection({ kind: "set-direction", transactionIds: [...selectedIds], direction: "credit" }, "row", clearSelection)}>Money in</Button>
+              <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing} onClick={() => structuralCorrection({ kind: "set-direction", transactionIds: [...selectedIds], direction: "debit" })}>Money out</Button>
+              <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing} onClick={() => structuralCorrection({ kind: "set-direction", transactionIds: [...selectedIds], direction: "credit" })}>Money in</Button>
               <Button
                 className="shrink-0"
                 size="xs"
@@ -884,12 +880,12 @@ export function PdfStatementReviewDialog({
                         direction: row.direction === "debit" ? "credit" as const : "debit" as const,
                       }]
                     : [];
-                }), "row", clearSelection)}
+                }))}
               >
                 Reverse
               </Button>
-              <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing || selectedIds.size < 2} onClick={() => structuralCorrection({ kind: "merge-blocks", blockIds: [...selectedIds] }, "row", clearSelection)}><GitMerge className="mr-1 size-3" />Merge rows</Button>
-              <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing} onClick={() => structuralCorrections([...selectedIds].map((blockId) => ({ kind: "ignore-block", blockId })), "row", clearSelection)}><Trash2 className="mr-1 size-3" />Ignore</Button>
+              <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing || selectedIds.size < 2} onClick={() => structuralCorrection({ kind: "merge-blocks", blockIds: [...selectedIds] })}><GitMerge className="mr-1 size-3" />Merge rows</Button>
+              <Button className="shrink-0" size="xs" variant="outline" disabled={isParsing} onClick={() => structuralCorrections([...selectedIds].map((blockId) => ({ kind: "ignore-block", blockId })))}><Trash2 className="mr-1 size-3" />Ignore</Button>
               <Button className="shrink-0" size="xs" variant="ghost" onClick={clearSelection}>Clear</Button>
             </div>
           ) : mode === "review" && scopedCorrectionOffer ? (

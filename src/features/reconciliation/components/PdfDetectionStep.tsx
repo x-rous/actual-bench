@@ -11,7 +11,6 @@ import {
 import { cn } from "@/lib/utils";
 import { generateId } from "@/lib/uuid";
 import type {
-  PdfAccountType,
   PdfColumn,
   PdfColumnRole,
   PdfParserGuidance,
@@ -205,7 +204,7 @@ export function PdfDetectionStep({
             <PdfStatementLayoutPanel {...layoutPanel} />
             <PdfDetectionControls
               guidance={guidance}
-              accountType={result.accountType as PdfAccountType}
+              accountType={result.accountType}
               focusRequest={controlFocus}
               open={interpretationOpen}
               disabled={busy}

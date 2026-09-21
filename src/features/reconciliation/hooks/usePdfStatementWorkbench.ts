@@ -29,7 +29,15 @@ export type PdfCorrectionInput = PdfCorrection extends infer Correction
  * of adopted, so the reviewer can see what a change would do before it becomes
  * what they are looking at.
  */
-export function usePdfStatementWorkbench(result: PdfStatementParseResult | null) {
+export function usePdfStatementWorkbench(
+  result: PdfStatementParseResult | null,
+  /**
+   * Called whenever a correction lands. Rows are re-assembled on every re-run,
+   * so anything holding row ids - a selection, an offer to repeat a correction -
+   * is about rows that may no longer exist.
+   */
+  onCorrectionsApplied?: () => void
+) {
   const [parsed, setParsed] = useState(result);
   const [draftGuidance, setDraftGuidance] = useState<PdfParserGuidance | null>(result?.guidance ?? null);
   const [corrections, setCorrections] = useState<PdfCorrection[]>([]);
@@ -70,35 +78,24 @@ export function usePdfStatementWorkbench(result: PdfStatementParseResult | null)
     setPreview(null);
   }
 
-  function applyCorrections(additions: PdfCorrection[], onApplied?: () => void) {
+  function applyCorrections(additions: PdfCorrection[]) {
     if (!parsed || isParsing) return;
     const next = [...corrections, ...additions];
     rerun(parsed.guidance, next, (output) => {
       setCorrections(next);
       setRedoCorrections([]);
       adopt(output);
-      onApplied?.();
+      onCorrectionsApplied?.();
     });
   }
 
-  function structuralCorrections(
-    items: PdfCorrectionInput[],
-    scope: PdfCorrectionScope = "row",
-    onApplied?: () => void
-  ) {
+  function structuralCorrections(items: PdfCorrectionInput[], scope: PdfCorrectionScope = "row") {
     const createdAt = new Date().toISOString();
-    applyCorrections(
-      items.map((correction) => ({ ...correction, id: generateId(), createdAt, scope } as PdfCorrection)),
-      onApplied
-    );
+    applyCorrections(items.map((correction) => ({ ...correction, id: generateId(), createdAt, scope } as PdfCorrection)));
   }
 
-  function structuralCorrection(
-    correction: PdfCorrectionInput,
-    scope: PdfCorrectionScope = "row",
-    onApplied?: () => void
-  ) {
-    structuralCorrections([correction], scope, onApplied);
+  function structuralCorrection(correction: PdfCorrectionInput, scope: PdfCorrectionScope = "row") {
+    structuralCorrections([correction], scope);
   }
 
   function undo() {
@@ -113,7 +110,7 @@ export function usePdfStatementWorkbench(result: PdfStatementParseResult | null)
     });
   }
 
-  function redo(onApplied?: () => void) {
+  function redo() {
     const nextCorrection = redoCorrections[0];
     if (!nextCorrection || !parsed || isParsing) return;
     const next = [...corrections, nextCorrection];
@@ -122,7 +119,7 @@ export function usePdfStatementWorkbench(result: PdfStatementParseResult | null)
       setRedoCorrections((current) => current.slice(1));
       setParsed(output);
       setDraftGuidance(output.guidance);
-      onApplied?.();
+      onCorrectionsApplied?.();
     });
   }
 
