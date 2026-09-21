@@ -1,5 +1,5 @@
 import { assemblePdfTransactionBlocks } from "./blocks";
-import { rowValuesForColumn } from "./columns";
+import { divideCellsAcrossColumns, rowValuesForColumn } from "./columns";
 import { dateCandidates } from "./candidates";
 import { applyBlockCorrections, applyFieldCorrections, applyGuidanceCorrections, type PdfCorrection } from "./corrections";
 import { inferPdfDateFormat, parsePdfDateCandidate } from "./dates";
@@ -67,7 +67,7 @@ export function parsePdfStatementDocumentV2(
   const detectedGuidance: PdfParserGuidance = {
     ...DEFAULT_PDF_PARSER_GUIDANCE,
     accountType: "auto",
-    currency: detectDocumentCurrency(layout.pages),
+    currency: currencyFromAmountColumn(detectedColumns) ?? detectDocumentCurrency(layout.pages),
     dateFormat: displayedDateFormat,
     statementPeriod: detectedPeriod,
     regions: detectedRegions.regions,
@@ -83,13 +83,16 @@ export function parsePdfStatementDocumentV2(
     columns: guidance.columns.length ? guidance.columns : schemas.active?.columns ?? [],
   };
   effectiveGuidance.importDate = availableImportDate(effectiveGuidance.importDate, effectiveGuidance.columns);
+  // Detection reads the page as extracted; everything after it reads the page
+  // divided along the mapped columns, so one cell cannot answer for several.
+  const pages = divideCellsAcrossColumns(layout.pages, effectiveGuidance.columns);
   const activeSchema = effectiveGuidance.columns.length
     ? { id: "effective", regionIds: effectiveGuidance.regions.filter((region) => region.included).map((region) => region.id), columns: effectiveGuidance.columns, score: 1, reasons: ["effective schema"] }
     : schemas.active;
-  const assembled = assemblePdfTransactionBlocks(layout.pages, effectiveGuidance.regions, activeSchema, effectiveGuidance);
+  const assembled = assemblePdfTransactionBlocks(pages, effectiveGuidance.regions, activeSchema, effectiveGuidance);
   const markedBlocks = corrections.reduce((blocks, correction) => {
     if (correction.kind !== "mark-row" || blocks.some((block) => block.rowIds.includes(correction.rowId))) return blocks;
-    const row = layout.pages.find((page) => page.pageNumber === correction.pageNumber)?.rows.find((candidate) => candidate.id === correction.rowId);
+    const row = pages.find((page) => page.pageNumber === correction.pageNumber)?.rows.find((candidate) => candidate.id === correction.rowId);
     if (!row) return blocks;
     return [...blocks, {
       id: `manual-${correction.id}`,
@@ -107,7 +110,7 @@ export function parsePdfStatementDocumentV2(
   }, assembled.blocks);
   const correctedBlocks = applyBlockCorrections(markedBlocks, corrections);
   const interpreted = interpretPdfBlocks(
-    layout.pages,
+    pages,
     correctedBlocks,
     activeSchema,
     effectiveGuidance,
@@ -118,7 +121,7 @@ export function parsePdfStatementDocumentV2(
     corrections.filter((correction) => correction.kind !== "accept-transaction")
   );
   const validated = validatePdfTransactions(correctedTransactions, effectiveGuidance, {
-    pages: layout.pages,
+    pages,
     regions: effectiveGuidance.regions,
     accountType: interpreted.accountType,
     balanceBehavior: interpreted.balanceBehavior,
@@ -163,7 +166,7 @@ export function parsePdfStatementDocumentV2(
   return {
     modelVersion: PDF_PARSER_MODEL_VERSION,
     document,
-    reconstructedPages: layout.pages,
+    reconstructedPages: pages,
     regions: effectiveGuidance.regions,
     schemaHypotheses: schemas.hypotheses,
     activeSchema,
@@ -179,6 +182,22 @@ export function parsePdfStatementDocumentV2(
     likelyScanned,
     warnings,
   };
+}
+
+/**
+ * A statement that prints "Total Amount (AED)" has already named its currency.
+ * That is a stronger signal than scanning the page for codes, which a foreign
+ * transaction can make ambiguous.
+ */
+function currencyFromAmountColumn(columns: PdfParserGuidance["columns"]) {
+  const headers = columns
+    .filter((column) => ["amount", "debit", "credit", "balance"].includes(column.role))
+    .map((column) => column.header)
+    .filter((header): header is string => Boolean(header));
+  const codes = [...new Set(headers.flatMap((header) =>
+    [...header.matchAll(/\b(AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR)\b/gi)]
+      .map((match) => match[1].toUpperCase())))];
+  return codes.length === 1 ? codes[0] : null;
 }
 
 function pageList(pageNumbers: number[]) {
@@ -215,7 +234,7 @@ function dateSamples(
       ),
     ]));
   }
-  return { "transaction-date": rows.flatMap(({ row }) => dateMatches(row.text)) };
+  return { "transaction-date": rows.flatMap(({ row }) => row.cells.flatMap((cell) => dateMatches(cell.text))) };
 }
 
 function detectStatementPeriod(

@@ -1,4 +1,4 @@
-import { columnAppliesToPage, columnBoundsForPage, rowValuesForColumn } from "./columns";
+import { cellBelongsToColumn, columnAppliesToPage, columnBoundsForPage, rowValuesForColumn } from "./columns";
 import { CURRENCY_CANDIDATE, dateCandidates, formatExactDecimal, looksLikeMoney, moneyCandidates, parseExactDecimal, printedSignOf } from "./candidates";
 import { parsePdfDateCandidate, type PdfDateCandidateResult } from "./dates";
 import { diagnostic } from "./diagnostics";
@@ -81,6 +81,10 @@ export function interpretPdfBlocks(
   const index = createPdfPageIndex(pages);
   const balanceBehavior = detectBalanceBehavior(pages, blocks, schema, index);
   const balanceCheckpoints = detectBalanceCheckpoints(pages, schema, guidance);
+  // A single amount column that marks only its credits has told us what an
+  // unmarked row means. Using that is still an inference, so the rows it
+  // resolves stay in review until the reader confirms them.
+  const markerConvention = inferUnsignedDirectionFromMarkers(guidance, schema?.columns ?? [], index);
   const previousDates = new Map<string, DateFieldsResult>();
   const transactions = blocks.filter((block) => !block.excluded).map((block, blockIndex) => {
     const transaction = interpretBlock(
@@ -91,7 +95,7 @@ export function interpretPdfBlocks(
       dateFormatsByRole,
       previousDates.get(block.sectionId),
       balanceBehavior,
-      { accountType, accountTypeConfirmed },
+      { accountType, accountTypeConfirmed, markerConvention },
       index
     );
     const dates = dateFieldsForTransaction(transaction);
@@ -134,7 +138,7 @@ function interpretBlock(
   dateFormatsByRole: DateFormatsByRole,
   inheritedDates: DateFieldsResult | undefined,
   balanceBehavior: PdfBalanceBehavior,
-  account: { accountType: PdfAccountType; accountTypeConfirmed: boolean },
+  account: { accountType: PdfAccountType; accountTypeConfirmed: boolean; markerConvention: PdfDirection | null },
   index: PdfPageIndex
 ): PdfTransactionProposal {
   const rows = rowsForBlock(index, block);
@@ -273,8 +277,10 @@ function dateFields(
     posting: sourceForRole(rows, columns, "posting-date", index),
     value: sourceForRole(rows, columns, "value-date", index),
   };
-  const allMatches = rows.flatMap((row) => dateCandidates(row.text)
-    .map((raw) => ({ raw, sourceIds: row.cells.flatMap((cell) => cell.tokenIds) })));
+  // Candidates come from individual cells, so a value spanning the gap between
+  // two cells cannot be read as a date the statement never printed.
+  const allMatches = rows.flatMap((row) => row.cells.flatMap((cell) =>
+    dateCandidates(cell.text).map((raw) => ({ raw, sourceIds: cell.tokenIds }))));
   if (!mapped.transaction.raw && (!hasTransactionDate || columns.length === 0) && allMatches[0]) mapped.transaction = allMatches[0];
   if (hasPostingDate && !mapped.posting.raw && allMatches[1]) mapped.posting = allMatches[1];
   const parsed = {
@@ -309,7 +315,7 @@ function amountFields(
   index: PdfPageIndex,
   sectionDirection: PdfDirection | undefined,
   balanceBehavior: PdfBalanceBehavior,
-  account: { accountType: PdfAccountType; accountTypeConfirmed: boolean }
+  account: { accountType: PdfAccountType; accountTypeConfirmed: boolean; markerConvention: PdfDirection | null }
 ) {
   const debit = moneyForRole(cells, columns, "debit", guidance, index);
   const credit = moneyForRole(cells, columns, "credit", guidance, index);
@@ -336,6 +342,7 @@ function amountFields(
   const signConventionInverted = guidance.printedSign === "issuer"
     || (guidance.printedSign === "auto" && liabilityAccount && account.accountTypeConfirmed);
   let signNeedsConfirmation = false;
+  let conventionNeedsConfirmation = false;
   let directionConflict = false;
   if (selectedDebit && !selectedCredit) {
     selected = selectedDebit; direction = "debit"; directionEvidence = "debit-column"; reason = "DIRECTION_FROM_DEBIT_COLUMN";
@@ -362,6 +369,11 @@ function amountFields(
       direction = guidance.unsignedDirection; directionEvidence = "explicit-policy"; reason = "DIRECTION_EXPLICIT_POLICY";
     } else if (sectionDirection && sectionDirection !== "unknown") {
       direction = sectionDirection; directionEvidence = "section"; reason = "DIRECTION_FROM_SECTION";
+    } else if (account.markerConvention && selected) {
+      direction = account.markerConvention;
+      directionEvidence = "marker-convention";
+      reason = "DIRECTION_FROM_MARKER_CONVENTION";
+      conventionNeedsConfirmation = true;
     }
   }
   const sourceIds = selected?.sourceIds ?? [];
@@ -400,7 +412,9 @@ function amountFields(
     ? { status: "rejected", score: 0, reasons: [reason], sourceIds }
     : signNeedsConfirmation
       ? { status: "review", score: 0.6, reasons: [reason, "SIGN_CONVENTION_UNCONFIRMED"], sourceIds }
-      : { status: "accepted", score: directionEvidence === "explicit-policy" ? 0.9 : 0.95, reasons: [reason], sourceIds };
+      : conventionNeedsConfirmation
+        ? { status: "review", score: 0.7, reasons: [reason], sourceIds }
+        : { status: "accepted", score: directionEvidence === "explicit-policy" ? 0.9 : 0.95, reasons: [reason], sourceIds };
   const selectedBalance = balanceEntries.at(-1) ?? null;
   const balanceConfidence: PdfFieldConfidence | null = selectedBalance
     ? {
@@ -426,6 +440,55 @@ function amountFields(
     directionConfidence,
     balanceConfidence,
   };
+}
+
+/**
+ * What an unmarked amount means, read from the statement rather than assumed.
+ *
+ * When one amount column carries `CR` on some rows and nothing on the others,
+ * and no row prints a sign, the unmarked rows are the opposite of the marker.
+ * Mixed markers, printed signs, or separate money-in and money-out columns all
+ * answer the question themselves, so nothing is inferred in those cases.
+ */
+function inferUnsignedDirectionFromMarkers(
+  guidance: PdfParserGuidance,
+  columns: PdfColumn[],
+  index: PdfPageIndex
+): PdfDirection | null {
+  if (guidance.unsignedDirection !== "review") return null;
+  if (columns.some((column) => column.role === "debit" || column.role === "credit")) return null;
+  const amountColumn = columns.find((column) => column.role === "amount");
+  if (!amountColumn) return null;
+  const directionColumn = columns.find((column) => column.role === "direction");
+
+  let credit = 0;
+  let debit = 0;
+  let unmarked = 0;
+  const rowIds = guidance.regions
+    .filter((region) => region.kind === "transactions" && region.included)
+    .flatMap((region) => region.rowIds);
+  for (const rowId of rowIds) {
+    const row = index.rowsById.get(rowId);
+    if (!row) continue;
+    const pageWidth = index.widthByPage.get(row.pageNumber) ?? 1;
+    const amountText = rowValuesForColumn(row, amountColumn, pageWidth).map((cell) => cell.text).join(" ");
+    if (!moneyCandidates(amountText).length) continue;
+    if (printedSignOf(amountText)) return null;
+    const directionText = directionColumn
+      ? rowValuesForColumn(row, directionColumn, pageWidth).map((cell) => cell.text).join(" ")
+      : "";
+    const marker = directionMarker(amountText, directionText);
+    if (marker === "credit") credit += 1;
+    else if (marker === "debit") debit += 1;
+    else unmarked += 1;
+  }
+  // Only the credit-marked convention is safe to read this way. A statement
+  // with one amount column marks the exceptions, and the exception it marks is
+  // money in: "113.61CR" among unmarked charges. The mirror image is not a
+  // convention - a lone DR on an interest line says nothing about the rest -
+  // so it is left for the reader to answer.
+  if (!unmarked || debit > 0 || credit === 0) return null;
+  return unmarked > credit ? "debit" : null;
 }
 
 function moneyForRole(cells: PdfVisualCell[], columns: PdfColumn[], role: PdfColumnRole, guidance: PdfParserGuidance, index: PdfPageIndex) {
@@ -653,7 +716,7 @@ function cellsForRoleFromCells(cells: PdfVisualCell[], columns: PdfColumn[], rol
   const matchingColumns = columns.filter((entry) => entry.role === role);
   if (!matchingColumns.length) return [];
   return cells.filter((cell) => matchingColumns.some((column) => {
-    if (!columnAppliesToPage(column, cell.pageNumber)) return false;
+    if (!columnAppliesToPage(column, cell.pageNumber) || !cellBelongsToColumn(cell, column)) return false;
     const pageWidth = index.widthByPage.get(cell.pageNumber) ?? 1;
     const bounds = columnBoundsForPage(column, pageWidth);
     return overlap(cell.x, cell.x + cell.width, bounds.xStart, bounds.xEnd) >= 0.25;

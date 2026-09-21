@@ -1188,6 +1188,198 @@ describe("PDF parser v2 sign and structure safeguards", () => {
     expect(result.transactions[0].status).toBe("accepted");
   });
 
+  it("reads an unmarked amount as the opposite of the statement's own credit marker", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Total Amount (AED)" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON CAFE" }, { x: 480, text: "4.00" }] },
+      { y: 660, cells: [{ x: 20, text: "08/17/2026" }, { x: 120, text: "ANON PAYMENT" }, { x: 480, text: "500.00CR" }] },
+    // No currency is supplied, so the statement has to name its own.
+    ])], { guidance: { dateFormat: "mdy" } });
+
+    // The statement names its own currency in the amount header.
+    expect(result.guidance.currency).toBe("AED");
+    expect(result.transactions.map((row) => [row.amount, row.direction, row.directionEvidence, row.status])).toEqual([
+      ["-12.50", "debit", "marker-convention", "review"],
+      ["-4.00", "debit", "marker-convention", "review"],
+      ["500.00", "credit", "marker", "accepted"],
+    ]);
+  });
+
+  it("does not read a lone debit marker as a convention for the unmarked rows", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON CAFE" }, { x: 480, text: "4.00" }] },
+      { y: 660, cells: [{ x: 20, text: "08/17/2026" }, { x: 120, text: "ANON INTEREST" }, { x: 480, text: "9.00DR" }] },
+    ])], { guidance: guidance() });
+
+    expect(result.transactions.filter((row) => row.direction === "unknown")).toHaveLength(2);
+    expect(result.transactions.every((row) => !row.issueCodes.includes("DIRECTION_FROM_MARKER_CONVENTION"))).toBe(true);
+  });
+
+  it("maps the account amount when one money column dominates the table", () => {
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      y: 700 - index * 20,
+      cells: [
+        { x: 20, text: `08/0${index + 1}/2026` },
+        { x: 120, text: `ANON ${index}` },
+        // A foreign amount appears on a minority of rows; the account amount
+        // appears on all of them.
+        ...(index < 2 ? [{ x: 300, text: "USD 20.00" }] : []),
+        { x: 480, text: `${10 + index}.00` },
+      ],
+    }));
+    const result = parsePdfStatementPages([page(rows)], { guidance: guidance({ unsignedDirection: "debit" }) });
+
+    expect(result.activeSchema?.columns.some((column) => column.role === "amount")).toBe(true);
+    expect(result.transactions).toHaveLength(6);
+    expect(result.transactions.every((row) => row.amount !== "")).toBe(true);
+  });
+
+  it("gives a value that cannot be divided to the column that covers most of it", () => {
+    // Money is right-aligned, so a boundary drawn between header labels can
+    // cut through the printed number.
+    const columns = [
+      { id: "date", pageNumber: null, referencePageWidth: 700, xStart: 15, xEnd: 100, role: "transaction-date" as const, header: null, examples: [], confidence: 1 },
+      { id: "details", pageNumber: null, referencePageWidth: 700, xStart: 100, xEnd: 236, role: "description" as const, header: null, examples: [], confidence: 1 },
+      { id: "out", pageNumber: null, referencePageWidth: 700, xStart: 236, xEnd: 370, role: "debit" as const, header: null, examples: [], confidence: 1 },
+      { id: "in", pageNumber: null, referencePageWidth: 700, xStart: 370, xEnd: 479, role: "credit" as const, header: null, examples: [], confidence: 1 },
+      { id: "bal", pageNumber: null, referencePageWidth: 700, xStart: 479, xEnd: 575, role: "balance" as const, header: null, examples: [], confidence: 1 },
+    ];
+    const result = parsePdfStatementPages([page([
+      // The amount runs from 340 to 379, so it sits across the money-out and
+      // money-in boundary at 370 with more of it on the money-out side.
+      { y: 700, cells: [{ x: 20, text: "21/02/2026" }, { x: 105, text: "ANON TRANSFER" }, { x: 340, text: "1,000.00" }, { x: 500, text: "2,009.88" }] },
+      { y: 680, cells: [{ x: 20, text: "22/02/2026" }, { x: 105, text: "ANON DEPOSIT" }, { x: 430, text: "500.00" }, { x: 500, text: "2,509.88" }] },
+    ])], { guidance: guidance({ columns, dateFormat: "dmy", accountType: "checking" }) });
+
+    expect(result.transactions.map((row) => [row.amount, row.direction])).toEqual([
+      ["-1000.00", "debit"],
+      ["500.00", "credit"],
+    ]);
+    expect(result.transactions.every((row) => !row.issueCodes.includes("AMOUNT_DEBIT_CREDIT_CONFLICT"))).toBe(true);
+  });
+
+  it("starts a transaction for an undated row whose description prints a date", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Transaction Details" }, { x: 360, text: "Debits" }, { x: 450, text: "Credits" }, { x: 520, text: "Balance" }] },
+      { y: 720, cells: [{ x: 20, text: "21/02/2026" }, { x: 120, text: "ANON TRANSFER" }, { x: 360, text: "100.00" }, { x: 520, text: "900.00" }] },
+      // A second transaction on the same day: the statement prints the date
+      // once, and this row carries a date only inside its own narrative.
+      { y: 700, cells: [{ x: 120, text: "ANON PAYMENT VALUE 20 FEB" }, { x: 360, text: "250.00" }, { x: 520, text: "650.00" }] },
+      { y: 680, cells: [{ x: 20, text: "22/02/2026" }, { x: 120, text: "ANON DEPOSIT" }, { x: 450, text: "50.00" }, { x: 520, text: "700.00" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy", accountType: "checking" }) });
+
+    expect(result.transactions).toHaveLength(3);
+    expect(result.transactions[1]).toMatchObject({ amount: "-250.00", transactionDate: "2026-02-21" });
+    expect(result.transactions[1].description).toContain("ANON PAYMENT");
+    expect(result.transactions[0].description).not.toContain("ANON PAYMENT");
+    expect(result.transactions[1].issueCodes).toContain("DATE_INHERITED_FROM_PREVIOUS_ROW");
+  });
+
+  it("divides one cell between the columns that claim it", () => {
+    // Extraction gives both dates and the description as a single cell when a
+    // statement prints them tightly together.
+    const columns = [
+      { id: "date", pageNumber: null, referencePageWidth: 700, xStart: 15, xEnd: 78, role: "transaction-date" as const, header: null, examples: [], confidence: 1 },
+      { id: "value", pageNumber: null, referencePageWidth: 700, xStart: 78, xEnd: 138, role: "value-date" as const, header: null, examples: [], confidence: 1 },
+      { id: "details", pageNumber: null, referencePageWidth: 700, xStart: 138, xEnd: 430, role: "description" as const, header: null, examples: [], confidence: 1 },
+      { id: "out", pageNumber: null, referencePageWidth: 700, xStart: 440, xEnd: 560, role: "debit" as const, header: null, examples: [], confidence: 1 },
+    ];
+    const result = parsePdfStatementPages([page([
+      { y: 700, cells: [{ x: 20, text: "17 Jun 19 16 Jun 19 ATM WITHDRAWAL SELF" }, { x: 470, text: "1,500.00" }] },
+      { y: 680, cells: [{ x: 20, text: "19 Jun 19 18 Jun 19 ANON SHOP PAYMENT" }, { x: 470, text: "2,000.00" }] },
+    ])], { guidance: guidance({ columns, dateFormat: "dmy-name", importDate: "transaction" }) });
+
+    expect(result.transactions).toHaveLength(2);
+    expect(result.transactions[0]).toMatchObject({
+      transactionDate: "2019-06-17",
+      valueDate: "2019-06-16",
+      amount: "-1500.00",
+    });
+    // Each column reports its own value: the dates are no longer repeated
+    // inside the description.
+    expect(result.transactions[0].description).toBe("ATM WITHDRAWAL SELF");
+    expect(result.transactions[1].description).toBe("ANON SHOP PAYMENT");
+  });
+
+  it("leaves a cell that only one column claims exactly as it was", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP AND CAFE" }, { x: 480, text: "USD -12.50" }] },
+    ])], { guidance: guidance() });
+
+    expect(result.transactions[0].description).toBe("ANON SHOP AND CAFE");
+    expect(result.transactions[0].amount).toBe("-12.50");
+  });
+
+  it("does not let a reference and the next cell's amount fabricate a date", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 360, text: "Deposit" }, { x: 440, text: "Withdrawal" }, { x: 520, text: "Balance" }] },
+      { y: 720, cells: [{ x: 20, text: "18 Jun 19" }, { x: 120, text: "ANON PURCHASE" }, { x: 440, text: "966.00" }, { x: 520, text: "111,523.14" }] },
+      { y: 700, cells: [{ x: 120, text: "ANON CITY IN 13:44:16" }] },
+      // The reference is cut off mid-date. Joined with the amount beside it,
+      // "2019-06-" and "1,035.49" read as 2019-06-1, which used to stop this
+      // row becoming the transaction it is.
+      { y: 680, cells: [{ x: 120, text: "CRADJ/UPI/ANON/916616736180/2019-06-" }, { x: 360, text: "1,035.49" }, { x: 520, text: "112,558.63" }] },
+      { y: 660, cells: [{ x: 20, text: "19 Jun 19" }, { x: 120, text: "ANON WITHDRAWAL" }, { x: 440, text: "2,000.00" }, { x: 520, text: "110,558.63" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy-name", currency: "INR" }) });
+
+    expect(result.transactions.map((row) => [row.amount, row.direction])).toEqual([
+      ["-966.00", "debit"],
+      ["1035.49", "credit"],
+      ["-2000.00", "debit"],
+    ]);
+    // The adjustment keeps its own description rather than joining the purchase.
+    expect(result.transactions[0].description).toContain("ANON PURCHASE");
+    expect(result.transactions[0].description).not.toContain("CRADJ");
+    expect(result.transactions[1].description).toContain("CRADJ");
+    expect(result.transactions[0].issueCodes).not.toContain("AMOUNT_DEBIT_CREDIT_CONFLICT");
+  });
+
+  it("keeps a lead description line with the transaction whose date follows it", () => {
+    // Some statements print the date on the second line of a transaction and
+    // separate transactions with a printed rule.
+    const result = parsePdfStatementPages([page([
+      { y: 760, cells: [{ x: 20, text: "Transaction Date" }, { x: 110, text: "Posting Date" }, { x: 200, text: "Description" }, { x: 480, text: "Total Amount" }] },
+      { y: 730, cells: [{ x: 200, text: "FIRST MERCHANT" }, { x: 480, text: "10.00" }] },
+      { y: 721, cells: [{ x: 20, text: "01/08/2026" }, { x: 110, text: "02/08/2026" }] },
+      { y: 712, cells: [{ x: 200, text: "FIRST DETAIL" }] },
+      { y: 704, cells: [{ x: 110, text: "-" }] },
+      { y: 695, cells: [{ x: 200, text: "SECOND MERCHANT" }] },
+      { y: 686, cells: [{ x: 20, text: "03/08/2026" }, { x: 110, text: "04/08/2026" }, { x: 200, text: "SECOND DETAIL" }] },
+      { y: 677, cells: [{ x: 200, text: "SECOND EXTRA" }, { x: 480, text: "20.00" }] },
+      { y: 669, cells: [{ x: 110, text: "-" }] },
+    ])], { guidance: guidance({ dateFormat: "dmy", unsignedDirection: "debit" }) });
+
+    expect(result.transactions).toHaveLength(2);
+    expect(result.transactions[0]).toMatchObject({ transactionDate: "2026-08-01", amount: "-10.00" });
+    expect(result.transactions[0].description).toContain("FIRST MERCHANT");
+    expect(result.transactions[0].description).not.toContain("SECOND MERCHANT");
+    expect(result.transactions[1]).toMatchObject({ transactionDate: "2026-08-03", amount: "-20.00" });
+    expect(result.transactions[1].description).toContain("SECOND MERCHANT");
+    // The printed rule between transactions is not statement content.
+    expect(result.transactions.every((row) => !row.raw.lines.some((line) => line.trim() === "-"))).toBe(true);
+  });
+
+  it("keeps the printed column header out of the transactions it names", () => {
+    const statementPage = (pageNumber: number) => page([
+      { y: 770, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 740, cells: [{ x: 20, text: `08/0${pageNumber}/2026` }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "-10.00" }] },
+      { y: 720, cells: [{ x: 20, text: `08/1${pageNumber}/2026` }, { x: 120, text: "ANON CAFE" }, { x: 480, text: "-20.00" }] },
+    ], pageNumber);
+    const result = parsePdfStatementPages([statementPage(1), statementPage(2)], { guidance: guidance() });
+
+    // The header still names the columns...
+    expect(result.activeSchema?.columns.map((column) => column.role))
+      .toEqual(expect.arrayContaining(["transaction-date", "description", "amount"]));
+    // ...without becoming part of any transaction.
+    expect(result.transactions).toHaveLength(4);
+    expect(result.transactions.every((row) => !/Transaction Date|Description|Amount/.test(row.description))).toBe(true);
+    expect(result.transactions.every((row) => row.raw.lines.length === 1)).toBe(true);
+  });
+
   it("keeps a page footer out of the transaction area", () => {
     const statementPage = (pageNumber: number) => page([
       { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },

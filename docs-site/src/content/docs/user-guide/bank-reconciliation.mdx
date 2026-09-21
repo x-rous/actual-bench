@@ -86,8 +86,12 @@ transaction table, and import stays disabled until you confirm that you checked 
 transactions are missing from the statement. Selecting **I checked these pages** dismisses the
 message and leaves a marker in the toolbar that brings it back. Rows inside a transaction area that did not become a
 transaction are counted the same way, so you can mark them in **Check detection** instead of losing
-them silently. When the statement currency cannot be read, it is asked for once in **Statement
-interpretation** rather than on every row.
+them silently. When the statement currency cannot be read from the amount column's own header, it is asked for once
+in **Statement interpretation** rather than on every row.
+
+**Check detection** lists what still needs attention above the settings. Where one setting answers
+the question - an unresolved money-in or money-out rule, or a missing currency - **Fix this** opens
+**Statement interpretation** and puts the cursor on that control.
 
 Select **Parser details** for page counts, parsing warnings, saved-layout validation, and technical
 diagnostics. Technical diagnostics contain aggregate events, counts, and page numbers, not statement
@@ -138,6 +142,10 @@ page containing its source and scrolls to the highlighted text when it is outsid
 In **Check detection**, select **Columns** to show or hide mappings; selecting a mapping
 centers that column in the viewer.
 
+**Export**, beside the search box, saves the transactions to CSV exactly as the table currently shows
+them: the same rows, the same order, and the corrections made so far, with each row's status and any
+outstanding notes. A filtered or searched view exports what is on screen.
+
 Use **All**, **Needs review**, and **Ready** above the transaction table to change the view. Selecting
 **Needs review** shows non-empty structural, date, amount, reconciliation, and duplicate filters.
 Direct edits change one row. After an eligible edit, the footer can offer to apply the same correction
@@ -154,8 +162,9 @@ cannot be read.
 
 The parser recognizes signed, parenthesized, and trailing-minus amounts, mixed-case `DR` and `CR`
 markers, separate debit and credit columns, and one **Amount** column where a suffix such as
-`113.61CR` marks money in and an unmarked value means money out. Choose the matching amount-direction
-rule before previewing the change. **Printed sign means** states whose side the printed sign takes:
+`113.61CR` marks money in `113.61CR` marks money in and an unmarked value means money out. When a statement marks only its
+credits that way and prints no signs, the unmarked rows are read as the opposite and kept in review;
+anything less clear waits for you to choose the amount-direction rule. **Printed sign means** states whose side the printed sign takes:
 a bank account prints a minus for money out, while a card or loan issuer prints a minus for a payment
 that reduces what is owed. On a card or loan statement whose sign convention has not been confirmed,
 rows that take their direction from a printed sign stay in review. Automatic column mapping first identifies the transaction table. It uses the table's own
@@ -163,9 +172,22 @@ printed header when available; content-based roles require supporting values acr
 transaction rows. Account details, credit limits, payment summaries, opening and closing balances,
 balance-forward rows, totals, and other page content
 do not create transaction-column mappings. An uncertain role remains unmapped for you to set in
-**Adjust detection**. A valid date in the mapped date column starts a transaction block. When a
-statement prints a date once for several transactions, a later complete transaction row can inherit
-that date and is marked for review. Description, original-amount, fee, VAT, and final-total lines stay
+**Adjust detection**. Where a statement prints values so tightly that extraction returns them as one
+piece of text - two dates and a description, say - the words are divided between the columns that
+cover them, so each column reports its own value instead of repeating the whole line. A date column
+takes the date it is for, and the rest divides at the spacing the statement itself prints. A value
+covered by a single column is never touched.
+
+A valid date in the mapped date column starts a transaction block. The lines
+above that date are divided by where the previous transaction ended rather than by how close they
+sit: a rule printed between transactions is taken at face value, and otherwise a line joins the date
+it sits nearest to, while a line carrying the previous transaction's account amount stays with it.
+That keeps a description line printed above its own date - which some statements do - with the
+transaction it introduces. The statement's own column header stays with its area, where it names the
+columns, and never joins a transaction. When a statement prints a date once for several
+transactions, a later complete transaction row can inherit that date and is marked for review.
+Whether a row carries its own date is read from the mapped date column, so a description that prints
+a date of its own does not stop that row becoming the transaction it is. Description, original-amount, fee, VAT, and final-total lines stay
 in the current block until the next transaction starts. Standalone fee or tax rows remain separate
 when their amount and balance show that they changed the account. The parser uses the mapped final
 account amount and flags competing candidates for review. It also combines multiple mapped narrative

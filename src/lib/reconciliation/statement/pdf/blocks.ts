@@ -1,4 +1,5 @@
 import { looksLikeDate, moneyCandidates } from "./candidates";
+import { rowHasMoney, rowLooksLikeDate } from "./rows";
 import { diagnostic } from "./diagnostics";
 import { rowValuesForColumn } from "./columns";
 import type {
@@ -24,6 +25,8 @@ const DIRECTION_SECTION_HEADERS: ["debit" | "credit", RegExp][] = [
   ["credit", /^(?:payments?(?:\s+and\s+(?:other\s+)?credits?)?|credits?|deposits?|money\s+in)(?:\s+activity|\s+transactions?)?\s*$/i],
   ["debit", /^(?:purchases?(?:\s+and\s+(?:other\s+)?debits?)?|withdrawals?|money\s+out|fees?(?:\s+and\s+charges?)?|interest\s+charges?)(?:\s+activity|\s+transactions?)?\s*$/i],
 ];
+/** A printed rule between transactions: dashes, dots, or underscores only. */
+const SEPARATOR_ROW = /^[\s\p{Pd}\u00b7._]+$/u;
 const CONTROL_ROW = /^(?:opening|previous|beginning|closing|ending)\s+balance\b|^(?:balance\s+(?:(?:brought|carried)\s+)?forward|brought\s+forward|carried\s+forward)\b|^(?:sub\s*total|total)(?:\s|$)|\b(?:balance\s+(?:(?:brought|carried)\s+)?forward|opening\s+balance|closing\s+balance)\b/i;
 
 export function assemblePdfTransactionBlocks(
@@ -34,7 +37,8 @@ export function assemblePdfTransactionBlocks(
 ): PdfBlockResult {
   const includedRegions = regions.filter((region) => region.kind === "transactions" && region.included);
   const rows = includedRegions.flatMap((region) => rowsForRegion(pages, region))
-    .filter((row) => !row.repeatedHeaderFooter)
+    // The column header belongs to the area, not to any transaction in it.
+    .filter((row) => !row.repeatedHeaderFooter && !row.tableHeader)
     .sort((left, right) => left.pageNumber - right.pageNumber || left.y - right.y);
   const anchorColumn = schema?.columns.find((column) => column.role === guidance.transactionAnchorRole)
     ?? schema?.columns.find((column) => ["transaction-date", "posting-date", "value-date"].includes(column.role));
@@ -51,10 +55,12 @@ export function assemblePdfTransactionBlocks(
   let sectionIndex = 1;
   let pendingRows: PdfVisualRow[] = [];
   let previousRow: PdfVisualRow | undefined;
+  let previousAnchorRow: PdfVisualRow | undefined;
 
   const appendPendingToPrevious = (pending: PdfVisualRow[]) => {
     const previous = blocks.at(-1);
     pending.forEach((pendingRow) => {
+      if (isSeparatorRow(pendingRow)) return;
       if (previous && isContinuation(previous, pendingRow, pages)) appendRow(previous, pendingRow);
       // A row inside an included transaction area that belongs to no block is
       // reported rather than dropped: the review screen counts it and the user
@@ -73,7 +79,7 @@ export function assemblePdfTransactionBlocks(
     // A heading owns the rows under it, so it must look like a heading: a
     // wrapped description line such as "PAYMENT" sits one line under its own
     // transaction and must stay part of it.
-    if (declaredDirection && separated && !looksLikeDate(row.text) && moneyCandidates(row.text).length === 0) {
+    if (declaredDirection && separated && !rowLooksLikeDate(row) && !rowHasMoney(row)) {
       appendPendingToPrevious(pendingRows);
       pendingRows = [];
       sectionIndex += 1;
@@ -81,7 +87,7 @@ export function assemblePdfTransactionBlocks(
       sectionDirection = declaredDirection;
       continue;
     }
-    if (SECTION_HEADER.test(row.text) && separated && !looksLikeDate(row.text)) {
+    if (SECTION_HEADER.test(row.text) && separated && !rowLooksLikeDate(row)) {
       appendPendingToPrevious(pendingRows);
       pendingRows = [];
       sectionIndex += 1;
@@ -100,23 +106,24 @@ export function assemblePdfTransactionBlocks(
       continue;
     }
     if (anchorCells.length) {
-      // PDF text on one printed line can be emitted on slightly different
-      // baselines. Delay continuation assignment until the next anchor is
-      // known, then move rows whose boxes overlap that anchor into its block.
-      // This keeps a transaction's description with its own date even when
-      // the description happens to sort just before the date token.
-      const alignedWithNext = trailingRowsMatching(pendingRows, (pendingRow) =>
-        pendingRow.pageNumber === row.pageNumber
-        && anchorCells.some((cell) => sharesAnchorBand(
-          pendingRow,
-          cell,
-          rowPitchByPage.get(row.pageNumber) ?? Math.max(row.height, cell.height) * 2
-        ))
+      // A statement does not always print the date on the first line of a
+      // transaction. Decide where the previous transaction ended rather than
+      // which lines sit near this date, so a lead description line is not
+      // handed to the transaction above it.
+      const carried = carriedRowsForAnchor(
+        pendingRows,
+        row,
+        anchorCells,
+        previousAnchorRow,
+        schema?.columns ?? [],
+        pageWidth,
+        rowPitchByPage.get(row.pageNumber) ?? Math.max(row.height * 2, 1)
       );
-      const alignedIds = new Set(alignedWithNext.map((pendingRow) => pendingRow.id));
-      appendPendingToPrevious(pendingRows.filter((pendingRow) => !alignedIds.has(pendingRow.id)));
+      const carriedIds = new Set(carried.map((pendingRow) => pendingRow.id));
+      appendPendingToPrevious(pendingRows.filter((pendingRow) => !carriedIds.has(pendingRow.id)));
       pendingRows = [];
-      blocks.push(blockFromRows([...alignedWithNext, row], sectionId, false, sectionDirection));
+      previousAnchorRow = row;
+      blocks.push(blockFromRows([...carried, row], sectionId, false, sectionDirection));
       continue;
     }
     if (isSuppressedDateTransaction(
@@ -180,7 +187,7 @@ function anchorSources(row: PdfVisualRow, column: PdfColumn | undefined, pageWid
   if (column) return [];
   // Without a mapped date column, require both a date and a financial value
   // before a full row can create a boundary.
-  if (!looksLikeDate(row.text) || moneyCandidates(row.text).length === 0) return [];
+  if (!rowLooksLikeDate(row) || !rowHasMoney(row)) return [];
   const datedCells = row.cells.filter((cell) => looksLikeDate(cell.text));
   return datedCells.length ? datedCells : row.cells;
 }
@@ -246,7 +253,16 @@ function isSuppressedDateTransaction(
   pageWidth: number,
   previousHasAccountAmount: boolean
 ) {
-  if (!columns.length || looksLikeDate(row.text)) return false;
+  if (!columns.length) return false;
+  // Whether a row carries its own date is a question about the date column.
+  // Descriptions often print a date of their own - a purchase date, a value
+  // date in the narrative - and that must not stop the row becoming the
+  // transaction it is.
+  const dateColumns = columns.filter((column) => ["transaction-date", "posting-date", "value-date"].includes(column.role));
+  const printsItsOwnDate = dateColumns.length
+    ? dateColumns.some((column) => rowValuesForColumn(row, column, pageWidth).some((cell) => looksLikeDate(cell.text)))
+    : rowLooksLikeDate(row);
+  if (printsItsOwnDate) return false;
   const values = (roles: PdfColumn["role"][]) => columns
     .filter((column) => roles.includes(column.role))
     .flatMap((column) => rowValuesForColumn(row, column, pageWidth));
@@ -312,12 +328,16 @@ function verticalOverlap(startA: number, endA: number, startB: number, endB: num
 function sharesAnchorBand(
   row: PdfVisualRow,
   anchor: PdfVisualRow["cells"][number],
-  rowPitch: number
+  rowPitch: number,
+  reach = 0.75
 ) {
   if (verticalOverlap(row.y, row.y + row.height, anchor.y, anchor.y + anchor.height) >= 0.25) return true;
   const centerDistance = Math.abs((row.y + row.height / 2) - (anchor.y + anchor.height / 2));
   const fontMetricTolerance = Math.max(row.height, anchor.height) * 1.25;
-  const anchorBand = Math.min(rowPitch * 0.75, Math.max(fontMetricTolerance, rowPitch * 0.7));
+  // A reach of about one printed line is far enough for a lead description
+  // line that sits directly above its own date; the tighter default leaves a
+  // line that belongs to the transaction above where it is.
+  const anchorBand = Math.max(fontMetricTolerance, rowPitch * reach);
   return centerDistance <= anchorBand;
 }
 
@@ -343,6 +363,72 @@ function hasMappedAccountAmount(row: PdfVisualRow, columns: PdfColumn[], pageWid
     .filter((column) => ["amount", "debit", "credit"].includes(column.role))
     .flatMap((column) => rowValuesForColumn(row, column, pageWidth))
     .some((cell) => moneyCandidates(cell.text).length > 0);
+}
+
+function isSeparatorRow(row: PdfVisualRow) {
+  return SEPARATOR_ROW.test(row.text.trim());
+}
+
+/**
+ * Which unclaimed lines belong to the transaction this date anchor starts.
+ *
+ * A statement does not always print the date on a transaction's first line, so
+ * the lines above an anchor have to be divided rather than assumed to belong
+ * above. In order of trust:
+ *
+ * 1. A printed separator is the statement's own boundary.
+ * 2. Otherwise a line is claimed only when it sits within about one line of
+ *    this date and closer to it than to the previous one, which keeps an
+ *    evenly spaced wrapped description with the transaction above it.
+ * 3. A line carrying the previous transaction's account amount completes that
+ *    transaction, so it and everything above it stay there.
+ */
+function carriedRowsForAnchor(
+  pending: PdfVisualRow[],
+  anchor: PdfVisualRow,
+  anchorCells: PdfVisualRow["cells"],
+  previousAnchor: PdfVisualRow | undefined,
+  columns: PdfColumn[],
+  pageWidth: number,
+  rowPitch: number
+) {
+  const lastSeparator = findLastIndex(pending, isSeparatorRow);
+  // A printed separator is the statement's own boundary and is taken at face
+  // value, including when the transaction prints its total on its first line.
+  if (lastSeparator >= 0) return pending.slice(lastSeparator + 1).filter((row) => !isSeparatorRow(row));
+
+  const candidates = lastSeparator >= 0
+    ? pending.slice(lastSeparator + 1)
+    : trailingRowsMatching(pending, (row) => {
+      if (row.pageNumber !== anchor.pageNumber || isSeparatorRow(row)) return false;
+      const samePageAsPrevious = Boolean(previousAnchor) && previousAnchor!.pageNumber === anchor.pageNumber;
+      // Across a page break the line above an anchor is the previous page's
+      // wrapped description far more often than a lead line, so only a line
+      // sharing this anchor's own baseline is claimed.
+      const reach = samePageAsPrevious ? 1.25 : 0.75;
+      if (!anchorCells.some((cell) => sharesAnchorBand(row, cell, rowPitch, reach))) return false;
+      return !samePageAsPrevious || verticalDistance(row, anchor) < verticalDistance(row, previousAnchor!);
+    });
+
+  // Without a separator, a line carrying the previous transaction's account
+  // amount completes it, so that line and everything above it stay there.
+  // With no transaction above, there is nothing to complete and the line
+  // belongs to the transaction it introduces.
+  const claimed = candidates.filter((row) => !isSeparatorRow(row));
+  if (!previousAnchor) return claimed;
+  const lastAccountAmount = findLastIndex(claimed, (row) => hasMappedAccountAmount(row, columns, pageWidth));
+  return lastAccountAmount >= 0 ? claimed.slice(lastAccountAmount + 1) : claimed;
+}
+
+function verticalDistance(row: PdfVisualRow, other: PdfVisualRow) {
+  return Math.abs((row.y + row.height / 2) - (other.y + other.height / 2));
+}
+
+function findLastIndex<T>(values: T[], predicate: (value: T) => boolean) {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (predicate(values[index])) return index;
+  }
+  return -1;
 }
 
 function trailingRowsMatching(rows: PdfVisualRow[], predicate: (row: PdfVisualRow) => boolean) {

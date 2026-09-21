@@ -9,8 +9,9 @@ import type {
   PdfVisualRow,
 } from "./model";
 import { normalizePdfText } from "./text";
-import { looksLikeDate, looksLikeMoney, moneyCandidates } from "./candidates";
+import { looksLikeDate, moneyCandidates } from "./candidates";
 import { isTransactionHeader } from "./regions";
+import { rowLooksLikeDate, rowLooksLikeMoney } from "./rows";
 
 type TokenDraft = PdfPositionedToken & { sourceOrder: number };
 
@@ -21,6 +22,9 @@ export type PdfLayoutResult = {
 
 export function reconstructPdfLayout(document: PdfStatementDocument): PdfLayoutResult {
   const pages = document.pages.map(reconstructPage);
+  pages.forEach((page) => page.rows.forEach((row) => {
+    if (isTransactionHeader(row)) row.tableHeader = true;
+  }));
   markRepeatedHeadersAndFooters(pages);
   return {
     pages,
@@ -271,7 +275,7 @@ function markRepeatedHeadersAndFooters(pages: PdfReconstructedPage[]) {
       // The table header repeats on every page by design. Removing it as
       // furniture would take the statement's own column names away from
       // schema detection, which is where they are most useful.
-      if (!edge || key.length < 3 || isTransactionHeader(row) || (looksLikeDate(row.text) && looksLikeMoney(row.text))) return;
+      if (!edge || key.length < 3 || row.tableHeader || (rowLooksLikeDate(row) && rowLooksLikeMoney(row))) return;
       const list = occurrences.get(key) ?? [];
       list.push(row);
       occurrences.set(key, list);

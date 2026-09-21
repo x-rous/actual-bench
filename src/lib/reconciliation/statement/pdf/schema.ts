@@ -1,4 +1,5 @@
 import { looksLikeDate, looksLikeMoney, moneyCandidates } from "./candidates";
+import { rowLooksLikeDate } from "./rows";
 import { columnExamplesForRegions } from "./columns";
 import { diagnostic } from "./diagnostics";
 import type {
@@ -68,20 +69,23 @@ export function detectPdfTableSchemas(
     pages,
     transactionRegions
   );
-  const transactionRowKeys = new Set(rows.filter((row) => looksLikeDate(row.text)).map((row) => row.id));
+  const transactionRowKeys = new Set(rows.filter(rowLooksLikeDate).map((row) => row.id));
   const contentHypothesis = withExamples(
     columnsFromContent(clusters, referencePageWidth, transactionRowKeys),
     pages,
     transactionRegions
   );
-  const hypotheses = [headerHypothesis, contentHypothesis]
-    .filter((columns) => columns.length > 0)
-    .map((columns, index) => schema(
-      index === 0 ? "headers" : "content",
+  const hypotheses = [
+    { id: "headers", columns: headerHypothesis, reason: "roles inferred from printed headers" },
+    { id: "content", columns: contentHypothesis, reason: "roles inferred from column values" },
+  ]
+    .filter((candidate) => candidate.columns.length > 0)
+    .map((candidate) => schema(
+      candidate.id,
       transactionRegions,
-      columns,
-      scoreSchema(columns, index === 0),
-      index === 0 ? ["roles inferred from printed headers"] : ["roles inferred from column values"]
+      candidate.columns,
+      scoreSchema(candidate.columns, candidate.id === "headers"),
+      [candidate.reason]
     ))
     .sort((left, right) => right.score - left.score);
   return {
@@ -159,6 +163,15 @@ function columnsFromContent(
     };
   }).filter((candidate) => candidate.support >= 2);
   const moneyClusters = supported.filter((candidate) => candidate.moneyRatio >= 0.65);
+  // With one money column there is nothing to confuse it with. With several,
+  // only a column that carries a value on nearly every transaction row, and
+  // far more often than any other, can be the account amount: an amount and a
+  // balance appear equally often, so neither wins and both stay unmapped.
+  const dominantMoneyCluster = moneyClusters.length > 1
+    ? moneyClusters.find((candidate) =>
+      candidate.support >= transactionRowKeys.size * 0.8
+      && moneyClusters.every((other) => other === candidate || candidate.support >= other.support * 3))
+    : undefined;
   const descriptionCluster = supported
     .filter((candidate) => candidate.dateRatio < 0.25 && candidate.moneyRatio < 0.25 && candidate.directionRatio < 0.65)
     .sort((left, right) => average(right.samples.map((sample) => sample.length)) - average(left.samples.map((sample) => sample.length)))[0];
@@ -168,7 +181,7 @@ function columnsFromContent(
     if (dateRatio >= 0.65) {
       role = dateIndex === 0 ? "transaction-date" : dateIndex === 1 ? "posting-date" : "value-date";
       dateIndex += 1;
-    } else if (moneyRatio >= 0.65 && moneyClusters.length === 1) {
+    } else if (moneyRatio >= 0.65 && (moneyClusters.length === 1 || dominantMoneyCluster?.index === index)) {
       role = "amount";
     } else if (directionRatio >= 0.65) {
       role = "direction";

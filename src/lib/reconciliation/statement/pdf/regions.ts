@@ -1,6 +1,7 @@
 import { diagnostic } from "./diagnostics";
-import { dateCandidates, looksLikeDate, looksLikeMoney, moneyCandidates } from "./candidates";
+import { dateCandidates, looksLikeDate, looksLikeMoney } from "./candidates";
 import { rowValuesForColumn } from "./columns";
+import { rowHasMoney, rowLooksLikeDate } from "./rows";
 import type {
   PdfColumn,
   PdfDiagnosticEvent,
@@ -62,7 +63,7 @@ function proposePageRegions(
   const anchorCandidates = usable.filter((row, index) =>
     hasLikelyDateAnchor(row, hasTransactionHeader)
     && (!transactionHeader || row.y > transactionHeader.y)
-    && (hasTransactionHeader || usable.slice(index, index + 7).some((candidate) => moneyCandidates(candidate.text).length > 0))
+    && (hasTransactionHeader || usable.slice(index, index + 7).some(rowHasMoney))
   );
   const anchors = hasTransactionHeader
     ? anchorCandidates
@@ -123,7 +124,7 @@ function hasLikelyDateAnchor(
   row: PdfReconstructedPage["rows"][number],
   hasTransactionHeader: boolean
 ) {
-  if (hasTransactionHeader) return looksLikeDate(row.text);
+  if (hasTransactionHeader) return rowLooksLikeDate(row);
   return row.cells.some((cell) => dateCandidates(cell.text).some((candidate) =>
     /\p{L}/u.test(candidate) || /[/\-]/.test(candidate) || /^\d{4}[.]/.test(candidate)
   ));

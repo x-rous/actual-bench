@@ -195,6 +195,7 @@ function isEvidenceReason(reason: PdfTransactionProposal["issueCodes"][number]) 
     "DIRECTION_FROM_BALANCE",
     "DIRECTION_FROM_SECTION",
     "DIRECTION_EXPLICIT_POLICY",
+    "DIRECTION_FROM_MARKER_CONVENTION",
     "BALANCE_RECONCILED",
     "ROW_MANUALLY_CHANGED",
   ].includes(reason);

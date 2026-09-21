@@ -32,6 +32,16 @@ function result(rows: { y: number; cells: { x: number; text: string }[] }[], gui
   });
 }
 
+/** This jsdom build has no Blob.text, so the export is read back the long way. */
+function readBlobText(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}
+
 function ordinaryResult() {
   return result([
     { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
@@ -541,6 +551,59 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByLabelText("Value date for PDF row 1")).toHaveValue("2026-08-15");
   });
 
+  const descriptionsOf = () => screen.getAllByRole("textbox", { name: /Description for PDF row/ })
+    .map((input) => (input as HTMLInputElement).value);
+
+  it("exports the transactions as they are currently shown", async () => {
+    const createObjectURL = jest.fn().mockReturnValue("blob:statement");
+    const revokeObjectURL = jest.fn();
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    const clicks: string[] = [];
+    const anchorClick = jest
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) { clicks.push(this.download); });
+
+    const parsed = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON BRAVO" }, { x: 480, text: "USD -30.00" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON ALPHA" }, { x: 480, text: "USD -10.00" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="march-statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    // Sorting and searching change what is shown, and the export follows.
+    fireEvent.change(screen.getByLabelText("Search parsed transactions"), { target: { value: "ALPHA" } });
+    expect(descriptionsOf()).toEqual(["ANON ALPHA"]);
+
+    // The search clears from its own control, as it does on the rules screen.
+    fireEvent.click(screen.getByRole("button", { name: "Clear the transaction search" }));
+    expect(descriptionsOf()).toEqual(["ANON BRAVO", "ANON ALPHA"]);
+    fireEvent.change(screen.getByLabelText("Search parsed transactions"), { target: { value: "ALPHA" } });
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+
+    // The export control stays beside the search box, not inside the filter
+    // strip that scrolls when a statement has many issue filters.
+    const toolbarSearch = screen.getByLabelText("Search parsed transactions");
+    const exportButton = screen.getByRole("button", { name: /Export/ });
+    expect(toolbarSearch.closest("div")).toBe(exportButton.closest("div"));
+    expect(screen.getByRole("group", { name: "Review filters" }).contains(exportButton)).toBe(false);
+
+    expect(clicks).toEqual(["march-statement.csv"]);
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toContain("text/csv");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:statement");
+
+    const csv = await readBlobText(blob);
+    const lines = csv.trim().split("\r\n");
+    expect(lines[0]).toContain("Transaction date");
+    expect(lines[0]).toContain("Amount");
+    // Only the row the search left on screen, with its reviewed values.
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain("ANON ALPHA");
+    expect(lines[1]).toContain("-10.00");
+    expect(csv).not.toContain("ANON BRAVO");
+    anchorClick.mockRestore();
+  });
+
   it("sorts the review table by a column and back to statement order", () => {
     const parsed = result([
       { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
@@ -635,6 +698,24 @@ describe("PdfStatementReviewDialog v2", () => {
       mode: "update",
     })));
     expect(toastSuccess).toHaveBeenCalledWith("Statement layout updated", expect.anything());
+  });
+
+  it("offers the setting that resolves an unresolved direction", async () => {
+    // One amount column, no signs and no markers: every row is blocked on the
+    // same question.
+    const parsed = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON CAFE" }, { x: 480, text: "4.00" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+    const attention = screen.getByRole("region", { name: "What needs attention" });
+    expect(within(attention).getByText(/do not say whether they are money in or money out/)).toBeInTheDocument();
+
+    fireEvent.click(within(attention).getAllByRole("button", { name: "Fix this" })[0]);
+    await waitFor(() => expect(screen.getByLabelText("Amount direction")).toHaveFocus());
   });
 
   it("keeps the statement layout controls with the detection settings", () => {

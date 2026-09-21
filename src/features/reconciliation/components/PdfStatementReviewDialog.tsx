@@ -14,6 +14,7 @@ import {
   ChevronsUpDown,
   CircleHelp,
   Copy,
+  Download,
   Eye,
   GitMerge,
   ListPlus,
@@ -25,6 +26,7 @@ import {
   SquareDashedMousePointer,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -38,6 +40,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
 import { columnBoundsForPage } from "@/lib/reconciliation/statement/pdf/columns";
 import {
@@ -243,6 +246,8 @@ export function PdfStatementReviewDialog({
   const [manageProfilesOpen, setManageProfilesOpen] = useState(false);
   const [saveProfileOpen, setSaveProfileOpen] = useState(false);
   const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
+  const [controlFocus, setControlFocus] = useState<{ id: string; requestId: number } | null>(null);
+  const [interpretationOpen, setInterpretationOpen] = useState(true);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [pageWarningsAcknowledged, setPageWarningsAcknowledged] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -301,9 +306,19 @@ export function PdfStatementReviewDialog({
     () => detectionIssuesFor(parsed, draftGuidance, profileNotice),
     [draftGuidance, parsed, profileNotice]
   );
-  const parserDetailCount = parsed
-    ? new Set([...parsed.warnings, ...detectionIssues]).size
-    : 0;
+  const issueMessages = useMemo(
+    () => [...new Set([...detectionIssues.map((issue) => issue.message), ...(parsed?.warnings ?? [])])],
+    [detectionIssues, parsed?.warnings]
+  );
+  const parserDetailCount = issueMessages.length;
+
+  function resolveIssue(issue: PdfDetectionIssue) {
+    setScopedCorrectionOffer(null);
+    setMode("adjust");
+    if (!issue.focus) return;
+    setInterpretationOpen(true);
+    setControlFocus((current) => ({ id: issue.focus!, requestId: (current?.requestId ?? 0) + 1 }));
+  }
   // Pages the parser could not read are missing transactions, not a detail in
   // a secondary view: import stays disabled until they are acknowledged.
   const unreadablePageCount = (parsed?.metrics.unreadablePages ?? 0) + (parsed?.metrics.imageOnlyPages ?? 0);
@@ -633,6 +648,52 @@ export function PdfStatementReviewDialog({
     }
   }
 
+  /**
+   * Export what the screen currently shows: the same rows, in the same order,
+   * carrying the corrections made so far. A filtered view exports the filtered
+   * rows, because that is what the reader is looking at.
+   */
+  function exportVisibleRows() {
+    if (!parsed || sortedRows.length === 0) return;
+    const showPosting = parsed.guidance.columns.some((column) => column.role === "posting-date")
+      || sortedRows.some((row) => row.postedDate);
+    const showValue = parsed.guidance.columns.some((column) => column.role === "value-date")
+      || sortedRows.some((row) => row.valueDate);
+    const showBalance = sortedRows.some((row) => row.balance);
+    const header = [
+      "Statement row",
+      "Status",
+      "Transaction date",
+      ...(showPosting ? ["Posting date"] : []),
+      ...(showValue ? ["Value date"] : []),
+      "Import date",
+      "Description",
+      "Reference",
+      "Amount",
+      "Currency",
+      ...(showBalance ? ["Balance"] : []),
+      "Page",
+      "Notes",
+    ];
+    const body = sortedRows.map((row) => [
+      row.sourceRowNumber,
+      row.status === "accepted" ? "Ready" : row.status === "rejected" ? "Fix" : "Review",
+      row.transactionDate ?? "",
+      ...(showPosting ? [row.postedDate ?? ""] : []),
+      ...(showValue ? [row.valueDate ?? ""] : []),
+      row.importDate ?? "",
+      row.description,
+      row.reference ?? "",
+      row.amount,
+      row.currency ?? "",
+      ...(showBalance ? [row.balance ?? ""] : []),
+      row.raw.pageNumber,
+      row.status === "accepted" ? "" : reasonText(row.issueCodes),
+    ]);
+    downloadCsv(csvFileNameFor(fileName), [header, ...body]);
+    toast.success(`Exported ${sortedRows.length} ${sortedRows.length === 1 ? "transaction" : "transactions"}`);
+  }
+
   function copyDiagnostics() {
     const payload = JSON.stringify({
       modelVersion: parsed?.modelVersion,
@@ -710,7 +771,7 @@ export function PdfStatementReviewDialog({
                   <Button
                     size="xs"
                     variant={mode === "diagnostics" ? "secondary" : "ghost"}
-                    title={parserDetailCount > 0 ? [...new Set([...detectionIssues, ...parsed.warnings])].join("\n") : "View parsing summary and technical diagnostics"}
+                    title={parserDetailCount > 0 ? issueMessages.join("\n") : "View parsing summary and technical diagnostics"}
                     onClick={() => { setScopedCorrectionOffer(null); setMode("diagnostics"); }}
                   >
                     <CircleHelp aria-hidden="true" className="mr-1 size-3.5" />Parser details{parserDetailCount > 0 ? ` (${parserDetailCount})` : ""}
@@ -752,6 +813,8 @@ export function PdfStatementReviewDialog({
                     setFilter={setFilter}
                     search={search}
                     setSearch={setSearch}
+                    exportCount={sortedRows.length}
+                    onExport={exportVisibleRows}
                   />
                   <TransactionTable
                     rows={tableRows}
@@ -867,6 +930,21 @@ export function PdfStatementReviewDialog({
                 </div>
                 <div className="flex min-h-0 flex-col">
                   <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+                    {detectionIssues.length > 0 && (
+                      <section aria-label="What needs attention" className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+                        <ul className="space-y-1.5 text-xs">
+                          {detectionIssues.map((issue) => (
+                            <li key={issue.message} className="flex items-start gap-2">
+                              <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                              <span className="min-w-0 flex-1">{issue.message}</span>
+                              {issue.focus && (
+                                <Button size="xs" variant="outline" className="shrink-0" onClick={() => resolveIssue(issue)}>Fix this</Button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
                     <PdfStatementLayoutPanel
                       profiles={profiles}
                       selectedProfileId={selectedProfileId}
@@ -885,7 +963,14 @@ export function PdfStatementReviewDialog({
                         : undefined}
                       onSave={onSaveProfile ? () => setSaveProfileOpen(true) : undefined}
                     />
-                    <DetectionControls guidance={draftGuidance} accountType={parsed.accountType} onChange={updateDraft} />
+                    <DetectionControls
+                      guidance={draftGuidance}
+                      accountType={parsed.accountType}
+                      focusRequest={controlFocus}
+                      open={interpretationOpen}
+                      onOpenChange={setInterpretationOpen}
+                      onChange={updateDraft}
+                    />
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-medium">Column mapping</h3>
                       <Button size="xs" variant="outline" onClick={addColumn}>Map another column</Button>
@@ -952,9 +1037,18 @@ export function PdfStatementReviewDialog({
                     </dl>
                     {(parsed.warnings.length > 0 || detectionIssues.length > 0) && (
                       <ul className="mt-3 space-y-1 border-t pt-2 text-xs">
-                        {[...new Set([...detectionIssues, ...parsed.warnings])].map((warning) => (
-                          <li key={warning} className="flex items-start gap-1.5 text-amber-700 dark:text-amber-300"><AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{warning}</li>
-                        ))}
+                        {issueMessages.map((message) => {
+                          const issue = detectionIssues.find((entry) => entry.message === message);
+                          return (
+                            <li key={message} className="flex items-start gap-1.5 text-amber-700 dark:text-amber-300">
+                              <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                              <span className="min-w-0 flex-1">{message}</span>
+                              {issue?.focus && (
+                                <Button size="xs" variant="outline" className="shrink-0" onClick={() => resolveIssue(issue)}>Fix this</Button>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
                   </section>
@@ -1097,32 +1191,59 @@ function initialReviewFilter(result: PdfStatementParseResult | null): ReviewCate
   return result && result.metrics.review + result.metrics.rejected > 0 ? "needs-review" : "all";
 }
 
+export type PdfDetectionIssue = {
+  message: string;
+  /** The control in Statement interpretation that answers this question. */
+  focus?: string;
+};
+
+/**
+ * What stands between this statement and an import, worded as the next thing
+ * to do. Where one setting answers the question, the issue carries the control
+ * that sets it so the reader is not left hunting for it.
+ */
 function detectionIssuesFor(
   result: PdfStatementParseResult | null,
   guidance: PdfParserGuidance | null,
   profileNotice: string | null
-) {
-  if (!result || !guidance) return ["No detection result is available."];
-  const issues: string[] = [];
-  if (profileNotice) issues.push(profileNotice);
+): PdfDetectionIssue[] {
+  if (!result || !guidance) return [{ message: "No detection result is available." }];
+  const issues: PdfDetectionIssue[] = [];
+  if (profileNotice) issues.push({ message: profileNotice });
   if (!guidance.regions.some((region) => region.included && region.kind === "transactions")) {
-    issues.push("Select at least one transaction area.");
+    issues.push({ message: "Select at least one transaction area." });
   }
   if (!guidance.columns.some((column) => ["transaction-date", "posting-date", "value-date"].includes(column.role))) {
-    issues.push("Map the statement date column.");
+    issues.push({ message: "Map the statement date column." });
   }
   if (!guidance.columns.some((column) => ["amount", "debit", "credit"].includes(column.role))) {
-    issues.push("Map the account amount, money-out, or money-in column.");
+    issues.push({ message: "Map the account amount, money-out, or money-in column." });
   }
   // Worded exactly like the parser's own warning so the two are one item in
   // the Parser details list rather than the same question asked twice.
   if (!guidance.currency) {
-    issues.push("The statement currency was not detected. Set it in Statement interpretation.");
+    issues.push({
+      message: "The statement currency was not detected. Set it in Statement interpretation.",
+      focus: "pdf-statement-currency",
+    });
   }
-  if (result.transactions.length > 0 && result.metrics.rejected / result.transactions.length > 0.5) {
-    issues.push("Most detected transactions have unresolved required fields.");
+
+  const blocked = result.transactions.filter((row) => row.status === "rejected");
+  if (result.transactions.length > 0 && blocked.length / result.transactions.length > 0.5) {
+    const unresolvedDirection = blocked.filter((row) => row.issueCodes.includes("DIRECTION_UNRESOLVED")).length;
+    const missingAmount = blocked.filter((row) => row.issueCodes.includes("AMOUNT_MISSING")).length;
+    if (unresolvedDirection >= blocked.length / 2) {
+      issues.push({
+        message: `${unresolvedDirection} transactions do not say whether they are money in or money out. Choose what an unmarked amount means.`,
+        focus: "pdf-unsigned-direction",
+      });
+    } else if (missingAmount >= blocked.length / 2) {
+      issues.push({ message: `${missingAmount} transactions have no amount. Map the column that holds the account amount.` });
+    } else {
+      issues.push({ message: "Most detected transactions have unresolved required fields." });
+    }
   }
-  return [...new Set(issues)];
+  return issues.filter((issue, index, entries) => entries.findIndex((entry) => entry.message === issue.message) === index);
 }
 
 function WorkflowStepButton({ step, active, label, onClick }: { step: number; active: boolean; label: string; onClick: () => void }) {
@@ -1299,7 +1420,7 @@ function PreviewRow({
   );
 }
 
-const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, search, setSearch }: { rows: PdfTransactionProposal[]; filter: ReviewCategory; setFilter: (filter: ReviewCategory) => void; search: string; setSearch: (value: string) => void }) {
+const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, search, setSearch, onExport, exportCount }: { rows: PdfTransactionProposal[]; filter: ReviewCategory; setFilter: (filter: ReviewCategory) => void; search: string; setSearch: (value: string) => void; onExport: () => void; exportCount: number }) {
   const reviewCategories: [ReviewCategory, string][] = [
     ["structure", "Structure"],
     ["dates", "Dates"],
@@ -1313,8 +1434,10 @@ const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, sea
   const manualCount = count("manual");
   const issueFilterActive = filter === "needs-review" || visibleReviewCategories.some((category) => category.value === filter);
   return (
-    <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b px-4 py-1.5">
-      <div className="flex shrink-0 items-center gap-1" aria-label="Review filters">
+    <div className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5">
+      {/* The filters scroll within their own space so that searching and
+          exporting stay reachable however many filters are showing. */}
+      <div role="group" aria-label="Review filters" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         <ReviewFilterButton label="All" count={count("all")} active={filter === "all"} onClick={() => setFilter("all")} />
         <ReviewFilterButton label="Needs review" count={needsReviewCount} active={filter === "needs-review"} onClick={() => setFilter("needs-review")} />
         <ReviewFilterButton label="Ready" count={count("ready")} active={filter === "ready"} onClick={() => setFilter("ready")} />
@@ -1328,11 +1451,36 @@ const ReviewToolbar = memo(function ReviewToolbar({ rows, filter, setFilter, sea
         )}
         {manualCount > 0 && <ReviewFilterButton label="Manual changes" count={manualCount} active={filter === "manual"} onClick={() => setFilter("manual")} />}
       </div>
-      <label className="relative ml-auto min-w-48 flex-1 sm:max-w-72">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <label className="relative flex shrink-0 items-center">
+        <Search className="pointer-events-none absolute left-1.5 size-3.5 text-muted-foreground" />
         <span className="sr-only">Search parsed transactions</span>
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search transactions" className="h-8 w-full rounded-md border bg-background pl-8 pr-2 text-xs" />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search…"
+          className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
+        />
+        {search && (
+          <button
+            type="button"
+            aria-label="Clear the transaction search"
+            onClick={() => setSearch("")}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-3" />
+          </button>
+        )}
       </label>
+      <Button
+        size="xs"
+        variant="outline"
+        className="shrink-0"
+        disabled={exportCount === 0}
+        title={`Export the ${exportCount} ${exportCount === 1 ? "transaction" : "transactions"} shown, as they are now`}
+        onClick={onExport}
+      >
+        <Download aria-hidden="true" className="mr-1 size-3.5" />Export
+      </Button>
     </div>
   );
 });
@@ -1560,6 +1708,12 @@ function SortableHeader({
 
 const STATUS_SORT_ORDER: Record<PdfTransactionProposal["status"], number> = { rejected: 0, review: 1, accepted: 2 };
 
+/** The statement's own name, with a csv extension and no directory parts. */
+function csvFileNameFor(fileName: string) {
+  const base = fileName.replace(/\.pdf$/i, "").replace(/[\\/]/g, "-").trim();
+  return `${base || "pdf-statement"}.csv`;
+}
+
 function nextSortState(current: SortState | null, column: SortColumn): SortState | null {
   if (current?.column !== column) return { column, direction: "asc" };
   if (current.direction === "asc") return { column, direction: "desc" };
@@ -1611,11 +1765,31 @@ function compareOptionalNumbers(left: string | null, right: string | null) {
   return minorUnits(left) - minorUnits(right);
 }
 
-function DetectionControls({ guidance, accountType, onChange }: { guidance: PdfParserGuidance; accountType: PdfAccountType; onChange: (patch: Partial<PdfParserGuidance>) => void }) {
-  const [open, setOpen] = useState(true);
+function DetectionControls({ guidance, accountType, focusRequest, open, onOpenChange, onChange }: {
+  guidance: PdfParserGuidance;
+  accountType: PdfAccountType;
+  focusRequest: { id: string; requestId: number } | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (patch: Partial<PdfParserGuidance>) => void;
+}) {
+  // A question raised elsewhere is answered here: the caller opens this
+  // section, and the caret lands on the control that settles the question.
+  useEffect(() => {
+    if (!focusRequest) return;
+    const frame = requestAnimationFrame(() => {
+      const control = document.getElementById(focusRequest.id);
+      if (!(control instanceof HTMLElement)) return;
+      // Not every environment implements scrolling; focus is the part that matters.
+      if (typeof control.scrollIntoView === "function") control.scrollIntoView({ block: "center", behavior: "smooth" });
+      control.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusRequest]);
+
   const importDateLabel = guidance.importDate === "transaction" ? "Transaction date" : guidance.importDate === "posting" ? "Posting date" : "Value date";
   return (
-    <details className="rounded-md border px-3 py-2" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <details className="rounded-md border px-3 py-2" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
       <summary className="cursor-pointer text-sm font-medium">
         <span>Statement interpretation</span>
         <span className="ml-2 text-[11px] font-normal text-muted-foreground">{accountTypeLabel(accountType)} · {guidance.currency ?? "currency automatic"} · import {importDateLabel.toLowerCase()}</span>
@@ -1623,9 +1797,9 @@ function DetectionControls({ guidance, accountType, onChange }: { guidance: PdfP
       <p className="mt-2 text-xs text-muted-foreground">Use these controls when the automatic date, number, account, or amount interpretation is wrong.</p>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <Control label="Account type"><select value={guidance.accountType} onChange={(event) => onChange({ accountType: event.target.value as PdfParserGuidance["accountType"] })} className="h-8 rounded border bg-background px-2"><option value="auto">Auto-detect ({accountTypeLabel(accountType)})</option>{["checking", "savings", "credit-card", "prepaid", "multi-currency", "business-cash", "loan", "investment"].map((value) => <option key={value} value={value}>{accountTypeLabel(value as PdfAccountType)}</option>)}</select></Control>
-        <Control label="Statement currency"><input value={guidance.currency ?? ""} maxLength={3} placeholder="Detect or enter ISO code" onChange={(event) => onChange({ currency: event.target.value.toUpperCase() || null })} className="h-8 rounded border bg-background px-2 uppercase" /></Control>
+        <Control label="Statement currency" htmlFor="pdf-statement-currency"><input id="pdf-statement-currency" value={guidance.currency ?? ""} maxLength={3} placeholder="Detect or enter ISO code" onChange={(event) => onChange({ currency: event.target.value.toUpperCase() || null })} className="h-8 rounded border bg-background px-2 uppercase" /></Control>
         <Control label="Use as import date"><select value={guidance.importDate} onChange={(event) => onChange({ importDate: event.target.value as PdfImportDate })} className="h-8 rounded border bg-background px-2"><option value="transaction">Transaction date</option><option value="posting">Posting date</option><option value="value">Value date</option></select></Control>
-        <Control label="Printed sign means"><select value={guidance.printedSign} onChange={(event) => onChange({ printedSign: event.target.value as PdfPrintedSign })} className="h-8 rounded border bg-background px-2">{PRINTED_SIGNS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control><Control label="Amount direction"><select value={guidance.unsignedDirection} onChange={(event) => onChange({ unsignedDirection: event.target.value as PdfParserGuidance["unsignedDirection"] })} className="h-8 rounded border bg-background px-2"><option value="review">Use signs or DR/CR; review unmarked</option><option value="debit">CR = money in; unmarked = money out</option><option value="credit">DR = money out; unmarked = money in</option></select></Control>
+        <Control label="Printed sign means"><select value={guidance.printedSign} onChange={(event) => onChange({ printedSign: event.target.value as PdfPrintedSign })} className="h-8 rounded border bg-background px-2">{PRINTED_SIGNS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control><Control label="Amount direction" htmlFor="pdf-unsigned-direction"><select id="pdf-unsigned-direction" value={guidance.unsignedDirection} onChange={(event) => onChange({ unsignedDirection: event.target.value as PdfParserGuidance["unsignedDirection"] })} className="h-8 rounded border bg-background px-2"><option value="review">Use signs or DR/CR; review unmarked</option><option value="debit">CR = money in; unmarked = money out</option><option value="credit">DR = money out; unmarked = money in</option></select></Control>
         <Control label="Statement starts"><input type="date" value={guidance.statementPeriod.start ?? ""} onChange={(event) => onChange({ statementPeriod: { ...guidance.statementPeriod, start: event.target.value || null } })} className="h-8 rounded border bg-background px-2" /></Control>
         <Control label="Statement ends"><input type="date" value={guidance.statementPeriod.end ?? ""} onChange={(event) => onChange({ statementPeriod: { ...guidance.statementPeriod, end: event.target.value || null } })} className="h-8 rounded border bg-background px-2" /></Control>
         <Control label="Date format"><select value={guidance.dateFormat} onChange={(event) => onChange({ dateFormat: event.target.value as PdfDateFormatOption })} className="h-8 rounded border bg-background px-2">{DATE_FORMATS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Control>
@@ -1635,7 +1809,9 @@ function DetectionControls({ guidance, accountType, onChange }: { guidance: PdfP
   );
 }
 
-function Control({ label, children }: { label: string; children: React.ReactNode }) { return <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted-foreground">{label}{children}</label>; }
+function Control({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
+  return <label htmlFor={htmlFor} className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted-foreground">{label}{children}</label>;
+}
 
 function PageControls({ pageNumber, pageCount, onChange }: { pageNumber: number; pageCount: number; onChange: (page: number) => void }) { return <div className="flex items-center gap-1"><Button size="icon-sm" variant="outline" aria-label="Previous PDF page" disabled={pageNumber <= 1} onClick={() => onChange(pageNumber - 1)}><ChevronLeft className="size-3.5" /></Button><span className="min-w-20 text-center text-xs">Page {pageNumber} of {pageCount}</span><Button size="icon-sm" variant="outline" aria-label="Next PDF page" disabled={pageNumber >= pageCount} onClick={() => onChange(pageNumber + 1)}><ChevronRight className="size-3.5" /></Button></div>; }
 
@@ -1663,12 +1839,13 @@ function isActionableReason(reason: PdfConfidenceReason) {
     "DIRECTION_FROM_BALANCE",
     "DIRECTION_FROM_SECTION",
     "DIRECTION_EXPLICIT_POLICY",
+    "DIRECTION_FROM_MARKER_CONVENTION",
     "BALANCE_RECONCILED",
     "ROW_MANUALLY_CHANGED",
   ].includes(reason);
 }
 
-function reasonText(reasons: PdfConfidenceReason[]) { return reasons.map((reason) => ({ DATE_AMBIGUOUS_ORDER: "Date order is ambiguous", DATE_YEAR_INFERRED_FROM_PERIOD: "Year was inferred from the statement period", DATE_INHERITED_FROM_PREVIOUS_ROW: "Date was inherited from the previous statement row", DATE_OUTSIDE_STATEMENT_PERIOD: "Date is outside the statement period", DATE_INVALID: "Date could not be read", AMOUNT_MULTIPLE_CANDIDATES: "More than one amount could apply", AMOUNT_DEBIT_CREDIT_CONFLICT: "Both money-out and money-in columns contain values", AMOUNT_FROM_MAPPED_COLUMN: "Amount came from the mapped column", AMOUNT_FORMAT_AMBIGUOUS: "Number format is ambiguous", AMOUNT_MISSING: "Amount is missing", AMOUNT_ZERO: "Amount must not be zero", CURRENCY_AMBIGUOUS: "Currency is not confirmed", CURRENCY_MINOR_UNIT_MISMATCH: "Amount precision does not match the currency", ACTUAL_PRECISION_UNSUPPORTED: "Actual cannot import this amount without losing decimal precision", DIRECTION_FROM_DEBIT_COLUMN: "Direction came from the money-out column", DIRECTION_FROM_CREDIT_COLUMN: "Direction came from the money-in column", DIRECTION_FROM_MARKER: "Direction came from a DR/CR marker", DIRECTION_FROM_SIGN: "Direction came from the printed sign", SIGN_CONVENTION_UNCONFIRMED: "Confirm whether the statement prints signs from your side or the card issuer's side", DIRECTION_FROM_BALANCE: "Direction came from the balance change", ACCOUNT_TYPE_UNCONFIRMED: "Confirm the account type: the balance column was read using a detected type", DIRECTION_FROM_SECTION: "Direction came from the statement section", DIRECTION_EXPLICIT_POLICY: "Direction follows your unsigned-amount policy", DIRECTION_UNRESOLVED: "Money in or money out is unresolved", DIRECTION_EVIDENCE_CONFLICT: "Printed direction evidence conflicts", BALANCE_RECONCILED: "Amount reconciles to the running balance", BALANCE_MISMATCH: "Amount does not reconcile to the running balance", ROW_CONTINUATION_UNCERTAIN: "Transaction grouping needs confirmation", ROW_IN_NON_TRANSACTION_SECTION: "Row may be outside the transaction table", ROW_MANUALLY_CHANGED: "Manually changed", PROFILE_LAYOUT_DRIFT: "Saved layout no longer aligns", PAGE_IMAGE_ONLY: "Page has no usable text", POSSIBLE_DUPLICATE: "Possible duplicate", STATEMENT_SUMMARY_MISMATCH: "Parsed totals do not match the statement summary", CROSS_PAGE_SEQUENCE_CHANGED: "Date order changes across pages", ACCOUNT_TYPE_SPECIALIZED: "This account type needs specialized review", DESCRIPTION_MISSING: "Description is missing" } satisfies Record<PdfConfidenceReason, string>)[reason]).join("; "); }
+function reasonText(reasons: PdfConfidenceReason[]) { return reasons.map((reason) => ({ DATE_AMBIGUOUS_ORDER: "Date order is ambiguous", DATE_YEAR_INFERRED_FROM_PERIOD: "Year was inferred from the statement period", DATE_INHERITED_FROM_PREVIOUS_ROW: "Date was inherited from the previous statement row", DATE_OUTSIDE_STATEMENT_PERIOD: "Date is outside the statement period", DATE_INVALID: "Date could not be read", AMOUNT_MULTIPLE_CANDIDATES: "More than one amount could apply", AMOUNT_DEBIT_CREDIT_CONFLICT: "Both money-out and money-in columns contain values", AMOUNT_FROM_MAPPED_COLUMN: "Amount came from the mapped column", AMOUNT_FORMAT_AMBIGUOUS: "Number format is ambiguous", AMOUNT_MISSING: "Amount is missing", AMOUNT_ZERO: "Amount must not be zero", CURRENCY_AMBIGUOUS: "Currency is not confirmed", CURRENCY_MINOR_UNIT_MISMATCH: "Amount precision does not match the currency", ACTUAL_PRECISION_UNSUPPORTED: "Actual cannot import this amount without losing decimal precision", DIRECTION_FROM_DEBIT_COLUMN: "Direction came from the money-out column", DIRECTION_FROM_CREDIT_COLUMN: "Direction came from the money-in column", DIRECTION_FROM_MARKER: "Direction came from a DR/CR marker", DIRECTION_FROM_SIGN: "Direction came from the printed sign", SIGN_CONVENTION_UNCONFIRMED: "Confirm whether the statement prints signs from your side or the card issuer's side", DIRECTION_FROM_BALANCE: "Direction came from the balance change", ACCOUNT_TYPE_UNCONFIRMED: "Confirm the account type: the balance column was read using a detected type", DIRECTION_FROM_SECTION: "Direction came from the statement section", DIRECTION_EXPLICIT_POLICY: "Direction follows your unsigned-amount policy", DIRECTION_FROM_MARKER_CONVENTION: "Unmarked amounts were read as the opposite of the statement's own CR or DR markers", DIRECTION_UNRESOLVED: "Money in or money out is unresolved", DIRECTION_EVIDENCE_CONFLICT: "Printed direction evidence conflicts", BALANCE_RECONCILED: "Amount reconciles to the running balance", BALANCE_MISMATCH: "Amount does not reconcile to the running balance", ROW_CONTINUATION_UNCERTAIN: "Transaction grouping needs confirmation", ROW_IN_NON_TRANSACTION_SECTION: "Row may be outside the transaction table", ROW_MANUALLY_CHANGED: "Manually changed", PROFILE_LAYOUT_DRIFT: "Saved layout no longer aligns", PAGE_IMAGE_ONLY: "Page has no usable text", POSSIBLE_DUPLICATE: "Possible duplicate", STATEMENT_SUMMARY_MISMATCH: "Parsed totals do not match the statement summary", CROSS_PAGE_SEQUENCE_CHANGED: "Date order changes across pages", ACCOUNT_TYPE_SPECIALIZED: "This account type needs specialized review", DESCRIPTION_MISSING: "Description is missing" } satisfies Record<PdfConfidenceReason, string>)[reason]).join("; "); }
 
 function transactionTotals(rows: PdfTransactionProposal[]) { return rows.reduce((total, row) => { const units = minorUnits(row.amount); if (units > 0) total.credits += units; if (units < 0) total.debits += Math.abs(units); return total; }, { credits: 0, debits: 0 }); }
 function formatSignedMinorUnits(value: number) { return `${value > 0 ? "+" : ""}${formatMinorUnits(value)}`; }

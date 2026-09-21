@@ -51,6 +51,11 @@ export type PdfVisualCell = PdfSourceBox & {
   rawText: string;
   text: string;
   tokenIds: string[];
+  /**
+   * Set when more than one mapped column covered this cell and it was settled
+   * in favour of one of them. Only that column reads the value.
+   */
+  columnId?: string;
 };
 
 export type PdfVisualRow = PdfSourceBox & {
@@ -60,6 +65,11 @@ export type PdfVisualRow = PdfSourceBox & {
   cellIds: string[];
   cells: PdfVisualCell[];
   repeatedHeaderFooter: boolean;
+  /**
+   * The statement's own column header. It stays in its area so column
+   * detection can read the printed names, and never joins a transaction.
+   */
+  tableHeader?: boolean;
 };
 
 export type PdfReconstructedPage = {
@@ -239,6 +249,7 @@ export type PdfConfidenceReason =
   | "ACCOUNT_TYPE_UNCONFIRMED"
   | "DIRECTION_FROM_SECTION"
   | "DIRECTION_EXPLICIT_POLICY"
+  | "DIRECTION_FROM_MARKER_CONVENTION"
   | "DIRECTION_UNRESOLVED"
   | "DIRECTION_EVIDENCE_CONFLICT"
   | "BALANCE_RECONCILED"
@@ -279,6 +290,7 @@ export type PdfDirectionEvidence =
   | "balance"
   | "section"
   | "explicit-policy"
+  | "marker-convention"
   | "manual"
   | "unknown";
 
