@@ -39,21 +39,34 @@ function DialogOverlay({
   )
 }
 
+/**
+ * `full` is for a dialog that is a workspace rather than a question: it takes
+ * the viewport apart from a margin, lays its own content out in a column, and
+ * drops the padding so headers and footers can span the full width. Kept here
+ * rather than written out at each call site so every such dialog is the same
+ * size, and so the viewport units stay in one place - `dvh` on small screens,
+ * where browser chrome makes `vh` taller than what the user can see.
+ */
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  size = "default",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  size?: "default" | "full"
 }) {
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        data-size={size}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-background p-4 text-sm ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          size === "full"
+            && "flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[calc(100vw-2rem)]",
           className
         )}
         {...props}

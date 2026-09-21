@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { PdfColumn, PdfReconstructedPage, PdfRegion } from "@/lib/reconciliation/statement/pdf";
 import { columnAppliesToPage, columnBoundsForPage, columnCoordinateToReference } from "@/lib/reconciliation/statement/pdf/columns";
+import { columnRoleLabel, regionKindLabel } from "../lib/pdfReviewTable";
 
 export function pdfColumnColor(index: number) {
   // Transaction regions already use green and amber. Keep column mappings in a
@@ -50,6 +51,8 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   onToggleRegion,
   onColumnChange,
   onDrawRegion,
+  toolbarStart,
+  toolbarEnd,
 }: {
   page: PdfReconstructedPage;
   previewDataUrl?: string | null;
@@ -69,6 +72,9 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   onToggleRegion: (regionId: string) => void;
   onColumnChange: (columnId: string, edge: "start" | "end", value: number) => void;
   onDrawRegion?: (box: { x: number; y: number; width: number; height: number }) => void;
+  /** Controls that belong with the viewer's own, before and after them. */
+  toolbarStart?: React.ReactNode;
+  toolbarEnd?: React.ReactNode;
 }) {
   const pageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -185,6 +191,66 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {/*
+        One strip of controls above the page, rather than a floating cluster
+        sitting on top of the statement: paging, zoom, and what is drawn over
+        the page are the same kind of thing, and the page is what the reader is
+        trying to look at.
+      */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2" role="group" aria-label="PDF viewer controls">
+        {toolbarStart}
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Zoom out PDF"
+            title={`Zoom out PDF (${Math.round(zoom * 100)}%, or press -)`}
+            disabled={zoom <= PDF_MIN_ZOOM}
+            onClick={() => changeZoom(zoom - PDF_ZOOM_STEP)}
+          >
+            <Minus aria-hidden="true" className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Zoom in PDF"
+            title={`Zoom in PDF (${Math.round(zoom * 100)}%, or press +)`}
+            disabled={zoom >= PDF_MAX_ZOOM}
+            onClick={() => changeZoom(zoom + PDF_ZOOM_STEP)}
+          >
+            <Plus aria-hidden="true" className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label="Fit PDF to width"
+            title={`Fit PDF to width (currently ${Math.round(zoom * 100)}%, or press 0)`}
+            disabled={zoom === PDF_FIT_WIDTH_ZOOM}
+            onClick={() => changeZoom(PDF_FIT_WIDTH_ZOOM)}
+          >
+            <Maximize2 aria-hidden="true" className="size-3.5" />
+          </Button>
+        </div>
+        {onToggleColumnMappings && (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            aria-label={columnMappingsVisible ? "Hide column mappings" : "Show column mappings"}
+            aria-pressed={columnMappingsVisible}
+            title={columnMappingsVisible ? "Hide column mappings" : "Show column mappings"}
+            className={cn(columnMappingsVisible && "bg-accent text-accent-foreground")}
+            onClick={onToggleColumnMappings}
+          >
+            <Columns3 aria-hidden="true" className="mr-1 size-3.5" />
+            Columns
+          </Button>
+        )}
+        {toolbarEnd}
+      </div>
       {showPageMetadata && (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>Page {page.pageNumber}</span>
@@ -209,65 +275,16 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
                   : "border-amber-600/70 bg-amber-500/15 text-amber-900 hover:bg-amber-500/25 dark:text-amber-200"
               )}
             >
-              {index + 1} · {region.kind.replaceAll("-", " ")} · {region.included ? "Included" : "Ignored"}
+              {index + 1} · {regionKindLabel(region.kind)} · {region.included ? "Included" : "Ignored"}
             </button>
           ))}
         </section>
       )}
       <div className="relative min-h-0 flex-1">
-        <div className="absolute left-2 top-2 z-[70] flex gap-1" role="group" aria-label="PDF viewer controls">
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="Zoom out PDF"
-            title={`Zoom out PDF (${Math.round(zoom * 100)}%)`}
-            disabled={zoom <= PDF_MIN_ZOOM}
-            onClick={() => changeZoom(zoom - PDF_ZOOM_STEP)}
-          >
-            <Minus aria-hidden="true" className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="Zoom in PDF"
-            title={`Zoom in PDF (${Math.round(zoom * 100)}%)`}
-            disabled={zoom >= PDF_MAX_ZOOM}
-            onClick={() => changeZoom(zoom + PDF_ZOOM_STEP)}
-          >
-            <Plus aria-hidden="true" className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            aria-label="Fit PDF to width"
-            title={`Fit PDF to width (currently ${Math.round(zoom * 100)}%)`}
-            disabled={zoom === PDF_FIT_WIDTH_ZOOM}
-            onClick={() => changeZoom(PDF_FIT_WIDTH_ZOOM)}
-          >
-            <Maximize2 aria-hidden="true" className="size-3.5" />
-          </Button>
-          {onToggleColumnMappings && (
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              aria-label={columnMappingsVisible ? "Hide column mappings" : "Show column mappings"}
-              aria-pressed={columnMappingsVisible}
-              title={columnMappingsVisible ? "Hide column mappings" : "Show column mappings"}
-              className={cn(columnMappingsVisible && "bg-accent text-accent-foreground")}
-              onClick={onToggleColumnMappings}
-            >
-              <Columns3 aria-hidden="true" className="mr-1 size-3.5" />
-              Columns
-            </Button>
-          )}
-        </div>
         <div
           ref={scrollRef}
           tabIndex={0}
+          role="group"
           aria-label={`PDF page ${page.pageNumber} viewer`}
           className="h-full overflow-auto rounded-md border bg-muted/30 p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onKeyDown={(event) => {
@@ -334,11 +351,17 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
               {token.rawText}
             </span>
           ))}
-          {page.rows.map((row) => (
+          {/*
+            Named by position, not by content: a label carrying the whole
+            printed line puts the statement's text into the accessibility tree
+            hundreds of times over, and "row 14" is what the reader is picking.
+          */}
+          {page.rows.map((row, rowIndex) => (
             <button
               key={row.id}
               type="button"
-              aria-label={`Select source row ${row.text}`}
+              aria-label={`Select statement row ${rowIndex + 1}`}
+              title={row.text}
               onClick={() => onSelectRow(row.id)}
               className={cn(
                 "absolute z-30 border border-transparent bg-transparent",
@@ -397,7 +420,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
                   className="absolute left-1 top-1 max-w-[calc(100%-0.5rem)] truncate rounded px-1 py-0.5 text-[9px] font-semibold text-white shadow-sm"
                   style={{ backgroundColor: color.border }}
                 >
-                  {column.role.replaceAll("-", " ")}
+                  {columnRoleLabel(column.role)}
                 </span>
                 {(["start", "end"] as const).map((edge) => (
                   <button

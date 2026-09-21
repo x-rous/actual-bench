@@ -94,8 +94,9 @@ the question - an unresolved money-in or money-out rule, or a missing currency -
 **Statement interpretation** and puts the cursor on that control.
 
 Select **Parser details** for page counts, parsing warnings, saved-layout validation, and technical
-diagnostics. Technical diagnostics contain aggregate events, counts, and page numbers, not statement
-text or source IDs.
+diagnostics. It opens beside the workbench rather than replacing it, so the rows a warning is about
+stay on screen and keep working. Technical diagnostics contain aggregate events, counts, and page
+numbers, not statement text or source IDs.
 
 Actual Bench opens **Review transactions** when the initial result is mostly usable and no saved
 layout needs confirmation. If more than half of the proposed transactions are rejected, or a saved
@@ -129,15 +130,16 @@ balance column is mapped and at least one balance was read.
 
 Use the row status and review filters to find structural, date, amount, direction, balance, and
 duplicate issues. **Ready** can continue, **Review** needs confirmation, and **Fix** is missing a
-required value. Select an eye icon to see the source text for a field. A review row contains a visible assumption or warning; select
+required value. A row that is not ready states underneath its description what it is waiting on. Select an eye icon to see the source text for a field. A review row contains a visible assumption or warning; select
 **Mark reviewed** only after checking it against the statement. Correcting a required field removes
 that error as soon as the row is valid. A row cannot be marked reviewed while a required field is
 still invalid.
 
-The PDF viewer opens at 80%, which keeps a full statement page in view. Use its floating **−**,
-**+**, and fit-width controls to zoom between 80% and 160%, or press **0** to fit the page to the
-available width. The viewer keeps the zoom
-level while you move between pages and workbench sections. Selecting a field's eye icon opens the
+The PDF viewer opens at 80%, which keeps a full statement page in view. Paging, zoom, and what is
+drawn over the page share one strip of controls above the viewer. Use **−**, **+**, and fit-width to
+zoom between 80% and 160%, or press **-**, **+**, and **0** with the page focused. A statement of
+more than five pages replaces the page label with a box you can type a page number into. The viewer
+keeps the zoom level while you move between pages and workbench sections. Selecting a field's eye icon opens the
 page containing its source and scrolls to the highlighted text when it is outside the visible area.
 In **Check detection**, select **Columns** to show or hide mappings; selecting a mapping
 centers that column in the viewer.
@@ -156,7 +158,8 @@ Marking several selected rows reviewed in one action first names the warnings th
 accept without resolving, such as possible duplicates or a balance that does not reconcile.
 
 Possible duplicates remain included. Mark both reviewed when they are separate transactions, or
-ignore the repeated row. Ignored rows can be restored from **Adjust detection**. A dated row inside a
+ignore the repeated row. Ignored rows can be restored from **Check detection**, individually or from
+one list when there are several. A dated row inside a
 detected or manually selected transaction table remains available for correction even when its amount
 cannot be read.
 

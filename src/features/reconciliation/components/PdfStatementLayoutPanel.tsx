@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { AlertTriangle, Save, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SelectField } from "@/components/ui/select-field";
 import {
   Dialog,
   DialogContent,
@@ -67,12 +69,12 @@ export function PdfStatementLayoutPanel({
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <label htmlFor="pdf-statement-layout" className="sr-only">Use layout</label>
-        <select
+        <SelectField
           id="pdf-statement-layout"
           value={selectedProfileId ?? ""}
           disabled={disabled}
           onChange={(event) => onSelect(event.target.value)}
-          className="h-8 min-w-48 flex-1 rounded-md border bg-background px-2 text-xs"
+          className="min-w-48 flex-1 text-xs"
         >
           <option value="">Automatic detection</option>
           {[...byBank.entries()]
@@ -86,7 +88,7 @@ export function PdfStatementLayoutPanel({
                   ))}
               </optgroup>
             ))}
-        </select>
+        </SelectField>
         {onSave && (
           <Button
             size="xs"
@@ -180,12 +182,12 @@ export function PdfLayoutSaveDialog({
         <div className="grid gap-4 py-2">
           <label className="grid gap-1.5 text-sm">
             <span className="font-medium">Bank</span>
-            <input
+            <Input
               list="pdf-statement-layout-banks"
               value={bankName}
               onChange={(event) => setBankName(event.target.value)}
               placeholder="For example, HSBC Bank"
-              className="h-9 rounded-md border bg-background px-3"
+              className="h-9"
               autoFocus
             />
             <datalist id="pdf-statement-layout-banks">
@@ -194,11 +196,11 @@ export function PdfLayoutSaveDialog({
           </label>
           <label className="grid gap-1.5 text-sm">
             <span className="font-medium">Layout name</span>
-            <input
+            <Input
               value={profileName}
               onChange={(event) => setProfileName(event.target.value)}
               placeholder="For example, Credit card"
-              className="h-9 rounded-md border bg-background px-3"
+              className="h-9"
             />
           </label>
 

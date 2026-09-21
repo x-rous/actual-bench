@@ -122,11 +122,11 @@ describe("PdfStatementReviewDialog v2", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
     fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF" }));
-    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (100%)");
+    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (100%, or press +)");
 
     fireEvent.click(screen.getByRole("button", { name: /Review transactions/ }));
     fireEvent.click(screen.getByRole("button", { name: "Show amount in statement for PDF row 1" }));
-    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (100%)");
+    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (100%, or press +)");
   });
 
   it("opens the PDF page containing the selected field evidence", () => {
@@ -409,7 +409,7 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(within(dateMapping).queryByText(/ANON SHOP/)).toBeNull();
     const boundary = screen.getByRole("button", { name: /Move transaction-date column start boundary/ });
     expect(boundary).toHaveClass("w-3", "bg-transparent");
-    expect(screen.getByText("transaction date")).toHaveClass("text-white");
+    expect(screen.getByText("Transaction date", { selector: "span" })).toHaveClass("text-white");
     const firstSwatch = screen.getByLabelText("Role for mapped column 1").previousElementSibling as HTMLElement;
     const secondSwatch = screen.getByLabelText("Role for mapped column 2").previousElementSibling as HTMLElement;
     expect(firstSwatch.style.backgroundColor).toBeTruthy();
@@ -431,10 +431,12 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("button", { name: "Apply changes and review" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Select transaction area" })).toBeInTheDocument();
     expect(screen.queryByText("Page 1")).not.toBeInTheDocument();
-    const coverage = screen.getByText(/% text coverage/);
+    const viewerControls = screen.getByRole("group", { name: "PDF viewer controls" });
+    const coverage = within(viewerControls).getByText(/% text coverage/);
     expect(coverage).toHaveClass("ml-auto");
-    const mappingToggle = screen.getByRole("button", { name: "Hide column mappings" });
-    expect(coverage.compareDocumentPosition(mappingToggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const mappingToggle = within(viewerControls).getByRole("button", { name: "Hide column mappings" });
+    expect(within(viewerControls).getByText("Page 1 of 1")).toBeInTheDocument();
+    expect(mappingToggle.compareDocumentPosition(coverage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const interpretation = screen.getByText("Statement interpretation");
     expect(interpretation.compareDocumentPosition(previewChanges) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("Change preview")).not.toBeInTheDocument();
@@ -452,10 +454,11 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(screen.getByRole("button", { name: "Include transaction area 1 from transaction areas" }));
     expect(screen.getByRole("button", { name: "Ignore transaction area 1 in PDF" })).toHaveClass("bg-emerald-600");
 
-    const nonTransactionSourceRow = screen.getAllByRole("button", { name: /Select source row/ })
-      .find((button) => button.getAttribute("aria-label")?.includes("Transaction Date"));
-    expect(nonTransactionSourceRow).toBeDefined();
-    fireEvent.click(nonTransactionSourceRow!);
+    // The header row prints above the transactions, so it is the first row and
+    // belongs to no transaction.
+    const nonTransactionSourceRow = screen.getByRole("button", { name: "Select statement row 1" });
+    expect(nonTransactionSourceRow).toHaveAttribute("title", expect.stringContaining("Transaction Date"));
+    fireEvent.click(nonTransactionSourceRow);
     expect(screen.getByRole("button", { name: "Mark selected row as transaction" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Role for mapped column 1"), { target: { value: "amount" } });
@@ -794,7 +797,8 @@ describe("PdfStatementReviewDialog v2", () => {
 
     // Accepting warnings that are still unresolved is confirmed first, and the
     // confirmation names them.
-    expect(screen.getByText(/Possible duplicate/)).toBeInTheDocument();
+    const confirmation = screen.getByRole("dialog", { name: /Mark 2 transactions reviewed/ });
+    expect(within(confirmation).getByText(/Possible duplicate/)).toBeInTheDocument();
     // The confirmation renders inside a paragraph, so it must not introduce
     // block elements that cannot legally nest there.
     expect(document.querySelector("[data-slot='dialog-description'] ul, [data-slot='dialog-description'] div"))
@@ -831,13 +835,15 @@ describe("PdfStatementReviewDialog v2", () => {
   it("shows diagnostics without exposing source text", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Parser details/ }));
-    fireEvent.click(screen.getByText("Technical diagnostics"));
+    // The details open beside the workbench rather than replacing it.
+    expect(screen.getByRole("table", { name: /Transactions extracted/ })).toBeInTheDocument();
 
-    const details = screen.getByText("Technical diagnostics").closest("details")!;
+    const diagnostics = screen.getByRole("region", { name: "Technical diagnostics" });
+    fireEvent.click(within(diagnostics).getByRole("button", { name: "Technical diagnostics" }));
     expect(
-      within(details).getByText(/Statement text and source IDs are not copied/),
+      within(diagnostics).getByText(/Statement text and source IDs are not copied/),
     ).toBeInTheDocument();
-    expect(within(details).queryByText(/ANON SHOP/)).toBeNull();
+    expect(within(diagnostics).queryByText(/ANON SHOP/)).toBeNull();
   });
 
   it("saves a privacy-safe bank profile without deriving names from the uploaded filename", async () => {
@@ -855,6 +861,87 @@ describe("PdfStatementReviewDialog v2", () => {
       result: expect.objectContaining({ modelVersion: 2 }),
     })));
     expect(JSON.stringify(onSaveProfile.mock.calls)).not.toContain("private-source-name");
+  });
+
+  it("collects several ignored rows into one restore control", () => {
+    const duplicate = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "FIRST" }, { x: 480, text: "USD -12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "SECOND" }, { x: 480, text: "USD -8.00" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={duplicate} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all visible PDF rows" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ignore" }));
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    // Two identical buttons say nothing a count does not.
+    expect(screen.queryByRole("button", { name: "Restore ignored row 1" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Restore ignored rows \(2\)/ })).toBeInTheDocument();
+  });
+
+  it("says what a row is waiting on in the table, not only in a tooltip", () => {
+    const parsed = ordinaryResult();
+    const row = parsed.transactions[0];
+    const needsReview = {
+      ...parsed,
+      transactions: [{ ...row, status: "review" as const, issueCodes: ["BALANCE_MISMATCH"] as typeof row.issueCodes }],
+      metrics: { ...parsed.metrics, accepted: 0, review: 1 },
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={needsReview} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    expect(screen.getByText("Amount does not reconcile to the running balance")).toBeInTheDocument();
+    // The status keeps the full list for anyone who wants all of it.
+    expect(screen.getByLabelText("Amount does not reconcile to the running balance")).toHaveTextContent("Review");
+  });
+
+  it("offers a way back when a filter leaves nothing on screen", () => {
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.change(screen.getByLabelText("Search parsed transactions"), { target: { value: "NOTHING MATCHES" } });
+    expect(screen.getByText("No transactions match this view.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all transactions" }));
+    expect(screen.getByLabelText("Description for PDF row 1")).toHaveValue("ANON SHOP");
+  });
+
+  it("marks a partial selection as partial rather than as selected", () => {
+    const duplicate = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "FIRST" }, { x: 480, text: "USD -12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "SECOND" }, { x: 480, text: "USD -8.00" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={duplicate} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    const selectAll = screen.getByRole("checkbox", { name: "Select all visible PDF rows" });
+    expect(selectAll).not.toHaveAttribute("data-indeterminate");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF row 1" }));
+    expect(screen.getByRole("checkbox", { name: "Select all visible PDF rows" })).toHaveAttribute("data-indeterminate");
+  });
+
+  it("offers a page number to jump to once a statement runs long", () => {
+    const parsed = ordinaryResult();
+    const firstPage = parsed.reconstructedPages[0];
+    const manyPages = {
+      ...parsed,
+      reconstructedPages: Array.from({ length: 8 }, (_, index) => ({
+        ...firstPage,
+        pageNumber: index + 1,
+        tokens: firstPage.tokens.map((token) => ({ ...token, id: `p${index + 1}-${token.id}`, pageNumber: index + 1 })),
+        rows: firstPage.rows.map((row) => ({ ...row, id: `p${index + 1}-${row.id}`, pageNumber: index + 1 })),
+      })),
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={manyPages} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    const pageInput = screen.getByLabelText("Go to PDF page");
+    fireEvent.change(pageInput, { target: { value: "6" } });
+    expect(screen.getByLabelText("PDF page 6 viewer")).toBeInTheDocument();
+
+    // Out-of-range entries are ignored rather than paging to nowhere.
+    fireEvent.change(pageInput, { target: { value: "99" } });
+    expect(screen.getByLabelText("PDF page 6 viewer")).toBeInTheDocument();
   });
 
   it("explains an image-only PDF without offering import", async () => {

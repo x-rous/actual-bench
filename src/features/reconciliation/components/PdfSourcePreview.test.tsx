@@ -88,7 +88,7 @@ function installViewerGeometry(viewer: HTMLElement, pageElement: HTMLElement) {
 }
 
 describe("PdfSourcePreview", () => {
-  it("fills the viewer width and provides bounded floating zoom controls", () => {
+  it("fills the viewer width and provides bounded zoom controls in the viewer toolbar", () => {
     const parsed = parsedPage();
     render(<PreviewHarness page={parsed.reconstructedPages[0]} />);
 
@@ -97,8 +97,11 @@ describe("PdfSourcePreview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF" }));
     expect(pageElement).toHaveStyle({ width: "120%" });
-    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (120%)");
-    expect(screen.getByRole("button", { name: "Zoom in PDF" }).parentElement).toHaveClass("left-2", "top-2");
+    expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (120%, or press +)");
+    // The controls sit in a strip above the page rather than on top of it.
+    const controls = screen.getByRole("group", { name: "PDF viewer controls" });
+    expect(controls).toContainElement(screen.getByRole("button", { name: "Zoom in PDF" }));
+    expect(controls.className).not.toContain("absolute");
 
     fireEvent.click(screen.getByRole("button", { name: "Fit PDF to width" }));
     expect(pageElement).toHaveStyle({ width: "100%" });
