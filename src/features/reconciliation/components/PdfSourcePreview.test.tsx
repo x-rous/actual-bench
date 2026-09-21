@@ -88,7 +88,7 @@ function installViewerGeometry(viewer: HTMLElement, pageElement: HTMLElement) {
 }
 
 describe("PdfSourcePreview", () => {
-  it("fills the viewer width and provides bounded zoom controls in the viewer toolbar", () => {
+  it("fills the viewer width and provides bounded zoom controls over the page", () => {
     const parsed = parsedPage();
     render(<PreviewHarness page={parsed.reconstructedPages[0]} />);
 
@@ -98,10 +98,10 @@ describe("PdfSourcePreview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Zoom in PDF" }));
     expect(pageElement).toHaveStyle({ width: "120%" });
     expect(screen.getByRole("button", { name: "Zoom in PDF" })).toHaveAttribute("title", "Zoom in PDF (120%, or press +)");
-    // The controls sit in a strip above the page rather than on top of it.
+    // The controls stay on the page, stacked down its left margin.
     const controls = screen.getByRole("group", { name: "PDF viewer controls" });
     expect(controls).toContainElement(screen.getByRole("button", { name: "Zoom in PDF" }));
-    expect(controls.className).not.toContain("absolute");
+    expect(controls).toHaveClass("absolute", "left-2", "top-2", "flex-col");
 
     fireEvent.click(screen.getByRole("button", { name: "Fit PDF to width" }));
     expect(pageElement).toHaveStyle({ width: "100%" });
@@ -162,10 +162,14 @@ describe("PdfSourcePreview", () => {
     expect(document.querySelector('[data-pdf-source-highlight="true"]')).not.toHaveClass("ring-1", "ring-sky-700");
 
     rendered.rerender(<PreviewHarness page={page} regions={[region]} calibration showColumnToggle />);
+    // A toggle rather than a labelled button: it shows that it is held down.
     const toggle = screen.getByRole("button", { name: "Hide column mappings" });
-    expect(toggle).toHaveTextContent("Columns");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveClass("bg-primary");
+    expect(toggle).toHaveTextContent("");
     fireEvent.click(toggle);
     expect(screen.getByRole("button", { name: "Show column mappings" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Show column mappings" })).not.toHaveClass("bg-primary");
     expect(screen.queryByRole("button", { name: /Move transaction-date column start boundary/ })).not.toBeInTheDocument();
   });
 });

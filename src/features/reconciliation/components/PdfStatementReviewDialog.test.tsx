@@ -431,12 +431,15 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("button", { name: "Apply changes and review" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Select transaction area" })).toBeInTheDocument();
     expect(screen.queryByText("Page 1")).not.toBeInTheDocument();
-    const viewerControls = screen.getByRole("group", { name: "PDF viewer controls" });
-    const coverage = within(viewerControls).getByText(/% text coverage/);
+    // Paging and page-level actions above the viewer; zoom and the mapping
+    // toggle on the page itself.
+    const pageControls = screen.getByRole("group", { name: "PDF page controls" });
+    const coverage = within(pageControls).getByText(/% text coverage/);
     expect(coverage).toHaveClass("ml-auto");
-    const mappingToggle = within(viewerControls).getByRole("button", { name: "Hide column mappings" });
-    expect(within(viewerControls).getByText("Page 1 of 1")).toBeInTheDocument();
-    expect(mappingToggle.compareDocumentPosition(coverage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(pageControls).getByText("Page 1 of 1")).toBeInTheDocument();
+    const viewerControls = screen.getByRole("group", { name: "PDF viewer controls" });
+    expect(viewerControls).toContainElement(screen.getByRole("button", { name: "Hide column mappings" }));
+    expect(viewerControls).toContainElement(screen.getByRole("button", { name: "Zoom in PDF" }));
     const interpretation = screen.getByText("Statement interpretation");
     expect(interpretation.compareDocumentPosition(previewChanges) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("Change preview")).not.toBeInTheDocument();

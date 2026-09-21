@@ -192,14 +192,53 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {/*
-        One strip of controls above the page, rather than a floating cluster
-        sitting on top of the statement: paging, zoom, and what is drawn over
-        the page are the same kind of thing, and the page is what the reader is
-        trying to look at.
+        Paging and page-level actions sit above the viewer; the controls that
+        act on what you are looking at stay on the page itself, where the eye
+        already is. The strip disappears entirely when nothing is passed, so
+        the review panel keeps the page and its own controls and nothing else.
       */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2" role="group" aria-label="PDF viewer controls">
-        {toolbarStart}
-        <div className="flex items-center gap-1">
+      {(toolbarStart || toolbarEnd) && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2" role="group" aria-label="PDF page controls">
+          {toolbarStart}
+          {toolbarEnd}
+        </div>
+      )}
+      {showPageMetadata && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Page {page.pageNumber}</span>
+          <span>{Math.round(page.coverage * 1000) / 10}% text coverage</span>
+        </div>
+      )}
+      {calibration && (
+        <section aria-label="Transaction areas" className="flex shrink-0 items-center gap-2 overflow-x-auto rounded-md border bg-muted/20 px-2 py-1.5">
+          <h4 className="shrink-0 text-xs font-medium">Transaction areas</h4>
+          {regions.length === 0 && <p className="whitespace-nowrap text-[11px] text-muted-foreground">No transaction areas detected. Select one in the PDF above.</p>}
+          {regions.map((region, index) => (
+            <button
+              key={region.id}
+              type="button"
+              aria-label={`${region.included ? "Ignore" : "Include"} transaction area ${index + 1} from transaction areas`}
+              aria-pressed={region.included}
+              onClick={() => onToggleRegion(region.id)}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                region.included
+                  ? "border-emerald-600/70 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
+                  : "border-amber-600/70 bg-amber-500/15 text-amber-900 hover:bg-amber-500/25 dark:text-amber-200"
+              )}
+            >
+              {index + 1} · {regionKindLabel(region.kind)} · {region.included ? "Included" : "Ignored"}
+            </button>
+          ))}
+        </section>
+      )}
+      <div className="relative min-h-0 flex-1">
+        {/*
+          Stacked rather than in a row: a column of buttons takes the page's
+          left margin, which is white space on a statement, instead of a strip
+          across the top of the first transactions.
+        */}
+        <div className="absolute left-2 top-2 z-[70] flex flex-col gap-1" role="group" aria-label="PDF viewer controls">
           <Button
             type="button"
             size="icon-sm"
@@ -233,54 +272,27 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
           >
             <Maximize2 aria-hidden="true" className="size-3.5" />
           </Button>
-        </div>
-        {onToggleColumnMappings && (
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            aria-label={columnMappingsVisible ? "Hide column mappings" : "Show column mappings"}
-            aria-pressed={columnMappingsVisible}
-            title={columnMappingsVisible ? "Hide column mappings" : "Show column mappings"}
-            className={cn(columnMappingsVisible && "bg-accent text-accent-foreground")}
-            onClick={onToggleColumnMappings}
-          >
-            <Columns3 aria-hidden="true" className="mr-1 size-3.5" />
-            Columns
-          </Button>
-        )}
-        {toolbarEnd}
-      </div>
-      {showPageMetadata && (
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Page {page.pageNumber}</span>
-          <span>{Math.round(page.coverage * 1000) / 10}% text coverage</span>
-        </div>
-      )}
-      {calibration && (
-        <section aria-label="Transaction areas" className="flex shrink-0 items-center gap-2 overflow-x-auto rounded-md border bg-muted/20 px-2 py-1.5">
-          <h4 className="shrink-0 text-xs font-medium">Transaction areas</h4>
-          {regions.length === 0 && <p className="whitespace-nowrap text-[11px] text-muted-foreground">No transaction areas detected. Select one in the PDF above.</p>}
-          {regions.map((region, index) => (
-            <button
-              key={region.id}
+          {onToggleColumnMappings && (
+            // A toggle, so it has to look held down rather than merely
+            // clickable: filled and outlined in the accent while the mappings
+            // are drawn, plain while they are not.
+            <Button
               type="button"
-              aria-label={`${region.included ? "Ignore" : "Include"} transaction area ${index + 1} from transaction areas`}
-              aria-pressed={region.included}
-              onClick={() => onToggleRegion(region.id)}
+              size="icon-sm"
+              variant="outline"
+              aria-label={columnMappingsVisible ? "Hide column mappings" : "Show column mappings"}
+              aria-pressed={columnMappingsVisible}
+              title={columnMappingsVisible ? "Hide column mappings" : "Show column mappings"}
               className={cn(
-                "shrink-0 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                region.included
-                  ? "border-emerald-600/70 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
-                  : "border-amber-600/70 bg-amber-500/15 text-amber-900 hover:bg-amber-500/25 dark:text-amber-200"
+                columnMappingsVisible
+                  && "border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
               )}
+              onClick={onToggleColumnMappings}
             >
-              {index + 1} · {regionKindLabel(region.kind)} · {region.included ? "Included" : "Ignored"}
-            </button>
-          ))}
-        </section>
-      )}
-      <div className="relative min-h-0 flex-1">
+              <Columns3 aria-hidden="true" className="size-3.5" />
+            </Button>
+          )}
+        </div>
         <div
           ref={scrollRef}
           tabIndex={0}
