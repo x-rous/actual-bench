@@ -26,8 +26,6 @@ The table lists every environment variable supported by the current application.
 | Variable | Default | Purpose | Secret | Restart |
 |---|---|---|:---:|:---:|
 | `ACTUAL_BENCH_DB_PATH` | `/data/actual-bench.sqlite` | Path to the metadata SQLite database. | No | Yes |
-| `DIRECT_BROWSER_API` | enabled | Set to `0` / `false` / `off` to disable Direct Actual Server mode. The single, canonical switch - takes effect at runtime on the prebuilt image. | No | Yes |
-| `NEXT_PUBLIC_DIRECT_BROWSER_API` | *(deprecated)* | Deprecated alias for `DIRECT_BROWSER_API`, still honored (with a warning) for one release. Use `DIRECT_BROWSER_API` instead. | No | Yes |
 | `SYNC_VAULT_KEY` | *(unset)* | Enables unattended server-side sync; derives the encryption key for stored credentials. | **Yes** | Yes |
 | `SYNC_SCHEDULER_SECRET` | *(unset)* | Enables the external scheduler trigger endpoint; required in its request header. | **Yes** | Yes |
 | `LOG_LEVEL` | `info` | Server log verbosity. | No | Yes |
@@ -41,20 +39,15 @@ build and do nothing in a self-hosted one.
 A persistent `/data` volume. That is the whole requirement. Set `ACTUAL_BENCH_DB_PATH` only if you
 want the metadata database somewhere else.
 
-## Direct-mode settings
+## Direct mode
 
-Direct Actual Server mode is enabled by default. To hide it (offer only HTTP API Server mode), set
-`DIRECT_BROWSER_API=0` and restart. This one server-side runtime variable is read consistently across
-the app - the middleware that emits the cross-origin-isolation headers, the connect screen, and the
-Actual-engine asset route - so it takes effect on the prebuilt image with no rebuild. See
+Direct Actual Server mode and HTTP API Server mode are both always offered; there is no setting to
+turn either one off. Actual Bench sets the cross-origin isolation headers Direct mode needs on every
+response, unconditionally. If your environment genuinely can't support Direct mode (the browser can't
+reach the Actual Server, or a proxy strips the isolation headers), Bench reports that clearly at the
+point of connecting so you can just use HTTP API Server mode instead. See
 [Deployment](../deployment/#direct-mode-network-requirements) for the browser reachability and
 cross-origin requirements Direct mode needs.
-
-:::note[`NEXT_PUBLIC_DIRECT_BROWSER_API` is deprecated]
-Earlier versions required a second, build-time `NEXT_PUBLIC_DIRECT_BROWSER_API` variable. It is now a
-deprecated alias - still honored (with a startup warning) for one release, but you should set only
-`DIRECT_BROWSER_API`.
-:::
 
 ## Metadata database
 
@@ -77,9 +70,10 @@ vault below - the two never share ciphertext or a key. Back up and persist `/dat
 servers across container replacement; a writable path by itself does not prove durability. A lost
 passphrase means the user resets the vault and re-saves.
 
-## Unattended sync settings
+## Unattended sync and automation settings
 
-For server-side scheduled sync (HTTP API Server mode flows only):
+These gate the whole automation engine, not just Budget File Sync — scheduled bank sync and backups
+depend on them too:
 
 - **`SYNC_VAULT_KEY`** - a strong operator secret. When set, the in-process scheduler runs and enrolled
   credentials can be stored/decrypted. When unset, the feature is fully disabled: nothing is persisted
@@ -132,13 +126,6 @@ environment:
 environment:
   ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
   SYNC_VAULT_KEY: ${SYNC_VAULT_KEY}   # provided via your secret manager
-```
-
-**HTTP API Server mode only (Direct disabled):**
-
-```yaml
-environment:
-  DIRECT_BROWSER_API: "0"
 ```
 
 Placeholders in the file, real secrets from your platform. Never the other way round.

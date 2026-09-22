@@ -14,10 +14,6 @@ import type {
 } from "@/lib/actual/browser/labRuntime";
 import { cn } from "@/lib/utils";
 
-type BrowserApiLabClientProps = {
-  enabled: boolean;
-};
-
 type LabStep = {
   id: BrowserApiLabStepId;
   label: string;
@@ -43,11 +39,10 @@ function stepIcon(status: LabStep["status"]) {
 }
 
 function getCrossOriginIsolated(): boolean | null {
-  if (typeof window === "undefined") return null;
   return window.crossOriginIsolated;
 }
 
-export function BrowserApiLabClient({ enabled }: BrowserApiLabClientProps) {
+export function BrowserApiLabClient() {
   const [form, setForm] = useState<BrowserApiLabInput>({
     serverUrl: "",
     serverPassword: "",
@@ -58,8 +53,20 @@ export function BrowserApiLabClient({ enabled }: BrowserApiLabClientProps) {
   const [result, setResult] = useState<BrowserApiLabResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [crossOriginIsolated] = useState<boolean | null>(() => getCrossOriginIsolated());
+  // Starts null on both server and client so the first client render matches
+  // the server-rendered HTML; `window.crossOriginIsolated` is read after mount
+  // instead of in a lazy initializer, which would read it during hydration
+  // itself and produce a client/server mismatch React would warn about.
+  const [crossOriginIsolated, setCrossOriginIsolated] = useState<boolean | null>(null);
   const [browserEvents, setBrowserEvents] = useState<string[]>([]);
+  // Direct mode has no operator toggle; this reflects whether the browser
+  // actually achieved cross-origin isolation, which is the one real
+  // precondition the lab depends on.
+  const enabled = crossOriginIsolated === true;
+
+  useEffect(() => {
+    setCrossOriginIsolated(getCrossOriginIsolated());
+  }, []);
 
   useEffect(() => {
     function addBrowserEvent(message: string) {
@@ -170,8 +177,11 @@ export function BrowserApiLabClient({ enabled }: BrowserApiLabClientProps) {
           <section className="flex items-start gap-3 rounded-lg border border-amber-400/30 bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              <p className="font-medium">Browser API lab is disabled for this deployment.</p>
-              <p className="mt-1">Remove DIRECT_BROWSER_API=0 and restart the app to enable this route.</p>
+              <p className="font-medium">Cross-origin isolation is not active in this browser session.</p>
+              <p className="mt-1">
+                Direct mode needs the COOP/COEP headers Bench sets on its own responses. If a reverse
+                proxy strips them, fix that upstream, or use HTTP API Server mode instead.
+              </p>
             </div>
           </section>
         )}

@@ -133,24 +133,11 @@ describe("useConnectForm connection activation", () => {
     });
   });
 
-  it("defaults to Direct mode when Direct connections are enabled", () => {
+  it("defaults to Direct mode", () => {
     const client = new QueryClient();
-    const { result } = renderHook(
-      () => useConnectForm({ directBrowserApiEnabled: true }),
-      { wrapper: makeWrapper(client) }
-    );
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
 
     expect(result.current.connectionMode).toBe("browser-api");
-  });
-
-  it("defaults to HTTP API mode when Direct connections are disabled", () => {
-    const client = new QueryClient();
-    const { result } = renderHook(
-      () => useConnectForm({ directBrowserApiEnabled: false }),
-      { wrapper: makeWrapper(client) }
-    );
-
-    expect(result.current.connectionMode).toBe("http-api");
   });
 
   it("activates a successful Direct budget connection without navigating", async () => {
@@ -206,6 +193,7 @@ describe("useConnectForm connection activation", () => {
     });
 
     act(() => {
+      result.current.handleModeChange("http-api");
       result.current.setBaseUrl("https://api.example.com");
       result.current.setApiKey("api-key");
     });
@@ -330,6 +318,7 @@ describe("useConnectForm connection activation", () => {
     const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
 
     act(() => {
+      result.current.handleModeChange("http-api");
       result.current.setBaseUrl("https://api.example.com");
       result.current.setApiKey("api-key");
     });
@@ -395,6 +384,7 @@ describe("useConnectForm connection activation", () => {
     );
 
     act(() => {
+      result.current.handleModeChange("http-api");
       result.current.setBaseUrl("https://api.example.com");
       result.current.setApiKey("api-key");
     });

@@ -79,8 +79,9 @@ Direct mode runs Actual's engine in the browser. That has consequences:
   requests to that URL straight from the browser, so `http://` there puts the server password on the
   wire. Plain HTTP is only acceptable on an internal hop behind a same-origin HTTPS proxy.
 
-If your environment cannot support Direct mode, turn it off with `DIRECT_BROWSER_API=0` and offer only
-HTTP API Server mode. Better than letting people find out by failing.
+If your environment genuinely can't support Direct mode, there's nothing to configure ahead of time:
+Bench reports the failure clearly the moment someone tries it, and they can use HTTP API Server mode
+instead.
 
 ### HTTP API network requirements
 
@@ -125,7 +126,7 @@ Open **App Health** (Tools sidebar) and confirm:
 The unattended sync scheduler runs **in-process** and ticks about once a minute; a **single instance is
 sufficient** and is the intended model. Do not assume distributed-lock behavior across multiple
 replicas. If you need external control, drive the trigger endpoint with `SYNC_SCHEDULER_SECRET` instead
-(see [Configuration](../configuration/#unattended-sync-settings)).
+(see [Configuration](../configuration/#unattended-sync-and-automation-settings)).
 
 ## Deployment checklist
 

@@ -48,9 +48,8 @@ Redact secrets before you share a log with anyone.
 - **The browser cannot reach Actual Server** - open that URL in the same browser, over HTTPS, and see
   what happens.
 - **CORS or cross-origin isolation errors** - allow CORS, or serve Actual Server same-origin through
-  your proxy. Bench sets its own isolation headers already.
-- **Only HTTP API Server mode is offered** - Direct mode is disabled via `DIRECT_BROWSER_API=0` /
-  `NEXT_PUBLIC_DIRECT_BROWSER_API=0`.
+  your proxy. Bench sets its own isolation headers already; if a proxy strips them, Direct mode
+  reports that clearly and you can use HTTP API Server mode instead.
 - **An encrypted budget will not open** - check the **Encryption password**. It is not the server
   password.
 
