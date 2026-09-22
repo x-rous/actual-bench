@@ -18,6 +18,7 @@ budget file health checks, verified backups, and automations that run with Bench
 [![Documentation](https://img.shields.io/badge/Docs-actual--bench-4169E1?style=flat-square&logo=readthedocs&logoColor=white)](https://x-rous.github.io/actual-bench/)
 [![Live demo](https://img.shields.io/badge/Demo-live-40a829?style=flat-square&logo=rocket&logoColor=white)](https://actual-bench-demo.vercel.app)
 [![Changelog](https://img.shields.io/badge/Changelog-releases-orange?style=flat-square)](CHANGELOG.md)
+[![Security Policy](https://img.shields.io/badge/Security-Policy-red?style=flat-square)](SECURITY.md)
 
 ![A full year of an envelope budget on one screen](docs/readme-images/budget-envelope.png)
 
@@ -30,8 +31,8 @@ budget file health checks, verified backups, and automations that run with Bench
 Actual Bench is a web app that connects to your [Actual Budget](https://github.com/actualbudget/actual)
 server and adds tools Actual Budget does not have:
 
-- **Bank reconciliation** - match a downloaded statement against your transactions line by line, and
-  fix the differences.
+- **Bank reconciliation** - match a downloaded statement (CSV/TSV, OFX/QFX, QIF, or text-based PDF)
+  against your transactions line by line, and fix the differences.
 - **Rule diagnostics** - find rules that duplicate each other, contradict each other, or never run.
 - **Payee cleanup** - find duplicate payees, see the evidence for each match, and create the rules
   that stop them coming back.
@@ -75,7 +76,7 @@ No setup, no account. A year of household Envelope and Tracking budgets to poke 
 
 **Money in and out**
 
-- **[Bank Reconciliation](https://x-rous.github.io/actual-bench/user-guide/bank-reconciliation/)** - import a statement (CSV/TSV, OFX/QFX, QIF), settle it row by row, and apply once. Re-reads every row before writing, so it will not overwrite an edit you made in Actual meanwhile.
+- **[Bank Reconciliation](https://x-rous.github.io/actual-bench/user-guide/bank-reconciliation/)** - import a statement (CSV/TSV, OFX/QFX, QIF, or text-based PDF), settle it row by row, and apply once. Re-reads every row before writing, so it will not overwrite an edit you made in Actual meanwhile.
 - **[Bank sync](https://x-rous.github.io/actual-bench/user-guide/bank-sync/)** - trigger Actual's own SimpleFIN/GoCardless import and get a per-account answer, instead of one number for everything.
 - **[Budget File Sync](https://x-rous.github.io/actual-bench/user-guide/budget-sync/)** - copy transactions, payees or categories between budget files. Preview first, apply only what you picked, never create a duplicate twice. Converts currency where budgets differ, using [locked FX rates](https://x-rous.github.io/actual-bench/user-guide/fx-rates/).
 - **[Backups](https://x-rous.github.io/actual-bench/user-guide/backups/)** - scheduled or on demand, to a destination you choose, and every copy is opened and verified rather than assumed.
