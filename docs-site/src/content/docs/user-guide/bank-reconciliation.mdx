@@ -19,8 +19,8 @@ they are created.
 ## Before you start
 
 You need a statement file and the Actual account to compare it with. Supported files are CSV, TSV,
-OFX, QFX, and QIF. The file format is detected from its contents, so an OFX export saved as `.txt`
-still imports as OFX.
+OFX, QFX, QIF, and text-based PDF statements. OFX and QIF are detected from their contents, so an
+OFX export saved as `.txt` still imports as OFX.
 
 Each session covers one account. It is stored in Actual Bench, so you can close the tab and return
 later. No bank connection, bank credentials, or separate setup is required.
@@ -28,7 +28,8 @@ later. No bank connection, bank credentials, or separate setup is required.
 ## The workflow
 
 1. Start a session and select the Actual account. Add a tag if it will help you find the session later.
-2. Import the statement. For CSV or TSV, confirm the date, amount, payee, and notes columns.
+2. Import the statement. For CSV or TSV, confirm the date, amount, payee, and notes columns. For a
+   PDF, review and correct the extracted transactions before importing them.
 3. Review automatic matches and decide what to do with every difference.
 4. Check the planned changes on **Review**.
 5. Select **Apply** to write the approved changes. Actual Bench checks affected transactions again
@@ -51,6 +52,200 @@ Paste a statement or upload a file. The import screen shows the parsed rows befo
 For CSV and TSV files, correct the mapping if needed. For example, map separate debit and credit
 columns when the bank does not supply one signed amount column. Check the date format and sign
 convention before matching.
+
+### Import a PDF statement
+
+Select a PDF to read it in your browser. Actual Bench uses PDF.js locally. It does not upload or
+store the PDF. If the file has a password, enter it when prompted; the password remains in memory
+only.
+
+The workbench has two steps, **Check detection** and **Review transactions**. It opens on review when
+the initial result is mostly usable, and on detection when more than half of the proposed
+transactions are rejected or a saved layout needs checking. The bar above both steps summarizes the
+statement: its transaction count and date range, a track showing how the rows divide into Ready,
+Review, and Fix with each part named beside its colour, the money in and out, the net, and how many
+pages held transactions. The track is a composition, so it shows progress as rows are resolved rather
+than only naming the worst problem left.
+
+Select **Use transactions** only after every row is ready. The rows then use the same import preview,
+matching, review, and Apply steps as other statement formats. Select **Review PDF import** on the
+import page to reopen the workbench before continuing.
+
+#### Check detection
+
+This step shows the positioned PDF text, transaction areas, and column boundaries, each mapped column
+in its own colour with a role label and examples taken from inside its current boundary. Include or
+ignore an area, select a missed one, change a column role, or drag its boundaries.
+
+The panel beside the page holds everything that decides how the statement is read: the **Statement
+layout** in use, **Statement interpretation** for the account type, currency, statement period, date
+or number format, import date, printed sign and unsigned amount direction, and the column mapping.
+What still needs attention is listed above those settings, and where one setting answers the
+question - an unresolved money-in or money-out rule, or a missing currency - **Fix this** opens that
+control with the cursor in it.
+
+The mapping list is always in the order the statement prints its columns, left to right, so it never
+disagrees with the page. Drag a column's label to move the whole column, or its edges to change one
+boundary; the arrow keys do the same from the keyboard. The **+** on a mapping adds a column between
+it and the one to its right, for a column the detection missed, and the up and down arrows swap a
+mapping with its neighbour, moving it left or right on the page.
+
+**Preview updated transactions** compares the current result with the proposed one: how many
+transactions there would be, how many are ready to import, and how the net change moves, each with
+the difference stated. Underneath it summarizes the row changes - added, removed, amounts, dates,
+descriptions - and warns when a change would leave transactions unreadable. **Apply changes and
+review** then reuses the extracted file and preserves your row corrections.
+
+#### Review transactions
+
+This step shows the extracted rows. Negative amounts are money out and positive amounts are money in.
+Edit a date, description, or amount directly. Select the sign to reverse one row, or select several
+rows to set their direction, mark valid warnings as reviewed, merge them, or ignore them. Actions for
+selected rows appear in the fixed footer.
+
+Each row is **Ready**, **Review**, or **Fix**. Ready can continue, Review needs confirmation, and Fix
+is missing a required value. A row that is not ready states underneath its description the most
+serious thing it is waiting on, so a repeated reason can be spotted down the column. A status with a
+chevron opens the row's full notes, on hover or selection, separating what needs attention from how a
+value was read; ready rows carry the second part only. Select a field's eye icon to see its source
+text in the PDF. Select **Mark reviewed** only after checking a row against the statement. Correcting
+a required field removes that error as soon as the row is valid, and a row cannot be marked reviewed
+while a required field is still invalid.
+
+Use **All**, **Needs review**, and **Ready** above the table to change the view; **Needs review**
+shows non-empty structural, date, amount, direction, balance, reconciliation, and duplicate filters.
+Direct edits change one row, and after an eligible edit the footer can offer the same correction to a
+stated number of similar rows or all remaining rows. Marking several selected rows reviewed at once
+first names the warnings that action would accept without resolving, such as possible duplicates or a
+balance that does not reconcile.
+
+Possible duplicates remain included: mark both reviewed when they are separate transactions, or
+ignore the repeated row. Ignored rows can be restored from **Check detection**. A dated row inside a
+transaction table stays available for correction even when its amount cannot be read.
+
+**Export**, beside the search box, saves the transactions to CSV exactly as the table shows them -
+the same rows in the same order, with the corrections made so far, each row's status, and any
+outstanding notes. A filtered or searched view exports what is on screen.
+
+#### The PDF viewer
+
+The viewer opens at 80%, which keeps a full statement page in view. Its **+**, **−**, and fit-width
+controls stack down the left of the page and zoom between 60% and 160%; with the page focused, **+**,
+**-**, and **0** do the same. Paging sits above the viewer, and a statement of more than five pages
+replaces the page label with a box you can type a page number into. The zoom level is kept as you
+move between pages and workbench sections. Selecting a field's eye icon opens the page containing its
+source and scrolls to the highlighted text. In **Check detection**, the columns button under the zoom
+controls shows or hides the mappings drawn over the page and stays lit while they are shown;
+selecting a mapping centers that column in the viewer.
+
+#### Statement layouts
+
+A layout stores how to read a bank's table and nothing about any one statement: column roles as
+fractions of the page width, the date, number and amount-direction settings, and the masked shape of
+the table's header row. It does not store the statement period, the transaction areas, the PDF, or
+transaction text - a period moves every month, and areas are numbered by page, which shifts as soon
+as a statement runs longer. Recognition is by the table's header, so correcting a layout's mapping
+never makes it harder to recognize next month.
+
+Layouts are grouped by bank and shared across budgets and accounts, so **HSBC Bank** can have
+separate **Credit card** and **Checking** layouts. The bank name organizes the list; Actual does not
+identify which bank owns an account. Selecting a layout applies it to the current statement only;
+select **Use for** the account to save that assignment.
+
+An assigned layout is applied to that account's statements. Where the statement's table has drifted
+from the saved one it is still applied and the difference is stated, because a layout withheld leaves
+you mapping the statement by hand for reasons you cannot see; it is held back only when its columns
+conflict with the table in front of it. A layout carrying amount-direction settings says so when it
+is applied, so you can confirm those against the statement.
+
+To save one, apply the detection changes and select **Save layout**, either in the **Statement
+layout** panel or on the confirmation that follows. Enter the bank and layout names, and assign it to
+the account if you want it used automatically. Layouts are not versioned, so a name that is already
+taken asks whether to replace that layout's settings or keep it and save under a different name, and
+a layout can only be saved when it has no rejected transactions. Select **Manage** to change an
+assignment, rename a bank or layout, or delete one; removing an assignment returns the account to
+automatic detection.
+
+When the settings in force no longer match the layout they came from, a **Layout not saved** control
+appears in the workbench header and opens the save dialog. It counts only changes a layout can hold -
+column mappings and the reading settings - so adjusting a transaction area, which belongs to one
+statement, does not ask to be saved.
+
+#### How the statement is read
+
+The parser has no bank-specific templates. It reads the statement's own structure, and anything it
+cannot settle from the statement stays in review rather than being guessed at.
+
+**Columns and rows.** Automatic mapping identifies the transaction table first, using the table's
+printed header where there is one, so account details, credit limits, payment summaries, balances,
+and totals elsewhere on the page do not create mappings. An uncertain role stays unmapped for you to
+set. Where extraction returns several values as one piece of text (two dates and a description, say)
+the words are divided between the columns that cover them, so each column reports its own value.
+
+A valid date in the mapped date column starts a transaction, and the lines above it join the
+transaction they belong to rather than the one they sit nearest: a description printed above its own
+date stays with it, and a fee, VAT, original-amount, or total line stays with the transaction it
+belongs to unless its own amount and balance show it moved the account. Where a statement prints a
+date once for several transactions, the later rows inherit it and are marked for review. Only running
+balances are used for reconciliation; available and periodic balances are not ledger movements.
+
+**Dates.** A date cell takes whatever the statement prints - `15 Jun 19`, `15/06/2019`, `2019-06-15` -
+reads it through the **Date format** setting, and stores the date it means; a value it cannot read
+stays on screen and is marked. Unambiguous dates establish whether the rest use day/month or
+month/day order, and the statement period supplies missing years across December and January.
+Transaction date is the default import date, marked by the check in its column header. Posting and
+value dates are optional and stay separate; removing one of their mappings stops it being validated.
+
+**Amounts and direction.** The parser reads signed, parenthesized, and trailing-minus amounts,
+mixed-case `DR` and `CR` markers, separate debit and credit columns, explicit debit and credit
+sections, and one **Amount** column where a suffix such as `113.61CR` marks money in. Common US,
+European, space-grouped, Indian, Swiss, Arabic-digit, and East Asian number layouts are supported.
+
+Money in and money out are never guessed from the account type alone. Printed directions decide
+first. Where a statement prints no direction at all, a running balance can supply one, but only once
+the parser knows which way that balance moves - from printed directions that already agree with it,
+or from an account type you have confirmed. A heading that is ambiguous, or that disagrees with the
+printed directions, leaves the balance column unused and those rows unresolved.
+
+**Printed sign means** states whose side the printed sign takes: a bank account prints a minus for
+money out, while a card or loan issuer prints a minus for a payment that reduces what is owed. Until
+that convention is confirmed on a card or loan statement, rows that take their direction from a
+printed sign stay in review. The account type behind it is read from the statement heading, never
+from transaction descriptions, so a checking statement that pays a credit card is not classified by
+those payments; a type read from the heading alone resolves directions but keeps them in review until
+you confirm it in **Statement interpretation**.
+
+**Currency and precision.** The amount column states the statement's currency in its header, and when
+it cannot be read it is asked for once in **Statement interpretation** rather than on every row.
+Currency is a statement-level reading: Actual holds one currency per budget file and the import
+carries no currency code, so what it decides here is how many decimal places an amount may have. A
+row printing a different currency is flagged, because it usually means the original amount was read
+instead of the amount charged to the account. Actual transactions use two decimal places, and import
+is blocked when converting would lose a meaningful digit, so correct the amount to the value that
+should be stored in Actual.
+
+#### Parser details, warnings, and limits
+
+Select **Parser details** for how the statement was read - the account type, currency, date and
+number formats, which date is imported, how unmarked amounts and printed signs were treated, what the
+balance column was taken to mean, and which pages held transactions - each labelled with where it
+came from: the parser's own reading, your setting, or a saved layout. Underneath, the reasons rows
+are not ready are counted, and selecting one shows those rows. It also holds saved-layout validation
+and technical diagnostics, which contain aggregate events, counts, and page numbers, not statement
+text or source IDs. The panel opens beside the workbench rather than replacing it. Parsing warnings
+are not kept here; they appear in **What needs attention**, beside the settings that answer them.
+
+A page that has no readable text layer, or that could not be read at all, is reported above the
+transaction table, and import stays disabled until you confirm that you checked those pages: their
+transactions are missing from the statement. Selecting **I checked these pages** dismisses the
+message and leaves a marker in the toolbar that brings it back. Rows inside a transaction area that
+did not become a transaction are counted the same way, so you can mark them in **Check detection**
+instead of losing them silently.
+
+Scanned or image-only PDFs have no usable text layer, and OCR is not included. A damaged page is
+reported instead of being silently ignored. Large files are limited by file size, page count, text
+item count, and processing time so they cannot keep the browser busy indefinitely. Use CSV, OFX,
+QFX, or QIF when the bank can provide a structured export.
 
 ![The import screen: statement source, date and amount conventions and matching options on the left, the whole parsed statement on the right with its column mapping.](../../../assets/screenshots/user-guide/recon-import.png)
 
@@ -83,8 +278,10 @@ mapping; matching always compares the statement with the current state of Actual
 
 ### Reconciliation profiles
 
-Save an account-specific profile when you import the same statement layout regularly. A profile keeps
-the column mapping, date and amount conventions, payee and memo choices, and matching options.
+For CSV and other structured files, save an account-specific reconciliation profile to keep the
+column mapping, date and amount conventions, payee and memo choices, and matching options. PDF
+statement layouts are separate: they are global, grouped by bank, and configured in **Check
+detection** as described above.
 
 ### Import details
 
@@ -254,6 +451,16 @@ Its Review page remains readable, but its write choices are locked to the option
 reconcile the account again, start a new session.
 
 ## Sessions and limits
+
+The session list shows one row per reconciliation: the account, its tag, the statement's format and
+file name, the period, the number of statement rows, and where it has got to. **Group by account**
+gathers an account's sessions under one heading, and is off by default because most accounts have a
+single session. Opening a session goes to the step its work is at - a draft opens on **Import**, an
+applied one on its result, and everything else on the workbench.
+
+The **Year** filter starts on the current year when there are sessions in it; **Clear filters** widens
+it back out. A statement period that runs across a year answers to both, so a December-to-January
+cycle is found under either.
 
 Sessions are stored in the Actual Bench metadata database on the server, not in the budget file. They
 contain the imported statement rows, your decisions, matching options, and apply result. Statement

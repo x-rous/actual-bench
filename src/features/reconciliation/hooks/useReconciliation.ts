@@ -20,6 +20,8 @@ const sessionsKey = (budgetSyncId: string) => ["reconciliation", "sessions", bud
 const sessionKey = (id: string) => ["reconciliation", "session", id] as const;
 const profilesKey = (budgetSyncId: string, accountId?: string) =>
   ["reconciliation", "profiles", budgetSyncId, accountId ?? "all"] as const;
+const pdfStatementLayoutsKey = (budgetSyncId: string, accountId: string) =>
+  ["reconciliation", "pdf-statement-layouts", budgetSyncId, accountId] as const;
 
 export function useReconciliationSessions() {
   const budgetSyncId = useActiveBudgetSyncId();
@@ -44,6 +46,15 @@ export function useReconciliationProfiles(accountId?: string) {
     queryKey: profilesKey(budgetSyncId ?? "", accountId),
     queryFn: async () => (await api.listProfiles(budgetSyncId!, accountId)).profiles,
     enabled: Boolean(budgetSyncId),
+  });
+}
+
+export function usePdfStatementLayouts(accountId?: string) {
+  const budgetSyncId = useActiveBudgetSyncId();
+  return useQuery({
+    queryKey: pdfStatementLayoutsKey(budgetSyncId ?? "", accountId ?? ""),
+    queryFn: () => api.listPdfStatementLayouts(budgetSyncId!, accountId!),
+    enabled: Boolean(budgetSyncId && accountId),
   });
 }
 
@@ -105,6 +116,48 @@ export function useReconciliationMutations() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["reconciliation", "profiles"] }),
   });
 
+  const invalidatePdfStatementLayouts = () =>
+    queryClient.invalidateQueries({ queryKey: ["reconciliation", "pdf-statement-layouts"] });
+
+  const savePdfStatementLayout = useMutation({
+    mutationFn: (payload: {
+      accountId: string;
+      bankName: string;
+      layoutName: string;
+      layout: unknown;
+      mode: "create" | "update";
+      assignToAccount?: boolean;
+    }) => api.savePdfStatementLayout({ budgetSyncId: budgetSyncId!, ...payload }),
+    onSuccess: invalidatePdfStatementLayouts,
+  });
+
+  const assignPdfStatementLayout = useMutation({
+    mutationFn: (payload: { accountId: string; layoutId: string }) =>
+      api.assignPdfStatementLayout({ budgetSyncId: budgetSyncId!, ...payload }),
+    onSuccess: invalidatePdfStatementLayouts,
+  });
+
+  const removePdfStatementLayoutAssignment = useMutation({
+    mutationFn: (payload: { accountId: string }) =>
+      api.removePdfStatementLayoutAssignment({ budgetSyncId: budgetSyncId!, ...payload }),
+    onSuccess: invalidatePdfStatementLayouts,
+  });
+
+  const renamePdfStatementLayoutBank = useMutation({
+    mutationFn: api.renamePdfStatementLayoutBank,
+    onSuccess: invalidatePdfStatementLayouts,
+  });
+
+  const renamePdfStatementLayout = useMutation({
+    mutationFn: api.renamePdfStatementLayout,
+    onSuccess: invalidatePdfStatementLayouts,
+  });
+
+  const deletePdfStatementLayout = useMutation({
+    mutationFn: api.deletePdfStatementLayout,
+    onSuccess: invalidatePdfStatementLayouts,
+  });
+
   /** Rewrite the whole item set — used when a decision adds or removes rows. */
   const replaceItems = useMutation({
     mutationFn: ({ sessionId, items }: { sessionId: string; items: unknown[] }) =>
@@ -124,6 +177,12 @@ export function useReconciliationMutations() {
     deleteSession,
     saveParsedStatement,
     saveProfile,
+    savePdfStatementLayout,
+    assignPdfStatementLayout,
+    removePdfStatementLayoutAssignment,
+    renamePdfStatementLayoutBank,
+    renamePdfStatementLayout,
+    deletePdfStatementLayout,
     patchItem,
     replaceItems,
   };

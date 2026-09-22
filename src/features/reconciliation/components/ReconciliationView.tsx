@@ -92,6 +92,7 @@ import { PhaseNav } from "./PhaseNav";
 import { SessionHeader, type SessionStep } from "./SessionHeader";
 import {
   useReconciliationMutations,
+  usePdfStatementLayouts,
   useReconciliationProfiles,
   useReconciliationSession,
   useReconciliationSessions,
@@ -100,7 +101,6 @@ import type {
   ReconciliationProfileRecord,
   ReconciliationSessionRecord,
 } from "../lib/reconciliationApi";
-import type { StatementParseConfig } from "@/lib/reconciliation/statement/normalize";
 import { ImportPanel } from "./ImportPanel";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { NewSessionDialog } from "./NewSessionDialog";
@@ -127,6 +127,33 @@ const PROGRESS_FLUSH_MS = 1000;
 /** How often the on-screen counter moves. Often enough to read, rarely enough
  * that redrawing the review table does not compete with the writing. */
 const PROGRESS_UI_MS = 250;
+
+/**
+ * The step a session is opened on.
+ *
+ * Opening always landed on the reconcile step, which for a draft meant a
+ * workbench with nothing in it and for an applied session meant the step
+ * before the result the reader came back to see. A session knows how far it
+ * has got, so it opens where its work is.
+ *
+ * A partial apply opens on its result because that is where the failures are
+ * listed; the result screen keeps its own way back into the workbench for the
+ * rows that still need work.
+ */
+function screenForSession(session: ReconciliationSessionRecord): Screen {
+  if (session.status === "draft") {
+    return {
+      name: "import",
+      sessionId: session.id,
+      accountId: session.accountId,
+      accountName: session.accountName ?? "this account",
+    };
+  }
+  if (session.status === "completed" || session.status === "partial") {
+    return { name: "result", sessionId: session.id };
+  }
+  return { name: "workbench", sessionId: session.id };
+}
 
 type Screen =
   | { name: "home" }
@@ -266,6 +293,7 @@ export function ReconciliationView() {
   // every month.
   const profileAccountId = screen.name === "import" ? screen.accountId : accountId || undefined;
   const profilesQuery = useReconciliationProfiles(profileAccountId);
+  const pdfStatementLayoutsQuery = usePdfStatementLayouts(profileAccountId);
 
   const sessionId = screen.name === "home" ? null : screen.sessionId;
   const sessionQuery = useReconciliationSession(sessionId);
@@ -297,7 +325,10 @@ export function ReconciliationView() {
   const hydratedSessionId = sessionQuery.data?.session.id;
   useEffect(() => {
     const data = sessionQuery.data;
-    if (!data || screen.name !== "workbench" || data.session.id !== screen.sessionId) return;
+    // Any screen that names a session, not the workbench alone: opening an
+    // applied session lands on the apply screen, and hydrating only on the
+    // workbench left it blank until the user walked back through match.
+    if (!data || data.session.id !== sessionId) return;
     // Hydrate whenever the loaded state belongs to a different session — or to
     // none. Keying on emptiness instead would leave another session's decisions
     // on screen, and skipping when it already matches keeps a fresh match result
@@ -378,7 +409,7 @@ export function ReconciliationView() {
     // changed still carries the old three-way `notesStrategy`.
     if (data.session.applyConfig) setApplyConfig(normalizeApplyConfig(data.session.applyConfig));
     setLoadedSessionId(data.session.id);
-  }, [sessionQuery.data, hydratedSessionId, screen, loadedSessionId]);
+  }, [sessionQuery.data, hydratedSessionId, sessionId, loadedSessionId]);
 
   /**
    * Pair a statement row with a transaction the matcher never related.
@@ -1661,12 +1692,15 @@ export function ReconciliationView() {
             matchConfig={matchConfig}
             matchPreset={matchPreset}
             profiles={profilesQuery.data ?? []}
+            pdfStatementLayouts={pdfStatementLayoutsQuery.data}
+            isLoadingPdfStatementLayouts={pdfStatementLayoutsQuery.isPending}
             isSavingProfile={mutations.saveProfile.isPending}
+            isSavingPdfStatementLayout={mutations.savePdfStatementLayout.isPending}
             onApplyProfile={(profile: ReconciliationProfileRecord) => {
               const saved = profile.matchConfig as MatchConfig | null;
               if (saved) setMatchConfig({ ...DEFAULT_MATCH_CONFIG, ...saved });
             }}
-            onSaveProfile={(name: string, parseConfig: StatementParseConfig) => {
+            onSaveProfile={(name: string, parseConfig: unknown) => {
               void mutations.saveProfile.mutateAsync({
                 accountId: screen.accountId,
                 name,
@@ -1674,6 +1708,26 @@ export function ReconciliationView() {
                 matchConfig,
               });
             }}
+            onSavePdfStatementLayout={(input) => mutations.savePdfStatementLayout.mutateAsync({
+              accountId: screen.accountId,
+              ...input,
+            })}
+            onAssignPdfStatementLayout={(layoutId) => mutations.assignPdfStatementLayout.mutateAsync({
+              accountId: screen.accountId,
+              layoutId,
+            })}
+            onRemovePdfStatementLayoutAssignment={() =>
+              mutations.removePdfStatementLayoutAssignment.mutateAsync({ accountId: screen.accountId })
+            }
+            onRenamePdfStatementLayoutBank={(from, to) =>
+              mutations.renamePdfStatementLayoutBank.mutateAsync({ from, to })
+            }
+            onRenamePdfStatementLayout={(layoutId, name) =>
+              mutations.renamePdfStatementLayout.mutateAsync({ layoutId, name })
+            }
+            onDeletePdfStatementLayout={(layoutId) =>
+              mutations.deletePdfStatementLayout.mutateAsync(layoutId)
+            }
             onMatchConfigChange={(preset, config) => {
               setMatchPreset(preset);
               setMatchConfig(config);
@@ -2064,7 +2118,7 @@ export function ReconciliationView() {
                 setApplyResult(null);
                 setLoadedSessionId(null);
               }
-              setScreen({ name: "workbench", sessionId: session.id });
+              setScreen(screenForSession(session));
             }}
             onDelete={(session) => {
               // Deleting takes the statement rows and every decision staged

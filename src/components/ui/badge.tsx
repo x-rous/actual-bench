@@ -28,6 +28,10 @@ const badgeVariants = cva(
           "border-muted-foreground/20 bg-muted/50 text-muted-foreground",
         "status-warning":
           "border-amber-400/30 bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400",
+        // Something is wrong and the row cannot proceed, as against
+        // `status-warning`, which asks for a look.
+        "status-error":
+          "border-destructive/30 bg-destructive/10 text-destructive",
       },
     },
     defaultVariants: {

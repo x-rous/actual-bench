@@ -51,10 +51,19 @@ export function InfoHint({
         <Info className="size-3.5" aria-hidden="true" />
       </Tooltip.Trigger>
       <Tooltip.Portal>
-        <Tooltip.Positioner side="bottom" align="start" sideOffset={6}>
+        {/*
+          Above a dialog, not level with it.
+
+          A dialog and its backdrop sit at `z-50`, so a hint opened from inside
+          one at the same level is painted underneath it and the explanation
+          never appears. `z-[80]` is where the popover layer already sits, and
+          a hint is the most transient thing on screen: whatever it is opened
+          from, it belongs on top of it.
+        */}
+        <Tooltip.Positioner side="bottom" align="start" sideOffset={6} className="z-[80]">
           <Tooltip.Popup
             className={cn(
-              "z-50 max-w-64 rounded-md bg-popover px-2.5 py-1.5",
+              "max-w-64 rounded-md bg-popover px-2.5 py-1.5",
               "text-[11px] leading-relaxed text-popover-foreground",
               "border border-border shadow-md"
             )}

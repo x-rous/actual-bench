@@ -69,15 +69,35 @@ export function NewSessionDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/*
+          A form so Enter and the Start button are one path rather than two
+          that can drift. `contents` keeps the dialog's own layout: a wrapper
+          that laid itself out would make the fields one grid item between the
+          header and the footer.
+
+          The account list handles Enter itself - it picks the highlighted
+          option and stops there - so pressing Enter to choose an account never
+          also starts the reconciliation.
+        */}
+        <form
+          className="contents"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!accountId || isCreating) return;
+            onStart(accountId, tag.trim() || null);
+          }}
+        >
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="reconciliation-account" className="text-xs">
-            Account
-          </Label>
+          {/* The combobox renders a button, not an input with an id, so the
+              visible label cannot point at it. It carries its own name. */}
+          <Label className="text-xs">Account</Label>
           <SearchableCombobox
             options={accounts}
             value={accountId}
             onChange={setAccountId}
             placeholder="Select an account…"
+            ariaLabel="Account"
+            autoFocus
           />
         </div>
 
@@ -113,16 +133,14 @@ export function NewSessionDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => handleOpenChange(false)}>
+          <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            disabled={!accountId || isCreating}
-            onClick={() => onStart(accountId, tag.trim() || null)}
-          >
+          <Button type="submit" disabled={!accountId || isCreating}>
             {isCreating ? "Starting…" : "Start"}
           </Button>
         </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

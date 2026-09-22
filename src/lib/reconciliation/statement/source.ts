@@ -146,4 +146,5 @@ export const STATEMENT_FORMAT_LABELS: Record<StatementFormat, string> = {
   delimited: "CSV / TSV",
   ofx: "OFX / QFX",
   qif: "QIF",
+  pdf: "PDF statement",
 };

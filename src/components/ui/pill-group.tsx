@@ -74,13 +74,16 @@ export function PillGroup<T extends string>({
   options,
   value,
   onChange,
+  className,
 }: {
-  options: { value: T; label: string }[];
+  /** `count` is shown beside the label, for a filter over a countable set. */
+  options: { value: T; label: string; count?: number }[];
   value: T;
   onChange: (v: T) => void;
+  className?: string;
 }) {
   return (
-    <div className="flex gap-px rounded border border-border bg-muted/40 p-px">
+    <div className={cn("flex gap-px rounded border border-border bg-muted/40 p-px", className)}>
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -88,13 +91,16 @@ export function PillGroup<T extends string>({
           aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
-            "rounded px-2 py-0.5 text-xs transition-colors",
+            "rounded px-2 py-0.5 text-xs whitespace-nowrap transition-colors",
             value === opt.value
               ? "bg-background font-medium shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           )}
         >
           {opt.label}
+          {opt.count !== undefined && (
+            <span className="ml-1 tabular-nums opacity-60">{opt.count}</span>
+          )}
         </button>
       ))}
     </div>

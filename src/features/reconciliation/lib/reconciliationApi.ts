@@ -14,6 +14,10 @@ import type {
   ReconciliationStatementFormat,
   ReconciliationStatementRowRecord,
 } from "@/lib/app-db/reconciliationRepository";
+import type {
+  PdfStatementLayoutCatalog,
+  PdfStatementLayoutRecord,
+} from "@/lib/app-db/pdfStatementLayoutRepository";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -132,7 +136,73 @@ export function saveProfile(payload: {
   });
 }
 
+export function listPdfStatementLayouts(budgetSyncId: string, accountId: string) {
+  const params = new URLSearchParams({ budgetSyncId, accountId });
+  return request<PdfStatementLayoutCatalog>(
+    `/api/reconciliation/pdf-statement-layouts?${params.toString()}`
+  );
+}
+
+export function savePdfStatementLayout(payload: {
+  budgetSyncId: string;
+  accountId: string;
+  bankName: string;
+  layoutName: string;
+  layout: unknown;
+  mode: "create" | "update";
+  assignToAccount?: boolean;
+}) {
+  return request<{ layout: PdfStatementLayoutRecord }>(
+    "/api/reconciliation/pdf-statement-layouts",
+    { method: "POST", body: JSON.stringify(payload) }
+  );
+}
+
+export function assignPdfStatementLayout(payload: {
+  budgetSyncId: string;
+  accountId: string;
+  layoutId: string;
+}) {
+  return request<void>("/api/reconciliation/pdf-statement-layouts", {
+    method: "PATCH",
+    body: JSON.stringify({ action: "assign-layout", ...payload }),
+  });
+}
+
+export function removePdfStatementLayoutAssignment(payload: {
+  budgetSyncId: string;
+  accountId: string;
+}) {
+  return request<void>("/api/reconciliation/pdf-statement-layouts", {
+    method: "PATCH",
+    body: JSON.stringify({ action: "remove-assignment", ...payload }),
+  });
+}
+
+export function renamePdfStatementLayoutBank(payload: { from: string; to: string }) {
+  return request<{ renamed: number }>(
+    "/api/reconciliation/pdf-statement-layouts",
+    { method: "PATCH", body: JSON.stringify({ action: "rename-bank", ...payload }) }
+  );
+}
+
+export function renamePdfStatementLayout(payload: { layoutId: string; name: string }) {
+  return request<{ layout: PdfStatementLayoutRecord }>(
+    "/api/reconciliation/pdf-statement-layouts",
+    { method: "PATCH", body: JSON.stringify({ action: "rename-layout", ...payload }) }
+  );
+}
+
+export function deletePdfStatementLayout(layoutId: string) {
+  const params = new URLSearchParams({ layoutId });
+  return request<void>(`/api/reconciliation/pdf-statement-layouts?${params.toString()}`, {
+    method: "DELETE",
+  });
+}
+
 export type {
+  PdfStatementLayoutCatalog,
+  PdfStatementLayoutRecord,
   ReconciliationItemRecord,
   ReconciliationProfileRecord,
   ReconciliationSessionRecord,

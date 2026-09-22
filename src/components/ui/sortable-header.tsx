@@ -41,20 +41,31 @@ export function SortableHeader<K extends string>({
   onSort,
   className,
   align = "left",
+  leading,
+  note,
 }: {
   label: string;
   sortKey: K;
   sort: { key: K; direction: SortDirection } | null;
   onSort: (key: K, direction: SortDirection) => void;
   className?: string;
-  align?: "left" | "right";
+  align?: "left" | "right" | "center";
+  /** A marker shown before the label, such as the column a value is taken from. */
+  leading?: React.ReactNode;
+  /** What `leading` means, for anyone who cannot see it. */
+  note?: string;
 }) {
   const direction = directionFor(sort, sortKey);
 
   return (
     <th
       scope="col"
-      className={cn("px-4 py-2 font-medium", align === "right" && "text-right", className)}
+      className={cn(
+        "px-4 py-2 font-medium",
+        align === "right" && "text-right",
+        align === "center" && "text-center",
+        className
+      )}
       aria-sort={
         direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"
       }
@@ -62,22 +73,32 @@ export function SortableHeader<K extends string>({
       <button
         type="button"
         className={cn(
-          "flex select-none items-center gap-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "flex max-w-full select-none items-center gap-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           align === "right" && "ml-auto",
+          align === "center" && "mx-auto",
           direction && "text-foreground"
         )}
         onClick={() => onSort(sortKey, nextSortDirection(direction))}
-        aria-label={`Sort by ${label}${
+        title={
+          direction
+            ? "Sort the other way, then back to the table's own order"
+            : `Sort by ${label.toLowerCase()}`
+        }
+        aria-label={`Sort by ${label}${note ? ` (${note})` : ""}${
           direction === "asc" ? ", ascending" : direction === "desc" ? ", descending" : ""
         }`}
       >
-        {label}
+        {leading}
+        <span className="truncate">{label}</span>
+        {/* In the cell's own text, so the column announces what it is even
+            when the reader lands on the header rather than the button. */}
+        {note && <span className="sr-only">({note})</span>}
         {direction === null ? (
-          <ArrowUpDown className="size-3 opacity-30" aria-hidden />
+          <ArrowUpDown className="size-3 shrink-0 opacity-30" aria-hidden />
         ) : direction === "asc" ? (
-          <ArrowUp className="size-3" aria-hidden />
+          <ArrowUp className="size-3 shrink-0" aria-hidden />
         ) : (
-          <ArrowDown className="size-3" aria-hidden />
+          <ArrowDown className="size-3 shrink-0" aria-hidden />
         )}
       </button>
     </th>

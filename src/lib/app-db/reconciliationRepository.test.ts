@@ -184,7 +184,7 @@ describe("statement format on a session (F-136)", () => {
     expect(newSession(db).statementFormat).toBeNull();
   });
 
-  it.each(["delimited", "ofx", "qif"] as const)("stores and reads back %s", (format) => {
+  it.each(["delimited", "ofx", "qif", "pdf"] as const)("stores and reads back %s", (format) => {
     const db = tempDb();
     const session = newSession(db);
 

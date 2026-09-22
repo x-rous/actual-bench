@@ -357,6 +357,107 @@ CREATE TABLE IF NOT EXISTS reconciliation_profiles (
 );
 `;
 
+// PDF detection profiles describe a bank's document layout, not an Actual
+// account. They are global to this Actual Bench installation so one HSBC
+// layout can be reused by several accounts and budgets. Bank names are groups,
+// not inferred account metadata. The active account mapping points directly to
+// a profile and contains only stable Actual identifiers, never statement text.
+/**
+ * A saved statement layout: how to read one bank's statements.
+ *
+ * A bank is a label here, not a table. It has no attributes and no lifecycle,
+ * Actual records no bank against an account, and its only job is to group
+ * layouts in a list - which a column does, without a second row to keep in
+ * step or a foreign key to cascade.
+ */
+export const PDF_STATEMENT_LAYOUT_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS pdf_statement_layouts (
+  id text PRIMARY KEY,
+  bank_name text NOT NULL COLLATE NOCASE,
+  name text NOT NULL COLLATE NOCASE,
+  layout_json text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  UNIQUE(bank_name, name)
+);
+`;
+
+/**
+ * Which layout an account reads its statements with.
+ *
+ * Its own table rather than a list on the layout: the cascade deletes the
+ * assignments with the layout, the primary key enforces one default per
+ * account, and assigning does not have to read and rewrite a row someone else
+ * may be writing at the same time.
+ */
+export const PDF_STATEMENT_LAYOUT_ACCOUNT_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS pdf_statement_layout_accounts (
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL,
+  layout_id text NOT NULL REFERENCES pdf_statement_layouts(id) ON DELETE CASCADE,
+  updated_at text NOT NULL,
+  PRIMARY KEY(budget_sync_id, account_id)
+);
+`;
+
+export const PDF_STATEMENT_LAYOUT_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_pdf_statement_layout_account ON pdf_statement_layout_accounts(layout_id)",
+  "CREATE INDEX IF NOT EXISTS idx_pdf_statement_layout_bank ON pdf_statement_layouts(bank_name COLLATE NOCASE)",
+];
+
+export const PDF_DETECTION_BANK_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS pdf_detection_banks (
+  id text PRIMARY KEY,
+  name text NOT NULL COLLATE NOCASE UNIQUE,
+  default_profile_id text REFERENCES pdf_detection_profiles(id) ON DELETE SET NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const PDF_DETECTION_PROFILE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS pdf_detection_profiles (
+  id text PRIMARY KEY,
+  bank_id text NOT NULL REFERENCES pdf_detection_banks(id) ON DELETE CASCADE,
+  name text NOT NULL COLLATE NOCASE,
+  profile_json text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  UNIQUE(bank_id, name)
+);
+`;
+
+// Legacy v26/v27 association retained so existing databases can migrate its
+// resolved profile into pdf_detection_account_profiles in v28.
+export const PDF_DETECTION_ACCOUNT_BANK_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS pdf_detection_account_banks (
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL,
+  bank_id text NOT NULL REFERENCES pdf_detection_banks(id) ON DELETE CASCADE,
+  preferred_profile_id text REFERENCES pdf_detection_profiles(id) ON DELETE SET NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY(budget_sync_id, account_id)
+);
+`;
+
+// Direct account-to-layout assignment. Bank records group profiles for people;
+// they are not inferred from Actual account metadata and do not participate in
+// profile selection.
+export const PDF_DETECTION_ACCOUNT_PROFILE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS pdf_detection_account_profiles (
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL,
+  profile_id text NOT NULL REFERENCES pdf_detection_profiles(id) ON DELETE CASCADE,
+  updated_at text NOT NULL,
+  PRIMARY KEY(budget_sync_id, account_id)
+);
+`;
+
+export const PDF_DETECTION_PROFILE_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_pdf_detection_profiles_bank ON pdf_detection_profiles(bank_id, updated_at)",
+  "CREATE INDEX IF NOT EXISTS idx_pdf_detection_account_bank ON pdf_detection_account_banks(bank_id)",
+] as const;
+
 export const RECONCILIATION_SESSION_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS reconciliation_sessions (
   id text PRIMARY KEY,
@@ -699,4 +800,3 @@ CREATE TABLE IF NOT EXISTS backup_credentials (
   updated_at text NOT NULL
 );
 `;
-
