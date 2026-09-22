@@ -4,9 +4,10 @@
 #   fly launch --no-deploy   # create the app and import this config
 #   fly deploy               # deploy using the pre-built Docker Hub image
 #
-# No secrets are required for a plain Direct/HTTP API connection — the server
-# URL and API key are entered in the browser UI and stored in session storage
-# (cleared on tab close).
+# No deployment environment secrets are required for a plain Direct/HTTP API
+# connection. The Actual server URL and API key are still sensitive; they are
+# entered in the browser UI and stored in session storage (cleared on tab
+# close), not set here.
 #
 # This config has no [mounts] volume, so the metadata database is ephemeral:
 # App Health, remembered-server credentials, and backup/automation history do
