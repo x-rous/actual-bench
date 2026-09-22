@@ -54,6 +54,45 @@ volumes:
 
 See [Configuration](../configuration/) for the full environment-variable reference.
 
+## Hosted platforms
+
+Docker Compose above is the universal method; these run the same image with a platform's own
+tooling instead. The single-instance/SQLite model below applies to all of them equally.
+
+### Fly.io
+
+```bash
+fly launch --from https://github.com/x-rous/actual-bench --generate-name --ha=false
+```
+
+The repository's `fly.toml` is a template, copied into a new Fly app of your own — it does not
+deploy into the maintainer's app. What it sets up:
+
+- A Fly Volume mounted at `/data`, so the metadata database, remembered-server credentials, and
+  backup/automation history survive restarts and redeploys.
+- **One Machine**, always on (`auto_stop_machines = "off"`). Bench's automation scheduler runs
+  in-process; a Machine that scales to zero on inactivity silently stops it. `--ha=false` on the
+  launch command prevents Fly from also creating a spare Machine for availability, which this
+  single-SQLite-volume model doesn't support (see [Scaling and the unattended
+  scheduler](#scaling-and-the-unattended-scheduler) below).
+- A health check against `/api/health`, matching the same endpoint the Docker image's own
+  `HEALTHCHECK` uses.
+
+Secrets never belong in `fly.toml`. Set them with:
+
+```bash
+fly secrets set SYNC_VAULT_KEY="..."
+fly secrets set SYNC_SCHEDULER_SECRET="..."
+```
+
+Scaling to multiple Machines is not supported by the current architecture — see [Scaling and the
+unattended scheduler](#scaling-and-the-unattended-scheduler).
+
+### PikaPods
+
+Available once the official PikaPods listing is approved. It will run the same image with one
+port (3000) and one persistent volume (`/data`); no environment variables are required.
+
 ## Network design
 
 There are two different reachability requirements here. Mixing them up is the single most common
@@ -79,8 +118,9 @@ Direct mode runs Actual's engine in the browser. That has consequences:
   requests to that URL straight from the browser, so `http://` there puts the server password on the
   wire. Plain HTTP is only acceptable on an internal hop behind a same-origin HTTPS proxy.
 
-If your environment cannot support Direct mode, turn it off with `DIRECT_BROWSER_API=0` and offer only
-HTTP API Server mode. Better than letting people find out by failing.
+If your environment genuinely can't support Direct mode, there's nothing to configure ahead of time:
+Bench reports the failure clearly the moment someone tries it, and they can use HTTP API Server mode
+instead.
 
 ### HTTP API network requirements
 
@@ -125,7 +165,7 @@ Open **App Health** (Tools sidebar) and confirm:
 The unattended sync scheduler runs **in-process** and ticks about once a minute; a **single instance is
 sufficient** and is the intended model. Do not assume distributed-lock behavior across multiple
 replicas. If you need external control, drive the trigger endpoint with `SYNC_SCHEDULER_SECRET` instead
-(see [Configuration](../configuration/#unattended-sync-settings)).
+(see [Configuration](../configuration/#unattended-sync-and-automation-settings)).
 
 ## Deployment checklist
 

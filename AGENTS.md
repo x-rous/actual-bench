@@ -429,7 +429,7 @@ Keep product claims internally consistent. Avoid absolute phrases such as “not
 | Transport contract and implementations | `src/lib/actual/` |
 | HTTP API wrapper helpers | `src/lib/api/` |
 | HTTP compatibility proxy | `src/app/api/proxy/` |
-| Direct-mode headers/assets/runtime | `src/proxy.ts`, `src/app/actual-api-assets/`, `src/lib/directMode.ts`, `src/lib/actual/browser/` |
+| Direct-mode headers/assets/runtime | `src/proxy.ts`, `src/app/actual-api-assets/`, `src/lib/actual/browser/` |
 | Entity staged store | `src/store/staged.ts` |
 | Budget staged store | `src/store/budgetEdits.ts` |
 | Connections and saved presets | `src/store/connection.ts`, `src/store/savedServers.ts` |

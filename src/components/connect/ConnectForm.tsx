@@ -33,11 +33,7 @@ import { deriveLabel, getConnectionModeBadge } from "./utils";
 const DOCS_URL = "https://x-rous.github.io/actual-bench";
 const GITHUB_URL = "https://github.com/x-rous/actual-bench";
 
-type ConnectFormProps = {
-  directBrowserApiEnabled: boolean;
-};
-
-export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
+export function ConnectForm() {
   const router = useRouter();
   const hydrated = useIsHydrated();
   const connectedInstance = useConnectionStore(selectActiveInstance);
@@ -101,7 +97,7 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
     handleSelectBudget,
     pendingBudgetSwitch,
     dismissBudgetSwitch,
-  } = useConnectForm({ savedBudgets, directBrowserApiEnabled });
+  } = useConnectForm({ savedBudgets });
 
   // One server-grouped view of everything openable: this-session connections +
   // the saved vault. Each budget appears once, deduped by server + sync id.
@@ -187,8 +183,8 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
           type="button"
           role="tab"
           aria-selected={connectionMode === "browser-api"}
-          disabled={anyBusy || !directBrowserApiEnabled}
-          title={directBrowserApiEnabled ? "Direct Actual Server" : "Direct mode is disabled for this deployment"}
+          disabled={anyBusy}
+          title="Direct Actual Server"
           onClick={() => handleModeChange("browser-api")}
           className={cn(
             "flex flex-col gap-1.5 rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
@@ -223,16 +219,6 @@ export function ConnectForm({ directBrowserApiEnabled }: ConnectFormProps) {
           <span className="text-xs leading-snug text-muted-foreground">Through an actual-http-api server.</span>
         </button>
       </div>
-
-      {!directBrowserApiEnabled && (
-        <div className="flex items-start gap-2.5 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
-          <AlertCircle className="mt-0.5 size-4 shrink-0" />
-          <span>
-            Direct mode is disabled for this deployment. Remove <code>DIRECT_BROWSER_API=0</code> and restart to
-            show both modes.
-          </span>
-        </div>
-      )}
 
       {savedServersForMode.length > 0 && (
         <div className="flex flex-wrap gap-2">

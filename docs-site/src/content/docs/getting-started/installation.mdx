@@ -55,7 +55,6 @@ services:
     environment:
       ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
       # --- Optional settings (uncomment to use; see the Configuration guide) ---
-      # DIRECT_BROWSER_API: "0"                    # offer only HTTP API Server mode
       # LOG_LEVEL: info                            # debug | info | warn | error
       # SYNC_VAULT_KEY: "<strong-secret>"          # enable unattended server-side sync
       # SYNC_SCHEDULER_SECRET: "<strong-secret>"   # enable the external scheduler trigger
@@ -89,6 +88,16 @@ docker run -d \
   -v actual-bench-data:/data \
   xrous/actual-bench:latest
 ```
+
+## Install on a hosted platform
+
+Prefer not to run your own Docker host? Actual Bench also deploys on:
+
+- **Fly.io** - `fly launch --from https://github.com/x-rous/actual-bench --generate-name --ha=false`
+- **PikaPods** - available once the official listing is approved
+
+Both run the same image as Docker Compose above. See [Deployment → Hosted
+platforms](../../administration/deployment/#hosted-platforms) for the full walkthrough of each.
 
 ## Open Actual Bench
 
