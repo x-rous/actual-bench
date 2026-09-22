@@ -261,11 +261,6 @@ export function PdfStatementReviewDialog({
     () => detectionIssuesFor(parsed, draftGuidance),
     [draftGuidance, parsed]
   );
-  const parserDetailCount = useMemo(
-    () => new Set([...detectionIssues.map((issue) => issue.message), ...(parsed?.warnings ?? [])]).size,
-    [detectionIssues, parsed?.warnings]
-  );
-
   // Pages the parser could not read are missing transactions, not a detail in
   // a secondary view: import stays disabled until they are acknowledged.
   const unreadablePageCount = (parsed?.metrics.unreadablePages ?? 0) + (parsed?.metrics.imageOnlyPages ?? 0);
@@ -650,11 +645,11 @@ export function PdfStatementReviewDialog({
                 className="shrink-0"
                 size="xs"
                 variant={diagnosticsOpen ? "secondary" : "ghost"}
-                title="View parsing summary and technical diagnostics"
+                title="How this statement was read, and the parser's own record of reading it"
                 onClick={() => setDiagnosticsOpen(true)}
               >
                 <CircleHelp aria-hidden="true" className="mr-1 size-3.5" />
-                Parser details{parserDetailCount > 0 ? ` (${parserDetailCount})` : ""}
+                Parser details
               </Button>
             )}
           </div>
@@ -829,6 +824,7 @@ export function PdfStatementReviewDialog({
                 previewDataUrl={pagePreviewDataUrl}
                 guidance={draftGuidance}
                 issues={detectionIssues}
+                warnings={parsed.warnings}
                 busy={isParsing}
                 preview={preview}
                 previewDiff={previewDiff}
@@ -885,11 +881,14 @@ export function PdfStatementReviewDialog({
               open={diagnosticsOpen}
               onOpenChange={setDiagnosticsOpen}
               result={parsed}
-              issues={detectionIssues}
-              warnings={parsed.warnings}
+              layoutInForce={selectedProfile}
               profiles={profiles}
-              onResolveIssue={resolveIssue}
               onApplyProfile={applyProfile}
+              onShowRows={(category) => {
+                setScopedCorrectionOffer(null);
+                setMode("review");
+                setFilter(category);
+              }}
               onCopyDiagnostics={copyDiagnostics}
             />
 

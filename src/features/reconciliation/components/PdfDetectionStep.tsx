@@ -40,6 +40,7 @@ export function PdfDetectionStep({
   previewDataUrl,
   guidance,
   issues,
+  warnings,
   busy,
   preview,
   previewDiff,
@@ -78,6 +79,8 @@ export function PdfDetectionStep({
   previewDataUrl: string | null;
   guidance: PdfParserGuidance;
   issues: PdfDetectionIssue[];
+  /** The parser's own warnings, which carry no control to focus. */
+  warnings: string[];
   busy: boolean;
   preview: PdfStatementParseResult | null;
   previewDiff: PdfResultDiff | null;
@@ -206,7 +209,12 @@ export function PdfDetectionStep({
 
         <div className="flex min-h-0 flex-col">
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
-            <PdfDetectionIssueList label="What needs attention" issues={issues} onResolve={onResolveIssue} />
+            <PdfDetectionIssueList
+              label="What needs attention"
+              issues={issues}
+              extraMessages={warnings}
+              onResolve={onResolveIssue}
+            />
             <PdfStatementLayoutPanel {...layoutPanel} />
             <PdfDetectionControls
               guidance={guidance}

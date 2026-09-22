@@ -1,6 +1,8 @@
 import type { SortDirection } from "@/components/ui/sortable-header";
+import { isActionableReason } from "./pdfReasonText";
 import type {
   PdfAccountType,
+  PdfConfidenceReason,
   PdfColumn,
   PdfColumnRole,
   PdfRegionKind,
@@ -117,6 +119,41 @@ export function matchesCategory(row: PdfTransactionProposal, category: PdfReview
   if (category === "reconciliation") return row.issueCodes.some((reason) => reason.startsWith("BALANCE_"));
   if (category === "duplicates") return row.issueCodes.includes("POSSIBLE_DUPLICATE");
   return false;
+}
+
+/**
+ * The view a reason belongs to, so a count of reasons can lead to the rows
+ * that carry it. Mirrors the filters in `matchesCategory`, which decide what
+ * the table shows rather than what a reason is.
+ */
+export function categoryForReason(reason: PdfConfidenceReason): PdfReviewCategory {
+  if (reason === "POSSIBLE_DUPLICATE") return "duplicates";
+  if (reason.startsWith("BALANCE_")) return "reconciliation";
+  if (reason.startsWith("DATE_")) return "dates";
+  if (reason.startsWith("AMOUNT_") || reason.startsWith("DIRECTION_") || reason.startsWith("CURRENCY_")) return "amounts";
+  if ((reason.startsWith("ROW_") && reason !== "ROW_MANUALLY_CHANGED") || reason === "PAGE_IMAGE_ONLY") return "structure";
+  return "needs-review";
+}
+
+/**
+ * Why the rows that are not ready are not ready, most common first.
+ *
+ * The count beside a reason is rows, not occurrences: a row carrying three
+ * reasons is counted under each of them, because the question this answers is
+ * "how many rows would this one fix", not "how many complaints are there".
+ */
+export function reasonBreakdown(rows: PdfTransactionProposal[]) {
+  const counts = new Map<PdfConfidenceReason, number>();
+  for (const row of rows) {
+    if (row.status === "accepted") continue;
+    for (const reason of new Set(row.issueCodes)) {
+      if (!isActionableReason(reason)) continue;
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([reason, count]) => ({ reason, count, category: categoryForReason(reason) }))
+    .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason));
 }
 
 export function matchesSearch(row: PdfTransactionProposal, search: string) {

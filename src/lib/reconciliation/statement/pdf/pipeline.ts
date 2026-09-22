@@ -117,6 +117,7 @@ export function parsePdfStatementDocumentV2(
     }];
   }, assembled.blocks);
   const correctedBlocks = applyBlockCorrections(markedBlocks, corrections);
+  const assignedRowIds = new Set(correctedBlocks.flatMap((block) => block.rowIds));
   const interpreted = interpretPdfBlocks(
     pages,
     correctedBlocks,
@@ -151,7 +152,11 @@ export function parsePdfStatementDocumentV2(
     rejected: transactions.filter((transaction) => transaction.status === "rejected").length,
     duplicates: transactions.filter((transaction) => transaction.issueCodes.includes("POSSIBLE_DUPLICATE")).length,
     skippedRegions: effectiveGuidance.regions.filter((region) => !region.included).length,
-    unassignedRows: assembled.unassignedRows.length,
+    // Counted after corrections, not before them: a row the reader has marked
+    // as a transaction now belongs to a block, and a warning that keeps
+    // reporting it is a warning that cannot be acted on - the reader does the
+    // one thing it asks for and it stays.
+    unassignedRows: assembled.unassignedRows.filter((row) => !assignedRowIds.has(row.id)).length,
     imageOnlyPages: likelyScanned ? 0 : imageOnlyPages.length,
     // Extraction owns this count; the parser never sees a page it could not read.
     unreadablePages: 0,
@@ -170,7 +175,9 @@ export function parsePdfStatementDocumentV2(
       && effectiveGuidance.currency === symbolCurrency.currency
       ? [`The statement prints ${symbolCurrency.symbol} without a currency code, and was read as ${symbolCurrency.currency}. Change it in Statement interpretation if this account is in another ${symbolCurrency.symbol} currency.`]
       : []),
-    ...(metrics.rejected ? [`${metrics.rejected} transaction ${metrics.rejected === 1 ? "has" : "have"} unresolved required fields.`] : []),
+    ...(metrics.rejected
+      ? [`${metrics.rejected} ${metrics.rejected === 1 ? "transaction has" : "transactions have"} unresolved required fields.`]
+      : []),
     ...(["loan", "investment"].includes(interpreted.accountType) ? ["This statement type needs specialized review before import."] : []),
     ...(interpreted.balancePolarity?.source === "detected-type"
       ? ["Money in and money out were derived from the balance column using a detected account type. Confirm the account type in Statement interpretation."]

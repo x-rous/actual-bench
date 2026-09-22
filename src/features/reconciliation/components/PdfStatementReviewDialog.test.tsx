@@ -1018,7 +1018,46 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("checkbox", { name: "Select PDF row 1" })).not.toBeChecked();
   });
 
-  it("shows diagnostics without exposing source text", () => {
+  it("says how the statement was read, rather than repeating the summary", async () => {
+    const parsed = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "03/04/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+    ], { dateFormat: "auto" });
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Parser details/ }));
+
+    // The decisions the parser made, which are not stated anywhere else, and
+    // where each one came from.
+    const reading = screen.getByRole("region", { name: "How this was read" });
+    ["Account type", "Currency", "Date format", "Number format", "Import date", "Transaction pages"].forEach((label) => {
+      expect(within(reading).getByText(label)).toBeInTheDocument();
+    });
+    expect(within(reading).getAllByText("detected").length).toBeGreaterThan(0);
+
+    // The counts in the workbench header are not said again here.
+    expect(within(reading).queryByText("Ready")).toBeNull();
+    expect(within(reading).queryByText("Needs review")).toBeNull();
+  });
+
+  it("leads from a reason to the rows that carry it", async () => {
+    const parsed = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Parser details/ }));
+
+    const why = screen.getByRole("region", { name: "Why rows are not ready" });
+    const duplicates = within(why).getByRole("button", { name: /Possible duplicate/ });
+    expect(duplicates).toHaveTextContent("2");
+
+    fireEvent.click(duplicates);
+    // The panel closes onto the rows it was counting.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Duplicates 2" })).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  it("keeps the parser's own record out of the statement's text", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Parser details/ }));
     // The details open beside the workbench rather than replacing it.

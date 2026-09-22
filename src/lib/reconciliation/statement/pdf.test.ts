@@ -1208,6 +1208,42 @@ describe("PDF parser v2 sign and structure safeguards", () => {
     expect(result.warnings.some((warning) => warning.includes("did not become a transaction"))).toBe(true);
   });
 
+  it("stops reporting a row once it has been marked as a transaction", () => {
+    const pages = [
+      page([
+        { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+        { y: 700, cells: [{ x: 20, text: "08/01/2026" }, { x: 120, text: "A" }, { x: 480, text: "-1.00" }] },
+        { y: 680, cells: [{ x: 20, text: "08/02/2026" }, { x: 120, text: "B" }, { x: 480, text: "-2.00" }] },
+        { y: 660, cells: [{ x: 20, text: "08/03/2026" }, { x: 120, text: "C" }, { x: 480, text: "-3.00" }] },
+      ], 1),
+      page([
+        { y: 500, cells: [{ x: 20, text: "3 Aout" }, { x: 120, text: "UNREADABLE DATE ROW" }, { x: 480, text: "-9.00" }] },
+        { y: 480, cells: [{ x: 20, text: "08/05/2026" }, { x: 120, text: "D" }, { x: 480, text: "-4.00" }] },
+      ], 2),
+    ];
+    const reported = parsePdfStatementPages(pages, { guidance: guidance() });
+    const row = reported.reconstructedPages
+      .flatMap((entry) => entry.rows)
+      .find((candidate) => candidate.text.includes("UNREADABLE DATE ROW"));
+    expect(row).toBeDefined();
+
+    const marked = parsePdfStatementPages(pages, {
+      guidance: guidance(),
+      corrections: [{
+        id: "correction-1",
+        kind: "mark-row",
+        rowId: row!.id,
+        pageNumber: row!.pageNumber,
+        scope: "row",
+        createdAt: "2026-09-21T00:00:00.000Z",
+      }],
+    });
+
+    // The reader did the one thing the warning asked for, so it goes.
+    expect(marked.metrics.unassignedRows).toBe(reported.metrics.unassignedRows - 1);
+    expect(marked.transactions.length).toBe(reported.transactions.length + 1);
+  });
+
   it("keeps a wrapped description that repeats at a page edge", () => {
     const pageWith = (pageNumber: number) => page([
       { y: 780, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
