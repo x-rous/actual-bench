@@ -59,213 +59,188 @@ Select a PDF to read it in your browser. Actual Bench uses PDF.js locally. It do
 store the PDF. If the file has a password, enter it when prompted; the password remains in memory
 only.
 
-The workbench has two steps:
+The workbench has two steps, **Check detection** and **Review transactions**. It opens on review when
+the initial result is mostly usable, and on detection when more than half of the proposed
+transactions are rejected or a saved layout needs checking. The bar above both steps summarizes the
+statement: its transaction count and date range, a track showing how the rows divide into Ready,
+Review, and Fix with each part named beside its colour, the money in and out, the net, and how many
+pages held transactions. The track is a composition, so it shows progress as rows are resolved rather
+than only naming the worst problem left.
 
-- **Check detection** shows the positioned PDF text, transaction areas, and column boundaries. Each
-  mapped column uses a separate color and role label. Include or ignore an area, select a missed
-  transaction area, change a column role, or drag its boundaries. The examples under each mapping
-  come from values inside its current boundary. The panel beside the page holds everything that
-  decides how the statement is read: the **Statement layout** in use, **Statement interpretation**
-  for the account type, currency, statement period, date or number format, import date, printed sign
-  and unsigned amount direction, and the column mapping. Select **Preview updated transactions**,
-  then **Apply changes and review**. This reuses the extracted file and preserves your row
-  corrections.
-- **Review transactions** shows the extracted rows. Negative amounts are money out and positive
-  amounts are money in. Edit a date, description, amount, or currency directly. Select the sign to
-  reverse one row, or select several rows to set their direction, mark valid warnings as reviewed,
-  merge them, or ignore them. Actions for selected rows appear in the fixed footer. Rows with missing
-  or invalid required values cannot be marked reviewed.
+Select **Use transactions** only after every row is ready. The rows then use the same import preview,
+matching, review, and Apply steps as other statement formats. Select **Review PDF import** on the
+import page to reopen the workbench before continuing.
+
+#### Check detection
+
+This step shows the positioned PDF text, transaction areas, and column boundaries, each mapped column
+in its own colour with a role label and examples taken from inside its current boundary. Include or
+ignore an area, select a missed one, change a column role, or drag its boundaries.
+
+The panel beside the page holds everything that decides how the statement is read: the **Statement
+layout** in use, **Statement interpretation** for the account type, currency, statement period, date
+or number format, import date, printed sign and unsigned amount direction, and the column mapping.
+What still needs attention is listed above those settings, and where one setting answers the
+question - an unresolved money-in or money-out rule, or a missing currency - **Fix this** opens that
+control with the cursor in it.
+
+The mapping list is always in the order the statement prints its columns, left to right, so it never
+disagrees with the page. Drag a column's label to move the whole column, or its edges to change one
+boundary; the arrow keys do the same from the keyboard. The **+** on a mapping adds a column between
+it and the one to its right, for a column the detection missed, and the up and down arrows swap a
+mapping with its neighbour, moving it left or right on the page.
 
 **Preview updated transactions** compares the current result with the proposed one: how many
 transactions there would be, how many are ready to import, and how the net change moves, each with
 the difference stated. Underneath it summarizes the row changes - added, removed, amounts, dates,
-descriptions - and warns when a change would leave transactions unreadable.
+descriptions - and warns when a change would leave transactions unreadable. **Apply changes and
+review** then reuses the extracted file and preserves your row corrections.
 
-A page that has no readable text layer, or that could not be read at all, is reported above the
-transaction table, and import stays disabled until you confirm that you checked those pages: their
-transactions are missing from the statement. Selecting **I checked these pages** dismisses the
-message and leaves a marker in the toolbar that brings it back. Rows inside a transaction area that did not become a
-transaction are counted the same way, so you can mark them in **Check detection** instead of losing
-them silently. When the statement currency cannot be read from the amount column's own header, it is asked for once
-in **Statement interpretation** rather than on every row.
+#### Review transactions
 
-**Check detection** lists what still needs attention above the settings. Where one setting answers
-the question - an unresolved money-in or money-out rule, or a missing currency - **Fix this** opens
-**Statement interpretation** and puts the cursor on that control.
+This step shows the extracted rows. Negative amounts are money out and positive amounts are money in.
+Edit a date, description, or amount directly. Select the sign to reverse one row, or select several
+rows to set their direction, mark valid warnings as reviewed, merge them, or ignore them. Actions for
+selected rows appear in the fixed footer.
 
-Select **Parser details** for how the statement was read: the account type, currency, date and number
-formats, which date is imported, how unmarked amounts and printed signs were treated, what the balance
-column was taken to mean, and which pages held transactions - each with where it came from, whether
-that is the parser's own reading, your setting, or a saved layout. Underneath, the reasons rows are not
-ready are counted, and selecting one shows those rows. It also holds saved-layout validation and
-technical diagnostics, which contain aggregate events, counts, and page numbers, not statement text or
-source IDs. The panel opens beside the workbench rather than replacing it.
+Each row is **Ready**, **Review**, or **Fix**. Ready can continue, Review needs confirmation, and Fix
+is missing a required value. A row that is not ready states underneath its description the most
+serious thing it is waiting on, so a repeated reason can be spotted down the column. A status with a
+chevron opens the row's full notes, on hover or selection, separating what needs attention from how a
+value was read; ready rows carry the second part only. Select a field's eye icon to see its source
+text in the PDF. Select **Mark reviewed** only after checking a row against the statement. Correcting
+a required field removes that error as soon as the row is valid, and a row cannot be marked reviewed
+while a required field is still invalid.
 
-Parsing warnings are not kept here: they appear in **What needs attention** in Check detection, beside
-the settings that answer them.
+Use **All**, **Needs review**, and **Ready** above the table to change the view; **Needs review**
+shows non-empty structural, date, amount, direction, balance, reconciliation, and duplicate filters.
+Direct edits change one row, and after an eligible edit the footer can offer the same correction to a
+stated number of similar rows or all remaining rows. Marking several selected rows reviewed at once
+first names the warnings that action would accept without resolving, such as possible duplicates or a
+balance that does not reconcile.
 
-Actual Bench opens **Review transactions** when the initial result is mostly usable and no saved
-layout needs confirmation. If more than half of the proposed transactions are rejected, or a saved
-layout needs checking, it opens **Check detection** and states what needs attention. After you apply
-detection changes, it moves to transaction review.
+Possible duplicates remain included: mark both reviewed when they are separate transactions, or
+ignore the repeated row. Ignored rows can be restored from **Check detection**. A dated row inside a
+transaction table stays available for correction even when its amount cannot be read.
 
-Statement layouts are grouped by bank and shared across budgets and accounts. For example, **HSBC
-Bank** can have separate **Credit card** and **Checking** layouts. The bank name organizes the list;
-Actual does not identify which bank owns an account. Assign the required layout directly to each
-account. Selecting a layout applies it to the current statement only. Select **Use for** the account
-to save that assignment. A strong assigned layout is applied before the initial
-result is shown. If it is only a possible match, the workbench opens detection settings and asks you
-to check the differences. Weak or conflicting matches stay unapplied instead of forcing the saved
-mapping onto the statement.
+**Export**, beside the search box, saves the transactions to CSV exactly as the table shows them -
+the same rows in the same order, with the corrections made so far, each row's status, and any
+outstanding notes. A filtered or searched view exports what is on screen.
 
-To create or update a layout, apply the detection changes and select **Save layout** in the
-**Statement layout** panel, or select **Save layout** on the confirmation that appears after
-applying. Enter the bank and layout names. When that name is already taken, choose whether to update
-that layout or keep it and save this one under a different name; layouts are not versioned, so an
-update replaces the settings it held. You can assign the layout to the current account when you save
-it. A layout can be saved only when it has no rejected transactions. Select **Manage** to change an
-account assignment, rename a bank or layout, or delete a layout. Removing an assignment returns the account to automatic
-detection. A layout stores how to read a bank's table and nothing about any one statement: column roles
-as fractions of the page width, the date, number and amount-direction settings, and the masked shape of
+#### The PDF viewer
+
+The viewer opens at 80%, which keeps a full statement page in view. Its **+**, **−**, and fit-width
+controls stack down the left of the page and zoom between 60% and 160%; with the page focused, **+**,
+**-**, and **0** do the same. Paging sits above the viewer, and a statement of more than five pages
+replaces the page label with a box you can type a page number into. The zoom level is kept as you
+move between pages and workbench sections. Selecting a field's eye icon opens the page containing its
+source and scrolls to the highlighted text. In **Check detection**, the columns button under the zoom
+controls shows or hides the mappings drawn over the page and stays lit while they are shown;
+selecting a mapping centers that column in the viewer.
+
+#### Statement layouts
+
+A layout stores how to read a bank's table and nothing about any one statement: column roles as
+fractions of the page width, the date, number and amount-direction settings, and the masked shape of
 the table's header row. It does not store the statement period, the transaction areas, the PDF, or
-transaction text - a period moves every month, and areas are numbered by page, which shifts as soon as a
-statement runs longer.
+transaction text - a period moves every month, and areas are numbered by page, which shifts as soon
+as a statement runs longer. Recognition is by the table's header, so correcting a layout's mapping
+never makes it harder to recognize next month.
+
+Layouts are grouped by bank and shared across budgets and accounts, so **HSBC Bank** can have
+separate **Credit card** and **Checking** layouts. The bank name organizes the list; Actual does not
+identify which bank owns an account. Selecting a layout applies it to the current statement only;
+select **Use for** the account to save that assignment.
+
+An assigned layout is applied to that account's statements. Where the statement's table has drifted
+from the saved one it is still applied and the difference is stated, because a layout withheld leaves
+you mapping the statement by hand for reasons you cannot see; it is held back only when its columns
+conflict with the table in front of it. A layout carrying amount-direction settings says so when it
+is applied, so you can confirm those against the statement.
+
+To save one, apply the detection changes and select **Save layout**, either in the **Statement
+layout** panel or on the confirmation that follows. Enter the bank and layout names, and assign it to
+the account if you want it used automatically. Layouts are not versioned, so a name that is already
+taken asks whether to replace that layout's settings or keep it and save under a different name, and
+a layout can only be saved when it has no rejected transactions. Select **Manage** to change an
+assignment, rename a bank or layout, or delete one; removing an assignment returns the account to
+automatic detection.
 
 When the settings in force no longer match the layout they came from, a **Layout not saved** control
 appears in the workbench header and opens the save dialog. It counts only changes a layout can hold -
 column mappings and the reading settings - so adjusting a transaction area, which belongs to one
 statement, does not ask to be saved.
 
-A layout assigned to an account is applied to its statements. If the statement's table has drifted from
-the saved one, it is still applied and the difference is stated; it is left unapplied only when the
-layout's columns conflict with the table in front of it. Recognition is by the table's header, so
-correcting a layout's mapping never makes it harder to recognize next month.
+#### How the statement is read
 
-The amount column states the statement's currency in its header. Currency is a statement-level reading,
-not a per-row value: Actual holds one currency per budget file and the import carries no currency code,
-so what the currency decides here is how many decimal places an amount may have. A row that prints a
-different currency from the statement is flagged, because it usually means the original amount was read
-instead of the amount charged to the account.
+The parser has no bank-specific templates. It reads the statement's own structure, and anything it
+cannot settle from the statement stays in review rather than being guessed at.
 
-A date cell takes whatever the statement prints - `15 Jun 19`, `15/06/2019`, `2019-06-15` - and reads it
-the way the page was read, using the **Date format** setting, then stores the date it means. A value it
-cannot read stays on screen and is marked, rather than being discarded or guessed at.
+**Columns and rows.** Automatic mapping identifies the transaction table first, using the table's
+printed header where there is one, so account details, credit limits, payment summaries, balances,
+and totals elsewhere on the page do not create mappings. An uncertain role stays unmapped for you to
+set. Where extraction returns several values as one piece of text (two dates and a description, say)
+the words are divided between the columns that cover them, so each column reports its own value.
 
-Transaction date is the default import date. If the statement has posting or value dates, they stay
-separate and appear when those columns are mapped. Posting and value dates are optional. If you
-remove one of their mappings, it is no longer validated or included in row warnings. The check in a
-date-column header identifies the date that will be imported. The Balance column appears only when a
-balance column is mapped and at least one balance was read.
+A valid date in the mapped date column starts a transaction, and the lines above it join the
+transaction they belong to rather than the one they sit nearest: a description printed above its own
+date stays with it, and a fee, VAT, original-amount, or total line stays with the transaction it
+belongs to unless its own amount and balance show it moved the account. Where a statement prints a
+date once for several transactions, the later rows inherit it and are marked for review. Only running
+balances are used for reconciliation; available and periodic balances are not ledger movements.
 
-The bar beside the two steps summarizes the statement: its transaction count and date range, a track
-showing how the rows divide into Ready, Review, and Fix with each part named beside its colour, the
-money in and out, the net, and how many pages held transactions. The track is a composition, so it
-shows progress as rows are resolved rather than only naming the worst problem left.
+**Dates.** A date cell takes whatever the statement prints - `15 Jun 19`, `15/06/2019`, `2019-06-15` -
+reads it through the **Date format** setting, and stores the date it means; a value it cannot read
+stays on screen and is marked. Unambiguous dates establish whether the rest use day/month or
+month/day order, and the statement period supplies missing years across December and January.
+Transaction date is the default import date, marked by the check in its column header. Posting and
+value dates are optional and stay separate; removing one of their mappings stops it being validated.
 
-Use the row status and review filters to find structural, date, amount, direction, balance, and
-duplicate issues. **Ready** can continue, **Review** needs confirmation, and **Fix** is missing a
-required value. A row that is not ready states underneath its description the most serious thing it is
-waiting on, so a repeated reason can be spotted down the column. A status with a chevron opens the row's
-full notes, on hover or selection, separating what needs attention from how a value was read. Ready rows
-carry the second part only, which is how each of their values was arrived at. Select an eye icon to see the source text for a field. A review row contains a visible assumption or warning; select
-**Mark reviewed** only after checking it against the statement. Correcting a required field removes
-that error as soon as the row is valid. A row cannot be marked reviewed while a required field is
-still invalid.
-
-The PDF viewer opens at 80%, which keeps a full statement page in view. Its **+**, **−**, and
-fit-width controls stack down the left of the page and zoom between 60% and 160%; with the page
-focused, **+**, **-**, and **0** do the same. Paging sits above the viewer, and a statement of more
-than five pages replaces the page label with a box you can type a page number into. The viewer keeps
-the zoom level while you move between pages and workbench sections. Selecting a field's eye icon opens the
-page containing its source and scrolls to the highlighted text when it is outside the visible area.
-In **Check detection**, the columns button under the zoom controls shows or hides the mappings drawn
-over the page and stays lit while they are shown; selecting a mapping centers that column in the
-viewer.
-
-The mapping list is always in the order the statement prints its columns, left to right, so it never
-disagrees with the page. Drag a column's label to move the whole column, or its edges to change one
-boundary; the arrow keys do the same from the keyboard. The **+** on a mapping adds a column between it
-and the one to its right, for a column the detection missed, and the up and down arrows swap a mapping
-with its neighbour, moving it left or right on the page.
-
-**Export**, beside the search box, saves the transactions to CSV exactly as the table currently shows
-them: the same rows, the same order, and the corrections made so far, with each row's status and any
-outstanding notes. A filtered or searched view exports what is on screen.
-
-Use **All**, **Needs review**, and **Ready** above the transaction table to change the view. Selecting
-**Needs review** shows non-empty structural, date, amount, reconciliation, and duplicate filters.
-Direct edits change one row. After an eligible edit, the footer can offer to apply the same correction
-to a stated number of similar rows or all remaining rows. Use row selection for intentional bulk
-changes.
-
-Marking several selected rows reviewed in one action first names the warnings that action would
-accept without resolving, such as possible duplicates or a balance that does not reconcile.
-
-Possible duplicates remain included. Mark both reviewed when they are separate transactions, or
-ignore the repeated row. Ignored rows can be restored from **Check detection**, individually or from
-one list when there are several. A dated row inside a
-detected or manually selected transaction table remains available for correction even when its amount
-cannot be read.
-
-The parser recognizes signed, parenthesized, and trailing-minus amounts, mixed-case `DR` and `CR`
-markers, separate debit and credit columns, and one **Amount** column where a suffix such as
-`113.61CR` marks money in `113.61CR` marks money in and an unmarked value means money out. When a statement marks only its
-credits that way and prints no signs, the unmarked rows are read as the opposite and kept in review;
-anything less clear waits for you to choose the amount-direction rule. **Printed sign means** states whose side the printed sign takes:
-a bank account prints a minus for money out, while a card or loan issuer prints a minus for a payment
-that reduces what is owed. On a card or loan statement whose sign convention has not been confirmed,
-rows that take their direction from a printed sign stay in review. Automatic column mapping first identifies the transaction table. It uses the table's own
-printed header when available; content-based roles require supporting values across repeated
-transaction rows. Account details, credit limits, payment summaries, opening and closing balances,
-balance-forward rows, totals, and other page content
-do not create transaction-column mappings. An uncertain role remains unmapped for you to set in
-**Adjust detection**. Where a statement prints values so tightly that extraction returns them as one
-piece of text - two dates and a description, say - the words are divided between the columns that
-cover them, so each column reports its own value instead of repeating the whole line. A date column
-takes the date it is for, and the rest divides at the spacing the statement itself prints. A value
-covered by a single column is never touched.
-
-A valid date in the mapped date column starts a transaction block. The lines
-above that date are divided by where the previous transaction ended rather than by how close they
-sit: a rule printed between transactions is taken at face value, and otherwise a line joins the date
-it sits nearest to, while a line carrying the previous transaction's account amount stays with it.
-That keeps a description line printed above its own date - which some statements do - with the
-transaction it introduces. The statement's own column header stays with its area, where it names the
-columns, and never joins a transaction. When a statement prints a date once for several
-transactions, a later complete transaction row can inherit that date and is marked for review.
-Whether a row carries its own date is read from the mapped date column, so a description that prints
-a date of its own does not stop that row becoming the transaction it is. Description, original-amount, fee, VAT, and final-total lines stay
-in the current block until the next transaction starts. Standalone fee or tax rows remain separate
-when their amount and balance show that they changed the account. The parser uses the mapped final
-account amount and flags competing candidates for review. It also combines multiple mapped narrative
-columns, recognizes explicit debit and credit sections, and uses only running balances for
-reconciliation; available or periodic balances are not treated as ledger movements. It supports
-common US, European,
-space-grouped, Indian, Swiss, Arabic-digit, and East Asian number layouts. Ambiguous dates, signs,
-currencies, and row boundaries
-require review only when the statement-level evidence cannot resolve them. For example, unambiguous
-dates in each mapped date column establish whether later values use day/month or month/day order.
-Statement periods can supply missing years across December and January.
+**Amounts and direction.** The parser reads signed, parenthesized, and trailing-minus amounts,
+mixed-case `DR` and `CR` markers, separate debit and credit columns, explicit debit and credit
+sections, and one **Amount** column where a suffix such as `113.61CR` marks money in. Common US,
+European, space-grouped, Indian, Swiss, Arabic-digit, and East Asian number layouts are supported.
 
 Money in and money out are never guessed from the account type alone. Printed directions decide
-first: debit and credit columns, `DR`/`CR` markers, printed signs, and explicit sections. When a
-statement prints no direction at all, a running balance can supply one, but only once the parser
-knows which way that balance moves. It reads that from printed directions that already agree with
-the balance column, or from the account type when you have confirmed it. A statement heading that
-is ambiguous, or that disagrees with the printed directions, leaves the balance column unused and
-those rows unresolved. An account type detected from the heading alone still resolves directions,
-and keeps them in review until you confirm the type in **Statement interpretation**.
+first. Where a statement prints no direction at all, a running balance can supply one, but only once
+the parser knows which way that balance moves - from printed directions that already agree with it,
+or from an account type you have confirmed. A heading that is ambiguous, or that disagrees with the
+printed directions, leaves the balance column unused and those rows unresolved.
 
-The account type itself is read from the statement heading, never from transaction descriptions, so
-a checking statement that pays a credit card or a mortgage is not classified by those payments.
+**Printed sign means** states whose side the printed sign takes: a bank account prints a minus for
+money out, while a card or loan issuer prints a minus for a payment that reduces what is owed. Until
+that convention is confirmed on a card or loan statement, rows that take their direction from a
+printed sign stay in review. The account type behind it is read from the statement heading, never
+from transaction descriptions, so a checking statement that pays a credit card is not classified by
+those payments; a type read from the heading alone resolves directions but keeps them in review until
+you confirm it in **Statement interpretation**.
 
-Actual transactions use two decimal places. The parser preserves higher precision from the PDF, but
-blocks import when converting it would lose a meaningful decimal digit. Correct the amount using the
-value that should be stored in Actual before continuing.
+**Currency and precision.** The amount column states the statement's currency in its header, and when
+it cannot be read it is asked for once in **Statement interpretation** rather than on every row.
+Currency is a statement-level reading: Actual holds one currency per budget file and the import
+carries no currency code, so what it decides here is how many decimal places an amount may have. A
+row printing a different currency is flagged, because it usually means the original amount was read
+instead of the amount charged to the account. Actual transactions use two decimal places, and import
+is blocked when converting would lose a meaningful digit, so correct the amount to the value that
+should be stored in Actual.
 
-Select **Use transactions** only after every row is ready. The rows then use the same import preview,
-matching, review, and Apply steps as other statement formats. Select **Review PDF import**
-on the import page to reopen the workbench before continuing.
+#### Parser details, warnings, and limits
+
+Select **Parser details** for how the statement was read - the account type, currency, date and
+number formats, which date is imported, how unmarked amounts and printed signs were treated, what the
+balance column was taken to mean, and which pages held transactions - each labelled with where it
+came from: the parser's own reading, your setting, or a saved layout. Underneath, the reasons rows
+are not ready are counted, and selecting one shows those rows. It also holds saved-layout validation
+and technical diagnostics, which contain aggregate events, counts, and page numbers, not statement
+text or source IDs. The panel opens beside the workbench rather than replacing it. Parsing warnings
+are not kept here; they appear in **What needs attention**, beside the settings that answer them.
+
+A page that has no readable text layer, or that could not be read at all, is reported above the
+transaction table, and import stays disabled until you confirm that you checked those pages: their
+transactions are missing from the statement. Selecting **I checked these pages** dismisses the
+message and leaves a marker in the toolbar that brings it back. Rows inside a transaction area that
+did not become a transaction are counted the same way, so you can mark them in **Check detection**
+instead of losing them silently.
 
 Scanned or image-only PDFs have no usable text layer, and OCR is not included. A damaged page is
 reported instead of being silently ignored. Large files are limited by file size, page count, text
