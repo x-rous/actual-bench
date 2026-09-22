@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Play, ShieldCheck, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,16 @@ function getCrossOriginIsolated(): boolean | null {
   return window.crossOriginIsolated;
 }
 
+// Nothing to subscribe to: crossOriginIsolated is fixed for the page's
+// lifetime once it loads, so this is a read, not a subscription.
+function subscribeToCrossOriginIsolated(): () => void {
+  return () => {};
+}
+
+function getServerCrossOriginIsolatedSnapshot(): boolean | null {
+  return null;
+}
+
 export function BrowserApiLabClient() {
   const [form, setForm] = useState<BrowserApiLabInput>({
     serverUrl: "",
@@ -53,20 +63,19 @@ export function BrowserApiLabClient() {
   const [result, setResult] = useState<BrowserApiLabResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  // Starts null on both server and client so the first client render matches
-  // the server-rendered HTML; `window.crossOriginIsolated` is read after mount
-  // instead of in a lazy initializer, which would read it during hydration
-  // itself and produce a client/server mismatch React would warn about.
-  const [crossOriginIsolated, setCrossOriginIsolated] = useState<boolean | null>(null);
+  // The server snapshot is always null, matching the server-rendered HTML;
+  // React swaps in the real client snapshot right after hydration with no
+  // extra render-then-setState step, and no client/server mismatch warning.
+  const crossOriginIsolated = useSyncExternalStore(
+    subscribeToCrossOriginIsolated,
+    getCrossOriginIsolated,
+    getServerCrossOriginIsolatedSnapshot
+  );
   const [browserEvents, setBrowserEvents] = useState<string[]>([]);
   // Direct mode has no operator toggle; this reflects whether the browser
   // actually achieved cross-origin isolation, which is the one real
   // precondition the lab depends on.
   const enabled = crossOriginIsolated === true;
-
-  useEffect(() => {
-    setCrossOriginIsolated(getCrossOriginIsolated());
-  }, []);
 
   useEffect(() => {
     function addBrowserEvent(message: string) {

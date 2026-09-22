@@ -100,13 +100,15 @@ jobs:
           curl -sf http://127.0.0.1:3000/ > /dev/null
           body=$(curl -sf http://127.0.0.1:3000/api/app-db/health)
           echo "$body"
-          echo "$body" | node -e '
+          created_at=$(echo "$body" | node -e '
             const body = JSON.parse(require("fs").readFileSync(0, "utf8"));
-            if (!body.ready || !body.writable || !body.schemaVersion) {
+            if (!body.ready || !body.writable || !body.schemaVersion || !body.createdAt) {
               console.error("app-db/health did not report a ready, writable, initialized database");
               process.exit(1);
             }
-          '
+            process.stdout.write(body.createdAt);
+          ')
+          echo "APP_DB_CREATED_AT=$created_at" >> "$GITHUB_ENV"
 
       - name: Stop the container and start a replacement on the same volume
         run: |
@@ -129,10 +131,10 @@ jobs:
           done
           body=$(curl -sf http://127.0.0.1:3000/api/app-db/health)
           echo "$body"
-          echo "$body" | node -e '
+          echo "$body" | APP_DB_CREATED_AT="$APP_DB_CREATED_AT" node -e '
             const body = JSON.parse(require("fs").readFileSync(0, "utf8"));
-            if (!body.ready || !body.schemaVersion) {
-              console.error("Replacement container did not see the same initialized database");
+            if (!body.ready || !body.schemaVersion || body.createdAt !== process.env.APP_DB_CREATED_AT) {
+              console.error("Replacement container did not see the same initialized database (createdAt mismatch)");
               process.exit(1);
             }
           '
