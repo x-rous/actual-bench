@@ -340,8 +340,14 @@ export function ImportPanel({
   } | null>(null);
   const [pdfPassword, setPdfPassword] = useState("");
 
+  // Written in an effect rather than during render: a render React throws
+  // away still leaves a ref assignment behind, so the unmount cleanup below
+  // could revoke the preview URLs of a draft that never reached the screen and
+  // leak the ones belonging to the draft that did.
   const pdfDraftRef = useRef<PdfStatementParseResult | null>(null);
-  pdfDraftRef.current = pdfDraft;
+  useEffect(() => {
+    pdfDraftRef.current = pdfDraft;
+  }, [pdfDraft]);
   useEffect(() => () => {
     pdfAbortRef.current?.abort();
     releasePdfStatementPreviews(pdfDraftRef.current);

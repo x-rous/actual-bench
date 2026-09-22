@@ -200,6 +200,7 @@ export function renamePdfStatementLayoutBank(
          FROM pdf_statement_layouts existing
          JOIN pdf_statement_layouts moving
            ON moving.name = existing.name COLLATE NOCASE
+          AND moving.id <> existing.id
         WHERE existing.bank_name = ? COLLATE NOCASE
           AND moving.bank_name = ? COLLATE NOCASE`
     ).get<{ id: string }>(to, from);

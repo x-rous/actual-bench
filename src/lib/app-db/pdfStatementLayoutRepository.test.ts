@@ -103,6 +103,17 @@ describe("statement layout repository", () => {
     });
   });
 
+  it("allows a rename that only changes the bank label's capitalization", () => {
+    withDb((db) => {
+      save(db);
+
+      // Names collate case-insensitively, so without excluding the layout
+      // being moved this join matches it against itself and reports a merge.
+      expect(renamePdfStatementLayoutBank(db, { from: "HSBC Bank", to: "HSBC BANK" })).toBe(1);
+      expect(listPdfStatementLayouts(db).layouts.map((layout) => layout.bankName)).toEqual(["HSBC BANK"]);
+    });
+  });
+
   it("refuses a bank rename that would collide two layouts of the same name", () => {
     withDb((db) => {
       save(db);

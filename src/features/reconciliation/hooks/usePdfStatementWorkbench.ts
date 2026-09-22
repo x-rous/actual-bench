@@ -53,10 +53,20 @@ export function usePdfStatementWorkbench(
   ) {
     if (!parsed || isParsing) return;
     setParserError(null);
-    const output = parsePdfStatementOffMainThread(parsed.document, {
-      guidance: nextGuidance,
-      corrections: nextCorrections,
-    });
+    let output: PdfStatementParseResult | Promise<PdfStatementParseResult>;
+    try {
+      output = parsePdfStatementOffMainThread(parsed.document, {
+        guidance: nextGuidance,
+        corrections: nextCorrections,
+      });
+    } catch (error: unknown) {
+      // Where there is no Worker the parser runs here and throws here, so this
+      // failure arrives as an exception rather than a rejected promise. Left
+      // uncaught it escapes the click handler having just cleared the last
+      // error, and the workbench reports nothing at all.
+      setParserError(error instanceof Error ? error.message : "The PDF parser could not re-run.");
+      return;
+    }
     // A synchronous result means the parser ran on this thread, and making it
     // async here would flash a busy state for work that is already done.
     if (!(output instanceof Promise)) {
@@ -107,6 +117,9 @@ export function usePdfStatementWorkbench(
       setCorrections(next);
       setParsed(output);
       setDraftGuidance(output.guidance);
+      // Undoing re-assembles the blocks just as applying does, so a row the
+      // caller had selected may no longer exist. Same reason as the other two.
+      onCorrectionsApplied?.();
     });
   }
 

@@ -220,6 +220,23 @@ describe("reconciliation sessions grouped by account", () => {
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
   });
 
+  it("counts a straddling period when choosing the year to open on", () => {
+    const thisYear = new Date().getFullYear();
+    // A cycle that starts in December and ends in January belongs to this year
+    // as far as the filter is concerned, so the default has to see it too - or
+    // the list opens on a year that hides the only session there is.
+    const straddling = session({
+      id: "straddling",
+      statementName: "straddling.csv",
+      statementStart: `${thisYear - 1}-12-20`,
+      statementEnd: `${thisYear}-01-19`,
+    });
+    renderList([straddling], { allYears: false });
+
+    expect(screen.getByLabelText("Filter by statement year")).toHaveValue(String(thisYear));
+    expect(screen.getByText("straddling.csv")).toBeInTheDocument();
+  });
+
   it("preserves status, tag, and search filtering while exposing matches", () => {
     const { dubaiActive, dubaiApplied, hsbcApplied } = fixtures();
     renderList([dubaiActive, dubaiApplied, hsbcApplied], { grouped: true });

@@ -88,14 +88,15 @@ export function NewSessionDialog({
           }}
         >
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="reconciliation-account" className="text-xs">
-            Account
-          </Label>
+          {/* The combobox renders a button, not an input with an id, so the
+              visible label cannot point at it. It carries its own name. */}
+          <Label className="text-xs">Account</Label>
           <SearchableCombobox
             options={accounts}
             value={accountId}
             onChange={setAccountId}
             placeholder="Select an account…"
+            ariaLabel="Account"
             autoFocus
           />
         </div>

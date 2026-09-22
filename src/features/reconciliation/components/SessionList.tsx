@@ -214,13 +214,16 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
     Grouping is off by default because most accounts have one session: a
     heading over a single row doubles the height of the table and indents the
     data under a line that says nothing the row does not. It earns its place
-    when an account has several, where the heading's count of what still needs
-    attention is a real summary, so it stays available rather than removed.
+    when an account has several and the rows under one heading are a set worth
+    reading together, so it stays available rather than removed.
   */
   const [groupByAccount, setGroupByAccount] = useState(false);
   const [year, setYear] = useState(() => {
     const thisYear = String(new Date().getFullYear());
-    return sessions.some((session) => (session.statementStart ?? "").startsWith(thisYear))
+    // Read through monthsCovered, the same way the filter itself matches: a
+    // cycle running December to January belongs to both years, and starting
+    // on a year that hides it would be the filter disagreeing with itself.
+    return sessions.some((session) => monthsCovered(session).some((entry) => entry.startsWith(thisYear)))
       ? thisYear
       : "all";
   });
