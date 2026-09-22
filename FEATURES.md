@@ -685,7 +685,7 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 - Exported files are UTF-8 CSV with BOM for correct Excel / Google Sheets rendering
 - Imported rows are staged — nothing is saved until you click Save
 - 5 MB file size limit with per-row validation and skip reporting on import
-- Sample CSV files included in `public/samples csv/` for testing with a fresh Actual Budget setup:
+- Sample CSV files included in `public/sample-csv/` for testing with a fresh Actual Budget setup:
 
 | File | Contents |
 |---|---|

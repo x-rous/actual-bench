@@ -3,7 +3,8 @@
   publish = ".next-build"
 
 [build.environment]
-  NODE_VERSION = "20"
+  # Kept in step with docker/Dockerfile.prod and .github/workflows/ci.yml — bump all three together.
+  NODE_VERSION = "24.21.0"
   NEXT_TELEMETRY_DISABLED = "1"
   # Ensures Netlify knows where your custom build folder is
   NEXT_DIST_DIR = ".next-build"

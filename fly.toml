@@ -4,11 +4,19 @@
 #   fly launch --no-deploy   # create the app and import this config
 #   fly deploy               # deploy using the pre-built Docker Hub image
 #
-# No secrets are required — the actual-http-api URL and API key are entered
-# in the browser UI and stored in session storage (cleared on tab close).
+# No secrets are required for a plain Direct/HTTP API connection — the server
+# URL and API key are entered in the browser UI and stored in session storage
+# (cleared on tab close).
+#
+# This config has no [mounts] volume, so the metadata database is ephemeral:
+# App Health, remembered-server credentials, and backup/automation history do
+# not survive a machine restart. Add a Fly volume and set ACTUAL_BENCH_DB_PATH
+# to it (see docs-site/administration/configuration) if you need that to
+# persist; the optional SYNC_VAULT_KEY / SYNC_SCHEDULER_SECRET features also
+# require a durable database to be worth enabling.
 #
 # To pin to a specific version instead of always pulling latest, change
-# the image tag below, e.g. xrous/actual-bench:1.1.6
+# the image tag below, e.g. xrous/actual-bench:1.3.5
 
 app = "actual-bench"
 primary_region = "iad"
