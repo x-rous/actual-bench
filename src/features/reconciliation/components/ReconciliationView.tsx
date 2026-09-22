@@ -128,6 +128,33 @@ const PROGRESS_FLUSH_MS = 1000;
  * that redrawing the review table does not compete with the writing. */
 const PROGRESS_UI_MS = 250;
 
+/**
+ * The step a session is opened on.
+ *
+ * Opening always landed on the reconcile step, which for a draft meant a
+ * workbench with nothing in it and for an applied session meant the step
+ * before the result the reader came back to see. A session knows how far it
+ * has got, so it opens where its work is.
+ *
+ * A partial apply opens on its result because that is where the failures are
+ * listed; the result screen keeps its own way back into the workbench for the
+ * rows that still need work.
+ */
+function screenForSession(session: ReconciliationSessionRecord): Screen {
+  if (session.status === "draft") {
+    return {
+      name: "import",
+      sessionId: session.id,
+      accountId: session.accountId,
+      accountName: session.accountName ?? "this account",
+    };
+  }
+  if (session.status === "completed" || session.status === "partial") {
+    return { name: "result", sessionId: session.id };
+  }
+  return { name: "workbench", sessionId: session.id };
+}
+
 type Screen =
   | { name: "home" }
   | { name: "import"; sessionId: string; accountId: string; accountName: string }
@@ -298,7 +325,10 @@ export function ReconciliationView() {
   const hydratedSessionId = sessionQuery.data?.session.id;
   useEffect(() => {
     const data = sessionQuery.data;
-    if (!data || screen.name !== "workbench" || data.session.id !== screen.sessionId) return;
+    // Any screen that names a session, not the workbench alone: opening an
+    // applied session lands on the apply screen, and hydrating only on the
+    // workbench left it blank until the user walked back through match.
+    if (!data || data.session.id !== sessionId) return;
     // Hydrate whenever the loaded state belongs to a different session — or to
     // none. Keying on emptiness instead would leave another session's decisions
     // on screen, and skipping when it already matches keeps a fresh match result
@@ -379,7 +409,7 @@ export function ReconciliationView() {
     // changed still carries the old three-way `notesStrategy`.
     if (data.session.applyConfig) setApplyConfig(normalizeApplyConfig(data.session.applyConfig));
     setLoadedSessionId(data.session.id);
-  }, [sessionQuery.data, hydratedSessionId, screen, loadedSessionId]);
+  }, [sessionQuery.data, hydratedSessionId, sessionId, loadedSessionId]);
 
   /**
    * Pair a statement row with a transaction the matcher never related.
@@ -2088,7 +2118,7 @@ export function ReconciliationView() {
                 setApplyResult(null);
                 setLoadedSessionId(null);
               }
-              setScreen({ name: "workbench", sessionId: session.id });
+              setScreen(screenForSession(session));
             }}
             onDelete={(session) => {
               // Deleting takes the statement rows and every decision staged

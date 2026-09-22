@@ -93,10 +93,16 @@ in **Statement interpretation** rather than on every row.
 the question - an unresolved money-in or money-out rule, or a missing currency - **Fix this** opens
 **Statement interpretation** and puts the cursor on that control.
 
-Select **Parser details** for page counts, parsing warnings, saved-layout validation, and technical
-diagnostics. It opens beside the workbench rather than replacing it, so the rows a warning is about
-stay on screen and keep working. Technical diagnostics contain aggregate events, counts, and page
-numbers, not statement text or source IDs.
+Select **Parser details** for how the statement was read: the account type, currency, date and number
+formats, which date is imported, how unmarked amounts and printed signs were treated, what the balance
+column was taken to mean, and which pages held transactions - each with where it came from, whether
+that is the parser's own reading, your setting, or a saved layout. Underneath, the reasons rows are not
+ready are counted, and selecting one shows those rows. It also holds saved-layout validation and
+technical diagnostics, which contain aggregate events, counts, and page numbers, not statement text or
+source IDs. The panel opens beside the workbench rather than replacing it.
+
+Parsing warnings are not kept here: they appear in **What needs attention** in Check detection, beside
+the settings that answer them.
 
 Actual Bench opens **Review transactions** when the initial result is mostly usable and no saved
 layout needs confirmation. If more than half of the proposed transactions are rejected, or a saved
@@ -470,6 +476,16 @@ Its Review page remains readable, but its write choices are locked to the option
 reconcile the account again, start a new session.
 
 ## Sessions and limits
+
+The session list shows one row per reconciliation: the account, its tag, the statement's format and
+file name, the period, the number of statement rows, and where it has got to. **Group by account**
+gathers an account's sessions under one heading, and is off by default because most accounts have a
+single session. Opening a session goes to the step its work is at - a draft opens on **Import**, an
+applied one on its result, and everything else on the workbench.
+
+The **Year** filter starts on the current year when there are sessions in it; **Clear filters** widens
+it back out. A statement period that runs across a year answers to both, so a December-to-January
+cycle is found under either.
 
 Sessions are stored in the Actual Bench metadata database on the server, not in the budget file. They
 contain the imported statement rows, your decisions, matching options, and apply result. Statement

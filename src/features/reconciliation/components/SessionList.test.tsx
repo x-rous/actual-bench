@@ -34,7 +34,10 @@ function session(
   };
 }
 
-function renderList(sessions: ReconciliationSessionRecord[]) {
+function renderList(
+  sessions: ReconciliationSessionRecord[],
+  { grouped = false, allYears = true } = {}
+) {
   const callbacks = {
     onOpen: jest.fn(),
     onDelete: jest.fn(),
@@ -42,6 +45,15 @@ function renderList(sessions: ReconciliationSessionRecord[]) {
     onNew: jest.fn(),
   };
   render(<SessionList sessions={sessions} {...callbacks} />);
+  // Grouping is off by default: most accounts have one session, and a heading
+  // over a single row is height spent saying what the row already says.
+  if (grouped) fireEvent.click(screen.getByRole("button", { name: "Group by account" }));
+  // The year filter opens on the current year, which these fixtures straddle
+  // deliberately. Tests that are not about that filter widen it back out; the
+  // default itself is covered by its own test below.
+  if (allYears) {
+    fireEvent.change(screen.getByLabelText("Filter by statement year"), { target: { value: "all" } });
+  }
   return callbacks;
 }
 
@@ -82,35 +94,41 @@ function fixtures() {
 describe("reconciliation sessions grouped by account", () => {
   it("uses one table and expands only accounts needing attention by default", () => {
     const { dubaiActive, dubaiApplied, hsbcApplied } = fixtures();
-    renderList([dubaiApplied, hsbcApplied, dubaiActive]);
+    renderList([dubaiApplied, hsbcApplied, dubaiActive], { grouped: true });
 
     const table = screen.getByRole("table", { name: "Reconciliation sessions" });
     expect(screen.getAllByRole("table", { name: "Reconciliation sessions" })).toHaveLength(1);
     expect(screen.getAllByRole("columnheader", { name: "Tag" })).toHaveLength(1);
-    expect(screen.getByRole("columnheader", { name: "Statement" })).toHaveClass("w-[20%]");
-    expect(screen.getByRole("columnheader", { name: "Period" })).toHaveClass("w-[20%]");
+    // Grouped, the account cell is empty on every row, so its width goes to
+    // the statement - the one column a reader actually has to read.
+    expect(screen.getByRole("columnheader", { name: "Statement" })).toHaveClass("w-[48%]");
+    expect(screen.getByRole("columnheader", { name: /Account/ })).toHaveClass("w-0");
 
     const dubaiGroup = screen.getByRole("button", { name: `Collapse ${DUBAI} sessions` });
     expect(dubaiGroup).toHaveAttribute("aria-expanded", "true");
-    expect(dubaiGroup).toHaveTextContent("2 sessions · 1 needs attention");
+    // The heading carries the account and nothing else; the counts it used to
+    // restate are what the rows under it already show.
+    expect(dubaiGroup).toHaveTextContent(DUBAI);
+    expect(dubaiGroup).not.toHaveTextContent("sessions");
     expect(screen.getByText("dubai-active.csv")).toBeInTheDocument();
     const activeRow = screen.getByText("dubai-active.csv").closest("tr");
-    const accountCell = activeRow?.querySelector("td");
-    expect(accountCell).toHaveClass("py-0.5");
+    // The account cell is empty under the heading that already names it.
+    expect(activeRow?.querySelector("td")).toBeEmptyDOMElement();
+    // Rows stay denser than the heading over them.
+    expect(activeRow?.querySelectorAll("td")[1]).toHaveClass("py-0.5");
     expect(dubaiGroup).toHaveClass("py-1.5");
-    expect(accountCell?.querySelector("svg")).toBeNull();
     expect(screen.getByText("dubai-applied.csv")).toBeInTheDocument();
     expect(within(table).getAllByText(DUBAI)).toHaveLength(1);
 
     const hsbcGroup = screen.getByRole("button", { name: `Expand ${HSBC} sessions` });
     expect(hsbcGroup).toHaveAttribute("aria-expanded", "false");
-    expect(hsbcGroup).toHaveTextContent("1 session · all applied");
+    expect(hsbcGroup).toHaveTextContent(HSBC);
     expect(screen.queryByText("hsbc-applied.csv")).toBeNull();
   });
 
   it("lets users expand and collapse groups without changing row actions", () => {
     const { dubaiActive, hsbcApplied } = fixtures();
-    const { onOpen, onDelete } = renderList([dubaiActive, hsbcApplied]);
+    const { onOpen, onDelete } = renderList([dubaiActive, hsbcApplied], { grouped: true });
 
     fireEvent.click(screen.getByRole("button", { name: `Expand ${HSBC} sessions` }));
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
@@ -129,7 +147,7 @@ describe("reconciliation sessions grouped by account", () => {
 
   it("expands and collapses all visible account groups from one control", () => {
     const { dubaiActive, hsbcApplied } = fixtures();
-    renderList([dubaiActive, hsbcApplied]);
+    renderList([dubaiActive, hsbcApplied], { grouped: true });
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse all groups" }));
     expect(screen.getByRole("button", { name: `Expand ${DUBAI} sessions` })).toBeInTheDocument();
@@ -145,7 +163,7 @@ describe("reconciliation sessions grouped by account", () => {
 
   it("adds an Account filter and exposes matching applied groups", () => {
     const { dubaiActive, hsbcApplied } = fixtures();
-    renderList([dubaiActive, hsbcApplied]);
+    renderList([dubaiActive, hsbcApplied], { grouped: true });
 
     fireEvent.change(screen.getByLabelText("Filter by account"), {
       target: { value: "account-2" },
@@ -156,25 +174,55 @@ describe("reconciliation sessions grouped by account", () => {
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
   });
 
-  it("keeps year and month as filters and exposes a cross-month result", () => {
+  it("keeps the year as a filter, and answers to either year a period straddles", () => {
+    const newYear = session({
+      id: "new-year",
+      statementName: "new-year.csv",
+      statementStart: "2025-12-20",
+      statementEnd: "2026-01-19",
+    });
     const { hsbcApplied } = fixtures();
-    renderList([hsbcApplied]);
+    renderList([hsbcApplied, newYear], { grouped: true });
 
     fireEvent.change(screen.getByLabelText("Filter by statement year"), {
       target: { value: "2025" },
     });
-    fireEvent.change(screen.getByLabelText("Filter by statement month"), {
-      target: { value: "06" },
-    });
-
-    expect(screen.getByRole("button", { name: `Collapse ${HSBC} sessions` })).toBeInTheDocument();
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
-    expect(screen.queryByText("2025", { selector: "th" })).toBeNull();
+    // A cycle running into January belongs to both years, or filtering by the
+    // year you remember would hide it.
+    expect(screen.getByText("new-year.csv")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Filter by statement year"), {
+      target: { value: "2026" },
+    });
+    expect(screen.queryByText("hsbc-applied.csv")).toBeNull();
+    expect(screen.getByText("new-year.csv")).toBeInTheDocument();
+  });
+
+  it("opens on this year, and says so as a filter the reader can clear", () => {
+    const thisYear = String(new Date().getFullYear());
+    const current = session({
+      id: "current",
+      statementName: "current.csv",
+      statementStart: `${thisYear}-03-01`,
+      statementEnd: `${thisYear}-03-31`,
+    });
+    const { hsbcApplied } = fixtures();
+    renderList([hsbcApplied, current], { allYears: false });
+
+    // Most of the time the session you want is one of this year's, and the
+    // years before it are history.
+    expect(screen.getByLabelText("Filter by statement year")).toHaveValue(thisYear);
+    expect(screen.getByText("current.csv")).toBeInTheDocument();
+    expect(screen.queryByText("hsbc-applied.csv")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
   });
 
   it("preserves status, tag, and search filtering while exposing matches", () => {
     const { dubaiActive, dubaiApplied, hsbcApplied } = fixtures();
-    renderList([dubaiActive, dubaiApplied, hsbcApplied]);
+    renderList([dubaiActive, dubaiApplied, hsbcApplied], { grouped: true });
 
     fireEvent.click(screen.getByRole("button", { name: /Applied 2/ }));
     expect(screen.queryByText("dubai-active.csv")).toBeNull();
@@ -191,6 +239,52 @@ describe("reconciliation sessions grouped by account", () => {
       target: { value: "hsbc" },
     });
     expect(screen.getByRole("button", { name: `Collapse ${HSBC} sessions` })).toBeInTheDocument();
+  });
+
+  it("lists sessions flat by default, with the account on the row", () => {
+    const { dubaiActive, hsbcApplied } = fixtures();
+    renderList([dubaiActive, hsbcApplied]);
+
+    // No heading over a single row, and no indent under one.
+    expect(screen.queryByRole("button", { name: `Collapse ${DUBAI} sessions` })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse all groups" })).toBeNull();
+    // The account is on the row instead, so nothing is lost by not grouping.
+    const table = screen.getByRole("table");
+    expect(within(table).getByText(DUBAI)).toBeInTheDocument();
+    expect(within(table).getByText(HSBC)).toBeInTheDocument();
+    expect(within(table).getByText("dubai-active.csv")).toBeInTheDocument();
+  });
+
+  it("opens a session from the keyboard, not only by clicking its row", () => {
+    const { dubaiActive } = fixtures();
+    const { onOpen } = renderList([dubaiActive]);
+
+    // A `tr` takes no focus and Enter does nothing on one, so the way in is a
+    // real control that says what it opens.
+    const open = screen.getByRole("button", { name: /Open the reconciliation for .* of dubai-active\.csv/ });
+    fireEvent.click(open);
+    expect(onOpen).toHaveBeenCalledWith(dubaiActive);
+  });
+
+  it("offers a way out of filters that match nothing", () => {
+    const { dubaiActive } = fixtures();
+    renderList([dubaiActive]);
+
+    fireEvent.change(screen.getByLabelText("Search reconciliation sessions"), {
+      target: { value: "nothing matches this" },
+    });
+    expect(screen.getByText("No sessions match these filters.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all sessions" }));
+    expect(screen.getByText("dubai-active.csv")).toBeInTheDocument();
+  });
+
+  it("names the statement's format beside its file name", () => {
+    const { hsbcApplied } = fixtures();
+    renderList([{ ...hsbcApplied, statementFormat: "pdf" }]);
+
+    const statement = screen.getByText("hsbc-applied.csv").closest("td")!;
+    expect(within(statement).getByText("pdf")).toBeInTheDocument();
   });
 
   it("sorts sessions within each account using the shared column headers", () => {
