@@ -1539,12 +1539,7 @@ describe("PDF layout profiles", () => {
       },
     });
 
-    const match = matchPdfLayoutProfile(
-      corrected,
-      detected.reconstructedPages,
-      detected.activeSchema,
-      detected.detectionSignature
-    );
+    const match = matchPdfLayoutProfile(corrected, detected);
 
     expect(match.outcome).toBe("strong");
   });
@@ -1561,9 +1556,7 @@ describe("PDF layout profiles", () => {
 
     const match = matchPdfLayoutProfile(
       createPdfLayoutProfile({ id: "layout-2", name: "Elsewhere", result: elsewhere }),
-      detected.reconstructedPages,
-      detected.activeSchema,
-      detected.detectionSignature
+      detected
     );
 
     expect(match.outcome).toBe("conflicting");
@@ -1595,11 +1588,14 @@ describe("PDF layout profiles", () => {
     const original = parsedWithDescription("ANON SHOP");
     const profile = createPdfLayoutProfile({ id: "profile-1", name: "Card layout", result: original });
     const changedData = parsedWithDescription("OTHER SHOP");
-    expect(matchPdfLayoutProfile(profile, changedData.reconstructedPages, changedData.activeSchema).outcome).toBe("strong");
+    expect(matchPdfLayoutProfile(profile, changedData).outcome).toBe("strong");
     expect(JSON.stringify(profile)).not.toContain("ANON SHOP");
-    expect(profile.guidance.statementPeriod).toEqual({ start: null, end: null });
-    expect(profile.guidance.columns.every((column) => column.header === null && column.examples.length === 0)).toBe(true);
-    expect(profile.guidance.regions.every((region) => region.rowIds.length === 0 && region.reasons.length === 0)).toBe(true);
+    // A layout describes a table: no period, no transaction areas, and bounds
+    // as fractions of the page rather than points on one particular page.
+    expect(profile).not.toHaveProperty("guidance");
+    expect(JSON.stringify(profile)).not.toContain("statementPeriod");
+    expect(JSON.stringify(profile)).not.toContain("regions");
+    expect(profile.reading.columns.every((column) => column.xStart >= 0 && column.xEnd <= 1)).toBe(true);
   });
 
   it("reads transaction pages the saved layout never saw", () => {
@@ -1654,13 +1650,19 @@ describe("PDF layout profiles", () => {
     const original = parsedWithDescription("ANON SHOP");
     const profile = createPdfLayoutProfile({ id: "profile-1", name: "Card layout", result: original });
     const shifted = parsedWithDescription("OTHER SHOP");
-    const schema = shifted.activeSchema && {
-      ...shifted.activeSchema,
-      columns: shifted.activeSchema.columns.map((column) => column.role === "amount"
-        ? { ...column, xStart: column.xStart - 100, xEnd: column.xEnd - 100 }
-        : column),
+    // Without a header on either side the table's shape is the only evidence,
+    // and a financial column that has moved is drift whatever else aligns.
+    const headerless = {
+      ...shifted,
+      detectionSignature: { ...shifted.detectionSignature, header: [] },
+      activeSchema: shifted.activeSchema && {
+        ...shifted.activeSchema,
+        columns: shifted.activeSchema.columns.map((column) => column.role === "amount"
+          ? { ...column, xStart: column.xStart - 100, xEnd: column.xEnd - 100 }
+          : column),
+      },
     };
-    const match = matchPdfLayoutProfile(profile, shifted.reconstructedPages, schema);
+    const match = matchPdfLayoutProfile({ ...profile, signature: { ...profile.signature, header: [] } }, headerless);
     expect(match.drift).toBe(true);
     expect(match.outcome).not.toBe("strong");
   });
@@ -1672,17 +1674,36 @@ describe("PDF layout profiles", () => {
       result: parsedWithDescription("ANON SHOP"),
     });
     const safe = sanitizePdfLayoutProfileEnvelope({
-      kind: "pdf-layout-v2",
+      kind: "pdf-layout-v3",
       statementText: "PRIVATE TRANSACTION",
       profile: {
         ...profile,
         transactionText: "PRIVATE TRANSACTION",
-        guidance: { ...profile.guidance, extractedText: "PRIVATE TRANSACTION" },
+        reading: { ...profile.reading, extractedText: "PRIVATE TRANSACTION" },
       },
     });
 
     expect(safe).not.toBeNull();
     expect(JSON.stringify(safe)).not.toContain("PRIVATE TRANSACTION");
+
+    // A header shape that still carries letters or digits is statement text
+    // wearing the shape's name, so the whole layout is refused.
+    expect(sanitizePdfLayoutProfileEnvelope({
+      kind: "pdf-layout-v3",
+      profile: {
+        ...profile,
+        signature: { ...profile.signature, header: [{ shape: "ANON SHOP", x: 1, width: 2 }] },
+      },
+    })).toBeNull();
+
+    // So is a column that claims a place outside the page.
+    expect(sanitizePdfLayoutProfileEnvelope({
+      kind: "pdf-layout-v3",
+      profile: {
+        ...profile,
+        reading: { ...profile.reading, columns: [{ ...profile.reading.columns[0], xEnd: 42 }] },
+      },
+    })).toBeNull();
   });
 
   it("keeps the current statement period when applying a reusable layout", () => {

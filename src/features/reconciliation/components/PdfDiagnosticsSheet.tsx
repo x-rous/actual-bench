@@ -91,7 +91,7 @@ export function PdfDiagnosticsSheet({
             <div className="mt-3 space-y-2">
               {profiles.map((option) => {
                 const profile = option.envelope.profile;
-                const match = matchPdfLayoutProfile(profile, result.reconstructedPages, result.activeSchema, result.detectionSignature);
+                const match = matchPdfLayoutProfile(profile, result);
                 return (
                   <div key={option.recordId} className="rounded border p-2 text-xs">
                     <div className="flex items-center gap-2">

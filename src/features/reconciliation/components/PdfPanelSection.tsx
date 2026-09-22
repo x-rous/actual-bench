@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { InfoHint } from "@/components/ui/info-hint";
 import { cn } from "@/lib/utils";
 
 /**
@@ -66,23 +67,37 @@ export function PdfPanelSection({
   );
 }
 
-/** A control and its label, spaced the same way in every section. */
+/**
+ * A setting: its name, then its control under it.
+ *
+ * Side by side, the name had to give way to the control and a setting called
+ * "Use as import date" arrived as "Use as impo…". A label that has to be
+ * guessed at is worth more than the height it costs, and the height this
+ * panel needed came from the density of the controls and from putting three
+ * settings on a line, not from where the label sits.
+ */
 export function PdfPanelField({
   label,
   htmlFor,
+  hint,
   className,
   children,
 }: {
   label: string;
   htmlFor?: string;
+  /** What the setting means, for when it is not obvious from its name. */
+  hint?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label htmlFor={htmlFor} className={cn("flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground", className)}>
-      {label}
+    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
+      <span className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground">
+        <label htmlFor={htmlFor}>{label}</label>
+        {hint && <InfoHint label={label.toLowerCase()}>{hint}</InfoHint>}
+      </span>
       {children}
-    </label>
+    </div>
   );
 }
 

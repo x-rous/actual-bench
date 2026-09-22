@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ListPlus, ListRestart, SquareDashedMousePointer, TriangleAlert, Undo2 } from "lucide-react";
+import { ListPlus, ListRestart, SquareDashedMousePointer, TriangleAlert, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -309,48 +309,96 @@ function RestoreIgnoredRows({
   );
 }
 
+/**
+ * What applying these settings would do, as a small ledger.
+ *
+ * Each measurement is a column and each state a row, so the figures stack:
+ * the change sits directly under the two numbers it came from, right-aligned
+ * and tabular, which is the arrangement the eye reads fastest. Read the other
+ * way round - a row per measurement, each with its own before, arrow, after
+ * and delta - nothing lined up with anything, and "same" and "unchanged" said
+ * in words what a zero says in the column it belongs to.
+ *
+ * Colour is on the change row only: the first two rows are facts, and the
+ * third is the one worth reacting to.
+ */
 export function PdfDetectionChangePreview({ diff }: { diff: PdfResultDiff }) {
   const edits = [
     diff.added ? `${diff.added} added` : null,
     diff.removed ? `${diff.removed} removed` : null,
     diff.amounts ? `${diff.amounts} ${diff.amounts === 1 ? "amount" : "amounts"}` : null,
+    diff.currencies ? `${diff.currencies} ${diff.currencies === 1 ? "currency" : "currencies"}` : null,
     diff.dates ? `${diff.dates} ${diff.dates === 1 ? "date" : "dates"}` : null,
     diff.descriptions ? `${diff.descriptions} ${diff.descriptions === 1 ? "description" : "descriptions"}` : null,
   ].filter(Boolean) as string[];
   const newlyUnreadable = diff.afterRejected - diff.beforeRejected;
+  const columns = [
+    { key: "transactions", label: "Transactions", before: diff.before, after: diff.after, money: false },
+    { key: "ready", label: "Ready", before: diff.beforeReady, after: diff.afterReady, money: false },
+    { key: "in", label: "In", before: diff.beforeCredits, after: diff.afterCredits, money: true },
+    { key: "out", label: "Out", before: -diff.beforeDebits, after: -diff.afterDebits, money: true },
+    { key: "net", label: "Net", before: diff.beforeNet, after: diff.afterNet, money: true },
+  ];
+  const show = (value: number, money: boolean) => (money ? signed(value) : String(value));
 
   return (
     <section aria-label="Detection change preview" className="mb-2 overflow-hidden rounded-md border bg-background/70">
-      <p className="border-b px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-        If you apply these changes
-      </p>
-
-      <div className="divide-y text-[11px]">
-        <PreviewRow
-          label="Transactions"
-          before={String(diff.before)}
-          after={String(diff.after)}
-          delta={diff.after - diff.before}
-        />
-        <PreviewRow
-          label="Ready to import"
-          before={String(diff.beforeReady)}
-          after={String(diff.afterReady)}
-          delta={diff.afterReady - diff.beforeReady}
-        />
-        <PreviewRow
-          label="Net change"
-          before={signed(diff.beforeNet)}
-          after={signed(diff.afterNet)}
-          delta={diff.afterNet - diff.beforeNet}
-          deltaLabel={diff.afterNet === diff.beforeNet ? "unchanged" : signed(diff.afterNet - diff.beforeNet)}
-          emphasis
-        />
+      {/* What changed shares the heading's line: it is one short phrase, and
+          a line of its own under the figures pushed the panel taller for it. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b px-3 py-1.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          If you apply these changes
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {edits.length ? `Row changes: ${edits.join(" · ")}` : "No row would change."}
+        </p>
       </div>
 
-      <p className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
-        {edits.length ? `Row changes: ${edits.join(" · ")}` : "No row would change."}
-      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px] whitespace-nowrap">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th scope="col" className="px-3 py-1 text-left font-normal"><span className="sr-only">Measurement</span></th>
+              {columns.map((column) => (
+                <th key={column.key} scope="col" className="px-2 py-1 text-right font-normal">{column.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            <tr>
+              <th scope="row" className="px-3 py-0.5 text-left font-normal text-muted-foreground">Now</th>
+              {columns.map((column) => (
+                <td key={column.key} className="px-2 py-0.5 text-right">{show(column.before, column.money)}</td>
+              ))}
+            </tr>
+            <tr>
+              <th scope="row" className="px-3 py-0.5 text-left font-normal text-muted-foreground">After</th>
+              {columns.map((column) => (
+                <td key={column.key} className="px-2 py-0.5 text-right font-medium">{show(column.after, column.money)}</td>
+              ))}
+            </tr>
+            <tr className="border-t">
+              <th scope="row" className="px-3 py-0.5 text-left font-normal text-muted-foreground">Change</th>
+              {columns.map((column) => {
+                const delta = column.after - column.before;
+                return (
+                  <td
+                    key={column.key}
+                    className={cn(
+                      "px-2 py-0.5 text-right",
+                      delta === 0 && "text-muted-foreground",
+                      delta > 0 && "text-emerald-700 dark:text-emerald-300",
+                      delta < 0 && "text-rose-700 dark:text-rose-300"
+                    )}
+                  >
+                    {column.money ? signed(delta) : `${delta > 0 ? "+" : ""}${delta}`}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       {newlyUnreadable > 0 && (
         <p role="status" className="flex items-start gap-1.5 border-t bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
@@ -364,47 +412,4 @@ export function PdfDetectionChangePreview({ diff }: { diff: PdfResultDiff }) {
 
 function signed(value: number) {
   return `${value > 0 ? "+" : ""}${formatMinorUnits(value)}`;
-}
-
-/**
- * One measurement, read left to right: what it is now, what it becomes, and by
- * how much. The delta carries the colour because it is the part that answers
- * "is this change what I wanted".
- */
-function PreviewRow({
-  label,
-  before,
-  after,
-  delta,
-  deltaLabel,
-  emphasis = false,
-}: {
-  label: string;
-  before: string;
-  after: string;
-  delta: number;
-  deltaLabel?: string;
-  emphasis?: boolean;
-}) {
-  const unchanged = delta === 0;
-  return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 px-3 py-1.5">
-      <span className={cn("truncate", emphasis ? "font-medium" : "text-muted-foreground")}>{label}</span>
-      <span className="flex items-baseline gap-1.5 tabular-nums">
-        <span className="text-muted-foreground line-through decoration-muted-foreground/40">{before}</span>
-        <ArrowRight aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
-        <strong className={cn(emphasis && "text-sm")}>{after}</strong>
-        <span
-          className={cn(
-            "min-w-10 text-right text-[10px]",
-            unchanged && "text-muted-foreground",
-            !unchanged && delta > 0 && "text-emerald-700 dark:text-emerald-300",
-            !unchanged && delta < 0 && "text-rose-700 dark:text-rose-300"
-          )}
-        >
-          {deltaLabel ?? (unchanged ? "same" : `${delta > 0 ? "+" : ""}${delta}`)}
-        </span>
-      </span>
-    </div>
-  );
 }

@@ -25,6 +25,9 @@ import {
   PDF_DETECTION_BANK_TABLE_SQL,
   PDF_DETECTION_PROFILE_INDEX_SQL,
   PDF_DETECTION_PROFILE_TABLE_SQL,
+  PDF_STATEMENT_LAYOUT_ACCOUNT_TABLE_SQL,
+  PDF_STATEMENT_LAYOUT_INDEX_SQL,
+  PDF_STATEMENT_LAYOUT_TABLE_SQL,
   RULE_DIAGNOSTICS_DISMISSAL_INDEX_SQL,
   RULE_DIAGNOSTICS_DISMISSAL_TABLE_SQL,
   SAVED_QUERY_TABLE_SQL,
@@ -46,7 +49,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 28;
+export const LATEST_SCHEMA_VERSION = 29;
 
 type Migration = {
   version: number;
@@ -360,7 +363,30 @@ const MIGRATIONS: readonly Migration[] = [
     // then make all future assignments directly account-to-profile.
     apply: applyPdfDetectionDirectProfileAssignments,
   },
+  {
+    version: 29,
+    // Layouts describe a bank's table, not one statement and not a bank
+    // entity. The old shape kept a statement period, page-indexed transaction
+    // areas, and a bank as a row of its own with two association tables around
+    // it; none of that survives re-reading next month's statement. The feature
+    // is unreleased, so the tables are replaced rather than migrated.
+    apply: applyPdfStatementLayouts,
+  },
 ];
+
+function applyPdfStatementLayouts(db: SqliteDatabase): void {
+  for (const table of [
+    "pdf_detection_account_banks",
+    "pdf_detection_account_profiles",
+    "pdf_detection_profiles",
+    "pdf_detection_banks",
+  ]) {
+    db.exec(`DROP TABLE IF EXISTS ${table}`);
+  }
+  db.exec(PDF_STATEMENT_LAYOUT_TABLE_SQL);
+  db.exec(PDF_STATEMENT_LAYOUT_ACCOUNT_TABLE_SQL);
+  for (const statement of PDF_STATEMENT_LAYOUT_INDEX_SQL) db.exec(statement);
+}
 
 function applyPdfDetectionDirectProfileAssignments(db: SqliteDatabase): void {
   db.exec(PDF_DETECTION_ACCOUNT_PROFILE_TABLE_SQL);

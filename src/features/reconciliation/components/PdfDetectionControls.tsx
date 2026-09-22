@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select-field";
-import { PdfPanelField, PdfPanelNote, PdfPanelSection } from "./PdfPanelSection";
+import { PdfPanelField, PdfPanelSection } from "./PdfPanelSection";
 import type {
   PdfAccountType,
   PdfDateFormatOption,
@@ -13,6 +13,9 @@ import type {
   PdfPrintedSign,
 } from "@/lib/reconciliation/statement/pdf";
 import { accountTypeLabel, formatDateInput, parseDateInput } from "../lib/pdfReviewTable";
+
+/** The density this panel is read at, matching the panels beside it. */
+const DENSE = "h-7 text-xs";
 import { cn } from "@/lib/utils";
 
 const DATE_FORMATS: { value: PdfDateFormatOption; label: string }[] = [
@@ -100,35 +103,41 @@ export function PdfDetectionControls({
       onOpenChange={onOpenChange}
       summary={`${accountTypeLabel(accountType)} · ${guidance.currency ?? "currency automatic"} · import ${importDateLabel.toLowerCase()}`}
     >
-      <PdfPanelNote>
-        Use these controls when the automatic date, number, account, or amount interpretation is wrong.
-      </PdfPanelNote>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <PdfPanelField label="Account type">
+      {/*
+        No sentence introducing the controls: the section is named, and the
+        line under its name already says how this statement is being read.
+        Three columns where there is room, because a setting is one short row.
+      */}
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
+        <PdfPanelField label="Account type" htmlFor="pdf-account-type">
           <SelectField
+            id="pdf-account-type"
+            className={DENSE}
             value={guidance.accountType}
             disabled={disabled}
             onChange={(event) => onChange({ accountType: event.target.value as PdfParserGuidance["accountType"] })}
           >
             <option value="auto">Auto-detect ({accountTypeLabel(accountType)})</option>
             {ACCOUNT_TYPES.map((value) => (
-            <option key={value} value={value}>{accountTypeLabel(value)}</option>
+              <option key={value} value={value}>{accountTypeLabel(value)}</option>
             ))}
           </SelectField>
         </PdfPanelField>
         <PdfPanelField label="Statement currency" htmlFor="pdf-statement-currency">
           <Input
             id="pdf-statement-currency"
+            className={cn(DENSE, "text-[10px] uppercase")}
             value={guidance.currency ?? ""}
             maxLength={3}
             disabled={disabled}
-            placeholder="Detect or enter ISO code"
+            placeholder="ISO code"
             onChange={(event) => onChange({ currency: event.target.value.toUpperCase() || null })}
-            className="uppercase"
           />
         </PdfPanelField>
-        <PdfPanelField label="Use as import date">
+        <PdfPanelField label="Use as import date" htmlFor="pdf-import-date">
           <SelectField
+            id="pdf-import-date"
+            className={DENSE}
             value={guidance.importDate}
             disabled={disabled}
             onChange={(event) => onChange({ importDate: event.target.value as PdfImportDate })}
@@ -138,20 +147,23 @@ export function PdfDetectionControls({
             <option value="value">Value date</option>
           </SelectField>
         </PdfPanelField>
-        <PdfPanelField label="Printed sign means">
+        <PdfPanelField label="Printed sign means" htmlFor="pdf-printed-sign">
           <SelectField
+            id="pdf-printed-sign"
+            className={DENSE}
             value={guidance.printedSign}
             disabled={disabled}
             onChange={(event) => onChange({ printedSign: event.target.value as PdfPrintedSign })}
           >
             {PRINTED_SIGNS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </SelectField>
         </PdfPanelField>
         <PdfPanelField label="Amount direction" htmlFor="pdf-unsigned-direction">
           <SelectField
             id="pdf-unsigned-direction"
+            className={DENSE}
             value={guidance.unsignedDirection}
             disabled={disabled}
             onChange={(event) => onChange({ unsignedDirection: event.target.value as PdfParserGuidance["unsignedDirection"] })}
@@ -161,60 +173,62 @@ export function PdfDetectionControls({
             <option value="credit">DR = money out; unmarked = money in</option>
           </SelectField>
         </PdfPanelField>
-        <PdfPanelField label="Date format">
+        <PdfPanelField label="Date format" htmlFor="pdf-date-format">
           <SelectField
+            id="pdf-date-format"
+            className={DENSE}
             value={guidance.dateFormat}
             disabled={disabled}
             onChange={(event) => onChange({ dateFormat: event.target.value as PdfDateFormatOption })}
           >
             {DATE_FORMATS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </SelectField>
         </PdfPanelField>
-        <PdfPanelField label="Number format">
+        <PdfPanelField label="Number format" htmlFor="pdf-number-format">
           <SelectField
+            id="pdf-number-format"
+            className={DENSE}
             value={guidance.numberFormat}
             disabled={disabled}
             onChange={(event) => onChange({ numberFormat: event.target.value as PdfNumberFormat })}
           >
             {NUMBER_FORMATS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </SelectField>
         </PdfPanelField>
-      </div>
 
-      {/*
-        The period belongs to this statement, not to the bank's layout: it
-        moves every month, and a saved layout never carries it. Kept here as
-        its own group, with that said, because it sat among the settings a
-        layout does keep and read as though it were one of them.
-      */}
-      <fieldset className="mt-1 rounded-md border px-3 py-2">
-        <legend className="px-1 text-xs font-medium text-muted-foreground">Statement period</legend>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <PdfPanelField label="Starts">
+        {/*
+          The period stays its own setting - it belongs to this statement and
+          not to a saved layout - but that is a sentence worth reading once
+          rather than a paragraph under the controls forever.
+        */}
+        <PdfPanelField
+          label="Statement period"
+          className="sm:col-span-2"
+          hint="Read from this statement and used to check its dates. It is not kept in a saved layout, because it moves every month."
+        >
+          <span className="flex items-center gap-1.5">
             <PdfDateField
+              className="flex-1"
               value={guidance.statementPeriod.start}
               disabled={disabled}
               label="Statement period start"
               onChange={(next) => onChange({ statementPeriod: { ...guidance.statementPeriod, start: next } })}
             />
-          </PdfPanelField>
-          <PdfPanelField label="Ends">
+            <span aria-hidden="true" className="shrink-0 text-[10px] text-muted-foreground">to</span>
             <PdfDateField
+              className="flex-1"
               value={guidance.statementPeriod.end}
               disabled={disabled}
               label="Statement period end"
               onChange={(next) => onChange({ statementPeriod: { ...guidance.statementPeriod, end: next } })}
             />
-          </PdfPanelField>
-        </div>
-        <PdfPanelNote className="mt-2">
-          Read from this statement, and used to check dates against it. Not kept in a saved layout.
-        </PdfPanelNote>
-      </fieldset>
+          </span>
+        </PdfPanelField>
+      </div>
     </PdfPanelSection>
   );
 }
@@ -224,11 +238,13 @@ function PdfDateField({
   value,
   label,
   disabled,
+  className,
   onChange,
 }: {
   value: string | null;
   label: string;
   disabled: boolean;
+  className?: string;
   onChange: (value: string | null) => void;
 }) {
   const [invalid, setInvalid] = useState(false);
@@ -240,7 +256,7 @@ function PdfDateField({
       defaultValue={formatDateInput(value)}
       disabled={disabled}
       placeholder="dd/mm/yyyy"
-      className={cn("tabular-nums", invalid && "border-destructive text-destructive")}
+      className={cn("h-7 w-full text-[10px] tabular-nums", className, invalid && "border-destructive text-destructive")}
       onBlur={(event) => {
         const text = event.target.value.trim();
         if (text === formatDateInput(value)) {

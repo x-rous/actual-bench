@@ -119,8 +119,21 @@ that layout or keep it and save this one under a different name; layouts are not
 update replaces the settings it held. You can assign the layout to the current account when you save
 it. A layout can be saved only when it has no rejected transactions. Select **Manage** to change an
 account assignment, rename a bank or layout, or delete a layout. Removing an assignment returns the account to automatic
-detection. A layout stores parser settings, geometry, and privacy-safe
-layout information; it does not store the PDF or transaction text.
+detection. A layout stores how to read a bank's table and nothing about any one statement: column roles
+as fractions of the page width, the date, number and amount-direction settings, and the masked shape of
+the table's header row. It does not store the statement period, the transaction areas, the PDF, or
+transaction text - a period moves every month, and areas are numbered by page, which shifts as soon as a
+statement runs longer.
+
+When the settings in force no longer match the layout they came from, a **Layout not saved** control
+appears in the workbench header and opens the save dialog. It counts only changes a layout can hold -
+column mappings and the reading settings - so adjusting a transaction area, which belongs to one
+statement, does not ask to be saved.
+
+A layout assigned to an account is applied to its statements. If the statement's table has drifted from
+the saved one, it is still applied and the difference is stated; it is left unapplied only when the
+layout's columns conflict with the table in front of it. Recognition is by the table's header, so
+correcting a layout's mapping never makes it harder to recognize next month.
 
 The amount column states the statement's currency in its header. Currency is a statement-level reading,
 not a per-row value: Actual holds one currency per budget file and the import carries no currency code,

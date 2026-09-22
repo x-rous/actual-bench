@@ -101,8 +101,8 @@ describe("PdfStatementReviewDialog v2", () => {
       expect(within(summary).getByText(label)).toBeInTheDocument();
     });
 
-    // Dates read the way every other date in the workbench reads.
-    expect(within(summary).getByText(/15\/08\/2026/)).toBeInTheDocument();
+    // A period is read rather than typed, so the month is named.
+    expect(within(summary).getByText("15 Aug 2026")).toBeInTheDocument();
   });
 
   it("groups issue filters under a clickable Needs review filter", () => {
@@ -218,9 +218,8 @@ describe("PdfStatementReviewDialog v2", () => {
     });
     const option: PdfDetectionProfileOption = {
       recordId: "record-1",
-      bankId: "bank-1",
       bankName: "HSBC Bank",
-      envelope: { kind: "pdf-layout-v2", profile: layout },
+      envelope: { kind: "pdf-layout-v3", profile: layout },
     };
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} profiles={[option]} activeProfileId="record-1" open onOpenChange={() => {}} onImport={() => {}} />);
 
@@ -240,9 +239,8 @@ describe("PdfStatementReviewDialog v2", () => {
     const layout = createPdfLayoutProfile({ id: "layout-1", name: "Credit card", result: parsed });
     const option: PdfDetectionProfileOption = {
       recordId: "record-1",
-      bankId: "bank-1",
       bankName: "HSBC Bank",
-      envelope: { kind: "pdf-layout-v2", profile: layout },
+      envelope: { kind: "pdf-layout-v3", profile: layout },
     };
     const onAssignProfile = jest.fn().mockResolvedValue(undefined);
     const noop = jest.fn().mockResolvedValue(undefined);
@@ -251,7 +249,6 @@ describe("PdfStatementReviewDialog v2", () => {
         fileName="statement.pdf"
         result={parsed}
         profiles={[option]}
-        banks={[{ id: "bank-1", name: "HSBC Bank", createdAt: "2026-09-19T00:00:00.000Z", updatedAt: "2026-09-19T00:00:00.000Z" }]}
         accountName="HSBC card"
         open
         onOpenChange={() => {}}
@@ -502,12 +499,15 @@ describe("PdfStatementReviewDialog v2", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Preview updated transactions" }));
     const comparison = screen.getByRole("region", { name: "Detection change preview" });
-    // Each measurement reads now → after, with the change called out, and the
-    // row-level edits are summarized underneath.
+    // A measurement per column and a state per row, so the change sits under
+    // the two figures it came from.
     expect(within(comparison).getByText("If you apply these changes")).toBeInTheDocument();
-    expect(within(comparison).getByText("Transactions")).toBeInTheDocument();
-    expect(within(comparison).getByText("Ready to import")).toBeInTheDocument();
-    expect(within(comparison).getByText("Net change")).toBeInTheDocument();
+    ["Transactions", "Ready", "In", "Out", "Net"].forEach((measurement) => {
+      expect(within(comparison).getByRole("columnheader", { name: measurement })).toBeInTheDocument();
+    });
+    ["Now", "After", "Change"].forEach((state) => {
+      expect(within(comparison).getByRole("rowheader", { name: state })).toBeInTheDocument();
+    });
     expect(within(comparison).getByText(/Row changes:|No row would change\./)).toBeInTheDocument();
     const applyDetection = screen.getByRole("button", { name: "Apply changes and review" });
     expect(applyDetection).toBeEnabled();
@@ -740,9 +740,8 @@ describe("PdfStatementReviewDialog v2", () => {
     const layout = createPdfLayoutProfile({ id: "layout-1", name: "Credit card", result: parsed });
     const option: PdfDetectionProfileOption = {
       recordId: "record-1",
-      bankId: "bank-1",
       bankName: "HSBC Bank",
-      envelope: { kind: "pdf-layout-v2", profile: layout },
+      envelope: { kind: "pdf-layout-v3", profile: layout },
     };
     const onSaveProfile = jest.fn().mockResolvedValue({ bankId: "bank-1", profileId: "record-1" });
     render(
@@ -795,6 +794,57 @@ describe("PdfStatementReviewDialog v2", () => {
 
     fireEvent.click(within(attention).getAllByRole("button", { name: "Fix this" })[0]);
     await waitFor(() => expect(screen.getByLabelText("Amount direction")).toHaveFocus());
+  });
+
+  it("asks to save a layout only when the layout itself would change", () => {
+    const parsed = ordinaryResult();
+    const layout = createPdfLayoutProfile({ id: "layout-1", name: "Credit card", result: parsed });
+    const option: PdfDetectionProfileOption = {
+      recordId: "record-1",
+      bankName: "HSBC Bank",
+      envelope: { kind: "pdf-layout-v3", profile: layout },
+    };
+    render(
+      <PdfStatementReviewDialog
+        fileName="statement.pdf"
+        result={parsed}
+        profiles={[option]}
+        activeProfileId="record-1"
+        open
+        onOpenChange={() => {}}
+        onImport={() => {}}
+        onSaveProfile={jest.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+
+    // A transaction area belongs to this statement. A layout holds no areas,
+    // so saving after changing one would store the same layout again.
+    fireEvent.click(screen.getByRole("button", { name: "Ignore transaction area 1 in PDF" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes and review" }));
+
+    expect(toastSuccess).toHaveBeenCalledWith(
+      "Detection changes applied",
+      expect.not.objectContaining({ action: expect.anything() })
+    );
+    expect(screen.queryByRole("button", { name: /Layout not saved/ })).toBeNull();
+
+    // A column role is part of the layout, so changing one is worth keeping.
+    toastSuccess.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+    fireEvent.change(screen.getByLabelText("Role for mapped column 1"), { target: { value: "reference" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply changes and review" }));
+
+    expect(toastSuccess).toHaveBeenCalledWith(
+      "Detection changes applied",
+      expect.objectContaining({ action: expect.objectContaining({ label: "Save layout" }) })
+    );
+    // The toast dismisses itself, so the state stays in the header, where it
+    // is visible from either step and opens the save dialog.
+    const chip = screen.getByRole("button", { name: /Layout not saved/ });
+    expect(chip).toHaveAttribute("title", expect.stringContaining("Credit card"));
+    fireEvent.click(chip);
+    expect(screen.getByRole("dialog", { name: "Save statement layout" })).toBeInTheDocument();
   });
 
   it("keeps the statement layout controls with the detection settings", () => {
@@ -893,16 +943,18 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.queryByRole("button", { name: /Mark selected row as transaction/ })).toBeNull();
   });
 
-  it("keeps the statement period out of the settings a layout saves", () => {
+  it("keeps the statement period out of the settings a layout saves", async () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
 
     // It is a fact about this document, not a property of the bank's layout,
-    // and the panel says so where someone deciding what to save will read it.
-    const period = screen.getByRole("group", { name: "Statement period" });
-    expect(within(period).getByText(/Not kept in a saved layout/)).toBeInTheDocument();
+    // and that is said where someone deciding what to save will read it -
+    // behind the setting's own hint rather than as a paragraph under it.
+    const hint = screen.getByRole("button", { name: "More about statement period" });
+    fireEvent.focus(hint);
+    await waitFor(() => expect(screen.getByText(/not kept in a saved layout/i)).toBeInTheDocument());
 
-    const start = within(period).getByLabelText("Statement period start");
+    const start = screen.getByLabelText("Statement period start");
     fireEvent.change(start, { target: { value: "21/09/2026" } });
     fireEvent.blur(start);
     expect(screen.getByLabelText("Statement period start")).toHaveValue("21/09/2026");

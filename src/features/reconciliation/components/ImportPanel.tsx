@@ -57,9 +57,8 @@ import { composeNotes } from "@/lib/reconciliation/session/prospective";
 import type { MatchConfig, StatementRow } from "@/lib/reconciliation/types";
 import type { TextTargetPreset } from "@/lib/reconciliation/match/config";
 import type {
-  PdfDetectionBankRecord,
-  PdfDetectionProfileCatalog,
-  PdfDetectionProfileRecord,
+  PdfStatementLayoutCatalog,
+  PdfStatementLayoutRecord,
   ReconciliationProfileRecord,
 } from "../lib/reconciliationApi";
 import type { ReconciliationSessionStatus } from "@/lib/app-db/reconciliationRepository";
@@ -240,21 +239,21 @@ export type ImportPanelProps = {
   onSaveProfile: (name: string, mapping: unknown) => void;
   isSavingProfile?: boolean;
   /** Global bank layouts and this account's optional bank association. */
-  pdfDetectionCatalog?: PdfDetectionProfileCatalog;
-  onSavePdfDetectionProfile?: (input: {
+  pdfStatementLayouts?: PdfStatementLayoutCatalog;
+  onSavePdfStatementLayout?: (input: {
     bankName: string;
-    profileName: string;
-    profile: PdfLayoutProfileEnvelope;
+    layoutName: string;
+    layout: PdfLayoutProfileEnvelope;
     mode: "create" | "update";
     assignToAccount?: boolean;
-  }) => Promise<{ bank: PdfDetectionBankRecord; profile: PdfDetectionProfileRecord }>;
-  onAssignPdfDetectionProfile?: (profileId: string) => Promise<unknown>;
-  onRemovePdfDetectionAccountAssociation?: () => Promise<unknown>;
-  onRenamePdfDetectionBank?: (bankId: string, name: string) => Promise<unknown>;
-  onRenamePdfDetectionProfile?: (profileId: string, name: string) => Promise<unknown>;
-  onDeletePdfDetectionProfile?: (profileId: string) => Promise<unknown>;
-  isSavingPdfDetectionProfile?: boolean;
-  isLoadingPdfDetectionProfiles?: boolean;
+  }) => Promise<{ layout: PdfStatementLayoutRecord }>;
+  onAssignPdfStatementLayout?: (layoutId: string) => Promise<unknown>;
+  onRemovePdfStatementLayoutAssignment?: () => Promise<unknown>;
+  onRenamePdfStatementLayoutBank?: (from: string, to: string) => Promise<unknown>;
+  onRenamePdfStatementLayout?: (layoutId: string, name: string) => Promise<unknown>;
+  onDeletePdfStatementLayout?: (layoutId: string) => Promise<unknown>;
+  isSavingPdfStatementLayout?: boolean;
+  isLoadingPdfStatementLayouts?: boolean;
   /**
    * The statement this session already holds, when re-importing.
    *
@@ -305,15 +304,15 @@ export function ImportPanel({
   onApplyProfile,
   onSaveProfile,
   isSavingProfile,
-  pdfDetectionCatalog,
-  onSavePdfDetectionProfile,
-  onAssignPdfDetectionProfile,
-  onRemovePdfDetectionAccountAssociation,
-  onRenamePdfDetectionBank,
-  onRenamePdfDetectionProfile,
-  onDeletePdfDetectionProfile,
-  isSavingPdfDetectionProfile,
-  isLoadingPdfDetectionProfiles = false,
+  pdfStatementLayouts,
+  onSavePdfStatementLayout,
+  onAssignPdfStatementLayout,
+  onRemovePdfStatementLayoutAssignment,
+  onRenamePdfStatementLayoutBank,
+  onRenamePdfStatementLayout,
+  onDeletePdfStatementLayout,
+  isSavingPdfStatementLayout,
+  isLoadingPdfStatementLayouts = false,
   previousStatement,
   onReadyChange,
   knownStatements,
@@ -347,26 +346,19 @@ export function ImportPanel({
     pdfAbortRef.current?.abort();
     releasePdfStatementPreviews(pdfDraftRef.current);
   }, []);
-  const pdfProfileOptions = useMemo(() => (pdfDetectionCatalog?.profiles ?? []).flatMap((record) => {
-    if (!isPdfLayoutProfileEnvelope(record.profile)) return [];
-    const bank = pdfDetectionCatalog?.banks.find((entry) => entry.id === record.bankId);
-    if (!bank) return [];
-    return [{
-      recordId: record.id,
-      bankId: bank.id,
-      bankName: bank.name,
-      envelope: record.profile,
-    }];
-  }), [pdfDetectionCatalog]);
+  const pdfProfileOptions = useMemo(() => (pdfStatementLayouts?.layouts ?? []).flatMap((record: PdfStatementLayoutRecord) => {
+    if (!isPdfLayoutProfileEnvelope(record.layout)) return [];
+    return [{ recordId: record.id, bankName: record.bankName, envelope: record.layout }];
+  }), [pdfStatementLayouts]);
   const importProfiles = useMemo(
     () => profiles.filter((profile) => !isPdfLayoutProfileEnvelope(profile.mapping)),
     [profiles]
   );
 
   const accountPdfProfile = useMemo(() => {
-    const profileId = pdfDetectionCatalog?.accountProfileId;
-    return pdfProfileOptions.find((entry) => entry.recordId === profileId) ?? null;
-  }, [pdfDetectionCatalog, pdfProfileOptions]);
+    const layoutId = pdfStatementLayouts?.accountLayoutId;
+    return pdfProfileOptions.find((entry) => entry.recordId === layoutId) ?? null;
+  }, [pdfStatementLayouts, pdfProfileOptions]);
 
   const source = useMemo(
     () => (pdfStatement ? null : text.trim() ? { text, fileName } : null),
@@ -486,12 +478,7 @@ export function ImportPanel({
         });
         let initialPdfProfileId: string | null = null;
         if (accountPdfProfile) {
-          const match = matchPdfLayoutProfile(
-            accountPdfProfile.envelope.profile,
-            draft.reconstructedPages,
-            draft.activeSchema,
-            draft.detectionSignature
-          );
+          const match = matchPdfLayoutProfile(accountPdfProfile.envelope.profile, draft);
           const layoutName = `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name}`;
           // An assignment is an instruction, so it is carried out. Only a
           // layout whose columns cannot sit on this statement's table is
@@ -507,7 +494,7 @@ export function ImportPanel({
               guidance: guidanceFromPdfLayoutProfile(accountPdfProfile.envelope.profile, draft),
             }, controller.signal);
             initialPdfProfileId = accountPdfProfile.recordId;
-            const savedGuidance = accountPdfProfile.envelope.profile.guidance;
+            const savedGuidance = accountPdfProfile.envelope.profile.reading;
             // A saved layout can carry the settings that decide money in from
             // money out. Those are confirmed against this statement rather
             // than applied on a geometric match alone.
@@ -688,14 +675,14 @@ export function ImportPanel({
   ) : null;
 
   const uploadControl = (
-    <label className={cn("inline-flex h-7 items-center rounded-md border border-input px-2.5 text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-ring", isLoadingPdfDetectionProfiles ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground")}>
+    <label className={cn("inline-flex h-7 items-center rounded-md border border-input px-2.5 text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-ring", isLoadingPdfStatementLayouts ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-accent hover:text-accent-foreground")}>
       <Upload className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
       {isReadingPdf ? "Reading PDF…" : statementLabel ? "Change statement" : "Upload a statement"}
       <input
         type="file"
         accept={ACCEPTED_EXTENSIONS}
         className="sr-only"
-        disabled={isReadingPdf || isLoadingPdfDetectionProfiles}
+        disabled={isReadingPdf || isLoadingPdfStatementLayouts}
         onChange={(event) => void handleFile(event.target.files?.[0])}
       />
     </label>
@@ -1088,10 +1075,9 @@ export function ImportPanel({
         fileName={pdfDraftName}
         result={pdfDraft}
         accountName={accountName}
-        banks={pdfDetectionCatalog?.banks ?? []}
         profiles={pdfProfileOptions}
         activeProfileId={appliedPdfProfileId}
-        accountProfileId={pdfDetectionCatalog?.accountProfileId ?? null}
+        accountProfileId={pdfStatementLayouts?.accountLayoutId ?? null}
         profileNotice={pdfProfileNotice}
         open={pdfReviewOpen}
         onOpenChange={setPdfReviewOpen}
@@ -1100,14 +1086,14 @@ export function ImportPanel({
           setAppliedPdfProfileId(option?.recordId ?? null);
           setPdfProfileNotice(null);
         }}
-        onAssignProfile={onAssignPdfDetectionProfile}
-        onRemoveAccountAssignment={onRemovePdfDetectionAccountAssociation}
-        onRenameBank={onRenamePdfDetectionBank}
-        onRenameProfile={onRenamePdfDetectionProfile}
-        onDeleteProfile={onDeletePdfDetectionProfile}
-        isSavingProfile={isSavingPdfDetectionProfile}
+        onAssignProfile={onAssignPdfStatementLayout}
+        onRemoveAccountAssignment={onRemovePdfStatementLayoutAssignment}
+        onRenameBank={onRenamePdfStatementLayoutBank}
+        onRenameProfile={onRenamePdfStatementLayout}
+        onDeleteProfile={onDeletePdfStatementLayout}
+        isSavingProfile={isSavingPdfStatementLayout}
         onSaveProfile={async ({ bankName, profileName, mode, assignToAccount, result }) => {
-          if (!onSavePdfDetectionProfile) return;
+          if (!onSavePdfStatementLayout) return;
           // Updating keeps the layout's identity and creation date; saving a
           // new one is a new layout. Nothing is versioned either way.
           const existing = pdfProfileOptions.find((option) =>
@@ -1120,15 +1106,15 @@ export function ImportPanel({
             result,
             createdAt: mode === "update" ? existing?.createdAt : undefined,
           });
-          const saved = await onSavePdfDetectionProfile({
+          const saved = await onSavePdfStatementLayout({
             bankName,
-            profileName,
+            layoutName: profileName,
             mode,
             assignToAccount,
-            profile: { kind: "pdf-layout-v2", profile },
+            layout: { kind: "pdf-layout-v3", profile },
           });
-          setAppliedPdfProfileId(saved.profile.id);
-          return { bankId: saved.bank.id, profileId: saved.profile.id };
+          setAppliedPdfProfileId(saved.layout.id);
+          return { profileId: saved.layout.id };
         }}
       />
 

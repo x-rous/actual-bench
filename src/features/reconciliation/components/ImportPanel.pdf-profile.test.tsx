@@ -8,7 +8,7 @@ import {
   parsePdfStatementPages,
   type PdfStatementPage,
 } from "@/lib/reconciliation/statement/pdf";
-import type { PdfDetectionProfileCatalog } from "../lib/reconciliationApi";
+import type { PdfStatementLayoutCatalog } from "../lib/reconciliationApi";
 import { ImportPanel } from "./ImportPanel";
 
 const mockExtractPdfStatement = jest.fn();
@@ -55,28 +55,22 @@ function parsedStatement() {
   });
 }
 
-function catalogFor(result: ReturnType<typeof parsedStatement>): PdfDetectionProfileCatalog {
+function catalogFor(result: ReturnType<typeof parsedStatement>): PdfStatementLayoutCatalog {
   const profile = createPdfLayoutProfile({ id: "layout-1", name: "Credit card", result });
   return {
-    banks: [{
-      id: "bank-1",
-      name: "HSBC Bank",
-      createdAt: "2026-09-19T00:00:00.000Z",
-      updatedAt: "2026-09-19T00:00:00.000Z",
-    }],
-    profiles: [{
+    layouts: [{
       id: "record-1",
-      bankId: "bank-1",
+      bankName: "HSBC Bank",
       name: "Credit card",
-      profile: { kind: "pdf-layout-v2", profile },
+      layout: { kind: "pdf-layout-v3", profile },
       createdAt: "2026-09-19T00:00:00.000Z",
       updatedAt: "2026-09-19T00:00:00.000Z",
     }],
-    accountProfileId: "record-1",
+    accountLayoutId: "record-1",
   };
 }
 
-function renderPanel(catalog: PdfDetectionProfileCatalog) {
+function renderPanel(catalog: PdfStatementLayoutCatalog) {
   render(
     <ImportPanel
       accountName="HSBC credit card"
@@ -85,7 +79,7 @@ function renderPanel(catalog: PdfDetectionProfileCatalog) {
       applyConfig={DEFAULT_APPLY_CONFIG}
       onApplyConfigChange={() => {}}
       profiles={[]}
-      pdfDetectionCatalog={catalog}
+      pdfStatementLayouts={catalog}
       onMatchConfigChange={() => {}}
       onApplyProfile={() => {}}
       onSaveProfile={() => {}}
@@ -125,15 +119,15 @@ describe("ImportPanel PDF detection profiles", () => {
     const parsed = parsedStatement();
     const catalog = catalogFor(parsed);
     const checking = createPdfLayoutProfile({ id: "layout-2", name: "Checking", result: parsed });
-    catalog.profiles.push({
+    catalog.layouts.push({
       id: "record-2",
-      bankId: "bank-1",
+      bankName: "HSBC Bank",
       name: "Checking",
-      profile: { kind: "pdf-layout-v2", profile: checking },
+      layout: { kind: "pdf-layout-v3", profile: checking },
       createdAt: "2026-09-19T00:00:00.000Z",
       updatedAt: "2026-09-19T00:00:00.000Z",
     });
-    catalog.accountProfileId = "record-2";
+    catalog.accountLayoutId = "record-2";
     mockExtractPdfStatement.mockResolvedValue(parsed);
     mockParsePdfStatementOffMainThread.mockImplementation(async (_document, options) => ({
       ...parsed,
@@ -154,14 +148,12 @@ describe("ImportPanel PDF detection profiles", () => {
     // Correcting the mapping is what a layout is for, and it used to be what
     // stopped the layout being recognized: matching compared the corrections
     // against bare detection, so the better the layout, the worse it scored.
-    const saved = (catalog.profiles[0].profile as PdfLayoutProfileEnvelope).profile;
-    saved.guidance.columns = [
-      ...saved.guidance.columns,
-      { ...saved.guidance.columns[0], id: "hand-added", role: "value-date" },
-      { ...saved.guidance.columns[0], id: "hand-added-2", role: "reference" },
+    const saved = (catalog.layouts[0].layout as PdfLayoutProfileEnvelope).profile;
+    saved.reading.columns = [
+      ...saved.reading.columns,
+      { ...saved.reading.columns[0], id: "hand-added", role: "value-date" },
+      { ...saved.reading.columns[0], id: "hand-added-2", role: "reference" },
     ];
-    saved.fingerprint = "not-this-statement";
-    saved.sourceFingerprint = "not-this-statement";
     mockExtractPdfStatement.mockResolvedValue(parsed);
     mockParsePdfStatementOffMainThread.mockImplementation(async (_document, options) => ({
       ...parsed,
@@ -181,19 +173,17 @@ describe("ImportPanel PDF detection profiles", () => {
   it("refuses a layout saved from a different statement template", async () => {
     const parsed = parsedStatement();
     const catalog = catalogFor(parsed);
-    const saved = (catalog.profiles[0].profile as PdfLayoutProfileEnvelope).profile;
+    const saved = (catalog.layouts[0].layout as PdfLayoutProfileEnvelope).profile;
     // Another bank's table: the same roles in the same kind of place, but its
     // header says something else.
     saved.signature = {
-      aspect: saved.signature?.aspect ?? 88,
+      aspect: saved.signature.aspect,
       rotation: 0,
       header: [
         { shape: "A9 A9", x: 40, width: 10 },
         { shape: "9A9", x: 60, width: 10 },
       ],
     };
-    saved.fingerprint = "not-this-statement";
-    saved.sourceFingerprint = "not-this-statement";
     mockExtractPdfStatement.mockResolvedValue(parsed);
     mockParsePdfStatementOffMainThread.mockImplementation(async (_document, options) => ({
       ...parsed,
@@ -218,7 +208,7 @@ describe("ImportPanel PDF detection profiles", () => {
         applyConfig={DEFAULT_APPLY_CONFIG}
         onApplyConfigChange={() => {}}
         profiles={[]}
-        isLoadingPdfDetectionProfiles
+        isLoadingPdfStatementLayouts
         onMatchConfigChange={() => {}}
         onApplyProfile={() => {}}
         onSaveProfile={() => {}}

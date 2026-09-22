@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import {
-  associatePdfDetectionProfile,
-  deletePdfDetectionProfile,
-  listPdfDetectionProfileCatalog,
-  removePdfDetectionAccountAssociation,
-  renamePdfDetectionBank,
-  renamePdfDetectionProfile,
-  savePdfDetectionProfile,
-} from "@/lib/app-db/pdfDetectionProfileRepository";
+  assignPdfStatementLayout,
+  deletePdfStatementLayout,
+  listPdfStatementLayouts,
+  removePdfStatementLayoutAssignment,
+  renamePdfStatementLayout,
+  renamePdfStatementLayoutBank,
+  savePdfStatementLayout,
+} from "@/lib/app-db/pdfStatementLayoutRepository";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 
 export const dynamic = "force-dynamic";
@@ -24,15 +24,9 @@ export function GET(request: Request) {
     const url = new URL(request.url);
     const budgetSyncId = url.searchParams.get("budgetSyncId");
     const accountId = url.searchParams.get("accountId");
-    if (!budgetSyncId) {
-      throw new AppDbValidationError('Query parameter "budgetSyncId" is required');
-    }
-    if (!accountId) {
-      throw new AppDbValidationError('Query parameter "accountId" is required');
-    }
-    return NextResponse.json(
-      listPdfDetectionProfileCatalog(getAppDb(), budgetSyncId, accountId)
-    );
+    if (!budgetSyncId) throw new AppDbValidationError('Query parameter "budgetSyncId" is required');
+    if (!accountId) throw new AppDbValidationError('Query parameter "accountId" is required');
+    return NextResponse.json(listPdfStatementLayouts(getAppDb(), budgetSyncId, accountId));
   } catch (error) {
     return appDbErrorResponse(error);
   }
@@ -42,16 +36,16 @@ export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
     if (!isRecord(body)) throw new AppDbValidationError("Request body must be an object");
-    const result = savePdfDetectionProfile(getAppDb(), {
+    const layout = savePdfStatementLayout(getAppDb(), {
       budgetSyncId: String(body.budgetSyncId ?? ""),
       accountId: String(body.accountId ?? ""),
       bankName: String(body.bankName ?? ""),
-      profileName: String(body.profileName ?? ""),
-      profile: body.profile,
+      layoutName: String(body.layoutName ?? ""),
+      layout: body.layout,
       mode: body.mode === "update" ? "update" : "create",
       assignToAccount: body.assignToAccount === true,
     });
-    return NextResponse.json(result, { status: 201 });
+    return NextResponse.json({ layout }, { status: 201 });
   } catch (error) {
     return appDbErrorResponse(error);
   }
@@ -62,17 +56,17 @@ export async function PATCH(request: Request) {
     const body = await readJsonBody(request);
     if (!isRecord(body)) throw new AppDbValidationError("Request body must be an object");
 
-    if (body.action === "associate-profile") {
-      associatePdfDetectionProfile(getAppDb(), {
+    if (body.action === "assign-layout") {
+      assignPdfStatementLayout(getAppDb(), {
         budgetSyncId: String(body.budgetSyncId ?? ""),
         accountId: String(body.accountId ?? ""),
-        profileId: String(body.profileId ?? ""),
+        layoutId: String(body.layoutId ?? ""),
       });
       return new NextResponse(null, { status: 204 });
     }
 
-    if (body.action === "remove-account-association") {
-      removePdfDetectionAccountAssociation(getAppDb(), {
+    if (body.action === "remove-assignment") {
+      removePdfStatementLayoutAssignment(getAppDb(), {
         budgetSyncId: String(body.budgetSyncId ?? ""),
         accountId: String(body.accountId ?? ""),
       });
@@ -80,22 +74,22 @@ export async function PATCH(request: Request) {
     }
 
     if (body.action === "rename-bank") {
-      const bank = renamePdfDetectionBank(getAppDb(), {
-        bankId: String(body.bankId ?? ""),
-        name: String(body.name ?? ""),
+      const renamed = renamePdfStatementLayoutBank(getAppDb(), {
+        from: String(body.from ?? ""),
+        to: String(body.to ?? ""),
       });
-      return NextResponse.json({ bank });
+      return NextResponse.json({ renamed });
     }
 
-    if (body.action === "rename-profile") {
-      const profile = renamePdfDetectionProfile(getAppDb(), {
-        profileId: String(body.profileId ?? ""),
+    if (body.action === "rename-layout") {
+      const layout = renamePdfStatementLayout(getAppDb(), {
+        layoutId: String(body.layoutId ?? ""),
         name: String(body.name ?? ""),
       });
-      return NextResponse.json({ profile });
+      return NextResponse.json({ layout });
     }
 
-    throw new AppDbValidationError("Unknown PDF detection profile action");
+    throw new AppDbValidationError("Unknown statement layout action");
   } catch (error) {
     return appDbErrorResponse(error);
   }
@@ -104,12 +98,10 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const url = new URL(request.url);
-    const profileId = url.searchParams.get("profileId");
-    if (!profileId) {
-      throw new AppDbValidationError('Query parameter "profileId" is required');
-    }
-    if (!deletePdfDetectionProfile(getAppDb(), profileId)) {
-      return NextResponse.json({ error: "PDF detection profile not found" }, { status: 404 });
+    const layoutId = url.searchParams.get("layoutId");
+    if (!layoutId) throw new AppDbValidationError('Query parameter "layoutId" is required');
+    if (!deletePdfStatementLayout(getAppDb(), layoutId)) {
+      return NextResponse.json({ error: "Statement layout not found" }, { status: 404 });
     }
     return new NextResponse(null, { status: 204 });
   } catch (error) {

@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { PdfDetectionBankRecord } from "../lib/reconciliationApi";
 import type { PdfDetectionProfileOption } from "./PdfStatementReviewDialog";
 
 type Editing = { kind: "bank" | "profile"; id: string; value: string } | null;
@@ -23,7 +22,6 @@ export function PdfDetectionProfileManagerDialog({
   open,
   onOpenChange,
   accountName,
-  banks,
   profiles,
   accountProfileId,
   onAssign,
@@ -35,23 +33,26 @@ export function PdfDetectionProfileManagerDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accountName: string;
-  banks: PdfDetectionBankRecord[];
   profiles: PdfDetectionProfileOption[];
   accountProfileId: string | null;
   onAssign: (profileId: string) => Promise<unknown>;
   onRemoveAssignment: () => Promise<unknown>;
-  onRenameBank: (bankId: string, name: string) => Promise<unknown>;
-  onRenameProfile: (profileId: string, name: string) => Promise<unknown>;
+  onRenameBank: (from: string, to: string) => Promise<unknown>;
+  onRenameProfile: (layoutId: string, name: string) => Promise<unknown>;
   onDeleteProfile: (profileId: string) => Promise<unknown>;
 }) {
   const [editing, setEditing] = useState<Editing>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
-  const grouped = useMemo(() => banks.map((bank) => ({
-    bank,
-    profiles: profiles.filter((profile) => profile.bankId === bank.id),
-  })), [banks, profiles]);
+  // A bank is the label its layouts carry, so the list is grouped by that
+  // label rather than by rows from a table of banks.
+  const grouped = useMemo(() => [...new Set(profiles.map((profile) => profile.bankName))]
+    .sort((left, right) => left.localeCompare(right))
+    .map((bankName) => ({
+      bankName,
+      profiles: profiles.filter((profile) => profile.bankName === bankName),
+    })), [profiles]);
   const assignedProfile = profiles.find((profile) => profile.recordId === accountProfileId);
 
   async function run(key: string, action: () => Promise<unknown>) {
@@ -115,10 +116,10 @@ export function PdfDetectionProfileManagerDialog({
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
           <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
-            {grouped.map(({ bank, profiles: bankProfiles }) => (
-              <section key={bank.id} className="rounded-md border">
+            {grouped.map(({ bankName, profiles: bankProfiles }) => (
+              <section key={bankName} className="rounded-md border">
                 <div className="flex items-center gap-2 border-b bg-muted/20 px-3 py-2">
-                  {editing?.kind === "bank" && editing.id === bank.id ? (
+                  {editing?.kind === "bank" && editing.id === bankName ? (
                     <>
                       <Input
                         aria-label="Bank name"
@@ -134,8 +135,8 @@ export function PdfDetectionProfileManagerDialog({
                     </>
                   ) : (
                     <>
-                      <h3 className="font-medium">{bank.name}</h3>
-                      <Button size="icon-xs" variant="ghost" aria-label={`Rename ${bank.name}`} disabled={busy !== null} onClick={() => setEditing({ kind: "bank", id: bank.id, value: bank.name })}><Pencil /></Button>
+                      <h3 className="font-medium">{bankName}</h3>
+                      <Button size="icon-xs" variant="ghost" aria-label={`Rename ${bankName}`} disabled={busy !== null} onClick={() => setEditing({ kind: "bank", id: bankName, value: bankName })}><Pencil /></Button>
                     </>
                   )}
                 </div>
@@ -177,8 +178,8 @@ export function PdfDetectionProfileManagerDialog({
                             onClick={() => setConfirm({
                               title: "Delete statement layout?",
                               message: bankProfiles.length === 1
-                                ? `This will also remove ${bank.name} and any account assignments that use it.`
-                                : `Delete ${profile.envelope.profile.name} from ${bank.name}? Account assignments that use it will be removed.`,
+                                ? `This will also remove ${bankName}, which has no other layouts, and any account assignments that use it.`
+                                : `Delete ${profile.envelope.profile.name} from ${bankName}? Account assignments that use it will be removed.`,
                               destructiveLabel: "Delete layout",
                               onConfirm: () => void run(`delete-${profile.recordId}`, () => onDeleteProfile(profile.recordId)),
                             })}
@@ -192,7 +193,7 @@ export function PdfDetectionProfileManagerDialog({
                 </div>
               </section>
             ))}
-            {banks.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No statement layouts have been saved.</p>}
+            {grouped.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No statement layouts have been saved.</p>}
           </div>
 
           <DialogFooter>

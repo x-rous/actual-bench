@@ -32,9 +32,11 @@ import {
   recordArtifactLocation,
 } from "./backupRepository";
 import {
-  listPdfDetectionProfileCatalog,
-  savePdfDetectionProfile,
-} from "./pdfDetectionProfileRepository";
+  deletePdfStatementLayout,
+  listPdfStatementLayouts,
+  savePdfStatementLayout,
+} from "./pdfStatementLayoutRepository";
+import { createPdfLayoutProfile, parsePdfStatementPages } from "@/lib/reconciliation/statement/pdf";
 
 /**
  * Upgrading a database that already holds real work.
@@ -493,47 +495,12 @@ describe("upgrading an existing database", () => {
     }
   });
 
-  it("adds direct account PDF profile assignments without changing existing reconciliation work (v28)", () => {
-    const { root, path } = olderDatabase();
-    try {
-      const db = getAppDb(path);
-      const envelope = {
-        kind: "pdf-layout-v2",
-        profile: {
-          id: "layout-1",
-          name: "Credit card",
-          parserVersion: 2,
-          profileVersion: 1,
-          fingerprint: "privacy-safe-shape",
-          guidance: DEFAULT_PDF_PARSER_GUIDANCE,
-          createdAt: "2026-09-19T00:00:00.000Z",
-          supersedesProfileId: null,
-          sourcePage: { width: 600, height: 800 },
-        },
-      };
-      savePdfDetectionProfile(db, {
-        budgetSyncId: "budget-1",
-        accountId: "acct-1",
-        bankName: "HSBC Bank",
-        profileName: "Credit card",
-        profile: envelope,
-        assignToAccount: true,
-      });
-
-      const catalog = listPdfDetectionProfileCatalog(db, "budget-1", "acct-1");
-      expect(catalog.profiles).toHaveLength(1);
-      expect(catalog.accountProfileId).toBe(catalog.profiles[0]?.id);
-      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
-    } finally {
-      resetAppDbForTests();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("freezes legacy bank-default associations to direct profile assignments (v28)", () => {
+  it("replaces the PDF detection tables with statement layouts (v29)", () => {
     const db = new Database(":memory:");
     try {
       db.pragma("foreign_keys = ON");
+      // The shape before: a bank as a row of its own, layouts hanging off it,
+      // and two association tables between accounts and either.
       db.exec(`
         CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
         CREATE TABLE pdf_detection_banks (
@@ -551,34 +518,85 @@ describe("upgrading an existing database", () => {
           created_at text NOT NULL,
           updated_at text NOT NULL
         );
-        CREATE TABLE pdf_detection_account_banks (
+        CREATE TABLE pdf_detection_account_profiles (
           budget_sync_id text NOT NULL,
           account_id text NOT NULL,
-          bank_id text NOT NULL REFERENCES pdf_detection_banks(id) ON DELETE CASCADE,
-          preferred_profile_id text REFERENCES pdf_detection_profiles(id) ON DELETE SET NULL,
+          profile_id text NOT NULL REFERENCES pdf_detection_profiles(id) ON DELETE CASCADE,
           updated_at text NOT NULL,
           PRIMARY KEY(budget_sync_id, account_id)
         );
-        INSERT INTO app_meta VALUES ('schema_version', '27', '2026-09-19T00:00:00.000Z');
-        INSERT INTO pdf_detection_banks VALUES ('bank', 'HSBC Bank', 'card', '2026-09-19T00:00:00.000Z', '2026-09-19T00:00:00.000Z');
+        INSERT INTO app_meta VALUES ('schema_version', '28', '2026-09-19T00:00:00.000Z');
+        INSERT INTO pdf_detection_banks VALUES ('bank', 'HSBC Bank', NULL, '2026-09-19T00:00:00.000Z', '2026-09-19T00:00:00.000Z');
         INSERT INTO pdf_detection_profiles VALUES ('card', 'bank', 'Credit card', '{}', '2026-09-19T00:00:00.000Z', '2026-09-19T00:00:00.000Z');
-        INSERT INTO pdf_detection_profiles VALUES ('checking', 'bank', 'Checking', '{}', '2026-09-19T00:00:00.000Z', '2026-09-19T00:00:00.000Z');
-        INSERT INTO pdf_detection_account_banks VALUES ('budget-a', 'card-account', 'bank', NULL, '2026-09-19T00:00:00.000Z');
-        INSERT INTO pdf_detection_account_banks VALUES ('budget-b', 'checking-account', 'bank', 'checking', '2026-09-19T00:00:00.000Z');
+        INSERT INTO pdf_detection_account_profiles VALUES ('budget-a', 'card-account', 'card', '2026-09-19T00:00:00.000Z');
       `);
 
       runMigrations(db);
 
-      expect(db.prepare(
-        `SELECT budget_sync_id, account_id, profile_id
-           FROM pdf_detection_account_profiles
-          ORDER BY budget_sync_id`
-      ).all()).toEqual([
-        { budget_sync_id: "budget-a", account_id: "card-account", profile_id: "card" },
-        { budget_sync_id: "budget-b", account_id: "checking-account", profile_id: "checking" },
+      const tables = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'pdf_%' ORDER BY name"
+      ).all() as { name: string }[];
+      expect(tables.map((table) => table.name)).toEqual([
+        "pdf_statement_layout_accounts",
+        "pdf_statement_layouts",
       ]);
+
+      // The layouts themselves do not survive: they stored a statement period
+      // and page-indexed areas, and the feature is unreleased, so they are
+      // saved again from a statement rather than carried across.
+      expect(db.prepare("SELECT COUNT(*) AS count FROM pdf_statement_layouts").get())
+        .toEqual({ count: 0 });
     } finally {
       db.close();
+    }
+  });
+
+  it("takes an account's assignment with the layout it points at (v29)", () => {
+    const { root, path } = olderDatabase();
+    try {
+      const db = getAppDb(path);
+      const layout = createPdfLayoutProfile({
+        id: "layout-1",
+        name: "Credit card",
+        result: parsePdfStatementPages([{
+          pageNumber: 1,
+          width: 700,
+          height: 800,
+          items: [
+            ["Transaction Date", 20, 740], ["Description", 120, 740], ["Amount", 480, 740],
+            ["08/15/2026", 20, 700], ["ANON SHOP", 120, 700], ["USD -12.50", 480, 700],
+          ].map(([text, x, y], index) => ({
+            id: `item-${index}`,
+            str: String(text),
+            transform: [10, 0, 0, 10, Number(x), Number(y)],
+            width: String(text).length * 6,
+            height: 10,
+          })),
+        }], { guidance: { ...DEFAULT_PDF_PARSER_GUIDANCE, currency: "USD", dateFormat: "mdy" } }),
+      });
+      savePdfStatementLayout(db, {
+        budgetSyncId: "budget-1",
+        accountId: "acct-1",
+        bankName: "HSBC Bank",
+        layoutName: "Credit card",
+        layout: { kind: "pdf-layout-v3", profile: layout },
+        assignToAccount: true,
+      });
+
+      const catalog = listPdfStatementLayouts(db, "budget-1", "acct-1");
+      expect(catalog.layouts).toHaveLength(1);
+      expect(catalog.accountLayoutId).toBe(catalog.layouts[0]?.id);
+      expect(getReconciliationSession(db, "sess-old")).not.toBeNull();
+
+      // The assignment is a foreign key, so deleting the layout takes it.
+      deletePdfStatementLayout(db, catalog.layouts[0]!.id);
+      expect(listPdfStatementLayouts(db, "budget-1", "acct-1")).toEqual({
+        layouts: [],
+        accountLayoutId: null,
+      });
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

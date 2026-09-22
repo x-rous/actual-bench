@@ -15,10 +15,9 @@ import type {
   ReconciliationStatementRowRecord,
 } from "@/lib/app-db/reconciliationRepository";
 import type {
-  PdfDetectionBankRecord,
-  PdfDetectionProfileCatalog,
-  PdfDetectionProfileRecord,
-} from "@/lib/app-db/pdfDetectionProfileRepository";
+  PdfStatementLayoutCatalog,
+  PdfStatementLayoutRecord,
+} from "@/lib/app-db/pdfStatementLayoutRepository";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -137,74 +136,73 @@ export function saveProfile(payload: {
   });
 }
 
-export function listPdfDetectionProfiles(budgetSyncId: string, accountId: string) {
+export function listPdfStatementLayouts(budgetSyncId: string, accountId: string) {
   const params = new URLSearchParams({ budgetSyncId, accountId });
-  return request<PdfDetectionProfileCatalog>(
-    `/api/reconciliation/pdf-detection-profiles?${params.toString()}`
+  return request<PdfStatementLayoutCatalog>(
+    `/api/reconciliation/pdf-statement-layouts?${params.toString()}`
   );
 }
 
-export function savePdfDetectionProfile(payload: {
+export function savePdfStatementLayout(payload: {
   budgetSyncId: string;
   accountId: string;
   bankName: string;
-  profileName: string;
-  profile: unknown;
+  layoutName: string;
+  layout: unknown;
   mode: "create" | "update";
   assignToAccount?: boolean;
 }) {
-  return request<{ bank: PdfDetectionBankRecord; profile: PdfDetectionProfileRecord }>(
-    "/api/reconciliation/pdf-detection-profiles",
+  return request<{ layout: PdfStatementLayoutRecord }>(
+    "/api/reconciliation/pdf-statement-layouts",
     { method: "POST", body: JSON.stringify(payload) }
   );
 }
 
-export function assignPdfDetectionProfile(payload: {
+export function assignPdfStatementLayout(payload: {
   budgetSyncId: string;
   accountId: string;
-  profileId: string;
+  layoutId: string;
 }) {
-  return request<void>("/api/reconciliation/pdf-detection-profiles", {
+  return request<void>("/api/reconciliation/pdf-statement-layouts", {
     method: "PATCH",
-    body: JSON.stringify({ action: "associate-profile", ...payload }),
+    body: JSON.stringify({ action: "assign-layout", ...payload }),
   });
 }
 
-export function removePdfDetectionAccountAssociation(payload: {
+export function removePdfStatementLayoutAssignment(payload: {
   budgetSyncId: string;
   accountId: string;
 }) {
-  return request<void>("/api/reconciliation/pdf-detection-profiles", {
+  return request<void>("/api/reconciliation/pdf-statement-layouts", {
     method: "PATCH",
-    body: JSON.stringify({ action: "remove-account-association", ...payload }),
+    body: JSON.stringify({ action: "remove-assignment", ...payload }),
   });
 }
 
-export function renamePdfDetectionBank(payload: { bankId: string; name: string }) {
-  return request<{ bank: PdfDetectionBankRecord }>(
-    "/api/reconciliation/pdf-detection-profiles",
+export function renamePdfStatementLayoutBank(payload: { from: string; to: string }) {
+  return request<{ renamed: number }>(
+    "/api/reconciliation/pdf-statement-layouts",
     { method: "PATCH", body: JSON.stringify({ action: "rename-bank", ...payload }) }
   );
 }
 
-export function renamePdfDetectionProfile(payload: { profileId: string; name: string }) {
-  return request<{ profile: PdfDetectionProfileRecord }>(
-    "/api/reconciliation/pdf-detection-profiles",
-    { method: "PATCH", body: JSON.stringify({ action: "rename-profile", ...payload }) }
+export function renamePdfStatementLayout(payload: { layoutId: string; name: string }) {
+  return request<{ layout: PdfStatementLayoutRecord }>(
+    "/api/reconciliation/pdf-statement-layouts",
+    { method: "PATCH", body: JSON.stringify({ action: "rename-layout", ...payload }) }
   );
 }
 
-export function deletePdfDetectionProfile(profileId: string) {
-  const params = new URLSearchParams({ profileId });
-  return request<void>(`/api/reconciliation/pdf-detection-profiles?${params.toString()}`, {
+export function deletePdfStatementLayout(layoutId: string) {
+  const params = new URLSearchParams({ layoutId });
+  return request<void>(`/api/reconciliation/pdf-statement-layouts?${params.toString()}`, {
     method: "DELETE",
   });
 }
 
 export type {
-  PdfDetectionBankRecord,
-  PdfDetectionProfileCatalog,
-  PdfDetectionProfileRecord,
+  PdfStatementLayoutCatalog,
+  PdfStatementLayoutRecord,
   ReconciliationItemRecord,
   ReconciliationProfileRecord,
   ReconciliationSessionRecord,

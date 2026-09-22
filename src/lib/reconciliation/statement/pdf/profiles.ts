@@ -1,19 +1,60 @@
-import { fnv1aHex } from "@/lib/sync/hash";
-import type { PdfLayoutSignature, PdfParserGuidance, PdfReconstructedPage, PdfTableSchema } from "./model";
+import type {
+  PdfColumnRole,
+  PdfLayoutSignature,
+  PdfParserGuidance,
+  PdfReconstructedPage,
+  PdfTableSchema,
+} from "./model";
 import { sourceSafeShape } from "./text";
+
+/**
+ * A mapped column, as a layout keeps it.
+ *
+ * Bounds are fractions of the page width, so a layout describes a table
+ * rather than a page: the same statement printed at another size, or read at
+ * another scale, still lands on the same columns. Nothing here is taken from
+ * the document - no header text, no example values, no confidence from a
+ * detection run that has since been corrected.
+ */
+export type PdfLayoutColumn = {
+  id: string;
+  role: PdfColumnRole;
+  /** Null when the column applies to every page, which is the usual case. */
+  pageNumber: number | null;
+  xStart: number;
+  xEnd: number;
+};
+
+/**
+ * How to read this bank's statements, and nothing about any one of them.
+ *
+ * Deliberately not `PdfParserGuidance`: that carries the statement period and
+ * the transaction areas, which belong to a document. A period moves every
+ * month, and areas are indexed by page number, which shifts the moment a
+ * statement runs to a different length.
+ */
+export type PdfLayoutReading = {
+  version: 1;
+  accountType: PdfParserGuidance["accountType"];
+  currency: string | null;
+  dateFormat: PdfParserGuidance["dateFormat"];
+  numberFormat: PdfParserGuidance["numberFormat"];
+  importDate: PdfParserGuidance["importDate"];
+  unsignedDirection: PdfParserGuidance["unsignedDirection"];
+  printedSign: PdfParserGuidance["printedSign"];
+  transactionAnchorRole: PdfParserGuidance["transactionAnchorRole"];
+  columns: PdfLayoutColumn[];
+};
 
 export type PdfLayoutProfile = {
   id: string;
   name: string;
   parserVersion: 2;
-  fingerprint: string;
-  sourceFingerprint?: string;
-  guidance: PdfParserGuidance;
-  /** The template this layout was captured from, for recognizing it again. */
-  signature?: PdfLayoutSignature;
+  /** What this layout was captured from, for recognizing the template again. */
+  signature: PdfLayoutSignature;
+  reading: PdfLayoutReading;
   createdAt: string;
   updatedAt: string;
-  sourcePage: { width: number; height: number };
 };
 
 /**
@@ -21,7 +62,7 @@ export type PdfLayoutProfile = {
  * replaces it; keeping the old settings means saving under another name.
  */
 export type PdfLayoutProfileEnvelope = {
-  kind: "pdf-layout-v2";
+  kind: "pdf-layout-v3";
   profile: PdfLayoutProfile;
 };
 
@@ -77,68 +118,42 @@ function headerSimilarity(saved: PdfLayoutSignature | null, current: PdfLayoutSi
   return matched / Math.max(saved.header.length, current.header.length);
 }
 
-export function createPdfLayoutFingerprint(
-  pages: PdfReconstructedPage[],
-  schema: PdfTableSchema | null
-) {
-  const pageShapes = pages.map((page) => ({
-    aspect: Math.round((page.width / Math.max(1, page.height)) * 20),
-    headerShapes: page.rows
-      .filter((row) => row.y < page.height * 0.25)
-      .map((row) => sourceSafeShape(row.text))
-      .filter((shape) => shape.length > 2)
-      .slice(0, 12),
-  }));
-  const columns = (schema?.columns ?? []).map((column) => ({
-    role: column.role,
-    x: Math.round(column.xStart / Math.max(1, column.referencePageWidth ?? pages[0]?.width ?? 1) * 100),
-    width: Math.round((column.xEnd - column.xStart) / Math.max(1, column.referencePageWidth ?? pages[0]?.width ?? 1) * 100),
-  }));
-  return fnv1aHex(JSON.stringify({ pageCountBand: Math.min(pages.length, 10), pageShapes, columns }));
-}
-
 export function matchPdfLayoutProfile(
   profile: PdfLayoutProfile,
-  pages: PdfReconstructedPage[],
-  schema: PdfTableSchema | null,
-  signature?: PdfLayoutSignature
+  current: {
+    reconstructedPages: PdfReconstructedPage[];
+    activeSchema: PdfTableSchema | null;
+    detectionSignature: PdfLayoutSignature;
+  }
 ): PdfProfileMatch {
   /*
     The table header first, when both sides have one.
 
-    Everything below it compares a saved layout's *corrected* columns against
-    this statement's *detected* ones, which measures how much correcting was
+    The alternative below compares a saved layout's corrected columns against
+    this statement's detected ones, which measures how much correcting was
     needed rather than whether this is the same statement - so a layout scored
     worse the more carefully it had been fixed, and the ones worth keeping were
-    the ones most likely to be refused. The header is the same on both sides
-    whatever anyone has corrected.
+    the ones most likely to be refused. A header is the same on both sides
+    whatever anyone has corrected, so it is asked first and trusted.
   */
-  const headerScore = signature ? headerSimilarity(profile.signature ?? null, signature) : null;
+  const headerScore = headerSimilarity(profile.signature, current.detectionSignature);
   if (headerScore !== null) {
     if (headerScore >= 0.85) return { outcome: "strong", score: headerScore, reasons: ["statement header matches the saved layout"], drift: false };
     if (headerScore >= 0.6) return { outcome: "possible", score: headerScore, reasons: ["most of the statement header matches the saved layout"], drift: true };
     if (headerScore >= 0.25) return { outcome: "weak", score: headerScore, reasons: ["only part of the statement header matches the saved layout"], drift: true };
     return { outcome: "conflicting", score: headerScore, reasons: ["this statement's table header is not the one the layout was saved from"], drift: true };
   }
-  if (profile.sourceFingerprint === createPdfSourceLayoutFingerprint(pages)) {
-    return { outcome: "strong", score: 1, reasons: ["statement layout matches"], drift: false };
-  }
-  const fingerprint = createPdfLayoutFingerprint(pages, schema);
-  if (fingerprint === profile.fingerprint) return { outcome: "strong", score: 1, reasons: ["layout fingerprint matches"], drift: false };
-  const expectedRoles = new Set(profile.guidance.columns.map((column) => column.role));
-  const actualRoles = new Set((schema?.columns ?? []).map((column) => column.role));
+
+  // No header to compare on either side, so fall back to the table's shape.
+  const expectedRoles = new Set(profile.reading.columns.map((column) => column.role));
+  const actualRoles = new Set((current.activeSchema?.columns ?? []).map((column) => column.role));
   const overlap = [...expectedRoles].filter((role) => actualRoles.has(role)).length / Math.max(1, expectedRoles.size);
-  const geometryDistance = columnGeometryDistance(profile, pages, schema);
+  const geometryDistance = columnGeometryDistance(profile, current.reconstructedPages, current.activeSchema);
   const geometryScore = Math.max(0, 1 - geometryDistance * 4);
   const score = overlap * 0.7 + geometryScore * 0.3;
   const drift = overlap < 0.8 || geometryDistance > 0.06;
   if (!drift && overlap >= 0.9) {
-    return {
-      outcome: "strong",
-      score,
-      reasons: ["roles and column geometry match"],
-      drift: false,
-    };
+    return { outcome: "strong", score, reasons: ["roles and column geometry match"], drift: false };
   }
   if (overlap >= 0.9 && geometryDistance <= 0.12) {
     return {
@@ -152,20 +167,19 @@ export function matchPdfLayoutProfile(
   return { outcome: "conflicting", score, reasons: ["mapped roles or column geometry conflict with this statement"], drift: true };
 }
 
+/** Both sides as fractions of their own page, so page size cannot matter. */
 function columnGeometryDistance(
   profile: PdfLayoutProfile,
   pages: PdfReconstructedPage[],
   schema: PdfTableSchema | null
 ) {
   const currentWidth = pages[0]?.width ?? 1;
-  const savedWidth = profile.sourcePage.width || 1;
-  const distances = profile.guidance.columns.flatMap((saved) => {
+  const distances = profile.reading.columns.flatMap((saved) => {
     const current = schema?.columns.find((column) => column.role === saved.role);
     if (!current) return [];
-    const savedReferenceWidth = saved.referencePageWidth ?? savedWidth;
-    const currentReferenceWidth = current.referencePageWidth ?? currentWidth;
-    const start = Math.abs(saved.xStart / savedReferenceWidth - current.xStart / currentReferenceWidth);
-    const end = Math.abs(saved.xEnd / savedReferenceWidth - current.xEnd / currentReferenceWidth);
+    const width = current.referencePageWidth ?? currentWidth;
+    const start = Math.abs(saved.xStart - current.xStart / width);
+    const end = Math.abs(saved.xEnd - current.xEnd / width);
     return [(start + end) / 2];
   });
   // A single moved financial column is material even when every other column
@@ -174,41 +188,95 @@ function columnGeometryDistance(
   return distances.length ? Math.max(...distances) : 1;
 }
 
+/**
+ * The part of a set of parser instructions that a layout keeps.
+ *
+ * Guidance also carries the statement period and the transaction areas, which
+ * belong to the document in front of the reader. Reducing to this before
+ * comparing is what separates "you have changed how this bank is read" from
+ * "you have changed something about this month's statement".
+ */
+export function layoutReadingFromGuidance(guidance: PdfParserGuidance, pageWidth: number): PdfLayoutReading {
+  return {
+    version: 1,
+    accountType: guidance.accountType,
+    currency: guidance.currency,
+    dateFormat: guidance.dateFormat,
+    numberFormat: guidance.numberFormat,
+    importDate: guidance.importDate,
+    unsignedDirection: guidance.unsignedDirection,
+    printedSign: guidance.printedSign,
+    transactionAnchorRole: guidance.transactionAnchorRole,
+    columns: guidance.columns.map((column) => ({
+      id: column.id,
+      role: column.role,
+      pageNumber: column.pageNumber,
+      xStart: column.xStart / Math.max(1, column.referencePageWidth ?? pageWidth),
+      xEnd: column.xEnd / Math.max(1, column.referencePageWidth ?? pageWidth),
+    })),
+  };
+}
+
+/**
+ * Two readings that would save as the same layout give the same key.
+ *
+ * Column ids are left out: a re-detected column can arrive with a new id
+ * without anything about the reading having changed, and asking the reader to
+ * save that is asking them to save nothing. Bounds are rounded to four places,
+ * which on a page of six hundred points is a twentieth of a point - below
+ * anything a boundary drag can mean.
+ */
+export function layoutReadingKey(reading: PdfLayoutReading): string {
+  const round = (value: number) => Math.round(value * 10_000) / 10_000;
+  return JSON.stringify({
+    accountType: reading.accountType,
+    currency: reading.currency,
+    dateFormat: reading.dateFormat,
+    numberFormat: reading.numberFormat,
+    importDate: reading.importDate,
+    unsignedDirection: reading.unsignedDirection,
+    printedSign: reading.printedSign ?? "auto",
+    transactionAnchorRole: reading.transactionAnchorRole,
+    columns: [...reading.columns]
+      .sort((left, right) => left.xStart - right.xStart)
+      .map((column) => [column.role, column.pageNumber, round(column.xStart), round(column.xEnd)]),
+  });
+}
+
 export function createPdfLayoutProfile(input: {
   id: string;
   name: string;
   result: {
     reconstructedPages: PdfReconstructedPage[];
-    activeSchema: PdfTableSchema | null;
     guidance: PdfParserGuidance;
-    detectionSignature?: PdfLayoutSignature;
+    detectionSignature: PdfLayoutSignature;
   };
   createdAt?: string;
 }): PdfLayoutProfile {
-  const firstPage = input.result.reconstructedPages[0];
   const now = new Date().toISOString();
   return {
     id: input.id,
     name: input.name,
     parserVersion: 2,
-    fingerprint: createPdfLayoutFingerprint(input.result.reconstructedPages, input.result.activeSchema),
-    sourceFingerprint: createPdfSourceLayoutFingerprint(input.result.reconstructedPages),
-    ...(input.result.detectionSignature ? { signature: input.result.detectionSignature } : {}),
-    guidance: {
-      ...input.result.guidance,
-      // A statement period is evidence for this document, not a reusable
-      // property of the bank layout. Persisting it would reject next month's
-      // otherwise valid dates and retain financial-document metadata.
-      statementPeriod: { start: null, end: null },
-      columns: input.result.guidance.columns.map((column) => ({ ...column, header: null, examples: [] })),
-      regions: input.result.guidance.regions.map((region) => ({ ...region, rowIds: [], reasons: [] })),
-    },
+    signature: input.result.detectionSignature,
+    reading: layoutReadingFromGuidance(
+      input.result.guidance,
+      input.result.reconstructedPages[0]?.width ?? 1
+    ),
     createdAt: input.createdAt ?? now,
     updatedAt: now,
-    sourcePage: { width: firstPage?.width ?? 1, height: firstPage?.height ?? 1 },
   };
 }
 
+/**
+ * The layout, read onto the statement in front of us.
+ *
+ * Transaction areas come from this statement every time. A saved area was
+ * indexed by page number, which is the one thing guaranteed to move between
+ * statements of different lengths, and all it ever contributed was whether a
+ * detected area was included - a decision the detector makes again here, on
+ * the right number of pages.
+ */
 export function guidanceFromPdfLayoutProfile(
   profile: PdfLayoutProfile,
   current: {
@@ -217,25 +285,29 @@ export function guidanceFromPdfLayoutProfile(
     guidance?: PdfParserGuidance;
   }
 ): PdfParserGuidance {
-  const firstPage = current.reconstructedPages[0];
-  const scaleX = (firstPage?.width ?? profile.sourcePage.width) / Math.max(1, profile.sourcePage.width);
-  const scaleY = (firstPage?.height ?? profile.sourcePage.height) / Math.max(1, profile.sourcePage.height);
-  const regions = current.detectedGuidance.regions.map((region) => {
-    const candidates = profile.guidance.regions.filter((saved) => saved.pageNumber === region.pageNumber);
-    const saved = candidates.sort((left, right) => Math.abs(left.y * scaleY - region.y) - Math.abs(right.y * scaleY - region.y))[0];
-    return saved ? { ...region, included: saved.included, kind: saved.kind } : region;
-  });
+  const pageWidth = current.reconstructedPages[0]?.width ?? 1;
   return {
     ...current.detectedGuidance,
-    ...profile.guidance,
+    accountType: profile.reading.accountType,
+    currency: profile.reading.currency,
+    dateFormat: profile.reading.dateFormat,
+    numberFormat: profile.reading.numberFormat,
+    importDate: profile.reading.importDate,
+    unsignedDirection: profile.reading.unsignedDirection,
+    printedSign: profile.reading.printedSign,
+    transactionAnchorRole: profile.reading.transactionAnchorRole,
     statementPeriod: current.guidance?.statementPeriod ?? current.detectedGuidance.statementPeriod,
-    regions,
-    columns: profile.guidance.columns.map((column) => ({
-      ...column,
-      xStart: column.referencePageWidth ? column.xStart : column.xStart * scaleX,
-      xEnd: column.referencePageWidth ? column.xEnd : column.xEnd * scaleX,
-      examples: [],
+    regions: current.detectedGuidance.regions,
+    columns: profile.reading.columns.map((column) => ({
+      id: column.id,
+      role: column.role,
+      pageNumber: column.pageNumber,
+      referencePageWidth: pageWidth,
+      xStart: column.xStart * pageWidth,
+      xEnd: column.xEnd * pageWidth,
       header: null,
+      examples: [],
+      confidence: 1,
     })),
   };
 }
@@ -244,136 +316,110 @@ export function isPdfLayoutProfileEnvelope(value: unknown): value is PdfLayoutPr
   if (!value || typeof value !== "object") return false;
   const envelope = value as Partial<PdfLayoutProfileEnvelope>;
   const profile = envelope.profile as Partial<PdfLayoutProfile> | undefined;
-  return envelope.kind === "pdf-layout-v2"
+  return envelope.kind === "pdf-layout-v3"
     && profile?.parserVersion === 2
     && typeof profile.id === "string"
     && typeof profile.name === "string"
-    && typeof profile.fingerprint === "string"
-    && Boolean(profile.guidance)
-    && Boolean(profile.sourcePage);
+    && Boolean(profile.reading)
+    && Boolean(profile.signature);
 }
 
 /**
- * Rebuild a persisted profile from an allow-list of declarative layout fields.
+ * Rebuild a persisted layout from an allow-list of declarative fields.
+ *
  * This is the server persistence boundary: even a hand-crafted API request
- * cannot smuggle extracted statement text or PDF bytes into the profile JSON.
+ * cannot smuggle extracted statement text or PDF bytes into the stored JSON.
+ * Everything kept is either a setting the reader chose, a fraction of a page,
+ * or a masked shape - the signature's header shapes have had their letters and
+ * digits replaced before they ever reach here, and are checked again below.
  */
 export function sanitizePdfLayoutProfileEnvelope(value: unknown): PdfLayoutProfileEnvelope | null {
   if (!isPdfLayoutProfileEnvelope(value)) return null;
   const current = sanitizeProfile(value.profile);
   if (!current) return null;
-  return { kind: "pdf-layout-v2", profile: current };
+  return { kind: "pdf-layout-v3", profile: current };
 }
 
+const ACCOUNT_TYPES = new Set(["auto", "credit-card", "checking", "savings", "prepaid", "multi-currency", "business-cash", "loan", "investment", "unknown"]);
+const DATE_FORMATS = new Set(["auto", "iso", "dmy", "mdy", "dmy-name", "ymd-compact", "ymd"]);
+const NUMBER_FORMATS = new Set(["auto", "us", "european", "space", "indian", "swiss"]);
+const IMPORT_DATES = new Set(["transaction", "posting", "value"]);
+const UNSIGNED_DIRECTIONS = new Set(["review", "debit", "credit"]);
+const PRINTED_SIGNS = new Set(["auto", "account-holder", "issuer"]);
+const ANCHOR_ROLES = new Set(["transaction-date", "posting-date", "value-date"]);
+const COLUMN_ROLES = new Set(["transaction-date", "posting-date", "value-date", "description", "reference", "debit", "credit", "amount", "direction", "balance", "original-amount", "original-currency", "exchange-rate", "currency", "fee", "vat", "ignore"]);
+/** Letters and digits masked to A and 9, with spaces and punctuation left. */
+const MASKED_SHAPE = /^[^A-Za-z0-8]*(?:[A9][^A-Za-z0-8]*)*$/;
+
 function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
-  const guidance = profile.guidance;
-  if (!guidance || guidance.version !== 1) return null;
-  if (!profile.id || !profile.name || !profile.fingerprint || typeof profile.createdAt !== "string") return null;
+  const reading = profile.reading;
+  const signature = profile.signature;
+  if (!reading || reading.version !== 1) return null;
+  if (!profile.id || !profile.name || typeof profile.createdAt !== "string") return null;
   if (profile.updatedAt !== undefined && typeof profile.updatedAt !== "string") return null;
-  if (profile.sourceFingerprint !== undefined && typeof profile.sourceFingerprint !== "string") return null;
-  if (!new Set(["auto", "credit-card", "checking", "savings", "prepaid", "multi-currency", "business-cash", "loan", "investment", "unknown"]).has(guidance.accountType)) return null;
-  if (!new Set(["auto", "iso", "dmy", "mdy", "dmy-name", "ymd-compact", "ymd"]).has(guidance.dateFormat)) return null;
-  if (!new Set(["auto", "us", "european", "space", "indian", "swiss"]).has(guidance.numberFormat)) return null;
-  if (!new Set(["transaction", "posting", "value"]).has(guidance.importDate)) return null;
-  if (!new Set(["review", "debit", "credit"]).has(guidance.unsignedDirection)) return null;
-  // Layouts saved before the printed-sign setting existed default to automatic.
-  if (guidance.printedSign !== undefined && !new Set(["auto", "account-holder", "issuer"]).has(guidance.printedSign)) return null;
-  if (!new Set(["transaction-date", "posting-date", "value-date"]).has(guidance.transactionAnchorRole)) return null;
-  if (!Number.isFinite(profile.sourcePage.width) || profile.sourcePage.width <= 0
-    || !Number.isFinite(profile.sourcePage.height) || profile.sourcePage.height <= 0) return null;
-  if (!Array.isArray(guidance.columns) || !Array.isArray(guidance.regions)) return null;
-  if (!guidance.statementPeriod
-    || guidance.statementPeriod.start !== null
-    || guidance.statementPeriod.end !== null) return null;
-  if (guidance.currency !== null && !/^[A-Z]{3}$/.test(guidance.currency)) return null;
-  if (!guidance.columns.every((column) =>
+  if (!ACCOUNT_TYPES.has(reading.accountType)) return null;
+  if (!DATE_FORMATS.has(reading.dateFormat)) return null;
+  if (!NUMBER_FORMATS.has(reading.numberFormat)) return null;
+  if (!IMPORT_DATES.has(reading.importDate)) return null;
+  if (!UNSIGNED_DIRECTIONS.has(reading.unsignedDirection)) return null;
+  if (!PRINTED_SIGNS.has(reading.printedSign ?? "auto")) return null;
+  if (!ANCHOR_ROLES.has(reading.transactionAnchorRole)) return null;
+  if (reading.currency !== null && !/^[A-Z]{3}$/.test(reading.currency)) return null;
+  if (!Array.isArray(reading.columns) || !reading.columns.length) return null;
+  if (!reading.columns.every((column) =>
     typeof column.id === "string"
+    && COLUMN_ROLES.has(column.role)
     && (column.pageNumber === null || Number.isInteger(column.pageNumber))
     && Number.isFinite(column.xStart)
     && Number.isFinite(column.xEnd)
-    && Number.isFinite(column.confidence)
-    && (column.referencePageWidth === undefined || Number.isFinite(column.referencePageWidth))
-    && new Set(["transaction-date", "posting-date", "value-date", "description", "reference", "debit", "credit", "amount", "direction", "balance", "original-amount", "original-currency", "exchange-rate", "currency", "fee", "vat", "ignore"]).has(column.role)
-    && column.header === null
-    && Array.isArray(column.examples)
-    && column.examples.length === 0
+    // Fractions of a page, so anything outside it is not a column.
+    && column.xStart >= 0
+    && column.xEnd <= 1
+    && column.xEnd > column.xStart
   )) return null;
-  if (!guidance.regions.every((region) =>
-    typeof region.id === "string"
-    && Number.isInteger(region.pageNumber)
-    && [region.x, region.y, region.width, region.height, region.confidence].every(Number.isFinite)
-    && new Set(["transactions", "summary", "rewards", "installments", "fees", "other"]).has(region.kind)
-    && typeof region.included === "boolean"
-    && Array.isArray(region.rowIds)
-    && region.rowIds.length === 0
-    && Array.isArray(region.reasons)
-    && region.reasons.length === 0
+
+  if (!signature
+    || !Number.isFinite(signature.aspect)
+    || !Number.isFinite(signature.rotation)
+    || !Array.isArray(signature.header)) return null;
+  if (!signature.header.every((cell) =>
+    typeof cell.shape === "string"
+    && cell.shape.length <= 64
+    // A shape that still holds letters or digits is statement text, not a
+    // shape, whatever it claims to be.
+    && MASKED_SHAPE.test(cell.shape)
+    && Number.isFinite(cell.x)
+    && Number.isFinite(cell.width)
   )) return null;
 
   return {
     id: profile.id,
     name: profile.name,
     parserVersion: 2,
-    fingerprint: profile.fingerprint,
-    ...(profile.sourceFingerprint === undefined ? {} : { sourceFingerprint: profile.sourceFingerprint }),
-    guidance: {
+    signature: {
+      aspect: signature.aspect,
+      rotation: signature.rotation,
+      header: signature.header.map((cell) => ({ shape: cell.shape, x: cell.x, width: cell.width })),
+    },
+    reading: {
       version: 1,
-      accountType: guidance.accountType,
-      currency: guidance.currency,
-      statementPeriod: { start: null, end: null },
-      dateFormat: guidance.dateFormat,
-      numberFormat: guidance.numberFormat,
-      importDate: guidance.importDate,
-      unsignedDirection: guidance.unsignedDirection,
-      printedSign: guidance.printedSign ?? "auto",
-      transactionAnchorRole: guidance.transactionAnchorRole,
-      columns: guidance.columns.map((column) => ({
+      accountType: reading.accountType,
+      currency: reading.currency,
+      dateFormat: reading.dateFormat,
+      numberFormat: reading.numberFormat,
+      importDate: reading.importDate,
+      unsignedDirection: reading.unsignedDirection,
+      printedSign: reading.printedSign ?? "auto",
+      transactionAnchorRole: reading.transactionAnchorRole,
+      columns: reading.columns.map((column) => ({
         id: column.id,
+        role: column.role,
         pageNumber: column.pageNumber,
-        ...(column.referencePageWidth === undefined ? {} : { referencePageWidth: column.referencePageWidth }),
         xStart: column.xStart,
         xEnd: column.xEnd,
-        role: column.role,
-        header: null,
-        examples: [],
-        confidence: column.confidence,
-      })),
-      regions: guidance.regions.map((region) => ({
-        id: region.id,
-        pageNumber: region.pageNumber,
-        x: region.x,
-        y: region.y,
-        width: region.width,
-        height: region.height,
-        kind: region.kind,
-        included: region.included,
-        confidence: region.confidence,
-        rowIds: [],
-        reasons: [],
       })),
     },
     createdAt: profile.createdAt,
-    updatedAt: profile.updatedAt ?? profile.createdAt,
-    sourcePage: { width: profile.sourcePage.width, height: profile.sourcePage.height },
+    updatedAt: typeof profile.updatedAt === "string" ? profile.updatedAt : profile.createdAt,
   };
-}
-
-function createPdfSourceLayoutFingerprint(pages: PdfReconstructedPage[]) {
-  const page = pages[0];
-  if (!page) return fnv1aHex("empty");
-  const rows = page.rows
-    .slice(0, 80)
-    .map((row) => ({
-      y: Math.round(row.y / Math.max(1, page.height) * 100),
-      cells: row.cells.map((cell) => ({
-        shape: sourceSafeShape(cell.text),
-        x: Math.round(cell.x / Math.max(1, page.width) * 100),
-        width: Math.round(cell.width / Math.max(1, page.width) * 100),
-      })),
-    }));
-  return fnv1aHex(JSON.stringify({
-    aspect: Math.round(page.width / Math.max(1, page.height) * 100),
-    rotation: page.rotation,
-    rows,
-  }));
 }

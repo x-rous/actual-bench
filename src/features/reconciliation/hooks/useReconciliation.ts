@@ -20,8 +20,8 @@ const sessionsKey = (budgetSyncId: string) => ["reconciliation", "sessions", bud
 const sessionKey = (id: string) => ["reconciliation", "session", id] as const;
 const profilesKey = (budgetSyncId: string, accountId?: string) =>
   ["reconciliation", "profiles", budgetSyncId, accountId ?? "all"] as const;
-const pdfDetectionProfilesKey = (budgetSyncId: string, accountId: string) =>
-  ["reconciliation", "pdf-detection-profiles", budgetSyncId, accountId] as const;
+const pdfStatementLayoutsKey = (budgetSyncId: string, accountId: string) =>
+  ["reconciliation", "pdf-statement-layouts", budgetSyncId, accountId] as const;
 
 export function useReconciliationSessions() {
   const budgetSyncId = useActiveBudgetSyncId();
@@ -49,11 +49,11 @@ export function useReconciliationProfiles(accountId?: string) {
   });
 }
 
-export function usePdfDetectionProfiles(accountId?: string) {
+export function usePdfStatementLayouts(accountId?: string) {
   const budgetSyncId = useActiveBudgetSyncId();
   return useQuery({
-    queryKey: pdfDetectionProfilesKey(budgetSyncId ?? "", accountId ?? ""),
-    queryFn: () => api.listPdfDetectionProfiles(budgetSyncId!, accountId!),
+    queryKey: pdfStatementLayoutsKey(budgetSyncId ?? "", accountId ?? ""),
+    queryFn: () => api.listPdfStatementLayouts(budgetSyncId!, accountId!),
     enabled: Boolean(budgetSyncId && accountId),
   });
 }
@@ -116,46 +116,46 @@ export function useReconciliationMutations() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["reconciliation", "profiles"] }),
   });
 
-  const invalidatePdfDetectionProfiles = () =>
-    queryClient.invalidateQueries({ queryKey: ["reconciliation", "pdf-detection-profiles"] });
+  const invalidatePdfStatementLayouts = () =>
+    queryClient.invalidateQueries({ queryKey: ["reconciliation", "pdf-statement-layouts"] });
 
-  const savePdfDetectionProfile = useMutation({
+  const savePdfStatementLayout = useMutation({
     mutationFn: (payload: {
       accountId: string;
       bankName: string;
-      profileName: string;
-      profile: unknown;
+      layoutName: string;
+      layout: unknown;
       mode: "create" | "update";
       assignToAccount?: boolean;
-    }) => api.savePdfDetectionProfile({ budgetSyncId: budgetSyncId!, ...payload }),
-    onSuccess: invalidatePdfDetectionProfiles,
+    }) => api.savePdfStatementLayout({ budgetSyncId: budgetSyncId!, ...payload }),
+    onSuccess: invalidatePdfStatementLayouts,
   });
 
-  const assignPdfDetectionProfile = useMutation({
-    mutationFn: (payload: { accountId: string; profileId: string }) =>
-      api.assignPdfDetectionProfile({ budgetSyncId: budgetSyncId!, ...payload }),
-    onSuccess: invalidatePdfDetectionProfiles,
+  const assignPdfStatementLayout = useMutation({
+    mutationFn: (payload: { accountId: string; layoutId: string }) =>
+      api.assignPdfStatementLayout({ budgetSyncId: budgetSyncId!, ...payload }),
+    onSuccess: invalidatePdfStatementLayouts,
   });
 
-  const removePdfDetectionAccountAssociation = useMutation({
+  const removePdfStatementLayoutAssignment = useMutation({
     mutationFn: (payload: { accountId: string }) =>
-      api.removePdfDetectionAccountAssociation({ budgetSyncId: budgetSyncId!, ...payload }),
-    onSuccess: invalidatePdfDetectionProfiles,
+      api.removePdfStatementLayoutAssignment({ budgetSyncId: budgetSyncId!, ...payload }),
+    onSuccess: invalidatePdfStatementLayouts,
   });
 
-  const renamePdfDetectionBank = useMutation({
-    mutationFn: api.renamePdfDetectionBank,
-    onSuccess: invalidatePdfDetectionProfiles,
+  const renamePdfStatementLayoutBank = useMutation({
+    mutationFn: api.renamePdfStatementLayoutBank,
+    onSuccess: invalidatePdfStatementLayouts,
   });
 
-  const renamePdfDetectionProfile = useMutation({
-    mutationFn: api.renamePdfDetectionProfile,
-    onSuccess: invalidatePdfDetectionProfiles,
+  const renamePdfStatementLayout = useMutation({
+    mutationFn: api.renamePdfStatementLayout,
+    onSuccess: invalidatePdfStatementLayouts,
   });
 
-  const deletePdfDetectionProfile = useMutation({
-    mutationFn: api.deletePdfDetectionProfile,
-    onSuccess: invalidatePdfDetectionProfiles,
+  const deletePdfStatementLayout = useMutation({
+    mutationFn: api.deletePdfStatementLayout,
+    onSuccess: invalidatePdfStatementLayouts,
   });
 
   /** Rewrite the whole item set — used when a decision adds or removes rows. */
@@ -177,12 +177,12 @@ export function useReconciliationMutations() {
     deleteSession,
     saveParsedStatement,
     saveProfile,
-    savePdfDetectionProfile,
-    assignPdfDetectionProfile,
-    removePdfDetectionAccountAssociation,
-    renamePdfDetectionBank,
-    renamePdfDetectionProfile,
-    deletePdfDetectionProfile,
+    savePdfStatementLayout,
+    assignPdfStatementLayout,
+    removePdfStatementLayoutAssignment,
+    renamePdfStatementLayoutBank,
+    renamePdfStatementLayout,
+    deletePdfStatementLayout,
     patchItem,
     replaceItems,
   };

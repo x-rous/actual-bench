@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleHelp,
   GitMerge,
+  Save,
   ShieldCheck,
   Trash2,
   TriangleAlert,
@@ -27,6 +28,8 @@ import { columnBoundsForPage } from "@/lib/reconciliation/statement/pdf/columns"
 import {
   columnExamplesForRegions,
   guidanceFromPdfLayoutProfile,
+  layoutReadingFromGuidance,
+  layoutReadingKey,
   matchPdfLayoutProfile,
   type PdfColumn,
   type PdfConfidenceReason,
@@ -40,7 +43,7 @@ import { formatMinorUnits } from "../lib/format";
 import { isActionableReason, reasonText } from "../lib/pdfReasonText";
 import {
   csvFileNameFor,
-  formatDateInput,
+  formatDateLabel,
   formatTableAmount,
   matchesCategory,
   matchesSearch,
@@ -65,7 +68,6 @@ import { PdfReviewStep } from "./PdfReviewStep";
 import { PdfLayoutSaveDialog, type PdfLayoutSaveRequest } from "./PdfStatementLayoutPanel";
 import type { PdfDetectionIssue } from "./PdfDetectionIssueList";
 import type { PdfTransactionField } from "./PdfTransactionTable";
-import type { PdfDetectionBankRecord } from "../lib/reconciliationApi";
 
 type WorkbenchMode = "review" | "adjust";
 
@@ -94,9 +96,9 @@ const NOOP = () => {};
 
 export type PdfDetectionProfileOption = {
   recordId: string;
-  bankId: string;
+  /** The label the layout is filed under; banks are not entities of their own. */
   bankName: string;
-  envelope: { kind: "pdf-layout-v2"; profile: PdfLayoutProfile; history?: PdfLayoutProfile[] };
+  envelope: { kind: "pdf-layout-v3"; profile: PdfLayoutProfile };
 };
 
 export function PdfStatementReviewDialog({
@@ -111,7 +113,6 @@ export function PdfStatementReviewDialog({
   onSaveProfile,
   onProfileChange,
   accountName = "this account",
-  banks = [],
   accountProfileId = null,
   onAssignProfile,
   onRemoveAccountAssignment,
@@ -130,15 +131,14 @@ export function PdfStatementReviewDialog({
   onImport: (rows: PdfTransactionProposal[], result: PdfStatementParseResult) => void;
   onSaveProfile?: (input: PdfLayoutSaveRequest & {
     result: PdfStatementParseResult;
-  }) => Promise<{ bankId: string; profileId: string } | void>;
+  }) => Promise<{ profileId: string } | void>;
   onProfileChange?: (profile: PdfDetectionProfileOption | null) => void;
   accountName?: string;
-  banks?: PdfDetectionBankRecord[];
   accountProfileId?: string | null;
   onAssignProfile?: (profileId: string) => Promise<unknown>;
   onRemoveAccountAssignment?: () => Promise<unknown>;
-  onRenameBank?: (bankId: string, name: string) => Promise<unknown>;
-  onRenameProfile?: (profileId: string, name: string) => Promise<unknown>;
+  onRenameBank?: (from: string, to: string) => Promise<unknown>;
+  onRenameProfile?: (layoutId: string, name: string) => Promise<unknown>;
   onDeleteProfile?: (profileId: string) => Promise<unknown>;
   isSavingProfile?: boolean;
 }) {
@@ -180,7 +180,6 @@ export function PdfStatementReviewDialog({
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(activeProfileId);
   const [manageProfilesOpen, setManageProfilesOpen] = useState(false);
   const [saveProfileOpen, setSaveProfileOpen] = useState(false);
-  const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
   const [controlFocus, setControlFocus] = useState<{ id: string; requestId: number } | null>(null);
   const [interpretationOpen, setInterpretationOpen] = useState(true);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
@@ -219,8 +218,37 @@ export function PdfStatementReviewDialog({
     () => (parsed && preview ? resultDiff(parsed, preview) : null),
     [parsed, preview]
   );
+  /**
+   * Whether the draft would save as a different layout.
+   *
+   * Not whether the guidance differs: guidance also carries the transaction
+   * areas and the statement period, which belong to this statement. Including
+   * them meant that redrawing an area asked the reader to save a layout that
+   * would come back byte for byte the same.
+   */
+  /**
+   * The settings in force no longer save as the layout they came from.
+   *
+   * Shown as a chip in the workbench header rather than as a line in the
+   * layout panel: applying moves the reader to the review step, so a reminder
+   * living beside the detection settings is a reminder on a screen they have
+   * just left, and the toast that carries it dismisses itself.
+   */
+  const layoutDrifted = useMemo(() => {
+    if (!parsed || !selectedProfile) return false;
+    const applied = layoutReadingKey(layoutReadingFromGuidance(
+      parsed.guidance,
+      parsed.reconstructedPages[0]?.width ?? 1
+    ));
+    return applied !== layoutReadingKey(selectedProfile.envelope.profile.reading);
+  }, [parsed, selectedProfile]);
   const detectionDirty = useMemo(
-    () => (parsed ? JSON.stringify(draftGuidance) !== JSON.stringify(parsed.guidance) : false),
+    () => {
+      if (!parsed || !draftGuidance) return false;
+      const pageWidth = parsed.reconstructedPages[0]?.width ?? 1;
+      return layoutReadingKey(layoutReadingFromGuidance(draftGuidance, pageWidth))
+        !== layoutReadingKey(layoutReadingFromGuidance(parsed.guidance, pageWidth));
+    },
     [draftGuidance, parsed]
   );
   const draftColumnExamples = useMemo(() => new Map(
@@ -384,15 +412,18 @@ export function PdfStatementReviewDialog({
     setMode("review");
     setFilter(output.metrics.review + output.metrics.rejected > 0 ? "needs-review" : "all");
     clearSelection();
-    // Applying moves to the review step, so the chance to keep these settings
-    // travels with the confirmation rather than being left behind on the
-    // detection screen.
-    if (selectedProfile) {
-      setLayoutNotice(`These settings differ from ${selectedProfile.envelope.profile.name}. Save the layout to reuse them next month.`);
-    }
+    // Offered with the confirmation, but only when there is something to keep:
+    // a change to this statement's transaction areas is not something a layout
+    // can hold. The header chip carries the same state after the toast goes.
+    const appliedReading = layoutReadingKey(layoutReadingFromGuidance(
+      output.guidance,
+      output.reconstructedPages[0]?.width ?? 1
+    ));
+    const worthSaving = !selectedProfile
+      || appliedReading !== layoutReadingKey(selectedProfile.envelope.profile.reading);
     toast.success("Detection changes applied", {
       description: `${diff.after} ${diff.after === 1 ? "transaction" : "transactions"} found · ${diff.afterReview} ${diff.afterReview === 1 ? "needs" : "need"} review`,
-      ...(onSaveProfile && output.metrics.rejected === 0
+      ...(onSaveProfile && output.metrics.rejected === 0 && worthSaving
         ? { action: { label: "Save layout", onClick: () => setSaveProfileOpen(true) } }
         : {}),
     });
@@ -408,7 +439,6 @@ export function PdfStatementReviewDialog({
     const reset = () => {
       setDraftGuidance(parsed.detectedGuidance);
       setPreview(null);
-      setLayoutNotice(null);
     };
     if (!detectionDirty) {
       reset();
@@ -495,14 +525,13 @@ export function PdfStatementReviewDialog({
 
   function applyProfile(option: PdfDetectionProfileOption, profile: PdfLayoutProfile = option.envelope.profile) {
     if (!parsed || isParsing) return;
-    const profileMatch = matchPdfLayoutProfile(profile, parsed.reconstructedPages, parsed.activeSchema, parsed.detectionSignature);
+    const profileMatch = matchPdfLayoutProfile(profile, parsed);
     if (profileMatch.outcome === "conflicting") {
       setParserError("That layout conflicts with the detected table. Adjust the mapping or choose another layout.");
       return;
     }
     applyGuidance(guidanceFromPdfLayoutProfile(profile, parsed), () => {
       setSelectedProfileId(option.recordId);
-      setLayoutNotice(null);
       onProfileChange?.(option);
     });
   }
@@ -668,6 +697,17 @@ export function PdfStatementReviewDialog({
                     {unreadablePageCount} {unreadablePageCount === 1 ? "page" : "pages"} unreadable
                   </Button>
                 )}
+                {layoutDrifted && onSaveProfile && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="shrink-0 text-amber-700 dark:text-amber-300"
+                    title={`These settings differ from ${selectedProfile?.envelope.profile.name}. Save the layout to reuse them next month.`}
+                    onClick={() => setSaveProfileOpen(true)}
+                  >
+                    <Save aria-hidden="true" className="mr-1 size-3.5" />Layout not saved
+                  </Button>
+                )}
                 {/* Beside the steps rather than under them: the same facts, a
                     row of height back for the table. */}
                 <SummaryBar result={parsed} totals={totals} />
@@ -806,7 +846,7 @@ export function PdfStatementReviewDialog({
                   selectedProfileId,
                   accountProfileId,
                   accountName,
-                  notices: [profileNotice, layoutNotice].filter((notice): notice is string => Boolean(notice)),
+                  notices: profileNotice ? [profileNotice] : [],
                   disabled: isParsing,
                   canSave: Boolean(onSaveProfile) && parsed.metrics.rejected === 0 && !detectionDirty,
                   saveBlockedReason: parsed.metrics.rejected > 0
@@ -868,7 +908,6 @@ export function PdfStatementReviewDialog({
                     const saved = await onSaveProfile({ ...request, result: parsed });
                     if (saved) setSelectedProfileId(saved.profileId);
                     setSaveProfileOpen(false);
-                    setLayoutNotice(null);
                     toast.success(request.mode === "update" ? "Statement layout updated" : "Statement layout saved", {
                       description: `${request.bankName} · ${request.profileName}`,
                     });
@@ -884,7 +923,6 @@ export function PdfStatementReviewDialog({
                 open
                 onOpenChange={setManageProfilesOpen}
                 accountName={accountName}
-                banks={banks}
                 profiles={profiles}
                 accountProfileId={accountProfileId}
                 onAssign={onAssignProfile}
@@ -1075,8 +1113,8 @@ const SummaryBar = memo(function SummaryBar({
   const period = dates.length === 0
     ? null
     : dates.at(-1) === dates[0]
-      ? formatDateInput(dates[0])
-      : `${formatDateInput(dates[0])} → ${formatDateInput(dates.at(-1) ?? null)}`;
+      ? formatDateLabel(dates[0])
+      : `${formatDateLabel(dates[0])} → ${formatDateLabel(dates.at(-1) ?? null)}`;
   const total = result.transactions.length;
   const net = totals.credits - totals.debits;
   const segments = [
@@ -1096,7 +1134,12 @@ const SummaryBar = memo(function SummaryBar({
           <strong className="text-sm tabular-nums">{total}</strong>{" "}
           <span className="text-muted-foreground">{total === 1 ? "transaction" : "transactions"}</span>
         </span>
-        {period && <span className="tabular-nums text-muted-foreground">{period}</span>}
+        {period && (
+          <>
+            <span aria-hidden="true" className="text-muted-foreground/60">·</span>
+            <span className="text-muted-foreground">{period}</span>
+          </>
+        )}
       </span>
 
       <SummaryRule />

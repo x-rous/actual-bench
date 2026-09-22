@@ -175,6 +175,23 @@ export function formatDateInput(iso: string | null) {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : iso ?? "";
 }
 
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * A date to read rather than to type: `24 Feb 2025`.
+ *
+ * Used where a date is being stated rather than edited - the statement's own
+ * period, where a month's name is quicker to take in than its number and
+ * there is no field to line the digits up in. Written the same way for
+ * everyone, like every other date here, rather than left to the browser's
+ * locale.
+ */
+export function formatDateLabel(iso: string | null) {
+  const match = (iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return iso ?? "";
+  return `${match[3]} ${MONTH_NAMES[Number(match[2]) - 1] ?? match[2]} ${match[1]}`;
+}
+
 export function parseDateInput(text: string): string | null {
   const value = text.trim();
   if (!value) return null;
@@ -344,10 +361,15 @@ function pairTransactions(before: PdfTransactionProposal[], after: PdfTransactio
 export function resultDiff(before: PdfStatementParseResult, after: PdfStatementParseResult) {
   const { pairs, added, removed } = pairTransactions(before.transactions, after.transactions);
   let amounts = 0;
+  let currencies = 0;
   let dates = 0;
   let descriptions = 0;
   for (const { left, right } of pairs) {
-    if (left.amount !== right.amount || left.currency !== right.currency) amounts += 1;
+    // Counted apart: "89 amounts changed" and "89 currencies changed" are very
+    // different findings, and reporting the second as the first turns an
+    // alarming number into a meaningless one.
+    if (left.amount !== right.amount) amounts += 1;
+    if (left.currency !== right.currency) currencies += 1;
     if (left.importDate !== right.importDate
       || left.transactionDate !== right.transactionDate
       || left.postedDate !== right.postedDate
@@ -362,9 +384,10 @@ export function resultDiff(before: PdfStatementParseResult, after: PdfStatementP
     added,
     removed,
     amounts,
+    currencies,
     dates,
     descriptions,
-    changed: added + removed + amounts + dates + descriptions,
+    changed: added + removed + amounts + currencies + dates + descriptions,
     beforeReady: before.metrics.accepted,
     afterReady: after.metrics.accepted,
     beforeReview: before.metrics.review + before.metrics.rejected,

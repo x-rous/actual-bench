@@ -92,7 +92,7 @@ import { PhaseNav } from "./PhaseNav";
 import { SessionHeader, type SessionStep } from "./SessionHeader";
 import {
   useReconciliationMutations,
-  usePdfDetectionProfiles,
+  usePdfStatementLayouts,
   useReconciliationProfiles,
   useReconciliationSession,
   useReconciliationSessions,
@@ -266,7 +266,7 @@ export function ReconciliationView() {
   // every month.
   const profileAccountId = screen.name === "import" ? screen.accountId : accountId || undefined;
   const profilesQuery = useReconciliationProfiles(profileAccountId);
-  const pdfDetectionProfilesQuery = usePdfDetectionProfiles(profileAccountId);
+  const pdfStatementLayoutsQuery = usePdfStatementLayouts(profileAccountId);
 
   const sessionId = screen.name === "home" ? null : screen.sessionId;
   const sessionQuery = useReconciliationSession(sessionId);
@@ -1662,10 +1662,10 @@ export function ReconciliationView() {
             matchConfig={matchConfig}
             matchPreset={matchPreset}
             profiles={profilesQuery.data ?? []}
-            pdfDetectionCatalog={pdfDetectionProfilesQuery.data}
-            isLoadingPdfDetectionProfiles={pdfDetectionProfilesQuery.isPending}
+            pdfStatementLayouts={pdfStatementLayoutsQuery.data}
+            isLoadingPdfStatementLayouts={pdfStatementLayoutsQuery.isPending}
             isSavingProfile={mutations.saveProfile.isPending}
-            isSavingPdfDetectionProfile={mutations.savePdfDetectionProfile.isPending}
+            isSavingPdfStatementLayout={mutations.savePdfStatementLayout.isPending}
             onApplyProfile={(profile: ReconciliationProfileRecord) => {
               const saved = profile.matchConfig as MatchConfig | null;
               if (saved) setMatchConfig({ ...DEFAULT_MATCH_CONFIG, ...saved });
@@ -1678,25 +1678,25 @@ export function ReconciliationView() {
                 matchConfig,
               });
             }}
-            onSavePdfDetectionProfile={(input) => mutations.savePdfDetectionProfile.mutateAsync({
+            onSavePdfStatementLayout={(input) => mutations.savePdfStatementLayout.mutateAsync({
               accountId: screen.accountId,
               ...input,
             })}
-            onAssignPdfDetectionProfile={(profileId) => mutations.assignPdfDetectionProfile.mutateAsync({
+            onAssignPdfStatementLayout={(layoutId) => mutations.assignPdfStatementLayout.mutateAsync({
               accountId: screen.accountId,
-              profileId,
+              layoutId,
             })}
-            onRemovePdfDetectionAccountAssociation={() =>
-              mutations.removePdfDetectionAccountAssociation.mutateAsync({ accountId: screen.accountId })
+            onRemovePdfStatementLayoutAssignment={() =>
+              mutations.removePdfStatementLayoutAssignment.mutateAsync({ accountId: screen.accountId })
             }
-            onRenamePdfDetectionBank={(bankId, name) =>
-              mutations.renamePdfDetectionBank.mutateAsync({ bankId, name })
+            onRenamePdfStatementLayoutBank={(from, to) =>
+              mutations.renamePdfStatementLayoutBank.mutateAsync({ from, to })
             }
-            onRenamePdfDetectionProfile={(profileId, name) =>
-              mutations.renamePdfDetectionProfile.mutateAsync({ profileId, name })
+            onRenamePdfStatementLayout={(layoutId, name) =>
+              mutations.renamePdfStatementLayout.mutateAsync({ layoutId, name })
             }
-            onDeletePdfDetectionProfile={(profileId) =>
-              mutations.deletePdfDetectionProfile.mutateAsync(profileId)
+            onDeletePdfStatementLayout={(layoutId) =>
+              mutations.deletePdfStatementLayout.mutateAsync(layoutId)
             }
             onMatchConfigChange={(preset, config) => {
               setMatchPreset(preset);

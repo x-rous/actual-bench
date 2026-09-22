@@ -362,6 +362,49 @@ CREATE TABLE IF NOT EXISTS reconciliation_profiles (
 // layout can be reused by several accounts and budgets. Bank names are groups,
 // not inferred account metadata. The active account mapping points directly to
 // a profile and contains only stable Actual identifiers, never statement text.
+/**
+ * A saved statement layout: how to read one bank's statements.
+ *
+ * A bank is a label here, not a table. It has no attributes and no lifecycle,
+ * Actual records no bank against an account, and its only job is to group
+ * layouts in a list - which a column does, without a second row to keep in
+ * step or a foreign key to cascade.
+ */
+export const PDF_STATEMENT_LAYOUT_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS pdf_statement_layouts (
+  id text PRIMARY KEY,
+  bank_name text NOT NULL COLLATE NOCASE,
+  name text NOT NULL COLLATE NOCASE,
+  layout_json text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  UNIQUE(bank_name, name)
+);
+`;
+
+/**
+ * Which layout an account reads its statements with.
+ *
+ * Its own table rather than a list on the layout: the cascade deletes the
+ * assignments with the layout, the primary key enforces one default per
+ * account, and assigning does not have to read and rewrite a row someone else
+ * may be writing at the same time.
+ */
+export const PDF_STATEMENT_LAYOUT_ACCOUNT_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS pdf_statement_layout_accounts (
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL,
+  layout_id text NOT NULL REFERENCES pdf_statement_layouts(id) ON DELETE CASCADE,
+  updated_at text NOT NULL,
+  PRIMARY KEY(budget_sync_id, account_id)
+);
+`;
+
+export const PDF_STATEMENT_LAYOUT_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_pdf_statement_layout_account ON pdf_statement_layout_accounts(layout_id)",
+  "CREATE INDEX IF NOT EXISTS idx_pdf_statement_layout_bank ON pdf_statement_layouts(bank_name COLLATE NOCASE)",
+];
+
 export const PDF_DETECTION_BANK_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS pdf_detection_banks (
   id text PRIMARY KEY,

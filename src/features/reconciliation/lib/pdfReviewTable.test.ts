@@ -3,6 +3,7 @@ import {
   columnRoleLabel,
   csvFileNameFor,
   formatDateInput,
+  formatDateLabel,
   formatGroupedDecimal,
   matchesCategory,
   matchesSearch,
@@ -191,6 +192,18 @@ describe("pdfReviewTable", () => {
       expect(diff.after - diff.before).toBe(1);
     });
 
+    it("counts a currency change apart from an amount change", () => {
+      const before = parseResult([transaction({ id: "a", amount: "-12.50", currency: "USD" })]);
+      const after = parseResult([transaction({ id: "a", amount: "-12.50", currency: "EUR" })]);
+
+      const diff = resultDiff(before, after);
+
+      // Reporting this as "1 amount changed" turned a currency re-read into an
+      // alarm about money that had not moved.
+      expect(diff.currencies).toBe(1);
+      expect(diff.amounts).toBe(0);
+    });
+
     it("names the fields that changed on a row that stayed", () => {
       const before = parseResult([transaction({ id: "a", description: "ANON SHOP", transactionDate: "2026-08-15" })]);
       const after = parseResult([transaction({ id: "a", description: "ANON SHOP", transactionDate: "2026-08-16" })]);
@@ -227,6 +240,12 @@ describe("pdfReviewTable", () => {
     it("shows a stored date the way the workbench writes dates", () => {
       expect(formatDateInput("2026-09-21")).toBe("21/09/2026");
       expect(formatDateInput(null)).toBe("");
+    });
+
+    it("names the month where a date is stated rather than typed", () => {
+      expect(formatDateLabel("2025-02-24")).toBe("24 Feb 2025");
+      expect(formatDateLabel("2025-12-05")).toBe("05 Dec 2025");
+      expect(formatDateLabel(null)).toBe("");
     });
 
     it("takes a typed date back, and a pasted ISO one", () => {
