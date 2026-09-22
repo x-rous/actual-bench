@@ -116,6 +116,7 @@ export function SearchableCombobox({
   footer,
   triggerClassName,
   ariaLabel,
+  autoFocus,
 }: {
   options: ComboboxOption[];
   value: string;
@@ -129,6 +130,12 @@ export function SearchableCombobox({
    * would otherwise be whichever option happens to be selected.
    */
   ariaLabel?: string;
+  /**
+   * Opens the list and puts the caret in its search box on mount, for a dialog
+   * whose first question this is: the reader can start typing an account name
+   * without reaching for the mouse to open the control first.
+   */
+  autoFocus?: boolean;
 }) {
   const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
     useComboboxState();
@@ -149,6 +156,12 @@ export function SearchableCombobox({
 
   const [activeIndex, setActiveIndex] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (autoFocus) openDropdown();
+    // Mount only: reopening on every render would make the list impossible to
+    // close.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Ties the highlighted row to the input, so assistive technology announces
   // what the arrow keys are moving over instead of silence.
   const listId = useId();
