@@ -39,7 +39,6 @@ type SyncFlowRunItemRow = {
   id: string;
   run_id: string;
   flow_id: string | null;
-  leg_id: string | null;
   sequence?: number | null;
   source_item_ref_json: string;
   target_item_ref_json: string | null;
@@ -82,7 +81,6 @@ type CreateSyncFlowRunItemInput = {
   id?: string;
   runId: string;
   flowId?: string | null;
-  legId?: string | null;
   sequence?: number | null;
   sourceItemRef?: JsonEnvelope;
   targetItemRef?: JsonEnvelope | null;
@@ -141,7 +139,6 @@ function rowToRunItem(row: SyncFlowRunItemRow): SyncFlowRunItem {
     id: row.id,
     runId: row.run_id,
     flowId: row.flow_id,
-    legId: row.leg_id,
     sequence: row.sequence ?? null,
     sourceItemRef: parseEnvelope(row.source_item_ref_json, "sourceItemRef"),
     targetItemRef: parseOptionalEnvelope(row.target_item_ref_json, "targetItemRef"),
@@ -230,6 +227,50 @@ export function listSyncFlowRuns(db: SqliteDatabase, options: { flowId?: string;
     .map(rowToRun);
 }
 
+/**
+ * Build the same `SyncFlowRunItem` shape `createSyncFlowRunItem` would
+ * produce, without writing it to the database.
+ *
+ * For classifications nothing ever acts on or reviews again (`already_synced`
+ * today), persisting a row every run is how this table grew past 100k rows
+ * from routine unattended ticks alone — the aggregate count already lives
+ * cheaply in the run's own `counts` envelope, and apply never reads these
+ * items back. The browser session still needs to display them (the "Already
+ * synced" filter tile), so the caller returns this alongside the persisted
+ * items rather than dropping it.
+ */
+export function buildEphemeralSyncFlowRunItem(input: CreateSyncFlowRunItemInput): SyncFlowRunItem {
+  const now = new Date().toISOString();
+  const id = normalizeId(input.id, generateId());
+  return {
+    id,
+    runId: input.runId,
+    flowId: input.flowId ?? null,
+    sequence: input.sequence ?? null,
+    sourceItemRef: normalizeEnvelope(input.sourceItemRef, "sourceItemRef"),
+    targetItemRef: normalizeOptionalEnvelope(input.targetItemRef, "targetItemRef"),
+    status: input.status ?? "planned",
+    message: normalizeOptionalText(input.message, "message"),
+    sourceEntityType: input.sourceEntityType ?? null,
+    sourceItemKey: normalizeOptionalText(input.sourceItemKey, "sourceItemKey"),
+    sourceTransactionId: normalizeOptionalText(input.sourceTransactionId, "sourceTransactionId"),
+    sourceSplitId: normalizeOptionalText(input.sourceSplitId, "sourceSplitId"),
+    sourceFingerprint: normalizeOptionalText(input.sourceFingerprint, "sourceFingerprint"),
+    plannedAction: normalizeOptionalText(input.plannedAction, "plannedAction"),
+    plannedTargetPayload: normalizeOptionalEnvelope(input.plannedTargetPayload, "plannedTargetPayload"),
+    classification: input.classification ?? null,
+    duplicateConfidence: input.duplicateConfidence ?? null,
+    warnings: normalizeOptionalEnvelope(input.warnings, "warnings"),
+    errors: normalizeOptionalEnvelope(input.errors, "errors"),
+    selectedForApply: input.selectedForApply ?? false,
+    applyState: input.applyState ?? null,
+    createdTargetTransactionId: normalizeOptionalText(input.createdTargetTransactionId, "createdTargetTransactionId"),
+    createdTargetMarker: normalizeOptionalText(input.createdTargetMarker, "createdTargetMarker"),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 export function createSyncFlowRunItem(db: SqliteDatabase, input: CreateSyncFlowRunItemInput): SyncFlowRunItem {
   const now = new Date().toISOString();
   const id = normalizeId(input.id, generateId());
@@ -244,7 +285,6 @@ export function createSyncFlowRunItem(db: SqliteDatabase, input: CreateSyncFlowR
       id,
       run_id,
       flow_id,
-      leg_id,
       sequence,
       source_item_ref_json,
       target_item_ref_json,
@@ -267,12 +307,11 @@ export function createSyncFlowRunItem(db: SqliteDatabase, input: CreateSyncFlowR
       created_target_marker,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.runId,
     input.flowId ?? null,
-    input.legId ?? null,
     input.sequence ?? null,
     stringifyEnvelope(sourceItemRef),
     stringifyEnvelope(targetItemRef),
@@ -428,4 +467,41 @@ export function updateSyncFlowRunItem(
   );
 
   return getSyncFlowRunItem(db, itemId);
+}
+
+/**
+ * Retention: keep the newest `keep` runs per flow and delete the rest.
+ * `sync_flow_run_items` cascades with its run (`ON DELETE CASCADE`), so
+ * pruning a run's history is one delete, not two.
+ *
+ * Per flow rather than globally, for the same reason `pruneAutomationRuns`
+ * (automationRunRepository.ts) is: a flow ticking every 15 minutes should not
+ * age out the only handful of runs an occasional flow has ever had.
+ *
+ * Runs whose flow has been deleted (`flow_id` is NULL, because the column is
+ * ON DELETE SET NULL) are one more group, not an exemption. Skipping them -
+ * which an ordinary `=` join does silently, since NULL = NULL is never true -
+ * left every run of every deleted flow, and all of its items, in the database
+ * permanently: unreachable from the Sync page, which lists runs per flow, and
+ * beyond the reach of the only thing that cleans this table up. `IS` is
+ * SQLite's NULL-safe comparison, so they age out like anything else.
+ */
+export function pruneSyncFlowRuns(db: SqliteDatabase, keep: number): number {
+  if (!Number.isInteger(keep) || keep < 1) {
+    throw new AppDbValidationError("keep must be a positive integer");
+  }
+
+  const result = db
+    .prepare(
+      `DELETE FROM sync_flow_runs
+        WHERE id NOT IN (
+          SELECT id FROM sync_flow_runs AS ranked
+           WHERE ranked.flow_id IS sync_flow_runs.flow_id
+           ORDER BY started_at DESC
+           LIMIT ?
+        )`
+    )
+    .run(keep);
+
+  return result.changes;
 }

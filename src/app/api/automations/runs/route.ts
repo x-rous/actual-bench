@@ -55,9 +55,10 @@ export async function GET(request: Request) {
     return NextResponse.json({
       runs: runs.map((run) => ({
         ...run,
-        // Deleting an automation cascades to its runs, so this is a fallback
-        // rather than the deletion story: a run whose automation cannot be
-        // resolved still belongs in the history, named as best we can.
+        // Deleting an automation orphans its runs rather than erasing them
+        // (`automation_id` is ON DELETE SET NULL, schema v30), so this is the
+        // normal way a deleted automation's history reads - not just a
+        // fallback. The run still belongs in the history, named as best we can.
         automationName: (run.automationId && names.get(run.automationId)) || "Deleted automation",
         typeLabel: typeLabels.get(run.type) ?? run.type,
       })),

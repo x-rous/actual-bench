@@ -30,6 +30,24 @@ export class SyncKindError extends Error {
   }
 }
 
+/**
+ * Extract a real message from a caught error, whatever shape it arrives in.
+ * Server-side HTTP calls (`apiRequest` in `src/lib/api/client.ts`) throw a
+ * structured `ApiError` plain object, not an `Error` instance, so a naive
+ * `err instanceof Error ? err.message : fallback` always falls through to the
+ * fallback for every HTTP failure - hiding exactly the detail (a real HTTP
+ * status/reason) someone needs to tell "the network is down" apart from
+ * "the account id is wrong" apart from "the API key was revoked".
+ */
+export function describeSyncError(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message) return message;
+  }
+  return fallback;
+}
+
 /** Materialized, JSON-serializable source snapshot + scan stats for the summary. */
 export type AdapterSourceResult = {
   materialized: unknown;

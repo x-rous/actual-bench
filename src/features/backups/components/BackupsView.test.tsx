@@ -332,6 +332,37 @@ describe("the Recovery Center", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("No enabled destination"));
   });
 
+  it("runs a manual app-db rule without a budget open in this browser", async () => {
+    // Bench's own database is not a budget and has no connection. Running a
+    // manual rule used to demand a browser export unconditionally, so an
+    // app-db rule could only be run while connected to whichever budget
+    // happened to be open when it was created - a connection the rule never
+    // had anything to do with. The server makes this copy itself.
+    const base = data();
+    mockedApi.fetchRecoveryCenter.mockResolvedValue({
+      ...base,
+      policies: [
+        {
+          ...base.policies[0],
+          contents: "app-db",
+          scheduleKind: "manual",
+          cronExpression: null,
+          // No budget behind it, which is the whole point.
+          sourceRef: { version: 1, data: {} },
+        },
+      ],
+    });
+    mockedApi.backUpNow.mockResolvedValue({ stored: true, verified: true, message: "Backed up and verified" });
+
+    renderView();
+    await openSetup();
+    fireEvent.click(await screen.findByRole("button", { name: /back up now/i }));
+
+    // Straight to the server, with no uploaded archive.
+    await waitFor(() => expect(mockedApi.backUpNow).toHaveBeenCalledWith("pol-1"));
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it("warns rather than congratulates when a copy stored but did not verify", async () => {
     mockedApi.backUpNow.mockResolvedValue({
       stored: true,

@@ -115,7 +115,7 @@ export function persistDraftRun(body: {
   summary?: JsonObject;
   sourceSnapshotSummary?: JsonObject;
   trigger?: SyncRunTrigger;
-}): Promise<{ runId: string }> {
+}): Promise<{ runId: string; items: SyncFlowRunItem[] }> {
   return jsonFetch("/api/sync-flow-runs", {
     method: "POST",
     body: JSON.stringify({ kind: "draft", ...body }),

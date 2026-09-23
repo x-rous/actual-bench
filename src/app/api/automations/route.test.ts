@@ -25,14 +25,25 @@ function request(body: unknown): Request {
   return { json: async () => body } as Request;
 }
 
-const validBody = {
-  type: "budget-file-sync",
-  name: "Nightly sync",
-  scheduleKind: "interval",
-  intervalMinutes: 30,
-  targetRef: { version: 1, data: { flowId: "flow-1" } },
-  config: { version: 1, data: { flowId: "flow-1" } },
-};
+/**
+ * A budget-file-sync automation names the flow it runs, and reconciliation
+ * removes one whose flow does not exist - that is the whole point of it, so a
+ * fixture has to name a flow that is really there.
+ */
+function bodyFor(flowId: string) {
+  return {
+    type: "budget-file-sync",
+    name: "Nightly sync",
+    scheduleKind: "interval",
+    intervalMinutes: 30,
+    targetRef: { version: 1, data: { flowId } },
+    config: { version: 1, data: { flowId } },
+  };
+}
+
+function seedFlow(): string {
+  return createSyncFlow(getAppDb(), { name: "Household → Joint" }).id;
+}
 
 describe("/api/automations", () => {
   let root: string;
@@ -51,7 +62,7 @@ describe("/api/automations", () => {
   });
 
   it("creates an automation of a registered type", async () => {
-    const response = await POST(request(validBody));
+    const response = await POST(request(bodyFor(seedFlow())));
     expect(response.status).toBe(201);
 
     const body = (await response.json()) as { automation: AutomationDefinition };
@@ -63,7 +74,7 @@ describe("/api/automations", () => {
   });
 
   it("refuses a type nothing can run, instead of accepting it and pausing later", async () => {
-    const response = await POST(request({ ...validBody, type: "not-a-real-type" }));
+    const response = await POST(request({ ...bodyFor("flow-1"), type: "not-a-real-type" }));
 
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };

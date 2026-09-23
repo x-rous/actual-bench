@@ -2,11 +2,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "./connection";
-import { createSyncFlow } from "./syncFlowRepository";
+import { createSyncFlow, deleteSyncFlow } from "./syncFlowRepository";
 import {
   createSyncFlowRun,
   createSyncFlowRunItem,
   listSyncFlowRunItems,
+  listSyncFlowRuns,
+  pruneSyncFlowRuns,
   updateSyncFlowRun,
   updateSyncFlowRunItem,
 } from "./syncRunRepository";
@@ -40,7 +42,6 @@ describe("sync run repository", () => {
       const item = createSyncFlowRunItem(db, {
         runId: run.id,
         flowId: flow.id,
-        legId: flow.legs[0]?.id ?? null,
         sourceEntityType: "transaction",
         sourceItemKey: "transaction:txn-source",
         sourceTransactionId: "txn-source",
@@ -84,6 +85,71 @@ describe("sync run repository", () => {
       const finalRun = updateSyncFlowRun(db, run.id, { status: "applied", finishedAt: "2026-07-07T00:00:00.000Z" });
       expect(finalRun?.status).toBe("applied");
       expect(finalRun?.finishedAt).toBe("2026-07-07T00:00:00.000Z");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prunes per flow, so a busy flow cannot age out a quiet flow's history", () => {
+    const { root, db } = tempDb();
+    try {
+      const busy = createSyncFlow(db, {
+        name: "Busy flow",
+        legs: [{ sourceRef: envelope, targetRef: envelope, filter: envelope, transform: envelope }],
+      });
+      const quiet = createSyncFlow(db, {
+        name: "Quiet flow",
+        legs: [{ sourceRef: envelope, targetRef: envelope, filter: envelope, transform: envelope }],
+      });
+
+      for (let i = 0; i < 6; i += 1) {
+        createSyncFlowRun(db, { flowId: busy.id, startedAt: `2026-08-25T0${i}:00:00.000Z` });
+      }
+      const quietRun = createSyncFlowRun(db, { flowId: quiet.id, startedAt: "2026-08-20T00:00:00.000Z" });
+      const survivingBusyRun = createSyncFlowRun(db, { flowId: busy.id, startedAt: "2026-08-25T09:00:00.000Z" });
+      createSyncFlowRunItem(db, { runId: survivingBusyRun.id, flowId: busy.id, sourceItemRef: envelope });
+
+      const deleted = pruneSyncFlowRuns(db, 2);
+
+      expect(deleted).toBe(5);
+      expect(listSyncFlowRuns(db, { flowId: busy.id })).toHaveLength(2);
+      // The quiet flow's single, much older run survives.
+      expect(listSyncFlowRuns(db, { flowId: quiet.id })).toHaveLength(1);
+      expect(listSyncFlowRuns(db, { flowId: quiet.id })[0]?.id).toBe(quietRun.id);
+      // Items cascade with their run.
+      expect(listSyncFlowRunItems(db, { runId: survivingBusyRun.id })).toHaveLength(1);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prunes the runs of a deleted flow, which nothing else can reach", () => {
+    const { root, db } = tempDb();
+    try {
+      const flow = createSyncFlow(db, {
+        name: "Doomed flow",
+        legs: [{ sourceRef: envelope, targetRef: envelope, filter: envelope, transform: envelope }],
+      });
+      for (let i = 0; i < 5; i += 1) {
+        const run = createSyncFlowRun(db, { flowId: flow.id, startedAt: `2026-08-25T0${i}:00:00.000Z` });
+        createSyncFlowRunItem(db, { runId: run.id, flowId: flow.id, sourceItemRef: envelope });
+      }
+
+      // flow_id is ON DELETE SET NULL, so deleting the flow orphans its runs.
+      // They are unreachable from the Sync page, which lists runs per flow, so
+      // if retention skips them too they stay in the database forever - which
+      // is how an install ends up with six figures of run items it cannot see.
+      deleteSyncFlow(db, flow.id);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM sync_flow_runs").get<{ n: number }>()?.n).toBe(5);
+
+      const deleted = pruneSyncFlowRuns(db, 2);
+
+      expect(deleted).toBe(3);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM sync_flow_runs").get<{ n: number }>()?.n).toBe(2);
+      // And their items went with them.
+      expect(db.prepare("SELECT COUNT(*) AS n FROM sync_flow_run_items").get<{ n: number }>()?.n).toBe(2);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

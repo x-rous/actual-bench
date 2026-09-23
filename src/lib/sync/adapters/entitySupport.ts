@@ -28,10 +28,9 @@ function str(value: unknown): string {
 }
 
 export function decodeEntityFlowConfig(flow: SyncFlow): EntityFlowConfig {
-  const leg = flow.legs[0];
-  const source = (leg?.sourceRef.data ?? {}) as Record<string, unknown>;
-  const target = (leg?.targetRef.data ?? {}) as Record<string, unknown>;
-  const options = (leg?.options.data ?? {}) as Record<string, unknown>;
+  const source = (flow.sourceRef.data ?? {}) as Record<string, unknown>;
+  const target = (flow.targetRef.data ?? {}) as Record<string, unknown>;
+  const options = (flow.options.data ?? {}) as Record<string, unknown>;
   const defaultGroup = str(options.defaultGroupName).trim();
   return {
     flowId: flow.id,

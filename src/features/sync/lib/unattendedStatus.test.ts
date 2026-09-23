@@ -32,6 +32,38 @@ describe("computeUnattendedStatus", () => {
     expect(computeUnattendedStatus({ ...base, bothEnrolled: false }).reason).toMatch(/Store credentials/);
   });
 
+  it("is not armed when the engine has health-paused the flow's automation", () => {
+    // The flow itself is enabled and perfectly configured - the reason it is
+    // not running lives on the automation, which nothing writes back onto the
+    // flow. Read it or this panel says "Armed" about a flow that will not run.
+    const s = computeUnattendedStatus({
+      ...base,
+      enginePause: { reason: "5 consecutive failures" },
+    });
+
+    expect(s.paused).toBe(true);
+    expect(s.armed).toBe(false);
+    expect(s.nextRunAtMs).toBeNull();
+    // In the engine's words, and pointing at the page that can undo it: the
+    // Sync page's own "re-enable the flow" would not clear this pause.
+    expect(s.reason).toBe("Paused by automation: 5 consecutive failures");
+  });
+
+  it("still says something actionable when the engine gave no pause reason", () => {
+    const s = computeUnattendedStatus({ ...base, enginePause: { reason: null } });
+    expect(s.armed).toBe(false);
+    expect(s.reason).toMatch(/Automations page/);
+  });
+
+  it("prefers the flow's own pause, which the Sync page can actually undo", () => {
+    const s = computeUnattendedStatus({
+      ...base,
+      flowEnabled: false,
+      enginePause: { reason: "5 consecutive failures" },
+    });
+    expect(s.reason).toBe("Paused - re-enable the flow to resume");
+  });
+
   it("computes the next run from last run + interval floor", () => {
     // 15-min interval, last run 5 min ago → future.
     const s = computeUnattendedStatus({ ...base, lastRunAtMs: base.nowMs - 5 * 60_000 });

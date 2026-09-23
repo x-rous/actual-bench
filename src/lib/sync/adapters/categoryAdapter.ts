@@ -8,6 +8,7 @@ import {
   toPlanResult,
 } from "./entitySupport";
 import {
+  describeSyncError,
   registerSyncKindAdapter,
   SyncKindError,
   type AdapterApplyContext,
@@ -73,7 +74,7 @@ export const categoryAdapter: SyncKindAdapter = {
       const materialized: MaterializedCategories = { categories: src };
       return { materialized, stats: { scanned: src.length, generatedExcluded: 0, expandedCount: src.length, keptCount: src.length } };
     } catch (err) {
-      throw new SyncKindError("source_load_failed", err instanceof Error ? err.message : "Failed to read source categories.");
+      throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to read source categories."));
     }
   },
 
@@ -92,7 +93,7 @@ export const categoryAdapter: SyncKindAdapter = {
       }
       return { categoryByKey, groupByKey } satisfies TargetCategories;
     } catch (err) {
-      throw new SyncKindError("target_load_failed", err instanceof Error ? err.message : "Failed to read target categories.");
+      throw new SyncKindError("target_load_failed", describeSyncError(err, "Failed to read target categories."));
     }
   },
 

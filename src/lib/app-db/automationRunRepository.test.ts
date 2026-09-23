@@ -123,9 +123,13 @@ describe("automation run repository", () => {
 
       deleteAutomation(db, automationId);
 
-      // The row cascades away with its definition; the type stays denormalized
-      // on any run that outlives it (e.g. an orphaned run kept for history).
-      expect(getAutomationRun(db, run.id)).toBeNull();
+      // The run survives, orphaned rather than cascaded away - automation_id
+      // goes null but `type` stays denormalized so the run renders by its
+      // type either way.
+      const orphaned = getAutomationRun(db, run.id);
+      expect(orphaned).not.toBeNull();
+      expect(orphaned?.automationId).toBeNull();
+      expect(orphaned?.type).toBe("budget-file-sync");
 
       const orphan = createAutomationRun(db, { automationId: null, type: "bank-sync" });
       expect(getAutomationRun(db, orphan.id)?.type).toBe("bank-sync");

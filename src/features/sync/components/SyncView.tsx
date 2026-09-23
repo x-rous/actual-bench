@@ -11,6 +11,7 @@ import { FlowList } from "./FlowList";
 import { PreviewPanel } from "./PreviewPanel";
 import { RunHistory } from "./RunHistory";
 import { useSyncFlows, useSyncFlowMutations } from "../hooks/useSyncFlows";
+import { useFlowAutomations } from "../hooks/useFlowAutomations";
 import { useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun, useVaultStatus } from "../hooks/useSyncData";
 import { useApplyMutation, usePreviewMutation, useSafeSyncMutation } from "../hooks/useSyncOrchestration";
 import { useSyncScheduler } from "../hooks/useSyncScheduler";
@@ -27,7 +28,7 @@ import {
 import { selectableRowIds, syncKindOf, toPreviewRow } from "../lib/previewRows";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
 import { formatRunTimestamp, relativeTime, runErrorMessage, toRunRow } from "../lib/runsView";
-import type { SyncFlowRun } from "@/lib/app-db/types";
+import type { SyncFlowRun, SyncFlowRunItem } from "@/lib/app-db/types";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
 import type { SafeSyncResult } from "@/lib/sync/safeSyncOrchestrator";
@@ -52,6 +53,10 @@ function deriveSummary(run: SyncFlowRun | undefined): DryRunSummary | null {
   };
 }
 
+/** Run statuses before or during an apply, where the live preview response's
+ * item list (including rows the database never persisted) is still current. */
+const PRE_APPLY_RUN_STATUSES = new Set<string | undefined>([undefined, "draft_preview", "applying"]);
+
 export function SyncView() {
   const connections = useSyncConnections();
   const flowsQuery = useSyncFlows();
@@ -63,6 +68,7 @@ export function SyncView() {
     () => new Set((vaultData?.credentials ?? []).map((c) => c.connectionFingerprint)),
     [vaultData]
   );
+  const enginePauses = useFlowAutomations();
   const flowMutations = useSyncFlowMutations();
   const previewMutation = usePreviewMutation();
   const applyMutation = useApplyMutation();
@@ -86,6 +92,16 @@ export function SyncView() {
   const [runId, setRunId] = useState<string | null>(null);
   const [historyRunId, setHistoryRunId] = useState<string | null>(null);
   const [isLivePreview, setIsLivePreview] = useState(false);
+  // The preview response's full item list, including classifications never
+  // persisted to the database (e.g. already_synced). Reopening this same run
+  // later from history reads it back from the DB and will not include them -
+  // this is the only place this session sees them.
+  //
+  // Kept with the run id it came from, and only ever used for that run. Held
+  // on its own, it was shown for whichever run happened to be on screen: open
+  // a historical draft preview after running a live one and the panel listed -
+  // and exported - the live run's items under the historical run's heading.
+  const [livePreview, setLivePreview] = useState<{ runId: string; items: SyncFlowRunItem[] } | null>(null);
   const [previewError, setPreviewError] = useState<DryRunError | null>(null);
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -110,7 +126,27 @@ export function SyncView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFlowId, flowsQuery.data]);
 
-  const rows = useMemo(() => (runQuery.data?.items ?? []).map(toPreviewRow), [runQuery.data]);
+  // The live preview response carries items the database never persisted
+  // (already_synced) - prefer it over the DB read for the run we just
+  // created, up until an apply actually changes the run's status. After
+  // that, the fresh DB read is what shows each item's real apply outcome;
+  // losing the already-synced rows from view at that point is fine, since
+  // apply never touched them and nobody needs their status post-apply.
+  // History falls back to runQuery outright and simply won't show those rows -
+  // the agreed tradeoff - and that holds even when it opens the very run this
+  // session just previewed. What history shows for a run has to be what the
+  // database holds for it: the audit CSV is exported from these same rows, and
+  // an export that depends on whose session is looking is not an audit. It is
+  // also what the "count only" note on the already-synced tile promises there.
+  const preferLiveItems =
+    view === "flow" &&
+    livePreview !== null &&
+    livePreview.runId === activeRunId &&
+    PRE_APPLY_RUN_STATUSES.has(runQuery.data?.run.status);
+  const rows = useMemo(
+    () => (preferLiveItems ? livePreview!.items : (runQuery.data?.items ?? [])).map(toPreviewRow),
+    [preferLiveItems, livePreview, runQuery.data]
+  );
 
   // Only a fresh, still-draft preview is appliable; runs opened from history are read-only.
   const runStatus = runQuery.data?.run.status;
@@ -152,6 +188,7 @@ export function SyncView() {
     setRunId(null);
     setHistoryRunId(null);
     setIsLivePreview(false);
+    setLivePreview(null);
     setPreviewError(null);
     setApplyResult(null);
     setActionError(null);
@@ -239,8 +276,13 @@ export function SyncView() {
       { flowId: selectedFlowId, sourceConnection: sourceConn, targetConnection: targetConn, allowDisabled: true },
       {
         onSuccess: (result) => {
-          if (result.status === "draft_preview") { setRunId(result.runId); setIsLivePreview(true); }
-          else setPreviewError(result.error);
+          if (result.status === "draft_preview") {
+            setRunId(result.runId);
+            setIsLivePreview(true);
+            setLivePreview({ runId: result.runId, items: result.items });
+          } else {
+            setPreviewError(result.error);
+          }
         },
         onError: (err) => setActionError(err instanceof Error ? err.message : "Preview could not be run."),
       }
@@ -358,6 +400,7 @@ export function SyncView() {
           connections={connections}
           vaultEnabled={vaultData?.enabled ?? false}
           enrolledFingerprints={enrolledFingerprints}
+          enginePauses={enginePauses}
           onSelect={handleSelect}
           onCreate={handleCreate}
         />

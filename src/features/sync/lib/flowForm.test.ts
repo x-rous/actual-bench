@@ -78,7 +78,7 @@ describe("entity (master-data) flows", () => {
 
     const flow: SyncFlow = {
       id: "flow-1", name: "Payee sync", enabled: true, flowType: "category_sync", description: null, createdAt: "", updatedAt: "",
-      legs: [{ id: "leg-1", flowId: "flow-1", position: 0, sourceRef: leg.sourceRef, targetRef: leg.targetRef, filter: leg.filter, transform: leg.transform, options: leg.options, createdAt: "", updatedAt: "" }],
+      sourceRef: leg.sourceRef, targetRef: leg.targetRef, filter: leg.filter, transform: leg.transform, options: leg.options,
     };
     const form = flowToFormState(flow, instances);
     expect(form.flowType).toBe("category_sync");
@@ -124,7 +124,7 @@ describe("FX config (RD-056)", () => {
 
     const flow: SyncFlow = {
       id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null, createdAt: "", updatedAt: "",
-      legs: [{ id: "leg-1", flowId: "flow-1", position: 0, sourceRef: leg.sourceRef, targetRef: leg.targetRef, filter: leg.filter, transform: leg.transform, options: leg.options, createdAt: "", updatedAt: "" }],
+      sourceRef: leg.sourceRef, targetRef: leg.targetRef, filter: leg.filter, transform: leg.transform, options: leg.options,
     };
     const back = flowToFormState(flow, instances);
     expect(back.transform).toMatchObject({ fxEnabled: true, fxSourceCurrency: "AED", fxTargetCurrency: "AUD", fxAllowProvider: false });
@@ -161,7 +161,12 @@ describe("buildFlowPayload", () => {
     const payload = buildFlowPayload(form, instances) as JsonObject & { legs: JsonObject[] };
     const leg = payload.legs[0] as Record<string, { version: number; data: JsonObject }>;
     expect(leg.options.data).toMatchObject({ reviewPolicy: "auto_sync_unattended" });
-    const back = flowToFormState(payload as unknown as Parameters<typeof flowToFormState>[0], instances);
+    const flow: SyncFlow = {
+      id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null,
+      createdAt: "", updatedAt: "",
+      sourceRef: leg.sourceRef, targetRef: leg.targetRef, filter: leg.filter, transform: leg.transform, options: leg.options,
+    };
+    const back = flowToFormState(flow, instances);
     expect(back.automation.reviewPolicy).toBe("auto_sync_unattended");
   });
 
@@ -186,12 +191,8 @@ describe("flowToFormState", () => {
     const flow: SyncFlow = {
       id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null,
       createdAt: "", updatedAt: "",
-      legs: [{
-        id: "leg-1", flowId: "flow-1", position: 0,
-        sourceRef: legIn.sourceRef, targetRef: legIn.targetRef,
-        filter: legIn.filter, transform: legIn.transform, options: { version: 1, data: {} },
-        createdAt: "", updatedAt: "",
-      }],
+      sourceRef: legIn.sourceRef, targetRef: legIn.targetRef,
+      filter: legIn.filter, transform: legIn.transform, options: { version: 1, data: {} },
     };
 
     const form = flowToFormState(flow, instances);
@@ -217,12 +218,8 @@ describe("flowToFormState", () => {
     const baseFlow = (options: JsonObject): SyncFlow => ({
       id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null,
       createdAt: "", updatedAt: "",
-      legs: [{
-        id: "leg-1", flowId: "flow-1", position: 0,
-        sourceRef: legIn.sourceRef, targetRef: legIn.targetRef,
-        filter: legIn.filter, transform: legIn.transform, options: { version: 1, data: options },
-        createdAt: "", updatedAt: "",
-      }],
+      sourceRef: legIn.sourceRef, targetRef: legIn.targetRef,
+      filter: legIn.filter, transform: legIn.transform, options: { version: 1, data: options },
     });
 
     expect(flowToFormState(baseFlow({ reviewPolicy: "auto_apply_safe_only" }), instances).automation.reviewPolicy).toBe("auto_apply_safe_only");
@@ -237,7 +234,7 @@ describe("flowToFormState", () => {
       // The payload the Save button sends must be accepted by the flow repo.
       const created = createSyncFlow(db, buildFlowPayload(filledForm(), instances));
       const reloaded = getSyncFlow(db, created.id);
-      expect(reloaded?.legs[0]?.sourceRef.data).toMatchObject({ accountId: "acct-src" });
+      expect(reloaded?.sourceRef.data).toMatchObject({ accountId: "acct-src" });
 
       const form = flowToFormState(reloaded as SyncFlow, instances);
       expect(form.source.connectionId).toBe("c-src");

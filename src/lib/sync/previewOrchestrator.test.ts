@@ -30,20 +30,11 @@ function makeFlow(overrides: FlowOverrides = {}): SyncFlow {
     description: null,
     createdAt: "2026-07-01T00:00:00.000Z",
     updatedAt: "2026-07-01T00:00:00.000Z",
-    legs: [
-      {
-        id: "leg-1",
-        flowId: "flow-1",
-        position: 0,
-        sourceRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(sourceConn), budgetId: "budget-src", accountId: "acct-src", budgetName: "Home", accountName: "Checking" } },
-        targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(target), budgetId: "budget-tgt", accountId: "acct-tgt" } },
-        filter: { version: 1, data: overrides.filterData ?? {} },
-        transform: { version: 1, data: {} },
-        options: { version: 1, data: {} },
-        createdAt: "2026-07-01T00:00:00.000Z",
-        updatedAt: "2026-07-01T00:00:00.000Z",
-      },
-    ],
+    sourceRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(sourceConn), budgetId: "budget-src", accountId: "acct-src", budgetName: "Home", accountName: "Checking" } },
+    targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(target), budgetId: "budget-tgt", accountId: "acct-tgt" } },
+    filter: { version: 1, data: overrides.filterData ?? {} },
+    transform: { version: 1, data: {} },
+    options: { version: 1, data: {} },
   };
 }
 
@@ -90,7 +81,7 @@ function makeTransport(kind: "source" | "target", fx: TransportFixture): ActualB
 function makeStore(flow: SyncFlow | null, opts: { mappings?: SyncMapping[]; persistThrows?: boolean } = {}) {
   const persistPlan = jest.fn(async (plan: SyncPlanResult) => {
     if (opts.persistThrows) throw new Error("db down");
-    return { runId: "run-123", plan };
+    return { runId: "run-123", plan, items: [] };
   });
   const persistFailedRun = jest.fn(async () => "failed-run-1");
   const store: PreviewStore = {

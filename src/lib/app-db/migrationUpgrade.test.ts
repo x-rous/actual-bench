@@ -19,10 +19,11 @@ import {
 import {
   claimAutomation,
   createAutomation,
+  deleteAutomation,
   getAutomation,
   listAutomations,
 } from "./automationRepository";
-import { createAutomationRun, listAutomationRuns } from "./automationRunRepository";
+import { createAutomationRun, getAutomationRun, listAutomationRuns } from "./automationRunRepository";
 import {
   createBackupArtifact,
   getBackupArtifact,
@@ -37,6 +38,9 @@ import {
   savePdfStatementLayout,
 } from "./pdfStatementLayoutRepository";
 import { createPdfLayoutProfile, parsePdfStatementPages } from "@/lib/reconciliation/statement/pdf";
+import { getSyncFlow } from "./syncFlowRepository";
+import { getAllSyncMappingsForFlow } from "./syncMappingRepository";
+import { listSyncFlowRuns } from "./syncRunRepository";
 
 /**
  * Upgrading a database that already holds real work.
@@ -393,6 +397,92 @@ describe("upgrading an existing database", () => {
     }
   });
 
+  it("repairs automation_runs' CASCADE delete on an older database (v30)", () => {
+    // The exact shape every database had before this fix: automation_id
+    // cascades away its runs on delete, contradicting the column's own
+    // "denormalized so a run stays readable after its definition is deleted"
+    // comment. Deleting the automation should orphan the run, not erase it.
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v29-cascade-"));
+    const path = join(root, "metadata.sqlite");
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE automation_definitions (
+        id text PRIMARY KEY,
+        type text NOT NULL,
+        name text NOT NULL,
+        enabled integer NOT NULL DEFAULT 1,
+        execution_mode text NOT NULL DEFAULT 'server',
+        schedule_kind text NOT NULL DEFAULT 'interval',
+        interval_minutes integer,
+        cron_expression text,
+        timezone text NOT NULL DEFAULT 'UTC',
+        target_ref_json text NOT NULL,
+        credential_ref text,
+        config_json text NOT NULL,
+        failure_policy_json text,
+        consecutive_failures integer NOT NULL DEFAULT 0,
+        auto_paused_at text,
+        auto_pause_reason text,
+        running_since text,
+        last_run_at text,
+        last_success_at text,
+        next_run_at text,
+        created_at text NOT NULL,
+        updated_at text NOT NULL
+      );
+      CREATE TABLE automation_runs (
+        id text PRIMARY KEY,
+        automation_id text REFERENCES automation_definitions(id) ON DELETE CASCADE,
+        type text NOT NULL,
+        status text NOT NULL,
+        started_at text NOT NULL,
+        finished_at text,
+        trigger text NOT NULL DEFAULT 'schedule',
+        attempt integer NOT NULL DEFAULT 1,
+        execution_mode text NOT NULL DEFAULT 'server',
+        result_json text,
+        rollup_json text,
+        error_json text
+      );
+    `);
+    const now = "2026-08-25T18:30:55.405Z";
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("schema_version", "29", now);
+    seed
+      .prepare(
+        `INSERT INTO automation_definitions
+           (id, type, name, target_ref_json, config_json, created_at, updated_at)
+         VALUES ('auto-1', 'budget-file-sync', 'Nightly sync', '{"version":1,"data":{}}',
+                 '{"version":1,"data":{"flowId":"flow-1"}}', ?, ?)`
+      )
+      .run(now, now);
+    seed
+      .prepare(
+        `INSERT INTO automation_runs (id, automation_id, type, status, started_at)
+         VALUES ('run-1', 'auto-1', 'budget-file-sync', 'succeeded', ?)`
+      )
+      .run(now);
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+
+      expect(getAutomationRun(db, "run-1")?.automationId).toBe("auto-1");
+
+      deleteAutomation(db, "auto-1");
+
+      // The run survives, orphaned rather than cascaded away.
+      const run = getAutomationRun(db, "run-1");
+      expect(run).not.toBeNull();
+      expect(run?.automationId).toBeNull();
+      expect(run?.type).toBe("budget-file-sync");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("adds backup storage to an older database (v20)", () => {
     // Additive, and nothing reads these tables yet, so an install carrying real
     // work should gain them without losing any of it.
@@ -609,6 +699,374 @@ describe("upgrading an existing database", () => {
       // guarded would fail here with "duplicate column name".
       const db = getAppDb(path);
       expect(getReconciliationSession(db, "sess-old")?.tag).toBeNull();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("collapses sync_flow_legs into sync_flows without touching mappings or run history (v31)", () => {
+    // The exact shape every database had before the collapse: a flow's route
+    // lived in a separate sync_flow_legs row, and sync_mappings/sync_flow_runs
+    // both hold a live FK to sync_flows. This is the scenario the migration's
+    // own comment warns about: naively rebuilding sync_flows by renaming it
+    // would make SQLite repoint those FKs at the renamed-away table, and
+    // dropping that table would then CASCADE-delete every mapping. This test
+    // proves that doesn't happen.
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v29-legs-"));
+    const path = join(root, "metadata.sqlite");
+
+    const seed = new Database(path);
+    seed.pragma("foreign_keys = ON");
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE sync_flows (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        enabled integer NOT NULL DEFAULT 1,
+        flow_type text NOT NULL DEFAULT 'transaction_sync',
+        description text,
+        created_at text NOT NULL,
+        updated_at text NOT NULL
+      );
+      CREATE TABLE sync_flow_legs (
+        id text PRIMARY KEY,
+        flow_id text NOT NULL REFERENCES sync_flows(id) ON DELETE CASCADE,
+        position integer NOT NULL,
+        source_ref_json text NOT NULL,
+        target_ref_json text NOT NULL,
+        filter_json text NOT NULL,
+        transform_json text NOT NULL,
+        options_json text NOT NULL,
+        created_at text NOT NULL,
+        updated_at text NOT NULL
+      );
+      CREATE TABLE sync_flow_runs (
+        id text PRIMARY KEY,
+        flow_id text REFERENCES sync_flows(id) ON DELETE SET NULL,
+        status text NOT NULL,
+        started_at text NOT NULL,
+        finished_at text,
+        summary_json text NOT NULL,
+        error_json text,
+        created_by_trigger text,
+        source_snapshot_summary_json text,
+        target_snapshot_summary_json text,
+        counts_json text
+      );
+      CREATE TABLE sync_flow_run_items (
+        id text PRIMARY KEY,
+        run_id text NOT NULL REFERENCES sync_flow_runs(id) ON DELETE CASCADE,
+        leg_id text REFERENCES sync_flow_legs(id) ON DELETE SET NULL,
+        source_item_ref_json text NOT NULL,
+        target_item_ref_json text,
+        status text NOT NULL,
+        message text,
+        created_at text NOT NULL,
+        flow_id text
+      );
+      CREATE TABLE sync_mappings (
+        id text PRIMARY KEY,
+        flow_id text NOT NULL REFERENCES sync_flows(id) ON DELETE CASCADE,
+        source_connection_fingerprint text NOT NULL,
+        source_budget_id text NOT NULL,
+        source_account_id text,
+        source_entity_type text NOT NULL,
+        source_transaction_id text,
+        source_split_id text,
+        source_item_key text NOT NULL,
+        source_fingerprint text NOT NULL,
+        target_connection_fingerprint text NOT NULL,
+        target_budget_id text NOT NULL,
+        target_account_id text,
+        target_entity_type text NOT NULL,
+        target_transaction_id text,
+        target_item_key text,
+        target_fingerprint text,
+        target_marker text,
+        created_run_id text REFERENCES sync_flow_runs(id) ON DELETE SET NULL,
+        status text NOT NULL,
+        last_seen_at text,
+        last_applied_at text,
+        created_at text NOT NULL,
+        updated_at text NOT NULL,
+        UNIQUE(flow_id, source_item_key)
+      );
+    `);
+    const now = "2026-08-25T18:30:55.405Z";
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("schema_version", "29", now);
+    seed
+      .prepare(
+        `INSERT INTO sync_flows (id, name, enabled, flow_type, description, created_at, updated_at)
+         VALUES ('flow-1', 'Card sync', 1, 'transaction_sync', NULL, ?, ?)`
+      )
+      .run(now, now);
+    seed
+      .prepare(
+        `INSERT INTO sync_flow_legs
+           (id, flow_id, position, source_ref_json, target_ref_json, filter_json, transform_json, options_json, created_at, updated_at)
+         VALUES ('leg-1', 'flow-1', 0, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        '{"version":1,"data":{"accountId":"acct-src"}}',
+        '{"version":1,"data":{"accountId":"acct-tgt"}}',
+        '{"version":1,"data":{}}',
+        '{"version":1,"data":{"amountDirection":"same"}}',
+        '{"version":1,"data":{"reviewPolicy":"manual_preview_required"}}',
+        now,
+        now
+      );
+    seed
+      .prepare(
+        `INSERT INTO sync_flow_runs (id, flow_id, status, started_at, summary_json)
+         VALUES ('run-1', 'flow-1', 'applied', ?, '{"version":1,"data":{}}')`
+      )
+      .run(now);
+    seed
+      .prepare(
+        `INSERT INTO sync_mappings
+           (id, flow_id, source_connection_fingerprint, source_budget_id, source_entity_type,
+            source_item_key, source_fingerprint, target_connection_fingerprint, target_budget_id,
+            target_entity_type, target_transaction_id, status, created_at, updated_at)
+         VALUES ('map-1', 'flow-1', 'src-fp', 'budget-src', 'transaction',
+                 'txn:t1', 'fp1', 'tgt-fp', 'budget-tgt',
+                 'transaction', 'target-1', 'active', ?, ?)`
+      )
+      .run(now, now);
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+
+      // The flow's route survived, backfilled from its one leg.
+      const flow = getSyncFlow(db, "flow-1");
+      expect(flow?.sourceRef.data).toMatchObject({ accountId: "acct-src" });
+      expect(flow?.targetRef.data).toMatchObject({ accountId: "acct-tgt" });
+      expect(flow?.transform.data).toMatchObject({ amountDirection: "same" });
+      expect(flow?.options.data).toMatchObject({ reviewPolicy: "manual_preview_required" });
+
+      // The mapping and run survive intact - not cascaded away.
+      const mappings = getAllSyncMappingsForFlow(db, "flow-1");
+      expect(mappings).toHaveLength(1);
+      expect(mappings[0]?.targetTransactionId).toBe("target-1");
+
+      const runs = listSyncFlowRuns(db, { flowId: "flow-1" });
+      expect(runs).toHaveLength(1);
+      expect(runs[0]?.flowId).toBe("flow-1");
+
+      // sync_flow_legs is gone, and nothing has a dangling FK to it or to
+      // anything else.
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_flow_legs'")
+        .all();
+      expect(tables).toHaveLength(0);
+      expect(db.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to silently drop a flow with more than one leg (v31)", () => {
+    // The UI never created a second leg, but createSyncFlow's old validation
+    // never enforced that - a direct API call could have. The migration must
+    // fail loudly rather than quietly keep only one and discard the other.
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v29-multileg-"));
+    const path = join(root, "metadata.sqlite");
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE sync_flows (
+        id text PRIMARY KEY, name text NOT NULL, enabled integer NOT NULL DEFAULT 1,
+        flow_type text NOT NULL DEFAULT 'transaction_sync', description text,
+        created_at text NOT NULL, updated_at text NOT NULL
+      );
+      CREATE TABLE sync_flow_legs (
+        id text PRIMARY KEY, flow_id text NOT NULL, position integer NOT NULL,
+        source_ref_json text NOT NULL, target_ref_json text NOT NULL, filter_json text NOT NULL,
+        transform_json text NOT NULL, options_json text NOT NULL,
+        created_at text NOT NULL, updated_at text NOT NULL
+      );
+      CREATE TABLE sync_flow_runs (id text PRIMARY KEY, flow_id text, status text NOT NULL, started_at text NOT NULL, summary_json text NOT NULL);
+      CREATE TABLE sync_flow_run_items (id text PRIMARY KEY, run_id text NOT NULL, leg_id text, source_item_ref_json text NOT NULL, status text NOT NULL, created_at text NOT NULL);
+      CREATE TABLE sync_mappings (id text PRIMARY KEY, flow_id text NOT NULL);
+    `);
+    const now = "2026-08-25T18:30:55.405Z";
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("schema_version", "29", now);
+    seed
+      .prepare(`INSERT INTO sync_flows (id, name, created_at, updated_at) VALUES ('flow-1', 'Two-leg flow', ?, ?)`)
+      .run(now, now);
+    for (const position of [0, 1]) {
+      seed
+        .prepare(
+          `INSERT INTO sync_flow_legs
+             (id, flow_id, position, source_ref_json, target_ref_json, filter_json, transform_json, options_json, created_at, updated_at)
+           VALUES (?, 'flow-1', ?, '{"version":1,"data":{}}', '{"version":1,"data":{}}', '{"version":1,"data":{}}', '{"version":1,"data":{}}', '{"version":1,"data":{}}', ?, ?)`
+        )
+        .run(`leg-${position}`, position, now, now);
+    }
+    seed.close();
+
+    try {
+      expect(() => getAppDb(path)).toThrow(/more than one leg/);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("clears out the already_synced run items an install has accumulated (v33)", () => {
+    // What a real install looks like after an unattended flow has been ticking
+    // for a while: the overwhelming majority of run items are already_synced,
+    // re-persisted every run, and nothing ever reads them back.
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v33-already-synced-"));
+    const path = join(root, "metadata.sqlite");
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE sync_flows (
+        id text PRIMARY KEY, name text NOT NULL, enabled integer NOT NULL DEFAULT 1,
+        flow_type text NOT NULL DEFAULT 'transaction_sync', description text,
+        source_ref_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        target_ref_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        filter_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        transform_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        options_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        created_at text NOT NULL, updated_at text NOT NULL
+      );
+      CREATE TABLE sync_flow_runs (
+        id text PRIMARY KEY, flow_id text REFERENCES sync_flows(id) ON DELETE SET NULL,
+        status text NOT NULL, started_at text NOT NULL, finished_at text,
+        summary_json text NOT NULL, error_json text, created_by_trigger text,
+        source_snapshot_summary_json text, target_snapshot_summary_json text, counts_json text
+      );
+      CREATE TABLE sync_flow_run_items (
+        id text PRIMARY KEY,
+        run_id text NOT NULL REFERENCES sync_flow_runs(id) ON DELETE CASCADE,
+        source_item_ref_json text NOT NULL, target_item_ref_json text,
+        status text NOT NULL, message text, created_at text NOT NULL,
+        flow_id text, classification text
+      );
+    `);
+    const now = "2026-09-01T00:00:00.000Z";
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("schema_version", "32", now);
+    seed
+      .prepare(`INSERT INTO sync_flows (id, name, created_at, updated_at) VALUES ('flow-1', 'Card sync', ?, ?)`)
+      .run(now, now);
+    seed
+      .prepare(
+        `INSERT INTO sync_flow_runs (id, flow_id, status, started_at, summary_json)
+         VALUES ('run-1', 'flow-1', 'applied', ?, '{"version":1,"data":{}}')`
+      )
+      .run(now);
+    const insertItem = seed.prepare(
+      `INSERT INTO sync_flow_run_items (id, run_id, flow_id, source_item_ref_json, status, created_at, classification)
+       VALUES (?, 'run-1', 'flow-1', '{}', 'planned', ?, ?)`
+    );
+    for (let i = 0; i < 50; i += 1) insertItem.run(`synced-${i}`, now, "already_synced");
+    insertItem.run("new-1", now, "new");
+    insertItem.run("blocked-1", now, "blocked");
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+
+      const remaining = db
+        .prepare("SELECT classification FROM sync_flow_run_items ORDER BY id")
+        .all() as Array<{ classification: string }>;
+      // Only the already_synced backlog goes; everything someone might still
+      // act on or look at stays exactly where it was.
+      expect(remaining.map((row) => row.classification)).toEqual(["blocked", "new"]);
+      // The run itself is untouched - its counts envelope, not these rows, is
+      // what the UI reports.
+      expect(db.prepare("SELECT COUNT(*) AS n FROM sync_flow_runs").get<{ n: number }>()?.n).toBe(1);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs a database an earlier v31 build left with a dangling leg_id FK (v32)", () => {
+    // Reproduces a real bad state: an earlier build of the legs-collapse
+    // migration dropped sync_flow_legs before also dropping
+    // sync_flow_run_items.leg_id, then recorded schema_version 31. That
+    // database is stuck forever with a column whose FK target table doesn't
+    // exist, which SQLite rejects inserting into (even NULL) once
+    // foreign_keys is on - this is exactly the "no such table: sync_flow_legs"
+    // error a real sync run hit.
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v31-dangling-leg-"));
+    const path = join(root, "metadata.sqlite");
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE sync_flows (
+        id text PRIMARY KEY, name text NOT NULL, enabled integer NOT NULL DEFAULT 1,
+        flow_type text NOT NULL DEFAULT 'transaction_sync', description text,
+        source_ref_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        target_ref_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        filter_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        transform_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        options_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        created_at text NOT NULL, updated_at text NOT NULL
+      );
+      CREATE TABLE sync_flow_runs (
+        id text PRIMARY KEY, flow_id text REFERENCES sync_flows(id) ON DELETE SET NULL,
+        status text NOT NULL, started_at text NOT NULL, finished_at text,
+        summary_json text NOT NULL, error_json text,
+        created_by_trigger text, source_snapshot_summary_json text,
+        target_snapshot_summary_json text, counts_json text
+      );
+      CREATE TABLE sync_flow_run_items (
+        id text PRIMARY KEY,
+        run_id text NOT NULL REFERENCES sync_flow_runs(id) ON DELETE CASCADE,
+        leg_id text REFERENCES sync_flow_legs(id) ON DELETE SET NULL,
+        source_item_ref_json text NOT NULL,
+        target_item_ref_json text,
+        status text NOT NULL,
+        message text,
+        created_at text NOT NULL,
+        flow_id text
+      );
+    `);
+    const now = "2026-08-25T18:30:55.405Z";
+    // sync_flow_legs was already dropped by the buggy build - never recreated here.
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("schema_version", "31", now);
+    seed
+      .prepare(
+        `INSERT INTO sync_flows (id, name, created_at, updated_at) VALUES ('flow-1', 'Card sync', ?, ?)`
+      )
+      .run(now, now);
+    seed
+      .prepare(
+        `INSERT INTO sync_flow_runs (id, flow_id, status, started_at, summary_json)
+         VALUES ('run-1', 'flow-1', 'applied', ?, '{"version":1,"data":{}}')`
+      )
+      .run(now);
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+
+      expect(db.pragma("table_info(sync_flow_run_items)")).not.toContainEqual(
+        expect.objectContaining({ name: "leg_id" })
+      );
+      expect(db.pragma("foreign_key_check")).toEqual([]);
+
+      // The exact failure mode this reproduces: inserting a new run item
+      // (even with no leg_id ever set) used to throw "no such table:
+      // sync_flow_legs" once the referenced table was gone.
+      db.pragma("foreign_keys = ON");
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO sync_flow_run_items (id, run_id, source_item_ref_json, status, created_at)
+             VALUES ('item-1', 'run-1', '{}', 'planned', ?)`
+          )
+          .run(now)
+      ).not.toThrow();
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

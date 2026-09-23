@@ -28,15 +28,9 @@ function makeFlow(): SyncFlow {
   return {
     id: "flow-1", name: "Cross-budget", enabled: true, flowType: "transaction_sync",
     description: null, createdAt: "2026-07-01T00:00:00.000Z", updatedAt: "2026-07-01T00:00:00.000Z",
-    legs: [
-      {
-        id: "leg-1", flowId: "flow-1", position: 0,
-        sourceRef: { version: 1, data: { connectionFingerprint: "src-fp", budgetId: "budget-src", accountId: "acct-src", budgetName: "Home", accountName: "Checking" } },
-        targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(targetConn), budgetId: "budget-tgt", accountId: "acct-tgt" } },
-        filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options: { version: 1, data: {} },
-        createdAt: "2026-07-01T00:00:00.000Z", updatedAt: "2026-07-01T00:00:00.000Z",
-      },
-    ],
+    sourceRef: { version: 1, data: { connectionFingerprint: "src-fp", budgetId: "budget-src", accountId: "acct-src", budgetName: "Home", accountName: "Checking" } },
+    targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(targetConn), budgetId: "budget-tgt", accountId: "acct-tgt" } },
+    filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options: { version: 1, data: {} },
   };
 }
 
@@ -49,7 +43,7 @@ function runItem(overrides: Partial<SyncFlowRunItem> = {}): SyncFlowRunItem {
     ...(overrides as { payloadData?: JsonObject }).payloadData,
   };
   return {
-    id: "item-1", runId: "run-1", flowId: "flow-1", legId: null, sequence: 0,
+    id: "item-1", runId: "run-1", flowId: "flow-1", sequence: 0,
     sourceItemRef: { version: 1, data: {} }, targetItemRef: null,
     status: "planned", message: null,
     sourceEntityType: "transaction", sourceItemKey: "txn:t1",

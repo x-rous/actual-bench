@@ -306,6 +306,7 @@ export async function runBackup(
     const anomalies = detectBackupAnomalies({
       content: prepared.verification.content,
       sizeBytes: prepared.plaintext.byteLength,
+      kind,
       previous,
       previousContent: contentOf(previous),
     });

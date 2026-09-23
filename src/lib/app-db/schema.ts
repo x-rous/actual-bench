@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS sync_mappings (
 );
 `;
 
+// Historical (v1) shape only - reused by the already-shipped version-1
+// migration, so never edited in place (AGENTS.md: "Never rewrite a migration
+// that may have shipped"). Every install creates this table and then
+// immediately drops it again via applySyncFlowLegsCollapse (migrations.ts
+// v31): a flow's route lives directly on sync_flows now.
 export const SYNC_FLOW_LEG_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS sync_flow_legs (
   id text PRIMARY KEY,
@@ -78,6 +83,8 @@ export const SYNC_FLOW_RUN_ITEM_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS sync_flow_run_items (
   id text PRIMARY KEY,
   run_id text NOT NULL REFERENCES sync_flow_runs(id) ON DELETE CASCADE,
+  -- Historical (v1) column, dropped by applySyncFlowLegsCollapse (migrations.ts
+  -- v31) once sync_flow_legs itself is gone. Never written by any caller.
   leg_id text REFERENCES sync_flow_legs(id) ON DELETE SET NULL,
   source_item_ref_json text NOT NULL,
   target_item_ref_json text,
@@ -627,12 +634,18 @@ CREATE TABLE IF NOT EXISTS automation_definitions (
 );
 `;
 
+// Historical (v18) shape - ON DELETE CASCADE despite the denormalization
+// below, a bug fixed by applyAutomationRunsDeleteSetNull (migrations.ts v30)
+// with its own table SQL. Never edited in place: this constant is reused by
+// the already-shipped v18 migration entry, and rewriting a shipped migration
+// makes a fresh install's replay diverge from what real databases went
+// through (AGENTS.md: "Never rewrite a migration that may have shipped").
 export const AUTOMATION_RUN_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS automation_runs (
   id text PRIMARY KEY,
-  automation_id text REFERENCES automation_definitions(id) ON DELETE CASCADE,
   -- Denormalized so a run stays readable (and renderable by its type) after its
   -- definition is deleted.
+  automation_id text REFERENCES automation_definitions(id) ON DELETE CASCADE,
   type text NOT NULL,
   status text NOT NULL,
   started_at text NOT NULL,

@@ -1,18 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import {
   AlertTriangle,
   CircleCheck,
   CircleDot,
   CirclePause,
   CircleX,
+  History,
   Loader2,
   Pause,
   Play,
   Trash2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   SortableHeader,
   type SortDirection,
@@ -237,6 +239,21 @@ export function AutomationsTable({
                       Run now
                     </Button>
 
+                    {/* A link, styled as a button - not the Button component.
+                        Base UI's Button puts role="button" on whatever it
+                        renders, which is its job, but this one navigates: it
+                        should announce as a link and behave like one (open in
+                        a new tab, copy address). `buttonVariants` is exported
+                        for exactly this. */}
+                    <Link
+                      href={`/automations/runs?automation=${automation.id}`}
+                      className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+                      aria-label={`View run history for ${automation.name}`}
+                      title="View run history"
+                    >
+                      <History aria-hidden />
+                    </Link>
+
                     {paused ? (
                       <Button variant="outline" size="sm" onClick={() => onResume(automation.id)}>
                         Resume
@@ -259,14 +276,15 @@ export function AutomationsTable({
                     {/* Deleting is how an automation actually goes away. Pause
                         is not: a backup rule that has been deleted leaves its
                         automation behind, paused with a reason, and without
-                        this there was no way to clear it. */}
+                        this there was no way to clear it. The runs it already
+                        recorded outlive it (schema v30). */}
                     <Button
                       variant="ghost"
                       size="sm"
                       className="text-destructive"
                       onClick={() => onDelete(automation)}
                       aria-label={`Delete ${automation.name}`}
-                      title="Delete this automation. Its run history goes with it."
+                      title="Delete this automation. Its past runs stay in the run history."
                     >
                       <Trash2 aria-hidden />
                     </Button>

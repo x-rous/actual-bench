@@ -40,6 +40,7 @@ describe("noticing a backup that got suspiciously smaller", () => {
       detectBackupAnomalies({
         content: { transactions: 5000, accounts: 12 },
         sizeBytes: 2_000_000,
+        kind: "budget",
         previous: null,
         previousContent: null,
       })
@@ -52,6 +53,7 @@ describe("noticing a backup that got suspiciously smaller", () => {
       detectBackupAnomalies({
         content: { transactions: 5120, accounts: 12 },
         sizeBytes: 2_050_000,
+        kind: "budget",
         previous,
         previousContent: contentOf(previous),
       })
@@ -62,6 +64,7 @@ describe("noticing a backup that got suspiciously smaller", () => {
       detectBackupAnomalies({
         content: { transactions: 4900, accounts: 12 },
         sizeBytes: 1_990_000,
+        kind: "budget",
         previous,
         previousContent: contentOf(previous),
       })
@@ -73,6 +76,7 @@ describe("noticing a backup that got suspiciously smaller", () => {
     const findings = detectBackupAnomalies({
       content: { transactions: 2500, accounts: 12 },
       sizeBytes: 1_900_000,
+      kind: "budget",
       previous,
       previousContent: contentOf(previous),
     });
@@ -89,6 +93,7 @@ describe("noticing a backup that got suspiciously smaller", () => {
     const findings = detectBackupAnomalies({
       content: { transactions: 5000, accounts: 11 },
       sizeBytes: 2_000_000,
+      kind: "budget",
       previous,
       previousContent: contentOf(previous),
     });
@@ -96,19 +101,38 @@ describe("noticing a backup that got suspiciously smaller", () => {
     expect(findings[0]).toMatch(/1 fewer account/);
   });
 
-  it("catches a truncated export by size, even with no counts to compare", () => {
-    // The only signal available for a copy of Bench's own database, and the
-    // backstop when an export is too broken to count anything.
-    const previous = previousArtifact({ kind: "app-db", verification: null });
+  it("catches a truncated budget export by size, with no counts to compare", () => {
+    // The backstop when an export is too broken to count anything.
+    const previous = previousArtifact({ kind: "budget", verification: null });
     const findings = detectBackupAnomalies({
       content: {},
       sizeBytes: 400_000,
+      kind: "budget",
       previous,
       previousContent: contentOf(previous),
     });
 
     expect(findings[0]).toMatch(/less than half the size/);
     expect(findings[0]).toMatch(/cut short/);
+  });
+
+  it("does not call a shrunken copy of Bench's own database damaged", () => {
+    // `VACUUM INTO` either writes a complete database or throws, so there is no
+    // truncated outcome to catch here - and a snapshot getting smaller is what
+    // run retention and incremental vacuum are *for*. Failing it meant the
+    // backup was reported as damaged exactly when housekeeping had worked,
+    // telling the user their export was cut short when nothing of the sort had
+    // happened. (Real case: 140 MB down to 9.3 MB after a run-history purge.)
+    const previous = previousArtifact({ kind: "app-db", verification: null, sizeBytes: 140_000_000 });
+    const findings = detectBackupAnomalies({
+      content: {},
+      sizeBytes: 9_300_000,
+      kind: "app-db",
+      previous,
+      previousContent: contentOf(previous),
+    });
+
+    expect(findings).toEqual([]);
   });
 
   it("reads a content summary off an artifact, and copes when there is none", () => {

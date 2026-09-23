@@ -241,15 +241,39 @@ export function targetEntityDisplay(sourceName: string | null, flags: string[], 
 
 export type PreviewTile = { key: string; label: string; value: number; tone?: "new" | "warn" | "bad"; filter: PreviewFilter };
 
-/** The summary tiles for a run, worded for its data type. */
-export function previewTiles(rows: PreviewRow[], kind: SyncKind): PreviewTile[] {
+/**
+ * True when the "Already synced" tile has a real number but no rows to show
+ * for it.
+ *
+ * Those items are counted on the run and never stored (see persistPlan.ts), so
+ * a run reopened from history - or opened in another browser - has the total
+ * and nothing behind it. Filtering to them would then present an empty table
+ * beneath a tile reading 46, which looks like a fault rather than the deliberate
+ * tradeoff it is. The caller uses this to say so on the tile instead.
+ */
+export function isAlreadySyncedCountOnly(rows: PreviewRow[], reportedAlreadySynced: number): boolean {
+  return reportedAlreadySynced > 0 && !rows.some((row) => row.group === "already_synced");
+}
+
+/** The summary tiles for a run, worded for its data type.
+ *
+ * `reportedAlreadySynced`, when given, overrides the row-counted value for
+ * the "Already synced" tile. Unlike the other tiles, that class has no
+ * persisted row to count once a run is reloaded from history - already-synced
+ * items are never written to the database (see persistPlan.ts), so counting
+ * `rows` there would silently read back 0. The run's own stored summary
+ * carries the real total for free; this is the one tile that should always
+ * prefer it over rows.length.
+ */
+export function previewTiles(rows: PreviewRow[], kind: SyncKind, reportedAlreadySynced?: number): PreviewTile[] {
   const tiles = tileCounts(rows);
+  const alreadySynced = reportedAlreadySynced ?? tiles.alreadySynced;
   const matched = rows.filter((r) => r.classification === "target_name_match").length;
   if (kind === "transaction") {
     return [
       { key: "new", label: "New - ready to sync", value: tiles.new, tone: "new", filter: "new" },
       { key: "needs_review", label: "Needs review", value: tiles.needsReview, tone: "warn", filter: "needs_review" },
-      { key: "already", label: "Already synced", value: tiles.alreadySynced, filter: "already_synced" },
+      { key: "already", label: "Already synced", value: alreadySynced, filter: "already_synced" },
       { key: "blocked", label: "Blocked", value: tiles.blocked, tone: "bad", filter: "blocked" },
     ];
   }
@@ -257,7 +281,7 @@ export function previewTiles(rows: PreviewRow[], kind: SyncKind): PreviewTile[] 
   const base: PreviewTile[] = [
     { key: "new", label: `New ${noun}`, value: tiles.new, tone: "new", filter: "new" },
     { key: "name_match", label: "Match on target", value: matched, filter: "marker_match" },
-    { key: "already", label: "Already synced", value: tiles.alreadySynced, filter: "already_synced" },
+    { key: "already", label: "Already synced", value: alreadySynced, filter: "already_synced" },
   ];
   // Only categories can be blocked (on ambiguous group placement); payees can't.
   if (kind === "category") base.push({ key: "blocked", label: "Needs a group", value: tiles.blocked, tone: "bad", filter: "blocked" });

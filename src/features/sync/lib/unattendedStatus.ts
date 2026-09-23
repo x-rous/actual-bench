@@ -5,8 +5,26 @@
  * both surfaces render identical decisions and it is trivially testable.
  */
 
-/** Interval floor - mirrors the scheduler's MIN_UNATTENDED_INTERVAL_MINUTES. */
-export const MIN_UNATTENDED_INTERVAL_MINUTES = 15;
+import { MIN_INTERVAL_MINUTES } from "@/lib/automation/schedule";
+
+/**
+ * Interval floor. The automation engine's own, not a copy: an unattended flow
+ * is run by an automation, so a different floor here would only mean predicting
+ * a next-run time the engine will not honour.
+ */
+export const MIN_UNATTENDED_INTERVAL_MINUTES = MIN_INTERVAL_MINUTES;
+
+/**
+ * A health pause the automation engine has applied to the automation running
+ * this flow, or null when it has not paused it.
+ *
+ * This is read, never mirrored into the flow. The engine owns server-side
+ * pausing; a flow-level copy would be a second source of truth that the "resume"
+ * button on either page would then have to keep in step.
+ */
+export type EnginePause = {
+  reason: string | null;
+};
 
 export type UnattendedStatusInput = {
   reviewPolicy: string;
@@ -17,6 +35,12 @@ export type UnattendedStatusInput = {
   bothHttp: boolean;
   /** Both budgets' credentials are stored in the server vault. */
   bothEnrolled: boolean;
+  /**
+   * Set when the engine has health-paused this flow's automation. Without it
+   * the Sync page read a health-paused flow as armed and healthy, quietly
+   * showing a next-run time for a run that was never going to happen.
+   */
+  enginePause?: EnginePause | null;
   lastRunAtMs: number | null;
   intervalMinutes: number;
   nowMs: number;
@@ -44,9 +68,16 @@ export function computeUnattendedStatus(i: UnattendedStatusInput): UnattendedSta
   if (i.reviewPolicy !== "auto_sync_unattended") {
     return { isUnattended: false, paused: false, armed: false, reason: null, nextRunAtMs: null };
   }
-  const paused = i.autoPaused || !i.flowEnabled;
+  const paused = i.autoPaused || !i.flowEnabled || Boolean(i.enginePause);
   let reason: string | null = null;
-  if (paused) reason = "Paused - re-enable the flow to resume";
+  // An engine pause is reported first, and in the engine's own words: it is the
+  // only kind of pause the Sync page cannot undo, so "re-enable the flow" would
+  // be the wrong instruction as well as the wrong explanation.
+  if (i.enginePause && i.flowEnabled && !i.autoPaused) {
+    reason = i.enginePause.reason
+      ? `Paused by automation: ${i.enginePause.reason}`
+      : "Paused by automation - resume it on the Automations page";
+  } else if (paused) reason = "Paused - re-enable the flow to resume";
   else if (!i.vaultEnabled) reason = "Server vault not configured (set SYNC_VAULT_KEY)";
   else if (!i.bothHttp) reason = "Both source and target must be HTTP API connections";
   else if (!i.bothEnrolled) reason = "Store credentials to arm unattended sync";

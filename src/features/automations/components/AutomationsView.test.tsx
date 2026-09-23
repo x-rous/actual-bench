@@ -114,6 +114,17 @@ describe("AutomationsView", () => {
     expect(screen.getByText(/3 added/)).toBeInTheDocument();
   });
 
+  it("links each row to its own filtered run history", async () => {
+    renderView();
+
+    await screen.findByText("Household → Joint");
+
+    expect(screen.getByRole("link", { name: /view run history for household/i })).toHaveAttribute(
+      "href",
+      "/automations/runs?automation=auto-1"
+    );
+  });
+
   it("states on every row whether the automation runs with Bench closed", async () => {
     mockedApi.listAutomations.mockResolvedValue({
       automations: [
@@ -279,17 +290,22 @@ describe("AutomationsView", () => {
     expect(await screen.findByText("Every 30 minutes")).toBeInTheDocument();
   });
 
-  it("can delete an automation, and says what goes with it", async () => {
+  it("can delete an automation, and says what survives it", async () => {
     // Pause is not removal: a backup rule that has been deleted leaves its
     // automation behind, paused with a reason, and there was no way to clear
     // it.
+    //
+    // What the confirmation promises has to match what the schema does: since
+    // v30 made `automation_runs.automation_id` ON DELETE SET NULL, the runs
+    // outlive the automation, so telling someone their history goes with it
+    // would be talking them out of a delete on false grounds.
     renderView();
     await screen.findByText("Household → Joint");
 
     fireEvent.click(screen.getByRole("button", { name: /delete household/i }));
 
     expect(await screen.findByText('Delete "Household → Joint"?')).toBeInTheDocument();
-    expect(screen.getByText(/run history goes with it/)).toBeInTheDocument();
+    expect(screen.getByText(/past runs stay in the run history/)).toBeInTheDocument();
     expect(mockedApi.deleteAutomation).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));

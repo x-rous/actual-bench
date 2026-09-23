@@ -12,6 +12,7 @@ jest.mock("../hooks/useSyncData");
 jest.mock("../hooks/useSyncOrchestration");
 // The interval scheduler starts real timers; stub it out for component tests.
 jest.mock("../hooks/useSyncScheduler", () => ({ useSyncScheduler: jest.fn() }));
+jest.mock("../hooks/useFlowAutomations", () => ({ useFlowAutomations: () => new Map() }));
 
 const conn1: BrowserApiConnection = { id: "c1", label: "Home", mode: "browser-api", baseUrl: "https://s.example.com", serverPassword: "pw", budgetSyncId: "b-src" };
 const conn2: BrowserApiConnection = { id: "c2", label: "Family", mode: "browser-api", baseUrl: "https://t.example.com", serverPassword: "pw", budgetSyncId: "b-tgt" };
@@ -19,19 +20,15 @@ const conn2: BrowserApiConnection = { id: "c2", label: "Family", mode: "browser-
 function makeFlow(): SyncFlow {
   return {
     id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null, createdAt: "", updatedAt: "",
-    legs: [{
-      id: "leg-1", flowId: "flow-1", position: 0,
-      sourceRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(conn1), budgetId: "b-src", budgetName: "Home", accountId: "acct-src", accountName: "Checking" } },
-      targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(conn2), budgetId: "b-tgt", budgetName: "Family", accountId: "acct-tgt", accountName: "Joint" } },
-      filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options: { version: 1, data: {} },
-      createdAt: "", updatedAt: "",
-    }],
+    sourceRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(conn1), budgetId: "b-src", budgetName: "Home", accountId: "acct-src", accountName: "Checking" } },
+    targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(conn2), budgetId: "b-tgt", budgetName: "Family", accountId: "acct-tgt", accountName: "Joint" } },
+    filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options: { version: 1, data: {} },
   };
 }
 
 function itemFixture(overrides: Partial<SyncFlowRunItem>): SyncFlowRunItem {
   return {
-    id: "i", runId: "run-1", flowId: "flow-1", legId: null, sequence: 0,
+    id: "i", runId: "run-1", flowId: "flow-1", sequence: 0,
     sourceItemRef: { version: 1, data: { itemKey: "txn:t1", source: { date: "2026-07-01", amount: -1250, payeeName: "Coffee Bar", categoryName: "Dining" } } },
     targetItemRef: null, status: "planned", message: null,
     sourceEntityType: "transaction", sourceItemKey: "txn:t1", sourceTransactionId: "t1", sourceSplitId: null, sourceFingerprint: "fp",
@@ -55,7 +52,7 @@ const runFixture = {
 };
 
 const previewMutate = jest.fn((_args, opts?: { onSuccess?: (r: unknown) => void }) =>
-  opts?.onSuccess?.({ status: "draft_preview", runId: "run-1", flowId: "flow-1", counts: {}, summary: {}, warnings: [], errors: [] })
+  opts?.onSuccess?.({ status: "draft_preview", runId: "run-1", flowId: "flow-1", counts: {}, summary: {}, warnings: [], errors: [], items: runFixture.items })
 );
 const applyMutate = jest.fn((_args, opts?: { onSuccess?: (r: unknown) => void }) =>
   opts?.onSuccess?.({ status: "applied", runId: "run-1", counts: { selected: 1, applied: 1, appliedWithWarnings: 0, repaired: 0, skipped: 0, failed: 0 }, items: [] })
@@ -187,6 +184,78 @@ describe("SyncView", () => {
     // rows are present but their checkboxes are disabled
     const rows = screen.getAllByTestId("preview-row");
     expect(within(rows[0]).getByRole("checkbox")).toBeDisabled();
+  });
+
+  it("does not show a live preview's items under a different run opened from history", async () => {
+    // The live preview response carries rows the database never stored, so it
+    // is preferred over the DB read - but only for the run it came from. Held
+    // loose, it was used for whichever run was on screen, so opening an older
+    // draft preview after running a live one listed (and exported) the live
+    // run's items under the older run's heading.
+    setup([conn1, conn2]);
+    const historical = {
+      run: { ...runFixture.run, id: "run-2", startedAt: "2026-06-01T00:00:00.000Z" },
+      items: [itemFixture({ id: "historical-1", sourceItemKey: "txn:historical" })],
+    };
+    (dataHook.useSyncRun as jest.Mock).mockImplementation((id: string | null) => ({
+      data: id === "run-2" ? historical : id ? runFixture : undefined,
+      refetch: jest.fn(),
+    }));
+    (dataHook.useFlowRuns as jest.Mock).mockImplementation((flowId: string | null) => ({
+      data: flowId ? [historical.run] : [],
+      refetch: jest.fn(),
+    }));
+
+    render(<SyncView />);
+    fireEvent.click(screen.getByText("Card sync"));
+
+    const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
+    await waitFor(() => expect(previewButtons[0]).toBeEnabled());
+    fireEvent.click(previewButtons[0]);
+    expect(await screen.findByText("Planned changes")).toBeInTheDocument();
+    expect(screen.getAllByTestId("preview-row")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    fireEvent.click(await screen.findByText("Preview only"));
+
+    // run-2 holds exactly one item; the live run's two must not carry over.
+    await waitFor(() => expect(screen.getAllByTestId("preview-row")).toHaveLength(1));
+  });
+
+  it("shows what the database holds when history opens the run just previewed", async () => {
+    // Same run, so the ids match - but history has to show the stored rows
+    // regardless. The audit CSV is exported from these, and an export that
+    // depends on whose session is looking is not an audit.
+    setup([conn1, conn2]);
+    previewMutate.mockImplementationOnce((_args, opts?: { onSuccess?: (r: unknown) => void }) =>
+      opts?.onSuccess?.({
+        status: "draft_preview",
+        runId: "run-1",
+        flowId: "flow-1",
+        counts: {},
+        summary: {},
+        warnings: [],
+        errors: [],
+        // The extra row the database deliberately never stored.
+        items: [...runFixture.items, itemFixture({ id: "synced-1", classification: "already_synced" })],
+      })
+    );
+
+    render(<SyncView />);
+    fireEvent.click(screen.getByText("Card sync"));
+    const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
+    await waitFor(() => expect(previewButtons[0]).toBeEnabled());
+    fireEvent.click(previewButtons[0]);
+
+    // The live preview sees all three, which is the whole point of holding them.
+    expect(await screen.findByText("Planned changes")).toBeInTheDocument();
+    expect(screen.getAllByTestId("preview-row")).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    fireEvent.click(await screen.findByText("Preview only"));
+
+    // Opened from history, the same run reads back as the database has it.
+    await waitFor(() => expect(screen.getAllByTestId("preview-row")).toHaveLength(2));
   });
 
   it("creates a reverse flow with source and target swapped from the header", async () => {

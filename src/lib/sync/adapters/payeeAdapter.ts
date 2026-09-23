@@ -8,6 +8,7 @@ import {
   toPlanResult,
 } from "./entitySupport";
 import {
+  describeSyncError,
   registerSyncKindAdapter,
   SyncKindError,
   type AdapterApplyContext,
@@ -58,7 +59,7 @@ export const payeeAdapter: SyncKindAdapter = {
     try {
       payees = (await transport.getPayees()).map((p) => ({ id: p.id, name: p.name }));
     } catch (err) {
-      throw new SyncKindError("source_load_failed", err instanceof Error ? err.message : "Failed to read source payees.");
+      throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to read source payees."));
     }
     const materialized: MaterializedPayees = { payees };
     return { materialized, stats: { scanned: payees.length, generatedExcluded: 0, expandedCount: payees.length, keptCount: payees.length } };
@@ -73,7 +74,7 @@ export const payeeAdapter: SyncKindAdapter = {
       }
       return { byName } satisfies TargetPayees;
     } catch (err) {
-      throw new SyncKindError("target_load_failed", err instanceof Error ? err.message : "Failed to read target payees.");
+      throw new SyncKindError("target_load_failed", describeSyncError(err, "Failed to read target payees."));
     }
   },
 

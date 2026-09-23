@@ -11,6 +11,7 @@ import {
 import { expandSourceTransactions, type SyncSourceItem } from "../sourceItems";
 import { planExpandedItems } from "../syncPlanner";
 import {
+  describeSyncError,
   registerSyncKindAdapter,
   SyncKindError,
   type AdapterApplyContext,
@@ -121,7 +122,7 @@ export const transactionAdapter: SyncKindAdapter = {
         endDate: filter.endDate ?? undefined,
       });
     } catch (err) {
-      throw new SyncKindError("source_load_failed", err instanceof Error ? err.message : "Failed to read source transactions.");
+      throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to read source transactions."));
     }
     const scanned = rawSource.length;
     const nonGenerated = filterSourceTransactions(rawSource, filter);
@@ -140,7 +141,7 @@ export const transactionAdapter: SyncKindAdapter = {
     try {
       return await loadTargetSnapshot(transport, config, filter);
     } catch (err) {
-      throw new SyncKindError("target_load_failed", err instanceof Error ? err.message : "Failed to read target lookup data.");
+      throw new SyncKindError("target_load_failed", describeSyncError(err, "Failed to read target lookup data."));
     }
   },
 
@@ -297,7 +298,7 @@ export const transactionAdapter: SyncKindAdapter = {
           targetFingerprint: applied ? hashTargetFields(applied) : null,
         });
       } catch (err) {
-        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: err instanceof Error ? err.message : "Update failed." });
+        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: describeSyncError(err, "Update failed.") });
       }
     }
     return results;
@@ -334,7 +335,7 @@ export const transactionAdapter: SyncKindAdapter = {
         await transport.deleteTransactionForSync({ transactionId: input.targetId });
         results.push({ itemId: input.itemId, outcome: "deleted", targetId: input.targetId });
       } catch (err) {
-        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: err instanceof Error ? err.message : "Delete failed." });
+        results.push({ itemId: input.itemId, outcome: "failed", targetId: input.targetId, message: describeSyncError(err, "Delete failed.") });
       }
     }
     return results;

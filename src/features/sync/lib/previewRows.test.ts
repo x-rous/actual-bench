@@ -4,6 +4,7 @@ import {
   formatAmount,
   isReviewRequired,
   matchesPreviewFilter,
+  isAlreadySyncedCountOnly,
   previewFilters,
   previewTiles,
   reviewQueueCount,
@@ -19,7 +20,7 @@ import type { SyncFlowRunItem } from "@/lib/app-db/types";
 
 function item(overrides: Partial<SyncFlowRunItem> = {}): SyncFlowRunItem {
   return {
-    id: "i1", runId: "r1", flowId: "f1", legId: null, sequence: 0,
+    id: "i1", runId: "r1", flowId: "f1", sequence: 0,
     sourceItemRef: {
       version: 1,
       data: { itemKey: "txn:t1", source: { date: "2026-07-01", amount: -1250, payeeName: "Coffee Bar", categoryName: "Dining", notes: "x" } },
@@ -176,6 +177,36 @@ describe("kind-aware rendering (RD-055 UI)", () => {
     // Entity filters drop transaction-only groups.
     expect(previewFilters("payee").map((f) => f.key)).not.toContain("duplicate");
     expect(previewFilters("transaction").map((f) => f.key)).toContain("duplicate");
+  });
+
+  it("prefers the reported already-synced total over counting rows", () => {
+    // already_synced items are never persisted (persistPlan.ts), so a run
+    // reloaded from history has none of those rows even though the run's own
+    // stored summary still knows the real count.
+    const rows = [toPreviewRow(item({ classification: "new" }))];
+    const withoutReported = previewTiles(rows, "transaction").find((t) => t.key === "already");
+    expect(withoutReported?.value).toBe(0);
+
+    const withReported = previewTiles(rows, "transaction", 54).find((t) => t.key === "already");
+    expect(withReported?.value).toBe(54);
+  });
+
+  it("knows when the already-synced total has no rows behind it", () => {
+    // A run reopened from history: the stored summary still knows 54 were
+    // already in sync, but those rows were never written, so offering the tile
+    // as a filter would open an empty table under the number 54.
+    const historical = [toPreviewRow(item({ classification: "new" }))];
+    expect(isAlreadySyncedCountOnly(historical, 54)).toBe(true);
+
+    // The live preview that produced them still has them in hand.
+    const live = [
+      toPreviewRow(item({ classification: "new" })),
+      toPreviewRow(item({ classification: "already_synced" })),
+    ];
+    expect(isAlreadySyncedCountOnly(live, 54)).toBe(false);
+
+    // And a run that genuinely had none is not a special case at all.
+    expect(isAlreadySyncedCountOnly(historical, 0)).toBe(false);
   });
 });
 

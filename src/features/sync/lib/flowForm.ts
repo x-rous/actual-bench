@@ -319,7 +319,7 @@ export function flowToFormState(
   form.name = flow.name;
   form.enabled = flow.enabled;
   form.flowType = flow.flowType === "payee_sync" || flow.flowType === "category_sync" ? flow.flowType : "transaction_sync";
-  const options = (flow.legs[0]?.options.data ?? {}) as Record<string, unknown>;
+  const options = (flow.options.data ?? {}) as Record<string, unknown>;
   form.entity = {
     defaultGroupName: typeof options.defaultGroupName === "string" ? options.defaultGroupName : "",
     createMissingGroup: options.createMissingGroup === true,

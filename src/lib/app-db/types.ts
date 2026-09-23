@@ -184,19 +184,6 @@ export type SyncConnectionReference = {
   accountName?: string;
 };
 
-export type SyncFlowLeg = {
-  id: string;
-  flowId: string;
-  position: number;
-  sourceRef: JsonEnvelope;
-  targetRef: JsonEnvelope;
-  filter: JsonEnvelope;
-  transform: JsonEnvelope;
-  options: JsonEnvelope;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type SyncFlow = {
   id: string;
   name: string;
@@ -205,7 +192,11 @@ export type SyncFlow = {
   description: string | null;
   createdAt: string;
   updatedAt: string;
-  legs: SyncFlowLeg[];
+  sourceRef: JsonEnvelope;
+  targetRef: JsonEnvelope;
+  filter: JsonEnvelope;
+  transform: JsonEnvelope;
+  options: JsonEnvelope;
 };
 
 export type SyncFlowRun = {
@@ -226,7 +217,6 @@ export type SyncFlowRunItem = {
   id: string;
   runId: string;
   flowId: string | null;
-  legId: string | null;
   /** Stable render order within a run (planner output order); null on legacy rows. */
   sequence: number | null;
   sourceItemRef: JsonEnvelope;

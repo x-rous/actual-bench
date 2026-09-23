@@ -144,11 +144,16 @@ function reconcileInTransaction(db: SqliteDatabase, policies: BackupPolicy[]): B
 
   // A rule that has been deleted leaves an automation with nothing to run.
   //
-  // What happens to it depends on whether it has history. Deleting an
-  // automation cascades to its runs, so removing one that has run would erase
-  // the record of backups that actually happened - the copies are kept, and
-  // their explanation should be too. One that never ran has nothing to lose and
-  // is removed, because a paused row that has never done anything is clutter.
+  // What happens to it depends on whether it has history. One that never ran
+  // has nothing to say and is removed, because a paused row that has never done
+  // anything is clutter. One that has run is kept, paused with a reason, so the
+  // Automations page can still explain why backups that people can see in the
+  // history stopped happening.
+  //
+  // (Deleting it would no longer erase those runs - `automation_id` became ON
+  // DELETE SET NULL in schema v30, so they would survive as orphans. Keeping
+  // the paused row is now a choice about explaining the stop, not a workaround
+  // for losing the record.)
   //
   // Confirmed against the database rather than against the list passed in: a
   // transiently empty read would otherwise delete every backup automation in

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   filterCount,
   formatAmount,
+  isAlreadySyncedCountOnly,
   matchesPreviewFilter,
   previewFilters,
   previewTiles,
@@ -106,7 +107,8 @@ export function PreviewPanel(props: PreviewPanelProps) {
 
   if (!summary) return null;
 
-  const tiles = previewTiles(rows, kind);
+  const tiles = previewTiles(rows, kind, summary.alreadySynced);
+  const alreadySyncedCountOnly = isAlreadySyncedCountOnly(rows, summary.alreadySynced);
   // Only show a filter chip when it would actually match something; "All" always
   // stays. Keeps the chip row focused on the classes a run really produced.
   const filters = previewFilters(kind).filter((f) => f.key === "all" || filterCount(rows, f.key) > 0);
@@ -139,7 +141,19 @@ export function PreviewPanel(props: PreviewPanelProps) {
           {/* Result tiles - worded for the data type; click to filter the table */}
           <div className={cn("grid grid-cols-2 gap-2", tiles.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4")}>
             {tiles.map((tile) => (
-              <Tile key={tile.key} value={tile.value} label={tile.label} tone={tile.tone} active={filter === tile.filter} onClick={() => setFilter(filter === tile.filter ? "all" : tile.filter)} />
+              <Tile
+                key={tile.key}
+                value={tile.value}
+                label={tile.label}
+                tone={tile.tone}
+                active={filter === tile.filter}
+                onClick={() => setFilter(filter === tile.filter ? "all" : tile.filter)}
+                note={
+                  tile.filter === "already_synced" && alreadySyncedCountOnly
+                    ? "These were already in sync, so this run had nothing to do for them. Bench keeps the total but not a row per item, which is what stops run history growing without end."
+                    : undefined
+                }
+              />
             ))}
           </div>
 
@@ -403,7 +417,39 @@ function PreviewFreshness({ previewedAt, readOnly }: { previewedAt: string | nul
   );
 }
 
-function Tile({ value, label, tone, active, onClick }: { value: number; label: string; tone?: "new" | "warn" | "bad"; active: boolean; onClick: () => void }) {
+/**
+ * `note` marks a tile whose number is real but whose rows are not there to show
+ * - the count comes from the run's stored summary, the individual items were
+ * never written. Such a tile is not a button: filtering to it would open an
+ * empty table under a tile reading 46, which reads as a bug rather than as a
+ * deliberate tradeoff.
+ */
+function Tile({ value, label, tone, active, onClick, note }: { value: number; label: string; tone?: "new" | "warn" | "bad"; active: boolean; onClick: () => void; note?: string }) {
+  const body = (
+    <>
+      <div className={cn("text-xl font-bold tabular-nums", tone === "new" && "text-green-600 dark:text-green-400", tone === "warn" && "text-amber-600 dark:text-amber-400", tone === "bad" && "text-destructive")}>{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+    </>
+  );
+
+  if (note) {
+    return (
+      <div
+        title={note}
+        className={cn(
+          "rounded-md border bg-background px-3 py-2.5 text-left",
+          tone ? TILE_BORDER[tone] : "border-border"
+        )}
+      >
+        {body}
+        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+          <Info className="h-3 w-3 shrink-0" aria-hidden />
+          <span>Count only</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -415,8 +461,7 @@ function Tile({ value, label, tone, active, onClick }: { value: number; label: s
         active && "ring-2 ring-ring"
       )}
     >
-      <div className={cn("text-xl font-bold tabular-nums", tone === "new" && "text-green-600 dark:text-green-400", tone === "warn" && "text-amber-600 dark:text-amber-400", tone === "bad" && "text-destructive")}>{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+      {body}
     </button>
   );
 }
