@@ -31,6 +31,7 @@ import {
   rememberBudgetEncryption,
   revealServerSecret,
 } from "@/features/connect/vaultApi";
+import { buildInstanceFromRevealed } from "@/features/connect/reconnectFromVault";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
@@ -345,17 +346,7 @@ export function useConnectForm({
   // straight to the budget — no budget picker. Errors propagate to the caller.
   async function openRememberedBudget(server: ServerCredentialMeta, budget: RememberedBudget) {
     const revealed = await revealServerSecret(server.serverFingerprint, budget.budgetSyncId);
-    const base = {
-      id: generateId(),
-      label: budget.name || deriveLabel(server.baseUrl),
-      baseUrl: server.baseUrl,
-      budgetSyncId: budget.budgetSyncId,
-      ...(revealed.secret.encryptionPassword ? { encryptionPassword: revealed.secret.encryptionPassword } : {}),
-    };
-    const instance: ConnectionInstance =
-      revealed.mode === "browser-api"
-        ? { ...base, mode: "browser-api", serverPassword: revealed.secret.serverPassword ?? "" }
-        : { ...base, mode: "http-api", apiKey: revealed.secret.apiKey ?? "" };
+    const instance = buildInstanceFromRevealed(revealed, budget.budgetSyncId, budget.name);
     reconnectRemembered(instance);
   }
 
