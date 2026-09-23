@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CalendarClock, CheckCircle2, Database, HardDrive, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import type { AppDbHealth } from "@/lib/app-db/types";
+import type { AppDbStorageUsage } from "@/lib/app-db/storageUsage";
 
 async function fetchAppDbHealth(): Promise<AppDbHealth> {
   const response = await fetch("/api/app-db/health", { cache: "no-store" });
@@ -14,6 +16,15 @@ async function fetchAppDbHealth(): Promise<AppDbHealth> {
     throw new Error(data.error ?? `App DB health request failed (${response.status})`);
   }
   return data;
+}
+
+async function fetchAppDbStorage(): Promise<AppDbStorageUsage> {
+  const response = await fetch("/api/app-db/storage", { cache: "no-store" });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `App DB storage request failed (${response.status})`);
+  }
+  return (await response.json()) as AppDbStorageUsage;
 }
 
 type AutomationHealthSummary = {
@@ -81,6 +92,125 @@ function HealthStatus({ health }: { health: AppDbHealth }) {
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+/**
+ * Loaded on request, not with the page: counting every table is a scan, and
+ * App health polls. Rows rather than per-table bytes because SQLite does not
+ * report per-table size without the dbstat extension, and the row count is the
+ * number that actually explains a growing file here anyway.
+ */
+function StorageUsagePanel() {
+  const [requested, setRequested] = useState(false);
+  const query = useQuery({
+    queryKey: ["app-db-storage"],
+    queryFn: fetchAppDbStorage,
+    enabled: requested,
+  });
+
+  if (!requested) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
+        <p className="text-xs text-muted-foreground">
+          See how large this database is and which tables hold the rows.
+        </p>
+        <Button size="sm" variant="outline" onClick={() => setRequested(true)}>
+          <HardDrive aria-hidden /> Check size
+        </Button>
+      </div>
+    );
+  }
+
+  if (query.isPending) {
+    return (
+      <div className="border-t border-border/60 px-4 py-3 text-sm text-muted-foreground">Measuring…</div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <div className="border-t border-border/60 px-4 py-3 text-sm text-destructive">
+        {query.error instanceof Error ? query.error.message : "Could not measure the database"}
+      </div>
+    );
+  }
+
+  const usage = query.data;
+  const populated = usage.tables.filter((table) => table.rows > 0);
+
+  return (
+    <>
+      {/* Data first, because it is the number people are actually after, and
+          the one that matches a downloaded backup. Leading with bytes-on-disk
+          meant a file holding 9 MB of data announcing itself as 310 MB. */}
+      <DetailRow label="Data" value={formatBytes(usage.dataBytes)} />
+      <DetailRow
+        label="Taking up on disk"
+        value={
+          <span>
+            {formatBytes(usage.totalBytes)}
+            <span className="text-muted-foreground">
+              {" "}
+              ({formatBytes(usage.fileBytes)} file
+              {usage.walBytes > 0 && <> + {formatBytes(usage.walBytes)} write-ahead log</>})
+            </span>
+          </span>
+        }
+      />
+      <DetailRow
+        label="Reclaimable"
+        value={
+          usage.freePages === 0 ? (
+            "None - the file is about as small as its contents allow"
+          ) : (
+            <span>
+              {formatBytes(usage.freeBytes)} freed by deleted rows, not yet returned to the disk.
+              <span className="text-muted-foreground">
+                {" "}
+                {usage.autoVacuum === "incremental"
+                  ? "Reclaimed as automations run, and on the next restart."
+                  : "Reclaimed on the next restart."}
+              </span>
+            </span>
+          )
+        }
+      />
+      <DetailRow
+        label="Rows by table"
+        value={
+          populated.length === 0 ? (
+            "Empty"
+          ) : (
+            <ul className="grid gap-0.5">
+              {populated.map((table) => (
+                <li key={table.name} className="flex justify-between gap-4 tabular-nums">
+                  <code className="text-xs">{table.name}</code>
+                  <span>{table.rows.toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      />
+      <div className="flex items-center justify-end border-t border-border/60 px-4 py-2">
+        <Button size="sm" variant="ghost" onClick={() => void query.refetch()} disabled={query.isFetching}>
+          <RefreshCw aria-hidden className={query.isFetching ? "animate-spin" : undefined} /> Re-check
+        </Button>
+      </div>
+    </>
+  );
+}
+
 function AppDatabaseCard({ health }: { health: AppDbHealth }) {
   return (
     <section className="rounded-md border border-border bg-background shadow-sm">
@@ -106,6 +236,7 @@ function AppDatabaseCard({ health }: { health: AppDbHealth }) {
         <DetailRow label="Migrated" value={formatDate(health.lastMigratedAt)} />
         <DetailRow label="Runtime" value={health.runtime === "vercel" ? "Vercel / non-durable filesystem" : "Node.js self-hosted"} />
         <DetailRow label="Persistence" value={health.durable ? "Persistent when /data is mounted" : "Not durable without external storage"} />
+        {health.ready && <StorageUsagePanel />}
       </dl>
 
       {health.error && (

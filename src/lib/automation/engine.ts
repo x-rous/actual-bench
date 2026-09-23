@@ -501,6 +501,13 @@ export async function runEngineTick(
     // auto_vacuum isn't INCREMENTAL yet or there is nothing pending; bounded
     // per tick so a large backlog reclaims gradually instead of stalling one.
     db.pragma("incremental_vacuum(1000)");
+    // ...and settle it onto the disk. In WAL mode both the pruning above and
+    // the vacuum land in the write-ahead log, not the database file: without a
+    // checkpoint the file never shrinks by a byte and the WAL grows without
+    // bound instead, which is how an install ends up with a 160 MB log in front
+    // of 9 MB of data. TRUNCATE is what returns the log's own space too.
+    // Reports busy and changes nothing if a reader is mid-flight.
+    db.pragma("wal_checkpoint(TRUNCATE)");
   } catch (error) {
     logger.warn(`[automation] incremental vacuum failed: ${error instanceof Error ? error.message : String(error)}`);
   }

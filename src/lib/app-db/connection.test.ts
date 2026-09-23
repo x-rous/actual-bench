@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -179,6 +179,63 @@ describe("app DB connection", () => {
       const reopened = getAppDb(dbPath);
       const mode = reopened.pragma("auto_vacuum") as Array<{ auto_vacuum: number }>;
       expect(mode[0]?.auto_vacuum).toBe(2);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reclaims the file after a bulk delete, even though the mode is already set", () => {
+    // The case that matters and the original version missed: a big delete
+    // happening *after* incremental auto_vacuum was switched on. Returning
+    // early whenever the mode was set meant exactly the deletes worth
+    // reclaiming were the ones that never got compacted.
+    const { root, dbPath } = tempDbPath();
+    try {
+      const db = getAppDb(dbPath);
+      db.exec("CREATE TABLE bulk (id INTEGER PRIMARY KEY, blob TEXT)");
+      const insert = db.prepare("INSERT INTO bulk (blob) VALUES (?)");
+      const payload = "x".repeat(2000);
+      db.transaction(() => {
+        for (let i = 0; i < 20000; i += 1) insert.run(payload);
+      })();
+      db.exec("DELETE FROM bulk");
+      const bloated = statSync(dbPath).size;
+      expect(bloated).toBeGreaterThan(20_000_000);
+
+      // Reopen: the mode is already incremental, so the old code did nothing.
+      resetAppDbForTests();
+      const reopened = getAppDb(dbPath);
+
+      // A VACUUM alone would not have shrunk the file either - in WAL mode it
+      // writes into the log, and only a checkpoint puts it on disk.
+      expect(statSync(dbPath).size).toBeLessThan(bloated / 2);
+      const free = reopened.pragma("freelist_count") as Array<{ freelist_count: number }>;
+      expect(free[0]?.freelist_count).toBe(0);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves no write-ahead log sitting in front of the data", () => {
+    // A WAL is not free space: it grows to the size of whatever passed through
+    // it and, unchecked by a checkpoint, outgrew the database it fronted.
+    const { root, dbPath } = tempDbPath();
+    try {
+      const db = getAppDb(dbPath);
+      db.exec("CREATE TABLE bulk (id INTEGER PRIMARY KEY, blob TEXT)");
+      const insert = db.prepare("INSERT INTO bulk (blob) VALUES (?)");
+      db.transaction(() => {
+        for (let i = 0; i < 5000; i += 1) insert.run("x".repeat(2000));
+      })();
+
+      resetAppDbForTests();
+      getAppDb(dbPath);
+
+      const wal = join(`${dbPath}-wal`);
+      const walBytes = existsSync(wal) ? statSync(wal).size : 0;
+      expect(walBytes).toBe(0);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
