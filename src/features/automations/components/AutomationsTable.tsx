@@ -14,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   SortableHeader,
   type SortDirection,
@@ -239,15 +239,20 @@ export function AutomationsTable({
                       Run now
                     </Button>
 
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      render={<Link href={`/automations/runs?automation=${automation.id}`} />}
+                    {/* A link, styled as a button - not the Button component.
+                        Base UI's Button puts role="button" on whatever it
+                        renders, which is its job, but this one navigates: it
+                        should announce as a link and behave like one (open in
+                        a new tab, copy address). `buttonVariants` is exported
+                        for exactly this. */}
+                    <Link
+                      href={`/automations/runs?automation=${automation.id}`}
+                      className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
                       aria-label={`View run history for ${automation.name}`}
                       title="View run history"
                     >
                       <History aria-hidden />
-                    </Button>
+                    </Link>
 
                     {paused ? (
                       <Button variant="outline" size="sm" onClick={() => onResume(automation.id)}>

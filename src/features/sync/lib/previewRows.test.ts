@@ -4,6 +4,7 @@ import {
   formatAmount,
   isReviewRequired,
   matchesPreviewFilter,
+  isAlreadySyncedCountOnly,
   previewFilters,
   previewTiles,
   reviewQueueCount,
@@ -188,6 +189,24 @@ describe("kind-aware rendering (RD-055 UI)", () => {
 
     const withReported = previewTiles(rows, "transaction", 54).find((t) => t.key === "already");
     expect(withReported?.value).toBe(54);
+  });
+
+  it("knows when the already-synced total has no rows behind it", () => {
+    // A run reopened from history: the stored summary still knows 54 were
+    // already in sync, but those rows were never written, so offering the tile
+    // as a filter would open an empty table under the number 54.
+    const historical = [toPreviewRow(item({ classification: "new" }))];
+    expect(isAlreadySyncedCountOnly(historical, 54)).toBe(true);
+
+    // The live preview that produced them still has them in hand.
+    const live = [
+      toPreviewRow(item({ classification: "new" })),
+      toPreviewRow(item({ classification: "already_synced" })),
+    ];
+    expect(isAlreadySyncedCountOnly(live, 54)).toBe(false);
+
+    // And a run that genuinely had none is not a special case at all.
+    expect(isAlreadySyncedCountOnly(historical, 0)).toBe(false);
   });
 });
 

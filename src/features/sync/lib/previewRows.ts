@@ -241,6 +241,20 @@ export function targetEntityDisplay(sourceName: string | null, flags: string[], 
 
 export type PreviewTile = { key: string; label: string; value: number; tone?: "new" | "warn" | "bad"; filter: PreviewFilter };
 
+/**
+ * True when the "Already synced" tile has a real number but no rows to show
+ * for it.
+ *
+ * Those items are counted on the run and never stored (see persistPlan.ts), so
+ * a run reopened from history - or opened in another browser - has the total
+ * and nothing behind it. Filtering to them would then present an empty table
+ * beneath a tile reading 46, which looks like a fault rather than the deliberate
+ * tradeoff it is. The caller uses this to say so on the tile instead.
+ */
+export function isAlreadySyncedCountOnly(rows: PreviewRow[], reportedAlreadySynced: number): boolean {
+  return reportedAlreadySynced > 0 && !rows.some((row) => row.group === "already_synced");
+}
+
 /** The summary tiles for a run, worded for its data type.
  *
  * `reportedAlreadySynced`, when given, overrides the row-counted value for
