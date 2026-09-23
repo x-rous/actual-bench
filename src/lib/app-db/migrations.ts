@@ -460,9 +460,19 @@ function applySyncFlowLegsCollapse(db: SqliteDatabase): void {
       .all() as Array<{ flow_id: string; n: number }>;
     if (multiLeg.length > 0) {
       const ids = multiLeg.map((row) => row.flow_id).join(", ");
+      const quoted = multiLeg.map((row) => `'${row.flow_id.replace(/'/g, "''")}'`).join(", ");
+      // Refusing to open is the same posture as the "schema is newer than this
+      // app" check above: a data problem nobody can see is worse than a stop.
+      // But a stop has to be actionable, and the app is down at this point, so
+      // the way out cannot be anywhere inside it - the statements go here.
       throw new AppDbUnavailableError(
-        `Cannot collapse sync_flow_legs: flow(s) ${ids} have more than one leg. ` +
-          "This was never reachable through the UI; inspect these flows manually before upgrading."
+        `Cannot collapse sync_flow_legs: flow(s) ${ids} have more than one leg, and only the first would survive. ` +
+          "This was never reachable through the UI, so it means a flow was created by calling the API directly. " +
+          "To resolve it, open the database with the sqlite3 CLI and inspect them:\n" +
+          `  SELECT * FROM sync_flow_legs WHERE flow_id IN (${quoted}) ORDER BY flow_id, position;\n` +
+          "Keep whichever leg each flow should actually use (the upgrade keeps the lowest position) and delete the rest, e.g.:\n" +
+          `  DELETE FROM sync_flow_legs WHERE flow_id IN (${quoted}) AND position > 0;\n` +
+          "Bench starts normally once every flow has at most one."
       );
     }
 

@@ -96,7 +96,12 @@ export function SyncView() {
   // persisted to the database (e.g. already_synced). Reopening this same run
   // later from history reads it back from the DB and will not include them -
   // this is the only place this session sees them.
-  const [livePreviewItems, setLivePreviewItems] = useState<SyncFlowRunItem[] | null>(null);
+  //
+  // Kept with the run id it came from, and only ever used for that run. Held
+  // on its own, it was shown for whichever run happened to be on screen: open
+  // a historical draft preview after running a live one and the panel listed -
+  // and exported - the live run's items under the historical run's heading.
+  const [livePreview, setLivePreview] = useState<{ runId: string; items: SyncFlowRunItem[] } | null>(null);
   const [previewError, setPreviewError] = useState<DryRunError | null>(null);
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -129,10 +134,13 @@ export function SyncView() {
   // apply never touched them and nobody needs their status post-apply.
   // History view, and any later reload of the same run, falls back to
   // runQuery outright and simply won't show those rows - the agreed tradeoff.
-  const preferLiveItems = isLivePreview && livePreviewItems !== null && PRE_APPLY_RUN_STATUSES.has(runQuery.data?.run.status);
+  const preferLiveItems =
+    livePreview !== null &&
+    livePreview.runId === activeRunId &&
+    PRE_APPLY_RUN_STATUSES.has(runQuery.data?.run.status);
   const rows = useMemo(
-    () => (preferLiveItems ? livePreviewItems! : (runQuery.data?.items ?? [])).map(toPreviewRow),
-    [preferLiveItems, livePreviewItems, runQuery.data]
+    () => (preferLiveItems ? livePreview!.items : (runQuery.data?.items ?? [])).map(toPreviewRow),
+    [preferLiveItems, livePreview, runQuery.data]
   );
 
   // Only a fresh, still-draft preview is appliable; runs opened from history are read-only.
@@ -175,7 +183,7 @@ export function SyncView() {
     setRunId(null);
     setHistoryRunId(null);
     setIsLivePreview(false);
-    setLivePreviewItems(null);
+    setLivePreview(null);
     setPreviewError(null);
     setApplyResult(null);
     setActionError(null);
@@ -266,7 +274,7 @@ export function SyncView() {
           if (result.status === "draft_preview") {
             setRunId(result.runId);
             setIsLivePreview(true);
-            setLivePreviewItems(result.items);
+            setLivePreview({ runId: result.runId, items: result.items });
           } else {
             setPreviewError(result.error);
           }

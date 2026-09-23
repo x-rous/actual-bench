@@ -186,6 +186,42 @@ describe("SyncView", () => {
     expect(within(rows[0]).getByRole("checkbox")).toBeDisabled();
   });
 
+  it("does not show a live preview's items under a different run opened from history", async () => {
+    // The live preview response carries rows the database never stored, so it
+    // is preferred over the DB read - but only for the run it came from. Held
+    // loose, it was used for whichever run was on screen, so opening an older
+    // draft preview after running a live one listed (and exported) the live
+    // run's items under the older run's heading.
+    setup([conn1, conn2]);
+    const historical = {
+      run: { ...runFixture.run, id: "run-2", startedAt: "2026-06-01T00:00:00.000Z" },
+      items: [itemFixture({ id: "historical-1", sourceItemKey: "txn:historical" })],
+    };
+    (dataHook.useSyncRun as jest.Mock).mockImplementation((id: string | null) => ({
+      data: id === "run-2" ? historical : id ? runFixture : undefined,
+      refetch: jest.fn(),
+    }));
+    (dataHook.useFlowRuns as jest.Mock).mockImplementation((flowId: string | null) => ({
+      data: flowId ? [historical.run] : [],
+      refetch: jest.fn(),
+    }));
+
+    render(<SyncView />);
+    fireEvent.click(screen.getByText("Card sync"));
+
+    const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
+    await waitFor(() => expect(previewButtons[0]).toBeEnabled());
+    fireEvent.click(previewButtons[0]);
+    expect(await screen.findByText("Planned changes")).toBeInTheDocument();
+    expect(screen.getAllByTestId("preview-row")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    fireEvent.click(await screen.findByText("Preview only"));
+
+    // run-2 holds exactly one item; the live run's two must not carry over.
+    await waitFor(() => expect(screen.getAllByTestId("preview-row")).toHaveLength(1));
+  });
+
   it("creates a reverse flow with source and target swapped from the header", async () => {
     setup([conn1, conn2]);
     render(<SyncView />);

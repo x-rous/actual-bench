@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { getAppDb, resolveAppDbPath } from "./connection";
+import { COMPACT_FREE_PAGE_FRACTION, getAppDb, resolveAppDbPath } from "./connection";
 import { errorMessage } from "./errors";
 import type { SqliteDatabase } from "./types";
 
@@ -52,6 +52,13 @@ export type AppDbStorageUsage = {
    */
   freePages: number;
   freeBytes: number;
+  /**
+   * Whether restarting would actually rebuild the file, rather than only
+   * settling the log. Reported rather than inferred by the caller: the
+   * threshold lives with the code that acts on it, so the page cannot promise
+   * a reclaim that will not happen.
+   */
+  compactsOnRestart: boolean;
   autoVacuum: "none" | "full" | "incremental" | "unknown";
   /** Largest first, so the reason for the size is the first row. */
   tables: TableUsage[];
@@ -122,6 +129,8 @@ export function getAppDbStorageUsage(dbPath = resolveAppDbPath()): AppDbStorageU
     pageCount,
     freePages,
     freeBytes: freePages * pageSize,
+    compactsOnRestart:
+      autoVacuumMode !== 2 || (pageCount > 0 && freePages / pageCount > COMPACT_FREE_PAGE_FRACTION),
     autoVacuum: AUTO_VACUUM_MODES[autoVacuumMode] ?? "unknown",
     tables: tableUsage(db),
     checkedAt: new Date().toISOString(),

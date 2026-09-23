@@ -139,8 +139,14 @@ function StorageUsagePanel() {
 
   if (query.isError) {
     return (
-      <div className="border-t border-border/60 px-4 py-3 text-sm text-destructive">
-        {query.error instanceof Error ? query.error.message : "Could not measure the database"}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-4 py-3">
+        <span className="text-sm text-destructive">
+          {query.error instanceof Error ? query.error.message : "Could not measure the database"}
+        </span>
+        {/* Without this the only way to try again was to reload the page. */}
+        <Button size="sm" variant="outline" onClick={() => void query.refetch()} disabled={query.isFetching}>
+          <RefreshCw aria-hidden className={query.isFetching ? "animate-spin" : undefined} /> Try again
+        </Button>
       </div>
     );
   }
@@ -177,9 +183,11 @@ function StorageUsagePanel() {
               {formatBytes(usage.freeBytes)} freed by deleted rows, not yet returned to the disk.
               <span className="text-muted-foreground">
                 {" "}
-                {usage.autoVacuum === "incremental"
-                  ? "Reclaimed as automations run, and on the next restart."
-                  : "Reclaimed on the next restart."}
+                {usage.compactsOnRestart
+                  ? "Enough to be worth rebuilding the file, which happens on the next restart."
+                  : usage.autoVacuum === "incremental"
+                    ? "Reclaimed gradually as automations run."
+                    : "Reused as the database grows again."}
               </span>
             </span>
           )

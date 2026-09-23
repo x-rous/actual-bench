@@ -66,7 +66,7 @@ export function checkAppDbStorage(dbPath = resolveAppDbPath()): StorageCheck {
  * A full rebuild is worth its cost once this much of the file is dead space.
  * Below it, incremental vacuum on the engine tick keeps up on its own.
  */
-const COMPACT_FREE_PAGE_FRACTION = 0.25;
+export const COMPACT_FREE_PAGE_FRACTION = 0.25;
 
 /**
  * In WAL mode a `VACUUM` does not shrink anything by itself.
