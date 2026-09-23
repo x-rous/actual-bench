@@ -49,7 +49,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 32;
+export const LATEST_SCHEMA_VERSION = 33;
 
 type Migration = {
   version: number;
@@ -400,7 +400,24 @@ const MIGRATIONS: readonly Migration[] = [
     // may have shipped, and it wouldn't rerun for a DB already at 31 anyway).
     apply: applySyncFlowRunItemsLegIdRepair,
   },
+  {
+    version: 33,
+    // Clears out the `already_synced` run items real installs have already
+    // accumulated - six figures of them on an unattended flow that has been
+    // ticking for a while. Nothing reads them back: apply never revisits an
+    // already-synced item, and the count the UI shows comes from the run's own
+    // `counts` envelope, not from these rows. New runs no longer write them
+    // (see buildEphemeralSyncFlowRunItem in syncRunRepository.ts); this is the
+    // backlog that predates that.
+    apply: applyAlreadySyncedRunItemPurge,
+  },
 ];
+
+function applyAlreadySyncedRunItemPurge(db: SqliteDatabase): void {
+  if (!tableExists(db, "sync_flow_run_items")) return;
+  if (!columnExists(db, "sync_flow_run_items", "classification")) return;
+  db.exec("DELETE FROM sync_flow_run_items WHERE classification = 'already_synced'");
+}
 
 function applySyncFlowRunItemsLegIdRepair(db: SqliteDatabase): void {
   if (!tableExists(db, "sync_flow_run_items")) return;

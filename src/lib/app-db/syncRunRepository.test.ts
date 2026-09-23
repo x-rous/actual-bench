@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "./connection";
-import { createSyncFlow } from "./syncFlowRepository";
+import { createSyncFlow, deleteSyncFlow } from "./syncFlowRepository";
 import {
   createSyncFlowRun,
   createSyncFlowRunItem,
@@ -119,6 +119,37 @@ describe("sync run repository", () => {
       expect(listSyncFlowRuns(db, { flowId: quiet.id })[0]?.id).toBe(quietRun.id);
       // Items cascade with their run.
       expect(listSyncFlowRunItems(db, { runId: survivingBusyRun.id })).toHaveLength(1);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prunes the runs of a deleted flow, which nothing else can reach", () => {
+    const { root, db } = tempDb();
+    try {
+      const flow = createSyncFlow(db, {
+        name: "Doomed flow",
+        legs: [{ sourceRef: envelope, targetRef: envelope, filter: envelope, transform: envelope }],
+      });
+      for (let i = 0; i < 5; i += 1) {
+        const run = createSyncFlowRun(db, { flowId: flow.id, startedAt: `2026-08-25T0${i}:00:00.000Z` });
+        createSyncFlowRunItem(db, { runId: run.id, flowId: flow.id, sourceItemRef: envelope });
+      }
+
+      // flow_id is ON DELETE SET NULL, so deleting the flow orphans its runs.
+      // They are unreachable from the Sync page, which lists runs per flow, so
+      // if retention skips them too they stay in the database forever - which
+      // is how an install ends up with six figures of run items it cannot see.
+      deleteSyncFlow(db, flow.id);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM sync_flow_runs").get<{ n: number }>()?.n).toBe(5);
+
+      const deleted = pruneSyncFlowRuns(db, 2);
+
+      expect(deleted).toBe(3);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM sync_flow_runs").get<{ n: number }>()?.n).toBe(2);
+      // And their items went with them.
+      expect(db.prepare("SELECT COUNT(*) AS n FROM sync_flow_run_items").get<{ n: number }>()?.n).toBe(2);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

@@ -916,6 +916,78 @@ describe("upgrading an existing database", () => {
     }
   });
 
+  it("clears out the already_synced run items an install has accumulated (v33)", () => {
+    // What a real install looks like after an unattended flow has been ticking
+    // for a while: the overwhelming majority of run items are already_synced,
+    // re-persisted every run, and nothing ever reads them back.
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v33-already-synced-"));
+    const path = join(root, "metadata.sqlite");
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE sync_flows (
+        id text PRIMARY KEY, name text NOT NULL, enabled integer NOT NULL DEFAULT 1,
+        flow_type text NOT NULL DEFAULT 'transaction_sync', description text,
+        source_ref_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        target_ref_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        filter_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        transform_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        options_json text NOT NULL DEFAULT '{"version":1,"data":{}}',
+        created_at text NOT NULL, updated_at text NOT NULL
+      );
+      CREATE TABLE sync_flow_runs (
+        id text PRIMARY KEY, flow_id text REFERENCES sync_flows(id) ON DELETE SET NULL,
+        status text NOT NULL, started_at text NOT NULL, finished_at text,
+        summary_json text NOT NULL, error_json text, created_by_trigger text,
+        source_snapshot_summary_json text, target_snapshot_summary_json text, counts_json text
+      );
+      CREATE TABLE sync_flow_run_items (
+        id text PRIMARY KEY,
+        run_id text NOT NULL REFERENCES sync_flow_runs(id) ON DELETE CASCADE,
+        source_item_ref_json text NOT NULL, target_item_ref_json text,
+        status text NOT NULL, message text, created_at text NOT NULL,
+        flow_id text, classification text
+      );
+    `);
+    const now = "2026-09-01T00:00:00.000Z";
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("schema_version", "32", now);
+    seed
+      .prepare(`INSERT INTO sync_flows (id, name, created_at, updated_at) VALUES ('flow-1', 'Card sync', ?, ?)`)
+      .run(now, now);
+    seed
+      .prepare(
+        `INSERT INTO sync_flow_runs (id, flow_id, status, started_at, summary_json)
+         VALUES ('run-1', 'flow-1', 'applied', ?, '{"version":1,"data":{}}')`
+      )
+      .run(now);
+    const insertItem = seed.prepare(
+      `INSERT INTO sync_flow_run_items (id, run_id, flow_id, source_item_ref_json, status, created_at, classification)
+       VALUES (?, 'run-1', 'flow-1', '{}', 'planned', ?, ?)`
+    );
+    for (let i = 0; i < 50; i += 1) insertItem.run(`synced-${i}`, now, "already_synced");
+    insertItem.run("new-1", now, "new");
+    insertItem.run("blocked-1", now, "blocked");
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+
+      const remaining = db
+        .prepare("SELECT classification FROM sync_flow_run_items ORDER BY id")
+        .all() as Array<{ classification: string }>;
+      // Only the already_synced backlog goes; everything someone might still
+      // act on or look at stays exactly where it was.
+      expect(remaining.map((row) => row.classification)).toEqual(["blocked", "new"]);
+      // The run itself is untouched - its counts envelope, not these rows, is
+      // what the UI reports.
+      expect(db.prepare("SELECT COUNT(*) AS n FROM sync_flow_runs").get<{ n: number }>()?.n).toBe(1);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("repairs a database an earlier v31 build left with a dangling leg_id FK (v32)", () => {
     // Reproduces a real bad state: an earlier build of the legs-collapse
     // migration dropped sync_flow_legs before also dropping

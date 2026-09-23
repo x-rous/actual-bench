@@ -246,7 +246,6 @@ export function buildEphemeralSyncFlowRunItem(input: CreateSyncFlowRunItemInput)
     id,
     runId: input.runId,
     flowId: input.flowId ?? null,
-    legId: input.legId ?? null,
     sequence: input.sequence ?? null,
     sourceItemRef: normalizeEnvelope(input.sourceItemRef, "sourceItemRef"),
     targetItemRef: normalizeOptionalEnvelope(input.targetItemRef, "targetItemRef"),
@@ -478,6 +477,14 @@ export function updateSyncFlowRunItem(
  * Per flow rather than globally, for the same reason `pruneAutomationRuns`
  * (automationRunRepository.ts) is: a flow ticking every 15 minutes should not
  * age out the only handful of runs an occasional flow has ever had.
+ *
+ * Runs whose flow has been deleted (`flow_id` is NULL, because the column is
+ * ON DELETE SET NULL) are one more group, not an exemption. Skipping them -
+ * which an ordinary `=` join does silently, since NULL = NULL is never true -
+ * left every run of every deleted flow, and all of its items, in the database
+ * permanently: unreachable from the Sync page, which lists runs per flow, and
+ * beyond the reach of the only thing that cleans this table up. `IS` is
+ * SQLite's NULL-safe comparison, so they age out like anything else.
  */
 export function pruneSyncFlowRuns(db: SqliteDatabase, keep: number): number {
   if (!Number.isInteger(keep) || keep < 1) {
@@ -487,13 +494,12 @@ export function pruneSyncFlowRuns(db: SqliteDatabase, keep: number): number {
   const result = db
     .prepare(
       `DELETE FROM sync_flow_runs
-        WHERE flow_id IS NOT NULL
-          AND id NOT IN (
-            SELECT id FROM sync_flow_runs AS ranked
-             WHERE ranked.flow_id = sync_flow_runs.flow_id
-             ORDER BY started_at DESC
-             LIMIT ?
-          )`
+        WHERE id NOT IN (
+          SELECT id FROM sync_flow_runs AS ranked
+           WHERE ranked.flow_id IS sync_flow_runs.flow_id
+           ORDER BY started_at DESC
+           LIMIT ?
+        )`
     )
     .run(keep);
 
