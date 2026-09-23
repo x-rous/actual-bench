@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { getSyncFlowRun, listSyncFlowRunItems } from "@/lib/app-db/syncRunRepository";
-import type { SqliteDatabase } from "@/lib/app-db/types";
+import type { SqliteDatabase, SyncMapping } from "@/lib/app-db/types";
 import { getBudgetFileSyncCapabilities } from "./capabilities";
 import { buildPlanConfig } from "./flowConfig";
 import { generateSyncMarker } from "./marker";
@@ -144,6 +144,61 @@ describe("persistDraftPreviewRun", () => {
       expect(stored.map((i) => i.sourceItemKey)).toEqual(["split:p:s1", "split:p:s2"]);
       expect(stored.map((i) => i.sequence)).toEqual([0, 1]);
       expect(stored.every((i) => i.sourceEntityType === "split_line")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("returns an already_synced item to the caller without persisting it", () => {
+    const { root, db } = tempDb();
+    try {
+      const flowId = createFlow(db);
+      const mapping: SyncMapping = {
+        id: "map-1",
+        flowId,
+        sourceConnectionFingerprint: "src-fp",
+        sourceBudgetId: "budget-src",
+        sourceAccountId: "acct-src",
+        sourceEntityType: "transaction",
+        sourceTransactionId: "t1",
+        sourceSplitId: null,
+        sourceItemKey: "txn:t1",
+        sourceFingerprint: "whatever",
+        targetConnectionFingerprint: "tgt-fp",
+        targetBudgetId: "budget-tgt",
+        targetAccountId: "acct-tgt",
+        targetEntityType: "transaction",
+        targetTransactionId: "target-1",
+        targetItemKey: "txn:target-1",
+        targetFingerprint: "whatever",
+        targetMarker: "marker-1",
+        createdRunId: null,
+        // A disabled mapping classifies as already_synced regardless of
+        // fingerprint match - the simplest way to exercise this path.
+        status: "disabled",
+        lastSeenAt: null,
+        lastAppliedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+      const plan = planSyncFlow({
+        config: buildPlanConfig({ flowId, sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: "acct-tgt", sourceBudgetName: "Home", sourceAccountName: "Checking" }),
+        capabilities: getBudgetFileSyncCapabilities({ mode: "browser-api" }),
+        sourceTransactions: [source],
+        target: { payees: [], categories: [], importedIdIndex: new Map(), transactions: [] },
+        existingMappings: [mapping],
+      });
+      expect(plan.items[0]?.classification).toBe("already_synced");
+
+      const { run, items } = persistDraftPreviewRun(db, plan);
+
+      // The caller (the browser session that just ran the preview) sees it...
+      expect(items).toHaveLength(1);
+      expect(items[0]?.classification).toBe("already_synced");
+      // ...but nothing was written to the database for it. The run's own
+      // counts still carry the aggregate total.
+      expect(listSyncFlowRunItems(db, { runId: run.id })).toHaveLength(0);
+      expect(getSyncFlowRun(db, run.id)?.counts?.data).toMatchObject({ already_synced: 1 });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

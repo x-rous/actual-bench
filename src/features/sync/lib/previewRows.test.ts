@@ -177,6 +177,18 @@ describe("kind-aware rendering (RD-055 UI)", () => {
     expect(previewFilters("payee").map((f) => f.key)).not.toContain("duplicate");
     expect(previewFilters("transaction").map((f) => f.key)).toContain("duplicate");
   });
+
+  it("prefers the reported already-synced total over counting rows", () => {
+    // already_synced items are never persisted (persistPlan.ts), so a run
+    // reloaded from history has none of those rows even though the run's own
+    // stored summary still knows the real count.
+    const rows = [toPreviewRow(item({ classification: "new" }))];
+    const withoutReported = previewTiles(rows, "transaction").find((t) => t.key === "already");
+    expect(withoutReported?.value).toBe(0);
+
+    const withReported = previewTiles(rows, "transaction", 54).find((t) => t.key === "already");
+    expect(withReported?.value).toBe(54);
+  });
 });
 
 describe("transaction preview clarity (PR-025g)", () => {

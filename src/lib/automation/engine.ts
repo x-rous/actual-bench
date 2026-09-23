@@ -15,6 +15,7 @@ import {
   pruneAutomationRuns,
 } from "@/lib/app-db/automationRunRepository";
 import { getSyncCredential, hasSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { pruneSyncFlowRuns } from "@/lib/app-db/syncRunRepository";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { logger } from "@/lib/logger";
 import { getAutomationJobType, listAutomationJobTypes } from "./registry";
@@ -46,6 +47,17 @@ const inFlight = new Set<string>();
 
 /** Runs left to keep per automation when pruning history. */
 export const RUN_RETENTION_PER_AUTOMATION = 100;
+
+/**
+ * Runs left to keep per Budget File Sync flow when pruning history.
+ *
+ * A separate table from `automation_runs` (`sync_flow_runs`/
+ * `sync_flow_run_items` — see persistPlan.ts) with its own retention, for the
+ * same reason RD-079 kept it: it holds the detailed per-item plan, not just
+ * the automation rollup. Left unpruned, an unattended flow ticking every 15
+ * minutes accumulates run history indefinitely.
+ */
+export const RUN_RETENTION_PER_SYNC_FLOW = 100;
 
 /** Cancellation handles for in-flight runs, so a stop request can reach them. */
 const cancellations = new Map<string, AbortController>();
@@ -476,6 +488,21 @@ export async function runEngineTick(
     pruneAutomationRuns(db, RUN_RETENTION_PER_AUTOMATION);
   } catch (error) {
     logger.warn(`[automation] run pruning failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    pruneSyncFlowRuns(db, RUN_RETENTION_PER_SYNC_FLOW);
+  } catch (error) {
+    logger.warn(`[automation] sync flow run pruning failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    // Reclaims pages the two prunes above just freed. A no-op (and cheap) when
+    // auto_vacuum isn't INCREMENTAL yet or there is nothing pending; bounded
+    // per tick so a large backlog reclaims gradually instead of stalling one.
+    db.pragma("incremental_vacuum(1000)");
+  } catch (error) {
+    logger.warn(`[automation] incremental vacuum failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return { at, due: due.length, ran };

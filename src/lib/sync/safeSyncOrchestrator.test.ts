@@ -38,7 +38,7 @@ function summary(overrides: Partial<DryRunSummary> = {}): DryRunSummary {
 }
 
 function previewOk(summaryOverrides: Partial<DryRunSummary> = {}): LiveDryRunResult {
-  return { status: "draft_preview", runId: "run-1", flowId: "flow-1", counts: {}, summary: summary(summaryOverrides), warnings: [], errors: [] };
+  return { status: "draft_preview", runId: "run-1", flowId: "flow-1", counts: {}, summary: summary(summaryOverrides), warnings: [], errors: [], items: [] };
 }
 
 function applyOk(overrides: Partial<ApplyRunResult> = {}): ApplyRunResult {

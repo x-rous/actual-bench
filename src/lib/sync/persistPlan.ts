@@ -1,4 +1,5 @@
 import {
+  buildEphemeralSyncFlowRunItem,
   createSyncFlowRun,
   createSyncFlowRunItem,
 } from "@/lib/app-db/syncRunRepository";
@@ -33,6 +34,23 @@ export type PersistDraftPreviewOptions = {
   /** What created this run; defaults to a manual preview (RD-054). */
   trigger?: SyncRunTrigger;
 };
+
+/**
+ * Classifications nothing ever acts on or reviews again once a run finishes.
+ * Apply never selects them (see `applyOrchestrator.ts`'s eligibility checks),
+ * the review queue never surfaces them, and the run's own `counts` envelope
+ * already carries the aggregate total — so persisting a row per item here
+ * only exists to be displayed once, for the session that just ran the
+ * preview. `already_synced` is the volume driver: an unattended tick re-scans
+ * the whole source account every run (deleted-source detection needs to), so
+ * the same few hundred already-synced items would otherwise get a fresh row
+ * every 15 minutes, forever.
+ */
+const EPHEMERAL_CLASSIFICATIONS: ReadonlySet<SyncPlannedItem["classification"]> = new Set(["already_synced"]);
+
+function shouldPersist(item: SyncPlannedItem): boolean {
+  return !EPHEMERAL_CLASSIFICATIONS.has(item.classification);
+}
 
 /** Serialize whichever create payload the planned item carries (transaction or entity). */
 function payloadToJsonObject(item: SyncPlannedItem): JsonObject | null {
@@ -79,16 +97,16 @@ export function persistDraftPreviewRun(
         : null,
     });
 
-    const items = plan.items.map((item, index) =>
-      createSyncFlowRunItem(db, {
+    const items = plan.items.map((item, index) => {
+      const input = {
         runId: run.id,
         flowId: plan.flowId,
         sequence: index,
         status: "planned",
         message: item.message,
-        sourceItemRef: { version: 1, data: sourceItemRef(item) },
+        sourceItemRef: { version: 1 as const, data: sourceItemRef(item) },
         targetItemRef: item.targetTransactionId
-          ? { version: 1, data: { targetTransactionId: item.targetTransactionId } }
+          ? { version: 1 as const, data: { targetTransactionId: item.targetTransactionId } }
           : null,
         sourceEntityType: item.sourceEntityType,
         sourceItemKey: item.sourceItemKey,
@@ -98,16 +116,18 @@ export function persistDraftPreviewRun(
         plannedAction: item.action,
         plannedTargetPayload: (() => {
           const data = payloadToJsonObject(item);
-          return data ? { version: 1, data } : null;
+          return data ? { version: 1 as const, data } : null;
         })(),
         classification: item.classification,
         duplicateConfidence: item.duplicateConfidence,
-        warnings: { version: 1, data: { flags: [...item.flags] } },
+        warnings: { version: 1 as const, data: { flags: [...item.flags] } },
         selectedForApply: item.selectedForApply,
-        applyState: "pending",
+        applyState: "pending" as const,
         createdTargetMarker: item.plannedTargetPayload?.importedId ?? null,
-      })
-    );
+      };
+
+      return shouldPersist(item) ? createSyncFlowRunItem(db, input) : buildEphemeralSyncFlowRunItem(input);
+    });
 
     return { run, items };
   });

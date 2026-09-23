@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { AppDbUnavailableError, errorMessage } from "./errors";
 import { LATEST_SCHEMA_VERSION, readMigrationMeta, runMigrations } from "./migrations";
+import { logger } from "@/lib/logger";
 import type { AppDbHealth, SqliteDatabase } from "./types";
 
 export const DEFAULT_APP_DB_PATH = "/data/actual-bench.sqlite";
@@ -61,6 +62,27 @@ export function checkAppDbStorage(dbPath = resolveAppDbPath()): StorageCheck {
   }
 }
 
+/**
+ * One-time: switches the database to incremental auto_vacuum and reclaims
+ * space already freed by deleted rows (e.g. the sync/automation run-history
+ * bloat retention pruning cleans up). `auto_vacuum` only takes effect on the
+ * on-disk file after a `VACUUM`, so this runs once — later boots see the mode
+ * already set and skip straight past it. Once enabled, retention pruning
+ * (`pruneAutomationRuns`, `pruneSyncFlowRuns`) reclaims freed pages
+ * incrementally via `PRAGMA incremental_vacuum`, without ever needing a
+ * second full `VACUUM`.
+ */
+function enableIncrementalVacuum(db: SqliteDatabase): void {
+  try {
+    const rows = db.pragma("auto_vacuum") as Array<{ auto_vacuum: number }>;
+    if (rows[0]?.auto_vacuum === 2) return;
+    db.pragma("auto_vacuum = INCREMENTAL");
+    db.exec("VACUUM");
+  } catch (error) {
+    logger.warn(`[app-db] could not enable incremental auto_vacuum: ${errorMessage(error)}`);
+  }
+}
+
 function closeCachedDb(): void {
   if (cachedDb?.db.open) {
     cachedDb.db.close();
@@ -89,6 +111,7 @@ export function getAppDb(dbPath = resolveAppDbPath()): SqliteDatabase {
     // writes a sync run makes.
     db.pragma("synchronous = NORMAL");
     runMigrations(db);
+    enableIncrementalVacuum(db);
     cachedDb = { path: dbPath, db };
     return db;
   } catch (error) {

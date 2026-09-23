@@ -81,7 +81,7 @@ function makeTransport(kind: "source" | "target", fx: TransportFixture): ActualB
 function makeStore(flow: SyncFlow | null, opts: { mappings?: SyncMapping[]; persistThrows?: boolean } = {}) {
   const persistPlan = jest.fn(async (plan: SyncPlanResult) => {
     if (opts.persistThrows) throw new Error("db down");
-    return { runId: "run-123", plan };
+    return { runId: "run-123", plan, items: [] };
   });
   const persistFailedRun = jest.fn(async () => "failed-run-1");
   const store: PreviewStore = {

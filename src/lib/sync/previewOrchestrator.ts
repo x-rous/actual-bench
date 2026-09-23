@@ -4,7 +4,7 @@ import "./adapters"; // register all data-type adapters (side-effect)
 import { describeSyncError, getSyncKindAdapter, SyncKindError } from "./syncKind";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import type { ConnectionInstance } from "@/store/connection";
-import type { JsonObject, SyncFlow, SyncMapping, SyncRunTrigger } from "@/lib/app-db/types";
+import type { JsonObject, SyncFlow, SyncFlowRunItem, SyncMapping, SyncRunTrigger } from "@/lib/app-db/types";
 import type { SyncPlanResult } from "./plannedChanges";
 
 /**
@@ -40,7 +40,14 @@ export type PreviewPersistMeta = {
 export type PreviewStore = {
   loadFlow(flowId: string): Promise<SyncFlow | null>;
   loadMappings(flowId: string): Promise<SyncMapping[]>;
-  persistPlan(plan: SyncPlanResult, meta: PreviewPersistMeta): Promise<{ runId: string }>;
+  /**
+   * `items` is the FULL planned list, including classifications the store
+   * chose not to persist (e.g. `already_synced` — see
+   * `persistPlan.ts`/`EPHEMERAL_CLASSIFICATIONS`). The caller uses it to
+   * render this session's preview without a follow-up read; a later reload of
+   * the same run from the database will not include the unpersisted rows.
+   */
+  persistPlan(plan: SyncPlanResult, meta: PreviewPersistMeta): Promise<{ runId: string; items: SyncFlowRunItem[] }>;
   persistFailedRun(
     flowId: string | null,
     error: DryRunError,
@@ -104,6 +111,8 @@ export type LiveDryRunResult =
       summary: DryRunSummary;
       warnings: string[];
       errors: [];
+      /** Full planned item list for this run, including unpersisted classes. */
+      items: SyncFlowRunItem[];
     }
   | {
       status: "failed";
@@ -215,8 +224,9 @@ export async function runLiveDryRunPreview(
 
     // 6. Persist the draft preview run (one transaction).
     let runId: string;
+    let items: SyncFlowRunItem[];
     try {
-      ({ runId } = await deps.store.persistPlan(plan, {
+      ({ runId, items } = await deps.store.persistPlan(plan, {
         summary: { ...summary },
         sourceSnapshotSummary: adapter.sourceSummary(flow),
         trigger: input.trigger,
@@ -225,7 +235,7 @@ export async function runLiveDryRunPreview(
       throw new DryRunPreviewError("persistence_failed", describeSyncError(err, "Failed to persist the preview run."));
     }
 
-    return { status: "draft_preview", runId, flowId, counts: plan.counts, summary, warnings, errors: [] };
+    return { status: "draft_preview", runId, flowId, counts: plan.counts, summary, warnings, errors: [], items };
   } catch (err) {
     const error: DryRunError =
       err instanceof SyncKindError
