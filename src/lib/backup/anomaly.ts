@@ -1,5 +1,5 @@
 import type { BackupArtifact } from "@/lib/app-db/backupRepository";
-import type { BackupContentSummary } from "./manifest";
+import type { BackupArtifactKind, BackupContentSummary } from "./manifest";
 
 /**
  * Noticing that a backup got suspiciously smaller (RD-077).
@@ -27,6 +27,8 @@ export type AnomalyInput = {
   /** What the new copy contains. */
   content: BackupContentSummary;
   sizeBytes: number;
+  /** Which kind of copy this is; the size rule only applies to one of them. */
+  kind: BackupArtifactKind;
   /** The most recent comparable copy, if there is one. */
   previous: BackupArtifact | null;
   previousContent: BackupContentSummary | null;
@@ -71,9 +73,21 @@ export function detectBackupAnomalies(input: AnomalyInput): string[] {
     );
   }
 
-  // Size is the only signal for a copy of Bench's own database, and the
-  // backstop when a budget export is unreadable enough to have no counts.
-  if (previous.sizeBytes > 0 && input.sizeBytes < previous.sizeBytes * SIZE_DROP) {
+  // The backstop when a budget export is unreadable enough to have no counts.
+  //
+  // Budget archives only. A copy of Bench's own database is made with
+  // `VACUUM INTO`, which either writes a complete, transactionally consistent
+  // database or throws - there is no truncated outcome for it to detect, and
+  // verification opens the result anyway. What a shrunken snapshot really
+  // means is that rows went away, which is the *designed* behaviour of run
+  // retention and incremental vacuum: applying this rule to it failed the
+  // backup precisely when housekeeping had worked, and told the user their
+  // export was cut short when nothing of the sort had happened.
+  if (
+    input.kind === "budget" &&
+    previous.sizeBytes > 0 &&
+    input.sizeBytes < previous.sizeBytes * SIZE_DROP
+  ) {
     findings.push(
       `This copy is less than half the size of the previous one (${formatBytes(
         previous.sizeBytes

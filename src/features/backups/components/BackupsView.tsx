@@ -162,6 +162,14 @@ export function BackupsView() {
       const policy = data?.policies.find((entry) => entry.id === policyId) ?? null;
       if (!policy || policy.scheduleKind !== "manual") return backUpNow(policyId);
 
+      // A rule that backs up only Bench's own database has no budget to
+      // export: the server makes that copy itself, straight from the file it
+      // is already holding. Asking the browser for one meant looking up a
+      // connection the rule never had, so the only way to run an app-db rule
+      // was to be connected to whatever budget happened to be open when it was
+      // created - which has nothing to do with what it backs up.
+      if (policy.contents === "app-db") return backUpNow(policyId);
+
       const fingerprint = policy.sourceRef.data.connectionFingerprint;
       const connection = connections.find(
         (entry) => connectionFingerprint(entry) === fingerprint
