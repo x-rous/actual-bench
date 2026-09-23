@@ -47,8 +47,8 @@ describe("sync flow repository", () => {
       expect(created.name).toBe("Rent reimbursement");
       expect(created.enabled).toBe(true);
       expect(created.flowType).toBe("transaction_sync");
-      expect(created.legs).toHaveLength(1);
-      expect(created.legs[0]?.position).toBe(0);
+      expect(created.sourceRef).toEqual(sourceRef);
+      expect(created.targetRef).toEqual(targetRef);
 
       expect(listSyncFlows(db)).toHaveLength(1);
 
@@ -71,7 +71,7 @@ describe("sync flow repository", () => {
       expect(updated?.enabled).toBe(false);
       expect(updated?.flowType).toBe("payee_sync");
       expect(updated?.description).toBeNull();
-      expect(updated?.legs[0]?.options).toEqual(emptyEnvelope);
+      expect(updated?.options).toEqual(emptyEnvelope);
 
       expect(deleteSyncFlow(db, created.id)).toBe(true);
       expect(getSyncFlow(db, created.id)).toBeNull();
@@ -98,6 +98,56 @@ describe("sync flow repository", () => {
           ],
         })
       ).toThrow(AppDbValidationError);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a second leg rather than quietly storing only the first", () => {
+    const { root, db } = tempDb();
+
+    try {
+      // A flow is one source -> one target. Accepting a two-leg route and
+      // persisting half of it is how a sync ends up running against a target
+      // the caller never sees in the saved flow - the same silent data loss
+      // the v31 migration refuses to perform.
+      expect(() =>
+        createSyncFlow(db, {
+          name: "Two-leg flow",
+          legs: [
+            { sourceRef, targetRef, filter: emptyEnvelope, transform: emptyEnvelope },
+            { sourceRef, targetRef, filter: emptyEnvelope, transform: emptyEnvelope },
+          ],
+        })
+      ).toThrow(AppDbValidationError);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("tolerates an empty legs array the same as legs being absent", () => {
+    const { root, db } = tempDb();
+
+    try {
+      // Create with no legs at all: falls back to empty envelopes, exactly
+      // as a flow with zero sync_flow_legs rows always behaved.
+      const created = createSyncFlow(db, { name: "No route yet", legs: [] });
+      expect(created.sourceRef).toEqual(emptyEnvelope);
+      expect(created.targetRef).toEqual(emptyEnvelope);
+
+      // Update with an empty array: leaves the existing refs untouched rather
+      // than erroring, matching legs being omitted entirely. Deliberately not
+      // what the old per-leg-row model did (it deleted every leg row, wiping
+      // the route) - an omitted value is not a request to clear the route.
+      const updated = updateSyncFlow(db, created.id, {
+        legs: [{ sourceRef, targetRef, filter: emptyEnvelope, transform: emptyEnvelope }],
+      });
+      expect(updated?.sourceRef).toEqual(sourceRef);
+
+      const untouched = updateSyncFlow(db, created.id, { name: "Still no new route", legs: [] });
+      expect(untouched?.sourceRef).toEqual(sourceRef);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

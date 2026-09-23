@@ -19,7 +19,7 @@ import type { SyncFlowRunItem } from "@/lib/app-db/types";
 
 function item(overrides: Partial<SyncFlowRunItem> = {}): SyncFlowRunItem {
   return {
-    id: "i1", runId: "r1", flowId: "f1", legId: null, sequence: 0,
+    id: "i1", runId: "r1", flowId: "f1", sequence: 0,
     sourceItemRef: {
       version: 1,
       data: { itemKey: "txn:t1", source: { date: "2026-07-01", amount: -1250, payeeName: "Coffee Bar", categoryName: "Dining", notes: "x" } },

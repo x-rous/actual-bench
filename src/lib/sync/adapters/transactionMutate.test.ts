@@ -13,13 +13,9 @@ function flow(): SyncFlow {
   return {
     id: "flow-1", name: "x", enabled: true, flowType: "transaction_sync",
     description: null, createdAt: "", updatedAt: "",
-    legs: [{
-      id: "leg-1", flowId: "flow-1", position: 0,
-      sourceRef: { version: 1, data: { budgetId: "b-src", accountId: "a-src" } },
-      targetRef: { version: 1, data: { budgetId: "b-tgt", accountId: "a-tgt" } },
-      filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options: { version: 1, data: {} },
-      createdAt: "", updatedAt: "",
-    }],
+    sourceRef: { version: 1, data: { budgetId: "b-src", accountId: "a-src" } },
+    targetRef: { version: 1, data: { budgetId: "b-tgt", accountId: "a-tgt" } },
+    filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options: { version: 1, data: {} },
   };
 }
 

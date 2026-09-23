@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection";
 import { enrollCredential, getVaultStatus, runFlowNow, withdrawCredential } from "../lib/syncApi";
+import { useFlowAutomations } from "../hooks/useFlowAutomations";
 import { computeUnattendedStatus, nextRunPhrase } from "../lib/unattendedStatus";
 
 /**
@@ -42,6 +43,7 @@ export function UnattendedEnrollment({
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<{ status: string; message: string | null } | null>(null);
+  const enginePauses = useFlowAutomations();
 
   const refresh = useCallback(async () => {
     try {
@@ -179,6 +181,10 @@ export function UnattendedEnrollment({
           reviewPolicy: "auto_sync_unattended",
           flowEnabled,
           autoPaused,
+          // The engine can have health-paused this flow's automation; without
+          // reading that, this panel reported "Armed" for a flow that was not
+          // going to run, and offered a next-run time to match.
+          enginePause: flowId ? (enginePauses.get(flowId) ?? null) : null,
           vaultEnabled: enabled,
           bothHttp,
           bothEnrolled,

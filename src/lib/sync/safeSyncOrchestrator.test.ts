@@ -22,13 +22,9 @@ function flowWithPolicy(reviewPolicy: SyncReviewPolicy | null): SyncFlow {
   return {
     id: "flow-1", name: "Cross-budget", enabled: true, flowType: "transaction_sync",
     description: null, createdAt: "", updatedAt: "",
-    legs: [{
-      id: "leg-1", flowId: "flow-1", position: 0,
-      sourceRef: { version: 1, data: { budgetId: "budget-src", accountId: "acct-src" } },
-      targetRef: { version: 1, data: { budgetId: "budget-tgt", accountId: "acct-tgt" } },
-      filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options,
-      createdAt: "", updatedAt: "",
-    }],
+    sourceRef: { version: 1, data: { budgetId: "budget-src", accountId: "acct-src" } },
+    targetRef: { version: 1, data: { budgetId: "budget-tgt", accountId: "acct-tgt" } },
+    filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options,
   };
 }
 

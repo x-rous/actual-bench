@@ -40,7 +40,6 @@ describe("sync run repository", () => {
       const item = createSyncFlowRunItem(db, {
         runId: run.id,
         flowId: flow.id,
-        legId: flow.legs[0]?.id ?? null,
         sourceEntityType: "transaction",
         sourceItemKey: "transaction:txn-source",
         sourceTransactionId: "txn-source",

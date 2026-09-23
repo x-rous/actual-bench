@@ -6,12 +6,8 @@ const env = (data: Record<string, unknown>): JsonEnvelope => ({ version: 1, data
 function flowWithTransform(transform: Record<string, unknown>): SyncFlow {
   return {
     id: "f1", name: "F", enabled: true, flowType: "transaction_sync", description: null, createdAt: "", updatedAt: "",
-    legs: [{
-      id: "l1", flowId: "f1", position: 0,
-      sourceRef: env({ accountId: "a" }), targetRef: env({ accountId: "b" }),
-      filter: env({}), transform: env(transform), options: env({}),
-      createdAt: "", updatedAt: "",
-    }],
+    sourceRef: env({ accountId: "a" }), targetRef: env({ accountId: "b" }),
+    filter: env({}), transform: env(transform), options: env({}),
   };
 }
 

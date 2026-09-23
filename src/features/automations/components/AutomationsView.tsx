@@ -381,10 +381,10 @@ export function AutomationsView() {
               title: `Delete "${automation.name}"?`,
               message:
                 automation.type === "budget-file-sync"
-                  ? "It stops running and its run history goes with it. The sync flow itself is untouched - set its review policy back to unattended and the automation returns."
+                  ? "It stops running. Its past runs stay in the run history. The sync flow itself is untouched - set its review policy back to unattended and the automation returns."
                   : automation.type === "backup"
-                    ? "It stops running and its run history goes with it. The backups it took are kept."
-                    : "It stops running and its run history goes with it.",
+                    ? "It stops running. Its past runs stay in the run history, and the backups it took are kept."
+                    : "It stops running. Its past runs stay in the run history.",
               destructiveLabel: "Delete",
               onConfirm: () => remove.mutate(automation.id),
             })

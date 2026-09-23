@@ -11,6 +11,7 @@ import { FlowList } from "./FlowList";
 import { PreviewPanel } from "./PreviewPanel";
 import { RunHistory } from "./RunHistory";
 import { useSyncFlows, useSyncFlowMutations } from "../hooks/useSyncFlows";
+import { useFlowAutomations } from "../hooks/useFlowAutomations";
 import { useSyncConnections, useFlowRuns, useLatestRunByFlow, useSyncRun, useVaultStatus } from "../hooks/useSyncData";
 import { useApplyMutation, usePreviewMutation, useSafeSyncMutation } from "../hooks/useSyncOrchestration";
 import { useSyncScheduler } from "../hooks/useSyncScheduler";
@@ -63,6 +64,7 @@ export function SyncView() {
     () => new Set((vaultData?.credentials ?? []).map((c) => c.connectionFingerprint)),
     [vaultData]
   );
+  const enginePauses = useFlowAutomations();
   const flowMutations = useSyncFlowMutations();
   const previewMutation = usePreviewMutation();
   const applyMutation = useApplyMutation();
@@ -358,6 +360,7 @@ export function SyncView() {
           connections={connections}
           vaultEnabled={vaultData?.enabled ?? false}
           enrolledFingerprints={enrolledFingerprints}
+          enginePauses={enginePauses}
           onSelect={handleSelect}
           onCreate={handleCreate}
         />

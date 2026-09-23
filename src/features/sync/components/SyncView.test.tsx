@@ -12,6 +12,7 @@ jest.mock("../hooks/useSyncData");
 jest.mock("../hooks/useSyncOrchestration");
 // The interval scheduler starts real timers; stub it out for component tests.
 jest.mock("../hooks/useSyncScheduler", () => ({ useSyncScheduler: jest.fn() }));
+jest.mock("../hooks/useFlowAutomations", () => ({ useFlowAutomations: () => new Map() }));
 
 const conn1: BrowserApiConnection = { id: "c1", label: "Home", mode: "browser-api", baseUrl: "https://s.example.com", serverPassword: "pw", budgetSyncId: "b-src" };
 const conn2: BrowserApiConnection = { id: "c2", label: "Family", mode: "browser-api", baseUrl: "https://t.example.com", serverPassword: "pw", budgetSyncId: "b-tgt" };
@@ -19,19 +20,15 @@ const conn2: BrowserApiConnection = { id: "c2", label: "Family", mode: "browser-
 function makeFlow(): SyncFlow {
   return {
     id: "flow-1", name: "Card sync", enabled: true, flowType: "transaction_sync", description: null, createdAt: "", updatedAt: "",
-    legs: [{
-      id: "leg-1", flowId: "flow-1", position: 0,
-      sourceRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(conn1), budgetId: "b-src", budgetName: "Home", accountId: "acct-src", accountName: "Checking" } },
-      targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(conn2), budgetId: "b-tgt", budgetName: "Family", accountId: "acct-tgt", accountName: "Joint" } },
-      filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options: { version: 1, data: {} },
-      createdAt: "", updatedAt: "",
-    }],
+    sourceRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(conn1), budgetId: "b-src", budgetName: "Home", accountId: "acct-src", accountName: "Checking" } },
+    targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(conn2), budgetId: "b-tgt", budgetName: "Family", accountId: "acct-tgt", accountName: "Joint" } },
+    filter: { version: 1, data: {} }, transform: { version: 1, data: {} }, options: { version: 1, data: {} },
   };
 }
 
 function itemFixture(overrides: Partial<SyncFlowRunItem>): SyncFlowRunItem {
   return {
-    id: "i", runId: "run-1", flowId: "flow-1", legId: null, sequence: 0,
+    id: "i", runId: "run-1", flowId: "flow-1", sequence: 0,
     sourceItemRef: { version: 1, data: { itemKey: "txn:t1", source: { date: "2026-07-01", amount: -1250, payeeName: "Coffee Bar", categoryName: "Dining" } } },
     targetItemRef: null, status: "planned", message: null,
     sourceEntityType: "transaction", sourceItemKey: "txn:t1", sourceTransactionId: "t1", sourceSplitId: null, sourceFingerprint: "fp",

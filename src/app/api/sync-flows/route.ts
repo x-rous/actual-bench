@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { createSyncFlow, listSyncFlows } from "@/lib/app-db/syncFlowRepository";
+import { syncAutomationsWithFlows } from "@/lib/sync/enrollment";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +18,9 @@ export function GET() {
 export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
-    const flow = createSyncFlow(getAppDb(), body);
+    const db = getAppDb();
+    const flow = createSyncFlow(db, body);
+    await syncAutomationsWithFlows(db);
     return NextResponse.json({ flow }, { status: 201 });
   } catch (error) {
     return appDbErrorResponse(error);

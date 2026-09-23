@@ -49,7 +49,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 29;
+export const LATEST_SCHEMA_VERSION = 32;
 
 type Migration = {
   version: number;
@@ -372,7 +372,146 @@ const MIGRATIONS: readonly Migration[] = [
     // is unreleased, so the tables are replaced rather than migrated.
     apply: applyPdfStatementLayouts,
   },
+  {
+    version: 30,
+    // The FK was CASCADE despite the column comment saying a run stays
+    // readable after its definition is deleted - deleting an automation
+    // silently erased all its history, the opposite of what that comment
+    // promises. `automation_id` was already nullable, so this only changes
+    // delete behavior; every other column is untouched.
+    apply: applyAutomationRunsDeleteSetNull,
+  },
+  {
+    version: 31,
+    // A flow is one source -> one target, not a multi-leg pipeline; nothing
+    // ever created more than one leg per flow, and the UI never exposed a way
+    // to. The single leg's fields move onto the flow row directly.
+    apply: applySyncFlowLegsCollapse,
+  },
+  {
+    version: 32,
+    // Repairs a real bad state an earlier build of v31 could leave behind: it
+    // dropped `sync_flow_legs` before this file also dropped
+    // `sync_flow_run_items.leg_id`, so a database that already recorded
+    // schema_version 31 from that build is stuck with a column whose FK
+    // target table no longer exists - which breaks every future insert into
+    // sync_flow_run_items, even NULL ones, once foreign_keys is on. v31 itself
+    // can't be edited to fix this (AGENTS.md: never rewrite a migration that
+    // may have shipped, and it wouldn't rerun for a DB already at 31 anyway).
+    apply: applySyncFlowRunItemsLegIdRepair,
+  },
 ];
+
+function applySyncFlowRunItemsLegIdRepair(db: SqliteDatabase): void {
+  if (!tableExists(db, "sync_flow_run_items")) return;
+  // Only unsafe to keep when the table it points to is actually gone; if
+  // sync_flow_legs still exists here, v31 hasn't run yet and will handle it.
+  if (tableExists(db, "sync_flow_legs")) return;
+  if (columnExists(db, "sync_flow_run_items", "leg_id")) {
+    db.exec("ALTER TABLE sync_flow_run_items DROP COLUMN leg_id");
+  }
+}
+
+function applySyncFlowLegsCollapse(db: SqliteDatabase): void {
+  if (!tableExists(db, "sync_flows")) return;
+
+  // sync_mappings.flow_id, sync_flow_runs.flow_id, and
+  // sync_flow_run_items.flow_id all hold a live FK to this table (CASCADE for
+  // sync_mappings). A rename-based rebuild (the pattern used elsewhere in this
+  // file) is unsafe here: SQLite rewrites every dependent's FK clause to
+  // follow the rename, and then dropping the renamed-away table fires their
+  // ON DELETE actions against every row as if each flow had really been
+  // deleted - wiping every mapping via the CASCADE. `foreign_keys` can't be
+  // toggled off mid-transaction to work around it (runMigrations runs the
+  // whole chain in one), so this stays a pure ADD COLUMN + backfill instead -
+  // sync_flows itself is never renamed or recreated, so nothing depending on
+  // it is ever at risk.
+  const defaultEnvelope = '{"version":1,"data":{}}';
+  for (const column of ["source_ref_json", "target_ref_json", "filter_json", "transform_json", "options_json"]) {
+    addColumnIfMissing(db, "sync_flows", column, `text NOT NULL DEFAULT '${defaultEnvelope}'`);
+  }
+
+  if (tableExists(db, "sync_flow_legs")) {
+    // The UI has only ever created one leg per flow, but createSyncFlow's old
+    // input validation never enforced that - a flow built by a direct API
+    // call, never through the UI, could in principle have more than one.
+    // Backfilling only ever reads the first (by position) either way, so
+    // failing loudly here beats silently dropping a real second leg with no
+    // record it ever existed.
+    const multiLeg = db
+      .prepare("SELECT flow_id, COUNT(*) AS n FROM sync_flow_legs GROUP BY flow_id HAVING n > 1")
+      .all() as Array<{ flow_id: string; n: number }>;
+    if (multiLeg.length > 0) {
+      const ids = multiLeg.map((row) => row.flow_id).join(", ");
+      throw new AppDbUnavailableError(
+        `Cannot collapse sync_flow_legs: flow(s) ${ids} have more than one leg. ` +
+          "This was never reachable through the UI; inspect these flows manually before upgrading."
+      );
+    }
+
+    db.exec(`
+      UPDATE sync_flows
+      SET (source_ref_json, target_ref_json, filter_json, transform_json, options_json) = (
+        SELECT source_ref_json, target_ref_json, filter_json, transform_json, options_json
+          FROM sync_flow_legs
+         WHERE flow_id = sync_flows.id
+         ORDER BY position ASC
+         LIMIT 1
+      )
+      WHERE EXISTS (SELECT 1 FROM sync_flow_legs WHERE flow_id = sync_flows.id)
+    `);
+
+    // sync_flow_run_items.leg_id references sync_flow_legs and nothing has
+    // ever written it (grep confirms no caller sets it) - but a FK column
+    // referencing a table that no longer exists breaks every future insert
+    // into sync_flow_run_items, even inserting NULL for it, once the
+    // referenced table is gone. Drop the column first, then the table.
+    if (columnExists(db, "sync_flow_run_items", "leg_id")) {
+      db.exec("ALTER TABLE sync_flow_run_items DROP COLUMN leg_id");
+    }
+    db.exec("DROP TABLE sync_flow_legs");
+  }
+}
+
+// The v30 shape: identical to AUTOMATION_RUN_TABLE_SQL except automation_id
+// is ON DELETE SET NULL. Defined locally rather than reusing that (v18)
+// constant - AGENTS.md: "Never rewrite a migration that may have shipped."
+const AUTOMATION_RUN_TABLE_V30_SQL = `
+CREATE TABLE automation_runs (
+  id text PRIMARY KEY,
+  automation_id text REFERENCES automation_definitions(id) ON DELETE SET NULL,
+  type text NOT NULL,
+  status text NOT NULL,
+  started_at text NOT NULL,
+  finished_at text,
+  trigger text NOT NULL DEFAULT 'schedule',
+  attempt integer NOT NULL DEFAULT 1,
+  execution_mode text NOT NULL DEFAULT 'server',
+  result_json text,
+  rollup_json text,
+  error_json text
+);
+`;
+
+function applyAutomationRunsDeleteSetNull(db: SqliteDatabase): void {
+  if (!tableExists(db, "automation_runs")) return;
+  db.exec("ALTER TABLE automation_runs RENAME TO automation_runs_old");
+  db.exec(AUTOMATION_RUN_TABLE_V30_SQL);
+  db.exec(`
+    INSERT INTO automation_runs
+      (id, automation_id, type, status, started_at, finished_at, trigger,
+       attempt, execution_mode, result_json, rollup_json, error_json)
+    SELECT id, automation_id, type, status, started_at, finished_at, trigger,
+           attempt, execution_mode, result_json, rollup_json, error_json
+    FROM automation_runs_old
+  `);
+  db.exec("DROP TABLE automation_runs_old");
+  // Dropping the table dropped its index; the other AUTOMATION_INDEX_SQL
+  // entry (automation_definitions) is untouched and unrelated to this rebuild.
+  for (const statement of AUTOMATION_INDEX_SQL) {
+    if (statement.includes("ON automation_runs")) db.exec(statement);
+  }
+}
 
 function applyPdfStatementLayouts(db: SqliteDatabase): void {
   for (const table of [

@@ -1,3 +1,4 @@
+import { MIN_INTERVAL_MINUTES } from "@/lib/automation/schedule";
 import type { SyncFlow, SyncReviewPolicy } from "@/lib/app-db/types";
 
 /**
@@ -106,8 +107,15 @@ export type SyncFlowPlanConfig = {
   fxUpdateOnRateChange: boolean;
 };
 
-/** Smallest allowed auto-sync interval - a budget sync per run is expensive. */
-export const MIN_SYNC_INTERVAL_MINUTES = 15;
+/**
+ * Smallest allowed auto-sync interval - a budget sync per run is expensive.
+ *
+ * This is the automation engine's own interval floor, not a second copy of it:
+ * an unattended flow's interval becomes its automation's `intervalMinutes`
+ * verbatim, so a lower floor here would only mean the editor accepting a
+ * frequency the engine then silently clamps.
+ */
+export const MIN_SYNC_INTERVAL_MINUTES = MIN_INTERVAL_MINUTES;
 /** Default auto-sync interval when a flow opts in without choosing one. */
 export const DEFAULT_SYNC_INTERVAL_MINUTES = 60;
 
@@ -247,16 +255,15 @@ function bool(value: unknown): boolean | undefined {
 }
 
 /**
- * Best-effort decode of a saved flow's first leg into a planner config. Unknown
- * or missing fields fall back to product defaults, so a partially-populated
- * flow still plans sensibly. Secrets are never read (the DB rejects them).
+ * Best-effort decode of a saved flow into a planner config. Unknown or missing
+ * fields fall back to product defaults, so a partially-populated flow still
+ * plans sensibly. Secrets are never read (the DB rejects them).
  */
 export function decodeFlowPlanConfig(flow: SyncFlow): SyncFlowPlanConfig {
-  const leg = flow.legs[0];
-  const source = (leg?.sourceRef.data ?? {}) as Record<string, unknown>;
-  const target = (leg?.targetRef.data ?? {}) as Record<string, unknown>;
-  const transform = (leg?.transform.data ?? {}) as Record<string, unknown>;
-  const options = (leg?.options.data ?? {}) as Record<string, unknown>;
+  const source = (flow.sourceRef.data ?? {}) as Record<string, unknown>;
+  const target = (flow.targetRef.data ?? {}) as Record<string, unknown>;
+  const transform = (flow.transform.data ?? {}) as Record<string, unknown>;
+  const options = (flow.options.data ?? {}) as Record<string, unknown>;
 
   const direction = str(transform.amountDirection);
   const missingPayee = str(transform.missingPayee);

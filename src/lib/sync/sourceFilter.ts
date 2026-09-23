@@ -166,9 +166,9 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
     : fallback;
 }
 
-/** Best-effort decode of the first leg's filter envelope; defaults are safe. */
+/** Best-effort decode of the flow's filter envelope; defaults are safe. */
 export function decodeSourceFilter(flow: SyncFlow): SyncSourceFilter {
-  const data = (flow.legs[0]?.filter.data ?? {}) as Record<string, unknown>;
+  const data = (flow.filter.data ?? {}) as Record<string, unknown>;
   return {
     startDate: str(data.startDate),
     endDate: str(data.endDate),

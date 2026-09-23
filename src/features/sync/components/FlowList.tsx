@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { connectionFingerprint, connectionMatchesBudget } from "@/lib/sync/connectionRef";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsView";
-import { computeUnattendedStatus, nextRunPhrase } from "../lib/unattendedStatus";
+import { computeUnattendedStatus, nextRunPhrase, type EnginePause } from "../lib/unattendedStatus";
 import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection";
 import type { SyncFlow, SyncFlowRun } from "@/lib/app-db/types";
 
@@ -18,6 +18,8 @@ type FlowListProps = {
   connections: ConnectionInstance[];
   vaultEnabled?: boolean;
   enrolledFingerprints?: Set<string>;
+  /** Engine health-pause per flow id, from `useFlowAutomations`. */
+  enginePauses?: Map<string, EnginePause | null>;
   onSelect: (flowId: string) => void;
   onCreate: () => void;
 };
@@ -44,6 +46,7 @@ export function FlowList({
   connections,
   vaultEnabled = false,
   enrolledFingerprints = new Set<string>(),
+  enginePauses = new Map<string, EnginePause | null>(),
   onSelect,
   onCreate,
 }: FlowListProps) {
@@ -109,7 +112,11 @@ export function FlowList({
                   connections
                 );
               const latestRun = latestRuns.get(flow.id);
-              const autoPaused = !flow.enabled && !!config.autoPausedAt;
+              const enginePause = enginePauses.get(flow.id) ?? null;
+              // Either kind of pause means "this is not running", and the badge
+              // has to say so for both - an engine health-pause used to leave
+              // the row looking perfectly healthy.
+              const autoPaused = (!flow.enabled && !!config.autoPausedAt) || !!enginePause;
               const lastRunMs = latestRun ? new Date(latestRun.finishedAt ?? latestRun.startedAt).getTime() : null;
               const src = config.sourceConnectionFingerprint;
               const tgt = config.targetConnectionFingerprint;
@@ -118,6 +125,7 @@ export function FlowList({
                 reviewPolicy: config.reviewPolicy,
                 flowEnabled: flow.enabled,
                 autoPaused: !!config.autoPausedAt,
+                enginePause,
                 vaultEnabled,
                 // Enrolled credentials are HTTP-API by construction, so treat an
                 // enrolled flow as HTTP even when its connection isn't loaded here.

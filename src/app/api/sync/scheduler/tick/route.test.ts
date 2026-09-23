@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createAutomation } from "@/lib/app-db/automationRepository";
+import { createSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { POST } from "./route";
 import type { NextRequest } from "next/server";
 
@@ -48,13 +49,29 @@ describe("POST /api/sync/scheduler/tick", () => {
 
   it("still reports the sync flow id, not the automation id, in `flowId`", async () => {
     const db = getAppDb();
+    // A real, unattended flow - not just an id. An automation naming a flow
+    // that does not exist is the orphan reconciliation now clears up, and one
+    // naming a flow that is not unattended gets switched off, so either way it
+    // would never reach the tick.
+    const flow = createSyncFlow(db, {
+      name: "Nightly sync flow",
+      legs: [
+        {
+          sourceRef: { version: 1, data: {} },
+          targetRef: { version: 1, data: {} },
+          filter: { version: 1, data: {} },
+          transform: { version: 1, data: {} },
+          options: { version: 1, data: { reviewPolicy: "auto_sync_unattended", intervalMinutes: 30 } },
+        },
+      ],
+    });
     createAutomation(db, {
       type: "budget-file-sync",
       name: "Nightly sync",
       scheduleKind: "interval",
       intervalMinutes: 30,
-      targetRef: { version: 1, data: { flowId: "flow-abc" } },
-      config: { version: 1, data: { flowId: "flow-abc" } },
+      targetRef: { version: 1, data: { flowId: flow.id } },
+      config: { version: 1, data: { flowId: flow.id } },
     });
 
     const response = await POST(request());
@@ -66,7 +83,7 @@ describe("POST /api/sync/scheduler/tick", () => {
 
     expect(body.ran).toHaveLength(1);
     // The identifier an existing cron consumer parses is unchanged...
-    expect(body.ran[0].flowId).toBe("flow-abc");
+    expect(body.ran[0].flowId).toBe(flow.id);
     // ...and the automation id is additional, not a substitute.
     expect(body.ran[0].automationId).not.toBe("flow-abc");
     expect(body.ran[0].type).toBe("budget-file-sync");

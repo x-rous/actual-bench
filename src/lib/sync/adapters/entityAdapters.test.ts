@@ -10,13 +10,9 @@ const envelope = (data: JsonObject) => ({ version: 1, data });
 function flow(flowType: SyncFlow["flowType"], options: JsonObject = {}): SyncFlow {
   return {
     id: "flow-1", name: "Master data", enabled: true, flowType, description: null, createdAt: "", updatedAt: "",
-    legs: [{
-      id: "leg-1", flowId: "flow-1", position: 0,
-      sourceRef: envelope({ connectionFingerprint: "src-fp", budgetId: "budget-src", budgetName: "Personal" }),
-      targetRef: envelope({ connectionFingerprint: "tgt-fp", budgetId: "budget-tgt", budgetName: "Family" }),
-      filter: envelope({}), transform: envelope({}), options: envelope(options),
-      createdAt: "", updatedAt: "",
-    }],
+    sourceRef: envelope({ connectionFingerprint: "src-fp", budgetId: "budget-src", budgetName: "Personal" }),
+    targetRef: envelope({ connectionFingerprint: "tgt-fp", budgetId: "budget-tgt", budgetName: "Family" }),
+    filter: envelope({}), transform: envelope({}), options: envelope(options),
   };
 }
 
@@ -34,8 +30,8 @@ function routeFlow(flowType: SyncFlow["flowType"], withAccount = false): SyncFlo
     ...(withAccount ? { accountId: "acct", accountName: "Checking" } : {}),
   });
   const f = flow(flowType);
-  f.legs[0].sourceRef = envelope(ref("budget-src", "Personal"));
-  f.legs[0].targetRef = envelope(ref("budget-tgt", "Family"));
+  f.sourceRef = envelope(ref("budget-src", "Personal"));
+  f.targetRef = envelope(ref("budget-tgt", "Family"));
   return f;
 }
 

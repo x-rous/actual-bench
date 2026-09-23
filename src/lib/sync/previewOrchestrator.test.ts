@@ -30,20 +30,11 @@ function makeFlow(overrides: FlowOverrides = {}): SyncFlow {
     description: null,
     createdAt: "2026-07-01T00:00:00.000Z",
     updatedAt: "2026-07-01T00:00:00.000Z",
-    legs: [
-      {
-        id: "leg-1",
-        flowId: "flow-1",
-        position: 0,
-        sourceRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(sourceConn), budgetId: "budget-src", accountId: "acct-src", budgetName: "Home", accountName: "Checking" } },
-        targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(target), budgetId: "budget-tgt", accountId: "acct-tgt" } },
-        filter: { version: 1, data: overrides.filterData ?? {} },
-        transform: { version: 1, data: {} },
-        options: { version: 1, data: {} },
-        createdAt: "2026-07-01T00:00:00.000Z",
-        updatedAt: "2026-07-01T00:00:00.000Z",
-      },
-    ],
+    sourceRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(sourceConn), budgetId: "budget-src", accountId: "acct-src", budgetName: "Home", accountName: "Checking" } },
+    targetRef: { version: 1, data: { connectionFingerprint: connectionFingerprint(target), budgetId: "budget-tgt", accountId: "acct-tgt" } },
+    filter: { version: 1, data: overrides.filterData ?? {} },
+    transform: { version: 1, data: {} },
+    options: { version: 1, data: {} },
   };
 }
 

@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { createSyncFlow, updateSyncFlow, getSyncFlow } from "@/lib/app-db/syncFlowRepository";
-import { listAutomations, updateAutomation } from "@/lib/app-db/automationRepository";
+import { createSyncFlow, deleteSyncFlow, updateSyncFlow, getSyncFlow } from "@/lib/app-db/syncFlowRepository";
+import { getAutomation, listAutomations, updateAutomation } from "@/lib/app-db/automationRepository";
 import { createSyncFlowRun } from "@/lib/app-db/syncRunRepository";
 import {
   __resetBudgetFileSyncRegistrationForTests,
@@ -199,6 +199,86 @@ describe("migrating sync flows onto the engine", () => {
     }
   });
 
+  it("still creates a new flow's automation when an unrelated flow fails to migrate", () => {
+    // A brand new unattended flow was reported to silently never get an
+    // automation. The whole batch used to run inside one db.transaction()
+    // with no per-flow isolation: any earlier flow throwing during migration
+    // rolled back everyone else in the same call, including a flow that had
+    // nothing wrong with it.
+    const { root, db } = tempDb();
+    try {
+      const brokenFlowId = unattendedFlow(db, "Already broken flow", 30);
+      migrateSyncFlowsToAutomations(db);
+      const [brokenAutomation] = listAutomations(db);
+      // Corrupt its schedule_kind directly, so processing it on the next pass
+      // throws inside updateAutomation's schedule validation.
+      db.prepare("UPDATE automation_definitions SET schedule_kind = 'bogus' WHERE id = ?").run(
+        brokenAutomation.id
+      );
+      // Also change its interval so migrateOneFlow actually reaches the
+      // schedule update call (the branch that throws) on this pass.
+      const brokenFlow = getSyncFlow(db, brokenFlowId);
+      updateSyncFlow(db, brokenFlowId, {
+        legs: [
+          {
+            sourceRef: brokenFlow!.sourceRef,
+            targetRef: brokenFlow!.targetRef,
+            filter: brokenFlow!.filter,
+            transform: brokenFlow!.transform,
+            options: { version: 1, data: { reviewPolicy: "auto_sync_unattended", intervalMinutes: 90 } },
+          },
+        ],
+      });
+
+      const newFlowId = unattendedFlow(db, "Freshly created flow", 60);
+      const summary = migrateSyncFlowsToAutomations(db);
+
+      expect(summary.created).toHaveLength(1);
+      const automations = listAutomations(db);
+      const created = automations.find((a) => a.config.data.flowId === newFlowId);
+      expect(created).toBeDefined();
+      expect(created?.name).toBe("Freshly created flow");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("removes the automation of a flow that has been deleted", () => {
+    const { root, db } = tempDb();
+    try {
+      const flowId = unattendedFlow(db, "Household → Joint", 30);
+      migrateSyncFlowsToAutomations(db);
+      const [automation] = listAutomations(db);
+
+      // Left behind, the automation stayed enabled and the engine kept firing
+      // it every interval against a flow that no longer exists - each run
+      // failing with flow_not_found until the failure policy paused it.
+      deleteSyncFlow(db, flowId);
+      const summary = migrateSyncFlowsToAutomations(db);
+
+      expect(summary.removed).toEqual([automation.id]);
+      expect(listAutomations(db)).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a deleted flow's automation while the flow is merely absent from one read", () => {
+    const { root, db } = tempDb();
+    try {
+      unattendedFlow(db, "Household → Joint", 30);
+      migrateSyncFlowsToAutomations(db);
+
+      // The flow still exists, so nothing is removed however many times this
+      // runs - the removal is keyed on the database, not on a list that could
+      // come back transiently empty.
+      expect(migrateSyncFlowsToAutomations(db).removed).toHaveLength(0);
+      expect(listAutomations(db)).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not overwrite a schedule the user has since changed", () => {
     const { root, db } = tempDb();
     try {
@@ -209,12 +289,57 @@ describe("migrating sync flows onto the engine", () => {
       const [automation] = listAutomations(db);
       updateAutomation(db, automation.id, { scheduleKind: "cron", cronExpression: "0 3 * * *" });
 
-      migrateSyncFlowsToAutomations(db);
+      // A cron row stores interval_minutes as NULL, so comparing it against the
+      // flow's own interval matches forever. Left unguarded, every tick rewrote
+      // the schedule - which also clears next_run_at, the floor the engine
+      // schedules from - and the comparison still never stopped matching.
+      updateAutomation(db, automation.id, { nextRunAt: "2999-01-01T00:00:00.000Z" });
+
+      const first = migrateSyncFlowsToAutomations(db);
+      const second = migrateSyncFlowsToAutomations(db);
+
+      expect(first.updated).toHaveLength(0);
+      expect(second.updated).toHaveLength(0);
 
       const [after] = listAutomations(db);
       expect(after.scheduleKind).toBe("cron");
       expect(after.cronExpression).toBe("0 3 * * *");
+      expect(after.nextRunAt).toBe("2999-01-01T00:00:00.000Z");
       expect(after.config.data.flowId).toBe(flowId);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports one update, not two, when a flow changes both its interval and its enabled state", () => {
+    const { root, db } = tempDb();
+    try {
+      const flowId = unattendedFlow(db, "Household → Joint", 30);
+      migrateSyncFlowsToAutomations(db);
+
+      // Disable the flow *and* change its interval in one edit: both used to
+      // fire their own updateAutomation and push the same id onto the summary,
+      // so the batch log double-counted a single automation.
+      const flow = getSyncFlow(db, flowId);
+      updateSyncFlow(db, flowId, {
+        enabled: false,
+        legs: [
+          {
+            sourceRef: flow!.sourceRef,
+            targetRef: flow!.targetRef,
+            filter: flow!.filter,
+            transform: flow!.transform,
+            options: { version: 1, data: { reviewPolicy: "auto_sync_unattended", intervalMinutes: 90 } },
+          },
+        ],
+      });
+
+      const summary = migrateSyncFlowsToAutomations(db);
+
+      expect(summary.updated).toHaveLength(1);
+      const [after] = listAutomations(db);
+      expect(after.enabled).toBe(false);
+      expect(after.intervalMinutes).toBe(90);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -270,19 +395,60 @@ describe("migrating sync flows onto the engine", () => {
       // The user moves the flow back to manual review.
       const flow = getSyncFlow(db, flowId)!;
       updateSyncFlow(db, flowId, {
-        legs: flow.legs.map((leg) => ({
-          sourceRef: leg.sourceRef,
-          targetRef: leg.targetRef,
-          filter: leg.filter,
-          transform: leg.transform,
-          options: { version: 1, data: { reviewPolicy: "manual_preview_required" } },
-        })),
+        legs: [
+          {
+            sourceRef: flow.sourceRef,
+            targetRef: flow.targetRef,
+            filter: flow.filter,
+            transform: flow.transform,
+            options: { version: 1, data: { reviewPolicy: "manual_preview_required" } },
+          },
+        ],
       });
 
       const summary = migrateSyncFlowsToAutomations(db);
 
       expect(summary.updated).toHaveLength(1);
       expect(listAutomations(db)[0].enabled).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an enrolled automation's interval in sync with the flow's own interval field", () => {
+    const { root, db } = tempDb();
+    try {
+      const flowId = unattendedFlow(db, "Household → Joint", 60);
+      migrateSyncFlowsToAutomations(db);
+      const automation = listAutomations(db)[0];
+      expect(automation.intervalMinutes).toBe(60);
+
+      // Give it some run history and a "not before" floor computed under the
+      // 60-minute schedule, matching what a real enrolled automation would have.
+      updateAutomation(db, automation.id, { nextRunAt: "2026-09-23T05:00:00.000Z" });
+
+      // The user reduces the interval to 15 minutes in the Sync flow editor.
+      const flow = getSyncFlow(db, flowId)!;
+      updateSyncFlow(db, flowId, {
+        legs: [
+          {
+            sourceRef: flow.sourceRef,
+            targetRef: flow.targetRef,
+            filter: flow.filter,
+            transform: flow.transform,
+            options: { version: 1, data: { reviewPolicy: "auto_sync_unattended", intervalMinutes: 15 } },
+          },
+        ],
+      });
+
+      const summary = migrateSyncFlowsToAutomations(db);
+
+      expect(summary.updated).toContain(automation.id);
+      const updated = getAutomation(db, automation.id);
+      expect(updated?.intervalMinutes).toBe(15);
+      // The floor computed under the old 60-minute schedule must not survive -
+      // keeping it would make the new 15-minute interval wait out the old one.
+      expect(updated?.nextRunAt).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

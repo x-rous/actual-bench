@@ -39,7 +39,6 @@ type SyncFlowRunItemRow = {
   id: string;
   run_id: string;
   flow_id: string | null;
-  leg_id: string | null;
   sequence?: number | null;
   source_item_ref_json: string;
   target_item_ref_json: string | null;
@@ -82,7 +81,6 @@ type CreateSyncFlowRunItemInput = {
   id?: string;
   runId: string;
   flowId?: string | null;
-  legId?: string | null;
   sequence?: number | null;
   sourceItemRef?: JsonEnvelope;
   targetItemRef?: JsonEnvelope | null;
@@ -141,7 +139,6 @@ function rowToRunItem(row: SyncFlowRunItemRow): SyncFlowRunItem {
     id: row.id,
     runId: row.run_id,
     flowId: row.flow_id,
-    legId: row.leg_id,
     sequence: row.sequence ?? null,
     sourceItemRef: parseEnvelope(row.source_item_ref_json, "sourceItemRef"),
     targetItemRef: parseOptionalEnvelope(row.target_item_ref_json, "targetItemRef"),
@@ -244,7 +241,6 @@ export function createSyncFlowRunItem(db: SqliteDatabase, input: CreateSyncFlowR
       id,
       run_id,
       flow_id,
-      leg_id,
       sequence,
       source_item_ref_json,
       target_item_ref_json,
@@ -267,12 +263,11 @@ export function createSyncFlowRunItem(db: SqliteDatabase, input: CreateSyncFlowR
       created_target_marker,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.runId,
     input.flowId ?? null,
-    input.legId ?? null,
     input.sequence ?? null,
     stringifyEnvelope(sourceItemRef),
     stringifyEnvelope(targetItemRef),

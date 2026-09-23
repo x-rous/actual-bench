@@ -1,7 +1,7 @@
 import { getBudgetFileSyncCapabilities } from "./capabilities";
 import { decodeFlowPlanConfig } from "./flowConfig";
 import "./adapters"; // register all data-type adapters (side-effect)
-import { getSyncKindAdapter, SyncKindError } from "./syncKind";
+import { describeSyncError, getSyncKindAdapter, SyncKindError } from "./syncKind";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import type { ConnectionInstance } from "@/store/connection";
 import type { JsonObject, SyncFlow, SyncMapping, SyncRunTrigger } from "@/lib/app-db/types";
@@ -147,7 +147,7 @@ export async function runLiveDryRunPreview(
   try {
     flow = await deps.store.loadFlow(flowId);
   } catch (err) {
-    return failedResult(flowId, { code: "persistence_failed", message: describe(err, "Failed to load the flow.") }, warnings);
+    return failedResult(flowId, { code: "persistence_failed", message: describeSyncError(err, "Failed to load the flow.") }, warnings);
   }
   if (!flow) return failedResult(flowId, { code: "flow_not_found", message: `Sync flow ${flowId} was not found.` }, warnings);
   if (!flow.enabled && !input.allowDisabled) {
@@ -173,7 +173,7 @@ export async function runLiveDryRunPreview(
     try {
       sourceTransport = await deps.transport.openTransport(input.context.sourceConnection);
     } catch (err) {
-      throw new SyncKindError("source_load_failed", describe(err, "Failed to open the source budget."));
+      throw new SyncKindError("source_load_failed", describeSyncError(err, "Failed to open the source budget."));
     }
     const source = await adapter.loadSource(sourceTransport, flow);
 
@@ -183,14 +183,14 @@ export async function runLiveDryRunPreview(
     try {
       targetTransport = await deps.transport.openTransport(input.context.targetConnection);
     } catch (err) {
-      throw new SyncKindError("target_load_failed", describe(err, "Failed to open the target budget."));
+      throw new SyncKindError("target_load_failed", describeSyncError(err, "Failed to open the target budget."));
     }
     const target = await adapter.loadTarget(targetTransport, flow);
     let mappings: SyncMapping[];
     try {
       mappings = await deps.store.loadMappings(flowId);
     } catch (err) {
-      throw new DryRunPreviewError("persistence_failed", describe(err, "Failed to load existing mappings."));
+      throw new DryRunPreviewError("persistence_failed", describeSyncError(err, "Failed to load existing mappings."));
     }
 
     // 4b. FX phase (RD-056): resolve the rates the run needs before planning, so
@@ -222,7 +222,7 @@ export async function runLiveDryRunPreview(
         trigger: input.trigger,
       }));
     } catch (err) {
-      throw new DryRunPreviewError("persistence_failed", describe(err, "Failed to persist the preview run."));
+      throw new DryRunPreviewError("persistence_failed", describeSyncError(err, "Failed to persist the preview run."));
     }
 
     return { status: "draft_preview", runId, flowId, counts: plan.counts, summary, warnings, errors: [] };
@@ -232,23 +232,12 @@ export async function runLiveDryRunPreview(
         ? { code: err.code, message: err.message }
         : err instanceof DryRunPreviewError
           ? err.toError()
-          : { code: "source_load_failed", message: describe(err, "Dry-run failed.") };
+          : { code: "source_load_failed", message: describeSyncError(err, "Dry-run failed.") };
     return persistFailure(deps.store, flowId, error, warnings);
   }
 }
 
 // --- Helpers ----------------------------------------------------------------
-
-function describe(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message;
-  // Server-side HTTP calls throw a structured ApiError object (not an Error
-  // instance); surface its real message instead of the generic fallback.
-  if (err && typeof err === "object" && "message" in err) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === "string" && message) return message;
-  }
-  return fallback;
-}
 
 function failedResult(flowId: string, error: DryRunError, warnings: string[]): LiveDryRunResult {
   return { status: "failed", runId: null, flowId, error, warnings };

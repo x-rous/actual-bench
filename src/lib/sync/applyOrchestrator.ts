@@ -3,7 +3,13 @@ import "./adapters"; // register all data-type adapters (side-effect)
 import { connectionMatchesBudget } from "./connectionRef";
 import { decodeFlowPlanConfig, type SyncFlowPlanConfig } from "./flowConfig";
 import { generateSyncMarker } from "./marker";
-import { getSyncKindAdapter, SyncKindError, type AdapterCreateResult, type SyncKindAdapter } from "./syncKind";
+import {
+  describeSyncError as describe,
+  getSyncKindAdapter,
+  SyncKindError,
+  type AdapterCreateResult,
+  type SyncKindAdapter,
+} from "./syncKind";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import type { ConnectionInstance } from "@/store/connection";
 import type {
@@ -1043,18 +1049,6 @@ function flagEnvelope(flags: string[], extra: JsonObject = {}): JsonEnvelope {
 
 function envelope(data: JsonObject): JsonEnvelope {
   return { version: 1, data };
-}
-
-function describe(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message;
-  // Server-side HTTP calls throw a structured ApiError object (not an Error
-  // instance); without this its real message was lost and callers saw only the
-  // generic fallback (e.g. "target_open_failed" with no HTTP reason).
-  if (err && typeof err === "object" && "message" in err) {
-    const message = (err as { message?: unknown }).message;
-    if (typeof message === "string" && message) return message;
-  }
-  return fallback;
 }
 
 function nowIso(): string {

@@ -1,3 +1,4 @@
+import { nextIntervalRun } from "@/lib/automation/schedule";
 import type { SyncReviewPolicy } from "@/lib/app-db/types";
 
 /**
@@ -11,7 +12,13 @@ import type { SyncReviewPolicy } from "@/lib/app-db/types";
  *
  * There is no server here: the engine and credentials live in the browser, so a
  * flow is only schedulable while its connections are unlocked in this tab
- * (`connectionsReady`). Unattended server-side scheduling is RD-058.
+ * (`connectionsReady`). Server-side scheduling is the automation engine's.
+ *
+ * The gates above are this scheduler's own - the engine has no notion of a
+ * connection being unlocked in a browser tab. *When* an interval is next due is
+ * not: that arithmetic (including the shared interval floor) is the engine's
+ * `nextIntervalRun`, so a browser-run flow and a server-run one cannot disagree
+ * about what "every 30 minutes" means.
  */
 
 export type SchedulableFlow = {
@@ -39,9 +46,7 @@ export function isFlowDue(flow: SchedulableFlow, inFlight: ReadonlySet<string>, 
   if (!flow.enabled) return false;
   if (!flow.connectionsReady) return false;
   if (inFlight.has(flow.flowId)) return false;
-  if (flow.lastRunAtMs == null) return true;
-  const intervalMs = Math.max(1, flow.intervalMinutes) * 60_000;
-  return nowMs - flow.lastRunAtMs >= intervalMs;
+  return nextIntervalRun(flow.intervalMinutes, flow.lastRunAtMs, nowMs) <= nowMs;
 }
 
 /** Flow ids that should start an automated safe-only run on this tick. */

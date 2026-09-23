@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import {
   AlertTriangle,
   CircleCheck,
   CircleDot,
   CirclePause,
   CircleX,
+  History,
   Loader2,
   Pause,
   Play,
@@ -237,6 +239,16 @@ export function AutomationsTable({
                       Run now
                     </Button>
 
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      render={<Link href={`/automations/runs?automation=${automation.id}`} />}
+                      aria-label={`View run history for ${automation.name}`}
+                      title="View run history"
+                    >
+                      <History aria-hidden />
+                    </Button>
+
                     {paused ? (
                       <Button variant="outline" size="sm" onClick={() => onResume(automation.id)}>
                         Resume
@@ -259,14 +271,15 @@ export function AutomationsTable({
                     {/* Deleting is how an automation actually goes away. Pause
                         is not: a backup rule that has been deleted leaves its
                         automation behind, paused with a reason, and without
-                        this there was no way to clear it. */}
+                        this there was no way to clear it. The runs it already
+                        recorded outlive it (schema v30). */}
                     <Button
                       variant="ghost"
                       size="sm"
                       className="text-destructive"
                       onClick={() => onDelete(automation)}
                       aria-label={`Delete ${automation.name}`}
-                      title="Delete this automation. Its run history goes with it."
+                      title="Delete this automation. Its past runs stay in the run history."
                     >
                       <Trash2 aria-hidden />
                     </Button>
