@@ -132,9 +132,14 @@ export function SyncView() {
   // that, the fresh DB read is what shows each item's real apply outcome;
   // losing the already-synced rows from view at that point is fine, since
   // apply never touched them and nobody needs their status post-apply.
-  // History view, and any later reload of the same run, falls back to
-  // runQuery outright and simply won't show those rows - the agreed tradeoff.
+  // History falls back to runQuery outright and simply won't show those rows -
+  // the agreed tradeoff - and that holds even when it opens the very run this
+  // session just previewed. What history shows for a run has to be what the
+  // database holds for it: the audit CSV is exported from these same rows, and
+  // an export that depends on whose session is looking is not an audit. It is
+  // also what the "count only" note on the already-synced tile promises there.
   const preferLiveItems =
+    view === "flow" &&
     livePreview !== null &&
     livePreview.runId === activeRunId &&
     PRE_APPLY_RUN_STATUSES.has(runQuery.data?.run.status);

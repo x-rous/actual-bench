@@ -222,6 +222,42 @@ describe("SyncView", () => {
     await waitFor(() => expect(screen.getAllByTestId("preview-row")).toHaveLength(1));
   });
 
+  it("shows what the database holds when history opens the run just previewed", async () => {
+    // Same run, so the ids match - but history has to show the stored rows
+    // regardless. The audit CSV is exported from these, and an export that
+    // depends on whose session is looking is not an audit.
+    setup([conn1, conn2]);
+    previewMutate.mockImplementationOnce((_args, opts?: { onSuccess?: (r: unknown) => void }) =>
+      opts?.onSuccess?.({
+        status: "draft_preview",
+        runId: "run-1",
+        flowId: "flow-1",
+        counts: {},
+        summary: {},
+        warnings: [],
+        errors: [],
+        // The extra row the database deliberately never stored.
+        items: [...runFixture.items, itemFixture({ id: "synced-1", classification: "already_synced" })],
+      })
+    );
+
+    render(<SyncView />);
+    fireEvent.click(screen.getByText("Card sync"));
+    const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
+    await waitFor(() => expect(previewButtons[0]).toBeEnabled());
+    fireEvent.click(previewButtons[0]);
+
+    // The live preview sees all three, which is the whole point of holding them.
+    expect(await screen.findByText("Planned changes")).toBeInTheDocument();
+    expect(screen.getAllByTestId("preview-row")).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+    fireEvent.click(await screen.findByText("Preview only"));
+
+    // Opened from history, the same run reads back as the database has it.
+    await waitFor(() => expect(screen.getAllByTestId("preview-row")).toHaveLength(2));
+  });
+
   it("creates a reverse flow with source and target swapped from the header", async () => {
     setup([conn1, conn2]);
     render(<SyncView />);
