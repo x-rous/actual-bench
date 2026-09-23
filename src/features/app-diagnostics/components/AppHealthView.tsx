@@ -186,7 +186,7 @@ function StorageUsagePanel() {
                 {usage.compactsOnRestart
                   ? "Enough to be worth rebuilding the file, which happens on the next restart."
                   : usage.autoVacuum === "incremental"
-                    ? "Reclaimed gradually as automations run."
+                    ? "Reclaimed gradually while Bench is running."
                     : "Reused as the database grows again."}
               </span>
             </span>
