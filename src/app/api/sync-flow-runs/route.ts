@@ -62,12 +62,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ runId: run.id }, { status: 201 });
     }
 
-    const { run } = persistDraftPreviewRun(db, body.plan, {
+    const { run, items } = persistDraftPreviewRun(db, body.plan, {
       summary: body.summary,
       sourceSnapshotSummary: body.sourceSnapshotSummary,
       trigger: normalizeTrigger(body.trigger),
     });
-    return NextResponse.json({ runId: run.id }, { status: 201 });
+    // `items` includes classifications persistDraftPreviewRun chose not to
+    // write to the database (e.g. already_synced) — this response is the only
+    // place the caller can see them; a later GET of this run will not.
+    return NextResponse.json({ runId: run.id, items }, { status: 201 });
   } catch (error) {
     return appDbErrorResponse(error);
   }

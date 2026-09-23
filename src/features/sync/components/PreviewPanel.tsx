@@ -106,7 +106,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
 
   if (!summary) return null;
 
-  const tiles = previewTiles(rows, kind);
+  const tiles = previewTiles(rows, kind, summary.alreadySynced);
   // Only show a filter chip when it would actually match something; "All" always
   // stays. Keeps the chip row focused on the classes a run really produced.
   const filters = previewFilters(kind).filter((f) => f.key === "all" || filterCount(rows, f.key) > 0);

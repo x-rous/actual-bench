@@ -19,12 +19,12 @@ export function createAppDbPreviewStore(db: SqliteDatabase): PreviewStore {
     loadFlow: async (flowId) => getSyncFlow(db, flowId),
     loadMappings: async (flowId) => getAllSyncMappingsForFlow(db, flowId),
     persistPlan: async (plan, meta) => {
-      const { run } = persistDraftPreviewRun(db, plan, {
+      const { run, items } = persistDraftPreviewRun(db, plan, {
         summary: meta.summary,
         sourceSnapshotSummary: meta.sourceSnapshotSummary,
         trigger: meta.trigger,
       });
-      return { runId: run.id };
+      return { runId: run.id, items };
     },
     persistFailedRun: async (flowId, error, meta) => {
       const run = createSyncFlowRun(db, {

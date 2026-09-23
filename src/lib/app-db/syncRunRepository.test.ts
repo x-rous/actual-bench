@@ -7,6 +7,8 @@ import {
   createSyncFlowRun,
   createSyncFlowRunItem,
   listSyncFlowRunItems,
+  listSyncFlowRuns,
+  pruneSyncFlowRuns,
   updateSyncFlowRun,
   updateSyncFlowRunItem,
 } from "./syncRunRepository";
@@ -84,6 +86,40 @@ describe("sync run repository", () => {
       const finalRun = updateSyncFlowRun(db, run.id, { status: "applied", finishedAt: "2026-07-07T00:00:00.000Z" });
       expect(finalRun?.status).toBe("applied");
       expect(finalRun?.finishedAt).toBe("2026-07-07T00:00:00.000Z");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prunes per flow, so a busy flow cannot age out a quiet flow's history", () => {
+    const { root, db } = tempDb();
+    try {
+      const busy = createSyncFlow(db, {
+        name: "Busy flow",
+        legs: [{ sourceRef: envelope, targetRef: envelope, filter: envelope, transform: envelope }],
+      });
+      const quiet = createSyncFlow(db, {
+        name: "Quiet flow",
+        legs: [{ sourceRef: envelope, targetRef: envelope, filter: envelope, transform: envelope }],
+      });
+
+      for (let i = 0; i < 6; i += 1) {
+        createSyncFlowRun(db, { flowId: busy.id, startedAt: `2026-08-25T0${i}:00:00.000Z` });
+      }
+      const quietRun = createSyncFlowRun(db, { flowId: quiet.id, startedAt: "2026-08-20T00:00:00.000Z" });
+      const survivingBusyRun = createSyncFlowRun(db, { flowId: busy.id, startedAt: "2026-08-25T09:00:00.000Z" });
+      createSyncFlowRunItem(db, { runId: survivingBusyRun.id, flowId: busy.id, sourceItemRef: envelope });
+
+      const deleted = pruneSyncFlowRuns(db, 2);
+
+      expect(deleted).toBe(5);
+      expect(listSyncFlowRuns(db, { flowId: busy.id })).toHaveLength(2);
+      // The quiet flow's single, much older run survives.
+      expect(listSyncFlowRuns(db, { flowId: quiet.id })).toHaveLength(1);
+      expect(listSyncFlowRuns(db, { flowId: quiet.id })[0]?.id).toBe(quietRun.id);
+      // Items cascade with their run.
+      expect(listSyncFlowRunItems(db, { runId: survivingBusyRun.id })).toHaveLength(1);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

@@ -27,7 +27,7 @@ import {
 import { selectableRowIds, syncKindOf, toPreviewRow } from "../lib/previewRows";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
 import { formatRunTimestamp, relativeTime, runErrorMessage, toRunRow } from "../lib/runsView";
-import type { SyncFlowRun } from "@/lib/app-db/types";
+import type { SyncFlowRun, SyncFlowRunItem } from "@/lib/app-db/types";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
 import type { SafeSyncResult } from "@/lib/sync/safeSyncOrchestrator";
@@ -51,6 +51,10 @@ function deriveSummary(run: SyncFlowRun | undefined): DryRunSummary | null {
     blocked: n("blocked"),
   };
 }
+
+/** Run statuses before or during an apply, where the live preview response's
+ * item list (including rows the database never persisted) is still current. */
+const PRE_APPLY_RUN_STATUSES = new Set<string | undefined>([undefined, "draft_preview", "applying"]);
 
 export function SyncView() {
   const connections = useSyncConnections();
@@ -86,6 +90,11 @@ export function SyncView() {
   const [runId, setRunId] = useState<string | null>(null);
   const [historyRunId, setHistoryRunId] = useState<string | null>(null);
   const [isLivePreview, setIsLivePreview] = useState(false);
+  // The preview response's full item list, including classifications never
+  // persisted to the database (e.g. already_synced). Reopening this same run
+  // later from history reads it back from the DB and will not include them -
+  // this is the only place this session sees them.
+  const [livePreviewItems, setLivePreviewItems] = useState<SyncFlowRunItem[] | null>(null);
   const [previewError, setPreviewError] = useState<DryRunError | null>(null);
   const [applyResult, setApplyResult] = useState<ApplyRunResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -110,7 +119,19 @@ export function SyncView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFlowId, flowsQuery.data]);
 
-  const rows = useMemo(() => (runQuery.data?.items ?? []).map(toPreviewRow), [runQuery.data]);
+  // The live preview response carries items the database never persisted
+  // (already_synced) - prefer it over the DB read for the run we just
+  // created, up until an apply actually changes the run's status. After
+  // that, the fresh DB read is what shows each item's real apply outcome;
+  // losing the already-synced rows from view at that point is fine, since
+  // apply never touched them and nobody needs their status post-apply.
+  // History view, and any later reload of the same run, falls back to
+  // runQuery outright and simply won't show those rows - the agreed tradeoff.
+  const preferLiveItems = isLivePreview && livePreviewItems !== null && PRE_APPLY_RUN_STATUSES.has(runQuery.data?.run.status);
+  const rows = useMemo(
+    () => (preferLiveItems ? livePreviewItems! : (runQuery.data?.items ?? [])).map(toPreviewRow),
+    [preferLiveItems, livePreviewItems, runQuery.data]
+  );
 
   // Only a fresh, still-draft preview is appliable; runs opened from history are read-only.
   const runStatus = runQuery.data?.run.status;
@@ -152,6 +173,7 @@ export function SyncView() {
     setRunId(null);
     setHistoryRunId(null);
     setIsLivePreview(false);
+    setLivePreviewItems(null);
     setPreviewError(null);
     setApplyResult(null);
     setActionError(null);
@@ -239,8 +261,13 @@ export function SyncView() {
       { flowId: selectedFlowId, sourceConnection: sourceConn, targetConnection: targetConn, allowDisabled: true },
       {
         onSuccess: (result) => {
-          if (result.status === "draft_preview") { setRunId(result.runId); setIsLivePreview(true); }
-          else setPreviewError(result.error);
+          if (result.status === "draft_preview") {
+            setRunId(result.runId);
+            setIsLivePreview(true);
+            setLivePreviewItems(result.items);
+          } else {
+            setPreviewError(result.error);
+          }
         },
         onError: (err) => setActionError(err instanceof Error ? err.message : "Preview could not be run."),
       }

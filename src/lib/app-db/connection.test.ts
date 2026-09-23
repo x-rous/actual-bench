@@ -155,6 +155,36 @@ describe("app DB connection", () => {
     }
   });
 
+  it("enables incremental auto_vacuum on a fresh database", () => {
+    const { root, dbPath } = tempDbPath();
+    try {
+      const db = getAppDb(dbPath);
+      const mode = db.pragma("auto_vacuum") as Array<{ auto_vacuum: number }>;
+      expect(mode[0]?.auto_vacuum).toBe(2); // 2 = incremental
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not re-run VACUUM once incremental auto_vacuum is already set", () => {
+    const { root, dbPath } = tempDbPath();
+    try {
+      getAppDb(dbPath);
+      resetAppDbForTests();
+
+      // Reopening (a fresh connection, mode already persisted on disk) must not
+      // throw or re-trigger a VACUUM - just confirm it still opens cleanly with
+      // the mode intact.
+      const reopened = getAppDb(dbPath);
+      const mode = reopened.pragma("auto_vacuum") as Array<{ auto_vacuum: number }>;
+      expect(mode[0]?.auto_vacuum).toBe(2);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("reports an unavailable health state when the parent directory is missing", () => {
     const { root } = tempDbPath();
     const missingPath = join(root, "missing", "metadata.sqlite");

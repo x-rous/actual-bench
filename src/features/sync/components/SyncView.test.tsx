@@ -55,7 +55,7 @@ const runFixture = {
 };
 
 const previewMutate = jest.fn((_args, opts?: { onSuccess?: (r: unknown) => void }) =>
-  opts?.onSuccess?.({ status: "draft_preview", runId: "run-1", flowId: "flow-1", counts: {}, summary: {}, warnings: [], errors: [] })
+  opts?.onSuccess?.({ status: "draft_preview", runId: "run-1", flowId: "flow-1", counts: {}, summary: {}, warnings: [], errors: [], items: runFixture.items })
 );
 const applyMutate = jest.fn((_args, opts?: { onSuccess?: (r: unknown) => void }) =>
   opts?.onSuccess?.({ status: "applied", runId: "run-1", counts: { selected: 1, applied: 1, appliedWithWarnings: 0, repaired: 0, skipped: 0, failed: 0 }, items: [] })
