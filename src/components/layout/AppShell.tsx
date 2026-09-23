@@ -21,7 +21,7 @@ import { useBudgetPreferences } from "@/hooks/useBudgetPreferences";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import { getLastActiveRef, setLastActiveRef, clearLastActiveRef } from "@/features/connect/lastActiveRef";
 import { revealServerSecret } from "@/features/connect/vaultApi";
-import { buildInstanceFromRevealed } from "@/features/connect/reconnectFromVault";
+import { buildInstanceFromRevealed, ensureConnectionReady } from "@/features/connect/reconnectFromVault";
 
 /**
  * The four-panel app shell:
@@ -105,9 +105,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     let cancelled = false;
     revealServerSecret(pending.fingerprint, pending.budgetSyncId)
-      .then((revealed) => {
+      .then(async (revealed) => {
         if (cancelled) return;
         const instance = buildInstanceFromRevealed(revealed, pending.budgetSyncId, pending.label);
+        // Same readiness gate reconnect() runs — don't activate a connection
+        // whose secret decrypted fine but no longer actually reaches the
+        // server (rotated password, server down).
+        await ensureConnectionReady(instance);
+        if (cancelled) return;
         addInstance(instance);
         setActiveInstance(instance.id);
       })
