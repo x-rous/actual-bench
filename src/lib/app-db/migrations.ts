@@ -49,7 +49,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 33;
+export const LATEST_SCHEMA_VERSION = 34;
 
 type Migration = {
   version: number;
@@ -411,7 +411,31 @@ const MIGRATIONS: readonly Migration[] = [
     // backlog that predates that.
     apply: applyAlreadySyncedRunItemPurge,
   },
+  {
+    version: 34,
+    // Two additions the unattended worker platform builds on (F-189, RD-095):
+    // a per-server request lease, so requests to one actual-http-api stay
+    // serialized across module instances and worker threads rather than only
+    // within one in-memory queue; and an optional input on each automation run,
+    // so a run can say what it was started for (an event id, later) without
+    // another schema change.
+    apply: applyServerLeasesAndRunInput,
+  },
 ];
+
+function applyServerLeasesAndRunInput(db: SqliteDatabase): void {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS server_request_leases (
+  server_key text PRIMARY KEY,
+  holder text NOT NULL,
+  acquired_at text NOT NULL,
+  expires_at_ms integer NOT NULL
+);
+`);
+  if (tableExists(db, "automation_runs")) {
+    addColumnIfMissing(db, "automation_runs", "input_json", "text");
+  }
+}
 
 function applyAlreadySyncedRunItemPurge(db: SqliteDatabase): void {
   if (!tableExists(db, "sync_flow_run_items")) return;

@@ -8,6 +8,7 @@
 
 import { isHttpApiConnection, type ConnectionInstance, type HttpApiConnection } from "@/store/connection";
 import type { ApiError } from "@/types/errors";
+import { getServerRequestGate } from "@/lib/http/serverRequestGate";
 
 // ─── Connection mode guard ─────────────────────────────────────────────────────
 
@@ -37,13 +38,33 @@ type RequestOptions = {
  * Server-side direct forward to actual-http-api (RD-058). Mirrors the proxy's
  * URL + auth-header construction, but runs in the Node server for unattended
  * sync where there is no browser. Never used on the client.
+ *
+ * It goes through the same per-server lock as the proxy (F-189). Two requests
+ * against one actual-http-api at once can wedge the budget, so a scheduled
+ * sync must wait for a user's save exactly as the user's own requests do. The
+ * lock lives in a server-only module this file cannot import (it also runs in
+ * the browser), so it is reached through the gate that module installs when it
+ * loads. A missing gate is an error, not a reason to skip the lock.
  */
+const UNATTENDED_REQUEST_TIMEOUT_MS = 30_000;
+
+type ForwardOutcome<T> = { status: number; data?: T; error?: ApiError };
+
 async function forwardDirectToActualHttpApi<T>(
   connection: HttpApiConnection,
   path: string,
   method: string,
   body: unknown
 ): Promise<T> {
+  const gate = getServerRequestGate();
+  if (!gate) {
+    throw {
+      kind: "api",
+      status: 500,
+      message: "The server request lock is not loaded, so this request was not sent.",
+    } satisfies ApiError;
+  }
+
   const base = connection.baseUrl.replace(/\/$/, "");
   const url = connection.budgetSyncId
     ? `${base}/v1/budgets/${connection.budgetSyncId}${path}`
@@ -54,35 +75,59 @@ async function forwardDirectToActualHttpApi<T>(
     "budget-encryption-password": connection.encryptionPassword ?? "",
   };
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch (err) {
-    const error: ApiError = {
-      kind: "api",
-      status: 0,
-      message: err instanceof Error ? err.message : "Network error reaching the API server",
-    };
-    throw error;
-  }
+  // The operation reports its status instead of throwing, so the lock can tell
+  // a server error (which may leave the budget half-open and is followed by a
+  // best-effort close) from an ordinary 4xx (which is not).
+  const outcome = await gate<ForwardOutcome<T>>(
+    connection,
+    `unattended-${Math.random().toString(36).slice(2, 9)}`,
+    async () => {
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method,
+          headers,
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(UNATTENDED_REQUEST_TIMEOUT_MS),
+        });
+      } catch (err) {
+        return {
+          status: 0,
+          error: {
+            kind: "api",
+            status: 0,
+            message: err instanceof Error ? err.message : "Network error reaching the API server",
+          },
+        };
+      }
 
-  if (response.status === 204) return undefined as T;
-  if (!response.ok) {
-    let message = `HTTP ${response.status}`;
-    try {
-      const json = (await response.json()) as { error?: string; message?: string };
-      message = json.error ?? json.message ?? message;
-    } catch {
-      // ignore parse errors
-    }
-    throw { kind: "api", status: response.status, message } satisfies ApiError;
-  }
-  return response.json() as Promise<T>;
+      if (response.status === 204) return { status: 204, data: undefined as T };
+      if (!response.ok) {
+        let message = `HTTP ${response.status}`;
+        try {
+          const json = (await response.json()) as { error?: string; message?: string };
+          message = json.error ?? json.message ?? message;
+        } catch {
+          // ignore parse errors
+        }
+        return { status: response.status, error: { kind: "api", status: response.status, message } };
+      }
+      return { status: response.status, data: (await response.json()) as T };
+    },
+    // The request timeout plus the budget-close cleanup plus margin.
+    { leaseTtlMs: UNATTENDED_REQUEST_TIMEOUT_MS + 15_000 }
+  ).catch((error: unknown): ForwardOutcome<T> => ({
+    // Another realm held the server for longer than a request may wait.
+    status: 503,
+    error: {
+      kind: "api",
+      status: 503,
+      message: error instanceof Error ? error.message : "The API server is busy.",
+    },
+  }));
+
+  if (outcome.error) throw outcome.error;
+  return outcome.data as T;
 }
 
 export async function apiRequest<T>(

@@ -3,6 +3,14 @@
  */
 import { createHttpApiTransport } from "./httpApiTransport";
 import type { HttpApiConnection } from "@/store/connection";
+import { installServerRequestGate } from "@/lib/http/serverRequestGate";
+
+// These tests cover how requests are built and read back. The per-server lock
+// they pass through on the server has its own tests (serverQueue.test.ts), so a
+// pass-through stands in for it here.
+beforeAll(() => {
+  installServerRequestGate((_target, _reqId, operation) => operation());
+});
 
 /**
  * HTTP API Server mode is a first-class transport (AGENTS.md §2) and every read

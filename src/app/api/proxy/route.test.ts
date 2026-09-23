@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 import { POST } from "./route";
-import { __internals } from "./serverQueue";
+import { __internals } from "@/lib/http/serverQueue";
 
 /**
  * Every browser call in HTTP API Server mode transits this route, and it had no
@@ -23,6 +23,8 @@ let fetchCalls: { url: string; init: RequestInit }[] = [];
 
 beforeEach(() => {
   __internals.serverQueueTails.clear();
+  // The lease itself is covered in serverQueue.test.ts; here it is always free.
+  __internals.setLeaseStoreFactory(() => ({ acquire: () => true, release: () => {} }));
   fetchCalls = [];
   upstream = { status: 200, json: { data: "ok" } };
   global.fetch = jest.fn(async (url: string, init: RequestInit) => {
@@ -178,5 +180,22 @@ describe("per-server serialisation", () => {
     // serverQueue.test.ts — what matters here is that this route uses it.
     await POST(request({ connection, path: "/accounts" }));
     expect(__internals.serverQueueTails.size).toBe(1);
+  });
+
+  it("answers 503, without reaching the server, when another realm holds it too long", async () => {
+    // An automation run in another thread holds the server's lease throughout.
+    __internals.setLeaseStoreFactory(() => ({ acquire: () => false, release: () => {} }));
+    __internals.setLeaseWaitMs(40);
+    try {
+      const response = await POST(request({ connection, path: "/accounts" }));
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toEqual({
+        error: "The API server is busy with another request. Try again shortly.",
+      });
+      // Nothing was sent - not the request, and not a budget close either.
+      expect(fetchCalls).toHaveLength(0);
+    } finally {
+      __internals.setLeaseWaitMs(120_000);
+    }
   });
 });

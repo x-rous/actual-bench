@@ -13,7 +13,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
-import { queueServerRequest, type HttpProxyConnection } from "../serverQueue";
+import {
+  ServerBusyError,
+  queueServerRequest,
+  type HttpProxyConnection,
+} from "@/lib/http/serverQueue";
 
 type DownloadRequestBody = {
   connection: HttpProxyConnection;
@@ -124,7 +128,18 @@ export async function POST(request: NextRequest) {
   };
   headers["budget-encryption-password"] = connection.encryptionPassword ?? "";
 
-  return queueServerRequest(connection, reqId, () =>
-    upstreamDownload(url, headers, method, reqId, start, path)
-  );
+  // The lease outlives the 60s download timeout by the budget-close cleanup
+  // plus margin, so it cannot expire while the download is still running.
+  return queueServerRequest(
+    connection,
+    reqId,
+    () => upstreamDownload(url, headers, method, reqId, start, path),
+    { leaseTtlMs: 75_000 }
+  ).catch((error: unknown) => {
+    // Another realm held the server for longer than a request may wait; the
+    // download never started, so a retry is safe.
+    if (!(error instanceof ServerBusyError)) throw error;
+    logger.warn(`${method} 503 ${path} [${reqId}] - ${error.message}`);
+    return NextResponse.json({ error: error.message }, { status: 503 });
+  });
 }

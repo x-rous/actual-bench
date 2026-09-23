@@ -22,7 +22,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { logger } from "@/lib/logger";
-import { queueServerRequest, type HttpProxyConnection } from "./serverQueue";
+import {
+  ServerBusyError,
+  queueServerRequest,
+  type HttpProxyConnection,
+} from "@/lib/http/serverQueue";
 
 type ProxyRequestBody = {
   connection: HttpProxyConnection;
@@ -129,7 +133,23 @@ export async function POST(request: NextRequest) {
   // even for unencrypted budgets. Defaults to empty string when not set.
   headers["budget-encryption-password"] = connection.encryptionPassword ?? "";
 
-  return queueServerRequest(connection, reqId, () =>
-    upstreamFetch(url, headers, method, body, reqId, start, path)
-  );
+  // The lease outlives the 15s upstream timeout by the 5s budget-close cleanup
+  // plus margin, so it cannot expire while this request is still running.
+  return queueServerRequest(
+    connection,
+    reqId,
+    () => upstreamFetch(url, headers, method, body, reqId, start, path),
+    { leaseTtlMs: 30_000 }
+  ).catch((error: unknown) => serverBusyResponse(error, method, path, reqId));
+}
+
+/**
+ * Another realm (an automation run in a worker, say) held the server for
+ * longer than a request may wait. The request never reached the server, so it
+ * is safe to retry - which is what 503 says.
+ */
+function serverBusyResponse(error: unknown, method: string, path: string, reqId: string): NextResponse {
+  if (!(error instanceof ServerBusyError)) throw error;
+  logger.warn(`${method} 503 ${path} [${reqId}] - ${error.message}`);
+  return NextResponse.json({ error: error.message }, { status: 503 });
 }
