@@ -36,6 +36,7 @@ type AutomationRunRow = {
   result_json: string | null;
   rollup_json: string | null;
   error_json: string | null;
+  input_json?: string | null;
 };
 
 export type CreateAutomationRunInput = {
@@ -47,7 +48,19 @@ export type CreateAutomationRunInput = {
   trigger?: AutomationRunTrigger;
   attempt?: number;
   executionMode?: AutomationExecutionMode;
+  /** What this run was started for. Small by design; see `MAX_RUN_INPUT_BYTES`. */
+  input?: JsonEnvelope | null;
 };
+
+/**
+ * Upper bound on a run's input once serialized.
+ *
+ * An input says *what* a run is for - an event id, a budget reference - never
+ * the data itself. Anything larger belongs in its own table with the run
+ * pointing at it; this cap is what stops that from quietly turning the run
+ * history into a payload store.
+ */
+export const MAX_RUN_INPUT_BYTES = 16 * 1024;
 
 export type FinalizeAutomationRunInput = {
   status: AutomationRunStatus;
@@ -146,7 +159,19 @@ function rowToRun(row: AutomationRunRow): AutomationRun {
     result: parseOptionalEnvelope(row.result_json, "result"),
     rollup: parseRollup(row.rollup_json),
     error: parseOptionalEnvelope(row.error_json, "error"),
+    // `?? null`: a database from before v34 has no such column at all.
+    input: parseOptionalEnvelope(row.input_json ?? null, "input"),
   };
+}
+
+function serializeRunInput(input: JsonEnvelope | null | undefined): string | null {
+  const serialized = stringifyEnvelope(normalizeOptionalEnvelope(input, "input"));
+  if (serialized !== null && Buffer.byteLength(serialized, "utf8") > MAX_RUN_INPUT_BYTES) {
+    throw new AppDbValidationError(
+      `input must be at most ${MAX_RUN_INPUT_BYTES} bytes once serialized; store larger data elsewhere and reference it`
+    );
+  }
+  return serialized;
 }
 
 export function createAutomationRun(db: SqliteDatabase, input: CreateAutomationRunInput): AutomationRun {
@@ -159,8 +184,8 @@ export function createAutomationRun(db: SqliteDatabase, input: CreateAutomationR
   db.prepare(
     `INSERT INTO automation_runs (
       id, automation_id, type, status, started_at, finished_at, trigger, attempt,
-      execution_mode, result_json, rollup_json, error_json
-    ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL)`
+      execution_mode, result_json, rollup_json, error_json, input_json
+    ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL, ?)`
   ).run(
     id,
     input.automationId ?? null,
@@ -169,7 +194,8 @@ export function createAutomationRun(db: SqliteDatabase, input: CreateAutomationR
     input.startedAt ?? new Date().toISOString(),
     normalizeEnum(input.trigger, TRIGGERS, "trigger", "schedule"),
     attempt,
-    normalizeEnum(input.executionMode, EXECUTION_MODES, "executionMode", "server")
+    normalizeEnum(input.executionMode, EXECUTION_MODES, "executionMode", "server"),
+    serializeRunInput(input.input)
   );
 
   const created = getAutomationRun(db, id);

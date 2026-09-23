@@ -4,6 +4,8 @@ import type {
   BackupDestination,
   BackupPolicy,
 } from "@/lib/app-db/backupRepository";
+import type { AutomationRun } from "@/lib/app-db/types";
+import { waitForRun } from "@/features/automations/lib/runPolling";
 import type { DestinationCheck, DestinationFacts } from "@/lib/backup/destinations/types";
 import type { BackupReadiness } from "@/lib/backup/readiness";
 import type { PruneResult } from "@/lib/backup/prune";
@@ -222,7 +224,31 @@ export async function backUpNow(
   }
   if (!response.ok) return readError(response);
 
-  return ((await response.json()) as { result: ManualBackupOutcome }).result;
+  const answer = (await response.json()) as
+    | { mode: "run"; runId: string }
+    | { mode?: "result"; result: ManualBackupOutcome };
+
+  // The engine started the backup and answered with its id rather than making
+  // the request wait for it (F-191). Follow it to the end and report the same
+  // three facts the direct paths return.
+  if (answer.mode === "run") return backupOutcomeFromRun(await waitForRun(answer.runId));
+  return answer.result;
+}
+
+/**
+ * The three facts the page reports, read from a finished backup run. The job
+ * records `stored`/`verified`/`message` in its result; a run that threw before
+ * getting that far has only its status and roll-up to go by.
+ */
+export function backupOutcomeFromRun(run: AutomationRun): ManualBackupOutcome {
+  const data = (run.result?.data ?? {}) as { stored?: unknown; verified?: unknown; message?: unknown };
+  const succeeded = run.status === "succeeded";
+  return {
+    stored: typeof data.stored === "boolean" ? data.stored : succeeded,
+    verified: typeof data.verified === "boolean" ? data.verified : succeeded,
+    message:
+      (typeof data.message === "string" && data.message ? data.message : null) ?? run.rollup?.message ?? null,
+  };
 }
 
 export async function previewRetention(policyId: string, apply = false): Promise<PruneResult> {

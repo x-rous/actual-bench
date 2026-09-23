@@ -26,6 +26,7 @@ function run(overrides: Partial<RunHistoryEntry> = {}): RunHistoryEntry {
     result: null,
     rollup: { outcome: "failed", itemCount: 0, message: "No copy could be stored." },
     error: null,
+    input: null,
     automationName: "Nightly backup",
     typeLabel: "Backup",
     ...overrides,

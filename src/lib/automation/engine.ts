@@ -169,7 +169,37 @@ export type ExecuteOptions = {
   trigger?: AutomationRunTrigger;
   attempt?: number;
   nowMs?: number;
+  /** Stored on the run and handed to the job as `ctx.input`. */
+  input?: JsonEnvelope | null;
 };
+
+/**
+ * The result of *starting* a run: either it started, with the id to follow it
+ * by and a promise that settles when it ends, or it did not, and why.
+ */
+export type StartedRun =
+  | { started: true; runId: string; done: Promise<EngineRunOutcome> }
+  | { started: false; outcome: EngineRunOutcome };
+
+/**
+ * Runs started in the background, kept process-wide so tests and shutdown can
+ * wait for them. On `globalThis` for the same reason the queue is: a route
+ * module instance and the engine's own must see the same set.
+ */
+const BACKGROUND_RUNS_KEY = Symbol.for("actual-bench.backgroundAutomationRuns");
+
+function backgroundRuns(): Set<Promise<EngineRunOutcome>> {
+  const holder = globalThis as { [BACKGROUND_RUNS_KEY]?: Set<Promise<EngineRunOutcome>> };
+  holder[BACKGROUND_RUNS_KEY] ??= new Set();
+  return holder[BACKGROUND_RUNS_KEY];
+}
+
+/** Settle every run started in the background. For tests and orderly shutdown. */
+export async function settleBackgroundRuns(): Promise<void> {
+  while (backgroundRuns().size > 0) {
+    await Promise.allSettled([...backgroundRuns()]);
+  }
+}
 
 /**
  * Run one automation once, recording a run row whatever happens.
@@ -183,13 +213,35 @@ export async function executeAutomation(
   automationId: string,
   options: ExecuteOptions = {}
 ): Promise<EngineRunOutcome> {
+  const start = startAutomationRun(db, automationId, options);
+  return start.started ? start.done : start.outcome;
+}
+
+/**
+ * Start one run and return as soon as it exists.
+ *
+ * Everything up to and including the run row happens before this returns:
+ * the lookup, the fail-closed credential check, the claim and the `running`
+ * row. The job itself continues in the background, with the same bookkeeping
+ * `executeAutomation` has always done. This is what lets "Run now" answer with
+ * a run id immediately instead of holding an HTTP request open for a run that
+ * may take minutes (F-191) - a reverse proxy gives up long before a large
+ * backup does, while the run carries on regardless.
+ */
+export function startAutomationRun(
+  db: SqliteDatabase,
+  automationId: string,
+  options: ExecuteOptions = {}
+): StartedRun {
+  const skip = (outcome: EngineRunOutcome): StartedRun => ({ started: false, outcome });
+
   const definition = getAutomation(db, automationId);
   if (!definition) {
-    return { automationId, runId: null, status: "skipped", message: "Automation not found" };
+    return skip({ automationId, runId: null, status: "skipped", message: "Automation not found" });
   }
 
   if (inFlight.has(automationId)) {
-    return { automationId, runId: null, status: "skipped", message: "A run is already in progress" };
+    return skip({ automationId, runId: null, status: "skipped", message: "A run is already in progress" });
   }
 
   const jobType = getAutomationJobType(definition.type) as AutomationJobType<unknown, unknown> | undefined;
@@ -204,7 +256,7 @@ export async function executeAutomation(
       new Date(options.nowMs ?? Date.now()).toISOString(),
       `No job type registered for "${definition.type}"`
     );
-    return { automationId, runId: null, status: "skipped", message: `Unknown job type ${definition.type}` };
+    return skip({ automationId, runId: null, status: "skipped", message: `Unknown job type ${definition.type}` });
   }
 
   const credentials = resolveCredentials(db, definition);
@@ -216,7 +268,7 @@ export async function executeAutomation(
       new Date(options.nowMs ?? Date.now()).toISOString(),
       credentials.reason
     );
-    return { automationId, runId: null, status: "skipped", message: credentials.reason };
+    return skip({ automationId, runId: null, status: "skipped", message: credentials.reason });
   }
 
   // Take the claim in the database, not only in memory. Next may evaluate a
@@ -225,7 +277,7 @@ export async function executeAutomation(
   // — an in-memory lock alone would let the same automation apply its writes
   // twice. The in-memory set stays as a cheap first check and for `running`.
   if (!claimAutomation(db, automationId, new Date(options.nowMs ?? Date.now()).toISOString())) {
-    return { automationId, runId: null, status: "skipped", message: "A run is already in progress" };
+    return skip({ automationId, runId: null, status: "skipped", message: "A run is already in progress" });
   }
 
   inFlight.add(automationId);
@@ -250,6 +302,7 @@ export async function executeAutomation(
       trigger: options.trigger ?? "schedule",
       attempt,
       executionMode: definition.executionMode,
+      input: options.input ?? null,
     });
   } catch (error) {
     inFlight.delete(automationId);
@@ -257,8 +310,51 @@ export async function executeAutomation(
     releaseAutomationClaim(db, automationId);
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`[automation] could not open a run for ${automationId}: ${message}`);
-    return { automationId, runId: null, status: "skipped", message };
+    return skip({ automationId, runId: null, status: "skipped", message });
   }
+
+  const done = runStartedAutomation(db, {
+    definition,
+    jobType,
+    credentials,
+    controller,
+    run,
+    attempt,
+    nowMs: options.nowMs,
+  });
+  const runs = backgroundRuns();
+  runs.add(done);
+  // Both branches, so a run nobody awaits (a background "Run now") cannot turn
+  // a rejection - a database error while finalizing - into an unhandled one.
+  // Callers that do await `done` still see it.
+  const forget = () => {
+    runs.delete(done);
+  };
+  done.then(forget, forget);
+
+  return { started: true, runId: run.id, done };
+}
+
+type StartedRunContext = {
+  definition: AutomationDefinition;
+  jobType: AutomationJobType<unknown, unknown>;
+  credentials: AutomationCredentials;
+  controller: AbortController;
+  run: AutomationRun;
+  attempt: number;
+  nowMs: number | undefined;
+};
+
+/**
+ * Execute a run that `startAutomationRun` has claimed and opened. Every exit
+ * path finalizes the run and releases the claim; it never rejects.
+ */
+async function runStartedAutomation(
+  db: SqliteDatabase,
+  { definition, jobType, credentials, controller, run, attempt, nowMs }: StartedRunContext
+): Promise<EngineRunOutcome> {
+  const automationId = definition.id;
+  const options = { nowMs };
 
   const runLogger = createRunLogger({ automationId, type: definition.type, runId: run.id });
   const secrets: string[] = [];
@@ -291,6 +387,7 @@ export async function executeAutomation(
       config,
       credentials: guardedCredentials,
       attempt,
+      input: run.input,
       signal: controller.signal,
       logger: runLogger,
       reportProgress: () => {},
