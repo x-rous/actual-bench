@@ -8,6 +8,7 @@ import {
   nextCronRun,
   nextIntervalRun,
   nextRunAt,
+  UNKNOWN_SCHEDULE_LABEL,
   zonedParts,
 } from "./schedule";
 
@@ -136,6 +137,15 @@ describe("nextRunAt / isDue", () => {
       })
     ).toBeNull();
     expect(isDue({ definition: { ...base, enabled: false }, lastRunAtMs: null, nowMs: now })).toBe(false);
+  });
+
+  it("is never due for a schedule kind this version does not know (F-192)", () => {
+    // Written by a newer Actual Bench. It used to fall through to the interval
+    // branch, so an unknown kind that carried an interval would have run on it.
+    const definition = { ...base, scheduleKind: "event" as unknown as "interval" };
+    expect(nextRunAt({ definition, lastRunAtMs: null, nowMs: now })).toBeNull();
+    expect(isDue({ definition, lastRunAtMs: now - 24 * 60 * 60_000, nowMs: now })).toBe(false);
+    expect(describeSchedule(definition)).toBe(UNKNOWN_SCHEDULE_LABEL);
   });
 
   it("is due once the interval has elapsed", () => {
