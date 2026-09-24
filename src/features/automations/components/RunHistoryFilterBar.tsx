@@ -21,6 +21,7 @@ import type { AutomationRunStatus } from "@/lib/app-db/types";
 const STATUS_OPTIONS: { value: AutomationRunStatus; label: string }[] = [
   { value: "failed", label: runStatusLabel("failed") },
   { value: "partial", label: runStatusLabel("partial") },
+  { value: "indeterminate", label: runStatusLabel("indeterminate") },
   { value: "succeeded", label: runStatusLabel("succeeded") },
   { value: "no_changes", label: runStatusLabel("no_changes") },
   { value: "running", label: runStatusLabel("running") },

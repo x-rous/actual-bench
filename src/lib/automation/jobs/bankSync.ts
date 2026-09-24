@@ -161,6 +161,10 @@ export const bankSyncJobType: AutomationJobType<BankSyncConfig, BankSyncJobResul
         : "Syncing every account linked to a bank"
     );
 
+    // From here a request is with Actual and the bank providers behind it,
+    // which may act on it whatever happens to this run.
+    ctx.enterPhase("external");
+
     // Cancellation is honoured between accounts on both paths: the transport
     // checks the signal inside its own loop, which is the only place that knows
     // where one account ends and the next begins.
@@ -219,6 +223,8 @@ export const bankSyncJobType: AutomationJobType<BankSyncConfig, BankSyncJobResul
       },
     };
   },
+
+  deadlineMs: 10 * 60_000,
 
   // No `classification`: this type constructs nothing, so it contributes
   // nothing to the shared review queue.

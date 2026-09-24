@@ -117,9 +117,12 @@ describe("startAndWaitForRun", () => {
       .mockResolvedValueOnce(jsonResponse(200, { run: run("no_changes", { id: "run-9" }) }));
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const finished = await startAndWaitForRun("/api/automations/auto-1/run", { method: "POST" }, fakeClock());
+    const onStarted = jest.fn();
+    const finished = await startAndWaitForRun("/api/automations/auto-1/run", { method: "POST" }, { ...fakeClock(), onStarted });
 
     expect(finished).toMatchObject({ id: "run-9", status: "no_changes" });
+    // Told the moment the run exists, so the page can show it as running.
+    expect(onStarted).toHaveBeenCalledWith("run-9");
     expect(fetchMock.mock.calls[1][0]).toBe("/api/automations/runs/run-9");
   });
 

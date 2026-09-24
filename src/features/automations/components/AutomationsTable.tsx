@@ -12,6 +12,7 @@ import {
   Pause,
   Play,
   Trash2,
+  Square,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -95,6 +96,7 @@ type AutomationsTableProps = {
   onSort: (key: AutomationSortKey, direction: SortDirection) => void;
   onOpen: (automationId: string) => void;
   onRunNow: (automationId: string) => void;
+  onCancelRun: (runId: string) => void;
   onToggleEnabled: (automation: AutomationListItem) => void;
   onResume: (automationId: string) => void;
   onDelete: (automation: AutomationListItem) => void;
@@ -107,6 +109,7 @@ export function AutomationsTable({
   onSort,
   onOpen,
   onRunNow,
+  onCancelRun,
   onToggleEnabled,
   onResume,
   onDelete,
@@ -238,6 +241,18 @@ export function AutomationsTable({
                       {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
                       Run now
                     </Button>
+
+                    {automation.lastRun?.status === "running" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onCancelRun(automation.lastRun!.id)}
+                        aria-label={`Cancel the running ${automation.name}`}
+                      >
+                        <Square aria-hidden />
+                        Cancel
+                      </Button>
+                    )}
 
                     {/* A link, styled as a button - not the Button component.
                         Base UI's Button puts role="button" on whatever it

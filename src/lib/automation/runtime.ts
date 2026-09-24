@@ -2,8 +2,10 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { clearAutomationClaims } from "@/lib/app-db/automationRepository";
 import { logger } from "@/lib/logger";
 import { vaultEnabled } from "@/lib/sync/vault";
+import { ensureWorkerPreflight } from "@/lib/workers/supervisor";
 import { ensureAutomationJobTypesRegistered } from "./bootstrap";
 import { runEngineTick } from "./engine";
+import { getAutomationExecutor } from "./executor";
 
 /**
  * Boots the in-process automation engine (RD-079 / PR-043b). Called once from
@@ -47,8 +49,25 @@ export function startAutomationEngine(): void {
     `[automation] engine started (vault ${vaultEnabled() ? "enabled" : "disabled - credential-backed automations will pause"})`
   );
 
+  // Jobs run in worker threads unless the operator chose otherwise. Check now
+  // that one can start, so a deployment where it cannot says so in App Health
+  // at boot rather than at the first scheduled run.
+  const checkWorkers = async (): Promise<void> => {
+    if (getAutomationExecutor().name !== "worker") return;
+    const result = await ensureWorkerPreflight();
+    if (result.status === "ready") {
+      logger.info(`[automation] worker threads ready (heap limit ${result.heapLimitMb} MB)`);
+    }
+  };
+  void checkWorkers().catch((error: unknown) =>
+    logger.warn(`[automation] worker check failed: ${error instanceof Error ? error.message : String(error)}`)
+  );
+
   const tick = async (): Promise<void> => {
     try {
+      // Cheap once workers are known to work; after a failed check it tries
+      // again every few minutes, so fixing the cause needs no restart.
+      if (getAutomationExecutor().name === "worker") await ensureWorkerPreflight();
       // Idempotent, and cheap: it costs two map writes and removes any
       // dependence on which module instance happened to run first.
       ensureAutomationJobTypesRegistered();

@@ -36,6 +36,36 @@ single automation from overlapping *itself within that process*. Running two Ben
 against the same database would run your automations twice. Bench does not coordinate across
 instances.
 
+### Worker threads
+
+Every run starts a worker thread of its own inside the server process, with its
+own memory limit. Three things follow:
+
+- **A run that hangs can be stopped.** Each job type has a deadline (Budget File
+  Sync 20 minutes, bank sync 10, backup 60, backup scrub 30). At the deadline, or
+  when you press **Cancel**, the run is asked to stop. If it has not stopped 10
+  seconds later, its thread is ended.
+- **A run that runs out of memory ends alone.** The server and other runs carry on.
+- **A stopped run is reported honestly.** A run stopped while it was only reading
+  is **Failed** (or **Cancelled**). A run stopped after it may already have
+  changed something - applying a sync, pulling from a bank, writing a backup - is
+  **Stopped, may have made changes**. That status is never retried automatically
+  and does not count toward auto-pause, because repeating a write could duplicate
+  it. Check the budget or destination before relying on it; the next scheduled
+  run goes ahead normally.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ACTUAL_BENCH_WORKERS_MAX` | `2` | How many runs may be going at once. A scheduled run that finds no free slot waits for the next minute; **Run now** says Bench is busy. |
+| `ACTUAL_BENCH_WORKER_HEAP_MB` | `512` | Memory limit for each run, in MB. Raise it if a large budget's runs stop with "Ran out of memory". |
+| `ACTUAL_BENCH_AUTOMATION_EXECUTOR` | `worker` | Set to `in-thread` only if your platform cannot start worker threads. Jobs then run in the server's own thread, as before: deadlines can only *ask* a run to stop, and a run that runs out of memory takes the server with it. |
+
+At startup Bench checks that a worker thread can start. **App Health → Automations
+→ Workers** shows the result, how many runs are going, and the last run that
+stopped unexpectedly. If the check fails, automations do not run - and the reason
+is shown there - rather than quietly falling back to the server's own thread.
+Bench tries again every few minutes, so fixing the cause needs no restart.
+
 ## Schedules
 
 Two kinds:

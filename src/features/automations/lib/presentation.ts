@@ -57,6 +57,8 @@ export function runStatusLabel(status: AutomationRunStatus): string {
       return "Cancelled";
     case "no_changes":
       return "Nothing to do";
+    case "indeterminate":
+      return "Stopped, may have made changes";
   }
 }
 
@@ -67,6 +69,7 @@ export function runStatusTone(status: AutomationRunStatus): StatusTone {
     case "succeeded":
       return "ok";
     case "partial":
+    case "indeterminate":
       return "warn";
     case "failed":
       return "bad";

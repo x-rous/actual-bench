@@ -17,6 +17,7 @@ const STATUSES: AutomationRunStatus[] = [
   "failed",
   "cancelled",
   "no_changes",
+  "indeterminate",
 ];
 
 /**

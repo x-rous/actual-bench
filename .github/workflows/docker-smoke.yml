@@ -110,6 +110,35 @@ jobs:
           ')
           echo "APP_DB_CREATED_AT=$created_at" >> "$GITHUB_ENV"
 
+      - name: Confirm automation worker threads start in the production image
+        # Jest cannot start a real worker on the TypeScript entry; this is the
+        # check that the compiled worker ships in the standalone build and runs.
+        run: |
+          for i in $(seq 1 30); do
+            body=$(curl -sf http://127.0.0.1:3000/api/automations/health || true)
+            status=$(echo "$body" | node -e '
+              let raw = "";
+              process.stdin.on("data", (chunk) => (raw += chunk));
+              process.stdin.on("end", () => {
+                try { process.stdout.write(JSON.parse(raw).workers?.preflight?.status ?? "missing"); }
+                catch { process.stdout.write("unreadable"); }
+              });
+            ')
+            if [ "$status" = "ready" ]; then
+              echo "Worker threads ready after ${i} attempt(s)."
+              exit 0
+            fi
+            if [ "$status" = "failed" ]; then
+              echo "::error::Worker preflight failed: $body"
+              docker logs actual-bench-smoke
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "::error::Worker preflight never reported ready (last: ${status})"
+          docker logs actual-bench-smoke
+          exit 1
+
       - name: Stop the container and start a replacement on the same volume
         run: |
           docker stop actual-bench-smoke

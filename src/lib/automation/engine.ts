@@ -14,14 +14,14 @@ import {
   listAutomationRuns,
   pruneAutomationRuns,
 } from "@/lib/app-db/automationRunRepository";
-import { getSyncCredential, hasSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import { pruneSyncFlowRuns } from "@/lib/app-db/syncRunRepository";
-import { vaultEnabled } from "@/lib/sync/vault";
 import { logger } from "@/lib/logger";
-import { getAutomationJobType, listAutomationJobTypes } from "./registry";
-import { createRunLogger, redactSecrets } from "./runLogger";
+import { DEFAULT_JOB_DEADLINE_MS, getAutomationJobType, listAutomationJobTypes } from "./registry";
+import { getAutomationExecutor, type AutomationExecutor } from "./executor";
+import { resolveCredentials, type JobExecutionOutcome, type StopCode } from "./jobExecution";
+import { redactSecrets, type RunLogEntry } from "./runLogger";
 import { effectiveNextRunAt, isDue } from "./schedule";
-import type { AutomationCredentials, AutomationJobType } from "./registry";
+import type { AutomationJobType } from "./registry";
 import type {
   AutomationDefinition,
   AutomationRun,
@@ -59,14 +59,30 @@ export const RUN_RETENTION_PER_AUTOMATION = 100;
  */
 export const RUN_RETENTION_PER_SYNC_FLOW = 100;
 
-/** Cancellation handles for in-flight runs, so a stop request can reach them. */
-const cancellations = new Map<string, AbortController>();
+/**
+ * Cancellation handles for in-flight runs, keyed by automation, so a stop
+ * request can reach them. On `globalThis`: the cancel route is a separate
+ * module instance from the scheduler that started the run, and a map of its
+ * own would never contain it.
+ */
+const CONTROLLERS_KEY = Symbol.for("actual-bench.automationRunControllers");
+
+function runControllers(): Map<string, { runId: string; controller: AbortController }> {
+  const holder = globalThis as { [CONTROLLERS_KEY]?: Map<string, { runId: string; controller: AbortController }> };
+  holder[CONTROLLERS_KEY] ??= new Map();
+  return holder[CONTROLLERS_KEY];
+}
+
+/** Why a run's signal was aborted, carried as the abort reason. */
+type AbortReason = { code: "TIMEOUT" | "CANCELLED" };
 
 export type EngineRunOutcome = {
   automationId: string;
   runId: string | null;
   status: AutomationRunStatus | "skipped";
   message?: string;
+  /** Set when a run was skipped for want of a worker (`NO_CAPACITY`, `WORKER_UNAVAILABLE`). */
+  code?: StopCode;
 };
 
 export type TickSummary = {
@@ -75,45 +91,9 @@ export type TickSummary = {
   ran: EngineRunOutcome[];
 };
 
-/**
- * Resolve the credentials a run may use — or refuse to run.
- *
- * Fail-closed is enforced here rather than left to each job type: an automation
- * that names a credential it cannot get does not execute at all, so a job can
- * never half-run against a partially available secret.
- */
-export function resolveCredentials(
-  db: SqliteDatabase,
-  definition: AutomationDefinition
-): AutomationCredentials {
-  if (definition.executionMode === "browser") return { status: "not-required" };
-  if (!definition.credentialRef) return { status: "not-required" };
-
-  if (!vaultEnabled()) {
-    return { status: "unavailable", reason: "The credential vault is disabled (SYNC_VAULT_KEY is not set)." };
-  }
-  if (!hasSyncCredential(db, definition.credentialRef)) {
-    return {
-      status: "unavailable",
-      reason: "No stored credential for this connection. Re-enrol it to run unattended.",
-    };
-  }
-
-  const credentialRef = definition.credentialRef;
-  return {
-    status: "resolved",
-    serverFingerprint: credentialRef,
-    // Opened only if the job actually asks, so the decrypted value never sits
-    // in a context object that could be logged or serialized into a result.
-    reveal: () => {
-      const credential = getSyncCredential(db, credentialRef);
-      if (!credential) {
-        throw new Error("The stored credential disappeared between checking and using it.");
-      }
-      return credential.secret;
-    },
-  };
-}
+// Moved to `jobExecution.ts`, where it also runs inside a worker; re-exported
+// so callers keep one import site.
+export { resolveCredentials } from "./jobExecution";
 
 /**
  * Re-exported so callers reason about backoff in one place. The delay is
@@ -121,9 +101,8 @@ export function resolveCredentials(
  */
 export { backoffDelayMinutes } from "./schedule";
 
-function errorEnvelope(error: unknown, secrets: readonly string[]): JsonEnvelope {
-  const message = error instanceof Error ? error.message : String(error);
-  return { version: 1, data: { message: redact(message, secrets) } };
+function errorEnvelope(message: string, code?: StopCode): JsonEnvelope {
+  return { version: 1, data: { message: redact(message), ...(code ? { code } : {}) } };
 }
 
 /**
@@ -135,8 +114,10 @@ function errorEnvelope(error: unknown, secrets: readonly string[]): JsonEnvelope
  * `error_json`, the roll-up message and the auto-pause reason, all of which are
  * persisted and shown in the UI. One redactor, one behaviour.
  */
-function redact(message: string, secrets: readonly string[]): string {
-  return redactSecrets(message, secrets);
+function redact(message: string): string {
+  // Everything that reaches here from a job is already redacted against the
+  // secrets it revealed (`jobExecution.ts`); patterns are the second line.
+  return redactSecrets(message);
 }
 
 function statusFromRollup(rollup: AutomationRunRollup): AutomationRunStatus {
@@ -271,6 +252,21 @@ export function startAutomationRun(
     return skip({ automationId, runId: null, status: "skipped", message: credentials.reason });
   }
 
+  // Room to run it? Asked before the claim, so a "no" leaves nothing to undo:
+  // no claim, no run row, no pause, nothing counted against health. The
+  // scheduler picks it up again next tick.
+  const executor = getAutomationExecutor();
+  const availability = executor.availability();
+  if (!availability.ok) {
+    return skip({
+      automationId,
+      runId: null,
+      status: "skipped",
+      message: availability.message,
+      code: availability.code,
+    });
+  }
+
   // Take the claim in the database, not only in memory. Next may evaluate a
   // route module separately from the server boot context, so the external-cron
   // trigger endpoint and the interval loop can hold *different* `inFlight` sets
@@ -282,7 +278,6 @@ export function startAutomationRun(
 
   inFlight.add(automationId);
   const controller = new AbortController();
-  cancellations.set(automationId, controller);
 
   const attempt = options.attempt ?? 1;
   const startedAt = new Date(options.nowMs ?? Date.now()).toISOString();
@@ -306,17 +301,18 @@ export function startAutomationRun(
     });
   } catch (error) {
     inFlight.delete(automationId);
-    cancellations.delete(automationId);
     releaseAutomationClaim(db, automationId);
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`[automation] could not open a run for ${automationId}: ${message}`);
     return skip({ automationId, runId: null, status: "skipped", message });
   }
 
+  runControllers().set(automationId, { runId: run.id, controller });
+
   const done = runStartedAutomation(db, {
     definition,
-    jobType,
-    credentials,
+    executor,
+    deadlineMs: jobType.deadlineMs ?? DEFAULT_JOB_DEADLINE_MS,
     controller,
     run,
     attempt,
@@ -337,8 +333,8 @@ export function startAutomationRun(
 
 type StartedRunContext = {
   definition: AutomationDefinition;
-  jobType: AutomationJobType<unknown, unknown>;
-  credentials: AutomationCredentials;
+  executor: AutomationExecutor;
+  deadlineMs: number;
   controller: AbortController;
   run: AutomationRun;
   attempt: number;
@@ -346,107 +342,179 @@ type StartedRunContext = {
 };
 
 /**
- * Execute a run that `startAutomationRun` has claimed and opened. Every exit
- * path finalizes the run and releases the claim; it never rejects.
+ * Execute a run that `startAutomationRun` has claimed and opened, through the
+ * executor, and record what came back. Every exit path finalizes the run and
+ * releases the claim; it never rejects.
+ *
+ * What a run ends as:
+ *
+ *   * it finished - its own roll-up decides, as always; if it stopped early
+ *     because it was asked to, it is `cancelled` (a person asked) or `failed`
+ *     (its deadline passed);
+ *   * it threw - `failed`;
+ *   * it was stopped from outside - by its deadline, a cancel it did not honour
+ *     in time, or its worker dying - then it depends on how far it had got.
+ *     Still only reading, it `failed` (or was `cancelled`). Past the point
+ *     where it may have changed something, it is `indeterminate`: not retried,
+ *     not counted against its health, and flagged for someone to check.
  */
 async function runStartedAutomation(
   db: SqliteDatabase,
-  { definition, jobType, credentials, controller, run, attempt, nowMs }: StartedRunContext
+  { definition, executor, deadlineMs, controller, run, attempt, nowMs }: StartedRunContext
 ): Promise<EngineRunOutcome> {
   const automationId = definition.id;
-  const options = { nowMs };
+  const scheduledFrom = nowMs ?? Date.now();
 
-  const runLogger = createRunLogger({ automationId, type: definition.type, runId: run.id });
-  const secrets: string[] = [];
-
-  // Any secret a job actually opens is registered for redaction at the moment
-  // it is revealed, so a provider error that echoes the key back cannot reach
-  // the log or the stored error. The job type does not have to remember to do
-  // this — it cannot get the secret without going through here.
-  const guardedCredentials: AutomationCredentials =
-    credentials.status === "resolved"
-      ? {
-          ...credentials,
-          reveal: () => {
-            const secret = credentials.reveal();
-            for (const value of [secret.apiKey, secret.encryptionPassword]) {
-              if (value) {
-                secrets.push(value);
-                runLogger.protect(value);
-              }
-            }
-            return secret;
-          },
-        }
-      : credentials;
+  // Started before the first `await`: the executor takes its worker slot here,
+  // in the same turn `startAutomationRun` checked that one was free.
+  const pending = executor.execute(
+    db,
+    { automationId, runId: run.id, attempt, input: run.input },
+    controller.signal
+  );
+  const deadline = setTimeout(() => controller.abort({ code: "TIMEOUT" } satisfies AbortReason), deadlineMs);
+  deadline.unref?.();
 
   try {
-    const config = jobType.validateConfig(definition.config);
-    const result = await jobType.run({
-      definition,
-      config,
-      credentials: guardedCredentials,
-      attempt,
-      input: run.input,
-      signal: controller.signal,
-      logger: runLogger,
-      reportProgress: () => {},
-    });
-
-    const rollup = jobType.summarize(result);
-    const status = controller.signal.aborted ? "cancelled" : statusFromRollup(rollup);
-
-    finalizeAutomationRun(db, run.id, {
-      status,
-      result: withLog(jobType.serializeResult(result), runLogger.entries()),
-      rollup,
-    });
-
-    const finishedAt = new Date().toISOString();
-
-    // A cancelled run is neither a success nor a failure: the user stopped it.
-    // Counting it as a failure meant stopping a run a few times auto-paused the
-    // automation, with a reason that read as consecutive failures.
-    if (status === "cancelled") {
-      scheduleNext(db, automationId, options.nowMs ?? Date.now());
-      return { automationId, runId: run.id, status, message: rollup.message };
-    }
-
-    const success = isHealthySuccess(status, rollup);
-    const updated = recordAutomationOutcome(db, automationId, { success, at: finishedAt });
-    applyHealthPolicy(db, updated ?? definition, success, rollup.message);
-    scheduleNext(db, automationId, options.nowMs ?? Date.now());
-
-    return { automationId, runId: run.id, status, message: rollup.message };
+    const outcome = await pending;
+    return recordOutcome(db, { definition, run, outcome, signal: controller.signal, deadlineMs, scheduledFrom });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    runLogger.error(message);
-
-    finalizeAutomationRun(db, run.id, {
-      status: "failed",
-      error: errorEnvelope(error, secrets),
-      result: withLog(null, runLogger.entries()),
-      rollup: { outcome: "failed", itemCount: 0, message: redact(message, secrets).slice(0, 500) },
+    // An executor is not supposed to reject; if one does, the run still ends.
+    const message = redact(error instanceof Error ? error.message : String(error));
+    return recordOutcome(db, {
+      definition,
+      run,
+      outcome: { kind: "threw", message, log: [] },
+      signal: controller.signal,
+      deadlineMs,
+      scheduledFrom,
     });
-
-    const updated = recordAutomationOutcome(db, automationId, { success: false, at: new Date().toISOString() });
-    // Redacted, like the log and the stored error: the pause reason is shown in
-    // the UI and returned by the health route, so a provider error echoing an
-    // API key must not reach it either.
-    const safeMessage = redact(message, secrets);
-    applyHealthPolicy(db, updated ?? definition, false, safeMessage);
-    scheduleNext(db, automationId, options.nowMs ?? Date.now());
-
-    return { automationId, runId: run.id, status: "failed", message: safeMessage };
   } finally {
+    clearTimeout(deadline);
     inFlight.delete(automationId);
-    cancellations.delete(automationId);
+    const entry = runControllers().get(automationId);
+    if (entry?.runId === run.id) runControllers().delete(automationId);
     releaseAutomationClaim(db, automationId);
   }
 }
 
+function abortCode(signal: AbortSignal): AbortReason["code"] | null {
+  if (!signal.aborted) return null;
+  return (signal.reason as Partial<AbortReason> | undefined)?.code === "TIMEOUT" ? "TIMEOUT" : "CANCELLED";
+}
+
+function deadlineMessage(deadlineMs: number): string {
+  return `Stopped at its ${Math.round(deadlineMs / 60_000)}-minute deadline.`;
+}
+
+function recordOutcome(
+  db: SqliteDatabase,
+  input: {
+    definition: AutomationDefinition;
+    run: AutomationRun;
+    outcome: JobExecutionOutcome;
+    signal: AbortSignal;
+    deadlineMs: number;
+    scheduledFrom: number;
+  }
+): EngineRunOutcome {
+  const { definition, run, outcome, signal, deadlineMs, scheduledFrom } = input;
+  const automationId = definition.id;
+
+  const finishFailure = (
+    message: string,
+    log: RunLogEntry[],
+    code?: StopCode,
+    result?: JsonEnvelope
+  ): EngineRunOutcome => {
+    const safeMessage = redact(message);
+    finalizeAutomationRun(db, run.id, {
+      status: "failed",
+      error: errorEnvelope(safeMessage, code),
+      result: result ?? withLog(null, log),
+      rollup: { outcome: "failed", itemCount: 0, message: safeMessage.slice(0, 500) },
+    });
+    const updated = recordAutomationOutcome(db, automationId, { success: false, at: new Date().toISOString() });
+    // Redacted, like the log and the stored error: the pause reason is shown in
+    // the UI and returned by the health route, so a provider error echoing an
+    // API key must not reach it either.
+    applyHealthPolicy(db, updated ?? definition, false, safeMessage);
+    scheduleNext(db, automationId, scheduledFrom);
+    return { automationId, runId: run.id, status: "failed", message: safeMessage, ...(code ? { code } : {}) };
+  };
+
+  // Neither a success nor a failure: the user stopped it, or it stopped after
+  // it may have written. Counting either as a failure would auto-pause the
+  // automation for something that was not its fault - and, for a run that may
+  // have written, back off into a retry that could repeat the write.
+  const finishNeutral = (
+    status: "cancelled" | "indeterminate",
+    fields: { result?: JsonEnvelope | null; error?: JsonEnvelope; rollup: AutomationRunRollup }
+  ): EngineRunOutcome => {
+    finalizeAutomationRun(db, run.id, { status, ...fields });
+    scheduleNext(db, automationId, scheduledFrom);
+    return { automationId, runId: run.id, status, message: fields.rollup.message };
+  };
+
+  switch (outcome.kind) {
+    case "completed": {
+      const stoppedBy = abortCode(signal);
+      const result = withLog(outcome.result, outcome.log);
+      if (stoppedBy === "TIMEOUT") {
+        // It stopped by itself when its deadline passed. What it did is still
+        // in its own result, which is kept either way. If it had got as far as
+        // changing something, it is a run that may have written - the same as
+        // one that had to be ended - and must not count as a failure or be
+        // backed off into a retry that could repeat the write.
+        if (outcome.phase !== "reading") {
+          const note = `${deadlineMessage(deadlineMs)} It may have made changes before it stopped; check before relying on them.`;
+          return finishNeutral("indeterminate", {
+            result,
+            error: errorEnvelope(note, "TIMEOUT"),
+            rollup: { ...outcome.rollup, outcome: "partial", message: redact(note).slice(0, 500) },
+          });
+        }
+        return finishFailure(deadlineMessage(deadlineMs), outcome.log, "TIMEOUT", result);
+      }
+      if (stoppedBy === "CANCELLED") {
+        return finishNeutral("cancelled", { result, rollup: outcome.rollup });
+      }
+      const status = statusFromRollup(outcome.rollup);
+      finalizeAutomationRun(db, run.id, { status, result, rollup: outcome.rollup });
+      const success = isHealthySuccess(status, outcome.rollup);
+      const updated = recordAutomationOutcome(db, automationId, { success, at: new Date().toISOString() });
+      applyHealthPolicy(db, updated ?? definition, success, outcome.rollup.message);
+      scheduleNext(db, automationId, scheduledFrom);
+      return { automationId, runId: run.id, status, message: outcome.rollup.message };
+    }
+
+    case "threw":
+      return finishFailure(outcome.message, outcome.log);
+
+    case "stopped": {
+      const message = outcome.code === "TIMEOUT" ? deadlineMessage(deadlineMs) : outcome.message;
+      if (outcome.phase !== "reading") {
+        const note = `${message} It may have made changes before it stopped; check before relying on them.`;
+        return finishNeutral("indeterminate", {
+          result: withLog(null, outcome.log),
+          error: errorEnvelope(note, outcome.code),
+          rollup: { outcome: "partial", itemCount: 0, message: redact(note).slice(0, 500) },
+        });
+      }
+      if (outcome.code === "CANCELLED") {
+        return finishNeutral("cancelled", {
+          result: withLog(null, outcome.log),
+          error: errorEnvelope(message, "CANCELLED"),
+          rollup: { outcome: "failed", itemCount: 0, message: redact(message).slice(0, 500) },
+        });
+      }
+      return finishFailure(message, outcome.log, outcome.code);
+    }
+  }
+}
+
 /** Store the run's redacted log lines alongside the type's own result. */
-function withLog(result: JsonEnvelope | null, entries: ReturnType<ReturnType<typeof createRunLogger>["entries"]>): JsonEnvelope {
+function withLog(result: JsonEnvelope | null, entries: RunLogEntry[]): JsonEnvelope {
   const base = result ?? { version: 1, data: {} };
   return { version: base.version, data: { ...base.data, log: entries } };
 }
@@ -637,12 +705,24 @@ export async function reconcileJobTypes(db: SqliteDatabase): Promise<void> {
   }
 }
 
-/** Request cancellation of an in-flight run. */
+/** Request cancellation of an automation's in-flight run. */
 export function cancelAutomation(automationId: string): boolean {
-  const controller = cancellations.get(automationId);
-  if (!controller) return false;
-  controller.abort();
+  const entry = runControllers().get(automationId);
+  if (!entry) return false;
+  entry.controller.abort({ code: "CANCELLED" } satisfies AbortReason);
   return true;
+}
+
+/**
+ * Request cancellation of one run. A job that honours its signal stops on its
+ * own; in a worker, one that does not is ended after a grace period. False when
+ * the run is not in progress in this process.
+ */
+export function cancelRun(runId: string): boolean {
+  for (const [automationId, entry] of runControllers()) {
+    if (entry.runId === runId) return cancelAutomation(automationId);
+  }
+  return false;
 }
 
 /**
@@ -680,5 +760,5 @@ export function latestRuns(db: SqliteDatabase, automationIds: string[]): Map<str
 /** Test-only: clear process-local engine state between cases. */
 export function __resetEngineStateForTests(): void {
   inFlight.clear();
-  cancellations.clear();
+  runControllers().clear();
 }

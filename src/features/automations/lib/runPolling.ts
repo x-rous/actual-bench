@@ -50,6 +50,8 @@ export class RunStillGoingError extends Error {
 
 type WaitOptions = {
   maxWaitMs?: number;
+  /** Called once the run exists, with its id - so a page can show it as running (and cancellable) at once. */
+  onStarted?: (runId: string) => void;
   /** Injected in tests; defaults to real timers. */
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
@@ -123,5 +125,6 @@ export async function startAndWaitForRun(
     throw new Error(message);
   }
   const { runId } = (await response.json()) as { runId: string };
+  options.onStarted?.(runId);
   return waitForRun(runId, options);
 }

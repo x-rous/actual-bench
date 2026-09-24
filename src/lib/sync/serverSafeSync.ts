@@ -58,7 +58,8 @@ function connectionFromCredential(cred: SyncCredential): HttpApiConnection {
 
 export async function runServerSafeSync(
   db: SqliteDatabase,
-  flowId: string
+  flowId: string,
+  options: { onApplyStart?: () => void } = {}
 ): Promise<ServerSafeSyncResult> {
   if (!vaultEnabled()) {
     return { status: "vault_disabled", flowId, message: "Credential vault is disabled (SYNC_VAULT_KEY unset)." };
@@ -102,6 +103,7 @@ export async function runServerSafeSync(
       transport,
       previewStore: createAppDbPreviewStore(db),
       applyStore: createAppDbApplyStore(db),
+      onApplyStart: options.onApplyStart,
     }
   );
 }

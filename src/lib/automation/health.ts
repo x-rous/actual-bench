@@ -200,6 +200,18 @@ function statusFor(
     return { status: "idle", summary: "Last run was cancelled." };
   }
 
+  // Stopped after it may have written. Neither a success nor a failure - the
+  // engine keeps it out of the failure streak - but not something to wave
+  // through either: someone should look before relying on what it touched.
+  if (lastRun.status === "indeterminate") {
+    return {
+      status: "warning",
+      summary:
+        lastRun.rollup?.message ??
+        "The last run stopped after it may have made changes. Check before relying on it.",
+    };
+  }
+
   if (lastRun.status === "failed") {
     return {
       status: "failing",

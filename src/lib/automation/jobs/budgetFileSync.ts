@@ -99,7 +99,11 @@ export const budgetFileSyncJobType: AutomationJobType<BudgetFileSyncConfig, Budg
     // `runServerSafeSync` opens the flow's own enrolled credentials through the
     // vault. The engine has already proven a credential exists and failed
     // closed if not, so this call is not the first line of defence.
-    const result = await runServerSafeSync(db, ctx.config.flowId);
+    // Preview only reads. Apply writes to the target budget, so a run stopped
+    // from there on may have written and is reported as indeterminate.
+    const result = await runServerSafeSync(db, ctx.config.flowId, {
+      onApplyStart: () => ctx.enterPhase("mutating"),
+    });
 
     const message = readMessage(result);
     if (message) ctx.logger.warn(message);
@@ -184,6 +188,9 @@ export const budgetFileSyncJobType: AutomationJobType<BudgetFileSyncConfig, Budg
   reconcile(db) {
     migrateSyncFlowsToAutomations(db);
   },
+
+  // Generous: a large first sync previews and applies thousands of items.
+  deadlineMs: 20 * 60_000,
 
   // Budget File Sync constructs writes through Bench, so it does take part in
   // the shared review queue — unlike a type that only triggers Actual's own

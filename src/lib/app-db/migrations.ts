@@ -51,7 +51,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 35;
+export const LATEST_SCHEMA_VERSION = 36;
 
 type Migration = {
   version: number;
@@ -433,6 +433,16 @@ const MIGRATIONS: readonly Migration[] = [
     // ciphertext is copied byte for byte: this migration never decrypts, so it
     // runs without either key.
     apply: applyCredentialStore,
+  },
+  {
+    version: 36,
+    // No structural change. Automation runs gain a status, `indeterminate`
+    // (RD-095): a run stopped after it may already have changed something.
+    // The status is a plain string read back with a cast, so an older Actual
+    // Bench would misread it; bumping the version is what makes an older build
+    // refuse this database instead (agents/knowledge.md: a new stored enum
+    // value ships with a schema-version bump).
+    statements: [],
   },
 ];
 
