@@ -225,7 +225,7 @@ export async function enrollCredential(
     if (body.status === "enrolled" && body.credential) return { credential: body.credential };
     if (body.status === "failed") throw new EnrolmentFailedError(body.message ?? "The check failed.", body.code ?? null);
     if (Date.now() > deadline) {
-      throw new Error("The check is taking longer than expected. Look in Connections in a minute to see whether it finished.");
+      throw new Error("The check is taking longer than expected. Look in Connections to see whether it finished.");
     }
   }
 }

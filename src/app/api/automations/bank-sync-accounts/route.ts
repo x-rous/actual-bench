@@ -17,8 +17,12 @@ export const dynamic = "force-dynamic";
 
 type DirectAccountsOutput = { accounts: BankLinkedAccount[] } | { failed: ActualErrorCode };
 
-/** A cold open of a Direct budget; enrolment refreshed its snapshot, so usually a few seconds. */
-const DIRECT_ACCOUNTS_DEADLINE_MS = 90_000;
+/**
+ * A cold open of a Direct budget. Usually a few seconds, because enrolment
+ * refreshed its snapshot, but a budget whose snapshot has gone stale again can
+ * take minutes - the same allowance as the enrolment check.
+ */
+const DIRECT_ACCOUNTS_DEADLINE_MS = 5 * 60_000;
 export const runtime = "nodejs";
 
 /**
@@ -79,7 +83,7 @@ export async function GET(request: Request) {
           : busy
             ? "Bench is busy running automations. Try again in a minute."
             : outcome.status === "stopped" && outcome.code === "TIMEOUT"
-              ? "Opening the budget took too long. Try again."
+              ? "Opening the budget took too long. Open it once in Actual's own app, which makes it faster to open, then try again."
               : "Bench could not read this budget's accounts. Try again.";
         if (!output) {
           logger.warn(
