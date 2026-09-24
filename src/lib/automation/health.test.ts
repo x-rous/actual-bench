@@ -188,6 +188,31 @@ describe("automation health", () => {
     ).toBe(false);
   });
 
+  it("says an automation with an unknown schedule kind needs a newer version, not that it is overdue", () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(jobType("budget-file-sync", true));
+      const id = automation(db);
+      // As a newer Actual Bench would have stored it; the repository refuses
+      // to write a kind it does not know, which is the point.
+      db.prepare(
+        "UPDATE automation_definitions SET schedule_kind = 'event', next_run_at = '2026-01-01T00:00:00.000Z' WHERE id = ?"
+      ).run(id);
+
+      const [health] = buildAutomationHealth(db).automations;
+
+      expect(health.status).toBe("warning");
+      expect(health.summary).toBe(
+        "Its schedule needs a newer version of Actual Bench, so it will not run until you update."
+      );
+      expect(health.schedule).toBe("Needs a newer version of Actual Bench");
+      // Unsupported, not overdue - even with a due time long gone.
+      expect(health.stale).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not call a cancelled run a success", () => {
     const { root, db } = tempDb();
     try {

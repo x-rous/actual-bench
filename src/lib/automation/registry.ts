@@ -72,6 +72,12 @@ export type AutomationRunContext<TConfig> = {
   credentials: AutomationCredentials;
   /** Attempt number for this occurrence, starting at 1. */
   attempt: number;
+  /**
+   * What this run was started for, when the caller said (an event id, say).
+   * `null` for ordinary scheduled and manual runs. Small by design: it names
+   * the work, it does not carry it.
+   */
+  input: JsonEnvelope | null;
   /** Aborted on shutdown or user cancellation; honor it between steps. */
   signal: AbortSignal;
   logger: AutomationLogger;

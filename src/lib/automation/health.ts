@@ -3,7 +3,7 @@ import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { getAutomationJobType } from "./registry";
 import { isAutomationRunning, runningAutomationIds } from "./engine";
-import { MIN_INTERVAL_MINUTES, describeSchedule, nextCronRun } from "./schedule";
+import { MIN_INTERVAL_MINUTES, describeSchedule, isKnownScheduleKind, nextCronRun } from "./schedule";
 import type { AutomationDefinition, AutomationRun, SqliteDatabase } from "@/lib/app-db/types";
 
 /**
@@ -126,6 +126,10 @@ export function staleGraceMs(automation: ScheduleShape): number {
 
 export function isStale(automation: StaleInput, nowMs: number): boolean {
   if (!automation.enabled || automation.autoPausedAt) return false;
+  // A schedule this version cannot run is unsupported, not overdue: it will
+  // never run here, so an old `nextRunAt` written by a newer version is not a
+  // missed occurrence (F-192).
+  if (!isKnownScheduleKind(automation.scheduleKind)) return false;
   if (!automation.nextRunAt) return false;
 
   const due = Date.parse(automation.nextRunAt);
@@ -148,6 +152,15 @@ function statusFor(
 
   if (!automation.enabled) {
     return { status: "idle", summary: "Turned off. It will not run until you enable it." };
+  }
+
+  // Written by a newer Actual Bench. It will not run here, and must not read as
+  // overdue or healthy either (F-192).
+  if (!isKnownScheduleKind(automation.scheduleKind)) {
+    return {
+      status: "warning",
+      summary: "Its schedule needs a newer version of Actual Bench, so it will not run until you update.",
+    };
   }
 
   if (automation.consecutiveFailures > 0) {

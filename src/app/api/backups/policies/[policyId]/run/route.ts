@@ -10,9 +10,8 @@ import {
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { getBackupPolicy } from "@/lib/app-db/backupRepository";
 import { listAutomations } from "@/lib/app-db/automationRepository";
-import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
-import { executeAutomation } from "@/lib/automation/engine";
+import { startAutomationRun } from "@/lib/automation/engine";
 import { BACKUP_JOB_TYPE } from "@/lib/automation/jobs/backupType";
 import { runBackup } from "@/lib/backup/runBackup";
 import { ARCHIVE_LIMITS } from "@/lib/backup/verify";
@@ -36,9 +35,16 @@ export const maxDuration = 300;
  *
  * The direct path remains as a fallback for a rule with no automation yet.
  *
- * A run that happened answers 200 whatever it concluded: a backup that failed
- * is a result, not a transport error, and the caller needs the detail to say
- * which destination refused it.
+ * Two response shapes, told apart by `mode`:
+ *
+ *   * `"run"` (202) - the engine started the backup and it carries on in the
+ *     background; the page follows it through `GET /api/automations/runs/[runId]`.
+ *     Waiting for it here held the request open for as long as the backup took.
+ *   * `"result"` (200, or 409 when a run is already going) - the direct paths
+ *     (no automation yet, or an archive uploaded by the browser) still finish
+ *     before answering. A run that happened answers 200 whatever it concluded:
+ *     a backup that failed is a result, not a transport error, and the caller
+ *     needs the detail to say which destination refused it.
  */
 type ManualRunOptions = { takenBefore?: string; notes?: string };
 
@@ -216,6 +222,7 @@ export async function POST(request: Request, context: RouteContext) {
         budgetArchive: upload.archive,
       });
       return NextResponse.json({
+        mode: "result",
         result: {
           stored: result.stored,
           verified: result.verified,
@@ -232,29 +239,28 @@ export async function POST(request: Request, context: RouteContext) {
     // A manual rule has no automation, and one left over from a rule whose
     // source changed is disabled - running through it would refuse.
     if (automation && policy.scheduleKind !== "manual") {
-      const outcome = await executeAutomation(db, automation.id, { trigger: "manual" });
+      // Through the engine, like the schedule, and without waiting for it: a
+      // large backup outlasts what a reverse proxy will hold a request open
+      // for (F-191). The page follows the run by its id.
+      const start = startAutomationRun(db, automation.id, { trigger: "manual" });
 
-      if (outcome.status === "skipped") {
+      if (!start.started) {
         // Already running, or the engine refused before starting - a real
         // answer, not a failure to report.
         return NextResponse.json(
-          { result: { stored: false, verified: false, message: outcome.message }, automationId: automation.id },
+          {
+            mode: "result",
+            result: { stored: false, verified: false, message: start.outcome.message },
+            automationId: automation.id,
+          },
           { status: 409 }
         );
       }
 
-      const [run] = listAutomationRuns(db, { automationId: automation.id, limit: 1 });
-      const data = (run?.result?.data ?? {}) as { stored?: boolean; verified?: boolean; message?: string | null };
-
-      return NextResponse.json({
-        result: {
-          stored: data.stored ?? outcome.status === "succeeded",
-          verified: data.verified ?? outcome.status === "succeeded",
-          message: data.message ?? run?.rollup?.message ?? outcome.message ?? null,
-        },
-        automationId: automation.id,
-        runId: outcome.runId,
-      });
+      return NextResponse.json(
+        { mode: "run", runId: start.runId, automationId: automation.id },
+        { status: 202 }
+      );
     }
 
     const result = await runBackup(db, policy, {
@@ -265,6 +271,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     return NextResponse.json({
+      mode: "result",
       result: { stored: result.stored, verified: result.verified, message: result.message ?? null },
       automationId: null,
     });

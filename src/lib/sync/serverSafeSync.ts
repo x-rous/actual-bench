@@ -1,3 +1,7 @@
+// Loaded for its side effect: it installs the per-server request lock that the
+// HTTP transport's unattended requests go through (F-189). Without it they fail
+// rather than reach actual-http-api unserialized.
+import "@/lib/http/serverQueue";
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { getSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";

@@ -10,6 +10,7 @@ import type {
   SyncMappingPatch,
   SyncRunTrigger,
 } from "@/lib/app-db/types";
+import { startAndWaitForRun } from "@/features/automations/lib/runPolling";
 import type { SyncPlanResult } from "@/lib/sync/plannedChanges";
 import type {
   UpdateSyncFlowRunItemPatch,
@@ -165,9 +166,27 @@ export function withdrawCredential(connectionFingerprint: string): Promise<{ ok:
   return jsonFetch(`/api/sync-credentials?connectionFingerprint=${encodeURIComponent(connectionFingerprint)}`, { method: "DELETE" });
 }
 
-/** Trigger one unattended (server-side) safe-sync for a flow immediately. */
-export function runFlowNow(flowId: string): Promise<{ result: { status: string; message: string | null } }> {
-  return jsonFetch(`/api/sync-flows/${encodeURIComponent(flowId)}/run-now`, { method: "POST" });
+/**
+ * Run one unattended (server-side) safe-sync for a flow now, and wait for it.
+ *
+ * The route starts the flow's automation and answers with the run's id; this
+ * follows the run to its end and reports it in the sync's own vocabulary
+ * ("applied", "no_safe_items", ...), which the job records in its result.
+ */
+export async function runFlowNow(flowId: string): Promise<{ result: { status: string; message: string | null } }> {
+  const run = await startAndWaitForRun(`/api/sync-flows/${encodeURIComponent(flowId)}/run-now`, {
+    method: "POST",
+  });
+  const data = (run.result?.data ?? {}) as { status?: unknown; message?: unknown };
+  return {
+    result: {
+      // A run that threw before the sync reported anything has only the
+      // engine's own status to go by.
+      status: typeof data.status === "string" ? data.status : run.status,
+      message:
+        typeof data.message === "string" && data.message ? data.message : (run.rollup?.message ?? null),
+    },
+  };
 }
 
 /** Persist an immutable FX snapshot for a created transaction (RD-056 / PR-025c). */

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createAutomation, getAutomation, listAutomations } from "@/lib/app-db/automationRepository";
-import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
+import { MAX_RUN_INPUT_BYTES, getAutomationRun, listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
 import {
   __resetEngineStateForTests,
@@ -14,6 +14,8 @@ import {
   resumeAutomationsAwaitingTheirJobType,
   runEngineTick,
   selectDueAutomations,
+  settleBackgroundRuns,
+  startAutomationRun,
 } from "./engine";
 import {
   claimAutomation,
@@ -813,3 +815,146 @@ describe("automation engine", () => {
     }
   });
 });
+
+describe("starting a run without waiting for it (F-191)", () => {
+  afterEach(async () => {
+    await settleBackgroundRuns();
+    __resetEngineStateForTests();
+    __resetAutomationRegistryForTests();
+    resetAppDbForTests();
+  });
+
+  it("returns the run id while the job is still running, then finishes it in the background", async () => {
+    const { root, db } = tempDb();
+    try {
+      let finish: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      registerAutomationJobType(
+        testJobType({
+          async run() {
+            await gate;
+            return { ok: true };
+          },
+        })
+      );
+      const id = definition(db);
+
+      const start = startAutomationRun(db, id, { trigger: "manual" });
+      if (!start.started) throw new Error(`expected a started run, got ${start.outcome.message}`);
+
+      // The row exists and the claim is held before the job has done anything,
+      // so a second "Run now" is refused rather than doubled up.
+      expect(getAutomationRun(db, start.runId)?.status).toBe("running");
+      const second = startAutomationRun(db, id, { trigger: "manual" });
+      expect(second.started).toBe(false);
+      if (!second.started) expect(second.outcome.message).toBe("A run is already in progress");
+
+      finish();
+      const outcome = await start.done;
+      expect(outcome).toMatchObject({ runId: start.runId, status: "succeeded" });
+      expect(getAutomationRun(db, start.runId)?.status).toBe("succeeded");
+      expect(isAutomationRunning(getAutomation(db, id)!)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finalizes a background run that throws, like any other", async () => {
+    const { root, db } = tempDb();
+    try {
+      registerAutomationJobType(
+        testJobType({
+          async run() {
+            throw new Error("the destination refused the upload");
+          },
+        })
+      );
+      const id = definition(db);
+
+      const start = startAutomationRun(db, id);
+      if (!start.started) throw new Error("expected a started run");
+      await settleBackgroundRuns();
+
+      expect(getAutomationRun(db, start.runId)).toMatchObject({ status: "failed" });
+      expect(getAutomation(db, id)?.runningSince).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("run input", () => {
+  afterEach(async () => {
+    await settleBackgroundRuns();
+    __resetEngineStateForTests();
+    __resetAutomationRegistryForTests();
+    resetAppDbForTests();
+  });
+
+  it("stores what a run was started for and hands it to the job", async () => {
+    const { root, db } = tempDb();
+    try {
+      const seen: unknown[] = [];
+      registerAutomationJobType(
+        testJobType({
+          async run(ctx: AutomationRunContext<TestConfig>) {
+            seen.push(ctx.input);
+            return { ok: true };
+          },
+        })
+      );
+      const id = definition(db);
+      const input = { version: 1, data: { eventId: "evt-42" } };
+
+      const outcome = await executeAutomation(db, id, { trigger: "manual", input });
+
+      expect(seen).toEqual([input]);
+      expect(getAutomationRun(db, outcome.runId!)?.input).toEqual(input);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("gives an ordinary run a null input", async () => {
+    const { root, db } = tempDb();
+    try {
+      const seen: unknown[] = [];
+      registerAutomationJobType(
+        testJobType({
+          async run(ctx: AutomationRunContext<TestConfig>) {
+            seen.push(ctx.input);
+            return { ok: true };
+          },
+        })
+      );
+      const outcome = await executeAutomation(db, definition(db));
+
+      expect(seen).toEqual([null]);
+      expect(getAutomationRun(db, outcome.runId!)?.input).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an input too large to be a reference, and releases the claim", async () => {
+    const { root, db } = tempDb();
+    try {
+      const run = jest.fn(async () => ({ ok: true }));
+      registerAutomationJobType(testJobType({ run }));
+      const id = definition(db);
+      const input = { version: 1, data: { blob: "x".repeat(MAX_RUN_INPUT_BYTES) } };
+
+      const outcome = await executeAutomation(db, id, { trigger: "manual", input });
+
+      expect(outcome.status).toBe("skipped");
+      expect(outcome.message).toMatch(/at most 16384 bytes/);
+      expect(run).not.toHaveBeenCalled();
+      expect(getAutomation(db, id)?.runningSince).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+

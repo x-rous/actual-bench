@@ -71,6 +71,7 @@ function run(overrides: Partial<AutomationRun> = {}): AutomationRun {
     result: { version: 1, data: { flowId: "flow-1", syncRunId: "sync-run-1", applied: 3, updated: 0, deleted: 0 } },
     rollup: { outcome: "ok", itemCount: 3, message: "3 added" },
     error: null,
+    input: null,
     ...overrides,
   };
 }

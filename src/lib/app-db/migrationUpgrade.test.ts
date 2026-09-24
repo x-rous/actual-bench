@@ -988,6 +988,55 @@ describe("upgrading an existing database", () => {
     }
   });
 
+  it("adds per-server request leases and run input to a v33 database, keeping its run history (v34)", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v34-"));
+    const path = join(root, "metadata.sqlite");
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE automation_runs (
+        id text PRIMARY KEY, automation_id text, type text NOT NULL, status text NOT NULL,
+        started_at text NOT NULL, finished_at text, trigger text NOT NULL DEFAULT 'schedule',
+        attempt integer NOT NULL DEFAULT 1, execution_mode text NOT NULL DEFAULT 'server',
+        result_json text, rollup_json text, error_json text
+      );
+    `);
+    const now = "2026-09-20T00:00:00.000Z";
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES (?, ?, ?)").run("schema_version", "33", now);
+    seed
+      .prepare(
+        `INSERT INTO automation_runs (id, automation_id, type, status, started_at, finished_at)
+         VALUES ('run-old', NULL, 'backup', 'succeeded', ?, ?)`
+      )
+      .run(now, now);
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+
+      // The run from before the upgrade reads back unchanged, with no input.
+      expect(getAutomationRun(db, "run-old")).toMatchObject({ status: "succeeded", input: null });
+      // A new run can carry one.
+      const run = createAutomationRun(db, {
+        type: "backup",
+        input: { version: 1, data: { eventId: "evt-1" } },
+      });
+      expect(getAutomationRun(db, run.id)?.input).toEqual({ version: 1, data: { eventId: "evt-1" } });
+      // The lease table exists and works.
+      db.prepare(
+        "INSERT INTO server_request_leases (server_key, holder, acquired_at, expires_at_ms) VALUES (?, ?, ?, ?)"
+      ).run("http://api.test", "holder", now, 1);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM server_request_leases").get<{ n: number }>()?.n).toBe(1);
+
+      // Idempotent: running the migrations again changes nothing.
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("repairs a database an earlier v31 build left with a dangling leg_id FK (v32)", () => {
     // Reproduces a real bad state: an earlier build of the legs-collapse
     // migration dropped sync_flow_legs before also dropping

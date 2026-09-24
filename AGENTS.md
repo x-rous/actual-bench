@@ -151,6 +151,8 @@ Rules:
 - Use repository/service modules rather than SQL in React components.
 - Keep migrations additive, ordered, transactional, and backward compatible.
 - Never rewrite a migration that may have shipped. Add a new migration.
+- A new value for a persisted enum (a schedule kind, a run status, a trigger) ships with a schema-version bump, even when no column changes. `runMigrations` refuses a database newer than the app, so this is what stops an older version from misreading the value after a downgrade. Readers still handle unknown values explicitly rather than by fall-through.
+- Every request to an `actual-http-api` server goes through `src/lib/http/serverQueue.ts` (in-process FIFO plus a per-server lease row). Two concurrent requests can wedge a budget, so do not add a path that bypasses it; browser-safe code reaches it through `serverRequestGate.ts`.
 - Use foreign keys and explicit indexes where the access pattern requires them.
 - Multi-row state transitions should be transactional.
 - The default self-hosted path is `/data/actual-bench.sqlite`; Vercel falls back to non-durable temp storage unless explicitly configured.

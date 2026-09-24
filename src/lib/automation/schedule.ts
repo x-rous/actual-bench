@@ -275,9 +275,27 @@ export type DueInput = {
  * is back in the future — so a missed daily job runs **once**, not once per
  * missed day.
  */
+/** The schedule kinds this version knows how to run. */
+const KNOWN_SCHEDULE_KINDS: readonly string[] = ["interval", "cron"];
+
+/**
+ * What an automation with a schedule kind this version does not know says
+ * about itself. The kind is stored as a bare string and read without a check,
+ * so a row written by a newer Actual Bench can reach here (F-192).
+ */
+export const UNKNOWN_SCHEDULE_LABEL = "Needs a newer version of Actual Bench";
+
+export function isKnownScheduleKind(kind: string): boolean {
+  return KNOWN_SCHEDULE_KINDS.includes(kind);
+}
+
 export function nextRunAt(input: DueInput): number | null {
   const { definition, lastRunAtMs, nowMs } = input;
   if (!definition.enabled || definition.autoPausedAt) return null;
+
+  // Never due. Before this check an unknown kind fell through to the interval
+  // branch, and was "never due" only because its interval happened to be null.
+  if (!isKnownScheduleKind(definition.scheduleKind)) return null;
 
   if (definition.scheduleKind === "cron") {
     if (!definition.cronExpression) return null;
@@ -347,6 +365,9 @@ export function effectiveNextRunAt(input: DueInput): number | null {
 export function describeSchedule(
   definition: Pick<AutomationDefinition, "scheduleKind" | "intervalMinutes" | "cronExpression" | "timezone">
 ): string {
+  // Not "Every 15 minutes": the minimum interval is what an unknown kind used
+  // to be shown as, for an automation that was never going to run.
+  if (!isKnownScheduleKind(definition.scheduleKind)) return UNKNOWN_SCHEDULE_LABEL;
   if (definition.scheduleKind === "cron") {
     if (!definition.cronExpression) return "No schedule";
     return `${describeCronExpression(definition.cronExpression)} (${definition.timezone})`;

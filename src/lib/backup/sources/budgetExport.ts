@@ -1,4 +1,4 @@
-import { queueServerRequest } from "@/app/api/proxy/serverQueue";
+import { ServerBusyError, queueServerRequest } from "@/lib/http/serverQueue";
 import type { SyncCredential } from "@/lib/app-db/types";
 
 /**
@@ -48,6 +48,7 @@ export async function exportBudgetFromCredential(
   const base = credential.baseUrl.replace(/\/$/, "");
   const url = `${base}/v1/budgets/${encodeURIComponent(credential.budgetSyncId)}/export`;
 
+  const timeoutMs = options.timeoutMs ?? 300_000;
   const result = await queueServerRequest<{ status: number; body?: ExportedBudget; error?: string }>(
     { baseUrl: credential.baseUrl, budgetSyncId: credential.budgetSyncId, apiKey: credential.secret.apiKey },
     `backup-${Math.random().toString(36).slice(2, 9)}`,
@@ -64,7 +65,7 @@ export async function exportBudgetFromCredential(
           // Exports of a large budget are slow, and a backup that gives up at
           // 60s on a big file is a backup that never runs for the people who
           // need it most.
-          signal: AbortSignal.timeout(options.timeoutMs ?? 300_000),
+          signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (error) {
         return {
@@ -94,8 +95,14 @@ export async function exportBudgetFromCredential(
           serverUrl: base,
         },
       };
-    }
-  );
+    },
+    // Outlives the export's own timeout by the budget-close cleanup plus
+    // margin, so the lease cannot expire mid-export and let another request in.
+    { leaseTtlMs: timeoutMs + 15_000 }
+  ).catch((error: unknown) => {
+    if (error instanceof ServerBusyError) throw new BudgetExportError(error.message, 503);
+    throw error;
+  });
 
   if (!result.body) {
     throw new BudgetExportError(result.error ?? `Export failed with HTTP ${result.status}`, result.status);

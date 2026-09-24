@@ -549,4 +549,6 @@ export type AutomationRun = {
   result: JsonEnvelope | null;
   rollup: AutomationRunRollup | null;
   error: JsonEnvelope | null;
+  /** What the run was started for (an event id, say); `null` for ordinary runs. */
+  input: JsonEnvelope | null;
 };

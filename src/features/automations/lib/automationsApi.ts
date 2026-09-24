@@ -1,4 +1,5 @@
 import type { AutomationDefinition, AutomationRun } from "@/lib/app-db/types";
+import { startAndWaitForRun } from "./runPolling";
 
 /** Client for the automation routes (RD-079 / PR-043d). */
 
@@ -84,15 +85,22 @@ export type RunOutcome = {
 };
 
 /**
- * A run that *happened* answers 200 whatever it concluded — failing is a
- * result, not a transport error — so the outcome is returned rather than
- * discarded. Reporting "Run finished" over a failed run is worse than saying
- * nothing.
+ * Start a run and wait for it to end.
+ *
+ * The route answers with the run's id straight away and the run carries on in
+ * the background (F-191); this follows it to the end, so the caller still gets
+ * the outcome - whatever it concluded. Failing is a result, not a transport
+ * error, and reporting "Run finished" over a failed run is worse than saying
+ * nothing. A refusal (already running, not found) still throws with its reason.
  */
 export async function runAutomationNow(automationId: string): Promise<RunOutcome> {
-  const response = await fetch(`/api/automations/${automationId}/run`, { method: "POST" });
-  if (!response.ok) return readError(response);
-  return ((await response.json()) as { outcome: RunOutcome }).outcome;
+  const run = await startAndWaitForRun(`/api/automations/${automationId}/run`, { method: "POST" });
+  return {
+    automationId,
+    runId: run.id,
+    status: run.status,
+    message: run.rollup?.message,
+  };
 }
 
 export async function patchAutomation(

@@ -5,7 +5,11 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { createBackupDestination, createBackupPolicy } from "@/lib/app-db/backupRepository";
+import { createBackupDestination, createBackupPolicy, listBackupPolicies } from "@/lib/app-db/backupRepository";
+import { getAutomationRun } from "@/lib/app-db/automationRunRepository";
+import { __resetEngineStateForTests, settleBackgroundRuns } from "@/lib/automation/engine";
+import { reconcileBackupAutomations } from "@/lib/automation/jobs/backupReconcile";
+import { backupOutcomeFromRun } from "@/features/backups/lib/backupsApi";
 import { buildBudgetArchive } from "@/lib/backup/testFixtures";
 import { ARCHIVE_LIMITS } from "@/lib/backup/verify";
 import type { SqliteDatabase } from "@/lib/app-db/types";
@@ -36,7 +40,9 @@ describe("POST /api/backups/policies/[policyId]/run", () => {
     db = getAppDb();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await settleBackgroundRuns();
+    __resetEngineStateForTests();
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     if (previousDbPath === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
@@ -90,6 +96,45 @@ describe("POST /api/backups/policies/[policyId]/run", () => {
   function upload(form: FormData): Request {
     return new Request("http://localhost/run", { method: "POST", body: form });
   }
+
+  it("starts a scheduled rule's run and answers with its id instead of waiting for it", async () => {
+    // Bench's own database needs no credential, so the engine path runs for
+    // real here. The backup itself carries on after the response (F-191).
+    const destination = createBackupDestination(db, {
+      name: "Volume",
+      kind: "local",
+      config: { version: 1, data: { path: volume } },
+    });
+    const policy = createBackupPolicy(db, {
+      name: "Settings nightly",
+      contents: "app-db",
+      scheduleKind: "cron",
+      cronExpression: "0 3 * * *",
+      destinationIds: [destination.id],
+      verificationLevel: "data",
+    });
+    reconcileBackupAutomations(db, listBackupPolicies(db));
+
+    const response = await POST(
+      new Request("http://localhost/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }),
+      context(policy.id)
+    );
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as { mode: string; runId: string };
+    expect(body.mode).toBe("run");
+
+    await settleBackgroundRuns();
+
+    const run = getAutomationRun(db, body.runId);
+    expect(run?.status).toBe("succeeded");
+    // The page reports the same three facts it did when the request waited.
+    expect(backupOutcomeFromRun(run!)).toMatchObject({ stored: true, verified: true });
+    expect(readdirSync(volume, { recursive: true }).length).toBeGreaterThan(0);
+  });
 
   it("stores an archive the browser exported", async () => {
     const policy = manualPolicy();

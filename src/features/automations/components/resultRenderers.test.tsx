@@ -16,6 +16,7 @@ function run(type: string, data: Record<string, unknown>): AutomationRun {
     result: { version: 1, data: data as never },
     rollup: null,
     error: null,
+    input: null,
   };
 }
 

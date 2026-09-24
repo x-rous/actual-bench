@@ -23,6 +23,7 @@ function run(overrides: Partial<AutomationRun> = {}): AutomationRun {
     result: null,
     rollup: null,
     error: null,
+    input: null,
     ...overrides,
   };
 }
