@@ -45,7 +45,10 @@ own memory limit. Three things follow:
   Sync 20 minutes, bank sync 10, backup 60, backup scrub 30). At the deadline, or
   when you press **Cancel**, the run is asked to stop. If it has not stopped 10
   seconds later, its thread is ended.
-- **A run that runs out of memory ends alone.** The server and other runs carry on.
+- **A run that reaches its memory limit is ended.** Normally the server and other
+  runs carry on. The limit covers the run's JavaScript memory only, not native
+  memory such as SQLite, so it is not a guarantee: if the container itself runs
+  out of memory, the whole server can stop.
 - **A stopped run is reported honestly.** A run stopped while it was only reading
   is **Failed** (or **Cancelled**). A run stopped after it may already have
   changed something - applying a sync, pulling from a bank, writing a backup - is
