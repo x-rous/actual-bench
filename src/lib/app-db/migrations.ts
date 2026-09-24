@@ -51,7 +51,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 36;
+export const LATEST_SCHEMA_VERSION = 37;
 
 type Migration = {
   version: number;
@@ -443,6 +443,23 @@ const MIGRATIONS: readonly Migration[] = [
     // refuse this database instead (agents/knowledge.md: a new stored enum
     // value ships with a schema-version bump).
     statements: [],
+  },
+  {
+    version: 37,
+    // When Bench last uploaded a fresh snapshot of a Direct budget it opens
+    // unattended (RD-095 M3). A download replays every change since the
+    // server's last snapshot, and only a client that uploads one refreshes it;
+    // Actual's own clients do so weekly, a headless one never does. Without
+    // this, a budget only Bench touches opens slower each week until it runs
+    // out of memory (M0, Appendix B.2).
+    statements: [
+      `CREATE TABLE IF NOT EXISTS budget_runtime_state (
+         server_fingerprint TEXT NOT NULL,
+         budget_sync_id TEXT NOT NULL,
+         last_snapshot_at TEXT NOT NULL,
+         PRIMARY KEY (server_fingerprint, budget_sync_id)
+       )`,
+    ],
   },
 ];
 

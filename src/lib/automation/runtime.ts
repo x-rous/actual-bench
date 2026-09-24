@@ -1,3 +1,4 @@
+import { sweepStaleWorkspaces } from "@/lib/actual/runtime/workspace";
 import { getAppDb } from "@/lib/app-db/connection";
 import { clearAutomationClaims } from "@/lib/app-db/automationRepository";
 import { logger } from "@/lib/logger";
@@ -42,6 +43,17 @@ export function startAutomationEngine(): void {
   } catch (error) {
     logger.warn(
       `[automation] could not clear stale claims: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  // Budget copies left by workers of a process that died. Same grace, same
+  // reason: a copy another live process is using is not this one's to delete.
+  try {
+    const swept = sweepStaleWorkspaces(BOOT_CLAIM_GRACE_MS);
+    if (swept > 0) logger.info(`[automation] removed ${swept} budget workspace(s) left by a previous process`);
+  } catch (error) {
+    logger.warn(
+      `[automation] could not sweep budget workspaces: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 

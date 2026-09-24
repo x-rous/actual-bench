@@ -15,6 +15,7 @@ import { sealSecret, sealWithKey } from "@/lib/sync/vault";
 import { connectionFingerprint, serverFingerprint } from "@/lib/sync/connectionRef";
 import { randomBytes } from "node:crypto";
 import { LATEST_SCHEMA_VERSION, runMigrations } from "./migrations";
+import { getLastSnapshotAt, recordSnapshotUploaded } from "./budgetRuntimeStateRepository";
 import {
   getReconciliationSession,
   listReconciliationProfiles,
@@ -1020,10 +1021,35 @@ describe("upgrading an existing database", () => {
 
     try {
       const db = getAppDb(path);
-      expect(runMigrations(db).schemaVersion).toBe(36);
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       expect(getAutomationRun(db, "run-old")).toMatchObject({ status: "succeeded" });
       const run = createAutomationRun(db, { type: "backup", status: "indeterminate" });
       expect(getAutomationRun(db, run.id)?.status).toBe("indeterminate");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds the budget snapshot record to a v36 database (v37)", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v37-"));
+    const path = join(root, "metadata.sqlite");
+    const now = "2026-09-24T00:00:00.000Z";
+
+    const seed = new Database(path);
+    seed.exec("CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);");
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES ('schema_version', '36', ?)").run(now);
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+      expect(runMigrations(db).schemaVersion).toBe(37);
+      const key = { serverFingerprint: "srv", budgetSyncId: "budget-1" };
+      expect(getLastSnapshotAt(db, key)).toBeNull();
+      recordSnapshotUploaded(db, key, now);
+      recordSnapshotUploaded(db, key, "2026-10-01T00:00:00.000Z");
+      expect(getLastSnapshotAt(db, key)).toBe("2026-10-01T00:00:00.000Z");
+      expect(getLastSnapshotAt(db, { ...key, budgetSyncId: "budget-2" })).toBeNull();
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

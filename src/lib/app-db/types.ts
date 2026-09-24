@@ -165,6 +165,8 @@ export type SyncCapabilitySet = {
    * answers "started" and Bench does not claim to know.
    */
   runBankSync: boolean;
+  /** Can hand over the whole budget as Actual's archive (`transport.exportBudget()`). */
+  canExportBudget: boolean;
 };
 
 export type SyncCapabilityReport = {
@@ -294,8 +296,13 @@ export type SyncMappingPatch = Partial<
 // ─── Credential vault (RD-058 / PR-024a) ────────────────────────────────────
 
 /** The plaintext secret sealed in the vault for an unattended-sync connection. */
+/**
+ * An enrolled connection's secrets, flattened. Exactly one of `apiKey` (HTTP
+ * API) or `serverPassword` (Direct) is set, matching the enrolment's `mode`.
+ */
 export type SyncCredentialSecret = {
-  apiKey: string;
+  apiKey?: string;
+  serverPassword?: string;
   encryptionPassword?: string;
 };
 

@@ -44,10 +44,14 @@ import {
 const OPERATOR: SecretAccess = { domain: "operator" };
 
 /**
- * The server half of an unattended credential. A union so the next kind -
- * `{ kind: "direct"; serverPassword }` - is an addition, not a reshape.
+ * The server half of an unattended credential: an actual-http-api key, or the
+ * Actual server's own password for a Direct connection (RD-095). Direct stores
+ * the password rather than a session token: every password-login client shares
+ * one token, and it survives a password change (M0, Appendix B).
  */
-export type UnattendedServerSecret = { kind: "http-api"; apiKey: string };
+export type UnattendedServerSecret =
+  | { kind: "http-api"; apiKey: string }
+  | { kind: "direct"; serverPassword: string };
 
 export type UnattendedSecret = {
   server: UnattendedServerSecret;
@@ -83,11 +87,26 @@ function getConnectionRow(db: SqliteDatabase, connectionFingerprint: string): Co
     .get<ConnectionRow>(connectionFingerprint);
 }
 
+function serverSecretFor(input: SyncCredentialInput): UnattendedServerSecret {
+  if (input.mode === "http-api" && input.secret.apiKey) {
+    return { kind: "http-api", apiKey: input.secret.apiKey };
+  }
+  if (input.mode === "browser-api" && input.secret.serverPassword) {
+    return { kind: "direct", serverPassword: input.secret.serverPassword };
+  }
+  throw new Error(
+    input.mode === "browser-api"
+      ? "A Direct connection is enrolled with its server password."
+      : "An HTTP API connection is enrolled with its API key."
+  );
+}
+
 /** Enrol (insert or replace) a connection and seal its secrets. Requires an enabled vault. */
 export function upsertSyncCredential(db: SqliteDatabase, input: SyncCredentialInput): SyncCredentialMeta {
   const now = new Date().toISOString();
   const serverFp = serverFingerprint({ mode: input.mode as ConnectionMode, baseUrl: input.baseUrl });
   const label = input.label ?? "";
+  const server = serverSecretFor(input);
 
   const enrol = db.transaction(() => {
     const row = db
@@ -115,7 +134,6 @@ export function upsertSyncCredential(db: SqliteDatabase, input: SyncCredentialIn
         now
       );
 
-    const server: UnattendedServerSecret = { kind: "http-api", apiKey: input.secret.apiKey };
     putSecret(db, OPERATOR, {
       ref: secretRefs.server(serverFp),
       kind: "server-login",
@@ -190,7 +208,9 @@ export function getSyncCredential(db: SqliteDatabase, connectionFingerprint: str
   return {
     ...toMeta(row),
     secret: {
-      apiKey: secret.server.apiKey,
+      ...(secret.server.kind === "http-api"
+        ? { apiKey: secret.server.apiKey }
+        : { serverPassword: secret.server.serverPassword }),
       ...(secret.encryptionPassword ? { encryptionPassword: secret.encryptionPassword } : {}),
     },
   };
@@ -264,9 +284,7 @@ function upgradeLegacyConnection(db: SqliteDatabase, row: ConnectionRow): boolea
         label: row.label,
       });
     } else {
-      const current = JSON.parse(getSecret(db, OPERATOR, serverRef)?.plaintext ?? "{}") as Partial<
-        UnattendedServerSecret
-      >;
+      const current = JSON.parse(getSecret(db, OPERATOR, serverRef)?.plaintext ?? "{}") as { apiKey?: string };
       if (current.apiKey !== parsed.apiKey) {
         logger.warn(
           `[credentials] enrolments on ${row.base_url} held different API keys; keeping the most recently updated one`

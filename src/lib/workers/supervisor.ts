@@ -3,6 +3,7 @@ import type { Readable } from "node:stream";
 import { generateId } from "@/lib/uuid";
 import { logger } from "@/lib/logger";
 import { redactSecrets } from "@/lib/automation/runLogger";
+import { removeThreadWorkspaces } from "@/lib/actual/runtime/workspace";
 import type { AutomationRunPhase } from "@/lib/automation/registry";
 import type { StopCode } from "@/lib/automation/jobExecution";
 import { workerToParentMessage } from "./protocol";
@@ -30,6 +31,8 @@ export type SupervisedWorker = {
   on(event: "error", listener: (error: Error & { code?: string }) => void): unknown;
   on(event: "exit", listener: (exitCode: number) => void): unknown;
   terminate(): Promise<number>;
+  /** Set on a real thread; names its budget workspace (`runtime/workspace.ts`). */
+  readonly threadId?: number;
   stdout?: Readable | null;
   stderr?: Readable | null;
 };
@@ -107,6 +110,16 @@ function state(): State {
 }
 
 /** Forward a worker's own output to the server log, redacted by pattern. */
+function removeLeftWorkspaces(threadId: number): void {
+  try {
+    removeThreadWorkspaces(threadId);
+  } catch (error) {
+    logger.warn(
+      `[workers] could not remove a stopped worker's budget copies: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
 function forwardOutput(stream: Readable | null | undefined, level: "info" | "warn"): void {
   if (!stream) return;
   const lines = createInterface({ input: stream, crlfDelay: Infinity });
@@ -181,6 +194,9 @@ export function runWorkerTask(kind: string, input: unknown, options: { signal: A
         .catch(() => undefined)
         .finally(() => {
           current.busy -= 1;
+          // A worker stopped mid-task never ran its own cleanup; its budget
+          // copies are removed here, once the thread can no longer write them.
+          if (workerThreadId !== undefined) removeLeftWorkspaces(workerThreadId);
         });
       resolve(outcome);
     };
@@ -219,8 +235,11 @@ export function runWorkerTask(kind: string, input: unknown, options: { signal: A
       }, settings.graceMs);
     }
 
+    let workerThreadId: number | undefined;
     try {
       worker = settings.spawn({ heapMb: settings.heapMb });
+      // Read now: Node resets it once the thread has exited.
+      workerThreadId = worker.threadId;
     } catch (error) {
       current.busy -= 1;
       settled = true;

@@ -6,7 +6,8 @@ import { sanitizeBankSyncError } from "@/lib/actual/bankSync";
 import { getSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import { listAccountsForBankSync, isBankLinked } from "@/lib/actual/bankSyncAccounts";
 import { vaultEnabled } from "@/lib/sync/vault";
-import type { HttpApiConnection } from "@/store/connection";
+import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
+import { connectionFromEnrolment } from "@/lib/actual/serverTransport";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,19 +42,18 @@ export async function GET(request: Request) {
       );
     }
 
-    const connection: HttpApiConnection = {
-      id: credential.connectionFingerprint,
-      label: credential.label || credential.baseUrl,
-      mode: "http-api",
-      baseUrl: credential.baseUrl,
-      apiKey: credential.secret.apiKey,
-      budgetSyncId: credential.budgetSyncId,
-      ...(credential.secret.encryptionPassword
-        ? { encryptionPassword: credential.secret.encryptionPassword }
-        : {}),
-    };
+    const { secret, ...meta } = credential;
+    const connection = connectionFromEnrolment(meta, secret);
+    if (connection.mode !== "http-api") {
+      // A Direct budget opens only inside a worker; listing its accounts from
+      // here arrives with Direct enrolment.
+      return NextResponse.json(
+        { error: "Listing bank accounts for a Direct connection is not available yet." },
+        { status: 400 }
+      );
+    }
 
-    const accounts = await listAccountsForBankSync(connection);
+    const accounts = await listAccountsForBankSync((body) => createHttpApiTransport(connection).runQuery(body));
 
     return NextResponse.json({
       accounts: accounts

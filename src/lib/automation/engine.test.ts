@@ -327,6 +327,42 @@ describe("automation engine", () => {
     }
   });
 
+  it("keeps a revealed Direct server password out of the run log and the stored error", async () => {
+    const { root, db } = tempDb();
+    process.env.SYNC_VAULT_KEY = VAULT_KEY;
+    try {
+      upsertSyncCredential(db, {
+        connectionFingerprint: "direct-1",
+        mode: "browser-api",
+        baseUrl: "https://actual.example.com",
+        budgetSyncId: "budget-1",
+        secret: { serverPassword: "direct-server-password-value", encryptionPassword: "direct-e2ee-value" },
+      });
+
+      registerAutomationJobType(
+        testJobType({
+          async run(ctx: AutomationRunContext<TestConfig>): Promise<never> {
+            if (ctx.credentials.status !== "resolved") throw new Error("expected credentials");
+            const secret = ctx.credentials.reveal();
+            ctx.logger.info(`signing in with ${secret.serverPassword}`);
+            throw new Error(`login failed for ${secret.serverPassword} / ${secret.encryptionPassword}`);
+          },
+        })
+      );
+      const id = definition(db, { credentialRef: "direct-1" });
+
+      await executeAutomation(db, id);
+
+      const [run] = listAutomationRuns(db, { automationId: id });
+      const serialized = JSON.stringify(run);
+      expect(serialized).not.toContain("direct-server-password-value");
+      expect(serialized).not.toContain("direct-e2ee-value");
+      expect(run.error?.data.message).toContain("[redacted]");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("auto-pauses after the configured failure streak and says why", async () => {
     const { root, db } = tempDb();
     try {

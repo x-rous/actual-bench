@@ -1,8 +1,4 @@
-// Loaded for its side effect: it installs the per-server request lock that the
-// HTTP transport's unattended requests go through (F-189). Without it they fail
-// rather than reach actual-http-api unserialized.
-import "@/lib/http/serverQueue";
-import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
+import { connectionFromEnrolment, openServerTransport } from "@/lib/actual/serverTransport";
 import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { getAppDb } from "@/lib/app-db/connection";
 import { getAutomationJobType, registerAutomationJobType } from "../registry";
@@ -10,7 +6,7 @@ import { BANK_SYNC_JOB_TYPE } from "./bankSyncType";
 import type { AutomationCredentials, AutomationJobType, AutomationRunContext } from "../registry";
 import type { BankSyncAccountResult, BankSyncOutcome } from "@/lib/actual/bankSync";
 import type { AutomationRunRollup, JsonEnvelope } from "@/lib/app-db/types";
-import type { HttpApiConnection } from "@/store/connection";
+import type { ConnectionInstance } from "@/store/connection";
 
 /**
  * Automatic Bank Sync as an automation job type (RD-080 / PR-045).
@@ -74,7 +70,7 @@ function readConfig(raw: JsonEnvelope): BankSyncConfig {
 function connectionFromCredentials(
   credentials: AutomationCredentials,
   configFingerprint: string
-): HttpApiConnection {
+): ConnectionInstance {
   if (credentials.status !== "resolved") {
     throw new Error("This automation has no usable credential. Re-enrol the connection to run it.");
   }
@@ -93,17 +89,7 @@ function connectionFromCredentials(
     throw new Error("The stored credential for this connection is no longer available.");
   }
 
-  const secret = credentials.reveal();
-
-  return {
-    id: meta.connectionFingerprint,
-    label: meta.label || meta.baseUrl,
-    mode: "http-api",
-    baseUrl: meta.baseUrl,
-    apiKey: secret.apiKey,
-    budgetSyncId: meta.budgetSyncId,
-    ...(secret.encryptionPassword ? { encryptionPassword: secret.encryptionPassword } : {}),
-  };
+  return connectionFromEnrolment(meta, credentials.reveal());
 }
 
 function describe(results: BankSyncAccountResult[], countsObserved: boolean): string {
@@ -144,7 +130,7 @@ export const bankSyncJobType: AutomationJobType<BankSyncConfig, BankSyncJobResul
 
   async run(ctx: AutomationRunContext<BankSyncConfig>): Promise<BankSyncJobResult> {
     const connection = connectionFromCredentials(ctx.credentials, ctx.config.connectionFingerprint);
-    const transport = createHttpApiTransport(connection);
+    const transport = openServerTransport(connection);
 
     if (!transport.runBankSync) {
       return {

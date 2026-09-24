@@ -16,6 +16,7 @@ const NO_SYNC_CAPABILITIES: SyncCapabilitySet = {
   updateTransaction: false,
   deleteTransaction: false,
   runBankSync: false,
+  canExportBudget: false,
 };
 
 /**
@@ -52,6 +53,8 @@ const CURRENT_DIRECT_CAPABILITIES: SyncCapabilitySet = {
   // it is a runtime question this static report cannot answer — callers that
   // need certainty use the transport's `canRunBankSync()`.
   runBankSync: true,
+  // RD-095: Actual's own `export-budget`, through the host (tab or worker).
+  canExportBudget: true,
 };
 
 /**
@@ -85,6 +88,8 @@ const HTTP_SYNC_CAPABILITIES: SyncCapabilitySet = {
   // endpoints. They answer "started" rather than reporting what was imported,
   // which the outcome type reflects — the capability is the ability to trigger.
   runBankSync: true,
+  // actual-http-api's `/export`, through the per-server request lock.
+  canExportBudget: true,
 };
 
 export type SyncCapabilityKey = keyof SyncCapabilitySet;

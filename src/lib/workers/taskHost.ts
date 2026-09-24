@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { closeNodeRuntime } from "@/lib/actual/runtime/nodeHost";
 import { getAppDb } from "@/lib/app-db/connection";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { executeJob } from "@/lib/automation/jobExecution";
@@ -52,11 +53,15 @@ const handlers: Record<string, TaskHandler> = {
   "automation.run": async (raw, ctx) => {
     const request = automationRunInput.parse(raw);
     ensureAutomationJobTypesRegistered();
-    return executeJob(
+    const outcome = await executeJob(
       getAppDb(),
       { ...request, input: request.input as Parameters<typeof executeJob>[1]["input"] },
       { signal: ctx.signal, onPhase: ctx.enterPhase }
     );
+    // A Direct budget the job opened is closed before the answer goes back,
+    // and its snapshot refreshed only when the job finished cleanly.
+    await closeNodeRuntime({ refreshSnapshot: outcome.kind === "completed" && !outcome.aborted });
+    return outcome;
   },
 };
 
@@ -103,6 +108,8 @@ export function createTaskHost(post: (message: WorkerToParentMessage) => void): 
         });
       } finally {
         controllers.delete(message.taskId);
+        // Whatever the task did, no budget and no downloaded copy outlives it.
+        await closeNodeRuntime().catch(() => undefined);
       }
     },
   };
