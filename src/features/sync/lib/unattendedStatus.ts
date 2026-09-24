@@ -31,8 +31,6 @@ export type UnattendedStatusInput = {
   flowEnabled: boolean;
   autoPaused: boolean;
   vaultEnabled: boolean;
-  /** Both source and target are HTTP API connections. */
-  bothHttp: boolean;
   /** Both budgets' credentials are stored in the server vault. */
   bothEnrolled: boolean;
   /**
@@ -79,7 +77,6 @@ export function computeUnattendedStatus(i: UnattendedStatusInput): UnattendedSta
       : "Paused by automation - resume it on the Automations page";
   } else if (paused) reason = "Paused - re-enable the flow to resume";
   else if (!i.vaultEnabled) reason = "Server vault not configured (set SYNC_VAULT_KEY)";
-  else if (!i.bothHttp) reason = "Both source and target must be HTTP API connections";
   else if (!i.bothEnrolled) reason = "Store credentials to arm unattended sync";
 
   const armed = reason === null;

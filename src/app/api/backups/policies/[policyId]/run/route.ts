@@ -8,10 +8,11 @@ import {
   readBoundedBody,
 } from "@/lib/http/boundedBody";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
-import { getBackupPolicy } from "@/lib/app-db/backupRepository";
+import { getBackupPolicy, listBackupPolicies } from "@/lib/app-db/backupRepository";
 import { listAutomations } from "@/lib/app-db/automationRepository";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { startAutomationRun } from "@/lib/automation/engine";
+import { reconcileBackupAutomations } from "@/lib/automation/jobs/backupReconcile";
 import { BACKUP_JOB_TYPE } from "@/lib/automation/jobs/backupType";
 import { runBackup } from "@/lib/backup/runBackup";
 import { ARCHIVE_LIMITS } from "@/lib/backup/verify";
@@ -33,7 +34,8 @@ export const maxDuration = 300;
  * and left no trace in the run history the rule links to - which is exactly
  * what someone checking "did that work?" goes looking for.
  *
- * The direct path remains as a fallback for a rule with no automation yet.
+ * A scheduled rule always goes through its automation (created here if the
+ * reconcile has not run yet); only a manual rule is run directly.
  *
  * Two response shapes, told apart by `mode`:
  *
@@ -232,9 +234,16 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
 
-    const automation = listAutomations(db, { type: BACKUP_JOB_TYPE }).find(
-      (entry) => entry.config.data.policyId === policyId
-    );
+    const findAutomation = () =>
+      listAutomations(db, { type: BACKUP_JOB_TYPE }).find((entry) => entry.config.data.policyId === policyId);
+    let automation = findAutomation();
+    // A scheduled rule without its automation yet (created a moment ago, before
+    // the engine's reconcile) gets it now: a run belongs in a worker, where a
+    // Direct budget can be opened, not in this request's thread.
+    if (!automation && policy.scheduleKind !== "manual") {
+      reconcileBackupAutomations(db, listBackupPolicies(db));
+      automation = findAutomation();
+    }
 
     // A manual rule has no automation, and one left over from a rule whose
     // source changed is disabled - running through it would refuse.

@@ -3,13 +3,18 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { AppDbUnavailableError, AppDbValidationError } from "@/lib/app-db/errors";
 import { sanitizeBankSyncError } from "@/lib/actual/bankSync";
-import { getSyncCredential } from "@/lib/credentials/unattendedCredentials";
-import { listAccountsForBankSync, isBankLinked } from "@/lib/actual/bankSyncAccounts";
+import { getSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
+import { listAccountsForBankSync, isBankLinked, type BankLinkedAccount } from "@/lib/actual/bankSyncAccounts";
+import { getAutomationExecutor } from "@/lib/automation/executor";
+import { runWorkerTask } from "@/lib/workers/supervisor";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
 import { connectionFromEnrolment } from "@/lib/actual/serverTransport";
 
 export const dynamic = "force-dynamic";
+
+/** A cold open of a Direct budget; enrolment refreshed its snapshot, so usually a few seconds. */
+const DIRECT_ACCOUNTS_DEADLINE_MS = 90_000;
 export const runtime = "nodejs";
 
 /**
@@ -34,26 +39,53 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "The credential vault is disabled." }, { status: 400 });
     }
 
-    const credential = getSyncCredential(getAppDb(), fingerprint);
-    if (!credential) {
+    const db = getAppDb();
+    const meta = listSyncCredentialMeta(db).find((entry) => entry.connectionFingerprint === fingerprint);
+    if (!meta) {
       return NextResponse.json(
         { error: "That connection has no stored credentials." },
         { status: 404 }
       );
     }
 
-    const { secret, ...meta } = credential;
-    const connection = connectionFromEnrolment(meta, secret);
-    if (connection.mode !== "http-api") {
-      // A Direct budget opens only inside a worker; listing its accounts from
-      // here arrives with Direct enrolment.
-      return NextResponse.json(
-        { error: "Listing bank accounts for a Direct connection is not available yet." },
-        { status: 400 }
+    let accounts: BankLinkedAccount[];
+    if (meta.mode === "browser-api") {
+      // A Direct budget opens only in a worker (RD-095). The worker gets the
+      // connection by reference and reveals the credential itself.
+      if (getAutomationExecutor().name !== "worker") {
+        return NextResponse.json(
+          { error: "Direct connections need worker threads. Remove ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread." },
+          { status: 400 }
+        );
+      }
+      const outcome = await runWorkerTask(
+        "connection.bankAccounts",
+        { connectionFingerprint: fingerprint },
+        { signal: AbortSignal.timeout(DIRECT_ACCOUNTS_DEADLINE_MS) }
       );
+      if (outcome.status !== "result") {
+        const busy = outcome.status === "stopped" && outcome.code === "NO_CAPACITY";
+        const message =
+          outcome.status === "error"
+            ? outcome.message
+            : busy
+              ? "Bench is busy running automations. Try again in a minute."
+              : outcome.code === "TIMEOUT"
+                ? "Opening the budget took too long. Try again."
+                : outcome.message;
+        return NextResponse.json({ error: message }, { status: busy ? 503 : 502 });
+      }
+      accounts = outcome.output as BankLinkedAccount[];
+    } else {
+      const credential = getSyncCredential(db, fingerprint);
+      if (!credential) {
+        return NextResponse.json({ error: "That connection has no stored credentials." }, { status: 404 });
+      }
+      const { secret, ...rest } = credential;
+      const connection = connectionFromEnrolment(rest, secret);
+      if (connection.mode !== "http-api") throw new Error("The stored credential does not match this connection.");
+      accounts = await listAccountsForBankSync((body) => createHttpApiTransport(connection).runQuery(body));
     }
-
-    const accounts = await listAccountsForBankSync((body) => createHttpApiTransport(connection).runQuery(body));
 
     return NextResponse.json({
       accounts: accounts

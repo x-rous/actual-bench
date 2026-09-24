@@ -1,5 +1,5 @@
 import { vaultEnabled } from "@/lib/sync/vault";
-import { getSyncCredential } from "@/lib/credentials/unattendedCredentials";
+import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
 import { getBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   createBackupArtifact,
@@ -10,7 +10,8 @@ import {
   type BackupArtifact,
   type BackupPolicy,
 } from "@/lib/app-db/backupRepository";
-import type { SqliteDatabase, SyncCredential } from "@/lib/app-db/types";
+import type { SqliteDatabase } from "@/lib/app-db/types";
+import type { ConnectionInstance } from "@/store/connection";
 import { contentOf, detectBackupAnomalies } from "./anomaly";
 import { createDestinationAdapter, DestinationError } from "./destinations";
 import { encryptArchive } from "./encryption";
@@ -24,7 +25,6 @@ import {
   type BackupRetentionTier,
 } from "./manifest";
 import { exportAppDbSnapshot } from "./sources/appDbExport";
-import { exportBudgetFromCredential } from "./sources/budgetExport";
 import { verifyAppDbArchive, verifyBudgetArchive, type VerificationOutcome } from "./verify";
 import { LATEST_SCHEMA_VERSION } from "@/lib/app-db/migrations";
 
@@ -163,7 +163,7 @@ type PreparedArtifact = {
   serverUrl: string | null;
 };
 
-function readSourceCredential(db: SqliteDatabase, policy: BackupPolicy): SyncCredential {
+function readSourceConnection(db: SqliteDatabase, policy: BackupPolicy): ConnectionInstance {
   const fingerprint = policy.sourceRef.data.connectionFingerprint;
   if (typeof fingerprint !== "string" || !fingerprint.trim()) {
     throw new Error("This backup has no source connection configured.");
@@ -174,18 +174,18 @@ function readSourceCredential(db: SqliteDatabase, policy: BackupPolicy): SyncCre
     );
   }
 
-  let credential: SyncCredential | null;
+  let connection: ConnectionInstance | null;
   try {
-    credential = getSyncCredential(db, fingerprint);
+    connection = resolveServerConnection(db, fingerprint);
   } catch {
     throw new Error("Bench could not decrypt the stored credentials; the vault key may have changed.");
   }
-  if (!credential) {
+  if (!connection) {
     throw new Error(
       "The source connection is not enrolled for unattended use, so a scheduled backup cannot reach it."
     );
   }
-  return credential;
+  return connection;
 }
 
 function readPassphrase(db: SqliteDatabase, policy: BackupPolicy): string {
@@ -235,16 +235,23 @@ async function prepareArtifact(
     };
   }
 
-  const credential = readSourceCredential(db, policy);
-  const exported = await exportBudgetFromCredential(credential);
+  // Either mode, through the same transport a run uses: actual-http-api's
+  // export for HTTP, Actual's own in this worker for Direct.
+  const connection = readSourceConnection(db, policy);
+  const transport = openServerTransport(connection);
+  if (!transport.exportBudget) throw new Error("This connection cannot export its budget.");
+  const bytes = Buffer.from(await transport.exportBudget());
+  // A server that answers with nothing is a failure, not an empty backup.
+  if (bytes.byteLength === 0) throw new Error("The server returned an empty export.");
+  const label = connection.label && connection.label !== connection.baseUrl ? connection.label : null;
   return {
     kind,
-    label: credential.label || credential.budgetSyncId,
-    plaintext: exported.bytes,
-    verification: verifyBudgetArchive(exported.bytes, policy.verificationLevel),
-    sourceBudgetId: credential.budgetSyncId,
-    sourceBudgetName: credential.label || null,
-    serverUrl: exported.serverUrl,
+    label: label || connection.budgetSyncId,
+    plaintext: bytes,
+    verification: verifyBudgetArchive(bytes, policy.verificationLevel),
+    sourceBudgetId: connection.budgetSyncId,
+    sourceBudgetName: label,
+    serverUrl: connection.baseUrl.replace(/\/$/, ""),
   };
 }
 

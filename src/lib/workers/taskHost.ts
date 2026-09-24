@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { closeNodeRuntime } from "@/lib/actual/runtime/nodeHost";
+import { listAccountsForBankSync } from "@/lib/actual/bankSyncAccounts";
+import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
 import { verifyConnection, verifyConnectionInput } from "@/lib/actual/verifyConnection";
 import { getAppDb } from "@/lib/app-db/connection";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
@@ -60,6 +62,26 @@ const handlers: Record<string, TaskHandler> = {
    * secret arrives sealed and is opened only here.
    */
   "connection.verify": async (raw) => verifyConnection(verifyConnectionInput.parse(raw)),
+
+  /**
+   * The accounts of an enrolled budget and their bank links, for the bank-sync
+   * dialog. By reference, like a run: the credential is revealed here.
+   */
+  "connection.bankAccounts": async (raw) => {
+    const { connectionFingerprint } = z.object({ connectionFingerprint: z.string().min(1) }).parse(raw);
+    const connection = resolveServerConnection(getAppDb(), connectionFingerprint);
+    if (!connection) throw new Error("That connection has no stored credentials.");
+    const secrets = [
+      connection.encryptionPassword,
+      connection.mode === "http-api" ? connection.apiKey : connection.serverPassword,
+    ].filter((value): value is string => !!value);
+    try {
+      const transport = openServerTransport(connection);
+      return await listAccountsForBankSync((body) => transport.runQuery(body));
+    } catch (error) {
+      throw new Error(redactSecrets(error instanceof Error ? error.message : String(error), secrets));
+    }
+  },
 
   /** Run one automation job, exactly as the engine would in-thread. */
   "automation.run": async (raw, ctx) => {

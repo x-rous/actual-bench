@@ -16,6 +16,11 @@ import {
   listBackupArtifacts,
 } from "@/lib/app-db/backupRepository";
 import { upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
+import {
+  __configureNodeHostForTests,
+  __resetNodeHostForTests,
+  closeNodeRuntime,
+} from "@/lib/actual/runtime/nodeHost";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { decryptArchive } from "./encryption";
 import { parseManifest } from "./manifest";
@@ -141,6 +146,46 @@ describe("running a backup", () => {
     expect(manifest?.artifactId).toBe(artifact.id);
     expect(manifest?.content?.transactions).toBe(1);
     expect(manifest?.source?.budgetName).toBe("Household");
+  });
+
+  it("backs up an enrolled Direct budget through the Actual runtime, with no browser involved", async () => {
+    upsertSyncCredential(db, {
+      connectionFingerprint: "conn-direct",
+      mode: "browser-api",
+      baseUrl: "https://actual.example.com",
+      budgetSyncId: "budget-direct",
+      label: "Envelope",
+      secret: { serverPassword: "server-pw" },
+    });
+    mockExport(new Uint8Array(), 500); // No HTTP export for a Direct source.
+    const send = jest.fn(async (name: string) => (name === "export-budget" ? { data: BUDGET_ZIP } : {}));
+    process.env.ACTUAL_BENCH_RUNTIME_DIR = join(root, "runtime");
+    __configureNodeHostForTests({
+      allowMainThread: true,
+      snapshots: { lastSnapshotAt: () => new Date().toISOString(), recordSnapshot: () => {} },
+      loadApi: async () =>
+        ({
+          init: async () => ({ send }),
+          downloadBudget: async () => undefined,
+          sync: async () => undefined,
+          shutdown: async () => undefined,
+        }) as never,
+    });
+    try {
+      const result = await runBackup(
+        db,
+        policy({ sourceRef: { version: 1, data: { connectionFingerprint: "conn-direct" } } })
+      );
+
+      expect(result).toMatchObject({ stored: true, verified: true });
+      expect(send).toHaveBeenCalledWith("export-budget");
+      const [artifact] = listBackupArtifacts(db);
+      expect(artifact).toMatchObject({ sourceBudgetId: "budget-direct", sourceBudgetName: "Envelope" });
+    } finally {
+      await closeNodeRuntime();
+      __resetNodeHostForTests();
+      delete process.env.ACTUAL_BENCH_RUNTIME_DIR;
+    }
   });
 
   it("stores an archive the caller exported, without reaching for a credential", async () => {

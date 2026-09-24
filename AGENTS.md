@@ -168,7 +168,7 @@ Unattended access is opt-in and server-side, for HTTP API and Direct connections
 - encryption depends on `SYNC_VAULT_KEY`;
 - decrypted values never return to the browser;
 - a missing/rotated key must fail closed and surface health state;
-- Direct-mode flows cannot become unattended server jobs because their runtime is browser-owned.
+- any enrolled connection, HTTP API or Direct, can run unattended: a Direct budget opens in an automation worker through the Node host (`src/lib/actual/runtime/nodeHost.ts`), never in the web server's own thread.
 
 ### Automation jobs run in worker threads
 
@@ -307,9 +307,9 @@ Never derive the marker from:
 
 App DB mappings remain the primary local record. The marker is the cross-instance recovery and dedupe mechanism. Do not parse markers; treat them as opaque equality keys.
 
-### Direct runtime limitation
+### Direct runtime: one budget at a time
 
-The Direct browser runtime owns one active budget runtime at a time. Opening another connection tears down and initializes the runtime for that budget.
+A Direct runtime - the browser tab's, or an automation worker's Node host - holds one open budget at a time. Opening another connection tears down and initializes the runtime for that budget, so a Direct→Direct flow switches between its two budgets in sequence, in the tab and in a worker alike. A worker never holds two budgets.
 
 Do not attempt an in-place same-server budget switch unless the upstream Actual API provides a supported primitive and the architecture is explicitly revisited.
 

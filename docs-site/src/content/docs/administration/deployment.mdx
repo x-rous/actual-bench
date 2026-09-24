@@ -111,6 +111,8 @@ itself. Use the API's Docker service name on a shared network, or any address th
 Direct mode runs Actual's engine in the browser. That has consequences:
 
 - The **browser** must be able to reach your Actual Server URL.
+- For **scheduled runs** on Direct budgets (backups, bank sync, Budget File Sync), Bench opens the
+  budget on its own server, so the **Bench server** must be able to reach the Actual Server URL too.
 - The response has to satisfy **CORS**, or come through your proxy as same-origin.
 - Actual Bench sets the cross-origin isolation headers it needs on its own assets
   (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`).

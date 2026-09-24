@@ -8,7 +8,7 @@ import { connectionFingerprint, connectionMatchesBudget } from "@/lib/sync/conne
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsView";
 import { computeUnattendedStatus, nextRunPhrase, type EnginePause } from "../lib/unattendedStatus";
-import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection";
+import type { ConnectionInstance } from "@/store/connection";
 import type { SyncFlow, SyncFlowRun } from "@/lib/app-db/types";
 
 type FlowListProps = {
@@ -33,10 +33,6 @@ function connectionAvailable(
     ? connections.some((connection) => connectionFingerprint(connection) === fingerprint)
     : false;
   return exactMatch || connections.some((connection) => connectionMatchesBudget(connection, budgetSyncId));
-}
-
-function isHttpFingerprint(fingerprint: string, connections: ConnectionInstance[]): boolean {
-  return connections.some((c) => connectionFingerprint(c) === fingerprint && isHttpApiConnection(c));
 }
 
 export function FlowList({
@@ -127,9 +123,6 @@ export function FlowList({
                 autoPaused: !!config.autoPausedAt,
                 enginePause,
                 vaultEnabled,
-                // Enrolled credentials are HTTP-API by construction, so treat an
-                // enrolled flow as HTTP even when its connection isn't loaded here.
-                bothHttp: bothEnrolled || (isHttpFingerprint(src, connections) && isHttpFingerprint(tgt, connections)),
                 bothEnrolled,
                 lastRunAtMs: lastRunMs && !Number.isNaN(lastRunMs) ? lastRunMs : null,
                 intervalMinutes: config.intervalMinutes,
@@ -179,6 +172,12 @@ export function FlowList({
                       <span className="text-amber-600 dark:text-amber-400">Needs connection</span>
                     )}
                   </div>
+                  {config.reviewPolicy === "auto_sync_on_interval" && (
+                    <div className="mt-0.5 text-[10.5px] text-amber-700 dark:text-amber-400">
+                      This flow no longer runs automatically while Bench is open. Edit it to run it on a server
+                      schedule.
+                    </div>
+                  )}
                   {unattended.isUnattended && !unattended.paused && (
                     <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px]">
                       <span

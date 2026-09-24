@@ -91,7 +91,9 @@ function runtimeKey(connection: BrowserApiConnection): string {
 
 function assertWorkerThread(): void {
   if (isMainThread && !state.allowMainThread) {
-    throw new Error("Direct budgets run only inside an automation worker.");
+    throw new Error(
+      "Direct budgets can only be opened in an automation worker thread. If ACTUAL_BENCH_AUTOMATION_EXECUTOR is set to in-thread, remove it."
+    );
   }
 }
 

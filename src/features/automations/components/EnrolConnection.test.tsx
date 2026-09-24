@@ -146,13 +146,19 @@ describe("enrolling a budget for unattended access", () => {
     expect(screen.getByText(/on this page at any time/)).toBeInTheDocument();
   });
 
-  it("cannot enrol a budget the browser is not connected to, and says so", async () => {
-    // The API key only exists in the session for the active connection.
-    const other = httpConnection({ id: "conn-2", label: "Joint account", budgetSyncId: "budget-2" });
+  it("enrols a budget connected in this session even when it is not the open one", async () => {
+    mockedSync.enrollCredential.mockResolvedValue({ credential: {} as never });
+    // The browser holds each connected budget's key for the session.
+    const other = httpConnection({ id: "conn-2", label: "Joint account", budgetSyncId: "budget-2", apiKey: "key-2" });
     renderPanel(other);
 
-    expect(await screen.findByText(/can only enrol the budget you are connected to/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /enrol/i })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /enrol joint account/i }));
+
+    await waitFor(() => expect(mockedSync.enrollCredential).toHaveBeenCalled());
+    expect(mockedSync.enrollCredential.mock.calls[0][0]).toMatchObject({
+      budgetSyncId: "budget-2",
+      secret: { apiKey: "key-2" },
+    });
   });
 
   it("points at the operator step when the vault is off", async () => {

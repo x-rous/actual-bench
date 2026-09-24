@@ -57,6 +57,9 @@ function deriveSummary(run: SyncFlowRun | undefined): DryRunSummary | null {
  * item list (including rows the database never persisted) is still current. */
 const PRE_APPLY_RUN_STATUSES = new Set<string | undefined>([undefined, "draft_preview", "applying"]);
 
+/** The tab-only scheduler (RD-054). Off since server scheduling covers Direct budgets (RD-095). */
+const TAB_SCHEDULER_ENABLED = false;
+
 export function SyncView() {
   const connections = useSyncConnections();
   const flowsQuery = useSyncFlows();
@@ -74,9 +77,11 @@ export function SyncView() {
   const applyMutation = useApplyMutation();
   const safeSyncMutation = useSafeSyncMutation();
 
-  // Client-side interval auto-sync (RD-054): only acts on flows whose policy is
-  // `auto_sync_on_interval`, and only while their connections are unlocked here.
+  // Client-side interval auto-sync (RD-054) is turned off (RD-095 D4): flows
+  // run on the server's schedule instead, for Direct budgets too. The hook
+  // stays until the server scheduler has been tested; this is the one switch.
   useSyncScheduler({
+    enabled: TAB_SCHEDULER_ENABLED,
     flows: flowsQuery.data ?? [],
     connections,
     latestRuns: latestRunsQuery.data ?? new Map(),
