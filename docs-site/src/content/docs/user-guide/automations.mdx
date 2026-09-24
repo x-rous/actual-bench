@@ -95,15 +95,17 @@ An automation's own drawer keeps the newest ten runs, which is enough to answer 
 
 ## Stopping a run
 
-Each run happens in a worker thread of its own, with its own memory limit, so one run cannot slow
-down or take down the rest of Bench.
+By default, each run happens in a worker thread of its own, with its own memory limit. A run that
+hangs can be stopped, and a run that reaches its limit ends without taking the rest of Bench with it.
+(If your operator set Bench to run automations in the server's own thread, time limits can only ask a
+run to stop. See [Configuration](../../administration/configuration/#automation-workers).)
 
 - **Every kind of automation has a time limit:** budget file sync 20 minutes, bank sync 10, backup 60,
   verify backups 30. At the limit the run is asked to stop. If it has not stopped 10 seconds later,
   its thread is ended.
 - **Cancel** appears on an automation's row while it is running, and stops it the same way.
-- **A run that runs out of memory ends alone.** It reports "Ran out of memory"; the server and any
-  other runs carry on. Your operator can raise the limit (see
+- **A run that reaches its memory limit ends alone.** It reports "Ran out of memory"; the server and
+  any other runs carry on. Your operator can raise the limit (see
   [Configuration](../../administration/configuration/#automation-workers)).
 
 What a stopped run is called depends on how far it got:

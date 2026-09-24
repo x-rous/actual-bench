@@ -54,6 +54,7 @@ type HostState = {
   open: OpenBudget | null;
   workspace: string | null;
   heartbeat: ReturnType<typeof setInterval> | null;
+  closing: Promise<void>;
   syncQueue: Promise<void>;
   allowMainThread: boolean;
   snapshots: SnapshotStore;
@@ -70,6 +71,7 @@ const state: HostState = {
   open: null,
   workspace: null,
   heartbeat: null,
+  closing: Promise.resolve(),
   syncQueue: Promise.resolve(),
   allowMainThread: false,
   snapshots: appDbSnapshotStore,
@@ -231,7 +233,16 @@ export const nodeHost: ActualRuntimeHost = {
  * leaves is one the server has. Safe to call when nothing is open, and more
  * than once.
  */
-export async function closeNodeRuntime(options: { refreshSnapshot: boolean } = { refreshSnapshot: false }): Promise<void> {
+export function closeNodeRuntime(options: { refreshSnapshot: boolean } = { refreshSnapshot: false }): Promise<void> {
+  // One close at a time. A task stopped during a snapshot upload answers
+  // without waiting for it, and the close that follows must not delete the
+  // workspace from under the upload still reading it.
+  const run = state.closing.then(() => closeOnce(options));
+  state.closing = run.catch(() => undefined);
+  return run;
+}
+
+async function closeOnce(options: { refreshSnapshot: boolean }): Promise<void> {
   const open = state.open;
   state.open = null;
   if (open) await leave(open, options);
@@ -272,6 +283,7 @@ export function __configureNodeHostForTests(
 export function __resetNodeHostForTests(): void {
   if (state.heartbeat) clearInterval(state.heartbeat);
   state.heartbeat = null;
+  state.closing = Promise.resolve();
   state.open = null;
   state.workspace = null;
   state.syncQueue = Promise.resolve();

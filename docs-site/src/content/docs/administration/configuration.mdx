@@ -105,9 +105,10 @@ the repository's `docs/UNATTENDED_SYNC.md` for the operator walkthrough.
 
 ## Automation workers
 
-Every automation run gets a worker thread of its own inside the Bench server, with its own memory
-limit. A run that hangs can be stopped, and a run that runs out of memory or crashes ends alone while
-the rest of Bench carries on. [Automations](../../user-guide/automations/#stopping-a-run) explains what
+By default, every automation run gets a worker thread of its own inside the Bench server, with its
+own memory limit. A run that hangs can be stopped, and a run that reaches its memory limit or crashes
+ends alone while the rest of Bench carries on. The limit covers the run's own working memory, not
+everything the server process uses, so the container still needs enough memory overall. [Automations](../../user-guide/automations/#stopping-a-run) explains what
 you see when that happens. The defaults suit most installs.
 
 - **`ACTUAL_BENCH_WORKERS_MAX`** *(default `2`)* - how many runs may be going at once. A scheduled run

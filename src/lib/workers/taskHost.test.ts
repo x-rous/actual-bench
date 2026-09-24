@@ -192,8 +192,9 @@ describe("worker task host", () => {
       expect(upload).not.toHaveBeenCalled();
     });
 
-    it("answers at once when stopped during the refresh, instead of waiting for the upload", async () => {
-      upload.mockReturnValue(new Promise(() => {})); // An upload that never finishes.
+    it("answers at once when stopped during the refresh, and cleans up only once the upload is done", async () => {
+      let finishUpload: (value: unknown) => void = () => {};
+      upload.mockReturnValue(new Promise((resolve) => (finishUpload = resolve)));
       openingJob(async () => ({}));
       const { automationId, runId } = automationWithRun();
       const { host: taskHost, posted } = host();
@@ -201,10 +202,17 @@ describe("worker task host", () => {
       const running = taskHost.handle({ type: "task", taskId: "t1", kind: "automation.run", input: { automationId, runId, attempt: 1, input: null } });
       while (upload.mock.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
       await taskHost.handle({ type: "cancel", taskId: "t1" });
-      await running;
+      while (!posted.some((message) => message.type === "result")) await new Promise((resolve) => setTimeout(resolve, 5));
 
-      // The job had finished: it is reported as it finished, not as stopped.
+      // The job had finished: it is reported as it finished, not as stopped,
+      // and without waiting for the upload.
       expect(posted.at(-1)).toMatchObject({ type: "result", output: { kind: "completed", aborted: false } });
+      // The upload is still reading the budget copy, so it is still there.
+      expect(readdirSync(join(root, "runtime"))).toHaveLength(1);
+
+      finishUpload({});
+      await running;
+      expect(readdirSync(join(root, "runtime"))).toEqual([]);
     });
   });
 
