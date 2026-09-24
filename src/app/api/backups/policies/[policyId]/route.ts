@@ -30,12 +30,16 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const db = getAppDb();
 
+    // Nothing is stored for a rule that does not exist: its id names where the
+    // passphrase goes, and it comes from the URL.
+    const existingPolicy = getBackupPolicy(db, policyId);
+    if (!existingPolicy) return NextResponse.json({ error: "Backup rule not found" }, { status: 404 });
+
     // Turning encryption on without giving Bench a passphrase would save a rule
     // that fails every night with "no stored passphrase". Caught here as well
     // as in the dialog, because the rule is what the runs read.
     if (payload.encryption === "passphrase" && !passphrase) {
-      const existing = getBackupPolicy(db, policyId);
-      if (!existing?.encryptionCredentialRef) {
+      if (!existingPolicy.encryptionCredentialRef) {
         return NextResponse.json(
           { error: "Enter the passphrase Bench should use to encrypt these backups." },
           { status: 400 }

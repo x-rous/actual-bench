@@ -113,7 +113,15 @@ function requireRef(ref: string): string {
   return trimmed;
 }
 
-/** Seal and store (insert or replace) a secret in `access.domain`. */
+/**
+ * Seal and store (insert or replace) a secret in `access.domain`.
+ *
+ * Replacing is only ever replacing *the same kind* of secret. Every feature
+ * shares one ref space per domain - backup secrets and unattended server keys
+ * both live in the operator domain - so a write whose ref happened to match
+ * another feature's secret would otherwise silently turn, say, a server's API
+ * key into an S3 key. It is refused instead.
+ */
 export function putSecret(
   db: SqliteDatabase,
   access: SecretAccess,
@@ -123,18 +131,18 @@ export function putSecret(
   const now = new Date().toISOString();
   const sealed = seal(access, input.plaintext);
 
-  db.prepare(
+  const result = db.prepare(
     `INSERT INTO credentials (
        domain, ref, kind, label, ciphertext, iv, auth_tag, key_id, created_at, updated_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(domain, ref) DO UPDATE SET
-       kind = excluded.kind,
        label = excluded.label,
        ciphertext = excluded.ciphertext,
        iv = excluded.iv,
        auth_tag = excluded.auth_tag,
        key_id = excluded.key_id,
-       updated_at = excluded.updated_at`
+       updated_at = excluded.updated_at
+     WHERE credentials.kind = excluded.kind`
   ).run(
     access.domain,
     ref,
@@ -147,6 +155,9 @@ export function putSecret(
     now,
     now
   );
+  if (result.changes === 0) {
+    throw new AppDbValidationError("A different kind of secret is already stored under this ref");
+  }
 
   const meta = getSecretMeta(db, access.domain, ref);
   if (!meta) throw new AppDbValidationError("Failed to store the secret");

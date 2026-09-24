@@ -30,6 +30,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     delete payload.credentials;
 
     const db = getAppDb();
+    // Nothing is stored for a destination that does not exist: its id names
+    // where the secret goes, and it comes from the URL.
+    if (!getBackupDestination(db, destinationId)) {
+      return NextResponse.json({ error: "Destination not found" }, { status: 404 });
+    }
     if (credentials?.accessKeyId && credentials?.secretAccessKey) {
       upsertBackupCredential(db, {
         ref: destinationId,

@@ -124,6 +124,17 @@ describe("credential store", () => {
     expect(db.prepare("SELECT * FROM credentials ORDER BY ref").all()).toEqual(before);
   });
 
+  it("refuses to replace a secret with one of a different kind", () => {
+    // Backup secrets and unattended server keys share the operator ref space;
+    // a write that happened to reuse a server key's ref must not turn it into
+    // an S3 key.
+    const ref = secretRefs.server("srv-1");
+    putSecret(db, operator, { ref, kind: "server-login", plaintext: "api-key" });
+
+    expect(() => putSecret(db, operator, { ref, kind: "s3", plaintext: "{}" })).toThrow(/different kind/);
+    expect(getSecret(db, operator, ref)).toMatchObject({ meta: { kind: "server-login" }, plaintext: "api-key" });
+  });
+
   it("lists only the kinds asked for", () => {
     putSecret(db, operator, { ref: "dest-1", kind: "s3", plaintext: "{}" });
     putSecret(db, operator, { ref: secretRefs.server("srv-1"), kind: "server-login", plaintext: "{}" });

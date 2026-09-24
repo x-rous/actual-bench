@@ -79,10 +79,17 @@ export function upsertBackupCredential(
   db: SqliteDatabase,
   input: { ref: string; kind: BackupCredentialKind; label?: string; secret: BackupSecret }
 ): BackupCredentialMeta {
-  if (!input.ref.trim()) throw new AppDbValidationError("ref is required");
+  const ref = input.ref.trim();
+  if (!ref) throw new AppDbValidationError("ref is required");
+  // Backup secrets are stored under their destination or policy id, in the
+  // same operator-domain ref space as unattended secrets (`server:...`,
+  // `budget:...`). Those names all contain a colon; a destination or policy
+  // id never does, so a ref with one can only be an attempt to reach another
+  // feature's secret.
+  if (ref.includes(":")) throw new AppDbValidationError("A backup secret ref cannot contain ':'");
   return toMeta(
     putSecret(db, OPERATOR, {
-      ref: input.ref.trim(),
+      ref,
       kind: STORE_KIND[input.kind],
       plaintext: JSON.stringify(input.secret),
       label: input.label,
