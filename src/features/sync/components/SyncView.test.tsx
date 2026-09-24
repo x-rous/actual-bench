@@ -147,6 +147,29 @@ describe("SyncView", () => {
     expect(screen.getByText("Connect this budget to change it.")).toBeInTheDocument();
   });
 
+  it("does not offer to run a disabled server flow, which the server would refuse", () => {
+    setup([conn1]);
+    const flow = makeFlow();
+    (flowsHook.useSyncFlows as jest.Mock).mockReturnValue({
+      data: [{ ...flow, enabled: false, options: { version: 1, data: { reviewPolicy: "auto_sync_unattended" } } }],
+      refetch: jest.fn(),
+    });
+    (dataHook.useVaultStatus as jest.Mock).mockReturnValue({
+      data: {
+        enabled: true,
+        credentials: [
+          { connectionFingerprint: connectionFingerprint(conn1) },
+          { connectionFingerprint: connectionFingerprint(conn2) },
+        ],
+      },
+    });
+
+    render(<SyncView />);
+    fireEvent.click(screen.getByText("Card sync"));
+
+    expect(screen.getByRole("button", { name: /run safe sync/i })).toBeDisabled();
+  });
+
   it("opens the editor dialog with default transform (same sign, create payee)", async () => {
     setup([conn1, conn2]);
     render(<SyncView />);

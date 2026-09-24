@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { closeNodeRuntime } from "@/lib/actual/runtime/nodeHost";
 import { listAccountsForBankSync } from "@/lib/actual/bankSyncAccounts";
+import { classifyActualError } from "@/lib/actual/runtime/errors";
 import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
 import { verifyConnection, verifyConnectionInput } from "@/lib/actual/verifyConnection";
 import { getAppDb } from "@/lib/app-db/connection";
@@ -77,8 +78,12 @@ const handlers: Record<string, TaskHandler> = {
     ].filter((value): value is string => !!value);
     try {
       const transport = openServerTransport(connection);
-      return await listAccountsForBankSync((body) => transport.runQuery(body));
+      return { accounts: await listAccountsForBankSync((body) => transport.runQuery(body)) };
     } catch (error) {
+      // A known failure is answered by its code; the page gets a fixed message
+      // for it. Anything else stays in the server log, redacted.
+      const code = classifyActualError(error);
+      if (code) return { failed: code };
       throw new Error(redactSecrets(error instanceof Error ? error.message : String(error), secrets));
     }
   },

@@ -475,7 +475,10 @@ export function SyncView() {
               canPreview={canPreview}
               previewDisabledReason={blockReason}
               showRunSafeSync={form.automation.reviewPolicy !== "manual_preview_required"}
-              canRunSafeSync={runsOnServer ? !dirty : !!sourceConn && !!targetConn && routeReady && !dirty}
+              canRunSafeSync={
+                // The server refuses to run a disabled flow; don't offer it.
+                runsOnServer ? !dirty && !!selectedFlow?.enabled : !!sourceConn && !!targetConn && routeReady && !dirty
+              }
               runningSafeSync={safeSyncMutation.isPending || serverRunning}
               runsOnServer={runsOnServer}
               onToggleEnabled={handleToggleEnabled}

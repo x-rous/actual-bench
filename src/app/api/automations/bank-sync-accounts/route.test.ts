@@ -108,6 +108,46 @@ describe("GET /api/automations/bank-sync-accounts for a Direct connection", () =
     expect(JSON.stringify(crossings)).not.toContain(PASSWORD);
   });
 
+  it("answers a known failure with a fixed message, never the worker's own text", async () => {
+    process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = "worker";
+    __configureWorkerSupervisorForTests({ spawn: hostBackedSpawn(crossings).spawn });
+    __configureNodeHostForTests({
+      loadApi: async () =>
+        ({
+          init: async () => {
+            throw Object.assign(new Error("Authentication failed: invalid-password at /srv/internal/path"), {
+              code: "invalid-password",
+            });
+          },
+        }) as never,
+    });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(502);
+    const { error } = (await response.json()) as { error: string };
+    expect(error).toBe("The Actual server refused the password. Update it on the connection.");
+    expect(error).not.toContain("/srv/internal");
+  });
+
+  it("answers an unexpected failure with a generic message", async () => {
+    process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = "worker";
+    __configureWorkerSupervisorForTests({ spawn: hostBackedSpawn(crossings).spawn });
+    __configureNodeHostForTests({
+      loadApi: async () =>
+        ({
+          init: async () => {
+            throw new Error("ENOSPC: no space left on device, write '/data/actual-runtime/w-1/db.sqlite'");
+          },
+        }) as never,
+    });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "Bench could not read this budget's accounts. Try again." });
+  });
+
   it("says Direct needs worker threads when automations run in-thread", async () => {
     process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = "in-thread";
 

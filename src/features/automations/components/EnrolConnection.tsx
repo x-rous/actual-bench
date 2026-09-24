@@ -144,7 +144,8 @@ export function EnrolConnection({
 
       {enrol.isPending && (
         <p className="mt-1" role="status">
-          Checking with your Actual server. This can take up to a minute. Nothing is saved if the check fails.
+          Checking with your Actual server. This usually takes a few seconds, but can take a few minutes the
+          first time. Nothing is saved if the check fails.
         </p>
       )}
 

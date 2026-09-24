@@ -82,9 +82,11 @@ export function importFlowDefinition(json: string): SyncFlowFormState {
     name: typeof flow.name === "string" ? flow.name : base.name,
     enabled: typeof flow.enabled === "boolean" ? flow.enabled : base.enabled,
     flowType,
-    // Never trust an imported connection id; force re-selection.
-    source: { ...base.source, ...(flow.source ?? {}), connectionId: "" },
-    target: { ...base.target, ...(flow.target ?? {}), connectionId: "" },
+    // Never trust an imported connection id or saved connection; force
+    // re-selection. A saved fingerprint would otherwise let an imported flow
+    // save a route to a connection nobody picked here.
+    source: { ...base.source, ...(flow.source ?? {}), connectionId: "", savedConnectionFingerprint: undefined },
+    target: { ...base.target, ...(flow.target ?? {}), connectionId: "", savedConnectionFingerprint: undefined },
     filter: { ...base.filter, ...(flow.filter ?? {}) },
     transform: { ...base.transform, ...(flow.transform ?? {}) },
     automation: { ...base.automation, ...(flow.automation ?? {}) },

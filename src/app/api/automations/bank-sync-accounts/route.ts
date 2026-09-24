@@ -5,13 +5,17 @@ import { AppDbUnavailableError, AppDbValidationError } from "@/lib/app-db/errors
 import { sanitizeBankSyncError } from "@/lib/actual/bankSync";
 import { getSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { listAccountsForBankSync, isBankLinked, type BankLinkedAccount } from "@/lib/actual/bankSyncAccounts";
+import { actualErrorMessage, type ActualErrorCode } from "@/lib/actual/runtime/errors";
 import { getAutomationExecutor } from "@/lib/automation/executor";
+import { logger } from "@/lib/logger";
 import { runWorkerTask } from "@/lib/workers/supervisor";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
 import { connectionFromEnrolment } from "@/lib/actual/serverTransport";
 
 export const dynamic = "force-dynamic";
+
+type DirectAccountsOutput = { accounts: BankLinkedAccount[] } | { failed: ActualErrorCode };
 
 /** A cold open of a Direct budget; enrolment refreshed its snapshot, so usually a few seconds. */
 const DIRECT_ACCOUNTS_DEADLINE_MS = 90_000;
@@ -63,19 +67,27 @@ export async function GET(request: Request) {
         { connectionFingerprint: fingerprint },
         { signal: AbortSignal.timeout(DIRECT_ACCOUNTS_DEADLINE_MS) }
       );
-      if (outcome.status !== "result") {
+      const output = outcome.status === "result" ? (outcome.output as DirectAccountsOutput | null) : null;
+      if (output && "accounts" in output) {
+        accounts = output.accounts;
+      } else {
+        // Fixed messages only: what a worker reports can carry internal detail
+        // (paths, upstream text), so it goes to the server log, not the page.
         const busy = outcome.status === "stopped" && outcome.code === "NO_CAPACITY";
-        const message =
-          outcome.status === "error"
-            ? outcome.message
-            : busy
-              ? "Bench is busy running automations. Try again in a minute."
-              : outcome.code === "TIMEOUT"
-                ? "Opening the budget took too long. Try again."
-                : outcome.message;
+        const message = output && "failed" in output
+          ? actualErrorMessage(output.failed)
+          : busy
+            ? "Bench is busy running automations. Try again in a minute."
+            : outcome.status === "stopped" && outcome.code === "TIMEOUT"
+              ? "Opening the budget took too long. Try again."
+              : "Bench could not read this budget's accounts. Try again.";
+        if (!output) {
+          logger.warn(
+            `[bank-sync-accounts] worker ${outcome.status}: ${outcome.status === "result" ? "unreadable answer" : outcome.message}`
+          );
+        }
         return NextResponse.json({ error: message }, { status: busy ? 503 : 502 });
       }
-      accounts = outcome.output as BankLinkedAccount[];
     } else {
       const credential = getSyncCredential(db, fingerprint);
       if (!credential) {
