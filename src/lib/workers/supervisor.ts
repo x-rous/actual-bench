@@ -76,6 +76,7 @@ type State = {
 };
 
 const STATE_KEY = Symbol.for("actual-bench.workerSupervisor");
+const PREFLIGHT_TASK_ID = "preflight";
 
 function positiveIntEnv(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] ?? "", 10);
@@ -306,15 +307,21 @@ export function ensureWorkerPreflight(nowMs = Date.now()): Promise<PreflightStat
       return;
     }
     forwardOutput(worker.stderr, "warn");
+    // Ready is not enough: a worker that starts but cannot run a job - it
+    // failed exactly that way once - must fail the check here, at startup,
+    // not at the first scheduled run. So it is given the self-test task too.
+    let announced: { nodeVersion: string; heapLimitMb: number } | null = null;
     worker.on("message", (raw) => {
       const parsed = workerToParentMessage.safeParse(raw);
-      if (parsed.success && parsed.data.type === "ready") {
-        finish({
-          status: "ready",
-          checkedAt: new Date().toISOString(),
-          nodeVersion: parsed.data.nodeVersion,
-          heapLimitMb: parsed.data.heapLimitMb,
-        });
+      if (!parsed.success) return;
+      const message = parsed.data;
+      if (message.type === "ready") {
+        announced = { nodeVersion: message.nodeVersion, heapLimitMb: message.heapLimitMb };
+        worker?.postMessage({ type: "task", taskId: PREFLIGHT_TASK_ID, kind: "preflight", input: null });
+      } else if (message.type === "result" && message.taskId === PREFLIGHT_TASK_ID && announced) {
+        finish({ status: "ready", checkedAt: new Date().toISOString(), ...announced });
+      } else if (message.type === "error" && message.taskId === PREFLIGHT_TASK_ID) {
+        failed(`the worker started but could not run its self-test: ${message.message}`);
       }
     });
     worker.on("error", (error) => failed(error.message));

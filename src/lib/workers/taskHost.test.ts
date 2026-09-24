@@ -119,6 +119,14 @@ describe("worker task host", () => {
     expect(posted.at(-1)).toMatchObject({ type: "result", output: { kind: "completed", aborted: true } });
   });
 
+  it("passes its self-test: every job type loads and a request goes through fetch", async () => {
+    const { host: taskHost, posted } = host();
+
+    await taskHost.handle({ type: "task", taskId: "preflight", kind: "preflight", input: null });
+
+    expect(posted).toEqual([{ type: "result", taskId: "preflight", output: { ok: true } }]);
+  });
+
   it("answers an unknown task kind with an error rather than silence", async () => {
     const { host: taskHost, posted } = host();
 

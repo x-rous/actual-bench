@@ -129,11 +129,34 @@ describe("worker supervisor", () => {
   });
 
   describe("preflight", () => {
-    it("records a worker that starts and answers", async () => {
-      __configureWorkerSupervisorForTests({ spawn: scriptedSpawn(() => {}).spawn });
+    it("records a worker that starts and passes its self-test", async () => {
+      const { spawn, workers } = scriptedSpawn((worker, task) => {
+        worker.send({ type: "result", taskId: task.taskId, output: { ok: true } });
+      });
+      __configureWorkerSupervisorForTests({ spawn });
 
       await expect(ensureWorkerPreflight()).resolves.toMatchObject({ status: "ready", heapLimitMb: 512 });
       expect(workerAvailability()).toEqual({ ok: true });
+      expect(workers[0].posted).toContainEqual(expect.objectContaining({ type: "task", kind: "preflight" }));
+    });
+
+    it("fails a worker that starts but cannot run its self-test", async () => {
+      // How the first real run failed: the worker came up, and the first
+      // request a job made threw inside Next's fetch. Ready is not enough.
+      const { spawn } = scriptedSpawn((worker, task) => {
+        worker.send({
+          type: "error",
+          taskId: task.taskId,
+          message: "Invariant: AsyncLocalStorage accessed in runtime where it is not available",
+        });
+      });
+      __configureWorkerSupervisorForTests({ spawn });
+
+      await expect(ensureWorkerPreflight()).resolves.toMatchObject({
+        status: "failed",
+        error: expect.stringMatching(/could not run its self-test: Invariant: AsyncLocalStorage/),
+      });
+      expect(workerAvailability()).toMatchObject({ ok: false, code: "WORKER_UNAVAILABLE" });
     });
 
     it("stops runs, with the reason, when no worker can start - and tries again later", async () => {

@@ -34,6 +34,20 @@ const automationRunInput = z.object({
 });
 
 const handlers: Record<string, TaskHandler> = {
+  /**
+   * Prove a worker can do real work, not merely start: load every job type,
+   * and make one request through the same `fetch` a job uses - Next patches
+   * it in server code, and a worker missing Next's environment fails there,
+   * not at startup. A `data:` URL keeps it off the network.
+   */
+  preflight: async () => {
+    ensureAutomationJobTypesRegistered();
+    const response = await fetch("data:text/plain,ok");
+    const body = await response.text();
+    if (body !== "ok") throw new Error(`The self-test request returned "${body.slice(0, 40)}"`);
+    return { ok: true };
+  },
+
   /** Run one automation job, exactly as the engine would in-thread. */
   "automation.run": async (raw, ctx) => {
     const request = automationRunInput.parse(raw);

@@ -1,3 +1,5 @@
+// First, before anything that could load Next's server modules.
+import "./workerEnvironment";
 import { parentPort } from "node:worker_threads";
 import { getHeapStatistics } from "node:v8";
 import { closeAppDb } from "@/lib/app-db/connection";
