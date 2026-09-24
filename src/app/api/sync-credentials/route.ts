@@ -5,7 +5,7 @@ import {
   deleteSyncCredential,
   listSyncCredentialMeta,
   upsertSyncCredential,
-} from "@/lib/app-db/syncCredentialRepository";
+} from "@/lib/credentials/unattendedCredentials";
 import { vaultEnabled } from "@/lib/sync/vault";
 import type { SyncCredentialInput } from "@/lib/app-db/types";
 

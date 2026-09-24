@@ -7,7 +7,7 @@ import {
   listBackupDestinations,
   listBackupPolicies,
 } from "@/lib/app-db/backupRepository";
-import { listSyncCredentialMeta } from "@/lib/app-db/syncCredentialRepository";
+import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { listAutomations } from "@/lib/app-db/automationRepository";
 import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
 import { buildAutomationHealth } from "@/lib/automation/health";

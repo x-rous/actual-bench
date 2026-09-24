@@ -3,7 +3,7 @@
 // rather than reach actual-http-api unserialized.
 import "@/lib/http/serverQueue";
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
-import { listSyncCredentialMeta } from "@/lib/app-db/syncCredentialRepository";
+import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { getAppDb } from "@/lib/app-db/connection";
 import { getAutomationJobType, registerAutomationJobType } from "../registry";
 import { BANK_SYNC_JOB_TYPE } from "./bankSyncType";

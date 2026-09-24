@@ -1,14 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { getAppDb, resetAppDbForTests } from "./connection";
+import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import {
   deriveConnectionVaultKey,
   getConnectionVaultSalt,
   getOrCreateConnectionVaultSalt,
   hasConnectionPassphrase,
-} from "./connectionCredentialRepository";
-import type { SqliteDatabase } from "./types";
+} from "./passphraseVaultKey";
+import type { SqliteDatabase } from "@/lib/app-db/types";
 
 // scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
 jest.setTimeout(30000);

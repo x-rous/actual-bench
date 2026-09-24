@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { claimAutomation, getAutomation, listAutomations } from "@/lib/app-db/automationRepository";
 import { getAutomationRun } from "@/lib/app-db/automationRunRepository";
-import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import { createSyncFlow, updateSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { __resetEngineStateForTests, settleBackgroundRuns } from "@/lib/automation/engine";
 import { migrateSyncFlowsToAutomations } from "@/lib/automation/jobs/budgetFileSyncMigration";

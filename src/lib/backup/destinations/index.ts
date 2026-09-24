@@ -1,5 +1,5 @@
-import { getBackupCredential } from "@/lib/app-db/backupCredentialRepository";
-import type { S3Credentials } from "@/lib/app-db/backupCredentialRepository";
+import { getBackupCredential } from "@/lib/credentials/backupSecrets";
+import type { S3Credentials } from "@/lib/credentials/backupSecrets";
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { LocalDestinationAdapter } from "./local";

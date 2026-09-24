@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { deriveConnectionVaultKey } from "@/lib/app-db/connectionCredentialRepository";
-import { getServerCredential, upsertServerCredential } from "@/lib/app-db/serverCredentialRepository";
+import { deriveConnectionVaultKey } from "@/lib/credentials/passphraseVaultKey";
+import { getServerCredential, upsertServerCredential } from "@/lib/credentials/rememberedCredentials";
 import type { ServerCredentialInput, SqliteDatabase } from "@/lib/app-db/types";
 import { changePassphrase, isPassphraseSet, resetVault, setPassphrase, verifyPassphrase } from "./passphrase";
 

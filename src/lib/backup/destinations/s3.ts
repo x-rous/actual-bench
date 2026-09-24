@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
-import type { S3Credentials } from "@/lib/app-db/backupCredentialRepository";
+import type { S3Credentials } from "@/lib/credentials/backupSecrets";
 import { EMPTY_PAYLOAD_SHA256, encodeS3Path, signS3Request } from "./sigv4";
 import {
   DestinationError,

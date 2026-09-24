@@ -12,7 +12,7 @@ import {
   createBackupPolicy,
   listBackupArtifacts,
 } from "@/lib/app-db/backupRepository";
-import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { readSafetySettings, takeSafetyRecoveryPoint, writeSafetySettings } from "./safetyPoint";
 

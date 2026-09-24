@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { listAutomations } from "@/lib/app-db/automationRepository";
-import { listSyncCredentialMeta } from "@/lib/app-db/syncCredentialRepository";
+import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { listAutomationJobTypes } from "@/lib/automation/registry";
 import { vaultEnabled } from "@/lib/sync/vault";

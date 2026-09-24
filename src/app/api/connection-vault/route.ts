@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
-import { rememberedCredentialsSupported } from "@/lib/app-db/connectionCredentialRepository";
+import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaultKey";
 import { isPassphraseSet } from "@/lib/connectionVault/passphrase";
 import { getSessionDuration, hasSession } from "@/lib/connectionVault/session";
 import { readSessionToken, setSessionCookie } from "@/lib/connectionVault/cookies";

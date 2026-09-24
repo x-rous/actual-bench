@@ -1,6 +1,6 @@
 import { deleteAppMeta, getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
-import { deriveConnectionVaultKey, getConnectionVaultSalt } from "@/lib/app-db/connectionCredentialRepository";
-import { deleteAllServerVaultCredentials, resealServerVault } from "@/lib/app-db/serverCredentialRepository";
+import { deriveConnectionVaultKey, getConnectionVaultSalt } from "@/lib/credentials/passphraseVaultKey";
+import { deleteAllServerVaultCredentials, resealServerVault } from "@/lib/credentials/rememberedCredentials";
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "@/lib/app-db/vaultMetaKeys";
 import { openWithKey, sealWithKey, type SealedSecret } from "@/lib/sync/vault";
 import type { SqliteDatabase } from "@/lib/app-db/types";

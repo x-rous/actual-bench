@@ -3,7 +3,7 @@
 // rather than reach actual-http-api unserialized.
 import "@/lib/http/serverQueue";
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
-import { getSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { getSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
 import { decodeFlowPlanConfig } from "./flowConfig";
 import { createAppDbApplyStore } from "./appDbApplyStore";

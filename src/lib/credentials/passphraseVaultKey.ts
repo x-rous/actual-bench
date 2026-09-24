@@ -1,18 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { CURRENT_KDF_VERSION, deriveKeyFromPassphrase, resolveKdfParams } from "@/lib/sync/vault";
-import { getAppMeta, setAppMeta } from "./appMetaRepository";
-import { getAppDbHealth } from "./connection";
-import { KDF_VERSION_META_KEY, SALT_META_KEY } from "./vaultMetaKeys";
-import type { SqliteDatabase } from "./types";
+import { getAppMeta, setAppMeta } from "@/lib/app-db/appMetaRepository";
+import { getAppDbHealth } from "@/lib/app-db/connection";
+import { KDF_VERSION_META_KEY, SALT_META_KEY } from "@/lib/app-db/vaultMetaKeys";
+import type { SqliteDatabase } from "@/lib/app-db/types";
 
 /**
- * Shared vault key material for the remembered-credentials feature (RD-061,
- * RD-063). The per-install salt + KDF version live here and are used by both the
- * passphrase lifecycle and the server-scoped credential store to derive the
- * AES-256-GCM key from the user's unlock passphrase. Only the salt and KDF
- * version are persisted; the passphrase and derived key are never stored. Kept
- * entirely separate from the `sync_credentials` (unattended `SYNC_VAULT_KEY`)
- * vault.
+ * The passphrase domain's key (RD-061, RD-063; moved here by F-195).
+ *
+ * The per-install salt + KDF version live here and are used by the passphrase
+ * lifecycle and by `rememberedCredentials` to derive the AES-256-GCM key from
+ * the user's unlock passphrase. Only the salt and KDF version are persisted;
+ * the passphrase and derived key are never stored. The operator domain
+ * (`SYNC_VAULT_KEY`) never uses this key - see `store.ts`.
  *
  * Node-only; must never be imported into client code.
  */

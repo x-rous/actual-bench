@@ -8,7 +8,7 @@ import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import {
   getBackupCredential,
   upsertBackupCredential,
-} from "@/lib/app-db/backupCredentialRepository";
+} from "@/lib/credentials/backupSecrets";
 import {
   createBackupArtifact,
   createBackupPolicy,

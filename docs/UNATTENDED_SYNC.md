@@ -55,9 +55,10 @@ Without `SYNC_SCHEDULER_SECRET` set, that endpoint is disabled (403).
 
 ## Security / threat model
 
-- **What is stored:** for each enrolled connection, its `actual-http-api` **API key** (and budget
-  encryption password if used), **AES-256-GCM encrypted**, in the app metadata database
-  (`sync_credentials` table).
+- **What is stored:** for each enrolled server, its `actual-http-api` **API key**, and for each
+  enrolled budget its encryption password if used, **AES-256-GCM encrypted**, in the app metadata
+  database (`credentials` table; which budgets are enrolled is recorded, without secrets, in
+  `unattended_connections`). Budgets on the same server share one stored key.
 - **The key is not in the database.** Encryption uses a key derived from `SYNC_VAULT_KEY` (an
   environment variable). Someone with only the database file cannot decrypt the secrets.
 - **Never exposed to the client.** Stored secrets are decrypted server-side only, during a

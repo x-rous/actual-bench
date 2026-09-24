@@ -17,13 +17,26 @@ export async function register(): Promise<void> {
     { migrateSyncFlowsToAutomations },
     { getAppDb },
     { logger },
+    { upgradeLegacyUnattendedCredentials },
   ] = await Promise.all([
     import("@/lib/automation/runtime"),
     import("@/lib/automation/bootstrap"),
     import("@/lib/automation/jobs/budgetFileSyncMigration"),
     import("@/lib/app-db/connection"),
     import("@/lib/logger"),
+    import("@/lib/credentials/unattendedCredentials"),
   ]);
+
+  try {
+    // Unattended secrets from before schema v35 were kept whole, because the
+    // migration runs without the vault key. Split them now that it may be
+    // here; each one is also split on first use, so this only saves a delay.
+    upgradeLegacyUnattendedCredentials(getAppDb());
+  } catch (error) {
+    logger.warn(
+      `[credentials] could not upgrade unattended credentials: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 
   // Every job type, not just the first one. Registering only Budget File Sync
   // here meant the engine's own tick knew nothing about bank sync or backups:

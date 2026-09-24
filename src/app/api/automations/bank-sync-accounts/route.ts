@@ -3,7 +3,7 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { AppDbUnavailableError, AppDbValidationError } from "@/lib/app-db/errors";
 import { sanitizeBankSyncError } from "@/lib/actual/bankSync";
-import { getSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { getSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import { listAccountsForBankSync, isBankLinked } from "@/lib/actual/bankSyncAccounts";
 import { vaultEnabled } from "@/lib/sync/vault";
 import type { HttpApiConnection } from "@/store/connection";

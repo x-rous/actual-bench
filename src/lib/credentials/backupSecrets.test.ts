@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { getAppDb, resetAppDbForTests } from "./connection";
+import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import {
   deleteBackupCredential,
   getBackupCredential,
@@ -9,8 +9,11 @@ import {
   hasBackupCredential,
   listBackupCredentialMeta,
   upsertBackupCredential,
-} from "./backupCredentialRepository";
-import type { SqliteDatabase } from "./types";
+} from "./backupSecrets";
+import { serverFingerprint } from "@/lib/sync/connectionRef";
+import { secretRefs } from "./store";
+import { getSyncCredential, upsertSyncCredential } from "./unattendedCredentials";
+import type { SqliteDatabase } from "@/lib/app-db/types";
 
 function tempDb(): { root: string; db: SqliteDatabase } {
   const root = mkdtempSync(join(tmpdir(), "actual-bench-backup-vault-"));
@@ -57,8 +60,9 @@ describe("backup credentials", () => {
     });
 
     const row = db
-      .prepare("SELECT * FROM backup_credentials WHERE ref = ?")
+      .prepare("SELECT * FROM credentials WHERE domain = 'operator' AND ref = ?")
       .get<Record<string, string>>("dest-1");
+    expect(row).toBeDefined();
     expect(JSON.stringify(row)).not.toContain("super-secret-value");
     expect(JSON.stringify(row)).not.toContain("AKIA");
   });
@@ -111,4 +115,32 @@ describe("backup credentials", () => {
     process.env.SYNC_VAULT_KEY = "a-different-key";
     expect(() => getBackupCredential(db, "dest-1")).toThrow();
   });
+
+  it("cannot reach another feature's secret through a crafted ref", () => {
+    // Unattended server keys live in the same operator ref space as backup
+    // secrets, under names like `server:<fingerprint>` - which is computable
+    // from the server's URL.
+    upsertSyncCredential(db, {
+      connectionFingerprint: "conn-1",
+      mode: "http-api",
+      baseUrl: "https://api.example.com",
+      budgetSyncId: "budget-1",
+      secret: { apiKey: "unattended-key" },
+    });
+    const serverRef = secretRefs.server(serverFingerprint({ mode: "http-api", baseUrl: "https://api.example.com" }));
+
+    expect(() =>
+      upsertBackupCredential(db, {
+        ref: serverRef,
+        kind: "s3",
+        secret: { accessKeyId: "AKIA", secretAccessKey: "attacker" },
+      })
+    ).toThrow(/cannot contain ':'/);
+    expect(getSyncCredential(db, "conn-1")?.secret.apiKey).toBe("unattended-key");
+    // Nor is it visible, or deletable, as a backup secret.
+    expect(getBackupCredential(db, serverRef)).toBeNull();
+    deleteBackupCredential(db, serverRef);
+    expect(getSyncCredential(db, "conn-1")?.secret.apiKey).toBe("unattended-key");
+  });
 });
+
