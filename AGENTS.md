@@ -168,6 +168,16 @@ Unattended HTTP-mode sync is opt-in and server-side:
 - a missing/rotated key must fail closed and surface health state;
 - Direct-mode flows cannot become unattended server jobs because their runtime is browser-owned.
 
+### Credential store
+
+Every secret is a row in the app DB's `credentials` table, written and read only through `src/lib/credentials/store.ts` and the feature modules on top of it (`rememberedCredentials`, `unattendedCredentials`, `backupSecrets`). Do not add another table or module that seals secrets.
+
+- Each secret belongs to one **key domain**, fixed for its lifetime: `passphrase` (remembered credentials, opened only after the user unlocks) or `operator` (unattended and backup secrets, opened with `SYNC_VAULT_KEY`).
+- Never add code that reads a secret in one domain and writes it in the other. Bench has no login, so an operator-domain copy of a remembered secret would make it readable by anyone who reaches the server. Enrolling a remembered server for unattended use means the user supplies the secret again.
+- A reset or withdrawal in one domain never touches the other.
+- Unattended secrets are server-scoped (one per server), with encryption passwords per budget.
+- Migrations never decrypt: they copy ciphertext as-is.
+
 ---
 
 ## 5. State Ownership and Data Flow

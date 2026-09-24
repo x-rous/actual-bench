@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
-import { rememberedCredentialsSupported } from "@/lib/app-db/connectionCredentialRepository";
+import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaultKey";
 import {
   getBudgetEncryptionPassword,
   getServerCredential,
-} from "@/lib/app-db/serverCredentialRepository";
+} from "@/lib/credentials/rememberedCredentials";
 import { getSessionKey } from "@/lib/connectionVault/session";
 import { readSessionToken, setSessionCookie } from "@/lib/connectionVault/cookies";
 import { getSessionDuration } from "@/lib/connectionVault/session";

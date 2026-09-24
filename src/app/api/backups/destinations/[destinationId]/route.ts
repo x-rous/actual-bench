@@ -8,7 +8,7 @@ import {
   listDestinationLocations,
   updateBackupDestination,
 } from "@/lib/app-db/backupRepository";
-import { deleteBackupCredential, upsertBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { deleteBackupCredential, upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 
 type RouteContext = { params: Promise<{ destinationId: string }> };
 

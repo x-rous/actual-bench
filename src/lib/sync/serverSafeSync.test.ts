@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createSyncFlow } from "@/lib/app-db/syncFlowRepository";
-import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import { runServerSafeSync } from "./serverSafeSync";
 import type { JsonEnvelope, JsonObject, SqliteDatabase } from "@/lib/app-db/types";
 

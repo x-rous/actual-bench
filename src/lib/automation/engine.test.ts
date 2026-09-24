@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createAutomation, getAutomation, listAutomations } from "@/lib/app-db/automationRepository";
 import { MAX_RUN_INPUT_BYTES, getAutomationRun, listAutomationRuns } from "@/lib/app-db/automationRunRepository";
-import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import {
   __resetEngineStateForTests,
   backoffDelayMinutes,

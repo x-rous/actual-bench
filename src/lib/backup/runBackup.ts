@@ -1,6 +1,6 @@
 import { vaultEnabled } from "@/lib/sync/vault";
-import { getSyncCredential } from "@/lib/app-db/syncCredentialRepository";
-import { getBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { getSyncCredential } from "@/lib/credentials/unattendedCredentials";
+import { getBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   createBackupArtifact,
   getBackupDestination,

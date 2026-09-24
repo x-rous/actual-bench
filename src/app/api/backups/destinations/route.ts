@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { createBackupDestination, listBackupDestinations, updateBackupDestination } from "@/lib/app-db/backupRepository";
-import { upsertBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import { vaultEnabled } from "@/lib/sync/vault";
 
 export const dynamic = "force-dynamic";

@@ -14,7 +14,7 @@ import {
   listAutomationRuns,
   pruneAutomationRuns,
 } from "@/lib/app-db/automationRunRepository";
-import { getSyncCredential, hasSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { getSyncCredential, hasSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import { pruneSyncFlowRuns } from "@/lib/app-db/syncRunRepository";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { logger } from "@/lib/logger";

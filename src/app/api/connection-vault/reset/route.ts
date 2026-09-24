@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
-import { rememberedCredentialsSupported } from "@/lib/app-db/connectionCredentialRepository";
+import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaultKey";
 import { resetVault } from "@/lib/connectionVault/passphrase";
 import { clearAllSessions } from "@/lib/connectionVault/session";
 import { clearSessionCookie } from "@/lib/connectionVault/cookies";

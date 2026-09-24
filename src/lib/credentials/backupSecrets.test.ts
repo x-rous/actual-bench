@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { getAppDb, resetAppDbForTests } from "./connection";
+import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import {
   deleteBackupCredential,
   getBackupCredential,
@@ -9,8 +9,8 @@ import {
   hasBackupCredential,
   listBackupCredentialMeta,
   upsertBackupCredential,
-} from "./backupCredentialRepository";
-import type { SqliteDatabase } from "./types";
+} from "./backupSecrets";
+import type { SqliteDatabase } from "@/lib/app-db/types";
 
 function tempDb(): { root: string; db: SqliteDatabase } {
   const root = mkdtempSync(join(tmpdir(), "actual-bench-backup-vault-"));
@@ -57,8 +57,9 @@ describe("backup credentials", () => {
     });
 
     const row = db
-      .prepare("SELECT * FROM backup_credentials WHERE ref = ?")
+      .prepare("SELECT * FROM credentials WHERE domain = 'operator' AND ref = ?")
       .get<Record<string, string>>("dest-1");
+    expect(row).toBeDefined();
     expect(JSON.stringify(row)).not.toContain("super-secret-value");
     expect(JSON.stringify(row)).not.toContain("AKIA");
   });

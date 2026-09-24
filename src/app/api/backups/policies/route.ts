@@ -6,7 +6,7 @@ import {
   listBackupPolicies,
   updateBackupPolicy,
 } from "@/lib/app-db/backupRepository";
-import { upsertBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import { reconcileBackupAutomations } from "@/lib/automation/jobs/backupReconcile";
 import { vaultEnabled } from "@/lib/sync/vault";
 

@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { upsertBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   createBackupDestination,
   createBackupPolicy,
@@ -15,7 +15,7 @@ import {
   listArtifactLocations,
   listBackupArtifacts,
 } from "@/lib/app-db/backupRepository";
-import { upsertSyncCredential } from "@/lib/app-db/syncCredentialRepository";
+import { upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { decryptArchive } from "./encryption";
 import { parseManifest } from "./manifest";

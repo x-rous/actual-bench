@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { deriveKeyFromPassphrase } from "@/lib/sync/vault";
 import { serverFingerprint, connectionFingerprint } from "@/lib/sync/connectionRef";
-import { getAppDb, resetAppDbForTests } from "./connection";
-import { getOrCreateConnectionVaultSalt } from "./connectionCredentialRepository";
+import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
+import { getOrCreateConnectionVaultSalt } from "./passphraseVaultKey";
 import {
   deleteAllServerVaultCredentials,
   deleteBudgetEncryptionCredential,
@@ -20,8 +20,8 @@ import {
   upsertBudgetEncryptionCredential,
   upsertRememberedBudget,
   upsertServerCredential,
-} from "./serverCredentialRepository";
-import type { ServerCredentialInput, SqliteDatabase } from "./types";
+} from "./rememberedCredentials";
+import type { ServerCredentialInput, SqliteDatabase } from "@/lib/app-db/types";
 
 // scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
 jest.setTimeout(30000);
@@ -61,8 +61,8 @@ describe("serverCredentialRepository (RD-063 / PR-028a)", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("creates the new tables at schema v7", () => {
-    for (const name of ["server_credentials", "budget_encryption_credentials"]) {
+  it("keeps remembered servers and their secrets in their own tables", () => {
+    for (const name of ["remembered_servers", "remembered_budgets", "credentials"]) {
       const row = db.prepare("SELECT COUNT(*) AS c FROM sqlite_schema WHERE type='table' AND name=?").get<{ c: number }>(name);
       expect(row?.c).toBe(1);
     }
@@ -74,10 +74,16 @@ describe("serverCredentialRepository (RD-063 / PR-028a)", () => {
     expect(meta.serverFingerprint).toBe(serverFingerprint(httpServer));
     expect(hasServerCredential(db, meta.serverFingerprint)).toBe(true);
     expect(getServerCredential(db, meta.serverFingerprint, k)?.secret).toEqual({ apiKey: "k-abc" });
-    // No budgetSyncId anywhere on the row — it's server-scoped.
-    const raw = db.prepare("SELECT * FROM server_credentials WHERE server_fingerprint=?").get(meta.serverFingerprint);
+    // No budgetSyncId anywhere on the record — it's server-scoped - and the
+    // secret is sealed in the passphrase domain, never readable unattended.
+    const raw = db.prepare("SELECT * FROM remembered_servers WHERE server_fingerprint=?").get(meta.serverFingerprint);
     expect(JSON.stringify(raw)).not.toContain("k-abc");
     expect(JSON.stringify(raw)).not.toContain("budget");
+    const sealed = db
+      .prepare("SELECT domain, kind, ciphertext FROM credentials WHERE ref = ?")
+      .all<{ domain: string; kind: string; ciphertext: string }>(`server:${meta.serverFingerprint}`);
+    expect(sealed).toEqual([expect.objectContaining({ domain: "passphrase", kind: "server-login" })]);
+    expect(sealed[0].ciphertext).not.toContain("k-abc");
   });
 
   it("lists metadata only and forgets a server (cascading its budget encryption passwords)", () => {

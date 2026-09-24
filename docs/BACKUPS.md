@@ -69,10 +69,10 @@ AWS's published GET Object test vector.
 - A custom `endpoint` implies **path-style** addressing, which is what MinIO, Garage and most
   self-hosted providers need. Virtual-host style needs wildcard DNS almost nobody configures.
 - Works with AWS, MinIO, Backblaze B2, Cloudflare R2, Wasabi and Garage.
-- Access keys live in `backup_credentials`, sealed with AES-256-GCM under `SYNC_VAULT_KEY`. Nothing
-  outside that module decrypts them, and a destination whose credentials cannot be resolved **fails
-  closed** — it never falls back to an unauthenticated attempt, which would surface as 403s that look
-  like a broken bucket.
+- Access keys live in the app database's `credentials` table, sealed with AES-256-GCM under
+  `SYNC_VAULT_KEY`. Nothing outside the backup-secrets module decrypts them, and a destination
+  whose credentials cannot be resolved **fails closed** — it never falls back to an
+  unauthenticated attempt, which would surface as 403s that look like a broken bucket.
 
 Every save tests the destination by writing real bytes, reading them back, comparing checksums and
 deleting the probe. A bucket that refuses deletes is a **warning**: backups still work, only

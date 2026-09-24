@@ -6,7 +6,7 @@ import {
 import {
   deleteBackupCredential,
   listBackupCredentialMeta,
-} from "@/lib/app-db/backupCredentialRepository";
+} from "@/lib/credentials/backupSecrets";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 
 /**

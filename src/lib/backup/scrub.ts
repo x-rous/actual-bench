@@ -1,4 +1,4 @@
-import { getBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { getBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
   getBackupArtifact,
   getBackupDestination,

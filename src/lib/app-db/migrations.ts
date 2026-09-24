@@ -1,4 +1,6 @@
 import type { SqliteDatabase } from "./types";
+import type { ConnectionMode } from "@/store/connection";
+import { serverFingerprint } from "@/lib/sync/connectionRef";
 import {
   APP_META_TABLE_SQL,
   BACKUP_ARTIFACT_LOCATION_TABLE_SQL,
@@ -49,7 +51,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 34;
+export const LATEST_SCHEMA_VERSION = 35;
 
 type Migration = {
   version: number;
@@ -421,7 +423,145 @@ const MIGRATIONS: readonly Migration[] = [
     // another schema change.
     apply: applyServerLeasesAndRunInput,
   },
+  {
+    version: 35,
+    // One secret store (F-195). Four credential tables, each with its own
+    // repository, become one `credentials` table whose key domain -
+    // `passphrase` (remembered, opened only after the user unlocks) or
+    // `operator` (unattended, opened with SYNC_VAULT_KEY) - is part of every
+    // row's identity. Non-secret records move to tables of their own. Every
+    // ciphertext is copied byte for byte: this migration never decrypts, so it
+    // runs without either key.
+    apply: applyCredentialStore,
+  },
 ];
+
+function applyCredentialStore(db: SqliteDatabase): void {
+  db.exec(`
+CREATE TABLE IF NOT EXISTS credentials (
+  domain text NOT NULL CHECK (domain IN ('passphrase', 'operator')),
+  ref text NOT NULL,
+  kind text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  ciphertext text NOT NULL,
+  iv text NOT NULL,
+  auth_tag text NOT NULL,
+  key_id text NOT NULL DEFAULT 'v1',
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY (domain, ref)
+);
+CREATE TABLE IF NOT EXISTS remembered_servers (
+  server_fingerprint text PRIMARY KEY,
+  mode text NOT NULL,
+  base_url text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+CREATE TABLE IF NOT EXISTS unattended_connections (
+  connection_fingerprint text PRIMARY KEY,
+  server_fingerprint text NOT NULL,
+  mode text NOT NULL,
+  base_url text NOT NULL,
+  budget_sync_id text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_unattended_connections_server ON unattended_connections(server_fingerprint);
+`);
+
+  // Remembered servers: metadata to its own table, the sealed secret to the
+  // passphrase domain under the server's ref.
+  if (tableExists(db, "server_credentials")) {
+    db.exec(`
+INSERT OR IGNORE INTO remembered_servers (server_fingerprint, mode, base_url, label, created_at, updated_at)
+  SELECT server_fingerprint, mode, base_url, label, created_at, updated_at FROM server_credentials;
+INSERT OR IGNORE INTO credentials (domain, ref, kind, label, ciphertext, iv, auth_tag, created_at, updated_at)
+  SELECT 'passphrase', 'server:' || server_fingerprint, 'server-login', label, ciphertext, iv, auth_tag, created_at, updated_at
+  FROM server_credentials;
+DROP TABLE server_credentials;
+`);
+  }
+
+  if (tableExists(db, "budget_encryption_credentials")) {
+    db.exec(`
+INSERT OR IGNORE INTO credentials (domain, ref, kind, label, ciphertext, iv, auth_tag, created_at, updated_at)
+  SELECT 'passphrase', 'budget:' || server_fingerprint || ':' || budget_sync_id, 'budget-encryption-password',
+         label, ciphertext, iv, auth_tag, created_at, updated_at
+  FROM budget_encryption_credentials;
+DROP TABLE budget_encryption_credentials;
+`);
+  }
+
+  // Backup secrets keep the refs their destinations and policies point at.
+  if (tableExists(db, "backup_credentials")) {
+    db.exec(`
+INSERT OR IGNORE INTO credentials (domain, ref, kind, label, ciphertext, iv, auth_tag, created_at, updated_at)
+  SELECT 'operator', ref, CASE kind WHEN 'passphrase' THEN 'backup-passphrase' ELSE kind END,
+         label, ciphertext, iv, auth_tag, created_at, updated_at
+  FROM backup_credentials;
+DROP TABLE backup_credentials;
+`);
+  }
+
+  // Unattended connections were stored one secret per budget. Their sealed
+  // `{ apiKey, encryptionPassword }` blobs are kept whole as legacy rows,
+  // because splitting them into one server secret and a per-budget password
+  // needs the key; `unattendedCredentials` does that once the key is present.
+  // The server fingerprint is computed here, by the app's own function - it is
+  // a hash, so SQL cannot derive it.
+  if (tableExists(db, "sync_credentials")) {
+    const rows = db
+      .prepare(
+        "SELECT connection_fingerprint, mode, base_url, budget_sync_id, label, ciphertext, iv, auth_tag, created_at, updated_at FROM sync_credentials"
+      )
+      .all<{
+        connection_fingerprint: string;
+        mode: string;
+        base_url: string;
+        budget_sync_id: string;
+        label: string;
+        ciphertext: string;
+        iv: string;
+        auth_tag: string;
+        created_at: string;
+        updated_at: string;
+      }>();
+    const insertConnection = db.prepare(
+      `INSERT OR IGNORE INTO unattended_connections (
+         connection_fingerprint, server_fingerprint, mode, base_url, budget_sync_id, label, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const insertLegacySecret = db.prepare(
+      `INSERT OR IGNORE INTO credentials (domain, ref, kind, label, ciphertext, iv, auth_tag, created_at, updated_at)
+       VALUES ('operator', ?, 'legacy-http-connection', ?, ?, ?, ?, ?, ?)`
+    );
+    for (const row of rows) {
+      insertConnection.run(
+        row.connection_fingerprint,
+        serverFingerprint({ mode: row.mode as ConnectionMode, baseUrl: row.base_url }),
+        row.mode,
+        row.base_url,
+        row.budget_sync_id,
+        row.label,
+        row.created_at,
+        row.updated_at
+      );
+      insertLegacySecret.run(
+        `legacy:${row.connection_fingerprint}`,
+        row.label,
+        row.ciphertext,
+        row.iv,
+        row.auth_tag,
+        row.created_at,
+        row.updated_at
+      );
+    }
+    db.exec("DROP TABLE sync_credentials");
+  }
+}
 
 function applyServerLeasesAndRunInput(db: SqliteDatabase): void {
   db.exec(`

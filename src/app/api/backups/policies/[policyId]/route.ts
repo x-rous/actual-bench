@@ -8,7 +8,7 @@ import {
   listBackupPolicies,
   updateBackupPolicy,
 } from "@/lib/app-db/backupRepository";
-import { upsertBackupCredential } from "@/lib/app-db/backupCredentialRepository";
+import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import { collectUnusedPassphrases } from "@/lib/backup/passphrases";
 import { reconcileBackupAutomations } from "@/lib/automation/jobs/backupReconcile";
 

@@ -5,11 +5,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
-import { getOrCreateConnectionVaultSalt } from "@/lib/app-db/connectionCredentialRepository";
+import { getOrCreateConnectionVaultSalt } from "@/lib/credentials/passphraseVaultKey";
 import {
   upsertBudgetEncryptionCredential,
   upsertServerCredential,
-} from "@/lib/app-db/serverCredentialRepository";
+} from "@/lib/credentials/rememberedCredentials";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import { deriveKeyFromPassphrase } from "@/lib/sync/vault";
 import { clearAllSessions, createSession } from "@/lib/connectionVault/session";

@@ -4,7 +4,16 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { DEFAULT_PDF_PARSER_GUIDANCE } from "@/lib/reconciliation/statement/pdf/model";
 import { getAppDb, resetAppDbForTests } from "./connection";
-import { getBackupCredential, upsertBackupCredential } from "./backupCredentialRepository";
+import { getBackupCredential, listBackupCredentialMeta, upsertBackupCredential } from "@/lib/credentials/backupSecrets";
+import {
+  getBudgetEncryptionPassword,
+  getServerCredential,
+  listServerCredentialMeta,
+} from "@/lib/credentials/rememberedCredentials";
+import { getSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
+import { sealSecret, sealWithKey } from "@/lib/sync/vault";
+import { connectionFingerprint, serverFingerprint } from "@/lib/sync/connectionRef";
+import { randomBytes } from "node:crypto";
 import { LATEST_SCHEMA_VERSION, runMigrations } from "./migrations";
 import {
   getReconciliationSession,
@@ -985,6 +994,120 @@ describe("upgrading an existing database", () => {
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("moves every secret into the credential store without decrypting, each still opening with its own key (v35)", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v35-"));
+    const path = join(root, "metadata.sqlite");
+    const previousVaultKey = process.env.SYNC_VAULT_KEY;
+    const userKey = randomBytes(32);
+    const now = "2026-09-20T00:00:00.000Z";
+
+    // Sealed the way v34 sealed them: remembered secrets with the user's key,
+    // unattended and backup secrets with the operator key.
+    process.env.SYNC_VAULT_KEY = "operator-key";
+    const operatorSealed = (value: unknown) => sealSecret(JSON.stringify(value));
+    const serverSealed = sealWithKey(JSON.stringify({ serverPassword: "remembered-pw" }), userKey);
+    const budgetSealed = sealWithKey("remembered-enc", userKey);
+    const syncSealed = operatorSealed({ apiKey: "unattended-key", encryptionPassword: "unattended-enc" });
+    const s3Sealed = operatorSealed({ accessKeyId: "AKIA", secretAccessKey: "s3-secret" });
+    const passphraseSealed = operatorSealed({ passphrase: "backup-pass" });
+    // The migration must not need the key.
+    delete process.env.SYNC_VAULT_KEY;
+
+    const remembered = { mode: "browser-api" as const, baseUrl: "https://actual.example.com" };
+    const rememberedFp = serverFingerprint(remembered);
+    const unattended = { mode: "http-api" as const, baseUrl: "https://api.example.com", budgetSyncId: "budget-9" };
+    const unattendedFp = connectionFingerprint(unattended);
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE server_credentials (server_fingerprint text PRIMARY KEY, mode text NOT NULL, base_url text NOT NULL,
+        label text NOT NULL DEFAULT '', ciphertext text NOT NULL, iv text NOT NULL, auth_tag text NOT NULL,
+        created_at text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE budget_encryption_credentials (server_fingerprint text NOT NULL, budget_sync_id text NOT NULL,
+        label text NOT NULL DEFAULT '', ciphertext text NOT NULL, iv text NOT NULL, auth_tag text NOT NULL,
+        created_at text NOT NULL, updated_at text NOT NULL, PRIMARY KEY (server_fingerprint, budget_sync_id));
+      CREATE TABLE remembered_budgets (server_fingerprint text NOT NULL, budget_sync_id text NOT NULL,
+        name text NOT NULL DEFAULT '', created_at text NOT NULL, last_opened_at text NOT NULL,
+        PRIMARY KEY (server_fingerprint, budget_sync_id));
+      CREATE TABLE sync_credentials (connection_fingerprint text PRIMARY KEY, mode text NOT NULL, base_url text NOT NULL,
+        budget_sync_id text NOT NULL, label text NOT NULL DEFAULT '', ciphertext text NOT NULL, iv text NOT NULL,
+        auth_tag text NOT NULL, created_at text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE backup_credentials (ref text PRIMARY KEY, kind text NOT NULL, label text NOT NULL DEFAULT '',
+        ciphertext text NOT NULL, iv text NOT NULL, auth_tag text NOT NULL, created_at text NOT NULL, updated_at text NOT NULL);
+    `);
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES ('schema_version', '34', ?)").run(now);
+    const sealedArgs = (sealed: { ciphertext: string; iv: string; authTag: string }) => [sealed.ciphertext, sealed.iv, sealed.authTag];
+    seed
+      .prepare("INSERT INTO server_credentials VALUES (?, ?, ?, 'Home Actual', ?, ?, ?, ?, ?)")
+      .run(rememberedFp, remembered.mode, remembered.baseUrl, ...sealedArgs(serverSealed), now, now);
+    seed
+      .prepare("INSERT INTO budget_encryption_credentials VALUES (?, 'budget-1', '', ?, ?, ?, ?, ?)")
+      .run(rememberedFp, ...sealedArgs(budgetSealed), now, now);
+    seed.prepare("INSERT INTO remembered_budgets VALUES (?, 'budget-1', 'Household', ?, ?)").run(rememberedFp, now, now);
+    seed
+      .prepare("INSERT INTO sync_credentials VALUES (?, ?, ?, ?, 'Joint', ?, ?, ?, ?, ?)")
+      .run(unattendedFp, unattended.mode, unattended.baseUrl, unattended.budgetSyncId, ...sealedArgs(syncSealed), now, now);
+    seed.prepare("INSERT INTO backup_credentials VALUES ('dest-1', 's3', 'NAS', ?, ?, ?, ?, ?)").run(...sealedArgs(s3Sealed), now, now);
+    seed
+      .prepare("INSERT INTO backup_credentials VALUES ('policy-1', 'passphrase', '', ?, ?, ?, ?, ?)")
+      .run(...sealedArgs(passphraseSealed), now, now);
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+
+      const tables = (db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'").all() as Array<{ name: string }>).map(
+        (row) => row.name
+      );
+      for (const gone of ["server_credentials", "budget_encryption_credentials", "sync_credentials", "backup_credentials"]) {
+        expect(tables).not.toContain(gone);
+      }
+      // Metadata is readable, and identical, without any key.
+      expect(listServerCredentialMeta(db)).toEqual([
+        expect.objectContaining({ serverFingerprint: rememberedFp, baseUrl: remembered.baseUrl, label: "Home Actual" }),
+      ]);
+      expect(listSyncCredentialMeta(db)).toEqual([
+        expect.objectContaining({ connectionFingerprint: unattendedFp, budgetSyncId: "budget-9", label: "Joint" }),
+      ]);
+      expect(listBackupCredentialMeta(db).map((meta) => [meta.ref, meta.kind]).sort()).toEqual([
+        ["dest-1", "s3"],
+        ["policy-1", "passphrase"],
+      ]);
+
+      // Remembered secrets open with the user's key.
+      expect(getServerCredential(db, rememberedFp, userKey)?.secret).toEqual({ serverPassword: "remembered-pw" });
+      expect(getBudgetEncryptionPassword(db, rememberedFp, "budget-1", userKey)).toBe("remembered-enc");
+
+      // Operator secrets open once the operator key is back - the unattended
+      // one split on first use into its server and budget parts.
+      process.env.SYNC_VAULT_KEY = "operator-key";
+      expect(getSyncCredential(db, unattendedFp)?.secret).toEqual({
+        apiKey: "unattended-key",
+        encryptionPassword: "unattended-enc",
+      });
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM credentials WHERE kind = 'legacy-http-connection'").get<{ n: number }>()?.n
+      ).toBe(0);
+      expect(getBackupCredential(db, "dest-1")).toEqual({ accessKeyId: "AKIA", secretAccessKey: "s3-secret" });
+      expect(getBackupCredential(db, "policy-1")).toEqual({ passphrase: "backup-pass" });
+
+      // The remembered secrets stayed in the passphrase domain.
+      const domains = db
+        .prepare("SELECT domain, COUNT(*) AS n FROM credentials GROUP BY domain ORDER BY domain")
+        .all() as Array<{ domain: string; n: number }>;
+      expect(domains).toEqual([
+        { domain: "operator", n: 4 },
+        { domain: "passphrase", n: 2 },
+      ]);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+      if (previousVaultKey === undefined) delete process.env.SYNC_VAULT_KEY;
+      else process.env.SYNC_VAULT_KEY = previousVaultKey;
     }
   });
 
