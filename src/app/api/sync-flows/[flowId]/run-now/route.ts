@@ -57,6 +57,16 @@ export async function POST(_request: Request, context: RouteContext) {
     if (!automation) {
       return NextResponse.json({ error: "This flow isn't set to sync unattended." }, { status: 409 });
     }
+    // Reconciliation turns the automation off, rather than deleting it, when
+    // the flow is paused after repeated failures or moved back to manual
+    // review. The schedule skips it then, and so must this: the engine starts
+    // whatever it is given, enabled or not.
+    if (!automation.enabled) {
+      return NextResponse.json(
+        { error: "This flow's unattended sync is paused or turned off, so it cannot run now." },
+        { status: 409 }
+      );
+    }
 
     const start = startAutomationRun(db, automation.id, { trigger: "manual" });
     if (!start.started) {

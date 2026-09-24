@@ -123,6 +123,39 @@ describe("POST /api/sync-flows/[flowId]/run-now", () => {
     expect(seenFlowIds).toEqual([]);
   });
 
+  it("does not run a flow whose unattended sync has been paused", async () => {
+    // Paused after repeated failures: still set to unattended, but
+    // reconciliation has turned its automation off.
+    const flowId = flow("auto_sync_unattended");
+    migrateSyncFlowsToAutomations(getAppDb());
+    updateSyncFlow(getAppDb(), flowId, {
+      legs: [
+        {
+          sourceRef: { version: 1, data: { connectionFingerprint: "server-a", budgetSyncId: "budget-a" } },
+          targetRef: { version: 1, data: { connectionFingerprint: "server-b", budgetSyncId: "budget-b" } },
+          filter: { version: 1, data: {} },
+          transform: { version: 1, data: {} },
+          options: {
+            version: 1,
+            data: {
+              reviewPolicy: "auto_sync_unattended",
+              intervalMinutes: 30,
+              autoPausedAt: "2026-09-24T00:00:00.000Z",
+            },
+          },
+        },
+      ],
+    });
+
+    const response = await POST(new Request("http://bench.test"), context(flowId));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "This flow's unattended sync is paused or turned off, so it cannot run now.",
+    });
+    expect(seenFlowIds).toEqual([]);
+  });
+
   it("says so when the flow is not set to sync unattended", async () => {
     const flowId = flow("manual_preview_required");
 

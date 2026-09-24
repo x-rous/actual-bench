@@ -116,15 +116,17 @@ async function forwardDirectToActualHttpApi<T>(
     },
     // The request timeout plus the budget-close cleanup plus margin.
     { leaseTtlMs: UNATTENDED_REQUEST_TIMEOUT_MS + 15_000 }
-  ).catch((error: unknown): ForwardOutcome<T> => ({
-    // Another realm held the server for longer than a request may wait.
-    status: 503,
-    error: {
-      kind: "api",
-      status: 503,
-      message: error instanceof Error ? error.message : "The API server is busy.",
-    },
-  }));
+  ).catch((error: unknown): ForwardOutcome<T> => {
+    // Another realm held the server for longer than a request may wait; the
+    // request was never sent, so "busy, try again" is the truth. Matched by
+    // name because this file cannot import the server-only class. Anything
+    // else - a response body that would not parse, say - is a real failure and
+    // must reach the caller as itself, not dressed up as a retryable 503.
+    if (error instanceof Error && error.name === "ServerBusyError") {
+      return { status: 503, error: { kind: "api", status: 503, message: error.message } };
+    }
+    throw error;
+  });
 
   if (outcome.error) throw outcome.error;
   return outcome.data as T;

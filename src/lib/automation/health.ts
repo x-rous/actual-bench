@@ -126,6 +126,10 @@ export function staleGraceMs(automation: ScheduleShape): number {
 
 export function isStale(automation: StaleInput, nowMs: number): boolean {
   if (!automation.enabled || automation.autoPausedAt) return false;
+  // A schedule this version cannot run is unsupported, not overdue: it will
+  // never run here, so an old `nextRunAt` written by a newer version is not a
+  // missed occurrence (F-192).
+  if (!isKnownScheduleKind(automation.scheduleKind)) return false;
   if (!automation.nextRunAt) return false;
 
   const due = Date.parse(automation.nextRunAt);

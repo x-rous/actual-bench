@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { getApiVersion, getServerVersion, listBudgets, testConnection } from "./client";
+import { apiRequest, getApiVersion, getServerVersion, listBudgets, testConnection } from "./client";
 import type { HttpApiConnection } from "@/store/connection";
 import { installServerRequestGate } from "@/lib/http/serverRequestGate";
 
@@ -196,3 +196,35 @@ describe("listBudgets", () => {
     });
   });
 });
+
+describe("unattended requests and the per-server lock", () => {
+  afterEach(() => {
+    installServerRequestGate((_target, _reqId, operation) => operation());
+  });
+
+  it("reports a server held too long by someone else as a retryable 503", async () => {
+    installServerRequestGate(async () => {
+      const busy = new Error("The API server is busy with another request. Try again shortly.");
+      busy.name = "ServerBusyError";
+      throw busy;
+    });
+
+    await expect(apiRequest(connection, "/accounts")).rejects.toEqual({
+      kind: "api",
+      status: 503,
+      message: "The API server is busy with another request. Try again shortly.",
+    });
+  });
+
+  it("lets any other failure through as itself, not as 'busy'", async () => {
+    // A 2xx whose body will not parse, say: telling the caller to retry would
+    // hide the real problem.
+    const broken = new SyntaxError("Unexpected end of JSON input");
+    installServerRequestGate(async () => {
+      throw broken;
+    });
+
+    await expect(apiRequest(connection, "/accounts")).rejects.toBe(broken);
+  });
+});
+

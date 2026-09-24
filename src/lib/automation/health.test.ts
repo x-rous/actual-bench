@@ -206,6 +206,8 @@ describe("automation health", () => {
         "Its schedule needs a newer version of Actual Bench, so it will not run until you update."
       );
       expect(health.schedule).toBe("Needs a newer version of Actual Bench");
+      // Unsupported, not overdue - even with a due time long gone.
+      expect(health.stale).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

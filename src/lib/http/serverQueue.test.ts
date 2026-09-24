@@ -261,6 +261,71 @@ describe("queueServerRequest", () => {
     expect(warn.mock.calls.filter(([m]) => String(m).includes("request leases unavailable"))).toHaveLength(1);
   });
 
+  it("waits out a busy app database instead of running without the lease", async () => {
+    // SQLITE_BUSY means another realm is writing - maybe taking its own lease.
+    // Going ahead unleased is exactly the overlap the lease prevents.
+    let attempts = 0;
+    const real = recordingStore(db)();
+    __internals.setLeaseStoreFactory(() => ({
+      acquire(serverKey, holder, ttlMs, nowMs) {
+        attempts += 1;
+        if (attempts <= 2) {
+          throw Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+        }
+        return real.acquire(serverKey, holder, ttlMs, nowMs);
+      },
+      release: real.release,
+    }));
+    // Another realm holds the lease meanwhile, so a request that skipped the
+    // lease would be the only way this operation could start before it frees.
+    tryAcquireServerLease(db, { serverKey: "http://example.test", holder: "other", ttlMs: 60_000, nowMs: Date.now() });
+    setTimeout(() => releaseServerLease(db, { serverKey: "http://example.test", holder: "other" }), 80);
+
+    const started: number[] = [];
+    const t0 = Date.now();
+    const response = await queueServerRequest(connection(), "r1", async () => {
+      started.push(Date.now() - t0);
+      return NextResponse.json({ ok: true }, { status: 200 });
+    });
+
+    expect(response.status).toBe(200);
+    expect(attempts).toBeGreaterThan(2);
+    expect(started[0]).toBeGreaterThanOrEqual(75);
+  });
+
+  it("gives up as busy when the database stays locked past the wait", async () => {
+    __internals.setLeaseStoreFactory(() => ({
+      acquire() {
+        throw Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+      },
+      release() {},
+    }));
+    __internals.setLeaseWaitMs(60);
+    const operation = jest.fn(async () => NextResponse.json({ ok: true }, { status: 200 }));
+
+    await expect(queueServerRequest(connection(), "r1", operation)).rejects.toBeInstanceOf(ServerBusyError);
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it("falls back to in-process order when a lease cannot be taken at all, and says so every time", async () => {
+    const { logger } = await import("@/lib/logger");
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => {});
+    __internals.setLeaseStoreFactory(() => ({
+      acquire() {
+        throw Object.assign(new Error("attempt to write a readonly database"), { code: "SQLITE_READONLY" });
+      },
+      release() {},
+    }));
+
+    for (const id of ["r1", "r2"]) {
+      const response = await queueServerRequest(connection(), id, async () =>
+        NextResponse.json({ ok: true }, { status: 200 })
+      );
+      expect(response.status).toBe(200);
+    }
+    expect(warn.mock.calls.filter(([m]) => String(m).includes("could not take the lease"))).toHaveLength(2);
+  });
+
   it("adds little to an uncontended request", async () => {
     const runs = 200;
     const started = performance.now();

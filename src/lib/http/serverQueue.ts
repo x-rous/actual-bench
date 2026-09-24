@@ -26,7 +26,9 @@
  * If the app database cannot be opened (non-durable demo storage, an
  * unwritable path), the FIFO alone serializes requests - the same guarantee
  * Bench had before - and the problem is logged once. The proxy never fails
- * because the lease store is unavailable.
+ * because the lease store is unavailable. A database that opened but is busy
+ * is different: that is another realm at work, so the request waits for the
+ * lease rather than running without it.
  */
 import type { NextResponse } from "next/server";
 import { threadId } from "node:worker_threads";
@@ -117,6 +119,15 @@ function openLeaseStore(): LeaseStore | null {
   }
 }
 
+/**
+ * A lock conflict in SQLite: another connection is writing. better-sqlite3
+ * reports these by code, after its own busy timeout has already waited.
+ */
+function isContention(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && (code.startsWith("SQLITE_BUSY") || code.startsWith("SQLITE_LOCKED"));
+}
+
 let holderSequence = 0;
 
 function newHolderId(reqId: string): string {
@@ -144,8 +155,25 @@ async function acquireLease(serverKey: string, holder: string, ttlMs: number): P
     try {
       acquired = store.acquire(serverKey, holder, ttlMs, Date.now());
     } catch (error) {
-      warnLeaseStoreOnce(error);
-      return () => {};
+      if (isContention(error)) {
+        // Another realm is writing to the app database - most likely taking
+        // or releasing a lease of its own. Running now, without the lease,
+        // is exactly the overlap this exists to prevent, so this counts as
+        // "not yet": keep waiting, and give up as busy at the deadline.
+        acquired = false;
+      } else {
+        // The store opened but cannot take a lease at all (a read-only or
+        // full disk, say). Waiting would not fix that, and making every
+        // request sit out the full wait would take the proxy down with it;
+        // fall back to the in-process order, and say so every time rather
+        // than once, because it is not the quiet startup case.
+        logger.warn(
+          `[server-queue] could not take the lease for ${serverKey}, serializing in this process only: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        return () => {};
+      }
     }
 
     if (acquired) {

@@ -79,10 +79,33 @@ describe("waitForRun", () => {
     );
   });
 
-  it("reports the server's reason when the run cannot be read", async () => {
-    global.fetch = jest.fn(async () => jsonResponse(404, { error: "Run not found" })) as unknown as typeof fetch;
+  it("stops at once, with the server's reason, when the run does not exist", async () => {
+    const fetchMock = jest.fn(async () => jsonResponse(404, { error: "Run not found" }));
+    global.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(waitForRun("run-1", fakeClock())).rejects.toThrow("Run not found");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps following a run through a few failed reads", async () => {
+    // A network blip and a busy database, then the answer: the run is still
+    // going on the server, so the page must not report it as an error.
+    const fetchMock = jest
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(jsonResponse(503, { error: "The app database is busy" }))
+      .mockResolvedValueOnce(jsonResponse(200, { run: run("succeeded") }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(waitForRun("run-1", fakeClock())).resolves.toMatchObject({ status: "succeeded" });
+  });
+
+  it("gives up after five failed reads in a row, with the last reason", async () => {
+    const fetchMock = jest.fn(async () => jsonResponse(503, { error: "The app database is busy" }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(waitForRun("run-1", fakeClock())).rejects.toThrow("The app database is busy");
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 });
 

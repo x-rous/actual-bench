@@ -22,6 +22,25 @@ const SLOW_POLL_MS = 2_000;
  */
 export const DEFAULT_RUN_WAIT_MS = 60 * 60_000;
 
+/**
+ * How many reads in a row may fail before the page gives up following a run.
+ * A wait can last an hour, so a single network blip or a moment when the app
+ * database is busy must not turn a run that is still going into an error on
+ * screen. A missing run (404) is a real answer and ends the wait at once.
+ */
+const MAX_CONSECUTIVE_READ_FAILURES = 5;
+
+/** A failed read of a run, carrying the HTTP status when there was one. */
+export class RunReadError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null
+  ) {
+    super(message);
+    this.name = "RunReadError";
+  }
+}
+
 export class RunStillGoingError extends Error {
   constructor(readonly runId: string) {
     super("The run is still going. Its result will appear in run history when it finishes.");
@@ -37,7 +56,12 @@ type WaitOptions = {
 };
 
 async function readRun(runId: string): Promise<AutomationRun> {
-  const response = await fetch(`/api/automations/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });
+  let response: Response;
+  try {
+    response = await fetch(`/api/automations/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });
+  } catch (error) {
+    throw new RunReadError(error instanceof Error ? error.message : "Could not reach the server", null);
+  }
   if (!response.ok) {
     let message = `Could not read the run (${response.status})`;
     try {
@@ -46,7 +70,7 @@ async function readRun(runId: string): Promise<AutomationRun> {
     } catch {
       // Keep the status-code message.
     }
-    throw new Error(message);
+    throw new RunReadError(message, response.status);
   }
   return ((await response.json()) as { run: AutomationRun }).run;
 }
@@ -57,9 +81,19 @@ export async function waitForRun(runId: string, options: WaitOptions = {}): Prom
   const startedAt = now();
   const deadline = startedAt + (options.maxWaitMs ?? DEFAULT_RUN_WAIT_MS);
 
+  let failures = 0;
+
   for (;;) {
-    const run = await readRun(runId);
-    if (run.status !== "running") return run;
+    let run: AutomationRun | null = null;
+    try {
+      run = await readRun(runId);
+      failures = 0;
+    } catch (error) {
+      failures += 1;
+      const missing = error instanceof RunReadError && error.status === 404;
+      if (missing || failures >= MAX_CONSECUTIVE_READ_FAILURES) throw error;
+    }
+    if (run && run.status !== "running") return run;
 
     const elapsed = now() - startedAt;
     const delay = elapsed < FAST_PHASE_MS ? FAST_POLL_MS : SLOW_POLL_MS;
