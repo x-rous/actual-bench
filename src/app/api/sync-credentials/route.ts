@@ -1,11 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
-import {
-  deleteSyncCredential,
-  listSyncCredentialMeta,
-  upsertSyncCredential,
-} from "@/lib/credentials/unattendedCredentials";
+import { EnrolmentRefusedError, startEnrolment } from "@/lib/credentials/enrolments";
+import { deleteSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { vaultEnabled } from "@/lib/sync/vault";
 import type { SyncCredentialInput } from "@/lib/app-db/types";
 
@@ -14,8 +11,9 @@ export const runtime = "nodejs";
 
 /**
  * Credential vault API (RD-058 / PR-024a). Write-only from the client's side:
- * enroll (POST) / withdraw (DELETE) / list metadata (GET). The secret is never
- * returned - GET yields only non-secret metadata + whether the vault is enabled.
+ * enroll (POST, checked first; see `enrolments/[id]`) / withdraw (DELETE) /
+ * list metadata (GET). The secret is never returned - GET yields only
+ * non-secret metadata + whether the vault is enabled.
  */
 
 // GET → { enabled, credentials: [metadata only] }
@@ -30,7 +28,9 @@ export function GET() {
   }
 }
 
-// POST → enroll (seal + store) a connection's secret for unattended sync.
+// POST → start enrolling a connection: check it against its server, then store
+// it. Answers 202 with an id to follow; nothing is stored unless the check
+// passes (RD-095 M4).
 export async function POST(request: Request) {
   try {
     if (!vaultEnabled()) {
@@ -40,18 +40,44 @@ export async function POST(request: Request) {
       );
     }
     const body = (await readJsonBody(request)) as SyncCredentialInput;
-    if (!body?.connectionFingerprint || !body?.secret?.apiKey) {
-      return NextResponse.json({ error: "connectionFingerprint and secret.apiKey are required." }, { status: 400 });
+    if (!body?.connectionFingerprint || !body?.baseUrl || !body?.budgetSyncId) {
+      return NextResponse.json(
+        { error: "connectionFingerprint, baseUrl and budgetSyncId are required." },
+        { status: 400 }
+      );
     }
-    if (!body?.baseUrl || !body?.budgetSyncId) {
-      return NextResponse.json({ error: "baseUrl and budgetSyncId are required." }, { status: 400 });
+    if (body.mode !== "http-api" && body.mode !== "browser-api") {
+      return NextResponse.json({ error: "Unknown connection mode." }, { status: 400 });
     }
-    if (body.mode !== "http-api") {
-      // Hybrid (RD-058): only HTTP-API connections can run unattended server-side.
-      return NextResponse.json({ error: "Only HTTP API Server connections can be enrolled for unattended sync." }, { status: 400 });
+    if (body.mode === "http-api" && !body.secret?.apiKey) {
+      return NextResponse.json({ error: "An HTTP API connection is enrolled with its API key." }, { status: 400 });
     }
-    const meta = upsertSyncCredential(getAppDb(), body);
-    return NextResponse.json({ credential: meta }, { status: 201 });
+    if (body.mode === "browser-api" && !body.secret?.serverPassword) {
+      return NextResponse.json({ error: "A Direct connection is enrolled with its server password." }, { status: 400 });
+    }
+
+    // Only the secret that belongs to the mode is kept.
+    const input: SyncCredentialInput = {
+      connectionFingerprint: body.connectionFingerprint,
+      mode: body.mode,
+      baseUrl: body.baseUrl,
+      budgetSyncId: body.budgetSyncId,
+      ...(body.label ? { label: body.label } : {}),
+      secret: {
+        ...(body.mode === "http-api" ? { apiKey: body.secret.apiKey } : { serverPassword: body.secret.serverPassword }),
+        ...(body.secret.encryptionPassword ? { encryptionPassword: body.secret.encryptionPassword } : {}),
+      },
+    };
+
+    try {
+      const enrolmentId = startEnrolment(input);
+      return NextResponse.json({ enrolmentId }, { status: 202 });
+    } catch (error) {
+      if (error instanceof EnrolmentRefusedError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: 503 });
+      }
+      throw error;
+    }
   } catch (error) {
     return appDbErrorResponse(error);
   }

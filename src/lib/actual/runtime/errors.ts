@@ -98,6 +98,8 @@ function ruleFor(error: unknown): Rule | undefined {
 
 /** The code for a failure, or `null` when it is none of the known ones. */
 export function classifyActualError(error: unknown): ActualErrorCode | null {
+  // Already classified - by the Node host, on its way up.
+  if (error instanceof ActualRuntimeError) return error.code;
   return ruleFor(error)?.code ?? null;
 }
 

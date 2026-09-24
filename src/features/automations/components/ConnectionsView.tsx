@@ -122,7 +122,7 @@ export function ConnectionsView() {
               this page can do directly, so it sits at the top when it applies. */}
           {!activeEnrolled && (
             <div className="mb-3">
-              <EnrolConnection connection={active ?? null} onEnrolled={invalidate} />
+              <EnrolConnection connection={active ?? null} onEnrolled={invalidate} allowDirect onConnectionsPage />
             </div>
           )}
 

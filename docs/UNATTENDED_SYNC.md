@@ -55,10 +55,16 @@ Without `SYNC_SCHEDULER_SECRET` set, that endpoint is disabled (403).
 
 ## Security / threat model
 
-- **What is stored:** for each enrolled server, its `actual-http-api` **API key**, and for each
-  enrolled budget its encryption password if used, **AES-256-GCM encrypted**, in the app metadata
-  database (`credentials` table; which budgets are enrolled is recorded, without secrets, in
-  `unattended_connections`). Budgets on the same server share one stored key.
+- **What is stored:** for each enrolled server, its `actual-http-api` **API key** (HTTP API
+  connections) or the Actual server's **password** (Direct connections, which can be enrolled from
+  Automations → Connections; Direct flows do not run unattended yet), and for each enrolled budget
+  its encryption password if used, **AES-256-GCM encrypted**, in the app metadata database
+  (`credentials` table; which budgets are enrolled is recorded, without secrets, in
+  `unattended_connections`). Budgets on the same server share one stored secret.
+- **Checked before it is stored.** Enrolling first checks the credentials against the server, in a
+  worker thread (for Direct, by opening the budget). A wrong key, password or encryption password
+  is reported and **nothing is stored**, so a typo cannot replace the working secret other budgets
+  on that server rely on. The secret reaches the worker only sealed with `SYNC_VAULT_KEY`.
 - **The key is not in the database.** Encryption uses a key derived from `SYNC_VAULT_KEY` (an
   environment variable). Someone with only the database file cannot decrypt the secrets.
 - **Never exposed to the client.** Stored secrets are decrypted server-side only, during a

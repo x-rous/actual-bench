@@ -58,19 +58,33 @@ The **Connections** tab lists the budgets Bench may act on, when each was enroll
 worth the tab - **what depends on it**. Withdrawing a credential stops those automations, so the
 confirmation names them before it happens.
 
-Two things to expect:
+Three things to expect:
 
+- **Bench checks before it saves.** When you enrol, Bench checks the password or API key with the
+  server. For a Direct connection this means opening the budget, which can take up to a minute. If
+  the check fails, Bench shows the reason and nothing is saved.
 - Enrolment is **per budget, not per server**. Three budgets on one server are three entries.
-- Bench can only enrol the budget you are **currently connected to**, because that is the only API
-  key your browser holds. Any other budget says so and asks you to switch to it first.
+- Bench can only enrol the budget you are **currently connected to**. To enrol another budget,
+  switch to it first.
 
 You can enrol from Connections, from the bank sync or backup dialogs, or from a Budget File Sync
-flow - all four write the same list.
+flow - all four write the same list. A **Direct** connection can be enrolled from **Connections**;
+scheduled jobs for Direct budgets are not available yet.
 
-:::caution[What gets stored]
-That budget's API key, and its encryption password if it has one, encrypted with the server's
-`SYNC_VAULT_KEY`. The key itself is never stored beside them. Nothing else is kept: no budget data,
-and no other budget on the same server.
+:::caution[What gets saved]
+- **HTTP API connection:** the budget's API key is encrypted with Bench's vault key
+  (`SYNC_VAULT_KEY`) and saved.
+- **Direct connection:** your Actual server password is encrypted with Bench's vault key
+  (`SYNC_VAULT_KEY`) and saved.
+- The vault key is kept in the server settings, not in Bench's database, so someone with a copy of
+  the database cannot read the password or API key. Keep the vault key private.
+- Bench only unlocks the password or API key on the server when an automation runs. It is never shown
+  again or sent to your browser.
+- If your budget has an encryption password, it is saved the same way. No budget data is saved.
+- If you change your Actual server password or API key, automations for budgets on that server stop
+  running. Enrol one of those budgets again to save the new one for all of them.
+- You can remove it in **Connections** at any time. Automations that use it will stop running until
+  you enrol again.
 :::
 
 ## Schedules

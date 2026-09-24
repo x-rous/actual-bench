@@ -257,11 +257,7 @@ export function BackupRuleDialog({
                   the list of budgets you can back up, with the reason it cannot
                   be used yet and the button that fixes it. */}
               {chosen && !chosen.enrolled && !chosen.manualOnly && (
-                <EnrolConnection
-                  connection={chosen.connection}
-                  compact
-                  onEnrolled={onSaved}
-                />
+                <EnrolConnection connection={chosen.connection} onEnrolled={onSaved} />
               )}
 
               {/* Said once, where the consequence is: this rule will not run on

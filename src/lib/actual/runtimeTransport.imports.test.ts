@@ -51,7 +51,12 @@ function clientModules(entry: string): string[] {
 }
 
 describe("code that runs in a worker", () => {
-  it.each(["lib/actual/runtimeTransport.ts", "lib/actual/runtime/nodeHost.ts", "lib/actual/serverTransport.ts"])(
+  it.each([
+    "lib/actual/runtimeTransport.ts",
+    "lib/actual/runtime/nodeHost.ts",
+    "lib/actual/serverTransport.ts",
+    "lib/actual/verifyConnection.ts",
+  ])(
     "%s loads nothing marked \"use client\"",
     (entry) => {
       expect(clientModules(join(SRC, entry))).toEqual([]);
