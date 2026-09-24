@@ -30,6 +30,9 @@ it is durable, and whether scheduled work can run.*
 - **Migration status** - whether migrations are up to date.
 - **Persistence** - a reminder that `/data` has to be mounted from outside. Writable is not the same as
   durable; a container's own filesystem is both writable and temporary.
+- **Automations → Workers** - whether Bench can start the worker threads that automations run in, how
+  many runs are going out of the maximum, the memory limit for each, and the last run that stopped
+  unexpectedly. See [Configuration](../configuration/#automation-workers).
 
 ## Verify a healthy install
 
@@ -48,6 +51,10 @@ attention. See [Installation](../../getting-started/installation/#verify-the-ins
 - **Writable: No** - the container user cannot write to `/data`. Fix the mount permissions.
 - **Schema: Not initialized** - the database was never created. Check `ACTUAL_BENCH_DB_PATH` actually
   points into the mounted volume.
+- **Workers: Cannot start** - Bench could not start a worker thread, so no automation runs. The
+  reason is shown beside it. Bench tries again every few minutes, so fixing the cause needs no
+  restart. If your platform cannot run worker threads at all, set
+  `ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread` (see [Configuration](../configuration/#automation-workers)).
 - **Everything vanishes when you recreate the container** - `/data` is not persisted. Mount a named
   volume or a host path.
 

@@ -28,6 +28,10 @@ The table lists every environment variable supported by the current application.
 | `ACTUAL_BENCH_DB_PATH` | `/data/actual-bench.sqlite` | Path to the metadata SQLite database. | No | Yes |
 | `SYNC_VAULT_KEY` | *(unset)* | Enables unattended server-side sync; derives the encryption key for stored credentials. | **Yes** | Yes |
 | `SYNC_SCHEDULER_SECRET` | *(unset)* | Enables the external scheduler trigger endpoint; required in its request header. | **Yes** | Yes |
+| `ACTUAL_BENCH_WORKERS_MAX` | `2` | How many automation runs may be going at once. | No | Yes |
+| `ACTUAL_BENCH_WORKER_HEAP_MB` | `512` | Memory limit for each automation run, in MB. | No | Yes |
+| `ACTUAL_BENCH_AUTOMATION_EXECUTOR` | `worker` | Where automation runs execute: `worker` (their own thread) or `in-thread` (the server's own thread). | No | Yes |
+| `ACTUAL_BENCH_RUNTIME_DIR` | `actual-runtime`, next to the metadata database | Where automation runs keep the temporary copy of a budget they open themselves. | No | Yes |
 | `LOG_LEVEL` | `info` | Server log verbosity. | No | Yes |
 | `NEXT_DEV_ALLOWED_ORIGINS` | *(unset)* | Dev-only: allow the HMR WebSocket through a reverse proxy (comma-separated hostnames). | No | Yes |
 
@@ -98,6 +102,35 @@ are paused and shown on App Health until re-enrolled.
 
 See [Budget Sync → Automation](../../user-guide/budget-sync/#automation-opt-in) for how flows opt in, and
 the repository's `docs/UNATTENDED_SYNC.md` for the operator walkthrough.
+
+## Automation workers
+
+Every automation run gets a worker thread of its own inside the Bench server, with its own memory
+limit. A run that hangs can be stopped, and a run that runs out of memory or crashes ends alone while
+the rest of Bench carries on. [Automations](../../user-guide/automations/#stopping-a-run) explains what
+you see when that happens. The defaults suit most installs.
+
+- **`ACTUAL_BENCH_WORKERS_MAX`** *(default `2`)* - how many runs may be going at once. A scheduled run
+  that finds no free slot waits for the next minute without counting as a failure; **Run now** says
+  Bench is busy.
+- **`ACTUAL_BENCH_WORKER_HEAP_MB`** *(default `512`)* - the memory limit for each run. Raise it if a
+  large budget's runs stop with "Ran out of memory". Give the container room for this much per run
+  that can go at once; as a guide, a container running automations on budgets of around 30,000
+  transactions wants at least 1 GB.
+- **`ACTUAL_BENCH_AUTOMATION_EXECUTOR`** *(default `worker`)* - set to `in-thread` only if your
+  platform cannot start worker threads. Runs then execute in the server's own thread, as they did
+  before: a time limit can only ask a run to stop, and a run that runs out of memory takes the whole
+  server with it.
+- **`ACTUAL_BENCH_RUNTIME_DIR`** *(default: an `actual-runtime` folder next to the metadata
+  database)* - where a run keeps the copy of a budget it downloads to work on. Each run gets a private
+  folder, readable only by the Bench process, that is deleted when the run ends. A folder left behind
+  by a crash is removed automatically once it has gone 15 minutes untouched. There is nothing here to
+  back up. Put it on fast local disk with room for a
+  copy of each budget being worked on at once.
+
+At startup Bench checks that a worker thread can start. **App Health → Automations → Workers** shows
+the result. If the check fails, automations do not run and the reason is shown there; they never
+quietly fall back to the server's own thread.
 
 ## Logging
 

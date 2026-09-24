@@ -216,6 +216,42 @@ describe("automations in worker threads", () => {
     expect(getAutomation(db, id)).toMatchObject({ consecutiveFailures: 0, autoPausedAt: null });
   });
 
+  it("records a job that had already finished when its deadline passed as finished", async () => {
+    // The job returned; the worker was still closing a Direct budget (a
+    // snapshot upload) when the deadline passed. The job never saw the stop,
+    // so it is not a run that "may have made changes".
+    __configureWorkerSupervisorForTests({
+      graceMs: 5_000,
+      spawn: scriptedSpawn((worker, task) => {
+        worker.send({ type: "phase", taskId: task.taskId, phase: "mutating" });
+        setTimeout(
+          () =>
+            worker.send({
+              type: "result",
+              taskId: task.taskId,
+              output: {
+                kind: "completed",
+                rollup: { outcome: "ok", itemCount: 1, message: "done" },
+                result: { version: 1, data: { ok: true } },
+                log: [],
+                aborted: false,
+                phase: "mutating",
+              },
+            }),
+          100
+        );
+      }).spawn,
+    });
+    registerAutomationJobType(jobType({ deadlineMs: 30 }));
+    const id = automation();
+
+    const outcome = await executeAutomation(db, id);
+
+    expect(outcome.status).toBe("succeeded");
+    expect(getAutomationRun(db, outcome.runId!)?.error).toBeFalsy();
+    expect(getAutomation(db, id)?.consecutiveFailures).toBe(0);
+  });
+
   it("fails a run that stops itself at its deadline while still reading, keeping its result", async () => {
     __configureWorkerSupervisorForTests({ spawn: hostBackedSpawn().spawn, graceMs: 5_000 });
     registerAutomationJobType(

@@ -8,7 +8,7 @@ import { exportRuntimeBudget } from "./archive";
 import { toActualRuntimeError } from "./errors";
 import { SHUTDOWN_STEP_TIMEOUT_MS, normalizeUrl, withTimeout } from "./timeouts";
 import type { ActualApi, ActualApiRuntime, ActualRuntimeHost } from "./types";
-import { createWorkspace, removeWorkspace } from "./workspace";
+import { WORKSPACE_HEARTBEAT_MS, createWorkspace, removeWorkspace, touchWorkspace } from "./workspace";
 
 /**
  * The Direct transport's host inside an automation worker (RD-095 M3).
@@ -53,6 +53,7 @@ type OpenBudget = {
 type HostState = {
   open: OpenBudget | null;
   workspace: string | null;
+  heartbeat: ReturnType<typeof setInterval> | null;
   syncQueue: Promise<void>;
   allowMainThread: boolean;
   snapshots: SnapshotStore;
@@ -68,6 +69,7 @@ async function loadNodeActualApi(): Promise<ActualApi> {
 const state: HostState = {
   open: null,
   workspace: null,
+  heartbeat: null,
   syncQueue: Promise.resolve(),
   allowMainThread: false,
   snapshots: appDbSnapshotStore,
@@ -92,8 +94,19 @@ function assertWorkerThread(): void {
 }
 
 function workspace(): string {
-  state.workspace ??= createWorkspace(threadId);
-  return state.workspace;
+  if (state.workspace) return state.workspace;
+  const dir = createWorkspace(threadId);
+  state.workspace = dir;
+  // Keeps a long run's workspace from looking abandoned to a sweep.
+  state.heartbeat = setInterval(() => {
+    try {
+      touchWorkspace(dir);
+    } catch {
+      // Gone already; the task is ending.
+    }
+  }, WORKSPACE_HEARTBEAT_MS);
+  state.heartbeat.unref?.();
+  return dir;
 }
 
 function snapshotKey(connection: BrowserApiConnection) {
@@ -224,6 +237,10 @@ export async function closeNodeRuntime(options: { refreshSnapshot: boolean } = {
   if (open) await leave(open, options);
   await state.syncQueue.catch(() => undefined);
   state.syncQueue = Promise.resolve();
+  if (state.heartbeat) {
+    clearInterval(state.heartbeat);
+    state.heartbeat = null;
+  }
   if (state.workspace) {
     const dir = state.workspace;
     state.workspace = null;
@@ -253,6 +270,8 @@ export function __configureNodeHostForTests(
 }
 
 export function __resetNodeHostForTests(): void {
+  if (state.heartbeat) clearInterval(state.heartbeat);
+  state.heartbeat = null;
   state.open = null;
   state.workspace = null;
   state.syncQueue = Promise.resolve();

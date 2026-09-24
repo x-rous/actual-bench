@@ -1,7 +1,14 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createWorkspace, removeThreadWorkspaces, runtimeRoot, sweepStaleWorkspaces } from "./workspace";
+import { basename, join } from "node:path";
+import {
+  createWorkspace,
+  removeThreadWorkspaces,
+  runtimeRoot,
+  sweepStaleWorkspaces,
+  touchWorkspace,
+  workspaceOwner,
+} from "./workspace";
 
 let root: string;
 
@@ -34,10 +41,27 @@ describe("budget workspaces", () => {
     createWorkspace(7, root);
     createWorkspace(7, root);
     const other = createWorkspace(71, root);
+    // Thread 7 of another server process sharing the same root.
+    const otherProcess = join(root, "w-someoneelse-7-abc");
+    mkdirSync(otherProcess);
 
     expect(removeThreadWorkspaces(7, root)).toBe(2);
-    expect(readdirSync(root)).toHaveLength(1);
     expect(existsSync(other)).toBe(true);
+    expect(existsSync(otherProcess)).toBe(true);
+  });
+
+  it("names every workspace with this process's owner token", () => {
+    expect(basename(createWorkspace(3, root))).toMatch(new RegExp(`^w-${workspaceOwner()}-3-`));
+  });
+
+  it("never sweeps a workspace that is touched while in use, however long the run", () => {
+    const busy = createWorkspace(1, root);
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60_000);
+    utimesSync(busy, twoHoursAgo, twoHoursAgo);
+    touchWorkspace(busy); // The heartbeat.
+
+    expect(sweepStaleWorkspaces(15 * 60_000, root)).toBe(0);
+    expect(existsSync(busy)).toBe(true);
   });
 
   it("sweeps leftovers at boot, but not a workspace in use within the grace", () => {

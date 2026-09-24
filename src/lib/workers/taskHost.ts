@@ -34,6 +34,11 @@ const automationRunInput = z.object({
   input: z.object({ version: z.number(), data: z.record(z.string(), z.unknown()) }).nullable(),
 });
 
+function abortedSignal(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+}
+
 const handlers: Record<string, TaskHandler> = {
   /**
    * Prove a worker can do real work, not merely start: load every job type,
@@ -59,8 +64,11 @@ const handlers: Record<string, TaskHandler> = {
       { signal: ctx.signal, onPhase: ctx.enterPhase }
     );
     // A Direct budget the job opened is closed before the answer goes back,
-    // and its snapshot refreshed only when the job finished cleanly.
-    await closeNodeRuntime({ refreshSnapshot: outcome.kind === "completed" && !outcome.aborted });
+    // and its snapshot refreshed only when the job finished cleanly. The job
+    // is done by now: a cancel or deadline ends the wait for the upload rather
+    // than holding the answer back until the worker is ended without one.
+    const refreshSnapshot = outcome.kind === "completed" && !outcome.aborted && !ctx.signal.aborted;
+    await Promise.race([closeNodeRuntime({ refreshSnapshot }).catch(() => undefined), abortedSignal(ctx.signal)]);
     return outcome;
   },
 };

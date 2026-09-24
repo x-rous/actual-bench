@@ -58,7 +58,7 @@ own memory limit. Three things follow:
 |---|---|---|
 | `ACTUAL_BENCH_WORKERS_MAX` | `2` | How many runs may be going at once. A scheduled run that finds no free slot waits for the next minute; **Run now** says Bench is busy. |
 | `ACTUAL_BENCH_WORKER_HEAP_MB` | `512` | Memory limit for each run, in MB. Raise it if a large budget's runs stop with "Ran out of memory". |
-| `ACTUAL_BENCH_RUNTIME_DIR` | `actual-runtime`, next to the app database | Where runs keep the budgets they download while they work. Each run gets a private folder that is deleted when it ends; folders left by a crash are removed at the next start. Put it on fast local disk. It needs room for a copy of each budget being worked on at once. |
+| `ACTUAL_BENCH_RUNTIME_DIR` | `actual-runtime`, next to the app database | Where runs keep the budgets they download while they work. Each run gets a private folder that is deleted when it ends; a folder left by a crash is removed automatically once it has gone 15 minutes untouched. Put it on fast local disk. It needs room for a copy of each budget being worked on at once. |
 | `ACTUAL_BENCH_AUTOMATION_EXECUTOR` | `worker` | Set to `in-thread` only if your platform cannot start worker threads. Jobs then run in the server's own thread, as before: deadlines can only *ask* a run to stop, and a run that runs out of memory takes the server with it. |
 
 At startup Bench checks that a worker thread can start. **App Health → Automations

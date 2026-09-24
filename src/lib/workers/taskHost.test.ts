@@ -1,13 +1,14 @@
 /**
  * @jest-environment node
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createAutomation } from "@/lib/app-db/automationRepository";
 import { createAutomationRun } from "@/lib/app-db/automationRunRepository";
 import { __resetAutomationRegistryForTests, registerAutomationJobType } from "@/lib/automation/registry";
+import { __configureNodeHostForTests, __resetNodeHostForTests, getNodeRuntime } from "@/lib/actual/runtime/nodeHost";
 import { createTaskHost } from "./taskHost";
 import type { WorkerToParentMessage } from "./protocol";
 
@@ -117,6 +118,94 @@ describe("worker task host", () => {
 
     expect(seenAbort).toBe(true);
     expect(posted.at(-1)).toMatchObject({ type: "result", output: { kind: "completed", aborted: true } });
+  });
+
+  describe("a Direct budget the job opened", () => {
+    const direct = {
+      id: "direct-1",
+      label: "Direct",
+      mode: "browser-api" as const,
+      baseUrl: "https://actual.example.test",
+      budgetSyncId: "budget-1",
+      serverPassword: "pw",
+    };
+    let upload: jest.Mock;
+
+    beforeEach(() => {
+      process.env.ACTUAL_BENCH_RUNTIME_DIR = join(root, "runtime");
+      upload = jest.fn();
+      const send = jest.fn(async (name: string) => (name === "upload-budget" ? upload() : null));
+      __configureNodeHostForTests({
+        allowMainThread: true,
+        snapshots: { lastSnapshotAt: () => null, recordSnapshot: () => {} },
+        loadApi: async () =>
+          ({
+            init: async () => ({ send }),
+            downloadBudget: async () => undefined,
+            sync: async () => undefined,
+            shutdown: async () => undefined,
+          }) as never,
+      });
+    });
+    afterEach(() => {
+      __resetNodeHostForTests();
+      delete process.env.ACTUAL_BENCH_RUNTIME_DIR;
+    });
+
+    function openingJob(run: (ctx: { signal: AbortSignal }) => Promise<object>) {
+      registerAutomationJobType({
+        type: "host-test",
+        label: "Host test",
+        validateConfig: () => ({}),
+        run: async (ctx) => {
+          await getNodeRuntime(direct);
+          return run(ctx);
+        },
+        summarize: () => ({ outcome: "ok" as const, itemCount: 1 }),
+        serializeResult: () => ({ version: 1, data: {} }),
+      });
+    }
+
+    it("refreshes its snapshot after a clean run, and closes it", async () => {
+      upload.mockResolvedValue({});
+      openingJob(async () => ({}));
+      const { automationId, runId } = automationWithRun();
+      const { host: taskHost, posted } = host();
+
+      await taskHost.handle({ type: "task", taskId: "t1", kind: "automation.run", input: { automationId, runId, attempt: 1, input: null } });
+
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(posted.at(-1)).toMatchObject({ type: "result", output: { kind: "completed", aborted: false } });
+      expect(readdirSync(join(root, "runtime"))).toEqual([]);
+    });
+
+    it("skips the refresh for a run that was stopped", async () => {
+      openingJob((ctx) => new Promise((resolve) => ctx.signal.addEventListener("abort", () => resolve({}))));
+      const { automationId, runId } = automationWithRun();
+      const { host: taskHost } = host();
+
+      const running = taskHost.handle({ type: "task", taskId: "t1", kind: "automation.run", input: { automationId, runId, attempt: 1, input: null } });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await taskHost.handle({ type: "cancel", taskId: "t1" });
+      await running;
+
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    it("answers at once when stopped during the refresh, instead of waiting for the upload", async () => {
+      upload.mockReturnValue(new Promise(() => {})); // An upload that never finishes.
+      openingJob(async () => ({}));
+      const { automationId, runId } = automationWithRun();
+      const { host: taskHost, posted } = host();
+
+      const running = taskHost.handle({ type: "task", taskId: "t1", kind: "automation.run", input: { automationId, runId, attempt: 1, input: null } });
+      while (upload.mock.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+      await taskHost.handle({ type: "cancel", taskId: "t1" });
+      await running;
+
+      // The job had finished: it is reported as it finished, not as stopped.
+      expect(posted.at(-1)).toMatchObject({ type: "result", output: { kind: "completed", aborted: false } });
+    });
   });
 
   it("passes its self-test: every job type loads and a request goes through fetch", async () => {

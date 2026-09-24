@@ -93,6 +93,32 @@ expands to its result, its duration, any retries, and a redacted log.
 
 An automation's own drawer keeps the newest ten runs, which is enough to answer "is this healthy".
 
+## Stopping a run
+
+Each run happens in a worker thread of its own, with its own memory limit, so one run cannot slow
+down or take down the rest of Bench.
+
+- **Every kind of automation has a time limit:** budget file sync 20 minutes, bank sync 10, backup 60,
+  verify backups 30. At the limit the run is asked to stop. If it has not stopped 10 seconds later,
+  its thread is ended.
+- **Cancel** appears on an automation's row while it is running, and stops it the same way.
+- **A run that runs out of memory ends alone.** It reports "Ran out of memory"; the server and any
+  other runs carry on. Your operator can raise the limit (see
+  [Configuration](../../administration/configuration/#automation-workers)).
+
+What a stopped run is called depends on how far it got:
+
+| Stopped while... | Shown as |
+|---|---|
+| Only reading | **Failed**, or **Cancelled** if you pressed Cancel |
+| It may already have changed something: applying a sync, pulling from a bank, writing a backup | **Stopped, may have made changes** |
+
+**Stopped, may have made changes** is never retried automatically, because repeating a write could
+duplicate it, and it does not count toward auto-pause. Check the budget or backup destination before
+relying on what that run did. The next scheduled run goes ahead as normal.
+
+A run that finishes its work just as the time limit passes is recorded as finished.
+
 ## When something fails
 
 Bench treats a failure as information, not an emergency:
@@ -102,6 +128,8 @@ Bench treats a failure as information, not an emergency:
 - **Auto-pause.** After a run of consecutive failures the automation pauses itself and says why.
   **Resume** clears both the pause and the streak. Editing a schedule does not clear a pause.
 - **Overdue is a warning.** An automation well past its next run is flagged even when nothing failed.
+- **Busy is not failure.** If the maximum number of runs is already going, a scheduled run waits for
+  the next minute and does not count toward the streak.
 - **Fail closed on credentials.** An automation that names a credential it cannot resolve - vault off,
   key rotated, enrolment withdrawn - does not run at all, and pauses with that reason.
 
