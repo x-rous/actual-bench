@@ -80,7 +80,7 @@ export async function listAutomationRuns(automationId: string, limit = 25): Prom
 export type RunOutcome = {
   automationId: string;
   runId: string | null;
-  status: "succeeded" | "partial" | "failed" | "cancelled" | "no_changes" | "running" | "skipped";
+  status: "succeeded" | "partial" | "failed" | "cancelled" | "no_changes" | "indeterminate" | "running" | "skipped";
   message?: string;
 };
 
@@ -93,14 +93,23 @@ export type RunOutcome = {
  * error, and reporting "Run finished" over a failed run is worse than saying
  * nothing. A refusal (already running, not found) still throws with its reason.
  */
-export async function runAutomationNow(automationId: string): Promise<RunOutcome> {
-  const run = await startAndWaitForRun(`/api/automations/${automationId}/run`, { method: "POST" });
+export async function runAutomationNow(
+  automationId: string,
+  options: { onStarted?: (runId: string) => void } = {}
+): Promise<RunOutcome> {
+  const run = await startAndWaitForRun(`/api/automations/${automationId}/run`, { method: "POST" }, options);
   return {
     automationId,
     runId: run.id,
     status: run.status,
-    message: run.rollup?.message,
+    message: run.rollup?.message ?? (run.error?.data.message as string | undefined),
   };
+}
+
+/** Ask a running run to stop. Resolves once the request is accepted, not when the run ends. */
+export async function cancelAutomationRun(runId: string): Promise<void> {
+  const response = await fetch(`/api/automations/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+  if (!response.ok) return readError(response);
 }
 
 export async function patchAutomation(

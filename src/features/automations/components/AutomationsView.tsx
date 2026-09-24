@@ -22,6 +22,7 @@ import {
   listReviewQueue,
   patchAutomation,
   runAutomationNow,
+  cancelAutomationRun,
 } from "../lib/automationsApi";
 
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
@@ -72,7 +73,9 @@ export function AutomationsView() {
   };
 
   const runNow = useMutation({
-    mutationFn: runAutomationNow,
+    // Refresh the list as soon as the run exists, so it shows as running - with
+    // Cancel - straight away rather than at the next 15-second refresh.
+    mutationFn: (automationId: string) => runAutomationNow(automationId, { onStarted: () => invalidate() }),
     onSuccess: (outcome) => {
       // Say what happened. A failed run comes back as a 200 with a failed
       // outcome, and calling that "Run finished" hides exactly the thing the
@@ -84,11 +87,26 @@ export function AutomationsView() {
         toast.warning(outcome.message ?? "The run did not start");
       } else if (outcome.status === "partial") {
         toast.warning(outcome.message ?? "Run finished with some items unfinished");
+      } else if (outcome.status === "indeterminate") {
+        toast.warning(
+          outcome.message ?? "The run stopped after it may have made changes. Check before relying on them."
+        );
+      } else if (outcome.status === "cancelled") {
+        toast.info(outcome.message ?? "Run cancelled");
       } else if (outcome.status === "no_changes") {
         toast.success(outcome.message ?? "Nothing to do");
       } else {
         toast.success(outcome.message ?? "Run finished");
       }
+      invalidate();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const cancelRun = useMutation({
+    mutationFn: cancelAutomationRun,
+    onSuccess: () => {
+      toast.info("Stopping the run…");
       invalidate();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -372,6 +390,7 @@ export function AutomationsView() {
           }
           onOpen={setSelectedId}
           onRunNow={(id) => runNow.mutate(id)}
+          onCancelRun={(runId) => cancelRun.mutate(runId)}
           onToggleEnabled={(automation) =>
             setEnabled.mutate({ id: automation.id, enabled: !automation.enabled })
           }

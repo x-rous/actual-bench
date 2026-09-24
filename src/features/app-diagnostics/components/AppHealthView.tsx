@@ -32,6 +32,13 @@ type AutomationHealthSummary = {
   singleInstance: boolean;
   vaultEnabled: boolean;
   runningIds: string[];
+  /** Absent from a server that predates worker threads. */
+  workers?: {
+    executor: "worker" | "in-thread";
+    preflight: { status: "unknown" | "checking" | "ready" | "failed"; heapLimitMb?: number; error?: string };
+    slots: { max: number; busy: number };
+    lastCrash: { at: string; code: string; message: string } | null;
+  };
   overall: "ok" | "warning" | "failing" | "paused" | "idle";
   automations: {
     id: string;
@@ -270,6 +277,36 @@ const AUTOMATION_STATUS_BADGE = {
 };
 
 /**
+ * Where automation jobs run and whether that works (RD-095). A failed startup
+ * check is the one state here that stops every run, so it leads.
+ */
+function WorkersSummary({ workers }: { workers: NonNullable<AutomationHealthSummary["workers"]> }) {
+  if (workers.executor === "in-thread") {
+    return <span>In the server&apos;s own thread (ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread)</span>;
+  }
+  const { preflight, slots, lastCrash } = workers;
+  return (
+    <span className="flex flex-col gap-0.5">
+      {preflight.status === "failed" ? (
+        <span className="text-destructive">
+          Cannot start - automations are not running. {preflight.error ?? ""}
+        </span>
+      ) : (
+        <span>
+          {preflight.status === "ready" ? "Ready" : "Checking"} · {slots.busy} of {slots.max} busy
+          {preflight.heapLimitMb ? ` · ${preflight.heapLimitMb} MB each` : ""}
+        </span>
+      )}
+      {lastCrash && (
+        <span className="text-muted-foreground">
+          Last stopped unexpectedly {formatDate(lastCrash.at)}: {lastCrash.message}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
  * Automations, from the engine's own health accessor (RD-079 / PR-043e).
  *
  * Replaces the RD-058 "unattended sync scheduler" card, which read a single
@@ -311,6 +348,7 @@ function AutomationsCard() {
           }
         />
         <DetailRow label="Enrolled connections" value={vault.data ? String(vault.data.credentials.length) : "-"} />
+        {report?.workers && <DetailRow label="Workers" value={<WorkersSummary workers={report.workers} />} />}
         <DetailRow label="Checked" value={formatDate(report?.checkedAt ?? null)} />
         <DetailRow
           label="Running now"

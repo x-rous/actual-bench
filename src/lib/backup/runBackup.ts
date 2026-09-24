@@ -113,6 +113,12 @@ export type RunBackupOptions = {
    * the same artifact, not a lesser one.
    */
   budgetArchive?: { bytes: Buffer; budgetId: string | null; budgetName: string | null } | null;
+  /**
+   * Called immediately before the first write to a destination. Exporting and
+   * verifying only read; a caller that has to report what a stop at any moment
+   * means (an automation in a worker) needs to know when that changes.
+   */
+  onBeforeStore?: () => void;
 };
 
 function slug(value: string): string {
@@ -371,6 +377,7 @@ export async function runBackup(
       encrypted: encrypted !== null,
     });
 
+    options.onBeforeStore?.();
     const results = await fanOut(db, destinations, objectKey, stored, manifest, artifact);
 
     artifacts.push({

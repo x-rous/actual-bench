@@ -54,6 +54,12 @@ export type SafeSyncDeps = {
   /** Injectable for tests; default to the real orchestrators. */
   runPreview?: typeof runLiveDryRunPreview;
   runApply?: typeof applySyncRun;
+  /**
+   * Called immediately before the first write to the target budget. Everything
+   * earlier only reads; a caller that has to report what a stop at any moment
+   * means (an automation in a worker) needs to know when that changes.
+   */
+  onApplyStart?: () => void;
 };
 
 export type SafeSyncResult =
@@ -134,6 +140,7 @@ export async function runSafeSync(
 
   // 4. Apply safe classes only (new creates + target-marker repairs). Apply
   //    re-validates freshness/route/capabilities per RD-053.
+  deps.onApplyStart?.();
   const apply = await runApply(
     {
       runId: preview.runId,

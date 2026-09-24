@@ -10,6 +10,7 @@ import { __resetEngineStateForTests, settleBackgroundRuns } from "@/lib/automati
 import { __resetAutomationRegistryForTests, registerAutomationJobType } from "@/lib/automation/registry";
 import { POST } from "./route";
 import { GET } from "../../runs/[runId]/route";
+import { POST as CANCEL } from "../../runs/[runId]/cancel/route";
 
 /**
  * "Run now" answers as soon as the run exists and the page follows it by id
@@ -97,6 +98,34 @@ describe("POST /api/automations/[automationId]/run and GET /api/automations/runs
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: "A run is already in progress" });
+  });
+
+  it("cancels a run in progress, and says so when there is none", async () => {
+    // A job that honours its signal: cancelled cooperatively.
+    registerAutomationJobType({
+      type: "slow-job",
+      label: "Slow job",
+      validateConfig: () => ({}),
+      run: (ctx) =>
+        new Promise((resolve) => {
+          ctx.signal.addEventListener("abort", () => resolve({ done: false }));
+        }),
+      summarize: () => ({ outcome: "ok" as const, itemCount: 0, message: "Stopped." }),
+      serializeResult: () => ({ version: 1, data: {} }),
+    });
+    const id = automation();
+    const started = await POST(new Request("http://bench.test"), context(id));
+    const { runId } = (await started.json()) as { runId: string };
+
+    const cancelled = await CANCEL(new Request("http://bench.test"), runContext(runId));
+    expect(cancelled.status).toBe(202);
+    await settleBackgroundRuns();
+
+    const finished = await GET(new Request("http://bench.test"), runContext(runId));
+    expect(((await finished.json()) as { run: { status: string } }).run.status).toBe("cancelled");
+
+    const again = await CANCEL(new Request("http://bench.test"), runContext(runId));
+    expect(again.status).toBe(409);
   });
 
   it("answers 404 for an automation that does not exist", async () => {

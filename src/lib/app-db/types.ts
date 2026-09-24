@@ -460,7 +460,14 @@ export type AutomationRunStatus =
   | "failed"
   | "cancelled"
   /** Ran, nothing to do. Distinct from `succeeded` so history is honest. */
-  | "no_changes";
+  | "no_changes"
+  /**
+   * Stopped - by its deadline, a cancel that had to be forced, or its worker
+   * dying - after it may already have changed something (RD-095). Not a
+   * failure: retrying could repeat a write. Never retried by backoff, never
+   * counted toward auto-pause; someone should check before relying on it.
+   */
+  | "indeterminate";
 
 export type AutomationRunTrigger = "schedule" | "manual" | "retry";
 

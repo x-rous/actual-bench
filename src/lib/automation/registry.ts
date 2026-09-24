@@ -35,6 +35,20 @@ export type AutomationLogger = {
   error(message: string): void;
 };
 
+/**
+ * Where a run is, in the terms that decide what a forced stop means (RD-095).
+ *
+ *   * `reading` - nothing has been changed yet. The default at the start of
+ *     every run. Stopped here, a run simply failed or was cancelled.
+ *   * `mutating` - writing somewhere: an Actual budget, a backup destination.
+ *   * `external` - a request has gone to a third party that may act on it,
+ *     such as a bank pull.
+ *
+ * Stopped in either of the last two, the run is `indeterminate`: some of it
+ * may have happened, so it is never retried blindly.
+ */
+export type AutomationRunPhase = "reading" | "mutating" | "external";
+
 /** Coarse progress for long runs; the engine decides whether to surface it. */
 export type AutomationProgressReporter = (progress: {
   completed: number;
@@ -78,10 +92,18 @@ export type AutomationRunContext<TConfig> = {
    * the work, it does not carry it.
    */
   input: JsonEnvelope | null;
-  /** Aborted on shutdown or user cancellation; honor it between steps. */
+  /** Aborted on shutdown, user cancellation or the deadline; honor it between steps. */
   signal: AbortSignal;
   logger: AutomationLogger;
   reportProgress: AutomationProgressReporter;
+  /**
+   * Say that the run is about to change something (or ask a third party to).
+   * Call it immediately *before* the first write, not after: the phase is
+   * what makes a run that is stopped from here on `indeterminate` rather than
+   * failed, and a write that lands before the call would be misreported.
+   * Phases only move forward; going back to `reading` is ignored.
+   */
+  enterPhase(phase: AutomationRunPhase): void;
 };
 
 /**
@@ -115,6 +137,12 @@ export type AutomationJobType<TConfig = unknown, TResult = unknown> = {
   serializeResult(result: TResult): JsonEnvelope;
   classification?: AutomationClassificationSupport;
   /**
+   * The longest one run may take before it is stopped. Defaults to
+   * `DEFAULT_JOB_DEADLINE_MS`. Generous on purpose: this catches a run that
+   * has hung, not one that is merely slow.
+   */
+  deadlineMs?: number;
+  /**
    * Bring this type's automations in line with the feature's own configuration.
    *
    * Called on every engine tick, before anything is selected to run. It exists
@@ -130,6 +158,9 @@ export type AutomationJobType<TConfig = unknown, TResult = unknown> = {
    */
   reconcile?(db: SqliteDatabase): void | Promise<void>;
 };
+
+/** Deadline for a job type that does not declare one. */
+export const DEFAULT_JOB_DEADLINE_MS = 30 * 60_000;
 
 const registry = new Map<string, AutomationJobType<never, never>>();
 

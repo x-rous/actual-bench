@@ -76,6 +76,7 @@ const RUN_STATUSES: readonly AutomationRunStatus[] = [
   "partial",
   "failed",
   "cancelled",
+  "indeterminate",
   "no_changes",
 ];
 

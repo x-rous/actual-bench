@@ -997,6 +997,39 @@ describe("upgrading an existing database", () => {
     }
   });
 
+  it("accepts the indeterminate run status after v36, keeping earlier runs as they were", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v36-"));
+    const path = join(root, "metadata.sqlite");
+    const now = "2026-09-24T00:00:00.000Z";
+
+    const seed = new Database(path);
+    seed.exec(`
+      CREATE TABLE app_meta (key text PRIMARY KEY, value text NOT NULL, updated_at text NOT NULL);
+      CREATE TABLE automation_runs (
+        id text PRIMARY KEY, automation_id text, type text NOT NULL, status text NOT NULL,
+        started_at text NOT NULL, finished_at text, trigger text NOT NULL DEFAULT 'schedule',
+        attempt integer NOT NULL DEFAULT 1, execution_mode text NOT NULL DEFAULT 'server',
+        result_json text, rollup_json text, error_json text, input_json text
+      );
+    `);
+    seed.prepare("INSERT INTO app_meta (key, value, updated_at) VALUES ('schema_version', '35', ?)").run(now);
+    seed
+      .prepare("INSERT INTO automation_runs (id, type, status, started_at, finished_at) VALUES ('run-old', 'backup', 'succeeded', ?, ?)")
+      .run(now, now);
+    seed.close();
+
+    try {
+      const db = getAppDb(path);
+      expect(runMigrations(db).schemaVersion).toBe(36);
+      expect(getAutomationRun(db, "run-old")).toMatchObject({ status: "succeeded" });
+      const run = createAutomationRun(db, { type: "backup", status: "indeterminate" });
+      expect(getAutomationRun(db, run.id)?.status).toBe("indeterminate");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("moves every secret into the credential store without decrypting, each still opening with its own key (v35)", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v35-"));
     const path = join(root, "metadata.sqlite");

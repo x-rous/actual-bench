@@ -24,6 +24,10 @@ const shared = {
   // aliased module failed to resolve. Mapping it explicitly makes the alias work
   // the same way everywhere.
   moduleNameMapper: {
+    // The worker spawner uses `import.meta`, which Jest cannot parse; tests give
+    // the supervisor a fake worker instead. Listed before the alias so it wins
+    // for both `@/lib/workers/spawnBenchWorker` and a relative import.
+    '(^|/)spawnBenchWorker$': '<rootDir>/src/lib/workers/spawnBenchWorker.stub.ts',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   // Comfortably above Testing Library's 5s async budget (jest.setup.ts). When

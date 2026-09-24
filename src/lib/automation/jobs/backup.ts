@@ -63,7 +63,12 @@ export const backupJobType: AutomationJobType<BackupJobConfig, BackupJobResult> 
     }
 
     ctx.logger.info(`Backing up "${policy.name}" to ${policy.destinationIds.length} destination(s)`);
-    const result = await runBackup(db, policy, { trigger: "scheduled" });
+    // Exporting and verifying only read; writing to a destination changes
+    // something, so a run stopped from there on is reported as indeterminate.
+    const result = await runBackup(db, policy, {
+      trigger: "scheduled",
+      onBeforeStore: () => ctx.enterPhase("mutating"),
+    });
 
     for (const artifact of result.artifacts) {
       for (const destination of artifact.destinations) {
@@ -202,6 +207,9 @@ export const backupJobType: AutomationJobType<BackupJobConfig, BackupJobResult> 
   reconcile(db) {
     reconcileBackupAutomations(db, listBackupPolicies(db));
   },
+
+  // A large budget exports, verifies and uploads to more than one place.
+  deadlineMs: 60 * 60_000,
 
   // A backup constructs nothing through Bench's write pipeline: it reads a
   // budget and stores bytes. Nothing to review, so no classification.

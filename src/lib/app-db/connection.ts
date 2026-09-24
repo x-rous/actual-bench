@@ -212,6 +212,14 @@ export function getAppDbHealth(dbPath = resolveAppDbPath()): AppDbHealth {
   }
 }
 
+/**
+ * Close this module's connection. For a worker thread about to exit, which
+ * owns a connection of its own and should not leave it to be torn down.
+ */
+export function closeAppDb(): void {
+  closeCachedDb();
+}
+
 export function resetAppDbForTests(): void {
   closeCachedDb();
 }

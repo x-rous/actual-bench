@@ -168,6 +168,16 @@ Unattended HTTP-mode sync is opt-in and server-side:
 - a missing/rotated key must fail closed and surface health state;
 - Direct-mode flows cannot become unattended server jobs because their runtime is browser-owned.
 
+### Automation jobs run in worker threads
+
+Every automation run executes in a disposable worker thread (`src/lib/workers/`), through the executor in `src/lib/automation/executor.ts`. The engine claims, schedules and records; the job runs in the worker.
+
+- A job may only use what it gets from its context and the app DB. Nothing in a worker is shared with the server's memory: in-memory caches, `globalThis` singletons and module state belong to the worker's own copy.
+- Call `ctx.enterPhase("mutating")` (or `"external"`) immediately **before** the first write to a budget or destination, or before the first request a third party may act on. A run stopped after that point is recorded `indeterminate` and never retried; stopped before it, it simply failed. A write before the call would be misreported.
+- Honour `ctx.signal`: it carries the job's deadline and the user's cancel. A job that ignores it is ended after a grace period.
+- Nothing secret crosses the worker boundary. A task carries references; the worker reveals secrets itself.
+- Tests run jobs in-thread (`ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread` in `jest.env.cjs`). The worker path is tested with `src/lib/workers/testing/fakeWorker.ts`; the Docker smoke test checks a real worker starts in the production image.
+
 ### Credential store
 
 Every secret is a row in the app DB's `credentials` table, written and read only through `src/lib/credentials/store.ts` and the feature modules on top of it (`rememberedCredentials`, `unattendedCredentials`, `backupSecrets`). Do not add another table or module that seals secrets.
