@@ -117,6 +117,36 @@ describe("SyncView", () => {
     expect(screen.getByText("Needs connection")).toBeInTheDocument();
   });
 
+  it("does not ask for connections for a flow that runs on the server with both budgets enrolled", () => {
+    setup([conn1]);
+    const flow = makeFlow();
+    (flowsHook.useSyncFlows as jest.Mock).mockReturnValue({
+      data: [{ ...flow, options: { version: 1, data: { reviewPolicy: "auto_sync_unattended" } } }],
+      refetch: jest.fn(),
+    });
+    (dataHook.useVaultStatus as jest.Mock).mockReturnValue({
+      data: {
+        enabled: true,
+        credentials: [
+          { connectionFingerprint: connectionFingerprint(conn1) },
+          { connectionFingerprint: connectionFingerprint(conn2) },
+        ],
+      },
+    });
+
+    render(<SyncView />);
+
+    // Its target budget is not open in this tab, and that is fine: it runs on the server.
+    expect(screen.queryByText("Needs connection")).not.toBeInTheDocument();
+
+    // The header says where it runs, and the editor still shows the budget it uses.
+    fireEvent.click(screen.getByText("Card sync"));
+    expect(screen.getByText("runs on the server")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit flow" }));
+    expect(screen.getByText("Family / Joint")).toBeInTheDocument();
+    expect(screen.getByText("Connect this budget to change it.")).toBeInTheDocument();
+  });
+
   it("opens the editor dialog with default transform (same sign, create payee)", async () => {
     setup([conn1, conn2]);
     render(<SyncView />);

@@ -15,7 +15,15 @@ import {
 import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { buildSyncNotesMarker } from "@/lib/sync/notesMarker";
 import { useFlowAccounts } from "../hooks/useSyncData";
-import { isEntityFlow, isSameBudget, isSelfSync, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
+import {
+  isEntityFlow,
+  isSameBudget,
+  isSavedEndpointOnly,
+  isSelfSync,
+  missingRouteFields,
+  type SyncEndpointForm,
+  type SyncFlowFormState,
+} from "../lib/flowForm";
 import { exportFlowDefinition, importFlowDefinition, FlowImportError } from "../lib/flowPortability";
 import { UnattendedEnrollment } from "./UnattendedEnrollment";
 import type { ConnectionInstance } from "@/store/connection";
@@ -63,6 +71,19 @@ function InlineEndpoint({
   onChange: (next: SyncEndpointForm) => void;
 }) {
   const accounts = useFlowAccounts(endpoint.connectionId);
+  // A flow that runs on the server keeps its budgets when they are not
+  // connected here. Show what it uses; changing it needs the budget connected.
+  if (isSavedEndpointOnly(endpoint)) {
+    return (
+      <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-xs">
+        <span className="truncate font-medium">
+          {endpoint.budgetName || endpoint.budgetSyncId}
+          {entityMode ? "" : ` / ${endpoint.accountName || endpoint.accountId}`}
+        </span>
+        <span className="text-muted-foreground">Connect this budget to change it.</span>
+      </div>
+    );
+  }
   return (
     <div className="flex min-w-0 gap-2">
       <select
@@ -160,7 +181,8 @@ export function FlowEditDialog({
   // needs both endpoints chosen.
   const sourceConn = connections.find((c) => c.id === form.source.connectionId);
   const targetConn = connections.find((c) => c.id === form.target.connectionId);
-  const unattendedEligible = Boolean(sourceConn && targetConn);
+  const unattendedEligible =
+    Boolean(sourceConn || isSavedEndpointOnly(form.source)) && Boolean(targetConn || isSavedEndpointOnly(form.target));
   // Block saving an unattended flow whose endpoints are gone - the option is
   // disabled in that case but the stored policy can go stale.
   const invalidUnattended = form.automation.reviewPolicy === "auto_sync_unattended" && !unattendedEligible;
@@ -316,6 +338,8 @@ export function FlowEditDialog({
                   <UnattendedEnrollment
                     sourceConnection={sourceConn}
                     targetConnection={targetConn}
+                    sourceSaved={form.source}
+                    targetSaved={form.target}
                     flowId={flowId}
                     intervalMinutes={clampSyncInterval(form.automation.intervalMinutes)}
                     flowEnabled={form.enabled}

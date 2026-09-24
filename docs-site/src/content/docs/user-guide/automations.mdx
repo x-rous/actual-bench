@@ -69,6 +69,14 @@ Three things to expect:
 - Bench can enrol any budget you have connected to in this browser session. A budget you have not
   connected to yet needs to be connected first, so Bench has its password or API key.
 
+:::note[Why some budgets take longer to open]
+Actual's server keeps a saved copy of each budget, and anything that opens the budget replays every
+change made since that copy. Actual's own app refreshes the copy about once a week. Bench and
+actual-http-api do not, so a budget you use mostly through them opens more slowly over time. Bench
+refreshes it once a week for budgets it runs automations on. If enrolling a budget takes too long,
+open it once in Actual's own app, then enrol it again.
+:::
+
 You can enrol from Connections, from the bank sync or backup dialogs, or from a Budget File Sync
 flow - all four write the same list. This works the same for HTTP API and Direct connections.
 

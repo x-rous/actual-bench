@@ -37,11 +37,16 @@ export function exportedZipToBytes(data: unknown): Uint8Array {
   throw new Error("Direct budget export returned an unsupported byte payload.");
 }
 
-export async function exportRuntimeBudget(runtime: ActualApiRuntime): Promise<Uint8Array> {
-  await withTimeout(runtime.sync(), "Syncing budget");
+export async function exportRuntimeBudget(
+  runtime: ActualApiRuntime,
+  /** Per step. A worker allows longer than a tab: its task has a deadline of its own. */
+  stepTimeoutMs?: number
+): Promise<Uint8Array> {
+  await withTimeout(runtime.sync(), "Syncing budget", stepTimeoutMs);
   const result = await withTimeout(
     runtime.send<ActualExportBudgetResult | null>("export-budget"),
-    "Exporting budget snapshot"
+    "Exporting budget snapshot",
+    stepTimeoutMs
   );
 
   if (!result) {

@@ -117,6 +117,8 @@ export function FlowList({
               const src = config.sourceConnectionFingerprint;
               const tgt = config.targetConnectionFingerprint;
               const bothEnrolled = enrolledFingerprints.has(src) && enrolledFingerprints.has(tgt);
+              // Runs on the server, so it needs nothing connected in this tab.
+              const runsOnServer = config.reviewPolicy === "auto_sync_unattended" && bothEnrolled;
               const unattended = computeUnattendedStatus({
                 reviewPolicy: config.reviewPolicy,
                 flowEnabled: flow.enabled,
@@ -159,7 +161,7 @@ export function FlowList({
                     <span className="sr-only">{flow.enabled ? "Enabled" : "Disabled"}</span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-                    {connected ? (
+                    {connected || runsOnServer ? (
                       <>
                         <span className="truncate">{latestRunLabel(latestRun)}</span>
                         {attentionBadge && (

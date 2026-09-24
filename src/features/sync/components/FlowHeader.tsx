@@ -18,6 +18,8 @@ type FlowHeaderProps = {
   showRunSafeSync: boolean;
   canRunSafeSync: boolean;
   runningSafeSync: boolean;
+  /** An unattended flow with both budgets enrolled: it runs on the server, connected here or not. */
+  runsOnServer?: boolean;
   onToggleEnabled: () => void;
   onRunPreview: () => void;
   onRunSafeSyncNow: () => void;
@@ -26,8 +28,8 @@ type FlowHeaderProps = {
   onShowHistory: () => void;
 };
 
-function hostOf(connection: ConnectionInstance | undefined): string {
-  if (!connection) return "connection not available";
+function hostOf(connection: ConnectionInstance | undefined, runsOnServer: boolean): string {
+  if (!connection) return runsOnServer ? "runs on the server" : "connection not available";
   try {
     return new URL(connection.baseUrl).host;
   } catch {
@@ -35,11 +37,26 @@ function hostOf(connection: ConnectionInstance | undefined): string {
   }
 }
 
-function Endpoint({ endpoint, connection, showAccount }: { endpoint: SyncEndpointForm; connection?: ConnectionInstance; showAccount: boolean }) {
+function Endpoint({
+  endpoint,
+  connection,
+  showAccount,
+  runsOnServer,
+}: {
+  endpoint: SyncEndpointForm;
+  connection?: ConnectionInstance;
+  showAccount: boolean;
+  runsOnServer: boolean;
+}) {
   return (
     <div className="flex w-[22rem] shrink-0 flex-col gap-0.5 rounded-md border border-border bg-muted/30 px-3 py-2">
-      <span className={cn("truncate font-mono text-[11px]", connection ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400")}>
-        {hostOf(connection)}
+      <span
+        className={cn(
+          "truncate font-mono text-[11px]",
+          connection || runsOnServer ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400"
+        )}
+      >
+        {hostOf(connection, runsOnServer)}
       </span>
       <span className="truncate text-[13px] font-semibold">
         {endpoint.budgetName || endpoint.budgetSyncId || "-"}
@@ -85,6 +102,7 @@ export function FlowHeader({
   showRunSafeSync,
   canRunSafeSync,
   runningSafeSync,
+  runsOnServer = false,
   onToggleEnabled,
   onRunPreview,
   onRunSafeSyncNow,
@@ -99,9 +117,9 @@ export function FlowHeader({
     <header className="flex min-h-28 shrink-0 flex-col justify-center gap-2 border-b border-border px-5 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <Endpoint endpoint={form.source} connection={sourceConn} showAccount={form.flowType === "transaction_sync"} />
+          <Endpoint endpoint={form.source} connection={sourceConn} showAccount={form.flowType === "transaction_sync"} runsOnServer={runsOnServer} />
           <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <Endpoint endpoint={form.target} connection={targetConn} showAccount={form.flowType === "transaction_sync"} />
+          <Endpoint endpoint={form.target} connection={targetConn} showAccount={form.flowType === "transaction_sync"} runsOnServer={runsOnServer} />
         </div>
         {/* Primary actions keep labels; secondary actions are icon-only so the
             row never wraps and overflows the header. */}

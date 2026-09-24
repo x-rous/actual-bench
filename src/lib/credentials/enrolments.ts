@@ -36,8 +36,12 @@ type Entry = EnrolmentStatus & { at: number };
 
 /** Enough for the check's deadline and a page to read the answer afterwards. */
 const KEEP_MS = 10 * 60_000;
-/** A cold open of a budget with a very stale snapshot took 54 s in M0. */
-export const VERIFY_DEADLINE_MS = 3 * 60_000;
+/**
+ * A cold open of a budget with a very stale snapshot took 54 s in M0, and a
+ * budget used only through Bench never gets a fresh one until an open
+ * succeeds. Generous, so the first check can get it through.
+ */
+export const VERIFY_DEADLINE_MS = 5 * 60_000;
 
 const REGISTRY_KEY = Symbol.for("actual-bench.enrolments");
 type Holder = { [REGISTRY_KEY]?: Map<string, Entry> };
@@ -93,7 +97,7 @@ async function check(input: SyncCredentialInput, signal: AbortSignal): Promise<V
         code: null,
         message:
           outcome.code === "TIMEOUT"
-            ? "The check took too long. Try again."
+            ? "Opening the budget took too long. Open it once in Actual's own app, which makes it faster to open, then try again."
             : outcome.code === "NO_CAPACITY"
               ? "Bench is busy running automations. Try again in a minute."
               : outcome.message,

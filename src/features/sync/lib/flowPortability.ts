@@ -13,7 +13,7 @@ import { emptyFlowForm, type SyncEndpointForm, type SyncFlowFormState } from "./
 const EXPORT_KIND = "actual-bench-sync-flow";
 const EXPORT_VERSION = 1;
 
-type ExportedEndpoint = Omit<SyncEndpointForm, "connectionId">;
+type ExportedEndpoint = Omit<SyncEndpointForm, "connectionId" | "savedConnectionFingerprint">;
 
 export type FlowExport = {
   kind: typeof EXPORT_KIND;
@@ -23,8 +23,9 @@ export type FlowExport = {
 
 /** Drop the ephemeral connection id from an endpoint (names are kept as hints). */
 function scrubEndpoint(ep: SyncEndpointForm): ExportedEndpoint {
-  const { connectionId: _drop, ...rest } = ep;
+  const { connectionId: _drop, savedConnectionFingerprint: _saved, ...rest } = ep;
   void _drop;
+  void _saved;
   return rest;
 }
 
