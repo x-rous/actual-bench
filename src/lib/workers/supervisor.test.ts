@@ -21,6 +21,35 @@ describe("worker supervisor", () => {
   });
 
   const signal = () => new AbortController().signal;
+  /** Let a terminate's settle-up (the slot release) run. */
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  it("keeps a slot taken until its thread has actually gone, not merely until the task settled", async () => {
+    // Ending a thread is asynchronous. Releasing on settle let a burst of
+    // start-and-cancel run more live threads than the limit.
+    let finishTerminate: () => void = () => {};
+    const { spawn, workers } = scriptedSpawn(() => {}, { ready: false });
+    __configureWorkerSupervisorForTests({ spawn, maxSlots: 1 });
+    const controller = new AbortController();
+
+    const pending = runWorkerTask("any.kind", {}, { signal: controller.signal });
+    workers[0].terminate = () =>
+      new Promise<number>((resolve) => {
+        finishTerminate = () => resolve(1);
+      });
+    controller.abort();
+
+    // The caller hears straight away...
+    await expect(pending).resolves.toMatchObject({ status: "stopped", code: "CANCELLED" });
+    // ...but the thread is still going, so its slot is still taken.
+    await flush();
+    expect(workerSupervisorStatus().slots.busy).toBe(1);
+    expect(workerAvailability()).toMatchObject({ ok: false, code: "NO_CAPACITY" });
+
+    finishTerminate();
+    await flush();
+    expect(workerSupervisorStatus().slots.busy).toBe(0);
+  });
 
   it("runs a task and frees its slot", async () => {
     const { spawn, workers } = scriptedSpawn((worker, task) => {
@@ -32,6 +61,7 @@ describe("worker supervisor", () => {
 
     expect(outcome).toEqual({ status: "result", output: { answer: 42 } });
     expect(workers[0].terminated).toBe(true);
+    await flush();
     expect(workerSupervisorStatus().slots).toEqual({ max: 1, busy: 0 });
   });
 
@@ -51,6 +81,7 @@ describe("worker supervisor", () => {
 
     controller.abort();
     await first;
+    await flush();
     expect(workerAvailability()).toEqual({ ok: true });
   });
 
@@ -84,6 +115,7 @@ describe("worker supervisor", () => {
 
     workers[0].emit("message", { type: "ready", protocol: 1, nodeVersion: "v22", heapLimitMb: 512 });
     expect(workers[0].posted.some((message) => (message as { type?: string }).type === "task")).toBe(false);
+    await flush();
     expect(workerSupervisorStatus().slots.busy).toBe(0);
   });
 

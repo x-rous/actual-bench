@@ -167,13 +167,21 @@ export function runWorkerTask(kind: string, input: unknown, options: { signal: A
     const settle = (outcome: TaskOutcome): void => {
       if (settled) return;
       settled = true;
-      current.busy -= 1;
       if (graceTimer) clearTimeout(graceTimer);
       options.signal.removeEventListener("abort", onAbort);
       if (outcome.status === "stopped" && outcome.code !== "TIMEOUT" && outcome.code !== "CANCELLED") {
         current.lastCrash = { at: new Date().toISOString(), code: outcome.code, message: outcome.message };
       }
-      void worker?.terminate().catch(() => undefined);
+      // The caller hears the outcome now; the slot is given back only once the
+      // thread has actually gone. Slots bound live threads - and their memory -
+      // and `terminate()` is asynchronous, so releasing on settle would let a
+      // burst of start-and-cancel run more threads than the limit.
+      void worker
+        .terminate()
+        .catch(() => undefined)
+        .finally(() => {
+          current.busy -= 1;
+        });
       resolve(outcome);
     };
 
