@@ -16,9 +16,10 @@ import type { ConnectionInstance } from "@/store/connection";
  * A scheduled anything - sync, bank pull, backup - runs with the browser closed,
  * so the server needs that budget's credentials stored: an API key for an HTTP
  * API connection, the Actual server's password for a Direct one (RD-095 M4).
- * That has always been true; what was wrong was where you could do it. The only path ran through a Budget
- * File Sync flow editor, so someone setting up a backup was sent to a feature
- * they may never use, losing the dialog they were filling in.
+ * That has always been true; what was wrong was where you could do it. The
+ * only path ran through a Budget File Sync flow editor, so someone setting up a
+ * backup was sent to a feature they may never use, losing the dialog they were
+ * filling in.
  *
  * This is that action, in one component, usable wherever the need appears. The
  * server checks the credentials against the Actual server before storing
@@ -48,13 +49,14 @@ export function useEnrolledFingerprints() {
 export function EnrolConnection({
   connection,
   onEnrolled,
-  compact,
   allowDirect = false,
+  onConnectionsPage = false,
 }: {
   /** The budget that needs enrolling. Usually the active connection. */
   connection: ConnectionInstance | null;
   onEnrolled?: () => void;
-  compact?: boolean;
+  /** Shown on Automations > Connections itself, where removing it happens. */
+  onConnectionsPage?: boolean;
   /**
    * Offer enrolment for a Direct connection. Only where something can use it:
    * Connections today; the backup and bank-sync dialogs once their jobs run
@@ -83,7 +85,7 @@ export function EnrolConnection({
       });
     },
     onSuccess: () => {
-      toast.success(`${connection?.label ?? "This budget"} can now be used unattended`);
+      toast.success(`${connection?.label ?? "This budget"} is set up for scheduled runs`);
       void queryClient.invalidateQueries({ queryKey: ["vault-status"] });
       void queryClient.invalidateQueries({ queryKey: ["automation-connections"] });
       onEnrolled?.();
@@ -120,28 +122,27 @@ export function EnrolConnection({
 
   if (vault.data.fingerprints.has(connectionFingerprint(connection))) return null;
 
+  const notSetUp = <span className="font-medium">{connection.label} is not set up for scheduled runs.</span>;
+
   // Only the connection the browser is currently using carries its key or password.
   const isActive = active?.id === connection.id;
   if (!isActive) {
     return (
       <div className={box}>
-        <span className="font-medium">{connection.label} is not enrolled for unattended access.</span>{" "}
-        Bench can only enrol the budget you are connected to right now, because that is the only one
-        whose {direct ? "password" : "key"} your browser holds. Switch to it, then enrol it here.
+        {notSetUp} Bench can only enrol the budget you are connected to. Switch to it, then enrol it.
       </div>
     );
   }
+
+  const vaultKey = <code className="rounded bg-black/5 px-1 dark:bg-white/10">SYNC_VAULT_KEY</code>;
+  const secret = direct ? "password" : "API key";
+  const removeWhere = onConnectionsPage ? "on this page" : "in Automations \u2192 Connections";
 
   return (
     <div className={box}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1">
-          <span className="font-medium">{connection.label} is not enrolled for unattended access.</span>{" "}
-          {compact
-            ? "Scheduled work runs with your browser closed."
-            : direct
-              ? "Anything scheduled against it runs with your browser closed, so Bench needs the Actual server's password stored on the server."
-              : "Anything scheduled against it runs with your browser closed, so Bench needs this budget's API key stored on the server."}
+          {notSetUp} Enrol it to let automations run when Bench is closed.
         </span>
         <Button
           size="sm"
@@ -150,15 +151,13 @@ export function EnrolConnection({
           disabled={enrol.isPending}
         >
           {enrol.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ShieldCheck aria-hidden />}
-          {enrol.isPending ? "Checking with the server..." : `Enrol ${connection.label}`}
+          {enrol.isPending ? "Checking..." : `Enrol ${connection.label}`}
         </Button>
       </div>
 
       {enrol.isPending && (
         <p className="mt-1" role="status">
-          Bench is checking {direct ? "the password" : "the key"} with the server
-          {direct ? " by opening the budget, which can take up to a minute" : ""}. Nothing is stored unless
-          it works.
+          Checking with your Actual server. This can take up to a minute. Nothing is saved if the check fails.
         </p>
       )}
 
@@ -167,39 +166,33 @@ export function EnrolConnection({
         className="mt-1 underline underline-offset-4"
         onClick={() => setShowDetail((current) => !current)}
       >
-        {showDetail ? "Hide details" : "What gets stored?"}
+        {showDetail ? "Hide details" : "What gets saved?"}
       </button>
 
       {showDetail && (
         <ul className="mt-1 space-y-0.5 pl-4">
-          {direct ? (
-            <>
-              <li className="list-disc">
-                The Actual server&rsquo;s password{connection.encryptionPassword ? " and this budget's encryption password" : ""},
-                encrypted with the server&rsquo;s <code className="rounded bg-black/5 px-1 dark:bg-white/10">SYNC_VAULT_KEY</code>.
-                The key itself is never stored beside them.
-              </li>
-              <li className="list-disc">
-                The password, not a login session: Actual&rsquo;s session never expires and survives a password
-                change, while a stored password stops working the moment you change it.
-              </li>
-              <li className="list-disc">
-                One password serves every enrolled budget on this server. After changing it, enrol any one of
-                them again to update them all.
-              </li>
-            </>
-          ) : (
-            <li className="list-disc">
-              This budget&rsquo;s API key{connection.encryptionPassword ? " and its encryption password" : ""},
-              encrypted with the server&rsquo;s <code className="rounded bg-black/5 px-1 dark:bg-white/10">SYNC_VAULT_KEY</code>.
-              The key itself is never stored beside them.
-            </li>
-          )}
-          <li className="list-disc">It is checked with the server first. Nothing is stored unless it works.</li>
-          <li className="list-disc">Nothing else: no budget data, and no other budget on this server.</li>
           <li className="list-disc">
-            Withdraw it whenever you like, from Automations &rarr; Connections. Anything relying on it
-            stops and says so.
+            {direct ? "Your Actual server password" : "This budget\u2019s API key"} is encrypted with Bench&rsquo;s vault key
+            ({vaultKey}) and saved.
+          </li>
+          <li className="list-disc">
+            The vault key is kept in the server settings, not in Bench&rsquo;s database, so someone with a copy of the
+            database cannot read the {secret}. Keep the vault key private.
+          </li>
+          <li className="list-disc">
+            Bench only unlocks the {secret} on the server when an automation runs. It is never shown again or sent to
+            your browser.
+          </li>
+          <li className="list-disc">
+            If your budget has an encryption password, it is saved the same way. No budget data is saved.
+          </li>
+          <li className="list-disc">
+            If you change {direct ? "your Actual server password" : "the API key"}, automations for budgets on that
+            server stop running. Enrol one of those budgets again to save the new {secret} for all of them.
+          </li>
+          <li className="list-disc">
+            You can remove it {removeWhere} at any time. Automations that use it will stop running until you enrol
+            again.
           </li>
         </ul>
       )}

@@ -42,16 +42,25 @@ export function sealEnrolmentSecret(secret: SyncCredentialSecret): SealedSecret 
   return sealSecret(JSON.stringify(secret));
 }
 
-const MESSAGES: Record<ActualErrorCode, string> = {
-  AUTH_FAILED: "The Actual server did not accept the password or API key.",
-  ENCRYPTION_KEY_REQUIRED:
-    "This budget is end-to-end encrypted. Reconnect with its encryption password, then enrol again.",
-  ENCRYPTION_KEY_WRONG: "The budget's encryption password was not accepted. Reconnect with the right one, then enrol again.",
+const MESSAGES: Record<Exclude<ActualErrorCode, "AUTH_FAILED">, string> = {
+  ENCRYPTION_KEY_REQUIRED: "This budget is encrypted. Connect again with its encryption password, then enrol.",
+  ENCRYPTION_KEY_WRONG: "The encryption password is not correct. Connect again with the correct one, then enrol.",
   BUDGET_NOT_FOUND: "The server has no budget with this sync ID.",
-  SERVER_UNREACHABLE: "Could not reach the server from Actual Bench. Check the address and that it is running.",
+  SERVER_UNREACHABLE: "Bench cannot reach the server. Check the server address and that the server is running.",
 };
 
-function failure(code: ActualErrorCode | null, fallback: string): VerifyConnectionResult {
+function failure(
+  mode: VerifyConnectionInput["mode"],
+  code: ActualErrorCode | null,
+  fallback: string
+): VerifyConnectionResult {
+  if (code === "AUTH_FAILED") {
+    return {
+      ok: false,
+      code,
+      message: `The server did not accept the ${mode === "http-api" ? "API key" : "password"}.`,
+    };
+  }
   return { ok: false, code, message: code ? MESSAGES[code] : fallback };
 }
 
@@ -79,7 +88,7 @@ export async function verifyConnection(input: VerifyConnectionInput): Promise<Ve
   try {
     secret = JSON.parse(openSecret(input.sealed as SealedSecret)) as SyncCredentialSecret;
   } catch {
-    return failure(null, "Could not open the credential to check it. Is SYNC_VAULT_KEY the same everywhere?");
+    return failure(input.mode, null, "Bench could not read the password to check it. Try again.");
   }
 
   // Anything that passes through from upstream is redacted before it leaves:
@@ -87,7 +96,8 @@ export async function verifyConnection(input: VerifyConnectionInput): Promise<Ve
   const known = [secret.apiKey, secret.serverPassword, secret.encryptionPassword].filter(
     (value): value is string => !!value
   );
-  const fail = (code: ActualErrorCode | null, error: unknown) => failure(code, redactSecrets(describe(error), known));
+  const fail = (code: ActualErrorCode | null, error: unknown) =>
+    failure(input.mode, code, redactSecrets(describe(error), known));
 
   const now = new Date().toISOString();
   let connection;

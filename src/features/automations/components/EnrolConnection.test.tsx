@@ -59,14 +59,18 @@ describe("enrolling a budget for unattended access", () => {
     });
   });
 
-  it("says what gets stored, because storing a key is a decision", async () => {
+  it("says what gets saved, because saving a key is a decision", async () => {
     renderPanel(httpConnection());
 
-    fireEvent.click(await screen.findByRole("button", { name: /what gets stored/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /what gets saved/i }));
 
-    expect(screen.getByText(/encrypted with the server/)).toBeInTheDocument();
-    expect(screen.getByText(/no budget data, and no other budget/)).toBeInTheDocument();
-    expect(screen.getByText(/Withdraw it whenever you like/)).toBeInTheDocument();
+    // The reassurance is in the same sentence as what is saved.
+    expect(screen.getByText(/This budget\u2019s API key is encrypted with Bench/)).toBeInTheDocument();
+    expect(screen.getByText(/someone with a copy of the\s+database cannot read the API key/)).toBeInTheDocument();
+    expect(screen.getByText(/never shown again or sent to\s+your browser/)).toBeInTheDocument();
+    expect(screen.getByText(/No budget data is saved/)).toBeInTheDocument();
+    expect(screen.getByText(/If you change the API key, automations for budgets on that\s+server stop running/)).toBeInTheDocument();
+    expect(screen.getByText(/in Automations \u2192 Connections at any time/)).toBeInTheDocument();
   });
 
   it("says nothing at all once the budget is enrolled", async () => {
@@ -113,8 +117,8 @@ describe("enrolling a budget for unattended access", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /enrol envelope/i }));
 
-    // The check opens the budget, so it says it is checking and that nothing is stored yet.
-    expect(await screen.findByRole("status")).toHaveTextContent(/Nothing is stored unless it works/);
+    // The check opens the budget, so it says it is checking and that nothing is saved if it fails.
+    expect(await screen.findByRole("status")).toHaveTextContent(/Nothing is saved if the check fails/);
     expect(mockedSync.enrollCredential.mock.calls[0][0]).toMatchObject({
       mode: "browser-api",
       secret: { serverPassword: "server-pw", encryptionPassword: "e2ee-pw" },
@@ -123,20 +127,23 @@ describe("enrolling a budget for unattended access", () => {
     finish({ credential: {} as never });
   });
 
-  it("explains what is stored for a Direct connection", async () => {
+  it("explains what is saved for a Direct connection", async () => {
     const direct = { ...httpConnection(), mode: "browser-api", serverPassword: "pw" } as ConnectionInstance;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <EnrolConnection connection={direct} allowDirect />
+        <EnrolConnection connection={direct} allowDirect onConnectionsPage />
       </QueryClientProvider>
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: /what gets stored/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /what gets saved/i }));
 
-    expect(screen.getByText(/The Actual server.s password/)).toBeInTheDocument();
-    expect(screen.getByText(/survives a password\s+change/)).toBeInTheDocument();
-    expect(screen.getByText(/One password serves every enrolled budget/)).toBeInTheDocument();
+    expect(screen.getByText(/Your Actual server password is encrypted with Bench/)).toBeInTheDocument();
+    expect(screen.getByText(/cannot read the password. Keep the vault key private/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/If you change your Actual server password, automations for budgets on that\s+server stop running/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/on this page at any time/)).toBeInTheDocument();
   });
 
   it("cannot enrol a budget the browser is not connected to, and says so", async () => {
@@ -144,7 +151,7 @@ describe("enrolling a budget for unattended access", () => {
     const other = httpConnection({ id: "conn-2", label: "Joint account", budgetSyncId: "budget-2" });
     renderPanel(other);
 
-    expect(await screen.findByText(/only enrol the budget you are connected to/)).toBeInTheDocument();
+    expect(await screen.findByText(/can only enrol the budget you are connected to/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /enrol/i })).not.toBeInTheDocument();
   });
 

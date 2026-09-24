@@ -93,7 +93,7 @@ async function check(input: SyncCredentialInput, signal: AbortSignal): Promise<V
         code: null,
         message:
           outcome.code === "TIMEOUT"
-            ? "The check took more than three minutes. The server may be slow or the budget very large; try again."
+            ? "The check took too long. Try again."
             : outcome.code === "NO_CAPACITY"
               ? "Bench is busy running automations. Try again in a minute."
               : outcome.message,
