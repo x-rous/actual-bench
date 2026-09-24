@@ -458,7 +458,10 @@ function recordOutcome(
 
   switch (outcome.kind) {
     case "completed": {
-      const stoppedBy = abortCode(signal);
+      // Stopped only if the job was still going when it was asked to stop. A
+      // job that had already finished - a worker closing its budget when the
+      // deadline passed, say - finished, whatever the signal says now.
+      const stoppedBy = outcome.aborted ? abortCode(signal) : null;
       const result = withLog(outcome.result, outcome.log);
       if (stoppedBy === "TIMEOUT") {
         // It stopped by itself when its deadline passed. What it did is still

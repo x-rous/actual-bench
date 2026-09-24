@@ -56,6 +56,7 @@ import {
   updateTag,
 } from "../api/tags";
 import { listAccountsForBankSync } from "./bankSyncAccounts";
+import { exportHttpApiBudget } from "./httpBudgetExport";
 import { runBankSyncForAccounts } from "./runBankSync";
 import type { HttpApiConnection } from "@/store/connection";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
@@ -181,9 +182,11 @@ export function createHttpApiTransport(
     // The endpoints are part of actual-http-api's contract, so there is no
     // per-build question to ask the way there is for the Direct runtime.
     canRunBankSync: async () => true,
+    exportBudget: async () => (await exportHttpApiBudget(connection)).bytes,
     runBankSync: (input) =>
       runBankSyncForAccounts({
-        loadAccounts: () => listAccountsForBankSync(connection),
+        loadAccounts: () =>
+          listAccountsForBankSync((body) => apiRequest(connection, "/run-query", { method: "POST", body })),
         accountId: input?.accountId,
         signal: input?.signal,
         trigger: (accountId) => triggerAccountBankSync(connection, accountId),

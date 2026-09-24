@@ -87,6 +87,43 @@ describe("syncCredentialRepository (RD-058 / PR-024a)", () => {
     expect(hasSyncCredential(db, "fp-d")).toBe(false);
   });
 
+  describe("Direct connections (RD-095)", () => {
+    const direct = (fp: string) => ({
+      connectionFingerprint: fp,
+      mode: "browser-api",
+      baseUrl: "https://actual.example.com",
+      budgetSyncId: "budget-9",
+      label: "Direct",
+      secret: { serverPassword: "server-pw-" + fp, encryptionPassword: "enc-9" },
+    });
+
+    it("seals the server password and gives it back only to the server", () => {
+      upsertSyncCredential(db, direct("fp-direct"));
+
+      expect(resolveUnattendedSecret(db, "fp-direct")).toEqual({
+        server: { kind: "direct", serverPassword: "server-pw-fp-direct" },
+        encryptionPassword: "enc-9",
+      });
+      expect(getSyncCredential(db, "fp-direct")?.secret).toEqual({
+        serverPassword: "server-pw-fp-direct",
+        encryptionPassword: "enc-9",
+      });
+      const rows = db.prepare("SELECT ciphertext FROM credentials").all<{ ciphertext: string }>();
+      expect(JSON.stringify(rows)).not.toContain("server-pw-fp-direct");
+      expect(JSON.stringify(listSyncCredentialMeta(db))).not.toContain("server-pw-fp-direct");
+    });
+
+    it("refuses a secret that does not match the connection's mode, storing nothing", () => {
+      expect(() =>
+        upsertSyncCredential(db, { ...direct("fp-wrong"), secret: { apiKey: "not-a-password" } })
+      ).toThrow("A Direct connection is enrolled with its server password.");
+      expect(() => upsertSyncCredential(db, { ...input("fp-wrong-2"), secret: { serverPassword: "pw" } })).toThrow(
+        "An HTTP API connection is enrolled with its API key."
+      );
+      expect(listSyncCredentialMeta(db)).toEqual([]);
+    });
+  });
+
   describe("one server secret per server (F-195)", () => {
     const onServer = (fp: string, budgetSyncId: string, apiKey: string, encryptionPassword?: string) => ({
       connectionFingerprint: fp,

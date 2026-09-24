@@ -45,7 +45,10 @@ own memory limit. Three things follow:
   Sync 20 minutes, bank sync 10, backup 60, backup scrub 30). At the deadline, or
   when you press **Cancel**, the run is asked to stop. If it has not stopped 10
   seconds later, its thread is ended.
-- **A run that runs out of memory ends alone.** The server and other runs carry on.
+- **A run that reaches its memory limit is ended.** Normally the server and other
+  runs carry on. The limit covers the run's JavaScript memory only, not native
+  memory such as SQLite, so it is not a guarantee: if the container itself runs
+  out of memory, the whole server can stop.
 - **A stopped run is reported honestly.** A run stopped while it was only reading
   is **Failed** (or **Cancelled**). A run stopped after it may already have
   changed something - applying a sync, pulling from a bank, writing a backup - is
@@ -58,6 +61,7 @@ own memory limit. Three things follow:
 |---|---|---|
 | `ACTUAL_BENCH_WORKERS_MAX` | `2` | How many runs may be going at once. A scheduled run that finds no free slot waits for the next minute; **Run now** says Bench is busy. |
 | `ACTUAL_BENCH_WORKER_HEAP_MB` | `512` | Memory limit for each run, in MB. Raise it if a large budget's runs stop with "Ran out of memory". |
+| `ACTUAL_BENCH_RUNTIME_DIR` | `actual-runtime`, next to the app database | Where runs keep the budgets they download while they work. Each run gets a private folder that is deleted when it ends; a folder left by a crash is removed automatically once it has gone 15 minutes untouched. Put it on fast local disk. It needs room for a copy of each budget being worked on at once. |
 | `ACTUAL_BENCH_AUTOMATION_EXECUTOR` | `worker` | Set to `in-thread` only if your platform cannot start worker threads. Jobs then run in the server's own thread, as before: deadlines can only *ask* a run to stop, and a run that runs out of memory takes the server with it. |
 
 At startup Bench checks that a worker thread can start. **App Health → Automations

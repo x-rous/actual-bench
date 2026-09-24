@@ -1,10 +1,5 @@
-// Loaded for its side effect: it installs the per-server request lock that the
-// HTTP transport's unattended requests go through (F-189). Without it they fail
-// rather than reach actual-http-api unserialized.
-import "@/lib/http/serverQueue";
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
-import { getSyncCredential } from "@/lib/credentials/unattendedCredentials";
-import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
+import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
 import { decodeFlowPlanConfig } from "./flowConfig";
 import { createAppDbApplyStore } from "./appDbApplyStore";
 import { createAppDbPreviewStore } from "./appDbPreviewStore";
@@ -12,8 +7,8 @@ import { runSafeSync, type SafeSyncResult } from "./safeSyncOrchestrator";
 import { vaultEnabled } from "./vault";
 import type { ApplyTransportProvider } from "./applyOrchestrator";
 import type { PreviewTransportProvider } from "./previewOrchestrator";
-import type { SqliteDatabase, SyncCredential } from "@/lib/app-db/types";
-import type { HttpApiConnection } from "@/store/connection";
+import type { SqliteDatabase } from "@/lib/app-db/types";
+import type { ConnectionInstance } from "@/store/connection";
 
 /**
  * Headless server-side safe-sync (RD-058 / PR-024b). Runs the RD-054 safe-only
@@ -23,7 +18,8 @@ import type { HttpApiConnection } from "@/store/connection";
  *
  * Fail-safe: a disabled/locked vault or an un-enrolled connection returns a
  * typed pre-run status (the scheduler pauses/surfaces it) instead of guessing.
- * HTTP-API only (Hybrid decision); Direct stays on the client interval.
+ * Connections resolve to either mode (RD-095); which flows run here is decided
+ * upstream, by what can be enrolled.
  */
 
 export type ServerSafeSyncBlocked = {
@@ -44,18 +40,6 @@ export function isServerSafeSyncBlocked(r: ServerSafeSyncResult): r is ServerSaf
   );
 }
 
-function connectionFromCredential(cred: SyncCredential): HttpApiConnection {
-  return {
-    id: cred.connectionFingerprint,
-    label: cred.label || cred.baseUrl,
-    mode: "http-api",
-    baseUrl: cred.baseUrl,
-    apiKey: cred.secret.apiKey,
-    budgetSyncId: cred.budgetSyncId,
-    ...(cred.secret.encryptionPassword ? { encryptionPassword: cred.secret.encryptionPassword } : {}),
-  };
-}
-
 export async function runServerSafeSync(
   db: SqliteDatabase,
   flowId: string,
@@ -71,25 +55,23 @@ export async function runServerSafeSync(
   }
   const config = decodeFlowPlanConfig(flow);
 
-  let sourceCred: SyncCredential | null;
-  let targetCred: SyncCredential | null;
+  let sourceConnection: ConnectionInstance | null;
+  let targetConnection: ConnectionInstance | null;
   try {
-    sourceCred = getSyncCredential(db, config.sourceConnectionFingerprint);
-    targetCred = getSyncCredential(db, config.targetConnectionFingerprint);
+    sourceConnection = resolveServerConnection(db, config.sourceConnectionFingerprint);
+    targetConnection = resolveServerConnection(db, config.targetConnectionFingerprint);
   } catch {
     // openSecret failed → vault locked (key changed) or ciphertext tampered.
     return { status: "vault_locked", flowId, message: "Cannot decrypt stored credentials; the vault key may have changed." };
   }
-  if (!sourceCred || !targetCred) {
+  if (!sourceConnection || !targetConnection) {
     return { status: "not_enrolled", flowId, message: "The source or target connection is not enrolled for unattended sync." };
   }
 
-  const sourceConnection = connectionFromCredential(sourceCred);
-  const targetConnection = connectionFromCredential(targetCred);
-
+  // HTTP on its own; Direct on the Node host, inside the worker this runs in.
   const transport: PreviewTransportProvider & ApplyTransportProvider = {
     async openTransport(connection) {
-      return createHttpApiTransport(connection as HttpApiConnection);
+      return openServerTransport(connection);
     },
   };
 

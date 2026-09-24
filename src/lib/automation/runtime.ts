@@ -1,3 +1,4 @@
+import { sweepStaleWorkspaces } from "@/lib/actual/runtime/workspace";
 import { getAppDb } from "@/lib/app-db/connection";
 import { clearAutomationClaims } from "@/lib/app-db/automationRepository";
 import { logger } from "@/lib/logger";
@@ -26,6 +27,17 @@ const BOOT_CLAIM_GRACE_MS = 15 * 60_000;
 const INITIAL_DELAY_MS = 5_000;
 let started = false;
 
+function sweepWorkspaces(): void {
+  try {
+    const swept = sweepStaleWorkspaces();
+    if (swept > 0) logger.info(`[automation] removed ${swept} budget workspace(s) left by workers that are gone`);
+  } catch (error) {
+    logger.warn(
+      `[automation] could not sweep budget workspaces: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
 export function startAutomationEngine(): void {
   if (started) return;
   started = true;
@@ -44,6 +56,12 @@ export function startAutomationEngine(): void {
       `[automation] could not clear stale claims: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+
+  // Budget copies left by workers that are gone, including those of a
+  // process that died. Again at every tick, so a crash's leftovers do not
+  // wait for the next restart; a workspace in use is touched every minute
+  // and is never swept, whichever process owns it.
+  sweepWorkspaces();
 
   logger.info(
     `[automation] engine started (vault ${vaultEnabled() ? "enabled" : "disabled - credential-backed automations will pause"})`
@@ -71,6 +89,7 @@ export function startAutomationEngine(): void {
       // Idempotent, and cheap: it costs two map writes and removes any
       // dependence on which module instance happened to run first.
       ensureAutomationJobTypesRegistered();
+      sweepWorkspaces();
       const summary = await runEngineTick(getAppDb());
       if (summary.ran.length > 0) {
         const detail = summary.ran

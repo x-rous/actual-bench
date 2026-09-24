@@ -25,6 +25,11 @@ const nextConfig: NextConfig = {
   // Next.js 16 - promoted out of experimental).
   // babel-plugin-react-compiler remains in devDependencies for Jest only.
   reactCompiler: true,
+  // Server-side, `@actual-app/api` (the Node build, used by automation workers
+  // for Direct budgets) is loaded from node_modules rather than bundled: its
+  // `dist/` reads `migrations/` and `default-db.sqlite` from beside itself, and
+  // tracing keeps them in the standalone image. The browser build is unaffected.
+  serverExternalPackages: ["@actual-app/api"],
   // Use a fresh output directory so Turbopack doesn't try to acquire a
   // lockfile on the root-owned .next/dev/cache from a prior container run.
   // Exception: on Vercel, use the default ".next" - Vercel's Next.js builder

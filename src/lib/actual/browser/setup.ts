@@ -1,5 +1,14 @@
 "use client";
 
+import { withTimeout } from "../runtime/timeouts";
+
+export {
+  DEFAULT_STEP_TIMEOUT_MS,
+  SHUTDOWN_STEP_TIMEOUT_MS,
+  normalizeUrl,
+  withTimeout,
+} from "../runtime/timeouts";
+
 type ActualInitConfig = {
   dataDir?: string;
   serverURL: string;
@@ -12,38 +21,6 @@ type ActualInitCapable = {
 };
 
 let initializeActualApiTail: Promise<unknown> = Promise.resolve();
-
-export const DEFAULT_STEP_TIMEOUT_MS = 45_000;
-export const SHUTDOWN_STEP_TIMEOUT_MS = 15_000;
-
-export function normalizeUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
-}
-
-export function withTimeout<T>(
-  promise: Promise<T>,
-  stepLabel: string,
-  timeoutMs = DEFAULT_STEP_TIMEOUT_MS
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(
-        new Error(
-          stepLabel +
-            " did not finish within " +
-            Math.round(timeoutMs / 1000) +
-            " seconds."
-        )
-      );
-    }, timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timeoutId) clearTimeout(timeoutId);
-  });
-}
 
 // Serialize init calls so overlapping connects can't interleave inside the
 // Actual API worker. Since 26.8.0 the browser build ships a fully self-contained

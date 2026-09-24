@@ -57,7 +57,10 @@ export type AutomationProgressReporter = (progress: {
 }) => void;
 
 export type AutomationSecret = {
-  apiKey: string;
+  /** Set for an HTTP API enrolment. */
+  apiKey?: string;
+  /** Set for a Direct enrolment. */
+  serverPassword?: string;
   encryptionPassword?: string;
 };
 

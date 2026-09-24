@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { closeNodeRuntime } from "@/lib/actual/runtime/nodeHost";
 import { getAppDb } from "@/lib/app-db/connection";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { executeJob } from "@/lib/automation/jobExecution";
@@ -33,6 +34,11 @@ const automationRunInput = z.object({
   input: z.object({ version: z.number(), data: z.record(z.string(), z.unknown()) }).nullable(),
 });
 
+function abortedSignal(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+}
+
 const handlers: Record<string, TaskHandler> = {
   /**
    * Prove a worker can do real work, not merely start: load every job type,
@@ -52,11 +58,18 @@ const handlers: Record<string, TaskHandler> = {
   "automation.run": async (raw, ctx) => {
     const request = automationRunInput.parse(raw);
     ensureAutomationJobTypesRegistered();
-    return executeJob(
+    const outcome = await executeJob(
       getAppDb(),
       { ...request, input: request.input as Parameters<typeof executeJob>[1]["input"] },
       { signal: ctx.signal, onPhase: ctx.enterPhase }
     );
+    // A Direct budget the job opened is closed before the answer goes back,
+    // and its snapshot refreshed only when the job finished cleanly. The job
+    // is done by now: a cancel or deadline ends the wait for the upload rather
+    // than holding the answer back until the worker is ended without one.
+    const refreshSnapshot = outcome.kind === "completed" && !outcome.aborted && !ctx.signal.aborted;
+    await Promise.race([closeNodeRuntime({ refreshSnapshot }).catch(() => undefined), abortedSignal(ctx.signal)]);
+    return outcome;
   },
 };
 
@@ -103,6 +116,8 @@ export function createTaskHost(post: (message: WorkerToParentMessage) => void): 
         });
       } finally {
         controllers.delete(message.taskId);
+        // Whatever the task did, no budget and no downloaded copy outlives it.
+        await closeNodeRuntime().catch(() => undefined);
       }
     },
   };

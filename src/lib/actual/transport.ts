@@ -1,5 +1,5 @@
 import type { CategoryGroupsResponse } from "../api/categoryGroups";
-import type { NotesIndex } from "../api/notes";
+import type { NotesIndex } from "../api/noteIds";
 import type { SyncCapabilityReport } from "@/lib/app-db/types";
 import type { BankSyncOutcome } from "./bankSync";
 import type { ConnectionMode } from "@/store/connection";
@@ -374,6 +374,14 @@ export interface ActualBenchTransport {
    * offering an action that could only fail.
    */
   canRunBankSync?(): Promise<boolean>;
+  /**
+   * The whole budget as Actual's own archive (a zip), after a sync (RD-095).
+   *
+   * Optional, like `runBankSync`: the capability report's `canExportBudget`
+   * says whether a transport has it, so a backup never discovers mid-run that
+   * it cannot read the budget.
+   */
+  exportBudget?(): Promise<Uint8Array>;
   /** Read source transactions with split lines inline and names resolved. */
   listTransactionsForSync(
     input: ListTransactionsForSyncInput

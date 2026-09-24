@@ -1,5 +1,3 @@
-import { runQuery } from "@/lib/api/query";
-import type { ConnectionInstance } from "@/store/connection";
 
 /**
  * Which accounts are actually linked to a bank (RD-080 / PR-044).
@@ -12,7 +10,9 @@ import type { ConnectionInstance } from "@/store/connection";
  * The AQL `accounts` schema carries everything needed — `account_id`,
  * `account_sync_source`, `last_sync`, `bank_sync_status` — and ActualQL is
  * available in both transports, so this is one read shared by both rather than
- * two per-transport implementations.
+ * two per-transport implementations. Each transport passes its own query
+ * runner: the Direct one may be running in a worker, where there is no
+ * tab-level transport to look up.
  */
 
 export type BankLinkedAccount = {
@@ -61,9 +61,9 @@ export function isBankLinked(account: BankLinkedAccount): boolean {
  * looked at" is only honest if the ones we skipped are visible.
  */
 export async function listAccountsForBankSync(
-  connection: ConnectionInstance
+  query: <T>(body: object) => Promise<T>
 ): Promise<BankLinkedAccount[]> {
-  const response = await runQuery<{ data: AccountRow[] }>(connection, {
+  const response = await query<{ data: AccountRow[] }>({
     ActualQLquery: {
       table: "accounts",
       select: [

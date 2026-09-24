@@ -130,7 +130,7 @@ export async function executeJob(
           ...credentials,
           reveal: () => {
             const secret = credentials.reveal();
-            for (const value of [secret.apiKey, secret.encryptionPassword]) {
+            for (const value of [secret.apiKey, secret.serverPassword, secret.encryptionPassword]) {
               if (value) {
                 secrets.push(value);
                 runLogger.protect(value);
