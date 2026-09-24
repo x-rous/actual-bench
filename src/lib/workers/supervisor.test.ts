@@ -71,6 +71,22 @@ describe("worker supervisor", () => {
     expect(workers[0].terminated).toBe(true);
   });
 
+  it("never starts a task cancelled while its worker was still starting", async () => {
+    // The worker says ready only after the cancel: sending the task then
+    // would start a job the user had already stopped.
+    const { spawn, workers } = scriptedSpawn(() => {}, { ready: false });
+    __configureWorkerSupervisorForTests({ spawn, graceMs: 5_000 });
+    const controller = new AbortController();
+
+    const pending = runWorkerTask("any.kind", {}, { signal: controller.signal });
+    controller.abort();
+    await expect(pending).resolves.toMatchObject({ status: "stopped", code: "CANCELLED", phase: "reading" });
+
+    workers[0].emit("message", { type: "ready", protocol: 1, nodeVersion: "v22", heapLimitMb: 512 });
+    expect(workers[0].posted.some((message) => (message as { type?: string }).type === "task")).toBe(false);
+    expect(workerSupervisorStatus().slots.busy).toBe(0);
+  });
+
   it("lets a task that honours a cancel finish on its own", async () => {
     const { spawn } = scriptedSpawn((worker, task) => {
       worker.onParentMessage = (message) => {

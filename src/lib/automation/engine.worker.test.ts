@@ -190,6 +190,52 @@ describe("automations in worker threads", () => {
     expect(health.status).toBe("warning");
   });
 
+  it("keeps a run that stops itself at its deadline after writing out of the failure streak, with its result", async () => {
+    // Bank sync does this: it checks the signal between accounts and returns
+    // what it has, after the first pull has already gone to a bank.
+    __configureWorkerSupervisorForTests({ spawn: hostBackedSpawn().spawn, graceMs: 5_000 });
+    registerAutomationJobType(
+      jobType({
+        deadlineMs: 30,
+        run: (ctx) =>
+          new Promise<Result>((resolve) => {
+            ctx.enterPhase("external");
+            ctx.signal.addEventListener("abort", () => resolve({ ok: true, note: "1 of 3 accounts synced" }));
+          }),
+      })
+    );
+    const id = automation();
+
+    const outcome = await executeAutomation(db, id);
+
+    expect(outcome.status).toBe("indeterminate");
+    const run = getAutomationRun(db, outcome.runId!)!;
+    // What it did is not thrown away.
+    expect(run.result?.data).toMatchObject({ ok: true });
+    expect(run.error?.data).toMatchObject({ code: "TIMEOUT" });
+    expect(getAutomation(db, id)).toMatchObject({ consecutiveFailures: 0, autoPausedAt: null });
+  });
+
+  it("fails a run that stops itself at its deadline while still reading, keeping its result", async () => {
+    __configureWorkerSupervisorForTests({ spawn: hostBackedSpawn().spawn, graceMs: 5_000 });
+    registerAutomationJobType(
+      jobType({
+        deadlineMs: 30,
+        run: (ctx) =>
+          new Promise<Result>((resolve) => {
+            ctx.signal.addEventListener("abort", () => resolve({ ok: false, note: "read half" }));
+          }),
+      })
+    );
+    const id = automation();
+
+    const outcome = await executeAutomation(db, id);
+
+    expect(outcome).toMatchObject({ status: "failed", code: "TIMEOUT" });
+    expect(getAutomationRun(db, outcome.runId!)?.result?.data).toMatchObject({ ok: false });
+    expect(getAutomation(db, id)?.consecutiveFailures).toBe(1);
+  });
+
   it("cancels a run that honours its signal", async () => {
     __configureWorkerSupervisorForTests({ spawn: hostBackedSpawn().spawn });
     registerAutomationJobType(

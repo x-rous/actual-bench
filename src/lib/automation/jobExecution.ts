@@ -38,6 +38,12 @@ export type JobExecutionOutcome =
       result: JsonEnvelope;
       log: RunLogEntry[];
       aborted: boolean;
+      /**
+       * How far the job had got. It matters when it stopped early because it
+       * was asked to: stopping by itself after it may have written is still
+       * a run that may have written.
+       */
+      phase: AutomationRunPhase;
     }
   /** The job threw. `message` is redacted. */
   | { kind: "threw"; message: string; log: RunLogEntry[] }
@@ -164,6 +170,7 @@ export async function executeJob(
       result: jobType.serializeResult(result),
       log: runLogger.entries(),
       aborted: hooks.signal.aborted,
+      phase,
     };
   } catch (error) {
     const message = redactSecrets(error instanceof Error ? error.message : String(error), secrets);

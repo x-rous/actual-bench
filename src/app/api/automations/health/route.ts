@@ -16,11 +16,16 @@ export async function GET() {
     const db = getAppDb();
     await reconcileJobTypes(db);
     const report = buildAutomationHealth(db);
+    const executor = getAutomationExecutor().name;
+    const workers = { executor, ...workerSupervisorStatus() };
+    // Workers that cannot start stop every automation, whatever each one's
+    // own history says; the overall status must not read healthy over that.
+    const workersDown = executor === "worker" && workers.preflight.status === "failed";
     return NextResponse.json({
       ...report,
-      overall: overallAutomationStatus(report),
+      overall: workersDown ? "failing" : overallAutomationStatus(report),
       // Where jobs run, and whether that is working (RD-095).
-      workers: { executor: getAutomationExecutor().name, ...workerSupervisorStatus() },
+      workers,
     });
   } catch (error) {
     return appDbErrorResponse(error);

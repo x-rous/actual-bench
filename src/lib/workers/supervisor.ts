@@ -177,8 +177,21 @@ export function runWorkerTask(kind: string, input: unknown, options: { signal: A
       resolve(outcome);
     };
 
+    let taskSent = false;
+
     function onAbort(): void {
       if (settled) return;
+      // Not started yet: nothing to ask, and nothing to wait for. Settle now,
+      // and the worker is never sent the task.
+      if (!taskSent) {
+        settle({
+          status: "stopped",
+          code: stopCodeFrom(options.signal),
+          phase: "reading",
+          message: "Stopped before it started.",
+        });
+        return;
+      }
       try {
         worker.postMessage({ type: "cancel", taskId });
       } catch {
@@ -221,6 +234,11 @@ export function runWorkerTask(kind: string, input: unknown, options: { signal: A
       const message = parsed.data;
       switch (message.type) {
         case "ready":
+          // A cancel or deadline that arrived while the worker was starting
+          // has already settled the task; a cancel sent before this point
+          // would have reached a worker with no task to cancel.
+          if (options.signal.aborted) return;
+          taskSent = true;
           worker.postMessage({ type: "task", taskId, kind, input });
           return;
         case "phase":

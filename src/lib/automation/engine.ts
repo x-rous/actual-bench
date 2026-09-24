@@ -421,12 +421,17 @@ function recordOutcome(
   const { definition, run, outcome, signal, deadlineMs, scheduledFrom } = input;
   const automationId = definition.id;
 
-  const finishFailure = (message: string, log: RunLogEntry[], code?: StopCode): EngineRunOutcome => {
+  const finishFailure = (
+    message: string,
+    log: RunLogEntry[],
+    code?: StopCode,
+    result?: JsonEnvelope
+  ): EngineRunOutcome => {
     const safeMessage = redact(message);
     finalizeAutomationRun(db, run.id, {
       status: "failed",
       error: errorEnvelope(safeMessage, code),
-      result: withLog(null, log),
+      result: result ?? withLog(null, log),
       rollup: { outcome: "failed", itemCount: 0, message: safeMessage.slice(0, 500) },
     });
     const updated = recordAutomationOutcome(db, automationId, { success: false, at: new Date().toISOString() });
@@ -454,10 +459,23 @@ function recordOutcome(
   switch (outcome.kind) {
     case "completed": {
       const stoppedBy = abortCode(signal);
-      if (stoppedBy === "TIMEOUT") {
-        return finishFailure(deadlineMessage(deadlineMs), outcome.log, "TIMEOUT");
-      }
       const result = withLog(outcome.result, outcome.log);
+      if (stoppedBy === "TIMEOUT") {
+        // It stopped by itself when its deadline passed. What it did is still
+        // in its own result, which is kept either way. If it had got as far as
+        // changing something, it is a run that may have written - the same as
+        // one that had to be ended - and must not count as a failure or be
+        // backed off into a retry that could repeat the write.
+        if (outcome.phase !== "reading") {
+          const note = `${deadlineMessage(deadlineMs)} It may have made changes before it stopped; check before relying on them.`;
+          return finishNeutral("indeterminate", {
+            result,
+            error: errorEnvelope(note, "TIMEOUT"),
+            rollup: { ...outcome.rollup, outcome: "partial", message: redact(note).slice(0, 500) },
+          });
+        }
+        return finishFailure(deadlineMessage(deadlineMs), outcome.log, "TIMEOUT", result);
+      }
       if (stoppedBy === "CANCELLED") {
         return finishNeutral("cancelled", { result, rollup: outcome.rollup });
       }
