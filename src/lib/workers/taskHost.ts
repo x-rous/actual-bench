@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { closeNodeRuntime } from "@/lib/actual/runtime/nodeHost";
+import { verifyConnection, verifyConnectionInput } from "@/lib/actual/verifyConnection";
 import { getAppDb } from "@/lib/app-db/connection";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { executeJob } from "@/lib/automation/jobExecution";
@@ -53,6 +54,12 @@ const handlers: Record<string, TaskHandler> = {
     if (body !== "ok") throw new Error(`The self-test request returned "${body.slice(0, 40)}"`);
     return { ok: true };
   },
+
+  /**
+   * Check an enrolment against its Actual server before it is stored. The
+   * secret arrives sealed and is opened only here.
+   */
+  "connection.verify": async (raw) => verifyConnection(verifyConnectionInput.parse(raw)),
 
   /** Run one automation job, exactly as the engine would in-thread. */
   "automation.run": async (raw, ctx) => {

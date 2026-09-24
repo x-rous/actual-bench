@@ -160,8 +160,10 @@ Rules:
 
 ### Unattended-sync credential vault
 
-Unattended HTTP-mode sync is opt-in and server-side:
+Unattended access is opt-in and server-side, for HTTP API and Direct connections alike:
 
+- an HTTP API connection enrols its API key; a Direct connection enrols the Actual server's **password** (never a session token: Actual's token is shared by every client, never expires and survives a password change);
+- an enrolment is **checked against the Actual server, in a worker, before anything is stored** (`src/lib/credentials/enrolments.ts`). Unattended secrets are one per server, so storing an unchecked one could break every enrolled budget on that server;
 - credentials are encrypted at rest;
 - encryption depends on `SYNC_VAULT_KEY`;
 - decrypted values never return to the browser;
@@ -175,7 +177,7 @@ Every automation run executes in a disposable worker thread (`src/lib/workers/`)
 - A job may only use what it gets from its context and the app DB. Nothing in a worker is shared with the server's memory: in-memory caches, `globalThis` singletons and module state belong to the worker's own copy.
 - Call `ctx.enterPhase("mutating")` (or `"external"`) immediately **before** the first write to a budget or destination, or before the first request a third party may act on. A run stopped after that point is recorded `indeterminate` and never retried; stopped before it, it simply failed. A write before the call would be misreported.
 - Honour `ctx.signal`: it carries the job's deadline and the user's cancel. A job that ignores it is ended after a grace period.
-- Nothing secret crosses the worker boundary. A task carries references; the worker reveals secrets itself.
+- No secret crosses the worker boundary in plaintext. A task carries references and the worker reveals secrets itself. The one exception is a secret that is not stored yet (an enrolment being checked): it crosses sealed with `SYNC_VAULT_KEY` and is opened only inside the worker.
 - Tests run jobs in-thread (`ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread` in `jest.env.cjs`). The worker path is tested with `src/lib/workers/testing/fakeWorker.ts`; the Docker smoke test checks a real worker starts in the production image.
 
 ### Credential store

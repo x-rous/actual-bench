@@ -1,35 +1,145 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
+import { __resetEnrolmentsForTests, __waitForEnrolmentsForTests } from "@/lib/credentials/enrolments";
+import { getSyncCredential, upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
+import { __configureWorkerSupervisorForTests } from "@/lib/workers/supervisor";
+import { scriptedSpawn } from "@/lib/workers/testing/fakeWorker";
+import { GET as getEnrolment } from "./enrolments/[id]/route";
 import { POST } from "./route";
 
+/**
+ * Enrolment through the route (RD-095 M4): checked against the server, stored
+ * only if the check passes. HTTP checks run in-thread here, as Jest runs jobs
+ * (`jest.env.cjs`); the Direct worker path is covered in `enrolments.test.ts`.
+ */
+
+const HTTP = {
+  connectionFingerprint: "fp-http",
+  mode: "http-api",
+  baseUrl: "https://api.example.test",
+  budgetSyncId: "budget-1",
+  label: "Household",
+};
+
+function post(body: unknown): Promise<Response> {
+  return POST(
+    new Request("http://bench.test/api/sync-credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
+
+async function enrolmentOf(response: Response) {
+  const { enrolmentId } = (await response.json()) as { enrolmentId: string };
+  await __waitForEnrolmentsForTests();
+  const status = await getEnrolment(new Request("http://bench.test"), { params: Promise.resolve({ id: enrolmentId }) });
+  return (await status.json()) as { status: string; code?: string | null; message?: string };
+}
+
 describe("POST /api/sync-credentials", () => {
-  const original = process.env.SYNC_VAULT_KEY;
+  const saved = { key: process.env.SYNC_VAULT_KEY, db: process.env.ACTUAL_BENCH_DB_PATH, fetch: global.fetch };
+  let root: string;
 
   beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "actual-bench-enrol-route-"));
+    process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
     process.env.SYNC_VAULT_KEY = "test-operator-key";
+    __resetEnrolmentsForTests();
   });
   afterEach(() => {
-    if (original === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = original;
+    global.fetch = saved.fetch;
+    resetAppDbForTests();
+    rmSync(root, { recursive: true, force: true });
+    for (const [name, value] of [
+      ["SYNC_VAULT_KEY", saved.key],
+      ["ACTUAL_BENCH_DB_PATH", saved.db],
+    ] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   });
 
-  // The store accepts a Direct secret (RD-095 M3); enrolling one waits for the
-  // enrolment flow that verifies it in a worker first.
+  function answerAccounts(status: number, body: unknown = { data: [] }) {
+    global.fetch = jest.fn(async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+  }
+
+  it("refuses while the vault is off", async () => {
+    delete process.env.SYNC_VAULT_KEY;
+    expect((await post({ ...HTTP, secret: { apiKey: "key" } })).status).toBe(400);
+  });
+
   it.each([
-    { serverPassword: "pw" },
-    { apiKey: "key", serverPassword: "pw" },
-  ])("still refuses to enrol a Direct connection (%j)", async (secret) => {
-    const response = await POST(
-      new Request("http://bench.test/api/sync-credentials", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          connectionFingerprint: "fp-1",
-          mode: "browser-api",
-          baseUrl: "https://actual.example.com",
-          budgetSyncId: "budget-1",
-          secret,
-        }),
-      })
-    );
+    [{ ...HTTP, secret: { serverPassword: "pw" } }, /API key/],
+    [{ ...HTTP, mode: "browser-api", secret: { apiKey: "key" } }, /server password/],
+    [{ ...HTTP, mode: "carrier-pigeon", secret: { apiKey: "key" } }, /Unknown connection mode/],
+  ])("refuses a secret that does not fit the mode (%#)", async (body, message) => {
+    const response = await post(body);
     expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toMatch(message);
+  });
+
+  it("refuses a Direct enrolment at once when automations run in-thread", async () => {
+    const response = await post({ ...HTTP, mode: "browser-api", secret: { serverPassword: "pw" } });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: "NEEDS_WORKERS" });
+  });
+
+  it("checks an HTTP key with the server, then stores it", async () => {
+    answerAccounts(200);
+    const response = await post({ ...HTTP, secret: { apiKey: "good-key" } });
+    expect(response.status).toBe(202);
+
+    expect(await enrolmentOf(response)).toMatchObject({ status: "enrolled" });
+    expect(getSyncCredential(getAppDb(), "fp-http")?.secret.apiKey).toBe("good-key");
+    // The check went to the server with the key being enrolled.
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("x-api-key")).toBe("good-key");
+  });
+
+  it.each([
+    [401, "AUTH_FAILED"],
+    [403, "AUTH_FAILED"],
+    [404, "BUDGET_NOT_FOUND"],
+  ])("stores nothing when the server answers %i, and keeps the key it already had", async (status, code) => {
+    upsertSyncCredential(getAppDb(), { ...HTTP, secret: { apiKey: "working-key" } });
+    answerAccounts(status, { error: "nope" });
+
+    const enrolment = await enrolmentOf(await post({ ...HTTP, secret: { apiKey: "mistyped-key" } }));
+
+    expect(enrolment).toMatchObject({ status: "failed", code });
+    expect(getSyncCredential(getAppDb(), "fp-http")?.secret.apiKey).toBe("working-key");
+  });
+
+  it("reports an unreachable server as such", async () => {
+    global.fetch = jest.fn(async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+
+    const enrolment = await enrolmentOf(await post({ ...HTTP, secret: { apiKey: "key" } }));
+
+    expect(enrolment).toMatchObject({ status: "failed", code: "SERVER_UNREACHABLE" });
+    expect(getSyncCredential(getAppDb(), "fp-http")).toBeNull();
+  });
+
+  it("says Bench is busy, at once, when no worker slot is free", async () => {
+    process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = "worker";
+    try {
+      __configureWorkerSupervisorForTests({ maxSlots: 0, spawn: scriptedSpawn(() => {}).spawn });
+      const response = await post({ ...HTTP, secret: { apiKey: "key" } });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ code: "BUSY", error: expect.stringMatching(/busy/) });
+    } finally {
+      process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = "in-thread";
+      __configureWorkerSupervisorForTests();
+    }
+  });
+
+  it("answers 404 for an enrolment it does not know", async () => {
+    const response = await getEnrolment(new Request("http://bench.test"), { params: Promise.resolve({ id: "nope" }) });
+    expect(response.status).toBe(404);
   });
 });

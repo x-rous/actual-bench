@@ -156,9 +156,78 @@ export function getVaultStatus(): Promise<{ enabled: boolean; credentials: SyncC
   return jsonFetch("/api/sync-credentials");
 }
 
-/** Enroll (seal + store) a connection's secret for unattended sync. */
-export function enrollCredential(input: SyncCredentialInput): Promise<{ credential: SyncCredentialMeta }> {
-  return jsonFetch("/api/sync-credentials", { method: "POST", body: JSON.stringify(input) });
+/** An enrolment the server checked and turned down, with its reason code. */
+export class EnrolmentFailedError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | null
+  ) {
+    super(message);
+    this.name = "EnrolmentFailedError";
+  }
+}
+
+/** Reads of the enrolment's status that may fail in a row before the page gives up. */
+const MAX_ENROLMENT_READ_FAILURES = 5;
+/** Longer than the server's three-minute check, with room to read the answer. */
+const ENROLMENT_WAIT_MS = 5 * 60_000;
+
+/**
+ * Enrol a connection for unattended use (RD-095 M4).
+ *
+ * The server checks it against the Actual server first - for Direct that means
+ * opening the budget, which can take a while - and stores it only if the check
+ * passes. The request answers with an id at once; this follows it to the end,
+ * so a caller simply awaits the enrolment as it always has.
+ */
+export async function enrollCredential(
+  input: SyncCredentialInput,
+  options: { sleep?: (ms: number) => Promise<void> } = {}
+): Promise<{ credential: SyncCredentialMeta }> {
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const { enrolmentId } = await jsonFetch<{ enrolmentId: string }>("/api/sync-credentials", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  const url = `/api/sync-credentials/enrolments/${encodeURIComponent(enrolmentId)}`;
+  const deadline = Date.now() + ENROLMENT_WAIT_MS;
+  let failures = 0;
+
+  for (;;) {
+    await sleep(1_000);
+    let response: Response;
+    try {
+      response = await fetch(url, { cache: "no-store" });
+    } catch (error) {
+      failures += 1;
+      if (failures >= MAX_ENROLMENT_READ_FAILURES) {
+        throw new Error(error instanceof Error ? error.message : "Could not reach the server.");
+      }
+      continue;
+    }
+
+    let body: { status?: string; credential?: SyncCredentialMeta; code?: string | null; message?: string; error?: string } = {};
+    try {
+      body = (await response.json()) as typeof body;
+    } catch {
+      // Keep the status code.
+    }
+    // Not found is an answer, not a blip: the server no longer knows this enrolment.
+    if (response.status === 404) throw new Error(body.error ?? "This enrolment is no longer being tracked.");
+    if (!response.ok) {
+      failures += 1;
+      if (failures >= MAX_ENROLMENT_READ_FAILURES) throw new Error(body.error ?? `Could not read the enrolment (${response.status}).`);
+      continue;
+    }
+    failures = 0;
+
+    if (body.status === "enrolled" && body.credential) return { credential: body.credential };
+    if (body.status === "failed") throw new EnrolmentFailedError(body.message ?? "The check failed.", body.code ?? null);
+    if (Date.now() > deadline) {
+      throw new Error("The check is taking longer than expected. Look in Connections in a minute to see whether it finished.");
+    }
+  }
 }
 
 /** Withdraw an enrolled credential by connection fingerprint. */

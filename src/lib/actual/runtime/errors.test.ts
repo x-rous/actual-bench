@@ -36,6 +36,12 @@ describe("classifyActualError", () => {
     expect(classifyActualError(error)).toBe("SERVER_UNREACHABLE");
   });
 
+  it("keeps the code of an error it already classified", () => {
+    expect(classifyActualError(new ActualRuntimeError("AUTH_FAILED", "The Actual server refused the password."))).toBe(
+      "AUTH_FAILED"
+    );
+  });
+
   it("leaves anything else unclassified", () => {
     expect(classifyActualError(new Error("We had an unknown problem opening \"abc\"."))).toBeNull();
     expect(classifyActualError("boom")).toBeNull();

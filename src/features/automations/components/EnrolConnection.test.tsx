@@ -84,11 +84,59 @@ describe("enrolling a budget for unattended access", () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
-  it("explains that a Direct connection can never run unattended", async () => {
+  it("does not offer a Direct connection where nothing can use it yet", async () => {
     renderPanel(httpConnection({ mode: "browser-api", label: "Local budget" }));
 
     expect(await screen.findByText(/is a Direct connection/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /enrol/i })).not.toBeInTheDocument();
+  });
+
+  it("enrols a Direct connection with its server password where it is allowed", async () => {
+    let finish: (value: { credential: never }) => void = () => {};
+    mockedSync.enrollCredential.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const direct = {
+      id: "conn-1",
+      label: "Envelope",
+      mode: "browser-api",
+      baseUrl: "https://actual.example.com",
+      budgetSyncId: "budget-1",
+      serverPassword: "server-pw",
+      encryptionPassword: "e2ee-pw",
+    } as ConnectionInstance;
+    useConnectionStore.setState({ instances: [direct], activeInstanceId: direct.id });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <EnrolConnection connection={direct} allowDirect />
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /enrol envelope/i }));
+
+    // The check opens the budget, so it says it is checking and that nothing is stored yet.
+    expect(await screen.findByRole("status")).toHaveTextContent(/Nothing is stored unless it works/);
+    expect(mockedSync.enrollCredential.mock.calls[0][0]).toMatchObject({
+      mode: "browser-api",
+      secret: { serverPassword: "server-pw", encryptionPassword: "e2ee-pw" },
+    });
+    expect(mockedSync.enrollCredential.mock.calls[0][0].secret).not.toHaveProperty("apiKey");
+    finish({ credential: {} as never });
+  });
+
+  it("explains what is stored for a Direct connection", async () => {
+    const direct = { ...httpConnection(), mode: "browser-api", serverPassword: "pw" } as ConnectionInstance;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <EnrolConnection connection={direct} allowDirect />
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /what gets stored/i }));
+
+    expect(screen.getByText(/The Actual server.s password/)).toBeInTheDocument();
+    expect(screen.getByText(/survives a password\s+change/)).toBeInTheDocument();
+    expect(screen.getByText(/One password serves every enrolled budget/)).toBeInTheDocument();
   });
 
   it("cannot enrol a budget the browser is not connected to, and says so", async () => {

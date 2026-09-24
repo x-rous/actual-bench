@@ -58,19 +58,30 @@ The **Connections** tab lists the budgets Bench may act on, when each was enroll
 worth the tab - **what depends on it**. Withdrawing a credential stops those automations, so the
 confirmation names them before it happens.
 
-Two things to expect:
+Three things to expect:
 
+- **Bench checks before it stores.** Enrolling asks the server whether the credentials work. For a
+  Direct connection that means opening the budget, which can take up to a minute. If the check
+  fails, you see why (wrong password, wrong encryption password, unknown budget, server
+  unreachable), and **nothing is stored**.
 - Enrolment is **per budget, not per server**. Three budgets on one server are three entries.
-- Bench can only enrol the budget you are **currently connected to**, because that is the only API
-  key your browser holds. Any other budget says so and asks you to switch to it first.
+- Bench can only enrol the budget you are **currently connected to**, because that is the only key
+  or password your browser holds. Any other budget says so and asks you to switch to it first.
 
 You can enrol from Connections, from the bank sync or backup dialogs, or from a Budget File Sync
-flow - all four write the same list.
+flow - all four write the same list. A **Direct** connection can be enrolled from **Connections**;
+scheduled jobs for Direct budgets are not available yet.
 
 :::caution[What gets stored]
-That budget's API key, and its encryption password if it has one, encrypted with the server's
-`SYNC_VAULT_KEY`. The key itself is never stored beside them. Nothing else is kept: no budget data,
-and no other budget on the same server.
+Encrypted with the server's `SYNC_VAULT_KEY`, which is never stored beside them:
+
+- **HTTP API connection:** the API key, and the budget's encryption password if it has one.
+- **Direct connection:** the Actual server's password, and the budget's encryption password if it
+  has one. Bench stores the password rather than a login session, because Actual's session never
+  expires and survives a password change. One password serves every enrolled budget on that server:
+  after changing it, enrol any one of them again to update them all.
+
+Nothing else is kept: no budget data, and no other budget on the same server.
 :::
 
 ## Schedules

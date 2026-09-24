@@ -1,4 +1,4 @@
-import { runFlowNow } from "./syncApi";
+import { EnrolmentFailedError, enrollCredential, runFlowNow } from "./syncApi";
 import type { AutomationRun } from "@/lib/app-db/types";
 
 /**
@@ -75,5 +75,58 @@ describe("runFlowNow", () => {
     ) as unknown as typeof fetch;
 
     await expect(runFlowNow("flow-1")).rejects.toThrow("This flow isn't set to sync unattended.");
+  });
+});
+
+describe("enrollCredential", () => {
+  const input = {
+    connectionFingerprint: "fp-1",
+    mode: "browser-api",
+    baseUrl: "https://actual.example.test",
+    budgetSyncId: "budget-1",
+    secret: { serverPassword: "pw" },
+  };
+  const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
+  const noWait = { sleep: async () => undefined };
+
+  it("starts the enrolment and follows it until the server has stored it", async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(reply(202, { enrolmentId: "e1" }))
+      .mockResolvedValueOnce(reply(200, { status: "verifying" }))
+      .mockResolvedValueOnce(reply(200, { status: "enrolled", credential: { connectionFingerprint: "fp-1" } }));
+
+    await expect(enrollCredential(input, noWait)).resolves.toEqual({ credential: { connectionFingerprint: "fp-1" } });
+    expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe("/api/sync-credentials/enrolments/e1");
+  });
+
+  it("throws the server's reason, with its code, when the check fails", async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(reply(202, { enrolmentId: "e1" }))
+      .mockResolvedValueOnce(reply(200, { status: "failed", code: "AUTH_FAILED", message: "Not accepted." }));
+
+    const error = await enrollCredential(input, noWait).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(EnrolmentFailedError);
+    expect(error).toMatchObject({ code: "AUTH_FAILED", message: "Not accepted." });
+  });
+
+  it("rides out a few failed reads, but stops at once when the server no longer knows the enrolment", async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(reply(202, { enrolmentId: "e1" }))
+      .mockRejectedValueOnce(new TypeError("network down"))
+      .mockResolvedValueOnce(reply(500, { error: "busy" }))
+      .mockResolvedValueOnce(reply(404, { error: "This enrolment is no longer being tracked." }));
+
+    await expect(enrollCredential(input, noWait)).rejects.toThrow("no longer being tracked");
+    expect(global.fetch).toHaveBeenCalledTimes(4);
+  });
+
+  it("throws the route's refusal without polling", async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce(reply(503, { error: "Bench is busy running automations." }));
+
+    await expect(enrollCredential(input, noWait)).rejects.toThrow("busy");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
