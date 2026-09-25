@@ -18,6 +18,7 @@ import {
   SchedulePicker,
   type ScheduleValue,
 } from "@/features/automations/components/SchedulePicker";
+import { useSavedBudgetConnector } from "@/features/connect/useSavedBudgetConnector";
 import { EnrolConnection } from "@/features/automations/components/EnrolConnection";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
@@ -81,6 +82,7 @@ export function BackupRuleDialog({
    * exports it and the server stores it.
    */
   const savedConnections = useConnectionStore((state) => state.instances);
+  const savedConnector = useSavedBudgetConnector();
   const choices = savedConnections.map((connection) => {
     const httpApi = isHttpApiConnection(connection);
     const enrolled = sources.some((entry) => entry.connectionFingerprint === connectionFingerprint(connection));
@@ -237,9 +239,25 @@ export function BackupRuleDialog({
                 <select
                   className={selectClass}
                   value={source}
-                  onChange={(event) => setSource(event.target.value)}
+                  disabled={savedConnector.connecting}
+                  onChange={async (event) => {
+                    const value = event.target.value;
+                    if (!value.startsWith("saved:")) {
+                      setSource(value);
+                      return;
+                    }
+                    // A saved budget joins the session in the background, then
+                    // is offered like any connected one (PR-071b).
+                    const saved = savedConnector.saved.find(
+                      (entry) => `saved:${entry.serverFingerprint}:${entry.budgetSyncId}` === value
+                    );
+                    const instance = saved ? await savedConnector.connect(saved) : null;
+                    if (instance) setSource(connectionFingerprint(instance));
+                  }}
                 >
-                  {choices.length === 0 && <option value="">No budget connections saved</option>}
+                  {choices.length === 0 && savedConnector.saved.length === 0 && (
+                    <option value="">No budget connections saved</option>
+                  )}
                   {choices.map((choice) => (
                     <option key={choice.fingerprint} value={choice.fingerprint}>
                       {choice.label} - {choice.baseUrl}
@@ -247,7 +265,21 @@ export function BackupRuleDialog({
                       {choice.enrolled ? "" : choice.manualOnly ? "  (manual only until enrolled)" : "  (not enrolled)"}
                     </option>
                   ))}
+                  {savedConnector.saved.length > 0 && (
+                    <optgroup label={savedConnector.locked ? "Saved (unlock to open)" : "Saved"}>
+                      {savedConnector.saved.map((saved) => (
+                        <option
+                          key={`${saved.serverFingerprint}:${saved.budgetSyncId}`}
+                          value={`saved:${saved.serverFingerprint}:${saved.budgetSyncId}`}
+                        >
+                          {saved.name} - {saved.baseUrl}
+                          {saved.mode === "browser-api" ? " (Direct)" : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
+                {savedConnector.dialog}
               </label>
 
               {/* Every budget you have connected to is listed, not only the

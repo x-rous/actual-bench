@@ -13,6 +13,11 @@ jest.mock("../hooks/useSyncOrchestration");
 // The interval scheduler starts real timers; stub it out for component tests.
 jest.mock("../hooks/useSyncScheduler", () => ({ useSyncScheduler: jest.fn() }));
 jest.mock("../hooks/useFlowAutomations", () => ({ useFlowAutomations: () => new Map() }));
+// No saved budgets by default; one test gives the editor a saved budget.
+const savedConnector = { saved: [] as unknown[], locked: false, connecting: false, connect: jest.fn(), dialog: null };
+jest.mock("@/features/connect/useSavedBudgetConnector", () => ({
+  useSavedBudgetConnector: () => savedConnector,
+}));
 
 const conn1: BrowserApiConnection = { id: "c1", label: "Home", mode: "browser-api", baseUrl: "https://s.example.com", serverPassword: "pw", budgetSyncId: "b-src" };
 const conn2: BrowserApiConnection = { id: "c2", label: "Family", mode: "browser-api", baseUrl: "https://t.example.com", serverPassword: "pw", budgetSyncId: "b-tgt" };
@@ -145,6 +150,30 @@ describe("SyncView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit flow" }));
     expect(screen.getByText("Family / Joint")).toBeInTheDocument();
     expect(screen.getByText("Connect this budget to change it.")).toBeInTheDocument();
+  });
+
+  it("connects a flow's saved budget with one click, keeping the flow's own connection (PR-071b)", async () => {
+    setup([conn1]);
+    const flow = makeFlow();
+    (flowsHook.useSyncFlows as jest.Mock).mockReturnValue({
+      data: [{ ...flow, options: { version: 1, data: { reviewPolicy: "auto_sync_unattended" } } }],
+      refetch: jest.fn(),
+    });
+    const saved = { serverFingerprint: "srv-t", budgetSyncId: "b-tgt", name: "Family", mode: "browser-api", baseUrl: conn2.baseUrl, serverLabel: "t" };
+    savedConnector.saved = [saved];
+    savedConnector.connect.mockResolvedValue({ ...conn2, id: "c2-new" });
+    try {
+      render(<SyncView />);
+      fireEvent.click(screen.getByText("Card sync"));
+      fireEvent.click(screen.getByRole("button", { name: "Edit flow" }));
+      fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+
+      await waitFor(() => expect(savedConnector.connect).toHaveBeenCalledWith(saved));
+      // Connected: the endpoint is editable again rather than read-only.
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument());
+    } finally {
+      savedConnector.saved = [];
+    }
   });
 
   it("does not offer to run a disabled server flow, which the server would refuse", () => {

@@ -35,6 +35,8 @@ import { getTransport } from "@/lib/actual";
 import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionHealthDot } from "./ConnectionHealthDot";
+import { connectSavedBudget, useSavedBudgets, type SavedBudget } from "@/features/connect/savedBudgets";
+import { UnlockVaultDialog } from "@/features/connect/UnlockVaultDialog";
 import { useSavedServersStore } from "@/store/savedServers";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
 import {
@@ -62,6 +64,7 @@ import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "@/features/bud
 
 type PendingAction =
   | { kind: "switch"; id: string }
+  | { kind: "openSaved"; saved: SavedBudget }
   | { kind: "addConnection" }
   | { kind: "disconnect" }
   | { kind: "disconnectAll" };
@@ -111,6 +114,9 @@ export function TopBar() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  // Saved budgets not connected yet (PR-071b), and the one waiting on an unlock.
+  const savedBudgets = useSavedBudgets();
+  const [unlockFor, setUnlockFor] = useState<SavedBudget | null>(null);
   // Set when a recovery point could not be taken before a risky save, so the
   // user can decide whether to go ahead without one.
   const [recoveryPointWarning, setRecoveryPointWarning] = useState<string | null>(null);
@@ -192,8 +198,36 @@ export function TopBar() {
     }
   }
 
+  /**
+   * Open a saved budget from the switcher: connect it from the vault and make
+   * it active. Checked before it becomes active, so a server that is down, or
+   * a password that changed, leaves the current budget in place.
+   */
+  async function openSavedBudget(saved: SavedBudget) {
+    if (savedBudgets.locked) {
+      setUnlockFor(saved);
+      return;
+    }
+    const pending = toast.loading(`Connecting to ${saved.name}...`);
+    try {
+      // Checked before it becomes active; only then are staged edits dropped
+      // and the caches cleared for the new budget.
+      await connectSavedBudget(saved, { activate: true });
+      handleDiscardAll();
+      queryClient.clear();
+      toast.success(`Switched to ${saved.name}`, { id: pending });
+    } catch (err) {
+      toast.error(
+        `Could not connect to ${saved.name}: ${err instanceof Error ? err.message : "the server did not answer"}. Open it from the Connect page to check its details.`,
+        { id: pending }
+      );
+    }
+  }
+
   async function executeAction(action: PendingAction) {
-    if (action.kind === "switch") {
+    if (action.kind === "openSaved") {
+      await openSavedBudget(action.saved);
+    } else if (action.kind === "switch") {
       handleDiscardAll();
       queryClient.clear();
       setActive(action.id);
@@ -418,6 +452,30 @@ export function TopBar() {
                     </DropdownMenuItem>
                   );
                 })}
+                {savedBudgets.saved.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                      Saved{savedBudgets.locked ? " (unlock to open)" : ""}
+                    </div>
+                    {savedBudgets.saved.map((saved) => (
+                      <DropdownMenuItem
+                        key={`${saved.serverFingerprint}:${saved.budgetSyncId}`}
+                        onClick={() => requestAction({ kind: "openSaved", saved })}
+                        className="flex items-center justify-between gap-2"
+                        title={saved.baseUrl}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{saved.name}</span>
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            {saved.mode === "browser-api" ? "Direct" : "HTTP API"}
+                          </span>
+                        </span>
+                        <span className="truncate text-[10px] text-muted-foreground">{saved.serverLabel}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => requestAction({ kind: "addConnection" })}>
@@ -646,6 +704,17 @@ export function TopBar() {
         </DialogContent>
       </Dialog>
 
+      <UnlockVaultDialog
+        open={unlockFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setUnlockFor(null);
+        }}
+        onUnlocked={() => {
+          const saved = unlockFor;
+          setUnlockFor(null);
+          if (saved) void openSavedBudget(saved);
+        }}
+      />
     </>
   );
 }

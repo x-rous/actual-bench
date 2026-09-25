@@ -75,10 +75,15 @@ Remembered servers only survive if the volume holding Bench's metadata database 
 by default, or wherever `ACTUAL_BENCH_DB_PATH` points. If you run the installation, see
 [Upgrades and backups](../../administration/upgrading-and-backups/).
 
-## Switch between open budgets
+## Switch between budgets
 
-Use the top-bar switcher to change budgets. Each budget keeps a separate draft and cache. Confirm the
-active budget before you select **Save** or **Apply**.
+Use the top-bar switcher to change budgets. It lists the budgets connected in this session, and under
+**Saved**, the budgets you saved with **Remember** that are not connected yet. Choosing a saved budget
+connects to it and switches to it in one step. If your saved connections are locked, Bench asks for
+your passphrase first. If the budget cannot be reached, you stay on the current one.
+
+Each budget keeps a separate draft and cache. Confirm the active budget before you select **Save** or
+**Apply**.
 
 ## How credentials are handled
 
