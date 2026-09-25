@@ -112,8 +112,9 @@ describe("enrolling a Direct connection", () => {
       serverPassword: PASSWORD,
       encryptionPassword: E2EE,
     });
-    // A stale snapshot is refreshed while the budget is open, and nothing is left on disk.
-    expect(uploads).toEqual(["upload-budget"]);
+    // No snapshot upload during the check - the first run does that - and
+    // nothing is left on disk.
+    expect(uploads).toEqual([]);
     expect(readdirSync(join(root, "runtime"))).toEqual([]);
   });
 

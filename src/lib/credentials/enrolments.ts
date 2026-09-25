@@ -6,7 +6,7 @@ import { generateId } from "@/lib/uuid";
 import { runWorkerTask, workerAvailability } from "@/lib/workers/supervisor";
 import type { SyncCredentialInput, SyncCredentialMeta } from "@/lib/app-db/types";
 import type { ActualErrorCode } from "@/lib/actual/runtime/errors";
-import { getSavedServerSecret, upsertSyncCredential } from "./unattendedCredentials";
+import { enrolBudget, getSavedServerSecret } from "./unattendedCredentials";
 import type { ConnectionMode } from "@/store/connection";
 
 /**
@@ -30,7 +30,12 @@ import type { ConnectionMode } from "@/store/connection";
 
 export type EnrolmentStatus =
   | { status: "verifying" }
-  | { status: "enrolled"; credential: SyncCredentialMeta }
+  | {
+      status: "enrolled";
+      credential: SyncCredentialMeta;
+      /** The mode it was enrolled through before, when this switched it. */
+      switchedFrom?: string;
+    }
   | { status: "failed"; code: ActualErrorCode | "BUSY" | "NEEDS_WORKERS" | null; message: string };
 
 type Entry = EnrolmentStatus & { at: number };
@@ -173,7 +178,13 @@ export function startEnrolment(submitted: SyncCredentialInput): string {
         finish({ status: "failed", code: result.code, message: result.message });
         return;
       }
-      finish({ status: "enrolled", credential: upsertSyncCredential(getAppDb(), input) });
+      const { credential, replaced } = enrolBudget(getAppDb(), input);
+      if (replaced.length > 0) {
+        logger.info(
+          `[enrolment] ${input.budgetSyncId} switched from ${replaced.map((old) => old.mode).join(", ")} to ${input.mode}`
+        );
+      }
+      finish({ status: "enrolled", credential, ...(replaced[0] ? { switchedFrom: replaced[0].mode } : {}) });
     })
     .catch((error: unknown) => {
       // Not the check failing - something around it. Said plainly, never with

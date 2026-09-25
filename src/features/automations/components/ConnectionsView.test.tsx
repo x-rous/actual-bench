@@ -97,9 +97,43 @@ describe("other budgets on an enrolled server (PR-071a)", () => {
       budgetSyncId: "budget-3",
       secret: { encryptionPassword: "e2ee" },
     });
+
+    // Everything went through: the dialog closes itself and the page updates
+    // once, from its own list, without signing in to the server again.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(toast.success).toHaveBeenCalledWith("2 budgets enrolled");
+    expect(await screen.findByText("Every budget on this server is enrolled.")).toBeInTheDocument();
+    expect(mockedApi.listServerBudgets).toHaveBeenCalledTimes(1);
+    // The enrolled list is re-read once for the batch, not once per budget.
+    expect(mockedApi.listEnrolledConnections).toHaveBeenCalledTimes(2);
   });
 
-  it("names a budget enrolled through the other mode instead of offering it (PR-071c)", async () => {
+  it("on a Direct server, offers to switch a budget enrolled through HTTP API (PR-071c)", async () => {
+    mockedApi.listEnrolledConnections.mockResolvedValue({
+      vaultEnabled: true,
+      connections: [connection({ mode: "browser-api", baseUrl: "https://actual.example.com" })],
+    });
+    mockedApi.listServerBudgets.mockResolvedValue({
+      server: { mode: "browser-api", baseUrl: "https://actual.example.com" },
+      budgets: [
+        { budgetSyncId: "budget-2", name: "Joint", encrypted: false, enrolled: false, enrolledVia: "http-api", connectionFingerprint: "fp-2" },
+      ],
+    });
+    mockedSync.enrollCredential.mockResolvedValue({ credential: {} as never, switchedFrom: "http-api" });
+    renderView();
+
+    expect(await screen.findByText(/Enrolled through HTTP API, can switch to Direct: Joint/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Switch budgets to Direct" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/select to switch to Direct/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Joint/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Enrol" }));
+
+    await waitFor(() => expect(mockedSync.enrollCredential).toHaveBeenCalled());
+    expect(mockedSync.enrollCredential.mock.calls[0][0]).toMatchObject({ mode: "browser-api", budgetSyncId: "budget-2", secret: {} });
+  });
+
+  it("on an HTTP API server, shows a budget enrolled through Direct as enrolled (PR-071c)", async () => {
     mockedApi.listServerBudgets.mockResolvedValue({
       server: { mode: "http-api", baseUrl: "https://budgetapi.example.com" },
       budgets: [
@@ -108,9 +142,8 @@ describe("other budgets on an enrolled server (PR-071a)", () => {
     });
     renderView();
 
-    expect(await screen.findByText(/Already enrolled another way: Joint \(through Direct\)/)).toBeInTheDocument();
-    expect(screen.getByText("Every budget on this server is enrolled.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Enrol budgets on this server" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Every budget on this server is enrolled.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Enrol budgets on this server|Switch budgets/ })).not.toBeInTheDocument();
   });
 
   it("shows a failure on its row and lets the others through", async () => {
@@ -135,8 +168,11 @@ describe("other budgets on an enrolled server (PR-071a)", () => {
 
     expect(await within(dialog).findByText("The encryption password is not correct.")).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getAllByText("Enrolled")).toHaveLength(1));
-    // The failed one is still selected, with its password, ready to fix and retry.
+    // Something failed, so the dialog stays open, with the failed one still
+    // selected and its password kept, ready to fix and retry.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Enrol" })).not.toBeDisabled();
+    expect(toast.success).toHaveBeenCalledWith("Joint enrolled");
   });
 });
 

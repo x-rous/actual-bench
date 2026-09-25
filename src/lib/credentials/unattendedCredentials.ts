@@ -6,6 +6,7 @@ import type {
 } from "@/lib/app-db/types";
 import { logger } from "@/lib/logger";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
+import { repointConnectionReferences } from "@/lib/app-db/connectionReferences";
 import { vaultEnabled } from "@/lib/sync/vault";
 import type { ConnectionMode } from "@/store/connection";
 import {
@@ -273,6 +274,34 @@ export function enrolledConnectionFor(
     (meta) => meta.budgetSyncId === budgetSyncId && hasSyncCredential(db, meta.connectionFingerprint)
   );
   return other?.connectionFingerprint ?? null;
+}
+
+/**
+ * Enrol a budget, keeping one enrolment per budget (PR-071c).
+ *
+ * A budget's sync ID is Actual's own identity for it, so the same budget
+ * reached through HTTP API and through Direct is one budget. Enrolling it the
+ * other way is a **switch**: the new enrolment is saved, everything that named
+ * the old one - automations, flows, backup rules - is moved to it, and the old
+ * one is withdrawn, in one transaction. The caller has already checked the new
+ * one with its server, so nothing is lost if that check fails.
+ */
+export function enrolBudget(
+  db: SqliteDatabase,
+  input: SyncCredentialInput
+): { credential: SyncCredentialMeta; replaced: SyncCredentialMeta[] } {
+  const switchOver = db.transaction(() => {
+    const replaced = listSyncCredentialMeta(db).filter(
+      (meta) => meta.budgetSyncId === input.budgetSyncId && meta.connectionFingerprint !== input.connectionFingerprint
+    );
+    const credential = upsertSyncCredential(db, input);
+    for (const old of replaced) {
+      repointConnectionReferences(db, old.connectionFingerprint, input.connectionFingerprint);
+      deleteSyncCredential(db, old.connectionFingerprint);
+    }
+    return { credential, replaced };
+  });
+  return switchOver() as { credential: SyncCredentialMeta; replaced: SyncCredentialMeta[] };
 }
 
 /** All enrolled credentials as metadata only - safe to return to the client. */

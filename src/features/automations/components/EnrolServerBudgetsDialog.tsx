@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -35,17 +36,24 @@ export function EnrolServerBudgetsDialog({
   onOpenChange: (open: boolean) => void;
   server: { mode: string; baseUrl: string };
   budgets: ServerBudget[];
-  /** Called after each budget that enrols, so the page can refresh. */
-  onEnrolled: () => void;
+  /**
+   * Called once, when a batch has finished, with the budgets that enrolled -
+   * so the page updates once, not after every budget.
+   */
+  onEnrolled: (budgets: ServerBudget[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [passwords, setPasswords] = useState<Record<string, string>>({});
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [running, setRunning] = useState(false);
 
-  // A budget enrolled through the other mode is already usable by runs (PR-071c).
-  const shown = budgets.filter((budget) => !budget.enrolledVia);
-  const choosable = shown.filter((budget) => !budget.enrolled && rows[budget.budgetSyncId]?.kind !== "enrolled");
+  // A budget is enrolled once (PR-071c). On a Direct server, one enrolled
+  // through HTTP API can be switched to Direct, the recommended route; on an
+  // HTTP API server, one enrolled through Direct simply shows as enrolled.
+  const directServer = server.mode === "browser-api";
+  const settled = (budget: ServerBudget) =>
+    budget.enrolled || (!!budget.enrolledVia && !directServer) || rows[budget.budgetSyncId]?.kind === "enrolled";
+  const choosable = budgets.filter((budget) => !settled(budget));
   const chosen = choosable.filter((budget) => selected.has(budget.budgetSyncId));
   const missingPassword = chosen.some((budget) => budget.encrypted && !passwords[budget.budgetSyncId]?.trim());
 
@@ -61,6 +69,8 @@ export function EnrolServerBudgetsDialog({
 
   async function enrolChosen() {
     setRunning(true);
+    const done: ServerBudget[] = [];
+    let failed = false;
     try {
       for (const budget of chosen) {
         setRow(budget.budgetSyncId, { kind: "checking" });
@@ -76,8 +86,9 @@ export function EnrolServerBudgetsDialog({
           });
           setRow(budget.budgetSyncId, { kind: "enrolled" });
           toggle(budget.budgetSyncId, false);
-          onEnrolled();
+          done.push(budget);
         } catch (error) {
+          failed = true;
           setRow(budget.budgetSyncId, {
             kind: "failed",
             message: error instanceof Error ? error.message : "Could not enrol this budget.",
@@ -87,6 +98,14 @@ export function EnrolServerBudgetsDialog({
     } finally {
       setRunning(false);
     }
+    // The page updates once, with everything that enrolled. The dialog stays
+    // open while it works; it closes itself when all went through, and stays
+    // open when something failed, so the failure can be fixed and retried.
+    if (done.length > 0) {
+      onEnrolled(done);
+      toast.success(done.length === 1 ? `${done[0].name} enrolled` : `${done.length} budgets enrolled`);
+    }
+    if (!failed) onOpenChange(false);
   }
 
   return (
@@ -101,12 +120,16 @@ export function EnrolServerBudgetsDialog({
             Bench already has this server&rsquo;s {server.mode === "http-api" ? "API key" : "password"}, so these
             budgets need nothing more, except an encryption password for an encrypted budget. Each one is checked
             with the server first. Nothing is saved if the check fails.
+            {directServer && budgets.some((budget) => budget.enrolledVia && !budget.enrolled)
+              ? " Switching a budget from HTTP API to Direct moves its automations to Direct."
+              : ""}
           </p>
 
           <ul className="max-h-80 space-y-1.5 overflow-y-auto">
-            {shown.map((budget) => {
+            {budgets.map((budget) => {
               const row = rows[budget.budgetSyncId] ?? { kind: "idle" };
-              const done = budget.enrolled || row.kind === "enrolled";
+              const done = settled(budget);
+              const switching = directServer && !!budget.enrolledVia && !done;
               const checked = done || selected.has(budget.budgetSyncId);
               return (
                 <li key={budget.budgetSyncId} className="rounded-md border border-border px-2.5 py-2">
@@ -119,9 +142,13 @@ export function EnrolServerBudgetsDialog({
                     />
                     <span className="min-w-0 flex-1 truncate font-medium">{budget.name}</span>
                     {budget.encrypted && !done && <span className="text-xs text-muted-foreground">Encrypted</span>}
+                    {switching && (
+                      <span className="text-xs text-muted-foreground">Enrolled through HTTP API - select to switch to Direct</span>
+                    )}
                     {done && (
                       <span className="flex items-center gap-1 text-xs text-green-700 dark:text-green-400">
-                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Enrolled
+                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                        {budget.enrolledVia && !directServer ? "Enrolled through Direct" : "Enrolled"}
                       </span>
                     )}
                     {row.kind === "checking" && (

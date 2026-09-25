@@ -125,9 +125,11 @@ export async function verifyConnection(input: VerifyConnectionInput): Promise<Ve
       await closeNodeRuntime().catch(() => undefined);
       return fail(classifyActualError(error), error);
     }
-    // It opened: the password and the encryption password work. Refresh a
-    // stale snapshot while it is open, so the first scheduled run is fast.
-    await closeNodeRuntime({ refreshSnapshot: true }).catch(() => undefined);
+    // It opened: the password and the encryption password work. No snapshot
+    // refresh here: uploading one takes several seconds per budget, which made
+    // enrolling a batch slow, and the first scheduled run refreshes it anyway
+    // once it finishes cleanly (PR-071c).
+    await closeNodeRuntime().catch(() => undefined);
     return { ok: true };
   }
 

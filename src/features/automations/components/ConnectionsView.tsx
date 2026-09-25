@@ -12,7 +12,12 @@ import { cn } from "@/lib/utils";
 import { withdrawCredential } from "@/features/sync/lib/syncApi";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, selectActiveInstance, useConnectionStore } from "@/store/connection";
-import { listEnrolledConnections, listServerBudgets, type EnrolledConnection } from "../lib/automationsApi";
+import {
+  listEnrolledConnections,
+  listServerBudgets,
+  type EnrolledConnection,
+  type ServerBudget,
+} from "../lib/automationsApi";
 import { formatDateTime } from "../lib/presentation";
 import { AutomationsTabs } from "./AutomationsTabs";
 import { EnrolConnection } from "./EnrolConnection";
@@ -57,7 +62,13 @@ function enrolledServers(connections: EnrolledConnection[]): EnrolledConnection[
  * the server signs in from a worker with its saved password or key - and
  * enrolled from there with nothing from the browser.
  */
-function OtherServerBudgets({ server, onEnrolled }: { server: EnrolledConnection; onEnrolled: () => void }) {
+function OtherServerBudgets({
+  server,
+  onEnrolled,
+}: {
+  server: EnrolledConnection;
+  onEnrolled: (budgets: ServerBudget[], mode: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const query = useQuery({
     queryKey: ["server-budgets", server.connectionFingerprint],
@@ -67,7 +78,9 @@ function OtherServerBudgets({ server, onEnrolled }: { server: EnrolledConnection
   });
   const budgets = query.data?.budgets ?? [];
   const others = budgets.filter((budget) => !budget.enrolled && !budget.enrolledVia);
-  const viaOther = budgets.filter((budget) => !budget.enrolled && budget.enrolledVia);
+  // Enrolled through HTTP API while this is a Direct server: can switch to Direct.
+  const switchable =
+    server.mode === "browser-api" ? budgets.filter((budget) => !budget.enrolled && budget.enrolledVia === "http-api") : [];
 
   return (
     <li className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
@@ -83,10 +96,9 @@ function OtherServerBudgets({ server, onEnrolled }: { server: EnrolledConnection
                 ? "Every budget on this server is enrolled."
                 : `${others.length} other ${others.length === 1 ? "budget" : "budgets"}: ${others.map((budget) => budget.name).join(", ")}`}
         </span>
-        {viaOther.length > 0 && (
+        {switchable.length > 0 && (
           <span className="block text-muted-foreground">
-            Already enrolled another way:{" "}
-            {viaOther.map((budget) => `${budget.name} (through ${modeName(budget.enrolledVia)})`).join(", ")}
+            Enrolled through HTTP API, can switch to Direct: {switchable.map((budget) => budget.name).join(", ")}
           </span>
         )}
       </span>
@@ -95,9 +107,9 @@ function OtherServerBudgets({ server, onEnrolled }: { server: EnrolledConnection
           Try again
         </Button>
       ) : (
-        others.length > 0 && (
+        (others.length > 0 || switchable.length > 0) && (
           <Button size="sm" className="h-7 text-xs" onClick={() => setOpen(true)}>
-            Enrol budgets on this server
+            {others.length > 0 ? "Enrol budgets on this server" : "Switch budgets to Direct"}
           </Button>
         )
       )}
@@ -107,7 +119,7 @@ function OtherServerBudgets({ server, onEnrolled }: { server: EnrolledConnection
           onOpenChange={setOpen}
           server={query.data.server}
           budgets={budgets}
-          onEnrolled={onEnrolled}
+          onEnrolled={(budgets) => onEnrolled(budgets, query.data?.server.mode ?? server.mode)}
         />
       )}
     </li>
@@ -129,11 +141,27 @@ export function ConnectionsView() {
     void queryClient.invalidateQueries({ queryKey: ["automation-connections"] });
     void queryClient.invalidateQueries({ queryKey: ["vault-status"] });
   };
-  // A budget just enrolled changes the "other budgets" list; the list itself is
-  // not re-read from the server, only its enrolled flags.
-  const onServerBudgetEnrolled = () => {
+  // A budget just enrolled changes only who is enrolled, not which budgets the
+  // servers have: update the cached lists in place rather than signing in to
+  // every server again, which also kept workers busy mid-batch (PR-071c).
+  const onServerBudgetsEnrolled = (enrolledBudgets: ServerBudget[], mode: string) => {
     invalidate();
-    void queryClient.invalidateQueries({ queryKey: ["server-budgets"] });
+    const byBudget = new Map(enrolledBudgets.map((budget) => [budget.budgetSyncId, budget]));
+    queryClient.setQueriesData<{ server: { mode: string; baseUrl: string }; budgets: ServerBudget[] }>(
+      { queryKey: ["server-budgets"] },
+      (current) =>
+        current && {
+          ...current,
+          budgets: current.budgets.map((budget) => {
+            const enrolled = byBudget.get(budget.budgetSyncId);
+            if (!enrolled) return budget;
+            // One enrolment per budget: this server's row, or the other mode's.
+            return budget.connectionFingerprint === enrolled.connectionFingerprint
+              ? { ...budget, enrolled: true, enrolledVia: undefined }
+              : { ...budget, enrolled: false, enrolledVia: mode };
+          }),
+        }
+    );
   };
 
   const withdraw = useMutation({
@@ -320,7 +348,7 @@ export function ConnectionsView() {
               </p>
               <ul className="mt-2 space-y-1.5">
                 {enrolledServers(connections).map((server) => (
-                  <OtherServerBudgets key={server.connectionFingerprint} server={server} onEnrolled={onServerBudgetEnrolled} />
+                  <OtherServerBudgets key={server.connectionFingerprint} server={server} onEnrolled={onServerBudgetsEnrolled} />
                 ))}
               </ul>
             </section>

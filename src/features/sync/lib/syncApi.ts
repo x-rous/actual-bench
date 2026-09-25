@@ -183,7 +183,7 @@ const ENROLMENT_WAIT_MS = 6 * 60_000;
 export async function enrollCredential(
   input: SyncCredentialInput,
   options: { sleep?: (ms: number) => Promise<void> } = {}
-): Promise<{ credential: SyncCredentialMeta }> {
+): Promise<{ credential: SyncCredentialMeta; switchedFrom?: string }> {
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const { enrolmentId } = await jsonFetch<{ enrolmentId: string }>("/api/sync-credentials", {
     method: "POST",
@@ -195,7 +195,8 @@ export async function enrollCredential(
   let failures = 0;
 
   for (;;) {
-    await sleep(1_000);
+    // Most checks finish in a second or two; a short interval shows them sooner.
+    await sleep(500);
     let response: Response;
     try {
       response = await fetch(url, { cache: "no-store" });
@@ -207,7 +208,14 @@ export async function enrollCredential(
       continue;
     }
 
-    let body: { status?: string; credential?: SyncCredentialMeta; code?: string | null; message?: string; error?: string } = {};
+    let body: {
+      status?: string;
+      credential?: SyncCredentialMeta;
+      switchedFrom?: string;
+      code?: string | null;
+      message?: string;
+      error?: string;
+    } = {};
     try {
       body = (await response.json()) as typeof body;
     } catch {
@@ -222,7 +230,9 @@ export async function enrollCredential(
     }
     failures = 0;
 
-    if (body.status === "enrolled" && body.credential) return { credential: body.credential };
+    if (body.status === "enrolled" && body.credential) {
+      return { credential: body.credential, ...(body.switchedFrom ? { switchedFrom: body.switchedFrom } : {}) };
+    }
     if (body.status === "failed") throw new EnrolmentFailedError(body.message ?? "The check failed.", body.code ?? null);
     if (Date.now() > deadline) {
       throw new Error("The check is taking longer than expected. Look in Connections to see whether it finished.");

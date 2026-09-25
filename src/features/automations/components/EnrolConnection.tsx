@@ -66,7 +66,6 @@ export function EnrolConnection({
 }) {
   const queryClient = useQueryClient();
   const [showDetail, setShowDetail] = useState(false);
-  const [enrolAnyway, setEnrolAnyway] = useState(false);
   const vault = useEnrolledFingerprints();
 
   const enrol = useMutation({
@@ -84,8 +83,12 @@ export function EnrolConnection({
           : { serverPassword: connection.serverPassword, ...encryption },
       });
     },
-    onSuccess: () => {
-      toast.success(`${connection?.label ?? "This budget"} is set up for scheduled runs`);
+    onSuccess: (result) => {
+      toast.success(
+        result.switchedFrom
+          ? `${connection?.label ?? "This budget"} now runs through ${connection && isHttpApiConnection(connection) ? "HTTP API" : "Direct"}`
+          : `${connection?.label ?? "This budget"} is set up for scheduled runs`
+      );
       void queryClient.invalidateQueries({ queryKey: ["vault-status"] });
       void queryClient.invalidateQueries({ queryKey: ["automation-connections"] });
       onEnrolled?.();
@@ -122,19 +125,46 @@ export function EnrolConnection({
 
   if (vault.data.fingerprints.has(connectionFingerprint(connection))) return null;
 
-  // The same budget, already enrolled through the other mode: runs use that
-  // one, so enrolling again is optional rather than missing (PR-071c).
+  // The same budget, already enrolled through the other mode. A budget is
+  // enrolled once, so enrolling this connection switches it (PR-071c). Direct
+  // is the recommended route - it needs no extra service - so it is offered;
+  // switching the other way stays possible but is not suggested.
   const otherMode = vault.data.modesByBudget.get(connection.budgetSyncId);
-  if (otherMode && otherMode !== connection.mode && !enrolAnyway) {
+  if (otherMode && otherMode !== connection.mode) {
     return (
       <div className={box}>
-        <span className="font-medium">
-          {connection.label} is already set up for scheduled runs through {otherMode === "http-api" ? "HTTP API" : "Direct"}.
-        </span>{" "}
-        Scheduled work on this budget uses that, so there is nothing more to do.{" "}
-        <button type="button" className="underline underline-offset-4" onClick={() => setEnrolAnyway(true)}>
-          Enrol this connection anyway
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">
+              {connection.label} is set up for scheduled runs through {otherMode === "http-api" ? "HTTP API" : "Direct"}.
+            </span>{" "}
+            {direct
+              ? "Direct is recommended: it needs no extra service and reports bank sync results in full. Switching moves this budget's automations to Direct."
+              : "Scheduled work on this budget uses that."}
+          </span>
+          {direct && (
+            <Button size="sm" className="h-7 text-xs" onClick={() => enrol.mutate()} disabled={enrol.isPending}>
+              {enrol.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ShieldCheck aria-hidden />}
+              {enrol.isPending ? "Checking..." : "Switch to Direct"}
+            </Button>
+          )}
+        </div>
+        {!direct && (
+          <button
+            type="button"
+            className="mt-1 underline underline-offset-4"
+            onClick={() => enrol.mutate()}
+            disabled={enrol.isPending}
+          >
+            {enrol.isPending ? "Checking..." : "Use HTTP API instead"}
+          </button>
+        )}
+        {enrol.isPending && (
+          <p className="mt-1" role="status">
+            Checking with your Actual server. This usually takes a few seconds, but can take a few minutes the first
+            time. Nothing changes if the check fails.
+          </p>
+        )}
       </div>
     );
   }
