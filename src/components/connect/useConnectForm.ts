@@ -84,6 +84,7 @@ export function useConnectForm({
   savedBudgets = [],
   rememberedServers = [],
   vaultLocked = false,
+  rememberByDefault = false,
 }: {
   savedBudgets?: SavedBudgetRef[];
   /** Servers whose password or key is saved in the vault. */
@@ -93,6 +94,12 @@ export function useConnectForm({
    * then cannot be used to connect - only a new server, typed in.
    */
   vaultLocked?: boolean;
+  /**
+   * Saving would work right away (the vault is unlocked, as it always is once
+   * signed in), so "Remember this budget" starts ticked until the user says
+   * otherwise.
+   */
+  rememberByDefault?: boolean;
 } = {}) {
   const queryClient = useQueryClient();
   const addInstance = useConnectionStore((s) => s.addInstance);
@@ -152,8 +159,11 @@ export function useConnectForm({
   const [reconnectBusyId, setReconnectBusyId] = useState<string | null>(null);
 
   // "Remember this connection on the server" (RD-061). Only enrolls when the
-  // vault is unlocked — the UI gates the checkbox on that.
-  const [rememberOnServer, setRememberOnServer] = useState(false);
+  // vault is unlocked — the UI gates the checkbox on that. Until the user
+  // touches it, it follows `rememberByDefault`, which is only known once the
+  // vault's status has loaded.
+  const [rememberChoice, setRememberOnServer] = useState<boolean | null>(null);
+  const rememberOnServer = rememberChoice ?? rememberByDefault;
 
   const validateBusy = validateStatus.kind === "busy";
   const connectBusy = connectStatus.kind === "busy";

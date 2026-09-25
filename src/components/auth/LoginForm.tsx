@@ -159,8 +159,8 @@ export function LoginForm({ next }: { next: string }) {
 
             {!settingUp && (
               <p className="text-xs text-muted-foreground">
-                Forgot it? Set <code className="font-mono">ACTUAL_BENCH_PASSWORD</code> on the server and restart
-                Actual Bench. Saved connections are cleared; automations and backups are kept.
+                Forgot your password? Set a new one with the <code className="font-mono">ACTUAL_BENCH_PASSWORD</code>{" "}
+                environment variable and restart Actual Bench.
               </p>
             )}
           </form>

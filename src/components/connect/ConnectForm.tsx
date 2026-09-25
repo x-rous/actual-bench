@@ -102,7 +102,12 @@ export function ConnectForm() {
     forgetOnLock,
     encryptionSaved,
     chooseDifferentEncryptionPassword,
-  } = useConnectForm({ savedBudgets, rememberedServers: vault.servers, vaultLocked });
+  } = useConnectForm({
+    savedBudgets,
+    rememberedServers: vault.servers,
+    vaultLocked,
+    rememberByDefault: vault.status.supported && vault.status.unlocked,
+  });
 
   // One server-grouped view of everything openable: this-session connections +
   // the saved vault. Each budget appears once, deduped by server + sync id.

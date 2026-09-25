@@ -51,21 +51,22 @@ function renderSwitcher(overrides: Partial<Parameters<typeof ConnectionSwitcher>
 }
 
 describe("the budget switcher (PR-071b)", () => {
-  it("groups each section by server, with the host and mode on the header, and marks the active one", async () => {
+  it("lists connected and saved budgets together by server, with the host and mode on the header, and marks the active one", async () => {
     renderSwitcher({ instances: [household, joint, { ...household, id: "c-4", label: "Holiday home", budgetSyncId: "b-4" }] });
 
     const menu = await screen.findByRole("menu");
-    expect(within(menu).getByText("Connected")).toBeInTheDocument();
-    expect(within(menu).getByText("Saved")).toBeInTheDocument();
-    // Two Direct budgets on one server share a header in Connected; the saved
-    // one on that server gets its own header under Saved.
-    expect(within(menu).getAllByText("actual.example.com")).toHaveLength(2);
-    expect(within(menu).getAllByText("Direct")).toHaveLength(2);
+    // Both Direct budgets connected on one server, and the saved one on the
+    // same server, share a single header.
+    expect(within(menu).getAllByText("actual.example.com")).toHaveLength(1);
+    expect(within(menu).getAllByText("Direct")).toHaveLength(1);
+    expect(within(menu).getByText("Holiday")).toBeInTheDocument();
     expect(within(menu).getByText("api.example.com")).toBeInTheDocument();
     expect(within(menu).getByText("HTTP API")).toBeInTheDocument();
     // Budget rows are the name alone.
     expect(within(menu).getByText("Holiday home")).toBeInTheDocument();
-    expect(within(menu).getByLabelText("Active")).toBeInTheDocument();
+    // Every connected budget has the green dot, the saved one none; the active one is marked current.
+    expect(within(menu).getAllByLabelText("Connected")).toHaveLength(3);
+    expect(menu.querySelector("[aria-current=\"true\"]")).toHaveTextContent("Household");
     expect(within(menu).getByText("Disconnect Household")).toBeInTheDocument();
   });
 

@@ -104,7 +104,7 @@ export function RememberToggle({
         <span className="flex flex-col">
           <span className="text-sm font-medium">Remember this budget</span>
           <span className="text-xs text-muted-foreground">
-            Adds this budget to your saved connections for one-click reopen. Stored encrypted with your password.
+            Adds this budget to your saved connections for one-click reopen.
             {checked && !vault.status.unlocked && (
               <>
                 {" "}

@@ -9,13 +9,6 @@ import {
   withTimeout,
 } from "./setup";
 
-export type BrowserApiLabInput = {
-  serverUrl: string;
-  serverPassword: string;
-  budgetSyncId: string;
-  encryptionPassword?: string;
-};
-
 export type BrowserApiBudgetListInput = {
   serverUrl: string;
   serverPassword: string;
@@ -35,38 +28,6 @@ export type BrowserApiLabBudget = {
 export type BrowserApiBudgetListResult = {
   budgets: BrowserApiLabBudget[];
   serverVersion: string | null;
-};
-
-export type BrowserApiLabAccount = {
-  id: string;
-  name: string;
-  closed?: boolean;
-  offbudget?: boolean;
-};
-
-export type BrowserApiLabResult = {
-  serverUrl: string;
-  budgetCount: number;
-  selectedBudgetName: string | null;
-  selectedBudgetSyncId: string;
-  accounts: BrowserApiLabAccount[];
-};
-
-export type BrowserApiLabStepId =
-  | "load"
-  | "init"
-  | "budgets"
-  | "download"
-  | "accounts"
-  | "sync"
-  | "shutdown";
-
-export type BrowserApiLabStepStatus = "running" | "success" | "error";
-
-export type BrowserApiLabStepUpdate = {
-  id: BrowserApiLabStepId;
-  status: BrowserApiLabStepStatus;
-  detail?: string;
 };
 
 type ActualBudget = {
@@ -112,16 +73,6 @@ function normalizeBudget(budget: ActualBudget): BrowserApiLabBudget {
     encryptKeyId: budget.encryptKeyId,
     hasKey: budget.hasKey,
     owner: budget.owner,
-  };
-}
-
-function normalizeAccount(account: ActualAccount): BrowserApiLabAccount | null {
-  if (!account.id || !account.name) return null;
-  return {
-    id: account.id,
-    name: account.name,
-    closed: account.closed,
-    offbudget: account.offbudget,
   };
 }
 
@@ -229,125 +180,4 @@ export async function listBrowserApiBudgets(
   input: BrowserApiBudgetListInput
 ): Promise<BrowserApiLabBudget[]> {
   return (await loadBrowserApiBudgetList(input)).budgets;
-}
-
-export async function runBrowserApiLab(
-  input: BrowserApiLabInput,
-  onStep: (update: BrowserApiLabStepUpdate) => void
-): Promise<BrowserApiLabResult> {
-  const serverUrl = normalizeUrl(input.serverUrl);
-  const budgetSyncId = input.budgetSyncId.trim();
-  const serverPassword = input.serverPassword;
-  const encryptionPassword = input.encryptionPassword?.trim() || undefined;
-
-  if (!serverUrl) throw new Error("Actual Server URL is required.");
-  if (!serverPassword) throw new Error("Actual Server password is required.");
-  if (!budgetSyncId) throw new Error("Budget Sync ID is required.");
-  assertDirectBrowserApiEnvironment();
-
-  let actual: ActualApiModule | null = null;
-  let initialized = false;
-  let result: BrowserApiLabResult | null = null;
-  let activeStep: BrowserApiLabStepId | null = null;
-
-  function startStep(id: BrowserApiLabStepId) {
-    activeStep = id;
-    onStep({ id, status: "running" });
-  }
-
-  function completeStep(id: BrowserApiLabStepId, detail?: string) {
-    if (activeStep === id) activeStep = null;
-    onStep({ id, status: "success", detail });
-  }
-
-  try {
-    startStep("load");
-    actual = await withTimeout(
-      loadActualApi<ActualApiModule>(),
-      "Loading @actual-app/api"
-    );
-    completeStep("load", "Browser API module loaded.");
-
-    startStep("init");
-    await initializeActualApi(actual, {
-      dataDir: "/documents",
-      serverURL: serverUrl,
-      password: serverPassword,
-      verbose: true,
-    });
-    initialized = true;
-    completeStep("init", "Worker runtime initialized.");
-
-    startStep("budgets");
-    const budgets = filterRemoteBudgets(
-      (await withTimeout(actual.getBudgets(), "Listing budgets")).map(normalizeBudget)
-    );
-    completeStep(
-      "budgets",
-      budgets.length + " budget" + (budgets.length === 1 ? "" : "s") + " returned."
-    );
-
-    const selectedBudget = budgets.find(
-      (budget) => getBudgetSyncId(budget) === budgetSyncId
-    );
-
-    startStep("download");
-    await withTimeout(
-      actual.downloadBudget(budgetSyncId, { password: encryptionPassword }),
-      "Downloading budget"
-    );
-    completeStep(
-      "download",
-      selectedBudget?.name
-        ? "Downloaded " + selectedBudget.name + "."
-        : "Downloaded selected budget."
-    );
-
-    startStep("accounts");
-    const accounts = (await withTimeout(actual.getAccounts(), "Reading accounts"))
-      .map(normalizeAccount)
-      .filter((account): account is BrowserApiLabAccount => account !== null);
-    completeStep(
-      "accounts",
-      accounts.length + " account" + (accounts.length === 1 ? "" : "s") + " returned."
-    );
-
-    startStep("sync");
-    await withTimeout(actual.sync(), "Syncing budget");
-    completeStep("sync", "Sync completed.");
-
-    result = {
-      serverUrl,
-      budgetCount: budgets.length,
-      selectedBudgetName: selectedBudget?.name ?? null,
-      selectedBudgetSyncId: budgetSyncId,
-      accounts,
-    };
-  } catch (error) {
-    const detail = toErrorMessage(error, input);
-    if (activeStep) {
-      onStep({ id: activeStep, status: "error", detail });
-      activeStep = null;
-    }
-    throw new Error(detail);
-  }
-
-  if (actual && initialized) {
-    onStep({ id: "shutdown", status: "running" });
-    try {
-      await withTimeout(
-        actual.shutdown(),
-        "Shutting down browser API",
-        SHUTDOWN_STEP_TIMEOUT_MS
-      );
-      onStep({ id: "shutdown", status: "success", detail: "Runtime shut down." });
-    } catch (error) {
-      const detail = toErrorMessage(error, input);
-      onStep({ id: "shutdown", status: "error", detail });
-      throw new Error(detail);
-    }
-  }
-
-  if (!result) throw new Error("Browser API lab did not produce a result.");
-  return result;
 }
