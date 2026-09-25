@@ -13,7 +13,7 @@ import { ensureTransportReady, getTransport } from "@/lib/actual";
 import {
   listBrowserApiBudgets,
   loadBrowserApiBudgetList,
-} from "@/lib/actual/browser/labRuntime";
+} from "@/lib/actual/browser/budgetList";
 import {
   useConnectionStore,
   selectActiveInstance,

@@ -5,17 +5,20 @@ import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaul
 import { changePassphrase, isPassphraseSet, verifyPassphrase } from "@/lib/connectionVault/passphrase";
 import { clearAllSessions, createSession } from "@/lib/connectionVault/session";
 import { setSessionCookie } from "@/lib/connectionVault/cookies";
-import { passwordFromEnv } from "@/lib/auth/authMode";
-import { recordUnlockFailure, recordUnlockSuccess, unlockRetryAfterMs } from "@/lib/connectionVault/throttle";
+import {
+  recordUnlockFailure,
+  recordUnlockSuccess,
+  throttleClientKey,
+  unlockRetryAfterMs,
+} from "@/lib/connectionVault/throttle";
 import {
   DEFAULT_VAULT_UNLOCK_DURATION,
   isVaultUnlockDuration,
 } from "@/lib/connectionVault/unlockDuration";
+import { MIN_PASSWORD_LENGTH, passwordFromEnv } from "@/lib/auth/authMode";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const MIN_PASSPHRASE_LENGTH = 8;
 
 /**
  * Change the vault passphrase (RD-061 / PR-026b): re-seals every remembered
@@ -49,9 +52,9 @@ export async function POST(request: NextRequest) {
     if (body.duration !== undefined && !isVaultUnlockDuration(body.duration)) {
       return NextResponse.json({ error: "Unsupported vault unlock duration." }, { status: 400 });
     }
-    if (body.newPassphrase.length < MIN_PASSPHRASE_LENGTH) {
+    if (body.newPassphrase.length < MIN_PASSWORD_LENGTH) {
       return NextResponse.json(
-        { error: `The new password must be at least ${MIN_PASSPHRASE_LENGTH} characters.` },
+        { error: `The new password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
         { status: 400 }
       );
     }
@@ -60,7 +63,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No password is set." }, { status: 400 });
     }
     // Share the unlock brute-force backoff — this also verifies a guessed passphrase.
-    const retryMs = unlockRetryAfterMs();
+    const client = throttleClientKey(request.headers);
+    const retryMs = unlockRetryAfterMs(client);
     if (retryMs > 0) {
       return NextResponse.json(
         { error: "Too many attempts. Try again later." },
@@ -68,10 +72,10 @@ export async function POST(request: NextRequest) {
       );
     }
     if (!changePassphrase(db, body.currentPassphrase, body.newPassphrase)) {
-      recordUnlockFailure();
+      recordUnlockFailure(client);
       return NextResponse.json({ error: "Incorrect current password." }, { status: 401 });
     }
-    recordUnlockSuccess();
+    recordUnlockSuccess(client);
     clearAllSessions();
     const key = verifyPassphrase(db, body.newPassphrase);
     if (!key) return NextResponse.json({ error: "Failed to re-establish the password." }, { status: 500 });

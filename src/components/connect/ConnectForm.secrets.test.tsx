@@ -18,7 +18,7 @@ let vaultUnlocked = true;
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn(), replace: jest.fn() }) }));
 jest.mock("@/hooks/useIsHydrated", () => ({ useIsHydrated: () => true }));
 jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn() } }));
-jest.mock("@/lib/actual/browser/labRuntime", () => ({
+jest.mock("@/lib/actual/browser/budgetList", () => ({
   listBrowserApiBudgets: jest.fn(),
   loadBrowserApiBudgetList: jest.fn(async () => ({
     budgets: [{ groupId: "budget-1", name: "Household" }],

@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { authMode } from "@/lib/auth/authMode";
 import { isOpenPath, safeNextPath } from "@/lib/auth/openPaths";
-import { readSessionToken } from "@/lib/connectionVault/cookies";
-import { hasSession } from "@/lib/connectionVault/session";
+import { readSessionToken, setSessionCookie } from "@/lib/connectionVault/cookies";
+import { getSessionDuration, hasSession } from "@/lib/connectionVault/session";
+import type { VaultUnlockDuration } from "@/lib/connectionVault/unlockDuration";
 
 /**
  * Cross-origin isolation headers Direct Actual Server mode needs
@@ -71,34 +72,49 @@ function externalScheme(request: NextRequest): string | null {
   return request.nextUrl.protocol === "https:" ? "https:" : null;
 }
 
+type Gate =
+  | { kind: "pass"; session?: { token: string; duration: VaultUnlockDuration } }
+  | { kind: "respond"; response: NextResponse };
+
+const PASS: Gate = { kind: "pass" };
+
 /**
  * The sign-in gate (RD-096). Signed in means the saved-connections vault is
  * unlocked for this browser: one password, one session. Pages send a signed-out
  * visitor to the sign-in page and back; API calls answer 401, marked so the
  * app can tell it apart from a budget server's own 401 and do the same.
  */
-function signInResponse(request: NextRequest): NextResponse | null {
-  if (authMode() === "none") return null;
+function signInGate(request: NextRequest): Gate {
+  if (authMode() === "none") return PASS;
 
   const { pathname, search } = request.nextUrl;
-  const signedIn = hasSession(readSessionToken(request));
+  // Assets and the sign-in routes never need the session looked up.
+  if (pathname !== "/login" && isOpenPath(pathname)) return PASS;
+
+  const token = readSessionToken(request);
+  const duration = hasSession(token) ? getSessionDuration(token) : null;
+  const signedIn = !!token && !!duration;
 
   if (pathname === "/login") {
-    if (!signedIn) return null;
+    if (!signedIn) return PASS;
     const next = safeNextPath(request.nextUrl.searchParams.get("next"));
-    return NextResponse.redirect(new URL(next, request.url));
+    return { kind: "respond", response: NextResponse.redirect(new URL(next, request.url)) };
   }
-  if (signedIn || isOpenPath(pathname)) return null;
+  if (signedIn) return { kind: "pass", session: { token, duration } };
 
   if (pathname.startsWith("/api/")) {
-    return NextResponse.json(
-      { error: "Sign in to continue.", code: "SIGNED_OUT" },
-      { status: 401, headers: { "X-Bench-Auth": "signed-out" } }
-    );
+    return {
+      kind: "respond",
+      response: NextResponse.json(
+        { error: "Sign in to continue.", code: "SIGNED_OUT" },
+        { status: 401, headers: { "X-Bench-Auth": "signed-out" } }
+      ),
+    };
   }
   const login = new URL("/login", request.url);
-  login.searchParams.set("next", `${pathname}${search}`);
-  return NextResponse.redirect(login);
+  // `/` only redirects on to the connect page, so go straight there after.
+  login.searchParams.set("next", pathname === "/" ? "/connect" : `${pathname}${search}`);
+  return { kind: "respond", response: NextResponse.redirect(login) };
 }
 
 export function proxy(request: NextRequest) {
@@ -107,8 +123,8 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Cross-site request refused." }, { status: 403 });
   }
 
-  const gate = signInResponse(request);
-  if (gate) return gate;
+  const gate = signInGate(request);
+  if (gate.kind === "respond") return gate.response;
 
   if (isApi) return NextResponse.next();
 
@@ -116,6 +132,13 @@ export function proxy(request: NextRequest) {
 
   for (const [key, value] of Object.entries(DIRECT_MODE_HEADERS)) {
     response.headers.set(key, value);
+  }
+
+  // Every request keeps the session alive on the server; each page load also
+  // renews the cookie's own expiry, so someone working without a break is not
+  // signed out when the time they chose at sign-in runs out.
+  if (gate.session) {
+    setSessionCookie(request, response, gate.session.token, gate.session.duration);
   }
 
   return response;

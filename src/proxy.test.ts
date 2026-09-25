@@ -149,6 +149,18 @@ describe("sign-in gate (RD-096)", () => {
     expect(response.status).toBe(401);
   });
 
+  it("renews the session cookie on a page load, not on API calls", () => {
+    const page = proxy(signedIn("/rules"));
+    expect(page.headers.get("set-cookie")).toContain(`${VAULT_COOKIE}=`);
+    expect(proxy(signedIn("/api/backups")).headers.get("set-cookie")).toBeNull();
+  });
+
+  it("sends a signed-out visit to / on to the connect page after sign-in", () => {
+    const location = new URL(proxy(request("/", "GET")).headers.get("location")!);
+    expect(location.pathname).toBe("/login");
+    expect(location.searchParams.get("next")).toBe("/connect");
+  });
+
   it("is off with ACTUAL_BENCH_AUTH=none", () => {
     process.env.ACTUAL_BENCH_AUTH = "none";
     expect(proxy(request("/api/backups", "GET")).status).toBe(200);

@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * Lists the budgets on an Actual Server from the browser, for the connect
+ * form's Direct mode: start the runtime, read the budget list and the server
+ * version, and shut it down again.
+ */
+
 import { assertDirectBrowserApiEnvironment } from "./environment";
 import {
   SHUTDOWN_STEP_TIMEOUT_MS,
@@ -14,7 +20,7 @@ export type BrowserApiBudgetListInput = {
   serverPassword: string;
 };
 
-export type BrowserApiLabBudget = {
+export type BrowserApiBudget = {
   id?: string;
   cloudFileId?: string;
   name?: string;
@@ -26,7 +32,7 @@ export type BrowserApiLabBudget = {
 };
 
 export type BrowserApiBudgetListResult = {
-  budgets: BrowserApiLabBudget[];
+  budgets: BrowserApiBudget[];
   serverVersion: string | null;
 };
 
@@ -63,7 +69,7 @@ type ActualApiModule = {
   shutdown(): Promise<unknown>;
 };
 
-function normalizeBudget(budget: ActualBudget): BrowserApiLabBudget {
+function normalizeBudget(budget: ActualBudget): BrowserApiBudget {
   return {
     id: budget.id,
     cloudFileId: budget.cloudFileId,
@@ -76,7 +82,7 @@ function normalizeBudget(budget: ActualBudget): BrowserApiLabBudget {
   };
 }
 
-function filterRemoteBudgets(budgets: BrowserApiLabBudget[]): BrowserApiLabBudget[] {
+function filterRemoteBudgets(budgets: BrowserApiBudget[]): BrowserApiBudget[] {
   const seen = new Set<string>();
   return budgets.filter((budget) => {
     if (budget.state !== "remote") return false;
@@ -88,7 +94,7 @@ function filterRemoteBudgets(budgets: BrowserApiLabBudget[]): BrowserApiLabBudge
   });
 }
 
-function getBudgetSyncId(budget: BrowserApiLabBudget): string | undefined {
+function getBudgetSyncId(budget: BrowserApiBudget): string | undefined {
   return budget.groupId ?? budget.id;
 }
 
@@ -178,6 +184,6 @@ export async function loadBrowserApiBudgetList(
 
 export async function listBrowserApiBudgets(
   input: BrowserApiBudgetListInput
-): Promise<BrowserApiLabBudget[]> {
+): Promise<BrowserApiBudget[]> {
   return (await loadBrowserApiBudgetList(input)).budgets;
 }

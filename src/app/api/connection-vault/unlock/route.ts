@@ -5,7 +5,12 @@ import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaul
 import { isPassphraseSet, verifyPassphrase } from "@/lib/connectionVault/passphrase";
 import { createSession } from "@/lib/connectionVault/session";
 import { setSessionCookie } from "@/lib/connectionVault/cookies";
-import { recordUnlockFailure, recordUnlockSuccess, unlockRetryAfterMs } from "@/lib/connectionVault/throttle";
+import {
+  recordUnlockFailure,
+  recordUnlockSuccess,
+  throttleClientKey,
+  unlockRetryAfterMs,
+} from "@/lib/connectionVault/throttle";
 import {
   DEFAULT_VAULT_UNLOCK_DURATION,
   isVaultUnlockDuration,
@@ -39,7 +44,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No password is set." }, { status: 400 });
     }
     // Brute-force backoff: reject while locked out after repeated failures.
-    const retryMs = unlockRetryAfterMs();
+    const client = throttleClientKey(request.headers);
+    const retryMs = unlockRetryAfterMs(client);
     if (retryMs > 0) {
       return NextResponse.json(
         { error: "Too many attempts. Try again later." },
@@ -48,10 +54,10 @@ export async function POST(request: NextRequest) {
     }
     const key = verifyPassphrase(db, body.passphrase);
     if (!key) {
-      recordUnlockFailure();
+      recordUnlockFailure(client);
       return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
     }
-    recordUnlockSuccess();
+    recordUnlockSuccess(client);
     const response = NextResponse.json({ ok: true, unlocked: true });
     const duration = body.duration ?? DEFAULT_VAULT_UNLOCK_DURATION;
     setSessionCookie(request, response, createSession(key, duration), duration);

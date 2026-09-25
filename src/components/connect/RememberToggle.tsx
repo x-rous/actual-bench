@@ -15,10 +15,9 @@ import { Input } from "@/components/ui/input";
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
 import { readVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
 import { parseApiError } from "./utils";
+import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
 
 type Vault = ReturnType<typeof useConnectionVault>;
-
-const MIN_PASSPHRASE_LENGTH = 8;
 
 /**
  * "Remember this connection on the server" (RD-061 / PR-026d). Opt-in, hidden
@@ -71,8 +70,8 @@ export function RememberToggle({
 
   async function handleConfirm() {
     setError(null);
-    if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+    if (passphrase.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (setting && passphrase !== confirm) {

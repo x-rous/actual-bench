@@ -233,8 +233,7 @@ export function TopBar() {
       clearServers();
       router.push("/connect");
     } else if (action.kind === "signOut") {
-      handleDiscardAll();
-      await signOut();
+      await signOut({ beforeLeave: handleDiscardAll });
     }
   }
 

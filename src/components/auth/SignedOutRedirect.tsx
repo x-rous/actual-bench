@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { fullPageLoad } from "@/lib/auth/fullPageLoad";
 
 const MARK = "__benchSignedOutWatch";
 
@@ -27,8 +28,7 @@ export function SignedOutRedirect() {
       ) {
         const next = `${window.location.pathname}${window.location.search}`;
         // A full load: this runs outside React, from whichever request noticed first.
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-        window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+        fullPageLoad(`/login?next=${encodeURIComponent(next)}`);
       }
       return response;
     };

@@ -26,6 +26,7 @@ import {
   type VaultStatus,
 } from "./vaultApi";
 import { SAVED_BUDGETS_QUERY_KEY } from "./savedBudgets";
+import { AUTH_STATUS_QUERY_KEY } from "@/hooks/useAuthStatus";
 
 const CLOSED: VaultStatus = {
   supported: false,
@@ -54,6 +55,7 @@ export function useConnectionVault() {
     try {
       const s = await getVaultStatus();
       setStatus(s);
+      queryClient.setQueryData(AUTH_STATUS_QUERY_KEY, s);
       if (s.supported) {
         const { servers: serverList, budgets: budgetList } = await listRememberedServers();
         setServers(serverList);

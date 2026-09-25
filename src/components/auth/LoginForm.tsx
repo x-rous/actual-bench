@@ -15,6 +15,7 @@ import {
   type VaultUnlockDuration,
 } from "@/lib/connectionVault/unlockDuration";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
+import { fullPageLoad } from "@/lib/auth/fullPageLoad";
 
 /**
  * Sign in, or on a fresh install set the password (RD-096). One password:
@@ -62,8 +63,7 @@ export function LoginForm({ next }: { next: string }) {
       if (settingUp) await setVaultPassphrase(password, duration);
       else await unlockVault(password, duration);
       saveVaultUnlockDuration(duration);
-      // A full load, so every part of the app starts from the signed-in state.
-      window.location.assign(next);
+      fullPageLoad(next);
     } catch (err) {
       setError(parseApiError(err));
       setBusy(false);

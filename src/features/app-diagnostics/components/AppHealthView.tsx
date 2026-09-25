@@ -7,8 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { VaultHealth } from "./VaultHealth";
-import { AUTH_STATUS_QUERY_KEY } from "@/components/auth/AccountMenu";
-import { getVaultStatus } from "@/features/connect/vaultApi";
+import { useAuthStatus } from "@/hooks/useAuthStatus";
 import type { AppDbHealth } from "@/lib/app-db/types";
 import type { AppDbStorageUsage } from "@/lib/app-db/storageUsage";
 
@@ -276,7 +275,7 @@ function AppDatabaseCard({ health }: { health: AppDbHealth }) {
  * reads as a warning rather than a setting.
  */
 function SignInCard() {
-  const { data: status } = useQuery({ queryKey: AUTH_STATUS_QUERY_KEY, queryFn: getVaultStatus, staleTime: 60_000 });
+  const { data: status } = useAuthStatus();
   // The public demo keeps nothing private and has nowhere to keep a password.
   if (!status?.supported) return null;
   const on = status.authMode === "password";

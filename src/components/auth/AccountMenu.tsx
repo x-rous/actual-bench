@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { KeyRound, LogOut, UserRound } from "lucide-react";
 import {
@@ -13,34 +12,38 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { changeVaultPassphrase, getVaultStatus, lockVault } from "@/features/connect/vaultApi";
+import { changeVaultPassphrase, lockVault } from "@/features/connect/vaultApi";
+import { useAuthStatus } from "@/hooks/useAuthStatus";
 import { readVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
+import { parseApiError } from "@/components/connect/utils";
+import { fullPageLoad } from "@/lib/auth/fullPageLoad";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 
-export const AUTH_STATUS_QUERY_KEY = ["auth-status"] as const;
-
-/** End this browser's session and go to the sign-in page (a full load clears the tab's memory). */
-export async function signOut(): Promise<void> {
+/**
+ * End this browser's session and go to the sign-in page; a full load drops
+ * every connection and credential the tab holds in memory. If the server does
+ * not confirm, the user stays where they are and is told, rather than landing
+ * on a sign-in page that sends them straight back. `beforeLeave` runs only once
+ * the session has ended (the app shell drops unsaved changes there).
+ */
+export async function signOut({ beforeLeave }: { beforeLeave?: () => void } = {}): Promise<void> {
   try {
     await lockVault();
-  } finally {
-    // A full load on purpose: it drops every connection and credential this tab holds in memory.
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.assign("/login");
+  } catch (error) {
+    toast.error(`Could not sign out: ${parseApiError(error)}`);
+    return;
   }
+  beforeLeave?.();
+  fullPageLoad("/login");
 }
 
 /**
  * Sign out and change password (RD-096). Shown only when Actual Bench asks for
  * its password. `onSignOut` lets the app shell ask about unsaved changes first.
  */
-export function AccountMenu({ onSignOut = signOut }: { onSignOut?: () => void | Promise<void> }) {
+export function AccountMenu({ onSignOut = () => signOut() }: { onSignOut?: () => void | Promise<void> }) {
   const [changeOpen, setChangeOpen] = useState(false);
-  const { data: status } = useQuery({
-    queryKey: AUTH_STATUS_QUERY_KEY,
-    queryFn: getVaultStatus,
-    staleTime: 60_000,
-  });
+  const { data: status } = useAuthStatus();
 
   if (status?.authMode !== "password") return null;
 

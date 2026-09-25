@@ -31,13 +31,16 @@ export function GET(request: NextRequest) {
     const db = getAppDb();
     const token = readSessionToken(request);
     const unlocked = hasSession(token);
+    const mode = authMode();
     const duration = unlocked ? getSessionDuration(token) : null;
     const response = NextResponse.json({
       supported: true,
       passphraseSet: isPassphraseSet(db),
       unlocked,
-      authMode: authMode(),
-      passwordFromEnv: passwordFromEnv() !== null,
+      authMode: mode,
+      // Only for someone already in: a signed-out visitor learns nothing about
+      // how the password is managed.
+      passwordFromEnv: (unlocked || mode === "none") && passwordFromEnv() !== null,
     });
     if (token && duration) setSessionCookie(request, response, token, duration);
     return response;

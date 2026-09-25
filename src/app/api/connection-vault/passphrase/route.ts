@@ -9,11 +9,10 @@ import {
   DEFAULT_VAULT_UNLOCK_DURATION,
   isVaultUnlockDuration,
 } from "@/lib/connectionVault/unlockDuration";
+import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const MIN_PASSPHRASE_LENGTH = 8;
 
 /**
  * Set the vault passphrase for the first time (RD-061 / PR-026b), then unlock the
@@ -28,9 +27,9 @@ export async function POST(request: NextRequest) {
       );
     }
     const body = (await readJsonBody(request)) as { passphrase?: unknown; duration?: unknown };
-    if (typeof body?.passphrase !== "string" || body.passphrase.length < MIN_PASSPHRASE_LENGTH) {
+    if (typeof body?.passphrase !== "string" || body.passphrase.length < MIN_PASSWORD_LENGTH) {
       return NextResponse.json(
-        { error: `The password must be at least ${MIN_PASSPHRASE_LENGTH} characters.` },
+        { error: `The password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
         { status: 400 }
       );
     }
