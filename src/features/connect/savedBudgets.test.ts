@@ -43,6 +43,7 @@ beforeEach(() => {
     secret: { apiKey: null, serverPassword: "pw", encryptionPassword: "e2ee" },
   });
   mockedReady.mockResolvedValue(undefined);
+  mockedVault.rememberBudget.mockResolvedValue({ ok: true });
 });
 
 describe("connecting a saved budget (PR-071b)", () => {
@@ -53,6 +54,8 @@ describe("connecting a saved budget (PR-071b)", () => {
     expect(mockedReady).toHaveBeenCalledWith(instance);
     expect(instance).toMatchObject({ budgetSyncId: "budget-2", serverPassword: "pw", encryptionPassword: "e2ee", label: "Joint" });
     expect(useConnectionStore.getState().activeInstanceId).toBe(instance.id);
+    // Moves it to the top of the Saved list, most recently opened first.
+    expect(mockedVault.rememberBudget).toHaveBeenCalledWith({ serverFingerprint: "srv-1", budgetSyncId: "budget-2", name: "Joint" });
   });
 
   it("from a picker: joins the session without changing the active budget", async () => {

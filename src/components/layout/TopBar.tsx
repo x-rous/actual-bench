@@ -4,11 +4,10 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Save, X, Undo2, Redo2, RefreshCw, Search } from "lucide-react";
+import { Save, X, Undo2, Redo2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +16,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   useConnectionStore,
   selectActiveInstance,
@@ -34,7 +26,7 @@ import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSe
 import { getTransport } from "@/lib/actual";
 import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
-import { ConnectionHealthDot } from "./ConnectionHealthDot";
+import { ConnectionSwitcher } from "./ConnectionSwitcher";
 import { connectSavedBudget, useSavedBudgets, type SavedBudget } from "@/features/connect/savedBudgets";
 import { UnlockVaultDialog } from "@/features/connect/UnlockVaultDialog";
 import { useSavedServersStore } from "@/store/savedServers";
@@ -117,6 +109,9 @@ export function TopBar() {
   // Saved budgets not connected yet (PR-071b), and the one waiting on an unlock.
   const savedBudgets = useSavedBudgets();
   const [unlockFor, setUnlockFor] = useState<SavedBudget | null>(null);
+  // The unlock asked for from the switcher itself, with nothing waiting on it.
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [connectingTo, setConnectingTo] = useState<string | null>(null);
   // Set when a recovery point could not be taken before a risky save, so the
   // user can decide whether to go ahead without one.
   const [recoveryPointWarning, setRecoveryPointWarning] = useState<string | null>(null);
@@ -208,6 +203,7 @@ export function TopBar() {
       setUnlockFor(saved);
       return;
     }
+    setConnectingTo(saved.name);
     const pending = toast.loading(`Connecting to ${saved.name}...`);
     try {
       // Checked before it becomes active; only then are staged edits dropped
@@ -221,6 +217,8 @@ export function TopBar() {
         `Could not connect to ${saved.name}: ${err instanceof Error ? err.message : "the server did not answer"}. Open it from the Connect page to check its details.`,
         { id: pending }
       );
+    } finally {
+      setConnectingTo(null);
     }
   }
 
@@ -352,6 +350,21 @@ export function TopBar() {
     }
   }
 
+  /**
+   * Disconnect one budget. The active one goes through the unsaved-changes
+   * guard, as before; another one holds no staged edits, so it just goes.
+   */
+  function handleDisconnect(id: string) {
+    if (id === activeInstance?.id) {
+      requestAction({ kind: "disconnect" });
+      return;
+    }
+    const instance = instances.find((entry) => entry.id === id);
+    if (!instance) return;
+    removeSavedServerIfUnused({ instance, instances, savedServers, removeServer });
+    removeInstance(id);
+  }
+
   function handleSwitchConnection(id: string) {
     if (id === activeInstance?.id) return;
     requestAction({ kind: "switch", id });
@@ -422,80 +435,19 @@ export function TopBar() {
           </span>
 
           {activeInstance && (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground">
-                <ConnectionHealthDot />
-                <span className="max-w-40 truncate text-muted-foreground">
-                  {activeInstance.label}
-                </span>
-                <ChevronDown className="h-3 w-3 text-muted-foreground" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-80">
-                <div className="max-h-64 overflow-y-auto">
-                {instances.map((instance) => {
-                  const isActive = instance.id === activeInstance.id;
-                  return (
-                    <DropdownMenuItem
-                      key={instance.id}
-                      onClick={() => handleSwitchConnection(instance.id)}
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="truncate">{instance.label}</span>
-                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {instance.mode === "browser-api" ? "Direct" : "HTTP API"}
-                        </span>
-                      </span>
-                      {isActive && (
-                        <Badge variant="secondary" className="ml-1 shrink-0 text-xs">active</Badge>
-                      )}
-                    </DropdownMenuItem>
-                  );
-                })}
-                {savedBudgets.saved.length > 0 && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                      Saved{savedBudgets.locked ? " (unlock to open)" : ""}
-                    </div>
-                    {savedBudgets.saved.map((saved) => (
-                      <DropdownMenuItem
-                        key={`${saved.serverFingerprint}:${saved.budgetSyncId}`}
-                        onClick={() => requestAction({ kind: "openSaved", saved })}
-                        className="flex items-center justify-between gap-2"
-                        title={saved.baseUrl}
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="truncate">{saved.name}</span>
-                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                            {saved.mode === "browser-api" ? "Direct" : "HTTP API"}
-                          </span>
-                        </span>
-                        <span className="truncate text-[10px] text-muted-foreground">{saved.serverLabel}</span>
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => requestAction({ kind: "addConnection" })}>
-                  Add connection…
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => requestAction({ kind: "disconnect" })}
-                  className="text-destructive focus:text-destructive"
-                >
-                  Disconnect
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => requestAction({ kind: "disconnectAll" })}
-                  className="text-destructive focus:text-destructive"
-                >
-                  Disconnect All Connections
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ConnectionSwitcher
+              active={activeInstance}
+              instances={instances}
+              saved={savedBudgets.saved}
+              locked={savedBudgets.locked}
+              connectingTo={connectingTo}
+              onSwitch={handleSwitchConnection}
+              onOpenSaved={(saved) => requestAction({ kind: "openSaved", saved })}
+              onUnlock={() => setUnlockOpen(true)}
+              onAdd={() => requestAction({ kind: "addConnection" })}
+              onDisconnect={handleDisconnect}
+              onDisconnectAll={() => requestAction({ kind: "disconnectAll" })}
+            />
           )}
 
           {activeInstance && (activeDirectInstance || activeHttpInstance?.apiVersion || activeActualServerVersion) && (
@@ -705,13 +657,16 @@ export function TopBar() {
       </Dialog>
 
       <UnlockVaultDialog
-        open={unlockFor !== null}
+        open={unlockFor !== null || unlockOpen}
         onOpenChange={(open) => {
-          if (!open) setUnlockFor(null);
+          if (open) return;
+          setUnlockFor(null);
+          setUnlockOpen(false);
         }}
         onUnlocked={() => {
           const saved = unlockFor;
           setUnlockFor(null);
+          setUnlockOpen(false);
           if (saved) void openSavedBudget(saved);
         }}
       />

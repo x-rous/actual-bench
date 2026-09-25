@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useConnectionStore, type ConnectionInstance, type ConnectionMode } from "@/store/connection";
 import { buildInstanceFromRevealed, ensureConnectionReady } from "./reconnectFromVault";
-import { getVaultStatus, listRememberedServers, revealServerSecret, type VaultStatus } from "./vaultApi";
+import { getVaultStatus, listRememberedServers, rememberBudget, revealServerSecret, type VaultStatus } from "./vaultApi";
 
 /**
  * Saved budgets - the ones remembered in the connection vault (RD-061/RD-063) -
@@ -103,5 +103,10 @@ export async function connectSavedBudget(
   const store = useConnectionStore.getState();
   store.addInstance(instance);
   if (options.activate) store.setActiveInstance(instance.id);
+  // Keeps the Saved list most-recently-opened first. Best effort: a failure
+  // here only leaves the order as it was.
+  void rememberBudget({ serverFingerprint: saved.serverFingerprint, budgetSyncId: saved.budgetSyncId, name: saved.name }).catch(
+    () => undefined
+  );
   return instance;
 }
