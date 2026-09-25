@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { getConnectionModeBadge } from "@/components/connect/utils";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection } from "@/store/connection";
 import { enrollCredential, getVaultStatus } from "@/features/sync/lib/syncApi";
@@ -40,6 +41,8 @@ export function useEnrolledFingerprints() {
     select: (status) => ({
       enabled: status.enabled,
       fingerprints: new Set(status.credentials.map((entry) => entry.connectionFingerprint)),
+      /** The mode each enrolled budget is enrolled through, by sync ID (PR-071c). */
+      modesByBudget: new Map(status.credentials.map((entry) => [entry.budgetSyncId, entry.mode])),
     }),
   });
 }
@@ -81,8 +84,12 @@ export function EnrolConnection({
           : { serverPassword: connection.serverPassword, ...encryption },
       });
     },
-    onSuccess: () => {
-      toast.success(`${connection?.label ?? "This budget"} is set up for scheduled runs`);
+    onSuccess: (result) => {
+      toast.success(
+        result.switchedFrom
+          ? `${connection?.label ?? "This budget"} now runs through ${getConnectionModeBadge(connection?.mode ?? "browser-api")}`
+          : `${connection?.label ?? "This budget"} is set up for scheduled runs`
+      );
       void queryClient.invalidateQueries({ queryKey: ["vault-status"] });
       void queryClient.invalidateQueries({ queryKey: ["automation-connections"] });
       onEnrolled?.();
@@ -118,6 +125,50 @@ export function EnrolConnection({
   }
 
   if (vault.data.fingerprints.has(connectionFingerprint(connection))) return null;
+
+  // The same budget, already enrolled through the other mode. A budget is
+  // enrolled once, so enrolling this connection switches it (PR-071c). Direct
+  // is the recommended route - it needs no extra service - so it is offered;
+  // switching the other way stays possible but is not suggested.
+  const otherMode = vault.data.modesByBudget.get(connection.budgetSyncId);
+  if (otherMode && otherMode !== connection.mode) {
+    return (
+      <div className={box}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">
+              {connection.label} is set up for scheduled runs through {getConnectionModeBadge(otherMode)}.
+            </span>{" "}
+            {direct
+              ? "Direct is recommended: it needs no extra service and reports bank sync results in full. Switching moves this budget's automations to Direct."
+              : "Scheduled work on this budget uses that."}
+          </span>
+          {direct && (
+            <Button size="sm" className="h-7 text-xs" onClick={() => enrol.mutate()} disabled={enrol.isPending}>
+              {enrol.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ShieldCheck aria-hidden />}
+              {enrol.isPending ? "Checking..." : "Switch to Direct"}
+            </Button>
+          )}
+        </div>
+        {!direct && (
+          <button
+            type="button"
+            className="mt-1 underline underline-offset-4"
+            onClick={() => enrol.mutate()}
+            disabled={enrol.isPending}
+          >
+            {enrol.isPending ? "Checking..." : "Use HTTP API instead"}
+          </button>
+        )}
+        {enrol.isPending && (
+          <p className="mt-1" role="status">
+            Checking with your Actual server. This usually takes a few seconds, but can take a few minutes the first
+            time. Nothing changes if the check fails.
+          </p>
+        )}
+      </div>
+    );
+  }
 
   const notSetUp = <span className="font-medium">{connection.label} is not set up for scheduled runs.</span>;
 

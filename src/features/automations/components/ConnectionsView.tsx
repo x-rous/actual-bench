@@ -10,12 +10,19 @@ import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog
 import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
 import { withdrawCredential } from "@/features/sync/lib/syncApi";
-import { connectionFingerprint } from "@/lib/sync/connectionRef";
-import { isHttpApiConnection, selectActiveInstance, useConnectionStore } from "@/store/connection";
-import { listEnrolledConnections } from "../lib/automationsApi";
+import { connectionFingerprint, serverFingerprint } from "@/lib/sync/connectionRef";
+import { getConnectionModeBadge } from "@/components/connect/utils";
+import { isHttpApiConnection, selectActiveInstance, useConnectionStore, type ConnectionMode } from "@/store/connection";
+import {
+  listEnrolledConnections,
+  listServerBudgets,
+  type EnrolledConnection,
+  type ServerBudget,
+} from "../lib/automationsApi";
 import { formatDateTime } from "../lib/presentation";
 import { AutomationsTabs } from "./AutomationsTabs";
 import { EnrolConnection } from "./EnrolConnection";
+import { EnrolServerBudgetsDialog } from "./EnrolServerBudgetsDialog";
 
 /**
  * Unattended access (RD-058, given a home).
@@ -33,6 +40,89 @@ import { EnrolConnection } from "./EnrolConnection";
 
 const headerCell = "px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide";
 
+/** A server's budget list is cached this long, so opening the page does not sign in every time. */
+const SERVER_BUDGETS_STALE_MS = 5 * 60_000;
+
+/** One entry per server: the first enrolled budget on it stands for the server. */
+function enrolledServers(connections: EnrolledConnection[]): EnrolledConnection[] {
+  const seen = new Set<string>();
+  return connections.filter((connection) => {
+    const key = serverFingerprint({ mode: connection.mode as ConnectionMode, baseUrl: connection.baseUrl });
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * The other budgets on one enrolled server (PR-071a). Listed automatically -
+ * the server signs in from a worker with its saved password or key - and
+ * enrolled from there with nothing from the browser.
+ */
+function OtherServerBudgets({
+  server,
+  onEnrolled,
+}: {
+  server: EnrolledConnection;
+  onEnrolled: (budgets: ServerBudget[], mode: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const query = useQuery({
+    queryKey: ["server-budgets", server.connectionFingerprint],
+    queryFn: () => listServerBudgets(server.connectionFingerprint),
+    staleTime: SERVER_BUDGETS_STALE_MS,
+    retry: false,
+  });
+  const budgets = query.data?.budgets ?? [];
+  const others = budgets.filter((budget) => !budget.enrolled && !budget.enrolledVia);
+  // Enrolled through HTTP API while this is a Direct server: can switch to Direct.
+  const switchable =
+    server.mode === "browser-api" ? budgets.filter((budget) => !budget.enrolled && budget.enrolledVia === "http-api") : [];
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+      <span className="min-w-0 flex-1">
+        <span className="font-medium">{server.baseUrl}</span>
+        <span className="ml-1.5 text-muted-foreground">({getConnectionModeBadge(server.mode)})</span>
+        <span className="block text-muted-foreground">
+          {query.isLoading
+            ? "Looking for other budgets on this server..."
+            : query.isError
+              ? (query.error as Error).message
+              : others.length === 0
+                ? "Every budget on this server is enrolled."
+                : `${others.length} other ${others.length === 1 ? "budget" : "budgets"}: ${others.map((budget) => budget.name).join(", ")}`}
+        </span>
+        {switchable.length > 0 && (
+          <span className="block text-muted-foreground">
+            Enrolled through HTTP API, can switch to Direct: {switchable.map((budget) => budget.name).join(", ")}
+          </span>
+        )}
+      </span>
+      {query.isError ? (
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => void query.refetch()}>
+          Try again
+        </Button>
+      ) : (
+        (others.length > 0 || switchable.length > 0) && (
+          <Button size="sm" className="h-7 text-xs" onClick={() => setOpen(true)}>
+            {others.length > 0 ? "Enrol budgets on this server" : "Switch budgets to Direct"}
+          </Button>
+        )
+      )}
+      {query.data && (
+        <EnrolServerBudgetsDialog
+          open={open}
+          onOpenChange={setOpen}
+          server={query.data.server}
+          budgets={budgets}
+          onEnrolled={(budgets) => onEnrolled(budgets, query.data?.server.mode ?? server.mode)}
+        />
+      )}
+    </li>
+  );
+}
+
 export function ConnectionsView() {
   const queryClient = useQueryClient();
   const active = useConnectionStore(selectActiveInstance);
@@ -48,6 +138,28 @@ export function ConnectionsView() {
     void queryClient.invalidateQueries({ queryKey: ["automation-connections"] });
     void queryClient.invalidateQueries({ queryKey: ["vault-status"] });
   };
+  // A budget just enrolled changes only who is enrolled, not which budgets the
+  // servers have: update the cached lists in place rather than signing in to
+  // every server again, which also kept workers busy mid-batch (PR-071c).
+  const onServerBudgetsEnrolled = (enrolledBudgets: ServerBudget[], mode: string) => {
+    invalidate();
+    const byBudget = new Map(enrolledBudgets.map((budget) => [budget.budgetSyncId, budget]));
+    queryClient.setQueriesData<{ server: { mode: string; baseUrl: string }; budgets: ServerBudget[] }>(
+      { queryKey: ["server-budgets"] },
+      (current) =>
+        current && {
+          ...current,
+          budgets: current.budgets.map((budget) => {
+            const enrolled = byBudget.get(budget.budgetSyncId);
+            if (!enrolled) return budget;
+            // One enrolment per budget: this server's row, or the other mode's.
+            return budget.connectionFingerprint === enrolled.connectionFingerprint
+              ? { ...budget, enrolled: true, enrolledVia: undefined }
+              : { ...budget, enrolled: false, enrolledVia: mode };
+          }),
+        }
+    );
+  };
 
   const withdraw = useMutation({
     mutationFn: withdrawCredential,
@@ -61,7 +173,8 @@ export function ConnectionsView() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await query.refetch();
+      // Refresh re-reads each server's budgets too, past the cache.
+      await Promise.all([query.refetch(), queryClient.refetchQueries({ queryKey: ["server-budgets"] })]);
     } finally {
       setRefreshing(false);
     }
@@ -162,7 +275,10 @@ export function ConnectionsView() {
                           {connection.label}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 text-muted-foreground">{connection.baseUrl}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">
+                        {connection.baseUrl}
+                        <span className="ml-1.5 rounded bg-muted px-1 py-px text-[10px]">{getConnectionModeBadge(connection.mode)}</span>
+                      </td>
                       <td className="px-3 py-1.5 text-muted-foreground">
                         {formatDateTime(connection.enrolledAt)}
                       </td>
@@ -220,6 +336,20 @@ export function ConnectionsView() {
             </div>
           )}
 
+          {connections.length > 0 && query.data?.vaultEnabled !== false && (
+            <section className="mt-4">
+              <h3 className="text-sm font-semibold">Other budgets on your servers</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Bench already has each server&rsquo;s password or API key, so the other budgets on it can be enrolled
+                without connecting to them.
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {enrolledServers(connections).map((server) => (
+                  <OtherServerBudgets key={server.connectionFingerprint} server={server} onEnrolled={onServerBudgetsEnrolled} />
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
 

@@ -16,14 +16,15 @@ does not describe planned work.
 
 ## Connection modes
 
-### Only budgets connected in this session can be enrolled
+### The first budget on a server has to be connected to be enrolled
 
 **Applies to:** enrolling budgets for scheduled runs.
 
-Bench needs a budget's password or API key to enrol it, and the browser only holds those for budgets
-you have connected to in this session.
+Bench needs a server's password or API key to enrol its first budget, and the browser only holds that
+for a budget you have connected to. After that, the server's other budgets can be enrolled from the
+Connections tab without connecting to them.
 
-**Alternative:** connect to the budget first, then enrol it.
+**Alternative:** connect to one budget on the server, enrol it, then enrol the rest from Connections.
 
 ### ActualQL cURL is HTTP API Server-only
 

@@ -4,11 +4,10 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Save, X, Undo2, Redo2, RefreshCw, Search } from "lucide-react";
+import { Save, X, Undo2, Redo2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +16,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   useConnectionStore,
   selectActiveInstance,
@@ -34,7 +26,9 @@ import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSe
 import { getTransport } from "@/lib/actual";
 import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
-import { ConnectionHealthDot } from "./ConnectionHealthDot";
+import { ConnectionSwitcher } from "./ConnectionSwitcher";
+import type { SavedBudget } from "@/features/connect/savedBudgets";
+import { useSavedBudgetSwitcher } from "@/features/connect/useSavedBudgetSwitcher";
 import { useSavedServersStore } from "@/store/savedServers";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
 import {
@@ -62,6 +56,7 @@ import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "@/features/bud
 
 type PendingAction =
   | { kind: "switch"; id: string }
+  | { kind: "openSaved"; saved: SavedBudget }
   | { kind: "addConnection" }
   | { kind: "disconnect" }
   | { kind: "disconnectAll" };
@@ -182,6 +177,15 @@ export function TopBar() {
     }
   }
 
+  // Saved budgets not connected yet (PR-071b). Staged edits are dropped and
+  // the caches cleared only once the chosen one is known to work.
+  const savedBudgets = useSavedBudgetSwitcher({
+    prepare: () => {
+      handleDiscardAll();
+      queryClient.clear();
+    },
+  });
+
   // ── Guarded action helpers ────────────────────────────────────────────────────
 
   function requestAction(action: PendingAction) {
@@ -193,7 +197,9 @@ export function TopBar() {
   }
 
   async function executeAction(action: PendingAction) {
-    if (action.kind === "switch") {
+    if (action.kind === "openSaved") {
+      await savedBudgets.open(action.saved);
+    } else if (action.kind === "switch") {
       handleDiscardAll();
       queryClient.clear();
       setActive(action.id);
@@ -318,6 +324,21 @@ export function TopBar() {
     }
   }
 
+  /**
+   * Disconnect one budget. The active one goes through the unsaved-changes
+   * guard, as before; another one holds no staged edits, so it just goes.
+   */
+  function handleDisconnect(id: string) {
+    if (id === activeInstance?.id) {
+      requestAction({ kind: "disconnect" });
+      return;
+    }
+    const instance = instances.find((entry) => entry.id === id);
+    if (!instance) return;
+    removeSavedServerIfUnused({ instance, instances, savedServers, removeServer });
+    removeInstance(id);
+  }
+
   function handleSwitchConnection(id: string) {
     if (id === activeInstance?.id) return;
     requestAction({ kind: "switch", id });
@@ -388,56 +409,19 @@ export function TopBar() {
           </span>
 
           {activeInstance && (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground">
-                <ConnectionHealthDot />
-                <span className="max-w-40 truncate text-muted-foreground">
-                  {activeInstance.label}
-                </span>
-                <ChevronDown className="h-3 w-3 text-muted-foreground" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-80">
-                <div className="max-h-64 overflow-y-auto">
-                {instances.map((instance) => {
-                  const isActive = instance.id === activeInstance.id;
-                  return (
-                    <DropdownMenuItem
-                      key={instance.id}
-                      onClick={() => handleSwitchConnection(instance.id)}
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="truncate">{instance.label}</span>
-                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {instance.mode === "browser-api" ? "Direct" : "HTTP API"}
-                        </span>
-                      </span>
-                      {isActive && (
-                        <Badge variant="secondary" className="ml-1 shrink-0 text-xs">active</Badge>
-                      )}
-                    </DropdownMenuItem>
-                  );
-                })}
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => requestAction({ kind: "addConnection" })}>
-                  Add connection…
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => requestAction({ kind: "disconnect" })}
-                  className="text-destructive focus:text-destructive"
-                >
-                  Disconnect
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => requestAction({ kind: "disconnectAll" })}
-                  className="text-destructive focus:text-destructive"
-                >
-                  Disconnect All Connections
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ConnectionSwitcher
+              active={activeInstance}
+              instances={instances}
+              saved={savedBudgets.saved}
+              locked={savedBudgets.locked}
+              connectingTo={savedBudgets.connectingTo}
+              onSwitch={handleSwitchConnection}
+              onOpenSaved={(saved) => requestAction({ kind: "openSaved", saved })}
+              onUnlock={savedBudgets.unlock}
+              onAdd={() => requestAction({ kind: "addConnection" })}
+              onDisconnect={handleDisconnect}
+              onDisconnectAll={() => requestAction({ kind: "disconnectAll" })}
+            />
           )}
 
           {activeInstance && (activeDirectInstance || activeHttpInstance?.apiVersion || activeActualServerVersion) && (
@@ -646,6 +630,7 @@ export function TopBar() {
         </DialogContent>
       </Dialog>
 
+      {savedBudgets.dialog}
     </>
   );
 }

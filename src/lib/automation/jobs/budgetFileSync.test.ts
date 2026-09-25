@@ -14,6 +14,7 @@ import { __resetEngineStateForTests, runEngineTick } from "../engine";
 import { __resetAutomationRegistryForTests } from "../registry";
 import { migrateSyncFlowsToAutomations } from "./budgetFileSyncMigration";
 import { MIN_INTERVAL_MINUTES } from "../schedule";
+import { upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 
 function tempDb(): { root: string; db: SqliteDatabase } {
@@ -180,6 +181,52 @@ describe("migrating sync flows onto the engine", () => {
       expect(automation.credentialRef).toBe("server-a");
       expect(automation.enabled).toBe(true);
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("checks the enrolment the run will use: the source's own, or its budget's other one (PR-071c)", () => {
+    const { root, db } = tempDb();
+    const savedKey = process.env.SYNC_VAULT_KEY;
+    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    try {
+      createSyncFlow(db, {
+        name: "Direct → Joint",
+        legs: [
+          {
+            sourceRef: { version: 1, data: { connectionFingerprint: "direct-fp", budgetId: "budget-a" } },
+            targetRef: { version: 1, data: { connectionFingerprint: "server-b", budgetId: "budget-b" } },
+            filter: { version: 1, data: {} },
+            transform: { version: 1, data: {} },
+            options: { version: 1, data: { reviewPolicy: "auto_sync_unattended", intervalMinutes: 30 } },
+          },
+        ],
+      });
+      // The source budget is enrolled only through HTTP API.
+      upsertSyncCredential(db, {
+        connectionFingerprint: "http-fp",
+        mode: "http-api",
+        baseUrl: "https://api.example.com",
+        budgetSyncId: "budget-a",
+        secret: { apiKey: "key" },
+      });
+
+      migrateSyncFlowsToAutomations(db);
+      expect(listAutomations(db)[0].credentialRef).toBe("http-fp");
+
+      // Its own enrolment appears: the automation follows it.
+      upsertSyncCredential(db, {
+        connectionFingerprint: "direct-fp",
+        mode: "browser-api",
+        baseUrl: "https://actual.example.com",
+        budgetSyncId: "budget-a",
+        secret: { serverPassword: "pw" },
+      });
+      migrateSyncFlowsToAutomations(db);
+      expect(listAutomations(db)[0].credentialRef).toBe("direct-fp");
+    } finally {
+      if (savedKey === undefined) delete process.env.SYNC_VAULT_KEY;
+      else process.env.SYNC_VAULT_KEY = savedKey;
       rmSync(root, { recursive: true, force: true });
     }
   });

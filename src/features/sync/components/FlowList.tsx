@@ -7,7 +7,14 @@ import { cn } from "@/lib/utils";
 import { connectionFingerprint, connectionMatchesBudget } from "@/lib/sync/connectionRef";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsView";
-import { computeUnattendedStatus, nextRunPhrase, type EnginePause } from "../lib/unattendedStatus";
+import {
+  computeUnattendedStatus,
+  isEnrolled,
+  NO_ENROLMENTS,
+  nextRunPhrase,
+  type EnginePause,
+  type EnrolledIndex,
+} from "../lib/unattendedStatus";
 import type { ConnectionInstance } from "@/store/connection";
 import type { SyncFlow, SyncFlowRun } from "@/lib/app-db/types";
 
@@ -17,7 +24,8 @@ type FlowListProps = {
   latestRuns: Map<string, SyncFlowRun>;
   connections: ConnectionInstance[];
   vaultEnabled?: boolean;
-  enrolledFingerprints?: Set<string>;
+  /** What is enrolled, by connection and by budget (PR-071c). */
+  enrolled?: EnrolledIndex;
   /** Engine health-pause per flow id, from `useFlowAutomations`. */
   enginePauses?: Map<string, EnginePause | null>;
   onSelect: (flowId: string) => void;
@@ -41,7 +49,7 @@ export function FlowList({
   latestRuns,
   connections,
   vaultEnabled = false,
-  enrolledFingerprints = new Set<string>(),
+  enrolled = NO_ENROLMENTS,
   enginePauses = new Map<string, EnginePause | null>(),
   onSelect,
   onCreate,
@@ -116,7 +124,8 @@ export function FlowList({
               const lastRunMs = latestRun ? new Date(latestRun.finishedAt ?? latestRun.startedAt).getTime() : null;
               const src = config.sourceConnectionFingerprint;
               const tgt = config.targetConnectionFingerprint;
-              const bothEnrolled = enrolledFingerprints.has(src) && enrolledFingerprints.has(tgt);
+              const bothEnrolled =
+                isEnrolled(enrolled, src, config.sourceBudgetId) && isEnrolled(enrolled, tgt, config.targetBudgetId);
               // Runs on the server, so it needs nothing connected in this tab.
               const runsOnServer = config.reviewPolicy === "auto_sync_unattended" && bothEnrolled;
               const unattended = computeUnattendedStatus({

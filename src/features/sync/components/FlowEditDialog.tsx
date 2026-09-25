@@ -5,6 +5,7 @@ import { ArrowRight, Download, Info, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { getConnectionModeBadge } from "@/components/connect/utils";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,8 @@ import {
 } from "../lib/flowForm";
 import { exportFlowDefinition, importFlowDefinition, FlowImportError } from "../lib/flowPortability";
 import { UnattendedEnrollment } from "./UnattendedEnrollment";
+import { useSavedBudgetConnector } from "@/features/connect/useSavedBudgetConnector";
+import type { SavedBudget } from "@/features/connect/savedBudgets";
 import type { ConnectionInstance } from "@/store/connection";
 
 type FlowEditDialogProps = {
@@ -56,6 +59,9 @@ function InfoDot({ text }: { text: string }) {
   );
 }
 
+const SAVED_PREFIX = "saved:";
+const savedValue = (saved: SavedBudget) => `${SAVED_PREFIX}${saved.serverFingerprint}:${saved.budgetSyncId}`;
+
 function InlineEndpoint({
   label,
   endpoint,
@@ -71,16 +77,41 @@ function InlineEndpoint({
   onChange: (next: SyncEndpointForm) => void;
 }) {
   const accounts = useFlowAccounts(endpoint.connectionId);
+  // Saved budgets can be picked too; picking one connects it in the background
+  // without changing the active budget (PR-071b).
+  const savedConnector = useSavedBudgetConnector();
+  const savedForThis = savedConnector.saved.find((saved) => saved.budgetSyncId === endpoint.budgetSyncId);
+
   // A flow that runs on the server keeps its budgets when they are not
-  // connected here. Show what it uses; changing it needs the budget connected.
+  // connected here. Show what it uses; connecting it - one click when it is a
+  // saved budget - makes it editable again, and keeps the flow's own connection.
   if (isSavedEndpointOnly(endpoint)) {
     return (
-      <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-xs">
-        <span className="truncate font-medium">
-          {endpoint.budgetName || endpoint.budgetSyncId}
-          {entityMode ? "" : ` / ${endpoint.accountName || endpoint.accountId}`}
+      <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-xs">
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate font-medium">
+            {endpoint.budgetName || endpoint.budgetSyncId}
+            {entityMode ? "" : ` / ${endpoint.accountName || endpoint.accountId}`}
+          </span>
+          <span className="text-muted-foreground">
+            {savedForThis ? "Not connected here." : "Connect this budget to change it."}
+          </span>
         </span>
-        <span className="text-muted-foreground">Connect this budget to change it.</span>
+        {savedForThis && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 shrink-0 text-xs"
+            disabled={savedConnector.connecting}
+            onClick={async () => {
+              const instance = await savedConnector.connect(savedForThis);
+              if (instance) onChange({ ...endpoint, connectionId: instance.id });
+            }}
+          >
+            {savedConnector.connecting ? "Connecting..." : "Connect"}
+          </Button>
+        )}
+        {savedConnector.dialog}
       </div>
     );
   }
@@ -90,16 +121,36 @@ function InlineEndpoint({
         aria-label={`${label} connection`}
         className={`${selectClass} flex-1`}
         value={endpoint.connectionId}
-        onChange={(e) => {
-          const c = connections.find((x) => x.id === e.target.value);
+        disabled={savedConnector.connecting}
+        onChange={async (e) => {
+          const value = e.target.value;
+          if (value.startsWith(SAVED_PREFIX)) {
+            const saved = savedConnector.saved.find((entry) => savedValue(entry) === value);
+            const instance = saved ? await savedConnector.connect(saved) : null;
+            if (instance) {
+              onChange({ connectionId: instance.id, budgetSyncId: instance.budgetSyncId, budgetName: instance.label, accountId: "", accountName: "" });
+            }
+            return;
+          }
+          const c = connections.find((x) => x.id === value);
           onChange({ connectionId: c?.id ?? "", budgetSyncId: c?.budgetSyncId ?? "", budgetName: c?.label ?? "", accountId: "", accountName: "" });
         }}
       >
-        <option value="">{label} budget…</option>
+        <option value="">{savedConnector.connecting ? "Connecting..." : `${label} budget…`}</option>
         {connections.map((c) => (
           <option key={c.id} value={c.id}>{c.label}</option>
         ))}
+        {savedConnector.saved.length > 0 && (
+          <optgroup label={savedConnector.locked ? "Saved (unlock to open)" : "Saved"}>
+            {savedConnector.saved.map((saved) => (
+              <option key={savedValue(saved)} value={savedValue(saved)}>
+                {saved.name} ({getConnectionModeBadge(saved.mode)})
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
+      {savedConnector.dialog}
       {entityMode ? null : (
       <select
         aria-label={`${label} account`}

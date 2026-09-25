@@ -216,8 +216,14 @@ function endpointFingerprint(
   endpoint: SyncEndpointForm,
   instances: ConnectionInstance[]
 ): string {
+  // What was saved stays saved. Opening a flow may bind an endpoint to any
+  // connected budget with the same sync ID - so the flow works in the tab after
+  // a mode or address change - but that must not re-point the stored flow: a
+  // server-scheduled flow would suddenly need a different enrolment (PR-071c).
+  // Picking a budget in the editor replaces the endpoint and drops this.
+  if (endpoint.savedConnectionFingerprint) return endpoint.savedConnectionFingerprint;
   const instance = instances.find((i) => i.id === endpoint.connectionId);
-  return instance ? connectionFingerprint(instance) : (endpoint.savedConnectionFingerprint ?? "");
+  return instance ? connectionFingerprint(instance) : "";
 }
 
 /** A saved endpoint whose budget is not connected in this tab: shown read-only, kept on save. */

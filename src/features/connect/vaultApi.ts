@@ -20,19 +20,33 @@ async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   const text = await response.text();
-  let data: (T & { error?: string }) | null = null;
+  let data: (T & { error?: string; code?: string }) | null = null;
   try {
-    data = (text ? JSON.parse(text) : {}) as T & { error?: string };
+    data = (text ? JSON.parse(text) : {}) as T & { error?: string; code?: string };
   } catch {
     // Non-JSON body: fall through to a status-based error.
   }
   if (!response.ok) {
-    throw new Error(data?.error ?? `Request to ${input} failed (${response.status})`);
+    // Marked as the vault's own answer, already written for people: the
+    // Connect page's `parseApiError` shows it as it is, instead of reading it
+    // as a server that could not be reached. No `status`: a 401 there would
+    // read as a wrong API key.
+    const error = new Error(data?.error ?? `Request to ${input} failed (${response.status})`);
+    throw Object.assign(error, { fromVault: true as const }, data?.code ? { code: data.code } : {});
   }
   if (data === null) {
     throw new Error(`Request to ${input} returned a malformed response.`);
   }
   return data;
+}
+
+/**
+ * True when a vault request was refused because this session is locked - the
+ * unlock time ran out, or it was locked elsewhere - so the caller can ask for
+ * the passphrase instead of reporting a failure.
+ */
+export function isVaultLockedError(error: unknown): boolean {
+  return !!error && typeof error === "object" && (error as { code?: unknown }).code === "VAULT_LOCKED";
 }
 
 export type VaultStatus = {

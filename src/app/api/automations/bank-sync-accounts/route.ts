@@ -5,17 +5,12 @@ import { AppDbUnavailableError, AppDbValidationError } from "@/lib/app-db/errors
 import { sanitizeBankSyncError } from "@/lib/actual/bankSync";
 import { getSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { listAccountsForBankSync, isBankLinked, type BankLinkedAccount } from "@/lib/actual/bankSyncAccounts";
-import { actualErrorMessage, type ActualErrorCode } from "@/lib/actual/runtime/errors";
-import { getAutomationExecutor } from "@/lib/automation/executor";
-import { logger } from "@/lib/logger";
-import { runWorkerTask } from "@/lib/workers/supervisor";
+import { runConnectionTask } from "@/lib/actual/connectionTasks";
 import { vaultEnabled } from "@/lib/sync/vault";
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
 import { connectionFromEnrolment } from "@/lib/actual/serverTransport";
 
 export const dynamic = "force-dynamic";
-
-type DirectAccountsOutput = { accounts: BankLinkedAccount[] } | { failed: ActualErrorCode };
 
 /**
  * A cold open of a Direct budget. Usually a few seconds, because enrolment
@@ -60,38 +55,20 @@ export async function GET(request: Request) {
     if (meta.mode === "browser-api") {
       // A Direct budget opens only in a worker (RD-095). The worker gets the
       // connection by reference and reveals the credential itself.
-      if (getAutomationExecutor().name !== "worker") {
-        return NextResponse.json(
-          { error: "Direct connections need worker threads. Remove ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread." },
-          { status: 400 }
-        );
-      }
-      const outcome = await runWorkerTask(
-        "connection.bankAccounts",
-        { connectionFingerprint: fingerprint },
-        { signal: AbortSignal.timeout(DIRECT_ACCOUNTS_DEADLINE_MS) }
-      );
-      const output = outcome.status === "result" ? (outcome.output as DirectAccountsOutput | null) : null;
-      if (output && "accounts" in output) {
-        accounts = output.accounts;
-      } else {
-        // Fixed messages only: what a worker reports can carry internal detail
-        // (paths, upstream text), so it goes to the server log, not the page.
-        const busy = outcome.status === "stopped" && outcome.code === "NO_CAPACITY";
-        const message = output && "failed" in output
-          ? actualErrorMessage(output.failed)
-          : busy
-            ? "Bench is busy running automations. Try again in a minute."
-            : outcome.status === "stopped" && outcome.code === "TIMEOUT"
-              ? "Opening the budget took too long. Open it once in Actual's own app, which makes it faster to open, then try again."
-              : "Bench could not read this budget's accounts. Try again.";
-        if (!output) {
-          logger.warn(
-            `[bank-sync-accounts] worker ${outcome.status}: ${outcome.status === "result" ? "unreadable answer" : outcome.message}`
-          );
-        }
-        return NextResponse.json({ error: message }, { status: busy ? 503 : 502 });
-      }
+      const result = await runConnectionTask<BankLinkedAccount[]>({
+        kind: "connection.bankAccounts",
+        taskInput: { connectionFingerprint: fingerprint },
+        mode: meta.mode,
+        deadlineMs: DIRECT_ACCOUNTS_DEADLINE_MS,
+        messages: {
+          failed: "Bench could not read this budget's accounts. Try again.",
+          timedOut:
+            "Opening the budget took too long. Open it once in Actual's own app, which makes it faster to open, then try again.",
+        },
+        inThread: () => Promise.reject(new Error("unreachable: Direct never runs in-thread")),
+      });
+      if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status });
+      accounts = result.value;
     } else {
       const credential = getSyncCredential(db, fingerprint);
       if (!credential) {

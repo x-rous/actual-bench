@@ -9,6 +9,8 @@ import { deleteAllServerVaultCredentials, getServerCredential, upsertServerCrede
 import { getSecret, hasSecret, putSecret, secretRefs } from "./store";
 import {
   deleteSyncCredential,
+  enrolBudget,
+  enrolledConnectionFor,
   getSyncCredential,
   hasSyncCredential,
   resolveUnattendedSecret,
@@ -85,6 +87,79 @@ describe("syncCredentialRepository (RD-058 / PR-024a)", () => {
     upsertSyncCredential(db, input("fp-d"));
     deleteSyncCredential(db, "fp-d");
     expect(hasSyncCredential(db, "fp-d")).toBe(false);
+  });
+
+  describe("one enrolment per budget: switching modes (PR-071c)", () => {
+    it("moves every automation, flow and backup rule to the new enrolment and withdraws the old one", () => {
+      upsertSyncCredential(db, { ...input("fp-http"), budgetSyncId: "shared-budget" });
+      const now = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO automation_definitions (id, type, name, enabled, execution_mode, schedule_kind, interval_minutes, timezone,
+           target_ref_json, credential_ref, config_json, created_at, updated_at)
+         VALUES ('auto-1', 'bank-sync', 'Bank sync', 1, 'server', 'interval', 60, 'UTC', ?, 'fp-http', ?, ?, ?)`
+      ).run(
+        JSON.stringify({ version: 1, data: { connectionFingerprint: "fp-http" } }),
+        JSON.stringify({ version: 1, data: { connectionFingerprint: "fp-http", accountIds: [] } }),
+        now,
+        now
+      );
+      db.prepare(
+        `INSERT INTO sync_flows (id, name, enabled, created_at, updated_at, source_ref_json, target_ref_json, filter_json, transform_json, options_json)
+         VALUES ('flow-1', 'Flow', 1, ?, ?, ?, ?, '{"version":1,"data":{}}', '{"version":1,"data":{}}', '{"version":1,"data":{}}')`
+      ).run(
+        now,
+        now,
+        JSON.stringify({ version: 1, data: { connectionFingerprint: "fp-http", budgetId: "shared-budget" } }),
+        JSON.stringify({ version: 1, data: { connectionFingerprint: "fp-elsewhere", budgetId: "b2" } })
+      );
+
+      const { credential, replaced } = enrolBudget(db, {
+        connectionFingerprint: "fp-direct",
+        mode: "browser-api",
+        baseUrl: "https://actual.example.com",
+        budgetSyncId: "shared-budget",
+        secret: { serverPassword: "pw" },
+      });
+
+      expect(credential.connectionFingerprint).toBe("fp-direct");
+      expect(replaced.map((old) => old.connectionFingerprint)).toEqual(["fp-http"]);
+      // One enrolment for the budget, the new one.
+      expect(listSyncCredentialMeta(db).map((meta) => meta.connectionFingerprint)).toEqual(["fp-direct"]);
+      expect(hasSyncCredential(db, "fp-http")).toBe(false);
+
+      const automation = db
+        .prepare("SELECT credential_ref, config_json, target_ref_json FROM automation_definitions WHERE id = 'auto-1'")
+        .get<{ credential_ref: string; config_json: string; target_ref_json: string }>()!;
+      expect(automation.credential_ref).toBe("fp-direct");
+      expect(JSON.parse(automation.config_json).data).toEqual({ connectionFingerprint: "fp-direct", accountIds: [] });
+      expect(JSON.parse(automation.target_ref_json).data.connectionFingerprint).toBe("fp-direct");
+
+      const flow = db
+        .prepare("SELECT source_ref_json, target_ref_json FROM sync_flows WHERE id = 'flow-1'")
+        .get<{ source_ref_json: string; target_ref_json: string }>()!;
+      expect(JSON.parse(flow.source_ref_json).data.connectionFingerprint).toBe("fp-direct");
+      // A different connection is left alone.
+      expect(JSON.parse(flow.target_ref_json).data.connectionFingerprint).toBe("fp-elsewhere");
+    });
+
+    it("re-enrolling the same connection replaces nothing", () => {
+      upsertSyncCredential(db, { ...input("fp-http"), budgetSyncId: "shared-budget" });
+      const { replaced } = enrolBudget(db, { ...input("fp-http"), budgetSyncId: "shared-budget" });
+      expect(replaced).toEqual([]);
+      expect(listSyncCredentialMeta(db)).toHaveLength(1);
+    });
+  });
+
+  describe("the same budget through both modes (PR-071c)", () => {
+    it("uses the given enrolment, or another enrolment of the same budget", () => {
+      upsertSyncCredential(db, { ...input("fp-http"), budgetSyncId: "shared-budget" });
+
+      expect(enrolledConnectionFor(db, "fp-http", "shared-budget")).toBe("fp-http");
+      // The flow was saved on the Direct connection, which is not enrolled.
+      expect(enrolledConnectionFor(db, "fp-direct", "shared-budget")).toBe("fp-http");
+      expect(enrolledConnectionFor(db, "fp-direct", "another-budget")).toBeNull();
+      expect(enrolledConnectionFor(db, "fp-direct", null)).toBeNull();
+    });
   });
 
   describe("Direct connections (RD-095)", () => {

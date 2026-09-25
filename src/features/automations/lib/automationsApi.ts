@@ -190,6 +190,34 @@ export async function listEnrolledConnections(): Promise<{
   return (await response.json()) as { vaultEnabled: boolean; connections: EnrolledConnection[] };
 }
 
+/** One budget file on an enrolled server (PR-071a). */
+export type ServerBudget = {
+  budgetSyncId: string;
+  name: string;
+  encrypted: boolean;
+  enrolled: boolean;
+  /** Already enrolled through the other mode (HTTP API or Direct); runs can use that. */
+  enrolledVia?: string;
+  connectionFingerprint: string;
+};
+
+/**
+ * The budgets on an enrolled connection's server, and which are enrolled. The
+ * server lists them in a worker from its saved password or key; only names and
+ * flags come back.
+ */
+export async function listServerBudgets(connectionFingerprint: string): Promise<{
+  server: { mode: string; baseUrl: string };
+  budgets: ServerBudget[];
+}> {
+  const response = await fetch(
+    `/api/sync-credentials/servers/${encodeURIComponent(connectionFingerprint)}/budgets`,
+    { cache: "no-store" }
+  );
+  if (!response.ok) return readError(response);
+  return (await response.json()) as { server: { mode: string; baseUrl: string }; budgets: ServerBudget[] };
+}
+
 export async function createAutomation(input: Record<string, unknown>): Promise<AutomationDefinition> {
   const response = await fetch("/api/automations", {
     method: "POST",

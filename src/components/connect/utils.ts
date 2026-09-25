@@ -21,7 +21,8 @@ export function getConnectionModeLabel(mode: "http-api" | "browser-api"): string
   return mode === "browser-api" ? "Direct Actual Server" : "HTTP API Server";
 }
 
-export function getConnectionModeBadge(mode: "http-api" | "browser-api"): string {
+/** "Direct" or "HTTP API": the one short name for a mode, everywhere in the app. */
+export function getConnectionModeBadge(mode: string): string {
   return mode === "browser-api" ? "Direct" : "HTTP API";
 }
 
@@ -32,6 +33,11 @@ export function getConnectionModeBadge(mode: "http-api" | "browser-api"): string
  * Single source of truth for all error paths in ConnectForm.
  */
 export function parseApiError(err: unknown): string {
+  // The saved-connections vault answers in plain words ("Incorrect
+  // passphrase."); it is not a server that could not be reached.
+  if (err instanceof Error && (err as { fromVault?: unknown }).fromVault === true && err.message) {
+    return err.message;
+  }
   const status =
     err && typeof err === "object" && "status" in err
       ? (err as { status: number }).status

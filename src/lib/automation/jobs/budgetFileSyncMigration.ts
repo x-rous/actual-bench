@@ -7,6 +7,7 @@ import {
   updateAutomation,
 } from "@/lib/app-db/automationRepository";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
+import { enrolledConnectionFor } from "@/lib/credentials/unattendedCredentials";
 import { logger } from "@/lib/logger";
 import { MIN_INTERVAL_MINUTES } from "../schedule";
 import { BUDGET_FILE_SYNC_JOB_TYPE } from "./budgetFileSyncType";
@@ -148,8 +149,18 @@ function migrateOneFlow(
     return;
   }
 
+  // The credential the engine checks before a run is the one the run will use
+  // for the source: its own enrolment, or another enrolment of the same budget
+  // (PR-071c). Set on creation and kept in step, so a flow whose source moved
+  // is not checked against an enrolment it no longer uses.
+  const credentialRef =
+    enrolledConnectionFor(db, config.sourceConnectionFingerprint, config.sourceBudgetId) ||
+    config.sourceConnectionFingerprint ||
+    null;
+
   if (existing) {
-    const patch: { enabled?: boolean; intervalMinutes?: number } = {};
+    const patch: { enabled?: boolean; intervalMinutes?: number; credentialRef?: string | null } = {};
+    if (existing.credentialRef !== credentialRef) patch.credentialRef = credentialRef;
 
     // **Only ever turn it off, never on.** Following the flow's enabled state
     // in both directions meant a user who pressed Pause on the Automations
@@ -196,7 +207,7 @@ function migrateOneFlow(
     // The source connection is the one whose credential the run needs first;
     // `runServerSafeSync` resolves both ends itself, so this reference exists
     // for the engine's fail-closed check and for health display.
-    credentialRef: config.sourceConnectionFingerprint || null,
+    credentialRef,
     config: { version: 1, data: { flowId: flow.id } },
     // Carry the flow's existing schedule position across. Without this the
     // automation has no run history, `nextIntervalRun` treats it as never-run,

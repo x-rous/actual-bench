@@ -96,3 +96,39 @@ export function nextRunPhrase(status: UnattendedStatus, nowMs: number): string {
   const mins = Math.max(1, Math.round((status.nextRunAtMs - nowMs) / 60_000));
   return mins < 60 ? `Next run in ~${mins} min` : `Next run in ~${Math.round(mins / 60)} h`;
 }
+
+/**
+ * Which budgets are enrolled, by connection and by budget (PR-071c). A budget's
+ * sync ID is Actual's own identity for it, so a budget enrolled through HTTP
+ * API counts as enrolled for a flow saved on its Direct connection, and the
+ * other way round: a server run uses whichever enrolment exists.
+ */
+export type EnrolledIndex = {
+  fingerprints: Set<string>;
+  /** Each budget's enrolled connections, by sync ID - the flow's own or the other mode's. */
+  byBudget: Map<string, string[]>;
+};
+
+export const NO_ENROLMENTS: EnrolledIndex = { fingerprints: new Set(), byBudget: new Map() };
+
+export function enrolledIndex(credentials: ReadonlyArray<{ connectionFingerprint: string; budgetSyncId?: string }>): EnrolledIndex {
+  const byBudget = new Map<string, string[]>();
+  for (const { connectionFingerprint, budgetSyncId } of credentials) {
+    if (budgetSyncId) byBudget.set(budgetSyncId, [...(byBudget.get(budgetSyncId) ?? []), connectionFingerprint]);
+  }
+  return { fingerprints: new Set(credentials.map((credential) => credential.connectionFingerprint)), byBudget };
+}
+
+export function isEnrolled(index: EnrolledIndex, fingerprint: string, budgetSyncId?: string): boolean {
+  return index.fingerprints.has(fingerprint) || (!!budgetSyncId && index.byBudget.has(budgetSyncId));
+}
+
+/**
+ * The enrolments that serve an endpoint: its own connection's, and any other
+ * enrolment of the same budget (PR-071c), so withdrawing removes the one a run
+ * would actually use.
+ */
+export function enrolmentsFor(index: EnrolledIndex, fingerprints: Array<string | undefined>, budgetSyncId?: string): string[] {
+  const own = fingerprints.filter((fingerprint): fingerprint is string => !!fingerprint && index.fingerprints.has(fingerprint));
+  return [...new Set([...own, ...(budgetSyncId ? (index.byBudget.get(budgetSyncId) ?? []) : [])])];
+}

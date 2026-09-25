@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
     const key = getSessionKey(readSessionToken(request));
     if (!key) {
-      return NextResponse.json({ error: "Vault is locked. Unlock to reconnect." }, { status: 401 });
+      return NextResponse.json({ error: "Vault is locked. Unlock to reconnect.", code: "VAULT_LOCKED" }, { status: 401 });
     }
     const body = (await readJsonBody(request)) as { serverFingerprint?: unknown; budgetSyncId?: unknown };
     if (typeof body.serverFingerprint !== "string") {

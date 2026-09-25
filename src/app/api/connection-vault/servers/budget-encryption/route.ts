@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     if (!rememberedCredentialsSupported()) return unsupported();
     const key = getSessionKey(readSessionToken(request));
     if (!key) {
-      return NextResponse.json({ error: "Vault is locked. Unlock before remembering a password." }, { status: 401 });
+      return NextResponse.json({ error: "Vault is locked. Unlock before remembering a password.", code: "VAULT_LOCKED" }, { status: 401 });
     }
     const body = (await readJsonBody(request)) as {
       serverFingerprint?: unknown;

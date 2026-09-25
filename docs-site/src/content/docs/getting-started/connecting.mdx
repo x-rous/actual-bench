@@ -60,7 +60,11 @@ You can save non-secret recent details or optionally save encrypted server crede
 3. Connect. The server credential is encrypted and saved; an encrypted budget's password is saved
    separately for that budget.
 
-Saved servers show up in the **Connections** list. Choose how long to keep the vault unlocked when you
+Saved servers show up in the **Connections** list, and as a choice when you add a server - marked with a
+lock. Choosing one loads its budgets with the saved password or API key. While your saved connections are
+locked, saved servers cannot be chosen: unlock them first, or add a new server by typing its details.
+Selecting **Lock** also clears anything the add-server form was holding. Budgets that are already open stay
+open and you can still switch between them. Choose how long to keep the vault unlocked when you
 enter your passphrase: 8 hours, 24 hours, 7 days, or 30 days. The timer resets when you use the vault.
 Locking it, clearing browser cookies, or restarting Bench always requires your passphrase again. One server
 is stored once, however many budgets live on it.
@@ -75,14 +79,27 @@ Remembered servers only survive if the volume holding Bench's metadata database 
 by default, or wherever `ACTUAL_BENCH_DB_PATH` points. If you run the installation, see
 [Upgrades and backups](../../administration/upgrading-and-backups/).
 
-## Switch between open budgets
+## Switch between budgets
 
-Use the top-bar switcher to change budgets. Each budget keeps a separate draft and cache. Confirm the
-active budget before you select **Save** or **Apply**.
+Use the top-bar switcher to change budgets. It lists the budgets connected in this session, and under
+**Saved**, the budgets you saved with **Remember** that are not connected yet. Choosing a saved budget
+connects to it and switches to it in one step. If your saved connections are locked, Bench asks for
+your passphrase first. If the budget cannot be reached, you stay on the current one.
+
+Budgets are grouped by server, with each server's address and mode (**Direct** or **HTTP API**) on its
+heading, and a check marks the active budget. Saved budgets are listed most recently opened first. Point at a connected budget and select **✕** to disconnect it without
+switching to it. When you have many budgets, a filter box at the top narrows the list by budget or
+server name.
+
+Each budget keeps a separate draft and cache. Confirm the active budget before you select **Save** or
+**Apply**.
 
 ## How credentials are handled
 
 - By default, server passwords, API keys and encryption passwords never leave browser memory.
+- Bench never shows a password, API key or encryption password it already has, not even hidden in a
+  field. Once one is saved, taken from an open connection, or typed and used to load the budgets, the
+  form says so, for example **Password saved for this server**, with an option to use a different one.
 - Recent connection details contain no secrets.
 - Remembered-server credentials are opt-in, and encrypted with your passphrase.
 - Unattended-sync credentials are a different opt-in again, controlled by whoever runs the server.

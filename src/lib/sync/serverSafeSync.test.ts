@@ -74,6 +74,25 @@ describe("runServerSafeSync (RD-058 / PR-024b)", () => {
     expect((await runServerSafeSync(db, flowId)).status).toBe("not_enrolled");
   });
 
+  it("runs a flow saved on a connection that is not enrolled through another enrolment of the same budget (PR-071c)", async () => {
+    const flowId = makeFlow(db);
+    // The flow was saved on "src-fp" and "tgt-fp"; the same two budgets are
+    // enrolled under other connections - say, through the other mode.
+    enroll(db, "src-other-mode", "b-src");
+    enroll(db, "tgt-other-mode", "b-tgt");
+    global.fetch = jest.fn(async () =>
+      new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } })
+    ) as unknown as typeof fetch;
+
+    const result = await runServerSafeSync(db, flowId);
+
+    expect(result.status).toBe("no_safe_items");
+    // Both budgets were read, each through its other enrolment.
+    const calledUrls = (global.fetch as jest.Mock).mock.calls.map((call) => String(call[0]));
+    expect(calledUrls.some((url) => url.includes("/v1/budgets/b-src/"))).toBe(true);
+    expect(calledUrls.some((url) => url.includes("/v1/budgets/b-tgt/"))).toBe(true);
+  });
+
   it("runs the safe-only engine server-side with no browser (empty source → no-op)", async () => {
     const flowId = makeFlow(db);
     enroll(db, "src-fp", "b-src");

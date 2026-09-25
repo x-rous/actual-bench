@@ -161,6 +161,42 @@ describe("enrolling a budget for unattended access", () => {
     });
   });
 
+  it("offers to switch a budget enrolled through HTTP API to Direct (PR-071c)", async () => {
+    mockedSync.getVaultStatus.mockResolvedValue({
+      enabled: true,
+      credentials: [{ connectionFingerprint: "http-fp", budgetSyncId: "budget-1", mode: "http-api" } as never],
+    });
+    mockedSync.enrollCredential.mockResolvedValue({ credential: {} as never, switchedFrom: "http-api" });
+    const direct = { ...httpConnection(), mode: "browser-api", serverPassword: "pw" } as ConnectionInstance;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <EnrolConnection connection={direct} allowDirect />
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText(/set up for scheduled runs through HTTP API/)).toBeInTheDocument();
+    expect(screen.getByText(/Direct is recommended/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Switch to Direct" }));
+
+    await waitFor(() => expect(mockedSync.enrollCredential).toHaveBeenCalled());
+    expect(mockedSync.enrollCredential.mock.calls[0][0]).toMatchObject({ mode: "browser-api", secret: { serverPassword: "pw" } });
+  });
+
+  it("does not push an HTTP API connection over a Direct enrolment, but allows it (PR-071c)", async () => {
+    mockedSync.getVaultStatus.mockResolvedValue({
+      enabled: true,
+      credentials: [{ connectionFingerprint: "direct-fp", budgetSyncId: "budget-1", mode: "browser-api" } as never],
+    });
+    mockedSync.enrollCredential.mockResolvedValue({ credential: {} as never });
+    renderPanel(httpConnection());
+
+    expect(await screen.findByText(/set up for scheduled runs through Direct/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /switch to direct/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use HTTP API instead" }));
+    await waitFor(() => expect(mockedSync.enrollCredential).toHaveBeenCalled());
+  });
+
   it("points at the operator step when the vault is off", async () => {
     mockedSync.getVaultStatus.mockResolvedValue({ enabled: false, credentials: [] });
     renderPanel(httpConnection());

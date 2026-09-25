@@ -31,7 +31,7 @@ import {
   rememberBudgetEncryption,
   revealServerSecret,
 } from "@/features/connect/vaultApi";
-import { buildInstanceFromRevealed } from "@/features/connect/reconnectFromVault";
+import { connectSavedBudget } from "@/features/connect/savedBudgets";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
@@ -39,6 +39,7 @@ import { generateId } from "@/lib/uuid";
 import {
   normalizeUrl,
   deriveLabel,
+  getConnectionModeBadge,
   parseApiError,
   type ValidateStatus,
   type ConnectStatus,
@@ -65,10 +66,33 @@ export type SavedBudgetRef = {
   label: string;
 };
 
+/**
+ * How the Connect page holds a server's password or API key once it has one:
+ * saved in the vault, taken from a connection open this session, or typed and
+ * already used to load the budget list. The secret itself is never put back
+ * into a form field - a field's value can be read with the browser's
+ * inspector - so the form shows only which of these it is.
+ */
+export type HeldCredential = { source: "saved" | "session" | "entered"; mode: ConnectionMode; baseUrl: string };
+
+/** A server the form offers as a chip: a remembered address, and whether the vault holds its secret. */
+export type ServerChoice = SavedServer & { remembered?: ServerCredentialMeta };
+
+type ServerSecret = { apiKey?: string; serverPassword?: string };
+
 export function useConnectForm({
   savedBudgets = [],
+  rememberedServers = [],
+  vaultLocked = false,
 }: {
   savedBudgets?: SavedBudgetRef[];
+  /** Servers whose password or key is saved in the vault. */
+  rememberedServers?: ServerCredentialMeta[];
+  /**
+   * A vault passphrase is set and this session is locked. Saved connections
+   * then cannot be used to connect - only a new server, typed in.
+   */
+  vaultLocked?: boolean;
 } = {}) {
   const queryClient = useQueryClient();
   const addInstance = useConnectionStore((s) => s.addInstance);
@@ -102,12 +126,26 @@ export function useConnectForm({
   const [budgets, setBudgets] = useState<BudgetFile[] | null>(null);
   const [validatedMode, setValidatedMode] = useState<ConnectionMode | null>(null);
   const [validatedUrl, setValidatedUrl] = useState("");
-  const [validatedApiKey, setValidatedApiKey] = useState("");
-  const [validatedServerPassword, setValidatedServerPassword] = useState("");
   const [validatedApiVersion, setValidatedApiVersion] = useState<string | null>(null);
   const [validatedServerVersion, setValidatedServerVersion] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [encryptionPassword, setEncryptionPassword] = useState("");
+
+  // The server's secret, held in memory and never rendered (see HeldCredential).
+  // The ref holds the value; the state says only where it came from.
+  const heldSecretRef = useRef<ServerSecret | null>(null);
+  const [heldCredential, setHeldCredential] = useState<HeldCredential | null>(null);
+  // A budget's saved encryption password, held the same way: the field stays
+  // empty and the form says one will be used.
+  const heldEncryptionRef = useRef("");
+  const [encryptionSaved, setEncryptionSaved] = useState(false);
+  // Bumped whenever the held secret is let go of (Lock, a new server, "Use a
+  // different password"): a budget list or reveal still on its way from before
+  // then must not bring the secret back.
+  const credentialGenerationRef = useRef(0);
+  // The same for a budget's encryption password: only the latest reveal counts,
+  // so a late answer for one budget never lands on another.
+  const encryptionRequestRef = useRef(0);
   const [connectStatus, setConnectStatus] = useState<ConnectStatus>({ kind: "idle" });
 
   // Reconnect busy tracking for connection cards
@@ -122,10 +160,32 @@ export function useConnectForm({
   const anyBusy = validateBusy || connectBusy || reconnectBusyId !== null;
   const step1Complete = budgets !== null;
 
-  const savedServersForMode = useMemo(
-    () => savedServers.filter((server) => server.mode === connectionMode),
-    [savedServers, connectionMode]
-  );
+  // One list of servers for this mode: the addresses remembered in this
+  // browser and the servers saved in the vault, each once, marked when the
+  // vault holds its secret.
+  const savedServersForMode = useMemo((): ServerChoice[] => {
+    const byServer = new Map<string, ServerChoice>();
+    for (const server of savedServers.filter((entry) => entry.mode === connectionMode)) {
+      byServer.set(serverFingerprint(server), server);
+    }
+    for (const remembered of rememberedServers.filter((entry) => entry.mode === connectionMode)) {
+      const fp = serverFingerprint(remembered);
+      const known = byServer.get(fp);
+      byServer.set(
+        fp,
+        known
+          ? { ...known, remembered }
+          : {
+              id: `vault:${remembered.serverFingerprint}`,
+              mode: remembered.mode,
+              label: remembered.label || deriveLabel(remembered.baseUrl),
+              baseUrl: remembered.baseUrl,
+              remembered,
+            } as ServerChoice
+      );
+    }
+    return [...byServer.values()];
+  }, [savedServers, rememberedServers, connectionMode]);
 
   // Keep server URL and credential fields visible only until the budget
   // list is loaded. The Change button resets step 1 if the user needs edits.
@@ -169,14 +229,63 @@ export function useConnectForm({
     setConnectStatus({ kind: "idle" });
     setValidatedMode(null);
     setValidatedUrl("");
-    setValidatedApiKey("");
-    setValidatedServerPassword("");
     setValidatedApiVersion(null);
     setValidatedServerVersion(null);
+    encryptionRequestRef.current += 1;
+    heldEncryptionRef.current = "";
+    setEncryptionSaved(false);
+  }
+
+  function holdCredential(held: HeldCredential, secret: ServerSecret) {
+    heldSecretRef.current = secret;
+    setHeldCredential(held);
+    // What was typed has been taken; the fields go back to empty.
+    setApiKey("");
+    setServerPassword("");
+  }
+
+  /** Forget the held secret: "Use a different password", a new URL or mode, Cancel. */
+  function dropCredential() {
+    credentialGenerationRef.current += 1;
+    heldSecretRef.current = null;
+    setHeldCredential(null);
+  }
+
+  /** The held secret, for a server call. Never for display. */
+  function heldSecret(): ServerSecret {
+    return heldSecretRef.current ?? {};
   }
 
   function handleCredentialChange() {
+    dropCredential();
     resetStep2();
+  }
+
+  /**
+   * The vault was locked: nothing saved may be used to connect now, so the
+   * form lets go of any password or key it holds and starts again, empty.
+   */
+  function forgetOnLock() {
+    dropCredential();
+    resetStep2();
+    setSelectedServerId(null);
+    setBaseUrl("");
+    setApiKey("");
+    setServerPassword("");
+    setValidateStatus({ kind: "idle" });
+  }
+
+  /** "Use a different password": back to an empty field for this server. */
+  function chooseDifferentCredential() {
+    dropCredential();
+    resetStep2();
+  }
+
+  /** "Use a different one" for a budget's saved encryption password. */
+  function chooseDifferentEncryptionPassword() {
+    encryptionRequestRef.current += 1;
+    heldEncryptionRef.current = "";
+    setEncryptionSaved(false);
   }
 
   function handleModeChange(mode: ConnectionMode) {
@@ -187,19 +296,27 @@ export function useConnectForm({
     setServerPassword("");
     setValidateStatus({ kind: "idle" });
     setSelectedServerId(null);
+    dropCredential();
     resetStep2();
   }
 
   // ── Saved server chip selection ──────────────────────────────────────────────
 
-  function handleSelectServer(server: SavedServer | null) {
+  // A chip fills in the address. Its secret is used without being shown: the
+  // one from a connection open this session, or the one saved in the vault.
+  // Otherwise the password or key is typed as usual. While the vault is
+  // locked the chips are saved connections that cannot be used - the page
+  // disables them - so a chip never connects then, whatever it holds.
+  function handleSelectServer(server: ServerChoice | null) {
+    if (server && vaultLocked) return;
     resetStep2();
+    dropCredential();
     setValidateStatus({ kind: "idle" });
+    setApiKey("");
+    setServerPassword("");
     if (!server) {
       setSelectedServerId(null);
       setBaseUrl("");
-      setApiKey("");
-      setServerPassword("");
       return;
     }
 
@@ -207,38 +324,57 @@ export function useConnectForm({
     setSelectedServerId(server.id);
     setBaseUrl(server.baseUrl);
 
-    const reusableConnection = instances.find(
-      (instance) => instance.mode === server.mode && instance.baseUrl === server.baseUrl
-    );
-
-    if (server.mode === "http-api") {
-      const reusableApiKey = isHttpApiConnection(reusableConnection)
-        ? reusableConnection.apiKey
-        : "";
-      setApiKey(reusableApiKey);
-      setServerPassword("");
-      if (reusableApiKey) {
-        validate({
-          mode: "http-api",
-          baseUrl: server.baseUrl,
-          apiKey: reusableApiKey,
-        }).catch(console.error);
-      }
+    const open = instances.find((instance) => serverFingerprint(instance) === serverFingerprint(server));
+    const openSecret: ServerSecret | null = isHttpApiConnection(open)
+      ? { apiKey: open.apiKey }
+      : isBrowserApiConnection(open)
+        ? { serverPassword: open.serverPassword }
+        : null;
+    if (openSecret) {
+      validate({ mode: server.mode, baseUrl: server.baseUrl, ...openSecret, source: "session" }).catch(console.error);
       return;
     }
 
-    const reusableServerPassword = isBrowserApiConnection(reusableConnection)
-      ? reusableConnection.serverPassword
-      : "";
-    setApiKey("");
-    setServerPassword(reusableServerPassword);
-    if (reusableServerPassword) {
-      validate({
-        mode: "browser-api",
-        baseUrl: server.baseUrl,
-        serverPassword: reusableServerPassword,
-      }).catch(console.error);
+    if (server.remembered) {
+      const remembered = server.remembered;
+      const generation = credentialGenerationRef.current;
+      void (async () => {
+        try {
+          const revealed = await revealServerSecret(remembered.serverFingerprint);
+          // Locked, or another server chosen, while it was revealed.
+          if (generation !== credentialGenerationRef.current) return;
+          await validate({
+            generation,
+            mode: revealed.mode,
+            baseUrl: revealed.baseUrl,
+            apiKey: revealed.secret.apiKey ?? undefined,
+            serverPassword: revealed.secret.serverPassword ?? undefined,
+            source: "saved",
+          });
+        } catch (err) {
+          if (generation !== credentialGenerationRef.current) return;
+          setValidateStatus({ kind: "error", message: parseApiError(err) });
+        }
+      })();
     }
+  }
+
+  // The server versions shown in the toolbar, read once a connection is known
+  // to work. Best effort: a version that cannot be read is left out.
+  async function readVersions(instance: ConnectionInstance): Promise<ConnectionInstance> {
+    if (isBrowserApiConnection(instance)) {
+      const version = await getTransport(instance).getServerVersion().catch(() => null);
+      return version ? { ...instance, serverVersion: version } : instance;
+    }
+    const [apiVersion, serverVersion] = await Promise.allSettled([
+      getApiVersion(instance.baseUrl, instance.apiKey),
+      getServerVersion(instance.baseUrl, instance.apiKey, instance.budgetSyncId),
+    ]);
+    return {
+      ...instance,
+      ...(apiVersion.status === "fulfilled" ? { apiVersion: apiVersion.value } : {}),
+      ...(serverVersion.status === "fulfilled" ? { serverVersion: serverVersion.value } : {}),
+    };
   }
 
   // ── Reconnect saved instance ─────────────────────────────────────────────────
@@ -297,14 +433,6 @@ export function useConnectForm({
     });
   }
 
-  // Reconnect a remembered (vault) connection: add it to the in-memory store,
-  // then run the normal reconnect flow. The instance is rebuilt from the
-  // revealed secret by the caller.
-  function reconnectRemembered(instance: ConnectionInstance) {
-    addInstance(instance);
-    handleReconnect(instance);
-  }
-
   // Best-effort enroll into the vault after a successful connect, when the user
   // ticked "Remember". Server-scoped (RD-063): the server credential opens any of
   // its budgets, and an encryption password (if any) is remembered per-budget.
@@ -343,40 +471,55 @@ export function useConnectForm({
 
   // One-click reconnect into a remembered budget (RD-063): reveal the server
   // secret + that budget's encryption password, rebuild the connection, and go
-  // straight to the budget — no budget picker. Errors propagate to the caller.
+  // straight to the budget - no budget picker. The same path as the toolbar's
+  // saved budgets: checked before it joins the session, so a server that is
+  // down leaves nothing behind and replaces nothing. Errors propagate to the
+  // caller (the Connections list shows them inline).
   async function openRememberedBudget(server: ServerCredentialMeta, budget: RememberedBudget) {
-    const revealed = await revealServerSecret(server.serverFingerprint, budget.budgetSyncId);
-    const instance = buildInstanceFromRevealed(revealed, budget.budgetSyncId, budget.name);
-    reconnectRemembered(instance);
+    const opened = await connectSavedBudget(
+      {
+        serverFingerprint: server.serverFingerprint,
+        budgetSyncId: budget.budgetSyncId,
+        name: budget.name,
+        mode: server.mode,
+        baseUrl: server.baseUrl,
+        serverLabel: server.label,
+      },
+      {
+        activate: true,
+        prepare: async (instance) => {
+          const withVersions = await readVersions(instance);
+          discardAll();
+          queryClient.clear();
+          return withVersions;
+        },
+      }
+    );
+    toast.success(isBrowserApiConnection(opened) ? "Direct connection opened." : "Connected!");
   }
 
   // Start a connection from a remembered server (RD-063): reveal its secret,
   // prime the form, and load its budget list so the user can pick any budget.
   // Errors propagate to the caller (the Connections list shows them inline).
   async function startFromRememberedServer(server: ServerCredentialMeta) {
+    dropCredential();
+    const generation = credentialGenerationRef.current;
     const revealed = await revealServerSecret(server.serverFingerprint);
+    // Locked, or another server chosen, while it was revealed.
+    if (generation !== credentialGenerationRef.current) return;
     setConnectionMode(revealed.mode);
     setSelectedServerId(null);
     setBaseUrl(revealed.baseUrl);
-    if (revealed.mode === "http-api") {
-      setApiKey(revealed.secret.apiKey ?? "");
-      setServerPassword("");
-    } else {
-      setServerPassword(revealed.secret.serverPassword ?? "");
-      setApiKey("");
-    }
+    // The secret goes to the server call only - never into the form's fields.
     await validate({
+      generation,
       mode: revealed.mode,
       baseUrl: revealed.baseUrl,
       apiKey: revealed.secret.apiKey ?? undefined,
       serverPassword: revealed.secret.serverPassword ?? undefined,
+      source: "saved",
     });
   }
-
-  // The last encryption password we auto-filled from the vault. Lets us tell a
-  // remembered password apart from one the user typed, so budget switches
-  // refresh the former but never clobber the latter.
-  const autoFilledEncRef = useRef("");
 
   // Reveal a budget's remembered encryption password for a server (mode + URL),
   // or "" when the vault is locked, the server isn't remembered, or the budget
@@ -391,21 +534,29 @@ export function useConnectForm({
     }
   }
 
-  // When a budget is picked, pre-fill its remembered encryption password so an
-  // encrypted budget opens without a second prompt — but never clobber a
-  // password the user typed themselves.
-  async function prefillEncryptionPassword(budgetSyncId: string) {
-    if (!validatedMode || !validatedUrl) return;
-    if (encryptionPassword && encryptionPassword !== autoFilledEncRef.current) return;
-    const pw = await revealBudgetEncryption(validatedMode, validatedUrl, budgetSyncId);
-    autoFilledEncRef.current = pw;
-    setEncryptionPassword(pw);
+  // Use a budget's remembered encryption password, so an encrypted budget
+  // opens without a second prompt. Held, never put in the field - and a
+  // password the user typed always wins.
+  async function holdSavedEncryption(mode: ConnectionMode, url: string, budgetSyncId: string) {
+    const request = ++encryptionRequestRef.current;
+    heldEncryptionRef.current = "";
+    setEncryptionSaved(false);
+    const saved = await revealBudgetEncryption(mode, url, budgetSyncId);
+    // Another budget chosen, or the password cleared, while it was revealed.
+    if (request !== encryptionRequestRef.current) return;
+    heldEncryptionRef.current = saved;
+    setEncryptionSaved(!!saved);
+  }
+
+  /** The encryption password to open the chosen budget with: typed, else saved. */
+  function chosenEncryptionPassword(): string {
+    return encryptionPassword.trim() || heldEncryptionRef.current;
   }
 
   function handleSelectBudget(budgetSyncId: string) {
     setSelectedGroupId(budgetSyncId);
     if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
-    void prefillEncryptionPassword(budgetSyncId);
+    if (validatedMode && validatedUrl) void holdSavedEncryption(validatedMode, validatedUrl, budgetSyncId);
   }
 
   // ── Validate: fetch budget list ─────────────────────────────────────────────
@@ -415,11 +566,20 @@ export function useConnectForm({
     baseUrl?: string;
     apiKey?: string;
     serverPassword?: string;
+    /** Where an override secret came from, for the "saved" line the form shows. */
+    source?: HeldCredential["source"];
+    /** The credential generation the caller started under, before its own awaits. */
+    generation?: number;
   } = {}) {
     const mode = overrides.mode ?? connectionMode;
     const url = normalizeUrl(overrides.baseUrl ?? baseUrl);
-    const key = (overrides.apiKey ?? apiKey).trim();
-    const password = overrides.serverPassword ?? serverPassword;
+    // An override (saved or session), else what was typed, else the held one.
+    const held = heldSecret();
+    const key = (overrides.apiKey ?? (apiKey.trim() || held.apiKey || "")).trim();
+    const password = overrides.serverPassword ?? (serverPassword || held.serverPassword || "");
+    const typed = mode === "http-api" ? !!apiKey.trim() : !!serverPassword;
+    const source: HeldCredential["source"] =
+      overrides.source ?? (typed ? "entered" : (heldCredential?.source ?? "entered"));
 
     if (!url) {
       setValidateStatus({ kind: "error", message: "Server URL is required." });
@@ -436,10 +596,16 @@ export function useConnectForm({
       return;
     }
 
+    const generation = overrides.generation ?? credentialGenerationRef.current;
+    // True once the vault was locked, or the credential let go of, since this
+    // started: the answer is dropped rather than bringing the secret back.
+    const stale = () => generation !== credentialGenerationRef.current;
     setValidateStatus({ kind: "busy" });
     setBudgets(null);
     setSelectedGroupId(null);
     setEncryptionPassword("");
+    heldEncryptionRef.current = "";
+    setEncryptionSaved(false);
     setConnectStatus({ kind: "idle" });
 
     try {
@@ -475,6 +641,10 @@ export function useConnectForm({
         });
       }
 
+      if (stale()) {
+        setValidateStatus({ kind: "idle" });
+        return;
+      }
       if (fetched.length === 0) {
         setValidateStatus({ kind: "error", message: "No budgets found on this server." });
         return;
@@ -482,20 +652,17 @@ export function useConnectForm({
 
       setValidatedMode(mode);
       setValidatedUrl(url);
-      setValidatedApiKey(mode === "http-api" ? key : "");
-      setValidatedServerPassword(mode === "browser-api" ? password : "");
+      holdCredential({ source, mode, baseUrl: url }, mode === "http-api" ? { apiKey: key } : { serverPassword: password });
       setValidatedApiVersion(apiVersion);
       setValidatedServerVersion(serverVersion);
       setBudgets(fetched);
       setSelectedGroupId(fetched[0].groupId!);
       setValidateStatus({ kind: "idle" });
 
-      // Pre-fill the initially-selected budget's remembered encryption password
-      // (if any) so opening it needs no second prompt. Uses local mode/url since
-      // the validated* state was just set this tick.
-      const firstPw = await revealBudgetEncryption(mode, url, fetched[0].groupId!);
-      autoFilledEncRef.current = firstPw;
-      setEncryptionPassword(firstPw);
+      // Use the initially-selected budget's remembered encryption password (if
+      // any) so opening it needs no second prompt. Local mode/url, since the
+      // validated* state was just set this tick.
+      await holdSavedEncryption(mode, url, fetched[0].groupId!);
 
       // Persist the server, then select its chip so the manual form collapses.
       const persisted = useSavedServersStore
@@ -503,6 +670,14 @@ export function useConnectForm({
         .servers.find((server) => server.mode === mode && server.baseUrl === url);
       if (persisted) setSelectedServerId(persisted.id);
     } catch (err) {
+      if (stale()) {
+        setValidateStatus({ kind: "idle" });
+        return;
+      }
+      // A secret that did not work is not kept, and not left in a field.
+      dropCredential();
+      setApiKey("");
+      setServerPassword("");
       setValidateStatus({ kind: "error", message: parseApiError(err) });
     }
   }
@@ -535,10 +710,9 @@ export function useConnectForm({
         (s) => s.budgetSyncId === selected.groupId && !(s.mode === validatedMode && s.baseUrl === validatedUrl)
       );
     if (replacedExisting && !confirmSwitchRef.current) {
-      const modeLabel = (m: ConnectionMode) => (m === "browser-api" ? "Direct" : "HTTP API");
       setPendingBudgetSwitch({
         title: "Switch this budget's connection?",
-        message: `"${replacedExisting.label}" is already set up in ${modeLabel(replacedExisting.mode)} mode. Continuing switches it to ${modeLabel(validatedMode)} mode and discards any unsaved changes.`,
+        message: `"${replacedExisting.label}" is already set up in ${getConnectionModeBadge(replacedExisting.mode)} mode. Continuing switches it to ${getConnectionModeBadge(validatedMode)} mode and discards any unsaved changes.`,
         destructiveLabel: "Switch mode",
         onConfirm: () => {
           confirmSwitchRef.current = true;
@@ -562,10 +736,10 @@ export function useConnectForm({
         mode: "browser-api",
         label: selected.name || deriveLabel(validatedUrl),
         baseUrl: validatedUrl,
-        serverPassword: validatedServerPassword,
+        serverPassword: heldSecret().serverPassword ?? "",
         budgetSyncId: selected.groupId!,
         ...(validatedServerVersion ? { serverVersion: validatedServerVersion } : {}),
-        ...(encryptionPassword.trim() ? { encryptionPassword: encryptionPassword.trim() } : {}),
+        ...(chosenEncryptionPassword() ? { encryptionPassword: chosenEncryptionPassword() } : {}),
       };
 
       setConnectStatus({ kind: "busy" });
@@ -600,15 +774,16 @@ export function useConnectForm({
       // Use fresh credentials from the current validation in case the key was rotated.
       const freshInstance: ConnectionInstance = {
         ...existing,
-        apiKey: validatedApiKey,
+        apiKey: heldSecret().apiKey ?? "",
         // Explicitly set to undefined when blank so clearing the field removes
         // a stored encryption password rather than silently preserving it.
-        encryptionPassword: encryptionPassword.trim() || undefined,
+        encryptionPassword: chosenEncryptionPassword() || undefined,
       };
       setConnectStatus({ kind: "busy" });
       try {
-        await maybeRemember(freshInstance);
+        // Checked first, so a wrong key is never remembered.
         await reconnect(freshInstance);
+        await maybeRemember(freshInstance);
         setConnectStatus({ kind: "idle" });
       } catch (err) {
         const status =
@@ -618,6 +793,7 @@ export function useConnectForm({
         if (status === 401 || status === 403) {
           setApiKey("");
           setSelectedServerId(null);
+          dropCredential();
           resetStep2();
           setValidateStatus({ kind: "error", message: parseApiError(err) });
           return;
@@ -632,17 +808,17 @@ export function useConnectForm({
       mode: "http-api",
       label: selected.name || deriveLabel(validatedUrl),
       baseUrl: validatedUrl,
-      apiKey: validatedApiKey,
+      apiKey: heldSecret().apiKey ?? "",
       budgetSyncId: selected.groupId!,
-      ...(encryptionPassword.trim() ? { encryptionPassword: encryptionPassword.trim() } : {}),
+      ...(chosenEncryptionPassword() ? { encryptionPassword: chosenEncryptionPassword() } : {}),
     };
 
     setConnectStatus({ kind: "busy" });
     try {
       await testConnection(instance);
       const [apiVersionResult, serverVersionResult] = await Promise.allSettled([
-        getApiVersion(validatedUrl, validatedApiKey),
-        getServerVersion(validatedUrl, validatedApiKey, selected.groupId!),
+        getApiVersion(validatedUrl, instance.apiKey),
+        getServerVersion(validatedUrl, instance.apiKey, selected.groupId!),
       ]);
       const finalInstance: ConnectionInstance = {
         ...instance,
@@ -671,6 +847,7 @@ export function useConnectForm({
         // Invalid API key — reset to step 1 so the user can correct their credentials.
         setApiKey("");
         setSelectedServerId(null);
+        dropCredential();
         resetStep2();
         setValidateStatus({ kind: "error", message: parseApiError(err) });
         return;
@@ -713,6 +890,13 @@ export function useConnectForm({
     setSelectedGroupId,
     encryptionPassword,
     setEncryptionPassword,
+    // Held secrets (never rendered): where they came from, and how to drop them
+    heldCredential,
+    chooseDifferentCredential,
+    dropCredential,
+    forgetOnLock,
+    encryptionSaved,
+    chooseDifferentEncryptionPassword,
     connectStatus,
     setConnectStatus,
     reconnectBusyId,
@@ -735,7 +919,6 @@ export function useConnectForm({
     // Remembered connections (RD-061)
     rememberOnServer,
     setRememberOnServer,
-    reconnectRemembered,
     // Remembered servers (RD-063)
     startFromRememberedServer,
     openRememberedBudget,

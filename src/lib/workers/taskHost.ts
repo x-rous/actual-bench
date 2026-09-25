@@ -2,6 +2,9 @@ import { z } from "zod";
 import { closeNodeRuntime } from "@/lib/actual/runtime/nodeHost";
 import { listAccountsForBankSync } from "@/lib/actual/bankSyncAccounts";
 import { classifyActualError } from "@/lib/actual/runtime/errors";
+import { listServerBudgets } from "@/lib/actual/serverBudgets";
+import type { ConnectionTaskOutput } from "@/lib/actual/connectionTasks";
+import type { ConnectionInstance } from "@/store/connection";
 import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
 import { verifyConnection, verifyConnectionInput } from "@/lib/actual/verifyConnection";
 import { getAppDb } from "@/lib/app-db/connection";
@@ -43,6 +46,31 @@ function abortedSignal(signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 }
 
+/**
+ * Work on an enrolled connection, by reference: the credential is revealed
+ * here and never leaves. A failure Actual reported in a known way answers with
+ * its code, for the page's fixed message; anything else is thrown, redacted.
+ */
+async function connectionTask<T>(
+  raw: unknown,
+  work: (connection: ConnectionInstance) => Promise<T>
+): Promise<ConnectionTaskOutput<T>> {
+  const { connectionFingerprint } = z.object({ connectionFingerprint: z.string().min(1) }).parse(raw);
+  const connection = resolveServerConnection(getAppDb(), connectionFingerprint);
+  if (!connection) throw new Error("That connection has no stored credentials.");
+  const secrets = [
+    connection.encryptionPassword,
+    connection.mode === "http-api" ? connection.apiKey : connection.serverPassword,
+  ].filter((value): value is string => !!value);
+  try {
+    return { value: await work(connection) };
+  } catch (error) {
+    const code = classifyActualError(error);
+    if (code) return { failed: code };
+    throw new Error(redactSecrets(error instanceof Error ? error.message : String(error), secrets));
+  }
+}
+
 const handlers: Record<string, TaskHandler> = {
   /**
    * Prove a worker can do real work, not merely start: load every job type,
@@ -68,25 +96,17 @@ const handlers: Record<string, TaskHandler> = {
    * The accounts of an enrolled budget and their bank links, for the bank-sync
    * dialog. By reference, like a run: the credential is revealed here.
    */
-  "connection.bankAccounts": async (raw) => {
-    const { connectionFingerprint } = z.object({ connectionFingerprint: z.string().min(1) }).parse(raw);
-    const connection = resolveServerConnection(getAppDb(), connectionFingerprint);
-    if (!connection) throw new Error("That connection has no stored credentials.");
-    const secrets = [
-      connection.encryptionPassword,
-      connection.mode === "http-api" ? connection.apiKey : connection.serverPassword,
-    ].filter((value): value is string => !!value);
-    try {
+  "connection.bankAccounts": async (raw) =>
+    connectionTask(raw, (connection) => {
       const transport = openServerTransport(connection);
-      return { accounts: await listAccountsForBankSync((body) => transport.runQuery(body)) };
-    } catch (error) {
-      // A known failure is answered by its code; the page gets a fixed message
-      // for it. Anything else stays in the server log, redacted.
-      const code = classifyActualError(error);
-      if (code) return { failed: code };
-      throw new Error(redactSecrets(error instanceof Error ? error.message : String(error), secrets));
-    }
-  },
+      return listAccountsForBankSync((body) => transport.runQuery(body));
+    }),
+
+  /**
+   * The budget files on an enrolled connection's server, so the others can be
+   * enrolled from the saved server secret (PR-071a). Signs in; opens nothing.
+   */
+  "server.budgets": async (raw) => connectionTask(raw, (connection) => listServerBudgets(connection)),
 
   /** Run one automation job, exactly as the engine would in-thread. */
   "automation.run": async (raw, ctx) => {

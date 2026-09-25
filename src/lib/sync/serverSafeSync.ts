@@ -1,5 +1,7 @@
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
+import { enrolledConnectionFor } from "@/lib/credentials/unattendedCredentials";
+import { logger } from "@/lib/logger";
 import { decodeFlowPlanConfig } from "./flowConfig";
 import { createAppDbApplyStore } from "./appDbApplyStore";
 import { createAppDbPreviewStore } from "./appDbPreviewStore";
@@ -55,11 +57,22 @@ export async function runServerSafeSync(
   }
   const config = decodeFlowPlanConfig(flow);
 
+  // Each end through its own enrolment, or another enrolment of the same
+  // budget - HTTP API or Direct - when the flow's own is missing (PR-071c).
+  const endpoint = (fingerprint: string, budgetSyncId: string, side: string): ConnectionInstance | null => {
+    const enrolled = enrolledConnectionFor(db, fingerprint, budgetSyncId);
+    if (!enrolled) return null;
+    if (enrolled !== fingerprint) {
+      logger.info(`[sync] flow ${flowId}: the ${side} budget runs through its other enrolment (${enrolled})`);
+    }
+    return resolveServerConnection(db, enrolled);
+  };
+
   let sourceConnection: ConnectionInstance | null;
   let targetConnection: ConnectionInstance | null;
   try {
-    sourceConnection = resolveServerConnection(db, config.sourceConnectionFingerprint);
-    targetConnection = resolveServerConnection(db, config.targetConnectionFingerprint);
+    sourceConnection = endpoint(config.sourceConnectionFingerprint, config.sourceBudgetId, "source");
+    targetConnection = endpoint(config.targetConnectionFingerprint, config.targetBudgetId, "target");
   } catch {
     // openSecret failed → vault locked (key changed) or ciphertext tampered.
     return { status: "vault_locked", flowId, message: "Cannot decrypt stored credentials; the vault key may have changed." };

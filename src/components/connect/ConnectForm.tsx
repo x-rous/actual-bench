@@ -15,6 +15,7 @@ import {
   ExternalLink,
   X,
   ChevronLeft,
+  Lock,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,7 @@ import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { useConnectionVault } from "@/features/connect/useConnectionVault";
+import { joinSavedBudgets } from "@/features/connect/savedBudgets";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConnectionsList } from "./ConnectionsList";
 import { mergeConnections } from "./mergeConnections";
@@ -38,17 +40,14 @@ export function ConnectForm() {
   const hydrated = useIsHydrated();
   const connectedInstance = useConnectionStore(selectActiveInstance);
   const vault = useConnectionVault();
+  // Saved connections cannot be used while the vault is locked: only a new
+  // server, typed in. With no passphrase set there is nothing to unlock.
+  const vaultLocked = vault.status.passphraseSet && !vault.status.unlocked;
 
   // Budgets already reachable via a saved (vault) connection — lets us warn when
   // reconnecting the same budget through a different mode/URL.
   const savedBudgets = useMemo(
-    () =>
-      vault.budgets.flatMap((b) => {
-        const srv = vault.servers.find((s) => s.serverFingerprint === b.serverFingerprint);
-        return srv
-          ? [{ budgetSyncId: b.budgetSyncId, mode: srv.mode, baseUrl: srv.baseUrl, label: b.name || deriveLabel(srv.baseUrl) }]
-          : [];
-      }),
+    () => joinSavedBudgets(vault.servers, vault.budgets).map((budget) => ({ ...budget, label: budget.name })),
     [vault.budgets, vault.servers]
   );
 
@@ -97,7 +96,13 @@ export function ConnectForm() {
     handleSelectBudget,
     pendingBudgetSwitch,
     dismissBudgetSwitch,
-  } = useConnectForm({ savedBudgets });
+    heldCredential,
+    chooseDifferentCredential,
+    dropCredential,
+    forgetOnLock,
+    encryptionSaved,
+    chooseDifferentEncryptionPassword,
+  } = useConnectForm({ savedBudgets, rememberedServers: vault.servers, vaultLocked });
 
   // One server-grouped view of everything openable: this-session connections +
   // the saved vault. Each budget appears once, deduped by server + sync id.
@@ -142,6 +147,7 @@ export function ConnectForm() {
   function closeAdd() {
     setAddingServer(false);
     resetStep2();
+    dropCredential();
     setBaseUrl("");
     setApiKey("");
     setServerPassword("");
@@ -226,7 +232,8 @@ export function ConnectForm() {
             <button
               key={server.id}
               type="button"
-              disabled={anyBusy}
+              disabled={anyBusy || vaultLocked}
+              title={vaultLocked ? "Unlock your saved connections to use this server" : undefined}
               onClick={() => handleSelectServer(server)}
               className={cn(
                 "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
@@ -237,6 +244,9 @@ export function ConnectForm() {
             >
               {selectedServerId === server.id && <Check className="size-3" />}
               {server.label}
+              {server.remembered && (
+                <Lock className="size-3 opacity-60" aria-label="Password saved" />
+              )}
             </button>
           ))}
           <button
@@ -253,6 +263,11 @@ export function ConnectForm() {
             <Plus className="size-3" />
             New server
           </button>
+          {vaultLocked && (
+            <p className="w-full text-xs text-muted-foreground">
+              Unlock your saved connections to use these servers, or add a new one.
+            </p>
+          )}
         </div>
       )}
 
@@ -278,46 +293,59 @@ export function ConnectForm() {
         />
       </div>
 
-      {connectionMode === "http-api" ? (
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="apiKey" className="text-sm text-muted-foreground">
-            API Key
-          </Label>
-          <Input
-            id="apiKey"
-            type="password"
-            placeholder="••••••••••••••••"
-            autoComplete="current-password"
-            value={apiKey}
-            onChange={(e) => {
-              setApiKey(e.target.value);
-              if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
-              handleCredentialChange();
-            }}
-            onKeyDown={handleKeyDown}
-            disabled={anyBusy}
-          />
-        </div>
+      {heldCredential && heldCredential.mode === connectionMode ? (
+        // Never the secret itself: only that one is held, and where it came from.
+        <SavedSecretLine
+          label={connectionMode === "http-api" ? "API Key" : "Server password"}
+          text={heldCredentialText(heldCredential.source, connectionMode)}
+          action={connectionMode === "http-api" ? "Use a different key" : "Use a different password"}
+          onChange={chooseDifferentCredential}
+          disabled={anyBusy}
+        />
       ) : (
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="serverPassword" className="text-sm text-muted-foreground">
-            Server password
-          </Label>
-          <Input
-            id="serverPassword"
-            type="password"
-            placeholder="••••••••••••••••"
-            autoComplete="current-password"
-            value={serverPassword}
-            onChange={(e) => {
-              setServerPassword(e.target.value);
-              if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
-              handleCredentialChange();
-            }}
-            onKeyDown={handleKeyDown}
-            disabled={anyBusy}
-          />
-        </div>
+        <>
+        {connectionMode === "http-api" ? (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="apiKey" className="text-sm text-muted-foreground">
+              API Key
+            </Label>
+            <Input
+              id="apiKey"
+              type="password"
+              placeholder="••••••••••••••••"
+              autoComplete="current-password"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
+                handleCredentialChange();
+              }}
+              onKeyDown={handleKeyDown}
+              disabled={anyBusy}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="serverPassword" className="text-sm text-muted-foreground">
+              Server password
+            </Label>
+            <Input
+              id="serverPassword"
+              type="password"
+              placeholder="••••••••••••••••"
+              autoComplete="current-password"
+              value={serverPassword}
+              onChange={(e) => {
+                setServerPassword(e.target.value);
+                if (validateStatus.kind === "error") setValidateStatus({ kind: "idle" });
+                handleCredentialChange();
+              }}
+              onKeyDown={handleKeyDown}
+              disabled={anyBusy}
+            />
+          </div>
+        )}
+        </>
       )}
 
       {validateStatus.kind === "error" && (
@@ -431,23 +459,33 @@ export function ConnectForm() {
           })}
         </div>
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="encryptionPassword" className="text-sm text-muted-foreground">
-            Encryption password <span className="text-muted-foreground/70">(optional)</span>
-          </Label>
-          <Input
-            id="encryptionPassword"
-            type="password"
-            placeholder="Only if this budget is end-to-end encrypted"
-            autoComplete="off"
-            value={encryptionPassword}
-            onChange={(e) => {
-              setEncryptionPassword(e.target.value);
-              if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
-            }}
+        {encryptionSaved && !encryptionPassword ? (
+          <SavedSecretLine
+            label="Encryption password"
+            text="The saved encryption password for this budget will be used."
+            action="Use a different one"
+            onChange={chooseDifferentEncryptionPassword}
             disabled={connectBusy || !!reconnectBusyId}
           />
-        </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="encryptionPassword" className="text-sm text-muted-foreground">
+              Encryption password <span className="text-muted-foreground/70">(optional)</span>
+            </Label>
+            <Input
+              id="encryptionPassword"
+              type="password"
+              placeholder="Only if this budget is end-to-end encrypted"
+              autoComplete="off"
+              value={encryptionPassword}
+              onChange={(e) => {
+                setEncryptionPassword(e.target.value);
+                if (connectStatus.kind === "error") setConnectStatus({ kind: "idle" });
+              }}
+              disabled={connectBusy || !!reconnectBusyId}
+            />
+          </div>
+        )}
 
         {connectStatus.kind === "error" && (
           <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
@@ -510,6 +548,7 @@ export function ConnectForm() {
           {/* Left: saved connections */}
           <div className="flex flex-col gap-4">
             <ConnectionsList
+              onLocked={forgetOnLock}
               vault={vault}
               servers={mergedServers}
               onReconnectInstance={handleReconnect}
@@ -565,6 +604,49 @@ export function ConnectForm() {
         }}
         state={pendingBudgetSwitch}
       />
+    </div>
+  );
+}
+
+function heldCredentialText(source: "saved" | "session" | "entered", mode: "http-api" | "browser-api"): string {
+  const secret = mode === "http-api" ? "API key" : "Password";
+  // Saved in the vault or held by an open connection: either way Bench has it.
+  return source === "entered" ? `${secret} entered.` : `${secret} saved for this server.`;
+}
+
+/**
+ * Stands in for a secret field once the secret is held: it says one is there
+ * and offers to replace it, and never shows it - not even masked, since a
+ * field's value can be read with the browser's inspector.
+ */
+function SavedSecretLine({
+  label,
+  text,
+  action,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  text: string;
+  action: string;
+  onChange: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
+        <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="min-w-0 flex-1">{text}</span>
+        <button
+          type="button"
+          onClick={onChange}
+          disabled={disabled}
+          className="shrink-0 text-xs font-medium text-action underline-offset-2 hover:underline disabled:opacity-50"
+        >
+          {action}
+        </button>
+      </div>
     </div>
   );
 }

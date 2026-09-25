@@ -9,7 +9,15 @@ import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection
 import { enrollCredential, getVaultStatus, runFlowNow, withdrawCredential } from "../lib/syncApi";
 import type { SyncEndpointForm } from "../lib/flowForm";
 import { useFlowAutomations } from "../hooks/useFlowAutomations";
-import { computeUnattendedStatus, nextRunPhrase } from "../lib/unattendedStatus";
+import {
+  computeUnattendedStatus,
+  enrolledIndex,
+  enrolmentsFor,
+  isEnrolled,
+  nextRunPhrase,
+  NO_ENROLMENTS,
+  type EnrolledIndex,
+} from "../lib/unattendedStatus";
 
 /**
  * Credential enrollment for unattended server sync (RD-058 / PR-024d). Shown when
@@ -48,7 +56,7 @@ export function UnattendedEnrollment({
   onRan?: () => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [enrolled, setEnrolled] = useState<Set<string>>(new Set());
+  const [enrolled, setEnrolled] = useState<EnrolledIndex>(NO_ENROLMENTS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -59,7 +67,7 @@ export function UnattendedEnrollment({
     try {
       const res = await getVaultStatus();
       setEnabled(res.enabled);
-      setEnrolled(new Set(res.credentials.map((c) => c.connectionFingerprint)));
+      setEnrolled(enrolledIndex(res.credentials));
     } catch {
       setEnabled(false);
     }
@@ -69,18 +77,23 @@ export function UnattendedEnrollment({
   }, [refresh]);
 
   // Either mode can run on the server (RD-095): an HTTP API budget with its
-  // API key, a Direct one with the Actual server's password. A budget not
-  // connected in this tab is still known by its saved fingerprint.
+  // API key, a Direct one with the Actual server's password. The flow's saved
+  // connection comes first; a budget enrolled through the other mode counts
+  // too, because a server run uses whichever enrolment exists (PR-071c).
   const endpointOf = (connection: ConnectionInstance | undefined, saved: SyncEndpointForm | undefined) => {
-    const fingerprint = connection ? connectionFingerprint(connection) : saved?.savedConnectionFingerprint;
+    const own = connection ? connectionFingerprint(connection) : undefined;
+    const fingerprint = saved?.savedConnectionFingerprint || own;
     if (!fingerprint) return null;
-    return { fingerprint, connection, name: connection?.label ?? saved?.budgetName ?? "this budget" };
+    const budgetSyncId = saved?.budgetSyncId || connection?.budgetSyncId;
+    return { fingerprint, own, budgetSyncId, connection, name: connection?.label ?? saved?.budgetName ?? "this budget" };
   };
   const endpoints = [endpointOf(sourceConnection, sourceSaved), endpointOf(targetConnection, targetSaved)].filter(
     (endpoint): endpoint is NonNullable<typeof endpoint> => endpoint !== null
   );
   const bothChosen = endpoints.length === 2;
-  const bothEnrolled = bothChosen && endpoints.every((endpoint) => enrolled.has(endpoint.fingerprint));
+  const endpointEnrolled = (endpoint: (typeof endpoints)[number]) =>
+    isEnrolled(enrolled, endpoint.fingerprint, endpoint.budgetSyncId);
+  const bothEnrolled = bothChosen && endpoints.every(endpointEnrolled);
 
   const enrollAll = async () => {
     setBusy(true);
@@ -88,13 +101,16 @@ export function UnattendedEnrollment({
     try {
       // One at a time, and only what is missing: each is checked with its
       // server before it is saved.
-      for (const { fingerprint, connection: conn, name } of endpoints) {
-        if (enrolled.has(fingerprint)) continue;
+      for (const endpoint of endpoints) {
+        if (endpointEnrolled(endpoint)) continue;
+        const conn = endpoint.connection;
         // Only a budget connected here has its key or password in this browser.
-        if (!conn) throw new Error(`Connect ${name} to enrol it.`);
+        if (!conn) throw new Error(`Connect ${endpoint.name} to enrol it.`);
         const encryption = conn.encryptionPassword ? { encryptionPassword: conn.encryptionPassword } : {};
+        // Enrolled under the connection the browser holds; the run finds it by
+        // budget even if the flow was saved on the other mode.
         await enrollCredential({
-          connectionFingerprint: fingerprint,
+          connectionFingerprint: connectionFingerprint(conn),
           mode: conn.mode,
           baseUrl: conn.baseUrl,
           budgetSyncId: conn.budgetSyncId,
@@ -117,7 +133,13 @@ export function UnattendedEnrollment({
     setBusy(true);
     setError(null);
     try {
-      for (const { fingerprint } of endpoints) {
+      // The flow's own enrolments - its saved connections and the connected
+      // ones - and its budgets' enrolments through the other mode, which the
+      // panel counts as enrolled too (PR-071c).
+      const fingerprints = new Set(
+        endpoints.flatMap((endpoint) => enrolmentsFor(enrolled, [endpoint.fingerprint, endpoint.own], endpoint.budgetSyncId))
+      );
+      for (const fingerprint of fingerprints) {
         await withdrawCredential(fingerprint);
       }
     } catch (e) {
