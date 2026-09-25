@@ -6,7 +6,7 @@ import { listServerBudgets, type ServerBudget } from "@/lib/actual/serverBudgets
 import { resolveServerConnection } from "@/lib/actual/serverTransport";
 import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
-import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
+import { requireReadyVault } from "@/lib/credentials/vaultState";
 import type { ConnectionMode } from "@/store/connection";
 
 type RouteContext = { params: Promise<{ fingerprint: string }> };
@@ -27,8 +27,7 @@ export async function GET(_request: Request, context: RouteContext) {
   try {
     const { fingerprint } = await context.params;
     const db = getAppDb();
-    const locked = lockedVaultResponse(db);
-    if (locked) return locked;
+    requireReadyVault(db);
     const enrolledList = listSyncCredentialMeta(db);
     const meta = enrolledList.find((entry) => entry.connectionFingerprint === fingerprint);
     if (!meta) {

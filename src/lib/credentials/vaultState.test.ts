@@ -80,7 +80,7 @@ describe("vault state", () => {
       const again = getVaultState(db);
 
       expect(again).toMatchObject({ status: "ready", source: "file" });
-      expect(again.generated).toBeUndefined();
+      expect(again).not.toHaveProperty("generated");
       expect(readFileSync(keyPath, "utf8")).toBe(first);
     });
 
@@ -93,8 +93,6 @@ describe("vault state", () => {
 
     it("never writes a second key: a racing writer reads the first one's", () => {
       const first = createVaultKeyFile();
-      // A temp file from a writer that died mid-way is harmless.
-      writeFileSync(`${keyPath}.deadbeef0000.tmp`, "half-written");
 
       const second = createVaultKeyFile();
 
@@ -108,8 +106,7 @@ describe("vault state", () => {
 
       const state = getVaultState(db);
 
-      expect(state).toMatchObject({ status: "locked", reason: "cannot-create" });
-      expect(state.detail).toBeTruthy();
+      expect(state).toMatchObject({ status: "locked", reason: "cannot-create", detail: expect.any(String) });
     });
   });
 
@@ -129,6 +126,13 @@ describe("vault state", () => {
         source: "legacy-environment",
         warning: "legacy-name",
       });
+    });
+
+    it("still warns about the old name when both hold the same key", () => {
+      process.env.ACTUAL_BENCH_VAULT_KEY = "same-key";
+      process.env.SYNC_VAULT_KEY = "same-key";
+
+      expect(getVaultState(db)).toMatchObject({ status: "ready", source: "environment", warning: "legacy-name" });
     });
 
     it("uses the new name when both are set and differ, and says so", () => {

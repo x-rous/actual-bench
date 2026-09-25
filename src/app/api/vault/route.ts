@@ -17,10 +17,11 @@ export function GET() {
     const state = getVaultState(getAppDb());
     return NextResponse.json({
       status: state.status,
-      ...(state.reason ? { reason: state.reason, message: VAULT_LOCK_MESSAGES[state.reason] } : {}),
-      ...(state.source ? { source: state.source } : {}),
-      ...(state.warning ? { warning: state.warning } : {}),
-      ...(state.detail ? { detail: state.detail } : {}),
+      ...(state.status === "locked"
+        ? { reason: state.reason, message: VAULT_LOCK_MESSAGES[state.reason], detail: state.detail }
+        : {}),
+      source: state.source,
+      warning: state.warning,
       keyPath: state.keyPath,
       storedSecrets: state.storedSecrets,
     });

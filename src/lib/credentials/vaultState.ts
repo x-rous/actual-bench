@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { logger } from "@/lib/logger";
-import { deriveOperatorKey, openWithKey } from "@/lib/sync/vault";
+import { deriveOperatorKey, openWithKey, VaultLockedError } from "@/lib/sync/vault";
 import {
   createVaultKeyFile,
   findVaultKey,
@@ -26,21 +26,29 @@ import type { VaultLockReason, VaultSummary } from "./vaultSummary";
  * Server-only.
  */
 
-export type VaultState = {
-  status: "ready" | "locked";
-  reason?: VaultLockReason;
-  /** Where the key came from, when one was found. */
-  source?: VaultKeySource;
-  /** True when this call created the key file. */
-  generated?: boolean;
-  warning?: VaultKeyWarning;
+type VaultStateBase = {
   /** Where Bench keeps (or would keep) a generated key. Not secret. */
   keyPath: string;
-  /** The underlying error for `unreadable` / `cannot-create`. Never key material. */
-  detail?: string;
   /** How many operator-domain secrets are stored. */
   storedSecrets: number;
+  /** Where the key came from, when one was found. */
+  source?: VaultKeySource;
+  warning?: VaultKeyWarning;
 };
+
+export type VaultState =
+  | (VaultStateBase & {
+      status: "ready";
+      source: VaultKeySource;
+      /** True when this call created the key file. */
+      generated?: boolean;
+    })
+  | (VaultStateBase & {
+      status: "locked";
+      reason: VaultLockReason;
+      /** The underlying error for `unreadable` / `cannot-create`. Never key material. */
+      detail?: string;
+    });
 
 /** Reasons a reset can fix. `cannot-create` is a storage problem; there is nothing to clear. */
 const RESETTABLE: readonly VaultLockReason[] = ["missing", "wrong-key", "unreadable"];
@@ -108,23 +116,26 @@ export function getVaultState(db: SqliteDatabase, env: NodeJS.ProcessEnv = proce
   } catch (error) {
     return { ...base, status: "locked", reason: "cannot-create", detail: describeError(error) };
   }
-  // Read back through the normal path, so a key another writer placed first is
-  // the one reported.
-  const created = findVaultKey(env);
-  if (created.kind !== "found") {
-    return { ...base, status: "locked", reason: "cannot-create", detail: `${keyPath} could not be read back` };
-  }
   logger.info(`[vault] generated a new vault key at ${keyPath}`);
-  return { ...base, status: "ready", source: created.source, generated: true };
+  return { ...base, status: "ready", source: "file", generated: true };
 }
 
 /** Just what the browser may see. */
 export function summarizeVault(state: VaultState): VaultSummary {
-  return state.status === "ready" ? { status: "ready" } : { status: "locked", reason: state.reason ?? "missing" };
+  return state.status === "ready" ? { status: "ready" } : { status: "locked", reason: state.reason };
 }
 
 export function getVaultSummary(db: SqliteDatabase): VaultSummary {
   return summarizeVault(getVaultState(db));
+}
+
+/**
+ * For anything that is about to need the vault: throws `VaultLockedError`
+ * (a 409 from any route, through `appDbErrorResponse`) unless it is ready.
+ */
+export function requireReadyVault(db: SqliteDatabase): void {
+  const state = getVaultState(db);
+  if (state.status !== "ready") throw new VaultLockedError(state.reason);
 }
 
 /**
@@ -138,7 +149,7 @@ export function getVaultSummary(db: SqliteDatabase): VaultSummary {
  */
 export function resetVault(db: SqliteDatabase, env: NodeJS.ProcessEnv = process.env): VaultState {
   const before = getVaultState(db, env);
-  if (before.status !== "locked" || !before.reason || !RESETTABLE.includes(before.reason)) {
+  if (before.status !== "locked" || !RESETTABLE.includes(before.reason)) {
     throw new VaultResetRefusedError(
       before.status === "ready"
         ? "The vault is working, so there is nothing to reset."

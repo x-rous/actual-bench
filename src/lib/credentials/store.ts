@@ -1,8 +1,7 @@
-import { openSecret, openWithKey, sealSecret, sealWithKey, VaultLockedError, type SealedSecret } from "@/lib/sync/vault";
+import { openSecret, openWithKey, sealSecret, sealWithKey, type SealedSecret } from "@/lib/sync/vault";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import type { SqliteDatabase } from "@/lib/app-db/types";
-import { getVaultState } from "./vaultState";
-import { vaultLockedError } from "./vaultSummary";
+import { requireReadyVault } from "./vaultState";
 
 /**
  * The one place secrets are stored (F-195).
@@ -135,10 +134,7 @@ export function putSecret(
     // Never seal a new secret under a key that does not open the ones already
     // stored: the vault would then hold two keys' worth of secrets, and no key
     // could open them all. This is also where a fresh install gets its key.
-    const state = getVaultState(db);
-    if (state.status !== "ready") {
-      throw new VaultLockedError(vaultLockedError({ status: "locked", reason: state.reason ?? "missing" }));
-    }
+    requireReadyVault(db);
   }
   const now = new Date().toISOString();
   const sealed = seal(access, input.plaintext);

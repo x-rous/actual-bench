@@ -9,7 +9,10 @@ export function appDbErrorResponse(error: unknown): NextResponse {
 
   // The request was fine; the server's vault is what has to change (F-197).
   if (error instanceof VaultLockedError) {
-    return NextResponse.json({ error: error.message, code: "VAULT_LOCKED" }, { status: 409 });
+    return NextResponse.json(
+      { error: error.message, code: "VAULT_LOCKED", vault: { status: "locked", reason: error.reason } },
+      { status: 409 }
+    );
   }
 
   if (error instanceof AppDbUnavailableError) {

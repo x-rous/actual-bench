@@ -1,14 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
-
-async function fetchVaultLocked(): Promise<boolean> {
-  const response = await fetch("/api/vault", { cache: "no-store" });
-  if (!response.ok) return false;
-  const body = (await response.json()) as { status?: string };
-  return body.status === "locked";
-}
+import { useVaultState } from "@/hooks/useVaultState";
 
 /**
  * The connect screen is the one page every visit passes through, so a locked
@@ -16,8 +9,8 @@ async function fetchVaultLocked(): Promise<boolean> {
  * fixes, reset included, sit behind a connection in App Health.
  */
 export function VaultLockedBanner() {
-  const locked = useQuery({ queryKey: ["vault-locked"], queryFn: fetchVaultLocked, staleTime: 60_000 });
-  if (!locked.data) return null;
+  const vault = useVaultState();
+  if (vault.data?.status !== "locked") return null;
   return (
     <div
       role="status"

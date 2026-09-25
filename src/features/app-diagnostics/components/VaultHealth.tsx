@@ -1,30 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useVaultState, type VaultStateResponse } from "@/hooks/useVaultState";
 import type { VaultLockReason } from "@/lib/credentials/vaultSummary";
-
-/** `GET /api/vault`: never key material. */
-export type VaultStateResponse = {
-  status: "ready" | "locked";
-  reason?: VaultLockReason;
-  message?: string;
-  source?: "environment" | "legacy-environment" | "file";
-  warning?: "legacy-name" | "both-names";
-  detail?: string;
-  keyPath: string;
-  storedSecrets: number;
-};
-
-export async function fetchVaultState(): Promise<VaultStateResponse> {
-  const response = await fetch("/api/vault", { cache: "no-store" });
-  if (!response.ok) throw new Error(`Vault status request failed (${response.status})`);
-  return (await response.json()) as VaultStateResponse;
-}
 
 async function postVaultReset(): Promise<void> {
   const response = await fetch("/api/vault/reset", { method: "POST" });
@@ -36,20 +19,6 @@ async function postVaultReset(): Promise<void> {
 
 const RESETTABLE: readonly VaultLockReason[] = ["missing", "wrong-key", "unreadable"];
 
-/** Every query whose answer depends on the vault being usable. */
-const VAULT_DEPENDENT_QUERIES = [
-  ["vault-state"],
-  ["vault-summary"],
-  ["vault-locked"],
-  ["sync-vault-status"],
-  ["vault-status"],
-  ["vault-connections"],
-  ["automation-health"],
-  ["automation-connections"],
-  ["server-budgets"],
-  ["backups"],
-];
-
 function Code({ children }: { children: React.ReactNode }) {
   return <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">{children}</code>;
 }
@@ -60,7 +29,7 @@ function sourceLabel(state: VaultStateResponse): React.ReactNode {
   return <>key file <Code>{state.keyPath}</Code></>;
 }
 
-function Fix({ state }: { state: VaultStateResponse }) {
+function Fix({ state }: { state: Extract<VaultStateResponse, { status: "locked" }> }) {
   const path = <Code>{state.keyPath}</Code>;
   switch (state.reason) {
     case "missing":
@@ -87,8 +56,6 @@ function Fix({ state }: { state: VaultStateResponse }) {
       );
     case "cannot-create":
       return <>Make the folder holding {path} writable by Bench, then check again.</>;
-    default:
-      return null;
   }
 }
 
@@ -99,14 +66,13 @@ function Fix({ state }: { state: VaultStateResponse }) {
 export function VaultHealth({ enrolledLabels }: { enrolledLabels: string[] }) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
-  const vault = useQuery({ queryKey: ["vault-state"], queryFn: fetchVaultState });
+  const vault = useVaultState();
 
-  // Everything that depends on the vault, not just its own row: once a key is
-  // restored, the enrolled count and automation status must not stay as they
-  // were while it was locked.
-  const refreshVaultDependents = () => {
-    for (const queryKey of VAULT_DEPENDENT_QUERIES) void queryClient.invalidateQueries({ queryKey });
-  };
+  // Everything, not just this row: once a key is restored or the vault reset,
+  // no screen may keep showing what it showed while the vault was locked. Both
+  // actions are rare and deliberate, so refreshing everything is the simple way
+  // to never miss a query.
+  const refreshVaultDependents = () => void queryClient.invalidateQueries();
 
   const reset = useMutation({
     mutationFn: postVaultReset,
@@ -150,7 +116,7 @@ export function VaultHealth({ enrolledLabels }: { enrolledLabels: string[] }) {
     );
   }
 
-  const canReset = state.reason ? RESETTABLE.includes(state.reason) : false;
+  const canReset = RESETTABLE.includes(state.reason);
   return (
     <span className="flex flex-col gap-1.5">
       <span className="text-destructive">

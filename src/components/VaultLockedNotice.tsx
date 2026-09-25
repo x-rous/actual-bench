@@ -1,15 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  VAULT_LOCK_MESSAGES,
-  VAULT_LOCKED_NOTICE,
-  type VaultLockReason,
-  type VaultSummary,
-} from "@/lib/credentials/vaultSummary";
+import { toVaultSummary, useVaultState } from "@/hooks/useVaultState";
+import { VAULT_LOCK_MESSAGES, VAULT_LOCKED_NOTICE, type VaultSummary } from "@/lib/credentials/vaultSummary";
 
 /**
  * Shown wherever a locked vault stops something from working (F-197). The
@@ -39,15 +34,8 @@ export function VaultLockedNotice({ vault, className }: { vault: VaultSummary | 
   );
 }
 
-async function fetchVaultSummary(): Promise<VaultSummary | null> {
-  const response = await fetch("/api/vault", { cache: "no-store" });
-  if (!response.ok) return null;
-  const body = (await response.json()) as { status: "ready" | "locked"; reason?: VaultLockReason };
-  return body.status === "locked" ? { status: "locked", reason: body.reason ?? "missing" } : { status: "ready" };
-}
-
-/** A page-level notice that asks for the vault's state itself. */
+/** A page-level notice that reads the vault's state itself. */
 export function VaultLockedPageNotice({ className }: { className?: string }) {
-  const vault = useQuery({ queryKey: ["vault-summary"], queryFn: fetchVaultSummary, staleTime: 30_000 });
-  return <VaultLockedNotice vault={vault.data} className={className} />;
+  const vault = useVaultState();
+  return <VaultLockedNotice vault={toVaultSummary(vault.data)} className={className} />;
 }

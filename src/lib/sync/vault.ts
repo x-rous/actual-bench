@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from "node:crypto";
 import { findVaultKey } from "@/lib/credentials/vaultKey";
+import { vaultLockedError, type VaultLockReason } from "@/lib/credentials/vaultSummary";
 
 /**
  * Server-side credential vault primitives (RD-058 / PR-024a; generalized in
@@ -27,8 +28,8 @@ const DERIVED_KEY_BYTES = 32;
  * reports.
  */
 export class VaultLockedError extends Error {
-  constructor(message = "The credential vault is locked: Bench cannot find its vault key. See App Health.") {
-    super(message);
+  constructor(readonly reason: VaultLockReason = "missing") {
+    super(vaultLockedError({ status: "locked", reason }));
     this.name = "VaultLockedError";
   }
 }

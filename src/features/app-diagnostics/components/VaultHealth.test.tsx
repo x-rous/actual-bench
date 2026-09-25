@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { VaultHealth, type VaultStateResponse } from "./VaultHealth";
+import type { VaultStateResponse } from "@/hooks/useVaultState";
+import { VaultHealth } from "./VaultHealth";
 
 jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn() } }));
 
@@ -67,9 +68,8 @@ describe("App Health vault row", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /check again/i }));
     await waitFor(() => expect(calls.filter((call) => call === "GET /api/vault")).toHaveLength(2));
-    // A restored key must refresh what depends on it too, not only this row.
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["sync-vault-status"] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["automation-health"] });
+    // A restored key must refresh everything that depends on it, not only this row.
+    expect(invalidate).toHaveBeenCalledWith();
 
     fireEvent.click(screen.getByRole("button", { name: /reset vault/i }));
     expect(await screen.findByText(/deletes the 3 stored secrets/)).toBeInTheDocument();

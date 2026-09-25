@@ -1,5 +1,4 @@
-import { getVaultSummary } from "@/lib/credentials/vaultState";
-import { vaultLockedError } from "@/lib/credentials/vaultSummary";
+import { requireReadyVault } from "@/lib/credentials/vaultState";
 import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
 import { getBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
@@ -169,8 +168,7 @@ function readSourceConnection(db: SqliteDatabase, policy: BackupPolicy): Connect
   if (typeof fingerprint !== "string" || !fingerprint.trim()) {
     throw new Error("This backup has no source connection configured.");
   }
-  const vault = getVaultSummary(db);
-  if (vault.status !== "ready") throw new Error(vaultLockedError(vault));
+  requireReadyVault(db);
 
   let connection: ConnectionInstance | null;
   try {

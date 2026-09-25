@@ -2,15 +2,11 @@ import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   closeSync,
-  constants,
-  copyFileSync,
   fsyncSync,
-  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
   renameSync,
-  unlinkSync,
   writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -76,9 +72,11 @@ export function findVaultKey(env: NodeJS.ProcessEnv = process.env): VaultKeyLook
   const current = envValue(env, VAULT_KEY_ENV);
   const legacy = envValue(env, LEGACY_VAULT_KEY_ENV);
   if (current) {
-    return legacy && legacy !== current
-      ? { kind: "found", secret: current, source: "environment", warning: "both-names" }
-      : { kind: "found", secret: current, source: "environment" };
+    // The old name still set, even to the same value, is worth a warning: it
+    // will stop being read, and whoever set it should know before then.
+    if (!legacy) return { kind: "found", secret: current, source: "environment" };
+    const warning = legacy === current ? "legacy-name" : "both-names";
+    return { kind: "found", secret: current, source: "environment", warning };
   }
   if (legacy) return { kind: "found", secret: legacy, source: "legacy-environment", warning: "legacy-name" };
 
@@ -109,28 +107,14 @@ function bestEffortChmod(path: string, mode: number): void {
   }
 }
 
-function fsyncDirectory(dir: string): void {
-  try {
-    const fd = openSync(dir, "r");
-    try {
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    // Not every platform can open a directory for fsync. The file itself was
-    // synced; this only narrows the window in which a power cut loses its name.
-  }
-}
-
 /**
  * Generate a key and write it, first writer wins. Returns the key that ended up
  * in the file, which is another writer's when this one lost the race.
  *
- * The key is written in full to a temporary file and then hard-linked into
- * place. `link` is atomic and refuses to replace an existing file, so the key
- * file is never seen half-written and is never overwritten. A plain exclusive
- * create followed by a write could leave an empty file behind after a crash.
+ * One exclusive create (`wx`): it never replaces an existing key file. The
+ * only gap is a crash between creating the file and writing it, which leaves
+ * an empty file; that reads as `unreadable`, so nothing is ever sealed with it
+ * and a vault reset moves it aside.
  *
  * Throws when the directory cannot be written. The caller decides what that
  * means; it must never carry on with a key that was not persisted.
@@ -141,47 +125,26 @@ export function createVaultKeyFile(env: NodeJS.ProcessEnv = process.env): string
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   bestEffortChmod(dir, 0o700);
 
-  const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
-  const fd = openSync(tmp, "wx", 0o600);
+  let fd: number | null = null;
   try {
-    writeSync(fd, `${randomBytes(32).toString("base64url")}\n`);
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
+    fd = openSync(path, "wx", 0o600);
+  } catch (error) {
+    // Another writer won. Theirs is the key.
+    if (errorCode(error) !== "EEXIST") throw error;
   }
-
-  try {
+  if (fd !== null) {
     try {
-      linkSync(tmp, path);
-    } catch (error) {
-      const code = errorCode(error);
-      if (code === "EEXIST") {
-        // Another writer won. Theirs is the key; ours is discarded below.
-      } else if (code === "EPERM" || code === "ENOTSUP" || code === "EOPNOTSUPP" || code === "ENOSYS") {
-        // A filesystem without hard links. An exclusive copy still never
-        // replaces an existing key.
-        try {
-          copyFileSync(tmp, path, constants.COPYFILE_EXCL);
-        } catch (copyError) {
-          if (errorCode(copyError) !== "EEXIST") throw copyError;
-        }
-      } else {
-        throw error;
-      }
+      writeSync(fd, `${randomBytes(32).toString("base64url")}\n`);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
     }
-  } finally {
-    try {
-      unlinkSync(tmp);
-    } catch {
-      // A leftover temp file is harmless: it is never read as the key.
-    }
+    bestEffortChmod(path, 0o600);
   }
-  bestEffortChmod(path, 0o600);
-  fsyncDirectory(dir);
 
   // The file, not the lookup order: this reports what was persisted.
   const secret = readFileSync(path, "utf8").trim();
-  if (!secret) throw new Error(`The vault key was written to ${path} but reads back empty`);
+  if (!secret) throw new Error(`The vault key at ${path} is empty`);
   return secret;
 }
 

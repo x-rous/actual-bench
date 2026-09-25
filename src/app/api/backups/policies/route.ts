@@ -8,7 +8,7 @@ import {
 } from "@/lib/app-db/backupRepository";
 import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import { reconcileBackupAutomations } from "@/lib/automation/jobs/backupReconcile";
-import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
+import { requireReadyVault } from "@/lib/credentials/vaultState";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,10 +39,7 @@ export async function POST(request: Request) {
     }
     const db = getAppDb();
     // Bench will not store a passphrase it cannot encrypt.
-    if (passphrase) {
-      const locked = lockedVaultResponse(db);
-      if (locked) return locked;
-    }
+    if (passphrase) requireReadyVault(db);
     const policy = createBackupPolicy(db, payload);
 
     if (passphrase) {

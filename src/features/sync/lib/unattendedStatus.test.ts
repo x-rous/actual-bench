@@ -33,7 +33,7 @@ describe("computeUnattendedStatus", () => {
     expect(computeUnattendedStatus({ ...base, autoPaused: true }).reason).toMatch(/Paused/);
     expect(computeUnattendedStatus({ ...base, flowEnabled: false }).reason).toMatch(/Paused/);
     expect(computeUnattendedStatus({ ...base, vaultReady: false }).reason).toMatch(/locked/);
-    expect(computeUnattendedStatus({ ...base, vaultReady: null }).reason).toMatch(/Checking/);
+    expect(computeUnattendedStatus({ ...base, vaultReady: null }).reason).toMatch(/not confirmed/);
     expect(computeUnattendedStatus({ ...base, bothEnrolled: false }).reason).toMatch(/Store credentials/);
   });
 

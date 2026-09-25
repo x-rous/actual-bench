@@ -3,7 +3,7 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { createBackupDestination, listBackupDestinations, updateBackupDestination } from "@/lib/app-db/backupRepository";
 import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
-import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
+import { requireReadyVault } from "@/lib/credentials/vaultState";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,10 +47,7 @@ export async function POST(request: Request) {
 
     const db = getAppDb();
     // Bench will not store an access key it cannot encrypt.
-    if (payload.kind === "s3") {
-      const locked = lockedVaultResponse(db);
-      if (locked) return locked;
-    }
+    if (payload.kind === "s3") requireReadyVault(db);
     const destination = createBackupDestination(db, payload);
 
     if (payload.kind === "s3" && credentials?.accessKeyId && credentials?.secretAccessKey) {

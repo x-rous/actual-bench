@@ -6,7 +6,7 @@ import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { reconcileJobTypes, startAutomationRun } from "@/lib/automation/engine";
 import { BUDGET_FILE_SYNC_JOB_TYPE } from "@/lib/automation/jobs/budgetFileSyncType";
-import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
+import { requireReadyVault } from "@/lib/credentials/vaultState";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,8 +31,7 @@ export async function POST(_request: Request, context: RouteContext) {
   try {
     const { flowId } = await context.params;
     const db = getAppDb();
-    const locked = lockedVaultResponse(db);
-    if (locked) return locked;
+    requireReadyVault(db);
 
     const flow = getSyncFlow(db, flowId);
     if (!flow) return NextResponse.json({ error: "This flow no longer exists." }, { status: 404 });

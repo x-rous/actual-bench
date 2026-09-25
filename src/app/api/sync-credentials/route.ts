@@ -4,8 +4,7 @@ import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { EnrolmentRefusedError, startEnrolment } from "@/lib/credentials/enrolments";
 import { deleteSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
-import { getVaultSummary } from "@/lib/credentials/vaultState";
-import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
+import { getVaultSummary, requireReadyVault } from "@/lib/credentials/vaultState";
 import type { SyncCredentialInput } from "@/lib/app-db/types";
 
 export const dynamic = "force-dynamic";
@@ -33,8 +32,7 @@ export function GET() {
 // passes (RD-095 M4).
 export async function POST(request: Request) {
   try {
-    const locked = lockedVaultResponse(getAppDb());
-    if (locked) return locked;
+    requireReadyVault(getAppDb());
     const body = (await readJsonBody(request)) as SyncCredentialInput;
     if (!body?.connectionFingerprint || !body?.baseUrl || !body?.budgetSyncId) {
       return NextResponse.json(
