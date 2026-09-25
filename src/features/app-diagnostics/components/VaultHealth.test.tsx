@@ -14,8 +14,7 @@ function respond(state: VaultStateResponse) {
   return calls;
 }
 
-function renderRow(enrolledLabels: string[] = []) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderRow(enrolledLabels: string[] = [], client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={client}>
       <VaultHealth enrolledLabels={enrolledLabels} />
@@ -59,13 +58,18 @@ describe("App Health vault row", () => {
       keyPath: "/data/secrets/vault.key",
       storedSecrets: 3,
     });
-    renderRow(["Household", "Business"]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = jest.spyOn(client, "invalidateQueries");
+    renderRow(["Household", "Business"], client);
 
     expect(await screen.findByText(/can't find the vault key/)).toBeInTheDocument();
     expect(screen.getByText(/Put the original key file back/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /check again/i }));
     await waitFor(() => expect(calls.filter((call) => call === "GET /api/vault")).toHaveLength(2));
+    // A restored key must refresh what depends on it too, not only this row.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["sync-vault-status"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["automation-health"] });
 
     fireEvent.click(screen.getByRole("button", { name: /reset vault/i }));
     expect(await screen.findByText(/deletes the 3 stored secrets/)).toBeInTheDocument();

@@ -73,6 +73,10 @@ export function UnattendedEnrollment({
       setLoadFailed(false);
       setEnrolled(enrolledIndex(res.credentials));
     } catch {
+      // Forget the last answer: stale "ready" and enrolments would still show
+      // the flow as armed and offer Run now.
+      setVault(null);
+      setEnrolled(NO_ENROLMENTS);
       setLoadFailed(true);
     }
   }, []);

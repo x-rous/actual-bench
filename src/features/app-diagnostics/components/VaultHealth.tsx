@@ -100,15 +100,20 @@ export function VaultHealth({ enrolledLabels }: { enrolledLabels: string[] }) {
   const [confirming, setConfirming] = useState(false);
   const vault = useQuery({ queryKey: ["vault-state"], queryFn: fetchVaultState });
 
+  // Everything that depends on the vault, not just its own row: once a key is
+  // restored, the enrolled count and automation status must not stay as they
+  // were while it was locked.
+  const refreshVaultDependents = () => {
+    for (const queryKey of VAULT_DEPENDENT_QUERIES) void queryClient.invalidateQueries({ queryKey });
+  };
+
   const reset = useMutation({
     mutationFn: postVaultReset,
     onSuccess: () => {
       toast.success("Vault reset. Enrol your connections and re-enter backup credentials to use them again.");
     },
     onError: (error: Error) => toast.error(error.message),
-    onSettled: () => {
-      for (const queryKey of VAULT_DEPENDENT_QUERIES) void queryClient.invalidateQueries({ queryKey });
-    },
+    onSettled: refreshVaultDependents,
   });
 
   if (vault.isError) {
@@ -160,7 +165,7 @@ export function VaultHealth({ enrolledLabels }: { enrolledLabels: string[] }) {
           variant="outline"
           size="sm"
           className="h-7 text-xs"
-          onClick={() => void vault.refetch()}
+          onClick={refreshVaultDependents}
           disabled={vault.isFetching}
         >
           <RefreshCw className={vault.isFetching ? "animate-spin" : undefined} aria-hidden />
