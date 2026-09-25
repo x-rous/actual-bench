@@ -27,7 +27,7 @@ jest.mock("@/lib/actual/browser/labRuntime", () => ({
 }));
 jest.mock("@/features/connect/vaultApi", () => ({
   ...jest.requireActual("@/features/connect/vaultApi"),
-  getVaultStatus: jest.fn(async () => ({ supported: true, passphraseSet: true, unlocked: vaultUnlocked })),
+  getVaultStatus: jest.fn(async () => ({ supported: true, passphraseSet: true, unlocked: vaultUnlocked, authMode: "none", passwordFromEnv: false })),
   listRememberedServers: jest.fn(async () => ({
     supported: true,
     servers: [

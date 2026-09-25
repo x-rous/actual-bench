@@ -63,7 +63,7 @@ query.
 | Staged edits and active connections | Browser memory | Until refresh or tab close |
 | Non-secret recent connection details | Browser session storage | Until the tab closes |
 | Actual Bench workflow metadata | `/data/actual-bench.sqlite` | Across restarts when `/data` is persisted |
-| Remembered server secrets, when enabled | Metadata database, encrypted with your passphrase | Until you forget or reset them |
+| Remembered server secrets, when enabled | Metadata database, encrypted with your Actual Bench password | Until you forget them, or the password is replaced |
 | Unattended-sync credentials, when enabled | Metadata database, encrypted with the vault key (`/data/secrets/vault.key` or `ACTUAL_BENCH_VAULT_KEY`) | Until withdrawn or the database is removed |
 | Exported budget snapshot | Browser memory; downloadable by you | Current session or your downloaded file |
 

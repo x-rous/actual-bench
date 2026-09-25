@@ -17,8 +17,8 @@ exchange rates, and optional encrypted credentials.
 | Actual Bench metadata | `/data` volume (SQLite) | **Yes** |
 | Credential vault key | `/data/secrets/vault.key`, or `ACTUAL_BENCH_VAULT_KEY` in your secret manager | **Yes** - without it stored credentials cannot be opened |
 | Configuration | Your Compose file / environment | Yes |
-| Remembered-server passphrase | Known by the user | Yes, separately - the database cannot recover it |
-| Browser session state | The browser | No (transient; unlock or reconnect after restart) |
+| Actual Bench password | Known by the user, or `ACTUAL_BENCH_PASSWORD` | Yes, separately - the database cannot recover it |
+| Browser session state | The browser | No (transient; sign in again after a restart) |
 
 That database holds no budget data and no plaintext credentials. It can hold the two encrypted
 opt-ins: remembered-server secrets, and unattended-sync credentials.
@@ -32,7 +32,7 @@ opt-ins: remembered-server secrets, and unattended-sync credentials.
 5. Make sure the vault key is kept: `/data/secrets/vault.key` is part of the `/data` backup, or keep
    your `ACTUAL_BENCH_VAULT_KEY` value. Upgrading from a version that used `SYNC_VAULT_KEY`? Keep it
    set; it still works, and renaming it to `ACTUAL_BENCH_VAULT_KEY` is all that's needed.
-6. If you use remembered servers, confirm the user still knows the vault passphrase.
+6. Confirm you know the Actual Bench password: every upgrade restarts Bench, which signs everyone out.
 7. Upgrade to a **pinned `:<version>`**, not a moving tag. Then you know what you got.
 
 ## Upgrade procedures

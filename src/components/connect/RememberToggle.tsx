@@ -72,11 +72,11 @@ export function RememberToggle({
   async function handleConfirm() {
     setError(null);
     if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
-      setError(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+      setError(`Password must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
       return;
     }
     if (setting && passphrase !== confirm) {
-      setError("Passphrases do not match.");
+      setError("Passwords do not match.");
       return;
     }
     setBusy(true);
@@ -104,7 +104,7 @@ export function RememberToggle({
         <span className="flex flex-col">
           <span className="text-sm font-medium">Remember this budget</span>
           <span className="text-xs text-muted-foreground">
-            Adds this budget to your saved connections for one-click reopen. Stored encrypted with your passphrase.
+            Adds this budget to your saved connections for one-click reopen. Stored encrypted with your password.
             {checked && !vault.status.unlocked && (
               <>
                 {" "}
@@ -113,7 +113,7 @@ export function RememberToggle({
                   onClick={() => { resetDialog(); setDialogOpen(true); }}
                   className="text-primary underline underline-offset-2"
                 >
-                  Enter passphrase
+                  Enter password
                 </button>{" "}
                 to enable.
               </>
@@ -128,8 +128,8 @@ export function RememberToggle({
             <DialogTitle>{setting ? "Protect saved credentials" : "Unlock the vault"}</DialogTitle>
             <DialogDescription>
               {setting
-                ? "Create a passphrase to encrypt your saved servers. It is not stored; if you forget it, you can reset the vault and start over."
-                : "Enter your passphrase to unlock your saved servers."}
+                ? "Create a password to encrypt your saved servers. It is not stored; if you forget it, you can reset the vault and start over."
+                : "Enter your password to unlock your saved servers."}
             </DialogDescription>
           </DialogHeader>
 
@@ -139,7 +139,7 @@ export function RememberToggle({
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !setting) void handleConfirm(); }}
-              placeholder="Passphrase"
+              placeholder="Password"
               autoComplete="new-password"
               autoFocus
               disabled={busy}
@@ -150,7 +150,7 @@ export function RememberToggle({
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void handleConfirm(); }}
-                placeholder="Confirm passphrase"
+                placeholder="Confirm password"
                 autoComplete="new-password"
                 disabled={busy}
               />
@@ -163,7 +163,7 @@ export function RememberToggle({
               Cancel
             </Button>
             <Button onClick={() => void handleConfirm()} disabled={busy || !passphrase}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : setting ? "Set passphrase" : "Unlock"}
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : setting ? "Set password" : "Unlock"}
             </Button>
           </DialogFooter>
         </DialogContent>

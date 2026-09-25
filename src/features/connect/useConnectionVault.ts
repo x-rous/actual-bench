@@ -31,6 +31,8 @@ const CLOSED: VaultStatus = {
   supported: false,
   passphraseSet: false,
   unlocked: false,
+  authMode: "none",
+  passwordFromEnv: false,
 };
 
 /**

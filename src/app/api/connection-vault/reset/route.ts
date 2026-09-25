@@ -5,6 +5,7 @@ import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaul
 import { resetVault } from "@/lib/connectionVault/passphrase";
 import { clearAllSessions } from "@/lib/connectionVault/session";
 import { clearSessionCookie } from "@/lib/connectionVault/cookies";
+import { authMode } from "@/lib/auth/authMode";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,6 +22,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Remembering credentials requires a durable metadata database." },
         { status: 400 }
+      );
+    }
+    if (authMode() === "password") {
+      // With sign-in on, this password is the app's password: clearing it
+      // would leave the first visitor to set a new one. Whoever is signed in
+      // knows it; a forgotten one is recovered with ACTUAL_BENCH_PASSWORD.
+      return NextResponse.json(
+        { error: "Set ACTUAL_BENCH_PASSWORD and restart to replace a forgotten password." },
+        { status: 409 }
       );
     }
     resetVault(getAppDb());

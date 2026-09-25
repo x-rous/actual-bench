@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CalendarClock, CheckCircle2, Database, HardDrive, RefreshCw } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Database, HardDrive, RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { VaultHealth } from "./VaultHealth";
+import { AUTH_STATUS_QUERY_KEY } from "@/components/auth/AccountMenu";
+import { getVaultStatus } from "@/features/connect/vaultApi";
 import type { AppDbHealth } from "@/lib/app-db/types";
 import type { AppDbStorageUsage } from "@/lib/app-db/storageUsage";
 
@@ -268,6 +270,64 @@ function AppDatabaseCard({ health }: { health: AppDbHealth }) {
   );
 }
 
+/**
+ * Whether Actual Bench asks for its password (RD-096). Off is a choice the
+ * operator made, but it means anyone who can reach the app can use it, so it
+ * reads as a warning rather than a setting.
+ */
+function SignInCard() {
+  const { data: status } = useQuery({ queryKey: AUTH_STATUS_QUERY_KEY, queryFn: getVaultStatus, staleTime: 60_000 });
+  // The public demo keeps nothing private and has nowhere to keep a password.
+  if (!status?.supported) return null;
+  const on = status.authMode === "password";
+  return (
+    <section className="rounded-md border border-border bg-background shadow-sm">
+      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+            <ShieldCheck className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">Sign-in</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              One password signs in to Actual Bench and encrypts your saved connections.
+            </p>
+          </div>
+        </div>
+        {on ? (
+          <Badge variant="status-active" className="gap-1">
+            <CheckCircle2 className="h-3 w-3" />
+            On
+          </Badge>
+        ) : (
+          <Badge variant="status-warning" className="gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Off
+          </Badge>
+        )}
+      </div>
+      <dl>
+        <DetailRow
+          label="Password"
+          value={
+            on
+              ? status.passwordFromEnv
+                ? "Set by ACTUAL_BENCH_PASSWORD"
+                : "Required to use Actual Bench"
+              : "Not asked for (ACTUAL_BENCH_AUTH=none)"
+          }
+        />
+      </dl>
+      {!on && (
+        <div className="border-t border-amber-400/30 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+          Anyone who can reach Actual Bench can use it, including its automations, backups and saved connections.
+          Keep it behind your own authentication, or remove ACTUAL_BENCH_AUTH=none.
+        </div>
+      )}
+    </section>
+  );
+}
+
 const AUTOMATION_STATUS_BADGE = {
   ok: { variant: "status-active" as const, label: "Healthy" },
   warning: { variant: "status-warning" as const, label: "Needs attention" },
@@ -420,6 +480,7 @@ export function AppHealthView() {
       onRetry={() => void query.refetch()}
     >
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 lg:p-5">
+        <SignInCard />
         {query.data && <AppDatabaseCard health={query.data} />}
         <AutomationsCard />
       </div>

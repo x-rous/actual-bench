@@ -29,14 +29,14 @@ export async function POST(request: NextRequest) {
     }
     const body = (await readJsonBody(request)) as { passphrase?: unknown; duration?: unknown };
     if (typeof body?.passphrase !== "string") {
-      return NextResponse.json({ error: "passphrase is required." }, { status: 400 });
+      return NextResponse.json({ error: "Enter your password." }, { status: 400 });
     }
     if (body.duration !== undefined && !isVaultUnlockDuration(body.duration)) {
       return NextResponse.json({ error: "Unsupported vault unlock duration." }, { status: 400 });
     }
     const db = getAppDb();
     if (!isPassphraseSet(db)) {
-      return NextResponse.json({ error: "No passphrase is set." }, { status: 400 });
+      return NextResponse.json({ error: "No password is set." }, { status: 400 });
     }
     // Brute-force backoff: reject while locked out after repeated failures.
     const retryMs = unlockRetryAfterMs();
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     const key = verifyPassphrase(db, body.passphrase);
     if (!key) {
       recordUnlockFailure();
-      return NextResponse.json({ error: "Incorrect passphrase." }, { status: 401 });
+      return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
     }
     recordUnlockSuccess();
     const response = NextResponse.json({ ok: true, unlocked: true });

@@ -19,6 +19,7 @@ export async function register(): Promise<void> {
     { logger },
     { upgradeLegacyUnattendedCredentials },
     { getVaultState, logVaultState },
+    { applyAuthSettings },
   ] = await Promise.all([
     import("@/lib/automation/runtime"),
     import("@/lib/automation/bootstrap"),
@@ -27,6 +28,7 @@ export async function register(): Promise<void> {
     import("@/lib/logger"),
     import("@/lib/credentials/unattendedCredentials"),
     import("@/lib/credentials/vaultState"),
+    import("@/lib/auth/startup"),
   ]);
 
   try {
@@ -35,6 +37,12 @@ export async function register(): Promise<void> {
     logVaultState(getVaultState(getAppDb()));
   } catch (error) {
     logger.warn(`[vault] could not check the vault: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    applyAuthSettings(getAppDb(), logger);
+  } catch (error) {
+    logger.warn(`[auth] could not apply the password settings: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   try {

@@ -43,16 +43,16 @@ Remembered secrets are stored in the server's metadata database and survive only
 persistent. The public demo disables remembering. Self-hosters must verify their volume mount; a
 writable container directory is not enough to survive container replacement.
 
-### A forgotten passphrase can't be recovered
+### A forgotten password can't be recovered
 
 **Applies to:** remembered servers.
 
-The passphrase and its derived key are never stored, so a lost passphrase means the encrypted secrets
+The password and its derived key are never stored, so a lost password means the saved servers
 **cannot be decrypted** - by design.
 
-**Alternative:** use **Forgot passphrase?** on the unlock panel to reset the vault, then set a new
-passphrase and re-save your servers. Changing the passphrase (when you still know it) re-encrypts all
-saved servers instead.
+**Alternative:** set `ACTUAL_BENCH_PASSWORD` to a new password and restart Actual Bench, then re-save
+your servers. Automations and backups are kept. Changing the password (when you still know it)
+re-encrypts all saved servers instead.
 
 ### Remembered servers are per-instance, not synced across devices
 

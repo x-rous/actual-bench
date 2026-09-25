@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ConnectForm } from "@/components/connect/ConnectForm";
 import { DemoButton } from "@/components/connect/DemoButton";
 import { VaultLockedBanner } from "@/components/connect/VaultLockedBanner";
+import { AccountMenu } from "@/components/auth/AccountMenu";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,9 @@ function isDemoConfigured() {
 export default function ConnectPage() {
   return (
     <div className="w-full flex flex-col items-center gap-4">
+      <div className="fixed right-4 top-4">
+        <AccountMenu />
+      </div>
       <VaultLockedBanner />
       {isDemoConfigured() && <DemoButton />}
       <ConnectForm />

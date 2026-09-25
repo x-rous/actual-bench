@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const body = (await readJsonBody(request)) as { passphrase?: unknown; duration?: unknown };
     if (typeof body?.passphrase !== "string" || body.passphrase.length < MIN_PASSPHRASE_LENGTH) {
       return NextResponse.json(
-        { error: `passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.` },
+        { error: `The password must be at least ${MIN_PASSPHRASE_LENGTH} characters.` },
         { status: 400 }
       );
     }
@@ -39,13 +39,13 @@ export async function POST(request: NextRequest) {
     }
     const db = getAppDb();
     if (isPassphraseSet(db)) {
-      return NextResponse.json({ error: "A passphrase is already set." }, { status: 409 });
+      return NextResponse.json({ error: "A password is already set." }, { status: 409 });
     }
     setPassphrase(db, body.passphrase);
     const key = verifyPassphrase(db, body.passphrase);
     if (!key) {
       // Should never happen right after setting; fail closed rather than guess.
-      return NextResponse.json({ error: "Failed to establish the passphrase." }, { status: 500 });
+      return NextResponse.json({ error: "Failed to set the password." }, { status: 500 });
     }
     const response = NextResponse.json({ ok: true, unlocked: true });
     const duration = body.duration ?? DEFAULT_VAULT_UNLOCK_DURATION;

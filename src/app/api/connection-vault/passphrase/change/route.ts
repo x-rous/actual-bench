@@ -5,6 +5,7 @@ import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaul
 import { changePassphrase, isPassphraseSet, verifyPassphrase } from "@/lib/connectionVault/passphrase";
 import { clearAllSessions, createSession } from "@/lib/connectionVault/session";
 import { setSessionCookie } from "@/lib/connectionVault/cookies";
+import { passwordFromEnv } from "@/lib/auth/authMode";
 import { recordUnlockFailure, recordUnlockSuccess, unlockRetryAfterMs } from "@/lib/connectionVault/throttle";
 import {
   DEFAULT_VAULT_UNLOCK_DURATION,
@@ -29,26 +30,34 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (passwordFromEnv() !== null) {
+      // The next restart would put the environment's password back, clearing
+      // everything sealed with the one chosen here.
+      return NextResponse.json(
+        { error: "The password is set by ACTUAL_BENCH_PASSWORD. Change it there and restart." },
+        { status: 409 }
+      );
+    }
     const body = (await readJsonBody(request)) as {
       currentPassphrase?: unknown;
       newPassphrase?: unknown;
       duration?: unknown;
     };
     if (typeof body?.currentPassphrase !== "string" || typeof body?.newPassphrase !== "string") {
-      return NextResponse.json({ error: "currentPassphrase and newPassphrase are required." }, { status: 400 });
+      return NextResponse.json({ error: "Enter your current password and a new one." }, { status: 400 });
     }
     if (body.duration !== undefined && !isVaultUnlockDuration(body.duration)) {
       return NextResponse.json({ error: "Unsupported vault unlock duration." }, { status: 400 });
     }
     if (body.newPassphrase.length < MIN_PASSPHRASE_LENGTH) {
       return NextResponse.json(
-        { error: `newPassphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.` },
+        { error: `The new password must be at least ${MIN_PASSPHRASE_LENGTH} characters.` },
         { status: 400 }
       );
     }
     const db = getAppDb();
     if (!isPassphraseSet(db)) {
-      return NextResponse.json({ error: "No passphrase is set." }, { status: 400 });
+      return NextResponse.json({ error: "No password is set." }, { status: 400 });
     }
     // Share the unlock brute-force backoff — this also verifies a guessed passphrase.
     const retryMs = unlockRetryAfterMs();
@@ -60,12 +69,12 @@ export async function POST(request: NextRequest) {
     }
     if (!changePassphrase(db, body.currentPassphrase, body.newPassphrase)) {
       recordUnlockFailure();
-      return NextResponse.json({ error: "Incorrect current passphrase." }, { status: 401 });
+      return NextResponse.json({ error: "Incorrect current password." }, { status: 401 });
     }
     recordUnlockSuccess();
     clearAllSessions();
     const key = verifyPassphrase(db, body.newPassphrase);
-    if (!key) return NextResponse.json({ error: "Failed to re-establish the passphrase." }, { status: 500 });
+    if (!key) return NextResponse.json({ error: "Failed to re-establish the password." }, { status: 500 });
     const response = NextResponse.json({ ok: true, unlocked: true });
     const duration = body.duration ?? DEFAULT_VAULT_UNLOCK_DURATION;
     setSessionCookie(request, response, createSession(key, duration), duration);

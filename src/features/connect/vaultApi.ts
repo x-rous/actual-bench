@@ -53,6 +53,10 @@ export type VaultStatus = {
   supported: boolean;
   passphraseSet: boolean;
   unlocked: boolean;
+  /** "password": signing in is unlocking the vault (RD-096). "none": sign-in is off. */
+  authMode: "password" | "none";
+  /** The operator set the password in `ACTUAL_BENCH_PASSWORD`; it can't be changed here. */
+  passwordFromEnv: boolean;
 };
 
 /** Whether the feature is available here, a passphrase is set, and this session is unlocked. */

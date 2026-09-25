@@ -1,4 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { authMode } from "@/lib/auth/authMode";
+import { isOpenPath, safeNextPath } from "@/lib/auth/openPaths";
+import { readSessionToken } from "@/lib/connectionVault/cookies";
+import { hasSession } from "@/lib/connectionVault/session";
 
 /**
  * Cross-origin isolation headers Direct Actual Server mode needs
@@ -67,13 +71,46 @@ function externalScheme(request: NextRequest): string | null {
   return request.nextUrl.protocol === "https:" ? "https:" : null;
 }
 
-export function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname.startsWith("/api/")) {
-    if (isCrossSiteWrite(request)) {
-      return NextResponse.json({ error: "Cross-site request refused." }, { status: 403 });
-    }
-    return NextResponse.next();
+/**
+ * The sign-in gate (RD-096). Signed in means the saved-connections vault is
+ * unlocked for this browser: one password, one session. Pages send a signed-out
+ * visitor to the sign-in page and back; API calls answer 401, marked so the
+ * app can tell it apart from a budget server's own 401 and do the same.
+ */
+function signInResponse(request: NextRequest): NextResponse | null {
+  if (authMode() === "none") return null;
+
+  const { pathname, search } = request.nextUrl;
+  const signedIn = hasSession(readSessionToken(request));
+
+  if (pathname === "/login") {
+    if (!signedIn) return null;
+    const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+    return NextResponse.redirect(new URL(next, request.url));
   }
+  if (signedIn || isOpenPath(pathname)) return null;
+
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { error: "Sign in to continue.", code: "SIGNED_OUT" },
+      { status: 401, headers: { "X-Bench-Auth": "signed-out" } }
+    );
+  }
+  const login = new URL("/login", request.url);
+  login.searchParams.set("next", `${pathname}${search}`);
+  return NextResponse.redirect(login);
+}
+
+export function proxy(request: NextRequest) {
+  const isApi = request.nextUrl.pathname.startsWith("/api/");
+  if (isApi && isCrossSiteWrite(request)) {
+    return NextResponse.json({ error: "Cross-site request refused." }, { status: 403 });
+  }
+
+  const gate = signInResponse(request);
+  if (gate) return gate;
+
+  if (isApi) return NextResponse.next();
 
   const response = NextResponse.next();
 

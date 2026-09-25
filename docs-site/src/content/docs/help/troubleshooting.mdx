@@ -64,7 +64,7 @@ Redact secrets before you share a log with anyone.
 
 - **A recent connection still asks for the password** - correct. Recent details hold no secrets. Use
   the remembered-server vault if you want the credential kept.
-- **The vault is locked after a restart** - also correct. Unlock it with your passphrase.
+- **Signed out after a restart** - also correct. Sign in again; your saved connections open with it.
 - **Remembered servers are gone** - the metadata database or the `/data` volume was replaced. Whoever
   runs the server needs to check the deployment and restore a backup.
 - **A refresh loses the connection** - memory-only connections do that by design.

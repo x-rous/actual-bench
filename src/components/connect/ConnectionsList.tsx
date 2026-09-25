@@ -18,6 +18,7 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
 import type { MergedBudget, MergedServer } from "./mergeConnections";
+import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { deriveLabel, getConnectionModeBadge, parseApiError } from "./utils";
 import {
   VAULT_UNLOCK_DURATION_OPTIONS,
@@ -25,7 +26,6 @@ import {
 } from "@/lib/connectionVault/unlockDuration";
 import { readVaultUnlockDuration, saveVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
 
-const MIN_PASSPHRASE_LENGTH = 8;
 type Vault = ReturnType<typeof useConnectionVault>;
 
 /**
@@ -74,11 +74,6 @@ export function ConnectionsList({
   const [locking, setLocking] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [changeOpen, setChangeOpen] = useState(false);
-  const [currentPass, setCurrentPass] = useState("");
-  const [nextPass, setNextPass] = useState("");
-  const [confirmPass, setConfirmPass] = useState("");
-  const [changing, setChanging] = useState(false);
-  const [changeError, setChangeError] = useState<string | null>(null);
 
   if (servers.length === 0) return null;
 
@@ -128,7 +123,7 @@ export function ConnectionsList({
       await vault.reset();
       setConfirmReset(false);
       setPassphrase("");
-      toast.success("Vault reset. Set a passphrase to start saving servers again.");
+      toast.success("Vault reset. Set a password to start saving servers again.");
     } catch (err) {
       setError(parseApiError(err));
     } finally {
@@ -137,10 +132,6 @@ export function ConnectionsList({
   }
 
   function openChangePassphrase() {
-    setCurrentPass("");
-    setNextPass("");
-    setConfirmPass("");
-    setChangeError(null);
     setChangeOpen(true);
   }
 
@@ -148,30 +139,9 @@ export function ConnectionsList({
     setSettingsOpen(true);
   }
 
-  async function handleChangePassphrase() {
-    setChangeError(null);
-    if (!currentPass) {
-      setChangeError("Current passphrase is required.");
-      return;
-    }
-    if (nextPass.length < MIN_PASSPHRASE_LENGTH) {
-      setChangeError(`New passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
-      return;
-    }
-    if (nextPass !== confirmPass) {
-      setChangeError("New passphrases do not match.");
-      return;
-    }
-    setChanging(true);
-    try {
-      await vault.changePassphrase(currentPass, nextPass, unlockDuration);
-      setChangeOpen(false);
-      toast.success("Passphrase changed. Your saved servers were re-encrypted.");
-    } catch (err) {
-      setChangeError(parseApiError(err));
-    } finally {
-      setChanging(false);
-    }
+  async function handleChangePassphrase(currentPassword: string, newPassword: string) {
+    await vault.changePassphrase(currentPassword, newPassword, unlockDuration);
+    toast.success("Password changed. Your saved servers were re-encrypted.");
   }
 
   async function runBusy(key: string, action: () => Promise<void>) {
@@ -238,7 +208,9 @@ export function ConnectionsList({
   return (
     <section className="flex flex-col gap-4">
       {/* ── Vault security bar ─────────────────────────────────────────────── */}
-      {hasSaved && (
+      {/* With sign-in on, signing in unlocked the vault: the account menu
+          holds sign out and change password instead (RD-096). */}
+      {hasSaved && vault.status.authMode !== "password" && (
         <div
           className={cn(
             "overflow-hidden rounded-xl border bg-card shadow-sm",
@@ -293,7 +265,7 @@ export function ConnectionsList({
                   onClick={openChangePassphrase}
                 >
                   <KeyRound className="size-3.5" />
-                  <span className="hidden sm:inline">Change passphrase</span>
+                  <span className="hidden sm:inline">Change password</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -319,8 +291,8 @@ export function ConnectionsList({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void handleUnlock();
                   }}
-                  placeholder="Enter your passphrase"
-                  aria-label="Vault passphrase"
+                  placeholder="Enter your password"
+                  aria-label="Vault password"
                   autoComplete="off"
                   disabled={unlocking}
                   className="h-9"
@@ -332,7 +304,7 @@ export function ConnectionsList({
               {confirmReset ? (
                 <div className="mt-2.5 flex flex-col gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-2.5">
                   <p className="text-xs text-muted-foreground">
-                    Forgot it? Resetting removes all saved servers and clears the passphrase so you can set a new
+                    Forgot it? Resetting removes all saved servers and clears the password so you can set a new
                     one. Your budgets and their data are untouched.
                   </p>
                   <div className="flex gap-2">
@@ -371,7 +343,7 @@ export function ConnectionsList({
                     onClick={() => setConfirmReset(true)}
                     className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                   >
-                    Forgot passphrase?
+                    Forgot password?
                   </button>
                 </div>
               )}
@@ -520,7 +492,7 @@ export function ConnectionsList({
               ))}
             </select>
             <span className="text-xs font-normal text-muted-foreground">
-              Server restarts and Lock always require your passphrase.
+              Server restarts and Lock always require your password.
             </span>
           </label>
 
@@ -530,70 +502,7 @@ export function ConnectionsList({
         </DialogContent>
       </Dialog>
 
-      {/* ── Change-passphrase dialog ───────────────────────────────────────── */}
-      <Dialog
-        open={changeOpen}
-        onOpenChange={(open) => {
-          if (!open && !changing) setChangeOpen(false);
-        }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Change passphrase</DialogTitle>
-            <DialogDescription>
-              Enter your current passphrase and a new one. Your saved servers are re-encrypted with the new
-              passphrase, and other tabs are signed out of the vault.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-2">
-            <Input
-              type="password"
-              value={currentPass}
-              onChange={(e) => setCurrentPass(e.target.value)}
-              placeholder="Current passphrase"
-              aria-label="Current passphrase"
-              autoComplete="current-password"
-              autoFocus
-              disabled={changing}
-            />
-            <Input
-              type="password"
-              value={nextPass}
-              onChange={(e) => setNextPass(e.target.value)}
-              placeholder="New passphrase"
-              aria-label="New passphrase"
-              autoComplete="new-password"
-              disabled={changing}
-            />
-            <Input
-              type="password"
-              value={confirmPass}
-              onChange={(e) => setConfirmPass(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleChangePassphrase();
-              }}
-              placeholder="Confirm new passphrase"
-              aria-label="Confirm new passphrase"
-              autoComplete="new-password"
-              disabled={changing}
-            />
-            {changeError && <p className="text-xs text-destructive">{changeError}</p>}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setChangeOpen(false)} disabled={changing}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => void handleChangePassphrase()}
-              disabled={changing || !currentPass || !nextPass || !confirmPass}
-            >
-              {changing ? <Loader2 className="size-4 animate-spin" /> : "Change passphrase"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ChangePasswordDialog open={changeOpen} onOpenChange={setChangeOpen} onSubmit={handleChangePassphrase} />
     </section>
   );
 }

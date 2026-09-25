@@ -25,6 +25,8 @@ The table lists every environment variable supported by the current application.
 
 | Variable | Default | Purpose | Secret | Restart |
 |---|---|---|:---:|:---:|
+| `ACTUAL_BENCH_AUTH` | `password` | `none` turns sign-in off, for when your own proxy or VPN already controls access. Anything else asks for the password. | No | Yes |
+| `ACTUAL_BENCH_PASSWORD` | *(unset: the first visitor sets it)* | Sets the password at start, and replaces a forgotten one. See [Sign-in](#sign-in). | **Yes** | Yes |
 | `ACTUAL_BENCH_DB_PATH` | `/data/actual-bench.sqlite` | Path to the metadata SQLite database. | No | Yes |
 | `ACTUAL_BENCH_VAULT_KEY` | *(unset: a generated key file)* | Your own key for the credential vault. Optional; see below. `SYNC_VAULT_KEY` is its old name and still works. | **Yes** | Yes |
 | `ACTUAL_BENCH_WORKERS_MAX` | `2` | How many automation runs may be going at once. | No | Yes |
@@ -41,6 +43,24 @@ build and do nothing in a self-hosted one.
 
 A persistent `/data` volume. That is the whole requirement. Set `ACTUAL_BENCH_DB_PATH` only if you
 want the metadata database somewhere else.
+
+## Sign-in
+
+Actual Bench asks for one password. It signs you in, and it also encrypts the connections you save,
+so signing in opens them too. There is no separate vault password.
+
+- **First visit:** the first person to open a new install sets the password. Open Actual Bench right
+  after deploying it, or set `ACTUAL_BENCH_PASSWORD` so the question never comes up.
+- **Upgrading:** if you had already set a password for saved connections, that is your password now.
+  Otherwise Actual Bench asks you to set one once.
+- **Staying signed in:** choose 8 hours, 24 hours, 7 days or 30 days when you sign in; the time resets
+  while you use the app. Restarting Actual Bench signs everyone out.
+- **Forgot it:** set `ACTUAL_BENCH_PASSWORD` to a new password and restart. Saved connections were
+  encrypted with the old password, so they are cleared and you save them again. Automations, backups
+  and their stored credentials use the separate vault key and are kept.
+- **While `ACTUAL_BENCH_PASSWORD` is set**, it is the password: change it there, not in the app.
+- **Sign-in off:** `ACTUAL_BENCH_AUTH=none` lets anyone who can reach Actual Bench use it. Only do this
+  behind your own authentication. App Health shows a warning while it is off.
 
 ## Direct mode
 
@@ -61,17 +81,17 @@ cross-origin requirements Direct mode needs.
   explicit, encrypted opt-ins: **remembered-connection** secrets and **unattended-sync** credentials
   (below).
 
-### Remembered-server secrets (user passphrase)
+### Remembered-server secrets (your password)
 
 When a user opts in to [remembering a server](../../getting-started/connecting/#remember-a-server),
-its secret is sealed **AES-256-GCM** in this database, encrypted with a key derived from a **passphrase
-the user sets** - no environment variable is involved. Credentials are server-scoped (one saved server
-opens any of its budgets); budget encryption passwords are sealed separately, per budget. The passphrase
+its secret is sealed **AES-256-GCM** in this database, encrypted with a key derived from **your
+Actual Bench password** (see [Sign-in](#sign-in)). Credentials are server-scoped (one saved server
+opens any of its budgets); budget encryption passwords are sealed separately, per budget. The password
 and derived key are never stored (only the ciphertext and a salt), so the server cannot decrypt on its
-own; the user unlocks once per session. This is **separate** from the credential vault
+own; signing in unlocks them for that session. This is **separate** from the credential vault
 below - the two never share ciphertext or a key. Back up and persist `/data` to preserve remembered
-servers across container replacement; a writable path by itself does not prove durability. A lost
-passphrase means the user resets the vault and re-saves.
+servers across container replacement; a writable path by itself does not prove durability. A forgotten
+password is replaced with `ACTUAL_BENCH_PASSWORD`, which clears these saved servers.
 
 ## The credential vault
 
