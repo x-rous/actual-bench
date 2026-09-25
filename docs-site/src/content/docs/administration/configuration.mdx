@@ -98,8 +98,9 @@ separately, set `ACTUAL_BENCH_VAULT_KEY` from your secret manager before the fir
 :::danger[Changing the key locks stored credentials]
 Credentials only open with the key that sealed them. If the key goes missing or changes (a new
 volume, a different `ACTUAL_BENCH_VAULT_KEY`), the vault is **locked**: automations that need
-stored credentials pause, and **App Health** shows why. Restore the old key and click **Check
-again**, or **Reset vault** to start over and enrol again.
+stored credentials pause, and **App Health** shows why. Put the old `vault.key` back and click
+**Check again**, or set the old `ACTUAL_BENCH_VAULT_KEY` and restart Bench. If the key is gone,
+**Reset vault** to start over and enrol again.
 :::
 
 See [Budget Sync → Automation](../../user-guide/budget-sync/#automation-opt-in) for how flows opt in, and

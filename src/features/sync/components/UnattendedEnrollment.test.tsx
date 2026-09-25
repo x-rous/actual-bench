@@ -96,6 +96,7 @@ describe("enrolling a flow's budgets for unattended sync", () => {
       ],
     });
     mockedSync.getVaultStatus.mockRejectedValueOnce(new Error("offline"));
+    mockedSync.getVaultStatus.mockResolvedValueOnce({ vault: { status: "ready" as const }, credentials: [] });
     mockedSync.withdrawCredential.mockResolvedValue(undefined as never);
     renderPanel(source, target);
 
@@ -104,6 +105,10 @@ describe("enrolling a flow's budgets for unattended sync", () => {
     expect(await screen.findByText(/Could not check the stored credentials/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /run/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/armed/i)).not.toBeInTheDocument();
+
+    // Recoverable in place, without reopening the flow.
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(await screen.findByRole("button", { name: /store credentials/i })).toBeInTheDocument();
   });
 
   it("no longer says Direct connections cannot run unattended", async () => {

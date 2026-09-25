@@ -30,8 +30,11 @@ export type UnattendedStatusInput = {
   reviewPolicy: string;
   flowEnabled: boolean;
   autoPaused: boolean;
-  /** The server vault can open stored credentials (not locked). */
-  vaultReady: boolean;
+  /**
+   * The server vault can open stored credentials (not locked). Null while that
+   * is not known yet, or could not be checked: never armed on a guess.
+   */
+  vaultReady: boolean | null;
   /** Both budgets' credentials are stored in the server vault. */
   bothEnrolled: boolean;
   /**
@@ -77,6 +80,7 @@ export function computeUnattendedStatus(i: UnattendedStatusInput): UnattendedSta
       ? `Paused by automation: ${i.enginePause.reason}`
       : "Paused by automation - resume it on the Automations page";
   } else if (paused) reason = "Paused - re-enable the flow to resume";
+  else if (i.vaultReady === null) reason = "Checking stored credentials...";
   else if (!i.vaultReady) reason = "Stored credentials are locked - see App Health";
   else if (!i.bothEnrolled) reason = "Store credentials to arm unattended sync";
 

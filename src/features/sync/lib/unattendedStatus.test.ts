@@ -16,6 +16,12 @@ describe("computeUnattendedStatus", () => {
     expect(computeUnattendedStatus({ ...base, reviewPolicy: "manual_preview_required" }).isUnattended).toBe(false);
   });
 
+  it("is never armed while the vault state is unknown", () => {
+    const s = computeUnattendedStatus({ ...base, vaultReady: null });
+    expect(s.armed).toBe(false);
+    expect(s.nextRunAtMs).toBeNull();
+  });
+
   it("is armed when vault + http + enrolled + active", () => {
     const s = computeUnattendedStatus(base);
     expect(s.armed).toBe(true);
@@ -27,6 +33,7 @@ describe("computeUnattendedStatus", () => {
     expect(computeUnattendedStatus({ ...base, autoPaused: true }).reason).toMatch(/Paused/);
     expect(computeUnattendedStatus({ ...base, flowEnabled: false }).reason).toMatch(/Paused/);
     expect(computeUnattendedStatus({ ...base, vaultReady: false }).reason).toMatch(/locked/);
+    expect(computeUnattendedStatus({ ...base, vaultReady: null }).reason).toMatch(/Checking/);
     expect(computeUnattendedStatus({ ...base, bothEnrolled: false }).reason).toMatch(/Store credentials/);
   });
 

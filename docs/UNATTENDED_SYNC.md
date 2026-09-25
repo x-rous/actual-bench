@@ -85,8 +85,9 @@ If Bench can't find the key that sealed its stored credentials, or the key it ha
 them, the vault is **locked**. Automations that need stored credentials pause, the connect screen
 shows a notice, and **App Health** says why, with the fix:
 
-- **Restore the key:** put the old `vault.key` back or set `ACTUAL_BENCH_VAULT_KEY` to the old
-  value, then click **Check again**. No restart needed.
+- **Restore the key:** put the old `vault.key` back and click **Check again**; no restart is
+  needed. Or set `ACTUAL_BENCH_VAULT_KEY` to the old value and restart Bench, since a running
+  server cannot see a changed environment variable.
 - **Reset the vault:** if the key is gone, **Reset vault** deletes the stored secrets Bench can no
   longer open and every unattended enrolment, and starts again. Enrol your budgets and re-enter
   backup credentials afterwards. Remembered connections are not affected. A reset is refused while

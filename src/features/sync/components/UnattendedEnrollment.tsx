@@ -179,7 +179,12 @@ export function UnattendedEnrollment({
   if (vault === null) {
     return loadFailed ? (
       <div className={box}>
-        <span className="text-destructive">Could not check the stored credentials. Reopen this flow to try again.</span>
+        <span className="text-destructive">Could not check the stored credentials.</span>
+        <div>
+          <Button size="sm" variant="outline" onClick={() => void refresh()}>
+            Try again
+          </Button>
+        </div>
       </div>
     ) : null;
   }

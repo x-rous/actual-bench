@@ -66,15 +66,16 @@ function Fix({ state }: { state: VaultStateResponse }) {
     case "missing":
       return (
         <>
-          Put the original key file back at {path}, or set <Code>ACTUAL_BENCH_VAULT_KEY</Code> to the key you used
-          before, then check again. If the key is gone for good, reset the vault and enter the credentials again.
+          Put the original key file back at {path} and check again, or set <Code>ACTUAL_BENCH_VAULT_KEY</Code> to the
+          key you used before and restart Bench. If the key is gone for good, reset the vault and enter the credentials
+          again.
         </>
       );
     case "wrong-key":
       return (
         <>
-          Set <Code>ACTUAL_BENCH_VAULT_KEY</Code>, or restore {path}, to the key that sealed them, then check again. If
-          that key is gone for good, reset the vault and enter the credentials again.
+          Restore {path} to the key that sealed them and check again, or set <Code>ACTUAL_BENCH_VAULT_KEY</Code> to it
+          and restart Bench. If that key is gone for good, reset the vault and enter the credentials again.
         </>
       );
     case "unreadable":

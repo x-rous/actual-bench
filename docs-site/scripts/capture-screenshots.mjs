@@ -1100,11 +1100,14 @@ async function startOwnInstance() {
   // wrapper that spawned it - a killed wrapper leaves the dev server running,
   // holding both the port and the build directory, and the next run cannot
   // start at all.
+  // Without the vault-key variables, so the fixture generates and shows its own
+  // key file rather than inheriting whatever key this shell happens to hold.
+  const { ACTUAL_BENCH_VAULT_KEY: _vaultKey, SYNC_VAULT_KEY: _legacyVaultKey, ...inheritedEnv } = process.env;
   const server = spawn("npx", ["next", "dev", "-p", String(port)], {
     cwd: join(here, "..", ".."),
     detached: true,
     env: {
-      ...process.env,
+      ...inheritedEnv,
       // Per port, for the same reason: two runs must never share one.
       ACTUAL_BENCH_DIST_DIR: `.next-shots/${port}`,
       // The credential vault generates its key into this data dir on first start.
