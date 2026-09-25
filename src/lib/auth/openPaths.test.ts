@@ -45,7 +45,20 @@ describe("safeNextPath", () => {
   });
 
   it("refuses anywhere else, and the sign-in page itself", () => {
-    for (const next of [null, undefined, "", "https://evil.example", "//evil.example", "/\\evil.example", "login", "/login", "/login?next=/x"]) {
+    for (const next of [
+      null,
+      undefined,
+      "",
+      "https://evil.example",
+      "//evil.example",
+      "/\\evil.example",
+      "/\t/evil.example",
+      "/\n/evil.example",
+      "/\r\n/evil.example",
+      "login",
+      "/login",
+      "/login?next=/x",
+    ]) {
       expect(safeNextPath(next)).toBe("/connect");
     }
   });

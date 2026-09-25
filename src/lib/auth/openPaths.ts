@@ -30,12 +30,23 @@ export function isOpenPath(pathname: string): boolean {
 }
 
 /**
- * Where to send someone after signing in. Only a path on this site: an
- * absolute or protocol-relative URL (`//evil.example`) falls back to the
- * connect page, so the sign-in link can't be used to bounce people elsewhere.
+ * Where to send someone after signing in. Only a page on this site: the value
+ * is resolved the way a browser would (which, among other things, drops tabs
+ * and newlines, so "/\t/evil.example" becomes "//evil.example") and kept only
+ * when it stays on the same origin. Anything else, and the sign-in page
+ * itself, falls back to the connect page, so the link can't bounce people
+ * elsewhere.
  */
 export function safeNextPath(next: string | null | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return "/connect";
-  if (next === "/login" || next.startsWith("/login?")) return "/connect";
-  return next;
+  const FALLBACK = "/connect";
+  if (!next || !next.startsWith("/")) return FALLBACK;
+  const base = "http://bench.invalid";
+  let url: URL;
+  try {
+    url = new URL(next, base);
+  } catch {
+    return FALLBACK;
+  }
+  if (url.origin !== base || url.pathname === "/login") return FALLBACK;
+  return `${url.pathname}${url.search}${url.hash}`;
 }

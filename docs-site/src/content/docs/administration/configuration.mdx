@@ -56,7 +56,8 @@ so signing in opens them too. There is no separate vault password.
 - **Staying signed in:** choose 8 hours, 24 hours, 7 days or 30 days when you sign in; the time resets
   while you use the app. Restarting Actual Bench signs everyone out.
 - **Wrong password:** after five wrong tries, that browser waits a short while before it can try
-  again, and the wait grows with more wrong tries. Other browsers are not held up.
+  again, and the wait grows with more wrong tries. Other browsers are not held up by it; only a
+  flood of wrong passwords from many places at once makes everyone wait briefly.
 - **Forgot it:** set `ACTUAL_BENCH_PASSWORD` to a new password and restart. Saved connections were
   encrypted with the old password, so they are cleared and you save them again. Automations, backups
   and their stored credentials use the separate vault key and are kept.
