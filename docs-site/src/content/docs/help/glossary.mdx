@@ -71,9 +71,11 @@ Use this glossary when a term in the documentation is unfamiliar. Terms with a d
 - **Locked rate** - a rate captured at first sync that won't silently change.
 - **Immutable rate snapshot** - the stored rate and amounts kept with a converted transaction.
 - **Remembered-server vault** - optional saved server credentials encrypted with a user passphrase.
-- **Unattended-sync vault** - optional HTTP API credentials encrypted for server-side scheduled sync.
-- **`SYNC_VAULT_KEY`** - the operator environment secret that enables and encrypts the unattended-sync
-  vault; it is unrelated to the remembered-server passphrase.
+- **Credential vault** - where credentials enrolled for automations are kept, encrypted, so they can
+  run with the app closed. Always present; **locked** when Bench can't find the key that sealed them.
+- **Vault key** - the key the credential vault is encrypted with: generated on first start into
+  `secrets/vault.key`, or supplied as `ACTUAL_BENCH_VAULT_KEY` (formerly `SYNC_VAULT_KEY`). Unrelated
+  to the remembered-server passphrase.
 - **Unattended sync** - safe-only server-side sync that runs with the app closed (HTTP API or Direct mode).
 - **Auto-pause** - a flow automatically pausing after repeated failed automated runs.
 

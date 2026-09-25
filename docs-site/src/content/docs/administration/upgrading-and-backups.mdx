@@ -15,8 +15,8 @@ exchange rates, and optional encrypted credentials.
 |---|---|---|
 | Actual budget data | Your Actual Server | Yes - by Actual, or by Actual Bench's own [Backups](../../user-guide/backups/) |
 | Actual Bench metadata | `/data` volume (SQLite) | **Yes** |
+| Credential vault key | `/data/secrets/vault.key`, or `ACTUAL_BENCH_VAULT_KEY` in your secret manager | **Yes** - without it stored credentials cannot be opened |
 | Configuration | Your Compose file / environment | Yes |
-| `SYNC_VAULT_KEY` | Your secret manager | Yes - **store it separately and safely** |
 | Remembered-server passphrase | Known by the user | Yes, separately - the database cannot recover it |
 | Browser session state | The browser | No (transient; unlock or reconnect after restart) |
 
@@ -29,7 +29,9 @@ opt-ins: remembered-server secrets, and unattended-sync credentials.
 2. Record your **current version** (shown in the sidebar footer).
 3. **Back up `/data`** (see [Backup](#back-up-the-metadata-database)).
 4. Back up your Compose file and environment configuration.
-5. Ensure `SYNC_VAULT_KEY` is safely retained (needed to keep unattended credentials usable).
+5. Make sure the vault key is kept: `/data/secrets/vault.key` is part of the `/data` backup, or keep
+   your `ACTUAL_BENCH_VAULT_KEY` value. Upgrading from a version that used `SYNC_VAULT_KEY`? Keep it
+   set; it still works, and renaming it to `ACTUAL_BENCH_VAULT_KEY` is all that's needed.
 6. If you use remembered servers, confirm the user still knows the vault passphrase.
 7. Upgrade to a **pinned `:<version>`**, not a moving tag. Then you know what you got.
 
@@ -100,32 +102,32 @@ Stop the container first, or use a SQLite-aware method. `cp` on a live database 
 corrupt file that looks fine until you need it. Take the `-wal` and `-shm` sidecars too if they exist.
 :::
 
-:::note[The vault key travels separately]
-Restore this database onto a host with a different `SYNC_VAULT_KEY` and you get every rule, flow and
-automation back - and none of the credentials. Bench will ask for them again. That holds however the
-copy was made.
+:::note[The vault key travels with it]
+Stored credentials only open with the vault key that sealed them. Restore this database without that
+key (`/data/secrets/vault.key`, or the same `ACTUAL_BENCH_VAULT_KEY`) and you get every rule, flow and
+automation back, but none of the credentials: App Health shows the vault as locked and offers a reset.
+Bench's own metadata backups deliberately leave the key out, so keep it with your `/data` backup.
 :::
 
-Back up your Compose file and environment too. Keep `SYNC_VAULT_KEY` **somewhere else entirely**, in
-your secret manager.
+Back up your Compose file and environment too.
 
 ## Restore the metadata database
 
 1. Stop the container.
 2. Restore the metadata files to the `/data` volume with correct ownership/permissions.
 3. Restore your environment configuration.
-4. Provide the **same `SYNC_VAULT_KEY`** as before.
+4. Restore `secrets/vault.key` with it, or provide the **same `ACTUAL_BENCH_VAULT_KEY`** as before.
 5. Start the container and verify **App Health**.
-6. Lost or changed the vault key? The unattended credentials cannot be decrypted. **Re-enrol** each
-   flow.
+6. Lost the vault key? The stored credentials cannot be decrypted. **Reset vault** in App Health, then
+   enrol your budgets again.
 
 ## Move to another host
 
 1. Back up `/data` and your configuration on the old host.
 2. Restore `/data` on the new host with correct permissions.
 3. Recreate the container with the same image `:<version>` and environment.
-4. Provide the same `SYNC_VAULT_KEY`.
-5. Verify App Health and re-enroll any unattended credentials if the key changed.
+4. Bring the vault key: `secrets/vault.key` comes with `/data`, or set the same `ACTUAL_BENCH_VAULT_KEY`.
+5. Verify App Health. If the vault is locked, restore the key, or reset it and enrol again.
 
 ## Troubleshooting
 

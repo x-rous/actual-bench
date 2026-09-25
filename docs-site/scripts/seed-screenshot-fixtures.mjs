@@ -176,7 +176,7 @@ async function seedBackups(page) {
   } else {
     throw new Error(
       "no budget in the rule dialog offers enrolment - the seeded instance is " +
-        "not connected to an HTTP API budget, or SYNC_VAULT_KEY is unset"
+        "not connected to an HTTP API budget, or its credential vault is locked"
     );
   }
   // Destinations come pre-ticked; the time does not, and "Create rule" stays

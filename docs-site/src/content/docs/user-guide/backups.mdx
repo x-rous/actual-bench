@@ -40,7 +40,7 @@ Choose one or both destination types:
 - **A folder on this server** - any absolute path the server can write to: a mounted volume, a NAS
   share, a second disk. Bench creates it if it does not exist.
 - **An S3-compatible bucket** - AWS, but equally MinIO on a NAS, Backblaze B2, Cloudflare R2, Wasabi
-  or Garage. Access keys are encrypted with your server's `SYNC_VAULT_KEY` and never stored in
+  or Garage. Access keys are encrypted with Bench's vault key and never stored in
   readable form.
 
 Bench checks a folder path while you are typing it rather than at 3am when the backup runs. It will
@@ -176,7 +176,7 @@ no budget connection at all, because it is a local database copy.
 
 Restoring it is an operator job rather than an in-app one: see
 [Upgrades & backups](../../administration/upgrading-and-backups/), which covers where the file goes
-and why the `SYNC_VAULT_KEY` has to travel with it.
+and why the vault key has to travel with it.
 
 ## Getting a backup back
 

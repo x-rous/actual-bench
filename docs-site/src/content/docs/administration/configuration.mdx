@@ -26,8 +26,7 @@ The table lists every environment variable supported by the current application.
 | Variable | Default | Purpose | Secret | Restart |
 |---|---|---|:---:|:---:|
 | `ACTUAL_BENCH_DB_PATH` | `/data/actual-bench.sqlite` | Path to the metadata SQLite database. | No | Yes |
-| `SYNC_VAULT_KEY` | *(unset)* | Enables unattended server-side sync; derives the encryption key for stored credentials. | **Yes** | Yes |
-| `SYNC_SCHEDULER_SECRET` | *(unset)* | Enables the external scheduler trigger endpoint; required in its request header. | **Yes** | Yes |
+| `ACTUAL_BENCH_VAULT_KEY` | *(unset: a generated key file)* | Your own key for the credential vault. Optional; see below. `SYNC_VAULT_KEY` is its old name and still works. | **Yes** | Yes |
 | `ACTUAL_BENCH_WORKERS_MAX` | `2` | How many automation runs may be going at once. | No | Yes |
 | `ACTUAL_BENCH_WORKER_HEAP_MB` | `512` | Memory limit for each automation run, in MB. | No | Yes |
 | `ACTUAL_BENCH_AUTOMATION_EXECUTOR` | `worker` | Where automation runs execute: `worker` (their own thread) or `in-thread` (the server's own thread). | No | Yes |
@@ -69,35 +68,38 @@ its secret is sealed **AES-256-GCM** in this database, encrypted with a key deri
 the user sets** - no environment variable is involved. Credentials are server-scoped (one saved server
 opens any of its budgets); budget encryption passwords are sealed separately, per budget. The passphrase
 and derived key are never stored (only the ciphertext and a salt), so the server cannot decrypt on its
-own; the user unlocks once per session. This is **separate** from the `SYNC_VAULT_KEY` unattended-sync
-vault below - the two never share ciphertext or a key. Back up and persist `/data` to preserve remembered
+own; the user unlocks once per session. This is **separate** from the credential vault
+below - the two never share ciphertext or a key. Back up and persist `/data` to preserve remembered
 servers across container replacement; a writable path by itself does not prove durability. A lost
 passphrase means the user resets the vault and re-saves.
 
-## Unattended sync and automation settings
+## The credential vault
 
-These gate the whole automation engine, not just Budget File Sync — scheduled bank sync and backups
-depend on them too:
+Automations that run with Bench closed (unattended sync, scheduled bank sync, backups) use
+credentials enrolled in the **credential vault**: stored **AES-256-GCM encrypted** in the metadata
+database, with the key never stored there. The vault needs no setup. Bench finds its key in this
+order:
 
-- **`SYNC_VAULT_KEY`** - a strong operator secret. When set, the in-process scheduler runs and enrolled
-  credentials can be stored/decrypted. When unset, the feature is fully disabled: nothing is persisted
-  and the scheduler never runs. Enrolled credentials are stored **AES-256-GCM encrypted** in the
-  metadata database; the key is derived from this variable and never stored in the database.
-- **`SYNC_SCHEDULER_SECRET`** *(optional)* - enables an external trigger endpoint at
-  `POST /api/sync/scheduler/tick`, which requires the header `x-scheduler-secret`. Without it, that
-  endpoint returns `403`. Use this only if you want to drive the scheduler from an external cron instead
-  of (or in addition to) the built-in one.
+1. **`ACTUAL_BENCH_VAULT_KEY`**, if you set one.
+2. **`SYNC_VAULT_KEY`**, the old name. It still works; App Health and the log ask you to rename it.
+3. **`secrets/vault.key`** beside the metadata database (`/data/secrets/vault.key` in Docker).
+   Bench generates it on first start: 32 random bytes, file mode `0600`.
 
-Generate strong values with, for example:
+Bench generates a key only when no credentials are stored, and it never overwrites a key file. To
+use a Docker or Kubernetes secret, mount it at that path.
 
-```bash
-openssl rand -base64 48
-```
+:::caution[Keep the key with your data]
+With the generated key, anyone holding a copy of the whole `/data` folder can open the stored
+credentials. That is the usual trade-off for software that needs no setup. To keep the key
+separately, set `ACTUAL_BENCH_VAULT_KEY` from your secret manager before the first start, for example
+`openssl rand -base64 48`.
+:::
 
-:::danger[Rotating `SYNC_VAULT_KEY` invalidates stored credentials]
-Changing `SYNC_VAULT_KEY` makes all previously stored ciphertext undecryptable **by design**. After
-rotating, **re-enroll** each unattended flow's credentials. Flows whose credentials can't be decrypted
-are paused and shown on App Health until re-enrolled.
+:::danger[Changing the key locks stored credentials]
+Credentials only open with the key that sealed them. If the key goes missing or changes (a new
+volume, a different `ACTUAL_BENCH_VAULT_KEY`), the vault is **locked**: automations that need
+stored credentials pause, and **App Health** shows why. Restore the old key and click **Check
+again**, or **Reset vault** to start over and enrol again.
 :::
 
 See [Budget Sync → Automation](../../user-guide/budget-sync/#automation-opt-in) for how flows opt in, and
@@ -141,33 +143,33 @@ you are chasing something.
 ## Secret handling
 
 - A `.env` with real secrets never goes into version control.
-- Use your container platform's secret management for `SYNC_VAULT_KEY` and `SYNC_SCHEDULER_SECRET`.
+- If you set `ACTUAL_BENCH_VAULT_KEY`, use your container platform's secret management for it.
 - Nothing secret goes in a `NEXT_PUBLIC_*` variable. Those are shipped to every browser.
 - Redact logs before you share them. Rotate anything you even suspect leaked.
 
 ## Configuration examples
 
-**Minimal (Direct or HTTP mode, no unattended sync):**
+**Minimal (every feature, automations included):**
 
 ```yaml
 environment:
   ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
 ```
 
-**With unattended server-side sync:**
+**Holding the vault key yourself:**
 
 ```yaml
 environment:
   ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
-  SYNC_VAULT_KEY: ${SYNC_VAULT_KEY}   # provided via your secret manager
+  ACTUAL_BENCH_VAULT_KEY: ${ACTUAL_BENCH_VAULT_KEY}   # provided via your secret manager
 ```
 
 Placeholders in the file, real secrets from your platform. Never the other way round.
 
 ## Validation
 
-Restart, then open **App Health**. The database should be writable, the schema current, and - if you
-configured it - the scheduler should report the vault state you expect.
+Restart, then open **App Health**. The database should be writable, the schema current, and the
+credential vault ready, with its key coming from where you expect.
 
 ## Related pages
 

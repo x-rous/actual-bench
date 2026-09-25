@@ -56,8 +56,7 @@ services:
       ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
       # --- Optional settings (uncomment to use; see the Configuration guide) ---
       # LOG_LEVEL: info                            # debug | info | warn | error
-      # SYNC_VAULT_KEY: "<strong-secret>"          # enable unattended server-side sync
-      # SYNC_SCHEDULER_SECRET: "<strong-secret>"   # enable the external scheduler trigger
+      # ACTUAL_BENCH_VAULT_KEY: "<strong-secret>"  # hold the vault key yourself (else generated)
     volumes:
       - actual-bench-data:/data
     restart: unless-stopped

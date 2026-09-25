@@ -1107,8 +1107,8 @@ async function startOwnInstance() {
       ...process.env,
       // Per port, for the same reason: two runs must never share one.
       ACTUAL_BENCH_DIST_DIR: `.next-shots/${port}`,
+      // The credential vault generates its key into this data dir on first start.
       ACTUAL_BENCH_DB_PATH: join(dataDir, "actual-bench.sqlite"),
-      SYNC_VAULT_KEY: process.env.SYNC_VAULT_KEY ?? "documentation-screenshots-vault-key",
     },
     stdio: "ignore",
   });
