@@ -38,6 +38,23 @@ describe("isCrossSiteWrite", () => {
     expect(isCrossSiteWrite(behindProxy)).toBe(false);
   });
 
+  it("refuses an http:// page writing to the https:// app on the same host", () => {
+    expect(isCrossSiteWrite(request("/api/x", "POST", { origin: "http://bench.example" }))).toBe(true);
+    const behindProxy = new NextRequest("http://bench:3000/api/x", {
+      method: "POST",
+      headers: { host: "bench.example", "x-forwarded-proto": "https", origin: "http://bench.example" },
+    });
+    expect(isCrossSiteWrite(behindProxy)).toBe(true);
+  });
+
+  it("compares only the host when a TLS-terminating proxy doesn't say the scheme", () => {
+    const noForwardedProto = new NextRequest("http://bench:3000/api/x", {
+      method: "POST",
+      headers: { host: "bench.example", origin: "https://bench.example" },
+    });
+    expect(isCrossSiteWrite(noForwardedProto)).toBe(false);
+  });
+
   it("lets a request with neither header through (not from a browser page)", () => {
     expect(isCrossSiteWrite(request("/api/x", "POST"))).toBe(false);
   });
