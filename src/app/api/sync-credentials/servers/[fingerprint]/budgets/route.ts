@@ -59,7 +59,18 @@ export async function GET(_request: Request, context: RouteContext) {
       server: { mode, baseUrl: meta.baseUrl },
       budgets: result.value.map((budget) => {
         const budgetFingerprint = connectionFingerprint({ mode, baseUrl: meta.baseUrl, budgetSyncId: budget.budgetSyncId });
-        return { ...budget, connectionFingerprint: budgetFingerprint, enrolled: enrolled.has(budgetFingerprint) };
+        const isEnrolled = enrolled.has(budgetFingerprint);
+        // The same budget enrolled through the other mode (PR-071c): runs can
+        // already use it, so it is not offered again as if it were missing.
+        const elsewhere = isEnrolled
+          ? undefined
+          : enrolledList.find((entry) => entry.budgetSyncId === budget.budgetSyncId);
+        return {
+          ...budget,
+          connectionFingerprint: budgetFingerprint,
+          enrolled: isEnrolled,
+          ...(elsewhere ? { enrolledVia: elsewhere.mode } : {}),
+        };
       }),
     });
   } catch (error) {

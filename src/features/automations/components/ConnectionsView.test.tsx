@@ -99,6 +99,20 @@ describe("other budgets on an enrolled server (PR-071a)", () => {
     });
   });
 
+  it("names a budget enrolled through the other mode instead of offering it (PR-071c)", async () => {
+    mockedApi.listServerBudgets.mockResolvedValue({
+      server: { mode: "http-api", baseUrl: "https://budgetapi.example.com" },
+      budgets: [
+        { budgetSyncId: "budget-2", name: "Joint", encrypted: false, enrolled: false, enrolledVia: "browser-api", connectionFingerprint: "fp-2" },
+      ],
+    });
+    renderView();
+
+    expect(await screen.findByText(/Already enrolled another way: Joint \(through Direct\)/)).toBeInTheDocument();
+    expect(screen.getByText("Every budget on this server is enrolled.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enrol budgets on this server" })).not.toBeInTheDocument();
+  });
+
   it("shows a failure on its row and lets the others through", async () => {
     mockedSync.enrollCredential
       .mockRejectedValueOnce(new Error("The encryption password is not correct."))

@@ -78,6 +78,10 @@ enrols the ones you choose, with nothing more from you. An encrypted budget asks
 password. Each budget is checked with the server first, and one that fails shows why on its own row
 without holding up the others. **Refresh** re-reads each server's list.
 
+A budget can be reached through HTTP API and Direct. Enrolling it one way is enough: scheduled work
+on that budget uses whichever enrolment exists, so Bench says so rather than asking you to enrol it
+again the other way. Each row on this tab shows which way it is enrolled.
+
 :::note[Why some budgets take longer to open]
 Actual's server keeps a saved copy of each budget, and anything that opens the budget replays every
 change made since that copy. Actual's own app refreshes the copy about once a week. Bench and

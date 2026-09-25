@@ -255,6 +255,26 @@ export function hasSyncCredential(db: SqliteDatabase, connectionFingerprint: str
   );
 }
 
+/**
+ * The enrolled connection to use for a budget (PR-071c): the given one when it
+ * is enrolled, otherwise another enrolled connection to the same budget - the
+ * same sync ID, reached through the other mode or address. A sync ID is
+ * Actual's own identity for a budget, so either route opens the same one.
+ * Null when neither is enrolled. No decryption.
+ */
+export function enrolledConnectionFor(
+  db: SqliteDatabase,
+  connectionFingerprint: string,
+  budgetSyncId: string | null | undefined
+): string | null {
+  if (connectionFingerprint && hasSyncCredential(db, connectionFingerprint)) return connectionFingerprint;
+  if (!budgetSyncId) return null;
+  const other = listSyncCredentialMeta(db).find(
+    (meta) => meta.budgetSyncId === budgetSyncId && hasSyncCredential(db, meta.connectionFingerprint)
+  );
+  return other?.connectionFingerprint ?? null;
+}
+
 /** All enrolled credentials as metadata only - safe to return to the client. */
 export function listSyncCredentialMeta(db: SqliteDatabase): SyncCredentialMeta[] {
   return db

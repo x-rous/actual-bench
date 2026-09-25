@@ -96,3 +96,22 @@ export function nextRunPhrase(status: UnattendedStatus, nowMs: number): string {
   const mins = Math.max(1, Math.round((status.nextRunAtMs - nowMs) / 60_000));
   return mins < 60 ? `Next run in ~${mins} min` : `Next run in ~${Math.round(mins / 60)} h`;
 }
+
+/**
+ * Which budgets are enrolled, by connection and by budget (PR-071c). A budget's
+ * sync ID is Actual's own identity for it, so a budget enrolled through HTTP
+ * API counts as enrolled for a flow saved on its Direct connection, and the
+ * other way round: a server run uses whichever enrolment exists.
+ */
+export type EnrolledIndex = { fingerprints: Set<string>; budgetIds: Set<string> };
+
+export function enrolledIndex(credentials: ReadonlyArray<{ connectionFingerprint: string; budgetSyncId?: string }>): EnrolledIndex {
+  return {
+    fingerprints: new Set(credentials.map((credential) => credential.connectionFingerprint)),
+    budgetIds: new Set(credentials.map((credential) => credential.budgetSyncId).filter((id): id is string => !!id)),
+  };
+}
+
+export function isEnrolled(index: EnrolledIndex, fingerprint: string, budgetSyncId?: string): boolean {
+  return index.fingerprints.has(fingerprint) || (!!budgetSyncId && index.budgetIds.has(budgetSyncId));
+}

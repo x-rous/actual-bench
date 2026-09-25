@@ -102,6 +102,25 @@ describe("GET /api/sync-credentials/servers/[fingerprint]/budgets", () => {
     expect(JSON.stringify(body)).not.toContain(PASSWORD);
   });
 
+  it("marks a budget already enrolled through the other mode, so it is not offered again (PR-071c)", async () => {
+    upsertSyncCredential(getAppDb(), {
+      connectionFingerprint: "http-route-to-tracking",
+      mode: "http-api",
+      baseUrl: "https://api.example.test",
+      budgetSyncId: "b-tracking",
+      secret: { apiKey: "key" },
+    });
+
+    const response = await get(fingerprintOf("b-envelope"));
+    const { budgets } = (await response.json()) as { budgets: Array<Record<string, unknown>> };
+
+    expect(budgets.find((budget) => budget.budgetSyncId === "b-tracking")).toMatchObject({
+      enrolled: false,
+      enrolledVia: "http-api",
+    });
+    expect(budgets.find((budget) => budget.budgetSyncId === "b-secret")).not.toHaveProperty("enrolledVia");
+  });
+
   it("answers 404 for a connection that is not enrolled", async () => {
     expect((await get("nope")).status).toBe(404);
   });

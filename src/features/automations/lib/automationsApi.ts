@@ -196,6 +196,8 @@ export type ServerBudget = {
   name: string;
   encrypted: boolean;
   enrolled: boolean;
+  /** Already enrolled through the other mode (HTTP API or Direct); runs can use that. */
+  enrolledVia?: string;
   connectionFingerprint: string;
 };
 

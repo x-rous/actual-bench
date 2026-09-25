@@ -27,6 +27,7 @@ import {
   type SyncFlowFormState,
 } from "../lib/flowForm";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
+import { enrolledIndex, isEnrolled } from "../lib/unattendedStatus";
 import { runFlowNow } from "../lib/syncApi";
 import { selectableRowIds, syncKindOf, toPreviewRow } from "../lib/previewRows";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
@@ -70,10 +71,7 @@ export function SyncView() {
   const latestRunsQuery = useLatestRunByFlow(flowIds);
   const vaultQuery = useVaultStatus();
   const vaultData = vaultQuery?.data;
-  const enrolledFingerprints = useMemo(
-    () => new Set((vaultData?.credentials ?? []).map((c) => c.connectionFingerprint)),
-    [vaultData]
-  );
+  const enrolled = useMemo(() => enrolledIndex(vaultData?.credentials ?? []), [vaultData]);
   const enginePauses = useFlowAutomations();
   const flowMutations = useSyncFlowMutations();
   const previewMutation = usePreviewMutation();
@@ -130,8 +128,8 @@ export function SyncView() {
   const runsOnServer =
     !!selectedConfig &&
     selectedConfig.reviewPolicy === "auto_sync_unattended" &&
-    enrolledFingerprints.has(selectedConfig.sourceConnectionFingerprint) &&
-    enrolledFingerprints.has(selectedConfig.targetConnectionFingerprint);
+    isEnrolled(enrolled, selectedConfig.sourceConnectionFingerprint, selectedConfig.sourceBudgetId) &&
+    isEnrolled(enrolled, selectedConfig.targetConnectionFingerprint, selectedConfig.targetBudgetId);
   const [serverRunning, setServerRunning] = useState(false);
   const kind = syncKindOf(selectedFlow?.flowType ?? "transaction_sync");
   useEffect(() => {
@@ -445,7 +443,7 @@ export function SyncView() {
           latestRuns={latestRunsQuery.data ?? new Map()}
           connections={connections}
           vaultEnabled={vaultData?.enabled ?? false}
-          enrolledFingerprints={enrolledFingerprints}
+          enrolled={enrolled}
           enginePauses={enginePauses}
           onSelect={handleSelect}
           onCreate={handleCreate}

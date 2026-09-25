@@ -40,6 +40,8 @@ export function useEnrolledFingerprints() {
     select: (status) => ({
       enabled: status.enabled,
       fingerprints: new Set(status.credentials.map((entry) => entry.connectionFingerprint)),
+      /** The mode each enrolled budget is enrolled through, by sync ID (PR-071c). */
+      modesByBudget: new Map(status.credentials.map((entry) => [entry.budgetSyncId, entry.mode])),
     }),
   });
 }
@@ -64,6 +66,7 @@ export function EnrolConnection({
 }) {
   const queryClient = useQueryClient();
   const [showDetail, setShowDetail] = useState(false);
+  const [enrolAnyway, setEnrolAnyway] = useState(false);
   const vault = useEnrolledFingerprints();
 
   const enrol = useMutation({
@@ -118,6 +121,23 @@ export function EnrolConnection({
   }
 
   if (vault.data.fingerprints.has(connectionFingerprint(connection))) return null;
+
+  // The same budget, already enrolled through the other mode: runs use that
+  // one, so enrolling again is optional rather than missing (PR-071c).
+  const otherMode = vault.data.modesByBudget.get(connection.budgetSyncId);
+  if (otherMode && otherMode !== connection.mode && !enrolAnyway) {
+    return (
+      <div className={box}>
+        <span className="font-medium">
+          {connection.label} is already set up for scheduled runs through {otherMode === "http-api" ? "HTTP API" : "Direct"}.
+        </span>{" "}
+        Scheduled work on this budget uses that, so there is nothing more to do.{" "}
+        <button type="button" className="underline underline-offset-4" onClick={() => setEnrolAnyway(true)}>
+          Enrol this connection anyway
+        </button>
+      </div>
+    );
+  }
 
   const notSetUp = <span className="font-medium">{connection.label} is not set up for scheduled runs.</span>;
 

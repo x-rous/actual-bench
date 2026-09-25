@@ -161,6 +161,22 @@ describe("enrolling a budget for unattended access", () => {
     });
   });
 
+  it("says a budget is already set up through the other mode, and can still be enrolled (PR-071c)", async () => {
+    mockedSync.getVaultStatus.mockResolvedValue({
+      enabled: true,
+      credentials: [{ connectionFingerprint: "direct-fp", budgetSyncId: "budget-1", mode: "browser-api" } as never],
+    });
+    mockedSync.enrollCredential.mockResolvedValue({ credential: {} as never });
+    renderPanel(httpConnection());
+
+    expect(await screen.findByText(/already set up for scheduled runs through Direct/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /enrol household/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /enrol this connection anyway/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /enrol household/i }));
+    await waitFor(() => expect(mockedSync.enrollCredential).toHaveBeenCalled());
+  });
+
   it("points at the operator step when the vault is off", async () => {
     mockedSync.getVaultStatus.mockResolvedValue({ enabled: false, credentials: [] });
     renderPanel(httpConnection());

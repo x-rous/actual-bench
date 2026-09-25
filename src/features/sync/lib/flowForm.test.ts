@@ -282,6 +282,18 @@ describe("a saved flow whose budgets are not connected in this tab (RD-095)", ()
     expect(leg.targetRef.data.connectionFingerprint).toBe(connectionFingerprint(targetConn));
   });
 
+  it("keeps the saved connection when the budget is open here through the other mode (PR-071c)", () => {
+    // The flow was saved on the Direct connection; this tab has the same
+    // budget through HTTP API only. Opening binds to it so the flow works here,
+    // but saving must not re-point the stored flow.
+    const httpSameBudget = { id: "c-http", label: "Home", mode: "http-api" as const, baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "budget-src" };
+    const form = flowToFormState(savedFlow(), [httpSameBudget, targetConn]);
+    expect(form.source.connectionId).toBe("c-http");
+
+    const leg = legOf(buildFlowPayload(form, [httpSameBudget, targetConn]));
+    expect(leg.sourceRef.data.connectionFingerprint).toBe(connectionFingerprint(sourceConn));
+  });
+
   it("uses the connected budget once one is picked", () => {
     const form = flowToFormState(savedFlow(), []);
     form.source = { connectionId: "c-tgt", budgetSyncId: "budget-tgt", budgetName: "Family", accountId: "a", accountName: "A" };

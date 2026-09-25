@@ -43,7 +43,9 @@ export function EnrolServerBudgetsDialog({
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [running, setRunning] = useState(false);
 
-  const choosable = budgets.filter((budget) => !budget.enrolled && rows[budget.budgetSyncId]?.kind !== "enrolled");
+  // A budget enrolled through the other mode is already usable by runs (PR-071c).
+  const shown = budgets.filter((budget) => !budget.enrolledVia);
+  const choosable = shown.filter((budget) => !budget.enrolled && rows[budget.budgetSyncId]?.kind !== "enrolled");
   const chosen = choosable.filter((budget) => selected.has(budget.budgetSyncId));
   const missingPassword = chosen.some((budget) => budget.encrypted && !passwords[budget.budgetSyncId]?.trim());
 
@@ -102,7 +104,7 @@ export function EnrolServerBudgetsDialog({
           </p>
 
           <ul className="max-h-80 space-y-1.5 overflow-y-auto">
-            {budgets.map((budget) => {
+            {shown.map((budget) => {
               const row = rows[budget.budgetSyncId] ?? { kind: "idle" };
               const done = budget.enrolled || row.kind === "enrolled";
               const checked = done || selected.has(budget.budgetSyncId);

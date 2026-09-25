@@ -9,6 +9,7 @@ import { deleteAllServerVaultCredentials, getServerCredential, upsertServerCrede
 import { getSecret, hasSecret, putSecret, secretRefs } from "./store";
 import {
   deleteSyncCredential,
+  enrolledConnectionFor,
   getSyncCredential,
   hasSyncCredential,
   resolveUnattendedSecret,
@@ -85,6 +86,18 @@ describe("syncCredentialRepository (RD-058 / PR-024a)", () => {
     upsertSyncCredential(db, input("fp-d"));
     deleteSyncCredential(db, "fp-d");
     expect(hasSyncCredential(db, "fp-d")).toBe(false);
+  });
+
+  describe("the same budget through both modes (PR-071c)", () => {
+    it("uses the given enrolment, or another enrolment of the same budget", () => {
+      upsertSyncCredential(db, { ...input("fp-http"), budgetSyncId: "shared-budget" });
+
+      expect(enrolledConnectionFor(db, "fp-http", "shared-budget")).toBe("fp-http");
+      // The flow was saved on the Direct connection, which is not enrolled.
+      expect(enrolledConnectionFor(db, "fp-direct", "shared-budget")).toBe("fp-http");
+      expect(enrolledConnectionFor(db, "fp-direct", "another-budget")).toBeNull();
+      expect(enrolledConnectionFor(db, "fp-direct", null)).toBeNull();
+    });
   });
 
   describe("Direct connections (RD-095)", () => {

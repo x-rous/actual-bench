@@ -37,6 +37,10 @@ const headerCell = "px-3 py-1.5 text-left text-[11px] font-semibold uppercase tr
 /** A server's budget list is cached this long, so opening the page does not sign in every time. */
 const SERVER_BUDGETS_STALE_MS = 5 * 60_000;
 
+function modeName(mode: string | undefined): string {
+  return mode === "http-api" ? "HTTP API" : "Direct";
+}
+
 /** One entry per server: the first enrolled budget on it stands for the server. */
 function enrolledServers(connections: EnrolledConnection[]): EnrolledConnection[] {
   const seen = new Set<string>();
@@ -62,13 +66,14 @@ function OtherServerBudgets({ server, onEnrolled }: { server: EnrolledConnection
     retry: false,
   });
   const budgets = query.data?.budgets ?? [];
-  const others = budgets.filter((budget) => !budget.enrolled);
+  const others = budgets.filter((budget) => !budget.enrolled && !budget.enrolledVia);
+  const viaOther = budgets.filter((budget) => !budget.enrolled && budget.enrolledVia);
 
   return (
     <li className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
       <span className="min-w-0 flex-1">
         <span className="font-medium">{server.baseUrl}</span>
-        <span className="ml-1.5 text-muted-foreground">({server.mode === "http-api" ? "HTTP API" : "Direct"})</span>
+        <span className="ml-1.5 text-muted-foreground">({modeName(server.mode)})</span>
         <span className="block text-muted-foreground">
           {query.isLoading
             ? "Looking for other budgets on this server..."
@@ -78,6 +83,12 @@ function OtherServerBudgets({ server, onEnrolled }: { server: EnrolledConnection
                 ? "Every budget on this server is enrolled."
                 : `${others.length} other ${others.length === 1 ? "budget" : "budgets"}: ${others.map((budget) => budget.name).join(", ")}`}
         </span>
+        {viaOther.length > 0 && (
+          <span className="block text-muted-foreground">
+            Already enrolled another way:{" "}
+            {viaOther.map((budget) => `${budget.name} (through ${modeName(budget.enrolledVia)})`).join(", ")}
+          </span>
+        )}
       </span>
       {query.isError ? (
         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => void query.refetch()}>
@@ -239,7 +250,10 @@ export function ConnectionsView() {
                           {connection.label}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 text-muted-foreground">{connection.baseUrl}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">
+                        {connection.baseUrl}
+                        <span className="ml-1.5 rounded bg-muted px-1 py-px text-[10px]">{modeName(connection.mode)}</span>
+                      </td>
                       <td className="px-3 py-1.5 text-muted-foreground">
                         {formatDateTime(connection.enrolledAt)}
                       </td>
