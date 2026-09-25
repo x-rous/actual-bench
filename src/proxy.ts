@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 /**
  * Cross-origin isolation headers Direct Actual Server mode needs
@@ -15,7 +15,50 @@ const DIRECT_MODE_HEADERS = {
   "Cross-Origin-Resource-Policy": "same-origin",
 } as const;
 
-export function proxy() {
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * True when a browser sent this state-changing API request from another site.
+ * Such a request can fire without the user knowing (a form or `fetch` on any
+ * page they visit), and the routes parse their body whatever the Content-Type
+ * says, so it is refused here, in one place, before any route runs.
+ *
+ * Browsers say where a request came from in `Sec-Fetch-Site`; older ones only
+ * in `Origin`, compared with the host the request was addressed to (as the
+ * reverse proxy forwarded it). A request carrying neither header is not from a
+ * browser page (curl, a script) and passes.
+ */
+export function isCrossSiteWrite(request: NextRequest): boolean {
+  if (SAFE_METHODS.has(request.method)) return false;
+
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite) return fetchSite !== "same-origin" && fetchSite !== "none";
+
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return true; // "null" (sandboxed frames, file: pages) or garbage
+  }
+
+  const hosts = [request.headers.get("x-forwarded-host"), request.headers.get("host")]
+    .flatMap((value) => (value ?? "").split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return !hosts.includes(originHost);
+}
+
+export function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    if (isCrossSiteWrite(request)) {
+      return NextResponse.json({ error: "Cross-site request refused." }, { status: 403 });
+    }
+    return NextResponse.next();
+  }
+
   const response = NextResponse.next();
 
   for (const [key, value] of Object.entries(DIRECT_MODE_HEADERS)) {
@@ -26,5 +69,5 @@ export function proxy() {
 }
 
 export const config = {
-  matcher: ["/((?!api/).*)"],
+  matcher: ["/(.*)"],
 };

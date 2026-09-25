@@ -40,10 +40,12 @@ export function setSessionCookie(
   });
 }
 
-export function clearSessionCookie(response: NextResponse): void {
+/** Clears the cookie with the same attributes it was set with, `Secure` included. */
+export function clearSessionCookie(request: NextRequest, response: NextResponse): void {
   response.cookies.set(VAULT_COOKIE, "", {
     httpOnly: true,
     sameSite: "strict",
+    secure: isSecureRequest(request),
     path: "/",
     maxAge: 0,
   });

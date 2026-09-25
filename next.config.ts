@@ -16,6 +16,16 @@ const actualApiPkg = JSON.parse(
   )
 ) as { version?: string };
 
+const SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()",
+  },
+];
+
 const nextConfig: NextConfig = {
   // Emit a self-contained standalone server (server.js + only the traced
   // runtime node_modules) so the Docker runtime image doesn't carry the full
@@ -56,6 +66,18 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version ?? "0.0.0",
     NEXT_PUBLIC_ACTUAL_API_VERSION: actualApiPkg.version ?? "0.0.0",
+  },
+  poweredByHeader: false,
+  // On every response, API included. The cross-origin isolation headers Direct
+  // mode needs are set on pages by `src/proxy.ts`. No `X-XSS-Protection`: the
+  // browser filter it controlled is obsolete, and omitting it is the advice.
+  headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+  },
+  // As a config redirect, `/` answers with an empty body; a page calling
+  // `redirect()` sent the whole prerendered shell along with the 307.
+  redirects() {
+    return [{ source: "/", destination: "/connect", permanent: false }];
   },
 };
 
