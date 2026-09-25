@@ -130,8 +130,9 @@ docker run -d --name actual-bench --restart unless-stopped \
 
 Open `http://localhost:3000` and connect. Keep the `/data` volume: it holds Bench's own settings,
 backup history and sync state - not a copy of your budget. Credentials stay in memory unless you opt
-in: remembering a server seals them behind a passphrase you choose, and unattended sync needs
-`SYNC_VAULT_KEY` set on the container, without which the vault stays off.
+in: remembering a server seals them behind a passphrase you choose, and credentials enrolled
+for automations are sealed with a vault key Bench generates on first start and keeps in
+`/data/secrets/vault.key`. No environment variables are required.
 
 Running behind a reverse proxy, want the edge build, or need to change a setting? See
 **[Installation](https://x-rous.github.io/actual-bench/getting-started/installation/)** and

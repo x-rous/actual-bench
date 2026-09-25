@@ -12,6 +12,7 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { SortDirection } from "@/components/ui/sortable-header";
+import { VaultLockedNotice } from "@/components/VaultLockedNotice";
 import {
   backUpNow,
   deleteDestination,
@@ -344,6 +345,7 @@ export function BackupsView() {
           // a row of its own it read as a page element with nothing to be part
           // of; inside a section it read as though it only refreshed that
           // section.
+          <>
           <div className="flex items-center justify-between gap-2 border-b border-border pr-3">
             {/* The border moves to this row: left on the list, the underline
                 ran out where the tabs did and stopped short of the button. */}
@@ -382,6 +384,8 @@ export function BackupsView() {
               New backup rule
             </Button>
           </div>
+          <VaultLockedNotice vault={data?.vault} className="mx-3 mt-3" />
+          </>
         }
         scrollManaged
         isLoading={query.isLoading}
@@ -503,7 +507,7 @@ export function BackupsView() {
           onOpenChange={(open) => setRuleDialog(open ? ruleDialog : null)}
           destinations={data.destinations}
           sources={data.sources}
-          vaultEnabled={data.vaultEnabled}
+          vault={data.vault}
           existing={ruleDialog.existing}
           onSaved={invalidate}
         />

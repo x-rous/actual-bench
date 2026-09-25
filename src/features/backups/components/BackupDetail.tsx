@@ -261,12 +261,16 @@ export function BackupDetail({
                     by default), and start it again.
                   </p>
                   <p>
-                    Restore it onto a server with a different{" "}
+                    Stored credentials in it only open with the same vault key: the{" "}
                     <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
-                      SYNC_VAULT_KEY
+                      secrets/vault.key
                     </code>{" "}
-                    and you get every rule back but none of the stored credentials - Bench will ask
-                    you to enter them again.
+                    file beside the database, or{" "}
+                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">
+                      ACTUAL_BENCH_VAULT_KEY
+                    </code>{" "}
+                    if you set one. Restore it without that key and you get every rule back, but Bench
+                    will ask you to reset the vault and enter the credentials again.
                   </p>
                 </>
               )}

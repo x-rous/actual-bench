@@ -13,3 +13,9 @@ process.env.ACTUAL_BENCH_TEST_KDF_N = '16384'
 // worker in the supervisor tests; the Docker smoke test checks a real thread
 // starts in the production image.
 process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = 'in-thread'
+
+// The credential vault always exists (F-197). A fixed key here gives every
+// suite a ready vault without touching the filesystem; suites that exercise the
+// generated key file or the locked states unset it and point
+// ACTUAL_BENCH_DB_PATH at a temp directory.
+process.env.ACTUAL_BENCH_VAULT_KEY = 'jest-operator-vault-key'

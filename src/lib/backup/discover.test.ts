@@ -30,12 +30,12 @@ describe("finding backups in a destination", () => {
   let root: string;
   let volume: string;
   let db: SqliteDatabase;
-  const previousKey = process.env.SYNC_VAULT_KEY;
+  const previousKey = process.env.ACTUAL_BENCH_VAULT_KEY;
   const previousDbPath = process.env.ACTUAL_BENCH_DB_PATH;
   const originalFetch = global.fetch;
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-vault-key";
     root = mkdtempSync(join(tmpdir(), "actual-bench-discover-"));
     volume = join(root, "volume");
     mkdirSync(volume, { recursive: true });
@@ -50,8 +50,8 @@ describe("finding backups in a destination", () => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     global.fetch = originalFetch;
-    if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousKey;
     if (previousDbPath === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
     else process.env.ACTUAL_BENCH_DB_PATH = previousDbPath;
   });

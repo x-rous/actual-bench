@@ -1,6 +1,7 @@
 import { listAutomations } from "@/lib/app-db/automationRepository";
 import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { getVaultSummary } from "@/lib/credentials/vaultState";
+import type { VaultSummary } from "@/lib/credentials/vaultSummary";
 import { getAutomationJobType } from "./registry";
 import { isAutomationRunning, runningAutomationIds } from "./engine";
 import { MIN_INTERVAL_MINUTES, describeSchedule, isKnownScheduleKind, nextCronRun } from "./schedule";
@@ -46,7 +47,7 @@ export type AutomationHealthReport = {
   checkedAt: string;
   /** In-process, single-instance — stated, not implied. */
   singleInstance: true;
-  vaultEnabled: boolean;
+  vault: VaultSummary;
   runningIds: string[];
   automations: AutomationHealth[];
   counts: Record<AutomationHealthStatus, number>;
@@ -269,7 +270,7 @@ export function buildAutomationHealth(
   return {
     checkedAt: new Date(nowMs).toISOString(),
     singleInstance: true,
-    vaultEnabled: vaultEnabled(),
+    vault: getVaultSummary(db),
     runningIds: runningAutomationIds(),
     automations,
     counts,

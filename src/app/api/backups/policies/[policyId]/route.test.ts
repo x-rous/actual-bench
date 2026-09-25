@@ -16,21 +16,21 @@ import { PATCH } from "./route";
 describe("PATCH /api/backups/policies/[policyId]", () => {
   let root: string;
   const previousDbPath = process.env.ACTUAL_BENCH_DB_PATH;
-  const previousVaultKey = process.env.SYNC_VAULT_KEY;
+  const previousVaultKey = process.env.ACTUAL_BENCH_VAULT_KEY;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "actual-bench-policy-patch-"));
     mkdirSync(join(root, "volume"));
     process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
-    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
   });
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     if (previousDbPath === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
     else process.env.ACTUAL_BENCH_DB_PATH = previousDbPath;
-    if (previousVaultKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousVaultKey;
+    if (previousVaultKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousVaultKey;
   });
 
   const patch = (policyId: string, body: unknown) =>

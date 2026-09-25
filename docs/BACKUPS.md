@@ -41,7 +41,7 @@ The day someone is browsing a destination by hand is the day Bench is not availa
 |---|---|
 | **HTTP API mode** for the source budget | A scheduled backup runs with no browser. Direct mode's engine lives in the browser, so there is nothing on the server to export from. |
 | **An enrolled connection** | A scheduled backup runs with no browser, so the server needs the budget's API key. Enrol from the backup rule dialog itself, or from Automations → Connections. |
-| **`SYNC_VAULT_KEY`** | Needed for enrolled credentials, for S3 access keys, and for a stored encryption passphrase. Without it Bench refuses to store any of them rather than writing them in the clear. |
+| **An unlocked vault** | Enrolled credentials, S3 access keys and a stored encryption passphrase are sealed with Bench's vault key, generated on first start. While the vault is locked, Bench refuses to store any of them rather than writing them in the clear. |
 | A writable destination | A folder path on the server, or an S3-compatible bucket. |
 
 Backing up **only** Bench's own settings (`contents: app-db`) needs none of the above beyond a
@@ -70,7 +70,7 @@ AWS's published GET Object test vector.
   self-hosted providers need. Virtual-host style needs wildcard DNS almost nobody configures.
 - Works with AWS, MinIO, Backblaze B2, Cloudflare R2, Wasabi and Garage.
 - Access keys live in the app database's `credentials` table, sealed with AES-256-GCM under
-  `SYNC_VAULT_KEY`. Nothing outside the backup-secrets module decrypts them, and a destination
+  the vault key. Nothing outside the backup-secrets module decrypts them, and a destination
   whose credentials cannot be resolved **fails closed** — it never falls back to an
   unauthenticated attempt, which would surface as 403s that look like a broken bucket.
 
@@ -189,7 +189,7 @@ contents without restoring anything. An inspection counts as a verification.
 
 ## Passphrases Bench holds
 
-A rule's passphrase is sealed under `SYNC_VAULT_KEY` and stored against the rule's id. Two rules
+A rule's passphrase is sealed under the vault key and stored against the rule's id. Two rules
 about its lifetime matter more than they look:
 
 - **Deleting a rule does not delete its passphrase.** Doing so would quietly make every encrypted
@@ -223,8 +223,9 @@ database beyond the sealed vault entry, not in the recovery sheet.
 
 ## Recovering from losing Bench
 
-1. Stand up Bench on a new server with the **same `SYNC_VAULT_KEY`** (a different key gives you back
-   every rule but no stored credentials).
+1. Stand up Bench on a new server with the **same vault key**: copy `secrets/vault.key` along with
+   the database, or set the same `ACTUAL_BENCH_VAULT_KEY`. Without it you get back every rule but no
+   stored credentials, and App Health asks you to reset the vault.
 2. Add the destination again.
 3. **Find backups** (`POST /api/backups/discover`) reads the manifests and rebuilds the inventory —
    verification state, retention tier and source budget intact. Discovery adds; it never overwrites a
@@ -241,7 +242,7 @@ with your passwords.
 | Symptom | Cause |
 |---|---|
 | "has no stored credentials. Re-enter its access key" | The destination's sealed credential is missing. Fails closed by design. |
-| "Could not unseal credentials … SYNC_VAULT_KEY" | The vault key changed since the credential was stored. |
+| "Could not unseal credentials … the vault key may have changed" | The vault key changed since the credential was stored. App Health shows the vault as locked, with the fix. |
 | "not enrolled for unattended use" | The source connection has no vault credential; enrol it in Budget File Sync. |
 | Backup stored but "could not confirm it is readable" | Verification failed. Open the copy's detail for the findings — usually a truncated or non-Actual archive. |
 | A rule shows "paused after repeated failures" | The engine auto-paused its automation. Fix the cause, then Resume from the Automations page — editing the rule does not clear a pause. |

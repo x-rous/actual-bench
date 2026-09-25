@@ -53,8 +53,9 @@ against one database would run your automations twice; Bench does not coordinate
 
 ## Unattended access
 
-Anything that runs with the browser closed needs credentials the server can use, which means two
-things: `SYNC_VAULT_KEY` set on the server, and the budget itself **enrolled**.
+Anything that runs with the browser closed needs credentials the server can use, so the budget itself
+has to be **enrolled**. There is nothing to set up on the server first: Bench's credential vault is
+always there.
 
 The **Connections** tab lists the budgets Bench may act on, when each was enrolled, and - the column
 worth the tab - **what depends on it**. Withdrawing a credential stops those automations, so the
@@ -96,12 +97,12 @@ You can enrol from Connections, from the bank sync or backup dialogs, or from a 
 flow - all four write the same list. This works the same for HTTP API and Direct connections.
 
 :::caution[What gets saved]
-- **HTTP API connection:** the budget's API key is encrypted with Bench's vault key
-  (`SYNC_VAULT_KEY`) and saved.
-- **Direct connection:** your Actual server password is encrypted with Bench's vault key
-  (`SYNC_VAULT_KEY`) and saved.
-- The vault key is kept in the server settings, not in Bench's database, so someone with a copy of
-  the database cannot read the password or API key. Keep the vault key private.
+- **HTTP API connection:** the budget's API key is encrypted with Bench's vault key and saved.
+- **Direct connection:** your Actual server password is encrypted with Bench's vault key and saved.
+- The vault key is kept beside Bench's database (`secrets/vault.key`) or in `ACTUAL_BENCH_VAULT_KEY`,
+  never in the database, so someone with a copy of the database alone cannot read the password or
+  API key. Keep the vault key private, and keep it with your data: without it the saved credentials
+  cannot be opened.
 - Bench only unlocks the password or API key on the server when an automation runs. It is never shown
   again or sent to your browser.
 - If your budget has an encryption password, it is saved the same way. No budget data is saved.

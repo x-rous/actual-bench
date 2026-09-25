@@ -151,7 +151,7 @@ function data(overrides: Partial<RecoveryCenterData> = {}): RecoveryCenterData {
       },
     ],
     heldPassphrases: [],
-    vaultEnabled: true,
+    vault: { status: "ready" as const },
     ...overrides,
   };
 }

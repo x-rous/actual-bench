@@ -3,7 +3,7 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { createBackupDestination, listBackupDestinations, updateBackupDestination } from "@/lib/app-db/backupRepository";
 import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { requireReadyVault } from "@/lib/credentials/vaultState";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,18 +43,11 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      if (!vaultEnabled()) {
-        return NextResponse.json(
-          {
-            error:
-              "Set SYNC_VAULT_KEY on the server before adding a bucket. Bench will not store an access key it cannot encrypt.",
-          },
-          { status: 400 }
-        );
-      }
     }
 
     const db = getAppDb();
+    // Bench will not store an access key it cannot encrypt.
+    if (payload.kind === "s3") requireReadyVault(db);
     const destination = createBackupDestination(db, payload);
 
     if (payload.kind === "s3" && credentials?.accessKeyId && credentials?.secretAccessKey) {

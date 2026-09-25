@@ -1,3 +1,4 @@
+import type { VaultSummary } from "@/lib/credentials/vaultSummary";
 import type { AutomationDefinition, AutomationRun } from "@/lib/app-db/types";
 import { startAndWaitForRun } from "./runPolling";
 
@@ -162,12 +163,12 @@ export type VaultConnection = {
  * enrolled credential produces an automation that can only fail closed.
  */
 export async function listVaultConnections(): Promise<{
-  enabled: boolean;
+  vault: VaultSummary;
   credentials: VaultConnection[];
 }> {
   const response = await fetch("/api/sync-credentials", { cache: "no-store" });
   if (!response.ok) return readError(response);
-  return (await response.json()) as { enabled: boolean; credentials: VaultConnection[] };
+  return (await response.json()) as { vault: VaultSummary; credentials: VaultConnection[] };
 }
 
 export type EnrolledConnection = {
@@ -182,12 +183,12 @@ export type EnrolledConnection = {
 
 /** Which budgets Bench may act on unattended, and what depends on each. */
 export async function listEnrolledConnections(): Promise<{
-  vaultEnabled: boolean;
+  vault: VaultSummary;
   connections: EnrolledConnection[];
 }> {
   const response = await fetch("/api/automations/connections", { cache: "no-store" });
   if (!response.ok) return readError(response);
-  return (await response.json()) as { vaultEnabled: boolean; connections: EnrolledConnection[] };
+  return (await response.json()) as { vault: VaultSummary; connections: EnrolledConnection[] };
 }
 
 /** One budget file on an enrolled server (PR-071a). */

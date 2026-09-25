@@ -1,4 +1,4 @@
-import { vaultEnabled } from "@/lib/sync/vault";
+import { requireReadyVault } from "@/lib/credentials/vaultState";
 import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
 import { getBackupCredential } from "@/lib/credentials/backupSecrets";
 import {
@@ -168,11 +168,7 @@ function readSourceConnection(db: SqliteDatabase, policy: BackupPolicy): Connect
   if (typeof fingerprint !== "string" || !fingerprint.trim()) {
     throw new Error("This backup has no source connection configured.");
   }
-  if (!vaultEnabled()) {
-    throw new Error(
-      "The credential vault is disabled (SYNC_VAULT_KEY is unset), so Bench cannot reach the budget without you."
-    );
-  }
+  requireReadyVault(db);
 
   let connection: ConnectionInstance | null;
   try {

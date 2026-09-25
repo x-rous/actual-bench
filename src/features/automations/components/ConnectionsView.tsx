@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { VaultLockedNotice } from "@/components/VaultLockedNotice";
 import { Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -233,7 +234,9 @@ export function ConnectionsView() {
 
           {/* Enrolling what you are connected to right now is the one thing
               this page can do directly, so it sits at the top when it applies. */}
-          {!activeEnrolled && (
+          {query.data && query.data.vault.status !== "ready" ? (
+            <VaultLockedNotice vault={query.data.vault} className="mb-3" />
+          ) : !activeEnrolled && (
             <div className="mb-3">
               <EnrolConnection connection={active ?? null} onEnrolled={invalidate} allowDirect onConnectionsPage />
             </div>
@@ -336,7 +339,7 @@ export function ConnectionsView() {
             </div>
           )}
 
-          {connections.length > 0 && query.data?.vaultEnabled !== false && (
+          {connections.length > 0 && query.data?.vault.status === "ready" && (
             <section className="mt-4">
               <h3 className="text-sm font-semibold">Other budgets on your servers</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">

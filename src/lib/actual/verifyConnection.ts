@@ -15,7 +15,7 @@ import { connectionFromEnrolment, openServerTransport } from "./serverTransport"
  * through the Node host (sign in, download, sync), HTTP reads through the HTTP
  * transport. A connection that passes here is one a run can open.
  *
- * The secret arrives **sealed** with `SYNC_VAULT_KEY`: the check runs in a
+ * The secret arrives **sealed** with the vault key: the check runs in a
  * worker, and a secret never crosses into one in plaintext. It is opened here,
  * inside the worker, and never leaves it.
  *

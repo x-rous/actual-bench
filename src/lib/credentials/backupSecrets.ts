@@ -17,7 +17,7 @@ import {
  * store since F-195).
  *
  * Destination credentials and backup passphrases, sealed in the **operator**
- * domain under `SYNC_VAULT_KEY`: a scheduled backup has to open them with
+ * domain under the vault key: a scheduled backup has to open them with
  * nobody present. They answer a different question from connection secrets -
  * what Bench needs to *write a copy*, not what it needs to reach a budget - so
  * a destination's keys are never entangled with a connection's lifecycle.

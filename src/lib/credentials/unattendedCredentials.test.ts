@@ -37,17 +37,17 @@ const input = (fp: string) => ({
 describe("syncCredentialRepository (RD-058 / PR-024a)", () => {
   let root: string;
   let db: SqliteDatabase;
-  const original = process.env.SYNC_VAULT_KEY;
+  const original = process.env.ACTUAL_BENCH_VAULT_KEY;
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
     ({ root, db } = tempDb());
   });
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
-    if (original === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = original;
+    if (original === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = original;
   });
 
   it("enrolls, reads back the decrypted secret, and lists metadata without secrets", () => {
@@ -330,12 +330,14 @@ describe("syncCredentialRepository (RD-058 / PR-024a)", () => {
       const before = getSecret(db, { domain: "operator" }, secretRefs.legacyConnection("fp-old"));
       const warn = jest.spyOn(logger, "warn").mockImplementation(() => {});
 
-      process.env.SYNC_VAULT_KEY = "a-different-key";
-      expect(upgradeLegacyUnattendedCredentials(db)).toEqual({ upgraded: 0, failed: 1 });
+      // A key that opens nothing stored locks the vault, so the upgrade does
+      // not even try.
+      process.env.ACTUAL_BENCH_VAULT_KEY = "a-different-key";
+      expect(upgradeLegacyUnattendedCredentials(db)).toEqual({ upgraded: 0, failed: 0 });
       expect(() => getSyncCredential(db, "fp-old")).toThrow();
       expect(hasSyncCredential(db, "fp-old")).toBe(true);
 
-      process.env.SYNC_VAULT_KEY = "test-operator-key";
+      process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
       expect(getSecret(db, { domain: "operator" }, secretRefs.legacyConnection("fp-old"))?.plaintext).toBe(
         before?.plaintext
       );
@@ -344,9 +346,9 @@ describe("syncCredentialRepository (RD-058 / PR-024a)", () => {
 
     it("does nothing without the vault key", () => {
       legacyEnrolment("fp-old", "budget-1", { apiKey: "key-1" }, "2026-01-01T00:00:00.000Z");
-      delete process.env.SYNC_VAULT_KEY;
+      delete process.env.ACTUAL_BENCH_VAULT_KEY;
       expect(upgradeLegacyUnattendedCredentials(db)).toEqual({ upgraded: 0, failed: 0 });
-      process.env.SYNC_VAULT_KEY = "test-operator-key";
+      process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
     });
   });
 });

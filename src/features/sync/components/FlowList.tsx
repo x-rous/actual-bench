@@ -23,7 +23,8 @@ type FlowListProps = {
   selectedFlowId: string | null;
   latestRuns: Map<string, SyncFlowRun>;
   connections: ConnectionInstance[];
-  vaultEnabled?: boolean;
+  /** Null while the vault state is unknown. */
+  vaultReady?: boolean | null;
   /** What is enrolled, by connection and by budget (PR-071c). */
   enrolled?: EnrolledIndex;
   /** Engine health-pause per flow id, from `useFlowAutomations`. */
@@ -48,7 +49,7 @@ export function FlowList({
   selectedFlowId,
   latestRuns,
   connections,
-  vaultEnabled = false,
+  vaultReady = null,
   enrolled = NO_ENROLMENTS,
   enginePauses = new Map<string, EnginePause | null>(),
   onSelect,
@@ -133,7 +134,7 @@ export function FlowList({
                 flowEnabled: flow.enabled,
                 autoPaused: !!config.autoPausedAt,
                 enginePause,
-                vaultEnabled,
+                vaultReady,
                 bothEnrolled,
                 lastRunAtMs: lastRunMs && !Number.isNaN(lastRunMs) ? lastRunMs : null,
                 intervalMinutes: config.intervalMinutes,

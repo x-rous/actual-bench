@@ -18,6 +18,7 @@ export async function register(): Promise<void> {
     { getAppDb },
     { logger },
     { upgradeLegacyUnattendedCredentials },
+    { getVaultState, logVaultState },
   ] = await Promise.all([
     import("@/lib/automation/runtime"),
     import("@/lib/automation/bootstrap"),
@@ -25,7 +26,16 @@ export async function register(): Promise<void> {
     import("@/lib/app-db/connection"),
     import("@/lib/logger"),
     import("@/lib/credentials/unattendedCredentials"),
+    import("@/lib/credentials/vaultState"),
   ]);
+
+  try {
+    // Resolve the vault first: a fresh install gets its key here, before
+    // anything could need one, and the log says where the key came from.
+    logVaultState(getVaultState(getAppDb()));
+  } catch (error) {
+    logger.warn(`[vault] could not check the vault: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
   try {
     // Unattended secrets from before schema v35 were kept whole, because the

@@ -25,7 +25,7 @@ happens.
 
 | Mode | What it means |
 |---|---|
-| **Runs on the server** | Runs on schedule even with Actual Bench closed, using credentials you enrolled in the encrypted vault. Works for HTTP API and Direct connections; requires `SYNC_VAULT_KEY`. |
+| **Runs on the server** | Runs on schedule even with Actual Bench closed, using credentials you enrolled in the encrypted vault. Works for HTTP API and Direct connections. |
 | **Runs in your browser** | Runs only while Actual Bench is open in a tab. Close the tab and it stops. This is a convenience, not unattended automation. |
 
 A Direct connection runs on the server too: the worker opens the budget with Actual's own
@@ -94,8 +94,9 @@ Daylight saving is handled explicitly, so a 02:30 job behaves sensibly twice a y
   ceiling, so a broken automation does not hammer a server.
 - After enough consecutive failures the automation **auto-pauses**, with the reason shown on the
   card. It stays paused until you press **Resume**, which clears the pause and the failure count.
-- If an automation needs a stored credential and the vault is unavailable — `SYNC_VAULT_KEY` unset
-  or rotated, or the credential removed — it **fails closed**: it does not run at all, and it pauses
+- If an automation needs a stored credential and the vault is **locked** (its key missing or
+  changed, see [`UNATTENDED_SYNC.md`](UNATTENDED_SYNC.md#when-the-vault-is-locked)), or the
+  credential was removed, it **fails closed**: it does not run at all, and it pauses
   with that reason. It never runs partially against a credential it could not fully resolve.
 - Editing an automation's schedule does **not** clear a pause. Resuming is a separate, deliberate
   decision about something that was broken.
@@ -154,17 +155,11 @@ where *every* account failed does count.
 Bank sync contributes nothing to the review queue. It constructs nothing for you to review — Actual's
 importer owns what arrives.
 
-## External cron
-
-If you would rather drive the schedule yourself, `POST /api/sync/scheduler/tick` runs one pass.
-It requires `SYNC_SCHEDULER_SECRET` in the server environment and a matching `x-scheduler-secret`
-header. The endpoint kept its URL when the engine replaced the sync-specific scheduler, so existing
-crons keep working.
-
 ## Unattended access
 
-Anything that runs with Bench closed needs credentials the server can use, which means
-two things: `SYNC_VAULT_KEY` set on the server, and the budget itself **enrolled**.
+Anything that runs with Bench closed needs credentials the server can use, so the budget
+itself has to be **enrolled**. Enrolled credentials are encrypted in Bench's vault, which needs no
+setup: its key is generated on first start (see [`UNATTENDED_SYNC.md`](UNATTENDED_SYNC.md#the-vault-key)).
 
 **Automations → Connections** lists the enrolled budgets, when each was enrolled, and
 which automations name it. Withdrawing a credential stops those automations - the engine

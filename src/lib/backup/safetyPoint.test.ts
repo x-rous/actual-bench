@@ -36,11 +36,11 @@ function budgetZip(): Uint8Array {
 describe("recovery points before risky changes", () => {
   let root: string;
   let db: SqliteDatabase;
-  const previousKey = process.env.SYNC_VAULT_KEY;
+  const previousKey = process.env.ACTUAL_BENCH_VAULT_KEY;
   const originalFetch = global.fetch;
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-vault-key";
     root = mkdtempSync(join(tmpdir(), "actual-bench-safety-"));
     mkdirSync(join(root, "volume"), { recursive: true });
     db = getAppDb(join(root, "metadata.sqlite"));
@@ -52,8 +52,8 @@ describe("recovery points before risky changes", () => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     global.fetch = originalFetch;
-    if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousKey;
   });
 
   function setUpPolicy(options: { safetyPoints?: boolean } = {}) {

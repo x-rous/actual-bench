@@ -259,8 +259,8 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
               </div>
               <p className="text-muted-foreground">
                 Works with MinIO, Backblaze B2, Cloudflare R2, Wasabi and Garage as well as AWS. Keys
-                are encrypted with your server&rsquo;s <code>SYNC_VAULT_KEY</code> and never stored in
-                readable form.
+                are encrypted with Bench&rsquo;s vault key on this server and never stored in readable
+                form.
               </p>
             </>
           )}

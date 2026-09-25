@@ -131,7 +131,7 @@ describe("SyncView", () => {
     });
     (dataHook.useVaultStatus as jest.Mock).mockReturnValue({
       data: {
-        enabled: true,
+        vault: { status: "ready" as const },
         credentials: [
           { connectionFingerprint: connectionFingerprint(conn1) },
           { connectionFingerprint: connectionFingerprint(conn2) },
@@ -185,7 +185,7 @@ describe("SyncView", () => {
     });
     (dataHook.useVaultStatus as jest.Mock).mockReturnValue({
       data: {
-        enabled: true,
+        vault: { status: "ready" as const },
         credentials: [
           { connectionFingerprint: connectionFingerprint(conn1) },
           { connectionFingerprint: connectionFingerprint(conn2) },

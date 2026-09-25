@@ -428,7 +428,7 @@ const MIGRATIONS: readonly Migration[] = [
     // One secret store (F-195). Four credential tables, each with its own
     // repository, become one `credentials` table whose key domain -
     // `passphrase` (remembered, opened only after the user unlocks) or
-    // `operator` (unattended, opened with SYNC_VAULT_KEY) - is part of every
+    // `operator` (unattended, opened with the vault key) - is part of every
     // row's identity. Non-secret records move to tables of their own. Every
     // ciphertext is copied byte for byte: this migration never decrypts, so it
     // runs without either key.

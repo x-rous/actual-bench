@@ -43,7 +43,7 @@ services:
       - "3000:3000"
     environment:
       ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
-      # SYNC_VAULT_KEY: "..."   # only if you use unattended server-side sync
+      # ACTUAL_BENCH_VAULT_KEY: "..."   # optional: hold the vault key yourself
     volumes:
       - actual-bench-data:/data
     restart: unless-stopped
@@ -78,11 +78,12 @@ deploy into the maintainer's app. What it sets up:
 - A health check against `/api/health`, matching the same endpoint the Docker image's own
   `HEALTHCHECK` uses.
 
-Secrets never belong in `fly.toml`. Set them with:
+No secrets are needed: the credential vault's key is generated on first start and kept on the
+`/data` volume. To hold the key yourself instead, set it before the first deploy (secrets never
+belong in `fly.toml`):
 
 ```bash
-fly secrets set SYNC_VAULT_KEY="..."
-fly secrets set SYNC_SCHEDULER_SECRET="..."
+fly secrets set ACTUAL_BENCH_VAULT_KEY="..."
 ```
 
 Scaling to multiple Machines is not supported by the current architecture — see [Scaling and the
@@ -149,15 +150,16 @@ Open **App Health** (Tools sidebar) and confirm:
 - **Writable** is `Yes`.
 - **Schema** shows a version (migrations run on boot).
 - **Persistence** reads *Persistent when /data is mounted*.
-- If you use unattended sync, the **Unattended sync scheduler** section shows the vault state, enrolled
-  count, and last tick.
+- The **Automations** section shows the credential vault's state and where its key comes from,
+  enrolled connections, and each automation's health.
 
 ## Production hardening
 
 - Terminate **HTTPS** at the proxy. Plain HTTP stops at localhost.
-- Secrets like `SYNC_VAULT_KEY` stay out of the image and out of git. Use your platform's secret
-  manager.
-- Persist `/data`, back it up, and lock down its permissions.
+- If you set `ACTUAL_BENCH_VAULT_KEY`, keep it out of the image and out of git. Use your platform's
+  secret manager.
+- Persist `/data`, back it up, and lock down its permissions. It holds the generated vault key
+  (`secrets/vault.key`) as well as the database.
 - Pin a specific `:<version>` and upgrade deliberately (see [Upgrading and Backups](../upgrading-and-backups/)).
 - Don't publicly expose backend APIs (`actual-http-api`, Actual Server) more than necessary.
 - Redact secrets before sharing logs.
@@ -166,8 +168,7 @@ Open **App Health** (Tools sidebar) and confirm:
 
 The unattended sync scheduler runs **in-process** and ticks about once a minute; a **single instance is
 sufficient** and is the intended model. Do not assume distributed-lock behavior across multiple
-replicas. If you need external control, drive the trigger endpoint with `SYNC_SCHEDULER_SECRET` instead
-(see [Configuration](../configuration/#unattended-sync-and-automation-settings)).
+replicas.
 
 ## Deployment checklist
 
@@ -176,8 +177,8 @@ replicas. If you need external control, drive the trigger endpoint with `SYNC_SC
 - [ ] HTTPS terminated at the proxy; host/protocol headers forwarded.
 - [ ] Direct mode: browser can reach Actual Server; CORS / cross-origin isolation satisfied.
 - [ ] HTTP mode: Actual Bench container can reach `actual-http-api`.
-- [ ] `SYNC_VAULT_KEY` set (only if using unattended sync) and stored securely.
-- [ ] App Health shows Writable = Yes and a valid schema version.
+- [ ] `ACTUAL_BENCH_VAULT_KEY` stored securely, if you set one; otherwise `/data/secrets/vault.key` is backed up with the volume.
+- [ ] App Health shows Writable = Yes, a valid schema version, and the credential vault Ready.
 
 ## Related pages
 

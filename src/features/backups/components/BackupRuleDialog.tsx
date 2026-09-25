@@ -25,6 +25,7 @@ import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
 import { createPolicy, patchPolicy, type BackupSource } from "../lib/backupsApi";
 import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupRepository";
+import { isVaultReady, type VaultSummary } from "@/lib/credentials/vaultSummary";
 
 /**
  * A backup rule (RD-077 / PR-047e).
@@ -57,7 +58,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   destinations: BackupDestination[];
   sources: BackupSource[];
-  vaultEnabled: boolean;
+  vault: VaultSummary;
   existing?: BackupPolicy | null;
   onSaved: () => void;
 };
@@ -67,11 +68,12 @@ export function BackupRuleDialog({
   onOpenChange,
   destinations,
   sources,
-  vaultEnabled,
+  vault,
   existing,
   onSaved,
 }: Props) {
   const editing = Boolean(existing);
+  const vaultReady = isVaultReady(vault);
   const [name, setName] = useState(existing?.name ?? "Nightly backup");
   /*
    * Every saved budget connection, and what each one can do.
@@ -360,15 +362,15 @@ export function BackupRuleDialog({
               type="checkbox"
               className="mt-0.5"
               checked={encrypt}
-              disabled={!vaultEnabled}
+              disabled={!vaultReady}
               onChange={(event) => setEncrypt(event.target.checked)}
             />
             <span>
               <span className="font-medium">Encrypt these backups</span>
               <span className="block text-muted-foreground">
-                {vaultEnabled
+                {vaultReady
                   ? "Worth it when a copy goes somewhere you do not control. Bench cannot recover an encrypted backup without the passphrase - nobody can."
-                  : "Set SYNC_VAULT_KEY on the server to enable encryption."}
+                  : "Unavailable while stored credentials are locked. See App Health."}
               </span>
             </span>
           </label>

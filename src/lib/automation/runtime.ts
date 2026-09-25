@@ -2,7 +2,6 @@ import { sweepStaleWorkspaces } from "@/lib/actual/runtime/workspace";
 import { getAppDb } from "@/lib/app-db/connection";
 import { clearAutomationClaims } from "@/lib/app-db/automationRepository";
 import { logger } from "@/lib/logger";
-import { vaultEnabled } from "@/lib/sync/vault";
 import { ensureWorkerPreflight } from "@/lib/workers/supervisor";
 import { ensureAutomationJobTypesRegistered } from "./bootstrap";
 import { runEngineTick } from "./engine";
@@ -63,9 +62,7 @@ export function startAutomationEngine(): void {
   // and is never swept, whichever process owns it.
   sweepWorkspaces();
 
-  logger.info(
-    `[automation] engine started (vault ${vaultEnabled() ? "enabled" : "disabled - credential-backed automations will pause"})`
-  );
+  logger.info("[automation] engine started");
 
   // Jobs run in worker threads unless the operator chose otherwise. Check now
   // that one can start, so a deployment where it cannot says so in App Health

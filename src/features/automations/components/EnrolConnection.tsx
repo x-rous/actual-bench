@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { VaultLockedNotice } from "@/components/VaultLockedNotice";
 import { getConnectionModeBadge } from "@/components/connect/utils";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection } from "@/store/connection";
@@ -39,7 +40,7 @@ export function useEnrolledFingerprints() {
     queryKey: ["vault-status"],
     queryFn: getVaultStatus,
     select: (status) => ({
-      enabled: status.enabled,
+      vault: status.vault,
       fingerprints: new Set(status.credentials.map((entry) => entry.connectionFingerprint)),
       /** The mode each enrolled budget is enrolled through, by sync ID (PR-071c). */
       modesByBudget: new Map(status.credentials.map((entry) => [entry.budgetSyncId, entry.mode])),
@@ -101,15 +102,7 @@ export function EnrolConnection({
 
   const box = "rounded-md border border-amber-400/40 bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/20 dark:text-amber-200";
 
-  if (!vault.data.enabled) {
-    return (
-      <div className={box}>
-        <span className="font-medium">Unattended access is not configured on this server.</span>{" "}
-        Set <code className="rounded bg-black/5 px-1 dark:bg-white/10">SYNC_VAULT_KEY</code> and
-        restart Bench. Until then, anything scheduled can only run while Bench is open in a tab.
-      </div>
-    );
-  }
+  if (vault.data.vault.status !== "ready") return <VaultLockedNotice vault={vault.data.vault} />;
 
   if (!connection) return null;
 
@@ -172,7 +165,6 @@ export function EnrolConnection({
 
   const notSetUp = <span className="font-medium">{connection.label} is not set up for scheduled runs.</span>;
 
-  const vaultKey = <code className="rounded bg-black/5 px-1 dark:bg-white/10">SYNC_VAULT_KEY</code>;
   const secret = direct ? "password" : "API key";
   const removeWhere = onConnectionsPage ? "on this page" : "in Automations \u2192 Connections";
 
@@ -212,7 +204,7 @@ export function EnrolConnection({
         <ul className="mt-1 space-y-0.5 pl-4">
           <li className="list-disc">
             {direct ? "Your Actual server password" : "This budget\u2019s API key"} is encrypted with Bench&rsquo;s vault key
-            ({vaultKey}) and saved.
+            and saved on this server.
           </li>
           <li className="list-disc">
             The vault key is kept in the server settings, not in Bench&rsquo;s database, so someone with a copy of the

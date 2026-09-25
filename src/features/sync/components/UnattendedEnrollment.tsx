@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Loader2, PlayCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { VaultLockedNotice } from "@/components/VaultLockedNotice";
+import type { VaultSummary } from "@/lib/credentials/vaultSummary";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection";
 import { enrollCredential, getVaultStatus, runFlowNow, withdrawCredential } from "../lib/syncApi";
@@ -55,7 +57,8 @@ export function UnattendedEnrollment({
   lastRunAtMs?: number | null;
   onRan?: () => void;
 }) {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [vault, setVault] = useState<VaultSummary | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [enrolled, setEnrolled] = useState<EnrolledIndex>(NO_ENROLMENTS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +69,15 @@ export function UnattendedEnrollment({
   const refresh = useCallback(async () => {
     try {
       const res = await getVaultStatus();
-      setEnabled(res.enabled);
+      setVault(res.vault);
+      setLoadFailed(false);
       setEnrolled(enrolledIndex(res.credentials));
     } catch {
-      setEnabled(false);
+      // Forget the last answer: stale "ready" and enrolments would still show
+      // the flow as armed and offer Run now.
+      setVault(null);
+      setEnrolled(NO_ENROLMENTS);
+      setLoadFailed(true);
     }
   }, []);
   useEffect(() => {
@@ -166,21 +174,22 @@ export function UnattendedEnrollment({
     }
   };
 
-  if (enabled === null) return null;
-
   const box = "flex flex-col gap-2 rounded-md border border-border bg-muted/30 p-3 text-xs";
 
-  if (!enabled) {
-    return (
+  if (vault === null) {
+    return loadFailed ? (
       <div className={box}>
-        <span className="font-medium text-amber-600 dark:text-amber-400">Server vault is not configured.</span>
-        <span className="text-muted-foreground">
-          Set the <code className="rounded bg-muted px-1">SYNC_VAULT_KEY</code> environment variable on the server to
-          enable unattended sync. Until then this flow can only run while the app is open.
-        </span>
+        <span className="text-destructive">Could not check the stored credentials.</span>
+        <div>
+          <Button size="sm" variant="outline" onClick={() => void refresh()}>
+            Try again
+          </Button>
+        </div>
       </div>
-    );
+    ) : null;
   }
+
+  if (vault.status !== "ready") return <VaultLockedNotice vault={vault} />;
 
   if (!bothChosen) {
     return (
@@ -198,7 +207,7 @@ export function UnattendedEnrollment({
       </span>
       <span className="text-muted-foreground">
         To run when Bench is closed, Bench saves each budget&apos;s API key or Actual server password, encrypted with
-        Bench&apos;s vault key (<code className="rounded bg-muted px-1">SYNC_VAULT_KEY</code>). Each one is checked
+        Bench&apos;s vault key on this server. Each one is checked
         with its server first. It is never shown again or sent to your browser.
       </span>
       <div className="flex items-center gap-2 pt-1">
@@ -226,7 +235,7 @@ export function UnattendedEnrollment({
           // reading that, this panel reported "Armed" for a flow that was not
           // going to run, and offered a next-run time to match.
           enginePause: flowId ? (enginePauses.get(flowId) ?? null) : null,
-          vaultEnabled: enabled,
+          vaultReady: true,
           bothEnrolled,
           lastRunAtMs,
           intervalMinutes,

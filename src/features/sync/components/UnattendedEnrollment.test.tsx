@@ -51,7 +51,7 @@ describe("enrolling a flow's budgets for unattended sync", () => {
 
   it("enrols a Direct and an HTTP API budget, each with its own kind of secret, skipping one already enrolled", async () => {
     mockedSync.getVaultStatus.mockResolvedValue({
-      enabled: true,
+      vault: { status: "ready" as const },
       credentials: [{ connectionFingerprint: connectionFingerprint(target) } as never],
     });
     renderPanel(source, target);
@@ -70,7 +70,7 @@ describe("enrolling a flow's budgets for unattended sync", () => {
     // The source is connected Direct here but enrolled through HTTP API.
     const sourceViaHttp = connectionFingerprint({ mode: "http-api", baseUrl: "https://api.example.com", budgetSyncId: "budget-1" });
     mockedSync.getVaultStatus.mockResolvedValue({
-      enabled: true,
+      vault: { status: "ready" as const },
       credentials: [
         { connectionFingerprint: sourceViaHttp, budgetSyncId: "budget-1" } as never,
         { connectionFingerprint: connectionFingerprint(target), budgetSyncId: "budget-2" } as never,
@@ -86,8 +86,33 @@ describe("enrolling a flow's budgets for unattended sync", () => {
     expect(mockedSync.withdrawCredential).toHaveBeenCalledWith(connectionFingerprint(target));
   });
 
+  it("stops trusting its last answer when a refresh fails, rather than staying armed", async () => {
+    const sourceViaHttp = connectionFingerprint({ mode: "http-api", baseUrl: "https://api.example.com", budgetSyncId: "budget-1" });
+    mockedSync.getVaultStatus.mockResolvedValueOnce({
+      vault: { status: "ready" as const },
+      credentials: [
+        { connectionFingerprint: sourceViaHttp, budgetSyncId: "budget-1" } as never,
+        { connectionFingerprint: connectionFingerprint(target), budgetSyncId: "budget-2" } as never,
+      ],
+    });
+    mockedSync.getVaultStatus.mockRejectedValueOnce(new Error("offline"));
+    mockedSync.getVaultStatus.mockResolvedValueOnce({ vault: { status: "ready" as const }, credentials: [] });
+    mockedSync.withdrawCredential.mockResolvedValue(undefined as never);
+    renderPanel(source, target);
+
+    fireEvent.click(await screen.findByRole("button", { name: /remove stored credentials/i }));
+
+    expect(await screen.findByText(/Could not check the stored credentials/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /run/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/armed/i)).not.toBeInTheDocument();
+
+    // Recoverable in place, without reopening the flow.
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(await screen.findByRole("button", { name: /store credentials/i })).toBeInTheDocument();
+  });
+
   it("no longer says Direct connections cannot run unattended", async () => {
-    mockedSync.getVaultStatus.mockResolvedValue({ enabled: true, credentials: [] });
+    mockedSync.getVaultStatus.mockResolvedValue({ vault: { status: "ready" as const }, credentials: [] });
     renderPanel(source, { ...source, id: "src-2", budgetSyncId: "budget-3" } as ConnectionInstance);
 
     expect(await screen.findByRole("button", { name: /store credentials/i })).toBeInTheDocument();

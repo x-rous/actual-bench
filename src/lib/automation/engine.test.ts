@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { putSecret } from "@/lib/credentials/store";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
@@ -145,11 +146,12 @@ describe("a pause that outlived its cause", () => {
 });
 
 describe("automation engine", () => {
+  const savedVaultKey = process.env.ACTUAL_BENCH_VAULT_KEY;
   afterEach(() => {
     __resetEngineStateForTests();
     __resetAutomationRegistryForTests();
     resetAppDbForTests();
-    delete process.env.SYNC_VAULT_KEY;
+    process.env.ACTUAL_BENCH_VAULT_KEY = savedVaultKey;
   });
 
   it("runs a registered job type end to end and records the run", async () => {
@@ -263,15 +265,18 @@ describe("automation engine", () => {
     try {
       registerAutomationJobType(testJobType());
       const id = definition(db, { credentialRef: "server-1" });
+      // Vault locked: a secret is stored and the key that sealed it is gone.
+      putSecret(db, { domain: "operator" }, { ref: "dest-1", kind: "s3", plaintext: "{}" });
+      process.env.ACTUAL_BENCH_VAULT_KEY = "a-different-key";
 
-      // Vault disabled: no run at all, and the reason is on the automation.
+      // No run at all, and the reason is on the automation.
       const outcome = await executeAutomation(db, id);
 
       expect(outcome.status).toBe("skipped");
       expect(listAutomationRuns(db, { automationId: id })).toHaveLength(0);
       const paused = getAutomation(db, id);
       expect(paused?.enabled).toBe(false);
-      expect(paused?.autoPauseReason).toMatch(/vault is disabled/);
+      expect(paused?.autoPauseReason).toMatch(/vault is locked/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -292,7 +297,7 @@ describe("automation engine", () => {
 
   it("keeps a revealed secret out of the run log and the stored error", async () => {
     const { root, db } = tempDb();
-    process.env.SYNC_VAULT_KEY = VAULT_KEY;
+    process.env.ACTUAL_BENCH_VAULT_KEY = VAULT_KEY;
     try {
       upsertSyncCredential(db, {
         connectionFingerprint: "server-1",
@@ -329,7 +334,7 @@ describe("automation engine", () => {
 
   it("keeps a revealed Direct server password out of the run log and the stored error", async () => {
     const { root, db } = tempDb();
-    process.env.SYNC_VAULT_KEY = VAULT_KEY;
+    process.env.ACTUAL_BENCH_VAULT_KEY = VAULT_KEY;
     try {
       upsertSyncCredential(db, {
         connectionFingerprint: "direct-1",
@@ -565,7 +570,7 @@ describe("automation engine", () => {
 
   it("keeps a revealed secret out of the pause reason as well as the log", async () => {
     const { root, db } = tempDb();
-    process.env.SYNC_VAULT_KEY = VAULT_KEY;
+    process.env.ACTUAL_BENCH_VAULT_KEY = VAULT_KEY;
     try {
       upsertSyncCredential(db, {
         connectionFingerprint: "server-1",
@@ -811,7 +816,7 @@ describe("automation engine", () => {
       const outcome = await executeAutomation(db, id, { trigger: "manual" });
 
       expect(outcome.status).toBe("skipped");
-      expect(getAutomation(db, id)?.autoPauseReason).toMatch(/vault is disabled|stored credential/);
+      expect(getAutomation(db, id)?.autoPauseReason).toMatch(/stored credential/);
     } finally {
       __resetBudgetFileSyncRegistrationForTests();
       __resetBankSyncRegistrationForTests();

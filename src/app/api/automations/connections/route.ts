@@ -5,7 +5,7 @@ import { listAutomations } from "@/lib/app-db/automationRepository";
 import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { listAutomationJobTypes } from "@/lib/automation/registry";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { getVaultSummary } from "@/lib/credentials/vaultState";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,15 +25,11 @@ export async function GET() {
     ensureAutomationJobTypesRegistered();
     const db = getAppDb();
 
-    if (!vaultEnabled()) {
-      return NextResponse.json({ vaultEnabled: false, connections: [] });
-    }
-
     const automations = listAutomations(db);
     const typeLabels = new Map(listAutomationJobTypes().map((jobType) => [jobType.type, jobType.label]));
 
     return NextResponse.json({
-      vaultEnabled: true,
+      vault: getVaultSummary(db),
       connections: listSyncCredentialMeta(db).map((credential) => ({
         connectionFingerprint: credential.connectionFingerprint,
         label: credential.label || credential.baseUrl,

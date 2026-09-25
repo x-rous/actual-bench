@@ -18,20 +18,13 @@ only while the app was open, is turned off.
 
 ## Enabling it
 
-1. **Set the vault key.** Provide a strong secret in the server environment:
+1. **Nothing to set up on the server.** The credential vault always exists. On first start
+   Bench generates its key and keeps it in `secrets/vault.key` beside the metadata database
+   (`/data/secrets/vault.key` in Docker). To hold the key yourself instead, set
+   `ACTUAL_BENCH_VAULT_KEY` before the first start (see [The vault key](#the-vault-key)).
 
-   ```bash
-   SYNC_VAULT_KEY="a-long-random-operator-secret"
-   ```
-
-   Without it, **unattended sync** is disabled: no credential can be stored or opened, so a flow
-   enrolled for it pauses with that reason. The automation engine itself still runs — it schedules
-   other work too — so this is a per-automation stop, not a silent global off switch.
-
-2. **Restart the server.** The in-process **automation engine** starts on boot and ticks about
-   once a minute (single instance is sufficient). Since the engine replaced the sync-specific
-   scheduler, it starts whether or not `SYNC_VAULT_KEY` is set — but a flow that needs stored
-   credentials will pause, with that reason shown, until the key is present.
+2. **The engine runs on its own.** The in-process **automation engine** starts on boot and ticks
+   about once a minute (single instance is sufficient).
 
 3. **Configure a flow.** In the flow editor, set the review policy to
    **"Auto-sync on a server schedule (unattended)"**, choose a frequency, then click **"Store
@@ -40,17 +33,6 @@ only while the app was open, is turned off.
 4. **Check status** on the **Automations** page (Tools → Automations): schedule, last run, next
    run, pause reasons and run history. The **App Health** page carries the same roll-up alongside
    vault state and enrolled count. See [`AUTOMATIONS.md`](AUTOMATIONS.md).
-
-### Optional: external cron
-
-The in-process scheduler is enough for most setups. To drive it externally instead (or in
-addition), set `SYNC_SCHEDULER_SECRET` and hit the trigger endpoint on your own schedule:
-
-```bash
-curl -X POST https://your-host/api/sync/scheduler/tick -H "x-scheduler-secret: $SYNC_SCHEDULER_SECRET"
-```
-
-Without `SYNC_SCHEDULER_SECRET` set, that endpoint is disabled (403).
 
 ## Security / threat model
 
@@ -62,12 +44,15 @@ Without `SYNC_SCHEDULER_SECRET` set, that endpoint is disabled (403).
 - **Checked before it is stored.** Enrolling first checks the credentials against the server, in a
   worker thread (for Direct, by opening the budget). A wrong key, password or encryption password
   is reported and **nothing is stored**, so a typo cannot replace the working secret other budgets
-  on that server rely on. The secret reaches the worker only sealed with `SYNC_VAULT_KEY`.
-- **The key is not in the database.** Encryption uses a key derived from `SYNC_VAULT_KEY` (an
-  environment variable). Someone with only the database file cannot decrypt the secrets.
+  on that server rely on. The secret reaches the worker only sealed with the vault key.
+- **The key is not in the database.** Encryption uses a key derived from the vault key, which
+  lives in `secrets/vault.key` beside the database or in `ACTUAL_BENCH_VAULT_KEY`. Someone with
+  only the database file cannot decrypt the secrets. Someone with a copy of the whole data folder
+  can, when the key is the generated file; hold the key in `ACTUAL_BENCH_VAULT_KEY` if that
+  matters to you.
 - **Never exposed to the client.** Stored secrets are decrypted server-side only, during a
   scheduled run; the API and the UI only ever see non-secret metadata.
-- **Fail-safe.** A missing/locked vault (key unset or changed) or an auth failure **pauses the
+- **Fail-safe.** A locked vault (key missing or changed) or an auth failure **pauses the
   automation and surfaces the reason** on Automations and App Health — it never guesses, never runs
   partially against a credential it could not resolve, and never retries forever.
 - **Redacted output.** Credentials opened during a run are redacted from run logs and stored errors,
@@ -77,11 +62,36 @@ Without `SYNC_SCHEDULER_SECRET` set, that endpoint is disabled (403).
 
 - **One flow:** in the flow editor, switch its policy away from unattended and/or click
   **"Remove stored credentials"** to withdraw its vault entry.
-- **Everything:** unset `SYNC_VAULT_KEY` and restart. The scheduler stops and stored secrets can
-  no longer be decrypted.
+- **Every budget:** withdraw each one on **Automations → Connections**.
 
-## Rotating the key
+## The vault key
 
-Changing `SYNC_VAULT_KEY` invalidates all existing ciphertext (by design — old secrets can no
-longer be decrypted). After rotating, **re-enroll** each unattended flow's credentials. Flows whose
-credentials can't be decrypted are paused and shown on Automations and App Health until re-enrolled.
+Bench looks for the key in this order and uses the first it finds:
+
+1. `ACTUAL_BENCH_VAULT_KEY`
+2. `SYNC_VAULT_KEY`, the old name. It still works, with a warning in the log and App Health.
+3. `secrets/vault.key` beside the metadata database.
+
+If none is found and **nothing is stored yet**, Bench generates a key into that file (mode `0600`,
+folder `0700`). It never generates a key while stored credentials exist, and it never overwrites a
+key file. To use a Docker or Kubernetes secret, mount it at that path.
+
+**Keep the key with your data.** Back up `secrets/vault.key` with the database, or keep your
+`ACTUAL_BENCH_VAULT_KEY` value somewhere safe.
+
+### When the vault is locked
+
+If Bench can't find the key that sealed its stored credentials, or the key it has doesn't open
+them, the vault is **locked**. Automations that need stored credentials pause, the connect screen
+shows a notice, and **App Health** says why, with the fix:
+
+- **Restore the key:** put the old `vault.key` back and click **Check again**; no restart is
+  needed. Or set `ACTUAL_BENCH_VAULT_KEY` to the old value and restart Bench, since a running
+  server cannot see a changed environment variable.
+- **Reset the vault:** if the key is gone, **Reset vault** deletes the stored secrets Bench can no
+  longer open and every unattended enrolment, and starts again. Enrol your budgets and re-enter
+  backup credentials afterwards. Remembered connections are not affected. A reset is refused while
+  the vault works.
+
+Changing the key on purpose is the same thing: the old secrets can't be opened, so reset and enrol
+again.

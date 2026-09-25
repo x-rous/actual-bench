@@ -24,7 +24,7 @@ const fingerprintOf = (budgetSyncId: string) => connectionFingerprint({ ...SERVE
 
 describe("GET /api/sync-credentials/servers/[fingerprint]/budgets", () => {
   const saved = {
-    key: process.env.SYNC_VAULT_KEY,
+    key: process.env.ACTUAL_BENCH_VAULT_KEY,
     db: process.env.ACTUAL_BENCH_DB_PATH,
     executor: process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR,
     runtime: process.env.ACTUAL_BENCH_RUNTIME_DIR,
@@ -37,7 +37,7 @@ describe("GET /api/sync-credentials/servers/[fingerprint]/budgets", () => {
     root = mkdtempSync(join(tmpdir(), "actual-bench-server-budgets-"));
     process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
     process.env.ACTUAL_BENCH_RUNTIME_DIR = join(root, "runtime");
-    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
     process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = "worker";
     upsertSyncCredential(getAppDb(), {
       connectionFingerprint: fingerprintOf("b-envelope"),
@@ -74,7 +74,7 @@ describe("GET /api/sync-credentials/servers/[fingerprint]/budgets", () => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     for (const [name, value] of Object.entries({
-      SYNC_VAULT_KEY: saved.key,
+      ACTUAL_BENCH_VAULT_KEY: saved.key,
       ACTUAL_BENCH_DB_PATH: saved.db,
       ACTUAL_BENCH_AUTOMATION_EXECUTOR: saved.executor,
       ACTUAL_BENCH_RUNTIME_DIR: saved.runtime,

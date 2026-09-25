@@ -4,7 +4,7 @@ const base: UnattendedStatusInput = {
   reviewPolicy: "auto_sync_unattended",
   flowEnabled: true,
   autoPaused: false,
-  vaultEnabled: true,
+  vaultReady: true,
   bothEnrolled: true,
   lastRunAtMs: null,
   intervalMinutes: 15,
@@ -14,6 +14,12 @@ const base: UnattendedStatusInput = {
 describe("computeUnattendedStatus", () => {
   it("is not unattended for other policies", () => {
     expect(computeUnattendedStatus({ ...base, reviewPolicy: "manual_preview_required" }).isUnattended).toBe(false);
+  });
+
+  it("is never armed while the vault state is unknown", () => {
+    const s = computeUnattendedStatus({ ...base, vaultReady: null });
+    expect(s.armed).toBe(false);
+    expect(s.nextRunAtMs).toBeNull();
   });
 
   it("is armed when vault + http + enrolled + active", () => {
@@ -26,7 +32,8 @@ describe("computeUnattendedStatus", () => {
   it("reports the first blocking reason in priority order", () => {
     expect(computeUnattendedStatus({ ...base, autoPaused: true }).reason).toMatch(/Paused/);
     expect(computeUnattendedStatus({ ...base, flowEnabled: false }).reason).toMatch(/Paused/);
-    expect(computeUnattendedStatus({ ...base, vaultEnabled: false }).reason).toMatch(/vault/);
+    expect(computeUnattendedStatus({ ...base, vaultReady: false }).reason).toMatch(/locked/);
+    expect(computeUnattendedStatus({ ...base, vaultReady: null }).reason).toMatch(/not confirmed/);
     expect(computeUnattendedStatus({ ...base, bothEnrolled: false }).reason).toMatch(/Store credentials/);
   });
 
@@ -85,6 +92,6 @@ describe("nextRunPhrase", () => {
   it("phrases soon / scheduled / blocked", () => {
     expect(nextRunPhrase(computeUnattendedStatus(base), base.nowMs)).toMatch(/next check/);
     expect(nextRunPhrase(computeUnattendedStatus({ ...base, lastRunAtMs: base.nowMs - 5 * 60_000 }), base.nowMs)).toMatch(/~10 min/);
-    expect(nextRunPhrase(computeUnattendedStatus({ ...base, vaultEnabled: false }), base.nowMs)).toMatch(/vault/);
+    expect(nextRunPhrase(computeUnattendedStatus({ ...base, vaultReady: false }), base.nowMs)).toMatch(/locked/);
   });
 });

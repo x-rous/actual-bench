@@ -187,8 +187,8 @@ describe("migrating sync flows onto the engine", () => {
 
   it("checks the enrolment the run will use: the source's own, or its budget's other one (PR-071c)", () => {
     const { root, db } = tempDb();
-    const savedKey = process.env.SYNC_VAULT_KEY;
-    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    const savedKey = process.env.ACTUAL_BENCH_VAULT_KEY;
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
     try {
       createSyncFlow(db, {
         name: "Direct → Joint",
@@ -225,8 +225,8 @@ describe("migrating sync flows onto the engine", () => {
       migrateSyncFlowsToAutomations(db);
       expect(listAutomations(db)[0].credentialRef).toBe("direct-fp");
     } finally {
-      if (savedKey === undefined) delete process.env.SYNC_VAULT_KEY;
-      else process.env.SYNC_VAULT_KEY = savedKey;
+      if (savedKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+      else process.env.ACTUAL_BENCH_VAULT_KEY = savedKey;
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -573,12 +573,11 @@ describe("migrating sync flows onto the engine", () => {
       expect(automation?.name).toBe("Created after boot");
       expect(automation?.config.data.flowId).toBeDefined();
 
-      // With no vault configured in this environment the engine then fails
-      // closed on the very same tick — which is the point: the flow is now
-      // visible with a reason a person can act on, instead of being absent and
-      // silently never running.
+      // Nothing is enrolled here, so the engine then fails closed on the very
+      // same tick — which is the point: the flow is now visible with a reason a
+      // person can act on, instead of being absent and silently never running.
       expect(automation?.enabled).toBe(false);
-      expect(automation?.autoPauseReason).toMatch(/vault is disabled/);
+      expect(automation?.autoPauseReason).toMatch(/No stored credential/);
     } finally {
       __resetEngineStateForTests();
       __resetAutomationRegistryForTests();

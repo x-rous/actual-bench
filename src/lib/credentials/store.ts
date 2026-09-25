@@ -1,6 +1,7 @@
 import { openSecret, openWithKey, sealSecret, sealWithKey, type SealedSecret } from "@/lib/sync/vault";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import type { SqliteDatabase } from "@/lib/app-db/types";
+import { requireReadyVault } from "./vaultState";
 
 /**
  * The one place secrets are stored (F-195).
@@ -17,8 +18,9 @@ import type { SqliteDatabase } from "@/lib/app-db/types";
  *   * `passphrase` - sealed with a key derived from the user's unlock
  *     passphrase. Remembered credentials. Readable only while the user has the
  *     vault unlocked.
- *   * `operator` - sealed with `SYNC_VAULT_KEY`. Unattended enrolment and
- *     backup secrets. Readable by the server on its own.
+ *   * `operator` - sealed with the vault key (`ACTUAL_BENCH_VAULT_KEY` or the
+ *     generated key file, see `vaultKey.ts`). Unattended enrolment and backup
+ *     secrets. Readable by the server on its own.
  *
  * RD-061 chose the passphrase for remembered credentials *because* Bench has no
  * login: a server that could open them unattended would hand them to anyone
@@ -42,8 +44,8 @@ export type SecretKind =
   | "legacy-http-connection";
 
 /**
- * How a call reaches its domain's key. The operator key comes from the
- * environment; a passphrase key only ever comes from the caller, who holds it
+ * How a call reaches its domain's key. The operator key comes from the vault
+ * key source; a passphrase key only ever comes from the caller, who holds it
  * because the user unlocked the vault.
  */
 export type SecretAccess = { domain: "operator" } | { domain: "passphrase"; key: Buffer };
@@ -128,6 +130,12 @@ export function putSecret(
   input: { ref: string; kind: SecretKind; plaintext: string; label?: string }
 ): SecretMeta {
   const ref = requireRef(input.ref);
+  if (access.domain === "operator") {
+    // Never seal a new secret under a key that does not open the ones already
+    // stored: the vault would then hold two keys' worth of secrets, and no key
+    // could open them all. This is also where a fresh install gets its key.
+    requireReadyVault(db);
+  }
   const now = new Date().toISOString();
   const sealed = seal(access, input.plaintext);
 
@@ -230,8 +238,8 @@ export function deleteAllSecrets(db: SqliteDatabase, domain: SecretDomain): void
  * transaction: a passphrase change. Rolls back, leaving every row as it was,
  * if any secret fails to open under `oldKey`. Returns how many were re-sealed.
  *
- * Passphrase domain only. The operator key is an environment variable, and
- * rotating it is a separate, deliberate operation (key ids exist for it).
+ * Passphrase domain only. The operator key is the vault key, and rotating it is
+ * a separate, deliberate operation (key ids exist for it).
  */
 export function resealPassphraseDomain(db: SqliteDatabase, oldKey: Buffer, newKey: Buffer): number {
   const rows = db.prepare("SELECT * FROM credentials WHERE domain = 'passphrase'").all<SecretRow>();

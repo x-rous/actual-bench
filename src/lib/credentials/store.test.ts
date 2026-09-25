@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import type { SqliteDatabase } from "@/lib/app-db/types";
+import { VaultLockedError } from "@/lib/sync/vault";
 import * as store from "./store";
 import {
   deleteAllSecrets,
@@ -28,19 +29,19 @@ import {
 describe("credential store", () => {
   let root: string;
   let db: SqliteDatabase;
-  const previousVaultKey = process.env.SYNC_VAULT_KEY;
+  const previousVaultKey = process.env.ACTUAL_BENCH_VAULT_KEY;
   const userKey = randomBytes(32);
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
     root = mkdtempSync(join(tmpdir(), "actual-bench-credential-store-"));
     db = getAppDb(join(root, "metadata.sqlite"));
   });
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
-    if (previousVaultKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousVaultKey;
+    if (previousVaultKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousVaultKey;
   });
 
   const passphrase = (key: Buffer = userKey) => ({ domain: "passphrase" as const, key });
@@ -73,11 +74,13 @@ describe("credential store", () => {
     expect(db.prepare("SELECT ciphertext, iv, auth_tag FROM credentials WHERE ref = ?").get(ref)).toEqual(before);
   });
 
-  it("refuses the operator domain when the vault key is not set", () => {
-    delete process.env.SYNC_VAULT_KEY;
+  it("refuses the operator domain while the vault is locked", () => {
+    putSecret(db, operator, { ref: "dest-1", kind: "s3", plaintext: "{}" });
+    process.env.ACTUAL_BENCH_VAULT_KEY = "a-different-key";
     expect(() =>
-      putSecret(db, operator, { ref: "dest-1", kind: "s3", plaintext: "{}" })
-    ).toThrow(/SYNC_VAULT_KEY/);
+      putSecret(db, operator, { ref: "dest-2", kind: "s3", plaintext: "{}" })
+    ).toThrow(VaultLockedError);
+    expect(hasSecret(db, "operator", "dest-2")).toBe(false);
   });
 
   it("clears one domain without touching the other", () => {
