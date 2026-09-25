@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 /**
  * Cross-origin isolation headers Direct Actual Server mode needs
@@ -15,7 +15,66 @@ const DIRECT_MODE_HEADERS = {
   "Cross-Origin-Resource-Policy": "same-origin",
 } as const;
 
-export function proxy() {
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * True when a browser sent this state-changing API request from another site.
+ * Such a request can fire without the user knowing (a form or `fetch` on any
+ * page they visit), and the routes parse their body whatever the Content-Type
+ * says, so it is refused here, in one place, before any route runs.
+ *
+ * Browsers say where a request came from in `Sec-Fetch-Site`; older ones only
+ * in `Origin`, compared with the scheme and host the request was addressed to
+ * (as the reverse proxy forwarded them). A request carrying neither header is
+ * not from a browser page (curl, a script) and passes.
+ */
+export function isCrossSiteWrite(request: NextRequest): boolean {
+  if (SAFE_METHODS.has(request.method)) return false;
+
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite) return fetchSite !== "same-origin" && fetchSite !== "none";
+
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+
+  let originUrl: URL;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    return true; // "null" (sandboxed frames, file: pages) or garbage
+  }
+
+  // An http:// page on the same host is another origin than the https:// app.
+  const scheme = externalScheme(request);
+  if (scheme && originUrl.protocol !== scheme) return true;
+
+  const hosts = [request.headers.get("x-forwarded-host"), request.headers.get("host")]
+    .flatMap((value) => (value ?? "").split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return !hosts.includes(originUrl.host);
+}
+
+/**
+ * The scheme the browser used, when Bench can know it: the proxy's
+ * `X-Forwarded-Proto`, or a direct HTTPS connection. A proxy that terminates
+ * TLS without that header looks like plain HTTP, so then the scheme is unknown
+ * and only the host is compared, rather than refusing its users' writes.
+ */
+function externalScheme(request: NextRequest): string | null {
+  const forwarded = (request.headers.get("x-forwarded-proto") ?? "").split(",")[0]?.trim();
+  if (forwarded) return `${forwarded.toLowerCase()}:`;
+  return request.nextUrl.protocol === "https:" ? "https:" : null;
+}
+
+export function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    if (isCrossSiteWrite(request)) {
+      return NextResponse.json({ error: "Cross-site request refused." }, { status: 403 });
+    }
+    return NextResponse.next();
+  }
+
   const response = NextResponse.next();
 
   for (const [key, value] of Object.entries(DIRECT_MODE_HEADERS)) {
@@ -26,5 +85,5 @@ export function proxy() {
 }
 
 export const config = {
-  matcher: ["/((?!api/).*)"],
+  matcher: ["/(.*)"],
 };

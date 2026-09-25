@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaultKey";
@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  * one — no secret is exposed, and no passphrase is required (a forgotten one
  * couldn't be supplied). All sessions are invalidated.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     if (!rememberedCredentialsSupported()) {
       return NextResponse.json(
@@ -26,7 +26,7 @@ export async function POST() {
     resetVault(getAppDb());
     clearAllSessions();
     const response = NextResponse.json({ ok: true });
-    clearSessionCookie(response);
+    clearSessionCookie(request, response);
     return response;
   } catch (error) {
     return appDbErrorResponse(error);

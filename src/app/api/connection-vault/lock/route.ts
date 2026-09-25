@@ -12,6 +12,6 @@ export const runtime = "nodejs";
 export function POST(request: NextRequest) {
   clearSession(readSessionToken(request));
   const response = NextResponse.json({ ok: true, unlocked: false });
-  clearSessionCookie(response);
+  clearSessionCookie(request, response);
   return response;
 }

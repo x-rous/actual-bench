@@ -153,9 +153,27 @@ Open **App Health** (Tools sidebar) and confirm:
 - The **Automations** section shows the credential vault's state and where its key comes from,
   enrolled connections, and each automation's health.
 
+## Access control
+
+Actual Bench has **no login of its own** yet. Anyone who can reach it can use it, including its
+automations, backups and saved connections. Never expose it to the internet on its own:
+
+- Put an authentication layer in front of it: your proxy's basic auth, an identity provider such as
+  Authelia or Authentik, or a VPN such as Tailscale.
+- When a proxy is the public entry point, don't also publish port `3000` on the host. Anyone could
+  reach it directly and bypass the proxy.
+
+Actual Bench refuses state-changing API requests sent from other websites, so a page you visit can't
+act on a Bench instance it can reach through your browser, even one that is only on your LAN.
+
 ## Production hardening
 
 - Terminate **HTTPS** at the proxy. Plain HTTP stops at localhost.
+- Enable **HSTS** at the proxy (for example `Strict-Transport-Security: max-age=31536000`) once the
+  hostname is HTTPS-only, and use its modern TLS defaults. Actual Bench doesn't send HSTS itself,
+  because it also runs over plain HTTP on a LAN.
+- Actual Bench sends its own browser security headers (`X-Frame-Options`, `X-Content-Type-Options`,
+  `Referrer-Policy`, `Permissions-Policy`). Don't strip them at the proxy.
 - If you set `ACTUAL_BENCH_VAULT_KEY`, keep it out of the image and out of git. Use your platform's
   secret manager.
 - Persist `/data`, back it up, and lock down its permissions. It holds the generated vault key
@@ -174,6 +192,7 @@ replicas.
 
 - [ ] Pinned image `:<version>` chosen.
 - [ ] `/data` volume mounted, writable, and backed up.
+- [ ] Authentication in front of Actual Bench; port `3000` not published beside the proxy.
 - [ ] HTTPS terminated at the proxy; host/protocol headers forwarded.
 - [ ] Direct mode: browser can reach Actual Server; CORS / cross-origin isolation satisfied.
 - [ ] HTTP mode: Actual Bench container can reach `actual-http-api`.
