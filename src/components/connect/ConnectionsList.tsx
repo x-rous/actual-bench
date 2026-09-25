@@ -45,6 +45,7 @@ export function ConnectionsList({
   onOpenBudget,
   onOpenServer,
   onForgetInstance,
+  onLocked,
   busy,
 }: {
   vault: Vault;
@@ -59,6 +60,8 @@ export function ConnectionsList({
   onOpenServer: (server: ServerCredentialMeta) => Promise<void>;
   /** Drop a session connection from memory. */
   onForgetInstance: (id: string) => void;
+  /** The vault was just locked: the form lets go of anything saved it holds. */
+  onLocked?: () => void;
   busy: boolean;
 }) {
   const [passphrase, setPassphrase] = useState("");
@@ -109,6 +112,7 @@ export function ConnectionsList({
     setLocking(true);
     try {
       await vault.lock();
+      onLocked?.();
       toast.success("Vault locked.");
     } catch (err) {
       toast.error(parseApiError(err));

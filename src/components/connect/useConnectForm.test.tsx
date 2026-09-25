@@ -260,12 +260,15 @@ describe("useConnectForm connection activation", () => {
       result.current.handleSelectServer(server);
     });
 
-    expect(result.current.serverPassword).toBe("password");
+    // Used for the server call, never put in the field.
+    expect(result.current.serverPassword).toBe("");
     await waitFor(() => expect(result.current.budgets).toHaveLength(1));
     expect(mockLoadBrowserApiBudgetList).toHaveBeenCalledWith({
       serverUrl: "https://actual.example.com",
       serverPassword: "password",
     });
+    expect(result.current.heldCredential).toMatchObject({ source: "session" });
+    expect(result.current.serverPassword).toBe("");
   });
 
   it("allows a Direct budget that exposes id instead of groupId", async () => {
@@ -327,8 +330,211 @@ describe("useConnectForm connection activation", () => {
     });
 
     await waitFor(() => expect(result.current.budgets).toHaveLength(1));
-    await waitFor(() => expect(result.current.encryptionPassword).toBe("enc-secret"));
+    // Held, not put in the field: the form says a saved one will be used.
+    await waitFor(() => expect(result.current.encryptionSaved).toBe(true));
+    expect(result.current.encryptionPassword).toBe("");
     expect(mockRevealServerSecret).toHaveBeenCalledWith(expect.any(String), "budget-1");
+
+    // And connecting uses it.
+    mockTestConnection.mockResolvedValue(undefined);
+    act(() => {
+      result.current.handleConnect();
+    });
+    await expectActiveInstance({ budgetSyncId: "budget-1", mode: "http-api" });
+    expect(useConnectionStore.getState().instances[0]).toMatchObject({ encryptionPassword: "enc-secret" });
+  });
+
+  it("takes a typed password out of the field once the budgets load, and keeps it out after Back", async () => {
+    mockLoadBrowserApiBudgetList.mockResolvedValue({ budgets: [{ groupId: "budget-1", name: "One" }], serverVersion: null });
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+
+    act(() => {
+      result.current.setBaseUrl("https://actual.example.com");
+      result.current.setServerPassword("typed-secret");
+    });
+    act(() => {
+      result.current.handleValidate();
+    });
+    await waitFor(() => expect(result.current.budgets).toHaveLength(1));
+
+    expect(result.current.serverPassword).toBe("");
+    expect(result.current.heldCredential).toMatchObject({ source: "entered", mode: "browser-api" });
+
+    // Back to step 1: the password is still held, still not in the field, and
+    // loading the budgets again needs nothing typed.
+    act(() => {
+      result.current.resetStep2();
+    });
+    expect(result.current.serverPassword).toBe("");
+    act(() => {
+      result.current.handleValidate();
+    });
+    await waitFor(() => expect(result.current.budgets).toHaveLength(1));
+    expect(mockLoadBrowserApiBudgetList).toHaveBeenLastCalledWith({
+      serverUrl: "https://actual.example.com",
+      serverPassword: "typed-secret",
+    });
+
+    // "Use a different password" forgets it.
+    act(() => {
+      result.current.chooseDifferentCredential();
+    });
+    expect(result.current.heldCredential).toBeNull();
+  });
+
+  it("does not keep, or show, a password the server refused", async () => {
+    mockLoadBrowserApiBudgetList.mockRejectedValue(new Error("Authentication failed"));
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+
+    act(() => {
+      result.current.setBaseUrl("https://actual.example.com");
+      result.current.setServerPassword("wrong");
+    });
+    act(() => {
+      result.current.handleValidate();
+    });
+    await waitFor(() => expect(result.current.validateStatus.kind).toBe("error"));
+
+    expect(result.current.serverPassword).toBe("");
+    expect(result.current.heldCredential).toBeNull();
+  });
+
+  it("opens another budget on a saved server without putting its password in the form", async () => {
+    mockRevealServerSecret.mockResolvedValue({
+      mode: "browser-api",
+      baseUrl: "https://actual.example.com",
+      label: "",
+      secret: { apiKey: null, serverPassword: "vault-secret", encryptionPassword: null },
+    });
+    mockLoadBrowserApiBudgetList.mockResolvedValue({ budgets: [{ groupId: "budget-1", name: "One" }], serverVersion: null });
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+
+    await act(async () => {
+      await result.current.startFromRememberedServer({
+        serverFingerprint: "fp",
+        mode: "browser-api",
+        baseUrl: "https://actual.example.com",
+        label: "",
+        createdAt: "",
+        updatedAt: "",
+      });
+    });
+
+    expect(mockLoadBrowserApiBudgetList).toHaveBeenCalledWith({
+      serverUrl: "https://actual.example.com",
+      serverPassword: "vault-secret",
+    });
+    expect(result.current.heldCredential).toMatchObject({ source: "saved" });
+    act(() => {
+      result.current.resetStep2();
+    });
+    expect(result.current.serverPassword).toBe("");
+    expect(result.current.apiKey).toBe("");
+  });
+
+  it("uses a vault-saved server's password from its chip once unlocked, and never while locked", async () => {
+    const remembered = {
+      serverFingerprint: "fp",
+      mode: "browser-api" as const,
+      baseUrl: "https://actual.example.com",
+      label: "Home",
+      createdAt: "",
+      updatedAt: "",
+    };
+    mockRevealServerSecret.mockResolvedValue({
+      mode: "browser-api",
+      baseUrl: "https://actual.example.com",
+      label: "",
+      secret: { apiKey: null, serverPassword: "vault-secret", encryptionPassword: null },
+    });
+    mockLoadBrowserApiBudgetList.mockResolvedValue({ budgets: [{ groupId: "budget-1", name: "One" }], serverVersion: null });
+
+    const client = new QueryClient();
+    const locked = renderHook(() => useConnectForm({ rememberedServers: [remembered], vaultLocked: true }), {
+      wrapper: makeWrapper(client),
+    });
+    // The vault's server is offered as a chip, marked as saved...
+    const [chip] = locked.result.current.savedServersForMode;
+    expect(chip).toMatchObject({ baseUrl: "https://actual.example.com", remembered });
+    // ...but a saved connection is not used while the vault is locked.
+    act(() => {
+      locked.result.current.handleSelectServer(chip);
+    });
+    expect(mockRevealServerSecret).not.toHaveBeenCalled();
+    expect(locked.result.current.baseUrl).toBe("");
+
+    const unlocked = renderHook(() => useConnectForm({ rememberedServers: [remembered], vaultLocked: false }), {
+      wrapper: makeWrapper(client),
+    });
+    act(() => {
+      unlocked.result.current.handleSelectServer(unlocked.result.current.savedServersForMode[0]);
+    });
+    await waitFor(() => expect(unlocked.result.current.budgets).toHaveLength(1));
+    expect(unlocked.result.current.heldCredential).toMatchObject({ source: "saved" });
+    expect(unlocked.result.current.serverPassword).toBe("");
+  });
+
+  it("does not reuse an open connection's password from a chip while the vault is locked", () => {
+    useConnectionStore.getState().addInstance({
+      id: "direct-1",
+      mode: "browser-api",
+      label: "Budget One",
+      baseUrl: "https://actual.example.com",
+      serverPassword: "password",
+      budgetSyncId: "budget-1",
+    });
+    useSavedServersStore.getState().addServer({
+      mode: "browser-api",
+      label: "actual.example.com",
+      baseUrl: "https://actual.example.com",
+    });
+    const [server] = useSavedServersStore.getState().servers;
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm({ vaultLocked: true }), { wrapper: makeWrapper(client) });
+    act(() => {
+      result.current.handleSelectServer(server);
+    });
+
+    expect(mockLoadBrowserApiBudgetList).not.toHaveBeenCalled();
+    expect(result.current.heldCredential).toBeNull();
+  });
+
+  it("lets go of everything it holds when the vault is locked", async () => {
+    mockLoadBrowserApiBudgetList.mockResolvedValue({ budgets: [{ groupId: "budget-1", name: "One" }], serverVersion: null });
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+    act(() => {
+      result.current.setBaseUrl("https://actual.example.com");
+      result.current.setServerPassword("typed-secret");
+    });
+    act(() => {
+      result.current.handleValidate();
+    });
+    await waitFor(() => expect(result.current.budgets).toHaveLength(1));
+
+    act(() => {
+      result.current.forgetOnLock();
+    });
+
+    expect(result.current.heldCredential).toBeNull();
+    expect(result.current.budgets).toBeNull();
+    expect(result.current.baseUrl).toBe("");
+    // Nothing left to load the budgets with: the password must be typed again.
+    act(() => {
+      result.current.setBaseUrl("https://actual.example.com");
+    });
+    act(() => {
+      result.current.handleValidate();
+    });
+    expect(result.current.validateStatus).toMatchObject({ kind: "error", message: "Actual Server password is required." });
   });
 
   it("opens a remembered budget in one click", async () => {

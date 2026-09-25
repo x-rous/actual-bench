@@ -33,6 +33,11 @@ export function getConnectionModeBadge(mode: string): string {
  * Single source of truth for all error paths in ConnectForm.
  */
 export function parseApiError(err: unknown): string {
+  // The saved-connections vault answers in plain words ("Incorrect
+  // passphrase."); it is not a server that could not be reached.
+  if (err instanceof Error && (err as { fromVault?: unknown }).fromVault === true && err.message) {
+    return err.message;
+  }
   const status =
     err && typeof err === "object" && "status" in err
       ? (err as { status: number }).status

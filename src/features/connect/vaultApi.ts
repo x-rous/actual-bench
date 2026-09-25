@@ -27,10 +27,12 @@ async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
     // Non-JSON body: fall through to a status-based error.
   }
   if (!response.ok) {
-    // The code only, never `status`: the Connect page's `parseApiError` reads a
-    // 401 status as a wrong API key.
+    // Marked as the vault's own answer, already written for people: the
+    // Connect page's `parseApiError` shows it as it is, instead of reading it
+    // as a server that could not be reached. No `status`: a 401 there would
+    // read as a wrong API key.
     const error = new Error(data?.error ?? `Request to ${input} failed (${response.status})`);
-    throw data?.code ? Object.assign(error, { code: data.code }) : error;
+    throw Object.assign(error, { fromVault: true as const }, data?.code ? { code: data.code } : {});
   }
   if (data === null) {
     throw new Error(`Request to ${input} returned a malformed response.`);
