@@ -103,15 +103,32 @@ export function nextRunPhrase(status: UnattendedStatus, nowMs: number): string {
  * API counts as enrolled for a flow saved on its Direct connection, and the
  * other way round: a server run uses whichever enrolment exists.
  */
-export type EnrolledIndex = { fingerprints: Set<string>; budgetIds: Set<string> };
+export type EnrolledIndex = {
+  fingerprints: Set<string>;
+  /** Each budget's enrolled connections, by sync ID - the flow's own or the other mode's. */
+  byBudget: Map<string, string[]>;
+};
+
+export const NO_ENROLMENTS: EnrolledIndex = { fingerprints: new Set(), byBudget: new Map() };
 
 export function enrolledIndex(credentials: ReadonlyArray<{ connectionFingerprint: string; budgetSyncId?: string }>): EnrolledIndex {
-  return {
-    fingerprints: new Set(credentials.map((credential) => credential.connectionFingerprint)),
-    budgetIds: new Set(credentials.map((credential) => credential.budgetSyncId).filter((id): id is string => !!id)),
-  };
+  const byBudget = new Map<string, string[]>();
+  for (const { connectionFingerprint, budgetSyncId } of credentials) {
+    if (budgetSyncId) byBudget.set(budgetSyncId, [...(byBudget.get(budgetSyncId) ?? []), connectionFingerprint]);
+  }
+  return { fingerprints: new Set(credentials.map((credential) => credential.connectionFingerprint)), byBudget };
 }
 
 export function isEnrolled(index: EnrolledIndex, fingerprint: string, budgetSyncId?: string): boolean {
-  return index.fingerprints.has(fingerprint) || (!!budgetSyncId && index.budgetIds.has(budgetSyncId));
+  return index.fingerprints.has(fingerprint) || (!!budgetSyncId && index.byBudget.has(budgetSyncId));
+}
+
+/**
+ * The enrolments that serve an endpoint: its own connection's, and any other
+ * enrolment of the same budget (PR-071c), so withdrawing removes the one a run
+ * would actually use.
+ */
+export function enrolmentsFor(index: EnrolledIndex, fingerprints: Array<string | undefined>, budgetSyncId?: string): string[] {
+  const own = fingerprints.filter((fingerprint): fingerprint is string => !!fingerprint && index.fingerprints.has(fingerprint));
+  return [...new Set([...own, ...(budgetSyncId ? (index.byBudget.get(budgetSyncId) ?? []) : [])])];
 }

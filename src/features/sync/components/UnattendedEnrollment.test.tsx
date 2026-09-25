@@ -66,6 +66,26 @@ describe("enrolling a flow's budgets for unattended sync", () => {
     });
   });
 
+  it("removes a budget's enrolment through the other mode, which the panel counts as enrolled", async () => {
+    // The source is connected Direct here but enrolled through HTTP API.
+    const sourceViaHttp = connectionFingerprint({ mode: "http-api", baseUrl: "https://api.example.com", budgetSyncId: "budget-1" });
+    mockedSync.getVaultStatus.mockResolvedValue({
+      enabled: true,
+      credentials: [
+        { connectionFingerprint: sourceViaHttp, budgetSyncId: "budget-1" } as never,
+        { connectionFingerprint: connectionFingerprint(target), budgetSyncId: "budget-2" } as never,
+      ],
+    });
+    mockedSync.withdrawCredential.mockResolvedValue(undefined as never);
+    renderPanel(source, target);
+
+    fireEvent.click(await screen.findByRole("button", { name: /remove stored credentials/i }));
+
+    await waitFor(() => expect(mockedSync.withdrawCredential).toHaveBeenCalledTimes(2));
+    expect(mockedSync.withdrawCredential).toHaveBeenCalledWith(sourceViaHttp);
+    expect(mockedSync.withdrawCredential).toHaveBeenCalledWith(connectionFingerprint(target));
+  });
+
   it("no longer says Direct connections cannot run unattended", async () => {
     mockedSync.getVaultStatus.mockResolvedValue({ enabled: true, credentials: [] });
     renderPanel(source, { ...source, id: "src-2", budgetSyncId: "budget-3" } as ConnectionInstance);

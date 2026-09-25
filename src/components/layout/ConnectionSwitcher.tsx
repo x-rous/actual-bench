@@ -11,6 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { getConnectionModeBadge } from "@/components/connect/utils";
+import { serverFingerprint } from "@/lib/sync/connectionRef";
 import type { SavedBudget } from "@/features/connect/savedBudgets";
 import type { ConnectionInstance, ConnectionMode } from "@/store/connection";
 import { ConnectionHealthDot } from "./ConnectionHealthDot";
@@ -46,10 +48,6 @@ function host(baseUrl: string): string {
   } catch {
     return baseUrl;
   }
-}
-
-function modeName(mode: ConnectionMode): string {
-  return mode === "browser-api" ? "Direct" : "HTTP API";
 }
 
 function matches(filter: string, name: string, baseUrl: string): boolean {
@@ -88,7 +86,7 @@ function ServerHeader({ mode, baseUrl }: { mode: ConnectionMode; baseUrl: string
     <div className="flex items-center justify-between gap-2 pt-1 pr-1.5 pb-0.5 pl-7.5 select-none" title={baseUrl}>
       <span className="truncate text-[11px] text-muted-foreground">{host(baseUrl)}</span>
       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-        {modeName(mode)}
+        {getConnectionModeBadge(mode)}
       </span>
     </div>
   );
@@ -106,7 +104,7 @@ function byServer<T>(items: T[], serverOf: (item: T) => { mode: ConnectionMode; 
   const groups = new Map<string, { mode: ConnectionMode; baseUrl: string; items: T[] }>();
   for (const item of items) {
     const { mode, baseUrl } = serverOf(item);
-    const key = `${mode} ${baseUrl.trim().replace(/\/+$/, "").toLowerCase()}`;
+    const key = serverFingerprint({ mode, baseUrl });
     const group = groups.get(key) ?? { mode, baseUrl, items: [] };
     group.items.push(item);
     groups.set(key, group);
@@ -151,7 +149,7 @@ export function ConnectionSwitcher({
     <DropdownMenu onOpenChange={(open) => !open && setFilter("")}>
       <DropdownMenuTrigger
         className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-        title={`${active.label} - ${modeName(active.mode)} · ${host(active.baseUrl)}`}
+        title={`${active.label} - ${getConnectionModeBadge(active.mode)} · ${host(active.baseUrl)}`}
       >
         {connectingTo ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <ConnectionHealthDot />}
         <span className="max-w-56 truncate text-muted-foreground">

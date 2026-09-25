@@ -18,7 +18,7 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
 import type { MergedBudget, MergedServer } from "./mergeConnections";
-import { deriveLabel, parseApiError } from "./utils";
+import { deriveLabel, getConnectionModeBadge, parseApiError } from "./utils";
 import {
   VAULT_UNLOCK_DURATION_OPTIONS,
   type VaultUnlockDuration,
@@ -200,7 +200,10 @@ export function ConnectionsList({
       try {
         await vault.forgetBudget(server.serverFingerprint, budget.budgetSyncId);
       } catch (err) {
+        // Stop here: going on would forget the server while this budget is
+        // still saved under it.
         toast.error(parseApiError(err));
+        return;
       }
       const savedRemaining = server.budgets.filter((b) => b.saved && b.budgetSyncId !== budget.budgetSyncId);
       if (server.savedServer && savedRemaining.length === 0) {
@@ -405,7 +408,7 @@ export function ConnectionsList({
                   {server.label || deriveLabel(server.baseUrl)}
                 </span>
                 <span className="shrink-0 rounded-full border bg-muted/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                  {isDirect ? "Direct" : "HTTP API"}
+                  {getConnectionModeBadge(server.mode)}
                 </span>
                 <span className="flex-1" />
                 <button

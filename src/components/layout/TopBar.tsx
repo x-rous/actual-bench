@@ -27,8 +27,8 @@ import { getTransport } from "@/lib/actual";
 import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionSwitcher } from "./ConnectionSwitcher";
-import { connectSavedBudget, useSavedBudgets, type SavedBudget } from "@/features/connect/savedBudgets";
-import { UnlockVaultDialog } from "@/features/connect/UnlockVaultDialog";
+import type { SavedBudget } from "@/features/connect/savedBudgets";
+import { useSavedBudgetSwitcher } from "@/features/connect/useSavedBudgetSwitcher";
 import { useSavedServersStore } from "@/store/savedServers";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
 import {
@@ -106,12 +106,6 @@ export function TopBar() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  // Saved budgets not connected yet (PR-071b), and the one waiting on an unlock.
-  const savedBudgets = useSavedBudgets();
-  const [unlockFor, setUnlockFor] = useState<SavedBudget | null>(null);
-  // The unlock asked for from the switcher itself, with nothing waiting on it.
-  const [unlockOpen, setUnlockOpen] = useState(false);
-  const [connectingTo, setConnectingTo] = useState<string | null>(null);
   // Set when a recovery point could not be taken before a risky save, so the
   // user can decide whether to go ahead without one.
   const [recoveryPointWarning, setRecoveryPointWarning] = useState<string | null>(null);
@@ -183,6 +177,15 @@ export function TopBar() {
     }
   }
 
+  // Saved budgets not connected yet (PR-071b). Staged edits are dropped and
+  // the caches cleared only once the chosen one is known to work.
+  const savedBudgets = useSavedBudgetSwitcher({
+    prepare: () => {
+      handleDiscardAll();
+      queryClient.clear();
+    },
+  });
+
   // ── Guarded action helpers ────────────────────────────────────────────────────
 
   function requestAction(action: PendingAction) {
@@ -193,38 +196,9 @@ export function TopBar() {
     }
   }
 
-  /**
-   * Open a saved budget from the switcher: connect it from the vault and make
-   * it active. Checked before it becomes active, so a server that is down, or
-   * a password that changed, leaves the current budget in place.
-   */
-  async function openSavedBudget(saved: SavedBudget) {
-    if (savedBudgets.locked) {
-      setUnlockFor(saved);
-      return;
-    }
-    setConnectingTo(saved.name);
-    const pending = toast.loading(`Connecting to ${saved.name}...`);
-    try {
-      // Checked before it becomes active; only then are staged edits dropped
-      // and the caches cleared for the new budget.
-      await connectSavedBudget(saved, { activate: true });
-      handleDiscardAll();
-      queryClient.clear();
-      toast.success(`Switched to ${saved.name}`, { id: pending });
-    } catch (err) {
-      toast.error(
-        `Could not connect to ${saved.name}: ${err instanceof Error ? err.message : "the server did not answer"}. Open it from the Connect page to check its details.`,
-        { id: pending }
-      );
-    } finally {
-      setConnectingTo(null);
-    }
-  }
-
   async function executeAction(action: PendingAction) {
     if (action.kind === "openSaved") {
-      await openSavedBudget(action.saved);
+      await savedBudgets.open(action.saved);
     } else if (action.kind === "switch") {
       handleDiscardAll();
       queryClient.clear();
@@ -440,10 +414,10 @@ export function TopBar() {
               instances={instances}
               saved={savedBudgets.saved}
               locked={savedBudgets.locked}
-              connectingTo={connectingTo}
+              connectingTo={savedBudgets.connectingTo}
               onSwitch={handleSwitchConnection}
               onOpenSaved={(saved) => requestAction({ kind: "openSaved", saved })}
-              onUnlock={() => setUnlockOpen(true)}
+              onUnlock={savedBudgets.unlock}
               onAdd={() => requestAction({ kind: "addConnection" })}
               onDisconnect={handleDisconnect}
               onDisconnectAll={() => requestAction({ kind: "disconnectAll" })}
@@ -656,20 +630,7 @@ export function TopBar() {
         </DialogContent>
       </Dialog>
 
-      <UnlockVaultDialog
-        open={unlockFor !== null || unlockOpen}
-        onOpenChange={(open) => {
-          if (open) return;
-          setUnlockFor(null);
-          setUnlockOpen(false);
-        }}
-        onUnlocked={() => {
-          const saved = unlockFor;
-          setUnlockFor(null);
-          setUnlockOpen(false);
-          if (saved) void openSavedBudget(saved);
-        }}
-      />
+      {savedBudgets.dialog}
     </>
   );
 }

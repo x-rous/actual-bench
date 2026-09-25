@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { ConnectionInstance } from "@/store/connection";
-import { connectSavedBudget, useSavedBudgets, type SavedBudget } from "./savedBudgets";
+import {
+  SAVED_BUDGETS_QUERY_KEY,
+  connectFailureMessage,
+  connectSavedBudget,
+  useSavedBudgets,
+  type SavedBudget,
+} from "./savedBudgets";
 import { UnlockVaultDialog } from "./UnlockVaultDialog";
+import { isVaultLockedError } from "./vaultApi";
 
 /**
  * For budget pickers (PR-071b): the saved budgets not connected yet, and a
@@ -19,27 +27,42 @@ export function useSavedBudgetConnector(): {
   connect: (saved: SavedBudget) => Promise<ConnectionInstance | null>;
   dialog: ReactNode;
 } {
+  const queryClient = useQueryClient();
   const { saved, locked } = useSavedBudgets();
   const [connecting, setConnecting] = useState(false);
+  const connectingRef = useRef(false);
   const [waiting, setWaiting] = useState<{ saved: SavedBudget; resolve: (value: ConnectionInstance | null) => void } | null>(
     null
   );
 
-  async function run(budget: SavedBudget): Promise<ConnectionInstance | null> {
+  const askToUnlock = (budget: SavedBudget) =>
+    new Promise<ConnectionInstance | null>((resolve) => setWaiting({ saved: budget, resolve }));
+
+  async function run(budget: SavedBudget): Promise<ConnectionInstance | null | "locked"> {
+    // One at a time: a second pick while one connects would race it.
+    if (connectingRef.current) return null;
+    connectingRef.current = true;
     setConnecting(true);
     try {
       return await connectSavedBudget(budget, { activate: false });
     } catch (err) {
-      toast.error(`Could not connect to ${budget.name}: ${err instanceof Error ? err.message : "the server did not answer"}`);
+      if (isVaultLockedError(err)) {
+        // The unlock ran out, or it was locked elsewhere: ask again, then carry on.
+        void queryClient.invalidateQueries({ queryKey: SAVED_BUDGETS_QUERY_KEY });
+        return "locked";
+      }
+      toast.error(connectFailureMessage(budget.name, err));
       return null;
     } finally {
+      connectingRef.current = false;
       setConnecting(false);
     }
   }
 
-  function connect(budget: SavedBudget): Promise<ConnectionInstance | null> {
-    if (!locked) return run(budget);
-    return new Promise((resolve) => setWaiting({ saved: budget, resolve }));
+  async function connect(budget: SavedBudget): Promise<ConnectionInstance | null> {
+    if (locked) return askToUnlock(budget);
+    const result = await run(budget);
+    return result === "locked" ? askToUnlock(budget) : result;
   }
 
   const dialog = (
@@ -53,7 +76,7 @@ export function useSavedBudgetConnector(): {
       onUnlocked={() => {
         const pending = waiting;
         setWaiting(null);
-        if (pending) void run(pending.saved).then(pending.resolve);
+        if (pending) void run(pending.saved).then((result) => pending.resolve(result === "locked" ? null : result));
       }}
     />
   );

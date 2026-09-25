@@ -31,7 +31,7 @@ import {
   rememberBudgetEncryption,
   revealServerSecret,
 } from "@/features/connect/vaultApi";
-import { buildInstanceFromRevealed } from "@/features/connect/reconnectFromVault";
+import { connectSavedBudget } from "@/features/connect/savedBudgets";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import { removeSavedServerIfUnused } from "@/lib/savedServerCleanup";
@@ -39,6 +39,7 @@ import { generateId } from "@/lib/uuid";
 import {
   normalizeUrl,
   deriveLabel,
+  getConnectionModeBadge,
   parseApiError,
   type ValidateStatus,
   type ConnectStatus,
@@ -241,6 +242,24 @@ export function useConnectForm({
     }
   }
 
+  // The server versions shown in the toolbar, read once a connection is known
+  // to work. Best effort: a version that cannot be read is left out.
+  async function readVersions(instance: ConnectionInstance): Promise<ConnectionInstance> {
+    if (isBrowserApiConnection(instance)) {
+      const version = await getTransport(instance).getServerVersion().catch(() => null);
+      return version ? { ...instance, serverVersion: version } : instance;
+    }
+    const [apiVersion, serverVersion] = await Promise.allSettled([
+      getApiVersion(instance.baseUrl, instance.apiKey),
+      getServerVersion(instance.baseUrl, instance.apiKey, instance.budgetSyncId),
+    ]);
+    return {
+      ...instance,
+      ...(apiVersion.status === "fulfilled" ? { apiVersion: apiVersion.value } : {}),
+      ...(serverVersion.status === "fulfilled" ? { serverVersion: serverVersion.value } : {}),
+    };
+  }
+
   // ── Reconnect saved instance ─────────────────────────────────────────────────
   // Does NOT handle errors — callers decide the UX (toast vs inline).
 
@@ -297,14 +316,6 @@ export function useConnectForm({
     });
   }
 
-  // Reconnect a remembered (vault) connection: add it to the in-memory store,
-  // then run the normal reconnect flow. The instance is rebuilt from the
-  // revealed secret by the caller.
-  function reconnectRemembered(instance: ConnectionInstance) {
-    addInstance(instance);
-    handleReconnect(instance);
-  }
-
   // Best-effort enroll into the vault after a successful connect, when the user
   // ticked "Remember". Server-scoped (RD-063): the server credential opens any of
   // its budgets, and an encryption password (if any) is remembered per-budget.
@@ -343,11 +354,31 @@ export function useConnectForm({
 
   // One-click reconnect into a remembered budget (RD-063): reveal the server
   // secret + that budget's encryption password, rebuild the connection, and go
-  // straight to the budget — no budget picker. Errors propagate to the caller.
+  // straight to the budget - no budget picker. The same path as the toolbar's
+  // saved budgets: checked before it joins the session, so a server that is
+  // down leaves nothing behind and replaces nothing. Errors propagate to the
+  // caller (the Connections list shows them inline).
   async function openRememberedBudget(server: ServerCredentialMeta, budget: RememberedBudget) {
-    const revealed = await revealServerSecret(server.serverFingerprint, budget.budgetSyncId);
-    const instance = buildInstanceFromRevealed(revealed, budget.budgetSyncId, budget.name);
-    reconnectRemembered(instance);
+    const opened = await connectSavedBudget(
+      {
+        serverFingerprint: server.serverFingerprint,
+        budgetSyncId: budget.budgetSyncId,
+        name: budget.name,
+        mode: server.mode,
+        baseUrl: server.baseUrl,
+        serverLabel: server.label,
+      },
+      {
+        activate: true,
+        prepare: async (instance) => {
+          const withVersions = await readVersions(instance);
+          discardAll();
+          queryClient.clear();
+          return withVersions;
+        },
+      }
+    );
+    toast.success(isBrowserApiConnection(opened) ? "Direct connection opened." : "Connected!");
   }
 
   // Start a connection from a remembered server (RD-063): reveal its secret,
@@ -535,10 +566,9 @@ export function useConnectForm({
         (s) => s.budgetSyncId === selected.groupId && !(s.mode === validatedMode && s.baseUrl === validatedUrl)
       );
     if (replacedExisting && !confirmSwitchRef.current) {
-      const modeLabel = (m: ConnectionMode) => (m === "browser-api" ? "Direct" : "HTTP API");
       setPendingBudgetSwitch({
         title: "Switch this budget's connection?",
-        message: `"${replacedExisting.label}" is already set up in ${modeLabel(replacedExisting.mode)} mode. Continuing switches it to ${modeLabel(validatedMode)} mode and discards any unsaved changes.`,
+        message: `"${replacedExisting.label}" is already set up in ${getConnectionModeBadge(replacedExisting.mode)} mode. Continuing switches it to ${getConnectionModeBadge(validatedMode)} mode and discards any unsaved changes.`,
         destructiveLabel: "Switch mode",
         onConfirm: () => {
           confirmSwitchRef.current = true;
@@ -607,8 +637,9 @@ export function useConnectForm({
       };
       setConnectStatus({ kind: "busy" });
       try {
-        await maybeRemember(freshInstance);
+        // Checked first, so a wrong key is never remembered.
         await reconnect(freshInstance);
+        await maybeRemember(freshInstance);
         setConnectStatus({ kind: "idle" });
       } catch (err) {
         const status =
@@ -735,7 +766,6 @@ export function useConnectForm({
     // Remembered connections (RD-061)
     rememberOnServer,
     setRememberOnServer,
-    reconnectRemembered,
     // Remembered servers (RD-063)
     startFromRememberedServer,
     openRememberedBudget,

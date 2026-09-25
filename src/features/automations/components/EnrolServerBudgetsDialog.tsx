@@ -67,6 +67,18 @@ export function EnrolServerBudgetsDialog({
 
   const setRow = (id: string, state: RowState) => setRows((current) => ({ ...current, [id]: state }));
 
+  // Closing forgets what was typed and chosen: encryption passwords are not
+  // kept once the dialog is gone, and old row messages do not greet the next
+  // open.
+  function setOpen(next: boolean) {
+    if (!next) {
+      setSelected(new Set());
+      setPasswords({});
+      setRows({});
+    }
+    onOpenChange(next);
+  }
+
   async function enrolChosen() {
     setRunning(true);
     const done: ServerBudget[] = [];
@@ -86,6 +98,12 @@ export function EnrolServerBudgetsDialog({
           });
           setRow(budget.budgetSyncId, { kind: "enrolled" });
           toggle(budget.budgetSyncId, false);
+          // Stored on the server now; the browser does not need it any more.
+          setPasswords((current) => {
+            const { [budget.budgetSyncId]: _used, ...rest } = current;
+            void _used;
+            return rest;
+          });
           done.push(budget);
         } catch (error) {
           failed = true;
@@ -105,11 +123,11 @@ export function EnrolServerBudgetsDialog({
       onEnrolled(done);
       toast.success(done.length === 1 ? `${done[0].name} enrolled` : `${done.length} budgets enrolled`);
     }
-    if (!failed) onOpenChange(false);
+    if (!failed) setOpen(false);
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !running && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => !running && setOpen(next)}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Enrol budgets on this server</DialogTitle>
@@ -183,7 +201,7 @@ export function EnrolServerBudgetsDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={running}>
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={running}>
             Close
           </Button>
           <Button size="sm" onClick={() => void enrolChosen()} disabled={running || chosen.length === 0 || missingPassword}>

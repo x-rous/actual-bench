@@ -363,6 +363,66 @@ describe("useConnectForm connection activation", () => {
     });
   });
 
+  it("adds nothing when a remembered budget cannot be reached", async () => {
+    mockRevealServerSecret.mockResolvedValue({
+      mode: "http-api",
+      baseUrl: "https://api.example.com",
+      label: "",
+      secret: { apiKey: "the-key", serverPassword: null, encryptionPassword: null },
+    });
+    mockTestConnection.mockRejectedValue(Object.assign(new Error("down"), { status: 502 }));
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+
+    // Checked before it joins the session: no dead connection is left behind,
+    // and none becomes active (which would leave the Connect page for it).
+    await expect(
+      result.current.openRememberedBudget(
+        { serverFingerprint: "fp", mode: "http-api", baseUrl: "https://api.example.com", label: "Home", createdAt: "", updatedAt: "" },
+        { serverFingerprint: "fp", budgetSyncId: "b1", name: "Main", createdAt: "", lastOpenedAt: "" }
+      )
+    ).rejects.toThrow("down");
+    expect(useConnectionStore.getState().instances).toHaveLength(0);
+    expect(useConnectionStore.getState().activeInstanceId).toBeNull();
+  });
+
+  it("never remembers an API key the server refused", async () => {
+    useConnectionStore.getState().addInstance({
+      id: "existing",
+      mode: "http-api",
+      label: "Budget One",
+      baseUrl: "https://api.example.com",
+      budgetSyncId: "budget-1",
+      apiKey: "old-key",
+    });
+    useConnectionStore.getState().setActiveInstance(null);
+    mockListBudgets.mockResolvedValue([{ groupId: "budget-1", cloudFileId: "budget-1", name: "Budget One" }]);
+    mockTestConnection.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+
+    act(() => {
+      result.current.handleModeChange("http-api");
+      result.current.setBaseUrl("https://api.example.com");
+      result.current.setApiKey("rotated-key");
+      result.current.setRememberOnServer(true);
+    });
+    act(() => {
+      result.current.handleValidate();
+    });
+    await waitFor(() => expect(result.current.budgets).toHaveLength(1));
+
+    act(() => {
+      result.current.handleConnect();
+    });
+
+    await waitFor(() => expect(mockTestConnection).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.validateStatus.kind).toBe("error"));
+    expect(mockRememberServer).not.toHaveBeenCalled();
+  });
+
   it("prompts to switch when connecting a budget already saved via a different mode", async () => {
     mockListBudgets.mockResolvedValue([{ groupId: "budget-1", cloudFileId: "budget-1", name: "Budget One" }]);
     mockGetApiVersion.mockResolvedValue("1.2.3");

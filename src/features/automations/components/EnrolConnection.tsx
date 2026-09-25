@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { getConnectionModeBadge } from "@/components/connect/utils";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection } from "@/store/connection";
 import { enrollCredential, getVaultStatus } from "@/features/sync/lib/syncApi";
@@ -86,7 +87,7 @@ export function EnrolConnection({
     onSuccess: (result) => {
       toast.success(
         result.switchedFrom
-          ? `${connection?.label ?? "This budget"} now runs through ${connection && isHttpApiConnection(connection) ? "HTTP API" : "Direct"}`
+          ? `${connection?.label ?? "This budget"} now runs through ${getConnectionModeBadge(connection?.mode ?? "browser-api")}`
           : `${connection?.label ?? "This budget"} is set up for scheduled runs`
       );
       void queryClient.invalidateQueries({ queryKey: ["vault-status"] });
@@ -136,7 +137,7 @@ export function EnrolConnection({
         <div className="flex flex-wrap items-center gap-2">
           <span className="min-w-0 flex-1">
             <span className="font-medium">
-              {connection.label} is set up for scheduled runs through {otherMode === "http-api" ? "HTTP API" : "Direct"}.
+              {connection.label} is set up for scheduled runs through {getConnectionModeBadge(otherMode)}.
             </span>{" "}
             {direct
               ? "Direct is recommended: it needs no extra service and reports bank sync results in full. Switching moves this budget's automations to Direct."

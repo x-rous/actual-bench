@@ -9,7 +9,15 @@ import { isHttpApiConnection, type ConnectionInstance } from "@/store/connection
 import { enrollCredential, getVaultStatus, runFlowNow, withdrawCredential } from "../lib/syncApi";
 import type { SyncEndpointForm } from "../lib/flowForm";
 import { useFlowAutomations } from "../hooks/useFlowAutomations";
-import { computeUnattendedStatus, enrolledIndex, isEnrolled, nextRunPhrase, type EnrolledIndex } from "../lib/unattendedStatus";
+import {
+  computeUnattendedStatus,
+  enrolledIndex,
+  enrolmentsFor,
+  isEnrolled,
+  nextRunPhrase,
+  NO_ENROLMENTS,
+  type EnrolledIndex,
+} from "../lib/unattendedStatus";
 
 /**
  * Credential enrollment for unattended server sync (RD-058 / PR-024d). Shown when
@@ -48,7 +56,7 @@ export function UnattendedEnrollment({
   onRan?: () => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [enrolled, setEnrolled] = useState<EnrolledIndex>({ fingerprints: new Set(), budgetIds: new Set() });
+  const [enrolled, setEnrolled] = useState<EnrolledIndex>(NO_ENROLMENTS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -125,12 +133,11 @@ export function UnattendedEnrollment({
     setBusy(true);
     setError(null);
     try {
-      // The flow's own enrolments: its saved connections, and the connected
-      // ones it may have been enrolled under.
+      // The flow's own enrolments - its saved connections and the connected
+      // ones - and its budgets' enrolments through the other mode, which the
+      // panel counts as enrolled too (PR-071c).
       const fingerprints = new Set(
-        endpoints.flatMap((endpoint) => [endpoint.fingerprint, endpoint.own]).filter(
-          (fingerprint): fingerprint is string => !!fingerprint && enrolled.fingerprints.has(fingerprint)
-        )
+        endpoints.flatMap((endpoint) => enrolmentsFor(enrolled, [endpoint.fingerprint, endpoint.own], endpoint.budgetSyncId))
       );
       for (const fingerprint of fingerprints) {
         await withdrawCredential(fingerprint);

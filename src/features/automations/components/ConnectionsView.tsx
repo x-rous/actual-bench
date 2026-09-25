@@ -10,8 +10,9 @@ import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog
 import { PageLayout } from "@/components/layout/PageLayout";
 import { cn } from "@/lib/utils";
 import { withdrawCredential } from "@/features/sync/lib/syncApi";
-import { connectionFingerprint } from "@/lib/sync/connectionRef";
-import { isHttpApiConnection, selectActiveInstance, useConnectionStore } from "@/store/connection";
+import { connectionFingerprint, serverFingerprint } from "@/lib/sync/connectionRef";
+import { getConnectionModeBadge } from "@/components/connect/utils";
+import { isHttpApiConnection, selectActiveInstance, useConnectionStore, type ConnectionMode } from "@/store/connection";
 import {
   listEnrolledConnections,
   listServerBudgets,
@@ -42,15 +43,11 @@ const headerCell = "px-3 py-1.5 text-left text-[11px] font-semibold uppercase tr
 /** A server's budget list is cached this long, so opening the page does not sign in every time. */
 const SERVER_BUDGETS_STALE_MS = 5 * 60_000;
 
-function modeName(mode: string | undefined): string {
-  return mode === "http-api" ? "HTTP API" : "Direct";
-}
-
 /** One entry per server: the first enrolled budget on it stands for the server. */
 function enrolledServers(connections: EnrolledConnection[]): EnrolledConnection[] {
   const seen = new Set<string>();
   return connections.filter((connection) => {
-    const key = `${connection.mode} ${connection.baseUrl.trim().replace(/\/+$/, "").toLowerCase()}`;
+    const key = serverFingerprint({ mode: connection.mode as ConnectionMode, baseUrl: connection.baseUrl });
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -86,7 +83,7 @@ function OtherServerBudgets({
     <li className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
       <span className="min-w-0 flex-1">
         <span className="font-medium">{server.baseUrl}</span>
-        <span className="ml-1.5 text-muted-foreground">({modeName(server.mode)})</span>
+        <span className="ml-1.5 text-muted-foreground">({getConnectionModeBadge(server.mode)})</span>
         <span className="block text-muted-foreground">
           {query.isLoading
             ? "Looking for other budgets on this server..."
@@ -280,7 +277,7 @@ export function ConnectionsView() {
                       </td>
                       <td className="px-3 py-1.5 text-muted-foreground">
                         {connection.baseUrl}
-                        <span className="ml-1.5 rounded bg-muted px-1 py-px text-[10px]">{modeName(connection.mode)}</span>
+                        <span className="ml-1.5 rounded bg-muted px-1 py-px text-[10px]">{getConnectionModeBadge(connection.mode)}</span>
                       </td>
                       <td className="px-3 py-1.5 text-muted-foreground">
                         {formatDateTime(connection.enrolledAt)}

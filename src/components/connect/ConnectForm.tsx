@@ -24,6 +24,7 @@ import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useIsHydrated } from "@/hooks/useIsHydrated";
 import { useConnectForm } from "./useConnectForm";
 import { useConnectionVault } from "@/features/connect/useConnectionVault";
+import { joinSavedBudgets } from "@/features/connect/savedBudgets";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConnectionsList } from "./ConnectionsList";
 import { mergeConnections } from "./mergeConnections";
@@ -42,13 +43,7 @@ export function ConnectForm() {
   // Budgets already reachable via a saved (vault) connection — lets us warn when
   // reconnecting the same budget through a different mode/URL.
   const savedBudgets = useMemo(
-    () =>
-      vault.budgets.flatMap((b) => {
-        const srv = vault.servers.find((s) => s.serverFingerprint === b.serverFingerprint);
-        return srv
-          ? [{ budgetSyncId: b.budgetSyncId, mode: srv.mode, baseUrl: srv.baseUrl, label: b.name || deriveLabel(srv.baseUrl) }]
-          : [];
-      }),
+    () => joinSavedBudgets(vault.servers, vault.budgets).map((budget) => ({ ...budget, label: budget.name })),
     [vault.budgets, vault.servers]
   );
 

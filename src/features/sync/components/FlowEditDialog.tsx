@@ -5,6 +5,7 @@ import { ArrowRight, Download, Info, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { getConnectionModeBadge } from "@/components/connect/utils";
 import {
   Dialog,
   DialogContent,
@@ -143,7 +144,7 @@ function InlineEndpoint({
           <optgroup label={savedConnector.locked ? "Saved (unlock to open)" : "Saved"}>
             {savedConnector.saved.map((saved) => (
               <option key={savedValue(saved)} value={savedValue(saved)}>
-                {saved.name} ({saved.mode === "browser-api" ? "Direct" : "HTTP API"})
+                {saved.name} ({getConnectionModeBadge(saved.mode)})
               </option>
             ))}
           </optgroup>

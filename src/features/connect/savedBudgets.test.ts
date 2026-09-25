@@ -4,7 +4,7 @@
 import { useConnectionStore, type ConnectionInstance } from "@/store/connection";
 import * as reconnect from "./reconnectFromVault";
 import * as vaultApi from "./vaultApi";
-import { connectSavedBudget, isConnected, type SavedBudget } from "./savedBudgets";
+import { connectFailureMessage, connectSavedBudget, isConnected, joinSavedBudgets, type SavedBudget } from "./savedBudgets";
 
 jest.mock("./vaultApi");
 jest.mock("./reconnectFromVault", () => ({
@@ -72,6 +72,64 @@ describe("connecting a saved budget (PR-071b)", () => {
     await expect(connectSavedBudget(saved, { activate: true })).rejects.toThrow("Authentication failed");
     expect(useConnectionStore.getState().instances).toEqual([current]);
     expect(useConnectionStore.getState().activeInstanceId).toBe("c-1");
+  });
+
+  it("prepares the switch only after the check, before the budget joins the session", async () => {
+    const order: string[] = [];
+    mockedReady.mockImplementation(async () => {
+      order.push("checked");
+    });
+
+    await connectSavedBudget(saved, {
+      activate: true,
+      prepare: (instance) => {
+        order.push("prepared");
+        // Nothing has joined the session yet: the current budget is untouched.
+        expect(useConnectionStore.getState().activeInstanceId).toBe("c-1");
+        return { ...instance, serverVersion: "25.1.0" };
+      },
+    });
+
+    expect(order).toEqual(["checked", "prepared"]);
+    // What `prepare` returned is what joined the session.
+    expect(useConnectionStore.getState().instances.at(-1)).toMatchObject({ budgetSyncId: "budget-2", serverVersion: "25.1.0" });
+  });
+
+  it("never prepares a switch that will not happen", async () => {
+    mockedReady.mockRejectedValue(new Error("Authentication failed"));
+    const prepare = jest.fn((instance: ConnectionInstance) => instance);
+
+    await expect(connectSavedBudget(saved, { activate: true, prepare })).rejects.toThrow();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it("says why it could not connect in one sentence", () => {
+    expect(connectFailureMessage("Joint", new Error("Vault is locked. Unlock to reconnect."))).toBe(
+      "Could not connect to Joint: Vault is locked. Unlock to reconnect."
+    );
+    expect(connectFailureMessage("Joint", "?")).toBe("Could not connect to Joint: the server did not answer.");
+  });
+
+  it("joins saved budgets to their servers, leaving out a budget whose server is gone", () => {
+    const server = { serverFingerprint: "srv-1", mode: "http-api" as const, baseUrl: "https://api.example.com", label: "", createdAt: "", updatedAt: "" };
+    const budget = (budgetSyncId: string, serverFingerprint = "srv-1") => ({
+      serverFingerprint,
+      budgetSyncId,
+      name: "",
+      createdAt: "",
+      lastOpenedAt: "",
+    });
+
+    expect(joinSavedBudgets([server], [budget("b-1"), budget("b-2", "gone")])).toEqual([
+      {
+        serverFingerprint: "srv-1",
+        budgetSyncId: "b-1",
+        name: "b-1",
+        mode: "http-api",
+        baseUrl: "https://api.example.com",
+        serverLabel: "https://api.example.com",
+      },
+    ]);
   });
 
   it("counts a budget as connected when it is connected in either mode", () => {

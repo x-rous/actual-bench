@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import type { VaultUnlockDuration } from "@/lib/connectionVault/unlockDuration";
 import {
@@ -24,6 +25,7 @@ import {
   type RevealedServerSecret,
   type VaultStatus,
 } from "./vaultApi";
+import { SAVED_BUDGETS_QUERY_KEY } from "./savedBudgets";
 
 const CLOSED: VaultStatus = {
   supported: false,
@@ -35,15 +37,18 @@ const CLOSED: VaultStatus = {
  * Client state + actions for the remembered-server vault (RD-061 / RD-063).
  * Encapsulates status, the saved-server list, and the passphrase/enroll
  * operations so the connect UI stays thin. All actions refresh status on
- * completion.
+ * completion, and the shared saved-budgets data the toolbar and pickers read,
+ * so an unlock, lock or forget here shows there at once.
  */
 export function useConnectionVault() {
   const [status, setStatus] = useState<VaultStatus>(CLOSED);
   const [servers, setServers] = useState<ServerCredentialMeta[]>([]);
   const [budgets, setBudgets] = useState<RememberedBudget[]>([]);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const refresh = useCallback(async () => {
+    void queryClient.invalidateQueries({ queryKey: SAVED_BUDGETS_QUERY_KEY });
     try {
       const s = await getVaultStatus();
       setStatus(s);
@@ -63,7 +68,7 @@ export function useConnectionVault() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     void refresh();

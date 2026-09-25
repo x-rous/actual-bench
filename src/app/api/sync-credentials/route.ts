@@ -3,6 +3,7 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { EnrolmentRefusedError, startEnrolment } from "@/lib/credentials/enrolments";
 import { deleteSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
+import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { vaultEnabled } from "@/lib/sync/vault";
 import type { SyncCredentialInput } from "@/lib/app-db/types";
 
@@ -49,6 +50,17 @@ export async function POST(request: Request) {
     if (body.mode !== "http-api" && body.mode !== "browser-api") {
       return NextResponse.json({ error: "Unknown connection mode." }, { status: 400 });
     }
+    // The fingerprint must be the one the connection's own details give. It is
+    // the record's key, and an enrolment can use its server's saved password,
+    // so a mismatched one could overwrite another budget's enrolment with a
+    // different server's details.
+    if (body.connectionFingerprint !== connectionFingerprint({ ...body, mode: body.mode })) {
+      return NextResponse.json(
+        { error: "The connection fingerprint does not match its mode, server and budget." },
+        { status: 400 }
+      );
+    }
+
     // Without its own password or key, an enrolment uses the one saved for its
     // server (PR-071a); `startEnrolment` refuses if there is none.
     const secret = body.secret ?? {};

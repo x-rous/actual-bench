@@ -19,6 +19,7 @@ import {
   type ScheduleValue,
 } from "@/features/automations/components/SchedulePicker";
 import { useSavedBudgetConnector } from "@/features/connect/useSavedBudgetConnector";
+import { getConnectionModeBadge } from "@/components/connect/utils";
 import { EnrolConnection } from "@/features/automations/components/EnrolConnection";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
@@ -272,8 +273,7 @@ export function BackupRuleDialog({
                           key={`${saved.serverFingerprint}:${saved.budgetSyncId}`}
                           value={`saved:${saved.serverFingerprint}:${saved.budgetSyncId}`}
                         >
-                          {saved.name} - {saved.baseUrl}
-                          {saved.mode === "browser-api" ? " (Direct)" : ""}
+                          {saved.name} - {saved.baseUrl} ({getConnectionModeBadge(saved.mode)})
                         </option>
                       ))}
                     </optgroup>

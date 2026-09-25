@@ -58,8 +58,9 @@ export function UnlockVaultDialog({
           <Input
             type="password"
             autoFocus
-            autoComplete="current-password"
-            aria-label="Passphrase"
+            // As on the Connect page's unlock form.
+            autoComplete="off"
+            aria-label="Vault passphrase"
             value={passphrase}
             disabled={busy}
             onChange={(event) => setPassphrase(event.target.value)}

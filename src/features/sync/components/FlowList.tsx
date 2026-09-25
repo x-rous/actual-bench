@@ -10,6 +10,7 @@ import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsVi
 import {
   computeUnattendedStatus,
   isEnrolled,
+  NO_ENROLMENTS,
   nextRunPhrase,
   type EnginePause,
   type EnrolledIndex,
@@ -48,7 +49,7 @@ export function FlowList({
   latestRuns,
   connections,
   vaultEnabled = false,
-  enrolled = { fingerprints: new Set<string>(), budgetIds: new Set<string>() },
+  enrolled = NO_ENROLMENTS,
   enginePauses = new Map<string, EnginePause | null>(),
   onSelect,
   onCreate,
