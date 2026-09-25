@@ -1,12 +1,13 @@
 import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { openServerTransport, resolveServerConnection } from "@/lib/actual/serverTransport";
 import { enrolledConnectionFor } from "@/lib/credentials/unattendedCredentials";
+import { getVaultSummary } from "@/lib/credentials/vaultState";
+import { vaultLockedError } from "@/lib/credentials/vaultSummary";
 import { logger } from "@/lib/logger";
 import { decodeFlowPlanConfig } from "./flowConfig";
 import { createAppDbApplyStore } from "./appDbApplyStore";
 import { createAppDbPreviewStore } from "./appDbPreviewStore";
 import { runSafeSync, type SafeSyncResult } from "./safeSyncOrchestrator";
-import { vaultEnabled } from "./vault";
 import type { ApplyTransportProvider } from "./applyOrchestrator";
 import type { PreviewTransportProvider } from "./previewOrchestrator";
 import type { SqliteDatabase } from "@/lib/app-db/types";
@@ -18,14 +19,14 @@ import type { ConnectionInstance } from "@/store/connection";
  * planner/apply engine through a server-side HTTP transport and the app-DB
  * stores. Credentials come from the encrypted vault - never the client.
  *
- * Fail-safe: a disabled/locked vault or an un-enrolled connection returns a
+ * Fail-safe: a locked vault or an un-enrolled connection returns a
  * typed pre-run status (the scheduler pauses/surfaces it) instead of guessing.
  * Connections resolve to either mode (RD-095); which flows run here is decided
  * upstream, by what can be enrolled.
  */
 
 export type ServerSafeSyncBlocked = {
-  status: "vault_disabled" | "vault_locked" | "not_enrolled" | "flow_not_found";
+  status: "vault_locked" | "not_enrolled" | "flow_not_found";
   flowId: string;
   message: string;
 };
@@ -35,7 +36,6 @@ export type ServerSafeSyncResult = ServerSafeSyncBlocked | SafeSyncResult;
 /** True for a blocked (pre-run) outcome the scheduler treats as a soft failure. */
 export function isServerSafeSyncBlocked(r: ServerSafeSyncResult): r is ServerSafeSyncBlocked {
   return (
-    r.status === "vault_disabled" ||
     r.status === "vault_locked" ||
     r.status === "not_enrolled" ||
     r.status === "flow_not_found"
@@ -47,8 +47,9 @@ export async function runServerSafeSync(
   flowId: string,
   options: { onApplyStart?: () => void } = {}
 ): Promise<ServerSafeSyncResult> {
-  if (!vaultEnabled()) {
-    return { status: "vault_disabled", flowId, message: "Credential vault is disabled (SYNC_VAULT_KEY unset)." };
+  const vault = getVaultSummary(db);
+  if (vault.status !== "ready") {
+    return { status: "vault_locked", flowId, message: vaultLockedError(vault) };
   }
 
   const flow = getSyncFlow(db, flowId);

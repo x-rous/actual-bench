@@ -1,3 +1,4 @@
+import type { VaultSummary } from "@/lib/credentials/vaultSummary";
 import type {
   JsonObject,
   SyncCredentialInput,
@@ -152,7 +153,7 @@ export function updateRunItems(
 // --- Credential vault (RD-058 / PR-024) -------------------------------------
 
 /** Vault status + enrolled connection metadata (never secrets). */
-export function getVaultStatus(): Promise<{ enabled: boolean; credentials: SyncCredentialMeta[] }> {
+export function getVaultStatus(): Promise<{ vault: VaultSummary; credentials: SyncCredentialMeta[] }> {
   return jsonFetch("/api/sync-credentials");
 }
 

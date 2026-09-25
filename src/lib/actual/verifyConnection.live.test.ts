@@ -29,7 +29,7 @@ jest.mock("@/lib/logger", () => ({
 live("checking a Direct enrolment against a real server", () => {
   jest.setTimeout(180_000);
   let root: string;
-  const savedKey = process.env.SYNC_VAULT_KEY;
+  const savedKey = process.env.ACTUAL_BENCH_VAULT_KEY;
 
   function input(syncId: string, secret: Record<string, string>): VerifyConnectionInput {
     return {
@@ -45,7 +45,7 @@ live("checking a Direct enrolment against a real server", () => {
   beforeAll(() => {
     root = mkdtempSync(join(tmpdir(), "actual-bench-verify-live-"));
     process.env.ACTUAL_BENCH_RUNTIME_DIR = root;
-    process.env.SYNC_VAULT_KEY = "live-test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "live-test-operator-key";
     __configureNodeHostForTests({
       allowMainThread: true,
       // "Uploaded just now": this test never refreshes a snapshot.
@@ -60,8 +60,8 @@ live("checking a Direct enrolment against a real server", () => {
     __resetNodeHostForTests();
     jest.restoreAllMocks();
     delete process.env.ACTUAL_BENCH_RUNTIME_DIR;
-    if (savedKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = savedKey;
+    if (savedKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = savedKey;
     rmSync(root, { recursive: true, force: true });
   });
 

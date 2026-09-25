@@ -38,7 +38,7 @@ live("enrolling a Direct server's budgets from its saved password, against a rea
   let root: string;
   const crossings: CrossingLog = { toWorker: [], toParent: [] };
   const saved = {
-    key: process.env.SYNC_VAULT_KEY,
+    key: process.env.ACTUAL_BENCH_VAULT_KEY,
     db: process.env.ACTUAL_BENCH_DB_PATH,
     executor: process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR,
   };
@@ -61,7 +61,7 @@ live("enrolling a Direct server's budgets from its saved password, against a rea
     root = mkdtempSync(join(tmpdir(), "actual-bench-enrol-server-live-"));
     process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
     process.env.ACTUAL_BENCH_RUNTIME_DIR = join(root, "runtime");
-    process.env.SYNC_VAULT_KEY = "live-test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "live-test-operator-key";
     process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = "worker";
     __configureWorkerSupervisorForTests({ spawn: hostBackedSpawn(crossings).spawn });
     __configureNodeHostForTests({
@@ -84,7 +84,7 @@ live("enrolling a Direct server's budgets from its saved password, against a rea
     rmSync(root, { recursive: true, force: true });
     delete process.env.ACTUAL_BENCH_RUNTIME_DIR;
     for (const [name, value] of Object.entries({
-      SYNC_VAULT_KEY: saved.key,
+      ACTUAL_BENCH_VAULT_KEY: saved.key,
       ACTUAL_BENCH_DB_PATH: saved.db,
       ACTUAL_BENCH_AUTOMATION_EXECUTOR: saved.executor,
     })) {

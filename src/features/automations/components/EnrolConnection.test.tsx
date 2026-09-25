@@ -37,7 +37,7 @@ function renderPanel(connection: ConnectionInstance | null) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedSync.getVaultStatus.mockResolvedValue({ enabled: true, credentials: [] });
+  mockedSync.getVaultStatus.mockResolvedValue({ vault: { status: "ready" as const }, credentials: [] });
   const connection = httpConnection();
   useConnectionStore.setState({ instances: [connection], activeInstanceId: connection.id });
 });
@@ -76,7 +76,7 @@ describe("enrolling a budget for unattended access", () => {
   it("says nothing at all once the budget is enrolled", async () => {
     const connection = httpConnection();
     mockedSync.getVaultStatus.mockResolvedValue({
-      enabled: true,
+      vault: { status: "ready" as const },
       credentials: [{ connectionFingerprint: connectionFingerprint(connection) } as never],
     });
 
@@ -163,7 +163,7 @@ describe("enrolling a budget for unattended access", () => {
 
   it("offers to switch a budget enrolled through HTTP API to Direct (PR-071c)", async () => {
     mockedSync.getVaultStatus.mockResolvedValue({
-      enabled: true,
+      vault: { status: "ready" as const },
       credentials: [{ connectionFingerprint: "http-fp", budgetSyncId: "budget-1", mode: "http-api" } as never],
     });
     mockedSync.enrollCredential.mockResolvedValue({ credential: {} as never, switchedFrom: "http-api" });
@@ -185,7 +185,7 @@ describe("enrolling a budget for unattended access", () => {
 
   it("does not push an HTTP API connection over a Direct enrolment, but allows it (PR-071c)", async () => {
     mockedSync.getVaultStatus.mockResolvedValue({
-      enabled: true,
+      vault: { status: "ready" as const },
       credentials: [{ connectionFingerprint: "direct-fp", budgetSyncId: "budget-1", mode: "browser-api" } as never],
     });
     mockedSync.enrollCredential.mockResolvedValue({ credential: {} as never });
@@ -197,11 +197,12 @@ describe("enrolling a budget for unattended access", () => {
     await waitFor(() => expect(mockedSync.enrollCredential).toHaveBeenCalled());
   });
 
-  it("points at the operator step when the vault is off", async () => {
-    mockedSync.getVaultStatus.mockResolvedValue({ enabled: false, credentials: [] });
+  it("points at App Health, and offers no enrolment, while the vault is locked", async () => {
+    mockedSync.getVaultStatus.mockResolvedValue({ vault: { status: "locked", reason: "missing" }, credentials: [] });
     renderPanel(httpConnection());
 
-    expect(await screen.findByText(/SYNC_VAULT_KEY/)).toBeInTheDocument();
+    expect(await screen.findByText(/Stored credentials are locked/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /fix it in app health/i })).toHaveAttribute("href", "/app-health");
     expect(screen.queryByRole("button", { name: /enrol/i })).not.toBeInTheDocument();
   });
 });

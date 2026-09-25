@@ -6,7 +6,7 @@ import { listServerBudgets, type ServerBudget } from "@/lib/actual/serverBudgets
 import { resolveServerConnection } from "@/lib/actual/serverTransport";
 import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
 import type { ConnectionMode } from "@/store/connection";
 
 type RouteContext = { params: Promise<{ fingerprint: string }> };
@@ -25,11 +25,10 @@ const LIST_DEADLINE_MS = 60_000;
  */
 export async function GET(_request: Request, context: RouteContext) {
   try {
-    if (!vaultEnabled()) {
-      return NextResponse.json({ error: "The credential vault is disabled." }, { status: 400 });
-    }
     const { fingerprint } = await context.params;
     const db = getAppDb();
+    const locked = lockedVaultResponse(db);
+    if (locked) return locked;
     const enrolledList = listSyncCredentialMeta(db);
     const meta = enrolledList.find((entry) => entry.connectionFingerprint === fingerprint);
     if (!meta) {

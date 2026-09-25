@@ -24,6 +24,7 @@ import { browserTimezone } from "../lib/timezones";
 import { SchedulePicker, type ScheduleValue } from "./SchedulePicker";
 import { EnrolConnection } from "./EnrolConnection";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
+import { VaultLockedNotice } from "@/components/VaultLockedNotice";
 
 /**
  * Scheduling a bank sync (RD-080 / PR-045).
@@ -95,7 +96,7 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
   }, [open]);
 
   const connections = useMemo(() => vault.data?.credentials ?? [], [vault.data]);
-  const vaultEnabled = vault.data?.enabled ?? false;
+  const vaultReady = vault.data?.vault.status === "ready";
 
   // Derived rather than written from an effect: the first enrolled connection
   // is the default until someone picks another, which needs no render pass to
@@ -134,7 +135,7 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const blocked = !vaultEnabled || connections.length === 0 || linked.length === 0;
+  const blocked = !vaultReady || connections.length === 0 || linked.length === 0;
   const canSubmit = !blocked && scheduleValid && !create.isPending;
 
   return (
@@ -150,11 +151,8 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
             keeping Actual Bench open.
           </p>
 
-          {!vaultEnabled ? (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
-              This needs the credential vault. Set <code>SYNC_VAULT_KEY</code> on the server and
-              restart to enable unattended automations.
-            </p>
+          {!vault.data ? null : !vaultReady ? (
+            <VaultLockedNotice vault={vault.data.vault} />
           ) : connections.length === 0 ? (
             // Enrolling happens here rather than somewhere else: being sent to
             // another feature mid-task is the problem, not the solution.

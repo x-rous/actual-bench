@@ -51,7 +51,7 @@ describe("enrolling a flow's budgets for unattended sync", () => {
 
   it("enrols a Direct and an HTTP API budget, each with its own kind of secret, skipping one already enrolled", async () => {
     mockedSync.getVaultStatus.mockResolvedValue({
-      enabled: true,
+      vault: { status: "ready" as const },
       credentials: [{ connectionFingerprint: connectionFingerprint(target) } as never],
     });
     renderPanel(source, target);
@@ -70,7 +70,7 @@ describe("enrolling a flow's budgets for unattended sync", () => {
     // The source is connected Direct here but enrolled through HTTP API.
     const sourceViaHttp = connectionFingerprint({ mode: "http-api", baseUrl: "https://api.example.com", budgetSyncId: "budget-1" });
     mockedSync.getVaultStatus.mockResolvedValue({
-      enabled: true,
+      vault: { status: "ready" as const },
       credentials: [
         { connectionFingerprint: sourceViaHttp, budgetSyncId: "budget-1" } as never,
         { connectionFingerprint: connectionFingerprint(target), budgetSyncId: "budget-2" } as never,
@@ -87,7 +87,7 @@ describe("enrolling a flow's budgets for unattended sync", () => {
   });
 
   it("no longer says Direct connections cannot run unattended", async () => {
-    mockedSync.getVaultStatus.mockResolvedValue({ enabled: true, credentials: [] });
+    mockedSync.getVaultStatus.mockResolvedValue({ vault: { status: "ready" as const }, credentials: [] });
     renderPanel(source, { ...source, id: "src-2", budgetSyncId: "budget-3" } as ConnectionInstance);
 
     expect(await screen.findByRole("button", { name: /store credentials/i })).toBeInTheDocument();

@@ -171,7 +171,7 @@ export function buildRecoverySheet(db: SqliteDatabase, now: Date = new Date()): 
   );
   lines.push("");
   lines.push(
-    "It holds sealed credentials that only open with the same `SYNC_VAULT_KEY`. Restoring it onto a server with a different key gives you back every rule but no stored credentials, and you will be asked to enter them again."
+    "It holds sealed credentials that only open with the same vault key: the `secrets/vault.key` file beside the database, or `ACTUAL_BENCH_VAULT_KEY` if you set one. Keep that key with the rest of your data. Restoring the database without it gives you back every rule but no stored credentials: App Health will ask you to reset the vault and enter them again."
   );
   lines.push("");
 

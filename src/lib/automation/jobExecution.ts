@@ -1,6 +1,7 @@
 import { getAutomation } from "@/lib/app-db/automationRepository";
 import { getSyncCredential, hasSyncCredential } from "@/lib/credentials/unattendedCredentials";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { getVaultSummary } from "@/lib/credentials/vaultState";
+import { vaultLockedError } from "@/lib/credentials/vaultSummary";
 import { getAutomationJobType } from "./registry";
 import { createRunLogger, redactSecrets, type RunLogEntry } from "./runLogger";
 import type { AutomationCredentials, AutomationJobType, AutomationRunPhase } from "./registry";
@@ -76,8 +77,9 @@ export function resolveCredentials(db: SqliteDatabase, definition: AutomationDef
   if (definition.executionMode === "browser") return { status: "not-required" };
   if (!definition.credentialRef) return { status: "not-required" };
 
-  if (!vaultEnabled()) {
-    return { status: "unavailable", reason: "The credential vault is disabled (SYNC_VAULT_KEY is not set)." };
+  const vault = getVaultSummary(db);
+  if (vault.status !== "ready") {
+    return { status: "unavailable", reason: vaultLockedError(vault) };
   }
   if (!hasSyncCredential(db, definition.credentialRef)) {
     return {

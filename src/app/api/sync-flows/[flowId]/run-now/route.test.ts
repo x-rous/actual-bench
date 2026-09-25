@@ -28,13 +28,13 @@ import { POST } from "./route";
 describe("POST /api/sync-flows/[flowId]/run-now", () => {
   let root: string;
   const previousDbPath = process.env.ACTUAL_BENCH_DB_PATH;
-  const previousVaultKey = process.env.SYNC_VAULT_KEY;
+  const previousVaultKey = process.env.ACTUAL_BENCH_VAULT_KEY;
   let seenFlowIds: string[];
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "actual-bench-flow-run-now-"));
     process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
-    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
     seenFlowIds = [];
     registerAutomationJobType({
       type: BUDGET_FILE_SYNC_JOB_TYPE,
@@ -68,8 +68,8 @@ describe("POST /api/sync-flows/[flowId]/run-now", () => {
     rmSync(root, { recursive: true, force: true });
     if (previousDbPath === undefined) delete process.env.ACTUAL_BENCH_DB_PATH;
     else process.env.ACTUAL_BENCH_DB_PATH = previousDbPath;
-    if (previousVaultKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousVaultKey;
+    if (previousVaultKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousVaultKey;
   });
 
   function flow(reviewPolicy: string): string {
@@ -175,13 +175,15 @@ describe("POST /api/sync-flows/[flowId]/run-now", () => {
     expect(seenFlowIds).toEqual([]);
   });
 
-  it("refuses when the vault is off, since unattended sync cannot reach its credentials", async () => {
+  it("refuses while the vault is locked, since unattended sync cannot reach its credentials", async () => {
     const flowId = flow("auto_sync_unattended");
-    delete process.env.SYNC_VAULT_KEY;
+    // Credentials are stored, and the key that sealed them is gone.
+    delete process.env.ACTUAL_BENCH_VAULT_KEY;
 
     const response = await POST(new Request("http://bench.test"), context(flowId));
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { vault: unknown }).vault).toEqual({ status: "locked", reason: "missing" });
   });
 
   it("answers 404 for a flow that does not exist", async () => {

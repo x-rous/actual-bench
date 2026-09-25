@@ -6,6 +6,7 @@ import { AlertTriangle, CalendarClock, CheckCircle2, Database, HardDrive, Refres
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
+import { VaultHealth } from "./VaultHealth";
 import type { AppDbHealth } from "@/lib/app-db/types";
 import type { AppDbStorageUsage } from "@/lib/app-db/storageUsage";
 
@@ -30,7 +31,6 @@ async function fetchAppDbStorage(): Promise<AppDbStorageUsage> {
 type AutomationHealthSummary = {
   checkedAt: string;
   singleInstance: boolean;
-  vaultEnabled: boolean;
   runningIds: string[];
   /** Absent from a server that predates worker threads. */
   workers?: {
@@ -52,7 +52,7 @@ type AutomationHealthSummary = {
     stale: boolean;
   }[];
 };
-type VaultStatus = { enabled: boolean; credentials: { connectionFingerprint: string; label: string; budgetSyncId: string }[] };
+type VaultStatus = { credentials: { connectionFingerprint: string; label: string; budgetSyncId: string }[] };
 
 async function fetchAutomationHealth(): Promise<AutomationHealthSummary> {
   const res = await fetch("/api/automations/health", { cache: "no-store" });
@@ -320,7 +320,6 @@ function AutomationsCard() {
   const vault = useQuery({ queryKey: ["sync-vault-status"], queryFn: fetchVaultStatus });
 
   const report = health.data;
-  const vaultEnabled = report?.vaultEnabled ?? vault.data?.enabled ?? false;
   // An unknown status must not blank the card: the response is JSON from a
   // server that may be a different version, so the lookup is defended.
   const badge = health.isError
@@ -341,11 +340,7 @@ function AutomationsCard() {
       <dl>
         <DetailRow
           label="Credential vault"
-          value={
-            vaultEnabled
-              ? "Configured (SYNC_VAULT_KEY set)"
-              : "Disabled - automations that need stored credentials will pause until SYNC_VAULT_KEY is set"
-          }
+          value={<VaultHealth enrolledLabels={(vault.data?.credentials ?? []).map((entry) => entry.label || entry.budgetSyncId)} />}
         />
         <DetailRow label="Enrolled connections" value={vault.data ? String(vault.data.credentials.length) : "-"} />
         {report?.workers && <DetailRow label="Workers" value={<WorkersSummary workers={report.workers} />} />}

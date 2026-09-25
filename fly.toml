@@ -8,11 +8,12 @@
 # Quick start:
 #   fly launch --from https://github.com/x-rous/actual-bench --generate-name --ha=false
 #
-# No deployment environment secrets are required for a plain Direct/HTTP API
-# connection. The Actual server URL and API key are still sensitive; they are
-# entered in the browser UI and stored in session storage (cleared on tab
-# close), not set here. See docs-site/administration/configuration for
-# SYNC_VAULT_KEY / SYNC_SCHEDULER_SECRET, which do need `fly secrets set`.
+# No secrets or environment variables are required. The Actual server URL and
+# API key are entered in the browser UI, not set here. Automations' stored
+# credentials are encrypted with a vault key Bench generates on first start and
+# keeps on the /data volume (secrets/vault.key). To hold that key yourself
+# instead, `fly secrets set ACTUAL_BENCH_VAULT_KEY=...` before the first deploy;
+# see docs-site/administration/configuration.
 #
 # This app runs Actual Bench's own in-process automation scheduler (unattended
 # sync, scheduled bank sync, backups). auto_stop_machines is "off" on purpose:

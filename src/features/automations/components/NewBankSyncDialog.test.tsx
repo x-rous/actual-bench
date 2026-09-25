@@ -32,7 +32,7 @@ function account(overrides: Partial<BankSyncAccountPreview> = {}): BankSyncAccou
 describe("scheduling a bank sync", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedApi.listVaultConnections.mockResolvedValue({ enabled: true, credentials: [connection] });
+    mockedApi.listVaultConnections.mockResolvedValue({ vault: { status: "ready" as const }, credentials: [connection] });
     mockedApi.listBankSyncAccounts.mockResolvedValue([
       account(),
       account({ id: "b", name: "Savings" }),
@@ -55,7 +55,7 @@ describe("scheduling a bank sync", () => {
   it("offers to enrol the budget instead of sending you to another feature", async () => {
     // The old dialog dead-ended with a link to Budget File Sync, losing whatever
     // had been filled in.
-    mockedApi.listVaultConnections.mockResolvedValue({ enabled: true, credentials: [] });
+    mockedApi.listVaultConnections.mockResolvedValue({ vault: { status: "ready" as const }, credentials: [] });
 
     renderDialog();
 

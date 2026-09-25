@@ -7,45 +7,70 @@ import {
   openWithKey,
   sealSecret,
   sealWithKey,
-  vaultEnabled,
-  VaultDisabledError,
+  VaultLockedError,
 } from "./vault";
 import { randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // scrypt at the OWASP floor is intentionally slow; give derive-heavy tests room.
 jest.setTimeout(30000);
 
 describe("credential vault (RD-058 / PR-024a)", () => {
-  const original = process.env.SYNC_VAULT_KEY;
+  const saved = {
+    key: process.env.ACTUAL_BENCH_VAULT_KEY,
+    legacy: process.env.SYNC_VAULT_KEY,
+    db: process.env.ACTUAL_BENCH_DB_PATH,
+  };
   afterEach(() => {
-    if (original === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = original;
+    for (const [name, value] of Object.entries({
+      ACTUAL_BENCH_VAULT_KEY: saved.key,
+      SYNC_VAULT_KEY: saved.legacy,
+      ACTUAL_BENCH_DB_PATH: saved.db,
+    })) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   });
 
-  it("is disabled without SYNC_VAULT_KEY, and sealing/opening throws", () => {
-    delete process.env.SYNC_VAULT_KEY;
-    expect(vaultEnabled()).toBe(false);
-    expect(() => sealSecret("x")).toThrow(VaultDisabledError);
-    expect(() => openSecret({ ciphertext: "a", iv: "b", authTag: "c" })).toThrow(VaultDisabledError);
+  it("is locked with no key anywhere: sealing and opening throw, and nothing is generated here", () => {
+    const root = mkdtempSync(join(tmpdir(), "vault-none-"));
+    try {
+      delete process.env.ACTUAL_BENCH_VAULT_KEY;
+      delete process.env.SYNC_VAULT_KEY;
+      process.env.ACTUAL_BENCH_DB_PATH = join(root, "actual-bench.sqlite");
+      expect(() => sealSecret("x")).toThrow(VaultLockedError);
+      expect(() => openSecret({ ciphertext: "a", iv: "b", authTag: "c" })).toThrow(VaultLockedError);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
-  it("round-trips a secret when enabled", () => {
-    process.env.SYNC_VAULT_KEY = "operator-secret-123";
-    expect(vaultEnabled()).toBe(true);
+  it("opens under the old SYNC_VAULT_KEY name what the new name sealed, when they hold the same key", () => {
+    process.env.ACTUAL_BENCH_VAULT_KEY = "shared-key";
+    const sealed = sealSecret("secret");
+    delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    process.env.SYNC_VAULT_KEY = "shared-key";
+    expect(openSecret(sealed)).toBe("secret");
+  });
+
+  it("round-trips a secret", () => {
+    process.env.ACTUAL_BENCH_VAULT_KEY = "operator-secret-123";
     const sealed = sealSecret(JSON.stringify({ apiKey: "k-abc", encryptionPassword: "p" }));
     expect(sealed.ciphertext).not.toContain("k-abc"); // actually encrypted
     expect(JSON.parse(openSecret(sealed))).toEqual({ apiKey: "k-abc", encryptionPassword: "p" });
   });
 
   it("fails to open under a different key (rotation invalidates ciphertext)", () => {
-    process.env.SYNC_VAULT_KEY = "key-one";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "key-one";
     const sealed = sealSecret("secret");
-    process.env.SYNC_VAULT_KEY = "key-two";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "key-two";
     expect(() => openSecret(sealed)).toThrow();
   });
 
   it("rejects tampered ciphertext (GCM auth tag)", () => {
-    process.env.SYNC_VAULT_KEY = "key-one";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "key-one";
     const sealed = sealSecret("secret");
     const tampered = { ...sealed, ciphertext: Buffer.from("tampered").toString("base64") };
     expect(() => openSecret(tampered)).toThrow();

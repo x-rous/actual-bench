@@ -32,13 +32,13 @@ jest.mock("@/lib/logger", () => ({
 live("scheduled work on a Direct budget, against a real server", () => {
   jest.setTimeout(300_000);
   let root: string;
-  const saved = { key: process.env.SYNC_VAULT_KEY, db: process.env.ACTUAL_BENCH_DB_PATH };
+  const saved = { key: process.env.ACTUAL_BENCH_VAULT_KEY, db: process.env.ACTUAL_BENCH_DB_PATH };
 
   beforeAll(() => {
     root = mkdtempSync(join(tmpdir(), "actual-bench-direct-live-"));
     process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
     process.env.ACTUAL_BENCH_RUNTIME_DIR = join(root, "runtime");
-    process.env.SYNC_VAULT_KEY = "live-test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "live-test-operator-key";
     __configureNodeHostForTests({
       allowMainThread: true,
       // "Uploaded just now": this test never refreshes a snapshot.
@@ -64,7 +64,7 @@ live("scheduled work on a Direct budget, against a real server", () => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     delete process.env.ACTUAL_BENCH_RUNTIME_DIR;
-    for (const [name, value] of Object.entries({ SYNC_VAULT_KEY: saved.key, ACTUAL_BENCH_DB_PATH: saved.db })) {
+    for (const [name, value] of Object.entries({ ACTUAL_BENCH_VAULT_KEY: saved.key, ACTUAL_BENCH_DB_PATH: saved.db })) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }

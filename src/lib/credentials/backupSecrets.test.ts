@@ -23,18 +23,18 @@ function tempDb(): { root: string; db: SqliteDatabase } {
 describe("backup credentials", () => {
   let root: string;
   let db: SqliteDatabase;
-  const previousKey = process.env.SYNC_VAULT_KEY;
+  const previousKey = process.env.ACTUAL_BENCH_VAULT_KEY;
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-vault-key";
     ({ root, db } = tempDb());
   });
 
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
-    if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousKey;
   });
 
   it("round-trips an S3 secret", () => {
@@ -101,10 +101,11 @@ describe("backup credentials", () => {
     expect(hasBackupCredential(db, "dest-1")).toBe(false);
   });
 
-  it("refuses to store anything when the vault key is not configured", () => {
-    // Fail closed: writing a credential in the clear because the operator
-    // forgot an env var would be the worst possible fallback.
-    delete process.env.SYNC_VAULT_KEY;
+  it("refuses to store anything while the vault is locked", () => {
+    // Fail closed: writing a credential in the clear, or under a key that does
+    // not open the others, would be the worst possible fallback.
+    upsertBackupCredential(db, { ref: "dest-1", kind: "s3", secret: { accessKeyId: "a", secretAccessKey: "b" } });
+    process.env.ACTUAL_BENCH_VAULT_KEY = "a-different-key";
     expect(() =>
       upsertBackupCredential(db, { ref: "dest-2", kind: "s3", secret: { accessKeyId: "a", secretAccessKey: "b" } })
     ).toThrow();
@@ -112,7 +113,7 @@ describe("backup credentials", () => {
 
   it("cannot open a secret sealed under a different key", () => {
     upsertBackupCredential(db, { ref: "dest-1", kind: "s3", secret: { accessKeyId: "a", secretAccessKey: "b" } });
-    process.env.SYNC_VAULT_KEY = "a-different-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "a-different-key";
     expect(() => getBackupCredential(db, "dest-1")).toThrow();
   });
 

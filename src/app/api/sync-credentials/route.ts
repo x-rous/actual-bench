@@ -4,7 +4,8 @@ import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import { EnrolmentRefusedError, startEnrolment } from "@/lib/credentials/enrolments";
 import { deleteSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { getVaultSummary } from "@/lib/credentials/vaultState";
+import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
 import type { SyncCredentialInput } from "@/lib/app-db/types";
 
 export const dynamic = "force-dynamic";
@@ -14,16 +15,14 @@ export const runtime = "nodejs";
  * Credential vault API (RD-058 / PR-024a). Write-only from the client's side:
  * enroll (POST, checked first; see `enrolments/[id]`) / withdraw (DELETE) /
  * list metadata (GET). The secret is never returned - GET yields only
- * non-secret metadata + whether the vault is enabled.
+ * non-secret metadata + whether the vault is ready or locked.
  */
 
-// GET → { enabled, credentials: [metadata only] }
+// GET → { vault, credentials: [metadata only] }
 export function GET() {
   try {
-    if (!vaultEnabled()) {
-      return NextResponse.json({ enabled: false, credentials: [] });
-    }
-    return NextResponse.json({ enabled: true, credentials: listSyncCredentialMeta(getAppDb()) });
+    const db = getAppDb();
+    return NextResponse.json({ vault: getVaultSummary(db), credentials: listSyncCredentialMeta(db) });
   } catch (error) {
     return appDbErrorResponse(error);
   }
@@ -34,12 +33,8 @@ export function GET() {
 // passes (RD-095 M4).
 export async function POST(request: Request) {
   try {
-    if (!vaultEnabled()) {
-      return NextResponse.json(
-        { error: "The credential vault is disabled. Set SYNC_VAULT_KEY to enable unattended sync." },
-        { status: 400 }
-      );
-    }
+    const locked = lockedVaultResponse(getAppDb());
+    if (locked) return locked;
     const body = (await readJsonBody(request)) as SyncCredentialInput;
     if (!body?.connectionFingerprint || !body?.baseUrl || !body?.budgetSyncId) {
       return NextResponse.json(

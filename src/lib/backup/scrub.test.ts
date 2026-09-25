@@ -59,10 +59,10 @@ describe("scrubbing a destination", () => {
   let db: SqliteDatabase;
   let destination: BackupDestination;
   let policyId: string;
-  const previousKey = process.env.SYNC_VAULT_KEY;
+  const previousKey = process.env.ACTUAL_BENCH_VAULT_KEY;
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-vault-key";
     root = mkdtempSync(join(tmpdir(), "actual-bench-scrub-"));
     volume = join(root, "volume");
     mkdirSync(volume, { recursive: true });
@@ -78,8 +78,8 @@ describe("scrubbing a destination", () => {
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
-    if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousKey;
   });
 
   function store(bytes: Uint8Array, overrides: Record<string, unknown> = {}) {

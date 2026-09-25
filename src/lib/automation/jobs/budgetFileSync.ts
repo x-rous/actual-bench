@@ -203,7 +203,6 @@ export const budgetFileSyncJobType: AutomationJobType<BudgetFileSyncConfig, Budg
 
 function isBlockedStatus(status: string): boolean {
   return (
-    status === "vault_disabled" ||
     status === "vault_locked" ||
     status === "not_enrolled" ||
     status === "flow_not_found"

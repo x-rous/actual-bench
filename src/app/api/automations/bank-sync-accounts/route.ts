@@ -6,7 +6,7 @@ import { sanitizeBankSyncError } from "@/lib/actual/bankSync";
 import { getSyncCredential, listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 import { listAccountsForBankSync, isBankLinked, type BankLinkedAccount } from "@/lib/actual/bankSyncAccounts";
 import { runConnectionTask } from "@/lib/actual/connectionTasks";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
 import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
 import { connectionFromEnrolment } from "@/lib/actual/serverTransport";
 
@@ -38,11 +38,9 @@ export async function GET(request: Request) {
     if (!fingerprint) {
       return NextResponse.json({ error: "A connection is required." }, { status: 400 });
     }
-    if (!vaultEnabled()) {
-      return NextResponse.json({ error: "The credential vault is disabled." }, { status: 400 });
-    }
-
     const db = getAppDb();
+    const locked = lockedVaultResponse(db);
+    if (locked) return locked;
     const meta = listSyncCredentialMeta(db).find((entry) => entry.connectionFingerprint === fingerprint);
     if (!meta) {
       return NextResponse.json(

@@ -21,10 +21,10 @@ import { collectUnusedPassphrases, forgetPassphrase, listHeldPassphrases } from 
 describe("passphrases Bench is holding", () => {
   let root: string;
   let db: SqliteDatabase;
-  const previousKey = process.env.SYNC_VAULT_KEY;
+  const previousKey = process.env.ACTUAL_BENCH_VAULT_KEY;
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-vault-key";
     root = mkdtempSync(join(tmpdir(), "actual-bench-passphrases-"));
     db = getAppDb(join(root, "metadata.sqlite"));
   });
@@ -32,8 +32,8 @@ describe("passphrases Bench is holding", () => {
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
-    if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousKey;
   });
 
   function encryptedRule() {

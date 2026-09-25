@@ -10,10 +10,9 @@ services:
       # --- Optional settings (uncomment to use) ---
       # Server log verbosity: debug | info (default) | warn | error
       # LOG_LEVEL: info
-      # Unattended server-side sync and automation — see docs.
-      # Provide these via your secret manager, never hard-coded:
-      # SYNC_VAULT_KEY: "<strong-secret>"        # enables + encrypts the credential vault
-      # SYNC_SCHEDULER_SECRET: "<strong-secret>" # enables the external scheduler trigger endpoint
+      # Credential vault key. Optional: without it Bench generates one into
+      # /data/secrets/vault.key. Set it only to hold the key yourself:
+      # ACTUAL_BENCH_VAULT_KEY: "<strong-secret>"
     volumes:
       - actual-bench-data:/data
     restart: unless-stopped

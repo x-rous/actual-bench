@@ -27,6 +27,7 @@ import {
 
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import type { SortDirection } from "@/components/ui/sortable-header";
+import { VaultLockedPageNotice } from "@/components/VaultLockedNotice";
 import { AutomationDetail } from "./AutomationDetail";
 import {
   AutomationsFilterBar,
@@ -198,7 +199,12 @@ export function AutomationsView() {
     <PageLayout
       // The tabs are the toolbar: a title bar above three tabs is a second
       // header saying what the first tab already says.
-      header={<AutomationsTabs />}
+      header={
+        <>
+          <AutomationsTabs />
+          <VaultLockedPageNotice className="mx-3 mt-3" />
+        </>
+      }
       scrollManaged
       isLoading={automationsQuery.isLoading}
       isError={automationsQuery.isError}

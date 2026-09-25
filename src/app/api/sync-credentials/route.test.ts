@@ -49,13 +49,13 @@ async function enrolmentOf(response: Response) {
 }
 
 describe("POST /api/sync-credentials", () => {
-  const saved = { key: process.env.SYNC_VAULT_KEY, db: process.env.ACTUAL_BENCH_DB_PATH, fetch: global.fetch };
+  const saved = { key: process.env.ACTUAL_BENCH_VAULT_KEY, db: process.env.ACTUAL_BENCH_DB_PATH, fetch: global.fetch };
   let root: string;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "actual-bench-enrol-route-"));
     process.env.ACTUAL_BENCH_DB_PATH = join(root, "metadata.sqlite");
-    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
     __resetEnrolmentsForTests();
   });
   afterEach(() => {
@@ -63,7 +63,7 @@ describe("POST /api/sync-credentials", () => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
     for (const [name, value] of [
-      ["SYNC_VAULT_KEY", saved.key],
+      ["ACTUAL_BENCH_VAULT_KEY", saved.key],
       ["ACTUAL_BENCH_DB_PATH", saved.db],
     ] as const) {
       if (value === undefined) delete process.env[name];
@@ -75,9 +75,10 @@ describe("POST /api/sync-credentials", () => {
     global.fetch = jest.fn(async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
   }
 
-  it("refuses while the vault is off", async () => {
-    delete process.env.SYNC_VAULT_KEY;
-    expect((await post({ ...HTTP, secret: { apiKey: "key" } })).status).toBe(400);
+  it("refuses while the vault is locked", async () => {
+    upsertSyncCredential(getAppDb(), { ...HTTP, secret: { apiKey: "working-key" } });
+    process.env.ACTUAL_BENCH_VAULT_KEY = "a-different-key";
+    expect((await post({ ...HTTP, secret: { apiKey: "key" } })).status).toBe(409);
   });
 
   it.each([

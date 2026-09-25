@@ -45,7 +45,7 @@ export function createDestinationAdapter(
     secret = getBackupCredential(db, destination.credentialRef);
   } catch (error) {
     throw new DestinationError(
-      `Could not unseal credentials for "${destination.name}". Check that SYNC_VAULT_KEY is set to the same value it was when they were saved.`,
+      `Could not unseal credentials for "${destination.name}". The vault key may have changed since they were saved; see App Health.`,
       { cause: error }
     );
   }

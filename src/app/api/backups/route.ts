@@ -15,7 +15,7 @@ import { isAutomationRunning } from "@/lib/automation/engine";
 import { BACKUP_JOB_TYPE } from "@/lib/automation/jobs/backupType";
 import { buildBackupReadiness } from "@/lib/backup/readiness";
 import { listHeldPassphrases } from "@/lib/backup/passphrases";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { getVaultSummary } from "@/lib/credentials/vaultState";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,7 +91,7 @@ export async function GET() {
       // Secrets Bench is holding on behalf of backups that still need them —
       // never the secret itself, only what depends on it.
       heldPassphrases: listHeldPassphrases(db),
-      vaultEnabled: vaultEnabled(),
+      vault: getVaultSummary(db),
     });
   } catch (error) {
     return appDbErrorResponse(error);

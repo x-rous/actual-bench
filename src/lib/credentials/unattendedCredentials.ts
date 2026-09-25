@@ -7,8 +7,8 @@ import type {
 import { logger } from "@/lib/logger";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import { repointConnectionReferences } from "@/lib/app-db/connectionReferences";
-import { vaultEnabled } from "@/lib/sync/vault";
 import type { ConnectionMode } from "@/store/connection";
+import { getVaultSummary } from "./vaultState";
 import {
   deleteSecret,
   getSecret,
@@ -26,7 +26,7 @@ import {
  * An enrolment names one budget on one server (`unattended_connections`,
  * keyed by the connection fingerprint that automations, sync flows and backup
  * policies already point at). The secrets behind it live in the **operator**
- * domain of the credential store, sealed with `SYNC_VAULT_KEY`, and are shaped
+ * domain of the credential store, sealed with the vault key, and are shaped
  * the way the server actually authenticates:
  *
  *   * one server secret per server - an HTTP API key today, an Actual server
@@ -433,7 +433,7 @@ function upgradeLegacyRows(
  * as it was, and reported.
  */
 export function upgradeLegacyUnattendedCredentials(db: SqliteDatabase): { upgraded: number; failed: number } {
-  if (!vaultEnabled()) return { upgraded: 0, failed: 0 };
+  if (getVaultSummary(db).status !== "ready") return { upgraded: 0, failed: 0 };
   const result = upgradeLegacyRows(db, db.prepare("SELECT * FROM unattended_connections").all<ConnectionRow>(), {
     throwOnFailure: false,
   });

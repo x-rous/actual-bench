@@ -117,7 +117,7 @@ export const SYNC_PLATFORM_V3_INDEX_SQL = [
 // v4 (RD-058): encrypted credential vault for unattended server-side sync.
 // One row per enrolled connection→budget (keyed by connection fingerprint).
 // The secret blob (API key [+ encryption password]) is AES-256-GCM sealed; the
-// key comes from the SYNC_VAULT_KEY env var and is never stored here.
+// key comes from the vault key (credentials/vaultKey.ts) and is never stored here.
 export const SYNC_CREDENTIAL_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS sync_credentials (
   connection_fingerprint text PRIMARY KEY,
@@ -799,7 +799,7 @@ export const BACKUP_INDEX_SQL = [
 // Sealed secrets for backup destinations and backup encryption, kept apart from
 // the sync vault because they answer to a different question: "what does Bench
 // need to write this copy", not "what does Bench need to reach your budget".
-// Same sealing (AES-256-GCM under SYNC_VAULT_KEY); the key is never stored.
+// Same sealing (AES-256-GCM under the vault key); the key is never stored.
 export const BACKUP_CREDENTIAL_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS backup_credentials (
   ref text PRIMARY KEY,

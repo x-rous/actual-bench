@@ -442,7 +442,7 @@ export function SyncView() {
           selectedFlowId={selectedFlowId}
           latestRuns={latestRunsQuery.data ?? new Map()}
           connections={connections}
-          vaultEnabled={vaultData?.enabled ?? false}
+          vaultReady={vaultData ? vaultData.vault.status === "ready" : true}
           enrolled={enrolled}
           enginePauses={enginePauses}
           onSelect={handleSelect}

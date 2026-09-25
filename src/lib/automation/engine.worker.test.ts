@@ -60,7 +60,7 @@ describe("automations in worker threads", () => {
   const saved = {
     executor: process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR,
     dbPath: process.env.ACTUAL_BENCH_DB_PATH,
-    vault: process.env.SYNC_VAULT_KEY,
+    vault: process.env.ACTUAL_BENCH_VAULT_KEY,
   };
 
   beforeEach(() => {
@@ -82,7 +82,7 @@ describe("automations in worker threads", () => {
     for (const [key, value] of [
       ["ACTUAL_BENCH_AUTOMATION_EXECUTOR", saved.executor],
       ["ACTUAL_BENCH_DB_PATH", saved.dbPath],
-      ["SYNC_VAULT_KEY", saved.vault],
+      ["ACTUAL_BENCH_VAULT_KEY", saved.vault],
     ] as const) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -123,7 +123,7 @@ describe("automations in worker threads", () => {
   });
 
   it("never lets a secret cross the thread boundary, even in an error", async () => {
-    process.env.SYNC_VAULT_KEY = "test-operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-operator-key";
     upsertSyncCredential(db, {
       connectionFingerprint: "conn-1",
       mode: "http-api",

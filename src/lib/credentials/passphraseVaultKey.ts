@@ -12,7 +12,7 @@ import type { SqliteDatabase } from "@/lib/app-db/types";
  * lifecycle and by `rememberedCredentials` to derive the AES-256-GCM key from
  * the user's unlock passphrase. Only the salt and KDF version are persisted;
  * the passphrase and derived key are never stored. The operator domain
- * (`SYNC_VAULT_KEY`) never uses this key - see `store.ts`.
+ * (the operator vault key) never uses this key - see `store.ts`.
  *
  * Node-only; must never be imported into client code.
  */

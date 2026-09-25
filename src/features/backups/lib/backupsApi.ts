@@ -1,3 +1,4 @@
+import type { VaultSummary } from "@/lib/credentials/vaultSummary";
 import type {
   BackupArtifact,
   BackupArtifactLocation,
@@ -59,7 +60,7 @@ export type RecoveryCenterData = {
   artifacts: ArtifactWithLocations[];
   sources: BackupSource[];
   heldPassphrases: HeldPassphrase[];
-  vaultEnabled: boolean;
+  vault: VaultSummary;
 };
 
 async function readError(response: Response): Promise<never> {

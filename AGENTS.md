@@ -138,7 +138,7 @@ Never persist these in `localStorage`, `sessionStorage`, URLs, logs, analytics, 
 - API keys;
 - Actual Server passwords;
 - budget encryption passwords;
-- `SYNC_VAULT_KEY`;
+- the vault key (`ACTUAL_BENCH_VAULT_KEY`, or the generated `secrets/vault.key`);
 - decrypted unattended-sync credentials.
 
 ### Actual Bench app database
@@ -165,9 +165,10 @@ Unattended access is opt-in and server-side, for HTTP API and Direct connections
 - an HTTP API connection enrols its API key; a Direct connection enrols the Actual server's **password** (never a session token: Actual's token is shared by every client, never expires and survives a password change);
 - an enrolment is **checked against the Actual server, in a worker, before anything is stored** (`src/lib/credentials/enrolments.ts`). Unattended secrets are one per server, so storing an unchecked one could break every enrolled budget on that server;
 - credentials are encrypted at rest;
-- encryption depends on `SYNC_VAULT_KEY`;
+- encryption uses the operator vault key, resolved only in `src/lib/credentials/vaultKey.ts`: `ACTUAL_BENCH_VAULT_KEY`, then its deprecated alias `SYNC_VAULT_KEY`, then `secrets/vault.key` beside the metadata database;
+- the vault always exists (F-197). A key is generated **only** when no operator-domain secret is stored; with secrets stored, the only acceptable key is one that opens them (`vaultState.ts`). Never regenerate or overwrite a key file;
 - decrypted values never return to the browser;
-- a missing/rotated key must fail closed and surface health state;
+- a missing/wrong key is the **locked** state: fail closed, surface it in App Health, and never seal a new operator secret while locked;
 - any enrolled connection, HTTP API or Direct, can run unattended: a Direct budget opens in an automation worker through the Node host (`src/lib/actual/runtime/nodeHost.ts`), never in the web server's own thread.
 
 ### Automation jobs run in worker threads
@@ -177,14 +178,14 @@ Every automation run executes in a disposable worker thread (`src/lib/workers/`)
 - A job may only use what it gets from its context and the app DB. Nothing in a worker is shared with the server's memory: in-memory caches, `globalThis` singletons and module state belong to the worker's own copy.
 - Call `ctx.enterPhase("mutating")` (or `"external"`) immediately **before** the first write to a budget or destination, or before the first request a third party may act on. A run stopped after that point is recorded `indeterminate` and never retried; stopped before it, it simply failed. A write before the call would be misreported.
 - Honour `ctx.signal`: it carries the job's deadline and the user's cancel. A job that ignores it is ended after a grace period.
-- No secret crosses the worker boundary in plaintext. A task carries references and the worker reveals secrets itself. The one exception is a secret that is not stored yet (an enrolment being checked): it crosses sealed with `SYNC_VAULT_KEY` and is opened only inside the worker.
+- No secret crosses the worker boundary in plaintext. A task carries references and the worker reveals secrets itself. The one exception is a secret that is not stored yet (an enrolment being checked): it crosses sealed with the vault key and is opened only inside the worker.
 - Tests run jobs in-thread (`ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread` in `jest.env.cjs`). The worker path is tested with `src/lib/workers/testing/fakeWorker.ts`; the Docker smoke test checks a real worker starts in the production image.
 
 ### Credential store
 
 Every secret is a row in the app DB's `credentials` table, written and read only through `src/lib/credentials/store.ts` and the feature modules on top of it (`rememberedCredentials`, `unattendedCredentials`, `backupSecrets`). Do not add another table or module that seals secrets.
 
-- Each secret belongs to one **key domain**, fixed for its lifetime: `passphrase` (remembered credentials, opened only after the user unlocks) or `operator` (unattended and backup secrets, opened with `SYNC_VAULT_KEY`).
+- Each secret belongs to one **key domain**, fixed for its lifetime: `passphrase` (remembered credentials, opened only after the user unlocks) or `operator` (unattended and backup secrets, opened with the vault key).
 - Never add code that reads a secret in one domain and writes it in the other. Bench has no login, so an operator-domain copy of a remembered secret would make it readable by anyone who reaches the server. Enrolling a remembered server for unattended use means the user supplies the secret again.
 - A reset or withdrawal in one domain never touches the other.
 - Unattended secrets are server-scoped (one per server), with encryption passwords per budget.

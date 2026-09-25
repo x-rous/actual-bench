@@ -10,10 +10,10 @@ import { createDestinationAdapter } from "./index";
 describe("choosing an adapter", () => {
   let root: string;
   let db: SqliteDatabase;
-  const previousKey = process.env.SYNC_VAULT_KEY;
+  const previousKey = process.env.ACTUAL_BENCH_VAULT_KEY;
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-vault-key";
     root = mkdtempSync(join(tmpdir(), "actual-bench-dest-factory-"));
     db = getAppDb(join(root, "metadata.sqlite"));
   });
@@ -21,8 +21,8 @@ describe("choosing an adapter", () => {
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
-    if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = previousKey;
   });
 
   it("builds a local adapter with no credentials at all", () => {
@@ -80,7 +80,7 @@ describe("choosing an adapter", () => {
       config: { version: 1, data: { bucket: "bench" } },
     });
 
-    process.env.SYNC_VAULT_KEY = "rotated";
-    expect(() => createDestinationAdapter(db, destination)).toThrow(/SYNC_VAULT_KEY/);
+    process.env.ACTUAL_BENCH_VAULT_KEY = "rotated";
+    expect(() => createDestinationAdapter(db, destination)).toThrow(/vault key may have changed/);
   });
 });

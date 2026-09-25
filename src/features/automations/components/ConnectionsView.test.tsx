@@ -45,10 +45,10 @@ beforeEach(() => {
   jest.clearAllMocks();
   useConnectionStore.setState({ instances: [], activeInstanceId: null });
   mockedApi.listEnrolledConnections.mockResolvedValue({
-    vaultEnabled: true,
+    vault: { status: "ready" as const },
     connections: [connection()],
   });
-  mockedSync.getVaultStatus.mockResolvedValue({ enabled: true, credentials: [] });
+  mockedSync.getVaultStatus.mockResolvedValue({ vault: { status: "ready" as const }, credentials: [] });
   mockedApi.listServerBudgets.mockResolvedValue({
     server: { mode: "http-api", baseUrl: "https://budgetapi.example.com" },
     budgets: [
@@ -62,7 +62,7 @@ beforeEach(() => {
 describe("other budgets on an enrolled server (PR-071a)", () => {
   it("lists them without being asked, once per server", async () => {
     mockedApi.listEnrolledConnections.mockResolvedValue({
-      vaultEnabled: true,
+      vault: { status: "ready" as const },
       connections: [connection(), connection({ connectionFingerprint: "fp-x", budgetSyncId: "budget-x", label: "Other" })],
     });
     renderView();
@@ -110,7 +110,7 @@ describe("other budgets on an enrolled server (PR-071a)", () => {
 
   it("on a Direct server, offers to switch a budget enrolled through HTTP API (PR-071c)", async () => {
     mockedApi.listEnrolledConnections.mockResolvedValue({
-      vaultEnabled: true,
+      vault: { status: "ready" as const },
       connections: [connection({ mode: "browser-api", baseUrl: "https://actual.example.com" })],
     });
     mockedApi.listServerBudgets.mockResolvedValue({
@@ -203,7 +203,7 @@ describe("unattended access", () => {
 
   it("says plainly when nothing is using a credential", async () => {
     mockedApi.listEnrolledConnections.mockResolvedValue({
-      vaultEnabled: true,
+      vault: { status: "ready" as const },
       connections: [connection({ usedBy: [] })],
     });
 
@@ -230,7 +230,7 @@ describe("unattended access", () => {
   });
 
   it("explains the empty case rather than showing a bare table", async () => {
-    mockedApi.listEnrolledConnections.mockResolvedValue({ vaultEnabled: true, connections: [] });
+    mockedApi.listEnrolledConnections.mockResolvedValue({ vault: { status: "ready" as const }, connections: [] });
     renderView();
 
     expect(

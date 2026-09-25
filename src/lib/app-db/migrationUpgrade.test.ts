@@ -529,8 +529,8 @@ describe("upgrading an existing database", () => {
 
   it("adds sealed backup credentials to an older database (v21)", () => {
     const { root, path } = olderDatabase();
-    const previousKey = process.env.SYNC_VAULT_KEY;
-    process.env.SYNC_VAULT_KEY = "test-vault-key";
+    const previousKey = process.env.ACTUAL_BENCH_VAULT_KEY;
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-vault-key";
     try {
       const db = getAppDb(path);
 
@@ -548,8 +548,8 @@ describe("upgrading an existing database", () => {
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
-      if (previousKey === undefined) delete process.env.SYNC_VAULT_KEY;
-      else process.env.SYNC_VAULT_KEY = previousKey;
+      if (previousKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+      else process.env.ACTUAL_BENCH_VAULT_KEY = previousKey;
     }
   });
 
@@ -1059,13 +1059,13 @@ describe("upgrading an existing database", () => {
   it("moves every secret into the credential store without decrypting, each still opening with its own key (v35)", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v35-"));
     const path = join(root, "metadata.sqlite");
-    const previousVaultKey = process.env.SYNC_VAULT_KEY;
+    const previousVaultKey = process.env.ACTUAL_BENCH_VAULT_KEY;
     const userKey = randomBytes(32);
     const now = "2026-09-20T00:00:00.000Z";
 
     // Sealed the way v34 sealed them: remembered secrets with the user's key,
     // unattended and backup secrets with the operator key.
-    process.env.SYNC_VAULT_KEY = "operator-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "operator-key";
     const operatorSealed = (value: unknown) => sealSecret(JSON.stringify(value));
     const serverSealed = sealWithKey(JSON.stringify({ serverPassword: "remembered-pw" }), userKey);
     const budgetSealed = sealWithKey("remembered-enc", userKey);
@@ -1073,7 +1073,7 @@ describe("upgrading an existing database", () => {
     const s3Sealed = operatorSealed({ accessKeyId: "AKIA", secretAccessKey: "s3-secret" });
     const passphraseSealed = operatorSealed({ passphrase: "backup-pass" });
     // The migration must not need the key.
-    delete process.env.SYNC_VAULT_KEY;
+    delete process.env.ACTUAL_BENCH_VAULT_KEY;
 
     const remembered = { mode: "browser-api" as const, baseUrl: "https://actual.example.com" };
     const rememberedFp = serverFingerprint(remembered);
@@ -1143,7 +1143,7 @@ describe("upgrading an existing database", () => {
 
       // Operator secrets open once the operator key is back - the unattended
       // one split on first use into its server and budget parts.
-      process.env.SYNC_VAULT_KEY = "operator-key";
+      process.env.ACTUAL_BENCH_VAULT_KEY = "operator-key";
       expect(getSyncCredential(db, unattendedFp)?.secret).toEqual({
         apiKey: "unattended-key",
         encryptionPassword: "unattended-enc",
@@ -1165,8 +1165,8 @@ describe("upgrading an existing database", () => {
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
-      if (previousVaultKey === undefined) delete process.env.SYNC_VAULT_KEY;
-      else process.env.SYNC_VAULT_KEY = previousVaultKey;
+      if (previousVaultKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+      else process.env.ACTUAL_BENCH_VAULT_KEY = previousVaultKey;
     }
   });
 

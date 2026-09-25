@@ -6,7 +6,7 @@ import { getSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { ensureAutomationJobTypesRegistered } from "@/lib/automation/bootstrap";
 import { reconcileJobTypes, startAutomationRun } from "@/lib/automation/engine";
 import { BUDGET_FILE_SYNC_JOB_TYPE } from "@/lib/automation/jobs/budgetFileSyncType";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,14 +29,10 @@ type RouteContext = { params: Promise<{ flowId: string }> };
  */
 export async function POST(_request: Request, context: RouteContext) {
   try {
-    if (!vaultEnabled()) {
-      return NextResponse.json(
-        { error: "The server vault is disabled (SYNC_VAULT_KEY unset), so unattended sync cannot run." },
-        { status: 400 }
-      );
-    }
     const { flowId } = await context.params;
     const db = getAppDb();
+    const locked = lockedVaultResponse(db);
+    if (locked) return locked;
 
     const flow = getSyncFlow(db, flowId);
     if (!flow) return NextResponse.json({ error: "This flow no longer exists." }, { status: 404 });

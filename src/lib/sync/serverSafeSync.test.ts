@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "@/lib/app-db/connection";
 import { createSyncFlow } from "@/lib/app-db/syncFlowRepository";
 import { upsertSyncCredential } from "@/lib/credentials/unattendedCredentials";
+import { putSecret } from "@/lib/credentials/store";
 import { runServerSafeSync } from "./serverSafeSync";
 import type { JsonEnvelope, JsonObject, SqliteDatabase } from "@/lib/app-db/types";
 
@@ -43,25 +44,28 @@ function tempDb(): { root: string; db: SqliteDatabase } {
 describe("runServerSafeSync (RD-058 / PR-024b)", () => {
   let root: string;
   let db: SqliteDatabase;
-  const originalKey = process.env.SYNC_VAULT_KEY;
+  const originalKey = process.env.ACTUAL_BENCH_VAULT_KEY;
   const originalFetch = global.fetch;
 
   beforeEach(() => {
-    process.env.SYNC_VAULT_KEY = "test-key";
+    process.env.ACTUAL_BENCH_VAULT_KEY = "test-key";
     ({ root, db } = tempDb());
   });
   afterEach(() => {
     resetAppDbForTests();
     rmSync(root, { recursive: true, force: true });
-    if (originalKey === undefined) delete process.env.SYNC_VAULT_KEY;
-    else process.env.SYNC_VAULT_KEY = originalKey;
+    if (originalKey === undefined) delete process.env.ACTUAL_BENCH_VAULT_KEY;
+    else process.env.ACTUAL_BENCH_VAULT_KEY = originalKey;
     global.fetch = originalFetch;
   });
 
-  it("is blocked when the vault is disabled", async () => {
-    delete process.env.SYNC_VAULT_KEY;
+  it("is blocked while the vault is locked", async () => {
+    putSecret(db, { domain: "operator" }, { ref: "dest-1", kind: "s3", plaintext: "{}" });
+    process.env.ACTUAL_BENCH_VAULT_KEY = "a-different-key";
     const flowId = makeFlow(db);
-    expect((await runServerSafeSync(db, flowId)).status).toBe("vault_disabled");
+    const result = await runServerSafeSync(db, flowId);
+    expect(result.status).toBe("vault_locked");
+    expect("message" in result && result.message).toMatch(/App Health/);
   });
 
   it("reports flow_not_found for an unknown flow", async () => {

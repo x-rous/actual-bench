@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
+import { VaultLockedError } from "@/lib/sync/vault";
 import { AppDbUnavailableError, AppDbValidationError, errorMessage } from "./errors";
 
 export function appDbErrorResponse(error: unknown): NextResponse {
   if (error instanceof AppDbValidationError) {
     return NextResponse.json({ error: error.message, code: error.code }, { status: 400 });
+  }
+
+  // The request was fine; the server's vault is what has to change (F-197).
+  if (error instanceof VaultLockedError) {
+    return NextResponse.json({ error: error.message, code: "VAULT_LOCKED" }, { status: 409 });
   }
 
   if (error instanceof AppDbUnavailableError) {

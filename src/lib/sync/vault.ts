@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from "node:crypto";
+import { findVaultKey } from "@/lib/credentials/vaultKey";
 
 /**
  * Server-side credential vault primitives (RD-058 / PR-024a; generalized in
@@ -6,8 +7,9 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync }
  *
  * Secrets are sealed with AES-256-GCM. Two keying paths share the same
  * primitives:
- *  - **Env key** (`sealSecret`/`openSecret`): derived from the operator
- *    `SYNC_VAULT_KEY` env var, for unattended server-side sync.
+ *  - **Operator key** (`sealSecret`/`openSecret`): derived from the vault key
+ *    (`ACTUAL_BENCH_VAULT_KEY`, or the key file Bench generates - see
+ *    `credentials/vaultKey.ts`), for unattended server-side work.
  *  - **Explicit key** (`sealWithKey`/`openWithKey`): a caller-supplied 32-byte
  *    key, e.g. one derived from a user unlock passphrase for remembered
  *    connection credentials.
@@ -19,24 +21,28 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync }
 const ALGORITHM = "aes-256-gcm";
 const DERIVED_KEY_BYTES = 32;
 
-/** Thrown when a vault operation is attempted without `SYNC_VAULT_KEY` set. */
-export class VaultDisabledError extends Error {
-  constructor() {
-    super("Credential vault is disabled: set the SYNC_VAULT_KEY environment variable to enable unattended sync.");
-    this.name = "VaultDisabledError";
+/**
+ * Thrown when the operator vault has no key to use. The vault always exists
+ * (F-197); this is the locked state, whose cause and fixes `vaultState.ts`
+ * reports.
+ */
+export class VaultLockedError extends Error {
+  constructor(message = "The credential vault is locked: Bench cannot find its vault key. See App Health.") {
+    super(message);
+    this.name = "VaultLockedError";
   }
 }
 
-/** Derive a stable 32-byte key from the operator secret, or null if unset. */
-function vaultKey(): Buffer | null {
-  const secret = process.env.SYNC_VAULT_KEY;
-  if (!secret || secret.trim().length === 0) return null;
+/** Derive the 32-byte AES key from a vault key secret. */
+export function deriveOperatorKey(secret: string): Buffer {
   return createHash("sha256").update(secret, "utf8").digest();
 }
 
-/** True when the vault is configured (env key present). */
-export function vaultEnabled(): boolean {
-  return vaultKey() !== null;
+/** The operator AES key, read afresh from its source. Throws VaultLockedError if there is none. */
+function operatorKey(): Buffer {
+  const lookup = findVaultKey();
+  if (lookup.kind !== "found") throw new VaultLockedError();
+  return deriveOperatorKey(lookup.secret);
 }
 
 /** An AES-256-GCM sealed value; all fields base64. */
@@ -119,7 +125,7 @@ export function resolveKdfParams(version: number = CURRENT_KDF_VERSION): ScryptP
 /**
  * Derive a 32-byte key from a user passphrase and a per-install salt (scrypt).
  * The passphrase and derived key must never be persisted. Used by the
- * remembered-connection vault (RD-061); unrelated to `SYNC_VAULT_KEY`.
+ * remembered-connection vault (RD-061); unrelated to the operator vault key.
  */
 export function deriveKeyFromPassphrase(
   passphrase: string,
@@ -134,20 +140,17 @@ export function deriveKeyFromPassphrase(
   });
 }
 
-/** Seal plaintext with the env (`SYNC_VAULT_KEY`) key. Throws VaultDisabledError if unset. */
+/** Seal plaintext with the operator key. Throws VaultLockedError if there is none. */
 export function sealSecret(plaintext: string): SealedSecret {
-  const key = vaultKey();
-  if (!key) throw new VaultDisabledError();
-  return sealWithKey(plaintext, key);
+  return sealWithKey(plaintext, operatorKey());
 }
 
 /**
- * Open a sealed value with the env key. Throws VaultDisabledError if unset, and
- * a plain Error if the ciphertext was tampered with or the key changed (GCM auth
- * tag mismatch) - callers treat any failure as "cannot decrypt → pause".
+ * Open a sealed value with the operator key. Throws VaultLockedError if there
+ * is none, and a plain Error if the ciphertext was tampered with or the key
+ * changed (GCM auth tag mismatch) - callers treat any failure as "cannot
+ * decrypt → pause".
  */
 export function openSecret(sealed: SealedSecret): string {
-  const key = vaultKey();
-  if (!key) throw new VaultDisabledError();
-  return openWithKey(sealed, key);
+  return openWithKey(sealed, operatorKey());
 }

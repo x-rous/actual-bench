@@ -8,7 +8,7 @@ import {
 } from "@/lib/app-db/backupRepository";
 import { upsertBackupCredential } from "@/lib/credentials/backupSecrets";
 import { reconcileBackupAutomations } from "@/lib/automation/jobs/backupReconcile";
-import { vaultEnabled } from "@/lib/sync/vault";
+import { lockedVaultResponse } from "@/lib/credentials/vaultResponse";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,17 +37,12 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    if (passphrase && !vaultEnabled()) {
-      return NextResponse.json(
-        {
-          error:
-            "Set SYNC_VAULT_KEY on the server before encrypting backups. Bench will not store a passphrase it cannot encrypt.",
-        },
-        { status: 400 }
-      );
-    }
-
     const db = getAppDb();
+    // Bench will not store a passphrase it cannot encrypt.
+    if (passphrase) {
+      const locked = lockedVaultResponse(db);
+      if (locked) return locked;
+    }
     const policy = createBackupPolicy(db, payload);
 
     if (passphrase) {
