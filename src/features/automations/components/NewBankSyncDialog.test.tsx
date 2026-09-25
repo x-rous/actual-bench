@@ -60,7 +60,7 @@ describe("scheduling a bank sync", () => {
     renderDialog();
 
     expect(
-      await screen.findByText(/API key stored on the server first/)
+      await screen.findByText(/API key or Actual server password saved on the server first/)
     ).toBeInTheDocument();
     expect(screen.queryByText(/Enrol one from Budget File Sync/)).not.toBeInTheDocument();
   });

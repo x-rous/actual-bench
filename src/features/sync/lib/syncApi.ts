@@ -169,8 +169,8 @@ export class EnrolmentFailedError extends Error {
 
 /** Reads of the enrolment's status that may fail in a row before the page gives up. */
 const MAX_ENROLMENT_READ_FAILURES = 5;
-/** Longer than the server's three-minute check, with room to read the answer. */
-const ENROLMENT_WAIT_MS = 5 * 60_000;
+/** Longer than the server's five-minute check, with room to read the answer. */
+const ENROLMENT_WAIT_MS = 6 * 60_000;
 
 /**
  * Enrol a connection for unattended use (RD-095 M4).
@@ -225,7 +225,7 @@ export async function enrollCredential(
     if (body.status === "enrolled" && body.credential) return { credential: body.credential };
     if (body.status === "failed") throw new EnrolmentFailedError(body.message ?? "The check failed.", body.code ?? null);
     if (Date.now() > deadline) {
-      throw new Error("The check is taking longer than expected. Look in Connections in a minute to see whether it finished.");
+      throw new Error("The check is taking longer than expected. Look in Connections to see whether it finished.");
     }
   }
 }

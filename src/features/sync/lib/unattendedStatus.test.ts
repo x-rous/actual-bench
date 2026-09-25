@@ -5,7 +5,6 @@ const base: UnattendedStatusInput = {
   flowEnabled: true,
   autoPaused: false,
   vaultEnabled: true,
-  bothHttp: true,
   bothEnrolled: true,
   lastRunAtMs: null,
   intervalMinutes: 15,
@@ -28,7 +27,6 @@ describe("computeUnattendedStatus", () => {
     expect(computeUnattendedStatus({ ...base, autoPaused: true }).reason).toMatch(/Paused/);
     expect(computeUnattendedStatus({ ...base, flowEnabled: false }).reason).toMatch(/Paused/);
     expect(computeUnattendedStatus({ ...base, vaultEnabled: false }).reason).toMatch(/vault/);
-    expect(computeUnattendedStatus({ ...base, bothHttp: false }).reason).toMatch(/HTTP API/);
     expect(computeUnattendedStatus({ ...base, bothEnrolled: false }).reason).toMatch(/Store credentials/);
   });
 

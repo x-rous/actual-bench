@@ -22,12 +22,9 @@ budget has no bank-linked accounts and the sync would import nothing.*
 ## What you need
 
 - Accounts **linked to a bank in Actual** (SimpleFIN or GoCardless). Bench cannot create those links.
-- **HTTP API Server mode**, and the budget [enrolled for unattended access](../automations/#unattended-access) - 
-  a scheduled sync runs with your browser closed, so the server needs credentials of its own.
-
-A Direct (browser) connection can pull on demand while Bench is open, but it can never run
-unattended: Actual's engine lives in your browser there, so with the tab closed there is nothing to
-run.
+- The budget [enrolled for unattended access](../automations/#unattended-access), in HTTP API or
+  Direct mode - a scheduled sync runs with your browser closed, so the server needs credentials of its
+  own.
 
 ## Create a bank-sync automation
 

@@ -245,3 +245,49 @@ describe("flowToFormState", () => {
     }
   });
 });
+
+describe("a saved flow whose budgets are not connected in this tab (RD-095)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "actual-bench-flowform-saved-"));
+  });
+  afterEach(() => {
+    resetAppDbForTests();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const legOf = (payload: JsonObject) =>
+    (payload as { legs: Array<Record<string, { data: JsonObject }>> }).legs[0];
+
+  function savedFlow(): SyncFlow {
+    const db = getAppDb(join(root, "metadata.sqlite"));
+    const created = createSyncFlow(db, buildFlowPayload(filledForm(), instances));
+    return getSyncFlow(db, created.id) as SyncFlow;
+  }
+
+  it("keeps each endpoint's saved budget, so the flow can still be edited and saved", () => {
+    // Opened in a tab where neither budget is connected.
+    const form = flowToFormState(savedFlow(), []);
+
+    expect(form.source).toMatchObject({
+      connectionId: "",
+      savedConnectionFingerprint: connectionFingerprint(sourceConn),
+      budgetName: "Home",
+      accountName: "Checking",
+    });
+    expect(missingRouteFields(form)).toEqual([]);
+
+    const leg = legOf(buildFlowPayload(form, []));
+    expect(leg.sourceRef.data.connectionFingerprint).toBe(connectionFingerprint(sourceConn));
+    expect(leg.targetRef.data.connectionFingerprint).toBe(connectionFingerprint(targetConn));
+  });
+
+  it("uses the connected budget once one is picked", () => {
+    const form = flowToFormState(savedFlow(), []);
+    form.source = { connectionId: "c-tgt", budgetSyncId: "budget-tgt", budgetName: "Family", accountId: "a", accountName: "A" };
+
+    expect(legOf(buildFlowPayload(form, instances)).sourceRef.data.connectionFingerprint).toBe(
+      connectionFingerprint(targetConn)
+    );
+  });
+});

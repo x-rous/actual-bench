@@ -3,7 +3,7 @@ import {
   importFlowDefinition,
   FlowImportError,
 } from "./flowPortability";
-import { emptyFlowForm } from "./flowForm";
+import { emptyFlowForm, isSavedEndpointOnly } from "./flowForm";
 
 function filledForm() {
   const form = emptyFlowForm();
@@ -25,6 +25,28 @@ describe("flow export / import (RD-057)", () => {
     // Connection ids are never carried across - user re-selects.
     expect(back.source.connectionId).toBe("");
     expect(back.target.connectionId).toBe("");
+  });
+
+  it("drops a saved connection from an imported file, so the flow asks for its budgets again", () => {
+    const planted = JSON.stringify({
+      kind: JSON.parse(exportFlowDefinition(filledForm())).kind,
+      version: 1,
+      flow: {
+        ...JSON.parse(exportFlowDefinition(filledForm())).flow,
+        source: { budgetSyncId: "b1", budgetName: "Home", savedConnectionFingerprint: "someone-elses-server" },
+      },
+    });
+
+    const back = importFlowDefinition(planted);
+
+    expect(back.source.savedConnectionFingerprint).toBeUndefined();
+    expect(isSavedEndpointOnly(back.source)).toBe(false);
+  });
+
+  it("never includes a saved connection in the exported JSON", () => {
+    const form = filledForm();
+    form.source = { ...form.source, savedConnectionFingerprint: "fp-saved" };
+    expect(exportFlowDefinition(form)).not.toContain("fp-saved");
   });
 
   it("never includes a connection id in the exported JSON", () => {

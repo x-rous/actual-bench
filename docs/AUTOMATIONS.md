@@ -25,11 +25,11 @@ happens.
 
 | Mode | What it means |
 |---|---|
-| **Runs on the server** | Runs on schedule even with Actual Bench closed, using credentials you enrolled in the encrypted vault. Requires HTTP API mode and `SYNC_VAULT_KEY`. |
+| **Runs on the server** | Runs on schedule even with Actual Bench closed, using credentials you enrolled in the encrypted vault. Works for HTTP API and Direct connections; requires `SYNC_VAULT_KEY`. |
 | **Runs in your browser** | Runs only while Actual Bench is open in a tab. Close the tab and it stops. This is a convenience, not unattended automation. |
 
-Direct (browser) mode cannot run unattended: Actual's engine runs in your browser, so there is
-nothing on the server to run. Bench says so rather than implying otherwise.
+A Direct connection runs on the server too: the worker opens the budget with Actual's own
+engine, so the Bench server must be able to reach the Actual server.
 
 **One instance only.** The engine runs inside the Actual Bench server process and prevents a
 single automation from overlapping *itself within that process*. Running two Bench containers
@@ -174,9 +174,9 @@ Enrolment is **per budget, not per server**: three budgets on one server are thr
 entries. It can be done from the Connections tab, from a bank sync or backup dialog, or
 from a Budget File Sync flow editor; all four write the same store.
 
-Bench can only enrol the budget you are currently connected to, because that is the only
-API key the browser holds. Direct connections can never be enrolled - Actual's engine
-runs in your browser there, so there is nothing on the server to run.
+Bench can enrol any budget connected in this browser session, HTTP API or Direct: the
+browser holds each one's API key or password for the session. Enrolling checks it with
+the server first and saves nothing if the check fails.
 
 ## Run history
 

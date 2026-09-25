@@ -41,10 +41,12 @@ Every automation says **where it runs**, on its own row:
 
 | | |
 |---|---|
-| **Runs on the server** | Runs on schedule even with Actual Bench closed. Needs HTTP API mode and a budget enrolled for unattended access. |
+| **Runs on the server** | Runs on schedule even with Actual Bench closed. Works with HTTP API and Direct connections, once the budget is enrolled for unattended access. |
 | **Runs in your browser** | Runs only while Bench is open in a tab. Close it and nothing happens. This is a convenience, not automation. |
 
-Direct mode runs in a browser and cannot run unattended after the browser closes.
+For a Direct connection, a scheduled run opens the budget on the Bench server, so the Bench server
+must be able to reach your Actual server (see
+[Deployment](../../administration/deployment/#direct-mode-network-requirements)).
 
 **One instance only.** The engine runs inside the Bench server process. Running two containers
 against one database would run your automations twice; Bench does not coordinate across instances.
@@ -61,15 +63,23 @@ confirmation names them before it happens.
 Three things to expect:
 
 - **Bench checks before it saves.** When you enrol, Bench checks the password or API key with the
-  server. For a Direct connection this means opening the budget, which can take up to a minute. If
-  the check fails, Bench shows the reason and nothing is saved.
+  server. For a Direct connection this means opening the budget, which usually takes a few seconds
+  but can take a few minutes the first time. If the check fails, Bench shows the reason and nothing
+  is saved.
 - Enrolment is **per budget, not per server**. Three budgets on one server are three entries.
-- Bench can only enrol the budget you are **currently connected to**. To enrol another budget,
-  switch to it first.
+- Bench can enrol any budget you have connected to in this browser session. A budget you have not
+  connected to yet needs to be connected first, so Bench has its password or API key.
+
+:::note[Why some budgets take longer to open]
+Actual's server keeps a saved copy of each budget, and anything that opens the budget replays every
+change made since that copy. Actual's own app refreshes the copy about once a week. Bench and
+actual-http-api do not, so a budget you use mostly through them opens more slowly over time. Bench
+refreshes it once a week for budgets it runs automations on. If enrolling a budget takes too long,
+open it once in Actual's own app, then enrol it again.
+:::
 
 You can enrol from Connections, from the bank sync or backup dialogs, or from a Budget File Sync
-flow - all four write the same list. A **Direct** connection can be enrolled from **Connections**;
-scheduled jobs for Direct budgets are not available yet.
+flow - all four write the same list. This works the same for HTTP API and Direct connections.
 
 :::caution[What gets saved]
 - **HTTP API connection:** the budget's API key is encrypted with Bench's vault key

@@ -76,11 +76,11 @@ A rule says what to copy, where to put it, how often, and how long to keep it.
   closed, so it needs an **enrolled** connection whose credentials the server can use on its own; the
   rule offers to enrol one on the spot rather than sending you elsewhere.
 
-  A **Direct** connection cannot be enrolled, because its budget lives in this browser and there is
-  nothing for a server to use while you are away. It is still offered, as a **manual rule**: there is
-  no schedule, and **Back up now** exports the budget here and hands it to Bench, which stores and
-  verifies it exactly like any other copy - same destinations, same checks, same list of copies. It
-  is a copy you have to ask for, not a lesser one.
+  A **Direct** connection works the same way once it is enrolled. Until then - or on a server
+  without a vault key - it is offered as a **manual rule**: there is no schedule, and **Back up now**
+  exports the budget here and hands it to Bench, which stores and verifies it exactly like any other
+  copy - same destinations, same checks, same list of copies. It is a copy you have to ask for, not a
+  lesser one. To schedule it later, enrol the connection and edit the rule.
 
   Backups taken by hand are **kept until you delete them**. Bench does not expire them, so a rule you
   run often will accumulate copies rather than rotating them the way a scheduled rule does.

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowLeftRight, Bell, Loader2, Play, Plus, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { NeedsConnectionsNotice } from "./NeedsConnectionsNotice";
 import { FlowEditDialog } from "./FlowEditDialog";
@@ -25,6 +26,8 @@ import {
   missingRouteFields,
   type SyncFlowFormState,
 } from "../lib/flowForm";
+import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
+import { runFlowNow } from "../lib/syncApi";
 import { selectableRowIds, syncKindOf, toPreviewRow } from "../lib/previewRows";
 import { buildReverseFlowForm } from "../lib/reverseFlow";
 import { formatRunTimestamp, relativeTime, runErrorMessage, toRunRow } from "../lib/runsView";
@@ -57,6 +60,9 @@ function deriveSummary(run: SyncFlowRun | undefined): DryRunSummary | null {
  * item list (including rows the database never persisted) is still current. */
 const PRE_APPLY_RUN_STATUSES = new Set<string | undefined>([undefined, "draft_preview", "applying"]);
 
+/** The tab-only scheduler (RD-054). Off since server scheduling covers Direct budgets (RD-095). */
+const TAB_SCHEDULER_ENABLED = false;
+
 export function SyncView() {
   const connections = useSyncConnections();
   const flowsQuery = useSyncFlows();
@@ -74,9 +80,11 @@ export function SyncView() {
   const applyMutation = useApplyMutation();
   const safeSyncMutation = useSafeSyncMutation();
 
-  // Client-side interval auto-sync (RD-054): only acts on flows whose policy is
-  // `auto_sync_on_interval`, and only while their connections are unlocked here.
+  // Client-side interval auto-sync (RD-054) is turned off (RD-095 D4): flows
+  // run on the server's schedule instead, for Direct budgets too. The hook
+  // stays until the server scheduler has been tested; this is the one switch.
   useSyncScheduler({
+    enabled: TAB_SCHEDULER_ENABLED,
     flows: flowsQuery.data ?? [],
     connections,
     latestRuns: latestRunsQuery.data ?? new Map(),
@@ -115,6 +123,16 @@ export function SyncView() {
 
   const flows = flowsQuery.data ?? [];
   const selectedFlow = flows.find((f) => f.id === selectedFlowId);
+  // An unattended flow whose budgets are both enrolled runs on the server
+  // (RD-095): it does not need its budgets connected in this tab, and "Run
+  // safe sync now" runs it there too, exactly as its schedule does.
+  const selectedConfig = selectedFlow ? decodeFlowPlanConfig(selectedFlow) : null;
+  const runsOnServer =
+    !!selectedConfig &&
+    selectedConfig.reviewPolicy === "auto_sync_unattended" &&
+    enrolledFingerprints.has(selectedConfig.sourceConnectionFingerprint) &&
+    enrolledFingerprints.has(selectedConfig.targetConnectionFingerprint);
+  const [serverRunning, setServerRunning] = useState(false);
   const kind = syncKindOf(selectedFlow?.flowType ?? "transaction_sync");
   useEffect(() => {
     if (!selectedFlowId) return;
@@ -325,7 +343,35 @@ export function SyncView() {
     setAutoNotice(`Auto-sync paused for “${flow.name}” after repeated failures. Re-enable it when you're ready.`);
   }
 
+  async function handleRunOnServer() {
+    if (!selectedFlowId) return;
+    setActionError(null);
+    setServerRunning(true);
+    try {
+      const { result } = await runFlowNow(selectedFlowId);
+      const detail = result.message ? ` ${result.message.replace(/\.?$/, ".")}` : "";
+      if (result.status === "applied" || result.status === "no_safe_items" || result.status === "succeeded") {
+        toast.success(`Ran on the server.${detail}`);
+      } else if (result.status === "partial") {
+        toast.warning(`Ran on the server, but some items failed.${detail}`);
+      } else {
+        toast.error(`The run on the server failed.${detail}`);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "The run could not be started.");
+    } finally {
+      setServerRunning(false);
+      runsQuery.refetch();
+      flowsQuery.refetch();
+      latestRunsQuery.refetch();
+    }
+  }
+
   function handleRunSafeSyncNow() {
+    if (runsOnServer) {
+      void handleRunOnServer();
+      return;
+    }
     if (!selectedFlowId || !sourceConn || !targetConn) return;
     setActionError(null);
     safeSyncMutation.mutate(
@@ -429,8 +475,12 @@ export function SyncView() {
               canPreview={canPreview}
               previewDisabledReason={blockReason}
               showRunSafeSync={form.automation.reviewPolicy !== "manual_preview_required"}
-              canRunSafeSync={!!sourceConn && !!targetConn && routeReady && !dirty}
-              runningSafeSync={safeSyncMutation.isPending}
+              canRunSafeSync={
+                // The server refuses to run a disabled flow; don't offer it.
+                runsOnServer ? !dirty && !!selectedFlow?.enabled : !!sourceConn && !!targetConn && routeReady && !dirty
+              }
+              runningSafeSync={safeSyncMutation.isPending || serverRunning}
+              runsOnServer={runsOnServer}
               onToggleEnabled={handleToggleEnabled}
               onRunPreview={handlePreview}
               onRunSafeSyncNow={handleRunSafeSyncNow}

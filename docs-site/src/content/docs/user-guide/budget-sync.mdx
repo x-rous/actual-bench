@@ -173,11 +173,12 @@ Each flow has a **review policy**:
 1. **Manual** (default) - preview and apply yourself.
 2. **Auto-apply safe items on preview** - a run auto-applies only safe items (new creates and
    marker-match repairs); everything uncertain is left for you.
-3. **Auto-sync on a schedule** - a client-side timer re-runs a safe-only sync at a chosen interval
-   (minimum 15 minutes) **while Actual Bench is open and the connection is unlocked**.
-4. **Auto-sync on a server schedule (unattended)** - for **HTTP API Server mode** flows, a server-side
-   scheduler runs the same safe-only sync **with the app closed**. It is opt-in and off by default and
-   requires operator setup (see the note below).
+3. **Auto-sync on a server schedule (unattended)** - the server runs the same safe-only sync on a
+   schedule, **with the app closed**, for HTTP API and Direct budgets alike. It is opt-in and off by
+   default and requires operator setup (see the note below).
+4. **Auto-sync on a schedule (while the app is open)** - turned off. A flow that still has this
+   policy no longer runs automatically and says so in the flow list; edit it and choose the server
+   schedule instead.
 5. **Run safe sync now** - a one-click safe-only run for any automated flow.
 
 Additional controls:
@@ -187,10 +188,10 @@ Additional controls:
   duplicates always stay in the review queue.
 
 :::note[Unattended sync needs operator setup]
-Unattended server-side sync requires an operator to set `SYNC_VAULT_KEY` and enroll the connection's API
-key in an encrypted server vault. Direct-mode flows can't run unattended (Actual runs in the browser)
-and keep the client-side interval. See [Configuration](../../administration/configuration/) and
-[Deployment](../../administration/deployment/).
+Unattended server-side sync requires an operator to set `SYNC_VAULT_KEY`, and both budgets to be
+enrolled: their API key or Actual server password is saved encrypted on the server. For Direct
+budgets, the Bench server must be able to reach your Actual server. See
+[Configuration](../../administration/configuration/) and [Deployment](../../administration/deployment/).
 :::
 
 ## Flow health and auto-pause

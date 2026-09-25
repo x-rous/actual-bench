@@ -161,9 +161,9 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
             <div className="space-y-2">
               <p className="text-muted-foreground">
                 A scheduled bank sync runs with your browser closed, so Bench needs the
-                budget&rsquo;s API key stored on the server first.
+                budget&rsquo;s API key or Actual server password saved on the server first.
               </p>
-              <EnrolConnection connection={active ?? null} onEnrolled={() => void vault.refetch()} />
+              <EnrolConnection connection={active ?? null} onEnrolled={() => void vault.refetch()} allowDirect />
             </div>
           ) : (
             <>

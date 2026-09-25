@@ -15,7 +15,15 @@ import {
 import { clampSyncInterval } from "@/lib/sync/flowConfig";
 import { buildSyncNotesMarker } from "@/lib/sync/notesMarker";
 import { useFlowAccounts } from "../hooks/useSyncData";
-import { isEntityFlow, isSameBudget, isSelfSync, missingRouteFields, type SyncEndpointForm, type SyncFlowFormState } from "../lib/flowForm";
+import {
+  isEntityFlow,
+  isSameBudget,
+  isSavedEndpointOnly,
+  isSelfSync,
+  missingRouteFields,
+  type SyncEndpointForm,
+  type SyncFlowFormState,
+} from "../lib/flowForm";
 import { exportFlowDefinition, importFlowDefinition, FlowImportError } from "../lib/flowPortability";
 import { UnattendedEnrollment } from "./UnattendedEnrollment";
 import type { ConnectionInstance } from "@/store/connection";
@@ -63,6 +71,19 @@ function InlineEndpoint({
   onChange: (next: SyncEndpointForm) => void;
 }) {
   const accounts = useFlowAccounts(endpoint.connectionId);
+  // A flow that runs on the server keeps its budgets when they are not
+  // connected here. Show what it uses; changing it needs the budget connected.
+  if (isSavedEndpointOnly(endpoint)) {
+    return (
+      <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-xs">
+        <span className="truncate font-medium">
+          {endpoint.budgetName || endpoint.budgetSyncId}
+          {entityMode ? "" : ` / ${endpoint.accountName || endpoint.accountId}`}
+        </span>
+        <span className="text-muted-foreground">Connect this budget to change it.</span>
+      </div>
+    );
+  }
   return (
     <div className="flex min-w-0 gap-2">
       <select
@@ -156,12 +177,14 @@ export function FlowEditDialog({
   const sameBudget = isSameBudget(form);
   const blockedRoute = entityMode ? sameBudget : isSelfSync(form);
 
-  // Unattended (server) sync needs both endpoints on HTTP API mode (Hybrid, RD-058).
+  // Unattended (server) sync runs either mode on the server (RD-095); it only
+  // needs both endpoints chosen.
   const sourceConn = connections.find((c) => c.id === form.source.connectionId);
   const targetConn = connections.find((c) => c.id === form.target.connectionId);
-  const unattendedEligible = sourceConn?.mode === "http-api" && targetConn?.mode === "http-api";
-  // Block saving an unattended flow whose endpoints are no longer HTTP API - the
-  // option is disabled in that case but the stored policy can go stale.
+  const unattendedEligible =
+    Boolean(sourceConn || isSavedEndpointOnly(form.source)) && Boolean(targetConn || isSavedEndpointOnly(form.target));
+  // Block saving an unattended flow whose endpoints are gone - the option is
+  // disabled in that case but the stored policy can go stale.
   const invalidUnattended = form.automation.reviewPolicy === "auto_sync_unattended" && !unattendedEligible;
 
   // FX (RD-056): a converting transaction flow needs both currency codes.
@@ -180,8 +203,8 @@ export function FlowEditDialog({
   const automationHelp: Record<SyncFlowFormState["automation"]["reviewPolicy"], string> = {
     manual_preview_required: "You review and apply every change.",
     auto_apply_safe_only: "Safe items apply on preview; uncertain ones wait in the review queue.",
-    auto_sync_on_interval: "Runs on a schedule while the app is open. Safe items only; nothing runs in the background.",
-    auto_sync_unattended: "Runs on a server schedule with the app closed. Safe items only. HTTP API mode; requires storing the credential in the vault.",
+    auto_sync_on_interval: "This no longer runs automatically while Bench is open. Choose a server schedule to keep it running.",
+    auto_sync_unattended: "Runs on a server schedule when Bench is closed. Safe items only. Needs both budgets' credentials saved on the server.",
   };
 
   // The default notes marker for this flow's route, shown as the editable
@@ -285,9 +308,12 @@ export function FlowEditDialog({
                   >
                     <option value="manual_preview_required">Manual - preview &amp; apply yourself (default)</option>
                     <option value="auto_apply_safe_only">Auto-apply safe items on preview</option>
-                    <option value="auto_sync_on_interval">Auto-sync on a schedule (while app is open)</option>
+                    {/* Turned off (RD-095 D4): kept only so a flow that already has it shows it. */}
+                    {form.automation.reviewPolicy === "auto_sync_on_interval" && (
+                      <option value="auto_sync_on_interval">Auto-sync on a schedule (while app is open) - turned off</option>
+                    )}
                     <option value="auto_sync_unattended" disabled={!unattendedEligible}>
-                      Auto-sync on a server schedule (unattended){unattendedEligible ? "" : " - HTTP API only"}
+                      Auto-sync on a server schedule (unattended){unattendedEligible ? "" : " - choose both budgets first"}
                     </option>
                   </select>
                 </label>
@@ -312,6 +338,8 @@ export function FlowEditDialog({
                   <UnattendedEnrollment
                     sourceConnection={sourceConn}
                     targetConnection={targetConn}
+                    sourceSaved={form.source}
+                    targetSaved={form.target}
                     flowId={flowId}
                     intervalMinutes={clampSyncInterval(form.automation.intervalMinutes)}
                     flowEnabled={form.enabled}

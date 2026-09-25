@@ -31,6 +31,17 @@ import { WORKSPACE_HEARTBEAT_MS, createWorkspace, removeWorkspace, touchWorkspac
  * Server-only.
  */
 
+/**
+ * Step limits in a worker. The browser gives each step 45 seconds; a worker
+ * does not need to, because every task already has a deadline of its own that
+ * ends the thread. A budget whose server snapshot is old replays every change
+ * since, which can take minutes, and it only gets a fresh snapshot after an
+ * open succeeds - so a short limit here could leave it unable to open at all.
+ */
+const OPEN_STEP_TIMEOUT_MS = 20 * 60_000;
+const SYNC_STEP_TIMEOUT_MS = 5 * 60_000;
+const EXPORT_STEP_TIMEOUT_MS = 10 * 60_000;
+
 /** Actual's own clients refresh a budget's snapshot at most this often. */
 export const SNAPSHOT_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60_000;
 
@@ -91,7 +102,9 @@ function runtimeKey(connection: BrowserApiConnection): string {
 
 function assertWorkerThread(): void {
   if (isMainThread && !state.allowMainThread) {
-    throw new Error("Direct budgets run only inside an automation worker.");
+    throw new Error(
+      "Direct budgets can only be opened in an automation worker thread. If ACTUAL_BENCH_AUTOMATION_EXECUTOR is set to in-thread, remove it."
+    );
   }
 }
 
@@ -131,7 +144,7 @@ async function refreshSnapshotIfDue(runtime: ActualApiRuntime, connection: Brows
 
     // Upload only what the server already has: a snapshot that contains
     // changes the server has not seen would be a second, divergent history.
-    await withTimeout(runtime.sync(), "Syncing budget");
+    await withTimeout(runtime.sync(), "Syncing budget", SYNC_STEP_TIMEOUT_MS);
     const result = await withTimeout(
       runtime.send<{ error?: { reason?: string } } | null>("upload-budget"),
       "Uploading budget snapshot",
@@ -194,9 +207,10 @@ export async function getNodeRuntime(connection: BrowserApiConnection): Promise<
       const runtime: ActualApiRuntime = { ...actual, send: initResult.send };
       await withTimeout(
         runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
-        "Opening budget"
+        "Opening budget",
+        OPEN_STEP_TIMEOUT_MS
       );
-      await withTimeout(runtime.sync(), "Syncing budget");
+      await withTimeout(runtime.sync(), "Syncing budget", SYNC_STEP_TIMEOUT_MS);
       return runtime;
     } catch (error) {
       throw toActualRuntimeError(error);
@@ -214,7 +228,7 @@ export async function getNodeRuntime(connection: BrowserApiConnection): Promise<
 export async function syncNodeRuntime(connection: BrowserApiConnection): Promise<void> {
   const next = state.syncQueue.then(async () => {
     const actual = await getNodeRuntime(connection);
-    await withTimeout(actual.sync(), "Syncing budget");
+    await withTimeout(actual.sync(), "Syncing budget", SYNC_STEP_TIMEOUT_MS);
   });
   state.syncQueue = next.catch(() => undefined);
   return next;
@@ -223,7 +237,7 @@ export async function syncNodeRuntime(connection: BrowserApiConnection): Promise
 export const nodeHost: ActualRuntimeHost = {
   getRuntime: getNodeRuntime,
   sync: syncNodeRuntime,
-  exportBudget: async (connection) => exportRuntimeBudget(await getNodeRuntime(connection)),
+  exportBudget: async (connection) => exportRuntimeBudget(await getNodeRuntime(connection), EXPORT_STEP_TIMEOUT_MS),
 };
 
 /**

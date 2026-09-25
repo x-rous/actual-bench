@@ -16,15 +16,14 @@ does not describe planned work.
 
 ## Connection modes
 
-### Direct-mode unattended sync is not supported
+### Only budgets connected in this session can be enrolled
 
-**Applies to:** Budget Sync using Direct Actual Server mode.
+**Applies to:** enrolling budgets for scheduled runs.
 
-Direct mode runs Actual's engine in your browser. Close the browser and there is nothing left running
-to do the sync.
+Bench needs a budget's password or API key to enrol it, and the browser only holds those for budgets
+you have connected to in this session.
 
-**Alternative:** use the client-side schedule while Bench is open, or put both sides on HTTP API Server
-mode and let the server do it.
+**Alternative:** connect to the budget first, then enrol it.
 
 ### ActualQL cURL is HTTP API Server-only
 

@@ -61,7 +61,7 @@ afterEach(async () => {
 describe("the Node host", () => {
   it("refuses to open a budget in the web server's own thread", async () => {
     await expect(getNodeRuntime(connection())).rejects.toThrow(
-      "Direct budgets run only inside an automation worker."
+      /only be opened in an automation worker thread\. If ACTUAL_BENCH_AUTOMATION_EXECUTOR is set to in-thread/
     );
     expect(readdirSync(root)).toEqual([]);
   });

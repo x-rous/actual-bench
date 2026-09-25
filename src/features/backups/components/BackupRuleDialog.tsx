@@ -74,28 +74,25 @@ export function BackupRuleDialog({
   /*
    * Every saved budget connection, and what each one can do.
    *
-   * A Direct connection was left out entirely, which meant a Direct user opened
-   * this form, found an empty dropdown and had no way to back anything up at
-   * all. What it cannot do is run *unattended*: its budget lives in this browser
-   * and there are no credentials a server can use while the operator is away.
-   * It can be backed up perfectly well when they ask, so it is offered as a
-   * manual rule rather than hidden.
+   * Any mode can run on a schedule once it is enrolled: the server opens an
+   * HTTP API budget through actual-http-api and a Direct one in a worker
+   * (RD-095). A Direct connection that is not enrolled - or any, when the vault
+   * is off - can still be backed up when you ask, as a manual rule: the browser
+   * exports it and the server stores it.
    */
   const savedConnections = useConnectionStore((state) => state.instances);
   const choices = savedConnections.map((connection) => {
     const httpApi = isHttpApiConnection(connection);
+    const enrolled = sources.some((entry) => entry.connectionFingerprint === connectionFingerprint(connection));
     return {
       fingerprint: connectionFingerprint(connection),
       label: connection.label,
-      baseUrl: httpApi ? connection.baseUrl : null,
+      baseUrl: connection.baseUrl,
+      httpApi,
       connection,
-      /** Direct connections can only ever run on request. */
-      manualOnly: !httpApi,
-      enrolled:
-        !httpApi ||
-        sources.some(
-          (entry) => entry.connectionFingerprint === connectionFingerprint(connection)
-        ),
+      /** A Direct connection that is not enrolled can only run on request. */
+      manualOnly: !httpApi && !enrolled,
+      enrolled,
     };
   });
 
@@ -160,10 +157,10 @@ export function BackupRuleDialog({
           version: 1,
           data: {
             connectionFingerprint: source,
-            // Recorded so the run knows where the bytes come from. A direct
-            // source is exported by the browser and uploaded; there is no
-            // credential for the server to use.
-            sourceKind: manualOnly ? "direct" : "http-api",
+            // Recorded so the run knows where the bytes come from: "direct"
+            // is exported by the browser and uploaded; the others are fetched
+            // by the server with the enrolled credential.
+            sourceKind: manualOnly ? "direct" : (chosen?.connection.mode ?? "http-api"),
           },
         },
         destinationIds,
@@ -187,14 +184,15 @@ export function BackupRuleDialog({
     onError: (error: Error) => toast.error(error.message),
   });
 
-  // A direct source can only be backed up from the browser holding it, so the
-  // rule has no schedule and no automation - "Back up now" is the whole of it.
+  // A Direct source that is not enrolled can only be backed up from this
+  // browser, so the rule has no schedule and no automation - "Back up now" is
+  // the whole of it.
   const manualOnly = chosen?.manualOnly ?? false;
   const needsSource = contents !== "app-db";
   const canSave =
     name.trim().length > 0 &&
     destinationIds.length > 0 &&
-    (!needsSource || (source.length > 0 && (chosen?.enrolled ?? false))) &&
+    (!needsSource || (source.length > 0 && (chosen?.enrolled || chosen?.manualOnly || false))) &&
     (!encrypt || editing || passphrase.length >= 8) &&
     (manualOnly || scheduleValid);
 
@@ -244,9 +242,9 @@ export function BackupRuleDialog({
                   {choices.length === 0 && <option value="">No budget connections saved</option>}
                   {choices.map((choice) => (
                     <option key={choice.fingerprint} value={choice.fingerprint}>
-                      {choice.label}
-                      {choice.baseUrl ? ` - ${choice.baseUrl}` : " - Direct (this browser)"}
-                      {choice.manualOnly ? "  (manual only)" : choice.enrolled ? "" : "  (not enrolled)"}
+                      {choice.label} - {choice.baseUrl}
+                      {choice.httpApi ? "" : " (Direct)"}
+                      {choice.enrolled ? "" : choice.manualOnly ? "  (manual only until enrolled)" : "  (not enrolled)"}
                     </option>
                   ))}
                 </select>
@@ -256,8 +254,8 @@ export function BackupRuleDialog({
                   enrolled ones - the budget you are working in should appear in
                   the list of budgets you can back up, with the reason it cannot
                   be used yet and the button that fixes it. */}
-              {chosen && !chosen.enrolled && !chosen.manualOnly && (
-                <EnrolConnection connection={chosen.connection} onEnrolled={onSaved} />
+              {chosen && !chosen.enrolled && (
+                <EnrolConnection connection={chosen.connection} onEnrolled={onSaved} allowDirect />
               )}
 
               {/* Said once, where the consequence is: this rule will not run on
@@ -265,9 +263,9 @@ export function BackupRuleDialog({
                   verified the same way. */}
               {manualOnly && (
                 <span className="block text-muted-foreground">
-                  This budget is open in your browser, so Bench cannot reach it while you are away.
-                  The rule has no schedule: use <span className="font-medium">Back up now</span> and
-                  the copy is exported here, then stored and verified like any other.
+                  Until this budget is enrolled, the rule has no schedule: use{" "}
+                  <span className="font-medium">Back up now</span> and the copy is exported in this
+                  browser, then stored and verified like any other.
                 </span>
               )}
 

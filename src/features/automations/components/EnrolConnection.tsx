@@ -6,7 +6,7 @@ import { Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
-import { isHttpApiConnection, useConnectionStore, selectActiveInstance } from "@/store/connection";
+import { isHttpApiConnection } from "@/store/connection";
 import { enrollCredential, getVaultStatus } from "@/features/sync/lib/syncApi";
 import type { ConnectionInstance } from "@/store/connection";
 
@@ -25,12 +25,10 @@ import type { ConnectionInstance } from "@/store/connection";
  * server checks the credentials against the Actual server before storing
  * anything, so enrolling takes a moment and can fail with a reason.
  *
- * Two limits it states rather than hides:
+ * Any budget connected in this session can be enrolled, not only the open one:
+ * the browser holds each one's key or password for the session (RD-095 M5).
  *
- *   * Bench can only enrol the connection you are **currently connected as**,
- *     because that is the only key or password the browser holds. Any other budget has
- *     to be selected first.
- *   * Enrolment is per budget, not per server. Three budgets means three
+ * One limit it states rather than hides: enrolment is per budget, not per server. Three budgets means three
  *     enrolments, and saying so keeps "I turned this on" and "this budget can
  *     be backed up" from drifting apart.
  */
@@ -65,7 +63,6 @@ export function EnrolConnection({
   allowDirect?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const active = useConnectionStore(selectActiveInstance);
   const [showDetail, setShowDetail] = useState(false);
   const vault = useEnrolledFingerprints();
 
@@ -124,16 +121,6 @@ export function EnrolConnection({
 
   const notSetUp = <span className="font-medium">{connection.label} is not set up for scheduled runs.</span>;
 
-  // Only the connection the browser is currently using carries its key or password.
-  const isActive = active?.id === connection.id;
-  if (!isActive) {
-    return (
-      <div className={box}>
-        {notSetUp} Bench can only enrol the budget you are connected to. Switch to it, then enrol it.
-      </div>
-    );
-  }
-
   const vaultKey = <code className="rounded bg-black/5 px-1 dark:bg-white/10">SYNC_VAULT_KEY</code>;
   const secret = direct ? "password" : "API key";
   const removeWhere = onConnectionsPage ? "on this page" : "in Automations \u2192 Connections";
@@ -157,7 +144,8 @@ export function EnrolConnection({
 
       {enrol.isPending && (
         <p className="mt-1" role="status">
-          Checking with your Actual server. This can take up to a minute. Nothing is saved if the check fails.
+          Checking with your Actual server. This usually takes a few seconds, but can take a few minutes the
+          first time. Nothing is saved if the check fails.
         </p>
       )}
 

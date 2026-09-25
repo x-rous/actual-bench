@@ -96,6 +96,11 @@ function ruleFor(error: unknown): Rule | undefined {
   return RULES.find((rule) => rule.text.test(text));
 }
 
+/** The plain-language message for a known failure. */
+export function actualErrorMessage(code: ActualErrorCode): string {
+  return RULES.find((rule) => rule.code === code)!.message;
+}
+
 /** The code for a failure, or `null` when it is none of the known ones. */
 export function classifyActualError(error: unknown): ActualErrorCode | null {
   // Already classified - by the Node host, on its way up.

@@ -25,6 +25,12 @@ import type {
 export type SyncEndpointForm = {
   /** In-memory connection instance id (ephemeral; not persisted). */
   connectionId: string;
+  /**
+   * The connection a saved flow was built with, kept when that budget is not
+   * connected in this tab (RD-095): a flow that runs on the server can still
+   * be edited and saved without its budgets open. Picking a budget replaces it.
+   */
+  savedConnectionFingerprint?: string;
   budgetSyncId: string;
   budgetName: string;
   accountId: string;
@@ -167,12 +173,12 @@ export function missingRouteFields(form: SyncFlowFormState): string[] {
   if (!form.name.trim()) missing.push("name");
   // Entity flows sync at the budget level (no account); transactions need an account.
   if (isEntityFlow(form.flowType)) {
-    if (!form.source.connectionId) missing.push("source budget");
-    if (!form.target.connectionId) missing.push("target budget");
+    if (!hasBudget(form.source)) missing.push("source budget");
+    if (!hasBudget(form.target)) missing.push("target budget");
     return missing;
   }
-  if (!form.source.connectionId || !form.source.accountId) missing.push("source account");
-  if (!form.target.connectionId || !form.target.accountId) missing.push("target account");
+  if (!hasBudget(form.source) || !form.source.accountId) missing.push("source account");
+  if (!hasBudget(form.target) || !form.target.accountId) missing.push("target account");
   return missing;
 }
 
@@ -211,7 +217,16 @@ function endpointFingerprint(
   instances: ConnectionInstance[]
 ): string {
   const instance = instances.find((i) => i.id === endpoint.connectionId);
-  return instance ? connectionFingerprint(instance) : "";
+  return instance ? connectionFingerprint(instance) : (endpoint.savedConnectionFingerprint ?? "");
+}
+
+/** A saved endpoint whose budget is not connected in this tab: shown read-only, kept on save. */
+export function isSavedEndpointOnly(endpoint: SyncEndpointForm): boolean {
+  return !endpoint.connectionId && !!endpoint.savedConnectionFingerprint && !!endpoint.budgetSyncId;
+}
+
+function hasBudget(endpoint: SyncEndpointForm): boolean {
+  return !!endpoint.connectionId || isSavedEndpointOnly(endpoint);
 }
 
 /** Build the create/update payload sent to the sync-flows route. */
@@ -326,6 +341,7 @@ export function flowToFormState(
   };
   form.source = {
     connectionId: resolveConnectionId(config.sourceConnectionFingerprint, config.sourceBudgetId),
+    savedConnectionFingerprint: config.sourceConnectionFingerprint,
     budgetSyncId: config.sourceBudgetId,
     budgetName: config.sourceBudgetName,
     accountId: config.sourceAccountId,
@@ -333,6 +349,7 @@ export function flowToFormState(
   };
   form.target = {
     connectionId: resolveConnectionId(config.targetConnectionFingerprint, config.targetBudgetId),
+    savedConnectionFingerprint: config.targetConnectionFingerprint,
     budgetSyncId: config.targetBudgetId,
     budgetName: config.targetBudgetName,
     accountId: config.targetAccountId,

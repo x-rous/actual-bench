@@ -1,11 +1,11 @@
 # Unattended Server-Side Scheduled Sync
 
 Budget File Sync can run **safe-only** syncs on a server schedule with **no browser open**.
-This is opt-in, **off by default**, and available for **HTTP API Server mode** flows only.
-
-> Direct-mode flows keep the client-side interval (they run only while the app is open),
-> because Direct sync runs the Actual engine in the browser. Unattended runs happen on the
-> Node server, which can reach `actual-http-api` directly.
+This is opt-in, **off by default**, and available for **HTTP API Server** and **Direct**
+flows alike. Unattended runs happen on the Node server: an HTTP API budget through
+`actual-http-api`, a Direct budget with Actual's own engine in a worker thread (so the
+server must be able to reach the Actual server). The old client-side interval, which ran
+only while the app was open, is turned off.
 
 ## What it does
 
@@ -34,9 +34,8 @@ This is opt-in, **off by default**, and available for **HTTP API Server mode** f
    credentials will pause, with that reason shown, until the key is present.
 
 3. **Configure a flow.** In the flow editor, set the review policy to
-   **"Auto-sync on a server schedule (unattended)"** (available only when both source and target
-   are HTTP API connections), choose a frequency, then click **"Store credentials for unattended
-   sync"** to enroll the budgets' API keys in the vault.
+   **"Auto-sync on a server schedule (unattended)"**, choose a frequency, then click **"Store
+   credentials for unattended sync"** to enroll both budgets (API key or Actual server password).
 
 4. **Check status** on the **Automations** page (Tools → Automations): schedule, last run, next
    run, pause reasons and run history. The **App Health** page carries the same roll-up alongside
@@ -56,8 +55,7 @@ Without `SYNC_SCHEDULER_SECRET` set, that endpoint is disabled (403).
 ## Security / threat model
 
 - **What is stored:** for each enrolled server, its `actual-http-api` **API key** (HTTP API
-  connections) or the Actual server's **password** (Direct connections, which can be enrolled from
-  Automations → Connections; Direct flows do not run unattended yet), and for each enrolled budget
+  connections) or the Actual server's **password** (Direct connections), and for each enrolled budget
   its encryption password if used, **AES-256-GCM encrypted**, in the app metadata database
   (`credentials` table; which budgets are enrolled is recorded, without secrets, in
   `unattended_connections`). Budgets on the same server share one stored secret.
