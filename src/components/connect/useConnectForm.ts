@@ -139,6 +139,13 @@ export function useConnectForm({
   // empty and the form says one will be used.
   const heldEncryptionRef = useRef("");
   const [encryptionSaved, setEncryptionSaved] = useState(false);
+  // Bumped whenever the held secret is let go of (Lock, a new server, "Use a
+  // different password"): a budget list or reveal still on its way from before
+  // then must not bring the secret back.
+  const credentialGenerationRef = useRef(0);
+  // The same for a budget's encryption password: only the latest reveal counts,
+  // so a late answer for one budget never lands on another.
+  const encryptionRequestRef = useRef(0);
   const [connectStatus, setConnectStatus] = useState<ConnectStatus>({ kind: "idle" });
 
   // Reconnect busy tracking for connection cards
@@ -224,6 +231,7 @@ export function useConnectForm({
     setValidatedUrl("");
     setValidatedApiVersion(null);
     setValidatedServerVersion(null);
+    encryptionRequestRef.current += 1;
     heldEncryptionRef.current = "";
     setEncryptionSaved(false);
   }
@@ -238,6 +246,7 @@ export function useConnectForm({
 
   /** Forget the held secret: "Use a different password", a new URL or mode, Cancel. */
   function dropCredential() {
+    credentialGenerationRef.current += 1;
     heldSecretRef.current = null;
     setHeldCredential(null);
   }
@@ -274,6 +283,7 @@ export function useConnectForm({
 
   /** "Use a different one" for a budget's saved encryption password. */
   function chooseDifferentEncryptionPassword() {
+    encryptionRequestRef.current += 1;
     heldEncryptionRef.current = "";
     setEncryptionSaved(false);
   }
@@ -327,10 +337,14 @@ export function useConnectForm({
 
     if (server.remembered) {
       const remembered = server.remembered;
+      const generation = credentialGenerationRef.current;
       void (async () => {
         try {
           const revealed = await revealServerSecret(remembered.serverFingerprint);
+          // Locked, or another server chosen, while it was revealed.
+          if (generation !== credentialGenerationRef.current) return;
           await validate({
+            generation,
             mode: revealed.mode,
             baseUrl: revealed.baseUrl,
             apiKey: revealed.secret.apiKey ?? undefined,
@@ -338,6 +352,7 @@ export function useConnectForm({
             source: "saved",
           });
         } catch (err) {
+          if (generation !== credentialGenerationRef.current) return;
           setValidateStatus({ kind: "error", message: parseApiError(err) });
         }
       })();
@@ -487,13 +502,17 @@ export function useConnectForm({
   // prime the form, and load its budget list so the user can pick any budget.
   // Errors propagate to the caller (the Connections list shows them inline).
   async function startFromRememberedServer(server: ServerCredentialMeta) {
+    dropCredential();
+    const generation = credentialGenerationRef.current;
     const revealed = await revealServerSecret(server.serverFingerprint);
+    // Locked, or another server chosen, while it was revealed.
+    if (generation !== credentialGenerationRef.current) return;
     setConnectionMode(revealed.mode);
     setSelectedServerId(null);
     setBaseUrl(revealed.baseUrl);
     // The secret goes to the server call only - never into the form's fields.
-    dropCredential();
     await validate({
+      generation,
       mode: revealed.mode,
       baseUrl: revealed.baseUrl,
       apiKey: revealed.secret.apiKey ?? undefined,
@@ -519,9 +538,12 @@ export function useConnectForm({
   // opens without a second prompt. Held, never put in the field - and a
   // password the user typed always wins.
   async function holdSavedEncryption(mode: ConnectionMode, url: string, budgetSyncId: string) {
+    const request = ++encryptionRequestRef.current;
     heldEncryptionRef.current = "";
     setEncryptionSaved(false);
     const saved = await revealBudgetEncryption(mode, url, budgetSyncId);
+    // Another budget chosen, or the password cleared, while it was revealed.
+    if (request !== encryptionRequestRef.current) return;
     heldEncryptionRef.current = saved;
     setEncryptionSaved(!!saved);
   }
@@ -546,6 +568,8 @@ export function useConnectForm({
     serverPassword?: string;
     /** Where an override secret came from, for the "saved" line the form shows. */
     source?: HeldCredential["source"];
+    /** The credential generation the caller started under, before its own awaits. */
+    generation?: number;
   } = {}) {
     const mode = overrides.mode ?? connectionMode;
     const url = normalizeUrl(overrides.baseUrl ?? baseUrl);
@@ -572,6 +596,10 @@ export function useConnectForm({
       return;
     }
 
+    const generation = overrides.generation ?? credentialGenerationRef.current;
+    // True once the vault was locked, or the credential let go of, since this
+    // started: the answer is dropped rather than bringing the secret back.
+    const stale = () => generation !== credentialGenerationRef.current;
     setValidateStatus({ kind: "busy" });
     setBudgets(null);
     setSelectedGroupId(null);
@@ -613,6 +641,10 @@ export function useConnectForm({
         });
       }
 
+      if (stale()) {
+        setValidateStatus({ kind: "idle" });
+        return;
+      }
       if (fetched.length === 0) {
         setValidateStatus({ kind: "error", message: "No budgets found on this server." });
         return;
@@ -638,6 +670,10 @@ export function useConnectForm({
         .servers.find((server) => server.mode === mode && server.baseUrl === url);
       if (persisted) setSelectedServerId(persisted.id);
     } catch (err) {
+      if (stale()) {
+        setValidateStatus({ kind: "idle" });
+        return;
+      }
       // A secret that did not work is not kept, and not left in a field.
       dropCredential();
       setApiKey("");

@@ -537,6 +537,96 @@ describe("useConnectForm connection activation", () => {
     expect(result.current.validateStatus).toMatchObject({ kind: "error", message: "Actual Server password is required." });
   });
 
+  it("drops a budget list that arrives after the vault was locked", async () => {
+    let finishLoading: (value: unknown) => void = () => {};
+    mockLoadBrowserApiBudgetList.mockImplementation(() => new Promise((resolve) => (finishLoading = resolve)));
+    mockRevealServerSecret.mockResolvedValue({
+      mode: "browser-api",
+      baseUrl: "https://actual.example.com",
+      label: "",
+      secret: { apiKey: null, serverPassword: "vault-secret", encryptionPassword: null },
+    });
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+
+    act(() => {
+      void result.current.startFromRememberedServer({
+        serverFingerprint: "fp",
+        mode: "browser-api",
+        baseUrl: "https://actual.example.com",
+        label: "",
+        createdAt: "",
+        updatedAt: "",
+      });
+    });
+    await waitFor(() => expect(mockLoadBrowserApiBudgetList).toHaveBeenCalled());
+
+    // Locked while the list is still loading...
+    act(() => {
+      result.current.forgetOnLock();
+    });
+    await act(async () => {
+      finishLoading({ budgets: [{ groupId: "budget-1", name: "One" }], serverVersion: null });
+    });
+
+    // ...so the saved password does not come back, and nothing can be opened.
+    expect(result.current.budgets).toBeNull();
+    expect(result.current.heldCredential).toBeNull();
+    expect(result.current.validateStatus.kind).toBe("idle");
+  });
+
+  it("keeps a budget's saved encryption password with that budget, however the answers arrive", async () => {
+    mockListBudgets.mockResolvedValue([
+      { groupId: "budget-a", cloudFileId: "budget-a", name: "A" },
+      { groupId: "budget-b", cloudFileId: "budget-b", name: "B" },
+    ]);
+    const answers: Record<string, (value: unknown) => void> = {};
+    mockRevealServerSecret.mockImplementation(
+      (_fp: string, budgetSyncId?: string) => new Promise((resolve) => (answers[budgetSyncId ?? ""] = resolve))
+    );
+    const revealed = (encryptionPassword: string | null) => ({
+      mode: "http-api",
+      baseUrl: "https://api.example.com",
+      label: "",
+      secret: { apiKey: null, serverPassword: null, encryptionPassword },
+    });
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+    act(() => {
+      result.current.handleModeChange("http-api");
+      result.current.setBaseUrl("https://api.example.com");
+      result.current.setApiKey("api-key");
+    });
+    act(() => {
+      result.current.handleValidate();
+    });
+    // Budget A is chosen first; its reveal is still on the way when B is chosen.
+    await waitFor(() => expect(answers["budget-a"]).toBeDefined());
+    await act(async () => {
+      answers["budget-a"](revealed("password-a"));
+    });
+    await waitFor(() => expect(result.current.budgets).toHaveLength(2));
+    // A is chosen again, then B, before A's reveal answers.
+    act(() => {
+      result.current.handleSelectBudget("budget-a");
+    });
+    act(() => {
+      result.current.handleSelectBudget("budget-b");
+    });
+    await act(async () => {
+      answers["budget-b"](revealed(null));
+    });
+    // A's answer arrives last: it must not land on B.
+    await act(async () => {
+      answers["budget-a"](revealed("password-a"));
+    });
+
+    expect(result.current.selectedGroupId).toBe("budget-b");
+    expect(result.current.encryptionSaved).toBe(false);
+  });
+
   it("opens a remembered budget in one click", async () => {
     mockRevealServerSecret.mockResolvedValue({
       mode: "http-api",
