@@ -49,12 +49,9 @@ export async function POST(request: Request) {
     if (body.mode !== "http-api" && body.mode !== "browser-api") {
       return NextResponse.json({ error: "Unknown connection mode." }, { status: 400 });
     }
-    if (body.mode === "http-api" && !body.secret?.apiKey) {
-      return NextResponse.json({ error: "An HTTP API connection is enrolled with its API key." }, { status: 400 });
-    }
-    if (body.mode === "browser-api" && !body.secret?.serverPassword) {
-      return NextResponse.json({ error: "A Direct connection is enrolled with its server password." }, { status: 400 });
-    }
+    // Without its own password or key, an enrolment uses the one saved for its
+    // server (PR-071a); `startEnrolment` refuses if there is none.
+    const secret = body.secret ?? {};
 
     // Only the secret that belongs to the mode is kept.
     const input: SyncCredentialInput = {
@@ -64,8 +61,14 @@ export async function POST(request: Request) {
       budgetSyncId: body.budgetSyncId,
       ...(body.label ? { label: body.label } : {}),
       secret: {
-        ...(body.mode === "http-api" ? { apiKey: body.secret.apiKey } : { serverPassword: body.secret.serverPassword }),
-        ...(body.secret.encryptionPassword ? { encryptionPassword: body.secret.encryptionPassword } : {}),
+        ...(body.mode === "http-api"
+          ? secret.apiKey
+            ? { apiKey: secret.apiKey }
+            : {}
+          : secret.serverPassword
+            ? { serverPassword: secret.serverPassword }
+            : {}),
+        ...(secret.encryptionPassword ? { encryptionPassword: secret.encryptionPassword } : {}),
       },
     };
 
@@ -74,7 +77,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ enrolmentId }, { status: 202 });
     } catch (error) {
       if (error instanceof EnrolmentRefusedError) {
-        return NextResponse.json({ error: error.message, code: error.code }, { status: 503 });
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.code === "NO_SECRET" ? 400 : 503 });
       }
       throw error;
     }

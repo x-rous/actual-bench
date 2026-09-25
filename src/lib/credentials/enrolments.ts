@@ -6,7 +6,8 @@ import { generateId } from "@/lib/uuid";
 import { runWorkerTask, workerAvailability } from "@/lib/workers/supervisor";
 import type { SyncCredentialInput, SyncCredentialMeta } from "@/lib/app-db/types";
 import type { ActualErrorCode } from "@/lib/actual/runtime/errors";
-import { upsertSyncCredential } from "./unattendedCredentials";
+import { getSavedServerSecret, upsertSyncCredential } from "./unattendedCredentials";
+import type { ConnectionMode } from "@/store/connection";
 
 /**
  * Enrolling a connection for unattended use: checked first, stored only if
@@ -61,7 +62,7 @@ function prune(now: number): void {
 export class EnrolmentRefusedError extends Error {
   constructor(
     message: string,
-    readonly code: "BUSY" | "NEEDS_WORKERS"
+    readonly code: "BUSY" | "NEEDS_WORKERS" | "NO_SECRET"
   ) {
     super(message);
     this.name = "EnrolmentRefusedError";
@@ -106,10 +107,38 @@ async function check(input: SyncCredentialInput, signal: AbortSignal): Promise<V
 }
 
 /**
+ * An enrolment sent without the server's password or key uses the one already
+ * saved for that server (PR-071a): unattended secrets are one per server, so
+ * another budget there needs nothing new from the browser - only its own
+ * encryption password, if it has one. The saved secret is filled in here, on
+ * the server; it never goes back to the browser, and it is checked like any
+ * other before anything is stored.
+ */
+function withSavedServerSecret(input: SyncCredentialInput): SyncCredentialInput {
+  const hasOwn = input.mode === "http-api" ? !!input.secret.apiKey : !!input.secret.serverPassword;
+  if (hasOwn) return input;
+  const saved = getSavedServerSecret(getAppDb(), { mode: input.mode as ConnectionMode, baseUrl: input.baseUrl });
+  if (!saved) {
+    throw new EnrolmentRefusedError(
+      "No budget on this server is enrolled yet, so Bench has no password or API key for it. Connect to a budget on it and enrol that first.",
+      "NO_SECRET"
+    );
+  }
+  return {
+    ...input,
+    secret: {
+      ...(saved.kind === "http-api" ? { apiKey: saved.apiKey } : { serverPassword: saved.serverPassword }),
+      ...(input.secret.encryptionPassword ? { encryptionPassword: input.secret.encryptionPassword } : {}),
+    },
+  };
+}
+
+/**
  * Start enrolling. Refuses at once when the check cannot run now; otherwise
  * answers with an id to follow and carries on in the background.
  */
-export function startEnrolment(input: SyncCredentialInput): string {
+export function startEnrolment(submitted: SyncCredentialInput): string {
+  const input = withSavedServerSecret(submitted);
   const worker = getAutomationExecutor().name === "worker";
   if (!worker && input.mode === "browser-api") {
     throw new EnrolmentRefusedError(
@@ -167,8 +196,9 @@ export function getEnrolment(id: string): EnrolmentStatus | null {
 }
 
 /** Test seam: settle every enrolment still being checked. */
-export async function __waitForEnrolmentsForTests(): Promise<void> {
-  for (let i = 0; i < 200; i += 1) {
+export async function __waitForEnrolmentsForTests(maxWaitMs = 2_000): Promise<void> {
+  const until = Date.now() + maxWaitMs;
+  while (Date.now() < until) {
     if (![...registry().values()].some((entry) => entry.status === "verifying")) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }

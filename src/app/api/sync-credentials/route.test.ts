@@ -73,10 +73,10 @@ describe("POST /api/sync-credentials", () => {
   });
 
   it.each([
-    [{ ...HTTP, secret: { serverPassword: "pw" } }, /API key/],
-    [{ ...HTTP, mode: "browser-api", secret: { apiKey: "key" } }, /server password/],
+    [{ ...HTTP, secret: { serverPassword: "pw" } }, /No budget on this server is enrolled yet/],
+    [{ ...HTTP, mode: "browser-api", secret: { apiKey: "key" } }, /No budget on this server is enrolled yet/],
     [{ ...HTTP, mode: "carrier-pigeon", secret: { apiKey: "key" } }, /Unknown connection mode/],
-  ])("refuses a secret that does not fit the mode (%#)", async (body, message) => {
+  ])("refuses an enrolment with no secret for its mode and none saved for its server (%#)", async (body, message) => {
     const response = await post(body);
     expect(response.status).toBe(400);
     expect(((await response.json()) as { error: string }).error).toMatch(message);
@@ -112,6 +112,36 @@ describe("POST /api/sync-credentials", () => {
 
     expect(enrolment).toMatchObject({ status: "failed", code });
     expect(getSyncCredential(getAppDb(), "fp-http")?.secret.apiKey).toBe("working-key");
+  });
+
+  it("enrols another budget on an enrolled server with the saved key, the browser sending none", async () => {
+    upsertSyncCredential(getAppDb(), { ...HTTP, secret: { apiKey: "saved-key" } });
+    answerAccounts(200);
+
+    const enrolment = await enrolmentOf(
+      await post({ ...HTTP, connectionFingerprint: "fp-http-2", budgetSyncId: "budget-2", label: "Joint", secret: {} })
+    );
+
+    expect(enrolment).toMatchObject({ status: "enrolled" });
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("x-api-key")).toBe("saved-key");
+    expect(getSyncCredential(getAppDb(), "fp-http-2")).toMatchObject({
+      budgetSyncId: "budget-2",
+      secret: { apiKey: "saved-key" },
+    });
+  });
+
+  it("passes the encryption password typed for a budget, with the saved key", async () => {
+    upsertSyncCredential(getAppDb(), { ...HTTP, secret: { apiKey: "saved-key" } });
+    answerAccounts(200);
+
+    await enrolmentOf(
+      await post({ ...HTTP, connectionFingerprint: "fp-http-3", budgetSyncId: "budget-3", secret: { encryptionPassword: "e2ee" } })
+    );
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("budget-encryption-password")).toBe("e2ee");
+    expect(getSyncCredential(getAppDb(), "fp-http-3")?.secret).toEqual({ apiKey: "saved-key", encryptionPassword: "e2ee" });
   });
 
   it("reports an unreachable server as such", async () => {

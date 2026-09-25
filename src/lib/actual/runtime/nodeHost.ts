@@ -225,6 +225,35 @@ export async function getNodeRuntime(connection: BrowserApiConnection): Promise<
   return promise;
 }
 
+/**
+ * Every budget file on the connection's server, as Actual lists them: sign in,
+ * list, sign out. Nothing is downloaded, so it costs a login, not a budget
+ * open. Closes any budget this worker had open first: the runtime is one per
+ * worker.
+ */
+export async function listNodeServerBudgets(connection: BrowserApiConnection): Promise<unknown[]> {
+  assertWorkerThread();
+  const open = state.open;
+  state.open = null;
+  if (open) await leave(open, { refreshSnapshot: false });
+
+  const dataDir = workspace();
+  try {
+    const actual = await withTimeout(state.loadApi(), "Loading @actual-app/api");
+    await withTimeout(
+      actual.init({ dataDir, serverURL: normalizeUrl(connection.baseUrl), password: connection.serverPassword, verbose: false }),
+      "Signing in to the Actual server"
+    );
+    try {
+      return await withTimeout(actual.getBudgets(), "Listing budgets");
+    } finally {
+      await withTimeout(actual.shutdown(), "Shutting down Actual", SHUTDOWN_STEP_TIMEOUT_MS).catch(() => undefined);
+    }
+  } catch (error) {
+    throw toActualRuntimeError(error);
+  }
+}
+
 export async function syncNodeRuntime(connection: BrowserApiConnection): Promise<void> {
   const next = state.syncQueue.then(async () => {
     const actual = await getNodeRuntime(connection);

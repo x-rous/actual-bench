@@ -171,6 +171,25 @@ describe("enrolling a Direct connection", () => {
     expect(getSyncCredential(getAppDb(), "fp-other")?.secret.serverPassword).toBe("the-working-password");
   });
 
+  it("enrols another budget on the server with the saved password, which never crosses in plaintext", async () => {
+    upsertSyncCredential(getAppDb(), {
+      ...DIRECT,
+      connectionFingerprint: "fp-first",
+      budgetSyncId: "budget-0",
+      secret: { serverPassword: PASSWORD },
+    });
+    script({});
+
+    expect(await enrol({})).toMatchObject({ status: "enrolled" });
+    expect(getSyncCredential(getAppDb(), "fp-direct")?.secret).toEqual({ serverPassword: PASSWORD });
+    expect(JSON.stringify(crossings)).not.toContain(PASSWORD);
+  });
+
+  it("refuses at once when nothing is saved for the server and no password was sent", () => {
+    script({});
+    expect(() => startEnrolment({ ...DIRECT, secret: {} })).toThrow(/No budget on this server is enrolled yet/);
+  });
+
   it("keeps a password an upstream error echoes back out of the answer", async () => {
     script({ initError: new Error(`unexpected reply for a-mistyped-password`) });
 

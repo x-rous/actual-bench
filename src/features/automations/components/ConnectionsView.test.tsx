@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { toast } from "sonner";
 import { ConnectionsView } from "./ConnectionsView";
 import * as api from "../lib/automationsApi";
@@ -49,6 +49,81 @@ beforeEach(() => {
     connections: [connection()],
   });
   mockedSync.getVaultStatus.mockResolvedValue({ enabled: true, credentials: [] });
+  mockedApi.listServerBudgets.mockResolvedValue({
+    server: { mode: "http-api", baseUrl: "https://budgetapi.example.com" },
+    budgets: [
+      { budgetSyncId: "budget-1", name: "Household", encrypted: false, enrolled: true, connectionFingerprint: "fp-1" },
+      { budgetSyncId: "budget-2", name: "Joint", encrypted: false, enrolled: false, connectionFingerprint: "fp-2" },
+      { budgetSyncId: "budget-3", name: "Private", encrypted: true, enrolled: false, connectionFingerprint: "fp-3" },
+    ],
+  });
+});
+
+describe("other budgets on an enrolled server (PR-071a)", () => {
+  it("lists them without being asked, once per server", async () => {
+    mockedApi.listEnrolledConnections.mockResolvedValue({
+      vaultEnabled: true,
+      connections: [connection(), connection({ connectionFingerprint: "fp-x", budgetSyncId: "budget-x", label: "Other" })],
+    });
+    renderView();
+
+    expect(await screen.findByText(/2 other budgets: Joint, Private/)).toBeInTheDocument();
+    // Two enrolled budgets on one server: the server is asked once.
+    expect(mockedApi.listServerBudgets).toHaveBeenCalledTimes(1);
+  });
+
+  it("enrols the chosen budgets one at a time, sending no key, and asks for an encrypted budget's password", async () => {
+    mockedSync.enrollCredential.mockResolvedValue({ credential: {} as never });
+    renderView();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Enrol budgets on this server" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Joint/ }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Private/ }));
+
+    // An encrypted budget cannot be enrolled until its password is typed.
+    const enrol = within(dialog).getByRole("button", { name: "Enrol 2 budgets" });
+    expect(enrol).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText("Encryption password for Private"), { target: { value: "e2ee" } });
+    fireEvent.click(enrol);
+
+    await waitFor(() => expect(mockedSync.enrollCredential).toHaveBeenCalledTimes(2));
+    expect(mockedSync.enrollCredential.mock.calls[0][0]).toMatchObject({
+      budgetSyncId: "budget-2",
+      mode: "http-api",
+      secret: {},
+    });
+    expect(mockedSync.enrollCredential.mock.calls[1][0]).toMatchObject({
+      budgetSyncId: "budget-3",
+      secret: { encryptionPassword: "e2ee" },
+    });
+  });
+
+  it("shows a failure on its row and lets the others through", async () => {
+    mockedSync.enrollCredential
+      .mockRejectedValueOnce(new Error("The encryption password is not correct."))
+      .mockResolvedValueOnce({ credential: {} as never });
+    mockedApi.listServerBudgets.mockResolvedValue({
+      server: { mode: "http-api", baseUrl: "https://budgetapi.example.com" },
+      budgets: [
+        { budgetSyncId: "budget-3", name: "Private", encrypted: true, enrolled: false, connectionFingerprint: "fp-3" },
+        { budgetSyncId: "budget-2", name: "Joint", encrypted: false, enrolled: false, connectionFingerprint: "fp-2" },
+      ],
+    });
+    renderView();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Enrol budgets on this server" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Private/ }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Joint/ }));
+    fireEvent.change(within(dialog).getByLabelText("Encryption password for Private"), { target: { value: "wrong" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Enrol 2 budgets" }));
+
+    expect(await within(dialog).findByText("The encryption password is not correct.")).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getAllByText("Enrolled")).toHaveLength(1));
+    // The failed one is still selected, with its password, ready to fix and retry.
+    expect(within(dialog).getByRole("button", { name: "Enrol" })).not.toBeDisabled();
+  });
 });
 
 describe("unattended access", () => {
@@ -56,7 +131,7 @@ describe("unattended access", () => {
     renderView();
 
     expect(await screen.findByText("Household")).toBeInTheDocument();
-    expect(screen.getByText("https://budgetapi.example.com")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("https://budgetapi.example.com")).toBeInTheDocument();
   });
 
   it("says what depends on a credential, which is the point of the page", async () => {

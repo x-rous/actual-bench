@@ -12,10 +12,11 @@ import { cn } from "@/lib/utils";
 import { withdrawCredential } from "@/features/sync/lib/syncApi";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, selectActiveInstance, useConnectionStore } from "@/store/connection";
-import { listEnrolledConnections } from "../lib/automationsApi";
+import { listEnrolledConnections, listServerBudgets, type EnrolledConnection } from "../lib/automationsApi";
 import { formatDateTime } from "../lib/presentation";
 import { AutomationsTabs } from "./AutomationsTabs";
 import { EnrolConnection } from "./EnrolConnection";
+import { EnrolServerBudgetsDialog } from "./EnrolServerBudgetsDialog";
 
 /**
  * Unattended access (RD-058, given a home).
@@ -33,6 +34,75 @@ import { EnrolConnection } from "./EnrolConnection";
 
 const headerCell = "px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide";
 
+/** A server's budget list is cached this long, so opening the page does not sign in every time. */
+const SERVER_BUDGETS_STALE_MS = 5 * 60_000;
+
+/** One entry per server: the first enrolled budget on it stands for the server. */
+function enrolledServers(connections: EnrolledConnection[]): EnrolledConnection[] {
+  const seen = new Set<string>();
+  return connections.filter((connection) => {
+    const key = `${connection.mode} ${connection.baseUrl.trim().replace(/\/+$/, "").toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * The other budgets on one enrolled server (PR-071a). Listed automatically -
+ * the server signs in from a worker with its saved password or key - and
+ * enrolled from there with nothing from the browser.
+ */
+function OtherServerBudgets({ server, onEnrolled }: { server: EnrolledConnection; onEnrolled: () => void }) {
+  const [open, setOpen] = useState(false);
+  const query = useQuery({
+    queryKey: ["server-budgets", server.connectionFingerprint],
+    queryFn: () => listServerBudgets(server.connectionFingerprint),
+    staleTime: SERVER_BUDGETS_STALE_MS,
+    retry: false,
+  });
+  const budgets = query.data?.budgets ?? [];
+  const others = budgets.filter((budget) => !budget.enrolled);
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+      <span className="min-w-0 flex-1">
+        <span className="font-medium">{server.baseUrl}</span>
+        <span className="ml-1.5 text-muted-foreground">({server.mode === "http-api" ? "HTTP API" : "Direct"})</span>
+        <span className="block text-muted-foreground">
+          {query.isLoading
+            ? "Looking for other budgets on this server..."
+            : query.isError
+              ? (query.error as Error).message
+              : others.length === 0
+                ? "Every budget on this server is enrolled."
+                : `${others.length} other ${others.length === 1 ? "budget" : "budgets"}: ${others.map((budget) => budget.name).join(", ")}`}
+        </span>
+      </span>
+      {query.isError ? (
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => void query.refetch()}>
+          Try again
+        </Button>
+      ) : (
+        others.length > 0 && (
+          <Button size="sm" className="h-7 text-xs" onClick={() => setOpen(true)}>
+            Enrol budgets on this server
+          </Button>
+        )
+      )}
+      {query.data && (
+        <EnrolServerBudgetsDialog
+          open={open}
+          onOpenChange={setOpen}
+          server={query.data.server}
+          budgets={budgets}
+          onEnrolled={onEnrolled}
+        />
+      )}
+    </li>
+  );
+}
+
 export function ConnectionsView() {
   const queryClient = useQueryClient();
   const active = useConnectionStore(selectActiveInstance);
@@ -48,6 +118,12 @@ export function ConnectionsView() {
     void queryClient.invalidateQueries({ queryKey: ["automation-connections"] });
     void queryClient.invalidateQueries({ queryKey: ["vault-status"] });
   };
+  // A budget just enrolled changes the "other budgets" list; the list itself is
+  // not re-read from the server, only its enrolled flags.
+  const onServerBudgetEnrolled = () => {
+    invalidate();
+    void queryClient.invalidateQueries({ queryKey: ["server-budgets"] });
+  };
 
   const withdraw = useMutation({
     mutationFn: withdrawCredential,
@@ -61,7 +137,8 @@ export function ConnectionsView() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await query.refetch();
+      // Refresh re-reads each server's budgets too, past the cache.
+      await Promise.all([query.refetch(), queryClient.refetchQueries({ queryKey: ["server-budgets"] })]);
     } finally {
       setRefreshing(false);
     }
@@ -220,6 +297,20 @@ export function ConnectionsView() {
             </div>
           )}
 
+          {connections.length > 0 && query.data?.vaultEnabled !== false && (
+            <section className="mt-4">
+              <h3 className="text-sm font-semibold">Other budgets on your servers</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Bench already has each server&rsquo;s password or API key, so the other budgets on it can be enrolled
+                without connecting to them.
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {enrolledServers(connections).map((server) => (
+                  <OtherServerBudgets key={server.connectionFingerprint} server={server} onEnrolled={onServerBudgetEnrolled} />
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
 

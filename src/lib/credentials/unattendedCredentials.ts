@@ -198,6 +198,35 @@ export function resolveUnattendedSecret(db: SqliteDatabase, connectionFingerprin
   };
 }
 
+/**
+ * The secret saved for a server, if any budget on it is enrolled (PR-071a).
+ * Unattended secrets are one per server, so enrolling another budget there
+ * needs nothing new from the browser. Throws when the vault cannot open it.
+ */
+export function getSavedServerSecret(
+  db: SqliteDatabase,
+  server: { mode: ConnectionMode; baseUrl: string }
+): UnattendedServerSecret | null {
+  const serverFp = serverFingerprint(server);
+  const rows = legacyRowsOfServer(db, serverFp);
+  if (rows.some((row) => hasSecret(db, "operator", secretRefs.legacyConnection(row.connection_fingerprint)))) {
+    upgradeLegacyRows(db, rows, { throwOnFailure: true });
+  }
+  const saved = getSecret(db, OPERATOR, secretRefs.server(serverFp));
+  return saved ? (JSON.parse(saved.plaintext) as UnattendedServerSecret) : null;
+}
+
+/** Whether a server has a saved secret (no decryption). */
+export function hasSavedServerSecret(db: SqliteDatabase, server: { mode: ConnectionMode; baseUrl: string }): boolean {
+  const serverFp = serverFingerprint(server);
+  return (
+    hasSecret(db, "operator", secretRefs.server(serverFp)) ||
+    legacyRowsOfServer(db, serverFp).some((row) =>
+      hasSecret(db, "operator", secretRefs.legacyConnection(row.connection_fingerprint))
+    )
+  );
+}
+
 /** Read + decrypt a credential (server-only). Null when absent. Throws if the
  *  vault is locked or the ciphertext can't be opened - callers pause the flow. */
 export function getSyncCredential(db: SqliteDatabase, connectionFingerprint: string): SyncCredential | null {

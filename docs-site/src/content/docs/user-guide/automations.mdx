@@ -67,8 +67,16 @@ Three things to expect:
   but can take a few minutes the first time. If the check fails, Bench shows the reason and nothing
   is saved.
 - Enrolment is **per budget, not per server**. Three budgets on one server are three entries.
-- Bench can enrol any budget you have connected to in this browser session. A budget you have not
-  connected to yet needs to be connected first, so Bench has its password or API key.
+- Bench can enrol any budget you have connected to in this browser session. After that, the other
+  budgets on the same server can be enrolled without connecting to them (see below).
+
+### Other budgets on your servers
+
+Bench saves one password or API key per server. Once one budget on a server is enrolled, the
+**Connections** tab lists that server's other budgets on its own, and **Enrol budgets on this server**
+enrols the ones you choose, with nothing more from you. An encrypted budget asks for its encryption
+password. Each budget is checked with the server first, and one that fails shows why on its own row
+without holding up the others. **Refresh** re-reads each server's list.
 
 :::note[Why some budgets take longer to open]
 Actual's server keeps a saved copy of each budget, and anything that opens the budget replays every
