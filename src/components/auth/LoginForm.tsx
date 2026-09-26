@@ -12,6 +12,8 @@ import { parseApiError } from "@/components/connect/utils";
 import { getVaultStatus, setVaultPassphrase, unlockVault, type VaultStatus } from "@/features/connect/vaultApi";
 import { readVaultUnlockDuration, saveVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
 import { preloadVault } from "@/features/connect/vaultQueries";
+import { clearSessionRecord, getSessionRecord } from "@/features/connect/sessionRecord";
+import { resumeSession } from "@/features/connect/resumeSession";
 import {
   VAULT_UNLOCK_DURATION_OPTIONS,
   type VaultUnlockDuration,
@@ -70,6 +72,12 @@ export function LoginForm({ next }: { next: string }) {
       // Load what the next page shows while this button still spins, then
       // move on without a reload: it opens ready, one wait instead of two.
       await preloadVault(queryClient).catch(() => undefined);
+      // Back to a page of the app (a session that ended mid-use): reopen its
+      // budgets now too, so it opens ready rather than showing its own
+      // "Reconnecting..." after this. If that fails, the page falls back to
+      // the connect page as it would on any refresh.
+      const record = next === "/connect" ? null : getSessionRecord();
+      if (record) await resumeSession(record).catch(() => clearSessionRecord());
       router.replace(next);
     } catch (err) {
       setError(parseApiError(err));

@@ -8,6 +8,8 @@ jest.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 jest.mock("next/image", () => ({ __esModule: true, default: () => null }));
 
 const preloadVault = jest.fn(async () => undefined);
+const resumeSession = jest.fn(async () => undefined);
+jest.mock("@/features/connect/resumeSession", () => ({ resumeSession: (...args: unknown[]) => resumeSession(...(args as [])) }));
 jest.mock("@/features/connect/vaultQueries", () => ({ preloadVault: () => preloadVault() }));
 
 function render(ui: React.ReactElement) {
@@ -78,5 +80,39 @@ describe("the sign-in page (RD-096)", () => {
     getVaultStatus.mockResolvedValue(status({ authMode: "none" }));
     render(<LoginForm next="/connect" />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/connect"));
+  });
+
+  it("reopens the tab's budgets before going back to a page of the app", async () => {
+    sessionStorage.setItem(
+      "actual-admin-last-active-ref",
+      JSON.stringify({ active: { fingerprint: "srv", budgetSyncId: "b-1", label: "Household" }, others: [] })
+    );
+    getVaultStatus.mockResolvedValue(status());
+    unlockVault.mockResolvedValue({ ok: true, unlocked: true });
+    render(<LoginForm next="/rules" />);
+
+    fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "the-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/rules"));
+    expect(resumeSession).toHaveBeenCalledWith(expect.objectContaining({ active: expect.objectContaining({ budgetSyncId: "b-1" }) }));
+    sessionStorage.clear();
+  });
+
+  it("doesn't reopen budgets when going to the connect page", async () => {
+    sessionStorage.setItem(
+      "actual-admin-last-active-ref",
+      JSON.stringify({ active: { fingerprint: "srv", budgetSyncId: "b-1", label: "Household" }, others: [] })
+    );
+    getVaultStatus.mockResolvedValue(status());
+    unlockVault.mockResolvedValue({ ok: true, unlocked: true });
+    render(<LoginForm next="/connect" />);
+
+    fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "the-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/connect"));
+    expect(resumeSession).not.toHaveBeenCalled();
+    sessionStorage.clear();
   });
 });

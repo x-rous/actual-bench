@@ -17,6 +17,7 @@ import { useAuthStatus } from "@/hooks/useAuthStatus";
 import { readVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
 import { parseApiError } from "@/components/connect/utils";
 import { fullPageLoad } from "@/lib/auth/fullPageLoad";
+import { clearSessionRecord } from "@/features/connect/sessionRecord";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 
 /**
@@ -34,6 +35,9 @@ export async function signOut({ beforeLeave }: { beforeLeave?: () => void } = {}
     return;
   }
   beforeLeave?.();
+  // Signing out means leaving: the next sign-in starts fresh, not with this
+  // tab's budgets reopened.
+  clearSessionRecord();
   fullPageLoad("/login");
 }
 

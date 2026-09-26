@@ -18,10 +18,13 @@ import { QuickCreateDialog } from "@/features/quick-create/components/QuickCreat
 import { useConnectionHealth, ConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { useVersionCheck, VersionCheckContext } from "@/hooks/useVersionCheck";
 import { useBudgetPreferences } from "@/hooks/useBudgetPreferences";
-import { serverFingerprint } from "@/lib/sync/connectionRef";
-import { getLastActiveRef, setLastActiveRef, clearLastActiveRef } from "@/features/connect/lastActiveRef";
-import { revealServerSecret } from "@/features/connect/vaultApi";
-import { buildInstanceFromRevealed, ensureConnectionReady } from "@/features/connect/reconnectFromVault";
+import {
+  clearSessionRecord,
+  getSessionRecord,
+  recordOf,
+  setSessionRecord,
+} from "@/features/connect/sessionRecord";
+import { resumeSession } from "@/features/connect/resumeSession";
 
 /**
  * The four-panel app shell:
@@ -34,12 +37,12 @@ import { buildInstanceFromRevealed, ensureConnectionReady } from "@/features/con
  * to populate the store before we decide to redirect.
  *
  * Before redirecting, it tries once — the first time it sees no active
- * connection after hydration — to silently resume the connection that was
- * active before a refresh (the in-memory connection store is always empty on
- * reload — see connection.ts), using the non-secret pointer in
- * lastActiveRef.ts plus the remembered-server vault. If there's no pointer,
- * the vault is locked, or the reveal fails, it falls through to /connect
- * exactly as before. Any *later* loss of the active connection (an explicit
+ * connection after hydration — to silently resume the budgets this tab had
+ * before a refresh (the in-memory connection store is always empty on reload
+ * — see connection.ts), using the non-secret record in sessionRecord.ts plus
+ * the remembered-server vault: the active one reopened, the others back in
+ * the switcher. If there's no record, the vault is locked, or the active one
+ * can't be reopened, it falls through to /connect exactly as before. Any *later* loss of the active connection (an explicit
  * disconnect) always goes straight to /connect — vault-resume is a
  * page-load feature, not an auto-reconnect-on-disconnect feature.
  *
@@ -51,8 +54,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const activeInstance = useConnectionStore(selectActiveInstance);
-  const addInstance = useConnectionStore((s) => s.addInstance);
-  const setActiveInstance = useConnectionStore((s) => s.setActiveInstance);
 
   // Overview is a lightweight landing page, so avoid booting the full entity
   // preload set while the user is on /overview. Other app routes keep the
@@ -69,10 +70,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // hydration — never recomputed afterward. This is what makes the resume
   // attempt below a one-shot, page-load-only thing: a later disconnect
   // doesn't re-read a (by-then-cleared) pointer and doesn't retry.
-  const pendingResumeRef = useRef<{ v: ReturnType<typeof getLastActiveRef> } | null>(null);
+  const pendingResumeRef = useRef<{ v: ReturnType<typeof getSessionRecord> } | null>(null);
   if (hydrated) {
     if (pendingResumeRef.current === null) {
-      pendingResumeRef.current = { v: activeInstance ? null : getLastActiveRef() };
+      pendingResumeRef.current = { v: activeInstance ? null : getSessionRecord() };
     }
   }
   // Set once a real connection has existed during this mount, so a later
@@ -85,7 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // instead of resuming) — a one-frame cosmetic flash at worst, since the
   // effect's own hadActiveInstanceRef check is what actually prevents a
   // reconnect.
-  const isResuming = hydrated && !activeInstance && !!getLastActiveRef();
+  const isResuming = hydrated && !activeInstance && !!getSessionRecord();
 
   useEffect(() => {
     if (!hydrated || activeInstance) return;
@@ -104,48 +105,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     let cancelled = false;
-    revealServerSecret(pending.fingerprint, pending.budgetSyncId)
-      .then(async (revealed) => {
-        if (cancelled) return;
-        const instance = buildInstanceFromRevealed(revealed, pending.budgetSyncId, pending.label);
-        // Same readiness gate reconnect() runs — don't activate a connection
-        // whose secret decrypted fine but no longer actually reaches the
-        // server (rotated password, server down).
-        await ensureConnectionReady(instance);
-        if (cancelled) return;
-        addInstance(instance);
-        setActiveInstance(instance.id);
-      })
-      .catch(() => {
-        // Stale/inaccessible reference (vault locked, budget forgotten, server
-        // unreachable) — fall back to the normal connect flow.
-        if (!cancelled) {
-          clearLastActiveRef();
-          router.replace("/connect");
-        }
-      });
+    resumeSession(pending).catch(() => {
+      // Stale/inaccessible record (vault locked, budget forgotten, server
+      // unreachable) — fall back to the normal connect flow.
+      if (!cancelled) {
+        clearSessionRecord();
+        router.replace("/connect");
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [hydrated, activeInstance, addInstance, setActiveInstance, router]);
+  }, [hydrated, activeInstance, router]);
 
-  // Remember which connection is active (non-secret pointer only) so a
-  // refresh can try to silently resume it above instead of always bouncing
-  // to /connect. Clearing on disconnect keeps a refresh right after
+  // Remember which budgets are connected and which is active (non-secret
+  // record only) so a refresh can bring them back above instead of always
+  // bouncing to /connect. Clearing on disconnect keeps a refresh right after
   // disconnecting from silently reconnecting the user.
+  const instances = useConnectionStore((s) => s.instances);
   useEffect(() => {
     if (activeInstance) {
       hadActiveInstanceRef.current = true;
-      setLastActiveRef({
-        fingerprint: serverFingerprint(activeInstance),
-        budgetSyncId: activeInstance.budgetSyncId,
-        label: activeInstance.label,
-      });
+      setSessionRecord(recordOf(activeInstance, instances));
     } else if (hadActiveInstanceRef.current) {
-      clearLastActiveRef();
+      clearSessionRecord();
     }
-  }, [activeInstance]);
+  }, [activeInstance, instances]);
 
   // Clear persisted filter state when the active connection changes so that
   // stale entity IDs stored in filter values don't carry over to a new budget.
