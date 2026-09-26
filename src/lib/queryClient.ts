@@ -39,12 +39,15 @@ export function createQueryClient(): QueryClient {
 const APP_QUERY_ROOTS = new Set(["auth-status", "remembered-servers", "vault-state"]);
 
 /**
- * Forget everything cached for the budget being left, before another one opens.
+ * Forget everything cached for the budget being left, before another one opens,
+ * and stop what is still loading for it.
  * Keeps the app-level caches, so the account menu and saved budgets don't blink
  * out and load again on every switch.
  */
 export function clearBudgetQueries(queryClient: QueryClient): void {
-  queryClient.removeQueries({
-    predicate: (query) => !APP_QUERY_ROOTS.has(String(query.queryKey[0])),
-  });
+  const predicate = (query: { queryKey: readonly unknown[] }) => !APP_QUERY_ROOTS.has(String(query.queryKey[0]));
+  // Cancel first: a request still on its way for the budget being left, or its
+  // retry, must not reach for that budget once another one is opening.
+  void queryClient.cancelQueries({ predicate });
+  queryClient.removeQueries({ predicate });
 }
