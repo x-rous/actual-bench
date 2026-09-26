@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import type { VaultUnlockDuration } from "@/lib/connectionVault/unlockDuration";
 import {
@@ -36,33 +36,70 @@ const CLOSED: VaultStatus = {
   passwordFromEnv: false,
 };
 
+export const REMEMBERED_SERVERS_QUERY_KEY = ["remembered-servers"] as const;
+
+type RememberedList = Awaited<ReturnType<typeof listRememberedServers>>;
+
+function fetchStatus(queryClient: QueryClient) {
+  return queryClient.fetchQuery({ queryKey: AUTH_STATUS_QUERY_KEY, queryFn: getVaultStatus, staleTime: 0 });
+}
+
+function fetchRememberedList(queryClient: QueryClient) {
+  return queryClient.fetchQuery({ queryKey: REMEMBERED_SERVERS_QUERY_KEY, queryFn: listRememberedServers, staleTime: 0 });
+}
+
+/**
+ * Load the vault's status and saved servers into the shared cache, both at
+ * once. The sign-in page calls it before moving on, so the connect page opens
+ * on the saved budgets instead of loading them itself (RD-096).
+ */
+export async function preloadVault(queryClient: QueryClient): Promise<void> {
+  await Promise.all([fetchStatus(queryClient), fetchRememberedList(queryClient)]);
+}
+
+type VaultView = { status: VaultStatus; servers: ServerCredentialMeta[]; budgets: RememberedBudget[] };
+
+function viewOf(status: VaultStatus, list: RememberedList | null | undefined): VaultView {
+  const usable = status.supported && list;
+  return { status, servers: usable ? list.servers : [], budgets: usable ? list.budgets : [] };
+}
+
 /**
  * Client state + actions for the remembered-server vault (RD-061 / RD-063).
  * Encapsulates status, the saved-server list, and the passphrase/enroll
  * operations so the connect UI stays thin. All actions refresh status on
  * completion, and the shared saved-budgets data the toolbar and pickers read,
  * so an unlock, lock or forget here shows there at once.
+ *
+ * Starts from the shared cache when it already holds both halves (after
+ * sign-in, see `preloadVault`), and refreshes quietly in the background;
+ * otherwise it reports `loading` until they arrive.
  */
 export function useConnectionVault() {
-  const [status, setStatus] = useState<VaultStatus>(CLOSED);
-  const [servers, setServers] = useState<ServerCredentialMeta[]>([]);
-  const [budgets, setBudgets] = useState<RememberedBudget[]>([]);
-  const [loading, setLoading] = useState(true);
   const queryClient = useQueryClient();
+  const [cached] = useState<VaultView | null>(() => {
+    const status = queryClient.getQueryData<VaultStatus>(AUTH_STATUS_QUERY_KEY);
+    const list = queryClient.getQueryData<RememberedList>(REMEMBERED_SERVERS_QUERY_KEY);
+    return status && list ? viewOf(status, list) : null;
+  });
+  const [status, setStatus] = useState<VaultStatus>(cached?.status ?? CLOSED);
+  const [servers, setServers] = useState<ServerCredentialMeta[]>(cached?.servers ?? []);
+  const [budgets, setBudgets] = useState<RememberedBudget[]>(cached?.budgets ?? []);
+  const [loading, setLoading] = useState(cached === null);
 
   const refresh = useCallback(async () => {
     void queryClient.invalidateQueries({ queryKey: SAVED_BUDGETS_QUERY_KEY });
     try {
-      // Both at once: the page waits for the pair before choosing its layout.
-      // The status goes through the shared auth-status cache, so the account
-      // menu's own request for it is the same one, and it shows with the page.
+      // Both at once, through the shared cache: the account menu's own
+      // request for the status is the same one, so it shows with the page.
       const [s, list] = await Promise.all([
-        queryClient.fetchQuery({ queryKey: AUTH_STATUS_QUERY_KEY, queryFn: getVaultStatus, staleTime: 0 }),
-        listRememberedServers().catch(() => null),
+        fetchStatus(queryClient),
+        fetchRememberedList(queryClient).catch(() => null),
       ]);
-      setStatus(s);
-      setServers(s.supported && list ? list.servers : []);
-      setBudgets(s.supported && list ? list.budgets : []);
+      const view = viewOf(s, list);
+      setStatus(view.status);
+      setServers(view.servers);
+      setBudgets(view.budgets);
     } catch {
       // Vault route unavailable → treat as unsupported rather than surface an error.
       setStatus(CLOSED);

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { VaultStatus } from "@/features/connect/vaultApi";
 import { LoginForm } from "./LoginForm";
 
@@ -6,8 +7,13 @@ const replace = jest.fn();
 jest.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 jest.mock("next/image", () => ({ __esModule: true, default: () => null }));
 
-const fullPageLoad = jest.fn();
-jest.mock("@/lib/auth/fullPageLoad", () => ({ fullPageLoad: (path: string) => fullPageLoad(path) }));
+const preloadVault = jest.fn(async () => undefined);
+jest.mock("@/features/connect/useConnectionVault", () => ({ preloadVault: () => preloadVault() }));
+
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const getVaultStatus = jest.fn<Promise<VaultStatus>, []>();
 const setVaultPassphrase = jest.fn();
@@ -25,7 +31,7 @@ function status(overrides: Partial<VaultStatus> = {}): VaultStatus {
 describe("the sign-in page (RD-096)", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("signs in and loads the page the user was going to", async () => {
+  it("signs in, loads what the next page shows, then goes there without a reload", async () => {
     getVaultStatus.mockResolvedValue(status());
     unlockVault.mockResolvedValue({ ok: true, unlocked: true });
     render(<LoginForm next="/rules" />);
@@ -33,8 +39,9 @@ describe("the sign-in page (RD-096)", () => {
     fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "the-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
-    await waitFor(() => expect(fullPageLoad).toHaveBeenCalledWith("/rules"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/rules"));
     expect(unlockVault).toHaveBeenCalledWith("the-password", expect.any(String));
+    expect(preloadVault).toHaveBeenCalled();
   });
 
   it("shows the server's answer when the password is wrong, and stays", async () => {
@@ -46,7 +53,7 @@ describe("the sign-in page (RD-096)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(await screen.findByText("Incorrect password.")).toBeInTheDocument();
-    expect(fullPageLoad).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it("asks a fresh install to set the password, and checks it was typed twice alike", async () => {
@@ -63,7 +70,7 @@ describe("the sign-in page (RD-096)", () => {
 
     fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "first-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Set password and continue" }));
-    await waitFor(() => expect(fullPageLoad).toHaveBeenCalledWith("/connect"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/connect"));
     expect(setVaultPassphrase).toHaveBeenCalledWith("first-password", expect.any(String));
   });
 

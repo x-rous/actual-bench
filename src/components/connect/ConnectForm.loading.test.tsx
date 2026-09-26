@@ -48,8 +48,7 @@ const SAVED = {
   budgets: [{ serverFingerprint: "srv-1", budgetSyncId: "budget-1", name: "Household", createdAt: "", lastOpenedAt: "" }],
 };
 
-function renderPage() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderPage(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   render(
     <QueryClientProvider client={client}>
       <ConnectForm />
@@ -92,3 +91,20 @@ it("shows the first-run form once the vault says nothing is saved", async () => 
   expect(await screen.findByText("Connect your Actual server")).toBeInTheDocument();
   expect(screen.queryByLabelText("Loading saved connections")).not.toBeInTheDocument();
 });
+
+it("opens straight on the saved budgets when sign-in already loaded them", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(["auth-status"], status);
+  client.setQueryData(["remembered-servers"], SAVED);
+  renderPage(client);
+
+  expect(screen.queryByLabelText("Loading saved connections")).not.toBeInTheDocument();
+  expect(screen.getByText("Household")).toBeInTheDocument();
+  // It still refreshes quietly behind the scenes.
+  await act(async () => {
+    statusCall.resolve(status);
+    listCall.resolve(SAVED);
+  });
+  expect(screen.getByText("Household")).toBeInTheDocument();
+});
+

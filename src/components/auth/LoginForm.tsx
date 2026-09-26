@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,19 +11,22 @@ import { Label } from "@/components/ui/label";
 import { parseApiError } from "@/components/connect/utils";
 import { getVaultStatus, setVaultPassphrase, unlockVault, type VaultStatus } from "@/features/connect/vaultApi";
 import { readVaultUnlockDuration, saveVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
+import { preloadVault } from "@/features/connect/useConnectionVault";
 import {
   VAULT_UNLOCK_DURATION_OPTIONS,
   type VaultUnlockDuration,
 } from "@/lib/connectionVault/unlockDuration";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
-import { fullPageLoad } from "@/lib/auth/fullPageLoad";
 
 /**
  * Sign in, or on a fresh install set the password (RD-096). One password:
  * it signs in and it encrypts saved connections, so signing in also opens them.
+ * The button keeps spinning until the next page's data is loaded, so signing
+ * in is one wait, not a spinner followed by another on the connect page.
  */
 export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<VaultStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -63,7 +67,10 @@ export function LoginForm({ next }: { next: string }) {
       if (settingUp) await setVaultPassphrase(password, duration);
       else await unlockVault(password, duration);
       saveVaultUnlockDuration(duration);
-      fullPageLoad(next);
+      // Load what the next page shows while this button still spins, then
+      // move on without a reload: it opens ready, one wait instead of two.
+      await preloadVault(queryClient).catch(() => undefined);
+      router.replace(next);
     } catch (err) {
       setError(parseApiError(err));
       setBusy(false);
