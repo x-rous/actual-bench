@@ -39,6 +39,7 @@ import { POST as setPassphrase } from "./passphrase/route";
 import { POST as changePassphrase } from "./passphrase/change/route";
 import { POST as unlock } from "./unlock/route";
 import { POST as lock } from "./lock/route";
+import { POST as reset } from "./reset/route";
 
 function req(body?: unknown): never {
   return {
@@ -56,6 +57,8 @@ async function status() {
     supported: boolean;
     passphraseSet: boolean;
     unlocked: boolean;
+    authMode: "password" | "none";
+    passwordFromEnv: boolean;
   };
 }
 
@@ -84,12 +87,12 @@ describe("connection-vault routes (RD-061 / PR-026b)", () => {
   });
 
   it("reports status through the full lifecycle", async () => {
-    expect(await status()).toEqual({ supported: true, passphraseSet: false, unlocked: false });
+    expect(await status()).toEqual({ supported: true, passphraseSet: false, unlocked: false, authMode: "password", passwordFromEnv: false });
 
     const set = await setPassphrase(req({ passphrase: "unlock-me-please" }));
     expect(set.status).toBe(200);
     expect(cookieJar.has(VAULT_COOKIE)).toBe(true);
-    expect(await status()).toEqual({ supported: true, passphraseSet: true, unlocked: true });
+    expect(await status()).toEqual({ supported: true, passphraseSet: true, unlocked: true, authMode: "password", passwordFromEnv: false });
   });
 
   it("rejects a short passphrase and a second set", async () => {
@@ -144,5 +147,36 @@ describe("connection-vault routes (RD-061 / PR-026b)", () => {
     await lock(req());
     expect((await unlock(req({ passphrase: "old-passphrase" }))).status).toBe(401);
     expect((await unlock(req({ passphrase: "new-passphrase" }))).status).toBe(200);
+  });
+
+  describe("with sign-in (RD-096)", () => {
+    const saved = { auth: process.env.ACTUAL_BENCH_AUTH, password: process.env.ACTUAL_BENCH_PASSWORD };
+
+    afterEach(() => {
+      if (saved.auth === undefined) delete process.env.ACTUAL_BENCH_AUTH;
+      else process.env.ACTUAL_BENCH_AUTH = saved.auth;
+      if (saved.password === undefined) delete process.env.ACTUAL_BENCH_PASSWORD;
+      else process.env.ACTUAL_BENCH_PASSWORD = saved.password;
+    });
+
+    it("refuses to change a password the environment sets", async () => {
+      await setPassphrase(req({ passphrase: "old-password" }));
+      process.env.ACTUAL_BENCH_PASSWORD = "old-password";
+
+      const response = await changePassphrase(req({ currentPassphrase: "old-password", newPassphrase: "new-password" }));
+      expect(response.status).toBe(409);
+      expect((await status()).passwordFromEnv).toBe(true);
+    });
+
+    it("refuses a reset while it is the app password, and allows one with sign-in off", async () => {
+      await setPassphrase(req({ passphrase: "the-password" }));
+      delete process.env.ACTUAL_BENCH_AUTH;
+      expect((await reset(req())).status).toBe(409);
+      expect((await status()).passphraseSet).toBe(true);
+
+      process.env.ACTUAL_BENCH_AUTH = "none";
+      expect((await reset(req())).status).toBe(200);
+      expect((await status()).passphraseSet).toBe(false);
+    });
   });
 });

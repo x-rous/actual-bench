@@ -41,7 +41,7 @@ export function UnlockVaultDialog({
       // The caller closes the dialog: it knows what was waiting on the unlock.
       onUnlocked();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The passphrase was not accepted.");
+      setError(err instanceof Error ? err.message : "The password was not accepted.");
     } finally {
       setBusy(false);
     }
@@ -54,13 +54,13 @@ export function UnlockVaultDialog({
           <DialogTitle>Unlock saved connections</DialogTitle>
         </DialogHeader>
         <div className="space-y-2 text-sm">
-          <p className="text-muted-foreground">Enter your passphrase to open saved budgets.</p>
+          <p className="text-muted-foreground">Enter your password to open saved budgets.</p>
           <Input
             type="password"
             autoFocus
             // As on the Connect page's unlock form.
             autoComplete="off"
-            aria-label="Vault passphrase"
+            aria-label="Vault password"
             value={passphrase}
             disabled={busy}
             onChange={(event) => setPassphrase(event.target.value)}

@@ -32,8 +32,6 @@ describe("execution-mode copy", () => {
   it("says a server automation runs with Bench closed", () => {
     const copy = executionModeCopy("server");
     expect(copy.detail).toMatch(/even with Actual Bench closed/i);
-    // And does not over-promise: the engine is one instance, not a cluster.
-    expect(copy.detail).toMatch(/One server instance/i);
   });
 
   it("says plainly that a browser automation stops when the tab closes", () => {

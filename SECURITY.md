@@ -29,11 +29,12 @@ context when assessing a report:
 
 - **Credentials**: Actual server and API credentials are kept in memory or session storage by
   default. The optional "Remember servers" feature seals secrets with AES-256-GCM in the
-  server-side metadata database, encrypted with a key derived from a passphrase you set; the
-  server itself cannot decrypt them without it.
-- **Access control**: Actual Bench has no accounts or login of its own, by design, and expects
-  network-level access control (a reverse proxy, VPN, or hosting platform's own auth) in front of
-  it. Our [deployment docs](https://x-rous.github.io/actual-bench/administration/deployment/)
+  server-side metadata database, encrypted with a key derived from your Actual Bench password;
+  the server itself cannot decrypt them without it.
+- **Access control**: Actual Bench asks for a single operator password (no user accounts). The
+  same password encrypts saved connections. Operators may turn sign-in off
+  (`ACTUAL_BENCH_AUTH=none`) when their own proxy, VPN or hosting platform controls access; a report
+  that only applies with sign-in off is still welcome, but is judged in that light. Our [deployment docs](https://x-rous.github.io/actual-bench/administration/deployment/)
   cover recommended setups for self-hosting safely.
 - **Operational endpoints**: any current or future operational/metrics endpoint (health checks,
   automation status, and similar) is scoped to expose no financial data (balances, category

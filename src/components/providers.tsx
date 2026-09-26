@@ -5,6 +5,7 @@ import { ThemeProvider } from "next-themes";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { createQueryClient } from "@/lib/queryClient";
+import { SignedOutRedirect } from "@/components/auth/SignedOutRedirect";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   // useState ensures each browser session gets its own QueryClient instance
@@ -18,6 +19,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
     >
       <QueryClientProvider client={queryClient}>
+        <SignedOutRedirect />
         {children}
         <Toaster richColors position="bottom-right" />
       </QueryClientProvider>

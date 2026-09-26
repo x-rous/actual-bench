@@ -63,7 +63,7 @@ function renderHarness() {
 }
 
 async function unlockWith(passphrase: string) {
-  fireEvent.change(await screen.findByLabelText("Vault passphrase"), { target: { value: passphrase } });
+  fireEvent.change(await screen.findByLabelText("Vault password"), { target: { value: passphrase } });
   fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
 }
 
@@ -71,7 +71,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   unlocked = false;
   useConnectionStore.setState({ instances: [current], activeInstanceId: current.id });
-  mockedVault.getVaultStatus.mockImplementation(async () => ({ supported: true, passphraseSet: true, unlocked }));
+  mockedVault.getVaultStatus.mockImplementation(async () => ({ supported: true, passphraseSet: true, unlocked, authMode: "none" as const, passwordFromEnv: false }));
   mockedVault.listRememberedServers.mockResolvedValue({
     supported: true,
     servers: [
@@ -107,7 +107,7 @@ describe("opening a saved budget from the toolbar", () => {
     await waitFor(() => expect(activeBudget()).toBe("budget-2"));
     // Straight on after the unlock: the dialog closed and was not asked again.
     expect(mockedVault.unlockVault).toHaveBeenCalledTimes(1);
-    expect(screen.queryByLabelText("Vault passphrase")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Vault password")).not.toBeInTheDocument();
     expect(prepare).toHaveBeenCalledTimes(1);
   });
 

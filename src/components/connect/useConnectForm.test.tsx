@@ -55,7 +55,7 @@ jest.mock("../../lib/actual", () => ({
   getTransport: (connection: unknown) => mockGetTransport(connection),
 }));
 
-jest.mock("../../lib/actual/browser/labRuntime", () => ({
+jest.mock("../../lib/actual/browser/budgetList", () => ({
   listBrowserApiBudgets: jest.fn(),
   loadBrowserApiBudgetList: (input: unknown) => mockLoadBrowserApiBudgetList(input),
 }));
@@ -138,6 +138,17 @@ describe("useConnectForm connection activation", () => {
     const { result } = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
 
     expect(result.current.connectionMode).toBe("browser-api");
+  });
+
+  it("ticks Remember when saving works right away, until the user chooses otherwise", () => {
+    const client = new QueryClient();
+    const unticked = renderHook(() => useConnectForm(), { wrapper: makeWrapper(client) });
+    expect(unticked.result.current.rememberOnServer).toBe(false);
+
+    const { result } = renderHook(() => useConnectForm({ rememberByDefault: true }), { wrapper: makeWrapper(client) });
+    expect(result.current.rememberOnServer).toBe(true);
+    act(() => result.current.setRememberOnServer(false));
+    expect(result.current.rememberOnServer).toBe(false);
   });
 
   it("activates a successful Direct budget connection without navigating", async () => {

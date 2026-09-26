@@ -274,8 +274,7 @@ export function AutomationsView() {
             </strong>
             {" · "}
             Automations marked <strong className="font-medium">Server</strong> run on a schedule even
-            with Actual Bench closed. One server instance runs them - Bench does not coordinate
-            across several.
+            with Actual Bench closed.
           </p>
 
           <div className="flex shrink-0 items-center gap-2">

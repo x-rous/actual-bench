@@ -47,6 +47,7 @@ import {
   takeRecoveryPoint,
 } from "@/features/backups/lib/safetyPoint";
 import { BudgetSaveProgressDialog } from "@/features/budget-management/components/BudgetSaveProgressDialog";
+import { AccountMenu, signOut } from "@/components/auth/AccountMenu";
 import { BudgetSaveReviewDialog } from "@/features/budget-management/components/BudgetSaveReviewDialog";
 import {
   readBudgetSaveReviewSkip,
@@ -59,7 +60,8 @@ type PendingAction =
   | { kind: "openSaved"; saved: SavedBudget }
   | { kind: "addConnection" }
   | { kind: "disconnect" }
-  | { kind: "disconnectAll" };
+  | { kind: "disconnectAll" }
+  | { kind: "signOut" };
 
 function TopBarVersionChip({
   label,
@@ -230,6 +232,8 @@ export function TopBar() {
       clearAll();
       clearServers();
       router.push("/connect");
+    } else if (action.kind === "signOut") {
+      await signOut({ beforeLeave: handleDiscardAll });
     }
   }
 
@@ -544,6 +548,7 @@ export function TopBar() {
             <Save className="mr-1 h-3.5 w-3.5" />
             {takingRecoveryPoint ? "Backing up…" : isSaving ? "Saving…" : "Save"}
           </Button>
+          <AccountMenu onSignOut={() => requestAction({ kind: "signOut" })} />
         </div>
       </header>
 

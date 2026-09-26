@@ -56,6 +56,7 @@ services:
       ACTUAL_BENCH_DB_PATH: /data/actual-bench.sqlite
       # --- Optional settings (uncomment to use; see the Configuration guide) ---
       # LOG_LEVEL: info                            # debug | info | warn | error
+      # ACTUAL_BENCH_PASSWORD: "<password>"        # set the sign-in password (else the first visitor does)
       # ACTUAL_BENCH_VAULT_KEY: "<strong-secret>"  # hold the vault key yourself (else generated)
     volumes:
       - actual-bench-data:/data

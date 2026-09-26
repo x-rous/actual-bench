@@ -40,6 +40,10 @@ concurrency:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
+    env:
+      # Actual Bench asks for a password; the image sets it from the
+      # environment at start, the same way an operator can.
+      SMOKE_PASSWORD: smoke-test-password
     steps:
       - uses: actions/checkout@v7
         with:
@@ -63,6 +67,7 @@ jobs:
           docker volume create actual-bench-smoke-data
           docker run -d \
             --name actual-bench-smoke \
+            -e ACTUAL_BENCH_PASSWORD="$SMOKE_PASSWORD" \
             -p 3000:3000 \
             -v actual-bench-smoke-data:/data \
             actual-bench:smoke-test
@@ -95,10 +100,24 @@ jobs:
           docker logs actual-bench-smoke
           exit 1
 
+      - name: Confirm sign-in guards the app, and sign in
+        # The gate runs in the proxy while sessions are created by a route
+        # handler; a gated call succeeding with the cookie proves the two share
+        # one session store in the production build.
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/app-db/health)
+          if [ "$code" != "401" ]; then
+            echo "::error::A signed-out API call returned ${code}, expected 401"
+            exit 1
+          fi
+          curl -sf -c cookies.txt -H 'Content-Type: application/json' \
+            -d "{\"passphrase\":\"$SMOKE_PASSWORD\"}" \
+            http://127.0.0.1:3000/api/connection-vault/unlock > /dev/null
+
       - name: Confirm the app responds and the metadata DB is initialized
         run: |
-          curl -sf http://127.0.0.1:3000/ > /dev/null
-          body=$(curl -sf http://127.0.0.1:3000/api/app-db/health)
+          curl -sf -b cookies.txt http://127.0.0.1:3000/ > /dev/null
+          body=$(curl -sf -b cookies.txt http://127.0.0.1:3000/api/app-db/health)
           echo "$body"
           created_at=$(echo "$body" | node -e '
             const body = JSON.parse(require("fs").readFileSync(0, "utf8"));
@@ -115,7 +134,7 @@ jobs:
         # check that the compiled worker ships in the standalone build and runs.
         run: |
           for i in $(seq 1 30); do
-            body=$(curl -sf http://127.0.0.1:3000/api/automations/health || true)
+            body=$(curl -sf -b cookies.txt http://127.0.0.1:3000/api/automations/health || true)
             status=$(echo "$body" | node -e '
               let raw = "";
               process.stdin.on("data", (chunk) => (raw += chunk));
@@ -145,6 +164,7 @@ jobs:
           docker rm actual-bench-smoke
           docker run -d \
             --name actual-bench-smoke-2 \
+            -e ACTUAL_BENCH_PASSWORD="$SMOKE_PASSWORD" \
             -p 3000:3000 \
             -v actual-bench-smoke-data:/data \
             actual-bench:smoke-test
@@ -158,7 +178,11 @@ jobs:
             fi
             sleep 2
           done
-          body=$(curl -sf http://127.0.0.1:3000/api/app-db/health)
+          # A restart signs everyone out; the same password signs back in.
+          curl -sf -c cookies.txt -H 'Content-Type: application/json' \
+            -d "{\"passphrase\":\"$SMOKE_PASSWORD\"}" \
+            http://127.0.0.1:3000/api/connection-vault/unlock > /dev/null
+          body=$(curl -sf -b cookies.txt http://127.0.0.1:3000/api/app-db/health)
           echo "$body"
           echo "$body" | APP_DB_CREATED_AT="$APP_DB_CREATED_AT" node -e '
             const body = JSON.parse(require("fs").readFileSync(0, "utf8"));

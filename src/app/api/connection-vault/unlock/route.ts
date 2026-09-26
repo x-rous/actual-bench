@@ -5,7 +5,12 @@ import { rememberedCredentialsSupported } from "@/lib/credentials/passphraseVaul
 import { isPassphraseSet, verifyPassphrase } from "@/lib/connectionVault/passphrase";
 import { createSession } from "@/lib/connectionVault/session";
 import { setSessionCookie } from "@/lib/connectionVault/cookies";
-import { recordUnlockFailure, recordUnlockSuccess, unlockRetryAfterMs } from "@/lib/connectionVault/throttle";
+import {
+  recordUnlockFailure,
+  recordUnlockSuccess,
+  throttleClientKey,
+  unlockRetryAfterMs,
+} from "@/lib/connectionVault/throttle";
 import {
   DEFAULT_VAULT_UNLOCK_DURATION,
   isVaultUnlockDuration,
@@ -29,17 +34,18 @@ export async function POST(request: NextRequest) {
     }
     const body = (await readJsonBody(request)) as { passphrase?: unknown; duration?: unknown };
     if (typeof body?.passphrase !== "string") {
-      return NextResponse.json({ error: "passphrase is required." }, { status: 400 });
+      return NextResponse.json({ error: "Enter your password." }, { status: 400 });
     }
     if (body.duration !== undefined && !isVaultUnlockDuration(body.duration)) {
       return NextResponse.json({ error: "Unsupported vault unlock duration." }, { status: 400 });
     }
     const db = getAppDb();
     if (!isPassphraseSet(db)) {
-      return NextResponse.json({ error: "No passphrase is set." }, { status: 400 });
+      return NextResponse.json({ error: "No password is set." }, { status: 400 });
     }
     // Brute-force backoff: reject while locked out after repeated failures.
-    const retryMs = unlockRetryAfterMs();
+    const client = throttleClientKey(request.headers);
+    const retryMs = unlockRetryAfterMs(client);
     if (retryMs > 0) {
       return NextResponse.json(
         { error: "Too many attempts. Try again later." },
@@ -48,10 +54,10 @@ export async function POST(request: NextRequest) {
     }
     const key = verifyPassphrase(db, body.passphrase);
     if (!key) {
-      recordUnlockFailure();
-      return NextResponse.json({ error: "Incorrect passphrase." }, { status: 401 });
+      recordUnlockFailure(client);
+      return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
     }
-    recordUnlockSuccess();
+    recordUnlockSuccess(client);
     const response = NextResponse.json({ ok: true, unlocked: true });
     const duration = body.duration ?? DEFAULT_VAULT_UNLOCK_DURATION;
     setSessionCookie(request, response, createSession(key, duration), duration);

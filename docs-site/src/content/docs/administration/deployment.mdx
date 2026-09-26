@@ -155,11 +155,13 @@ Open **App Health** (Tools sidebar) and confirm:
 
 ## Access control
 
-Actual Bench has **no login of its own** yet. Anyone who can reach it can use it, including its
-automations, backups and saved connections. Never expose it to the internet on its own:
+Actual Bench asks for a password before anything else (see [Sign-in](../configuration/#sign-in)).
+The first visitor to a new install sets it, so open Actual Bench right after deploying it, or set
+`ACTUAL_BENCH_PASSWORD` in advance.
 
-- Put an authentication layer in front of it: your proxy's basic auth, an identity provider such as
-  Authelia or Authentik, or a VPN such as Tailscale.
+- For an internet-facing install, an extra layer in front (your identity provider, or a VPN such as
+  Tailscale) is still worth having. If that layer already controls access, you can turn Bench's own
+  sign-in off with `ACTUAL_BENCH_AUTH=none`.
 - When a proxy is the public entry point, don't also publish port `3000` on the host. Anyone could
   reach it directly and bypass the proxy.
 
@@ -192,7 +194,7 @@ replicas.
 
 - [ ] Pinned image `:<version>` chosen.
 - [ ] `/data` volume mounted, writable, and backed up.
-- [ ] Authentication in front of Actual Bench; port `3000` not published beside the proxy.
+- [ ] Password set (first visit or `ACTUAL_BENCH_PASSWORD`); port `3000` not published beside the proxy.
 - [ ] HTTPS terminated at the proxy; host/protocol headers forwarded.
 - [ ] Direct mode: browser can reach Actual Server; CORS / cross-origin isolation satisfied.
 - [ ] HTTP mode: Actual Bench container can reach `actual-http-api`.

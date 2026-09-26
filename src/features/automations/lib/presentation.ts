@@ -33,7 +33,7 @@ export function executionModeCopy(mode: AutomationExecutionMode): ExecutionModeC
     return {
       label: "Runs on the server",
       detail:
-        "This runs on a schedule even with Actual Bench closed, using the credentials you enrolled. One server instance runs it - Bench does not coordinate across several.",
+        "This runs on a schedule even with Actual Bench closed, using the credentials you enrolled.",
     };
   }
   return {
