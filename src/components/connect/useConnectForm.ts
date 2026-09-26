@@ -45,6 +45,7 @@ import {
   type ConnectStatus,
 } from "@/components/connect/utils";
 import { clearBudgetQueries } from "@/lib/queryClient";
+import { ensureConnectionReady } from "@/features/connect/reconnectFromVault";
 import { invalidateVault } from "@/features/connect/vaultQueries";
 
 function toBudgetFile(budget: Awaited<ReturnType<typeof listBrowserApiBudgets>>[number]): BudgetFile {
@@ -393,45 +394,14 @@ export function useConnectForm({
   // Does NOT handle errors — callers decide the UX (toast vs inline).
 
   async function reconnect(instance: ConnectionInstance) {
-    if (isBrowserApiConnection(instance)) {
-      setReconnectBusyId(instance.id);
-      try {
-        await ensureTransportReady(instance);
-        const version = await getTransport(instance).getServerVersion().catch(() => null);
-        if (version) updateInstance(instance.id, { serverVersion: version });
-        discardAll();
-        clearBudgetQueries(queryClient);
-        setActiveInstance(instance.id);
-        toast.success("Direct connection opened.");
-      } finally {
-        setReconnectBusyId(null);
-      }
-      return;
-    }
-
     setReconnectBusyId(instance.id);
     try {
-      await testConnection(instance);
-      const [apiVersionResult, serverVersionResult] = await Promise.allSettled([
-        getApiVersion(instance.baseUrl, instance.apiKey),
-        getServerVersion(instance.baseUrl, instance.apiKey, instance.budgetSyncId),
-      ]);
-      updateInstance(instance.id, {
-        apiKey: instance.apiKey,
-        encryptionPassword: instance.encryptionPassword,
-        apiVersion:
-          apiVersionResult.status === "fulfilled"
-            ? apiVersionResult.value
-            : instance.apiVersion,
-        serverVersion:
-          serverVersionResult.status === "fulfilled"
-            ? serverVersionResult.value
-            : instance.serverVersion,
-      });
+      await ensureConnectionReady(instance);
+      updateInstance(instance.id, await readVersions(instance));
       discardAll();
       clearBudgetQueries(queryClient);
       setActiveInstance(instance.id);
-      toast.success("Connected!");
+      toast.success(isBrowserApiConnection(instance) ? "Direct connection opened." : "Connected!");
     } finally {
       setReconnectBusyId(null);
     }
@@ -825,26 +795,14 @@ export function useConnectForm({
       apiKey: heldSecret().apiKey ?? "",
       budgetSyncId: selected.groupId!,
       ...(chosenEncryptionPassword() ? { encryptionPassword: chosenEncryptionPassword() } : {}),
+      // Kept if the version can't be read again below.
+      ...(validatedApiVersion ? { apiVersion: validatedApiVersion } : {}),
     };
 
     setConnectStatus({ kind: "busy" });
     try {
       await testConnection(instance);
-      const [apiVersionResult, serverVersionResult] = await Promise.allSettled([
-        getApiVersion(validatedUrl, instance.apiKey),
-        getServerVersion(validatedUrl, instance.apiKey, selected.groupId!),
-      ]);
-      const finalInstance: ConnectionInstance = {
-        ...instance,
-        apiVersion:
-          apiVersionResult.status === "fulfilled"
-            ? apiVersionResult.value
-            : validatedApiVersion ?? undefined,
-        serverVersion:
-          serverVersionResult.status === "fulfilled"
-            ? serverVersionResult.value
-            : undefined,
-      };
+      const finalInstance = await readVersions(instance);
       discardAll();
       clearBudgetQueries(queryClient);
       addInstance(finalInstance);
