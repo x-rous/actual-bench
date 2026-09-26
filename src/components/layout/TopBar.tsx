@@ -54,6 +54,7 @@ import {
   writeBudgetSaveReviewSkip,
 } from "@/features/budget-management/lib/budgetSaveReview";
 import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "@/features/budget-management/types";
+import { clearBudgetQueries } from "@/lib/queryClient";
 
 type PendingAction =
   | { kind: "switch"; id: string }
@@ -184,7 +185,7 @@ export function TopBar() {
   const savedBudgets = useSavedBudgetSwitcher({
     prepare: () => {
       handleDiscardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
     },
   });
 
@@ -203,17 +204,17 @@ export function TopBar() {
       await savedBudgets.open(action.saved);
     } else if (action.kind === "switch") {
       handleDiscardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       setActive(action.id);
     } else if (action.kind === "addConnection") {
       handleDiscardAll();
       await queryClient.cancelQueries();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       setActive(null);
       router.push("/connect");
     } else if (action.kind === "disconnect") {
       handleDiscardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       if (activeInstance) {
         removeSavedServerIfUnused({
           instance: activeInstance,
@@ -228,7 +229,7 @@ export function TopBar() {
       }
     } else if (action.kind === "disconnectAll") {
       handleDiscardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       clearAll();
       clearServers();
       router.push("/connect");

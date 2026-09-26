@@ -44,6 +44,7 @@ import {
   type ValidateStatus,
   type ConnectStatus,
 } from "@/components/connect/utils";
+import { clearBudgetQueries } from "@/lib/queryClient";
 
 function toBudgetFile(budget: Awaited<ReturnType<typeof listBrowserApiBudgets>>[number]): BudgetFile {
   const syncId = budget.groupId ?? budget.id ?? budget.cloudFileId ?? "";
@@ -398,7 +399,7 @@ export function useConnectForm({
         const version = await getTransport(instance).getServerVersion().catch(() => null);
         if (version) updateInstance(instance.id, { serverVersion: version });
         discardAll();
-        queryClient.clear();
+        clearBudgetQueries(queryClient);
         setActiveInstance(instance.id);
         toast.success("Direct connection opened.");
       } finally {
@@ -427,7 +428,7 @@ export function useConnectForm({
             : instance.serverVersion,
       });
       discardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       setActiveInstance(instance.id);
       toast.success("Connected!");
     } finally {
@@ -500,7 +501,7 @@ export function useConnectForm({
         prepare: async (instance) => {
           const withVersions = await readVersions(instance);
           discardAll();
-          queryClient.clear();
+          clearBudgetQueries(queryClient);
           return withVersions;
         },
       }
@@ -761,7 +762,7 @@ export function useConnectForm({
           addInstance(directConnection);
         }
         discardAll();
-        queryClient.clear();
+        clearBudgetQueries(queryClient);
         setActiveInstance(directConnection.id);
         await maybeRemember(directConnection);
         setConnectStatus({ kind: "success" });
@@ -842,7 +843,7 @@ export function useConnectForm({
             : undefined,
       };
       discardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       addInstance(finalInstance);
       setActiveInstance(finalInstance.id);
       await maybeRemember(finalInstance);

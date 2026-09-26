@@ -30,3 +30,21 @@ export function createQueryClient(): QueryClient {
     },
   });
 }
+
+/**
+ * Caches about Actual Bench itself rather than the open budget: whether this
+ * browser is signed in, the saved connections, the credential vault. They stay
+ * valid whichever budget is open.
+ */
+const APP_QUERY_ROOTS = new Set(["auth-status", "remembered-servers", "vault-state"]);
+
+/**
+ * Forget everything cached for the budget being left, before another one opens.
+ * Keeps the app-level caches, so the account menu and saved budgets don't blink
+ * out and load again on every switch.
+ */
+export function clearBudgetQueries(queryClient: QueryClient): void {
+  queryClient.removeQueries({
+    predicate: (query) => !APP_QUERY_ROOTS.has(String(query.queryKey[0])),
+  });
+}
