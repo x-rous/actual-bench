@@ -5,7 +5,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { ConnectionInstance } from "@/store/connection";
 import {
-  SAVED_BUDGETS_QUERY_KEY,
   connectFailureMessage,
   connectSavedBudget,
   useSavedBudgets,
@@ -13,6 +12,7 @@ import {
 } from "./savedBudgets";
 import { UnlockVaultDialog } from "./UnlockVaultDialog";
 import { isVaultLockedError } from "./vaultApi";
+import { invalidateVault } from "./vaultQueries";
 
 /**
  * For budget pickers (PR-071b): the saved budgets not connected yet, and a
@@ -48,7 +48,7 @@ export function useSavedBudgetConnector(): {
     } catch (err) {
       if (isVaultLockedError(err)) {
         // The unlock ran out, or it was locked elsewhere: ask again, then carry on.
-        void queryClient.invalidateQueries({ queryKey: SAVED_BUDGETS_QUERY_KEY });
+        void invalidateVault(queryClient);
         return "locked";
       }
       toast.error(connectFailureMessage(budget.name, err));

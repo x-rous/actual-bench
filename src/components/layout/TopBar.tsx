@@ -23,7 +23,8 @@ import {
   isBrowserApiConnection,
 } from "@/store/connection";
 import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSearchStore";
-import { getTransport } from "@/lib/actual";
+import { ensureTransportReady, getTransport } from "@/lib/actual";
+import { connectFailureMessage } from "@/features/connect/savedBudgets";
 import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionSwitcher } from "./ConnectionSwitcher";
@@ -54,6 +55,7 @@ import {
   writeBudgetSaveReviewSkip,
 } from "@/features/budget-management/lib/budgetSaveReview";
 import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "@/features/budget-management/types";
+import { clearBudgetQueries } from "@/lib/queryClient";
 
 type PendingAction =
   | { kind: "switch"; id: string }
@@ -107,6 +109,8 @@ export function TopBar() {
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // A connected Direct budget being opened before it becomes active.
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   // Set when a recovery point could not be taken before a risky save, so the
   // user can decide whether to go ahead without one.
@@ -184,7 +188,7 @@ export function TopBar() {
   const savedBudgets = useSavedBudgetSwitcher({
     prepare: () => {
       handleDiscardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
     },
   });
 
@@ -202,18 +206,33 @@ export function TopBar() {
     if (action.kind === "openSaved") {
       await savedBudgets.open(action.saved);
     } else if (action.kind === "switch") {
+      const target = instances.find((instance) => instance.id === action.id);
+      if (isBrowserApiConnection(target)) {
+        // Open it before switching, as a saved budget is: the tab holds one
+        // Direct budget, and this makes it the newest open, so one still on
+        // its way stops and this budget's pages load against an open budget.
+        setSwitchingTo(target.label);
+        try {
+          await ensureTransportReady(target);
+        } catch (err) {
+          toast.error(connectFailureMessage(target.label, err));
+          return;
+        } finally {
+          setSwitchingTo(null);
+        }
+      }
       handleDiscardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       setActive(action.id);
     } else if (action.kind === "addConnection") {
       handleDiscardAll();
       await queryClient.cancelQueries();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       setActive(null);
       router.push("/connect");
     } else if (action.kind === "disconnect") {
       handleDiscardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       if (activeInstance) {
         removeSavedServerIfUnused({
           instance: activeInstance,
@@ -228,7 +247,7 @@ export function TopBar() {
       }
     } else if (action.kind === "disconnectAll") {
       handleDiscardAll();
-      queryClient.clear();
+      clearBudgetQueries(queryClient);
       clearAll();
       clearServers();
       router.push("/connect");
@@ -418,7 +437,7 @@ export function TopBar() {
               instances={instances}
               saved={savedBudgets.saved}
               locked={savedBudgets.locked}
-              connectingTo={savedBudgets.connectingTo}
+              connectingTo={savedBudgets.connectingTo ?? switchingTo}
               onSwitch={handleSwitchConnection}
               onOpenSaved={(saved) => requestAction({ kind: "openSaved", saved })}
               onUnlock={savedBudgets.unlock}

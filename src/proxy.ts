@@ -4,6 +4,7 @@ import { isOpenPath, safeNextPath } from "@/lib/auth/openPaths";
 import { readSessionToken, setSessionCookie } from "@/lib/connectionVault/cookies";
 import { getSessionDuration, hasSession } from "@/lib/connectionVault/session";
 import type { VaultUnlockDuration } from "@/lib/connectionVault/unlockDuration";
+import { CSP_NONCE_HEADER, contentSecurityPolicy, createNonce } from "@/lib/security/contentSecurityPolicy";
 
 /**
  * Cross-origin isolation headers Direct Actual Server mode needs
@@ -72,6 +73,28 @@ function externalScheme(request: NextRequest): string | null {
   return request.nextUrl.protocol === "https:" ? "https:" : null;
 }
 
+/**
+ * Report-Only while the policy is proven against every workflow in a real
+ * browser; switched to enforcing once it reports nothing (PR-075b).
+ */
+export const CSP_HEADER = "Content-Security-Policy-Report-Only";
+
+/**
+ * A page response with its own nonce. Next reads the policy from the request
+ * headers to put the nonce on its scripts, and the browser from the response.
+ * Static files under `/_next/` don't need one.
+ */
+function withContentSecurityPolicy(request: NextRequest): NextResponse {
+  const nonce = createNonce();
+  const policy = contentSecurityPolicy({ nonce, dev: process.env.NODE_ENV === "development" });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(CSP_NONCE_HEADER, nonce);
+  requestHeaders.set(CSP_HEADER, policy);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set(CSP_HEADER, policy);
+  return response;
+}
+
 type Gate =
   | { kind: "pass"; session?: { token: string; duration: VaultUnlockDuration } }
   | { kind: "respond"; response: NextResponse };
@@ -128,7 +151,9 @@ export function proxy(request: NextRequest) {
 
   if (isApi) return NextResponse.next();
 
-  const response = NextResponse.next();
+  const response = request.nextUrl.pathname.startsWith("/_next/")
+    ? NextResponse.next()
+    : withContentSecurityPolicy(request);
 
   for (const [key, value] of Object.entries(DIRECT_MODE_HEADERS)) {
     response.headers.set(key, value);

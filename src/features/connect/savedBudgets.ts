@@ -1,16 +1,12 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { useConnectionStore, type ConnectionInstance, type ConnectionMode } from "@/store/connection";
 import { buildInstanceFromRevealed, ensureConnectionReady } from "./reconnectFromVault";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
-import {
-  getVaultStatus,
-  listRememberedServers,
-  rememberBudget,
-  revealServerSecret,
-  type VaultStatus,
-} from "./vaultApi";
+import { rememberBudget, revealServerSecret } from "./vaultApi";
+import { rememberedServersQuery, vaultStatusQuery } from "./vaultQueries";
 
 /**
  * Saved budgets - the ones remembered in the connection vault (RD-061/RD-063) -
@@ -32,8 +28,6 @@ export type SavedBudget = {
   baseUrl: string;
   serverLabel: string;
 };
-
-export const SAVED_BUDGETS_QUERY_KEY = ["saved-budgets"] as const;
 
 /**
  * The remembered budgets joined with their servers: one entry per budget, in
@@ -58,13 +52,6 @@ export function joinSavedBudgets(servers: ServerCredentialMeta[], budgets: Remem
   });
 }
 
-async function readSavedBudgets(): Promise<{ status: VaultStatus; budgets: SavedBudget[] }> {
-  const status = await getVaultStatus();
-  if (!status.supported) return { status, budgets: [] };
-  const { servers, budgets } = await listRememberedServers();
-  return { status, budgets: joinSavedBudgets(servers, budgets) };
-}
-
 /**
  * True when this saved budget is already connected in this session, in either
  * mode: the session holds one connection per budget, so connecting it again
@@ -80,19 +67,25 @@ export function isConnected(saved: SavedBudget, instances: ConnectionInstance[])
  */
 export function useSavedBudgets(options: { enabled?: boolean } = {}) {
   const instances = useConnectionStore((state) => state.instances);
-  const query = useQuery({
-    queryKey: SAVED_BUDGETS_QUERY_KEY,
-    queryFn: readSavedBudgets,
-    enabled: options.enabled ?? true,
-    staleTime: 30_000,
-    retry: false,
+  const enabled = options.enabled ?? true;
+  // The same two cached answers the connect page and sign-in use, so after
+  // signing in the list is already here.
+  const [statusQuery, listQuery] = useQueries({
+    queries: [
+      { ...vaultStatusQuery, enabled, staleTime: 30_000, retry: false },
+      { ...rememberedServersQuery, enabled, staleTime: 30_000, retry: false },
+    ],
   });
-  const status = query.data?.status;
+  const status = statusQuery.data;
+  const list = listQuery.data;
+  const all = useMemo(
+    () => (status?.supported && list ? joinSavedBudgets(list.servers, list.budgets) : []),
+    [status?.supported, list]
+  );
   return {
-    saved: (query.data?.budgets ?? []).filter((budget) => !isConnected(budget, instances)),
-    /** A passphrase is set and this session has not unlocked it. */
+    saved: all.filter((budget) => !isConnected(budget, instances)),
+    /** A password is set and this session has not unlocked it. */
     locked: !!status?.passphraseSet && !status.unlocked,
-    refetch: query.refetch,
   };
 }
 

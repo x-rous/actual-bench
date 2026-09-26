@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { getTransport } from "@/lib/actual";
+import { ensureTransportReady, getTransport } from "@/lib/actual";
 import { useConnectionStore } from "@/store/connection";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 import * as api from "../lib/syncApi";
@@ -33,6 +33,9 @@ export function useFlowAccounts(connectionId: string) {
     queryKey: ["sync-flow-accounts", connectionId],
     queryFn: async () => {
       if (!connection) return [];
+      // A flow's budget is usually not the active one: open it explicitly, as
+      // the sync run itself does (a Direct budget takes the tab's runtime).
+      await ensureTransportReady(connection);
       return getTransport(connection).getAccounts();
     },
     enabled: !!connection,

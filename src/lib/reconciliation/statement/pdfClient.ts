@@ -54,6 +54,9 @@ export async function extractPdfStatement(
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(await file.arrayBuffer()),
     password: options.password,
+    // PDF.js would otherwise probe for eval, which the Content-Security-Policy
+    // refuses; it has a non-eval path and uses it anyway when the probe fails.
+    isEvalSupported: false,
   });
   const abort = () => { void loadingTask.destroy(); };
   options.signal?.addEventListener("abort", abort, { once: true });

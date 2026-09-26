@@ -56,11 +56,13 @@ describe("the account menu (RD-096)", () => {
 describe("signOut", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("ends the session, then leaves for the sign-in page", async () => {
+  it("ends the session, forgets the tab's budgets, then leaves for the sign-in page", async () => {
+    sessionStorage.setItem("actual-admin-last-active-ref", "{}");
     lockVault.mockResolvedValue({ ok: true });
     const beforeLeave = jest.fn();
     await signOut({ beforeLeave });
     expect(beforeLeave).toHaveBeenCalled();
+    expect(sessionStorage.getItem("actual-admin-last-active-ref")).toBeNull();
     expect(fullPageLoad).toHaveBeenCalledWith("/login");
   });
 

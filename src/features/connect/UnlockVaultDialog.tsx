@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { SAVED_BUDGETS_QUERY_KEY } from "./savedBudgets";
+import { invalidateVault } from "./vaultQueries";
 import { unlockVault } from "./vaultApi";
 import { readVaultUnlockDuration } from "./vaultUnlockPreference";
 
@@ -37,7 +37,7 @@ export function UnlockVaultDialog({
     try {
       await unlockVault(passphrase, readVaultUnlockDuration());
       setPassphrase("");
-      await queryClient.invalidateQueries({ queryKey: SAVED_BUDGETS_QUERY_KEY });
+      await invalidateVault(queryClient);
       // The caller closes the dialog: it knows what was waiting on the unlock.
       onUnlocked();
     } catch (err) {
