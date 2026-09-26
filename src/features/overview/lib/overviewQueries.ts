@@ -2,6 +2,7 @@ import { runQuery } from "@/lib/api/query";
 import { fetchBudgetPreferences } from "@/lib/api/preferences";
 import type { ConnectionInstance } from "@/store/connection";
 import type { BudgetMode, BudgetOverviewSnapshot, OverviewStatKey } from "../types";
+import { BudgetNotOpenError } from "@/lib/actual/browser/runtime";
 
 type ScalarCountQuery = {
   ActualQLquery: {
@@ -95,6 +96,8 @@ function logOverviewQueryFailure(
   attempt: number,
   error: unknown
 ) {
+  // The page is being left for another budget: expected, and not worth a line.
+  if (error instanceof BudgetNotOpenError) return;
   console.warn(
     `[overview] Failed to fetch ${label} (attempt ${attempt}/${OVERVIEW_QUERY_MAX_ATTEMPTS})`,
     error
@@ -128,7 +131,7 @@ async function fetchOverviewCountWithRetry(
       return await runScalarCountQuery(connection, query);
     } catch (error) {
       logOverviewQueryFailure(`${statKey} count`, attempt, error);
-      if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS) {
+      if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS || error instanceof BudgetNotOpenError) {
         return null;
       }
     }
@@ -148,7 +151,7 @@ async function fetchBudgetModeWithRetry(
       return budgetMode === "tracking" ? "Tracking" : "Envelope";
     } catch (error) {
       logOverviewQueryFailure("budgetMode", attempt, error);
-      if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS) {
+      if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS || error instanceof BudgetNotOpenError) {
         return null;
       }
     }
@@ -172,7 +175,7 @@ async function fetchBudgetingSinceWithRetry(
       return formatBudgetingSince(oldest.date);
     } catch (error) {
       logOverviewQueryFailure("budgetingSince", attempt, error);
-      if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS) {
+      if (attempt === OVERVIEW_QUERY_MAX_ATTEMPTS || error instanceof BudgetNotOpenError) {
         return null;
       }
     }
