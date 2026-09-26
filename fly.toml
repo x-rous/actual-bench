@@ -31,37 +31,43 @@
 # To pin to a specific version instead of always pulling latest, change
 # the image tag below, e.g. xrous/actual-bench:1.3.5
 
-app = "actual-bench-template"
-primary_region = "iad"
+# fly.toml app configuration file generated for actual-bench-rqeqda on 2026-09-26T10:40:33Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'actual-bench'
+primary_region = 'iad'
 
 [build]
-  image = "xrous/actual-bench:latest"
+  image = 'xrous/actual-bench:latest'
+
+[[mounts]]
+  source = 'actual_bench_data'
+  destination = '/data'
+  initial_size = '1gb'
 
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
   [http_service.concurrency]
-    type = "requests"
+    type = 'requests'
     hard_limit = 200
     soft_limit = 150
 
   [[http_service.checks]]
-    grace_period = "20s"
-    interval = "30s"
-    timeout = "5s"
-    method = "GET"
-    path = "/api/health"
-
-[mounts]
-  source = "actual_bench_data"
-  destination = "/data"
-  initial_size = "1gb"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/api/health'
 
 [[vm]]
-  memory = "512mb"
-  cpu_kind = "shared"
+  memory = '512mb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 256
