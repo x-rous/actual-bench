@@ -45,6 +45,7 @@ import {
   type ConnectStatus,
 } from "@/components/connect/utils";
 import { clearBudgetQueries } from "@/lib/queryClient";
+import { invalidateVault } from "@/features/connect/vaultQueries";
 
 function toBudgetFile(budget: Awaited<ReturnType<typeof listBrowserApiBudgets>>[number]): BudgetFile {
   const syncId = budget.groupId ?? budget.id ?? budget.cloudFileId ?? "";
@@ -475,6 +476,8 @@ export function useConnectForm({
           encryptionPassword: instance.encryptionPassword,
         });
       }
+      // The switcher's saved list and the connect page read the vault from cache.
+      void invalidateVault(queryClient);
     } catch (err) {
       toast.error(`Connected, but couldn't remember this server: ${parseApiError(err)}`);
     }

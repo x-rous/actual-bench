@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import type { VaultUnlockDuration } from "@/lib/connectionVault/unlockDuration";
 import {
@@ -9,7 +9,6 @@ import {
   forgetBudget,
   forgetBudgetEncryption,
   forgetRememberedServer,
-  getVaultStatus,
   listRememberedServers,
   lockVault,
   rememberBudget,
@@ -25,8 +24,8 @@ import {
   type RevealedServerSecret,
   type VaultStatus,
 } from "./vaultApi";
-import { SAVED_BUDGETS_QUERY_KEY } from "./savedBudgets";
 import { AUTH_STATUS_QUERY_KEY } from "@/hooks/useAuthStatus";
+import { REMEMBERED_SERVERS_QUERY_KEY, fetchVault } from "./vaultQueries";
 
 const CLOSED: VaultStatus = {
   supported: false,
@@ -36,26 +35,7 @@ const CLOSED: VaultStatus = {
   passwordFromEnv: false,
 };
 
-export const REMEMBERED_SERVERS_QUERY_KEY = ["remembered-servers"] as const;
-
 type RememberedList = Awaited<ReturnType<typeof listRememberedServers>>;
-
-function fetchStatus(queryClient: QueryClient) {
-  return queryClient.fetchQuery({ queryKey: AUTH_STATUS_QUERY_KEY, queryFn: getVaultStatus, staleTime: 0 });
-}
-
-function fetchRememberedList(queryClient: QueryClient) {
-  return queryClient.fetchQuery({ queryKey: REMEMBERED_SERVERS_QUERY_KEY, queryFn: listRememberedServers, staleTime: 0 });
-}
-
-/**
- * Load the vault's status and saved servers into the shared cache, both at
- * once. The sign-in page calls it before moving on, so the connect page opens
- * on the saved budgets instead of loading them itself (RD-096).
- */
-export async function preloadVault(queryClient: QueryClient): Promise<void> {
-  await Promise.all([fetchStatus(queryClient), fetchRememberedList(queryClient)]);
-}
 
 type VaultView = { status: VaultStatus; servers: ServerCredentialMeta[]; budgets: RememberedBudget[] };
 
@@ -72,8 +52,8 @@ function viewOf(status: VaultStatus, list: RememberedList | null | undefined): V
  * so an unlock, lock or forget here shows there at once.
  *
  * Starts from the shared cache when it already holds both halves (after
- * sign-in, see `preloadVault`), and refreshes quietly in the background;
- * otherwise it reports `loading` until they arrive.
+ * sign-in, see `preloadVault` in vaultQueries.ts), and refreshes quietly in
+ * the background; otherwise it reports `loading` until they arrive.
  */
 export function useConnectionVault() {
   const queryClient = useQueryClient();
@@ -88,14 +68,10 @@ export function useConnectionVault() {
   const [loading, setLoading] = useState(cached === null);
 
   const refresh = useCallback(async () => {
-    void queryClient.invalidateQueries({ queryKey: SAVED_BUDGETS_QUERY_KEY });
     try {
       // Both at once, through the shared cache: the account menu's own
       // request for the status is the same one, so it shows with the page.
-      const [s, list] = await Promise.all([
-        fetchStatus(queryClient),
-        fetchRememberedList(queryClient).catch(() => null),
-      ]);
+      const [s, list] = await fetchVault(queryClient);
       const view = viewOf(s, list);
       setStatus(view.status);
       setServers(view.servers);

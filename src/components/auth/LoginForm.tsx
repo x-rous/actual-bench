@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { parseApiError } from "@/components/connect/utils";
 import { getVaultStatus, setVaultPassphrase, unlockVault, type VaultStatus } from "@/features/connect/vaultApi";
 import { readVaultUnlockDuration, saveVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
-import { preloadVault } from "@/features/connect/useConnectionVault";
+import { preloadVault } from "@/features/connect/vaultQueries";
 import {
   VAULT_UNLOCK_DURATION_OPTIONS,
   type VaultUnlockDuration,

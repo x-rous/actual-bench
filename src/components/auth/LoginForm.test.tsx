@@ -8,7 +8,7 @@ jest.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 jest.mock("next/image", () => ({ __esModule: true, default: () => null }));
 
 const preloadVault = jest.fn(async () => undefined);
-jest.mock("@/features/connect/useConnectionVault", () => ({ preloadVault: () => preloadVault() }));
+jest.mock("@/features/connect/vaultQueries", () => ({ preloadVault: () => preloadVault() }));
 
 function render(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
