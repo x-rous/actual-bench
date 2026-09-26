@@ -140,6 +140,18 @@ export function ConnectForm() {
     return null;
   }
 
+  // Until the vault answers, whether there are saved budgets is unknown: show
+  // the brand and a spinner rather than the first-run form, which would jump
+  // to the saved list a moment later.
+  if (vault.loading) {
+    return (
+      <div className="flex w-full max-w-md flex-col items-center gap-6">
+        <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
+        <Loader2 className="size-5 animate-spin text-muted-foreground" aria-label="Loading saved connections" />
+      </div>
+    );
+  }
+
   const activeValidatedMode = validatedMode ?? connectionMode;
   const hasSideContent = mergedServers.length > 0;
   const inFlow = budgets !== null; // budgets loaded → choosing a budget

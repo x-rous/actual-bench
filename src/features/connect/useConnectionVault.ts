@@ -53,17 +53,16 @@ export function useConnectionVault() {
   const refresh = useCallback(async () => {
     void queryClient.invalidateQueries({ queryKey: SAVED_BUDGETS_QUERY_KEY });
     try {
-      const s = await getVaultStatus();
+      // Both at once: the page waits for the pair before choosing its layout.
+      // The status goes through the shared auth-status cache, so the account
+      // menu's own request for it is the same one, and it shows with the page.
+      const [s, list] = await Promise.all([
+        queryClient.fetchQuery({ queryKey: AUTH_STATUS_QUERY_KEY, queryFn: getVaultStatus, staleTime: 0 }),
+        listRememberedServers().catch(() => null),
+      ]);
       setStatus(s);
-      queryClient.setQueryData(AUTH_STATUS_QUERY_KEY, s);
-      if (s.supported) {
-        const { servers: serverList, budgets: budgetList } = await listRememberedServers();
-        setServers(serverList);
-        setBudgets(budgetList);
-      } else {
-        setServers([]);
-        setBudgets([]);
-      }
+      setServers(s.supported && list ? list.servers : []);
+      setBudgets(s.supported && list ? list.budgets : []);
     } catch {
       // Vault route unavailable → treat as unsupported rather than surface an error.
       setStatus(CLOSED);
