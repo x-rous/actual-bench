@@ -61,6 +61,38 @@ describe("resumeSession", () => {
     expect(useConnectionStore.getState().activeInstanceId).toBe(active?.id);
   });
 
+  it("brings nothing back if the user disconnected before the others arrived", async () => {
+    let releaseJoint!: () => void;
+    revealServerSecret.mockImplementation(async (_fingerprint: string, budgetSyncId: string) => {
+      if (budgetSyncId === "b-2") await new Promise<void>((resolve) => (releaseJoint = resolve));
+      return revealed("https://srv.example.com");
+    });
+
+    await resumeSession({ active: home, others: [joint] });
+    useConnectionStore.getState().clearAll();
+    releaseJoint();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(useConnectionStore.getState().instances).toEqual([]);
+  });
+
+  it("keeps a budget the user connected themselves meanwhile", async () => {
+    let releaseJoint!: () => void;
+    revealServerSecret.mockImplementation(async (_fingerprint: string, budgetSyncId: string) => {
+      if (budgetSyncId === "b-2") await new Promise<void>((resolve) => (releaseJoint = resolve));
+      return revealed("https://srv.example.com");
+    });
+
+    await resumeSession({ active: home, others: [joint] });
+    const theirs = { id: "theirs", label: "Joint", mode: "http-api", baseUrl: "https://new.example.com", budgetSyncId: "b-2", apiKey: "k" } as ConnectionInstance;
+    useConnectionStore.getState().addInstance(theirs);
+    releaseJoint();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const joints = useConnectionStore.getState().instances.filter((i) => i.budgetSyncId === "b-2");
+    expect(joints.map((i) => i.id)).toEqual(["theirs"]);
+  });
+
   it("fails when the active budget can't be reopened, adding nothing", async () => {
     revealServerSecret.mockRejectedValue(new Error("locked"));
     await expect(resumeSession({ active: home, others: [joint] })).rejects.toThrow("locked");
