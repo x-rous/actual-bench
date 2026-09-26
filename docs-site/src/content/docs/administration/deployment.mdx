@@ -175,7 +175,9 @@ act on a Bench instance it can reach through your browser, even one that is only
   hostname is HTTPS-only, and use its modern TLS defaults. Actual Bench doesn't send HSTS itself,
   because it also runs over plain HTTP on a LAN.
 - Actual Bench sends its own browser security headers (`X-Frame-Options`, `X-Content-Type-Options`,
-  `Referrer-Policy`, `Permissions-Policy`). Don't strip them at the proxy.
+  `Referrer-Policy`, `Permissions-Policy`, and a `Content-Security-Policy` with a fresh nonce on every
+  page). Don't strip or replace them at the proxy; a proxy that adds its own
+  `Content-Security-Policy` would block the app's scripts.
 - If you set `ACTUAL_BENCH_VAULT_KEY`, keep it out of the image and out of git. Use your platform's
   secret manager.
 - Persist `/data`, back it up, and lock down its permissions. It holds the generated vault key

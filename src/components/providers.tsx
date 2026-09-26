@@ -7,7 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { createQueryClient } from "@/lib/queryClient";
 import { SignedOutRedirect } from "@/components/auth/SignedOutRedirect";
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ children, nonce }: { children: React.ReactNode; nonce?: string }) {
   // useState ensures each browser session gets its own QueryClient instance
   const [queryClient] = useState(() => createQueryClient());
 
@@ -17,6 +17,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       defaultTheme="system"
       enableSystem
       disableTransitionOnChange
+      nonce={nonce}
     >
       <QueryClientProvider client={queryClient}>
         <SignedOutRedirect />

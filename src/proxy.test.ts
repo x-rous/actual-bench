@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { VAULT_COOKIE } from "@/lib/connectionVault/cookies";
 import { clearAllSessions, createSession } from "@/lib/connectionVault/session";
-import { isCrossSiteWrite, proxy } from "./proxy";
+import { CSP_HEADER, isCrossSiteWrite, proxy } from "./proxy";
 
 function request(path: string, method: string, headers: Record<string, string> = {}): NextRequest {
   return new NextRequest(`https://bench.example${path}`, {
@@ -82,6 +82,21 @@ describe("proxy", () => {
     const response = proxy(request("/api/connection-vault/lock", "POST", { "sec-fetch-site": "same-origin" }));
     expect(response.status).toBe(200);
     expect(response.headers.get("cross-origin-embedder-policy")).toBeNull();
+  });
+
+  it("sends pages a Content-Security-Policy with a fresh nonce, and hands Next the same one", () => {
+    const first = proxy(request("/connect", "GET"));
+    const second = proxy(request("/connect", "GET"));
+    const policy = first.headers.get(CSP_HEADER)!;
+    const nonce = /'nonce-([^']+)'/.exec(policy)![1];
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(first.headers.get("x-middleware-request-x-nonce")).toBe(nonce);
+    expect(second.headers.get(CSP_HEADER)).not.toBe(policy);
+  });
+
+  it("leaves static files and API responses without a policy", () => {
+    expect(proxy(request("/_next/static/chunks/app.js", "GET")).headers.get(CSP_HEADER)).toBeNull();
+    expect(proxy(request("/api/health", "GET")).headers.get(CSP_HEADER)).toBeNull();
   });
 
   it("keeps Direct mode's cross-origin isolation headers on pages", () => {
