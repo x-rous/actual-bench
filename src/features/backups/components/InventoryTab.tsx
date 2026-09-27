@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Loader2, Search, ShieldCheck, X } from "lucide-react";
+import { FileText, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BackupsTable, type BackupSortKey } from "./BackupsTable";
@@ -10,6 +10,7 @@ import { budgetsInArtifacts, formatBytes } from "../lib/presentation";
 import type { SortDirection } from "@/components/ui/sortable-header";
 import type { ArtifactWithLocations, RecoveryCenterData } from "../lib/backupsApi";
 import { Select } from "@/components/ui/select";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * The copies that exist (RD-077 / PR-047).
@@ -161,26 +162,12 @@ export function InventoryTab({
             {/* Search first, because with a few hundred copies the fastest way
                 to the one you mean is to type part of what you remember - a
                 budget name, a rule, or the destination it went to. */}
-            <div className="relative flex items-center">
-              <Search className="absolute left-1.5 size-3.5 text-muted-foreground" aria-hidden />
-              <input
-                value={search}
-                onChange={(event) => onSearch(event.target.value)}
-                placeholder="Search copies…"
-                aria-label="Search backups"
-                className="h-6 w-48 rounded border border-border bg-background pl-6 pr-6 outline-none focus:ring-1 focus:ring-ring"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => onSearch("")}
-                  aria-label="Clear search"
-                  className="absolute right-1.5 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="size-3" aria-hidden />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              value={search}
+              onValueChange={onSearch}
+              placeholder="Search copies…"
+              aria-label="Search backups"
+            />
 
             <Select
               className="h-6 w-auto"

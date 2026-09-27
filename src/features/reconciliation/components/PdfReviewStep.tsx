@@ -1,13 +1,14 @@
 "use client";
 
 import { memo } from "react";
-import { Download, Redo2, Search, Undo2, X } from "lucide-react";
+import { Download, Redo2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 import type { SortDirection } from "@/components/ui/sortable-header";
 import type { PdfStatementParseResult, PdfTransactionProposal } from "@/lib/reconciliation/statement/pdf";
 import { matchesCategory, type PdfReviewCategory, type PdfSortColumn, type PdfSortState } from "../lib/pdfReviewTable";
 import { PdfTransactionTable, type PdfTransactionField } from "./PdfTransactionTable";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * Step two: the transactions themselves, with the statement page beside them
@@ -199,27 +200,13 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
       <span className="text-[11px] text-muted-foreground tabular-nums" aria-live="polite">
         Showing {shownCount} of {rows.length}
       </span>
-      <label className="relative flex items-center">
-        <Search className="pointer-events-none absolute left-1.5 size-3.5 text-muted-foreground" />
-        <span className="sr-only">Search parsed transactions</span>
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search…"
-          title="Searches the description, reference, amount, and import date"
-          className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-        />
-        {search && (
-          <button
-            type="button"
-            aria-label="Clear the transaction search"
-            onClick={() => setSearch("")}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-3" />
-          </button>
-        )}
-      </label>
+      <SearchInput
+        value={search}
+        onValueChange={setSearch}
+        aria-label="Search parsed transactions"
+        clearLabel="Clear the transaction search"
+        title="Searches the description, reference, amount, and import date"
+      />
       <Button
         size="xs"
         variant="outline"

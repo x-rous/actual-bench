@@ -17,6 +17,7 @@ import type { CleanupSuggestion } from "../lib/scan";
 import type { ConfidenceBand } from "../lib/confidence";
 import type { PayeeCleanupCandidate } from "../types";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 type Props = {
   suggestion: CleanupSuggestion;
@@ -233,7 +234,7 @@ export function SuggestionCard({
         {/* ── Result and the payees it comes from ───────────────────────── */}
         <section className="min-w-0">
           <h4 className="font-medium text-foreground">Result</h4>
-          <input
+          <Input
             type="text"
             defaultValue={canonicalName}
             key={canonicalName}
@@ -241,7 +242,8 @@ export function SuggestionCard({
               if (e.target.value !== canonicalName) onRenameTo(e.target.value);
             }}
             aria-label="Final payee name"
-            className="mt-1 h-7 w-full rounded-md border border-border bg-background px-2 text-sm"
+            size="sm"
+            className="mt-1"
           />
 
           <ul className="mt-2 space-y-1" aria-label="Payees in this group">
@@ -299,12 +301,13 @@ export function SuggestionCard({
             })}
           </ul>
 
-          <input
+          <Input
             type="text"
             list={`add-payee-${cluster.id}`}
             placeholder="Add a payee the scan missed…"
             aria-label="Add a payee the scan missed"
-            className="mt-1.5 h-7 w-full rounded-md border border-dashed border-border bg-background px-2 text-xs"
+            size="sm"
+            className="mt-1.5 border-dashed"
             onFocus={() => setPickerOpen(true)}
             onChange={(e) => {
               const match = addableOptions.find(
@@ -454,7 +457,7 @@ export function SuggestionCard({
                     { value: "notes", label: "notes" },
                   ]}
                 />
-                <input
+                <Input
                   type="text"
                   value={patternDraft ?? future.matchText}
                   onChange={(e) => setPatternDraft(e.target.value)}
@@ -469,7 +472,8 @@ export function SuggestionCard({
                     setPatternDraft(null);
                   }}
                   aria-label="Text the rule should match"
-                  className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2"
+                  size="sm"
+                  className="flex-1"
                 />
               </div>
 

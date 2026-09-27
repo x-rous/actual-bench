@@ -9,6 +9,7 @@ import {
 } from "@/lib/reconciliation/match/config";
 import type { MatchConfig } from "@/lib/reconciliation/types";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 
 /**
@@ -27,7 +28,7 @@ import { Checkbox } from "@/components/ui/checkbox";
  * pseudo-elements cover WebKit and Blink.
  */
 const NUMBER_FIELD =
-  "h-7 w-full rounded-md border border-input bg-background px-2 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+  "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 
 /**
  * Label on the left, control on the right in a column of fixed width.
@@ -148,7 +149,8 @@ export function MatchOptions({
                 A bank&apos;s posting date often differs from the date you recorded it.
               </InfoHint>
             </span>
-            <input
+            <Input
+              size="sm"
               id="match-tolerance"
               type="number"
               inputMode="numeric"
@@ -174,7 +176,8 @@ export function MatchOptions({
                 transactions are shown separately and aren&rsquo;t counted as missing.
               </InfoHint>
             </span>
-            <input
+            <Input
+              size="sm"
               id="match-padding"
               type="number"
               inputMode="numeric"

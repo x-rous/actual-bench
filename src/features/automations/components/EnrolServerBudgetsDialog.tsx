@@ -179,7 +179,8 @@ export function EnrolServerBudgetsDialog({
                     <Input
                       type="password"
                       autoComplete="off"
-                      className="mt-1.5 h-7 text-xs"
+                      size="sm"
+                      className="mt-1.5"
                       placeholder="Encryption password"
                       aria-label={`Encryption password for ${budget.name}`}
                       value={passwords[budget.budgetSyncId] ?? ""}

@@ -199,7 +199,7 @@ export function ConnectionSwitcher({
               value={filter}
               placeholder="Filter by budget or server"
               aria-label="Filter budgets"
-              className="h-7 text-xs"
+              size="sm"
               onChange={(event) => setFilter(event.target.value)}
               // Keep typing in the box: the menu would otherwise take the keys
               // for its own type-to-select.

@@ -2,6 +2,7 @@
 
 import { useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 export type AmountOp = "is" | "isapprox" | "isbetween";
 
@@ -89,13 +90,12 @@ export function AmountModeInput({
       {/* Amount inputs */}
       {(amountOp === "is" || amountOp === "isapprox") && (
         <div className="flex flex-col gap-1">
-          <input
+          <Input
             type="number"
             step="0.01"
             value={amount}
             onChange={(e) => onAmountChange(e.target.value)}
             placeholder={amountOp === "isapprox" ? "~0.00" : "0.00"}
-            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/50"
           />
           {errors.amount && <p className="text-xs text-destructive">{errors.amount}</p>}
           <p className="text-[11px] text-muted-foreground">Negative = expense · Positive = income</p>
@@ -106,25 +106,23 @@ export function AmountModeInput({
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <div className="flex flex-1 flex-col gap-1">
-              <input
+              <Input
                 type="number"
                 step="0.01"
                 value={amountNum1}
                 onChange={(e) => onAmountNum1Change(e.target.value)}
                 placeholder="Min"
-                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/50"
               />
               {errors.amountNum1 && <p className="text-xs text-destructive">{errors.amountNum1}</p>}
             </div>
             <span className="text-xs text-muted-foreground">–</span>
             <div className="flex flex-1 flex-col gap-1">
-              <input
+              <Input
                 type="number"
                 step="0.01"
                 value={amountNum2}
                 onChange={(e) => onAmountNum2Change(e.target.value)}
                 placeholder="Max"
-                className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/50"
               />
               {errors.amountNum2 && <p className="text-xs text-destructive">{errors.amountNum2}</p>}
             </div>

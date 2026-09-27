@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type TableBulkAddBarProps = {
   bulkCount: number;
@@ -29,13 +30,13 @@ export function TableBulkAddBar({
         + Add row
       </Button>
       <span className="text-xs text-muted-foreground">or add</span>
-      <input
+      <Input
         type="number"
         min={1}
         max={100}
         value={bulkCount}
         onChange={(e) => onBulkCountChange(normalizeBulkCount(Number(e.target.value)))}
-        className="h-6 w-12 rounded border border-border bg-background px-1.5 text-center text-xs outline-none focus:ring-1 focus:ring-ring"
+        className="h-6 w-12 px-1.5 text-center"
       />
       <span className="text-xs text-muted-foreground">rows</span>
       <Button variant="outline" size="xs" onClick={() => onAdd(normalizeBulkCount(bulkCount))}>

@@ -1,11 +1,11 @@
 "use client";
 
-import { Search, X } from "lucide-react";
 import { MultiPillGroup } from "@/components/ui/pill-group";
 import { runStatusLabel } from "../lib/presentation";
 import type { RunHistory } from "../lib/automationsApi";
 import type { AutomationRunStatus } from "@/lib/app-db/types";
 import { Select } from "@/components/ui/select";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * Narrowing the run history (RD-079).
@@ -65,26 +65,12 @@ export function RunHistoryFilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-1.5">
-      <div className="relative flex items-center">
-        <Search className="absolute left-1.5 size-3.5 text-muted-foreground" aria-hidden />
-        <input
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search runs…"
-          aria-label="Search runs"
-          className="h-6 w-52 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => onSearchChange("")}
-            aria-label="Clear search"
-            className="absolute right-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-3" aria-hidden />
-          </button>
-        )}
-      </div>
+      <SearchInput
+        value={search}
+        onValueChange={onSearchChange}
+        placeholder="Search runs…"
+        aria-label="Search runs"
+      />
 
       <MultiPillGroup options={STATUS_OPTIONS} values={statuses} onChange={onStatusesChange} />
 

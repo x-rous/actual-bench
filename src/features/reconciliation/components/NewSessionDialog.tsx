@@ -118,7 +118,6 @@ export function NewSessionDialog({
             onChange={(event) => setTag(event.target.value)}
             placeholder="July close"
             maxLength={40}
-            className="h-8 text-xs"
           />
           {knownTags.length > 0 && (
             <datalist id="reconciliation-tag-suggestions">

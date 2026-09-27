@@ -30,6 +30,7 @@ import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect"
 import type { ConnectionInstance } from "@/store/connection";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 
 type FlowEditDialogProps = {
   open: boolean;
@@ -47,7 +48,6 @@ type FlowEditDialogProps = {
   onRan?: () => void;
 };
 
-const compactInputClass = "h-7 rounded-md px-2 py-1 text-xs md:text-xs";
 
 /** A tooltip-bearing info dot, for inline field/option explanations. */
 function InfoDot({ text }: { text: string }) {
@@ -304,7 +304,7 @@ export function FlowEditDialog({
             </div>
             <div className="flex min-w-[16rem] flex-1 flex-col gap-1.5">
               <span className="text-[11px] font-semibold uppercase text-muted-foreground">Name</span>
-              <Input className={compactInputClass} aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={entityMode ? "e.g. Shared payees" : "e.g. Joint card → Personal"} />
+              <Input size="sm" aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={entityMode ? "e.g. Shared payees" : "e.g. Joint card → Personal"} />
             </div>
           </div>
 
@@ -358,7 +358,7 @@ export function FlowEditDialog({
                   <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                     Run every (minutes)
                     <Input
-                      className={compactInputClass}
+                      size="sm"
                       type="number"
                       min={15}
                       step={5}
@@ -416,7 +416,7 @@ export function FlowEditDialog({
                   <label className="flex max-w-xs flex-col gap-1 text-xs text-muted-foreground">
                     Default group
                     <Input
-                      className={compactInputClass}
+                      size="sm"
                       aria-label="Default target group"
                       value={form.entity.defaultGroupName}
                       onChange={(e) => setEntity({ defaultGroupName: e.target.value })}
@@ -479,7 +479,7 @@ export function FlowEditDialog({
               {form.transform.notesMarkerEnabled && (
                 <div className="flex flex-col gap-1 pl-6">
                   <Input
-                    className={compactInputClass}
+                    size="sm"
                     aria-label="Notes marker text"
                     value={form.transform.notesMarker}
                     onChange={(e) => setTransform({ notesMarker: e.target.value })}
@@ -503,9 +503,9 @@ export function FlowEditDialog({
                   {form.transform.fxEnabled && (
                     <div className="flex flex-col gap-2 pl-6">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Input aria-label="Source currency" className={cn(compactInputClass, "w-16 uppercase")} maxLength={3} placeholder="AED" value={form.transform.fxSourceCurrency} onChange={(e) => setTransform({ fxSourceCurrency: e.target.value.toUpperCase() })} />
+                        <Input aria-label="Source currency" size="sm" className="w-16 uppercase" maxLength={3} placeholder="AED" value={form.transform.fxSourceCurrency} onChange={(e) => setTransform({ fxSourceCurrency: e.target.value.toUpperCase() })} />
                         <span className="text-muted-foreground">→</span>
-                        <Input aria-label="Target currency" className={cn(compactInputClass, "w-16 uppercase")} maxLength={3} placeholder="AUD" value={form.transform.fxTargetCurrency} onChange={(e) => setTransform({ fxTargetCurrency: e.target.value.toUpperCase() })} />
+                        <Input aria-label="Target currency" size="sm" className="w-16 uppercase" maxLength={3} placeholder="AUD" value={form.transform.fxTargetCurrency} onChange={(e) => setTransform({ fxTargetCurrency: e.target.value.toUpperCase() })} />
                         <span className="text-[11px] text-muted-foreground">ISO 4217 codes - target is your master currency</span>
                       </div>
                       <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -536,8 +536,8 @@ export function FlowEditDialog({
                 )}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className={cn("flex flex-col gap-1 text-xs", filterActive.startDate ? "text-foreground" : "text-muted-foreground")}>Start date<Input type="date" aria-label="Start date" className={cn(compactInputClass, filterActive.startDate && activeRing)} value={form.filter.startDate} onChange={(e) => setFilter({ startDate: e.target.value })} /></label>
-                <label className={cn("flex flex-col gap-1 text-xs", filterActive.endDate ? "text-foreground" : "text-muted-foreground")}>End date<Input type="date" aria-label="End date" className={cn(compactInputClass, filterActive.endDate && activeRing)} value={form.filter.endDate} onChange={(e) => setFilter({ endDate: e.target.value })} /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.startDate ? "text-foreground" : "text-muted-foreground")}>Start date<DateInput aria-label="Start date" size="sm" className={cn(filterActive.startDate && activeRing)} value={form.filter.startDate} onValueChange={(value) => setFilter({ startDate: value })} /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.endDate ? "text-foreground" : "text-muted-foreground")}>End date<DateInput aria-label="End date" size="sm" className={cn(filterActive.endDate && activeRing)} value={form.filter.endDate} onValueChange={(value) => setFilter({ endDate: value })} /></label>
                 <label className={cn("flex flex-col gap-1 text-xs", filterActive.amountSign ? "text-foreground" : "text-muted-foreground")}>Amount sign
                   <Select
                     aria-label="Amount sign"
@@ -566,9 +566,9 @@ export function FlowEditDialog({
                     ]}
                   />
                 </label>
-                <label className={cn("flex flex-col gap-1 text-xs", filterActive.payeeInclude ? "text-foreground" : "text-muted-foreground")}>Payee include<Input aria-label="Payee include" className={cn(compactInputClass, filterActive.payeeInclude && activeRing)} value={form.filter.payeeInclude} onChange={(e) => setFilter({ payeeInclude: e.target.value })} placeholder="comma-separated" /></label>
-                <label className={cn("flex flex-col gap-1 text-xs", filterActive.categoryInclude ? "text-foreground" : "text-muted-foreground")}>Category include<Input aria-label="Category include" className={cn(compactInputClass, filterActive.categoryInclude && activeRing)} value={form.filter.categoryInclude} onChange={(e) => setFilter({ categoryInclude: e.target.value })} placeholder="comma-separated" /></label>
-                <label className={cn("flex flex-col gap-1 text-xs sm:col-span-2", filterActive.notesContains ? "text-foreground" : "text-muted-foreground")}>Notes contains<Input aria-label="Notes contains" className={cn(compactInputClass, filterActive.notesContains && activeRing)} value={form.filter.notesContains} onChange={(e) => setFilter({ notesContains: e.target.value })} /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.payeeInclude ? "text-foreground" : "text-muted-foreground")}>Payee include<Input aria-label="Payee include" size="sm" className={cn(filterActive.payeeInclude && activeRing)} value={form.filter.payeeInclude} onChange={(e) => setFilter({ payeeInclude: e.target.value })} placeholder="comma-separated" /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.categoryInclude ? "text-foreground" : "text-muted-foreground")}>Category include<Input aria-label="Category include" size="sm" className={cn(filterActive.categoryInclude && activeRing)} value={form.filter.categoryInclude} onChange={(e) => setFilter({ categoryInclude: e.target.value })} placeholder="comma-separated" /></label>
+                <label className={cn("flex flex-col gap-1 text-xs sm:col-span-2", filterActive.notesContains ? "text-foreground" : "text-muted-foreground")}>Notes contains<Input aria-label="Notes contains" size="sm" className={cn(filterActive.notesContains && activeRing)} value={form.filter.notesContains} onChange={(e) => setFilter({ notesContains: e.target.value })} /></label>
               </div>
               <p className="text-xs text-muted-foreground">Sync-generated transactions are always excluded to prevent loops.</p>
             </section>

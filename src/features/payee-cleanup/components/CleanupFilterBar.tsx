@@ -1,8 +1,8 @@
 "use client";
 
-import { Search, X } from "lucide-react";
 import { PillGroup } from "@/components/ui/pill-group";
 import type { ConfidenceBand } from "../lib/confidence";
+import { SearchInput } from "@/components/ui/search-input";
 
 export type CleanupTab = "suggestions" | "unused" | "rule-gaps" | "dismissed";
 
@@ -33,13 +33,6 @@ type Props = {
   };
 };
 
-const SEARCH_PLACEHOLDERS: Record<CleanupTab, string> = {
-  suggestions: "Search duplicate payees…",
-  "rule-gaps": "Search payees needing rules…",
-  unused: "Search unused payees…",
-  dismissed: "Search dismissed items…",
-};
-
 /** Search and workflow navigation stay visible while each list scrolls. */
 export function CleanupFilterBar({
   tab,
@@ -60,27 +53,12 @@ export function CleanupFilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-2">
-      <div className="relative flex items-center">
-        <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" />
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={SEARCH_PLACEHOLDERS[tab]}
-          aria-label="Search payees"
-          className="h-7 w-56 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-        />
-        {search ? (
-          <button
-            type="button"
-            onClick={() => onSearchChange("")}
-            aria-label="Clear search"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        ) : null}
-      </div>
+      <SearchInput
+        value={search}
+        onValueChange={onSearchChange}
+        placeholder="Search payees…"
+        aria-label="Search payees"
+      />
 
       <PillGroup
         options={[

@@ -13,6 +13,7 @@ import { listFlows } from "@/features/sync/lib/syncApi";
 import { addManualFxRate, fillFxRange, fxRecalcImpact, listFxPairs, listFxRates } from "../lib/fxApi";
 import { FxImportPanel } from "./FxImportPanel";
 import type { FxRateRecord } from "@/lib/fx/types";
+import { DateInput } from "@/components/ui/date-input";
 
 type Pair = { base: string; quote: string };
 const pairKey = (p: Pair) => `${p.base}:${p.quote}`;
@@ -270,8 +271,8 @@ function PairPanel({ pair }: { pair: Pair }) {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">From<Input aria-label="From date" type="date" className="w-40" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">To<Input aria-label="To date" type="date" className="w-40" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">From<DateInput aria-label="From date" className="w-40" value={from} onValueChange={setFrom} /></label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">To<DateInput aria-label="To date" className="w-40" value={to} onValueChange={setTo} /></label>
         <Button size="sm" variant="outline" disabled={fillM.isPending} onClick={() => fillM.mutate()}>
           {fillM.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Fill range from Frankfurter
         </Button>
@@ -285,7 +286,7 @@ function PairPanel({ pair }: { pair: Pair }) {
       <section className="rounded-md border border-border bg-muted/20 p-3">
         <div className="flex flex-wrap items-end gap-2">
           <span className="pb-2 text-xs font-medium">Use your own rate for a date:</span>
-          <Input aria-label="Override date" type="date" className="w-40" value={overrideDate} onChange={(e) => setOverrideDate(e.target.value)} />
+          <DateInput aria-label="Override date" className="w-40" value={overrideDate} onValueChange={setOverrideDate} />
           <Input aria-label="Override rate" className="w-28" placeholder="0.4162" value={overrideRate} onChange={(e) => setOverrideRate(e.target.value)} />
           <Button size="sm" disabled={!overrideDate || !overrideRate.trim() || overrideM.isPending} onClick={() => overrideM.mutate()}>Save rate</Button>
         </div>

@@ -172,7 +172,6 @@ export function BackupDetail({
             <label className="block space-y-1">
               <span className="text-sm font-semibold">Passphrase</span>
               <Input
-                className="h-8 rounded-md px-2 text-xs md:text-xs"
                 type="password"
                 value={passphrase}
                 onChange={(event) => setPassphrase(event.target.value)}

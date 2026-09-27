@@ -478,6 +478,7 @@ export function BudgetCell({
         data-category-id={category.id}
       >
         {carryoverIndicator}
+        {/* eslint-disable-next-line no-restricted-syntax -- an editor inside a table cell, sized to the cell */}
         <input
           ref={inputRef}
           type="text"

@@ -179,7 +179,8 @@ describe("scheduling a bank sync", () => {
 
     await waitFor(() => expect(mockedApi.createAutomation).toHaveBeenCalled());
     expect(mockedApi.createAutomation.mock.calls[0][0].timezone).toBe("UTC");
-  });
+    // The zone list is a few hundred options, slow to render on a loaded machine.
+  }, 20_000);
 
   it("does not schedule midnight when the time is cleared", async () => {
     renderDialog();

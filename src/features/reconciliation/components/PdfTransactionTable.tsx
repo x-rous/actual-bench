@@ -1,10 +1,11 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { CalendarCheck, Check, CheckCircle2, ChevronDown, Eye, OctagonAlert, Split, Trash2, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SortableHeader, type SortDirection } from "@/components/ui/sortable-header";
 import { cn } from "@/lib/utils";
@@ -12,9 +13,7 @@ import type { PdfStatementParseResult, PdfTransactionProposal } from "@/lib/reco
 import { groupRowReasons, PDF_REASON_TEXT, reasonText, type PdfRowReasons } from "../lib/pdfReasonText";
 import {
   financialDetails,
-  formatDateInput,
   formatGroupedDecimal,
-  parseDateInput,
   type PdfSortColumn,
   type PdfSortState,
 } from "../lib/pdfReviewTable";
@@ -125,9 +124,9 @@ export function PdfTransactionTable({
       <table className="w-full min-w-[1060px] table-fixed text-xs">
         <caption className="sr-only">Transactions extracted from the PDF statement</caption>
         <colgroup>
-          <col className="w-9" /><col className="w-[5.5rem]" /><col className="w-28" />
-          {showPosting && <col className="w-28" />}
-          {showValue && <col className="w-28" />}
+          <col className="w-9" /><col className="w-[5.5rem]" /><col className="w-36" />
+          {showPosting && <col className="w-36" />}
+          {showValue && <col className="w-36" />}
           <col /><col className="w-40" />
           {showBalance && <col className="w-24" />}
           <col className="w-44" />
@@ -309,6 +308,7 @@ const PdfTransactionRow = memo(function PdfTransactionRow({
       {showValue && <PdfEditableDate row={row} field="valueDate" value={row.valueDate} confidence="valueDate" busy={busy} onField={onField} onSource={onSource} />}
       <td className="p-0.5">
         <div className="flex">
+          {/* eslint-disable-next-line no-restricted-syntax -- an editor inside a table cell, sized to the cell */}
           <input
             key={`${row.id}-description-${row.description}`}
             aria-label={`Description for PDF row ${row.sourceRowNumber}`}
@@ -355,6 +355,7 @@ const PdfTransactionRow = memo(function PdfTransactionRow({
           >
             {row.direction === "debit" ? "−" : row.direction === "credit" ? "+" : "?"}
           </button>
+          {/* eslint-disable-next-line no-restricted-syntax -- an editor inside a table cell, sized to the cell */}
           <input
             key={`${row.id}-amount-${row.amount}`}
             aria-label={`Amount for PDF row ${row.sourceRowNumber}`}
@@ -466,59 +467,20 @@ function PdfEditableDate({
   onField: (row: PdfTransactionProposal, field: PdfTransactionField, value: string | null) => void;
   onSource: (row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) => void;
 }) {
-  const [invalid, setInvalid] = useState(false);
   const label = field === "transactionDate" ? "Transaction" : field === "postedDate" ? "Posting" : "Value";
-
-  /**
-   * Shown and typed as `21/09/2026`, stored as the date it means.
-   *
-   * A native date input made this a segmented mask in the browser's locale:
-   * no pasting, no typing a year without stepping through it, and a date
-   * shown back in whatever order that machine prefers. One written format
-   * across the workbench costs less to read than a picker saves.
-   *
-   * A value it cannot read is kept on screen and marked, rather than thrown
-   * away or written to the row as a guess.
-   */
-  function commit(input: HTMLInputElement) {
-    const text = input.value.trim();
-    if (text === formatDateInput(value)) {
-      setInvalid(false);
-      return;
-    }
-    if (!text) {
-      setInvalid(false);
-      onField(row, field, null);
-      return;
-    }
-    const parsed = parseDateInput(text);
-    if (!parsed) {
-      setInvalid(true);
-      return;
-    }
-    setInvalid(false);
-    // The same date written differently still tidies up on screen.
-    if (parsed === value) input.value = formatDateInput(parsed);
-    else onField(row, field, parsed);
-  }
 
   return (
     <td className="p-0.5">
       <div className="flex">
-        <input
-          key={`${row.id}-${field}-${value ?? ""}`}
+        <DateInput
           aria-label={`${label} date for PDF row ${row.sourceRowNumber}`}
-          aria-invalid={invalid || undefined}
           data-pdf-cell={field}
-          defaultValue={formatDateInput(value)}
+          size="sm"
+          value={value ?? ""}
           disabled={busy}
-          placeholder="dd/mm/yyyy"
-          title={invalid ? "This date could not be read. Write it as 21/09/2026." : undefined}
-          onBlur={(event) => commit(event.target)}
-          className={cn(
-            "h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 tabular-nums focus:border-input focus:bg-background disabled:opacity-60",
-            invalid && "border-destructive text-destructive"
-          )}
+          onValueChange={(next) => onField(row, field, next || null)}
+          className="flex-1"
+          inputClassName="border-transparent bg-transparent pl-1 focus-visible:border-input focus-visible:bg-background"
         />
         <PdfSourceButton
           label={`Show ${field} in statement for PDF row ${row.sourceRowNumber}`}

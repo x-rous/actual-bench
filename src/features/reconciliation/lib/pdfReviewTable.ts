@@ -197,21 +197,6 @@ export function normalizeTableAmountInput(value: string) {
   return /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(unsigned) ? `${sign}${unsigned.replaceAll(",", "")}` : value;
 }
 
-/**
- * Dates are shown and typed as `21/09/2026`, wherever one appears in the
- * workbench.
- *
- * One format, whatever the statement prints and whatever the browser's locale
- * would prefer: the reviewer is comparing a column of dates against a page,
- * and a field that shows `09/21/2026` to one person and `21/09/2026` to
- * another turns a check into a translation. ISO is what gets stored, and is
- * accepted on the way in so a pasted `2026-09-21` still works.
- */
-export function formatDateInput(iso: string | null) {
-  const match = (iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : iso ?? "";
-}
-
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**
@@ -220,31 +205,12 @@ const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
  * Used where a date is being stated rather than edited - the statement's own
  * period, where a month's name is quicker to take in than its number and
  * there is no field to line the digits up in. Written the same way for
- * everyone, like every other date here, rather than left to the browser's
- * locale.
+ * everyone; the date fields themselves are the browser's own.
  */
 export function formatDateLabel(iso: string | null) {
   const match = (iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return iso ?? "";
   return `${match[3]} ${MONTH_NAMES[Number(match[2]) - 1] ?? match[2]} ${match[1]}`;
-}
-
-export function parseDateInput(text: string): string | null {
-  const value = text.trim();
-  if (!value) return null;
-  const iso = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  const dmy = value.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/);
-  const parts = iso
-    ? { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) }
-    : dmy
-      ? { year: Number(dmy[3]), month: Number(dmy[2]), day: Number(dmy[1]) }
-      : null;
-  if (!parts) return null;
-  if (parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31) return null;
-  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
-  // Rejects the days a month does not have, which the range check above lets by.
-  if (date.getUTCMonth() !== parts.month - 1 || date.getUTCDate() !== parts.day) return null;
-  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
 /** The statement's own name, with a csv extension and no directory parts. */

@@ -51,7 +51,6 @@ import { Checkbox } from "@/components/ui/checkbox";
  *     not control, and the wording says exactly that rather than nudging.
  */
 
-const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
 
 type Props = {
   open: boolean;
@@ -220,7 +219,7 @@ export function BackupRuleDialog({
         <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1 text-xs">
           <label className="block space-y-1">
             <span className="font-medium">Name</span>
-            <Input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} />
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
 
           <label className="block space-y-1">
@@ -356,7 +355,6 @@ export function BackupRuleDialog({
             <label className="block space-y-1">
               <span className="font-medium">Passphrase</span>
               <Input
-                className={inputClass}
                 type="password"
                 value={passphrase}
                 onChange={(event) => setPassphrase(event.target.value)}
@@ -400,7 +398,6 @@ export function BackupRuleDialog({
                     <label key={tier} className="space-y-1">
                       <span className="block capitalize text-muted-foreground">{tier}</span>
                       <Input
-                        className={inputClass}
                         type="number"
                         min={0}
                         value={retention[tier]}

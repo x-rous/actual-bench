@@ -5,6 +5,7 @@ import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { Check, ChevronsUpDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { FIELD_FOCUS, FIELD_OPEN } from "@/components/ui/field-focus";
 
 export type SelectOption = { value: string; label: React.ReactNode; disabled?: boolean };
 export type SelectOptionGroup = { label: string; options: SelectOption[] };
@@ -75,7 +76,9 @@ export function Select({
         title={title}
         data-size={size}
         className={cn(
-          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md border border-input bg-background px-2 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground",
+          "flex w-full min-w-0 items-center justify-between gap-1 rounded-md border border-input bg-background px-2 text-left text-xs outline-none disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground",
+          FIELD_FOCUS,
+          FIELD_OPEN,
           size === "sm" ? "h-7" : "h-8",
           className
         )}

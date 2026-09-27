@@ -40,7 +40,6 @@ import { Select } from "@/components/ui/select";
  * nothing until the night it was needed.
  */
 
-const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
 
 type Props = {
   open: boolean;
@@ -165,7 +164,6 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
         <div className="space-y-3 text-xs">
           <Field label="Name">
             <Input
-              className={inputClass}
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder={kind === "local" ? "NAS volume" : "Off-site bucket"}
@@ -190,7 +188,6 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
               <Field label="Folder">
                 <div className="flex gap-2">
                   <Input
-                    className={inputClass}
                     value={path}
                     onChange={(event) => {
                       setPath(event.target.value);
@@ -219,27 +216,25 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
             <>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Bucket">
-                  <Input className={inputClass} value={bucket} onChange={(e) => setBucket(e.target.value)} />
+                  <Input value={bucket} onChange={(e) => setBucket(e.target.value)} />
                 </Field>
                 <Field label="Region">
-                  <Input className={inputClass} value={region} onChange={(e) => setRegion(e.target.value)} />
+                  <Input value={region} onChange={(e) => setRegion(e.target.value)} />
                 </Field>
               </div>
               <Field label="Endpoint (leave blank for AWS)">
                 <Input
-                  className={inputClass}
                   value={endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
                   placeholder="https://minio.lan:9000"
                 />
               </Field>
               <Field label="Prefix">
-                <Input className={inputClass} value={prefix} onChange={(e) => setPrefix(e.target.value)} />
+                <Input value={prefix} onChange={(e) => setPrefix(e.target.value)} />
               </Field>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Access key ID">
                   <Input
-                    className={inputClass}
                     value={accessKeyId}
                     onChange={(e) => setAccessKeyId(e.target.value)}
                     placeholder={editing ? "unchanged" : ""}
@@ -248,7 +243,6 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
                 </Field>
                 <Field label="Secret access key">
                   <Input
-                    className={inputClass}
                     type="password"
                     value={secretAccessKey}
                     onChange={(e) => setSecretAccessKey(e.target.value)}

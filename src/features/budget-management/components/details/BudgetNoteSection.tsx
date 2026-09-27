@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useAllNotes } from "@/hooks/useAllNotes";
 import { useNoteMutation, type EntityNoteKind } from "@/hooks/useNoteMutation";
 import { toAccountNoteId, toBudgetNoteId } from "@/lib/api/notes";
+import { Textarea } from "@/components/ui/textarea";
 
 /** What the panel's note editor points at: the entity kind + its own id. */
 export type BudgetNoteTarget = { kind: EntityNoteKind; id: string };
@@ -99,13 +100,13 @@ export function BudgetNoteSection({ target }: { target: BudgetNoteTarget }) {
         <p className="text-[11px] text-muted-foreground">Loading…</p>
       ) : editing ? (
         <>
-          <textarea
+          <Textarea
             ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={4}
             placeholder="Write a note… Markdown supported."
-            className="w-full resize-y rounded border border-input bg-transparent px-2 py-1.5 text-[11px] outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring"
+            className="resize-y"
           />
           {(save.isError || remove.isError) && (
             <p aria-live="polite" className="mt-1 text-[10.5px] text-destructive">

@@ -5,7 +5,7 @@ import { Trash2, Braces } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EntityCombobox } from "./EntityCombobox";
-import { fieldSelectCls, inputCls } from "./ConditionRow";
+import { fieldSelectCls } from "./ConditionRow";
 import { valueToString } from "../utils/rulePreview";
 import {
   ACTION_FIELDS,
@@ -24,7 +24,9 @@ import type { QuickCreateEntityType } from "@/features/quick-create/store/useQui
 import type { ConditionOrAction, RuleOptions } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 
 // ─── Options merging ──────────────────────────────────────────────────────────
 //
@@ -230,8 +232,8 @@ export function ActionRow({
 
           {method === "formula" ? (
             <div className="flex flex-1 flex-col gap-0.5">
-              <input
-                className={cn(inputCls, compact && "h-7")}
+              <Input
+                size={compact ? "sm" : "default"}
                 value={action.options?.formula ?? ""}
                 aria-label="Split amount formula"
                 onChange={(e) => onChange(withOptions(action, { formula: e.target.value }))}
@@ -243,9 +245,9 @@ export function ActionRow({
             </div>
           ) : method === "fixed-amount" || method === "fixed-percent" ? (
             <div className="flex flex-1 items-center gap-1">
-              <input
+              <Input
                 type="number"
-                className={cn(inputCls, compact && "h-7")}
+                size={compact ? "sm" : "default"}
                 value={typeof action.value === "number" ? action.value : ""}
                 aria-label={method === "fixed-percent" ? "Split percentage" : "Split amount"}
                 onChange={(e) =>
@@ -326,8 +328,8 @@ export function ActionRow({
             onValueChange={handleOpChange}
             options={ACTION_OP_OPTIONS.map((k) => ({ value: k, label: ACTION_OPS[k].label }))}
           />
-          <input
-            className={cn(inputCls, compact && "h-7")}
+          <Input
+            size={compact ? "sm" : "default"}
             value={valueToString(action.value)}
             aria-label="Notes text"
             onChange={(e) => onChange({ ...action, value: e.target.value })}
@@ -373,8 +375,8 @@ export function ActionRow({
 
         {isFormula ? (
           <div className="flex flex-1 flex-col gap-0.5">
-            <input
-              className={cn(inputCls, compact && "h-7")}
+            <Input
+              size={compact ? "sm" : "default"}
               value={action.options?.formula ?? ""}
               aria-label="Formula"
               onChange={(e) => onChange(withOptions(action, { formula: e.target.value }))}
@@ -386,8 +388,8 @@ export function ActionRow({
           </div>
         ) : isTemplate ? (
           <div className="flex flex-1 flex-col gap-0.5">
-            <input
-              className={cn(inputCls, compact && "h-7")}
+            <Input
+              size={compact ? "sm" : "default"}
               value={action.options?.template ?? ""}
               aria-label="Template"
               onChange={(e) => onChange(withOptions(action, { template: e.target.value }))}
@@ -409,9 +411,9 @@ export function ActionRow({
             </span>
           </div>
         ) : fieldDef?.type === "number" ? (
-          <input
+          <Input
             type="number"
-            className={cn(inputCls, compact && "h-7")}
+            size={compact ? "sm" : "default"}
             value={typeof action.value === "number" ? action.value : typeof action.value === "string" ? action.value : ""}
             aria-label={`Set ${fieldDef.label}`}
             onChange={(e) => onChange({ ...action, value: e.target.value === "" ? "" : Number(e.target.value) })}
@@ -419,12 +421,11 @@ export function ActionRow({
             step="0.01"
           />
         ) : fieldDef?.type === "date" ? (
-          <input
-            type="date"
-            className={cn(inputCls, compact && "h-7")}
+          <DateInput
+            size={compact ? "sm" : "default"}
             value={valueToString(action.value)}
             aria-label={`Set ${fieldDef.label}`}
-            onChange={(e) => onChange({ ...action, value: e.target.value })}
+            onValueChange={(value) => onChange({ ...action, value })}
           />
         ) : fieldDef?.entity ? (
           <EntityCombobox
@@ -436,8 +437,8 @@ export function ActionRow({
             compact={compact}
           />
         ) : (
-          <input
-            className={cn(inputCls, compact && "h-7")}
+          <Input
+            size={compact ? "sm" : "default"}
             value={valueToString(action.value)}
             aria-label="Action value"
             onChange={(e) => onChange({ ...action, value: e.target.value })}

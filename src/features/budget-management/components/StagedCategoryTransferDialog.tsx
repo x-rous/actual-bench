@@ -11,6 +11,7 @@ import {
   CategoryBalanceCombobox,
   type CategoryWithBalance,
 } from "./CategoryBalanceCombobox";
+import { Input } from "@/components/ui/input";
 
 type Props = {
   month: string;
@@ -217,7 +218,7 @@ export function StagedCategoryTransferDialog({
             <label htmlFor={amountInputId} className="block text-xs font-medium mb-1">
               {mode === "cover" ? "Amount to cover ($)" : "Amount to transfer ($)"}
             </label>
-            <input
+            <Input
               id={amountInputId}
               type="number"
               min="0.01"
@@ -228,7 +229,8 @@ export function StagedCategoryTransferDialog({
                 setValidationError(null);
               }}
               placeholder="0.00"
-              className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+              size="sm"
+              className="font-mono"
               aria-label="Transfer amount in dollars"
             />
             <div className="text-[10px] text-muted-foreground mt-0.5">

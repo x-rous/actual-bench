@@ -20,7 +20,9 @@ import type { QuickCreateEntityType } from "@/features/quick-create/store/useQui
 import type { ConditionOrAction, AmountRange, RecurConfig } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 
 // ─── Shared input/select styles ───────────────────────────────────────────────
 
@@ -32,8 +34,6 @@ export const conditionFieldSelectCls =
 export const fieldSelectCls =
   "border-violet-200 bg-violet-50 font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300";
 
-export const inputCls =
-  "h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50";
 
 // ─── Tag values ───────────────────────────────────────────────────────────────
 //
@@ -101,9 +101,9 @@ function ConditionValueInput({
         : { num1: 0, num2: 0 };
     return (
       <div className="flex flex-1 items-center gap-1">
-        <input
+        <Input
           type="number"
-          className={cn(inputCls, compact && "h-7")}
+          size={compact ? "sm" : "default"}
           value={range.num1}
           aria-label={`${valueLabel} from`}
           onChange={(e) =>
@@ -112,9 +112,9 @@ function ConditionValueInput({
           placeholder="from"
         />
         <span className="text-xs text-muted-foreground shrink-0">–</span>
-        <input
+        <Input
           type="number"
-          className={cn(inputCls, compact && "h-7")}
+          size={compact ? "sm" : "default"}
           value={range.num2}
           aria-label={`${valueLabel} to`}
           onChange={(e) =>
@@ -197,12 +197,11 @@ function ConditionValueInput({
 
   if (kind === "date") {
     return (
-      <input
-        type="date"
-        className={cn(inputCls, compact && "h-7")}
+      <DateInput
+        size={compact ? "sm" : "default"}
         value={valueToString(condition.value)}
         aria-label={valueLabel}
-        onChange={(e) => onChange({ ...condition, value: e.target.value })}
+        onValueChange={(value) => onChange({ ...condition, value })}
       />
     );
   }
@@ -227,9 +226,9 @@ function ConditionValueInput({
 
   if (kind === "number") {
     return (
-      <input
+      <Input
         type="number"
-        className={cn(inputCls, compact && "h-7")}
+        size={compact ? "sm" : "default"}
         value={valueToString(condition.value)}
         aria-label={valueLabel}
         onChange={(e) =>
@@ -247,8 +246,8 @@ function ConditionValueInput({
 
   return isRegex ? (
     <div className="flex flex-1 flex-col gap-0.5">
-      <input
-        className={cn(inputCls, compact && "h-7")}
+      <Input
+        size={compact ? "sm" : "default"}
         value={valueToString(condition.value)}
         aria-label={valueLabel}
         onChange={(e) => onChange({ ...condition, value: e.target.value })}
@@ -259,8 +258,8 @@ function ConditionValueInput({
       </span>
     </div>
   ) : (
-    <input
-      className={cn(inputCls, compact && "h-7")}
+    <Input
+      size={compact ? "sm" : "default"}
       value={valueToString(condition.value)}
       aria-label={valueLabel}
       onChange={(e) => onChange({ ...condition, value: e.target.value })}

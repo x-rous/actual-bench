@@ -2,7 +2,6 @@ import type { PdfStatementParseResult, PdfTransactionProposal } from "@/lib/reco
 import {
   columnRoleLabel,
   csvFileNameFor,
-  formatDateInput,
   formatDateLabel,
   formatGroupedDecimal,
   matchesCategory,
@@ -11,7 +10,6 @@ import {
   newColumnBounds,
   nextSortState,
   normalizeTableAmountInput,
-  parseDateInput,
   regionKindLabel,
   sortColumnsByPosition,
   columnBoundsAfter,
@@ -237,30 +235,10 @@ describe("pdfReviewTable", () => {
   });
 
   describe("date fields", () => {
-    it("shows a stored date the way the workbench writes dates", () => {
-      expect(formatDateInput("2026-09-21")).toBe("21/09/2026");
-      expect(formatDateInput(null)).toBe("");
-    });
-
     it("names the month where a date is stated rather than typed", () => {
       expect(formatDateLabel("2025-02-24")).toBe("24 Feb 2025");
       expect(formatDateLabel("2025-12-05")).toBe("05 Dec 2025");
       expect(formatDateLabel(null)).toBe("");
-    });
-
-    it("takes a typed date back, and a pasted ISO one", () => {
-      expect(parseDateInput("21/09/2026")).toBe("2026-09-21");
-      expect(parseDateInput("1/9/2026")).toBe("2026-09-01");
-      expect(parseDateInput("21-09-2026")).toBe("2026-09-21");
-      expect(parseDateInput("2026-09-21")).toBe("2026-09-21");
-      expect(parseDateInput("  ")).toBeNull();
-    });
-
-    it("refuses a date that does not exist rather than rolling it forward", () => {
-      expect(parseDateInput("31/02/2026")).toBeNull();
-      expect(parseDateInput("21/13/2026")).toBeNull();
-      expect(parseDateInput("09/21/2026")).toBeNull();
-      expect(parseDateInput("not a date")).toBeNull();
     });
   });
 

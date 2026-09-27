@@ -121,7 +121,7 @@ export function LoginForm({ next }: { next: string }) {
               <Label htmlFor="password" className="text-sm text-muted-foreground">
                 Password
               </Label>
-              <Input
+              <Input size="lg"
                 id="password"
                 type="password"
                 value={password}
@@ -137,7 +137,7 @@ export function LoginForm({ next }: { next: string }) {
                 <Label htmlFor="confirm" className="text-sm text-muted-foreground">
                   Confirm password
                 </Label>
-                <Input
+                <Input size="lg"
                   id="confirm"
                   type="password"
                   value={confirm}

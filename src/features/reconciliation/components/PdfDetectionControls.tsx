@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { PdfPanelField, PdfPanelSection } from "./PdfPanelSection";
@@ -12,7 +12,8 @@ import type {
   PdfParserGuidance,
   PdfPrintedSign,
 } from "@/lib/reconciliation/statement/pdf";
-import { accountTypeLabel, formatDateInput, parseDateInput } from "../lib/pdfReviewTable";
+import { accountTypeLabel } from "../lib/pdfReviewTable";
+import { DateInput } from "@/components/ui/date-input";
 
 /** The density this panel is read at, matching the panels beside it. */
 const DENSE = "h-7 text-xs";
@@ -203,71 +204,26 @@ export function PdfDetectionControls({
           hint="Read from this statement and used to check its dates. It is not kept in a saved layout, because it moves every month."
         >
           <span className="flex items-center gap-1.5">
-            <PdfDateField
+            <DateInput
+              size="sm"
               className="flex-1"
-              value={guidance.statementPeriod.start}
+              value={guidance.statementPeriod.start ?? ""}
               disabled={disabled}
-              label="Statement period start"
-              onChange={(next) => onChange({ statementPeriod: { ...guidance.statementPeriod, start: next } })}
+              aria-label="Statement period start"
+              onValueChange={(next) => onChange({ statementPeriod: { ...guidance.statementPeriod, start: next || null } })}
             />
             <span aria-hidden="true" className="shrink-0 text-[10px] text-muted-foreground">to</span>
-            <PdfDateField
+            <DateInput
+              size="sm"
               className="flex-1"
-              value={guidance.statementPeriod.end}
+              value={guidance.statementPeriod.end ?? ""}
               disabled={disabled}
-              label="Statement period end"
-              onChange={(next) => onChange({ statementPeriod: { ...guidance.statementPeriod, end: next } })}
+              aria-label="Statement period end"
+              onValueChange={(next) => onChange({ statementPeriod: { ...guidance.statementPeriod, end: next || null } })}
             />
           </span>
         </PdfPanelField>
       </div>
     </PdfPanelSection>
-  );
-}
-
-/** A date written the way the workbench writes dates, stored as ISO. */
-function PdfDateField({
-  value,
-  label,
-  disabled,
-  className,
-  onChange,
-}: {
-  value: string | null;
-  label: string;
-  disabled: boolean;
-  className?: string;
-  onChange: (value: string | null) => void;
-}) {
-  const [invalid, setInvalid] = useState(false);
-  return (
-    <Input
-      key={value ?? ""}
-      aria-label={label}
-      aria-invalid={invalid || undefined}
-      defaultValue={formatDateInput(value)}
-      disabled={disabled}
-      placeholder="dd/mm/yyyy"
-      className={cn("h-7 w-full text-[10px] tabular-nums", className, invalid && "border-destructive text-destructive")}
-      onBlur={(event) => {
-        const text = event.target.value.trim();
-        if (text === formatDateInput(value)) {
-          setInvalid(false);
-          return;
-        }
-        if (!text) {
-          setInvalid(false);
-          onChange(null);
-          return;
-        }
-        const parsed = parseDateInput(text);
-        if (!parsed) {
-          setInvalid(true);
-          return;
-        }
-        setInvalid(false);
-        onChange(parsed);
-      }}
-    />
   );
 }

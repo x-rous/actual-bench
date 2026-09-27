@@ -1,11 +1,12 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MultiSearchableCombobox } from "@/components/ui/combobox";
 import { PillGroup } from "@/components/ui/pill-group";
 import { FINDING_CODE_LABELS } from "../lib/findingMessages";
 import type { FindingCode, Severity } from "../types";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * What the list is showing.
@@ -58,27 +59,12 @@ export function DiagnosticsFilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-2">
-      <div className="relative flex items-center">
-        <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" />
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search rules…"
-          aria-label="Search findings by rule"
-          className="h-7 w-52 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => onSearchChange("")}
-            aria-label="Clear search"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
+      <SearchInput
+        value={search}
+        onValueChange={onSearchChange}
+        placeholder="Search rules…"
+        aria-label="Search findings by rule"
+      />
 
       <PillGroup
         options={[

@@ -17,6 +17,7 @@ import { generateId } from "@/lib/uuid";
 import { useStagedStore } from "@/store/staged";
 import { useQuickCreateStore } from "../store/useQuickCreateStore";
 import type { QuickCreateEntityType } from "../store/useQuickCreateStore";
+import { Input } from "@/components/ui/input";
 
 const DEFAULT_TAG_COLOR = "#E4D4FF";
 
@@ -155,14 +156,13 @@ function QuickCreateForm({
         <label className="text-xs font-medium text-foreground">
           Name <span className="text-destructive">*</span>
         </label>
-        <input
+        <Input
           autoFocus
           maxLength={100}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={`${ENTITY_LABELS[selectedType]} name…`}
-          className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
         />
         {isDuplicate && (
           <p className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">

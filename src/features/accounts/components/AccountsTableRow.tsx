@@ -71,6 +71,7 @@ function InitialBalanceInput({
   onChange: (id: string, value: number | undefined) => void;
 }) {
   return (
+    // eslint-disable-next-line no-restricted-syntax -- an editor inside a table cell, sized to the cell
     <input
       key={value ?? "empty"}
       type="text"

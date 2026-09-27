@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
+import { Input } from "@/components/ui/input";
 
 type Props = {
   month: string;
@@ -83,7 +84,7 @@ export function NextMonthHoldDialog({
           <label htmlFor="hold-amount" className="block text-xs font-medium mb-1">
             Amount to hold
           </label>
-          <input
+          <Input
             ref={inputRef}
             id="hold-amount"
             type="number"
@@ -93,7 +94,8 @@ export function NextMonthHoldDialog({
             onChange={(e) => setAmountStr(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && amountStr !== "") handleSet(); }}
             placeholder="0.00"
-            className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
+            size="sm"
+            className="font-mono"
             aria-label="Hold amount in dollars"
           />
         </div>

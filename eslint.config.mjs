@@ -52,6 +52,27 @@ const eslintConfig = defineConfig([
             "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='checkbox']",
           message: "Use Checkbox from @/components/ui/checkbox, not a raw checkbox <input>.",
         },
+        /*
+         * Text fields: `Input` (or `SearchInput`, `Textarea`). Radio, file,
+         * colour and hidden inputs have no styled equivalent and stay native.
+         * The few deliberate exceptions (editors inside table cells, the
+         * search box inside a dropdown) carry a disable comment saying why.
+         */
+        {
+          selector:
+            "JSXOpeningElement[name.name='input']:not(:has(JSXAttribute[name.name='type'][value.value=/^(checkbox|radio|file|color|hidden)$/]))",
+          message:
+            "Use Input from @/components/ui/input (or SearchInput for a search box), not a raw <input>.",
+        },
+        {
+          selector: "JSXAttribute[name.name='type'][value.value='date']",
+          message:
+            "Use DateInput from @/components/ui/date-input: dates are typed in the budget's format, as in Actual.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='textarea']",
+          message: "Use Textarea from @/components/ui/textarea, not a raw <textarea>.",
+        },
       ],
     },
   },

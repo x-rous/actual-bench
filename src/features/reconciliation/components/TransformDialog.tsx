@@ -28,6 +28,8 @@ import type { Option } from "./StagedFields";
 import { Select } from "@/components/ui/select";
 import { SearchableCombobox } from "@/components/ui/combobox";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 
 /**
  * Bulk transformation (feature spec §47).
@@ -176,12 +178,12 @@ function TagField({
   ariaLabel: string;
   onChange: (value: string) => void;
 }) {
-  const className = "h-7 w-32 rounded-md border border-input bg-background px-2 text-xs";
 
   if (tags.length === 0) {
     return (
-      <input
-        className={className}
+      <Input
+        size="sm"
+        className="w-32"
         value={value}
         placeholder={placeholder}
         aria-label={ariaLabel}
@@ -500,11 +502,24 @@ export function TransformDialog({
                   }))}
                 />
               </div>
-            ) : (
-              <input
-                className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+            ) : condition.field === "date" ? (
+              <DateInput
+                size="sm"
+                className="w-40"
                 value={condition.value}
-                type={condition.field === "amount" ? "number" : condition.field === "date" ? "date" : "text"}
+                aria-label="Value"
+                onValueChange={(value) =>
+                  setConditions((previous) =>
+                    previous.map((entry, i) => (i === index ? { ...entry, value } : entry))
+                  )
+                }
+              />
+            ) : (
+              <Input
+                size="sm"
+                className="w-40"
+                value={condition.value}
+                type={condition.field === "amount" ? "number" : "text"}
                 step={condition.field === "amount" ? "0.01" : undefined}
                 aria-label="Value"
                 onChange={(event) =>
@@ -518,8 +533,9 @@ export function TransformDialog({
             )}
 
             {condition.operator === "between" && (
-              <input
-                className="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs"
+              <Input
+                size="sm"
+                className="w-28"
                 value={condition.value2 ?? ""}
                 aria-label="Upper bound"
                 onChange={(event) =>
@@ -596,8 +612,9 @@ export function TransformDialog({
                   }
                 />
                 <span className="text-xs text-muted-foreground">with</span>
-                <input
-                  className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
+                <Input
+                  size="sm"
+                  className="w-32"
                   value={action.to}
                   placeholder="#2026-07"
                   aria-label="Replacement tag"
@@ -655,8 +672,9 @@ export function TransformDialog({
             )}
 
             {action.kind === "addTag" && (
-              <input
-                className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
+              <Input
+                size="sm"
+                className="w-32"
                 value={action.tag}
                 placeholder="#2026-07"
                 aria-label="Tag"
@@ -674,8 +692,9 @@ export function TransformDialog({
 
             {action.kind === "replaceNoteText" && (
               <>
-                <input
-                  className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                <Input
+                  size="sm"
+                  className="w-40"
                   value={action.from}
                   placeholder="AMZN Mktp"
                   aria-label="Text to replace"
@@ -690,8 +709,9 @@ export function TransformDialog({
                   }
                 />
                 <span className="text-xs text-muted-foreground">with</span>
-                <input
-                  className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                <Input
+                  size="sm"
+                  className="w-40"
                   value={action.to}
                   placeholder="Amazon"
                   aria-label="Replacement text"
@@ -714,8 +734,9 @@ export function TransformDialog({
             )}
 
             {(action.kind === "appendNote" || action.kind === "prependNote") && (
-              <input
-                className="h-7 w-64 rounded-md border border-input bg-background px-2 text-xs"
+              <Input
+                size="sm"
+                className="w-64"
                 value={action.text}
                 placeholder="Checked against statement"
                 aria-label="Text to append"

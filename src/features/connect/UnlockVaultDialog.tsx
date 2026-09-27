@@ -55,7 +55,7 @@ export function UnlockVaultDialog({
         </DialogHeader>
         <div className="space-y-2 text-sm">
           <p className="text-muted-foreground">Enter your password to open saved budgets.</p>
-          <Input
+          <Input size="lg"
             type="password"
             autoFocus
             // As on the Connect page's unlock form.

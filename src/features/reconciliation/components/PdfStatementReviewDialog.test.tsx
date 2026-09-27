@@ -364,7 +364,7 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeDisabled();
     expect(screen.queryByRole("button", { name: /Mark PDF row \d+ reviewed/ })).toBeNull();
     const date = screen.getByLabelText("Transaction date for PDF row 1");
-    fireEvent.change(date, { target: { value: "04/03/2026" } });
+    fireEvent.change(date, { target: { value: "2026-03-04" } });
     fireEvent.blur(date);
     expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeEnabled();
   });
@@ -633,7 +633,7 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("columnheader", { name: /Value date \(used as the import date\)/ })).toBeInTheDocument();
     // Dates are written one way across the workbench, whatever the statement
     // prints and whatever locale the browser would prefer.
-    expect(screen.getByLabelText("Value date for PDF row 1")).toHaveValue("15/08/2026");
+    expect(screen.getByLabelText("Value date for PDF row 1")).toHaveValue("08/15/2026");
   });
 
   const descriptionsOf = () => screen.getAllByRole("textbox", { name: /Description for PDF row/ })
@@ -669,7 +669,7 @@ describe("PdfStatementReviewDialog v2", () => {
     // strip that scrolls when a statement has many issue filters.
     const toolbarSearch = screen.getByLabelText("Search parsed transactions");
     const exportButton = screen.getByRole("button", { name: /Export/ });
-    expect(toolbarSearch.closest("div")).toBe(exportButton.closest("div"));
+    expect(exportButton.closest("div")).toContainElement(toolbarSearch);
     expect(screen.getByRole("group", { name: "Review filters" }).contains(exportButton)).toBe(false);
 
     expect(clicks).toEqual(["march-statement.csv"]);
@@ -961,9 +961,9 @@ describe("PdfStatementReviewDialog v2", () => {
     await waitFor(() => expect(screen.getByText(/not kept in a saved layout/i)).toBeInTheDocument());
 
     const start = screen.getByLabelText("Statement period start");
-    fireEvent.change(start, { target: { value: "21/09/2026" } });
+    fireEvent.change(start, { target: { value: "09/21/2026" } });
     fireEvent.blur(start);
-    expect(screen.getByLabelText("Statement period start")).toHaveValue("21/09/2026");
+    expect(screen.getByLabelText("Statement period start")).toHaveValue("09/21/2026");
   });
 
   it("offers the printed-sign convention next to the amount-direction rule", async () => {
@@ -1268,16 +1268,17 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("columnheader", { name: /Trans\. date/ })).toBeInTheDocument();
   });
 
-  it("writes dates one way and keeps an unreadable one on screen", () => {
+  it("writes dates in the budget's format and keeps an unreadable one on screen", () => {
     const onImport = jest.fn();
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={onImport} />);
 
+    // No budget is open here, so the format is Actual's default, MM/dd/yyyy.
     const date = screen.getByLabelText("Transaction date for PDF row 1");
-    expect(date).toHaveValue("15/08/2026");
+    expect(date).toHaveValue("08/15/2026");
 
-    fireEvent.change(date, { target: { value: "01/09/2026" } });
+    fireEvent.change(date, { target: { value: "9/1/2026" } });
     fireEvent.blur(date);
-    expect(screen.getByLabelText("Transaction date for PDF row 1")).toHaveValue("01/09/2026");
+    expect(screen.getByLabelText("Transaction date for PDF row 1")).toHaveValue("09/01/2026");
 
     // Something that is not a date is kept and marked, not discarded and not
     // written to the row as a guess.

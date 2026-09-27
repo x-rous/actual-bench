@@ -285,7 +285,7 @@ export function ConnectionsList({
           {locked && (
             <div className="px-3 pb-3">
               <div className="flex gap-2">
-                <Input
+                <Input size="lg"
                   type="password"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}

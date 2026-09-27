@@ -132,7 +132,7 @@ export function RememberToggle({
           </DialogHeader>
 
           <div className="flex flex-col gap-2">
-            <Input
+            <Input size="lg"
               type="password"
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
@@ -143,7 +143,7 @@ export function RememberToggle({
               disabled={busy}
             />
             {setting && (
-              <Input
+              <Input size="lg"
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}

@@ -68,6 +68,8 @@ import { PdfStatementReviewDialog } from "./PdfStatementReviewDialog";
 import { formatMinorUnits } from "../lib/format";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /**
  * Screen 2 — import and parse (UX §5).
@@ -707,7 +709,7 @@ export function ImportPanel({
             Editing this re-parses the preview. Uploading a different file replaces it.
           </DialogDescription>
         </DialogHeader>
-        <textarea
+        <Textarea
           aria-label="Statement rows"
           value={text}
           onChange={(event) => {
@@ -718,7 +720,7 @@ export function ImportPanel({
           }}
           rows={16}
           spellCheck={false}
-          className="w-full rounded-md border border-input bg-background p-2 font-mono text-xs"
+          className="font-mono"
         />
       </DialogContent>
     </Dialog>
@@ -753,13 +755,13 @@ export function ImportPanel({
           }}
         >
           <Label htmlFor="pdf-password">PDF password</Label>
-          <input
+          <Input
             id="pdf-password"
             type="password"
             autoFocus
             value={pdfPassword}
             onChange={(event) => setPdfPassword(event.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3"
+            size="lg"
           />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => {
@@ -832,7 +834,7 @@ export function ImportPanel({
             <Label htmlFor="statement-text" className="text-xs">
               Or paste statement rows
             </Label>
-            <textarea
+            <Textarea
               id="statement-text"
               value={text}
               onChange={(event) => {
@@ -844,7 +846,7 @@ export function ImportPanel({
               rows={5}
               spellCheck={false}
               placeholder={"2026-07-01\tCARREFOUR MARKET\t-342.85"}
-              className="w-full rounded-md border border-input bg-background p-2 font-mono text-xs"
+              className="font-mono"
             />
           </div>
         </>
@@ -993,13 +995,13 @@ export function ImportPanel({
       {effectiveConfig && (
         <>
           <div className="flex items-center gap-2">
-            <input
+            <Input
               id="profile-name"
               aria-label="Profile name"
               value={profileName}
               onChange={(event) => setProfileName(event.target.value)}
               placeholder={`${accountName} statement`}
-              className="h-7 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+              size="sm"
             />
             <Button
               variant="outline"

@@ -19,6 +19,7 @@ import { useStagedStore } from "@/store/staged";
 import { useProposalBacktest } from "../hooks/useProposalBacktest";
 import type { RuleGap, RuleGapOverride } from "../lib/ruleGaps";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 type Props = {
   gaps: RuleGap[];
@@ -816,7 +817,7 @@ function RuleConditionEditor({
           ]}
         />
 
-        <input
+        <Input
           type="text"
           value={draft ?? currentValue}
           onChange={(e) => setDraft(e.target.value)}
@@ -827,7 +828,8 @@ function RuleConditionEditor({
             setDraft(null);
           }}
           aria-label={`Text the rule for ${gap.payee.name} should match`}
-          className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono"
+          size="sm"
+          className="flex-1 font-mono"
         />
 
         {edited ? (

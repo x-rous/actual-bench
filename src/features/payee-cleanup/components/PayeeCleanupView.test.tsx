@@ -787,12 +787,12 @@ describe("PayeeCleanupView", () => {
     ];
     render(<PayeeCleanupView />);
 
-    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+    fireEvent.change(screen.getByRole("textbox", { name: /search payees/i }), {
       target: { value: "GROCERGO" },
     });
     fireEvent.click(screen.getByRole("button", { name: /accept 1 safe/i }));
 
-    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+    fireEvent.change(screen.getByRole("textbox", { name: /search payees/i }), {
       target: { value: "" },
     });
     expect(screen.getAllByRole("button", { name: /accepted/i })).toHaveLength(1);
@@ -1180,7 +1180,7 @@ describe("PayeeCleanupView", () => {
     fireEvent.click(screen.getByRole("button", { name: /payees needing rules/i }));
     fireEvent.click(screen.getByRole("button", { name: /accept 1 safe rule/i }));
 
-    fireEvent.change(screen.getByRole("searchbox", { name: /search payees/i }), {
+    fireEvent.change(screen.getByRole("textbox", { name: /search payees/i }), {
       target: { value: "not Filmbox" },
     });
 
@@ -1428,7 +1428,7 @@ describe("PayeeCleanupView", () => {
     candidates = [payee("AMAZON"), payee("Amazon")];
     render(<PayeeCleanupView />);
 
-    expect(screen.getByRole("searchbox", { name: /search payees/i })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /search payees/i })).toBeInTheDocument();
   });
 
   it("exposes the selected workflow and confidence filters to assistive technology", () => {

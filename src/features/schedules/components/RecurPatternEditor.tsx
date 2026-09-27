@@ -3,7 +3,9 @@
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,13 +62,6 @@ const DAY_OPTIONS = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function inputCls(error?: string) {
-  return cn(
-    "h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/50",
-    error && "border-destructive"
-  );
-}
-
 // ─── RecurPatternEditor ───────────────────────────────────────────────────────
 
 type Props = {
@@ -108,21 +103,22 @@ export function RecurPatternEditor({ values, onChange, errors = {} }: Props) {
       <div className="flex items-end gap-2">
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs">Every</Label>
-          <input
+          <Input
             type="number"
             min={1}
             value={interval}
             onChange={(e) => onChange("interval", Math.max(1, parseInt(e.target.value) || 1))}
-            className={cn(inputCls(errors.interval), "w-16")}
+            aria-invalid={errors.interval ? true : undefined}
+            className="w-16"
           />
         </div>
         <div className="flex flex-col gap-1.5 flex-1">
           <Label className="text-xs">Starting</Label>
-          <input
-            type="date"
+          <DateInput
             value={start}
-            onChange={(e) => onChange("start", e.target.value)}
-            className={cn(inputCls(errors.start), "w-full")}
+            onValueChange={(value) => onChange("start", value)}
+            aria-invalid={errors.start ? true : undefined}
+            className="w-full"
           />
           {errors.start && <p className="text-xs text-destructive">{errors.start}</p>}
         </div>
@@ -241,12 +237,13 @@ export function RecurPatternEditor({ values, onChange, errors = {} }: Props) {
 
         {endMode === "after_n_occurrences" && (
           <div className="flex items-center gap-2">
-            <input
+            <Input
               type="number"
               min={1}
               value={endOccurrences}
               onChange={(e) => onChange("endOccurrences", Math.max(1, parseInt(e.target.value) || 1))}
-              className={cn(inputCls(errors.endOccurrences), "w-20")}
+              aria-invalid={errors.endOccurrences ? true : undefined}
+            className="w-20"
             />
             <span className="text-xs text-muted-foreground">occurrences</span>
             {errors.endOccurrences && <p className="text-xs text-destructive">{errors.endOccurrences}</p>}
@@ -255,11 +252,11 @@ export function RecurPatternEditor({ values, onChange, errors = {} }: Props) {
 
         {endMode === "on_date" && (
           <div>
-            <input
-              type="date"
+            <DateInput
               value={endDate}
-              onChange={(e) => onChange("endDate", e.target.value)}
-              className={cn(inputCls(errors.endDate), "w-full")}
+              onValueChange={(value) => onChange("endDate", value)}
+              aria-invalid={errors.endDate ? true : undefined}
+            className="w-full"
             />
             {errors.endDate && <p className="text-xs text-destructive">{errors.endDate}</p>}
           </div>

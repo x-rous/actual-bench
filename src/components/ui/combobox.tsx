@@ -3,6 +3,7 @@
 import { useState, useEffect, useId, useRef } from "react";
 import { Search, Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FIELD_FOCUS, FIELD_OPEN } from "@/components/ui/field-focus";
 
 // ─── useComboboxState ─────────────────────────────────────────────────────────
 
@@ -228,7 +229,9 @@ export function SearchableCombobox({
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
-          "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs outline-none disabled:cursor-not-allowed disabled:opacity-50",
+          FIELD_FOCUS,
+          FIELD_OPEN,
           !selectedLabel && "text-muted-foreground",
           triggerClassName
         )}
@@ -241,6 +244,7 @@ export function SearchableCombobox({
         <div className="absolute top-full left-0 z-50 mt-1 w-full min-w-[180px] rounded-md border border-border bg-popover shadow-md">
           <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
             <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+            {/* eslint-disable-next-line no-restricted-syntax -- the search box inside its own dropdown, borderless in the popup */}
             <input
               ref={searchRef}
               value={search}
@@ -481,10 +485,13 @@ export function MultiSearchableCombobox({
         role="button"
         tabIndex={0}
         aria-label={ariaLabel}
+        aria-expanded={open}
         onClick={() => (open ? closeDropdown() : openDropdown())}
         onKeyDown={(e) => e.key === "Enter" && (open ? closeDropdown() : openDropdown())}
         className={cn(
-          "flex min-h-8 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50",
+          "flex min-h-8 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none",
+          FIELD_FOCUS,
+          FIELD_OPEN,
           triggerClassName
         )}
       >
@@ -535,6 +542,7 @@ export function MultiSearchableCombobox({
         <div className="absolute top-full left-0 z-50 mt-1 w-full min-w-[180px] rounded-md border border-border bg-popover shadow-md">
           <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
             <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+            {/* eslint-disable-next-line no-restricted-syntax -- the search box inside its own dropdown, borderless in the popup */}
             <input
               ref={searchRef}
               value={search}

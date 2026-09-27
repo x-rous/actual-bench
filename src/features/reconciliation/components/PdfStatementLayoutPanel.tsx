@@ -207,7 +207,6 @@ export function PdfLayoutSaveDialog({
               value={bankName}
               onChange={(event) => setBankName(event.target.value)}
               placeholder="For example, HSBC Bank"
-              className="h-9"
               autoFocus
             />
             <datalist id="pdf-statement-layout-banks">
@@ -220,7 +219,6 @@ export function PdfLayoutSaveDialog({
               value={profileName}
               onChange={(event) => setProfileName(event.target.value)}
               placeholder="For example, Credit card"
-              className="h-9"
             />
           </label>
 

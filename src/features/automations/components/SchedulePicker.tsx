@@ -56,7 +56,6 @@ const WEEKDAYS = [
   { value: 0, short: "Sun" },
 ];
 
-const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -239,7 +238,7 @@ export function SchedulePicker({ value, onChange, nowMs, onValidityChange }: Pro
         {mode === "hours" && (
           <label className="flex items-center gap-1.5">
             <Input
-              className={`${inputClass} w-16`}
+              className="w-16"
               type="number"
               min={1}
               max={24}
@@ -279,7 +278,7 @@ export function SchedulePicker({ value, onChange, nowMs, onValidityChange }: Pro
           <label className="flex items-center gap-1.5">
             <span className="text-muted-foreground">at</span>
             <Input
-              className={`${inputClass} w-24`}
+              className="w-24"
               type="time"
               value={time}
               onChange={(event) => {
@@ -293,7 +292,7 @@ export function SchedulePicker({ value, onChange, nowMs, onValidityChange }: Pro
 
         {mode === "cron" && (
           <Input
-            className={`${inputClass} w-44 font-mono`}
+            className="w-44 font-mono"
             value={cron}
             onChange={(event) => {
               setCron(event.target.value);
