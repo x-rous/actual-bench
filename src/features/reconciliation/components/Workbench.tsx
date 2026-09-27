@@ -1111,14 +1111,17 @@ export function Workbench({
       // whichever row happens to be selected underneath it.
       if (document.querySelector('[role="dialog"]')) return;
 
-      // Never steal a key from someone typing in the search box or a note.
+      // Never steal a key from someone typing in the search box or a note, or
+      // choosing from a dropdown: its trigger and open list take the arrows and
+      // Enter for themselves.
       const target = event.target as HTMLElement | null;
       if (
         target &&
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.tagName === "SELECT" ||
-          target.isContentEditable)
+          target.isContentEditable ||
+          target.closest('[role="combobox"], [role="listbox"]'))
       ) {
         return;
       }

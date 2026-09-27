@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useId, useRef } from "react";
+import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { Search, Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FIELD_FOCUS, FIELD_OPEN } from "@/components/ui/field-focus";
@@ -13,38 +14,24 @@ export type ComboboxStateResult = {
   closeDropdown: () => void;
   search: string;
   setSearch: React.Dispatch<React.SetStateAction<string>>;
-  containerRef: React.RefObject<HTMLDivElement | null>;
   searchRef: React.RefObject<HTMLInputElement | null>;
 };
 
 export function useComboboxState(): ComboboxStateResult {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handler(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
 
   function openDropdown() {
     setSearch("");
     setOpen(true);
-    requestAnimationFrame(() => searchRef.current?.focus());
   }
 
   function closeDropdown() {
     setOpen(false);
   }
 
-  return { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef };
+  return { open, openDropdown, closeDropdown, search, setSearch, searchRef };
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -146,7 +133,7 @@ export function SearchableCombobox({
    */
   autoFocus?: boolean;
 }) {
-  const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
+  const { open, openDropdown, closeDropdown, search, setSearch, searchRef } =
     useComboboxState();
 
   const selectedLabel = options.find((o) => !o.isGroupHeader && o.id === value)?.name ?? "";
@@ -188,6 +175,14 @@ export function SearchableCombobox({
     // A search that matches nothing leaves nothing to walk: moving would set an
     // index no option has, and point `aria-activedescendant` at an id that is
     // not on the page.
+    // Escape comes first, and stops here: it closes this list, never the
+    // dialog the picker sits in, even when a search has left nothing to walk.
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDropdown();
+      return;
+    }
     if (navigable.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -199,9 +194,6 @@ export function SearchableCombobox({
       event.preventDefault();
       const id = navigable[activeIndex];
       if (id !== undefined) select(id);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      closeDropdown();
     }
   }
 
@@ -211,127 +203,136 @@ export function SearchableCombobox({
   }
 
   return (
-    <div ref={containerRef} className="relative flex-1">
-      <button
-        type="button"
-        aria-label={ariaLabel}
-        disabled={disabled}
-        onClick={() => {
-          if (open) {
-            closeDropdown();
-          } else {
+    <div className="relative flex-1">
+      <PopoverPrimitive.Root
+        open={open}
+        onOpenChange={(next) => {
+          if (next) {
             // Start on the selected option, so Down moves on from where the
             // user already is rather than from the top of the list.
             setActiveIndex(indexOf.get(value) ?? 0);
             openDropdown();
+          } else {
+            closeDropdown();
           }
         }}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={cn(
-          "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs outline-none disabled:cursor-not-allowed disabled:opacity-50",
-          FIELD_FOCUS,
-          FIELD_OPEN,
-          !selectedLabel && "text-muted-foreground",
-          triggerClassName
-        )}
       >
-        <span className="truncate">{selectedLabel || placeholder}</span>
-        <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 text-muted-foreground" />
-      </button>
+        <PopoverPrimitive.Trigger
+          aria-label={ariaLabel}
+          disabled={disabled}
+          aria-haspopup="listbox"
+          className={cn(
+            "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs outline-none disabled:cursor-not-allowed disabled:opacity-50",
+            FIELD_FOCUS,
+            FIELD_OPEN,
+            !selectedLabel && "text-muted-foreground",
+            triggerClassName
+          )}
+        >
+          <span className="truncate">{selectedLabel || placeholder}</span>
+          <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 text-muted-foreground" />
+        </PopoverPrimitive.Trigger>
 
-      {open && (
-        <div className="absolute top-full left-0 z-50 mt-1 w-full min-w-[180px] rounded-md border border-border bg-popover shadow-md">
-          <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
-            <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
-            {/* eslint-disable-next-line no-restricted-syntax -- the search box inside its own dropdown, borderless in the popup */}
-            <input
-              ref={searchRef}
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                // The list underneath just changed, so the old highlight no
-                // longer refers to the same row.
-                setActiveIndex(0);
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="Search…"
-              role="combobox"
-              aria-expanded
-              aria-controls={listId}
-              aria-activedescendant={navigable[activeIndex] === undefined ? undefined : optionId(activeIndex)}
-              aria-label="Search options"
-              className="h-5 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
-            />
-          </div>
-          <ul ref={listRef} id={listId} role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {allowNone && (
-              <li>
-                <button
-                  type="button"
-                  id={optionId(0)}
-                  role="option"
-                  aria-selected={value === ""}
-                  data-index={0}
-                  onClick={() => select("")}
-                  onMouseEnter={() => setActiveIndex(0)}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                    activeIndex === 0 && "bg-accent text-accent-foreground"
-                  )}
-                >
-                  <Check className={cn("h-3 w-3 shrink-0", value === "" ? "opacity-100" : "opacity-0")} />
-                  - none -
-                </button>
-              </li>
-            )}
-            {filtered.filter((o) => !o.isGroupHeader).length === 0 ? (
-              <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
-            ) : (
-              filtered.map((o) =>
-                o.isGroupHeader ? (
-                  <li
-                    key={`group-${o.id}`}
-                    className={cn(
-                      "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
-                      o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
-                    )}
-                  >
-                    {o.name}
-                  </li>
-                ) : (
-                  <li key={o.id}>
+        <PopoverPrimitive.Portal>
+          {/* Drawn above the page, so a scrolling dialog or table never clips the
+              list, and it opens upwards when there is no room below. */}
+          <PopoverPrimitive.Positioner side="bottom" align="start" sideOffset={4} className="z-[80] outline-none">
+            <PopoverPrimitive.Popup
+              initialFocus={searchRef}
+              className="w-(--anchor-width) min-w-[180px] rounded-md border border-border bg-popover shadow-md outline-none"
+            >
+              <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
+                <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+                {/* eslint-disable-next-line no-restricted-syntax -- the search box inside its own dropdown, borderless in the popup */}
+                <input
+                  ref={searchRef}
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    // The list underneath just changed, so the old highlight no
+                    // longer refers to the same row.
+                    setActiveIndex(0);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Search…"
+                  role="combobox"
+                  aria-expanded
+                  aria-controls={listId}
+                  aria-activedescendant={navigable[activeIndex] === undefined ? undefined : optionId(activeIndex)}
+                  aria-label="Search options"
+                  className="h-5 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+                />
+              </div>
+              <ul ref={listRef} id={listId} role="listbox" className="max-h-72 overflow-y-auto py-1">
+                {allowNone && (
+                  <li>
                     <button
                       type="button"
-                      data-index={indexOf.get(o.id)}
-                      id={optionId(indexOf.get(o.id) ?? 0)}
+                      id={optionId(0)}
                       role="option"
-                      aria-selected={value === o.id}
-                      onClick={() => select(o.id)}
-                      onMouseEnter={() => setActiveIndex(indexOf.get(o.id) ?? 0)}
+                      aria-selected={value === ""}
+                      data-index={0}
+                      onClick={() => select("")}
+                      onMouseEnter={() => setActiveIndex(0)}
                       className={cn(
-                        "flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
-                        o.hidden ? "text-foreground/60" : "text-foreground",
-                        activeIndex === indexOf.get(o.id) && "bg-accent text-accent-foreground"
+                        "flex w-full items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        activeIndex === 0 && "bg-accent text-accent-foreground"
                       )}
                     >
-                      <Check
-                        className={cn("h-3 w-3 shrink-0", value === o.id ? "opacity-100" : "opacity-0")}
-                      />
-                      <span className="truncate">{o.name}</span>
+                      <Check className={cn("h-3 w-3 shrink-0", value === "" ? "opacity-100" : "opacity-0")} />
+                      - none -
                     </button>
                   </li>
-                )
-              )
-            )}
-          </ul>
-          {footer && (
-            <div className="border-t border-border">
-              {footer(search)}
-            </div>
-          )}
-        </div>
-      )}
+                )}
+                {filtered.filter((o) => !o.isGroupHeader).length === 0 ? (
+                  <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
+                ) : (
+                  filtered.map((o) =>
+                    o.isGroupHeader ? (
+                      <li
+                        key={`group-${o.id}`}
+                        className={cn(
+                          "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
+                          o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
+                        )}
+                      >
+                        {o.name}
+                      </li>
+                    ) : (
+                      <li key={o.id}>
+                        <button
+                          type="button"
+                          data-index={indexOf.get(o.id)}
+                          id={optionId(indexOf.get(o.id) ?? 0)}
+                          role="option"
+                          aria-selected={value === o.id}
+                          onClick={() => select(o.id)}
+                          onMouseEnter={() => setActiveIndex(indexOf.get(o.id) ?? 0)}
+                          className={cn(
+                            "flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
+                            o.hidden ? "text-foreground/60" : "text-foreground",
+                            activeIndex === indexOf.get(o.id) && "bg-accent text-accent-foreground"
+                          )}
+                        >
+                          <Check
+                            className={cn("h-3 w-3 shrink-0", value === o.id ? "opacity-100" : "opacity-0")}
+                          />
+                          <span className="truncate">{o.name}</span>
+                        </button>
+                      </li>
+                    )
+                  )
+                )}
+              </ul>
+              {footer && (
+                <div className="border-t border-border">
+                  {footer(search)}
+                </div>
+              )}
+            </PopoverPrimitive.Popup>
+          </PopoverPrimitive.Positioner>
+        </PopoverPrimitive.Portal>
+      </PopoverPrimitive.Root>
     </div>
   );
 }
@@ -407,7 +408,7 @@ export function MultiSearchableCombobox({
    */
   onClear?: () => void;
 }) {
-  const { open, openDropdown, closeDropdown, search, setSearch, containerRef, searchRef } =
+  const { open, openDropdown, closeDropdown, search, setSearch, searchRef } =
     useComboboxState();
 
   const filtered = filterGroupedOptions(options, search, selectableGroups);
@@ -442,6 +443,14 @@ export function MultiSearchableCombobox({
     // A search that matches nothing leaves nothing to walk: moving would set an
     // index no option has, and point `aria-activedescendant` at an id that is
     // not on the page.
+    // Escape comes first, and stops here: it closes this list, never the
+    // dialog the picker sits in, even when a search has left nothing to walk.
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDropdown();
+      return;
+    }
     if (navigable.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -455,9 +464,6 @@ export function MultiSearchableCombobox({
       event.preventDefault();
       const id = navigable[activeIndex];
       if (id !== undefined) toggle(id);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      closeDropdown();
     }
   }
 
@@ -480,192 +486,197 @@ export function MultiSearchableCombobox({
   }
 
   return (
-    <div ref={containerRef} className="relative flex-1">
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={ariaLabel}
-        aria-expanded={open}
-        onClick={() => (open ? closeDropdown() : openDropdown())}
-        onKeyDown={(e) => e.key === "Enter" && (open ? closeDropdown() : openDropdown())}
-        className={cn(
-          "flex min-h-8 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none",
-          FIELD_FOCUS,
-          FIELD_OPEN,
-          triggerClassName
-        )}
-      >
-        {selectedOptions.length === 0 ? (
-          <span className="truncate text-muted-foreground">{placeholder}</span>
-        ) : summary !== undefined ? (
-          <span className="truncate font-medium text-foreground">{summary}</span>
-        ) : (
-          selectedOptions.map((o) => (
-            <span
-              key={o.id}
-              className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-accent-foreground"
-            >
-              {o.name}
+    <div className="relative flex-1">
+      <PopoverPrimitive.Root open={open} onOpenChange={(next) => (next ? openDropdown() : closeDropdown())}>
+        {/* A div, not a button: it holds the chips' own remove buttons. */}
+        <PopoverPrimitive.Trigger
+          nativeButton={false}
+          render={<div />}
+          aria-label={ariaLabel}
+          className={cn(
+            "flex min-h-8 w-full cursor-pointer flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none",
+            FIELD_FOCUS,
+            FIELD_OPEN,
+            triggerClassName
+          )}
+        >
+          {selectedOptions.length === 0 ? (
+            <span className="truncate text-muted-foreground">{placeholder}</span>
+          ) : summary !== undefined ? (
+            <span className="truncate font-medium text-foreground">{summary}</span>
+          ) : (
+            selectedOptions.map((o) => (
+              <span
+                key={o.id}
+                className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-accent-foreground"
+              >
+                {o.name}
+                <button
+                  type="button"
+                  onClick={(e) => remove(o.id, e)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))
+          )}
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {onClear && selectedOptions.length > 0 && (
               <button
                 type="button"
-                onClick={(e) => remove(o.id, e)}
-                className="text-muted-foreground hover:text-foreground"
+                aria-label="Clear selection"
+                // The trigger is a div with its own Enter handler, so without
+                // this the keyboard path cleared the selection and toggled the
+                // dropdown in the same press.
+                onKeyDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClear();
+                }}
+                className="rounded text-muted-foreground hover:text-foreground"
               >
                 <X className="h-3 w-3" />
               </button>
-            </span>
-          ))
-        )}
-        <span className="ml-auto flex shrink-0 items-center gap-1">
-          {onClear && selectedOptions.length > 0 && (
-            <button
-              type="button"
-              aria-label="Clear selection"
-              // The trigger is a div with its own Enter handler, so without
-              // this the keyboard path cleared the selection and toggled the
-              // dropdown in the same press.
-              onKeyDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClear();
-              }}
-              className="rounded text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-          <ChevronsUpDown className="h-3 w-3 text-muted-foreground" />
-        </span>
-      </div>
+            )}
+            <ChevronsUpDown className="h-3 w-3 text-muted-foreground" />
+          </span>
+        </PopoverPrimitive.Trigger>
 
-      {open && (
-        <div className="absolute top-full left-0 z-50 mt-1 w-full min-w-[180px] rounded-md border border-border bg-popover shadow-md">
-          <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
-            <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
-            {/* eslint-disable-next-line no-restricted-syntax -- the search box inside its own dropdown, borderless in the popup */}
-            <input
-              ref={searchRef}
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                // The list underneath just changed, so the old highlight no
-                // longer refers to the same row.
-                setActiveIndex(0);
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="Search…"
-              role="combobox"
-              aria-expanded
-              aria-controls={listId}
-              aria-activedescendant={navigable[activeIndex] === undefined ? undefined : optionId(activeIndex)}
-              aria-label="Search options"
-              className="h-5 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
-            />
-          </div>
-          <ul
-            ref={listRef}
-            id={listId}
-            role="listbox"
-            aria-multiselectable
-            className="max-h-72 overflow-y-auto py-1"
-          >
-            {/*
-              Counted from what is drawn, not from what the arrow keys can
-              reach. Covered rows are excluded from the walk, so a search
-              matching only those reported "No results" while the rows - and
-              their "Included by its group" explanation - were right there.
-            */}
-            {visible.length === 0 ? (
-              <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
-            ) : (
-              filtered.map((o) =>
-                o.isGroupHeader && !selectableGroups ? (
-                  <li
-                    key={`group-${o.id}`}
-                    className={cn(
-                      "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
-                      o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
-                    )}
-                  >
-                    {o.name}
-                  </li>
+        <PopoverPrimitive.Portal>
+          <PopoverPrimitive.Positioner side="bottom" align="start" sideOffset={4} className="z-[80] outline-none">
+            <PopoverPrimitive.Popup
+              initialFocus={searchRef}
+              className="w-(--anchor-width) min-w-[180px] rounded-md border border-border bg-popover shadow-md outline-none"
+            >
+              <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5">
+                <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+                {/* eslint-disable-next-line no-restricted-syntax -- the search box inside its own dropdown, borderless in the popup */}
+                <input
+                  ref={searchRef}
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    // The list underneath just changed, so the old highlight no
+                    // longer refers to the same row.
+                    setActiveIndex(0);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Search…"
+                  role="combobox"
+                  aria-expanded
+                  aria-controls={listId}
+                  aria-activedescendant={navigable[activeIndex] === undefined ? undefined : optionId(activeIndex)}
+                  aria-label="Search options"
+                  className="h-5 flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+                />
+              </div>
+              <ul
+                ref={listRef}
+                id={listId}
+                role="listbox"
+                aria-multiselectable
+                className="max-h-72 overflow-y-auto py-1"
+              >
+                {/*
+                  Counted from what is drawn, not from what the arrow keys can
+                  reach. Covered rows are excluded from the walk, so a search
+                  matching only those reported "No results" while the rows - and
+                  their "Included by its group" explanation - were right there.
+                */}
+                {visible.length === 0 ? (
+                  <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
                 ) : (
-                  <li key={`${o.isGroupHeader ? "group" : "item"}-${o.id}`}>
-                    <button
-                      type="button"
-                      data-index={indexOf.get(o.id)}
-                      {...(indexOf.has(o.id)
-                        ? { id: optionId(indexOf.get(o.id) as number) }
-                        : // A covered row is not in the keyboard walk, so it has
-                          // no index - and falling back to zero gave it the same
-                          // DOM id as the first selectable row, which
-                          // `aria-activedescendant` could then resolve to.
-                          {})}
-                      role="option"
-                      disabled={isCovered(o.id)}
-                      aria-selected={values.includes(o.id) || isCovered(o.id)}
-                      // Says *why* it cannot be clicked. A row that is ticked
-                      // and inert with no explanation reads as broken.
-                      title={isCovered(o.id) ? "Included by its group" : undefined}
-                      onClick={() => toggle(o.id)}
-                      onMouseEnter={() => setActiveIndex(indexOf.get(o.id) ?? 0)}
-                      className={cn(
-                        "flex w-full items-center gap-2 pr-2 py-1.5 text-xs",
-                        isCovered(o.id)
-                          ? "cursor-default text-muted-foreground"
-                          : "hover:bg-accent hover:text-accent-foreground",
-                        // The indent is the whole point of the grouping: a
-                        // heading sits at the margin and its children step in
-                        // from it, so the shape of the list says what belongs
-                        // to what without any lines being drawn.
-                        o.isGroupHeader && !isExclusive(o.id)
-                          ? "pl-2 font-semibold uppercase tracking-wide text-[10px]"
-                          : isExclusive(o.id)
-                            ? "pl-2 font-medium"
-                            : "pl-6",
-                        isExclusive(o.id) && values.includes(o.id) && "text-primary",
-                        o.hidden && !isCovered(o.id) && "text-foreground/60",
-                        !o.hidden && !isCovered(o.id) && "text-foreground",
-                        !isCovered(o.id) &&
-                          activeIndex === indexOf.get(o.id) &&
-                          "bg-accent text-accent-foreground"
-                      )}
-                    >
-                      {/*
-                        A box rather than a bare tick. The tick was invisible
-                        until selected, so a menu nobody had clicked yet looked
-                        single-select - the one thing about it worth knowing in
-                        advance.
-                      */}
-                      {isExclusive(o.id) ? (
-                        // The slot is held so the labels still line up, but it
-                        // stays empty: there is nothing here to tick.
-                        <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                      ) : (
-                        <span
+                  filtered.map((o) =>
+                    o.isGroupHeader && !selectableGroups ? (
+                      <li
+                        key={`group-${o.id}`}
+                        className={cn(
+                          "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
+                          o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
+                        )}
+                      >
+                        {o.name}
+                      </li>
+                    ) : (
+                      <li key={`${o.isGroupHeader ? "group" : "item"}-${o.id}`}>
+                        <button
+                          type="button"
+                          data-index={indexOf.get(o.id)}
+                          {...(indexOf.has(o.id)
+                            ? { id: optionId(indexOf.get(o.id) as number) }
+                            : // A covered row is not in the keyboard walk, so it has
+                              // no index - and falling back to zero gave it the same
+                              // DOM id as the first selectable row, which
+                              // `aria-activedescendant` could then resolve to.
+                              {})}
+                          role="option"
+                          disabled={isCovered(o.id)}
+                          aria-selected={values.includes(o.id) || isCovered(o.id)}
+                          // Says *why* it cannot be clicked. A row that is ticked
+                          // and inert with no explanation reads as broken.
+                          title={isCovered(o.id) ? "Included by its group" : undefined}
+                          onClick={() => toggle(o.id)}
+                          onMouseEnter={() => setActiveIndex(indexOf.get(o.id) ?? 0)}
                           className={cn(
-                            "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border",
+                            "flex w-full items-center gap-2 pr-2 py-1.5 text-xs",
                             isCovered(o.id)
-                              ? "border-muted-foreground/40 bg-muted-foreground/40 text-background"
-                              : values.includes(o.id)
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-input"
+                              ? "cursor-default text-muted-foreground"
+                              : "hover:bg-accent hover:text-accent-foreground",
+                            // The indent is the whole point of the grouping: a
+                            // heading sits at the margin and its children step in
+                            // from it, so the shape of the list says what belongs
+                            // to what without any lines being drawn.
+                            o.isGroupHeader && !isExclusive(o.id)
+                              ? "pl-2 font-semibold uppercase tracking-wide text-[10px]"
+                              : isExclusive(o.id)
+                                ? "pl-2 font-medium"
+                                : "pl-6",
+                            isExclusive(o.id) && values.includes(o.id) && "text-primary",
+                            o.hidden && !isCovered(o.id) && "text-foreground/60",
+                            !o.hidden && !isCovered(o.id) && "text-foreground",
+                            !isCovered(o.id) &&
+                              activeIndex === indexOf.get(o.id) &&
+                              "bg-accent text-accent-foreground"
                           )}
                         >
-                          {(values.includes(o.id) || isCovered(o.id)) && (
-                            <Check className="h-2.5 w-2.5" />
+                          {/*
+                            A box rather than a bare tick. The tick was invisible
+                            until selected, so a menu nobody had clicked yet looked
+                            single-select - the one thing about it worth knowing in
+                            advance.
+                          */}
+                          {isExclusive(o.id) ? (
+                            // The slot is held so the labels still line up, but it
+                            // stays empty: there is nothing here to tick.
+                            <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          ) : (
+                            <span
+                              className={cn(
+                                "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border",
+                                isCovered(o.id)
+                                  ? "border-muted-foreground/40 bg-muted-foreground/40 text-background"
+                                  : values.includes(o.id)
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-input"
+                              )}
+                            >
+                              {(values.includes(o.id) || isCovered(o.id)) && (
+                                <Check className="h-2.5 w-2.5" />
+                              )}
+                            </span>
                           )}
-                        </span>
-                      )}
-                      <span className="truncate">{o.name}</span>
-                    </button>
-                  </li>
-                )
-              )
-            )}
-          </ul>
-        </div>
-      )}
+                          <span className="truncate">{o.name}</span>
+                        </button>
+                      </li>
+                    )
+                  )
+                )}
+              </ul>
+            </PopoverPrimitive.Popup>
+          </PopoverPrimitive.Positioner>
+        </PopoverPrimitive.Portal>
+      </PopoverPrimitive.Root>
     </div>
   );
 }
