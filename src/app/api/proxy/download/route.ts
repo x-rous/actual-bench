@@ -18,6 +18,7 @@ import {
   queueServerRequest,
   type HttpProxyConnection,
 } from "@/lib/http/serverQueue";
+import { OutboundBlockedError, guardedFetch } from "@/lib/security/outboundGuard";
 
 type DownloadRequestBody = {
   connection: HttpProxyConnection;
@@ -38,7 +39,7 @@ async function upstreamDownload(
   let upstream: Response;
 
   try {
-    upstream = await fetch(url, {
+    upstream = await guardedFetch(url, {
       method,
       headers,
       // Export endpoints can take longer than JSON calls — allow 60s.
@@ -136,6 +137,10 @@ export async function POST(request: NextRequest) {
     () => upstreamDownload(url, headers, method, reqId, start, path),
     { leaseTtlMs: 75_000 }
   ).catch((error: unknown) => {
+    if (error instanceof OutboundBlockedError) {
+      logger.warn(`${method} 403 ${path} [${reqId}] - ${error.message}`);
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     // Another realm held the server for longer than a request may wait; the
     // download never started, so a retry is safe.
     if (!(error instanceof ServerBusyError)) throw error;

@@ -199,3 +199,14 @@ describe("per-server serialisation", () => {
     }
   });
 });
+
+describe("addresses Bench refuses (F-194)", () => {
+  it("answers 403 for a cloud metadata address, without sending anything", async () => {
+    const fetchSpy = jest.spyOn(global, "fetch");
+    const calls = fetchSpy.mock.calls.length;
+    const response = await POST(request({ connection: { ...connection, baseUrl: "http://169.254.169.254" }, path: "/accounts" }));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: expect.stringContaining("169.254.169.254") });
+    expect(fetchSpy.mock.calls.length).toBe(calls);
+  });
+});

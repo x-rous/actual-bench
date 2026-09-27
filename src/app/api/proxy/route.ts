@@ -27,6 +27,7 @@ import {
   queueServerRequest,
   type HttpProxyConnection,
 } from "@/lib/http/serverQueue";
+import { OutboundBlockedError, guardedFetch } from "@/lib/security/outboundGuard";
 
 type ProxyRequestBody = {
   connection: HttpProxyConnection;
@@ -49,7 +50,7 @@ async function upstreamFetch(
   let upstreamResponse: Response;
 
   try {
-    upstreamResponse = await fetch(url, {
+    upstreamResponse = await guardedFetch(url, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -149,6 +150,10 @@ export async function POST(request: NextRequest) {
  * is safe to retry - which is what 503 says.
  */
 function serverBusyResponse(error: unknown, method: string, path: string, reqId: string): NextResponse {
+  if (error instanceof OutboundBlockedError) {
+    logger.warn(`${method} 403 ${path} [${reqId}] - ${error.message}`);
+    return NextResponse.json({ error: error.message }, { status: 403 });
+  }
   if (!(error instanceof ServerBusyError)) throw error;
   logger.warn(`${method} 503 ${path} [${reqId}] - ${error.message}`);
   return NextResponse.json({ error: error.message }, { status: 503 });

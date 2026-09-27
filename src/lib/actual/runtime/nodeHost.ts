@@ -9,6 +9,7 @@ import { toActualRuntimeError } from "./errors";
 import { SHUTDOWN_STEP_TIMEOUT_MS, normalizeUrl, withTimeout } from "./timeouts";
 import type { ActualApi, ActualApiRuntime, ActualRuntimeHost } from "./types";
 import { WORKSPACE_HEARTBEAT_MS, createWorkspace, removeWorkspace, touchWorkspace } from "./workspace";
+import { assertAllowedOutbound } from "@/lib/security/outboundGuard";
 
 /**
  * The Direct transport's host inside an automation worker (RD-095 M3).
@@ -194,6 +195,8 @@ export async function getNodeRuntime(connection: BrowserApiConnection): Promise<
     if (previous) await leave(previous, { refreshSnapshot: true });
 
     try {
+      // Actual's own client makes the requests from here on (F-194).
+      await assertAllowedOutbound(connection.baseUrl);
       const actual = await withTimeout(state.loadApi(), "Loading @actual-app/api");
       const initResult = await withTimeout(
         actual.init({
