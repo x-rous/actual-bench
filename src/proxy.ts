@@ -73,11 +73,7 @@ function externalScheme(request: NextRequest): string | null {
   return request.nextUrl.protocol === "https:" ? "https:" : null;
 }
 
-/**
- * Report-Only while the policy is proven against every workflow in a real
- * browser; switched to enforcing once it reports nothing (PR-075b).
- */
-export const CSP_HEADER = "Content-Security-Policy-Report-Only";
+export const CSP_HEADER = "Content-Security-Policy";
 
 /**
  * A page response with its own nonce. Next reads the policy from the request

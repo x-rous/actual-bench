@@ -94,6 +94,10 @@ describe("proxy", () => {
     expect(second.headers.get(CSP_HEADER)).not.toBe(policy);
   });
 
+  it("enforces the policy", () => {
+    expect(CSP_HEADER).toBe("Content-Security-Policy");
+  });
+
   it("leaves static files and API responses without a policy", () => {
     expect(proxy(request("/_next/static/chunks/app.js", "GET")).headers.get(CSP_HEADER)).toBeNull();
     expect(proxy(request("/api/health", "GET")).headers.get(CSP_HEADER)).toBeNull();
