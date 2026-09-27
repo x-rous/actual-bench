@@ -209,4 +209,12 @@ describe("addresses Bench refuses (F-194)", () => {
     await expect(response.json()).resolves.toEqual({ error: expect.stringContaining("169.254.169.254") });
     expect(fetchSpy.mock.calls.length).toBe(calls);
   });
+
+  it("answers 403 when an allowed server redirects to a metadata address", async () => {
+    global.fetch = jest.fn(async () =>
+      new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data/" } })
+    ) as unknown as typeof fetch;
+    const response = await POST(request({ connection, path: "/accounts" }));
+    expect(response.status).toBe(403);
+  });
 });

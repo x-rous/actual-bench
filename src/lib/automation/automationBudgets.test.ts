@@ -45,6 +45,21 @@ describe("automationBudgets", () => {
     expect(automationBudgets(db, sync, enrolments)).toEqual(["Household", "sync-joint"]);
   });
 
+  it("doesn't show a server-run sync's stored name once its enrolment is gone", () => {
+    flows["flow-2"] = {
+      sourceRef: { version: 1, data: { budgetName: "Household", connectionFingerprint: "fp-gone" } },
+      targetRef: { version: 1, data: { budgetName: "Joint", connectionFingerprint: "fp-joint" } },
+    };
+    const serverRun = automation("budget-file-sync", {
+      executionMode: "server",
+      targetRef: { version: 1, data: { flowId: "flow-2" } },
+    });
+    expect(automationBudgets(db, serverRun, enrolments)).toEqual([null, "Joint"]);
+    // Run in the browser, it uses the tab's own connections: the name stands.
+    const browserRun = { ...serverRun, executionMode: "browser" } as AutomationDefinition;
+    expect(automationBudgets(db, browserRun, enrolments)).toEqual(["Household", "Joint"]);
+  });
+
   it("marks a budget that can no longer be found", () => {
     const bankSync = automation("bank-sync", { config: { version: 1, data: { connectionFingerprint: "fp-gone" } } });
     expect(automationBudgets(db, bankSync, enrolments)).toEqual([null]);

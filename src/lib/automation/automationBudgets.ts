@@ -39,8 +39,15 @@ export function automationBudgets(
       const flowId = automation.targetRef.data.flowId;
       const flow = typeof flowId === "string" ? getSyncFlow(db, flowId) : null;
       if (!flow) return [null, null];
-      const side = (ref: Record<string, unknown>) =>
-        (typeof ref.budgetName === "string" && ref.budgetName) || nameOf(ref.connectionFingerprint);
+      // A server-run sync needs each side's enrolment: without it the stored
+      // name is no longer a budget the run can reach. One run in the browser
+      // uses the tab's own connections, so its stored name stands.
+      const needsEnrolment = automation.executionMode === "server";
+      const side = (ref: Record<string, unknown>) => {
+        const enrolled = nameOf(ref.connectionFingerprint);
+        if (needsEnrolment && typeof ref.connectionFingerprint === "string" && enrolled === null) return null;
+        return (typeof ref.budgetName === "string" && ref.budgetName) || enrolled;
+      };
       return [side(flow.sourceRef.data ?? {}), side(flow.targetRef.data ?? {})];
     }
     default:

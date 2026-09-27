@@ -192,11 +192,10 @@ export function AutomationsTable({
                     return (
                       <span
                         className={cn(
-                          "block max-w-64 truncate",
+                          "block min-w-32 max-w-64 break-words",
                           cell.muted && "text-muted-foreground",
                           cell.missing && "italic"
                         )}
-                        title={cell.text}
                       >
                         {cell.text}
                       </span>

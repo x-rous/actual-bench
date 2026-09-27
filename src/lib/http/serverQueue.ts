@@ -37,7 +37,7 @@ import { releaseServerLease, tryAcquireServerLease } from "@/lib/app-db/serverLe
 import { logger } from "@/lib/logger";
 import type { HttpApiConnection } from "@/store/connection";
 import { installServerRequestGate } from "./serverRequestGate";
-import { OutboundBlockedError, assertAllowedOutbound } from "@/lib/security/outboundGuard";
+import { OutboundBlockedError, assertAllowedOutbound, guardedFetch } from "@/lib/security/outboundGuard";
 
 /**
  * How long a lease lives when the caller does not say. Long enough for the
@@ -212,7 +212,9 @@ async function tryCloseBudget(
 ): Promise<void> {
   try {
     const encodedBudgetSyncId = encodeURIComponent(budgetSyncId);
-    await fetch(
+    // Guarded like the request itself: a redirect must not carry the key on
+    // to a metadata address.
+    await guardedFetch(
       `${normalizeBaseUrl(baseUrl)}/v1/budgets/${encodedBudgetSyncId}`,
       {
         method: "DELETE",

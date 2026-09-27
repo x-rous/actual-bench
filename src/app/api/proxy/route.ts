@@ -57,6 +57,12 @@ async function upstreamFetch(
       signal: AbortSignal.timeout(15_000),
     });
   } catch (err) {
+    // A redirect to a refused address: the same answer as a refused address,
+    // and not a 5xx, which would also trigger a budget close.
+    if (err instanceof OutboundBlockedError) {
+      logger.warn(`${method} 403 ${path} [${reqId}] - ${err.message}`);
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     const message =
       err instanceof Error ? err.message : "Network error reaching API server";
     const ms = Date.now() - start;

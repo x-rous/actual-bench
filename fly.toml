@@ -33,6 +33,7 @@ swap_size_mb = 512
 [[mounts]]
   source = 'actual_bench_data'
   destination = '/data'
+  initial_size = '1gb' # The smallest Fly offers; plenty for Actual Bench.
 
 [http_service]
   internal_port = 3000
