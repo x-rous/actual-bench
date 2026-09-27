@@ -18,8 +18,7 @@ import {
   SchedulePicker,
   type ScheduleValue,
 } from "@/features/automations/components/SchedulePicker";
-import { useSavedBudgetConnector } from "@/features/connect/useSavedBudgetConnector";
-import { getConnectionModeBadge } from "@/components/connect/utils";
+import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect";
 import { EnrolConnection } from "@/features/automations/components/EnrolConnection";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
@@ -85,7 +84,6 @@ export function BackupRuleDialog({
    * exports it and the server stores it.
    */
   const savedConnections = useConnectionStore((state) => state.instances);
-  const savedConnector = useSavedBudgetConnector();
   const choices = savedConnections.map((connection) => {
     const httpApi = isHttpApiConnection(connection);
     const enrolled = sources.some((entry) => entry.connectionFingerprint === connectionFingerprint(connection));
@@ -99,6 +97,16 @@ export function BackupRuleDialog({
       manualOnly: !httpApi && !enrolled,
       enrolled,
     };
+  });
+
+  const budgetChoices = useBudgetChoices({
+    connections: savedConnections,
+    keyOf: connectionFingerprint,
+    noteOf: (connection) => {
+      const choice = choices.find((entry) => entry.connection === connection);
+      if (!choice || choice.enrolled) return undefined;
+      return choice.manualOnly ? "manual only until enrolled" : "not enrolled";
+    },
   });
 
   const [source, setSource] = useState(
@@ -239,49 +247,19 @@ export function BackupRuleDialog({
             <div className="space-y-1">
               <label className="block space-y-1">
                 <span className="font-medium">Budget</span>
-                <select
-                  className={selectClass}
+                <BudgetSelect
+                  options={budgetChoices.options}
                   value={source}
-                  disabled={savedConnector.connecting}
-                  onChange={async (event) => {
-                    const value = event.target.value;
-                    if (!value.startsWith("saved:")) {
-                      setSource(value);
-                      return;
-                    }
+                  disabled={budgetChoices.connecting}
+                  emptyLabel="No budget connections saved"
+                  onValueChange={async (value) => {
                     // A saved budget joins the session in the background, then
                     // is offered like any connected one (PR-071b).
-                    const saved = savedConnector.saved.find(
-                      (entry) => `saved:${entry.serverFingerprint}:${entry.budgetSyncId}` === value
-                    );
-                    const instance = saved ? await savedConnector.connect(saved) : null;
+                    const instance = await budgetChoices.resolve(value);
                     if (instance) setSource(connectionFingerprint(instance));
                   }}
-                >
-                  {choices.length === 0 && savedConnector.saved.length === 0 && (
-                    <option value="">No budget connections saved</option>
-                  )}
-                  {choices.map((choice) => (
-                    <option key={choice.fingerprint} value={choice.fingerprint}>
-                      {choice.label} - {choice.baseUrl}
-                      {choice.httpApi ? "" : " (Direct)"}
-                      {choice.enrolled ? "" : choice.manualOnly ? "  (manual only until enrolled)" : "  (not enrolled)"}
-                    </option>
-                  ))}
-                  {savedConnector.saved.length > 0 && (
-                    <optgroup label={savedConnector.locked ? "Saved (unlock to open)" : "Saved"}>
-                      {savedConnector.saved.map((saved) => (
-                        <option
-                          key={`${saved.serverFingerprint}:${saved.budgetSyncId}`}
-                          value={`saved:${saved.serverFingerprint}:${saved.budgetSyncId}`}
-                        >
-                          {saved.name} - {saved.baseUrl} ({getConnectionModeBadge(saved.mode)})
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                {savedConnector.dialog}
+                />
+                {budgetChoices.dialog}
               </label>
 
               {/* Every budget you have connected to is listed, not only the

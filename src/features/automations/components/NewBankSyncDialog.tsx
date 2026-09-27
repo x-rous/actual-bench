@@ -25,6 +25,7 @@ import { SchedulePicker, type ScheduleValue } from "./SchedulePicker";
 import { EnrolConnection } from "./EnrolConnection";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { VaultLockedNotice } from "@/components/VaultLockedNotice";
+import { BudgetSelect } from "@/features/connect/BudgetSelect";
 
 /**
  * Scheduling a bank sync (RD-080 / PR-045).
@@ -43,7 +44,6 @@ import { VaultLockedNotice } from "@/components/VaultLockedNotice";
  * personal-finance app should not ask anybody to write `0 6 * * *`.
  */
 
-const selectClass = "h-8 rounded-md border border-input bg-background px-2 text-xs";
 
 type NewBankSyncDialogProps = {
   open: boolean;
@@ -168,17 +168,16 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
               {connections.length > 1 && (
                 <label className="block">
                   <span className="mb-1 block font-medium">Budget</span>
-                  <select
-                    className={`${selectClass} w-full`}
+                  <BudgetSelect
                     value={connectionFingerprint}
-                    onChange={(event) => setChosenConnection(event.target.value)}
-                  >
-                    {connections.map((connection) => (
-                      <option key={connection.connectionFingerprint} value={connection.connectionFingerprint}>
-                        {connection.label || connection.baseUrl}
-                      </option>
-                    ))}
-                  </select>
+                    onValueChange={setChosenConnection}
+                    options={connections.map((connection) => ({
+                      value: connection.connectionFingerprint,
+                      name: connection.label || connection.budgetSyncId,
+                      mode: connection.mode,
+                      baseUrl: connection.baseUrl,
+                    }))}
+                  />
                 </label>
               )}
 

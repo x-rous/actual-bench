@@ -20,6 +20,7 @@ function renderDialog() {
 
 const connection = {
   connectionFingerprint: "srv-1",
+  mode: "http-api" as const,
   label: "Household",
   baseUrl: "https://budget.example.com",
   budgetSyncId: "budget-1",

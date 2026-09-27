@@ -12,14 +12,22 @@ import { cn } from "@/lib/utils"
  * what this adds - the same height, radius, border, and focus ring, so a form
  * of selects and text fields reads as one form.
  *
+ * `size="sm"` is the compact form for dense rows (toolbars, table filters,
+ * inline editors), where the default would stand taller than its neighbours.
  * `optgroup` and `option` children work as usual.
  */
-function SelectField({ className, ...props }: React.ComponentProps<"select">) {
+function SelectField({
+  className,
+  size = "default",
+  ...props
+}: Omit<React.ComponentProps<"select">, "size"> & { size?: "default" | "sm" }) {
   return (
     <select
       data-slot="select-field"
+      data-size={size}
       className={cn(
-        "h-8 w-full min-w-0 rounded-lg border border-input bg-background px-2 py-1 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80",
+        "w-full min-w-0 rounded-lg border border-input bg-background transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80",
+        size === "sm" ? "h-7 px-2 text-xs" : "h-8 px-2 py-1 text-sm",
         className
       )}
       {...props}

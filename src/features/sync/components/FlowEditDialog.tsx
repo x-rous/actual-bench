@@ -5,7 +5,6 @@ import { ArrowRight, Download, Info, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { getConnectionModeBadge } from "@/components/connect/utils";
 import {
   Dialog,
   DialogContent,
@@ -27,8 +26,7 @@ import {
 } from "../lib/flowForm";
 import { exportFlowDefinition, importFlowDefinition, FlowImportError } from "../lib/flowPortability";
 import { UnattendedEnrollment } from "./UnattendedEnrollment";
-import { useSavedBudgetConnector } from "@/features/connect/useSavedBudgetConnector";
-import type { SavedBudget } from "@/features/connect/savedBudgets";
+import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect";
 import type { ConnectionInstance } from "@/store/connection";
 
 type FlowEditDialogProps = {
@@ -59,8 +57,6 @@ function InfoDot({ text }: { text: string }) {
   );
 }
 
-const SAVED_PREFIX = "saved:";
-const savedValue = (saved: SavedBudget) => `${SAVED_PREFIX}${saved.serverFingerprint}:${saved.budgetSyncId}`;
 
 function InlineEndpoint({
   label,
@@ -79,7 +75,8 @@ function InlineEndpoint({
   const accounts = useFlowAccounts(endpoint.connectionId);
   // Saved budgets can be picked too; picking one connects it in the background
   // without changing the active budget (PR-071b).
-  const savedConnector = useSavedBudgetConnector();
+  const budgetChoices = useBudgetChoices({ connections });
+  const savedConnector = budgetChoices.connector;
   const savedForThis = savedConnector.saved.find((saved) => saved.budgetSyncId === endpoint.budgetSyncId);
 
   // A flow that runs on the server keeps its budgets when they are not
@@ -117,39 +114,25 @@ function InlineEndpoint({
   }
   return (
     <div className="flex min-w-0 gap-2">
-      <select
+      <BudgetSelect
         aria-label={`${label} connection`}
-        className={`${selectClass} flex-1`}
+        size="sm"
+        className="flex-1"
+        options={budgetChoices.options}
         value={endpoint.connectionId}
         disabled={savedConnector.connecting}
-        onChange={async (e) => {
-          const value = e.target.value;
-          if (value.startsWith(SAVED_PREFIX)) {
-            const saved = savedConnector.saved.find((entry) => savedValue(entry) === value);
-            const instance = saved ? await savedConnector.connect(saved) : null;
-            if (instance) {
-              onChange({ connectionId: instance.id, budgetSyncId: instance.budgetSyncId, budgetName: instance.label, accountId: "", accountName: "" });
-            }
+        placeholder={savedConnector.connecting ? "Connecting..." : `${label} budget…`}
+        onValueChange={async (value) => {
+          if (!value) {
+            onChange({ connectionId: "", budgetSyncId: "", budgetName: "", accountId: "", accountName: "" });
             return;
           }
-          const c = connections.find((x) => x.id === value);
-          onChange({ connectionId: c?.id ?? "", budgetSyncId: c?.budgetSyncId ?? "", budgetName: c?.label ?? "", accountId: "", accountName: "" });
+          const instance = await budgetChoices.resolve(value);
+          if (instance) {
+            onChange({ connectionId: instance.id, budgetSyncId: instance.budgetSyncId, budgetName: instance.label, accountId: "", accountName: "" });
+          }
         }}
-      >
-        <option value="">{savedConnector.connecting ? "Connecting..." : `${label} budget…`}</option>
-        {connections.map((c) => (
-          <option key={c.id} value={c.id}>{c.label}</option>
-        ))}
-        {savedConnector.saved.length > 0 && (
-          <optgroup label={savedConnector.locked ? "Saved (unlock to open)" : "Saved"}>
-            {savedConnector.saved.map((saved) => (
-              <option key={savedValue(saved)} value={savedValue(saved)}>
-                {saved.name} ({getConnectionModeBadge(saved.mode)})
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
+      />
       {savedConnector.dialog}
       {entityMode ? null : (
       <select
