@@ -24,6 +24,8 @@ describe("isBlockedAddress (F-194)", () => {
 
 describe("assertAllowedOutbound", () => {
   it("refuses a URL that names a refused address", () => {
+    // The URL parser rewrites an IPv4-in-IPv6 address in hex.
+    expect(() => assertAllowedOutbound("http://[::ffff:169.254.169.254]/")).toThrow(OutboundBlockedError);
     expect(() => assertAllowedOutbound("http://169.254.169.254/latest/meta-data/")).toThrow(OutboundBlockedError);
     expect(() => assertAllowedOutbound("http://[fd00:ec2::254]/")).toThrow(OutboundBlockedError);
   });
@@ -50,10 +52,30 @@ describe("guardedFetch", () => {
     expect(fetchSpy).toHaveBeenLastCalledWith("https://192.168.1.20/v1/", expect.objectContaining({ redirect: "manual" }));
   });
 
-  it("refuses a redirect to a metadata address", async () => {
-    jest
+  it("never reaches a metadata address through a redirect", async () => {
+    const fetchSpy = jest
       .spyOn(global, "fetch")
       .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "http://169.254.169.254/" } }));
-    await expect(guardedFetch("http://192.168.1.20/v1/")).rejects.toBeInstanceOf(OutboundBlockedError);
+    const response = await guardedFetch("http://192.168.1.20/v1/");
+    expect(response.status).toBe(302);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't follow a redirect to another host, which would carry the credentials along", async () => {
+    const fetchSpy = jest
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://elsewhere.example/v1/" } }));
+    const response = await guardedFetch("https://actual.example/v1/", { headers: { "x-api-key": "key" } });
+    expect(response.status).toBe(302);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't follow a redirect from https to http", async () => {
+    const fetchSpy = jest
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 301, headers: { location: "http://actual.example/v1/" } }));
+    const response = await guardedFetch("https://actual.example/v1/");
+    expect(response.status).toBe(301);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

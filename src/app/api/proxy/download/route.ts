@@ -18,7 +18,7 @@ import {
   queueServerRequest,
   type HttpProxyConnection,
 } from "@/lib/http/serverQueue";
-import { OutboundBlockedError, guardedFetch } from "@/lib/security/outboundGuard";
+import { OutboundBlockedError, guardedFetch, unfollowedRedirectMessage } from "@/lib/security/outboundGuard";
 
 type DownloadRequestBody = {
   connection: HttpProxyConnection;
@@ -46,17 +46,25 @@ async function upstreamDownload(
       signal: AbortSignal.timeout(60_000),
     });
   } catch (err) {
-    // A redirect to a refused address: the same answer as a refused address,
-    // and not a 5xx, which would also trigger a budget close.
+    // A refused address: 400, not 403 (which the app reads as a wrong API
+    // key) and not a 5xx (which would also trigger a budget close).
     if (err instanceof OutboundBlockedError) {
-      logger.warn(`${method} 403 ${path} [${reqId}] - ${err.message}`);
-      return NextResponse.json({ error: err.message }, { status: 403 });
+      logger.warn(`${method} 400 ${path} [${reqId}] - ${err.message}`);
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     const message =
       err instanceof Error ? err.message : "Network error reaching API server";
     const ms = Date.now() - start;
     logger.warn(`${method} 502 ${path} (${ms}ms) [${reqId}] - ${message}`);
     return NextResponse.json({ error: message }, { status: 502 });
+  }
+
+  const redirected = unfollowedRedirectMessage(upstream);
+  if (redirected) {
+    // A wrong address, not a failing server: not a 5xx, which would also
+    // trigger a budget close.
+    logger.warn(`${method} 400 ${path} [${reqId}] - ${redirected}`);
+    return NextResponse.json({ error: redirected }, { status: 400 });
   }
 
   if (!upstream.ok) {
@@ -144,8 +152,8 @@ export async function POST(request: NextRequest) {
     { leaseTtlMs: 75_000 }
   ).catch((error: unknown) => {
     if (error instanceof OutboundBlockedError) {
-      logger.warn(`${method} 403 ${path} [${reqId}] - ${error.message}`);
-      return NextResponse.json({ error: error.message }, { status: 403 });
+      logger.warn(`${method} 400 ${path} [${reqId}] - ${error.message}`);
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     // Another realm held the server for longer than a request may wait; the
     // download never started, so a retry is safe.

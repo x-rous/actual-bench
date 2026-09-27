@@ -162,6 +162,10 @@ act on a Bench instance it can reach through your browser, even one that is only
 - Actual Bench's server refuses to connect to the cloud metadata addresses (such as
   `169.254.169.254`) when a connection or backup destination names one, or redirects to one. LAN
   addresses, localhost and your container runtime's host address are fine.
+- When a server Actual Bench connects to redirects it to a *different* address, or from `https` to
+  `http`, Actual Bench stops there rather than send your API key on, and shows the address it was
+  sent to. Use that address in the connection instead. (`http://` to `https://` on the same address
+  is followed.)
 - If you set `ACTUAL_BENCH_VAULT_KEY`, keep it out of the image and out of git. Use your platform's
   secret manager.
 - Persist `/data`, back it up, and lock down its permissions. It holds the generated vault key

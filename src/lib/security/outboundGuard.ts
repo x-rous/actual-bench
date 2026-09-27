@@ -44,8 +44,16 @@ function ipv4Blocked(address: string): boolean {
 
 function ipv6Blocked(address: string): boolean {
   const lower = address.toLowerCase();
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-  if (mapped) return ipv4Blocked(mapped[1]);
+  // An IPv4 address inside IPv6, dotted (`::ffff:169.254.169.254`) or as the
+  // URL parser writes it back (`::ffff:a9fe:a9fe`).
+  const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
+  if (dotted) return ipv4Blocked(dotted[1]);
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
+  if (hex) {
+    const high = Number.parseInt(hex[1], 16);
+    const low = Number.parseInt(hex[2], 16);
+    return ipv4Blocked(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+  }
   return BLOCKED_IPV6.has(lower);
 }
 
@@ -72,6 +80,11 @@ const MAX_REDIRECTS = 5;
 /**
  * `fetch` for an address a user typed, checked before connecting and again at
  * every redirect, so a server can't bounce Bench on to a refused address.
+ *
+ * A redirect is followed only on the same host, and never from https to http:
+ * these requests carry an API key or a budget password, which must not go to
+ * another server or travel unencrypted. `http://host` to `https://host` is
+ * fine. Any other redirect is handed back as it is.
  */
 export async function guardedFetch(url: string, init: RequestInit = {}): Promise<Response> {
   let target = url;
@@ -82,11 +95,28 @@ export async function guardedFetch(url: string, init: RequestInit = {}): Promise
     if (response.status < 300 || response.status >= 400 || hop >= MAX_REDIRECTS) return response;
     const location = response.headers.get("location");
     if (!location) return response;
-    target = new URL(location, target).toString();
+    const from = new URL(target);
+    const next = new URL(location, from);
+    if (next.hostname !== from.hostname || (from.protocol === "https:" && next.protocol !== "https:")) {
+      return response;
+    }
+    target = next.toString();
     const method = (options.method ?? "GET").toUpperCase();
     // As fetch itself does: a 303, or a 301/302 after a POST, continues as GET.
     if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === "POST")) {
       options = { ...options, method: "GET", body: undefined };
     }
   }
+}
+
+/**
+ * A redirect `guardedFetch` didn't follow (to another server, or from https to
+ * http): say where it points, so the address can be corrected in Bench.
+ */
+export function unfollowedRedirectMessage(response: Response): string | null {
+  if (response.status < 300 || response.status >= 400) return null;
+  const location = response.headers.get("location");
+  return location
+    ? `The server redirected to ${location}. Actual Bench doesn't send your credentials on to another address; use that address for this connection instead.`
+    : `The server answered with a redirect (HTTP ${response.status}).`;
 }
