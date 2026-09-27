@@ -37,6 +37,7 @@ import { releaseServerLease, tryAcquireServerLease } from "@/lib/app-db/serverLe
 import { logger } from "@/lib/logger";
 import type { HttpApiConnection } from "@/store/connection";
 import { installServerRequestGate } from "./serverRequestGate";
+import { OutboundBlockedError, assertAllowedOutbound, guardedFetch } from "@/lib/security/outboundGuard";
 
 /**
  * How long a lease lives when the caller does not say. Long enough for the
@@ -211,7 +212,9 @@ async function tryCloseBudget(
 ): Promise<void> {
   try {
     const encodedBudgetSyncId = encodeURIComponent(budgetSyncId);
-    await fetch(
+    // Guarded like the request itself: a redirect must not carry the key on
+    // to a metadata address.
+    await guardedFetch(
       `${normalizeBaseUrl(baseUrl)}/v1/budgets/${encodedBudgetSyncId}`,
       {
         method: "DELETE",
@@ -259,6 +262,9 @@ export function queueServerRequest<T extends { status: number } = NextResponse>(
   const lease = { release: () => {} };
 
   const thisRequest = prev.then(async () => {
+    // A link-local or cloud metadata address is refused before anything is
+    // sent, or held (F-194).
+    assertAllowedOutbound(connection.baseUrl);
     lease.release = await acquireLease(
       serverKey,
       newHolderId(reqId),
@@ -279,7 +285,8 @@ export function queueServerRequest<T extends { status: number } = NextResponse>(
         }
       },
       async (error: unknown) => {
-        if (error instanceof ServerBusyError) return;
+        // Nothing was sent to the server, so there is no budget to close.
+        if (error instanceof ServerBusyError || error instanceof OutboundBlockedError) return;
         if (connection.budgetSyncId) {
           await tryCloseBudget(connection.baseUrl, connection.budgetSyncId, connection.apiKey);
         }

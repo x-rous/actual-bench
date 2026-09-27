@@ -213,6 +213,27 @@ const STATUS_ORDER: Record<AutomationListItem["status"], number> = {
   ok: 4,
 };
 
+export type BudgetsCell = { text: string; muted: boolean; missing: boolean };
+
+/**
+ * What the Budgets column says: a bank sync's or backup's budget, a Budget File
+ * Sync's "source → target", "All backups" for verifying stored backups, and
+ * "Budget no longer available" where one can't be found (the run would fail).
+ */
+export function describeAutomationBudgets(automation: AutomationListItem): BudgetsCell {
+  const budgets = automation.budgets ?? [];
+  if (budgets.length === 0) {
+    return { text: automation.type === "backup-scrub" ? "All backups" : "-", muted: true, missing: false };
+  }
+  const names = budgets.map((name) => name ?? "Budget no longer available");
+  const missing = budgets.some((name) => name === null);
+  return {
+    text: names.join(automation.type === "budget-file-sync" ? " → " : ", "),
+    muted: missing,
+    missing,
+  };
+}
+
 export function sortAutomations(
   automations: AutomationListItem[],
   sort: { key: AutomationSortKey; direction: SortDirection } | null
@@ -228,6 +249,8 @@ export function sortAutomations(
         return automation.name;
       case "type":
         return automation.typeLabel;
+      case "budgets":
+        return describeAutomationBudgets(automation).text;
       case "schedule":
         return automation.scheduleLabel;
       case "lastRun":

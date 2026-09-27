@@ -21,7 +21,7 @@ import {
   type SortDirection,
 } from "@/components/ui/sortable-header";
 import { cn } from "@/lib/utils";
-import { executionModeCopy, formatDateTime, jobTypeIcon, relativeTime } from "../lib/presentation";
+import { describeAutomationBudgets, executionModeCopy, formatDateTime, jobTypeIcon, relativeTime } from "../lib/presentation";
 import type { AutomationListItem } from "../lib/automationsApi";
 
 /**
@@ -84,6 +84,7 @@ const STATUS_STYLE: Record<
 export type AutomationSortKey =
   | "status"
   | "name"
+  | "budgets"
   | "type"
   | "schedule"
   | "lastRun"
@@ -121,6 +122,7 @@ export function AutomationsTable({
           <tr>
             <SortableHeader label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2" />
             <SortableHeader label="Automation" sortKey="name" sort={sort} onSort={onSort} className="px-3 py-2" />
+            <SortableHeader label="Budgets" sortKey="budgets" sort={sort} onSort={onSort} className="px-3 py-2" />
             <SortableHeader label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-3 py-2" />
             <SortableHeader label="Schedule" sortKey="schedule" sort={sort} onSort={onSort} className="px-3 py-2" />
             <SortableHeader label="Last run" sortKey="lastRun" sort={sort} onSort={onSort} className="px-3 py-2" />
@@ -182,6 +184,23 @@ export function AutomationsTable({
                       <span>{automation.autoPauseReason ?? automation.statusSummary}</span>
                     </p>
                   )}
+                </td>
+
+                <td className="px-3 py-2">
+                  {(() => {
+                    const cell = describeAutomationBudgets(automation);
+                    return (
+                      <span
+                        className={cn(
+                          "block min-w-32 max-w-64 break-words",
+                          cell.muted && "text-muted-foreground",
+                          cell.missing && "italic"
+                        )}
+                      >
+                        {cell.text}
+                      </span>
+                    );
+                  })()}
                 </td>
 
                 <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">

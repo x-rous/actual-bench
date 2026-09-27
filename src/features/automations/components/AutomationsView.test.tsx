@@ -33,6 +33,7 @@ function automation(overrides: Partial<AutomationListItem> = {}): AutomationList
     targetRef: { version: 1, data: {} },
     credentialRef: "server-a",
     config: { version: 1, data: { flowId: "flow-1" } },
+    budgets: ["Family", "Shared"],
     failurePolicy: {
       backoffMinutes: 5,
       backoffCeilingMinutes: 60,
@@ -108,6 +109,8 @@ describe("AutomationsView", () => {
     renderView();
 
     expect(await screen.findByText("Household → Joint")).toBeInTheDocument();
+    // Which budgets it works on, source then target.
+    expect(screen.getByText("Family → Shared")).toBeInTheDocument();
     expect(screen.getByText(/Every 30 minutes/)).toBeInTheDocument();
     // The job type is named rather than inferred: "Household → Joint" says
     // nothing about what kind of automation it is once bank sync exists.

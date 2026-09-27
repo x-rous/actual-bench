@@ -199,3 +199,25 @@ describe("per-server serialisation", () => {
     }
   });
 });
+
+describe("addresses Bench refuses (F-194)", () => {
+  it("answers 400 for a cloud metadata address, without sending anything (not 403, which the app reads as a wrong API key)", async () => {
+    const fetchSpy = jest.spyOn(global, "fetch");
+    const calls = fetchSpy.mock.calls.length;
+    const response = await POST(request({ connection: { ...connection, baseUrl: "http://169.254.169.254" }, path: "/accounts" }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: expect.stringContaining("169.254.169.254") });
+    expect(fetchSpy.mock.calls.length).toBe(calls);
+  });
+
+  it("doesn't follow an allowed server's redirect to a metadata address", async () => {
+    const fetchMock = jest.fn(async () =>
+      new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/meta-data/" } })
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const response = await POST(request({ connection, path: "/accounts" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: expect.stringContaining("redirected to http://169.254.169.254") });
+  });
+});

@@ -8,6 +8,8 @@ import { describeSchedule } from "@/lib/automation/schedule";
 import { buildAutomationHealth } from "@/lib/automation/health";
 import { isAutomationRunning, reconcileJobTypes } from "@/lib/automation/engine";
 import { listAutomationRuns } from "@/lib/app-db/automationRunRepository";
+import { automationBudgets } from "@/lib/automation/automationBudgets";
+import { listSyncCredentialMeta } from "@/lib/credentials/unattendedCredentials";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,6 +35,7 @@ export async function GET() {
       buildAutomationHealth(db).automations.map((entry) => [entry.id, entry])
     );
 
+    const enrolments = listSyncCredentialMeta(db);
     const automations = listAutomations(db).map((automation) => {
       const [lastRun] = listAutomationRuns(db, { automationId: automation.id, limit: 1 });
       const entry = health.get(automation.id);
@@ -44,6 +47,7 @@ export async function GET() {
         typeLabel: entry?.typeLabel ?? automation.type,
         status: entry?.status ?? "idle",
         statusSummary: entry?.summary ?? "",
+        budgets: automationBudgets(db, automation, enrolments),
       };
     });
 

@@ -142,7 +142,7 @@ Running behind a reverse proxy, want the edge build, or need to change a setting
 
 Prefer not to run your own Docker host?
 
-- **Fly.io** - deploy your own instance with `fly launch --from https://github.com/x-rous/actual-bench --generate-name --ha=false`. The included template mounts persistent storage and keeps a single always-on Machine, since Bench's automation scheduler needs one running instance.
+- **Fly.io** - deploy your own instance with the included `fly.toml` template: see [Deploy on Fly.io](https://x-rous.github.io/actual-bench/administration/fly-io/) for step-by-step instructions. It keeps a single always-on Machine with persistent storage, since Actual Bench's automation scheduler needs one running instance.
 - **PikaPods** - available once the official listing is approved.
 
 See **[Deployment](https://x-rous.github.io/actual-bench/administration/deployment/)** for the full walkthrough of either.

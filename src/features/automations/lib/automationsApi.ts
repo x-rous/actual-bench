@@ -13,6 +13,11 @@ export type AutomationListItem = AutomationDefinition & {
   status: "ok" | "warning" | "failing" | "paused" | "idle";
   /** One sentence a person can act on, from the health module. */
   statusSummary: string;
+  /**
+   * The budgets it works on, by name (a sync: source, then target). `null` is a
+   * budget that can no longer be found; empty means none in particular.
+   */
+  budgets: (string | null)[];
 };
 
 export type AutomationJobTypeSummary = {

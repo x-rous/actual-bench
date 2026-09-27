@@ -1,0 +1,232 @@
+---
+title: Deploy on Fly.io
+description: "Step-by-step, no experience needed: run your own Actual Bench on Fly.io, with its own web address, HTTPS and saved data."
+sidebar:
+  order: 2
+---
+
+[Fly.io](https://fly.io) is a hosting service: it runs Actual Bench for you on the internet, so you
+don't need a server of your own. You'll set it up by typing a few commands into a terminal (a window
+where you type commands). If you've never done this before, that's fine: every command is on this
+page, and you copy and paste them one at a time.
+
+When you're done, you'll have:
+
+- Your own Actual Bench at a web address you choose, like `https://my-budget-bench.fly.dev`.
+- A secure (HTTPS) connection, set up for you.
+- Your settings and saved connections kept safely between restarts and updates.
+- Scheduled automations (backups, bank sync, budget sync) that keep running while your browser is
+  closed.
+
+It takes about 15 minutes.
+
+## Before you start
+
+### 1. Create a Fly.io account
+
+Go to [fly.io](https://fly.io), choose **Get Started**, and fill in the form.
+
+Fly asks for a credit card and charges for what you use each month. Running Actual Bench this way
+costs a few US dollars a month. See [Fly's pricing](https://fly.io/docs/about/pricing/) for current
+prices, and [Costs](#costs) below for how to pay less.
+
+### 2. Open a terminal
+
+- **Windows**: open the Start menu, type **PowerShell**, and open it.
+- **Mac**: open **Finder**, choose **Go → Utilities** from the menu bar, and open **Terminal**.
+- **Linux**: open your terminal app.
+
+Keep this window open for the rest of the guide. To run a command, paste it into the window and
+press **Enter**. Wait until it finishes before pasting the next one.
+
+### 3. Install Fly's tool
+
+Paste the command for your computer:
+
+```powershell title="Windows (PowerShell)"
+iwr https://fly.io/install.ps1 -useb | iex
+```
+
+```bash title="Mac and Linux"
+curl -L https://fly.io/install.sh | sh
+```
+
+When it finishes, **close the terminal window and open a new one**, so it finds the tool it just
+installed.
+
+:::tip[If `fly` is "not found"]
+On a Mac, use `~/.fly/bin/fly` wherever this guide says `fly`. If the install commands above don't
+work, Fly's own [install page](https://fly.io/docs/flyctl/install/) has the latest ones.
+:::
+
+### 4. Sign in to Fly
+
+```bash
+fly auth login
+```
+
+Your web browser opens. Sign in to Fly there, then come back to the terminal.
+
+## Put Actual Bench on Fly
+
+### 5. Make a folder for it
+
+This folder holds Actual Bench's settings file. You'll come back to it whenever you update, so keep
+it.
+
+```bash
+mkdir actual-bench
+cd actual-bench
+```
+
+### 6. Download the settings file
+
+This downloads `fly.toml`, a small file that tells Fly how to run Actual Bench:
+
+```powershell title="Windows (PowerShell)"
+iwr https://raw.githubusercontent.com/x-rous/actual-bench/main/fly.toml -OutFile fly.toml
+```
+
+```bash title="Mac and Linux"
+curl -fsSL -o fly.toml https://raw.githubusercontent.com/x-rous/actual-bench/main/fly.toml
+```
+
+### 7. Choose a name and launch
+
+Pick a name for your app. **The name becomes your web address**: the name `my-budget-bench` gives you
+`https://my-budget-bench.fly.dev`.
+
+- Use only lowercase letters, numbers and dashes (`-`), with no spaces.
+- It must be unique across all of Fly, so add something of your own, like your initials.
+- You can't rename it later, so choose one you're happy to type.
+
+Then run this, with your name in place of `my-budget-bench`:
+
+```bash
+fly launch --name my-budget-bench --ha=false
+```
+
+Fly asks a few questions. Answer them like this:
+
+1. *An existing fly.toml file was found. Would you like to copy its configuration to the new app?*
+   Type **y** and press Enter.
+2. *Do you want to tweak these settings before proceeding?* Type **N** and press Enter. (Fly has
+   already picked the region nearest to you.)
+
+Fly then sets everything up and starts Actual Bench. This takes a few minutes. If it says the name is
+already taken, run the command again with another name.
+
+:::note[What `--ha=false` does]
+It keeps your app to a single machine. Actual Bench keeps all its data in one place, and a second
+machine would start with an empty copy of its own.
+:::
+
+### 8. Open it and set your password
+
+```bash
+fly apps open
+```
+
+Actual Bench opens in your browser, and asks you to choose a password.
+
+Use at least 8 characters. **Keep it somewhere safe**: it signs you in, and it also protects the budget
+connections you save in Actual Bench.
+
+You can open your app any time by going to its address (`https://your-app-name.fly.dev`), or from the
+[Fly dashboard](https://fly.io/dashboard): open your app and choose the link under **Hostname**.
+
+## Connect to your budget
+
+Choose **Add a server** and connect to your Actual server; [Connect to a
+budget](../../getting-started/connecting/) walks you through it.
+
+Actual Bench offers two ways to connect. When it runs on Fly:
+
+- **Direct** (your Actual Server's address and password): your *browser* talks to your Actual
+  server, so its address must open in your browser over `https://`. An Actual server that is also on
+  Fly, or anywhere with HTTPS, works as it is.
+- **HTTP API** (for `actual-http-api`): Actual Bench on Fly talks to it, so it must be reachable from
+  the internet, or over Fly's [private network](https://fly.io/docs/networking/private-networking/) if
+  you run it on Fly too.
+
+## Update Actual Bench
+
+When a new version comes out, open a terminal, go to the folder from step 5, and run:
+
+```bash
+cd actual-bench
+fly deploy
+```
+
+This installs the newest version and restarts Actual Bench. A restart signs you out, so sign in
+again afterwards. Your data and saved connections stay.
+
+:::tip[Staying on a version you choose]
+To update only when you decide, open `fly.toml` in a text editor and change `xrous/actual-bench:latest`
+to a specific version, such as `xrous/actual-bench:1.3.6`. `fly deploy` then keeps that version until
+you change it. [Upgrades & backups](../upgrading-and-backups/) lists what to check before upgrading.
+:::
+
+## If you forget your password
+
+Your password can't be recovered, but you can set a new one from the terminal. Go to the folder from
+step 5 and run this, with your new password between the quotes:
+
+```bash
+fly secrets set ACTUAL_BENCH_PASSWORD='your-new-password'
+```
+
+Actual Bench restarts with the new password. The budget connections you had saved were protected
+with the old one, so they are removed: add them again after signing in. Automations and backups are
+kept.
+
+While this setting is in place, the password can only be changed this way, not from inside Actual
+Bench. To go back to changing it in the app, remove the setting (your new password stays):
+
+```bash
+fly secrets unset ACTUAL_BENCH_PASSWORD
+```
+
+## Backups
+
+Fly keeps a copy of your app's data from each of the last few days on its own. To see them:
+
+```bash
+fly volumes snapshots list
+```
+
+For copies you control, set up Actual Bench's [Backups](../../user-guide/backups/), for example to
+S3-compatible storage.
+
+## Costs
+
+The settings file runs one small machine that is always on (shared CPU, 512 MB of memory), plus 1 GB
+of storage for your data, the smallest Fly offers. Always on is what keeps automations running while
+you're away.
+
+**Paying less if you don't use automations.** Fly can stop the machine when no one is using it and
+start it again when you visit, which takes a few seconds. Open `fly.toml` in a text editor, change
+`auto_stop_machines = 'off'` to `auto_stop_machines = 'stop'` and `min_machines_running = 1` to
+`min_machines_running = 0`, save it, and run `fly deploy`. While the machine is stopped, nothing
+scheduled runs, and each start signs you out.
+
+## Common questions
+
+**Why am I being charged?** Fly charges for what runs each month, and this app runs all the time so
+automations can.
+
+**My app doesn't open, or shows an error.** In a terminal, go to the folder from step 5 and run
+`fly logs` to see what Actual Bench is reporting. Once you can sign in, **App Health** in Actual Bench
+shows more.
+
+**An automation says it ran out of memory.** Very large budgets need more room than this small
+machine gives each automation. Open `fly.toml` in a text editor, change `memory = '512mb'` to
+`memory = '1gb'` and `ACTUAL_BENCH_WORKER_HEAP_MB = '256'` to `ACTUAL_BENCH_WORKER_HEAP_MB = '512'`,
+save it, and run `fly deploy`. The bigger machine costs a little more.
+
+**Can I run more than one machine?** No. Actual Bench keeps its data in one place, on one machine.
+
+**Can I move it to another region?** Launch a new app there (steps 5 to 8), adding the region's code
+to the launch command, for example `--region fra` for Frankfurt (`fly platform regions` lists them
+all). Then move your data across with Actual Bench's [Backups](../../user-guide/backups/), or add your
+connections again.

@@ -1,4 +1,5 @@
 import {
+  describeAutomationBudgets,
   describeAutomationsSummary,
   executionModeCopy,
   relativeTime,
@@ -8,6 +9,7 @@ import {
   triggerLabel,
 } from "./presentation";
 import type { AutomationRun } from "@/lib/app-db/types";
+import type { AutomationListItem } from "./automationsApi";
 
 function run(overrides: Partial<AutomationRun> = {}): AutomationRun {
   return {
@@ -120,3 +122,29 @@ describe("the page summary line", () => {
     expect(describeAutomationsSummary([], now)).toBeUndefined();
   });
 });
+
+describe("describeAutomationBudgets", () => {
+  const base = { budgets: [] } as unknown as AutomationListItem;
+
+  it("shows a sync's budgets as source → target", () => {
+    expect(describeAutomationBudgets({ ...base, type: "budget-file-sync", budgets: ["Household", "Joint"] })).toEqual({
+      text: "Household → Joint",
+      muted: false,
+      missing: false,
+    });
+  });
+
+  it("shows one budget for a bank sync or backup", () => {
+    expect(describeAutomationBudgets({ ...base, type: "backup", budgets: ["Household"] }).text).toBe("Household");
+  });
+
+  it("says when a budget can no longer be found", () => {
+    const cell = describeAutomationBudgets({ ...base, type: "bank-sync", budgets: [null] });
+    expect(cell).toEqual({ text: "Budget no longer available", muted: true, missing: true });
+  });
+
+  it("says All backups for verifying stored backups", () => {
+    expect(describeAutomationBudgets({ ...base, type: "backup-scrub", budgets: [] }).text).toBe("All backups");
+  });
+});
+

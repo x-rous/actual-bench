@@ -10,6 +10,7 @@ import {
   type DestinationTestResult,
   type StoredObject,
 } from "./types";
+import { OutboundBlockedError, guardedFetch } from "@/lib/security/outboundGuard";
 
 /**
  * An S3-compatible destination (RD-077 / PR-047b).
@@ -146,12 +147,15 @@ export class S3DestinationAdapter implements DestinationAdapter {
 
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await guardedFetch(url, {
         method: options.method,
         headers: signed.headers,
         body: body ? Buffer.from(body) : undefined,
       });
     } catch (error) {
+      if (error instanceof OutboundBlockedError) {
+        throw new DestinationError(error.message, { cause: error, retryable: false });
+      }
       throw new DestinationError(
         `Could not reach ${this.host}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error, retryable: true }
