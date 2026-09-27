@@ -126,6 +126,7 @@ export default defineConfig({
 					label: 'For Self-hosters',
 					items: [
 						{ label: 'Deployment', link: '/administration/deployment/' },
+						{ label: 'Deploy on Fly.io', link: '/administration/fly-io/' },
 						{ label: 'Configuration', link: '/administration/configuration/' },
 						{ label: 'Upgrades & backups', link: '/administration/upgrading-and-backups/' },
 						{ label: 'App Health', link: '/administration/app-health/' },
