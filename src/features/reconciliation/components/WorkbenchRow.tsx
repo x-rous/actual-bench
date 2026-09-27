@@ -23,6 +23,7 @@ import type {
 import { REASON } from "@/lib/reconciliation/session/build";
 import { statementText } from "@/lib/reconciliation/statement/text";
 import { confidenceLabelText, describeReason, formatMinorUnits, formatShortDate } from "../lib/format";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * One reconciliation relationship as a single table row.
@@ -364,10 +365,9 @@ export function WorkbenchRow({
       )}
     >
       <td className="px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
-        <input
-          type="checkbox"
+        <Checkbox
           checked={checked}
-          onChange={(event) => onToggleChecked(event.target.checked)}
+          onCheckedChange={(checked) => onToggleChecked(checked)}
           aria-label={
             statementRow
               ? `Select ${statementText(statementRow)}`

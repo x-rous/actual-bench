@@ -164,8 +164,8 @@ describe("import preview", () => {
 
     expect(screen.queryByLabelText("Source column for the imported payee")).toBeNull();
     // ...but the format's own interpretation controls are there.
-    expect(screen.getByLabelText(/Swap the payee and memo/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Use the memo as a fallback for empty payees/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Swap the payee and memo/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Use the memo as a fallback for empty payees/ })).toBeInTheDocument();
 
     // And, having no mapping to defer to, it is the format that carries the
     // two notes switches (F-127, F-128).
@@ -318,7 +318,7 @@ describe("import preview — a memo spent as the payee", () => {
 
   it("restores their memo when the fallback that consumed it is turned off", () => {
     renderLive(QIF);
-    fireEvent.click(screen.getByLabelText(/Use the memo as a fallback for empty payees/));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Use the memo as a fallback for empty payees/ }));
 
     const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
     expect(cells[0]).toHaveTextContent("DIRECT DEBIT BRITISH GAS");

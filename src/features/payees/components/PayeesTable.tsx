@@ -27,6 +27,7 @@ import { PayeesTableRow } from "./PayeesTableRow";
 import type { PayeeDeleteIntent } from "./PayeesTableOverlays";
 import type { PayeeMergeState } from "./PayeesMergeDialog";
 import type { TypeFilter, RulesFilter, SortCol, SortDir } from "./FilterBar";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -571,13 +572,11 @@ export function PayeesTable({
                 <tr aria-rowindex={1} className="border-b border-border">
                   {/* Select all (only selectable/regular rows) */}
                   <th className="w-9 px-3 py-1.5">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={allVisibleSelected}
-                      ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
-                      onChange={toggleSelectAll}
+                      indeterminate={someVisibleSelected && !allVisibleSelected}
+                      onCheckedChange={toggleSelectAll}
                       disabled={selectableRows.length === 0}
-                      className="h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50"
                       title={
                         selectableRows.length === 0
                           ? "No regular payees in the current view can be selected"

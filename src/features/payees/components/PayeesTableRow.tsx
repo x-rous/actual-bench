@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Payee } from "@/types/entities";
 import type { StagedEntity } from "@/types/staged";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type PayeeRow = StagedEntity<Payee>;
 
@@ -95,16 +96,11 @@ function PayeesTableRowComponent({
       )}
     >
       <td className="w-9 px-3 py-0.5">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={isTransfer ? false : isRowSelected}
           disabled={isTransfer}
-          onChange={(e) => onToggleSelect(entity.id, e.target.checked)}
+          onCheckedChange={(checked) => onToggleSelect(entity.id, checked)}
           onClick={(e) => e.stopPropagation()}
-          className={cn(
-            "h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50",
-            !isTransfer && "cursor-pointer"
-          )}
           title={
             isTransfer
               ? "Transfer payees are managed by account transfers and can't be selected for bulk actions"

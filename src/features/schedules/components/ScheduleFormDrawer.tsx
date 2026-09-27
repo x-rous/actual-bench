@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useForm, type Path, type PathValue } from "react-hook-form";
+import { Controller, useForm, type Path, type PathValue } from "react-hook-form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -479,10 +480,17 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
           <div className="px-4 py-4">
             <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Options</p>
             <label className="flex items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-3.5 w-3.5 accent-primary"
-                {...register("postsTransaction")}
+              <Controller
+                control={control}
+                name="postsTransaction"
+                render={({ field }) => (
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={!!field.value}
+                    onCheckedChange={(checked) => field.onChange(checked)}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
               <span>
                 <span className="font-medium">Automatically add transaction</span>

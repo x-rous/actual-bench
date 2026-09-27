@@ -6,6 +6,7 @@ import type { ImportRowResult, ImportPreviewEntry } from "../lib/budgetCsv";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { formatCurrency as formatAmount } from "../lib/format";
 import type { LoadedCategory, LoadedGroup } from "../types";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Props = {
   availableMonths: string[];
@@ -262,10 +263,9 @@ export function BudgetImportDialog({
                       >
                         <td className="px-2 py-1">
                           {result.matchedCategoryId && result.matchStatus !== "unmatched" && (
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={isApproved}
-                              onChange={() => toggleApproval(rowId)}
+                              onCheckedChange={() => toggleApproval(rowId)}
                               aria-label={`Approve import of ${result.csvRow.categoryName}`}
                             />
                           )}

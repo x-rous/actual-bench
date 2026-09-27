@@ -1313,10 +1313,10 @@ describe("PdfStatementReviewDialog v2", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={duplicate} open onOpenChange={() => {}} onImport={() => {}} />);
 
     const selectAll = screen.getByRole("checkbox", { name: "Select all visible PDF rows" });
-    expect(selectAll).not.toHaveAttribute("data-indeterminate");
+    expect((selectAll as HTMLInputElement).indeterminate).toBe(false);
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF row 1" }));
-    expect(screen.getByRole("checkbox", { name: "Select all visible PDF rows" })).toHaveAttribute("data-indeterminate");
+    expect((screen.getByRole("checkbox", { name: "Select all visible PDF rows" }) as HTMLInputElement).indeterminate).toBe(true);
   });
 
   it("offers a page number to jump to once a statement runs long", () => {

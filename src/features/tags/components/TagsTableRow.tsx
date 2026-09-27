@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Tag } from "@/types/entities";
 import type { StagedEntity } from "@/types/staged";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const DEFAULT_TAG_COLOR = "#E4D4FF";
 
@@ -94,12 +95,10 @@ function TagsTableRowComponent({
     >
       <td className="w-9 px-3 py-0.5">
         {!isDeleted && (
-          <input
-            type="checkbox"
+          <Checkbox
             checked={isRowSelected}
-            onChange={(e) => onToggleSelect(entity.id, e.target.checked)}
+            onCheckedChange={(checked) => onToggleSelect(entity.id, checked)}
             onClick={(e) => e.stopPropagation()}
-            className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
             aria-label={`Select tag ${entity.name || "Unnamed tag"}`}
           />
         )}

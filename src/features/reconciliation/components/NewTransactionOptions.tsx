@@ -4,6 +4,7 @@ import { InfoHint } from "@/components/ui/info-hint";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import type { StatementFormat } from "@/lib/reconciliation/statement/normalize";
 import { WriteSetting } from "./WriteSetting";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * What a statement row becomes when Actual does not have it.
@@ -109,11 +110,9 @@ export function NewTransactionOptions({
           ) : (
             <>
               <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  className="size-3.5 accent-foreground"
+                <Checkbox
                   checked={config.notesFromMemo}
-                  onChange={(event) => onChange({ ...config, notesFromMemo: event.target.checked })}
+                  onCheckedChange={(checked) => onChange({ ...config, notesFromMemo: checked })}
                 />
                 <span className="flex items-center gap-1.5">
                   Use the statement&apos;s memo
@@ -124,12 +123,10 @@ export function NewTransactionOptions({
               </label>
 
               <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  className="size-3.5 accent-foreground"
+                <Checkbox
                   checked={config.notesIncludePayee}
-                  onChange={(event) =>
-                    onChange({ ...config, notesIncludePayee: event.target.checked })
+                  onCheckedChange={(checked) =>
+                    onChange({ ...config, notesIncludePayee: checked })
                   }
                 />
                 <span className="flex items-center gap-1.5">

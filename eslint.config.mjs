@@ -47,6 +47,11 @@ const eslintConfig = defineConfig([
           message:
             "Use Select from @/components/ui/select (or SearchableCombobox / BudgetSelect for long, searchable lists), not a raw <select>.",
         },
+        {
+          selector:
+            "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='checkbox']",
+          message: "Use Checkbox from @/components/ui/checkbox, not a raw checkbox <input>.",
+        },
       ],
     },
   },

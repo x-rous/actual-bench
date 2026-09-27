@@ -22,6 +22,7 @@ import {
   type GeneralisationImpact,
 } from "@/features/rule-diagnostics/lib/generalisationBacktest";
 import type { ConditionOrAction } from "@/types/entities";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Props = {
   open: boolean;
@@ -316,11 +317,9 @@ export function GeneraliseRuleDialog({ open, onOpenChange, ruleId, onConfirmed }
 
               {selected && !selected.clean ? (
                 <label className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
+                  <Checkbox className="mt-0.5"
                     checked={acknowledged}
-                    onChange={(event) => setAcknowledged(event.target.checked)}
+                    onCheckedChange={(checked) => setAcknowledged(checked)}
                     aria-label="Accept a rewrite that also matches another payee's transactions"
                   />
                   <span>

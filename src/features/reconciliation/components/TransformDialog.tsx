@@ -27,6 +27,7 @@ import { findNoteTags } from "@/lib/reconciliation/noteTags";
 import type { Option } from "./StagedFields";
 import { Select } from "@/components/ui/select";
 import { SearchableCombobox } from "@/components/ui/combobox";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Bulk transformation (feature spec §47).
@@ -778,11 +779,9 @@ export function TransformDialog({
       </section>
 
       <label className="flex items-start gap-2 text-xs">
-        <input
-          type="checkbox"
-          className="mt-0.5"
+        <Checkbox className="mt-0.5"
           checked={overrideManual}
-          onChange={(event) => setOverrideManual(event.target.checked)}
+          onCheckedChange={(checked) => setOverrideManual(checked)}
         />
         <span>
           Also change rows I edited by hand

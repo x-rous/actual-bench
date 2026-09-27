@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Account } from "@/types/entities";
 import type { StagedEntity } from "@/types/staged";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type AccountRow = StagedEntity<Account>;
 
@@ -140,13 +141,11 @@ function AccountsTableRowComponent({
       )}
     >
       <td className="w-9 px-3 py-0.5">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={isRowSelected}
-          onChange={(e) => onToggleSelect(entity.id, e.target.checked)}
+          onCheckedChange={(checked) => onToggleSelect(entity.id, checked)}
           onClick={(e) => e.stopPropagation()}
           aria-label={`Select account ${entity.name || "Unnamed account"}`}
-          className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
         />
       </td>
 

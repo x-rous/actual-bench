@@ -38,6 +38,7 @@ import { ShortcutsHelp } from "./ShortcutsHelp";
 import { TransformDialog } from "./TransformDialog";
 import { WorkbenchRow } from "./WorkbenchRow";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Screen 3 — the reconciliation workbench (UX §7).
@@ -1601,13 +1602,12 @@ export function Workbench({
               </tr>
               <tr>
                 <th scope="col" className="w-8 border-b border-border bg-muted px-2 pb-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     aria-label={
                       allVisibleSelected ? "Deselect all visible rows" : "Select all visible rows"
                     }
                     checked={allVisibleSelected}
-                    onChange={() => toggleSelectAll(visibleIds, allVisibleSelected)}
+                    onCheckedChange={() => toggleSelectAll(visibleIds, allVisibleSelected)}
                   />
                 </th>
                 {/*

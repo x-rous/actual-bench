@@ -23,6 +23,7 @@ import type { StageFilter, ActionTypeFilter } from "./FilterBar";
 import { ConditionChip, ActionChip } from "./RuleChips";
 import type { StagedEntity } from "@/types/staged";
 import type { Rule } from "@/types/entities";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -265,15 +266,13 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
             <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b border-border bg-muted/30 text-muted-foreground">
                 <th className="w-8 px-3 py-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={allSelected}
-                    ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                    onChange={toggleSelectAll}
+                    indeterminate={someSelected && !allSelected}
+                    onCheckedChange={toggleSelectAll}
                     disabled={selectableRowCount === 0}
                     aria-label="Select all visible rules"
                     aria-describedby={selectableRowCount === 0 ? "rules-selection-help" : undefined}
-                    className="h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50"
                     title={
                       selectableRowCount === 0
                         ? "No mergeable or deletable rules in the current view"
@@ -311,17 +310,12 @@ export function RulesTable({ onEdit, onMerge, payeeId, categoryId, accountId }: 
                   >
                     {/* Checkbox */}
                     <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selectedIds.has(rule.id)}
-                        onChange={() => toggleSelect(rule.id)}
+                        onCheckedChange={() => toggleSelect(rule.id)}
                         disabled={isScheduleLinked}
                         aria-label={`Select rule ${rule.id}`}
                         aria-describedby={isScheduleLinked ? "rules-selection-help" : undefined}
-                        className={cn(
-                          "h-3.5 w-3.5 rounded accent-primary disabled:cursor-default disabled:opacity-50",
-                          !isScheduleLinked && "cursor-pointer"
-                        )}
                         title={
                           isScheduleLinked
                             ? "Schedule-generated rules are managed by the Schedules page and cannot be merged or bulk deleted"

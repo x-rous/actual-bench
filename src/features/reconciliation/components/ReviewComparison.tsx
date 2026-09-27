@@ -20,6 +20,7 @@ import type {
 } from "@/lib/reconciliation/types";
 import { formatMinorUnits, formatShortDate } from "../lib/format";
 import type { Option } from "./StagedFields";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Statement row by statement row, what it will look like in the budget.
@@ -319,10 +320,9 @@ export function ReviewComparison({
 
         {quiet.length > 0 && (
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={showUnchanged}
-              onChange={(event) => setShowUnchanged(event.target.checked)}
+              onCheckedChange={(checked) => setShowUnchanged(checked)}
             />
             Also show the {quiet.length} rows nothing happens to
           </label>

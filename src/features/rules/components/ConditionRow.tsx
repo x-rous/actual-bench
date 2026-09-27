@@ -20,6 +20,7 @@ import type { QuickCreateEntityType } from "@/features/quick-create/store/useQui
 import type { ConditionOrAction, AmountRange, RecurConfig } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Shared input/select styles ───────────────────────────────────────────────
 
@@ -184,11 +185,9 @@ function ConditionValueInput({
     const checked = condition.value === true || condition.value === "true";
     return (
       <div className={cn("flex h-8 flex-1 items-center gap-2", compact && "h-7")}>
-        <input
-          type="checkbox"
+        <Checkbox
           checked={checked}
-          onChange={(e) => onChange({ ...condition, value: e.target.checked })}
-          className="h-4 w-4 cursor-pointer rounded accent-primary"
+          onCheckedChange={(checked) => onChange({ ...condition, value: checked })}
           aria-label={valueLabel}
         />
         <span className="text-xs text-muted-foreground">{checked ? "Yes" : "No"}</span>

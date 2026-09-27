@@ -29,6 +29,7 @@ import { UnattendedEnrollment } from "./UnattendedEnrollment";
 import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect";
 import type { ConnectionInstance } from "@/store/connection";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type FlowEditDialogProps = {
   open: boolean;
@@ -390,12 +391,10 @@ export function FlowEditDialog({
                   <span className="text-[11px] font-semibold uppercase text-muted-foreground">What a sync may do</span>
                   {syncToggles.map((t) => (
                     <label key={t.key} className="flex items-start gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
+                      <Checkbox className="mt-0.5"
                         aria-label={t.label}
                         checked={!!form.automation[t.key]}
-                        onChange={(e) => setAutomation({ [t.key]: e.target.checked } as Partial<SyncFlowFormState["automation"]>)}
+                        onCheckedChange={(checked) => setAutomation({ [t.key]: checked } as Partial<SyncFlowFormState["automation"]>)}
                       />
                       <span className="flex items-center gap-1">{t.label} <InfoDot text={t.detail} /></span>
                     </label>
@@ -425,11 +424,10 @@ export function FlowEditDialog({
                     />
                   </label>
                   <label className="flex items-center gap-2 text-xs" title="Create the source group on the target when it doesn't exist there.">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       aria-label="Create missing groups"
                       checked={form.entity.createMissingGroup}
-                      onChange={(e) => setEntity({ createMissingGroup: e.target.checked })}
+                      onCheckedChange={(checked) => setEntity({ createMissingGroup: checked })}
                     />
                     Create missing groups too
                   </label>
@@ -475,7 +473,7 @@ export function FlowEditDialog({
                 </label>
               </div>
               <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" aria-label="Add notes marker" checked={form.transform.notesMarkerEnabled} onChange={(e) => setTransform({ notesMarkerEnabled: e.target.checked })} />
+                <Checkbox aria-label="Add notes marker" checked={form.transform.notesMarkerEnabled} onCheckedChange={(checked) => setTransform({ notesMarkerEnabled: checked })} />
                 Add a note to synced transactions
               </label>
               {form.transform.notesMarkerEnabled && (
@@ -491,7 +489,7 @@ export function FlowEditDialog({
                 </div>
               )}
               <label className="flex items-center gap-2 text-xs" title="Copy the source transaction's own notes onto the target, before the marker.">
-                <input type="checkbox" aria-label="Copy source notes" checked={form.transform.copySourceNotes} onChange={(e) => setTransform({ copySourceNotes: e.target.checked })} />
+                <Checkbox aria-label="Copy source notes" checked={form.transform.copySourceNotes} onCheckedChange={(checked) => setTransform({ copySourceNotes: checked })} />
                 Also copy the source transaction&apos;s notes
               </label>
               <p className="text-xs text-muted-foreground">Payees and categories are matched by name on the target.</p>
@@ -499,7 +497,7 @@ export function FlowEditDialog({
               {!entityMode && (
                 <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
                   <label className="flex items-center gap-2 text-xs" title="Convert amounts into a master currency using the FX rate for each transaction's date (RD-056). Missing rates go to review.">
-                    <input type="checkbox" aria-label="Convert currency" checked={form.transform.fxEnabled} onChange={(e) => setTransform({ fxEnabled: e.target.checked })} />
+                    <Checkbox aria-label="Convert currency" checked={form.transform.fxEnabled} onCheckedChange={(checked) => setTransform({ fxEnabled: checked })} />
                     Convert currency (multi-currency consolidation)
                   </label>
                   {form.transform.fxEnabled && (
@@ -511,11 +509,11 @@ export function FlowEditDialog({
                         <span className="text-[11px] text-muted-foreground">ISO 4217 codes - target is your master currency</span>
                       </div>
                       <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <input type="checkbox" aria-label="Fetch missing rates" checked={form.transform.fxAllowProvider} onChange={(e) => setTransform({ fxAllowProvider: e.target.checked })} />
+                        <Checkbox aria-label="Fetch missing rates" checked={form.transform.fxAllowProvider} onCheckedChange={(checked) => setTransform({ fxAllowProvider: checked })} />
                         Fetch missing rates automatically (Frankfurter)
                       </label>
                       <label className="flex items-center gap-2 text-xs text-muted-foreground" title="If you correct a rate after syncing, the preview offers to update the already-synced transactions' amounts. A transaction you edited by hand in Actual is never overwritten.">
-                        <input type="checkbox" aria-label="Update on rate change" checked={form.transform.fxUpdateOnRateChange} onChange={(e) => setTransform({ fxUpdateOnRateChange: e.target.checked })} />
+                        <Checkbox aria-label="Update on rate change" checked={form.transform.fxUpdateOnRateChange} onCheckedChange={(checked) => setTransform({ fxUpdateOnRateChange: checked })} />
                         Update synced transactions when the rate changes
                       </label>
                       {invalidFx && <span className="text-xs text-destructive">Enter both a source and a target currency code.</span>}

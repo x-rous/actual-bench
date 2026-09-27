@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { enrollCredential } from "@/features/sync/lib/syncApi";
 import type { ServerBudget } from "../lib/automationsApi";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Enrolling several budgets on an enrolled server at once (PR-071a).
@@ -152,11 +153,10 @@ export function EnrolServerBudgetsDialog({
               return (
                 <li key={budget.budgetSyncId} className="rounded-md border border-border px-2.5 py-2">
                   <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={checked}
                       disabled={done || running}
-                      onChange={(event) => toggle(budget.budgetSyncId, event.target.checked)}
+                      onCheckedChange={(checked) => toggle(budget.budgetSyncId, checked)}
                     />
                     <span className="min-w-0 flex-1 truncate font-medium">{budget.name}</span>
                     {budget.encrypted && !done && <span className="text-xs text-muted-foreground">Encrypted</span>}

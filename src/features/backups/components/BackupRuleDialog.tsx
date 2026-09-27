@@ -26,6 +26,7 @@ import { createPolicy, patchPolicy, type BackupSource } from "../lib/backupsApi"
 import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupRepository";
 import { isVaultReady, type VaultSummary } from "@/lib/credentials/vaultSummary";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * A backup rule (RD-077 / PR-047e).
@@ -297,12 +298,11 @@ export function BackupRuleDialog({
             ) : (
               destinations.map((destination) => (
                 <label key={destination.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={destinationIds.includes(destination.id)}
-                    onChange={(event) =>
+                    onCheckedChange={(checked) =>
                       setDestinationIds((current) =>
-                        event.target.checked
+                        checked
                           ? [...current, destination.id]
                           : current.filter((id) => id !== destination.id)
                       )
@@ -337,12 +337,10 @@ export function BackupRuleDialog({
           )}
 
           <label className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              className="mt-0.5"
+            <Checkbox className="mt-0.5"
               checked={encrypt}
               disabled={!vaultReady}
-              onChange={(event) => setEncrypt(event.target.checked)}
+              onCheckedChange={(checked) => setEncrypt(checked)}
             />
             <span>
               <span className="font-medium">Encrypt these backups</span>
@@ -424,11 +422,9 @@ export function BackupRuleDialog({
               </fieldset>
 
               <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
+                <Checkbox className="mt-0.5"
                   checked={scrubEnabled}
-                  onChange={(event) => setScrubEnabled(event.target.checked)}
+                  onCheckedChange={(checked) => setScrubEnabled(checked)}
                 />
                 <span>
                   <span className="font-medium">Re-check stored copies weekly</span>

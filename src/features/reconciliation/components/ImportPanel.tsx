@@ -67,6 +67,7 @@ import { NewTransactionOptions } from "./NewTransactionOptions";
 import { PdfStatementReviewDialog } from "./PdfStatementReviewDialog";
 import { formatMinorUnits } from "../lib/format";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Screen 2 — import and parse (UX §5).
@@ -922,11 +923,9 @@ export function ImportPanel({
             reads before the swap that decides which text is which.
           */}
           <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="size-3.5 accent-foreground"
+            <Checkbox
               checked={effectiveConfig.fallbackPayeeToMemo}
-              onChange={(event) => update({ fallbackPayeeToMemo: event.target.checked })}
+              onCheckedChange={(checked) => update({ fallbackPayeeToMemo: checked })}
             />
             <span className="flex items-center gap-1.5">
               Use the memo as a fallback for empty payees
@@ -938,11 +937,9 @@ export function ImportPanel({
             </span>
           </label>
           <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="size-3.5 accent-foreground"
+            <Checkbox
               checked={effectiveConfig.swapPayeeAndMemo}
-              onChange={(event) => update({ swapPayeeAndMemo: event.target.checked })}
+              onCheckedChange={(checked) => update({ swapPayeeAndMemo: checked })}
             />
             <span className="flex items-center gap-1.5">
               Swap the payee and memo

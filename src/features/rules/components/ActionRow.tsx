@@ -24,6 +24,7 @@ import type { QuickCreateEntityType } from "@/features/quick-create/store/useQui
 import type { ConditionOrAction, RuleOptions } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Options merging ──────────────────────────────────────────────────────────
 //
@@ -398,12 +399,10 @@ export function ActionRow({
           </div>
         ) : fieldDef?.type === "boolean" ? (
           <div className={cn("flex h-8 flex-1 items-center gap-2", compact && "h-7")}>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={action.value === true || action.value === "true"}
               aria-label={`Set ${fieldDef.label}`}
-              onChange={(e) => onChange({ ...action, value: e.target.checked })}
-              className="h-4 w-4 cursor-pointer rounded accent-primary"
+              onCheckedChange={(checked) => onChange({ ...action, value: checked })}
             />
             <span className="text-xs text-muted-foreground">
               {action.value === true || action.value === "true" ? "Yes (cleared)" : "No (uncleared)"}

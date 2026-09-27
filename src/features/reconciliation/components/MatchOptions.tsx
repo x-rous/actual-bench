@@ -9,6 +9,7 @@ import {
 } from "@/lib/reconciliation/match/config";
 import type { MatchConfig } from "@/lib/reconciliation/types";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Matching options, saved with the import profile.
@@ -202,12 +203,10 @@ export function MatchOptions({
             <legend className="sr-only">Text handling</legend>
 
             <label className="flex items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                className="mt-0.5"
+              <Checkbox className="mt-0.5"
                 checked={config.text.ignoreTagsInNotes}
-                onChange={(event) =>
-                  patch({ text: { ...config.text, ignoreTagsInNotes: event.target.checked } })
+                onCheckedChange={(checked) =>
+                  patch({ text: { ...config.text, ignoreTagsInNotes: checked } })
                 }
               />
               <span>
@@ -220,11 +219,9 @@ export function MatchOptions({
             </label>
 
             <label className="flex items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                className="mt-0.5"
+              <Checkbox className="mt-0.5"
                 checked={config.matchOriginalCurrencyAmount}
-                onChange={(event) => patch({ matchOriginalCurrencyAmount: event.target.checked })}
+                onCheckedChange={(checked) => patch({ matchOriginalCurrencyAmount: checked })}
               />
               <span>
                 Match foreign transactions on their original amount

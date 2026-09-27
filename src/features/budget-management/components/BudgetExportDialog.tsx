@@ -10,6 +10,7 @@ import { exportToCsv, exportBlankTemplate } from "../lib/budgetCsv";
 import { budgetMonthDataQueryOptions } from "../hooks/useMonthData";
 import type { LoadedCategory, LoadedGroup, LoadedMonthState, StagedBudgetEdit, BudgetCellKey } from "../types";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -358,20 +359,18 @@ export function BudgetExportDialog({
           <legend className="text-sm font-medium mb-2">Options</legend>
 
           <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={includeHidden}
-              onChange={(e) => setIncludeHidden(e.target.checked)}
+              onCheckedChange={(checked) => setIncludeHidden(checked)}
               aria-label="Include hidden categories"
             />
             Include hidden categories
           </label>
 
           <label className="flex items-center gap-2 text-xs cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={includeIncome}
-              onChange={(e) => setIncludeIncome(e.target.checked)}
+              onCheckedChange={(checked) => setIncludeIncome(checked)}
               aria-label="Include income groups"
             />
             Include income groups
@@ -379,10 +378,9 @@ export function BudgetExportDialog({
 
           {stagedEdits && Object.keys(stagedEdits).length > 0 && (
             <label className="flex items-center gap-2 text-xs cursor-pointer">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={includeStagedView}
-                onChange={(e) => setIncludeStagedView(e.target.checked)}
+                onCheckedChange={(checked) => setIncludeStagedView(checked)}
                 aria-label="Export with staged (unsaved) values"
               />
               Export with staged (unsaved) values
