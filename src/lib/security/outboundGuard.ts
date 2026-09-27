@@ -79,6 +79,9 @@ const lookupCache = new Map<string, { blocked: boolean; until: number }>();
  * lookup each time would slow them all.
  */
 async function resolvesToBlocked(host: string): Promise<boolean> {
+  // Test suites use made-up hostnames; a real lookup would only make them slow
+  // and timing-dependent (set in jest.env.cjs; this module's own test unsets it).
+  if (process.env.ACTUAL_BENCH_TEST_SKIP_DNS === "1") return false;
   const now = Date.now();
   const cached = lookupCache.get(host);
   if (cached && cached.until > now) return cached.blocked;
