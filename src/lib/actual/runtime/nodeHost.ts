@@ -196,7 +196,7 @@ export async function getNodeRuntime(connection: BrowserApiConnection): Promise<
 
     try {
       // Actual's own client makes the requests from here on (F-194).
-      await assertAllowedOutbound(connection.baseUrl);
+      assertAllowedOutbound(connection.baseUrl);
       const actual = await withTimeout(state.loadApi(), "Loading @actual-app/api");
       const initResult = await withTimeout(
         actual.init({

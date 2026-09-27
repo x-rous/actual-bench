@@ -19,9 +19,3 @@ process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = 'in-thread'
 // generated key file or the locked states unset it and point
 // ACTUAL_BENCH_DB_PATH at a temp directory.
 process.env.ACTUAL_BENCH_VAULT_KEY = 'jest-operator-vault-key'
-
-// The outbound-address guard resolves names before connecting. Suites use
-// made-up hostnames, and a real lookup made them slow and order-dependent on
-// CI; addresses written as IPs are still checked. outboundGuard.test.ts
-// unsets this and resolves through a stub.
-process.env.ACTUAL_BENCH_TEST_SKIP_DNS = '1'

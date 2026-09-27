@@ -264,7 +264,7 @@ export function queueServerRequest<T extends { status: number } = NextResponse>(
   const thisRequest = prev.then(async () => {
     // A link-local or cloud metadata address is refused before anything is
     // sent, or held (F-194).
-    await assertAllowedOutbound(connection.baseUrl);
+    assertAllowedOutbound(connection.baseUrl);
     lease.release = await acquireLease(
       serverKey,
       newHolderId(reqId),

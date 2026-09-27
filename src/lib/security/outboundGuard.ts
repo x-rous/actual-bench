@@ -1,4 +1,3 @@
-import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
 /**
@@ -9,9 +8,11 @@ import { isIP } from "node:net";
  * cloud metadata endpoints: on a cloud host, `169.254.169.254` hands out the
  * machine's own credentials, and no Actual or S3 server lives there.
  *
- * The name is resolved and every address it resolves to is checked. A DNS
- * answer that changes between this check and the connection is not defended
- * against: sign-in already limits who can make Bench connect anywhere.
+ * Checked: an address written as an IP, directly or in a redirect, which is how
+ * these endpoints are reached in practice. A host *name* is not looked up: one
+ * that resolves to a metadata address needs someone controlling its DNS, and
+ * sign-in already limits who can make Bench connect anywhere. That keeps the
+ * check free of lookups, caches and their timing.
  *
  * Node-only; must never be imported into client code.
  */
@@ -55,46 +56,15 @@ export function isBlockedAddress(address: string): boolean {
   return false;
 }
 
-/** Throws `OutboundBlockedError` when the URL's host is, or resolves to, a refused address. */
-export async function assertAllowedOutbound(url: string): Promise<void> {
+/** Throws `OutboundBlockedError` when the URL's host is a refused IP address. */
+export function assertAllowedOutbound(url: string): void {
   let host: string;
   try {
     host = new URL(url).hostname.replace(/^\[|\]$/g, "");
   } catch {
     return; // Not a URL: the request itself will fail and say so.
   }
-  if (isIP(host)) {
-    if (isBlockedAddress(host)) throw new OutboundBlockedError(host);
-    return;
-  }
-  if (await resolvesToBlocked(host)) throw new OutboundBlockedError(host);
-}
-
-const LOOKUP_CACHE_MS = 60_000;
-const lookupCache = new Map<string, { blocked: boolean; until: number }>();
-
-/**
- * Whether the name resolves to a refused address. Remembered for a minute per
- * name: every request to an HTTP API server passes through here, and a DNS
- * lookup each time would slow them all.
- */
-async function resolvesToBlocked(host: string): Promise<boolean> {
-  // Test suites use made-up hostnames; a real lookup would only make them slow
-  // and timing-dependent (set in jest.env.cjs; this module's own test unsets it).
-  if (process.env.ACTUAL_BENCH_TEST_SKIP_DNS === "1") return false;
-  const now = Date.now();
-  const cached = lookupCache.get(host);
-  if (cached && cached.until > now) return cached.blocked;
-  let blocked = false;
-  try {
-    const addresses = await lookup(host, { all: true, verbatim: true });
-    blocked = addresses.some(({ address }) => isBlockedAddress(address));
-  } catch {
-    // Unresolvable: the request fails with its own, clearer error.
-  }
-  if (lookupCache.size > 500) lookupCache.clear();
-  lookupCache.set(host, { blocked, until: now + LOOKUP_CACHE_MS });
-  return blocked;
+  if (isBlockedAddress(host)) throw new OutboundBlockedError(host);
 }
 
 const MAX_REDIRECTS = 5;
@@ -107,7 +77,7 @@ export async function guardedFetch(url: string, init: RequestInit = {}): Promise
   let target = url;
   let options = init;
   for (let hop = 0; ; hop += 1) {
-    await assertAllowedOutbound(target);
+    assertAllowedOutbound(target);
     const response = await fetch(target, { ...options, redirect: "manual" });
     if (response.status < 300 || response.status >= 400 || hop >= MAX_REDIRECTS) return response;
     const location = response.headers.get("location");
