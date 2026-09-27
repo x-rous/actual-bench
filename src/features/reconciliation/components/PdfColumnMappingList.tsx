@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SelectField } from "@/components/ui/select-field";
+import { Select } from "@/components/ui/select";
 import type { PdfColumn, PdfColumnRole } from "@/lib/reconciliation/statement/pdf";
 import { columnRoleLabel, PDF_COLUMN_ROLE_GROUPS } from "../lib/pdfReviewTable";
 import { pdfColumnColor } from "./PdfSourcePreview";
@@ -51,21 +51,17 @@ export function PdfColumnMappingList({
               className="h-7 w-1 rounded-full"
               style={{ backgroundColor: pdfColumnColor(columnIndex).border }}
             />
-            <SelectField
+            <Select
               aria-label={`Role for mapped column ${columnIndex + 1}`}
               value={column.role}
               disabled={disabled}
-              onChange={(event) => onChangeRole(column.id, event.target.value as PdfColumnRole)}
-              className="text-xs font-medium"
-            >
-              {PDF_COLUMN_ROLE_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.roles.map((role) => (
-                    <option key={role.value} value={role.value}>{role.label}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </SelectField>
+              onValueChange={(value) => onChangeRole(column.id, value as PdfColumnRole)}
+              className="font-medium"
+              groups={PDF_COLUMN_ROLE_GROUPS.map((group) => ({
+                label: group.label,
+                options: group.roles.map((role) => ({ value: role.value, label: role.label })),
+              }))}
+            />
             <p
               className="min-w-0 truncate text-[10px] text-muted-foreground"
               title={values.join(" · ")}

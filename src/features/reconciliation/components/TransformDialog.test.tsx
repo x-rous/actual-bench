@@ -1,6 +1,6 @@
 "use client";
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { DEFAULT_APPLY_CONFIG } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import type {
@@ -9,6 +9,7 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import { TransformDialog } from "./TransformDialog";
+import { chooseSelectOption } from "@/components/ui/select.testing";
 
 function txn(notes: string | null): ActualTransactionSnapshot {
   return {
@@ -123,8 +124,9 @@ describe("choosing a condition's value rather than typing it", () => {
 
     // The default condition is "notes hasTag", so the picker is already shown.
     const value = screen.getByLabelText("Value");
-    expect(value.tagName).toBe("SELECT");
-    expect(within(value as HTMLSelectElement).getByRole("option", { name: "#API" })).toBeInTheDocument();
+    expect(value.tagName).toBe("BUTTON");
+    fireEvent.click(value);
+    expect(screen.getByRole("option", { name: "#API" })).toBeInTheDocument();
   });
 
   it("falls back to a plain field when the rows carry no tags", () => {
@@ -156,22 +158,18 @@ describe("the tags offered when the rule is scoped to a selection", () => {
       ["i1"]
     );
 
-    const value = screen.getByLabelText("Value");
-    expect(within(value as HTMLSelectElement).getByRole("option", { name: "#API" })).toBeInTheDocument();
-    expect(
-      within(value as HTMLSelectElement).queryByRole("option", { name: "#PAYROLL" })
-    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Value"));
+    expect(screen.getByRole("option", { name: "#API" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "#PAYROLL" })).not.toBeInTheDocument();
   });
 });
 
 describe("replacing text in the notes", () => {
-  it("is offered as an action", () => {
+  it("is offered as an action", async () => {
     renderDialog();
 
-    const action = screen.getByLabelText("Action");
-    expect(
-      within(action as HTMLSelectElement).getByRole("option", { name: "Replace text in notes" })
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Action"));
+    expect(await screen.findByRole("option", { name: "Replace text in notes" })).toBeInTheDocument();
   });
 
   /*
@@ -179,12 +177,10 @@ describe("replacing text in the notes", () => {
    * the dialog called the rule complete and the preview reported "nothing
    * matches" - blaming the rows for a field the user had not filled in.
    */
-  it("is not complete until there is something to replace", () => {
+  it("is not complete until there is something to replace", async () => {
     renderDialog();
 
-    fireEvent.change(screen.getByLabelText("Action"), {
-      target: { value: "replaceNoteText" },
-    });
+    await chooseSelectOption(screen.getByLabelText("Action"), "Replace text in notes");
 
     // An incomplete rule is told so. Calling it complete and reporting
     // "nothing matches" blames the rows for a field nobody filled in.
@@ -198,14 +194,12 @@ describe("replacing text in the notes", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("counts whitespace as something to replace", () => {
+  it("counts whitespace as something to replace", async () => {
     // Collapsing a double space is a real rule; trimming the field would reject
     // it along with the empty one.
     renderDialog("#API  DANUBE");
 
-    fireEvent.change(screen.getByLabelText("Action"), {
-      target: { value: "replaceNoteText" },
-    });
+    await chooseSelectOption(screen.getByLabelText("Action"), "Replace text in notes");
     fireEvent.change(screen.getByLabelText("Text to replace"), { target: { value: "  " } });
 
     expect(

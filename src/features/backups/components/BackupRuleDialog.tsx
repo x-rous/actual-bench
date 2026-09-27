@@ -25,6 +25,7 @@ import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
 import { createPolicy, patchPolicy, type BackupSource } from "../lib/backupsApi";
 import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupRepository";
 import { isVaultReady, type VaultSummary } from "@/lib/credentials/vaultSummary";
+import { Select } from "@/components/ui/select";
 
 /**
  * A backup rule (RD-077 / PR-047e).
@@ -50,7 +51,6 @@ import { isVaultReady, type VaultSummary } from "@/lib/credentials/vaultSummary"
  */
 
 const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
-const selectClass = "h-8 w-full rounded-md border border-input bg-background px-2 text-xs";
 
 type Props = {
   open: boolean;
@@ -224,15 +224,15 @@ export function BackupRuleDialog({
 
           <label className="block space-y-1">
             <span className="font-medium">What to copy</span>
-            <select
-              className={selectClass}
+            <Select
               value={contents}
-              onChange={(event) => setContents(event.target.value as BackupPolicy["contents"])}
-            >
-              <option value="both">The budget and Bench&rsquo;s own settings</option>
-              <option value="budget">Just the budget</option>
-              <option value="app-db">Just Bench&rsquo;s settings</option>
-            </select>
+              onValueChange={(next) => setContents(next as BackupPolicy["contents"])}
+              options={[
+                { value: "both", label: "The budget and Bench’s own settings" },
+                { value: "budget", label: "Just the budget" },
+                { value: "app-db", label: "Just Bench’s settings" },
+              ]}
+            />
             <span className="block text-muted-foreground">
               Bench&rsquo;s settings are your sync rules, mappings, reconciliation sessions and
               automations - everything you have taught it, which lives nowhere else.
@@ -245,9 +245,10 @@ export function BackupRuleDialog({
               on the answer. */}
           {needsSource && (
             <div className="space-y-1">
-              <label className="block space-y-1">
-                <span className="font-medium">Budget</span>
+              <div className="space-y-1">
+                <span className="block font-medium">Budget</span>
                 <BudgetSelect
+                  aria-label="Budget"
                   options={budgetChoices.options}
                   value={source}
                   disabled={budgetChoices.connecting}
@@ -260,7 +261,7 @@ export function BackupRuleDialog({
                   }}
                 />
                 {budgetChoices.dialog}
-              </label>
+              </div>
 
               {/* Every budget you have connected to is listed, not only the
                   enrolled ones - the budget you are working in should appear in
@@ -383,17 +384,15 @@ export function BackupRuleDialog({
             <div className="space-y-3 rounded-md border border-border p-2">
               <label className="block space-y-1">
                 <span className="font-medium">How thoroughly to check each copy</span>
-                <select
-                  className={selectClass}
+                <Select
                   value={verificationLevel}
-                  onChange={(event) =>
-                    setVerificationLevel(event.target.value as BackupPolicy["verificationLevel"])
-                  }
-                >
-                  <option value="archive">Quick - it is a valid archive</option>
-                  <option value="data">Normal - open the database and count what is inside</option>
-                  <option value="deep">Thorough - the full Budget File Health check</option>
-                </select>
+                  onValueChange={(next) => setVerificationLevel(next as BackupPolicy["verificationLevel"])}
+                  options={[
+                    { value: "archive", label: "Quick - it is a valid archive" },
+                    { value: "data", label: "Normal - open the database and count what is inside" },
+                    { value: "deep", label: "Thorough - the full Budget File Health check" },
+                  ]}
+                />
               </label>
 
               <fieldset className="space-y-1">

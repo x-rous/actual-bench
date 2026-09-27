@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { createDestination, inspectPath, patchDestination, testDestination } from "../lib/backupsApi";
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
 import type { DestinationCheck } from "@/lib/backup/destinations/types";
+import { Select } from "@/components/ui/select";
 
 /**
  * Adding a place for backups to go (RD-077 / PR-047e).
@@ -40,7 +41,6 @@ import type { DestinationCheck } from "@/lib/backup/destinations/types";
  */
 
 const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
-const selectClass = "h-8 w-full rounded-md border border-input bg-background px-2 text-xs";
 
 type Props = {
   open: boolean;
@@ -174,14 +174,14 @@ export function DestinationDialog({ open, onOpenChange, existing, onSaved }: Pro
 
           {!editing && (
             <Field label="Kind">
-              <select
-                className={selectClass}
+              <Select
                 value={kind}
-                onChange={(event) => setKind(event.target.value as "local" | "s3")}
-              >
-                <option value="local">A folder on this server</option>
-                <option value="s3">An S3-compatible bucket</option>
-              </select>
+                onValueChange={(next) => setKind(next as "local" | "s3")}
+                options={[
+                  { value: "local", label: "A folder on this server" },
+                  { value: "s3", label: "An S3-compatible bucket" },
+                ]}
+              />
             </Field>
           )}
 

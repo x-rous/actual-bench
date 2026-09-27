@@ -4,7 +4,8 @@
  * reader reaching the value control otherwise finds an unlabelled text box.
  */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { chooseSelectOption } from "@/components/ui/select.testing";
+import { render, screen } from "@testing-library/react";
 import { ConditionRow, formatTagValue, parseTagValue } from "./ConditionRow";
 import type { ConditionOrAction } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
@@ -59,8 +60,7 @@ describe("ConditionRow accessible names", () => {
 
   it("shows an amount condition with inflow options as its own field", () => {
     renderRow({ field: "amount", op: "gt", value: 10, type: "number", options: { inflow: true } });
-    const select = screen.getByLabelText("Condition field") as HTMLSelectElement;
-    expect(select.value).toBe("amount-inflow");
+    expect(screen.getByLabelText("Condition field")).toHaveTextContent("Amount (inflow)");
     expect(screen.getByLabelText("Amount (inflow) value")).toBeInTheDocument();
   });
 });
@@ -100,9 +100,12 @@ describe("changing the operator preserves the value", () => {
     return onChange;
   }
 
-  it.each(["hasTags", "hasAnyTag"])(
+  it.each([
+    ["hasTags", "has all tags"],
+    ["hasAnyTag", "has any tag"],
+  ])(
     "carries every value across when switching oneOf to %s",
-    (op) => {
+    async (_op, label) => {
       // The multi-to-scalar case would otherwise take value[0] and drop the rest.
       const onChange = renderWithChange({
         field: "payee_name",
@@ -110,32 +113,30 @@ describe("changing the operator preserves the value", () => {
         value: ["food", "travel"],
         type: "string",
       });
-      fireEvent.change(screen.getByLabelText("Condition operator"), { target: { value: op } });
+      await chooseSelectOption(screen.getByLabelText("Condition operator"), label);
       expect(onChange.mock.calls[0][0].value).toBe("#food #travel");
     }
   );
 
-  it("keeps the stored string when switching between the two tag operators", () => {
+  it("keeps the stored string when switching between the two tag operators", async () => {
     const onChange = renderWithChange({
       field: "notes",
       op: "hasTags",
       value: "#food #travel",
       type: "string",
     });
-    fireEvent.change(screen.getByLabelText("Condition operator"), {
-      target: { value: "hasAnyTag" },
-    });
+    await chooseSelectOption(screen.getByLabelText("Condition operator"), "has any tag");
     expect(onChange.mock.calls[0][0].value).toBe("#food #travel");
   });
 
-  it("still collapses a list to a scalar for a non-tag operator", () => {
+  it("still collapses a list to a scalar for a non-tag operator", async () => {
     const onChange = renderWithChange({
       field: "payee_name",
       op: "oneOf",
       value: ["food", "travel"],
       type: "string",
     });
-    fireEvent.change(screen.getByLabelText("Condition operator"), { target: { value: "contains" } });
+    await chooseSelectOption(screen.getByLabelText("Condition operator"), "contains");
     expect(onChange.mock.calls[0][0].value).toBe("food");
   });
 });

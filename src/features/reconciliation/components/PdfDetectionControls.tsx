@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
-import { SelectField } from "@/components/ui/select-field";
+import { Select } from "@/components/ui/select";
 import { PdfPanelField, PdfPanelSection } from "./PdfPanelSection";
 import type {
   PdfAccountType,
@@ -110,18 +110,17 @@ export function PdfDetectionControls({
       */}
       <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
         <PdfPanelField label="Account type" htmlFor="pdf-account-type">
-          <SelectField
+          <Select
             id="pdf-account-type"
-            className={DENSE}
+            size="sm"
             value={guidance.accountType}
             disabled={disabled}
-            onChange={(event) => onChange({ accountType: event.target.value as PdfParserGuidance["accountType"] })}
-          >
-            <option value="auto">Auto-detect ({accountTypeLabel(accountType)})</option>
-            {ACCOUNT_TYPES.map((value) => (
-              <option key={value} value={value}>{accountTypeLabel(value)}</option>
-            ))}
-          </SelectField>
+            onValueChange={(value) => onChange({ accountType: value as PdfParserGuidance["accountType"] })}
+            options={[
+              { value: "auto", label: `Auto-detect (${accountTypeLabel(accountType)})` },
+              ...ACCOUNT_TYPES.map((value) => ({ value, label: accountTypeLabel(value) })),
+            ]}
+          />
         </PdfPanelField>
         <PdfPanelField label="Statement currency" htmlFor="pdf-statement-currency">
           <Input
@@ -135,69 +134,62 @@ export function PdfDetectionControls({
           />
         </PdfPanelField>
         <PdfPanelField label="Use as import date" htmlFor="pdf-import-date">
-          <SelectField
+          <Select
             id="pdf-import-date"
-            className={DENSE}
+            size="sm"
             value={guidance.importDate}
             disabled={disabled}
-            onChange={(event) => onChange({ importDate: event.target.value as PdfImportDate })}
-          >
-            <option value="transaction">Transaction date</option>
-            <option value="posting">Posting date</option>
-            <option value="value">Value date</option>
-          </SelectField>
+            onValueChange={(value) => onChange({ importDate: value as PdfImportDate })}
+            options={[
+              { value: "transaction", label: "Transaction date" },
+              { value: "posting", label: "Posting date" },
+              { value: "value", label: "Value date" },
+            ]}
+          />
         </PdfPanelField>
         <PdfPanelField label="Printed sign means" htmlFor="pdf-printed-sign">
-          <SelectField
+          <Select
             id="pdf-printed-sign"
-            className={DENSE}
+            size="sm"
             value={guidance.printedSign}
             disabled={disabled}
-            onChange={(event) => onChange({ printedSign: event.target.value as PdfPrintedSign })}
-          >
-            {PRINTED_SIGNS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </SelectField>
+            onValueChange={(value) => onChange({ printedSign: value as PdfPrintedSign })}
+            options={PRINTED_SIGNS.map((option) => ({ value: option.value, label: option.label }))}
+          />
         </PdfPanelField>
         <PdfPanelField label="Amount direction" htmlFor="pdf-unsigned-direction">
-          <SelectField
+          <Select
             id="pdf-unsigned-direction"
-            className={DENSE}
+            size="sm"
             value={guidance.unsignedDirection}
             disabled={disabled}
-            onChange={(event) => onChange({ unsignedDirection: event.target.value as PdfParserGuidance["unsignedDirection"] })}
-          >
-            <option value="review">Use signs or DR/CR; review unmarked</option>
-            <option value="debit">CR = money in; unmarked = money out</option>
-            <option value="credit">DR = money out; unmarked = money in</option>
-          </SelectField>
+            onValueChange={(value) => onChange({ unsignedDirection: value as PdfParserGuidance["unsignedDirection"] })}
+            options={[
+              { value: "review", label: "Use signs or DR/CR; review unmarked" },
+              { value: "debit", label: "CR = money in; unmarked = money out" },
+              { value: "credit", label: "DR = money out; unmarked = money in" },
+            ]}
+          />
         </PdfPanelField>
         <PdfPanelField label="Date format" htmlFor="pdf-date-format">
-          <SelectField
+          <Select
             id="pdf-date-format"
-            className={DENSE}
+            size="sm"
             value={guidance.dateFormat}
             disabled={disabled}
-            onChange={(event) => onChange({ dateFormat: event.target.value as PdfDateFormatOption })}
-          >
-            {DATE_FORMATS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </SelectField>
+            onValueChange={(value) => onChange({ dateFormat: value as PdfDateFormatOption })}
+            options={DATE_FORMATS.map((option) => ({ value: option.value, label: option.label }))}
+          />
         </PdfPanelField>
         <PdfPanelField label="Number format" htmlFor="pdf-number-format">
-          <SelectField
+          <Select
             id="pdf-number-format"
-            className={DENSE}
+            size="sm"
             value={guidance.numberFormat}
             disabled={disabled}
-            onChange={(event) => onChange({ numberFormat: event.target.value as PdfNumberFormat })}
-          >
-            {NUMBER_FORMATS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </SelectField>
+            onValueChange={(value) => onChange({ numberFormat: value as PdfNumberFormat })}
+            options={NUMBER_FORMATS.map((option) => ({ value: option.value, label: option.label }))}
+          />
         </PdfPanelField>
 
         {/*

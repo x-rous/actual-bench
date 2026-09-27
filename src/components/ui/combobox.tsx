@@ -117,6 +117,8 @@ export function SearchableCombobox({
   triggerClassName,
   ariaLabel,
   autoFocus,
+  allowNone = true,
+  disabled,
 }: {
   options: ComboboxOption[];
   value: string;
@@ -124,6 +126,12 @@ export function SearchableCombobox({
   placeholder?: string;
   footer?: (search: string) => React.ReactNode;
   triggerClassName?: string;
+  /**
+   * Offer a "- none -" row that clears the field. Off where a choice is
+   * required: the list then holds only real options.
+   */
+  allowNone?: boolean;
+  disabled?: boolean;
   /**
    * Names the control where no visible `<label>` can point at it — the trigger
    * is a button, so `htmlFor` has nothing to bind to and the accessible name
@@ -151,7 +159,7 @@ export function SearchableCombobox({
    * The empty id is the "- none -" row, which is a real choice: it clears the
    * field.
    */
-  const navigable = ["", ...filtered.filter((o) => !o.isGroupHeader).map((o) => o.id)];
+  const navigable = [...(allowNone ? [""] : []), ...filtered.filter((o) => !o.isGroupHeader).map((o) => o.id)];
   const indexOf = new Map(navigable.map((id, index) => [id, index]));
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -206,6 +214,7 @@ export function SearchableCombobox({
       <button
         type="button"
         aria-label={ariaLabel}
+        disabled={disabled}
         onClick={() => {
           if (open) {
             closeDropdown();
@@ -219,7 +228,7 @@ export function SearchableCombobox({
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
-          "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50",
+          "flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
           !selectedLabel && "text-muted-foreground",
           triggerClassName
         )}
@@ -252,24 +261,26 @@ export function SearchableCombobox({
             />
           </div>
           <ul ref={listRef} id={listId} role="listbox" className="max-h-72 overflow-y-auto py-1">
-            <li>
-              <button
-                type="button"
-                id={optionId(0)}
-                role="option"
-                aria-selected={value === ""}
-                data-index={0}
-                onClick={() => select("")}
-                onMouseEnter={() => setActiveIndex(0)}
-                className={cn(
-                  "flex w-full items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                  activeIndex === 0 && "bg-accent text-accent-foreground"
-                )}
-              >
-                <Check className={cn("h-3 w-3 shrink-0", value === "" ? "opacity-100" : "opacity-0")} />
-                - none -
-              </button>
-            </li>
+            {allowNone && (
+              <li>
+                <button
+                  type="button"
+                  id={optionId(0)}
+                  role="option"
+                  aria-selected={value === ""}
+                  data-index={0}
+                  onClick={() => select("")}
+                  onMouseEnter={() => setActiveIndex(0)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    activeIndex === 0 && "bg-accent text-accent-foreground"
+                  )}
+                >
+                  <Check className={cn("h-3 w-3 shrink-0", value === "" ? "opacity-100" : "opacity-0")} />
+                  - none -
+                </button>
+              </li>
+            )}
             {filtered.filter((o) => !o.isGroupHeader).length === 0 ? (
               <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
             ) : (

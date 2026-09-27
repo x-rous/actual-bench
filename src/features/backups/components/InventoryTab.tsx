@@ -9,6 +9,7 @@ import { ReadinessBanner } from "./ReadinessBanner";
 import { budgetsInArtifacts, formatBytes } from "../lib/presentation";
 import type { SortDirection } from "@/components/ui/sortable-header";
 import type { ArtifactWithLocations, RecoveryCenterData } from "../lib/backupsApi";
+import { Select } from "@/components/ui/select";
 
 /**
  * The copies that exist (RD-077 / PR-047).
@@ -181,61 +182,51 @@ export function InventoryTab({
               )}
             </div>
 
-            <select
-              className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+            <Select
+              className="h-6 w-auto"
               value={stateFilter}
-              onChange={(event) => onStateFilter(event.target.value as StateFilter)}
+              onValueChange={(value) => onStateFilter(value as StateFilter)}
               aria-label="Filter by state"
-            >
-              <option value="all">Any state</option>
-              <option value="verified">Verified</option>
-              <option value="unverified">Not checked</option>
-              <option value="problem">Damaged or missing</option>
-            </select>
+              options={[
+                { value: "all", label: "Any state" },
+                { value: "verified", label: "Verified" },
+                { value: "unverified", label: "Not checked" },
+                { value: "problem", label: "Damaged or missing" },
+              ]}
+            />
 
-            <select
-              className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+            <Select
+              className="h-6 w-auto"
               value={kindFilter}
-              onChange={(event) => onKindFilter(event.target.value as KindFilter)}
+              onValueChange={(value) => onKindFilter(value as KindFilter)}
               aria-label="Filter by contents"
-            >
-              <option value="all">Anything</option>
-              <option value="budget">Budgets</option>
-              <option value="app-db">Bench settings</option>
-            </select>
+              options={[
+                { value: "all", label: "Anything" },
+                { value: "budget", label: "Budgets" },
+                { value: "app-db", label: "Bench settings" },
+              ]}
+            />
 
             {/* Only offered when there is more than one: a picker with one
                 option is a question with one answer. */}
             {budgets.length > 1 && (
-              <select
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+              <Select
+                className="h-6 w-auto"
                 value={budget}
-                onChange={(event) => onBudget(event.target.value)}
+                onValueChange={onBudget}
                 aria-label="Filter by budget"
-              >
-                <option value="">Any budget</option>
-                {budgets.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+                options={[{ value: "", label: "Any budget" }, ...budgets.map((name) => ({ value: name, label: name }))]}
+              />
             )}
 
             {data.policies.length > 1 && (
-              <select
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+              <Select
+                className="h-6 w-auto"
                 value={policyId}
-                onChange={(event) => onPolicy(event.target.value)}
+                onValueChange={onPolicy}
                 aria-label="Filter by rule"
-              >
-                <option value="">Any rule</option>
-                {data.policies.map((policy) => (
-                  <option key={policy.id} value={policy.id}>
-                    {policy.name}
-                  </option>
-                ))}
-              </select>
+                options={[{ value: "", label: "Any rule" }, ...data.policies.map((policy) => ({ value: policy.id, label: policy.name }))]}
+              />
             )}
 
             {/* One statement about how many, the cap included. Saying "200"

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import {
   createPdfLayoutProfile,
   DEFAULT_PDF_PARSER_GUIDANCE,
@@ -209,7 +210,7 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByLabelText("PDF page 2 viewer")).toBeInTheDocument();
   });
 
-  it("groups global profiles by bank", () => {
+  it("groups global profiles by bank", async () => {
     const parsed = ordinaryResult();
     const layout = createPdfLayoutProfile({
       id: "layout-1",
@@ -228,10 +229,11 @@ describe("PdfStatementReviewDialog v2", () => {
     // out of the way.
     expect(screen.queryByLabelText("Use layout")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Statement layout/ }));
-    const selector = screen.getByLabelText("Use layout") as HTMLSelectElement;
-    expect(selector.value).toBe("record-1");
-    expect(selector.querySelector("optgroup")?.label).toBe("HSBC Bank");
-    expect(within(selector).getByRole("option", { name: "Credit card" })).toBeInTheDocument();
+    const selector = screen.getByLabelText("Use layout");
+    expect(selector).toHaveTextContent("Credit card");
+    fireEvent.click(selector);
+    const bank = await screen.findByRole("group", { name: "HSBC Bank" });
+    expect(within(bank).getByRole("option", { name: "Credit card" })).toBeInTheDocument();
   });
 
   it("keeps profile selection statement-only until the user assigns it to the account", async () => {
@@ -262,7 +264,7 @@ describe("PdfStatementReviewDialog v2", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
-    fireEvent.change(screen.getByLabelText("Use layout"), { target: { value: "record-1" } });
+    await chooseSelectOption(screen.getByLabelText("Use layout"), "Credit card");
     await waitFor(() => expect(screen.getByText(/statement only/i)).toBeInTheDocument());
     expect(onAssignProfile).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Use for HSBC card" }));
@@ -413,14 +415,16 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(source!.className).toContain("bg-sky-300");
   });
 
-  it("provides visual region and column mapping with source examples", () => {
+  it("provides visual region and column mapping with source examples", async () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
 
     expect(screen.getByText("Column mapping")).toBeInTheDocument();
     expect(screen.getAllByText(/Examples:/).length).toBeGreaterThan(0);
-    const roleSelect = screen.getByLabelText("Role for mapped column 1") as HTMLSelectElement;
-    expect(Array.from(roleSelect.querySelectorAll("optgroup"), (group) => group.label)).toEqual([
+    const roleSelect = screen.getByLabelText("Role for mapped column 1");
+    fireEvent.click(roleSelect);
+    const roleList = await screen.findByRole("listbox");
+    expect(within(roleList).getAllByRole("group").map((group) => group.firstElementChild?.textContent)).toEqual([
       "Dates",
       "Transaction details",
       "Account values",
@@ -428,6 +432,8 @@ describe("PdfStatementReviewDialog v2", () => {
       "Charges",
       "Exclude",
     ]);
+    fireEvent.keyDown(roleList, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
     const dateMapping = roleSelect.closest("div")!;
     expect(within(dateMapping).getByText("Examples: 08/15/2026")).toBeInTheDocument();
     expect(dateMapping).toHaveClass("items-center");
@@ -494,7 +500,7 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(nonTransactionSourceRow);
     expect(screen.getByRole("button", { name: "Mark selected row as transaction" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Role for mapped column 1"), { target: { value: "amount" } });
+    await chooseSelectOption(screen.getByLabelText("Role for mapped column 1"), "Amount");
     expect(within(dateMapping).getByText("Examples: No matching value read yet")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Preview updated transactions" }));
@@ -537,8 +543,8 @@ describe("PdfStatementReviewDialog v2", () => {
     // The list runs down, the page runs across, and the two stay in step.
     fireEvent.click(screen.getByRole("button", { name: "Move transaction-date column down" }));
 
-    expect(screen.getByLabelText("Role for mapped column 1")).toHaveValue("description");
-    expect(screen.getByLabelText("Role for mapped column 2")).toHaveValue("transaction-date");
+    expect(screen.getByLabelText("Role for mapped column 1")).toHaveTextContent("Description");
+    expect(screen.getByLabelText("Role for mapped column 2")).toHaveTextContent("Transaction date");
     const movedDateArea = screen.getByRole("button", { name: "Move transaction-date column start boundary" }).parentElement!;
     const movedDescriptionArea = screen.getByRole("button", { name: "Move description column start boundary" }).parentElement!;
     expect(Number.parseFloat(movedDateArea.style.left)).toBeGreaterThan(Number.parseFloat(movedDescriptionArea.style.left));
@@ -550,13 +556,13 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
 
     const rolesInOrder = () => screen.getAllByRole("combobox", { name: /Role for mapped column/ })
-      .map((select) => (select as HTMLSelectElement).value);
-    expect(rolesInOrder()).toEqual(["transaction-date", "description", "amount"]);
+      .map((select) => select.textContent);
+    expect(rolesInOrder()).toEqual(["Transaction date", "Description", "Amount"]);
 
     // A column the detection missed belongs where the statement prints it,
     // not at the end of the list.
     fireEvent.click(screen.getByRole("button", { name: "Add a column after transaction-date" }));
-    expect(rolesInOrder()).toEqual(["transaction-date", "ignore", "description", "amount"]);
+    expect(rolesInOrder()).toEqual(["Transaction date", "Ignore this column", "Description", "Amount"]);
 
     const inserted = screen.getByRole("button", { name: "Move the ignore column" }).parentElement!;
     const date = screen.getByRole("button", { name: "Move the transaction-date column" }).parentElement!;
@@ -796,7 +802,7 @@ describe("PdfStatementReviewDialog v2", () => {
     await waitFor(() => expect(screen.getByLabelText("Amount direction")).toHaveFocus());
   });
 
-  it("asks to save a layout only when the layout itself would change", () => {
+  it("asks to save a layout only when the layout itself would change", async () => {
     const parsed = ordinaryResult();
     const layout = createPdfLayoutProfile({ id: "layout-1", name: "Credit card", result: parsed });
     const option: PdfDetectionProfileOption = {
@@ -832,7 +838,7 @@ describe("PdfStatementReviewDialog v2", () => {
     // A column role is part of the layout, so changing one is worth keeping.
     toastSuccess.mockClear();
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
-    fireEvent.change(screen.getByLabelText("Role for mapped column 1"), { target: { value: "reference" } });
+    await chooseSelectOption(screen.getByLabelText("Role for mapped column 1"), "Reference");
     fireEvent.click(screen.getByRole("button", { name: "Apply changes and review" }));
 
     expect(toastSuccess).toHaveBeenCalledWith(
@@ -960,14 +966,14 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByLabelText("Statement period start")).toHaveValue("21/09/2026");
   });
 
-  it("offers the printed-sign convention next to the amount-direction rule", () => {
+  it("offers the printed-sign convention next to the amount-direction rule", async () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
 
     const printedSign = screen.getByLabelText("Printed sign means");
-    expect(printedSign).toHaveValue("auto");
-    fireEvent.change(printedSign, { target: { value: "issuer" } });
-    expect(screen.getByLabelText("Printed sign means")).toHaveValue("issuer");
+    expect(printedSign).toHaveTextContent("Detect from the account type");
+    await chooseSelectOption(printedSign, "Minus is money in (card or loan issuer)");
+    expect(screen.getByLabelText("Printed sign means")).toHaveTextContent("Minus is money in (card or loan issuer)");
   });
 
   it("marks multiple selected review rows as reviewed in one bulk action", () => {
@@ -1145,7 +1151,7 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getAllByRole("button", { name: /Mark PDF row \d+ reviewed/ })).toHaveLength(1);
   });
 
-  it("asks before throwing away the detection settings", () => {
+  it("asks before throwing away the detection settings", async () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
 
@@ -1153,13 +1159,13 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset detection" }));
     expect(screen.queryByRole("dialog", { name: /Reset the detection settings/ })).toBeNull();
 
-    fireEvent.change(screen.getByLabelText("Role for mapped column 1"), { target: { value: "amount" } });
+    await chooseSelectOption(screen.getByLabelText("Role for mapped column 1"), "Amount");
     fireEvent.click(screen.getByRole("button", { name: "Reset detection" }));
     expect(screen.getByRole("dialog", { name: /Reset the detection settings/ })).toBeInTheDocument();
 
     const confirmation = screen.getByRole("dialog", { name: /Reset the detection settings/ });
     fireEvent.click(within(confirmation).getByRole("button", { name: "Reset detection" }));
-    expect(screen.getByLabelText("Role for mapped column 1")).toHaveValue("transaction-date");
+    expect(screen.getByLabelText("Role for mapped column 1")).toHaveTextContent("Transaction date");
   });
 
   it("says what a row is waiting on in the table, and keeps the rest behind its status", async () => {

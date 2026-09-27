@@ -8,6 +8,7 @@ import {
   type TextTargetPreset,
 } from "@/lib/reconciliation/match/config";
 import type { MatchConfig } from "@/lib/reconciliation/types";
+import { Select } from "@/components/ui/select";
 
 /**
  * Matching options, saved with the import profile.
@@ -123,18 +124,13 @@ export function MatchOptions({
             <Label htmlFor="match-preset" className="min-w-0 text-xs">
               Compare statement text against
             </Label>
-            <select
+            <Select
               id="match-preset"
-              className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
+              size="sm"
               value={preset}
-              onChange={(event) => setPreset(event.target.value as TextTargetPreset)}
-            >
-              {PRESETS.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setPreset(value as TextTargetPreset)}
+              options={PRESETS.map((entry) => ({ value: entry.id, label: entry.label }))}
+            />
           </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
             {PRESETS.find((entry) => entry.id === preset)?.hint}

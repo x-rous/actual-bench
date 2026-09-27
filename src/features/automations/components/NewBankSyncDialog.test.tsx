@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NewBankSyncDialog } from "./NewBankSyncDialog";
@@ -102,7 +103,7 @@ describe("scheduling a bank sync", () => {
     const cadence = screen.getByLabelText("How often");
     expect(screen.queryByLabelText("Cron expression")).not.toBeInTheDocument();
 
-    fireEvent.change(cadence, { target: { value: "daily" } });
+    await chooseSelectOption(cadence, "Every day");
     fireEvent.change(screen.getByLabelText("Time of day"), { target: { value: "07:30" } });
     fireEvent.click(screen.getByRole("button", { name: /schedule sync/i }));
 
@@ -119,7 +120,7 @@ describe("scheduling a bank sync", () => {
     // Wait for the account list to have loaded, not for any one name in it.
     await screen.findByText(/accounts will sync/);
 
-    fireEvent.change(screen.getByLabelText("How often"), { target: { value: "cron" } });
+    await chooseSelectOption(screen.getByLabelText("How often"), "Custom (cron)");
     fireEvent.change(screen.getByLabelText("Cron expression"), { target: { value: "@daily" } });
 
     expect(screen.getByText(/Five fields/)).toBeInTheDocument();
@@ -163,17 +164,17 @@ describe("scheduling a bank sync", () => {
     // asking a question whose answer cannot matter.
     expect(screen.queryByLabelText("Time zone")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("How often"), { target: { value: "daily" } });
+    await chooseSelectOption(screen.getByLabelText("How often"), "Every day");
 
     const zone = screen.getByLabelText("Time zone");
     // A mistyped zone is a schedule that silently runs at the wrong hour, so it
-    // is chosen, never typed.
-    expect(zone.tagName).toBe("SELECT");
+    // is chosen from a list, never typed.
+    expect(zone).toHaveAttribute("role", "combobox");
     // Labelled the way every other time-zone picker does, and the way the tz
     // database's own tables do — an IANA path alone is not an answer to "when".
     expect(zone.textContent).toMatch(/\(UTC[+-]\d{2}:\d{2}\)/);
 
-    fireEvent.change(zone, { target: { value: "UTC" } });
+    await chooseSelectOption(zone, /\(UTC\+00:00\) UTC$/);
     fireEvent.click(screen.getByRole("button", { name: /schedule sync/i }));
 
     await waitFor(() => expect(mockedApi.createAutomation).toHaveBeenCalled());
@@ -185,7 +186,7 @@ describe("scheduling a bank sync", () => {
     // Wait for the account list to have loaded, not for any one name in it.
     await screen.findByText(/accounts will sync/);
 
-    fireEvent.change(screen.getByLabelText("How often"), { target: { value: "daily" } });
+    await chooseSelectOption(screen.getByLabelText("How often"), "Every day");
     fireEvent.change(screen.getByLabelText("Time of day"), { target: { value: "" } });
 
     // An empty time used to become `0 0 * * *` — a schedule nobody chose.

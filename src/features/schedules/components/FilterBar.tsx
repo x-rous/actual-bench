@@ -3,6 +3,7 @@
 import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
+import { Select } from "@/components/ui/select";
 
 export type StatusFilter = "active" | "all" | "missed" | "completed";
 export type AutoAddFilter = "all" | "auto" | "manual";
@@ -53,9 +54,6 @@ type Props = {
   onBulkDelete: () => void;
   onDeselect: () => void;
 };
-
-const selectCls =
-  "h-6 rounded border border-border bg-background px-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring";
 
 export function FilterBar({
   search, onSearchChange,
@@ -108,32 +106,24 @@ export function FilterBar({
 
       {/* Payee filter */}
       {payeeOptions.length > 0 && (
-        <select
-          className={selectCls}
+        <Select
+          className="h-6 w-auto"
           value={payeeFilter}
-          onChange={(e) => onPayeeFilterChange(e.target.value)}
+          onValueChange={onPayeeFilterChange}
           aria-label="Filter by payee"
-        >
-          <option value="">All Payees</option>
-          {payeeOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          options={[{ value: "", label: "All Payees" }, ...payeeOptions]}
+        />
       )}
 
       {/* Account filter */}
       {accountOptions.length > 0 && (
-        <select
-          className={selectCls}
+        <Select
+          className="h-6 w-auto"
           value={accountFilter}
-          onChange={(e) => onAccountFilterChange(e.target.value)}
+          onValueChange={onAccountFilterChange}
           aria-label="Filter by account"
-        >
-          <option value="">All Accounts</option>
-          {accountOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          options={[{ value: "", label: "All Accounts" }, ...accountOptions]}
+        />
       )}
 
       {hasFilters && (

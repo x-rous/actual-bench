@@ -3,6 +3,7 @@
 import { Search, X } from "lucide-react";
 import { PillGroup } from "@/components/ui/pill-group";
 import type { AutomationJobTypeSummary, AutomationListItem } from "../lib/automationsApi";
+import { Select } from "@/components/ui/select";
 
 /**
  * Narrowing the list of automations (RD-079).
@@ -72,19 +73,13 @@ export function AutomationsFilterBar({
       <PillGroup options={STATUS_OPTIONS} value={status} onChange={onStatusChange} />
 
       {jobTypes.length > 1 && (
-        <select
-          className="h-6 rounded border border-border bg-background px-1.5 text-xs"
+        <Select
+          className="h-6 w-auto"
           value={type}
-          onChange={(event) => onTypeChange(event.target.value)}
+          onValueChange={onTypeChange}
           aria-label="Filter by kind"
-        >
-          <option value="">Any kind</option>
-          {jobTypes.map((jobType) => (
-            <option key={jobType.type} value={jobType.type}>
-              {jobType.label}
-            </option>
-          ))}
-        </select>
+          options={[{ value: "", label: "Any kind" }, ...jobTypes.map((jobType) => ({ value: jobType.type, label: jobType.label }))]}
+        />
       )}
 
       <span className="text-xs text-muted-foreground">

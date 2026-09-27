@@ -5,6 +5,7 @@ import { MultiPillGroup } from "@/components/ui/pill-group";
 import { runStatusLabel } from "../lib/presentation";
 import type { RunHistory } from "../lib/automationsApi";
 import type { AutomationRunStatus } from "@/lib/app-db/types";
+import { Select } from "@/components/ui/select";
 
 /**
  * Narrowing the run history (RD-079).
@@ -88,35 +89,29 @@ export function RunHistoryFilterBar({
       <MultiPillGroup options={STATUS_OPTIONS} values={statuses} onChange={onStatusesChange} />
 
       {(options?.automations.length ?? 0) > 1 && (
-        <select
-          className="h-6 rounded border border-border bg-background px-1.5 text-xs"
+        <Select
+          className="h-6 w-auto"
           value={automationId}
-          onChange={(event) => onAutomationChange(event.target.value)}
+          onValueChange={onAutomationChange}
           aria-label="Filter by automation"
-        >
-          <option value="">Any automation</option>
-          {options?.automations.map((automation) => (
-            <option key={automation.id} value={automation.id}>
-              {automation.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "Any automation" },
+            ...(options?.automations ?? []).map((automation) => ({ value: automation.id, label: automation.name })),
+          ]}
+        />
       )}
 
       {(options?.jobTypes.length ?? 0) > 1 && (
-        <select
-          className="h-6 rounded border border-border bg-background px-1.5 text-xs"
+        <Select
+          className="h-6 w-auto"
           value={type}
-          onChange={(event) => onTypeChange(event.target.value)}
+          onValueChange={onTypeChange}
           aria-label="Filter by kind"
-        >
-          <option value="">Any kind</option>
-          {options?.jobTypes.map((jobType) => (
-            <option key={jobType.type} value={jobType.type}>
-              {jobType.label}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "Any kind" },
+            ...(options?.jobTypes ?? []).map((jobType) => ({ value: jobType.type, label: jobType.label })),
+          ]}
+        />
       )}
 
       {/* One statement about how many, including the cap. Saying "200" and then

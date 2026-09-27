@@ -26,6 +26,7 @@ import {
   type BulkSkips,
 } from "../lib/bulkActionReport";
 import type { LoadedCategory } from "../types";
+import { Select } from "@/components/ui/select";
 
 type Props = {
   /**
@@ -484,22 +485,16 @@ export function BulkActionDialog({
                   <label htmlFor="bulk-source-month" className="block text-xs font-medium mb-1">
                     Source month
                   </label>
-                  <select
+                  <Select
                     id="bulk-source-month"
+                    size="sm"
                     value={effectiveSourceMonth}
-                    onChange={(e) => setSourceMonth(e.target.value)}
-                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs"
-                  >
-                    {sourceOptions.map(([year, monthsInYear]) => (
-                      <optgroup key={year} label={year}>
-                        {monthsInYear.map((m) => (
-                          <option key={m} value={m}>
-                            {formatMonthLabel(m, "long")}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                    onValueChange={setSourceMonth}
+                    groups={sourceOptions.map(([year, monthsInYear]) => ({
+                      label: year,
+                      options: monthsInYear.map((m) => ({ value: m, label: formatMonthLabel(m, "long") })),
+                    }))}
+                  />
                 </div>
               )}
 

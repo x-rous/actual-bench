@@ -203,8 +203,8 @@ describe("SyncView", () => {
     setup([conn1, conn2]);
     render(<SyncView />);
     fireEvent.click(screen.getByRole("button", { name: /create sync flow/i }));
-    expect((await screen.findByLabelText("Amount direction") as HTMLSelectElement).value).toBe("same");
-    expect((screen.getByLabelText("Missing payee policy") as HTMLSelectElement).value).toBe("create");
+    expect(await screen.findByLabelText("Amount direction")).toHaveTextContent("Same sign (default)");
+    expect(screen.getByLabelText("Missing payee policy")).toHaveTextContent("Create payee (default)");
   });
 
   it("runs a preview from the top section and renders classified rows", async () => {

@@ -166,9 +166,10 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
           ) : (
             <>
               {connections.length > 1 && (
-                <label className="block">
+                <div>
                   <span className="mb-1 block font-medium">Budget</span>
                   <BudgetSelect
+                    aria-label="Budget"
                     value={connectionFingerprint}
                     onValueChange={setChosenConnection}
                     options={connections.map((connection) => ({
@@ -178,7 +179,7 @@ export function NewBankSyncDialog({ open, onOpenChange, onCreated }: NewBankSync
                       baseUrl: connection.baseUrl,
                     }))}
                   />
-                </label>
+                </div>
               )}
 
               <section>

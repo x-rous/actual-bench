@@ -37,6 +37,7 @@ import type {
 } from "../types";
 import type { RowDetailsEntry } from "./RowDetailsSheet";
 import { SchemaObjectDetails as SchemaObjectDetailsView } from "./SchemaObjectDetails";
+import { Select } from "@/components/ui/select";
 
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const;
 const DEFAULT_PAGE_SIZE = 100;
@@ -529,17 +530,14 @@ export function TableBrowser({
                     </Button>
                     <label className="flex items-center gap-2 text-xs text-muted-foreground">
                       Rows
-                      <select
-                        value={state.pageSize}
-                        onChange={(event) => setPageSize(Number(event.target.value) as PageSize)}
-                        className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-                      >
-                        {PAGE_SIZE_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
+                      <Select
+                        size="sm"
+                        className="w-auto"
+                        aria-label="Rows per page"
+                        value={String(state.pageSize)}
+                        onValueChange={(value) => setPageSize(Number(value) as PageSize)}
+                        options={PAGE_SIZE_OPTIONS.map((option) => ({ value: String(option), label: String(option) }))}
+                      />
                     </label>
                     <div className="flex items-center gap-1">
                       <Button

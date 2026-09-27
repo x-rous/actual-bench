@@ -25,6 +25,7 @@ import {
   type VaultUnlockDuration,
 } from "@/lib/connectionVault/unlockDuration";
 import { readVaultUnlockDuration, saveVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
+import { Select } from "@/components/ui/select";
 
 type Vault = ReturnType<typeof useConnectionVault>;
 
@@ -326,17 +327,14 @@ export function ConnectionsList({
                 <div className="mt-2.5 flex items-center justify-between gap-3">
                   <label className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>Keep unlocked for</span>
-                    <select
+                    <Select
+                      className="w-auto"
                       value={unlockDuration}
-                      onChange={(event) => updateUnlockDuration(event.target.value as VaultUnlockDuration)}
+                      onValueChange={(next) => updateUnlockDuration(next as VaultUnlockDuration)}
                       disabled={unlocking}
                       aria-label="Keep vault unlocked for"
-                      className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-50"
-                    >
-                      {VAULT_UNLOCK_DURATION_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
+                      options={VAULT_UNLOCK_DURATION_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                    />
                   </label>
                   <button
                     type="button"
@@ -481,16 +479,12 @@ export function ConnectionsList({
 
           <label className="flex flex-col gap-1.5 text-sm font-medium">
             Default unlock duration
-            <select
+            <Select
               value={unlockDuration}
-              onChange={(event) => updateUnlockDuration(event.target.value as VaultUnlockDuration)}
+              onValueChange={(next) => updateUnlockDuration(next as VaultUnlockDuration)}
               aria-label="Default vault unlock duration"
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal text-foreground"
-            >
-              {VAULT_UNLOCK_DURATION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+              options={VAULT_UNLOCK_DURATION_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            />
             <span className="text-xs font-normal text-muted-foreground">
               Server restarts and Lock always require your password.
             </span>

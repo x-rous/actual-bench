@@ -7,6 +7,7 @@ import { describeCronExpression, isValidCronExpression } from "@/lib/automation/
 import { MIN_INTERVAL_MINUTES, nextCronRun } from "@/lib/automation/schedule";
 import { formatDateTime, relativeTime } from "../lib/presentation";
 import { timezoneOptions } from "../lib/timezones";
+import { Select } from "@/components/ui/select";
 
 /**
  * Choosing when something runs (RD-079 / RD-077).
@@ -56,7 +57,6 @@ const WEEKDAYS = [
 ];
 
 const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
-const selectClass = "h-8 rounded-md border border-input bg-background px-2 text-xs";
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -218,22 +218,23 @@ export function SchedulePicker({ value, onChange, nowMs, onValidityChange }: Pro
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          className={selectClass}
+        <Select
+          className="w-auto"
           value={mode}
-          onChange={(event) => {
-            const next = event.target.value as Mode;
+          onValueChange={(value) => {
+            const next = value as Mode;
             setMode(next);
             emit({ mode: next });
           }}
           aria-label="How often"
-        >
-          <option value="hours">Every few hours</option>
-          <option value="daily">Every day</option>
-          <option value="weekly">On chosen days of the week</option>
-          <option value="monthly">Once a month</option>
-          <option value="cron">Custom (cron)</option>
-        </select>
+          options={[
+            { value: "hours", label: "Every few hours" },
+            { value: "daily", label: "Every day" },
+            { value: "weekly", label: "On chosen days of the week" },
+            { value: "monthly", label: "Once a month" },
+            { value: "cron", label: "Custom (cron)" },
+          ]}
+        />
 
         {mode === "hours" && (
           <label className="flex items-center gap-1.5">
@@ -260,22 +261,17 @@ export function SchedulePicker({ value, onChange, nowMs, onValidityChange }: Pro
         {mode === "monthly" && (
           <label className="flex items-center gap-1.5">
             <span className="text-muted-foreground">on day</span>
-            <select
-              className={selectClass}
-              value={dayOfMonth}
-              onChange={(event) => {
-                const next = Number(event.target.value);
+            <Select
+              className="w-auto"
+              value={String(dayOfMonth)}
+              onValueChange={(value) => {
+                const next = Number(value);
                 setDayOfMonth(next);
                 emit({ dayOfMonth: next });
               }}
               aria-label="Day of the month"
-            >
-              {Array.from({ length: 28 }, (_, index) => index + 1).map((day) => (
-                <option key={day} value={day}>
-                  {day}
-                </option>
-              ))}
-            </select>
+              options={Array.from({ length: 28 }, (_, index) => ({ value: String(index + 1), label: String(index + 1) }))}
+            />
           </label>
         )}
 
@@ -339,18 +335,13 @@ export function SchedulePicker({ value, onChange, nowMs, onValidityChange }: Pro
       {mode !== "hours" && (
         <label className="flex flex-wrap items-center gap-1.5">
           <span className="text-muted-foreground">Time zone</span>
-          <select
-            className={selectClass}
+          <Select
+            className="w-auto"
             value={value.timezone}
-            onChange={(event) => emit({ timezone: event.target.value })}
+            onValueChange={(timezone) => emit({ timezone })}
             aria-label="Time zone"
-          >
-            {timezones.map((zone) => (
-              <option key={zone.value} value={zone.value}>
-                {zone.label}
-              </option>
-            ))}
-          </select>
+            options={timezones.map((zone) => ({ value: zone.value, label: zone.label }))}
+          />
         </label>
       )}
 

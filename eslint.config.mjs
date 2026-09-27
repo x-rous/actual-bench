@@ -37,6 +37,16 @@ const eslintConfig = defineConfig([
           selector: "TemplateElement[value.raw=/\u2014/]",
           message: "Use a plain hyphen '-' in UI text, never an em dash.",
         },
+        /*
+         * One dropdown across the app: `Select` (src/components/ui/select.tsx),
+         * or `SearchableCombobox` / `BudgetSelect` for long lists worth
+         * searching. A raw <select> looks and behaves differently from both.
+         */
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message:
+            "Use Select from @/components/ui/select (or SearchableCombobox / BudgetSelect for long, searchable lists), not a raw <select>.",
+        },
       ],
     },
   },

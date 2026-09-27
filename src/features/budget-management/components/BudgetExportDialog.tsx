@@ -9,6 +9,7 @@ import { subtractMonths, formatMonthLabel } from "@/lib/budget/monthMath";
 import { exportToCsv, exportBlankTemplate } from "../lib/budgetCsv";
 import { budgetMonthDataQueryOptions } from "../hooks/useMonthData";
 import type { LoadedCategory, LoadedGroup, LoadedMonthState, StagedBudgetEdit, BudgetCellKey } from "../types";
+import { Select } from "@/components/ui/select";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -291,30 +292,26 @@ export function BudgetExportDialog({
           <div className="flex items-center gap-2 mb-4">
             <div className="flex-1">
               <label className="block text-xs text-muted-foreground mb-1">From</label>
-              <select
+              <Select
+                size="sm"
+                className="font-mono"
                 value={rangeFrom}
-                onChange={(e) => handleRangeFromChange(e.target.value)}
-                className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
+                onValueChange={handleRangeFromChange}
                 aria-label="Range start month"
-              >
-                {availableMonths.map((m) => (
-                  <option key={m} value={m}>{fmtMonthLabel(m)}</option>
-                ))}
-              </select>
+                options={availableMonths.map((m) => ({ value: m, label: fmtMonthLabel(m) }))}
+              />
             </div>
             <span className="mt-4 text-muted-foreground text-xs shrink-0">–</span>
             <div className="flex-1">
               <label className="block text-xs text-muted-foreground mb-1">To</label>
-              <select
+              <Select
+                size="sm"
+                className="font-mono"
                 value={rangeTo}
-                onChange={(e) => handleRangeToChange(e.target.value)}
-                className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
+                onValueChange={handleRangeToChange}
                 aria-label="Range end month"
-              >
-                {availableMonths.map((m) => (
-                  <option key={m} value={m}>{fmtMonthLabel(m)}</option>
-                ))}
-              </select>
+                options={availableMonths.map((m) => ({ value: m, label: fmtMonthLabel(m) }))}
+              />
             </div>
           </div>
         )}

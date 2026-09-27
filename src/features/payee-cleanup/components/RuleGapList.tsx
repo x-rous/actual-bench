@@ -18,6 +18,7 @@ import type { EntityMaps } from "@/features/rules/utils/rulePreview";
 import { useStagedStore } from "@/store/staged";
 import { useProposalBacktest } from "../hooks/useProposalBacktest";
 import type { RuleGap, RuleGapOverride } from "../lib/ruleGaps";
+import { Select } from "@/components/ui/select";
 
 type Props = {
   gaps: RuleGap[];
@@ -791,37 +792,29 @@ function RuleConditionEditor({
         aria-label={`Rule condition for ${gap.payee.name}`}
         className="flex flex-wrap items-center gap-1.5"
       >
-        <select
+        <Select
+          size="sm"
+          className="w-auto"
           value={proposal.field}
-          onChange={(e) =>
-            commit(
-              draft ?? currentValue,
-              currentOp,
-              e.target.value as RuleGapOverride["field"]
-            )
-          }
+          onValueChange={(value) => commit(draft ?? currentValue, currentOp, value as RuleGapOverride["field"])}
           aria-label={`Which field the rule for ${gap.payee.name} matches on`}
-          className="h-7 rounded-md border border-border bg-background px-1"
-        >
-          <option value="imported_payee">imported payee</option>
-          <option value="notes">notes</option>
-        </select>
+          options={[
+            { value: "imported_payee", label: "imported payee" },
+            { value: "notes", label: "notes" },
+          ]}
+        />
 
-        <select
+        <Select
+          size="sm"
+          className="w-auto"
           value={currentOp}
-          onChange={(e) =>
-            commit(
-              draft ?? currentValue,
-              e.target.value as "matches" | "contains",
-              proposal.field
-            )
-          }
+          onValueChange={(value) => commit(draft ?? currentValue, value as "matches" | "contains", proposal.field)}
           aria-label={`How the rule for ${gap.payee.name} matches`}
-          className="h-7 rounded-md border border-border bg-background px-1"
-        >
-          <option value="matches">matches</option>
-          <option value="contains">contains</option>
-        </select>
+          options={[
+            { value: "matches", label: "matches" },
+            { value: "contains", label: "contains" },
+          ]}
+        />
 
         <input
           type="text"

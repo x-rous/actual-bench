@@ -1,7 +1,8 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { SelectField } from "@/components/ui/select-field";
+import { SearchableCombobox, type ComboboxOption } from "@/components/ui/combobox";
+import { cn } from "@/lib/utils";
 import { getConnectionModeBadge } from "@/components/connect/utils";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import type { ConnectionInstance, ConnectionMode } from "@/store/connection";
@@ -17,7 +18,6 @@ export type BudgetOption = {
   mode: ConnectionMode;
   baseUrl: string;
   note?: string;
-  disabled?: boolean;
 };
 
 function host(baseUrl: string): string {
@@ -28,8 +28,11 @@ function host(baseUrl: string): string {
   }
 }
 
-/** Options grouped by server (mode and address), in the order each server first appears. */
-function byServer(options: BudgetOption[]) {
+/**
+ * The combobox's list: a heading per server (mode and address, in the order each
+ * server first appears) with its budgets beneath.
+ */
+function groupedOptions(options: BudgetOption[]): ComboboxOption[] {
   const groups = new Map<string, { label: string; options: BudgetOption[] }>();
   for (const option of options) {
     const key = serverFingerprint({ mode: option.mode, baseUrl: option.baseUrl });
@@ -37,13 +40,19 @@ function byServer(options: BudgetOption[]) {
     group.options.push(option);
     groups.set(key, group);
   }
-  return [...groups.values()];
+  return [...groups.entries()].flatMap(([key, group]) => [
+    { id: `server:${key}`, name: group.label, isGroupHeader: true as const },
+    ...group.options.map((option) => ({
+      id: option.value,
+      name: option.note ? `${option.name} (${option.note})` : option.name,
+    })),
+  ]);
 }
 
 /**
  * Pick a budget: every picker in the app looks and reads the same, grouped by
- * server like the top-bar switcher. A native select (via `SelectField`), so
- * keyboard, typeahead, touch and screen readers work as the platform does.
+ * server like the top-bar switcher, with a search box for long lists. The same
+ * control as the rules dialog's category picker.
  */
 export function BudgetSelect({
   options,
@@ -55,42 +64,29 @@ export function BudgetSelect({
   disabled,
   className,
   "aria-label": ariaLabel,
-  id,
 }: {
   options: BudgetOption[];
   value: string;
   onValueChange: (value: string) => void;
-  /** Shown as the first, empty choice when nothing needs to be chosen yet. */
+  /** Shown when nothing is chosen; also offers "- none -" to clear the choice. */
   placeholder?: string;
   emptyLabel?: string;
   size?: "default" | "sm";
   disabled?: boolean;
   className?: string;
   "aria-label"?: string;
-  id?: string;
 }) {
   return (
-    <SelectField
-      id={id}
-      size={size}
-      className={className}
+    <SearchableCombobox
+      options={groupedOptions(options)}
       value={value}
+      onChange={onValueChange}
+      placeholder={options.length === 0 ? emptyLabel : (placeholder ?? "Choose a budget…")}
+      allowNone={placeholder !== undefined}
       disabled={disabled}
-      aria-label={ariaLabel}
-      onChange={(event) => onValueChange(event.target.value)}
-    >
-      {placeholder !== undefined && <option value="">{placeholder}</option>}
-      {options.length === 0 && placeholder === undefined && <option value="">{emptyLabel}</option>}
-      {byServer(options).map((group) => (
-        <optgroup key={group.label} label={group.label}>
-          {group.options.map((option) => (
-            <option key={option.value} value={option.value} disabled={option.disabled}>
-              {option.note ? `${option.name} (${option.note})` : option.name}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </SelectField>
+      ariaLabel={ariaLabel}
+      triggerClassName={cn(size === "sm" && "h-7", className)}
+    />
   );
 }
 
@@ -99,9 +95,10 @@ const byId = (connection: ConnectionInstance): string => connection.id;
 
 /**
  * The usual budget choices: the budgets connected in this session, then the
- * saved ones not connected yet. Choosing a saved one connects it in the
- * background (asking to unlock saved connections first when needed) without
- * changing the active budget. Render `dialog` once beside the select.
+ * saved ones not connected yet, listed like any other. Choosing a saved one
+ * connects it in the background (asking to unlock saved connections first
+ * when needed) without changing the active budget. Render `dialog` once beside
+ * the select.
  *
  * `keyOf` keys a connection the way the caller stores its choice (its id by
  * default); `noteOf` adds a qualifier to a connected budget.
@@ -139,7 +136,6 @@ export function useBudgetChoices({
       name: saved.name,
       mode: saved.mode,
       baseUrl: saved.baseUrl,
-      note: connector.locked ? "saved, unlock to open" : "saved",
     })),
   ];
 

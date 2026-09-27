@@ -16,6 +16,7 @@ import { annotateNoise, detectionSummary } from "../lib/triage";
 import type { CleanupSuggestion } from "../lib/scan";
 import type { ConfidenceBand } from "../lib/confidence";
 import type { PayeeCleanupCandidate } from "../types";
+import { Select } from "@/components/ui/select";
 
 type Props = {
   suggestion: CleanupSuggestion;
@@ -435,10 +436,12 @@ export function SuggestionCard({
               )}
 
               <div className="mt-1.5 flex items-center gap-1.5">
-                <select
+                <Select
+                  size="sm"
+                  className="w-auto"
                   value={ruleField}
-                  onChange={(e) => {
-                    const field = e.target.value as "imported_payee" | "notes";
+                  onValueChange={(value) => {
+                    const field = value as "imported_payee" | "notes";
                     setFieldOverride(field);
                     onRulePatternChange({
                       field,
@@ -446,11 +449,11 @@ export function SuggestionCard({
                     });
                   }}
                   aria-label="Which field the rule matches on"
-                  className="h-7 rounded-md border border-border bg-background px-1"
-                >
-                  <option value="imported_payee">imported payee</option>
-                  <option value="notes">notes</option>
-                </select>
+                  options={[
+                    { value: "imported_payee", label: "imported payee" },
+                    { value: "notes", label: "notes" },
+                  ]}
+                />
                 <input
                   type="text"
                   value={patternDraft ?? future.matchText}

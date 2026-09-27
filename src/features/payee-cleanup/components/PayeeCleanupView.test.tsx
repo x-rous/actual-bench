@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PayeeCleanupView } from "./PayeeCleanupView";
 import { partitionByEligibility } from "../lib/eligibility";
@@ -627,7 +628,7 @@ describe("PayeeCleanupView", () => {
     );
   });
 
-  it("keeps the pattern editor reachable after choosing a field with no matches", () => {
+  it("keeps the pattern editor reachable after choosing a field with no matches", async () => {
     // Selecting a field the history cannot match leaves no recommendation. If
     // that also removed the editor, the user could not choose another field or
     // type text that would match — a one-way trip out of the rule.
@@ -650,13 +651,11 @@ describe("PayeeCleanupView", () => {
     render(<PayeeCleanupView />);
 
     const field = screen.getByLabelText(/which field the rule matches on/i);
-    fireEvent.change(field, { target: { value: "notes" } });
+    await chooseSelectOption(field, "notes");
 
     // Nothing in the history is a note, so there is no recommendation — but the
     // controls are still there, and they still show the user's choice.
-    expect(screen.getByLabelText(/which field the rule matches on/i)).toHaveValue(
-      "notes"
-    );
+    expect(screen.getByLabelText(/which field the rule matches on/i)).toHaveTextContent("notes");
     expect(screen.getByLabelText(/text the rule should match/i)).toBeInTheDocument();
 
     // And the explanation names the real reason rather than a generic one.
@@ -664,9 +663,7 @@ describe("PayeeCleanupView", () => {
       screen.getByText(/nothing in the imported text on record matches this pattern/i)
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/which field the rule matches on/i), {
-      target: { value: "imported_payee" },
-    });
+    await chooseSelectOption(screen.getByLabelText(/which field the rule matches on/i), "imported payee");
     // Back on a field the history can match, the recommendation returns.
     expect(screen.getByText(/\^SNACK/)).toBeInTheDocument();
   });

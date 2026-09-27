@@ -15,25 +15,37 @@ const options: BudgetOption[] = [
 ];
 
 describe("BudgetSelect", () => {
-  it("groups budgets by server, with the host and mode on each group", () => {
+  it("lists budgets under a heading per server, with the host and mode", () => {
     render(<BudgetSelect options={options} value="a" onValueChange={jest.fn()} aria-label="Budget" />);
-    const groups = screen.getByLabelText("Budget").querySelectorAll("optgroup");
-    expect([...groups].map((group) => group.label)).toEqual(["actual.example.com · Direct", "api.example.com · HTTP API"]);
-    expect([...groups[0].querySelectorAll("option")].map((option) => option.textContent)).toEqual(["Household", "Holiday"]);
-    expect(screen.getByRole("option", { name: "Joint (not enrolled)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Budget" }));
+
+    const list = screen.getByRole("listbox");
+    expect(list.textContent).toMatch(/actual\.example\.com · Direct.*Household.*Holiday.*api\.example\.com · HTTP API.*Joint \(not enrolled\)/);
+    // A required choice: no "- none -" row.
+    expect(screen.queryByRole("option", { name: /none/ })).not.toBeInTheDocument();
   });
 
-  it("reports the chosen value, and offers a placeholder", () => {
+  it("reports the chosen value; a placeholder also offers clearing it", () => {
     const onValueChange = jest.fn();
     render(<BudgetSelect options={options} value="" placeholder="Source budget…" onValueChange={onValueChange} aria-label="Budget" />);
-    expect(screen.getByRole("option", { name: "Source budget…" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Budget"), { target: { value: "c" } });
+    expect(screen.getByRole("button", { name: "Budget" })).toHaveTextContent("Source budget…");
+    fireEvent.click(screen.getByRole("button", { name: "Budget" }));
+    expect(screen.getByRole("option", { name: /none/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Holiday" }));
     expect(onValueChange).toHaveBeenCalledWith("c");
+  });
+
+  it("finds a budget by typing", () => {
+    render(<BudgetSelect options={options} value="a" onValueChange={jest.fn()} aria-label="Budget" />);
+    fireEvent.click(screen.getByRole("button", { name: "Budget" }));
+    fireEvent.change(screen.getByLabelText("Search options"), { target: { value: "joi" } });
+    expect(screen.getByRole("option", { name: "Joint (not enrolled)" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Household" })).not.toBeInTheDocument();
   });
 
   it("says when there is nothing to choose", () => {
     render(<BudgetSelect options={[]} value="" onValueChange={jest.fn()} emptyLabel="No budget connections saved" aria-label="Budget" />);
-    expect(screen.getByRole("option", { name: "No budget connections saved" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Budget" })).toHaveTextContent("No budget connections saved");
   });
 });
 
@@ -45,11 +57,11 @@ describe("useBudgetChoices", () => {
     saved = [{ serverFingerprint: "srv", budgetSyncId: "b-2", name: "Joint", mode: "http-api", baseUrl: "https://api.example.com", serverLabel: "" }];
   });
 
-  it("offers connected budgets, then saved ones marked as saved", () => {
+  it("offers connected budgets, then saved ones, listed alike", () => {
     const { result } = renderHook(() => useBudgetChoices({ connections: [household] }));
     expect(result.current.options.map((option) => [option.name, option.note])).toEqual([
       ["Household", undefined],
-      ["Joint", "saved"],
+      ["Joint", undefined],
     ]);
   });
 

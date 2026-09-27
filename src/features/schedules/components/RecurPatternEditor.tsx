@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,10 +64,6 @@ function inputCls(error?: string) {
     "h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/50",
     error && "border-destructive"
   );
-}
-
-function selectCls() {
-  return "h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/50";
 }
 
 // ─── RecurPatternEditor ───────────────────────────────────────────────────────
@@ -153,37 +150,31 @@ export function RecurPatternEditor({ values, onChange, errors = {} }: Props) {
           </div>
 
           {patternMode === "specific_day" && (
-            <select
-              value={patternDay}
-              onChange={(e) => onChange("patternDay", parseInt(e.target.value))}
-              className={selectCls()}
-            >
-              {DAY_OPTIONS.map((d) => (
-                <option key={d.value} value={d.value}>{d.label}</option>
-              ))}
-            </select>
+            <Select
+              className="w-auto"
+              aria-label="Day of the month"
+              value={String(patternDay)}
+              onValueChange={(value) => onChange("patternDay", parseInt(value))}
+              options={DAY_OPTIONS.map((d) => ({ value: String(d.value), label: d.label }))}
+            />
           )}
 
           {patternMode === "day_of_week" && (
             <div className="flex gap-2">
-              <select
-                value={patternWeekNum}
-                onChange={(e) => onChange("patternWeekNum", parseInt(e.target.value))}
-                className={cn(selectCls(), "flex-1")}
-              >
-                {WEEK_NUMS.map((w) => (
-                  <option key={w.value} value={w.value}>{w.label}</option>
-                ))}
-              </select>
-              <select
+              <Select
+                className="flex-1"
+                aria-label="Which week"
+                value={String(patternWeekNum)}
+                onValueChange={(value) => onChange("patternWeekNum", parseInt(value))}
+                options={WEEK_NUMS.map((w) => ({ value: String(w.value), label: w.label }))}
+              />
+              <Select
+                className="flex-1"
+                aria-label="Day of the week"
                 value={patternWeekDay}
-                onChange={(e) => onChange("patternWeekDay", e.target.value)}
-                className={cn(selectCls(), "flex-1")}
-              >
-                {WEEKDAYS.map((d) => (
-                  <option key={d.value} value={d.value}>{d.label}</option>
-                ))}
-              </select>
+                onValueChange={(value) => onChange("patternWeekDay", value)}
+                options={WEEKDAYS.map((d) => ({ value: d.value, label: d.label }))}
+              />
             </div>
           )}
         </div>

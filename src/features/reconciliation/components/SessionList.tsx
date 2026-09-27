@@ -21,6 +21,7 @@ import { MultiPillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { formatDateLabel } from "../lib/pdfReviewTable";
 import type { ReconciliationSessionRecord } from "../lib/reconciliationApi";
+import { Select } from "@/components/ui/select";
 
 /**
  * Screen 1 — the reconciliation home (UX §3).
@@ -468,35 +469,23 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         )}
 
         {accounts.length > 0 && (
-          <select
+          <Select
+            className="h-6 w-auto max-w-56"
             value={accountFilter}
-            onChange={(event) => setAccountFilter(event.target.value)}
+            onValueChange={setAccountFilter}
             aria-label="Filter by account"
-            className="h-6 max-w-56 rounded border border-border bg-background px-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="all">Any account</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.label}
-              </option>
-            ))}
-          </select>
+            options={[{ value: "all", label: "Any account" }, ...accounts.map((account) => ({ value: account.id, label: account.label }))]}
+          />
         )}
 
         {tags.length > 0 && (
-          <select
+          <Select
+            className="h-6 w-auto"
             value={tagFilter}
-            onChange={(event) => setTagFilter(event.target.value)}
+            onValueChange={setTagFilter}
             aria-label="Filter by tag"
-            className="h-6 rounded border border-border bg-background px-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="all">Any tag</option>
-            {tags.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
+            options={[{ value: "all", label: "Any tag" }, ...tags.map((entry) => ({ value: entry, label: entry }))]}
+          />
         )}
 
         {/* The statement's own period, not when the session was worked on —
@@ -504,19 +493,13 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         {years.length > 0 && (
           <div className="flex items-center gap-1">
             <span className="text-xs text-muted-foreground">Period</span>
-            <select
+            <Select
+              className="h-6 w-auto"
               value={year}
-              onChange={(event) => setYear(event.target.value)}
+              onValueChange={setYear}
               aria-label="Filter by statement year"
-              className="h-6 rounded border border-border bg-background px-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-            >
-              <option value="all">Any year</option>
-              {years.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
-            </select>
+              options={[{ value: "all", label: "Any year" }, ...years.map((entry) => ({ value: String(entry), label: String(entry) }))]}
+            />
           </div>
         )}
 

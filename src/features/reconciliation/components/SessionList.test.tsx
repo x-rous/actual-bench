@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReconciliationSessionRecord } from "../lib/reconciliationApi";
 import { SessionList } from "./SessionList";
+import { chooseSelectOption } from "@/components/ui/select.testing";
 
 function session(
   overrides: Partial<ReconciliationSessionRecord> & Pick<ReconciliationSessionRecord, "id">
@@ -34,7 +35,7 @@ function session(
   };
 }
 
-function renderList(
+async function renderList(
   sessions: ReconciliationSessionRecord[],
   { grouped = false, allYears = true } = {}
 ) {
@@ -52,7 +53,7 @@ function renderList(
   // deliberately. Tests that are not about that filter widen it back out; the
   // default itself is covered by its own test below.
   if (allYears) {
-    fireEvent.change(screen.getByLabelText("Filter by statement year"), { target: { value: "all" } });
+    await chooseSelectOption(screen.getByLabelText("Filter by statement year"), "Any year");
   }
   return callbacks;
 }
@@ -92,9 +93,9 @@ function fixtures() {
 }
 
 describe("reconciliation sessions grouped by account", () => {
-  it("uses one table and expands only accounts needing attention by default", () => {
+  it("uses one table and expands only accounts needing attention by default", async () => {
     const { dubaiActive, dubaiApplied, hsbcApplied } = fixtures();
-    renderList([dubaiApplied, hsbcApplied, dubaiActive], { grouped: true });
+    await renderList([dubaiApplied, hsbcApplied, dubaiActive], { grouped: true });
 
     const table = screen.getByRole("table", { name: "Reconciliation sessions" });
     expect(screen.getAllByRole("table", { name: "Reconciliation sessions" })).toHaveLength(1);
@@ -126,9 +127,9 @@ describe("reconciliation sessions grouped by account", () => {
     expect(screen.queryByText("hsbc-applied.csv")).toBeNull();
   });
 
-  it("lets users expand and collapse groups without changing row actions", () => {
+  it("lets users expand and collapse groups without changing row actions", async () => {
     const { dubaiActive, hsbcApplied } = fixtures();
-    const { onOpen, onDelete } = renderList([dubaiActive, hsbcApplied], { grouped: true });
+    const { onOpen, onDelete } = await renderList([dubaiActive, hsbcApplied], { grouped: true });
 
     fireEvent.click(screen.getByRole("button", { name: `Expand ${HSBC} sessions` }));
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
@@ -145,9 +146,9 @@ describe("reconciliation sessions grouped by account", () => {
     expect(screen.queryByText("dubai-active.csv")).toBeNull();
   });
 
-  it("expands and collapses all visible account groups from one control", () => {
+  it("expands and collapses all visible account groups from one control", async () => {
     const { dubaiActive, hsbcApplied } = fixtures();
-    renderList([dubaiActive, hsbcApplied], { grouped: true });
+    await renderList([dubaiActive, hsbcApplied], { grouped: true });
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse all groups" }));
     expect(screen.getByRole("button", { name: `Expand ${DUBAI} sessions` })).toBeInTheDocument();
@@ -161,20 +162,18 @@ describe("reconciliation sessions grouped by account", () => {
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
   });
 
-  it("adds an Account filter and exposes matching applied groups", () => {
+  it("adds an Account filter and exposes matching applied groups", async () => {
     const { dubaiActive, hsbcApplied } = fixtures();
-    renderList([dubaiActive, hsbcApplied], { grouped: true });
+    await renderList([dubaiActive, hsbcApplied], { grouped: true });
 
-    fireEvent.change(screen.getByLabelText("Filter by account"), {
-      target: { value: "account-2" },
-    });
+    await chooseSelectOption(screen.getByLabelText("Filter by account"), HSBC);
 
     expect(screen.queryByRole("button", { name: new RegExp(DUBAI) })).toBeNull();
     expect(screen.getByRole("button", { name: `Collapse ${HSBC} sessions` })).toBeInTheDocument();
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
   });
 
-  it("keeps the year as a filter, and answers to either year a period straddles", () => {
+  it("keeps the year as a filter, and answers to either year a period straddles", async () => {
     const newYear = session({
       id: "new-year",
       statementName: "new-year.csv",
@@ -182,24 +181,20 @@ describe("reconciliation sessions grouped by account", () => {
       statementEnd: "2026-01-19",
     });
     const { hsbcApplied } = fixtures();
-    renderList([hsbcApplied, newYear], { grouped: true });
+    await renderList([hsbcApplied, newYear], { grouped: true });
 
-    fireEvent.change(screen.getByLabelText("Filter by statement year"), {
-      target: { value: "2025" },
-    });
+    await chooseSelectOption(screen.getByLabelText("Filter by statement year"), "2025");
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
     // A cycle running into January belongs to both years, or filtering by the
     // year you remember would hide it.
     expect(screen.getByText("new-year.csv")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter by statement year"), {
-      target: { value: "2026" },
-    });
+    await chooseSelectOption(screen.getByLabelText("Filter by statement year"), "2026");
     expect(screen.queryByText("hsbc-applied.csv")).toBeNull();
     expect(screen.getByText("new-year.csv")).toBeInTheDocument();
   });
 
-  it("opens on this year, and says so as a filter the reader can clear", () => {
+  it("opens on this year, and says so as a filter the reader can clear", async () => {
     const thisYear = String(new Date().getFullYear());
     const current = session({
       id: "current",
@@ -208,11 +203,11 @@ describe("reconciliation sessions grouped by account", () => {
       statementEnd: `${thisYear}-03-31`,
     });
     const { hsbcApplied } = fixtures();
-    renderList([hsbcApplied, current], { allYears: false });
+    await renderList([hsbcApplied, current], { allYears: false });
 
     // Most of the time the session you want is one of this year's, and the
     // years before it are history.
-    expect(screen.getByLabelText("Filter by statement year")).toHaveValue(thisYear);
+    expect(screen.getByLabelText("Filter by statement year")).toHaveTextContent(thisYear);
     expect(screen.getByText("current.csv")).toBeInTheDocument();
     expect(screen.queryByText("hsbc-applied.csv")).toBeNull();
 
@@ -220,7 +215,7 @@ describe("reconciliation sessions grouped by account", () => {
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
   });
 
-  it("counts a straddling period when choosing the year to open on", () => {
+  it("counts a straddling period when choosing the year to open on", async () => {
     const thisYear = new Date().getFullYear();
     // A cycle that starts in December and ends in January belongs to this year
     // as far as the filter is concerned, so the default has to see it too - or
@@ -231,24 +226,22 @@ describe("reconciliation sessions grouped by account", () => {
       statementStart: `${thisYear - 1}-12-20`,
       statementEnd: `${thisYear}-01-19`,
     });
-    renderList([straddling], { allYears: false });
+    await renderList([straddling], { allYears: false });
 
-    expect(screen.getByLabelText("Filter by statement year")).toHaveValue(String(thisYear));
+    expect(screen.getByLabelText("Filter by statement year")).toHaveTextContent(String(thisYear));
     expect(screen.getByText("straddling.csv")).toBeInTheDocument();
   });
 
-  it("preserves status, tag, and search filtering while exposing matches", () => {
+  it("preserves status, tag, and search filtering while exposing matches", async () => {
     const { dubaiActive, dubaiApplied, hsbcApplied } = fixtures();
-    renderList([dubaiActive, dubaiApplied, hsbcApplied], { grouped: true });
+    await renderList([dubaiActive, dubaiApplied, hsbcApplied], { grouped: true });
 
     fireEvent.click(screen.getByRole("button", { name: /Applied 2/ }));
     expect(screen.queryByText("dubai-active.csv")).toBeNull();
     expect(screen.getByText("dubai-applied.csv")).toBeInTheDocument();
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter by tag"), {
-      target: { value: "Archive" },
-    });
+    await chooseSelectOption(screen.getByLabelText("Filter by tag"), "Archive");
     expect(screen.queryByRole("button", { name: new RegExp(DUBAI) })).toBeNull();
     expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
 
@@ -258,9 +251,9 @@ describe("reconciliation sessions grouped by account", () => {
     expect(screen.getByRole("button", { name: `Collapse ${HSBC} sessions` })).toBeInTheDocument();
   });
 
-  it("lists sessions flat by default, with the account on the row", () => {
+  it("lists sessions flat by default, with the account on the row", async () => {
     const { dubaiActive, hsbcApplied } = fixtures();
-    renderList([dubaiActive, hsbcApplied]);
+    await renderList([dubaiActive, hsbcApplied]);
 
     // No heading over a single row, and no indent under one.
     expect(screen.queryByRole("button", { name: `Collapse ${DUBAI} sessions` })).toBeNull();
@@ -272,9 +265,9 @@ describe("reconciliation sessions grouped by account", () => {
     expect(within(table).getByText("dubai-active.csv")).toBeInTheDocument();
   });
 
-  it("opens a session from the keyboard, not only by clicking its row", () => {
+  it("opens a session from the keyboard, not only by clicking its row", async () => {
     const { dubaiActive } = fixtures();
-    const { onOpen } = renderList([dubaiActive]);
+    const { onOpen } = await renderList([dubaiActive]);
 
     // A `tr` takes no focus and Enter does nothing on one, so the way in is a
     // real control that says what it opens.
@@ -283,9 +276,9 @@ describe("reconciliation sessions grouped by account", () => {
     expect(onOpen).toHaveBeenCalledWith(dubaiActive);
   });
 
-  it("offers a way out of filters that match nothing", () => {
+  it("offers a way out of filters that match nothing", async () => {
     const { dubaiActive } = fixtures();
-    renderList([dubaiActive]);
+    await renderList([dubaiActive]);
 
     fireEvent.change(screen.getByLabelText("Search reconciliation sessions"), {
       target: { value: "nothing matches this" },
@@ -296,17 +289,17 @@ describe("reconciliation sessions grouped by account", () => {
     expect(screen.getByText("dubai-active.csv")).toBeInTheDocument();
   });
 
-  it("names the statement's format beside its file name", () => {
+  it("names the statement's format beside its file name", async () => {
     const { hsbcApplied } = fixtures();
-    renderList([{ ...hsbcApplied, statementFormat: "pdf" }]);
+    await renderList([{ ...hsbcApplied, statementFormat: "pdf" }]);
 
     const statement = screen.getByText("hsbc-applied.csv").closest("td")!;
     expect(within(statement).getByText("pdf")).toBeInTheDocument();
   });
 
-  it("sorts sessions within each account using the shared column headers", () => {
+  it("sorts sessions within each account using the shared column headers", async () => {
     const { dubaiActive, dubaiApplied } = fixtures();
-    renderList([dubaiApplied, dubaiActive]);
+    await renderList([dubaiApplied, dubaiActive]);
     const table = screen.getByRole("table", { name: "Reconciliation sessions" });
     const statementOrder = () =>
       within(table)

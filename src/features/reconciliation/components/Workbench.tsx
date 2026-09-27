@@ -37,6 +37,7 @@ import { MatchOptions } from "./MatchOptions";
 import { ShortcutsHelp } from "./ShortcutsHelp";
 import { TransformDialog } from "./TransformDialog";
 import { WorkbenchRow } from "./WorkbenchRow";
+import { Select } from "@/components/ui/select";
 
 /**
  * Screen 3 — the reconciliation workbench (UX §7).
@@ -1523,17 +1524,13 @@ export function Workbench({
           </div>
           <label className="flex items-center gap-1 text-muted-foreground">
             Sort
-            <select
+            <Select
+              className="h-6 w-auto"
+              aria-label="Sort"
               value={sort}
-              onChange={(event) => setSort(event.target.value as SortId)}
-              className="h-6 rounded border border-border/60 bg-background px-1 text-xs"
-            >
-              {SORTS.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setSort(value as SortId)}
+              options={SORTS.map((entry) => ({ value: entry.id, label: entry.label }))}
+            />
           </label>
           {/* About the screen rather than about this session's progress, so it
               ends the row instead of sitting among the decision figures. */}

@@ -5,7 +5,7 @@ import { Trash2, Braces } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EntityCombobox } from "./EntityCombobox";
-import { selectCls, fieldSelectCls, inputCls } from "./ConditionRow";
+import { fieldSelectCls, inputCls } from "./ConditionRow";
 import { valueToString } from "../utils/rulePreview";
 import {
   ACTION_FIELDS,
@@ -23,6 +23,7 @@ import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreat
 import type { QuickCreateEntityType } from "@/features/quick-create/store/useQuickCreateStore";
 import type { ConditionOrAction, RuleOptions } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
+import { Select } from "@/components/ui/select";
 
 // ─── Options merging ──────────────────────────────────────────────────────────
 //
@@ -203,7 +204,7 @@ export function ActionRow({
         <div className="flex items-start gap-1.5">
           <div
             className={cn(
-              selectCls,
+              "h-8 rounded-md border border-input px-2 text-xs",
               compact && "h-7",
               "flex w-32 shrink-0 items-center bg-muted/30 font-medium text-muted-foreground"
             )}
@@ -211,24 +212,20 @@ export function ActionRow({
             Allocate
           </div>
 
-          <select
-            className={cn(selectCls, compact && "h-7", "w-56 shrink-0")}
+          <Select
+            size={compact ? "sm" : "default"}
+            className="w-56 shrink-0"
             value={method ?? ""}
+            placeholder="Choose a method…"
             aria-label="Allocation method"
-            onChange={(e) =>
+            onValueChange={(value) =>
               onChange({
-                ...withOptions(action, { method: e.target.value, formula: undefined }),
+                ...withOptions(action, { method: value, formula: undefined }),
                 value: null,
               })
             }
-          >
-            {method === undefined && <option value="">Choose a method…</option>}
-            {ALLOCATION_METHOD_OPTIONS.map((m) => (
-              <option key={m} value={m}>
-                {ALLOCATION_METHODS[m]}
-              </option>
-            ))}
-          </select>
+            options={ALLOCATION_METHOD_OPTIONS.map((m) => ({ value: m, label: ALLOCATION_METHODS[m] }))}
+          />
 
           {method === "formula" ? (
             <div className="flex flex-1 flex-col gap-0.5">
@@ -290,16 +287,14 @@ export function ActionRow({
     return (
       <div className="space-y-1">
         <div className="flex items-start gap-1.5">
-          <select
-            className={cn(selectCls, compact && "h-7", "w-48 shrink-0")}
+          <Select
+            size={compact ? "sm" : "default"}
+            className="w-48 shrink-0"
             value={op}
             aria-label="Action type"
-            onChange={(e) => handleOpChange(e.target.value)}
-          >
-            {ACTION_OP_OPTIONS.map((k) => (
-              <option key={k} value={k}>{ACTION_OPS[k].label}</option>
-            ))}
-          </select>
+            onValueChange={handleOpChange}
+            options={ACTION_OP_OPTIONS.map((k) => ({ value: k, label: ACTION_OPS[k].label }))}
+          />
           <div className="flex-1" />
           <Button
             variant="ghost"
@@ -322,16 +317,14 @@ export function ActionRow({
     return (
       <div className="space-y-1">
         <div className="flex items-start gap-1.5">
-          <select
-            className={cn(selectCls, compact && "h-7", "w-48 shrink-0")}
+          <Select
+            size={compact ? "sm" : "default"}
+            className="w-48 shrink-0"
             value={op}
             aria-label="Action type"
-            onChange={(e) => handleOpChange(e.target.value)}
-          >
-            {ACTION_OP_OPTIONS.map((k) => (
-              <option key={k} value={k}>{ACTION_OPS[k].label}</option>
-            ))}
-          </select>
+            onValueChange={handleOpChange}
+            options={ACTION_OP_OPTIONS.map((k) => ({ value: k, label: ACTION_OPS[k].label }))}
+          />
           <input
             className={cn(inputCls, compact && "h-7")}
             value={valueToString(action.value)}
@@ -359,27 +352,23 @@ export function ActionRow({
   return (
     <div className="space-y-1">
       <div className="flex items-start gap-1.5">
-        <select
-          className={cn(selectCls, compact && "h-7", "w-32 shrink-0")}
+        <Select
+          size={compact ? "sm" : "default"}
+          className="w-32 shrink-0"
           value={op}
           aria-label="Action type"
-          onChange={(e) => handleOpChange(e.target.value)}
-        >
-          {ACTION_OP_OPTIONS.map((k) => (
-            <option key={k} value={k}>{ACTION_OPS[k].label}</option>
-          ))}
-        </select>
+          onValueChange={handleOpChange}
+          options={ACTION_OP_OPTIONS.map((k) => ({ value: k, label: ACTION_OPS[k].label }))}
+        />
 
-        <select
-          className={cn(fieldSelectCls, compact && "h-7", "w-32 shrink-0")}
+        <Select
+          size={compact ? "sm" : "default"}
+          className={cn(fieldSelectCls, "w-32 shrink-0")}
           value={field}
           aria-label="Action field"
-          onChange={(e) => handleFieldChange(e.target.value)}
-        >
-          {Object.entries(availableFields).map(([k, def]) => (
-            <option key={k} value={k}>{def.label}</option>
-          ))}
-        </select>
+          onValueChange={handleFieldChange}
+          options={Object.entries(availableFields).map(([k, def]) => ({ value: k, label: def.label }))}
+        />
 
         {isFormula ? (
           <div className="flex flex-1 flex-col gap-0.5">
