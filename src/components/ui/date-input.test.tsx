@@ -39,6 +39,21 @@ describe("DateInput", () => {
     expect(field).toHaveValue("05/08/2026")
   })
 
+  it("saves once when Enter is followed by the field losing focus", () => {
+    // A table that moves to the next cell on Enter blurs the field straight
+    // after, before the new value has come back from the parent.
+    const onValueChange = jest.fn()
+    render(<DateInput aria-label="Start date" dateFormat="dd/MM/yyyy" value="" onValueChange={onValueChange} />)
+    const field = screen.getByLabelText("Start date")
+
+    fireEvent.change(field, { target: { value: "5/8/2026" } })
+    fireEvent.keyDown(field, { key: "Enter" })
+    fireEvent.blur(field)
+
+    expect(onValueChange).toHaveBeenCalledTimes(1)
+    expect(onValueChange).toHaveBeenCalledWith("2026-08-05")
+  })
+
   it("keeps text that is not a date on screen and saves nothing", () => {
     const onValue = jest.fn()
     render(<Field initial="2026-08-15" onValue={onValue} />)

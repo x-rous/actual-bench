@@ -205,7 +205,8 @@ const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
  * Used where a date is being stated rather than edited - the statement's own
  * period, where a month's name is quicker to take in than its number and
  * there is no field to line the digits up in. Written the same way for
- * everyone; the date fields themselves are the browser's own.
+ * everyone. The date fields are the shared `DateInput`, in the budget's own
+ * date format.
  */
 export function formatDateLabel(iso: string | null) {
   const match = (iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);

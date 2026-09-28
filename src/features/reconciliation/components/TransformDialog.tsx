@@ -532,21 +532,37 @@ export function TransformDialog({
               />
             )}
 
-            {condition.operator === "between" && (
-              <Input
-                size="sm"
-                className="w-28"
-                value={condition.value2 ?? ""}
-                aria-label="Upper bound"
-                onChange={(event) =>
-                  setConditions((previous) =>
-                    previous.map((entry, i) =>
-                      i === index ? { ...entry, value2: event.target.value } : entry
+            {condition.operator === "between" &&
+              (condition.field === "date" ? (
+                // Stored as ISO like the lower bound, so the two compare as dates.
+                <DateInput
+                  size="sm"
+                  className="w-40"
+                  value={condition.value2 ?? ""}
+                  aria-label="Upper bound"
+                  onValueChange={(value2) =>
+                    setConditions((previous) =>
+                      previous.map((entry, i) => (i === index ? { ...entry, value2 } : entry))
                     )
-                  )
-                }
-              />
-            )}
+                  }
+                />
+              ) : (
+                <Input
+                  size="sm"
+                  className="w-28"
+                  value={condition.value2 ?? ""}
+                  type={condition.field === "amount" ? "number" : "text"}
+                  step={condition.field === "amount" ? "0.01" : undefined}
+                  aria-label="Upper bound"
+                  onChange={(event) =>
+                    setConditions((previous) =>
+                      previous.map((entry, i) =>
+                        i === index ? { ...entry, value2: event.target.value } : entry
+                      )
+                    )
+                  }
+                />
+              ))}
 
             <Button
               variant="ghost"

@@ -64,10 +64,24 @@ function DateInput({
     setInvalid(false)
   }
 
+  // The last date handed to `onValueChange`, so Enter followed by the field
+  // losing focus (a table moving to the next cell does both) saves it once,
+  // not twice while the new value is still on its way back.
+  const lastCommitted = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    lastCommitted.current = null
+  }, [value])
+
+  function save(iso: string) {
+    if (iso === value || iso === lastCommitted.current) return
+    lastCommitted.current = iso
+    onValueChange(iso)
+  }
+
   function commit(text: string) {
     if (!text.trim()) {
       setInvalid(false)
-      if (value) onValueChange("")
+      if (value) save("")
       return
     }
     const iso = parseTypedDate(text, dateFormat)
@@ -78,7 +92,7 @@ function DateInput({
     setInvalid(false)
     // The same date written another way still tidies up on screen.
     setDraft(formatTypedDate(iso, dateFormat))
-    if (iso !== value) onValueChange(iso)
+    save(iso)
   }
 
   const selected = value ? parse(value, "yyyy-MM-dd", new Date()) : undefined
@@ -128,7 +142,7 @@ function DateInput({
               const iso = format(date, "yyyy-MM-dd")
               setInvalid(false)
               setDraft(formatTypedDate(iso, dateFormat))
-              if (iso !== value) onValueChange(iso)
+              save(iso)
               setOpen(false)
             }}
           />
