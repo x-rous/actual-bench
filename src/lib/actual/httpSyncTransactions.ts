@@ -303,9 +303,14 @@ export async function createHttpTransactionsForSync(
   const created: SyncCreatedTransaction[] = new Array(inputs.length);
   for (const [accountId, group] of byAccount) {
     // Plain insert (batch), then one range read to recover ids + fields by marker.
+    //
+    // `runTransfers` matches the Direct path: without it a row whose payee is a
+    // transfer payee (set by the caller or by a target rule) is written with no
+    // counterpart, a one-legged transfer. actual-http-api defaults it to false.
+    // `learnCategories` is deliberately left at the server default here.
     await apiRequest(connection, `/accounts/${accountId}/transactions/batch`, {
       method: "POST",
-      body: { transactions: group.entries.map((e) => e.payload) },
+      body: { transactions: group.entries.map((e) => e.payload), runTransfers: true },
     });
     const rowByMarker = new Map<string, RawHttpTransaction>();
     for (const r of await fetchTransactions(connection, accountId, group.minDate)) {

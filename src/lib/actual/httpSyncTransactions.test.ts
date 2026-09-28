@@ -6,6 +6,7 @@ import {
   updateHttpTransactionForSync,
 } from "./httpSyncTransactions";
 import { apiRequest } from "../api/client";
+import { createFakeActualBudget } from "./testing/fakeActualBudget";
 import type { ConnectionInstance } from "@/store/connection";
 
 jest.mock("../api/client", () => ({ apiRequest: jest.fn() }));
@@ -324,5 +325,81 @@ describe("imported_payee over HTTP", () => {
     expect("notes" in transaction).toBe(false);
     expect("category" in transaction).toBe(false);
     expect("payee" in transaction).toBe(false);
+  });
+});
+
+/**
+ * Transfers over HTTP (P1.0a): the batch create must ask actual-http-api to run
+ * Actual's transfer handling, as the Direct path already does. Without it a row
+ * whose payee is a transfer payee is written with no counterpart.
+ */
+describe("createHttpTransactionsForSync - transfers", () => {
+  const accounts = [
+    { id: "acct-chk", name: "Checking" },
+    { id: "acct-sav", name: "Savings" },
+  ];
+
+  it("sends runTransfers: true and leaves learnCategories to the server default", async () => {
+    const budget = createFakeActualBudget({ accounts });
+    mockApiRequest.mockImplementation(budget.httpApiRequest as never);
+
+    await createHttpTransactionsForSync(connection, [
+      { accountId: "acct-chk", date: "2026-07-01", amount: -100, payeeName: "Grocer", importedId: "m1" },
+    ]);
+
+    const batch = mockApiRequest.mock.calls.find(
+      ([, path, opts]) => path.endsWith("/transactions/batch") && opts?.method === "POST"
+    );
+    const body = batch?.[2]?.body as Record<string, unknown>;
+    expect(body.runTransfers).toBe(true);
+    expect("learnCategories" in body).toBe(false);
+  });
+
+  it("creates exactly one counterpart for a row whose payee is a transfer payee", async () => {
+    const budget = createFakeActualBudget({ accounts });
+    mockApiRequest.mockImplementation(budget.httpApiRequest as never);
+
+    const result = await createHttpTransactionsForSync(connection, [
+      { accountId: "acct-chk", date: "2026-07-01", amount: -2500, payeeId: budget.transferPayeeId("acct-sav"), importedId: "m1" },
+    ]);
+
+    const source = budget.accountRows("acct-chk");
+    const counterparts = budget.accountRows("acct-sav");
+    expect(source).toHaveLength(1);
+    expect(counterparts).toHaveLength(1);
+    expect(counterparts[0]).toMatchObject({
+      amount: 2500,
+      date: "2026-07-01",
+      payee: budget.transferPayeeId("acct-chk"),
+      transfer_id: source[0].id,
+    });
+    expect(source[0].transfer_id).toBe(counterparts[0].id);
+    // The created row is still recovered by its marker, not confused with the counterpart.
+    expect(result.created[0].transactionId).toBe(source[0].id);
+  });
+
+  it("creates a counterpart when the payee name resolves to a target transfer payee", async () => {
+    const budget = createFakeActualBudget({ accounts });
+    mockApiRequest.mockImplementation(budget.httpApiRequest as never);
+
+    await createHttpTransactionsForSync(connection, [
+      { accountId: "acct-chk", date: "2026-07-01", amount: -2500, payeeName: "Savings", importedId: "m1" },
+    ]);
+
+    expect(budget.accountRows("acct-sav")).toHaveLength(1);
+  });
+
+  it("leaves a non-transfer create unchanged: no counterpart, no other account touched", async () => {
+    const budget = createFakeActualBudget({ accounts, payees: [{ id: "p1", name: "Grocer" }] });
+    mockApiRequest.mockImplementation(budget.httpApiRequest as never);
+
+    const result = await createHttpTransactionsForSync(connection, [
+      { accountId: "acct-chk", date: "2026-07-01", amount: -100, payeeName: "Grocer", categoryId: "c1", notes: "n", importedId: "m1" },
+    ]);
+
+    expect(budget.rows()).toHaveLength(1);
+    expect(budget.accountRows("acct-sav")).toHaveLength(0);
+    expect(budget.rows()[0]).not.toHaveProperty("transfer_id");
+    expect(result.created[0].applied).toMatchObject({ amount: -100, payeeId: "p1", categoryId: "c1", notes: "n" });
   });
 });
