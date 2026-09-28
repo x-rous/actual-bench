@@ -191,7 +191,7 @@ export function ConnectionSwitcher({
         <ChevronDown className="h-3 w-3 text-muted-foreground" />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="start" className="w-[23rem] max-w-[calc(100vw-2rem)]">
+      <DropdownMenuContent align="start" className="w-[20rem] max-w-[calc(100vw-2rem)]">
         {showFilter && (
           <div className="p-1">
             <Input

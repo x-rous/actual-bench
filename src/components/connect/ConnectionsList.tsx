@@ -6,6 +6,7 @@ import { KeyRound, Loader2, Lock, Plus, Server, Trash2, Unlock, X } from "lucide
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import type { ConnectionInstance } from "@/store/connection";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import type { useConnectionVault } from "@/features/connect/useConnectionVault";
@@ -68,6 +69,7 @@ export function ConnectionsList({
   const [resetting, setResetting] = useState(false);
   const [locking, setLocking] = useState(false);
   const [changeOpen, setChangeOpen] = useState(false);
+  const [confirmForget, setConfirmForget] = useState<ConfirmState | null>(null);
 
   if (servers.length === 0) return null;
 
@@ -180,6 +182,24 @@ export function ConnectionsList({
       }
     }
     if (budget.instance) onForgetInstance(budget.instance.id);
+  }
+
+  /**
+   * Forgetting a server drops its saved password or API key, which can't be
+   * got back without finding and typing it again, so it asks first. A single
+   * budget goes without asking: it is one click to save again.
+   */
+  function askForgetServer(server: MergedServer) {
+    const name = server.label || deriveLabel(server.baseUrl);
+    const secret = server.mode === "http-api" ? "API key" : "password";
+    setConfirmForget({
+      title: `Forget ${name}?`,
+      message: server.savedServer
+        ? `Its saved ${secret} and budgets are removed from Actual Bench. Nothing changes on the server or in your budgets.`
+        : "Its open budgets are closed here. Nothing changes on the server or in your budgets.",
+      destructiveLabel: "Forget",
+      onConfirm: () => void forgetServer(server),
+    });
   }
 
   async function forgetServer(server: MergedServer) {
@@ -364,7 +384,7 @@ export function ConnectionsList({
                 <span className="flex-1" />
                 <button
                   type="button"
-                  onClick={() => void forgetServer(server)}
+                  onClick={() => askForgetServer(server)}
                   disabled={busy}
                   title="Forget this server and its saved budgets"
                   aria-label={`Forget ${server.label || deriveLabel(server.baseUrl)}`}
@@ -443,6 +463,14 @@ export function ConnectionsList({
           );
         })}
       </div>
+
+      <ConfirmDialog
+        open={confirmForget !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmForget(null);
+        }}
+        state={confirmForget}
+      />
 
       <ChangePasswordDialog open={changeOpen} onOpenChange={setChangeOpen} onSubmit={handleChangePassphrase} />
     </section>

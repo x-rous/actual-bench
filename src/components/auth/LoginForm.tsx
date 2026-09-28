@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, BookOpen, ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -21,6 +21,9 @@ import {
   keepsSignedIn,
 } from "@/lib/connectionVault/unlockDuration";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
+
+const DOCS_URL = "https://x-rous.github.io/actual-bench";
+const GITHUB_URL = "https://github.com/x-rous/actual-bench";
 
 /**
  * Sign in, or on a fresh install set the password (RD-096). One password:
@@ -94,7 +97,7 @@ export function LoginForm({ next }: { next: string }) {
         <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
       </div>
 
-      <div className="rounded-xl border bg-card p-5 shadow-sm">
+      <div className="rounded-xl border bg-card p-7 shadow-sm">
         {status === null ? (
           loadError ? (
             <p className="flex items-start gap-2 text-sm text-destructive">
@@ -107,7 +110,7 @@ export function LoginForm({ next }: { next: string }) {
             </div>
           )
         ) : (
-          <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
+          <form className="flex flex-col gap-6" onSubmit={(event) => void handleSubmit(event)}>
             <div className="flex flex-col gap-1">
               <h1 className="text-base font-semibold tracking-tight">
                 {settingUp ? "Set a password" : "Sign in"}
@@ -173,6 +176,28 @@ export function LoginForm({ next }: { next: string }) {
             )}
           </form>
         )}
+      </div>
+
+      {/* Docs / GitHub, as on the connect page. No version here: this page is public. */}
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        <a
+          href={DOCS_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <BookOpen className="size-4" />
+          Documentation
+        </a>
+        <a
+          href={GITHUB_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ExternalLink className="size-4" />
+          GitHub
+        </a>
       </div>
     </div>
   );
