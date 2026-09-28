@@ -356,9 +356,9 @@ const ANCHOR_ROLES = new Set(["transaction-date", "posting-date", "value-date"])
 const COLUMN_ROLES = new Set(["transaction-date", "posting-date", "value-date", "description", "reference", "debit", "credit", "amount", "direction", "balance", "original-amount", "original-currency", "exchange-rate", "currency", "fee", "vat", "ignore"]);
 /**
  * Letters and digits masked to A and 9, with spaces and punctuation left. Any
- * other letter or digit, in any script, is statement text.
+ * other letter, digit or combining mark, in any script, is statement text.
  */
-const MASKED_SHAPE = /^(?:[^\p{L}\p{N}]|A|9)*$/u;
+const MASKED_SHAPE = /^(?:[^\p{L}\p{N}\p{M}]|A|9)*$/u;
 
 function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
   const reading = profile.reading;

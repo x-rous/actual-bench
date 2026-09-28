@@ -44,6 +44,19 @@ describe("diagnostics report", () => {
     expect(maskForDiagnostics("Total Amount (AED)")).toBe("Total Amount (AED)");
   });
 
+  it("masks digits in any script, even beside a word it keeps", () => {
+    expect(maskForDiagnostics("USD१२३४")).toBe("USD9999");
+    expect(maskForDiagnostics("१२३४.५०")).toBe("9999.99");
+  });
+
+  it("leaves no combining marks, which are part of the text too", () => {
+    // Devanagari vowel signs and Arabic harakat are marks, not letters.
+    for (const text of ["किताब", "مُحَمَّد", "café"]) {
+      expect(maskForDiagnostics(text)).toBe("A");
+      expect(maskForDiagnostics(text)).not.toMatch(/\p{M}/u);
+    }
+  });
+
   it("says which version read it and what settings were in force, with their source", () => {
     expect(report.appVersion).toBe("9.9.9");
     expect(report.settings.unsignedDirection).toEqual({ inUse: "review", detected: "review", changed: false });

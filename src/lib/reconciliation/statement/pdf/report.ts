@@ -96,14 +96,18 @@ export function buildPdfDiagnosticsReport(
  */
 const KEPT_WORDS = /^(?:date|transaction|trans|posting|posted|value|booking|description|details|narration|narrative|particulars|reference|ref|amount|debit|credit|withdrawals?|deposits?|balance|original|currency|vat|tax|fees?|total|money|in|out|CR|DR|AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)$/i;
 
-/** A value's shape: letters in any script as `A`, digits as `9`, kept words as printed. */
+/**
+ * A value's shape: letters in any script as `A` (with their combining marks -
+ * vowel signs, diacritics - which are part of the text too), digits in any
+ * script as `9`, kept words as printed with their digits still masked.
+ */
 export function maskForDiagnostics(value: string): string {
   return normalizePdfText(value)
     .split(" ")
     .map((word) => {
       const bare = word.replace(/[^\p{L}]/gu, "");
-      if (bare && KEPT_WORDS.test(bare)) return word.replace(/\d/g, "9");
-      return word.replace(/\p{L}+/gu, "A").replace(/\p{N}/gu, "9");
+      if (bare && KEPT_WORDS.test(bare)) return word.replace(/\p{M}/gu, "").replace(/\p{N}/gu, "9");
+      return word.replace(/[\p{L}\p{M}]+/gu, "A").replace(/\p{N}/gu, "9");
     })
     .join(" ");
 }

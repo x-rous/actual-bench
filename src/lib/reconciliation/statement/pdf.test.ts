@@ -2011,8 +2011,11 @@ describe("saved-layout header shapes in any script", () => {
       { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
       { y: 700, cells: [{ x: 20, text: "08/05/2026" }, { x: 120, text: "SHOP" }, { x: 480, text: "USD -10.00" }] },
     ])] }) });
-    const tampered = { ...profile, signature: { ...profile.signature, header: [{ shape: "الرصيد", x: 10, width: 10 }] } };
+    const withShape = (shape: string) => ({ ...profile, signature: { ...profile.signature, header: [{ shape, x: 10, width: 10 }] } });
 
-    expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: tampered })).toBeNull();
+    expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: withShape("الرصيد") })).toBeNull();
+    // Combining marks on their own are text too (an Arabic shadda, a Devanagari vowel sign).
+    expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: withShape("Aّ A") })).toBeNull();
+    expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: withShape("A A (A)") })).not.toBeNull();
   });
 });

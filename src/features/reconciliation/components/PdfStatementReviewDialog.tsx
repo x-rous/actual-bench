@@ -693,7 +693,9 @@ export function PdfStatementReviewDialog({
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${fileName.replace(/\.pdf$/i, "")}-diagnostics.json`;
+    // Not the PDF's own name: it often carries the account holder, bank or
+    // account number, which the report itself is careful never to include.
+    anchor.download = `pdf-statement-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
   }

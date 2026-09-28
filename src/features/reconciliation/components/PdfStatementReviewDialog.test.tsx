@@ -1092,6 +1092,25 @@ describe("PdfStatementReviewDialog v2", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Duplicates 2" })).toHaveAttribute("aria-pressed", "true"));
   });
 
+  it("names the downloaded diagnostics generically, never after the PDF", () => {
+    const createObjectURL = jest.fn(() => "blob:report");
+    Object.assign(URL, { createObjectURL, revokeObjectURL: jest.fn() });
+    let downloadedAs = "";
+    const click = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloadedAs = this.download;
+    });
+    render(<PdfStatementReviewDialog fileName="Jane-Doe-4485-HSBC-statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Parser details/ }));
+    const diagnostics = screen.getByRole("region", { name: "Technical diagnostics" });
+    fireEvent.click(within(diagnostics).getByRole("button", { name: "Technical diagnostics" }));
+
+    fireEvent.click(within(diagnostics).getByRole("button", { name: /Download/ }));
+
+    expect(downloadedAs).toMatch(/^pdf-statement-diagnostics-\d{4}-\d{2}-\d{2}\.json$/);
+    expect(downloadedAs).not.toMatch(/Jane|Doe|4485|HSBC/);
+    click.mockRestore();
+  });
+
   it("keeps the parser's own record out of the statement's text", async () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Parser details/ }));

@@ -21,13 +21,13 @@ export function normalizePdfText(value: string): string {
 }
 
 /**
- * A value's shape with its content removed: letters in any script become `A`,
- * digits `9`. Masking only Latin letters let an Arabic or Chinese header word
- * into a saved layout as printed.
+ * A value's shape with its content removed: letters in any script, with their
+ * combining marks, become `A`, and digits `9`. Masking only Latin letters let
+ * an Arabic or Chinese header word into a saved layout as printed.
  */
 export function sourceSafeShape(value: string): string {
   return normalizePdfText(value)
-    .replace(/\p{L}+/gu, "A")
+    .replace(/[\p{L}\p{M}]+/gu, "A")
     .replace(/\p{N}+/gu, "9")
     .replace(/\s+/g, " ");
 }
