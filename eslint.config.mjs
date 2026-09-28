@@ -77,6 +77,66 @@ const eslintConfig = defineConfig([
     },
   },
 
+  /*
+   * Assets & Debt calculations stay pure (RD-084, Constitution XIII).
+   *
+   * Every applied financial result must be reproducible from its recorded
+   * inputs alone, so nothing under src/lib/financial-models may reach the app
+   * database, the Actual transport, the automation engine, credentials,
+   * providers, routes or UI. Relative paths into those areas are caught too.
+   */
+  {
+    files: ["src/lib/financial-models/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            { name: "react", message: "Financial models are pure: no React." },
+            { name: "react-dom", message: "Financial models are pure: no React." },
+            { name: "next", message: "Financial models are pure: no Next.js." },
+          ],
+          patterns: [
+            {
+              group: [
+                "@/lib/app-db",
+                "@/lib/app-db/**",
+                "@/lib/actual",
+                "@/lib/actual/**",
+                "@/lib/api",
+                "@/lib/api/**",
+                "@/lib/http",
+                "@/lib/http/**",
+                "@/lib/automation",
+                "@/lib/automation/**",
+                "@/lib/workers",
+                "@/lib/workers/**",
+                "@/lib/credentials",
+                "@/lib/credentials/**",
+                "@/lib/assets-debt",
+                "@/lib/assets-debt/**",
+                "@/app/**",
+                "@/components/**",
+                "@/features/**",
+                "@/store/**",
+                "next/**",
+                "**/app-db",
+                "**/app-db/**",
+                "**/lib/actual",
+                "**/lib/actual/**",
+                "**/automation/**",
+                "**/credentials/**",
+                "**/assets-debt/**",
+              ],
+              message:
+                "src/lib/financial-models is pure calculation: no app DB, Actual transport, automation, credentials, providers, routes or UI.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Fix: allow require() in config files
   {
     files: ["*.config.*", "*.cjs"],
