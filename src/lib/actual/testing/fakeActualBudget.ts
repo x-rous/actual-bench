@@ -22,6 +22,8 @@ export type FakeActualBudget = {
   rows(): Row[];
   /** Top-level rows of one account, as Actual lists them. */
   accountRows(accountId: string): Row[];
+  /** Every payee in the budget, transfer payees included. */
+  payees(): Array<{ id: string; name: string; transfer_acct: string | null }>;
   /** The id of the transfer payee that points at `accountId`. */
   transferPayeeId(accountId: string): string;
   /** Options received by each insert, for asserting what the transport sent. */
@@ -104,6 +106,7 @@ export function createFakeActualBudget(options: {
   return {
     rows: () => rows,
     accountRows,
+    payees: () => payees,
     transferPayeeId: (accountId) => `tp-${accountId}`,
     insertOptions: () => inserts,
 
@@ -114,7 +117,8 @@ export function createFakeActualBudget(options: {
         const name = (opts?.body as { payee: { name: string } }).payee.name;
         const created = { id: `payee-${nextId++}`, name, transfer_acct: null };
         payees.push(created);
-        return { data: created };
+        // actual-http-api returns the new payee's id alone.
+        return { data: created.id };
       }
       if (path === "/categorygroups") return { data: [] };
       const batch = path.match(/^\/accounts\/([^/]+)\/transactions\/batch$/);

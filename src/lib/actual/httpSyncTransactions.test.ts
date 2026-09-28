@@ -51,7 +51,8 @@ function mockApi(options: {
       const name = (opts?.body as { payee: { name: string } }).payee.name;
       const created = { id: `payee-${nextId++}`, name };
       payees.push(created);
-      return { data: created } as never;
+      // actual-http-api returns the new payee's id alone.
+      return { data: created.id } as never;
     }
     if (path === "/categorygroups") {
       return {
