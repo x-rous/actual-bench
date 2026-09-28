@@ -6,7 +6,7 @@ WORKDIR /app
 # is not enough.
 RUN apk upgrade --no-cache && apk add --no-cache python3 make g++
 COPY package*.json ./
-COPY scripts/copy-sqlite-wasm.mjs ./scripts/copy-sqlite-wasm.mjs
+COPY scripts/copy-sqlite-wasm.mjs scripts/copy-pdfjs-assets.mjs ./scripts/
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1

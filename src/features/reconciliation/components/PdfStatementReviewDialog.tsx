@@ -26,6 +26,7 @@ import { downloadCsv } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
 import { columnBoundsForPage } from "@/lib/reconciliation/statement/pdf/columns";
 import {
+  buildPdfDiagnosticsReport,
   columnExamplesForRegions,
   guidanceFromPdfLayoutProfile,
   layoutReadingFromGuidance,
@@ -34,6 +35,7 @@ import {
   type PdfColumn,
   type PdfConfidenceReason,
   type PdfLayoutProfile,
+  type PdfParseNotice,
   type PdfParserGuidance,
   type PdfStatementParseResult,
   type PdfTransactionProposal,
@@ -51,6 +53,7 @@ import {
   newColumnBounds,
   nextSortState,
   normalizeTableAmountInput,
+  openParserQuestions,
   pageForSourceIds,
   resultDiff,
   sortColumnsByPosition,
@@ -67,6 +70,7 @@ import { PdfPageControls } from "./PdfPageControls";
 import { PdfReviewStep } from "./PdfReviewStep";
 import { PdfLayoutSaveDialog, type PdfLayoutSaveRequest } from "./PdfStatementLayoutPanel";
 import type { PdfDetectionIssue } from "./PdfDetectionIssueList";
+import { PAGE_RULES_FIRST, PERIOD_START } from "./PdfDetectionControls";
 import type { PdfTransactionField } from "./PdfTransactionTable";
 
 type WorkbenchMode = "review" | "adjust";
@@ -251,6 +255,48 @@ export function PdfStatementReviewDialog({
     },
     [draftGuidance, parsed]
   );
+  /**
+   * Whether closing now loses anything: a correction, a re-read that was
+   * applied, or settings changed and not yet applied (an area toggled counts).
+   * Nothing here is saved until import, and the PDF itself is never stored.
+   */
+  function hasUnsavedWork() {
+    if (!parsed) return false;
+    return workbench.corrections.length > 0
+      || parsed !== result
+      || (draftGuidance !== null && JSON.stringify(draftGuidance) !== JSON.stringify(parsed.guidance));
+  }
+
+  /**
+   * Every way out of the review - Esc, the close button, Cancel - comes here.
+   * With nothing to lose it closes at once; otherwise it asks, defaulting to
+   * keeping the work. Clicking outside never closes it (see the Dialog).
+   */
+  function requestClose() {
+    if (!hasUnsavedWork()) {
+      onOpenChange(false);
+      return;
+    }
+    setConfirm({
+      title: "Discard your changes to this statement?",
+      message: "Corrections and detection changes made here are lost when the review closes.",
+      destructiveLabel: "Discard",
+      cancelLabel: "Keep editing",
+      onConfirm: () => onOpenChange(false),
+    });
+  }
+
+  // Leaving the page loses the same work, and the dialog cannot catch that.
+  const unsavedWork = open && hasUnsavedWork();
+  useEffect(() => {
+    if (!unsavedWork) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsavedWork]);
+
   const draftColumnExamples = useMemo(() => new Map(
     (draftGuidance?.columns ?? []).map((column) => [
       column.id,
@@ -265,8 +311,10 @@ export function PdfStatementReviewDialog({
   // a secondary view: import stays disabled until they are acknowledged.
   const unreadablePageCount = (parsed?.metrics.unreadablePages ?? 0) + (parsed?.metrics.imageOnlyPages ?? 0);
   const pageWarnings = useMemo(
-    () => (parsed?.warnings ?? []).filter((warning) => /readable text layer|could not be read/.test(warning)),
-    [parsed?.warnings]
+    () => (parsed?.notices ?? [])
+      .filter((notice) => notice.code === "IMAGE_ONLY_PAGES" || notice.code === "UNREADABLE_PAGES")
+      .map((notice) => notice.message),
+    [parsed?.notices]
   );
   const importBlockedByPages = unreadablePageCount > 0 && !pageWarningsAcknowledged;
 
@@ -283,6 +331,12 @@ export function PdfStatementReviewDialog({
     setScopedCorrectionOffer(null);
     setDiagnosticsOpen(false);
     setMode("adjust");
+    const row = issue.goTo?.[0];
+    if (row) {
+      setPageNumber(row.pageNumber);
+      setSelectedSourceRowId(row.rowId);
+      return;
+    }
     if (!issue.focus) return;
     setInterpretationOpen(true);
     setControlFocus((current) => ({ id: issue.focus!, requestId: (current?.requestId ?? 0) + 1 }));
@@ -602,20 +656,28 @@ export function PdfStatementReviewDialog({
     toast.success(`Exported ${sortedRows.length} ${sortedRows.length === 1 ? "transaction" : "transactions"}`);
   }
 
+  /**
+   * The report a reader shares when a statement does not read as it should:
+   * settings and their sources, columns, per-page facts, why rows are not
+   * ready, and masked row shapes. No statement text (see
+   * `buildPdfDiagnosticsReport`).
+   */
+  function diagnosticsReport() {
+    if (!parsed) return null;
+    return JSON.stringify(buildPdfDiagnosticsReport(
+      // A re-parse after detection changes keeps the original extraction facts.
+      { ...parsed, extraction: parsed.extraction ?? result?.extraction },
+      {
+        appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0",
+        userAgent: typeof navigator === "undefined" ? undefined : navigator.userAgent,
+        layout: { applied: Boolean(selectedProfileId), assignedToAccount: Boolean(selectedProfileId) && selectedProfileId === accountProfileId },
+      }
+    ), null, 2);
+  }
+
   function copyDiagnostics() {
-    const payload = JSON.stringify({
-      modelVersion: parsed?.modelVersion,
-      metrics: parsed?.metrics,
-      accountType: parsed?.accountType,
-      balanceBehavior: parsed?.balanceBehavior,
-      warnings: parsed?.warnings,
-      diagnostics: parsed?.diagnostics.map(({ stage, code, pageNumber: diagnosticPage, metrics }) => ({
-        stage,
-        code,
-        pageNumber: diagnosticPage,
-        metrics,
-      })),
-    }, null, 2);
+    const payload = diagnosticsReport();
+    if (!payload) return;
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
       toast.error("Clipboard access is unavailable");
       return;
@@ -625,10 +687,26 @@ export function PdfStatementReviewDialog({
       .catch(() => toast.error("Could not copy parser diagnostics"));
   }
 
+  function downloadDiagnostics() {
+    const payload = diagnosticsReport();
+    if (!payload || typeof document === "undefined") return;
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    // Not the PDF's own name: it often carries the account holder, bank or
+    // account number, which the report itself is careful never to include.
+    anchor.download = `pdf-statement-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (!parsed || !draftGuidance) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    // A workspace, not a prompt: a click outside is almost always a slip, so it
+    // never closes the review. Esc and the close button ask first when there
+    // is work to lose.
+    <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : requestClose())} disablePointerDismissal>
       <DialogContent size="full" aria-busy={isParsing}>
         <DialogHeader className="shrink-0 border-b px-4 py-2.5 pr-12">
           <div className="flex min-w-0 items-center gap-3">
@@ -824,7 +902,6 @@ export function PdfStatementReviewDialog({
                 previewDataUrl={pagePreviewDataUrl}
                 guidance={draftGuidance}
                 issues={detectionIssues}
-                warnings={parsed.warnings}
                 busy={isParsing}
                 preview={preview}
                 previewDiff={previewDiff}
@@ -890,6 +967,7 @@ export function PdfStatementReviewDialog({
                 setFilter(category);
               }}
               onCopyDiagnostics={copyDiagnostics}
+              onDownloadDiagnostics={downloadDiagnostics}
             />
 
             {saveProfileOpen && (
@@ -993,7 +1071,7 @@ export function PdfStatementReviewDialog({
                 : reviewCount > 0 ? <span className="text-amber-700 dark:text-amber-300">Check and mark {reviewCount} {reviewCount === 1 ? "transaction" : "transactions"} reviewed.</span>
                   : <span className="text-muted-foreground">All transactions are ready.</span>}
             </span>
-            <Button variant="outline" disabled={isParsing} onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button variant="outline" disabled={isParsing} onClick={requestClose}>Cancel</Button>
             {!parsed.likelyScanned && (
               <Button
                 disabled={isParsing || rows.length === 0 || blockingCount > 0 || reviewCount > 0 || importBlockedByPages}
@@ -1010,9 +1088,17 @@ export function PdfStatementReviewDialog({
   );
 }
 
+/**
+ * Opens on Check detection whenever something there needs the reader: a row
+ * that could not be read (even one: the column mapping may be off), or a
+ * statement-wide question - the period for dates without a year, or the rule
+ * for amounts without a sign - that one answer settles for every row. Only a
+ * statement with nothing to settle opens straight on Review.
+ */
 function initialModeForResult(result: PdfStatementParseResult | null, profileNeedsReview = false): WorkbenchMode {
   if (profileNeedsReview || !result || result.transactions.length === 0) return "adjust";
-  return result.metrics.rejected / result.transactions.length > 0.5 ? "adjust" : "review";
+  const questions = openParserQuestions(result);
+  return result.metrics.rejected > 0 || questions.missingYear > 0 || questions.unmarkedAmounts > 0 ? "adjust" : "review";
 }
 
 function initialReviewFilter(result: PdfStatementParseResult | null): PdfReviewCategory {
@@ -1024,48 +1110,100 @@ function initialReviewFilter(result: PdfStatementParseResult | null): PdfReviewC
  * to do. Where one setting answers the question, the issue carries the control
  * that sets it so the reader is not left hunting for it.
  */
+/**
+ * Everything "What needs attention" says, built one way for any statement.
+ *
+ * Each item says what happened and where, and names the one action that
+ * settles it: a Statement interpretation control to focus, or a row to show.
+ * Items waiting on the reader come first; the rest are notes.
+ */
 function detectionIssuesFor(
   result: PdfStatementParseResult | null,
   guidance: PdfParserGuidance | null
 ): PdfDetectionIssue[] {
-  if (!result || !guidance) return [{ message: "No detection result is available." }];
+  if (!result || !guidance) return [{ message: "No detection result is available.", kind: "answer" }];
   const issues: PdfDetectionIssue[] = [];
   // Not the statement-layout notice: that is about the layout in force, and it
   // is said in the panel that holds the control for it, immediately below.
   if (!guidance.regions.some((region) => region.included && region.kind === "transactions")) {
-    issues.push({ message: "Select at least one transaction area." });
+    issues.push({ message: "Select at least one transaction area.", kind: "answer" });
   }
   if (!guidance.columns.some((column) => ["transaction-date", "posting-date", "value-date"].includes(column.role))) {
-    issues.push({ message: "Map the statement date column." });
+    issues.push({ message: "Map the statement date column.", kind: "answer" });
   }
   if (!guidance.columns.some((column) => ["amount", "debit", "credit"].includes(column.role))) {
-    issues.push({ message: "Map the account amount, money-out, or money-in column." });
+    issues.push({ message: "Map the account amount, money-out, or money-in column.", kind: "answer" });
   }
-  // Worded exactly like the parser's own warning so the two are one item in
-  // the Parser details list rather than the same question asked twice.
-  if (!guidance.currency) {
+
+  const questions = openParserQuestions(result);
+  if (questions.missingYear) {
     issues.push({
-      message: "The statement currency was not detected. Set it in Statement interpretation.",
-      focus: "pdf-statement-currency",
+      message: `${rowsPhrase(questions.missingYear)} a date without a year. Set the statement period to read ${questions.missingYear === 1 ? "it" : "them"}.`,
+      kind: "answer",
+      actionLabel: "Set period",
+      focus: PERIOD_START,
+    });
+  }
+  if (questions.unmarkedAmounts) {
+    issues.push({
+      message: `${rowsPhrase(questions.unmarkedAmounts)} an amount without a sign. Choose a rule; it is saved with the layout.`,
+      kind: "answer",
+      actionLabel: "Choose a rule",
+      focus: "pdf-unsigned-direction",
+    });
+  }
+  const missingAmount = result.transactions.filter((row) => row.issueCodes.includes("AMOUNT_MISSING")).length;
+  const mostLackAmount = missingAmount > 0 && missingAmount >= result.transactions.length / 2;
+  if (mostLackAmount) {
+    issues.push({ message: `${rowsPhrase(missingAmount)} no amount. Map the column that holds the account amount.`, kind: "answer" });
+  }
+  // Any other row that could not be read: often a column mapped wrongly, so
+  // it is said here, with the rows to look at. Rows already explained above
+  // (no year, no amount) are not counted twice.
+  const blocks = new Map(result.blocks.map((block) => [block.id, block]));
+  const unread = result.transactions.filter((row) =>
+    row.status === "rejected"
+    && !row.issueCodes.includes("DATE_YEAR_MISSING")
+    && !(mostLackAmount && row.issueCodes.includes("AMOUNT_MISSING")));
+  if (unread.length) {
+    const goTo = unread.flatMap((row) => {
+      const block = blocks.get(row.id);
+      return block?.rowIds[0] ? [{ pageNumber: block.pageNumber, rowId: block.rowIds[0] }] : [];
+    });
+    issues.push({
+      message: `${unread.length} ${unread.length === 1 ? "row" : "rows"} could not be read. Check the column mapping, or fix ${unread.length === 1 ? "it" : "them"} in Review.`,
+      kind: "answer",
+      ...(goTo.length ? { goTo } : {}),
     });
   }
 
-  const blocked = result.transactions.filter((row) => row.status === "rejected");
-  if (result.transactions.length > 0 && blocked.length / result.transactions.length > 0.5) {
-    const unresolvedDirection = blocked.filter((row) => row.issueCodes.includes("DIRECTION_UNRESOLVED")).length;
-    const missingAmount = blocked.filter((row) => row.issueCodes.includes("AMOUNT_MISSING")).length;
-    if (unresolvedDirection >= blocked.length / 2) {
-      issues.push({
-        message: `${unresolvedDirection} transactions do not say whether they are money in or money out. Choose what an unmarked amount means.`,
-        focus: "pdf-unsigned-direction",
-      });
-    } else if (missingAmount >= blocked.length / 2) {
-      issues.push({ message: `${missingAmount} transactions have no amount. Map the column that holds the account amount.` });
-    } else {
-      issues.push({ message: "Most detected transactions have unresolved required fields." });
-    }
+  for (const notice of result.notices ?? []) {
+    const focus = notice.setting ? SETTING_CONTROLS[notice.setting] : undefined;
+    issues.push({
+      message: notice.message,
+      kind: notice.kind,
+      ...(focus ? { focus, actionLabel: NOTICE_ACTIONS[notice.code] ?? "Change" } : {}),
+      ...(notice.rows?.length ? { goTo: notice.rows } : {}),
+    });
   }
-  return issues.filter((issue, index, entries) => entries.findIndex((entry) => entry.message === issue.message) === index);
+  return issues;
+}
+
+/** The Statement interpretation control that settles a notice's setting. */
+const SETTING_CONTROLS: Record<NonNullable<PdfParseNotice["setting"]>, string> = {
+  currency: "pdf-statement-currency",
+  accountType: "pdf-account-type",
+  pageRules: PAGE_RULES_FIRST,
+};
+
+const NOTICE_ACTIONS: Partial<Record<PdfParseNotice["code"], string>> = {
+  CURRENCY_MISSING: "Set currency",
+  ACCOUNT_TYPE_FROM_BALANCE: "Confirm",
+  PAGE_RULES_NOT_APPLIED: "Change",
+};
+
+function rowsPhrase(count: number) {
+  return `${count} ${count === 1 ? "row has" : "rows have"}`;
 }
 
 function WorkflowStepButton({ step, active, label, onClick }: { step: number; active: boolean; label: string; onClick: () => void }) {

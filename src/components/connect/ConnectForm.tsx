@@ -18,6 +18,8 @@ import {
   Lock,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -34,6 +36,8 @@ import { deriveLabel, getConnectionModeBadge } from "./utils";
 
 const DOCS_URL = "https://x-rous.github.io/actual-bench";
 const GITHUB_URL = "https://github.com/x-rous/actual-bench";
+/** A budget list longer than this scrolls, so it gets a filter box. */
+const BUDGET_FILTER_THRESHOLD = 5;
 
 export function ConnectForm() {
   const router = useRouter();
@@ -124,6 +128,7 @@ export function ConnectForm() {
   // Whether the add-a-server workspace is expanded (returning users start on a
   // calm CTA so the saved list stays the focus).
   const [addingServer, setAddingServer] = useState(false);
+  const [budgetFilter, setBudgetFilter] = useState<{ list: typeof budgets; query: string }>({ list: null, query: "" });
 
   // Single owner of the post-connect redirect. Connect/reconnect handlers must
   // NOT navigate themselves: an imperative `router.push` in an async handler
@@ -386,6 +391,17 @@ export function ConnectForm() {
   );
 
   // ── Step 2: choose a budget ─────────────────────────────────────────────────
+  // The filter belongs to one budget list: a new list starts unfiltered. The
+  // selected budget always stays in view, so what Connect opens is on screen.
+  const budgetQuery = budgetFilter.list === budgets ? budgetFilter.query : "";
+  const budgetNeedle = budgetQuery.trim().toLowerCase();
+  const shownBudgets = (budgets ?? []).filter(
+    (budget) =>
+      !budgetNeedle ||
+      (budget.groupId !== undefined && budget.groupId === selectedGroupId) ||
+      (budget.name || budget.cloudFileId).toLowerCase().includes(budgetNeedle) ||
+      (budget.groupId ?? "").toLowerCase().includes(budgetNeedle)
+  );
   const step2 =
     budgets !== null ? (
       <div className="flex flex-col gap-4 p-4">
@@ -427,53 +443,76 @@ export function ConnectForm() {
           </span>
         </div>
 
-        <div className="-mx-1 flex max-h-[21rem] flex-col gap-2 overflow-y-auto px-1">
-          {budgets.map((budget) => {
-            const selected = selectedGroupId === budget.groupId;
-            return (
-              <button
-                key={budget.groupId}
-                type="button"
-                disabled={connectBusy || !!reconnectBusyId}
-                onClick={() => {
-                  if (budget.groupId) handleSelectBudget(budget.groupId);
-                  else setSelectedGroupId(null);
-                }}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-50",
-                  selected
-                    ? "border-primary bg-muted"
-                    : "border-border hover:border-muted-foreground/40 hover:bg-muted/40"
-                )}
-              >
-                <span
+        {/* The list sits in its own full-width band, set apart from the
+            server line above and the options and Connect button below. */}
+        <div className="-mx-4 flex flex-col gap-2 border-y bg-muted/30 px-4 py-3">
+          {budgets.length > BUDGET_FILTER_THRESHOLD && (
+            <SearchInput
+              size="default"
+              className="w-full"
+              value={budgetQuery}
+              onValueChange={(query) => setBudgetFilter({ list: budgets, query })}
+              placeholder="Filter budgets"
+              aria-label="Filter budgets"
+              clearLabel="Clear filter"
+            />
+          )}
+
+          {/* A fixed height, at least 5 budgets, with the 6th peeking to show
+              there is more. The scrollbar floats in the band's right padding, clear of the rows. */}
+          <OverlayScrollArea className="-ml-1 -mr-3 h-[21rem]">
+          <div className="flex flex-col gap-2 pl-1 pr-3">
+            {shownBudgets.length === 0 && (
+              <p className="px-1 py-3 text-center text-xs text-muted-foreground">No budgets match.</p>
+            )}
+            {shownBudgets.map((budget) => {
+              const selected = selectedGroupId === budget.groupId;
+              return (
+                <button
+                  key={budget.groupId}
+                  type="button"
+                  disabled={connectBusy || !!reconnectBusyId}
+                  onClick={() => {
+                    if (budget.groupId) handleSelectBudget(budget.groupId);
+                    else setSelectedGroupId(null);
+                  }}
                   className={cn(
-                    "grid size-[18px] shrink-0 place-items-center rounded-full transition-colors",
-                    selected ? "bg-primary text-primary-foreground" : "border-2 border-border"
+                    "flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-50",
+                    selected
+                      ? "border-primary bg-muted"
+                      : "border-border bg-card hover:border-muted-foreground/40 hover:bg-muted/40"
                   )}
                 >
-                  {selected && <Check className="size-3" strokeWidth={3} />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
-                    {budget.name || budget.cloudFileId}
+                  <span
+                    className={cn(
+                      "grid size-[18px] shrink-0 place-items-center rounded-full transition-colors",
+                      selected ? "bg-primary text-primary-foreground" : "border-2 border-border"
+                    )}
+                  >
+                    {selected && <Check className="size-3" strokeWidth={3} />}
                   </span>
-                  <span className="block truncate font-mono text-xs text-muted-foreground">
-                    Sync ID: {budget.groupId}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {budget.name || budget.cloudFileId}
+                    </span>
+                    <span className="block truncate font-mono text-xs text-muted-foreground">
+                      Sync ID: {budget.groupId}
+                    </span>
                   </span>
-                </span>
-                {budget.groupId && openSyncIds.has(budget.groupId) ? (
-                  <span className="shrink-0 rounded-full bg-staged-new/12 px-2 py-0.5 text-[10px] font-medium text-staged-new">
-                    open now
-                  </span>
-                ) : budget.groupId && savedSyncIds.has(budget.groupId) ? (
-                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    saved
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
+                  {budget.groupId && openSyncIds.has(budget.groupId) ? (
+                    <span className="shrink-0 rounded-full bg-staged-new/12 px-2 py-0.5 text-[10px] font-medium text-staged-new">
+                      open now
+                    </span>
+                  ) : budget.groupId && savedSyncIds.has(budget.groupId) ? (
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      saved
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          </OverlayScrollArea>
         </div>
 
         {encryptionSaved && !encryptionPassword ? (
@@ -485,13 +524,14 @@ export function ConnectForm() {
             disabled={connectBusy || !!reconnectBusyId}
           />
         ) : (
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="encryptionPassword" className="text-sm text-muted-foreground">
-              Encryption password <span className="text-muted-foreground/70">(optional)</span>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <Label htmlFor="encryptionPassword" className="shrink-0 gap-1 text-[13px] text-muted-foreground">
+              Encryption password <span className="text-[11px] font-normal text-muted-foreground/70">(optional)</span>
             </Label>
             <Input size="lg"
               id="encryptionPassword"
               type="password"
+              className="placeholder:text-xs"
               placeholder="Only if this budget is end-to-end encrypted"
               autoComplete="off"
               value={encryptionPassword}
@@ -504,19 +544,19 @@ export function ConnectForm() {
           </div>
         )}
 
-        {connectStatus.kind === "error" && (
-          <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
-            <span>{connectStatus.message}</span>
-          </div>
-        )}
-
         <RememberToggle
           vault={vault}
           checked={rememberOnServer}
           onCheckedChange={setRememberOnServer}
           disabled={connectBusy || !!reconnectBusyId}
         />
+
+        {connectStatus.kind === "error" && (
+          <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{connectStatus.message}</span>
+          </div>
+        )}
 
         <Button className="w-full" onClick={handleConnect} disabled={connectBusy || !!reconnectBusyId || !selectedGroupId}>
           {connectBusy ? (

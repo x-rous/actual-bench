@@ -134,6 +134,8 @@ describe("PdfStatementReviewDialog v2", () => {
     };
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={withReviewRows} open onOpenChange={() => {}} onImport={() => {}} />);
 
+    // A row that could not be read opens the dialog on Check detection.
+    fireEvent.click(screen.getByRole("button", { name: /Review transactions/ }));
     expect(screen.getByRole("group", { name: "Needs review filters" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Structure/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Reconciliation/ })).not.toBeInTheDocument();
@@ -228,7 +230,7 @@ describe("PdfStatementReviewDialog v2", () => {
     // A layout was already in force when the PDF was read, so the panel starts
     // out of the way.
     expect(screen.queryByLabelText("Use layout")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Statement layout/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Statement Layout/ }));
     const selector = screen.getByLabelText("Use layout");
     expect(selector).toHaveTextContent("Credit card");
     fireEvent.click(selector);
@@ -352,6 +354,42 @@ describe("PdfStatementReviewDialog v2", () => {
     );
   });
 
+  it("opens on Check detection when even one row could not be read, and says so there", () => {
+    const parsed = ordinaryResult();
+    const row = parsed.transactions[0];
+    const oneUnread = {
+      ...parsed,
+      transactions: [{ ...row, status: "rejected" as const, issueCodes: ["AMOUNT_DEBIT_CREDIT_CONFLICT"] as typeof row.issueCodes }],
+      metrics: { ...parsed.metrics, accepted: 0, rejected: 1 },
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={oneUnread} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    expect(screen.getByRole("button", { name: /Check detection/ })).toHaveAttribute("aria-current", "step");
+    expect(screen.getByText(/1 row could not be read\. Check the column mapping, or fix it in Review\./)).toBeInTheDocument();
+  });
+
+  it("opens on Check detection when amounts need a direction rule or dates need the period", () => {
+    const parsed = ordinaryResult();
+    const row = parsed.transactions[0];
+    const unsigned = {
+      ...parsed,
+      guidance: { ...parsed.guidance, unsignedDirection: "review" as const },
+      transactions: [{ ...row, directionEvidence: "unknown" as const }],
+    };
+    const { unmount } = render(<PdfStatementReviewDialog fileName="statement.pdf" result={unsigned} open onOpenChange={() => {}} onImport={() => {}} />);
+    expect(screen.getByRole("button", { name: /Check detection/ })).toHaveAttribute("aria-current", "step");
+    unmount();
+
+    const noYear = {
+      ...parsed,
+      transactions: [{ ...row, status: "review" as const, issueCodes: ["DATE_YEAR_MISSING"] as typeof row.issueCodes }],
+      metrics: { ...parsed.metrics, accepted: 0, review: 1 },
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={noYear} open onOpenChange={() => {}} onImport={() => {}} />);
+    expect(screen.getByRole("button", { name: /Check detection/ })).toHaveAttribute("aria-current", "step");
+    expect(screen.getByText(/a date without a year/)).toBeInTheDocument();
+  });
+
   it("revalidates a corrected import date in one parser run", () => {
     const ambiguous = result([
       { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
@@ -419,7 +457,7 @@ describe("PdfStatementReviewDialog v2", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
 
-    expect(screen.getByText("Column mapping")).toBeInTheDocument();
+    expect(screen.getByText("Column Mapping")).toBeInTheDocument();
     expect(screen.getAllByText(/Examples:/).length).toBeGreaterThan(0);
     const roleSelect = screen.getByLabelText("Role for mapped column 1");
     fireEvent.click(roleSelect);
@@ -476,7 +514,7 @@ describe("PdfStatementReviewDialog v2", () => {
     const viewerControls = screen.getByRole("group", { name: "PDF viewer controls" });
     expect(viewerControls).toContainElement(screen.getByRole("button", { name: "Hide column mappings" }));
     expect(viewerControls).toContainElement(screen.getByRole("button", { name: "Zoom in PDF" }));
-    const interpretation = screen.getByText("Statement interpretation");
+    const interpretation = screen.getByText("Statement Interpretation");
     expect(interpretation.compareDocumentPosition(previewChanges) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("Change preview")).not.toBeInTheDocument();
     expect(interpretation.closest(".overflow-auto")).toBeInTheDocument();
@@ -796,9 +834,9 @@ describe("PdfStatementReviewDialog v2", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
     const attention = screen.getByRole("region", { name: "What needs attention" });
-    expect(within(attention).getByText(/do not say whether they are money in or money out/)).toBeInTheDocument();
+    expect(within(attention).getByText(/2 rows have an amount without a sign/)).toBeInTheDocument();
 
-    fireEvent.click(within(attention).getAllByRole("button", { name: "Fix this" })[0]);
+    fireEvent.click(within(attention).getByRole("button", { name: "Choose a rule" }));
     await waitFor(() => expect(screen.getByLabelText("Amount direction")).toHaveFocus());
   });
 
@@ -870,7 +908,7 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.queryByLabelText("Use layout")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
-    const layoutSection = screen.getByRole("region", { name: "Statement layout" });
+    const layoutSection = screen.getByRole("region", { name: "Statement Layout" });
     expect(within(layoutSection).getByLabelText("Use layout")).toBeInTheDocument();
     expect(within(layoutSection).getByRole("button", { name: "Save layout" })).toBeInTheDocument();
   });
@@ -891,7 +929,7 @@ describe("PdfStatementReviewDialog v2", () => {
     // Not in the attention list as well: the control that answers it is in the
     // layout panel, which says it.
     expect(screen.getAllByText(notice)).toHaveLength(1);
-    const layoutSection = screen.getByRole("region", { name: "Statement layout" });
+    const layoutSection = screen.getByRole("region", { name: "Statement Layout" });
     expect(within(layoutSection).getByText(notice)).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "What needs attention" })).toBeNull();
   });
@@ -912,16 +950,45 @@ describe("PdfStatementReviewDialog v2", () => {
       />
     );
 
-    const layoutSection = screen.getByRole("region", { name: "Statement layout" });
+    const layoutSection = screen.getByRole("region", { name: "Statement Layout" });
     expect(within(layoutSection).getByRole("button", { name: "Save layout" })).toBeDisabled();
     expect(within(layoutSection).getByText("Resolve rejected transactions before saving this layout"))
       .toBeInTheDocument();
   });
 
+  it("closes at once on Escape when nothing would be lost", () => {
+    const onOpenChange = jest.fn();
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={onOpenChange} onImport={() => {}} />);
+
+    fireEvent.keyDown(screen.getAllByRole("dialog")[0], { key: "Escape" });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("asks before Escape throws away changes, and keeps them unless told otherwise", async () => {
+    const onOpenChange = jest.fn();
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={onOpenChange} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+    fireEvent.change(screen.getByLabelText("Statement currency"), { target: { value: "EUR" } });
+
+    fireEvent.keyDown(screen.getAllByRole("dialog")[0], { key: "Escape" });
+    const confirmation = await screen.findByRole("dialog", { name: "Discard your changes to this statement?" });
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Keep editing" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Discard your changes to this statement?" })).toBeNull());
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Discard your changes to this statement?" })).getByRole("button", { name: "Discard" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("blocks import until unreadable pages are acknowledged", () => {
     const parsed = ordinaryResult();
     parsed.metrics = { ...parsed.metrics, unreadablePages: 1 };
-    parsed.warnings = [...parsed.warnings, "1 PDF page could not be read. Review the remaining pages before importing."];
+    const message = "1 PDF page could not be read. Review the remaining pages before importing.";
+    parsed.warnings = [...parsed.warnings, message];
+    parsed.notices = [...parsed.notices, { code: "UNREADABLE_PAGES", kind: "note", message, pageNumbers: [2] }];
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
 
     expect(screen.getByRole("alert")).toHaveTextContent("could not be read");
@@ -1063,7 +1130,26 @@ describe("PdfStatementReviewDialog v2", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Duplicates 2" })).toHaveAttribute("aria-pressed", "true"));
   });
 
-  it("keeps the parser's own record out of the statement's text", () => {
+  it("names the downloaded diagnostics generically, never after the PDF", () => {
+    const createObjectURL = jest.fn(() => "blob:report");
+    Object.assign(URL, { createObjectURL, revokeObjectURL: jest.fn() });
+    let downloadedAs = "";
+    const click = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloadedAs = this.download;
+    });
+    render(<PdfStatementReviewDialog fileName="Jane-Doe-4485-HSBC-statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Parser details/ }));
+    const diagnostics = screen.getByRole("region", { name: "Technical diagnostics" });
+    fireEvent.click(within(diagnostics).getByRole("button", { name: "Technical diagnostics" }));
+
+    fireEvent.click(within(diagnostics).getByRole("button", { name: /Download/ }));
+
+    expect(downloadedAs).toMatch(/^pdf-statement-diagnostics-\d{4}-\d{2}-\d{2}\.json$/);
+    expect(downloadedAs).not.toMatch(/Jane|Doe|4485|HSBC/);
+    click.mockRestore();
+  });
+
+  it("keeps the parser's own record out of the statement's text", async () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /Parser details/ }));
     // The details open beside the workbench rather than replacing it.
@@ -1071,10 +1157,23 @@ describe("PdfStatementReviewDialog v2", () => {
 
     const diagnostics = screen.getByRole("region", { name: "Technical diagnostics" });
     fireEvent.click(within(diagnostics).getByRole("button", { name: "Technical diagnostics" }));
-    expect(
-      within(diagnostics).getByText(/Statement text and source IDs are not copied/),
-    ).toBeInTheDocument();
+    expect(within(diagnostics).getByText(/every\s+letter and digit masked/)).toBeInTheDocument();
     expect(within(diagnostics).queryByText(/ANON SHOP/)).toBeNull();
+    expect(within(diagnostics).getByRole("button", { name: /Download/ })).toBeInTheDocument();
+
+    // What is copied: the settings and row shapes that explain the result, and
+    // none of the statement's text.
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    fireEvent.click(within(diagnostics).getByRole("button", { name: /Copy diagnostics/ }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const copied = writeText.mock.calls[0][0] as string;
+    expect(copied).not.toContain("ANON SHOP");
+    expect(JSON.parse(copied)).toEqual(expect.objectContaining({
+      format: 1,
+      settings: expect.objectContaining({ unsignedDirection: expect.any(Object) }),
+      rowSamples: expect.objectContaining({ transactions: expect.any(Array) }),
+    }));
   });
 
   it("saves a privacy-safe bank profile without deriving names from the uploaded filename", async () => {

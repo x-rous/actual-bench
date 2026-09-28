@@ -246,7 +246,7 @@ export const PdfSourcePreview = memo(function PdfSourcePreview({
                   : "border-amber-600/70 bg-amber-500/15 text-amber-900 hover:bg-amber-500/25 dark:text-amber-200"
               )}
             >
-              {index + 1} · {regionKindLabel(region.kind)} · {region.included ? "Included" : "Ignored"}
+              {index + 1} · {regionKindLabel(region.kind)} · {region.included ? "Included" : region.ignoredByLayout ? "Ignored by the layout" : "Ignored"}
             </button>
           ))}
         </section>

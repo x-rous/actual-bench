@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Copy } from "lucide-react";
+import { ChevronDown, Copy, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -11,6 +11,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+
+/** Which version read the statement, so a report can be matched to the parser that produced it. */
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
 import type { PdfLayoutProfile, PdfStatementParseResult } from "@/lib/reconciliation/statement/pdf";
 import { matchPdfLayoutProfile } from "@/lib/reconciliation/statement/pdf";
 import { PDF_REASON_TEXT } from "../lib/pdfReasonText";
@@ -33,6 +36,7 @@ export function PdfDiagnosticsSheet({
   onApplyProfile,
   onShowRows,
   onCopyDiagnostics,
+  onDownloadDiagnostics,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -43,6 +47,7 @@ export function PdfDiagnosticsSheet({
   onApplyProfile: (option: PdfDetectionProfileOption, profile: PdfLayoutProfile) => void;
   onShowRows: (category: PdfReviewCategory) => void;
   onCopyDiagnostics: () => void;
+  onDownloadDiagnostics?: () => void;
 }) {
   const transactionPages = [...new Set(result.regions
     .filter((region) => region.included && region.kind === "transactions")
@@ -78,7 +83,10 @@ export function PdfDiagnosticsSheet({
       <SheetContent side="right" className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-3xl">
         <SheetHeader>
           <SheetTitle>Parser details</SheetTitle>
-          <SheetDescription>What Actual Bench used to read this statement.</SheetDescription>
+          <SheetDescription>
+            What Actual Bench used to read this statement. Read by Actual Bench v{APP_VERSION}; changes to
+            how statements are read are listed per version in the user guide.
+          </SheetDescription>
         </SheetHeader>
 
         <div className="space-y-3 overflow-y-auto px-4 pb-4">
@@ -176,11 +184,17 @@ export function PdfDiagnosticsSheet({
           <Disclosure title="Technical diagnostics">
             <div className="flex items-center gap-2">
               <p className="text-xs text-muted-foreground">
-                Contains stage names, counts, and page numbers only. Statement text and source IDs are not copied.
+                Settings, columns, counts, page numbers, and the shape of the rows that explain the result, with every
+                letter and digit masked. No statement text is included.
               </p>
               <Button className="ml-auto shrink-0" size="xs" variant="outline" onClick={onCopyDiagnostics}>
                 <Copy aria-hidden="true" className="mr-1 size-3" />Copy diagnostics
               </Button>
+              {onDownloadDiagnostics && (
+                <Button className="shrink-0" size="xs" variant="outline" onClick={onDownloadDiagnostics}>
+                  <Download aria-hidden="true" className="mr-1 size-3" />Download
+                </Button>
+              )}
             </div>
             <ol className="mt-3 space-y-1 font-mono text-[11px]">
               {result.diagnostics.map((event, index) => (

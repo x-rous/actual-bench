@@ -10,7 +10,7 @@
   "private": true,
   "scripts": {
     "dev": "NODE_OPTIONS=--max-old-space-size=2048 next dev",
-    "postinstall": "node scripts/copy-sqlite-wasm.mjs",
+    "postinstall": "node scripts/copy-sqlite-wasm.mjs && node scripts/copy-pdfjs-assets.mjs",
     "preview": "NODE_OPTIONS=--max-old-space-size=512 next start",
     "build": "next build",
     "start": "node scripts/start.mjs",
@@ -37,7 +37,7 @@
     "lucide-react": "^1.47.0",
     "next": "^16.2.3",
     "next-themes": "^0.4.6",
-    "pdfjs-dist": "^4.10.38",
+    "pdfjs-dist": "^6.3.289",
     "react": "19.3.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "19.3.0",

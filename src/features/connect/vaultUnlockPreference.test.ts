@@ -19,6 +19,13 @@ describe("vault unlock duration preference", () => {
     expect(readVaultUnlockDuration()).toBe("8h");
   });
 
+  it("maps choices saved before the checkbox onto it", () => {
+    for (const [saved, read] of [["30d", "30d"], ["7d", "30d"], ["24h", "8h"], ["8h", "8h"], ["forever", "8h"]]) {
+      window.localStorage.setItem("vault-unlock-duration", saved);
+      expect(readVaultUnlockDuration()).toBe(read);
+    }
+  });
+
   it("reports a failed browser-storage write", () => {
     jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("Storage unavailable");

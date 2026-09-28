@@ -17,6 +17,7 @@ export * from "./pdf/corrections";
 export * from "./pdf/profiles";
 export type { PdfParseOptions } from "./pdf/pipeline";
 export { diagnosticsArePrivacySafe } from "./pdf/diagnostics";
+export { buildPdfDiagnosticsReport, maskForDiagnostics } from "./pdf/report";
 export { normalizePdfText } from "./pdf/text";
 export { reconstructPdfLayout } from "./pdf/layout";
 export { columnExamplesForRegions } from "./pdf/columns";

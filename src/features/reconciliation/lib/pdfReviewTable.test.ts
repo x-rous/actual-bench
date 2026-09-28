@@ -2,6 +2,8 @@ import type { PdfStatementParseResult, PdfTransactionProposal } from "@/lib/reco
 import {
   columnRoleLabel,
   csvFileNameFor,
+  detectedAmountDirection,
+  openParserQuestions,
   formatDateLabel,
   formatGroupedDecimal,
   matchesCategory,
@@ -343,5 +345,45 @@ describe("pdfReviewTable", () => {
       expect(bounds.xStart).toBeGreaterThanOrEqual(200);
       expect(bounds.xEnd).toBeLessThanOrEqual(400);
     });
+  });
+});
+
+describe("what amount-direction auto-detection found", () => {
+  const rows = (...evidence: string[]) => evidence.map((directionEvidence) => ({ directionEvidence } as never));
+
+  it("states the evidence rows were decided by", () => {
+    expect(detectedAmountDirection(rows("debit-column", "credit-column", "unknown"))).toBe("from the Debit and Credit columns");
+    expect(detectedAmountDirection(rows("balance", "balance", "signed"))).toBe("from the balance column");
+    expect(detectedAmountDirection(rows("section", "section"))).toBe("from section headings");
+    expect(detectedAmountDirection(rows("marker", "marker"))).toBe("from CR/DR markers");
+  });
+
+  it("does not present a CR-on-some-rows guess as a conclusion", () => {
+    expect(detectedAmountDirection(rows("marker", "marker-convention", "marker-convention")))
+      .toBe("unmarked amounts need a rule");
+  });
+
+  it("says a rule is needed when nothing decided the rows, ignoring the reader's own choices", () => {
+    expect(detectedAmountDirection(rows("unknown", "unknown", "marker"))).toBe("unmarked amounts need a rule");
+    expect(detectedAmountDirection(rows("explicit-policy", "manual"))).toBe("unmarked amounts need a rule");
+    expect(detectedAmountDirection([])).toBe("unmarked amounts need a rule");
+  });
+});
+
+describe("questions only the reader can answer", () => {
+  const tx = (directionEvidence: string, issueCodes: string[] = []) => ({ directionEvidence, issueCodes } as never);
+  const result = (unsignedDirection: string, transactions: never[]) =>
+    ({ guidance: { unsignedDirection }, transactions } as never);
+
+  it("counts rows waiting on a rule for amounts without a sign, while direction is automatic", () => {
+    const rows = [tx("marker-convention"), tx("unknown"), tx("debit-column"), tx("unknown", ["AMOUNT_DEBIT_CREDIT_CONFLICT"]), tx("unknown", ["AMOUNT_MISSING"])];
+    expect(openParserQuestions(result("review", rows)).unmarkedAmounts).toBe(2);
+    // Once the reader has chosen a rule, there is no question left.
+    expect(openParserQuestions(result("debit", rows)).unmarkedAmounts).toBe(0);
+  });
+
+  it("counts rows whose date needs the statement period for its year", () => {
+    const rows = [tx("debit-column", ["DATE_YEAR_MISSING"]), tx("debit-column", ["DATE_INVALID"]), tx("debit-column")];
+    expect(openParserQuestions(result("review", rows)).missingYear).toBe(1);
   });
 });

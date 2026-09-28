@@ -32,6 +32,8 @@ export type ConfirmState = {
    * red button on a harmless action teaches people to ignore red buttons.
    */
   destructive?: boolean;
+  /** Label for the button that backs out. Defaults to "Cancel". */
+  cancelLabel?: string;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -53,7 +55,7 @@ export function ConfirmDialog({ open, onOpenChange, state }: Props) {
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {state?.cancelLabel ?? "Cancel"}
           </Button>
           <Button
             variant={state?.destructive === false ? "default" : "destructive"}

@@ -1,6 +1,5 @@
 import type { NextRequest, NextResponse } from "next/server";
-import { SESSION_IDLE_TTL_MS } from "./session";
-import { vaultUnlockDurationMs, type VaultUnlockDuration } from "./unlockDuration";
+import { keepsSignedIn, vaultUnlockDurationMs, type VaultUnlockDuration } from "./unlockDuration";
 
 /**
  * Session cookie helpers for the remembered-connection vault (RD-061 / PR-026b).
@@ -30,13 +29,15 @@ export function setSessionCookie(
   token: string,
   duration?: VaultUnlockDuration
 ): void {
-  const ttlMs = duration ? vaultUnlockDurationMs(duration) : SESSION_IDLE_TTL_MS;
+  // Not kept signed in: a browser-session cookie (no Max-Age), so closing the
+  // browser signs you out; the server's idle limit still applies meanwhile.
+  const kept = duration !== undefined && keepsSignedIn(duration);
   response.cookies.set(VAULT_COOKIE, token, {
     httpOnly: true,
     sameSite: "strict",
     secure: isSecureRequest(request),
     path: "/",
-    maxAge: Math.floor(ttlMs / 1000),
+    ...(kept ? { maxAge: Math.floor(vaultUnlockDurationMs(duration) / 1000) } : {}),
   });
 }
 

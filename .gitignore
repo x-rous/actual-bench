@@ -48,6 +48,7 @@ yarn-error.log*
 
 # ── Generated SQLite WASM asset ───────────────────────────────────────────────
 public/sqlite/sqlite3.wasm
+public/pdfjs/
 
 # ── Local Claude Code settings (user-specific, not project config) ─────────────
 .claude/settings.local.json

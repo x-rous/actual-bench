@@ -46,6 +46,43 @@ describe("the sign-in page (RD-096)", () => {
     expect(preloadVault).toHaveBeenCalled();
   });
 
+  it("signs in until the browser closes unless 'Keep me signed in' is ticked", async () => {
+    getVaultStatus.mockResolvedValue(status());
+    unlockVault.mockResolvedValue({ ok: true, unlocked: true });
+    render(<LoginForm next="/rules" />);
+
+    const keep = await screen.findByRole("checkbox", { name: "Keep me signed in" });
+    expect(keep).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "the-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(unlockVault).toHaveBeenCalledWith("the-password", "8h"));
+  });
+
+  it("keeps you signed in for 30 days when ticked, and remembers the choice", async () => {
+    getVaultStatus.mockResolvedValue(status());
+    unlockVault.mockResolvedValue({ ok: true, unlocked: true });
+    render(<LoginForm next="/rules" />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Keep me signed in" }));
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "the-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(unlockVault).toHaveBeenCalledWith("the-password", "30d"));
+    expect(localStorage.getItem("vault-unlock-duration")).toBe("30d");
+    localStorage.clear();
+  });
+
+  it("shows the password on request", async () => {
+    getVaultStatus.mockResolvedValue(status());
+    render(<LoginForm next="/rules" />);
+
+    const field = await screen.findByLabelText("Password");
+    expect(field).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(field).toHaveAttribute("type", "text");
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(field).toHaveAttribute("type", "password");
+  });
+
   it("shows the server's answer when the password is wrong, and stays", async () => {
     getVaultStatus.mockResolvedValue(status());
     unlockVault.mockRejectedValue(Object.assign(new Error("Incorrect password."), { fromVault: true }));

@@ -98,6 +98,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "agents/**",
     "docs-site/**",
+    // PDF.js support files, copied from pdfjs-dist at install time.
+    "public/pdfjs/**",
   ]),
 ]);
 

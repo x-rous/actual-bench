@@ -98,7 +98,21 @@ export type PdfRegion = PdfSourceBox & {
   confidence: number;
   rowIds: string[];
   reasons: string[];
+  /** Switched off by the layout's page rules; its page carries no transactions. */
+  ignoredByLayout?: boolean;
+  /** The reader included this area although the page rules ignore its page. */
+  layoutOverride?: boolean;
 };
+
+/**
+ * Pages a saved layout always treats as carrying no transactions, counted
+ * from each end so the rule holds however long a statement runs. The pages
+ * are still read for everything else - the period, currency, balances - and
+ * still shown; only their transaction areas are switched off.
+ */
+export type PdfPageRules = { ignoreFirst: number; ignoreLast: number };
+
+export const NO_PAGE_RULES: PdfPageRules = { ignoreFirst: 0, ignoreLast: 0 };
 
 export type PdfColumnRole =
   | "transaction-date"
@@ -206,6 +220,7 @@ export type PdfParserGuidance = {
   regions: PdfRegion[];
   columns: PdfColumn[];
   transactionAnchorRole: "transaction-date" | "posting-date" | "value-date";
+  pageRules: PdfPageRules;
 };
 
 export const DEFAULT_PDF_PARSER_GUIDANCE: PdfParserGuidance = {
@@ -221,6 +236,7 @@ export const DEFAULT_PDF_PARSER_GUIDANCE: PdfParserGuidance = {
   regions: [],
   columns: [],
   transactionAnchorRole: "transaction-date",
+  pageRules: NO_PAGE_RULES,
 };
 
 export type PdfConfidenceStatus = "accepted" | "review" | "rejected";
@@ -231,6 +247,7 @@ export type PdfConfidenceReason =
   | "DATE_INHERITED_FROM_PREVIOUS_ROW"
   | "DATE_OUTSIDE_STATEMENT_PERIOD"
   | "DATE_INVALID"
+  | "DATE_YEAR_MISSING"
   | "AMOUNT_MULTIPLE_CANDIDATES"
   | "AMOUNT_DEBIT_CREDIT_CONFLICT"
   | "AMOUNT_FROM_MAPPED_COLUMN"
@@ -412,5 +429,38 @@ export type PdfStatementParseResult = {
   diagnostics: PdfDiagnosticEvent[];
   metrics: PdfParseMetrics;
   likelyScanned: boolean;
+  /** Every notice's message, in order: the plain-text form, for diagnostics. */
   warnings: string[];
+  notices: PdfParseNotice[];
+  /** How the text was extracted, set by the browser extraction step. */
+  extraction?: { pdfjsVersion: string; extractMs: number; parseMs: number; unreadablePages: number[] };
+};
+
+/**
+ * Something the reader should know about this statement, said once and in the
+ * same shape whatever the bank or language: what happened, where, and which
+ * setting or row settles it.
+ *
+ * - `answer`: rows are waiting on something only the reader can answer.
+ * - `note`: worth knowing, nothing to settle (or a choice that can be changed).
+ */
+export type PdfParseNotice = {
+  code:
+    | "NO_TEXT"
+    | "IMAGE_ONLY_PAGES"
+    | "UNREADABLE_PAGES"
+    | "UNASSIGNED_ROWS"
+    | "CURRENCY_MISSING"
+    | "ACCOUNT_TYPE_FROM_BALANCE"
+    | "SPECIALIZED_ACCOUNT"
+    | "PAGE_RULES_NOT_APPLIED"
+    | "ROWS_BLOCKED";
+  kind: "answer" | "note";
+  message: string;
+  /** The Statement interpretation setting that settles it. */
+  setting?: "currency" | "accountType" | "pageRules";
+  /** Pages it concerns, for saying where. */
+  pageNumbers?: number[];
+  /** Rows it concerns, in page order, for taking the reader to the first. */
+  rows?: { pageNumber: number; rowId: string }[];
 };

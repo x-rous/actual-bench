@@ -1049,10 +1049,9 @@ describe("PDF parser v2 sign and structure safeguards", () => {
     ])], { guidance: guidance({ currency: undefined }) });
 
     expect(dollars.guidance.currency).toBe("USD");
-    // A dollar sign is shared, so the reading is stated rather than assumed
-    // silently, and the "currency not detected" warning is gone.
-    expect(dollars.warnings.join(" ")).toContain("read as USD");
-    expect(dollars.warnings.join(" ")).not.toContain("currency was not detected");
+    // Currency only decides decimal places in Actual, so the reading is shown
+    // in the Currency field, not raised as a message on most statements.
+    expect(dollars.notices.map((notice) => notice.code)).not.toContain("CURRENCY_MISSING");
 
     const pounds = parsePdfStatementPages([page([
       { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
@@ -1060,8 +1059,6 @@ describe("PDF parser v2 sign and structure safeguards", () => {
     ])], { guidance: guidance({ currency: undefined }) });
 
     expect(pounds.guidance.currency).toBe("GBP");
-    // A pound sign is not shared, so there is nothing to warn about.
-    expect(pounds.warnings.join(" ")).not.toContain("read as GBP");
   });
 
   it("leaves the currency unknown when a statement prints two symbols", () => {
@@ -1205,7 +1202,12 @@ describe("PDF parser v2 sign and structure safeguards", () => {
 
     expect(result.metrics.unassignedRows).toBeGreaterThan(0);
     expect(result.diagnostics.some((event) => event.code === "ROW_UNASSIGNED")).toBe(true);
-    expect(result.warnings.some((warning) => warning.includes("did not become a transaction"))).toBe(true);
+    // Says where, and names the rows, so the reader can be taken to them.
+    const notice = result.notices.find((entry) => entry.code === "UNASSIGNED_ROWS");
+    expect(notice?.kind).toBe("answer");
+    expect(notice?.message).toMatch(/not read as (?:a )?transactions? on|on page/);
+    expect(notice?.pageNumbers).toEqual(expect.arrayContaining([2]));
+    expect(notice?.rows?.[0]).toEqual(expect.objectContaining({ pageNumber: expect.any(Number), rowId: expect.any(String) }));
   });
 
   it("stops reporting a row once it has been marked as a transaction", () => {
@@ -1763,5 +1765,257 @@ describe("reviewed PDF normalization", () => {
   it("preserves the selected import date and signed amount at the existing boundary", () => {
     const normalized = normalizeReviewedPdfStatement([{ sourceRowNumber: 1, transactionDate: "2026-08-02", postedDate: "2026-08-03", importDate: "2026-08-03", description: "ANON MERCHANT", amount: "-15.00", raw: { pageNumber: 1, lines: ["anonymized source"], sourceIds: ["p1-i1"] } }], (index) => `row-${index}`);
     expect(normalized.rows[0]).toMatchObject({ postedDate: "2026-08-03", amount: -1500, importedPayee: "ANON MERCHANT", transactionDate: "2026-08-02" });
+  });
+});
+
+describe("page rules in a saved layout", () => {
+  /** A statement whose every page holds a small transaction table. */
+  function statement(pageCount: number, periodOnPage: 1 | 2 | null = 1) {
+    return {
+      pages: Array.from({ length: pageCount }, (_, index) => {
+        const pageNumber = index + 1;
+        return page([
+          ...(periodOnPage === pageNumber
+            ? [{ y: 775, cells: [{ x: 20, text: "Statement period 08/01/2026 - 08/31/2026" }] }]
+            : []),
+          { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+          { y: 700, cells: [{ x: 20, text: `08/0${pageNumber}/2026` }, { x: 120, text: `PAGE ${pageNumber} FIRST` }, { x: 480, text: "USD -10.00" }] },
+          { y: 680, cells: [{ x: 20, text: `08/1${pageNumber}/2026` }, { x: 120, text: `PAGE ${pageNumber} SECOND` }, { x: 480, text: "USD -20.00" }] },
+        ], pageNumber);
+      }),
+    };
+  }
+  const pagesOf = (result: ReturnType<typeof parsePdfStatementDocument>) =>
+    [...new Set(result.transactions.map((row) => Number(/PAGE (\d+)/.exec(row.description)?.[1])))];
+
+  it("ignores the transaction areas on the first and last pages it names", () => {
+    const result = parsePdfStatementDocument(statement(4), {
+      guidance: guidance({ pageRules: { ignoreFirst: 1, ignoreLast: 1 } }),
+    });
+
+    expect(pagesOf(result)).toEqual([2, 3]);
+    const ignored = result.regions.filter((region) => region.ignoredByLayout);
+    expect(ignored.map((region) => region.pageNumber)).toEqual([1, 4]);
+    expect(ignored.every((region) => !region.included)).toBe(true);
+    // Every page is still there to show.
+    expect(result.reconstructedPages).toHaveLength(4);
+  });
+
+  it("still reads the statement period from a page it ignores", () => {
+    const result = parsePdfStatementDocument(statement(3), {
+      guidance: guidance({ pageRules: { ignoreFirst: 1, ignoreLast: 0 } }),
+    });
+
+    expect(result.guidance.statementPeriod).toEqual({ start: "2026-08-01", end: "2026-08-31" });
+  });
+
+  it("counts from each end, so the rule holds for a statement of another length", () => {
+    const rules = { pageRules: { ignoreFirst: 0, ignoreLast: 1 } };
+    expect(pagesOf(parsePdfStatementDocument(statement(3), { guidance: guidance(rules) }))).toEqual([1, 2]);
+    expect(pagesOf(parsePdfStatementDocument(statement(5), { guidance: guidance(rules) }))).toEqual([1, 2, 3, 4]);
+  });
+
+  it("does not apply rules that would ignore every page, and says so", () => {
+    const result = parsePdfStatementDocument(statement(2), {
+      guidance: guidance({ pageRules: { ignoreFirst: 1, ignoreLast: 1 } }),
+    });
+
+    expect(pagesOf(result)).toEqual([1, 2]);
+    expect(result.notices).toContainEqual(expect.objectContaining({ code: "PAGE_RULES_NOT_APPLIED", kind: "answer", setting: "pageRules" }));
+  });
+
+  it("keeps an area the reader included for this statement, and restores areas when the rule goes", () => {
+    const first = parsePdfStatementDocument(statement(3), {
+      guidance: guidance({ pageRules: { ignoreFirst: 1, ignoreLast: 0 } }),
+    });
+    // The review screen sends back the whole area list with the change made.
+    const overridden = first.guidance.regions.map((region) => region.ignoredByLayout
+      ? { ...region, included: true, ignoredByLayout: false, layoutOverride: true }
+      : region);
+    const rerun = parsePdfStatementDocument(statement(3), {
+      guidance: { ...first.guidance, regions: overridden },
+    });
+    expect(pagesOf(rerun)).toEqual([1, 2, 3]);
+
+    const withoutRule = parsePdfStatementDocument(statement(3), {
+      guidance: { ...first.guidance, pageRules: { ignoreFirst: 0, ignoreLast: 0 } },
+    });
+    expect(pagesOf(withoutRule)).toEqual([1, 2, 3]);
+    expect(withoutRule.regions.some((region) => region.ignoredByLayout)).toBe(false);
+  });
+
+  it("is saved with the layout and comes back from it", () => {
+    const result = parsePdfStatementDocument(statement(3), {
+      guidance: guidance({ pageRules: { ignoreFirst: 1, ignoreLast: 1 } }),
+    });
+    const profile = createPdfLayoutProfile({ id: "layout-1", name: "Card", result });
+    expect(profile.reading.pageRules).toEqual({ ignoreFirst: 1, ignoreLast: 1 });
+
+    const envelope = sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile });
+    expect(envelope?.profile.reading.pageRules).toEqual({ ignoreFirst: 1, ignoreLast: 1 });
+    const applied = guidanceFromPdfLayoutProfile(envelope!.profile, {
+      reconstructedPages: result.reconstructedPages,
+      detectedGuidance: result.detectedGuidance,
+    });
+    expect(applied.pageRules).toEqual({ ignoreFirst: 1, ignoreLast: 1 });
+  });
+
+  it("loads a layout saved before page rules existed as ignoring no pages", () => {
+    const result = parsePdfStatementDocument(statement(2));
+    const profile = createPdfLayoutProfile({ id: "layout-1", name: "Card", result });
+    const { pageRules: _omitted, ...older } = profile.reading;
+    void _omitted;
+    const envelope = sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: { ...profile, reading: older } });
+
+    expect(envelope).not.toBeNull();
+    expect(guidanceFromPdfLayoutProfile(envelope!.profile, {
+      reconstructedPages: result.reconstructedPages,
+      detectedGuidance: result.detectedGuidance,
+    }).pageRules).toEqual({ ignoreFirst: 0, ignoreLast: 0 });
+  });
+
+  it("refuses page rules that are not whole numbers from 0 to 20", () => {
+    const result = parsePdfStatementDocument(statement(2));
+    const profile = createPdfLayoutProfile({ id: "layout-1", name: "Card", result });
+    for (const pageRules of [{ ignoreFirst: -1, ignoreLast: 0 }, { ignoreFirst: 21, ignoreLast: 0 }, { ignoreFirst: 1.5, ignoreLast: 0 }]) {
+      expect(sanitizePdfLayoutProfileEnvelope({
+        kind: "pdf-layout-v3",
+        profile: { ...profile, reading: { ...profile.reading, pageRules } },
+      })).toBeNull();
+    }
+  });
+});
+
+describe("statement period on the first two pages", () => {
+  function statementWithPeriods(page1: string | null, page2: string | null) {
+    const table = (pageNumber: number) => [
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/05/2026" }, { x: 120, text: `ROW ${pageNumber}` }, { x: 480, text: "USD -10.00" }] },
+      { y: 680, cells: [{ x: 20, text: "08/06/2026" }, { x: 120, text: `ROW ${pageNumber} B` }, { x: 480, text: "USD -10.00" }] },
+    ];
+    return {
+      pages: [
+        page([...(page1 ? [{ y: 775, cells: [{ x: 20, text: page1 }] }] : []), ...table(1)], 1),
+        page([...(page2 ? [{ y: 775, cells: [{ x: 20, text: page2 }] }] : []), ...table(2)], 2),
+      ],
+    };
+  }
+
+  it("finds a period printed only on page 2", () => {
+    const result = parsePdfStatementDocument(statementWithPeriods(null, "Statement period 08/01/2026 - 08/31/2026"));
+    expect(result.guidance.statementPeriod).toEqual({ start: "2026-08-01", end: "2026-08-31" });
+  });
+
+  it("prefers page 1 when both pages print one", () => {
+    const result = parsePdfStatementDocument(statementWithPeriods(
+      "Statement period 08/01/2026 - 08/31/2026",
+      "Statement period 07/01/2026 - 07/31/2026"
+    ));
+    expect(result.guidance.statementPeriod).toEqual({ start: "2026-08-01", end: "2026-08-31" });
+  });
+});
+
+describe("statement period in the shapes statements print it", () => {
+  const table = (pageNumber = 1) => [
+    { y: 300, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+    { y: 270, cells: [{ x: 20, text: "15 Feb" }, { x: 120, text: `ROW ${pageNumber}` }, { x: 480, text: "USD -10.00" }] },
+    { y: 250, cells: [{ x: 20, text: "20 Feb" }, { x: 120, text: `ROW ${pageNumber} B` }, { x: 480, text: "USD -10.00" }] },
+  ];
+
+  it("reads a named-month period whose label runs straight into the first date", () => {
+    // "PERIOD 12" looks like a month and a day; it must not swallow "12 Feb".
+    const result = parsePdfStatementDocument({ pages: [page([
+      { y: 775, cells: [{ x: 20, text: "STATEMENT PERIOD 12 Feb 2026 TO 11 Mar 2026" }] },
+      ...table(),
+    ])] });
+
+    expect(result.guidance.statementPeriod).toEqual({ start: "2026-02-12", end: "2026-03-11" });
+    expect(result.transactions.map((row) => row.transactionDate)).toEqual(["2026-02-15", "2026-02-20"]);
+  });
+
+  it("reads the dates on the line below a period label, and not the due date after them", () => {
+    const result = parsePdfStatementDocument({ pages: [page([
+      { y: 300, cells: [{ x: 20, text: "Statement Period" }, { x: 300, text: "Payment Due Date" }] },
+      { y: 285, cells: [{ x: 20, text: "From 22 August 25 to 21 September 25" }, { x: 300, text: "16 October 2025" }] },
+    ])] });
+
+    expect(result.guidance.statementPeriod).toEqual({ start: "2025-08-22", end: "2025-09-21" });
+  });
+});
+
+describe("a date printed without its year", () => {
+  const noPeriod = { start: null, end: null };
+
+  it("asks for the statement period instead of calling the date unreadable", () => {
+    expect(parsePdfDateCandidate("12 Feb", "dmy-name", [], noPeriod).confidence.reasons).toEqual(["DATE_YEAR_MISSING"]);
+    expect(parsePdfDateCandidate("Dec 9", "auto", [], noPeriod).confidence.reasons).toEqual(["DATE_YEAR_MISSING"]);
+    expect(parsePdfDateCandidate("15/02", "dmy", [], noPeriod).confidence.reasons).toEqual(["DATE_YEAR_MISSING"]);
+  });
+
+  it("keeps an unreadable date as unreadable", () => {
+    expect(parsePdfDateCandidate("not a date", "auto", [], noPeriod).confidence.reasons).toEqual(["DATE_INVALID"]);
+    expect(parsePdfDateCandidate("31 Feb 2026", "dmy-name", [], noPeriod).confidence.reasons).toEqual(["DATE_INVALID"]);
+  });
+
+  it("marks every row sharing a yearless date as waiting on the period, not just the first", () => {
+    const result = parsePdfStatementDocument({ pages: [page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 400, text: "Withdrawals" }, { x: 500, text: "Deposits" }] },
+      { y: 700, cells: [{ x: 20, text: "Dec 9" }, { x: 120, text: "FIRST" }, { x: 400, text: "10.00" }] },
+      { y: 680, cells: [{ x: 120, text: "SECOND" }, { x: 500, text: "20.00" }] },
+    ])] });
+
+    expect(result.transactions.map((row) => row.issueCodes.includes("DATE_YEAR_MISSING"))).toEqual([true, true]);
+    expect(result.transactions.some((row) => row.issueCodes.includes("DATE_INVALID"))).toBe(false);
+  });
+
+  it("reads the date once the statement period supplies the year", () => {
+    const result = parsePdfDateCandidate("12 Feb", "dmy-name", [], { start: "2026-02-01", end: "2026-02-28" });
+    expect(result.value).toBe("2026-02-12");
+  });
+});
+
+describe("rows reported as not read", () => {
+  it("reports a line with an amount, not lines of text that cannot be a transaction", () => {
+    const result = parsePdfStatementDocument({ pages: [page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/05/2026" }, { x: 120, text: "SHOP" }, { x: 480, text: "USD -10.00" }] },
+      { y: 680, cells: [{ x: 20, text: "08/06/2026" }, { x: 120, text: "CAFE" }, { x: 480, text: "USD -4.00" }] },
+      // A translated label and a disclaimer line: text only, in any language.
+      { y: 640, cells: [{ x: 120, text: "الرصيد الافتتاحي" }] },
+      { y: 620, cells: [{ x: 20, text: "Any information given in this statement is for reference." }] },
+    ])] });
+
+    expect(result.notices.some((notice) => notice.code === "UNASSIGNED_ROWS")).toBe(false);
+    expect(result.metrics.unassignedRows).toBe(0);
+  });
+});
+
+describe("saved-layout header shapes in any script", () => {
+  it("masks letters and digits whatever the script", () => {
+    const shape = createPdfLayoutProfile({
+      id: "layout-1",
+      name: "Card",
+      result: parsePdfStatementDocument({ pages: [page([
+        { y: 740, cells: [{ x: 20, text: "التاريخ Date" }, { x: 120, text: "الوصف Description" }, { x: 480, text: "المبلغ Amount" }] },
+        { y: 700, cells: [{ x: 20, text: "08/05/2026" }, { x: 120, text: "SHOP" }, { x: 480, text: "USD -10.00" }] },
+        { y: 680, cells: [{ x: 20, text: "08/06/2026" }, { x: 120, text: "CAFE" }, { x: 480, text: "USD -4.00" }] },
+      ])] }),
+    }).signature.header.map((cell) => cell.shape);
+
+    expect(shape.join(" ")).not.toMatch(/[؀-ۿ]/u);
+    expect(shape.every((value) => /^(?:[^\p{L}\p{N}]|A|9)*$/u.test(value))).toBe(true);
+  });
+
+  it("refuses to save a header shape that still holds letters of any script", () => {
+    const profile = createPdfLayoutProfile({ id: "layout-1", name: "Card", result: parsePdfStatementDocument({ pages: [page([
+      { y: 740, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/05/2026" }, { x: 120, text: "SHOP" }, { x: 480, text: "USD -10.00" }] },
+    ])] }) });
+    const withShape = (shape: string) => ({ ...profile, signature: { ...profile.signature, header: [{ shape, x: 10, width: 10 }] } });
+
+    expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: withShape("الرصيد") })).toBeNull();
+    // Combining marks on their own are text too (an Arabic shadda, a Devanagari vowel sign).
+    expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: withShape("Aّ A") })).toBeNull();
+    expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: withShape("A A (A)") })).not.toBeNull();
   });
 });

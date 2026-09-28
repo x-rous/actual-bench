@@ -19,7 +19,7 @@ import type {
   PdfStatementParseResult,
 } from "@/lib/reconciliation/statement/pdf";
 import { formatMinorUnits } from "../lib/format";
-import { boxesOverlap, type PdfResultDiff } from "../lib/pdfReviewTable";
+import { boxesOverlap, detectedAmountDirection, type PdfResultDiff } from "../lib/pdfReviewTable";
 import { PdfColumnMappingList } from "./PdfColumnMappingList";
 import { PdfDetectionControls } from "./PdfDetectionControls";
 import { PdfDetectionIssueList, type PdfDetectionIssue } from "./PdfDetectionIssueList";
@@ -40,7 +40,6 @@ export function PdfDetectionStep({
   previewDataUrl,
   guidance,
   issues,
-  warnings,
   busy,
   preview,
   previewDiff,
@@ -79,8 +78,6 @@ export function PdfDetectionStep({
   previewDataUrl: string | null;
   guidance: PdfParserGuidance;
   issues: PdfDetectionIssue[];
-  /** The parser's own warnings, which carry no control to focus. */
-  warnings: string[];
   busy: boolean;
   preview: PdfStatementParseResult | null;
   previewDiff: PdfResultDiff | null;
@@ -175,7 +172,15 @@ export function PdfDetectionStep({
             }
             onToggleRegion={(regionId) => onUpdateDraft({
               regions: guidance.regions.map((region) => region.id === regionId
-                ? { ...region, included: !region.included, kind: !region.included ? "transactions" : region.kind }
+                ? {
+                  ...region,
+                  included: !region.included,
+                  kind: !region.included ? "transactions" : region.kind,
+                  // Including an area the page rules ignore is a choice for this
+                  // statement, which the rules then leave alone.
+                  ignoredByLayout: false,
+                  layoutOverride: !region.included && (region.ignoredByLayout ?? false),
+                }
                 : region),
             })}
             onColumnChange={(columnId, edge, value) => onUpdateColumn(
@@ -195,6 +200,8 @@ export function PdfDetectionStep({
                 confidence: 1,
                 rowIds,
                 reasons: ["manually selected transaction region"],
+                // Drawn on purpose, so page rules do not switch it off.
+                layoutOverride: true,
               };
               onUpdateDraft({
                 regions: [
@@ -212,13 +219,14 @@ export function PdfDetectionStep({
             <PdfDetectionIssueList
               label="What needs attention"
               issues={issues}
-              extraMessages={warnings}
               onResolve={onResolveIssue}
             />
             <PdfStatementLayoutPanel {...layoutPanel} />
             <PdfDetectionControls
               guidance={guidance}
               accountType={result.accountType}
+              detectedDirection={detectedAmountDirection(result.transactions)}
+              attentionIds={issues.flatMap((issue) => issue.kind === "answer" && issue.focus ? [issue.focus] : [])}
               focusRequest={controlFocus}
               open={interpretationOpen}
               disabled={busy}
@@ -227,7 +235,7 @@ export function PdfDetectionStep({
             />
 
             <PdfPanelSection
-              title="Column mapping"
+              title="Column Mapping"
               summary={`${guidance.columns.length} ${guidance.columns.length === 1 ? "column" : "columns"}`}
               action={
                 <Button size="xs" variant="outline" disabled={busy} onClick={() => onAddColumn()}>Map another column</Button>

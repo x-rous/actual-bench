@@ -220,6 +220,70 @@ export function csvFileNameFor(fileName: string) {
   return `${base || "pdf-statement"}.csv`;
 }
 
+/**
+ * What "Auto-detect" based amount direction on, in words, from how the last
+ * parse decided each row. It states evidence, never a conclusion: a statement
+ * that marks some amounts CR and leaves the rest bare has not said what the
+ * bare ones are, so it is reported as needing a rule, not as a convention.
+ *
+ * A reader's own choices (a set policy, a row fixed by hand) are not
+ * detection, and are left out.
+ */
+export function detectedAmountDirection(
+  transactions: Pick<PdfTransactionProposal, "directionEvidence">[]
+): string {
+  const detected = transactions
+    .map((transaction) => transaction.directionEvidence)
+    .filter((evidence) => evidence !== "explicit-policy" && evidence !== "manual");
+  if (!detected.length || detected.includes("marker-convention")) return UNMARKED_NEED_A_RULE;
+  const counts = new Map<string, number>();
+  detected.forEach((evidence) => {
+    const key = evidence === "credit-column" ? "debit-column" : evidence;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  const [top] = [...counts.entries()].sort((left, right) => right[1] - left[1])[0];
+  return ({
+    "debit-column": "from the Debit and Credit columns",
+    marker: "from CR/DR markers",
+    signed: "from printed signs",
+    balance: "from the balance column",
+    section: "from section headings",
+  } as Record<string, string>)[top] ?? UNMARKED_NEED_A_RULE;
+}
+
+const UNMARKED_NEED_A_RULE = "unmarked amounts need a rule";
+
+/**
+ * The questions only the reader can answer, counted in rows.
+ *
+ * Both are asked the same way for any bank in any language: the statement
+ * gave no evidence for the answer, so the parser leaves it open rather than
+ * guess, and says which setting settles it. Answered once and saved with the
+ * layout, neither is asked again for that bank.
+ *
+ * - `unmarkedAmounts`: rows whose amount has no sign, marker or column to say
+ *   which way it goes, while Amount direction is still Auto-detect. Rows whose
+ *   Debit and Credit columns both hold a value are left out: a rule does not
+ *   settle those.
+ * - `missingYear`: rows whose date was printed without a year, with no
+ *   statement period to supply one.
+ */
+export function openParserQuestions(
+  result: Pick<PdfStatementParseResult, "transactions" | "guidance">
+): { unmarkedAmounts: number; missingYear: number } {
+  const auto = result.guidance.unsignedDirection === "review";
+  return {
+    unmarkedAmounts: auto
+      ? result.transactions.filter((transaction) =>
+        transaction.directionEvidence === "marker-convention"
+        || (transaction.directionEvidence === "unknown"
+          && !transaction.issueCodes.includes("AMOUNT_DEBIT_CREDIT_CONFLICT")
+          && !transaction.issueCodes.includes("AMOUNT_MISSING"))).length
+      : 0,
+    missingYear: result.transactions.filter((transaction) => transaction.issueCodes.includes("DATE_YEAR_MISSING")).length,
+  };
+}
+
 export function accountTypeLabel(type: PdfAccountType) {
   return ({
     "credit-card": "Credit card",

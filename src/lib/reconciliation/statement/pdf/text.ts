@@ -20,9 +20,14 @@ export function normalizePdfText(value: string): string {
     .trim();
 }
 
+/**
+ * A value's shape with its content removed: letters in any script, with their
+ * combining marks, become `A`, and digits `9`. Masking only Latin letters let
+ * an Arabic or Chinese header word into a saved layout as printed.
+ */
 export function sourceSafeShape(value: string): string {
   return normalizePdfText(value)
-    .replace(/[A-Za-z]+/g, "A")
-    .replace(/\d+/g, "9")
+    .replace(/[\p{L}\p{M}]+/gu, "A")
+    .replace(/\p{N}+/gu, "9")
     .replace(/\s+/g, " ");
 }

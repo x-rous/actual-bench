@@ -9,15 +9,17 @@ export type VaultUnlockDuration = keyof typeof VAULT_UNLOCK_DURATIONS;
 
 export const DEFAULT_VAULT_UNLOCK_DURATION: VaultUnlockDuration = "8h";
 
-export const VAULT_UNLOCK_DURATION_OPTIONS: ReadonlyArray<{
-  value: VaultUnlockDuration;
-  label: string;
-}> = [
-  { value: "8h", label: "8 hours" },
-  { value: "24h", label: "24 hours" },
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-];
+/** What "Keep me signed in" asks for: 30 days, renewed while in use. */
+export const KEEP_SIGNED_IN_DURATION: VaultUnlockDuration = "30d";
+
+/**
+ * Whether a duration keeps you signed in across browser restarts. The shorter
+ * ones (the unticked "Keep me signed in") end when the browser closes, so
+ * their cookie carries no expiry; the server still ends them when idle.
+ */
+export function keepsSignedIn(duration: VaultUnlockDuration): boolean {
+  return duration === "7d" || duration === "30d";
+}
 
 export function isVaultUnlockDuration(value: unknown): value is VaultUnlockDuration {
   return (

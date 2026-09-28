@@ -93,7 +93,7 @@ export function RememberToggle({
 
   return (
     <>
-      <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-muted/20 p-3">
+      <label className="flex cursor-pointer items-start gap-2.5">
         <Checkbox
           checked={checked}
           disabled={disabled}
