@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { parseApiError } from "@/components/connect/utils";
 import { getVaultStatus, setVaultPassphrase, unlockVault, type VaultStatus } from "@/features/connect/vaultApi";
@@ -15,11 +16,11 @@ import { preloadVault } from "@/features/connect/vaultQueries";
 import { clearSessionRecord, getSessionRecord } from "@/features/connect/sessionRecord";
 import { resumeSession } from "@/features/connect/resumeSession";
 import {
-  VAULT_UNLOCK_DURATION_OPTIONS,
-  type VaultUnlockDuration,
+  DEFAULT_VAULT_UNLOCK_DURATION,
+  KEEP_SIGNED_IN_DURATION,
+  keepsSignedIn,
 } from "@/lib/connectionVault/unlockDuration";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
-import { Select } from "@/components/ui/select";
 
 /**
  * Sign in, or on a fresh install set the password (RD-096). One password:
@@ -34,7 +35,7 @@ export function LoginForm({ next }: { next: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [duration, setDuration] = useState<VaultUnlockDuration>(readVaultUnlockDuration);
+  const [keepSignedIn, setKeepSignedIn] = useState(() => keepsSignedIn(readVaultUnlockDuration()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +66,7 @@ export function LoginForm({ next }: { next: string }) {
         return;
       }
     }
+    const duration = keepSignedIn ? KEEP_SIGNED_IN_DURATION : DEFAULT_VAULT_UNLOCK_DURATION;
     setBusy(true);
     try {
       if (settingUp) await setVaultPassphrase(password, duration);
@@ -87,7 +89,7 @@ export function LoginForm({ next }: { next: string }) {
   }
 
   return (
-    <div className="flex w-full max-w-sm flex-col">
+    <div className="flex w-full max-w-[27.6rem] flex-col">
       <div className="mb-7 flex justify-center">
         <Image src="/logo.png" alt="Actual Bench" width={160} height={40} priority />
       </div>
@@ -121,9 +123,8 @@ export function LoginForm({ next }: { next: string }) {
               <Label htmlFor="password" className="text-sm text-muted-foreground">
                 Password
               </Label>
-              <Input size="lg"
+              <PasswordInput size="lg"
                 id="password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete={settingUp ? "new-password" : "current-password"}
@@ -137,9 +138,8 @@ export function LoginForm({ next }: { next: string }) {
                 <Label htmlFor="confirm" className="text-sm text-muted-foreground">
                   Confirm password
                 </Label>
-                <Input size="lg"
+                <PasswordInput size="lg"
                   id="confirm"
-                  type="password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   autoComplete="new-password"
@@ -147,18 +147,6 @@ export function LoginForm({ next }: { next: string }) {
                 />
               </div>
             )}
-
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>Keep me signed in for</span>
-              <Select
-                aria-label="Keep me signed in for"
-                className="w-auto"
-                value={duration}
-                onValueChange={(next) => setDuration(next as VaultUnlockDuration)}
-                disabled={busy}
-                options={VAULT_UNLOCK_DURATION_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-              />
-            </label>
 
             {error && (
               <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
@@ -171,10 +159,16 @@ export function LoginForm({ next }: { next: string }) {
               {busy ? <Loader2 className="size-4 animate-spin" /> : settingUp ? "Set password and continue" : "Sign in"}
             </Button>
 
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Checkbox checked={keepSignedIn} onCheckedChange={setKeepSignedIn} disabled={busy} />
+              Keep me signed in
+            </label>
+
             {!settingUp && (
-              <p className="text-xs text-muted-foreground">
-                Forgot your password? Set a new one with the <code className="font-mono">ACTUAL_BENCH_PASSWORD</code>{" "}
-                environment variable and restart Actual Bench.
+              <p className="text-sm text-muted-foreground">
+                Forgot your password? Set a new one with env variable{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">ACTUAL_BENCH_PASSWORD</code>{" "}
+                and restart Actual Bench.
               </p>
             )}
           </form>

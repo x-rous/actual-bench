@@ -35,6 +35,18 @@ describe("vault session cookie", () => {
     expect(header).not.toMatch(/; Secure/i);
   });
 
+  it("lasts 30 days when kept signed in, and ends with the browser otherwise", () => {
+    const kept = NextResponse.json({});
+    setSessionCookie(request("https://bench.example/api/x"), kept, "token", "30d");
+    expect(setCookieHeader(kept)).toMatch(/Max-Age=2592000/i);
+
+    for (const duration of [undefined, "8h", "24h"] as const) {
+      const session = NextResponse.json({});
+      setSessionCookie(request("https://bench.example/api/x"), session, "token", duration);
+      expect(setCookieHeader(session)).not.toMatch(/Max-Age|Expires/i);
+    }
+  });
+
   it("is cleared with the attributes it was set with", () => {
     const response = NextResponse.json({});
     clearSessionCookie(request("https://bench.example/api/x"), response);

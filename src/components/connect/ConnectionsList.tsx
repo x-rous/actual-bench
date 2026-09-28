@@ -2,16 +2,8 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { KeyRound, Loader2, Lock, Plus, Server, Settings2, Trash2, Unlock, X } from "lucide-react";
+import { KeyRound, Loader2, Lock, Plus, Server, Trash2, Unlock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ConnectionInstance } from "@/store/connection";
@@ -21,11 +13,13 @@ import type { MergedBudget, MergedServer } from "./mergeConnections";
 import { ChangePasswordDialog } from "@/components/auth/ChangePasswordDialog";
 import { deriveLabel, getConnectionModeBadge, parseApiError } from "./utils";
 import {
-  VAULT_UNLOCK_DURATION_OPTIONS,
+  DEFAULT_VAULT_UNLOCK_DURATION,
+  KEEP_SIGNED_IN_DURATION,
+  keepsSignedIn,
   type VaultUnlockDuration,
 } from "@/lib/connectionVault/unlockDuration";
 import { readVaultUnlockDuration, saveVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
-import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Vault = ReturnType<typeof useConnectionVault>;
 
@@ -73,7 +67,6 @@ export function ConnectionsList({
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [locking, setLocking] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [changeOpen, setChangeOpen] = useState(false);
 
   if (servers.length === 0) return null;
@@ -96,9 +89,10 @@ export function ConnectionsList({
     }
   }
 
-  function updateUnlockDuration(duration: VaultUnlockDuration) {
+  function updateKeepSignedIn(keep: boolean) {
+    const duration = keep ? KEEP_SIGNED_IN_DURATION : DEFAULT_VAULT_UNLOCK_DURATION;
     if (!saveVaultUnlockDuration(duration)) {
-      toast.error("Could not save the default unlock duration.");
+      toast.error("Could not save your sign-in choice.");
       return;
     }
     setUnlockDuration(duration);
@@ -134,10 +128,6 @@ export function ConnectionsList({
 
   function openChangePassphrase() {
     setChangeOpen(true);
-  }
-
-  function openVaultSettings() {
-    setSettingsOpen(true);
   }
 
   async function handleChangePassphrase(currentPassword: string, newPassword: string) {
@@ -253,16 +243,6 @@ export function ConnectionsList({
                   variant="outline"
                   size="sm"
                   className="h-8 gap-1.5"
-                  onClick={openVaultSettings}
-                  aria-label="Settings"
-                >
-                  <Settings2 className="size-3.5" />
-                  <span className="hidden sm:inline">Settings</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5"
                   onClick={openChangePassphrase}
                 >
                   <KeyRound className="size-3.5" />
@@ -326,15 +306,12 @@ export function ConnectionsList({
               ) : (
                 <div className="mt-2.5 flex items-center justify-between gap-3">
                   <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Keep unlocked for</span>
-                    <Select
-                      className="w-auto"
-                      value={unlockDuration}
-                      onValueChange={(next) => updateUnlockDuration(next as VaultUnlockDuration)}
+                    <Checkbox
+                      checked={keepsSignedIn(unlockDuration)}
+                      onCheckedChange={updateKeepSignedIn}
                       disabled={unlocking}
-                      aria-label="Keep vault unlocked for"
-                      options={VAULT_UNLOCK_DURATION_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
                     />
+                    Keep me signed in
                   </label>
                   <button
                     type="button"
@@ -466,35 +443,6 @@ export function ConnectionsList({
           );
         })}
       </div>
-
-      {/* ── Vault settings dialog ──────────────────────────────────────────── */}
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>
-              Choose how long future vault unlocks can stay inactive before they lock.
-            </DialogDescription>
-          </DialogHeader>
-
-          <label className="flex flex-col gap-1.5 text-sm font-medium">
-            Default unlock duration
-            <Select
-              value={unlockDuration}
-              onValueChange={(next) => updateUnlockDuration(next as VaultUnlockDuration)}
-              aria-label="Default vault unlock duration"
-              options={VAULT_UNLOCK_DURATION_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-            />
-            <span className="text-xs font-normal text-muted-foreground">
-              Server restarts and Lock always require your password.
-            </span>
-          </label>
-
-          <DialogFooter>
-            <Button onClick={() => setSettingsOpen(false)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <ChangePasswordDialog open={changeOpen} onOpenChange={setChangeOpen} onSubmit={handleChangePassphrase} />
     </section>
