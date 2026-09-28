@@ -81,3 +81,36 @@ export const CURRENT_COMPONENT_VERSIONS = {
   "event-order": "event-order@1",
   "repayment": "repayment@1",
 } as const satisfies EngineVersions;
+
+/**
+ * Every identifier `rd084.debt-config` version 1 accepts, frozen at the end of
+ * P1.1 (T048). `identifiers.test.ts` fails if a parser enum drifts from this
+ * list. Adding a value is a new config version (research R-12), and removing
+ * one would strand stored configurations, so neither happens by editing v1.
+ * A listed identifier may still be unselectable (see daycount/registry.ts).
+ */
+export const DEBT_CONFIG_V1_IDENTIFIERS = {
+  amortization: ["level-payment", "constant-principal", "interest-only-phase", "custom-payment", "revolving"],
+  rateQuote: ["nominal-simple-periodic", "nominal-compounded-monthly", "nominal-compounded-semiannual", "annual-effective"],
+  dayCount: ["actual-365-fixed", "actual-actual-calendar", "actual-360", "monthly-30-360-actual-day-allocation", "30u-360"],
+  accrual: ["per-period", "daily-simple", "daily-compounded"],
+  chargeFrequency: ["monthly", "quarterly", "annual", "at-repayment"],
+  capitalization: ["at-charge", "daily"],
+  repaymentFrequency: ["weekly", "fortnightly", "semi-monthly", "monthly", "quarterly", "annual", "custom-dated"],
+  repaymentDerivation: ["annuity-at-payment-frequency", "monthly-equivalent-pro-rata", "split-monthly", "contractual-fixed", "lender-provided"],
+  recast: ["never", "on-rate-change", "annual", "on-contract-date", "lender-provided"],
+  rateEffectiveTiming: ["on-accrual-effective-date", "from-next-charge-period"],
+  repaymentEffectiveTiming: ["on-payment-date", "next-day"],
+  roundingMode: ["half-up", "half-even", "up", "down"],
+  intermediateScaleMode: ["full", "currency", "fixed"],
+  balancePrecision: ["round-each-event", "round-each-posting", "carry-full-precision"],
+  sameDayTiming: ["start-of-day", "end-of-day"],
+  placement: ["before-accrual", "after-accrual"],
+  finalPayment: ["true-up-to-zero", "contractual-balloon", "keep-level-payment-with-residual", "continue-until-paid"],
+  shortMonth: ["clamp-to-last-calendar-day"],
+  economicKind: ["principal", "interest", "fee", "escrow", "insurance", "tax", "draw", "other"],
+  componentDestination: ["transfer", "category", "income-category", "tracking-only"],
+  componentAmountRule: ["fixed", "calculated", "lender-provided"],
+  revolvingPaymentModel: ["fixed-scheduled", "interest-only", "percent-of-balance"],
+  phaseKind: ["interest-only"],
+} as const;
