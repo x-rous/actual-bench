@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { connectionFingerprint, connectionMatchesBudget } from "@/lib/sync/connectionRef";
@@ -17,6 +17,7 @@ import {
 } from "../lib/unattendedStatus";
 import type { ConnectionInstance } from "@/store/connection";
 import type { SyncFlow, SyncFlowRun } from "@/lib/app-db/types";
+import { SearchInput } from "@/components/ui/search-input";
 
 type FlowListProps = {
   flows: SyncFlow[];
@@ -79,16 +80,14 @@ export function FlowList({
             <Plus className="h-3.5 w-3.5" /> New
           </Button>
         </div>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            aria-label="Search sync flows"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search flows"
-            className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-          />
-        </div>
+        <SearchInput
+          value={search}
+          onValueChange={setSearch}
+          placeholder="Search flows"
+          aria-label="Search sync flows"
+          size="default"
+          className="w-full"
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">

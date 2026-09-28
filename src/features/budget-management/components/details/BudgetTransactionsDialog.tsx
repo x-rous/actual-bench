@@ -19,7 +19,6 @@ import {
   Clock3,
   Upload,
   FolderOpen,
-  Search,
   X,
 } from "lucide-react";
 import {
@@ -83,6 +82,8 @@ import type {
   BudgetTransactionSide,
 } from "../../lib/budgetTransactionBrowser";
 import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
+import { SearchInput } from "@/components/ui/search-input";
+import { FIELD_FOCUS, FIELD_OPEN } from "@/components/ui/field-focus";
 
 type Props = {
   target: BudgetTransactionsDrilldown | null;
@@ -106,8 +107,7 @@ const EMPTY_CATEGORY_IDS: string[] = [];
 const EMPTY_SELECTION: string[] = [];
 const EMPTY_MONTHS: string[] = [];
 const EMPTY_FILTERS: string[] = [];
-const SELECT_CLASS =
-  "h-7 min-w-0 rounded-md border border-input bg-background px-2 text-[11px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-60 dark:bg-input/30";
+const SELECT_CLASS = `h-7 min-w-0 rounded-md border border-input bg-background px-2 text-[11px] outline-none transition-colors disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-60 dark:bg-input/30 ${FIELD_FOCUS} ${FIELD_OPEN}`;
 
 
 // ─── column setup ─────────────────────────────────────────────────────────────
@@ -1842,29 +1842,14 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
                       the responsive variant is emitted after the plain utilities,
                       so a `text-xs` passed in loses to it above 768px.
                     */}
-                    <div className="relative flex items-center">
-                      <Search
-                        className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground"
-                        aria-hidden="true"
-                      />
-                      <input
-                        value={globalFilter}
-                        onChange={(event) => setGlobalFilter(event.target.value)}
-                        placeholder="Search transactions"
-                        aria-label="Search transactions"
-                        className="h-7 w-48 rounded-md border border-border bg-background pl-7 pr-7 text-xs outline-none focus:ring-1 focus:ring-ring"
-                      />
-                      {globalFilter.length > 0 && (
-                        <button
-                          type="button"
-                          aria-label="Clear search"
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          onClick={() => setGlobalFilter("")}
-                        >
-                          <X className="h-3 w-3" aria-hidden="true" />
-                        </button>
-                      )}
-                    </div>
+                    <SearchInput
+                      value={globalFilter}
+                      onValueChange={setGlobalFilter}
+                      placeholder="Search transactions"
+                      aria-label="Search transactions"
+                      size="sm"
+                      className="w-48"
+                    />
 
                     {/*
                       Export sits with the table it exports, not up in the

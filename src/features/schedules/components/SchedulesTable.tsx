@@ -20,6 +20,7 @@ import { computeScheduleStatus, STATUS_BADGE } from "../lib/scheduleStatus";
 import { useBudgetPreferences } from "@/hooks/useBudgetPreferences";
 import type { StagedEntity } from "@/types/staged";
 import type { Schedule, ScheduleAmountRange } from "@/types/entities";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Amount display helper ────────────────────────────────────────────────────
 
@@ -315,13 +316,11 @@ export function SchedulesTable({
             <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b border-border bg-muted/30 text-muted-foreground">
                 <th className="w-8 px-3 py-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={allSelected}
-                    ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                    onChange={toggleSelectAll}
+                    indeterminate={someSelected && !allSelected}
+                    onCheckedChange={toggleSelectAll}
                     aria-label="Select all schedules"
-                    className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
                   />
                 </th>
                 <th className="px-3 py-2 text-left" aria-sort={sortCol === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
@@ -366,12 +365,10 @@ export function SchedulesTable({
                   >
                     {/* Checkbox */}
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={isRowSelected}
-                        onChange={() => toggleSelect(entity.id)}
+                        onCheckedChange={() => toggleSelect(entity.id)}
                         aria-label={`Select schedule ${entity.name ?? entity.id}`}
-                        className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
                       />
                     </td>
 

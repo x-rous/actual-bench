@@ -23,6 +23,7 @@ import {
 import { auditFileName, buildRunAuditCsv } from "../lib/runAudit";
 import type { ApplyRunResult } from "@/lib/sync/applyOrchestrator";
 import type { DryRunError, DryRunSummary } from "@/lib/sync/previewOrchestrator";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type PreviewPanelProps = {
   kind: SyncKind;
@@ -256,16 +257,13 @@ export function PreviewPanel(props: PreviewPanelProps) {
               <tr className="[&>th]:whitespace-nowrap [&>th]:px-2 [&>th]:py-1.5 [&>th]:font-medium">
                 <th className="w-8">
                   {visibleSelectableIds.length > 0 && (
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       aria-label="Select all shown"
                       title="Select all shown items"
                       disabled={props.applying}
                       checked={allVisibleSelected}
-                      ref={(el) => {
-                        if (el) el.indeterminate = selectedVisible > 0 && !allVisibleSelected;
-                      }}
-                      onChange={() => props.onSelectRows?.(visibleSelectableIds, !allVisibleSelected)}
+                      indeterminate={selectedVisible > 0 && !allVisibleSelected}
+                      onCheckedChange={() => props.onSelectRows?.(visibleSelectableIds, !allVisibleSelected)}
                     />
                   )}
                 </th>
@@ -306,7 +304,7 @@ export function PreviewPanel(props: PreviewPanelProps) {
                     className={cn("border-t border-border/60 [&>td]:whitespace-nowrap [&>td]:px-2 [&>td]:py-1.5", !row.selectable && "text-muted-foreground")}
                   >
                     <td>
-                      <input type="checkbox" aria-label={`Select ${row.source.payeeName ?? row.sourceItemKey}`} disabled={!row.selectable || props.readOnly} checked={selectedIds.has(row.id)} onChange={() => props.onToggle(row.id)} />
+                      <Checkbox aria-label={`Select ${row.source.payeeName ?? row.sourceItemKey}`} disabled={!row.selectable || props.readOnly} checked={selectedIds.has(row.id)} onCheckedChange={() => props.onToggle(row.id)} />
                     </td>
                     <td>
                       <Badge variant={badgeVariant(row)} className="text-[10px]">{statusLabel(row)}</Badge>

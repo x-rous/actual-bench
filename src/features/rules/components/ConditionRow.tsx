@@ -19,20 +19,21 @@ import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreat
 import type { QuickCreateEntityType } from "@/features/quick-create/store/useQuickCreateStore";
 import type { ConditionOrAction, AmountRange, RecurConfig } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
+import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 
 // ─── Shared input/select styles ───────────────────────────────────────────────
 
-export const selectCls =
-  "h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50";
-
+/** Colour for a condition's field picker, on top of the shared `Select`. */
 export const conditionFieldSelectCls =
-  "h-8 rounded-md border border-indigo-200 bg-indigo-50 px-2 text-xs font-medium text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/50 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300";
+  "border-indigo-200 bg-indigo-50 font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300";
 
+/** Colour for an action's field picker, on top of the shared `Select`. */
 export const fieldSelectCls =
-  "h-8 rounded-md border border-violet-200 bg-violet-50 px-2 text-xs font-medium text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400/50 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300";
+  "border-violet-200 bg-violet-50 font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300";
 
-export const inputCls =
-  "h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50";
 
 // ─── Tag values ───────────────────────────────────────────────────────────────
 //
@@ -100,9 +101,9 @@ function ConditionValueInput({
         : { num1: 0, num2: 0 };
     return (
       <div className="flex flex-1 items-center gap-1">
-        <input
+        <Input
           type="number"
-          className={cn(inputCls, compact && "h-7")}
+          size={compact ? "sm" : "default"}
           value={range.num1}
           aria-label={`${valueLabel} from`}
           onChange={(e) =>
@@ -111,9 +112,9 @@ function ConditionValueInput({
           placeholder="from"
         />
         <span className="text-xs text-muted-foreground shrink-0">–</span>
-        <input
+        <Input
           type="number"
-          className={cn(inputCls, compact && "h-7")}
+          size={compact ? "sm" : "default"}
           value={range.num2}
           aria-label={`${valueLabel} to`}
           onChange={(e) =>
@@ -184,11 +185,9 @@ function ConditionValueInput({
     const checked = condition.value === true || condition.value === "true";
     return (
       <div className={cn("flex h-8 flex-1 items-center gap-2", compact && "h-7")}>
-        <input
-          type="checkbox"
+        <Checkbox
           checked={checked}
-          onChange={(e) => onChange({ ...condition, value: e.target.checked })}
-          className="h-4 w-4 cursor-pointer rounded accent-primary"
+          onCheckedChange={(checked) => onChange({ ...condition, value: checked })}
           aria-label={valueLabel}
         />
         <span className="text-xs text-muted-foreground">{checked ? "Yes" : "No"}</span>
@@ -198,12 +197,11 @@ function ConditionValueInput({
 
   if (kind === "date") {
     return (
-      <input
-        type="date"
-        className={cn(inputCls, compact && "h-7")}
+      <DateInput
+        size={compact ? "sm" : "default"}
         value={valueToString(condition.value)}
         aria-label={valueLabel}
-        onChange={(e) => onChange({ ...condition, value: e.target.value })}
+        onValueChange={(value) => onChange({ ...condition, value })}
       />
     );
   }
@@ -228,9 +226,9 @@ function ConditionValueInput({
 
   if (kind === "number") {
     return (
-      <input
+      <Input
         type="number"
-        className={cn(inputCls, compact && "h-7")}
+        size={compact ? "sm" : "default"}
         value={valueToString(condition.value)}
         aria-label={valueLabel}
         onChange={(e) =>
@@ -248,8 +246,8 @@ function ConditionValueInput({
 
   return isRegex ? (
     <div className="flex flex-1 flex-col gap-0.5">
-      <input
-        className={cn(inputCls, compact && "h-7")}
+      <Input
+        size={compact ? "sm" : "default"}
         value={valueToString(condition.value)}
         aria-label={valueLabel}
         onChange={(e) => onChange({ ...condition, value: e.target.value })}
@@ -260,8 +258,8 @@ function ConditionValueInput({
       </span>
     </div>
   ) : (
-    <input
-      className={cn(inputCls, compact && "h-7")}
+    <Input
+      size={compact ? "sm" : "default"}
       value={valueToString(condition.value)}
       aria-label={valueLabel}
       onChange={(e) => onChange({ ...condition, value: e.target.value })}
@@ -384,7 +382,7 @@ export function ConditionRow({
         <div className="flex items-start gap-1.5">
           <div
             className={cn(
-              selectCls,
+              "h-8 rounded-md border border-input px-2 text-xs",
               compact && "h-7",
               "flex w-32 shrink-0 items-center bg-muted/30 text-muted-foreground"
             )}
@@ -394,7 +392,7 @@ export function ConditionRow({
 
           <div
             className={cn(
-              selectCls,
+              "h-8 rounded-md border border-input px-2 text-xs",
               compact && "h-7",
               "flex w-32 shrink-0 items-center bg-muted/30 text-muted-foreground"
             )}
@@ -418,31 +416,23 @@ export function ConditionRow({
   return (
     <div className="space-y-1">
       <div className="flex items-start gap-1.5">
-        <select
-          className={cn(conditionFieldSelectCls, compact && "h-7", "w-32 shrink-0")}
+        <Select
+          size={compact ? "sm" : "default"}
+          className={cn(conditionFieldSelectCls, "w-32 shrink-0")}
           value={displayField}
           aria-label="Condition field"
-          onChange={(e) => setField(e.target.value)}
-        >
-          {Object.entries(CONDITION_FIELDS).map(([k, def]) => (
-            <option key={k} value={k}>
-              {def.label}
-            </option>
-          ))}
-        </select>
+          onValueChange={setField}
+          options={Object.entries(CONDITION_FIELDS).map(([k, def]) => ({ value: k, label: def.label }))}
+        />
 
-        <select
-          className={cn(selectCls, compact && "h-7", "w-32 shrink-0")}
+        <Select
+          size={compact ? "sm" : "default"}
+          className="w-32 shrink-0"
           value={condition.op ?? ""}
           aria-label="Condition operator"
-          onChange={(e) => handleOpChange(e.target.value)}
-        >
-          {Object.entries(ops).map(([k, def]) => (
-            <option key={k} value={k}>
-              {def.label}
-            </option>
-          ))}
-        </select>
+          onValueChange={handleOpChange}
+          options={Object.entries(ops).map(([k, def]) => ({ value: k, label: def.label }))}
+        />
 
         <ConditionValueInput condition={condition} entityOptions={entityOptions} onChange={onChange} onQuickCreate={openQuickCreate} compact={compact} />
 

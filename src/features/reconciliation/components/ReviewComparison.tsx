@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   isEnrichmentOnly,
@@ -20,6 +19,8 @@ import type {
 } from "@/lib/reconciliation/types";
 import { formatMinorUnits, formatShortDate } from "../lib/format";
 import type { Option } from "./StagedFields";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * Statement row by statement row, what it will look like in the budget.
@@ -255,26 +256,12 @@ export function ReviewComparison({
           Your statement, after applying
         </h3>
 
-        <div className="relative flex items-center">
-          <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search…"
-            aria-label="Search the rows being applied"
-            className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              aria-label="Clear the search"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          value={search}
+          onValueChange={setSearch}
+          aria-label="Search the rows being applied"
+          clearLabel="Clear the search"
+        />
 
         {/*
           One kind of write at a time.
@@ -319,10 +306,9 @@ export function ReviewComparison({
 
         {quiet.length > 0 && (
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={showUnchanged}
-              onChange={(event) => setShowUnchanged(event.target.checked)}
+              onCheckedChange={(checked) => setShowUnchanged(checked)}
             />
             Also show the {quiet.length} rows nothing happens to
           </label>

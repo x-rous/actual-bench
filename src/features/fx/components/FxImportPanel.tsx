@@ -6,6 +6,7 @@ import { FileUp, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { commitFxImport, previewFxImport } from "../lib/fxApi";
 import type { FxImportPreview } from "@/lib/fx/services/importFxRates";
+import { Textarea } from "@/components/ui/textarea";
 
 /** CSV rate import with a validated preview (RD-056 / PR-025e). */
 export function FxImportPanel({ onCommitted }: { onCommitted: () => void }) {
@@ -58,9 +59,9 @@ export function FxImportPanel({ onCommitted }: { onCommitted: () => void }) {
           {fileName && <span className="truncate text-xs text-muted-foreground">{fileName}</span>}
           <span className="text-xs text-muted-foreground">or paste below</span>
         </div>
-        <textarea
+        <Textarea
           aria-label="CSV content"
-          className="h-24 w-full rounded-md border border-border bg-background p-2 font-mono text-xs"
+          className="h-24 font-mono"
           placeholder={"date,base_currency,quote_currency,rate\n2026-07-10,AED,AUD,0.4180"}
           value={csv}
           onChange={(e) => { setCsv(e.target.value); setPreview(null); }}

@@ -16,6 +16,7 @@ import type { Tag } from "@/types/entities";
 import { FilterBar } from "./FilterBar";
 import { TagsTableRow } from "./TagsTableRow";
 import type { ColorFilter } from "./FilterBar";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -254,12 +255,10 @@ export function TagsTable({
             <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b border-border bg-muted/30 text-muted-foreground">
                 <th className="w-9 px-3 py-1.5">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={allVisibleSelected}
-                    ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
-                    onChange={toggleSelectAll}
-                    className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
+                    indeterminate={someVisibleSelected && !allVisibleSelected}
+                    onCheckedChange={toggleSelectAll}
                   />
                 </th>
                 <th className="w-1 p-0" />

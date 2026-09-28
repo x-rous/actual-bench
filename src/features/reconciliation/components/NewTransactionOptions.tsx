@@ -4,6 +4,7 @@ import { InfoHint } from "@/components/ui/info-hint";
 import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import type { StatementFormat } from "@/lib/reconciliation/statement/normalize";
 import { WriteSetting } from "./WriteSetting";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * What a statement row becomes when Actual does not have it.
@@ -65,6 +66,7 @@ export function NewTransactionOptions({
         label="Payee"
         legend="Where a created transaction's payee comes from"
         name="payee-strategy"
+        layout="radio"
         value={config.payeeStrategy}
         disabled={disabled}
         onChange={(next) => onChange({ ...config, payeeStrategy: next })}
@@ -72,7 +74,7 @@ export function NewTransactionOptions({
           {
             value: "imported-payee",
             label: "Use the statement's payee",
-            hint: "Resolved to a payee, creating one if it is new. A payee you set on a row yourself is always kept, and the statement's payee is recorded as the imported payee either way.",
+            hint: "Uses the payee from the statement, adding it if it's new. A payee you picked on a row stays as is.",
           },
           {
             value: "leave-unset",
@@ -80,7 +82,7 @@ export function NewTransactionOptions({
             // fills it. "Leave it to your rules" alone read as though the rules
             // were choosing *which* payee rather than supplying the only one.
             label: "Don't set the payee - Leave it to your rules",
-            hint: "No payee is written; Actual's rules set it on the way in, as they do for bank-synced transactions. The statement's payee is still kept as the imported payee.",
+            hint: "Leaves the payee blank so your Actual rules can fill it in. The statement's payee is still saved as the imported payee.",
           },
         ]}
       />
@@ -108,11 +110,9 @@ export function NewTransactionOptions({
           ) : (
             <>
               <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  className="size-3.5 accent-foreground"
+                <Checkbox
                   checked={config.notesFromMemo}
-                  onChange={(event) => onChange({ ...config, notesFromMemo: event.target.checked })}
+                  onCheckedChange={(checked) => onChange({ ...config, notesFromMemo: checked })}
                 />
                 <span className="flex items-center gap-1.5">
                   Use the statement&apos;s memo
@@ -123,12 +123,10 @@ export function NewTransactionOptions({
               </label>
 
               <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  className="size-3.5 accent-foreground"
+                <Checkbox
                   checked={config.notesIncludePayee}
-                  onChange={(event) =>
-                    onChange({ ...config, notesIncludePayee: event.target.checked })
+                  onCheckedChange={(checked) =>
+                    onChange({ ...config, notesIncludePayee: checked })
                   }
                 />
                 <span className="flex items-center gap-1.5">

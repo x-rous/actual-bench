@@ -5,7 +5,7 @@ import { AlertTriangle, Save, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { SelectField } from "@/components/ui/select-field";
+import { Select } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -92,26 +92,22 @@ export function PdfStatementLayoutPanel({
     >
       <div className="flex flex-wrap items-center gap-2">
         <label htmlFor="pdf-statement-layout" className="sr-only">Use layout</label>
-        <SelectField
+        <Select
           id="pdf-statement-layout"
           value={selectedProfileId ?? ""}
           disabled={disabled}
-          onChange={(event) => onSelect(event.target.value)}
-          className="min-w-48 flex-1 text-xs"
-        >
-          <option value="">Automatic detection</option>
-          {[...byBank.entries()]
+          onValueChange={onSelect}
+          className="min-w-48 flex-1"
+          options={[{ value: "", label: "Automatic detection" }]}
+          groups={[...byBank.entries()]
             .sort(([left], [right]) => left.localeCompare(right))
-            .map(([bankName, bankProfiles]) => (
-              <optgroup key={bankName} label={bankName}>
-                {[...bankProfiles]
-                  .sort((left, right) => left.envelope.profile.name.localeCompare(right.envelope.profile.name))
-                  .map((profile) => (
-                    <option key={profile.recordId} value={profile.recordId}>{profile.envelope.profile.name}</option>
-                  ))}
-              </optgroup>
-            ))}
-        </SelectField>
+            .map(([bankName, bankProfiles]) => ({
+              label: bankName,
+              options: [...bankProfiles]
+                .sort((left, right) => left.envelope.profile.name.localeCompare(right.envelope.profile.name))
+                .map((profile) => ({ value: profile.recordId, label: profile.envelope.profile.name })),
+            }))}
+        />
         {onSave && (
           <Button
             size="xs"
@@ -211,7 +207,6 @@ export function PdfLayoutSaveDialog({
               value={bankName}
               onChange={(event) => setBankName(event.target.value)}
               placeholder="For example, HSBC Bank"
-              className="h-9"
               autoFocus
             />
             <datalist id="pdf-statement-layout-banks">
@@ -224,7 +219,6 @@ export function PdfLayoutSaveDialog({
               value={profileName}
               onChange={(event) => setProfileName(event.target.value)}
               placeholder="For example, Credit card"
-              className="h-9"
             />
           </label>
 

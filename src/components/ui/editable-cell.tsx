@@ -90,6 +90,7 @@ export function EditableCellInput({
   }
 
   return (
+    // eslint-disable-next-line no-restricted-syntax -- an editor inside a table cell, sized to the cell
     <input
       ref={inputRef}
       defaultValue={initialDraft}

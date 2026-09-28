@@ -142,6 +142,7 @@ function GlobalSearchModalContent() {
         {/* Search input */}
         <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          {/* eslint-disable-next-line no-restricted-syntax -- the search box of a command palette, borderless in its panel */}
           <input
             // autoFocus fires when the portal mounts (i.e. when isOpen becomes true).
             // The component unmounts on close so state and focus reset automatically.

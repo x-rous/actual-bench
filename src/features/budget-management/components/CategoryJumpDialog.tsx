@@ -118,6 +118,7 @@ export function CategoryJumpDialog({
         <div className="border-b border-border px-4 py-3">
           <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-background px-2 focus-within:ring-2 focus-within:ring-ring/40">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {/* eslint-disable-next-line no-restricted-syntax -- the search box of a command palette, borderless in its panel */}
             <input
               ref={inputRef}
               value={query}

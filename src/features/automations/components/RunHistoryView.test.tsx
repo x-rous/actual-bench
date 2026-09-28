@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RunHistoryView } from "./RunHistoryView";
@@ -92,9 +93,7 @@ describe("run history", () => {
     renderView();
     await screen.findByText("No copy could be stored.");
 
-    fireEvent.change(screen.getByLabelText("Filter by automation"), {
-      target: { value: "auto-1" },
-    });
+    await chooseSelectOption(screen.getByLabelText("Filter by automation"), "Nightly backup");
 
     await waitFor(() =>
       expect(mockedApi.fetchRunHistory).toHaveBeenLastCalledWith(

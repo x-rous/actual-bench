@@ -5,7 +5,7 @@ import { Trash2, Braces } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EntityCombobox } from "./EntityCombobox";
-import { selectCls, fieldSelectCls, inputCls } from "./ConditionRow";
+import { fieldSelectCls } from "./ConditionRow";
 import { valueToString } from "../utils/rulePreview";
 import {
   ACTION_FIELDS,
@@ -23,6 +23,10 @@ import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreat
 import type { QuickCreateEntityType } from "@/features/quick-create/store/useQuickCreateStore";
 import type { ConditionOrAction, RuleOptions } from "@/types/entities";
 import type { RuleEntityOptionsMap } from "../lib/ruleEditor";
+import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 
 // ─── Options merging ──────────────────────────────────────────────────────────
 //
@@ -203,7 +207,7 @@ export function ActionRow({
         <div className="flex items-start gap-1.5">
           <div
             className={cn(
-              selectCls,
+              "h-8 rounded-md border border-input px-2 text-xs",
               compact && "h-7",
               "flex w-32 shrink-0 items-center bg-muted/30 font-medium text-muted-foreground"
             )}
@@ -211,29 +215,25 @@ export function ActionRow({
             Allocate
           </div>
 
-          <select
-            className={cn(selectCls, compact && "h-7", "w-56 shrink-0")}
+          <Select
+            size={compact ? "sm" : "default"}
+            className="w-56 shrink-0"
             value={method ?? ""}
+            placeholder="Choose a method…"
             aria-label="Allocation method"
-            onChange={(e) =>
+            onValueChange={(value) =>
               onChange({
-                ...withOptions(action, { method: e.target.value, formula: undefined }),
+                ...withOptions(action, { method: value, formula: undefined }),
                 value: null,
               })
             }
-          >
-            {method === undefined && <option value="">Choose a method…</option>}
-            {ALLOCATION_METHOD_OPTIONS.map((m) => (
-              <option key={m} value={m}>
-                {ALLOCATION_METHODS[m]}
-              </option>
-            ))}
-          </select>
+            options={ALLOCATION_METHOD_OPTIONS.map((m) => ({ value: m, label: ALLOCATION_METHODS[m] }))}
+          />
 
           {method === "formula" ? (
             <div className="flex flex-1 flex-col gap-0.5">
-              <input
-                className={cn(inputCls, compact && "h-7")}
+              <Input
+                size={compact ? "sm" : "default"}
                 value={action.options?.formula ?? ""}
                 aria-label="Split amount formula"
                 onChange={(e) => onChange(withOptions(action, { formula: e.target.value }))}
@@ -245,9 +245,9 @@ export function ActionRow({
             </div>
           ) : method === "fixed-amount" || method === "fixed-percent" ? (
             <div className="flex flex-1 items-center gap-1">
-              <input
+              <Input
                 type="number"
-                className={cn(inputCls, compact && "h-7")}
+                size={compact ? "sm" : "default"}
                 value={typeof action.value === "number" ? action.value : ""}
                 aria-label={method === "fixed-percent" ? "Split percentage" : "Split amount"}
                 onChange={(e) =>
@@ -290,16 +290,14 @@ export function ActionRow({
     return (
       <div className="space-y-1">
         <div className="flex items-start gap-1.5">
-          <select
-            className={cn(selectCls, compact && "h-7", "w-48 shrink-0")}
+          <Select
+            size={compact ? "sm" : "default"}
+            className="w-48 shrink-0"
             value={op}
             aria-label="Action type"
-            onChange={(e) => handleOpChange(e.target.value)}
-          >
-            {ACTION_OP_OPTIONS.map((k) => (
-              <option key={k} value={k}>{ACTION_OPS[k].label}</option>
-            ))}
-          </select>
+            onValueChange={handleOpChange}
+            options={ACTION_OP_OPTIONS.map((k) => ({ value: k, label: ACTION_OPS[k].label }))}
+          />
           <div className="flex-1" />
           <Button
             variant="ghost"
@@ -322,18 +320,16 @@ export function ActionRow({
     return (
       <div className="space-y-1">
         <div className="flex items-start gap-1.5">
-          <select
-            className={cn(selectCls, compact && "h-7", "w-48 shrink-0")}
+          <Select
+            size={compact ? "sm" : "default"}
+            className="w-48 shrink-0"
             value={op}
             aria-label="Action type"
-            onChange={(e) => handleOpChange(e.target.value)}
-          >
-            {ACTION_OP_OPTIONS.map((k) => (
-              <option key={k} value={k}>{ACTION_OPS[k].label}</option>
-            ))}
-          </select>
-          <input
-            className={cn(inputCls, compact && "h-7")}
+            onValueChange={handleOpChange}
+            options={ACTION_OP_OPTIONS.map((k) => ({ value: k, label: ACTION_OPS[k].label }))}
+          />
+          <Input
+            size={compact ? "sm" : "default"}
             value={valueToString(action.value)}
             aria-label="Notes text"
             onChange={(e) => onChange({ ...action, value: e.target.value })}
@@ -359,32 +355,28 @@ export function ActionRow({
   return (
     <div className="space-y-1">
       <div className="flex items-start gap-1.5">
-        <select
-          className={cn(selectCls, compact && "h-7", "w-32 shrink-0")}
+        <Select
+          size={compact ? "sm" : "default"}
+          className="w-32 shrink-0"
           value={op}
           aria-label="Action type"
-          onChange={(e) => handleOpChange(e.target.value)}
-        >
-          {ACTION_OP_OPTIONS.map((k) => (
-            <option key={k} value={k}>{ACTION_OPS[k].label}</option>
-          ))}
-        </select>
+          onValueChange={handleOpChange}
+          options={ACTION_OP_OPTIONS.map((k) => ({ value: k, label: ACTION_OPS[k].label }))}
+        />
 
-        <select
-          className={cn(fieldSelectCls, compact && "h-7", "w-32 shrink-0")}
+        <Select
+          size={compact ? "sm" : "default"}
+          className={cn(fieldSelectCls, "w-32 shrink-0")}
           value={field}
           aria-label="Action field"
-          onChange={(e) => handleFieldChange(e.target.value)}
-        >
-          {Object.entries(availableFields).map(([k, def]) => (
-            <option key={k} value={k}>{def.label}</option>
-          ))}
-        </select>
+          onValueChange={handleFieldChange}
+          options={Object.entries(availableFields).map(([k, def]) => ({ value: k, label: def.label }))}
+        />
 
         {isFormula ? (
           <div className="flex flex-1 flex-col gap-0.5">
-            <input
-              className={cn(inputCls, compact && "h-7")}
+            <Input
+              size={compact ? "sm" : "default"}
               value={action.options?.formula ?? ""}
               aria-label="Formula"
               onChange={(e) => onChange(withOptions(action, { formula: e.target.value }))}
@@ -396,8 +388,8 @@ export function ActionRow({
           </div>
         ) : isTemplate ? (
           <div className="flex flex-1 flex-col gap-0.5">
-            <input
-              className={cn(inputCls, compact && "h-7")}
+            <Input
+              size={compact ? "sm" : "default"}
               value={action.options?.template ?? ""}
               aria-label="Template"
               onChange={(e) => onChange(withOptions(action, { template: e.target.value }))}
@@ -409,21 +401,19 @@ export function ActionRow({
           </div>
         ) : fieldDef?.type === "boolean" ? (
           <div className={cn("flex h-8 flex-1 items-center gap-2", compact && "h-7")}>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={action.value === true || action.value === "true"}
               aria-label={`Set ${fieldDef.label}`}
-              onChange={(e) => onChange({ ...action, value: e.target.checked })}
-              className="h-4 w-4 cursor-pointer rounded accent-primary"
+              onCheckedChange={(checked) => onChange({ ...action, value: checked })}
             />
             <span className="text-xs text-muted-foreground">
               {action.value === true || action.value === "true" ? "Yes (cleared)" : "No (uncleared)"}
             </span>
           </div>
         ) : fieldDef?.type === "number" ? (
-          <input
+          <Input
             type="number"
-            className={cn(inputCls, compact && "h-7")}
+            size={compact ? "sm" : "default"}
             value={typeof action.value === "number" ? action.value : typeof action.value === "string" ? action.value : ""}
             aria-label={`Set ${fieldDef.label}`}
             onChange={(e) => onChange({ ...action, value: e.target.value === "" ? "" : Number(e.target.value) })}
@@ -431,12 +421,11 @@ export function ActionRow({
             step="0.01"
           />
         ) : fieldDef?.type === "date" ? (
-          <input
-            type="date"
-            className={cn(inputCls, compact && "h-7")}
+          <DateInput
+            size={compact ? "sm" : "default"}
             value={valueToString(action.value)}
             aria-label={`Set ${fieldDef.label}`}
-            onChange={(e) => onChange({ ...action, value: e.target.value })}
+            onValueChange={(value) => onChange({ ...action, value })}
           />
         ) : fieldDef?.entity ? (
           <EntityCombobox
@@ -448,8 +437,8 @@ export function ActionRow({
             compact={compact}
           />
         ) : (
-          <input
-            className={cn(inputCls, compact && "h-7")}
+          <Input
+            size={compact ? "sm" : "default"}
             value={valueToString(action.value)}
             aria-label="Action value"
             onChange={(e) => onChange({ ...action, value: e.target.value })}

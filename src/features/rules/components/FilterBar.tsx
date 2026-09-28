@@ -1,10 +1,11 @@
 "use client";
 
-import { Search, X, Merge } from "lucide-react";
+import { X, Merge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { STAGE_LABELS } from "../utils/ruleFields";
+import { SearchInput } from "@/components/ui/search-input";
 
 export type StageFilter = "all" | "pre" | "default" | "post";
 export type ActionTypeFilter =
@@ -95,23 +96,11 @@ export function FilterBar({
 
   return (
     <div className="flex flex-wrap shrink-0 items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
-      <div className="relative flex items-center">
-        <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" />
-        <input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search…"
-          className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-        />
-        {search && (
-          <button
-            onClick={() => onSearchChange("")}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
+      <SearchInput
+        value={search}
+        onValueChange={onSearchChange}
+        aria-label="Search rules"
+      />
 
       <div className="flex gap-px rounded border border-border bg-muted/40 p-px">
         {(["all", "pre", "default", "post"] as const).map((f) => (

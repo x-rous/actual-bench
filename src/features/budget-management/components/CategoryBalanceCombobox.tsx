@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, useId, useCallback } from "react";
 import { formatCurrency } from "../lib/format";
+import { FIELD_FOCUS } from "@/components/ui/field-focus";
+import { cn } from "@/lib/utils";
 
 export type CategoryWithBalance = {
   id: string;
@@ -107,6 +109,7 @@ export function CategoryBalanceCombobox({
 
   return (
     <div ref={containerRef} className="relative">
+      {/* eslint-disable-next-line no-restricted-syntax -- the search box inside its own dropdown, borderless in the popup */}
       <input
         ref={inputRef}
         id={inputId}
@@ -118,7 +121,7 @@ export function CategoryBalanceCombobox({
         autoComplete="off"
         value={displayValue}
         placeholder={placeholder}
-        className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        className={cn("h-7 w-full rounded-md border border-input bg-background px-2 py-1 text-xs outline-none", FIELD_FOCUS)}
         onFocus={() => setOpen(true)}
         onClick={() => setOpen(true)}
         onChange={(e) => {

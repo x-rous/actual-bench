@@ -55,6 +55,7 @@ export function TagInput({
           </button>
         </span>
       ))}
+      {/* eslint-disable-next-line no-restricted-syntax -- typing area inside the tag chips' own field frame */}
       <input
         value={input}
         onChange={(e) => setInput(e.target.value)}

@@ -20,6 +20,7 @@ import type { AccountDeleteIntent } from "./AccountsTableOverlays";
 import type { StatusFilter, BudgetFilter, RulesFilter } from "./FilterBar";
 import type { StagedEntity } from "@/types/staged";
 import type { Account } from "@/types/entities";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -428,12 +429,10 @@ export function AccountsTable({
                 <tr className="border-b border-border">
                   {/* Select all */}
                   <th className="w-9 px-3 py-1.5">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={allVisibleSelected}
-                      ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
-                      onChange={toggleSelectAll}
-                      className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
+                      indeterminate={someVisibleSelected && !allVisibleSelected}
+                      onCheckedChange={toggleSelectAll}
                     />
                   </th>
                   <th className="w-1 p-0" />

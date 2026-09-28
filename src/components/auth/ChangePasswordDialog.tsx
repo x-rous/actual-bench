@@ -79,7 +79,7 @@ export function ChangePasswordDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-2">
-          <Input
+          <Input size="lg"
             type="password"
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
@@ -89,7 +89,7 @@ export function ChangePasswordDialog({
             autoFocus
             disabled={busy}
           />
-          <Input
+          <Input size="lg"
             type="password"
             value={next}
             onChange={(e) => setNext(e.target.value)}
@@ -98,7 +98,7 @@ export function ChangePasswordDialog({
             autoComplete="new-password"
             disabled={busy}
           />
-          <Input
+          <Input size="lg"
             type="password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}

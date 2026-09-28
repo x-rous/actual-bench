@@ -8,8 +8,6 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Download,
-  Search,
-  X,
 } from "lucide-react";
 import {
   Dialog,
@@ -30,6 +28,7 @@ import {
   type VarianceTree,
 } from "../../lib/varianceDrivers";
 import type { LoadedMonthState } from "../../types";
+import { SearchInput } from "@/components/ui/search-input";
 
 export type TopVarianceDriversDialogProps = {
   open: boolean;
@@ -209,29 +208,13 @@ export function TopVarianceDriversDialog({
                 press at a time and showed only the one currently chosen, so
                 finding a sort meant pressing until it appeared.
               */}
-              <div className="relative flex items-center">
-                <Search
-                  className="pointer-events-none absolute left-2 size-3 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search groups"
-                  aria-label="Search groups and categories"
-                  className="h-7 w-44 rounded-md border border-border bg-background pl-7 pr-7 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-                />
-                {search.length > 0 && (
-                  <button
-                    type="button"
-                    aria-label="Clear search"
-                    className="absolute right-2 text-muted-foreground hover:text-foreground"
-                    onClick={() => setSearch("")}
-                  >
-                    <X className="size-3" aria-hidden="true" />
-                  </button>
-                )}
-              </div>
+              <SearchInput
+                value={search}
+                onValueChange={setSearch}
+                placeholder="Search groups"
+                aria-label="Search groups and categories"
+                size="sm"
+              />
               <ToolButton onClick={toggleExpandAll} icon={<ChevronsUpDown className="size-3" />}>
                 {allExpanded ? "Collapse all" : "Expand all"}
               </ToolButton>

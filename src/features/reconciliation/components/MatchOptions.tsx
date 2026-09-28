@@ -8,6 +8,9 @@ import {
   type TextTargetPreset,
 } from "@/lib/reconciliation/match/config";
 import type { MatchConfig } from "@/lib/reconciliation/types";
+import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Matching options, saved with the import profile.
@@ -25,7 +28,7 @@ import type { MatchConfig } from "@/lib/reconciliation/types";
  * pseudo-elements cover WebKit and Blink.
  */
 const NUMBER_FIELD =
-  "h-7 w-full rounded-md border border-input bg-background px-2 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+  "[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 
 /**
  * Label on the left, control on the right in a column of fixed width.
@@ -123,18 +126,13 @@ export function MatchOptions({
             <Label htmlFor="match-preset" className="min-w-0 text-xs">
               Compare statement text against
             </Label>
-            <select
+            <Select
               id="match-preset"
-              className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
+              size="sm"
               value={preset}
-              onChange={(event) => setPreset(event.target.value as TextTargetPreset)}
-            >
-              {PRESETS.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setPreset(value as TextTargetPreset)}
+              options={PRESETS.map((entry) => ({ value: entry.id, label: entry.label }))}
+            />
           </div>
           <p className="text-[11px] leading-snug text-muted-foreground">
             {PRESETS.find((entry) => entry.id === preset)?.hint}
@@ -151,7 +149,8 @@ export function MatchOptions({
                 A bank&apos;s posting date often differs from the date you recorded it.
               </InfoHint>
             </span>
-            <input
+            <Input
+              size="sm"
               id="match-tolerance"
               type="number"
               inputMode="numeric"
@@ -177,7 +176,8 @@ export function MatchOptions({
                 transactions are shown separately and aren&rsquo;t counted as missing.
               </InfoHint>
             </span>
-            <input
+            <Input
+              size="sm"
               id="match-padding"
               type="number"
               inputMode="numeric"
@@ -206,12 +206,10 @@ export function MatchOptions({
             <legend className="sr-only">Text handling</legend>
 
             <label className="flex items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                className="mt-0.5"
+              <Checkbox className="mt-0.5"
                 checked={config.text.ignoreTagsInNotes}
-                onChange={(event) =>
-                  patch({ text: { ...config.text, ignoreTagsInNotes: event.target.checked } })
+                onCheckedChange={(checked) =>
+                  patch({ text: { ...config.text, ignoreTagsInNotes: checked } })
                 }
               />
               <span>
@@ -224,11 +222,9 @@ export function MatchOptions({
             </label>
 
             <label className="flex items-start gap-2 text-xs">
-              <input
-                type="checkbox"
-                className="mt-0.5"
+              <Checkbox className="mt-0.5"
                 checked={config.matchOriginalCurrencyAmount}
-                onChange={(event) => patch({ matchOriginalCurrencyAmount: event.target.checked })}
+                onCheckedChange={(checked) => patch({ matchOriginalCurrencyAmount: checked })}
               />
               <span>
                 Match foreign transactions on their original amount

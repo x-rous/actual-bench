@@ -26,6 +26,8 @@ import {
   type BulkSkips,
 } from "../lib/bulkActionReport";
 import type { LoadedCategory } from "../types";
+import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 type Props = {
   /**
@@ -465,7 +467,7 @@ export function BulkActionDialog({
                   <label htmlFor="bulk-fixed-amount" className="block text-xs font-medium mb-1">
                     Amount ($)
                   </label>
-                  <input
+                  <Input
                     id="bulk-fixed-amount"
                     type="number"
                     min="0"
@@ -473,7 +475,8 @@ export function BulkActionDialog({
                     value={fixedAmount}
                     onChange={(e) => setFixedAmount(e.target.value)}
                     placeholder="0.00"
-                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
+                    size="sm"
+                    className="font-mono"
                     aria-label="Fixed amount in dollars"
                   />
                 </div>
@@ -484,22 +487,16 @@ export function BulkActionDialog({
                   <label htmlFor="bulk-source-month" className="block text-xs font-medium mb-1">
                     Source month
                   </label>
-                  <select
+                  <Select
                     id="bulk-source-month"
+                    size="sm"
                     value={effectiveSourceMonth}
-                    onChange={(e) => setSourceMonth(e.target.value)}
-                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs"
-                  >
-                    {sourceOptions.map(([year, monthsInYear]) => (
-                      <optgroup key={year} label={year}>
-                        {monthsInYear.map((m) => (
-                          <option key={m} value={m}>
-                            {formatMonthLabel(m, "long")}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                    onValueChange={setSourceMonth}
+                    groups={sourceOptions.map(([year, monthsInYear]) => ({
+                      label: year,
+                      options: monthsInYear.map((m) => ({ value: m, label: formatMonthLabel(m, "long") })),
+                    }))}
+                  />
                 </div>
               )}
 
@@ -516,14 +513,15 @@ export function BulkActionDialog({
                       ? "New value as % of current (e.g. 110 = 10% increase)"
                       : "Copy at % of the source (e.g. 105 = 5% increase)"}
                   </label>
-                  <input
+                  <Input
                     id="bulk-percentage"
                     type="number"
                     min="0"
                     step="1"
                     value={percentage}
                     onChange={(e) => setPercentage(e.target.value)}
-                    className="h-7 w-full rounded border border-border bg-background px-2 py-1 text-xs font-mono"
+                    size="sm"
+                    className="font-mono"
                     aria-label={
                       requiredPercentage
                         ? "Percentage of current value"
@@ -597,13 +595,14 @@ export function BulkActionDialog({
 
             {previewRows.length > 12 && (
               <div className="flex items-center gap-2 mb-2">
-                <input
+                <Input
                   type="search"
                   value={rowFilter}
                   onChange={(e) => setRowFilter(e.target.value)}
                   placeholder="Filter by category or group…"
                   aria-label="Filter previewed rows"
-                  className="h-7 flex-1 rounded border border-border bg-background px-2 text-xs"
+                  size="sm"
+                  className="flex-1"
                 />
                 {filterTerm && (
                   <span className="text-[11px] text-muted-foreground whitespace-nowrap">
@@ -712,6 +711,7 @@ export function BulkActionDialog({
                             {formatAmount(row.previousBudgeted)}
                           </td>
                           <td className="px-3 py-1 text-right">
+                            {/* eslint-disable-next-line no-restricted-syntax -- an editor inside a table cell, sized to the cell */}
                             <input
                               type="text"
                               inputMode="decimal"

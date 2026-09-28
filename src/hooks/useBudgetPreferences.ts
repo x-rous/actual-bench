@@ -5,7 +5,7 @@ import {
   useConnectionStore,
   selectActiveInstance,
 } from "@/store/connection";
-import { fetchBudgetPreferences } from "@/lib/api/preferences";
+import { DEFAULT_BUDGET_PREFERENCES, fetchBudgetPreferences } from "@/lib/api/preferences";
 import type { BudgetPreferences } from "@/lib/api/preferences";
 
 const REFETCH_INTERVAL = 5 * 60 * 1000; // 5 minutes
@@ -37,5 +37,5 @@ export function useBudgetPreferences(): BudgetPreferences {
     refetchIntervalInBackground: false,
   });
 
-  return data ?? { upcomingScheduledTransactionLength: 14, budgetMode: "envelope" };
+  return data ?? DEFAULT_BUDGET_PREFERENCES;
 }

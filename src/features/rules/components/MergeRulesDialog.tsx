@@ -24,6 +24,7 @@ import {
   type EditorPart,
 } from "../lib/ruleEditor";
 import type { ConditionOrAction, RuleStage, ConditionsOp } from "@/types/entities";
+import { Checkbox } from "@/components/ui/checkbox";
 
 function partsKey(part: ConditionOrAction): string {
   return JSON.stringify({ field: part.field, op: part.op, value: part.value });
@@ -278,12 +279,10 @@ export function MergeRulesDialog({
         >
           <div className="space-y-3 rounded-md border border-border p-4">
             <div className="flex items-center gap-2.5">
-              <input
+              <Checkbox
                 id="merge-delete-originals"
-                type="checkbox"
                 checked={deleteOriginals}
-                onChange={(e) => setDeleteOriginals(e.target.checked)}
-                className="h-4 w-4 cursor-pointer rounded accent-primary"
+                onCheckedChange={(checked) => setDeleteOriginals(checked)}
               />
               <label
                 htmlFor="merge-delete-originals"

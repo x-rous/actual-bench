@@ -221,6 +221,7 @@ export function JsonEditor({
       </pre>
 
       {/* ── Textarea ─────────────────────────────────────────────────────── */}
+      {/* eslint-disable-next-line no-restricted-syntax -- transparent typing layer over the highlighted JSON */}
       <textarea
         ref={textareaRef}
         value={value}

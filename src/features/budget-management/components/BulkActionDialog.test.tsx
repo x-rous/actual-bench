@@ -87,13 +87,14 @@ describe("BulkActionDialog percentage defaults", () => {
     expect(percentageInput().value).toBe("100");
   });
 
-  it("offers source months from the whole budget file, grouped by year", () => {
+  it("offers source months from the whole budget file, grouped by year", async () => {
     renderDialog("copy-from-month");
-    const select = screen.getByLabelText("Source month") as HTMLSelectElement;
-    const groups = Array.from(select.querySelectorAll("optgroup")).map((g) => g.label);
-    expect(groups).toEqual(["2026", "2025"]);
+    const select = screen.getByLabelText("Source month");
     // Prior-year default: the same month one year before the selection.
-    expect(select.value).toBe("2025-01");
+    expect(select).toHaveTextContent("Jan 2025");
+    fireEvent.click(select);
+    const list = await screen.findByRole("listbox");
+    expect(list.textContent).toMatch(/2026.*2025/);
   });
 });
 

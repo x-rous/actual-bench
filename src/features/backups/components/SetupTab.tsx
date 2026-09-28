@@ -27,6 +27,7 @@ import type {
   RecoveryCenterData,
 } from "../lib/backupsApi";
 import type { BackupDestination } from "@/lib/app-db/backupRepository";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Setting backups up (RD-077 / PR-047).
@@ -483,12 +484,10 @@ export function SetupTab({
           Recovery points
         </h2>
         <label className="flex items-start gap-2 text-xs">
-          <input
-            type="checkbox"
-            className="mt-0.5"
+          <Checkbox className="mt-0.5"
             checked={safetyEnabled}
             disabled={safetyPending}
-            onChange={(event) => onToggleSafetyPoints(event.target.checked)}
+            onCheckedChange={(checked) => onToggleSafetyPoints(checked)}
           />
           <span>
             <span className="font-medium">Take a recovery point before risky changes</span>

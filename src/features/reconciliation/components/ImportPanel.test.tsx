@@ -135,11 +135,11 @@ describe("import preview", () => {
 
 
 
-  it("names source columns by their header and a real value from them", () => {
+  it("names source columns by their header and a real value from them", async () => {
     renderWith(statement(5));
 
-    const select = screen.getByLabelText("Source column for the imported payee");
-    const options = [...select.querySelectorAll("option")].map((option) => option.textContent);
+    fireEvent.click(screen.getByLabelText("Source column for the imported payee"));
+    const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
 
     // "Column 3" says nothing; "Description · MERCHANT A" is recognisable.
     expect(options).toContain("Description · MERCHANT A");
@@ -164,8 +164,8 @@ describe("import preview", () => {
 
     expect(screen.queryByLabelText("Source column for the imported payee")).toBeNull();
     // ...but the format's own interpretation controls are there.
-    expect(screen.getByLabelText(/Swap the payee and memo/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Use the memo as a fallback for empty payees/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Swap the payee and memo/ })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Use the memo as a fallback for empty payees/ })).toBeInTheDocument();
 
     // And, having no mapping to defer to, it is the format that carries the
     // two notes switches (F-127, F-128).
@@ -203,19 +203,13 @@ describe("import preview", () => {
   });
 
 
-  it("says the bank's text is kept as the imported payee whichever payee you choose", () => {
-    renderWith(statement(3));
+  it("says the bank's text is kept when your rules set the payee", () => {
+    renderLive(statement(3));
 
     // The gap this closes: choosing rules read as though the statement's text
-    // would be discarded, when it is recorded as the imported payee either way.
-    for (const option of [
-      "Use the statement's payee",
-      "Don't set the payee - Leave it to your rules",
-    ]) {
-      const radio = screen.getByRole("radio", { name: option });
-      fireEvent.click(radio);
-      expect(screen.getByText(/recorded as the imported payee either way|still recorded as the imported payee/i)).toBeInTheDocument();
-    }
+    // would be discarded, when it is kept as the imported payee.
+    fireEvent.click(screen.getByRole("radio", { name: "Don't set the payee - Leave it to your rules" }));
+    expect(screen.getByText(/still saved as the imported payee/i)).toBeInTheDocument();
   });
 
   it("locks write choices after Apply starts and keeps their focus target visible", () => {
@@ -223,9 +217,9 @@ describe("import preview", () => {
 
     const payeeChoice = screen.getByRole("radio", { name: "Use the statement's payee" });
     expect(payeeChoice).toBeDisabled();
-    expect(payeeChoice.closest("label")).toHaveClass(
-      "has-[input:focus-visible]:ring-2"
-    );
+    // A real radio, not one hidden behind a styled label, so it keeps the
+    // browser's own focus ring.
+    expect(payeeChoice).not.toHaveClass("sr-only");
   });
 });
 
@@ -324,7 +318,7 @@ describe("import preview — a memo spent as the payee", () => {
 
   it("restores their memo when the fallback that consumed it is turned off", () => {
     renderLive(QIF);
-    fireEvent.click(screen.getByLabelText(/Use the memo as a fallback for empty payees/));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Use the memo as a fallback for empty payees/ }));
 
     const cells = previewRows().map((r) => r.querySelectorAll("td")[2]);
     expect(cells[0]).toHaveTextContent("DIRECT DEBIT BRITISH GAS");

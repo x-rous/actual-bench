@@ -18,14 +18,15 @@ import {
   SchedulePicker,
   type ScheduleValue,
 } from "@/features/automations/components/SchedulePicker";
-import { useSavedBudgetConnector } from "@/features/connect/useSavedBudgetConnector";
-import { getConnectionModeBadge } from "@/components/connect/utils";
+import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect";
 import { EnrolConnection } from "@/features/automations/components/EnrolConnection";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { isHttpApiConnection, useConnectionStore } from "@/store/connection";
 import { createPolicy, patchPolicy, type BackupSource } from "../lib/backupsApi";
 import type { BackupDestination, BackupPolicy } from "@/lib/app-db/backupRepository";
 import { isVaultReady, type VaultSummary } from "@/lib/credentials/vaultSummary";
+import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * A backup rule (RD-077 / PR-047e).
@@ -50,8 +51,6 @@ import { isVaultReady, type VaultSummary } from "@/lib/credentials/vaultSummary"
  *     not control, and the wording says exactly that rather than nudging.
  */
 
-const inputClass = "h-8 rounded-md px-2 text-xs md:text-xs";
-const selectClass = "h-8 w-full rounded-md border border-input bg-background px-2 text-xs";
 
 type Props = {
   open: boolean;
@@ -85,7 +84,6 @@ export function BackupRuleDialog({
    * exports it and the server stores it.
    */
   const savedConnections = useConnectionStore((state) => state.instances);
-  const savedConnector = useSavedBudgetConnector();
   const choices = savedConnections.map((connection) => {
     const httpApi = isHttpApiConnection(connection);
     const enrolled = sources.some((entry) => entry.connectionFingerprint === connectionFingerprint(connection));
@@ -99,6 +97,16 @@ export function BackupRuleDialog({
       manualOnly: !httpApi && !enrolled,
       enrolled,
     };
+  });
+
+  const budgetChoices = useBudgetChoices({
+    connections: savedConnections,
+    keyOf: connectionFingerprint,
+    noteOf: (connection) => {
+      const choice = choices.find((entry) => entry.connection === connection);
+      if (!choice || choice.enrolled) return undefined;
+      return choice.manualOnly ? "manual only until enrolled" : "not enrolled";
+    },
   });
 
   const [source, setSource] = useState(
@@ -211,20 +219,20 @@ export function BackupRuleDialog({
         <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1 text-xs">
           <label className="block space-y-1">
             <span className="font-medium">Name</span>
-            <Input className={inputClass} value={name} onChange={(event) => setName(event.target.value)} />
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
 
           <label className="block space-y-1">
             <span className="font-medium">What to copy</span>
-            <select
-              className={selectClass}
+            <Select
               value={contents}
-              onChange={(event) => setContents(event.target.value as BackupPolicy["contents"])}
-            >
-              <option value="both">The budget and Bench&rsquo;s own settings</option>
-              <option value="budget">Just the budget</option>
-              <option value="app-db">Just Bench&rsquo;s settings</option>
-            </select>
+              onValueChange={(next) => setContents(next as BackupPolicy["contents"])}
+              options={[
+                { value: "both", label: "The budget and Bench’s own settings" },
+                { value: "budget", label: "Just the budget" },
+                { value: "app-db", label: "Just Bench’s settings" },
+              ]}
+            />
             <span className="block text-muted-foreground">
               Bench&rsquo;s settings are your sync rules, mappings, reconciliation sessions and
               automations - everything you have taught it, which lives nowhere else.
@@ -237,52 +245,23 @@ export function BackupRuleDialog({
               on the answer. */}
           {needsSource && (
             <div className="space-y-1">
-              <label className="block space-y-1">
-                <span className="font-medium">Budget</span>
-                <select
-                  className={selectClass}
+              <div className="space-y-1">
+                <span className="block font-medium">Budget</span>
+                <BudgetSelect
+                  aria-label="Budget"
+                  options={budgetChoices.options}
                   value={source}
-                  disabled={savedConnector.connecting}
-                  onChange={async (event) => {
-                    const value = event.target.value;
-                    if (!value.startsWith("saved:")) {
-                      setSource(value);
-                      return;
-                    }
+                  disabled={budgetChoices.connecting}
+                  emptyLabel="No budget connections saved"
+                  onValueChange={async (value) => {
                     // A saved budget joins the session in the background, then
                     // is offered like any connected one (PR-071b).
-                    const saved = savedConnector.saved.find(
-                      (entry) => `saved:${entry.serverFingerprint}:${entry.budgetSyncId}` === value
-                    );
-                    const instance = saved ? await savedConnector.connect(saved) : null;
+                    const instance = await budgetChoices.resolve(value);
                     if (instance) setSource(connectionFingerprint(instance));
                   }}
-                >
-                  {choices.length === 0 && savedConnector.saved.length === 0 && (
-                    <option value="">No budget connections saved</option>
-                  )}
-                  {choices.map((choice) => (
-                    <option key={choice.fingerprint} value={choice.fingerprint}>
-                      {choice.label} - {choice.baseUrl}
-                      {choice.httpApi ? "" : " (Direct)"}
-                      {choice.enrolled ? "" : choice.manualOnly ? "  (manual only until enrolled)" : "  (not enrolled)"}
-                    </option>
-                  ))}
-                  {savedConnector.saved.length > 0 && (
-                    <optgroup label={savedConnector.locked ? "Saved (unlock to open)" : "Saved"}>
-                      {savedConnector.saved.map((saved) => (
-                        <option
-                          key={`${saved.serverFingerprint}:${saved.budgetSyncId}`}
-                          value={`saved:${saved.serverFingerprint}:${saved.budgetSyncId}`}
-                        >
-                          {saved.name} - {saved.baseUrl} ({getConnectionModeBadge(saved.mode)})
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                {savedConnector.dialog}
-              </label>
+                />
+                {budgetChoices.dialog}
+              </div>
 
               {/* Every budget you have connected to is listed, not only the
                   enrolled ones - the budget you are working in should appear in
@@ -318,12 +297,11 @@ export function BackupRuleDialog({
             ) : (
               destinations.map((destination) => (
                 <label key={destination.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={destinationIds.includes(destination.id)}
-                    onChange={(event) =>
+                    onCheckedChange={(checked) =>
                       setDestinationIds((current) =>
-                        event.target.checked
+                        checked
                           ? [...current, destination.id]
                           : current.filter((id) => id !== destination.id)
                       )
@@ -358,12 +336,10 @@ export function BackupRuleDialog({
           )}
 
           <label className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              className="mt-0.5"
+            <Checkbox className="mt-0.5"
               checked={encrypt}
               disabled={!vaultReady}
-              onChange={(event) => setEncrypt(event.target.checked)}
+              onCheckedChange={(checked) => setEncrypt(checked)}
             />
             <span>
               <span className="font-medium">Encrypt these backups</span>
@@ -379,7 +355,6 @@ export function BackupRuleDialog({
             <label className="block space-y-1">
               <span className="font-medium">Passphrase</span>
               <Input
-                className={inputClass}
                 type="password"
                 value={passphrase}
                 onChange={(event) => setPassphrase(event.target.value)}
@@ -405,17 +380,15 @@ export function BackupRuleDialog({
             <div className="space-y-3 rounded-md border border-border p-2">
               <label className="block space-y-1">
                 <span className="font-medium">How thoroughly to check each copy</span>
-                <select
-                  className={selectClass}
+                <Select
                   value={verificationLevel}
-                  onChange={(event) =>
-                    setVerificationLevel(event.target.value as BackupPolicy["verificationLevel"])
-                  }
-                >
-                  <option value="archive">Quick - it is a valid archive</option>
-                  <option value="data">Normal - open the database and count what is inside</option>
-                  <option value="deep">Thorough - the full Budget File Health check</option>
-                </select>
+                  onValueChange={(next) => setVerificationLevel(next as BackupPolicy["verificationLevel"])}
+                  options={[
+                    { value: "archive", label: "Quick - it is a valid archive" },
+                    { value: "data", label: "Normal - open the database and count what is inside" },
+                    { value: "deep", label: "Thorough - the full Budget File Health check" },
+                  ]}
+                />
               </label>
 
               <fieldset className="space-y-1">
@@ -425,7 +398,6 @@ export function BackupRuleDialog({
                     <label key={tier} className="space-y-1">
                       <span className="block capitalize text-muted-foreground">{tier}</span>
                       <Input
-                        className={inputClass}
                         type="number"
                         min={0}
                         value={retention[tier]}
@@ -447,11 +419,9 @@ export function BackupRuleDialog({
               </fieldset>
 
               <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
+                <Checkbox className="mt-0.5"
                   checked={scrubEnabled}
-                  onChange={(event) => setScrubEnabled(event.target.checked)}
+                  onCheckedChange={(checked) => setScrubEnabled(checked)}
                 />
                 <span>
                   <span className="font-medium">Re-check stored copies weekly</span>

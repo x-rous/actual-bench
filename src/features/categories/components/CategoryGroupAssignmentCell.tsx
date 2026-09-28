@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { Select } from "@/components/ui/select";
 
 export type CategoryGroupOption = { id: string; name: string };
 
@@ -46,25 +47,22 @@ export const CategoryGroupAssignmentCell = React.memo(
     }
 
     return (
-      <select
-        autoFocus
-        className="h-6 w-full rounded border border-border bg-background px-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      <Select
+        defaultOpen
+        className="h-6"
+        aria-label="Category group"
         value={groupId}
-        onBlur={() => setIsEditing(false)}
-        onChange={(e) => {
-          const nextGroupId = e.target.value;
+        onOpenChange={(open) => {
+          if (!open) setIsEditing(false);
+        }}
+        onValueChange={(nextGroupId) => {
           if (nextGroupId !== groupId) {
             onCommit(categoryId, nextGroupId);
           }
           setIsEditing(false);
         }}
-      >
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
-        ))}
-      </select>
+        options={options.map((option) => ({ value: option.id, label: option.name }))}
+      />
     );
   },
   (prev, next) =>

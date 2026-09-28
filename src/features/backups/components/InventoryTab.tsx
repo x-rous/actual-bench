@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Loader2, Search, ShieldCheck, X } from "lucide-react";
+import { FileText, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BackupsTable, type BackupSortKey } from "./BackupsTable";
@@ -9,6 +9,8 @@ import { ReadinessBanner } from "./ReadinessBanner";
 import { budgetsInArtifacts, formatBytes } from "../lib/presentation";
 import type { SortDirection } from "@/components/ui/sortable-header";
 import type { ArtifactWithLocations, RecoveryCenterData } from "../lib/backupsApi";
+import { Select } from "@/components/ui/select";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * The copies that exist (RD-077 / PR-047).
@@ -160,82 +162,58 @@ export function InventoryTab({
             {/* Search first, because with a few hundred copies the fastest way
                 to the one you mean is to type part of what you remember - a
                 budget name, a rule, or the destination it went to. */}
-            <div className="relative flex items-center">
-              <Search className="absolute left-1.5 size-3.5 text-muted-foreground" aria-hidden />
-              <input
-                value={search}
-                onChange={(event) => onSearch(event.target.value)}
-                placeholder="Search copies…"
-                aria-label="Search backups"
-                className="h-6 w-48 rounded border border-border bg-background pl-6 pr-6 outline-none focus:ring-1 focus:ring-ring"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => onSearch("")}
-                  aria-label="Clear search"
-                  className="absolute right-1.5 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="size-3" aria-hidden />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              value={search}
+              onValueChange={onSearch}
+              placeholder="Search copies…"
+              aria-label="Search backups"
+            />
 
-            <select
-              className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+            <Select
+              className="h-6 w-auto"
               value={stateFilter}
-              onChange={(event) => onStateFilter(event.target.value as StateFilter)}
+              onValueChange={(value) => onStateFilter(value as StateFilter)}
               aria-label="Filter by state"
-            >
-              <option value="all">Any state</option>
-              <option value="verified">Verified</option>
-              <option value="unverified">Not checked</option>
-              <option value="problem">Damaged or missing</option>
-            </select>
+              options={[
+                { value: "all", label: "Any state" },
+                { value: "verified", label: "Verified" },
+                { value: "unverified", label: "Not checked" },
+                { value: "problem", label: "Damaged or missing" },
+              ]}
+            />
 
-            <select
-              className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+            <Select
+              className="h-6 w-auto"
               value={kindFilter}
-              onChange={(event) => onKindFilter(event.target.value as KindFilter)}
+              onValueChange={(value) => onKindFilter(value as KindFilter)}
               aria-label="Filter by contents"
-            >
-              <option value="all">Anything</option>
-              <option value="budget">Budgets</option>
-              <option value="app-db">Bench settings</option>
-            </select>
+              options={[
+                { value: "all", label: "Anything" },
+                { value: "budget", label: "Budgets" },
+                { value: "app-db", label: "Bench settings" },
+              ]}
+            />
 
             {/* Only offered when there is more than one: a picker with one
                 option is a question with one answer. */}
             {budgets.length > 1 && (
-              <select
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+              <Select
+                className="h-6 w-auto"
                 value={budget}
-                onChange={(event) => onBudget(event.target.value)}
+                onValueChange={onBudget}
                 aria-label="Filter by budget"
-              >
-                <option value="">Any budget</option>
-                {budgets.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+                options={[{ value: "", label: "Any budget" }, ...budgets.map((name) => ({ value: name, label: name }))]}
+              />
             )}
 
             {data.policies.length > 1 && (
-              <select
-                className="h-6 rounded-md border border-input bg-background px-1.5 text-xs"
+              <Select
+                className="h-6 w-auto"
                 value={policyId}
-                onChange={(event) => onPolicy(event.target.value)}
+                onValueChange={onPolicy}
                 aria-label="Filter by rule"
-              >
-                <option value="">Any rule</option>
-                {data.policies.map((policy) => (
-                  <option key={policy.id} value={policy.id}>
-                    {policy.name}
-                  </option>
-                ))}
-              </select>
+                options={[{ value: "", label: "Any rule" }, ...data.policies.map((policy) => ({ value: policy.id, label: policy.name }))]}
+              />
             )}
 
             {/* One statement about how many, the cap included. Saying "200"

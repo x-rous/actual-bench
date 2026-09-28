@@ -1,10 +1,11 @@
 "use client";
 
-import { Search, X } from "lucide-react";
 import { MultiPillGroup } from "@/components/ui/pill-group";
 import { runStatusLabel } from "../lib/presentation";
 import type { RunHistory } from "../lib/automationsApi";
 import type { AutomationRunStatus } from "@/lib/app-db/types";
+import { Select } from "@/components/ui/select";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * Narrowing the run history (RD-079).
@@ -64,59 +65,39 @@ export function RunHistoryFilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-4 py-1.5">
-      <div className="relative flex items-center">
-        <Search className="absolute left-1.5 size-3.5 text-muted-foreground" aria-hidden />
-        <input
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search runs…"
-          aria-label="Search runs"
-          className="h-6 w-52 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => onSearchChange("")}
-            aria-label="Clear search"
-            className="absolute right-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-3" aria-hidden />
-          </button>
-        )}
-      </div>
+      <SearchInput
+        value={search}
+        onValueChange={onSearchChange}
+        placeholder="Search runs…"
+        aria-label="Search runs"
+      />
 
       <MultiPillGroup options={STATUS_OPTIONS} values={statuses} onChange={onStatusesChange} />
 
       {(options?.automations.length ?? 0) > 1 && (
-        <select
-          className="h-6 rounded border border-border bg-background px-1.5 text-xs"
+        <Select
+          className="h-6 w-auto"
           value={automationId}
-          onChange={(event) => onAutomationChange(event.target.value)}
+          onValueChange={onAutomationChange}
           aria-label="Filter by automation"
-        >
-          <option value="">Any automation</option>
-          {options?.automations.map((automation) => (
-            <option key={automation.id} value={automation.id}>
-              {automation.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "Any automation" },
+            ...(options?.automations ?? []).map((automation) => ({ value: automation.id, label: automation.name })),
+          ]}
+        />
       )}
 
       {(options?.jobTypes.length ?? 0) > 1 && (
-        <select
-          className="h-6 rounded border border-border bg-background px-1.5 text-xs"
+        <Select
+          className="h-6 w-auto"
           value={type}
-          onChange={(event) => onTypeChange(event.target.value)}
+          onValueChange={onTypeChange}
           aria-label="Filter by kind"
-        >
-          <option value="">Any kind</option>
-          {options?.jobTypes.map((jobType) => (
-            <option key={jobType.type} value={jobType.type}>
-              {jobType.label}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "Any kind" },
+            ...(options?.jobTypes ?? []).map((jobType) => ({ value: jobType.type, label: jobType.label })),
+          ]}
+        />
       )}
 
       {/* One statement about how many, including the cap. Saying "200" and then

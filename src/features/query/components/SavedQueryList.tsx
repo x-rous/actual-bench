@@ -234,6 +234,7 @@ function SavedItem({
       }}
     >
       {isRenaming ? (
+        // eslint-disable-next-line no-restricted-syntax -- inline rename inside a list item, sized to the item
         <input
           autoFocus
           value={renameValue}

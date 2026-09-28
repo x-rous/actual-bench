@@ -1,5 +1,6 @@
 import { runQuery } from "./query";
 import type { ConnectionInstance } from "@/store/connection";
+import { DEFAULT_DATE_FORMAT, normalizeDateFormat } from "@/lib/dates/typedDate";
 
 type RawRow = { id?: unknown; value?: unknown };
 type QueryResponse = { data: RawRow[] };
@@ -10,12 +11,15 @@ export type PreferencesBudgetMode = "tracking" | "envelope";
 export type BudgetPreferences = {
   upcomingScheduledTransactionLength: number;
   budgetMode: PreferencesBudgetMode;
+  /** Settings → Formatting → Date format, e.g. `dd/MM/yyyy`; how dates are typed and shown. */
+  dateFormat: string;
 };
 
-const DEFAULTS: BudgetPreferences = {
+export const DEFAULT_BUDGET_PREFERENCES: BudgetPreferences = {
   upcomingScheduledTransactionLength: 14,
   // Absence of a `budgetType` preference means an envelope (zero-based) budget.
   budgetMode: "envelope",
+  dateFormat: DEFAULT_DATE_FORMAT,
 };
 
 export async function fetchBudgetPreferences(
@@ -48,7 +52,8 @@ export async function fetchBudgetPreferences(
   return {
     upcomingScheduledTransactionLength: Number.isFinite(upcoming) && upcoming > 0
       ? upcoming
-      : DEFAULTS.upcomingScheduledTransactionLength,
+      : DEFAULT_BUDGET_PREFERENCES.upcomingScheduledTransactionLength,
     budgetMode,
+    dateFormat: normalizeDateFormat(map.get("dateFormat")),
   };
 }

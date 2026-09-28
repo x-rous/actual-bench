@@ -16,6 +16,7 @@ import type { useConnectionVault } from "@/features/connect/useConnectionVault";
 import { readVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
 import { parseApiError } from "./utils";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Vault = ReturnType<typeof useConnectionVault>;
 
@@ -93,12 +94,10 @@ export function RememberToggle({
   return (
     <>
       <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-muted/20 p-3">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={checked}
           disabled={disabled}
-          onChange={(e) => handleToggle(e.target.checked)}
-          className="mt-0.5 h-4 w-4"
+          onCheckedChange={(checked) => handleToggle(checked)} className="mt-0.5"
         />
         <span className="flex flex-col">
           <span className="text-sm font-medium">Remember this budget</span>
@@ -133,7 +132,7 @@ export function RememberToggle({
           </DialogHeader>
 
           <div className="flex flex-col gap-2">
-            <Input
+            <Input size="lg"
               type="password"
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
@@ -144,7 +143,7 @@ export function RememberToggle({
               disabled={busy}
             />
             {setting && (
-              <Input
+              <Input size="lg"
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}

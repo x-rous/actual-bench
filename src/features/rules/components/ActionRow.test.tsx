@@ -4,6 +4,7 @@
  * that is how a split index used to disappear when a user retyped an unrelated value.
  */
 
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ActionRow } from "./ActionRow";
 import type { ConditionOrAction } from "@/types/entities";
@@ -30,7 +31,7 @@ function renderRow(action: ConditionOrAction) {
 }
 
 describe("ActionRow preserves options it does not own", () => {
-  it("keeps the split index when the field changes", () => {
+  it("keeps the split index when the field changes", async () => {
     const onChange = renderRow({
       op: "set",
       field: "category",
@@ -39,7 +40,7 @@ describe("ActionRow preserves options it does not own", () => {
       options: { splitIndex: 2 },
     });
 
-    fireEvent.change(screen.getByLabelText("Action field"), { target: { value: "notes" } });
+    await chooseSelectOption(screen.getByLabelText("Action field"), "Notes");
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0]).toMatchObject({
@@ -49,7 +50,7 @@ describe("ActionRow preserves options it does not own", () => {
     });
   });
 
-  it("keeps the split index when the operator changes", () => {
+  it("keeps the split index when the operator changes", async () => {
     const onChange = renderRow({
       op: "set",
       field: "notes",
@@ -58,7 +59,7 @@ describe("ActionRow preserves options it does not own", () => {
       options: { splitIndex: 1 },
     });
 
-    fireEvent.change(screen.getByLabelText("Action type"), { target: { value: "append-notes" } });
+    await chooseSelectOption(screen.getByLabelText("Action type"), "Append to Notes");
 
     expect(onChange.mock.calls[0][0]).toMatchObject({
       op: "append-notes",
@@ -66,7 +67,7 @@ describe("ActionRow preserves options it does not own", () => {
     });
   });
 
-  it("clears template mode on a field change, since that key is the row's own", () => {
+  it("clears template mode on a field change, since that key is the row's own", async () => {
     const onChange = renderRow({
       op: "set",
       field: "notes",
@@ -75,13 +76,13 @@ describe("ActionRow preserves options it does not own", () => {
       options: { template: "{{payee}}", splitIndex: 1 },
     });
 
-    fireEvent.change(screen.getByLabelText("Action field"), { target: { value: "payee_name" } });
+    await chooseSelectOption(screen.getByLabelText("Action field"), "Payee Name");
 
     const next = onChange.mock.calls[0][0];
     expect(next.options).toEqual({ splitIndex: 1 });
   });
 
-  it("drops options entirely when nothing is left to carry", () => {
+  it("drops options entirely when nothing is left to carry", async () => {
     const onChange = renderRow({
       op: "set",
       field: "notes",
@@ -90,12 +91,12 @@ describe("ActionRow preserves options it does not own", () => {
       options: { formula: "=1" },
     });
 
-    fireEvent.change(screen.getByLabelText("Action field"), { target: { value: "payee_name" } });
+    await chooseSelectOption(screen.getByLabelText("Action field"), "Payee Name");
 
     expect(onChange.mock.calls[0][0].options).toBeUndefined();
   });
 
-  it("offers only the split-safe fields inside a split", () => {
+  it("offers only the split-safe fields inside a split", async () => {
     renderRow({
       op: "set",
       field: "category",
@@ -104,8 +105,8 @@ describe("ActionRow preserves options it does not own", () => {
       options: { splitIndex: 1 },
     });
 
-    const field = screen.getByLabelText("Action field") as HTMLSelectElement;
-    const offered = [...field.options].map((o) => o.value);
-    expect(offered).toEqual(["category", "payee", "payee_name", "notes"]);
+    fireEvent.click(screen.getByLabelText("Action field"));
+    const offered = (await screen.findAllByRole("option")).map((option) => option.textContent);
+    expect(offered).toEqual(["Category", "Payee", "Payee Name", "Notes"]);
   });
 });

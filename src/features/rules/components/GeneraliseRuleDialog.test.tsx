@@ -186,7 +186,7 @@ describe("GeneraliseRuleDialog", () => {
     // before there is anything to acknowledge.
     fireEvent.click(screen.getAllByRole("radio")[0]);
     fireEvent.click(
-      screen.getByLabelText("Accept a rewrite that also matches another payee's transactions")
+      screen.getByRole("checkbox", { name: /I understand this condition also matches/ })
     );
     expect(confirm).not.toBeDisabled();
     fireEvent.click(confirm);

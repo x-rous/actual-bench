@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MultiSearchableCombobox, type ComboboxOption } from "./combobox";
+import { MultiSearchableCombobox, SearchableCombobox, type ComboboxOption } from "./combobox";
 
 /**
  * The rendered behaviour of the multi-select, as opposed to the filtering
@@ -78,5 +78,39 @@ describe("MultiSearchableCombobox", () => {
     });
     fireEvent.click(screen.getByText("All expenses"));
     expect(onChange).toHaveBeenCalledWith(["all:expenses"]);
+  });
+});
+
+describe("SearchableCombobox", () => {
+  function openSingle() {
+    const { container } = render(
+      <SearchableCombobox
+        options={[{ id: "a", name: "Groceries" }]}
+        value=""
+        onChange={() => {}}
+        ariaLabel="Category"
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Category" }));
+    return { container, search: screen.getByLabelText("Search options") };
+  }
+
+  it("draws its list above the page, so a scrolling dialog cannot clip it", () => {
+    const { container } = openSingle();
+    // Portaled out of the field's own container, not positioned inside it.
+    expect(container).not.toContainElement(screen.getByRole("listbox"));
+  });
+
+  it("closes on Escape without letting it reach a dialog behind, even with no matches", () => {
+    const behind = jest.fn();
+    document.addEventListener("keydown", behind);
+    const { search } = openSingle();
+
+    fireEvent.change(search, { target: { value: "nothing matches this" } });
+    fireEvent.keyDown(search, { key: "Escape" });
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(behind).not.toHaveBeenCalled();
+    document.removeEventListener("keydown", behind);
   });
 });

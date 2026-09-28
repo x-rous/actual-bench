@@ -292,7 +292,7 @@ export function ConnectForm() {
         <Label htmlFor="baseUrl" className="text-sm text-muted-foreground">
           {connectionMode === "browser-api" ? "Actual Server URL" : "HTTP API Server URL"}
         </Label>
-        <Input
+        <Input size="lg"
           id="baseUrl"
           type="text"
           placeholder={connectionMode === "browser-api" ? "https://actual.example.com" : "https://budgetapi.example.com"}
@@ -326,7 +326,7 @@ export function ConnectForm() {
             <Label htmlFor="apiKey" className="text-sm text-muted-foreground">
               API Key
             </Label>
-            <Input
+            <Input size="lg"
               id="apiKey"
               type="password"
               placeholder="••••••••••••••••"
@@ -346,7 +346,7 @@ export function ConnectForm() {
             <Label htmlFor="serverPassword" className="text-sm text-muted-foreground">
               Server password
             </Label>
-            <Input
+            <Input size="lg"
               id="serverPassword"
               type="password"
               placeholder="••••••••••••••••"
@@ -489,7 +489,7 @@ export function ConnectForm() {
             <Label htmlFor="encryptionPassword" className="text-sm text-muted-foreground">
               Encryption password <span className="text-muted-foreground/70">(optional)</span>
             </Label>
-            <Input
+            <Input size="lg"
               id="encryptionPassword"
               type="password"
               placeholder="Only if this budget is end-to-end encrypted"

@@ -66,6 +66,10 @@ import { MatchOptions } from "./MatchOptions";
 import { NewTransactionOptions } from "./NewTransactionOptions";
 import { PdfStatementReviewDialog } from "./PdfStatementReviewDialog";
 import { formatMinorUnits } from "../lib/format";
+import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 /**
  * Screen 2 — import and parse (UX §5).
@@ -198,22 +202,17 @@ function MappingSelect({
   required?: boolean;
 }) {
   return (
-    <select
+    <Select
       id={id}
       aria-label={ariaLabel}
-      className="h-6 w-full min-w-0 rounded border border-input bg-background px-1 text-[11px] font-normal"
-      value={value ?? ""}
-      onChange={(event) =>
-        onChange(event.target.value === "" ? undefined : Number(event.target.value))
-      }
-    >
-      {!required && <option value="">-</option>}
-      {options.map((column) => (
-        <option key={column.index} value={column.index}>
-          {column.label}
-        </option>
-      ))}
-    </select>
+      className="h-6 px-1 text-[11px] font-normal"
+      value={value === undefined ? "" : String(value)}
+      onValueChange={(next) => onChange(next === "" ? undefined : Number(next))}
+      options={[
+        ...(required ? [] : [{ value: "", label: "-" }]),
+        ...options.map((column) => ({ value: String(column.index), label: column.label })),
+      ]}
+    />
   );
 }
 
@@ -710,7 +709,7 @@ export function ImportPanel({
             Editing this re-parses the preview. Uploading a different file replaces it.
           </DialogDescription>
         </DialogHeader>
-        <textarea
+        <Textarea
           aria-label="Statement rows"
           value={text}
           onChange={(event) => {
@@ -721,7 +720,7 @@ export function ImportPanel({
           }}
           rows={16}
           spellCheck={false}
-          className="w-full rounded-md border border-input bg-background p-2 font-mono text-xs"
+          className="font-mono"
         />
       </DialogContent>
     </Dialog>
@@ -756,13 +755,13 @@ export function ImportPanel({
           }}
         >
           <Label htmlFor="pdf-password">PDF password</Label>
-          <input
+          <Input
             id="pdf-password"
             type="password"
             autoFocus
             value={pdfPassword}
             onChange={(event) => setPdfPassword(event.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3"
+            size="lg"
           />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => {
@@ -835,7 +834,7 @@ export function ImportPanel({
             <Label htmlFor="statement-text" className="text-xs">
               Or paste statement rows
             </Label>
-            <textarea
+            <Textarea
               id="statement-text"
               value={text}
               onChange={(event) => {
@@ -847,7 +846,7 @@ export function ImportPanel({
               rows={5}
               spellCheck={false}
               placeholder={"2026-07-01\tCARREFOUR MARKET\t-342.85"}
-              className="w-full rounded-md border border-input bg-background p-2 font-mono text-xs"
+              className="font-mono"
             />
           </div>
         </>
@@ -875,49 +874,40 @@ export function ImportPanel({
             ) : undefined
           }
         >
-          <select
+          <Select
             id="map-date-format"
-            className="h-7 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+            size="sm"
             value={effectiveConfig.dateFormat}
-            onChange={(event) => update({ dateFormat: event.target.value as StatementDateFormat })}
-          >
-            {DATE_FORMATS.map((format) => (
-              <option key={format.value} value={format.value}>
-                {format.label}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => update({ dateFormat: value as StatementDateFormat })}
+            options={DATE_FORMATS.map((entry) => ({ value: entry.value, label: entry.label }))}
+          />
         </FieldRow>
       )}
 
       {isDelimited && (
         <FieldRow id="map-sign" label="Amounts">
-          <select
+          <Select
             id="map-sign"
-            className="h-7 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+            size="sm"
             value={effectiveConfig.signConvention}
-            onChange={(event) => update({ signConvention: event.target.value as SignConvention })}
-          >
-            {SIGN_CONVENTIONS.map((convention) => (
-              <option key={convention.value} value={convention.value}>
-                {convention.label}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => update({ signConvention: value as SignConvention })}
+            options={SIGN_CONVENTIONS.map((entry) => ({ value: entry.value, label: entry.label }))}
+          />
         </FieldRow>
       )}
 
       {effectiveConfig.format !== "ofx" && (
         <FieldRow id="map-decimal" label="Decimal">
-          <select
+          <Select
             id="map-decimal"
-            className="h-7 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+            size="sm"
             value={effectiveConfig.decimalSeparator}
-            onChange={(event) => update({ decimalSeparator: event.target.value as "." | "," })}
-          >
-            <option value=".">1,234.56</option>
-            <option value=",">1.234,56</option>
-          </select>
+            onValueChange={(value) => update({ decimalSeparator: value as "." | "," })}
+            options={[
+              { value: ".", label: "1,234.56" },
+              { value: ",", label: "1.234,56" },
+            ]}
+          />
         </FieldRow>
       )}
 
@@ -935,11 +925,9 @@ export function ImportPanel({
             reads before the swap that decides which text is which.
           */}
           <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="size-3.5 accent-foreground"
+            <Checkbox
               checked={effectiveConfig.fallbackPayeeToMemo}
-              onChange={(event) => update({ fallbackPayeeToMemo: event.target.checked })}
+              onCheckedChange={(checked) => update({ fallbackPayeeToMemo: checked })}
             />
             <span className="flex items-center gap-1.5">
               Use the memo as a fallback for empty payees
@@ -951,11 +939,9 @@ export function ImportPanel({
             </span>
           </label>
           <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="size-3.5 accent-foreground"
+            <Checkbox
               checked={effectiveConfig.swapPayeeAndMemo}
-              onChange={(event) => update({ swapPayeeAndMemo: event.target.checked })}
+              onCheckedChange={(checked) => update({ swapPayeeAndMemo: checked })}
             />
             <span className="flex items-center gap-1.5">
               Swap the payee and memo
@@ -1009,13 +995,13 @@ export function ImportPanel({
       {effectiveConfig && (
         <>
           <div className="flex items-center gap-2">
-            <input
+            <Input
               id="profile-name"
               aria-label="Profile name"
               value={profileName}
               onChange={(event) => setProfileName(event.target.value)}
               placeholder={`${accountName} statement`}
-              className="h-7 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+              size="sm"
             />
             <Button
               variant="outline"

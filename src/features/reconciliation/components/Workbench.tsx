@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FileCheck, RefreshCw, Search, Wand2, X } from "lucide-react";
+import { ChevronDown, FileCheck, RefreshCw, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
@@ -37,6 +37,9 @@ import { MatchOptions } from "./MatchOptions";
 import { ShortcutsHelp } from "./ShortcutsHelp";
 import { TransformDialog } from "./TransformDialog";
 import { WorkbenchRow } from "./WorkbenchRow";
+import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * Screen 3 — the reconciliation workbench (UX §7).
@@ -1108,14 +1111,17 @@ export function Workbench({
       // whichever row happens to be selected underneath it.
       if (document.querySelector('[role="dialog"]')) return;
 
-      // Never steal a key from someone typing in the search box or a note.
+      // Never steal a key from someone typing in the search box or a note, or
+      // choosing from a dropdown: its trigger and open list take the arrows and
+      // Enter for themselves.
       const target = event.target as HTMLElement | null;
       if (
         target &&
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.tagName === "SELECT" ||
-          target.isContentEditable)
+          target.isContentEditable ||
+          target.closest('[role="combobox"], [role="listbox"]'))
       ) {
         return;
       }
@@ -1498,42 +1504,21 @@ export function Workbench({
             size larger than the Sort select beside it on every desktop screen
             and agreed with it only on mobile.
           */}
-          <div className="relative flex items-center">
-            <Search
-              className="pointer-events-none absolute left-1.5 h-3.5 w-3.5 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search rows…"
-              aria-label="Search reconciliation rows"
-              className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                aria-label="Clear search"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" aria-hidden="true" />
-              </button>
-            )}
-          </div>
+          <SearchInput
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Search rows…"
+            aria-label="Search reconciliation rows"
+          />
           <label className="flex items-center gap-1 text-muted-foreground">
             Sort
-            <select
+            <Select
+              className="h-6 w-auto"
+              aria-label="Sort"
               value={sort}
-              onChange={(event) => setSort(event.target.value as SortId)}
-              className="h-6 rounded border border-border/60 bg-background px-1 text-xs"
-            >
-              {SORTS.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => setSort(value as SortId)}
+              options={SORTS.map((entry) => ({ value: entry.id, label: entry.label }))}
+            />
           </label>
           {/* About the screen rather than about this session's progress, so it
               ends the row instead of sitting among the decision figures. */}
@@ -1604,13 +1589,12 @@ export function Workbench({
               </tr>
               <tr>
                 <th scope="col" className="w-8 border-b border-border bg-muted px-2 pb-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     aria-label={
                       allVisibleSelected ? "Deselect all visible rows" : "Select all visible rows"
                     }
                     checked={allVisibleSelected}
-                    onChange={() => toggleSelectAll(visibleIds, allVisibleSelected)}
+                    onCheckedChange={() => toggleSelectAll(visibleIds, allVisibleSelected)}
                   />
                 </th>
                 {/*

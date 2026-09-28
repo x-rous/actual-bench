@@ -5,7 +5,6 @@ import { ArrowRight, Download, Info, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { getConnectionModeBadge } from "@/components/connect/utils";
 import {
   Dialog,
   DialogContent,
@@ -27,9 +26,11 @@ import {
 } from "../lib/flowForm";
 import { exportFlowDefinition, importFlowDefinition, FlowImportError } from "../lib/flowPortability";
 import { UnattendedEnrollment } from "./UnattendedEnrollment";
-import { useSavedBudgetConnector } from "@/features/connect/useSavedBudgetConnector";
-import type { SavedBudget } from "@/features/connect/savedBudgets";
+import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect";
 import type { ConnectionInstance } from "@/store/connection";
+import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 
 type FlowEditDialogProps = {
   open: boolean;
@@ -47,8 +48,6 @@ type FlowEditDialogProps = {
   onRan?: () => void;
 };
 
-const compactInputClass = "h-7 rounded-md px-2 py-1 text-xs md:text-xs";
-const selectClass = "h-7 min-w-0 rounded-md border border-input bg-background px-2 py-1 text-xs";
 
 /** A tooltip-bearing info dot, for inline field/option explanations. */
 function InfoDot({ text }: { text: string }) {
@@ -59,8 +58,6 @@ function InfoDot({ text }: { text: string }) {
   );
 }
 
-const SAVED_PREFIX = "saved:";
-const savedValue = (saved: SavedBudget) => `${SAVED_PREFIX}${saved.serverFingerprint}:${saved.budgetSyncId}`;
 
 function InlineEndpoint({
   label,
@@ -79,7 +76,8 @@ function InlineEndpoint({
   const accounts = useFlowAccounts(endpoint.connectionId);
   // Saved budgets can be picked too; picking one connects it in the background
   // without changing the active budget (PR-071b).
-  const savedConnector = useSavedBudgetConnector();
+  const budgetChoices = useBudgetChoices({ connections });
+  const savedConnector = budgetChoices.connector;
   const savedForThis = savedConnector.saved.find((saved) => saved.budgetSyncId === endpoint.budgetSyncId);
 
   // A flow that runs on the server keeps its budgets when they are not
@@ -117,56 +115,40 @@ function InlineEndpoint({
   }
   return (
     <div className="flex min-w-0 gap-2">
-      <select
+      <BudgetSelect
         aria-label={`${label} connection`}
-        className={`${selectClass} flex-1`}
+        size="sm"
+        className="flex-1"
+        options={budgetChoices.options}
         value={endpoint.connectionId}
         disabled={savedConnector.connecting}
-        onChange={async (e) => {
-          const value = e.target.value;
-          if (value.startsWith(SAVED_PREFIX)) {
-            const saved = savedConnector.saved.find((entry) => savedValue(entry) === value);
-            const instance = saved ? await savedConnector.connect(saved) : null;
-            if (instance) {
-              onChange({ connectionId: instance.id, budgetSyncId: instance.budgetSyncId, budgetName: instance.label, accountId: "", accountName: "" });
-            }
+        placeholder={savedConnector.connecting ? "Connecting..." : `${label} budget…`}
+        onValueChange={async (value) => {
+          if (!value) {
+            onChange({ connectionId: "", budgetSyncId: "", budgetName: "", accountId: "", accountName: "" });
             return;
           }
-          const c = connections.find((x) => x.id === value);
-          onChange({ connectionId: c?.id ?? "", budgetSyncId: c?.budgetSyncId ?? "", budgetName: c?.label ?? "", accountId: "", accountName: "" });
+          const instance = await budgetChoices.resolve(value);
+          if (instance) {
+            onChange({ connectionId: instance.id, budgetSyncId: instance.budgetSyncId, budgetName: instance.label, accountId: "", accountName: "" });
+          }
         }}
-      >
-        <option value="">{savedConnector.connecting ? "Connecting..." : `${label} budget…`}</option>
-        {connections.map((c) => (
-          <option key={c.id} value={c.id}>{c.label}</option>
-        ))}
-        {savedConnector.saved.length > 0 && (
-          <optgroup label={savedConnector.locked ? "Saved (unlock to open)" : "Saved"}>
-            {savedConnector.saved.map((saved) => (
-              <option key={savedValue(saved)} value={savedValue(saved)}>
-                {saved.name} ({getConnectionModeBadge(saved.mode)})
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
+      />
       {savedConnector.dialog}
       {entityMode ? null : (
-      <select
+      <Select
         aria-label={`${label} account`}
-        className={`${selectClass} flex-1`}
+        size="sm"
+        className="min-w-0 flex-1"
         value={endpoint.accountId}
         disabled={!endpoint.connectionId || accounts.isLoading}
-        onChange={(e) => {
-          const a = (accounts.data ?? []).find((x) => x.id === e.target.value);
+        placeholder={accounts.isLoading ? "Loading…" : "account…"}
+        onValueChange={(value) => {
+          const a = (accounts.data ?? []).find((x) => x.id === value);
           onChange({ ...endpoint, accountId: a?.id ?? "", accountName: a?.name ?? "" });
         }}
-      >
-        <option value="">{accounts.isLoading ? "Loading…" : "account…"}</option>
-        {(accounts.data ?? []).map((a) => (
-          <option key={a.id} value={a.id}>{a.name}</option>
-        ))}
-      </select>
+        options={(accounts.data ?? []).map((a) => ({ value: a.id, label: a.name }))}
+      />
       )}
     </div>
   );
@@ -322,7 +304,7 @@ export function FlowEditDialog({
             </div>
             <div className="flex min-w-[16rem] flex-1 flex-col gap-1.5">
               <span className="text-[11px] font-semibold uppercase text-muted-foreground">Name</span>
-              <Input className={compactInputClass} aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={entityMode ? "e.g. Shared payees" : "e.g. Joint card → Personal"} />
+              <Input size="sm" aria-label="Flow name" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder={entityMode ? "e.g. Shared payees" : "e.g. Joint card → Personal"} />
             </div>
           </div>
 
@@ -351,29 +333,32 @@ export function FlowEditDialog({
               <div className="flex flex-col gap-2">
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                   Review policy
-                  <select
+                  <Select
                     aria-label="Review policy"
-                    className={selectClass}
+                    size="sm"
                     value={form.automation.reviewPolicy}
-                    onChange={(e) => setAutomation({ reviewPolicy: e.target.value as SyncFlowFormState["automation"]["reviewPolicy"] })}
-                  >
-                    <option value="manual_preview_required">Manual - preview &amp; apply yourself (default)</option>
-                    <option value="auto_apply_safe_only">Auto-apply safe items on preview</option>
-                    {/* Turned off (RD-095 D4): kept only so a flow that already has it shows it. */}
-                    {form.automation.reviewPolicy === "auto_sync_on_interval" && (
-                      <option value="auto_sync_on_interval">Auto-sync on a schedule (while app is open) - turned off</option>
-                    )}
-                    <option value="auto_sync_unattended" disabled={!unattendedEligible}>
-                      Auto-sync on a server schedule (unattended){unattendedEligible ? "" : " - choose both budgets first"}
-                    </option>
-                  </select>
+                    onValueChange={(value) => setAutomation({ reviewPolicy: value as SyncFlowFormState["automation"]["reviewPolicy"] })}
+                    options={[
+                      { value: "manual_preview_required", label: "Manual - preview & apply yourself (default)" },
+                      { value: "auto_apply_safe_only", label: "Auto-apply safe items on preview" },
+                      // Turned off (RD-095 D4): kept only so a flow that already has it shows it.
+                      ...(form.automation.reviewPolicy === "auto_sync_on_interval"
+                        ? [{ value: "auto_sync_on_interval", label: "Auto-sync on a schedule (while app is open) - turned off" }]
+                        : []),
+                      {
+                        value: "auto_sync_unattended",
+                        label: `Auto-sync on a server schedule (unattended)${unattendedEligible ? "" : " - choose both budgets first"}`,
+                        disabled: !unattendedEligible,
+                      },
+                    ]}
+                  />
                 </label>
                 <p className="text-xs text-muted-foreground">{automationHelp[form.automation.reviewPolicy]}</p>
                 {(form.automation.reviewPolicy === "auto_sync_on_interval" || form.automation.reviewPolicy === "auto_sync_unattended") && (
                   <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                     Run every (minutes)
                     <Input
-                      className={compactInputClass}
+                      size="sm"
                       type="number"
                       min={15}
                       step={5}
@@ -406,12 +391,10 @@ export function FlowEditDialog({
                   <span className="text-[11px] font-semibold uppercase text-muted-foreground">What a sync may do</span>
                   {syncToggles.map((t) => (
                     <label key={t.key} className="flex items-start gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
+                      <Checkbox className="mt-0.5"
                         aria-label={t.label}
                         checked={!!form.automation[t.key]}
-                        onChange={(e) => setAutomation({ [t.key]: e.target.checked } as Partial<SyncFlowFormState["automation"]>)}
+                        onCheckedChange={(checked) => setAutomation({ [t.key]: checked } as Partial<SyncFlowFormState["automation"]>)}
                       />
                       <span className="flex items-center gap-1">{t.label} <InfoDot text={t.detail} /></span>
                     </label>
@@ -433,7 +416,7 @@ export function FlowEditDialog({
                   <label className="flex max-w-xs flex-col gap-1 text-xs text-muted-foreground">
                     Default group
                     <Input
-                      className={compactInputClass}
+                      size="sm"
                       aria-label="Default target group"
                       value={form.entity.defaultGroupName}
                       onChange={(e) => setEntity({ defaultGroupName: e.target.value })}
@@ -441,11 +424,9 @@ export function FlowEditDialog({
                     />
                   </label>
                   <label className="flex items-center gap-2 text-xs" title="Create the source group on the target when it doesn't exist there.">
-                    <input
-                      type="checkbox"
-                      aria-label="Create missing groups"
+                    <Checkbox
                       checked={form.entity.createMissingGroup}
-                      onChange={(e) => setEntity({ createMissingGroup: e.target.checked })}
+                      onCheckedChange={(checked) => setEntity({ createMissingGroup: checked })}
                     />
                     Create missing groups too
                   </label>
@@ -465,27 +446,39 @@ export function FlowEditDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">Amount direction <InfoDot text="Reverse flips the sign (an expense in one budget becomes income in the other) - the usual choice for cross-budget. Same keeps the sign." /></span>
-                  <select aria-label="Amount direction" className={selectClass} value={form.transform.amountDirection} onChange={(e) => setTransform({ amountDirection: e.target.value as "reverse" | "same" })}>
-                    <option value="same">Same sign (default)</option>
-                    <option value="reverse">Reverse sign</option>
-                  </select>
+                  <Select
+                    aria-label="Amount direction"
+                    size="sm"
+                    value={form.transform.amountDirection}
+                    onValueChange={(value) => setTransform({ amountDirection: value as "reverse" | "same" })}
+                    options={[
+                      { value: "same", label: "Same sign (default)" },
+                      { value: "reverse", label: "Reverse sign" },
+                    ]}
+                  />
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">Missing payee <InfoDot text="When the source payee has no match on the target: create it, or leave the payee empty." /></span>
-                  <select aria-label="Missing payee policy" className={selectClass} value={form.transform.missingPayee} onChange={(e) => setTransform({ missingPayee: e.target.value as "create" | "leave_empty" })}>
-                    <option value="create">Create payee (default)</option>
-                    <option value="leave_empty">Leave empty</option>
-                  </select>
+                  <Select
+                    aria-label="Missing payee policy"
+                    size="sm"
+                    value={form.transform.missingPayee}
+                    onValueChange={(value) => setTransform({ missingPayee: value as "create" | "leave_empty" })}
+                    options={[
+                      { value: "create", label: "Create payee (default)" },
+                      { value: "leave_empty", label: "Leave empty" },
+                    ]}
+                  />
                 </label>
               </div>
               <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" aria-label="Add notes marker" checked={form.transform.notesMarkerEnabled} onChange={(e) => setTransform({ notesMarkerEnabled: e.target.checked })} />
+                <Checkbox checked={form.transform.notesMarkerEnabled} onCheckedChange={(checked) => setTransform({ notesMarkerEnabled: checked })} />
                 Add a note to synced transactions
               </label>
               {form.transform.notesMarkerEnabled && (
                 <div className="flex flex-col gap-1 pl-6">
                   <Input
-                    className={compactInputClass}
+                    size="sm"
                     aria-label="Notes marker text"
                     value={form.transform.notesMarker}
                     onChange={(e) => setTransform({ notesMarker: e.target.value })}
@@ -495,7 +488,7 @@ export function FlowEditDialog({
                 </div>
               )}
               <label className="flex items-center gap-2 text-xs" title="Copy the source transaction's own notes onto the target, before the marker.">
-                <input type="checkbox" aria-label="Copy source notes" checked={form.transform.copySourceNotes} onChange={(e) => setTransform({ copySourceNotes: e.target.checked })} />
+                <Checkbox checked={form.transform.copySourceNotes} onCheckedChange={(checked) => setTransform({ copySourceNotes: checked })} />
                 Also copy the source transaction&apos;s notes
               </label>
               <p className="text-xs text-muted-foreground">Payees and categories are matched by name on the target.</p>
@@ -503,23 +496,23 @@ export function FlowEditDialog({
               {!entityMode && (
                 <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
                   <label className="flex items-center gap-2 text-xs" title="Convert amounts into a master currency using the FX rate for each transaction's date (RD-056). Missing rates go to review.">
-                    <input type="checkbox" aria-label="Convert currency" checked={form.transform.fxEnabled} onChange={(e) => setTransform({ fxEnabled: e.target.checked })} />
+                    <Checkbox checked={form.transform.fxEnabled} onCheckedChange={(checked) => setTransform({ fxEnabled: checked })} />
                     Convert currency (multi-currency consolidation)
                   </label>
                   {form.transform.fxEnabled && (
                     <div className="flex flex-col gap-2 pl-6">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Input aria-label="Source currency" className={cn(compactInputClass, "w-16 uppercase")} maxLength={3} placeholder="AED" value={form.transform.fxSourceCurrency} onChange={(e) => setTransform({ fxSourceCurrency: e.target.value.toUpperCase() })} />
+                        <Input aria-label="Source currency" size="sm" className="w-16 uppercase" maxLength={3} placeholder="AED" value={form.transform.fxSourceCurrency} onChange={(e) => setTransform({ fxSourceCurrency: e.target.value.toUpperCase() })} />
                         <span className="text-muted-foreground">→</span>
-                        <Input aria-label="Target currency" className={cn(compactInputClass, "w-16 uppercase")} maxLength={3} placeholder="AUD" value={form.transform.fxTargetCurrency} onChange={(e) => setTransform({ fxTargetCurrency: e.target.value.toUpperCase() })} />
+                        <Input aria-label="Target currency" size="sm" className="w-16 uppercase" maxLength={3} placeholder="AUD" value={form.transform.fxTargetCurrency} onChange={(e) => setTransform({ fxTargetCurrency: e.target.value.toUpperCase() })} />
                         <span className="text-[11px] text-muted-foreground">ISO 4217 codes - target is your master currency</span>
                       </div>
                       <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <input type="checkbox" aria-label="Fetch missing rates" checked={form.transform.fxAllowProvider} onChange={(e) => setTransform({ fxAllowProvider: e.target.checked })} />
+                        <Checkbox checked={form.transform.fxAllowProvider} onCheckedChange={(checked) => setTransform({ fxAllowProvider: checked })} />
                         Fetch missing rates automatically (Frankfurter)
                       </label>
                       <label className="flex items-center gap-2 text-xs text-muted-foreground" title="If you correct a rate after syncing, the preview offers to update the already-synced transactions' amounts. A transaction you edited by hand in Actual is never overwritten.">
-                        <input type="checkbox" aria-label="Update on rate change" checked={form.transform.fxUpdateOnRateChange} onChange={(e) => setTransform({ fxUpdateOnRateChange: e.target.checked })} />
+                        <Checkbox checked={form.transform.fxUpdateOnRateChange} onCheckedChange={(checked) => setTransform({ fxUpdateOnRateChange: checked })} />
                         Update synced transactions when the rate changes
                       </label>
                       {invalidFx && <span className="text-xs text-destructive">Enter both a source and a target currency code.</span>}
@@ -542,21 +535,39 @@ export function FlowEditDialog({
                 )}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className={cn("flex flex-col gap-1 text-xs", filterActive.startDate ? "text-foreground" : "text-muted-foreground")}>Start date<Input type="date" aria-label="Start date" className={cn(compactInputClass, filterActive.startDate && activeRing)} value={form.filter.startDate} onChange={(e) => setFilter({ startDate: e.target.value })} /></label>
-                <label className={cn("flex flex-col gap-1 text-xs", filterActive.endDate ? "text-foreground" : "text-muted-foreground")}>End date<Input type="date" aria-label="End date" className={cn(compactInputClass, filterActive.endDate && activeRing)} value={form.filter.endDate} onChange={(e) => setFilter({ endDate: e.target.value })} /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.startDate ? "text-foreground" : "text-muted-foreground")}>Start date<DateInput aria-label="Start date" size="sm" className={cn(filterActive.startDate && activeRing)} value={form.filter.startDate} onValueChange={(value) => setFilter({ startDate: value })} /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.endDate ? "text-foreground" : "text-muted-foreground")}>End date<DateInput aria-label="End date" size="sm" className={cn(filterActive.endDate && activeRing)} value={form.filter.endDate} onValueChange={(value) => setFilter({ endDate: value })} /></label>
                 <label className={cn("flex flex-col gap-1 text-xs", filterActive.amountSign ? "text-foreground" : "text-muted-foreground")}>Amount sign
-                  <select aria-label="Amount sign" className={cn(selectClass, filterActive.amountSign && activeRing)} value={form.filter.amountSign} onChange={(e) => setFilter({ amountSign: e.target.value as "any" | "inflow" | "outflow" })}>
-                    <option value="any">Both</option><option value="inflow">Inflow only</option><option value="outflow">Outflow only</option>
-                  </select>
+                  <Select
+                    aria-label="Amount sign"
+                    size="sm"
+                    className={cn(filterActive.amountSign && activeRing)}
+                    value={form.filter.amountSign}
+                    onValueChange={(value) => setFilter({ amountSign: value as "any" | "inflow" | "outflow" })}
+                    options={[
+                      { value: "any", label: "Both" },
+                      { value: "inflow", label: "Inflow only" },
+                      { value: "outflow", label: "Outflow only" },
+                    ]}
+                  />
                 </label>
                 <label className={cn("flex flex-col gap-1 text-xs", filterActive.cleared ? "text-foreground" : "text-muted-foreground")}>Cleared
-                  <select aria-label="Cleared filter" className={cn(selectClass, filterActive.cleared && activeRing)} value={form.filter.cleared} onChange={(e) => setFilter({ cleared: e.target.value as "any" | "cleared" | "uncleared" })}>
-                    <option value="any">Any</option><option value="cleared">Cleared</option><option value="uncleared">Uncleared</option>
-                  </select>
+                  <Select
+                    aria-label="Cleared filter"
+                    size="sm"
+                    className={cn(filterActive.cleared && activeRing)}
+                    value={form.filter.cleared}
+                    onValueChange={(value) => setFilter({ cleared: value as "any" | "cleared" | "uncleared" })}
+                    options={[
+                      { value: "any", label: "Any" },
+                      { value: "cleared", label: "Cleared" },
+                      { value: "uncleared", label: "Uncleared" },
+                    ]}
+                  />
                 </label>
-                <label className={cn("flex flex-col gap-1 text-xs", filterActive.payeeInclude ? "text-foreground" : "text-muted-foreground")}>Payee include<Input aria-label="Payee include" className={cn(compactInputClass, filterActive.payeeInclude && activeRing)} value={form.filter.payeeInclude} onChange={(e) => setFilter({ payeeInclude: e.target.value })} placeholder="comma-separated" /></label>
-                <label className={cn("flex flex-col gap-1 text-xs", filterActive.categoryInclude ? "text-foreground" : "text-muted-foreground")}>Category include<Input aria-label="Category include" className={cn(compactInputClass, filterActive.categoryInclude && activeRing)} value={form.filter.categoryInclude} onChange={(e) => setFilter({ categoryInclude: e.target.value })} placeholder="comma-separated" /></label>
-                <label className={cn("flex flex-col gap-1 text-xs sm:col-span-2", filterActive.notesContains ? "text-foreground" : "text-muted-foreground")}>Notes contains<Input aria-label="Notes contains" className={cn(compactInputClass, filterActive.notesContains && activeRing)} value={form.filter.notesContains} onChange={(e) => setFilter({ notesContains: e.target.value })} /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.payeeInclude ? "text-foreground" : "text-muted-foreground")}>Payee include<Input aria-label="Payee include" size="sm" className={cn(filterActive.payeeInclude && activeRing)} value={form.filter.payeeInclude} onChange={(e) => setFilter({ payeeInclude: e.target.value })} placeholder="comma-separated" /></label>
+                <label className={cn("flex flex-col gap-1 text-xs", filterActive.categoryInclude ? "text-foreground" : "text-muted-foreground")}>Category include<Input aria-label="Category include" size="sm" className={cn(filterActive.categoryInclude && activeRing)} value={form.filter.categoryInclude} onChange={(e) => setFilter({ categoryInclude: e.target.value })} placeholder="comma-separated" /></label>
+                <label className={cn("flex flex-col gap-1 text-xs sm:col-span-2", filterActive.notesContains ? "text-foreground" : "text-muted-foreground")}>Notes contains<Input aria-label="Notes contains" size="sm" className={cn(filterActive.notesContains && activeRing)} value={form.filter.notesContains} onChange={(e) => setFilter({ notesContains: e.target.value })} /></label>
               </div>
               <p className="text-xs text-muted-foreground">Sync-generated transactions are always excluded to prevent loops.</p>
             </section>

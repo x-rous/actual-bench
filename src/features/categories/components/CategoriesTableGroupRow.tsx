@@ -9,6 +9,7 @@ import { EntityNoteButton } from "@/components/ui/entity-note-button";
 import { cn } from "@/lib/utils";
 import type { CategoryGroup } from "@/types/entities";
 import type { StagedEntity } from "@/types/staged";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Props = {
   row: StagedEntity<CategoryGroup>;
@@ -77,12 +78,11 @@ export function CategoriesTableGroupRow({
       )}
     >
       <td className="w-9 px-3 py-0.5">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={isChecked}
-          onChange={(e) => onToggleSelect(entity.id, e.target.checked)}
+          onCheckedChange={(checked) => onToggleSelect(entity.id, checked)}
+          aria-label={`Select category group ${entity.name || "Unnamed group"}`}
           onClick={(e) => e.stopPropagation()}
-          className="h-3.5 w-3.5 cursor-pointer rounded accent-primary"
         />
       </td>
 

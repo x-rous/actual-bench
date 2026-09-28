@@ -1,6 +1,7 @@
 import type { VaultSummary } from "@/lib/credentials/vaultSummary";
 import type { AutomationDefinition, AutomationRun } from "@/lib/app-db/types";
 import { startAndWaitForRun } from "./runPolling";
+import type { ConnectionMode } from "@/store/connection";
 
 /** Client for the automation routes (RD-079 / PR-043d). */
 
@@ -156,6 +157,7 @@ export async function listReviewQueue(): Promise<ReviewQueueEntry[]> {
 
 export type VaultConnection = {
   connectionFingerprint: string;
+  mode: ConnectionMode;
   label: string;
   baseUrl: string;
   budgetSyncId: string;

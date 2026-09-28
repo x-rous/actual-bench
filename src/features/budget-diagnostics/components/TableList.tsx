@@ -1,7 +1,7 @@
-import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SchemaObjectSummary } from "../types";
 import { groupSchemaObjects } from "../lib/schemaObjectGroups";
+import { SearchInput } from "@/components/ui/search-input";
 
 type SortMode = "name" | "rowCount";
 
@@ -55,16 +55,14 @@ export function TableList({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="space-y-3 border-b border-border pb-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            aria-label="Search objects"
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search objects"
-            className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-          />
-        </div>
+        <SearchInput
+          value={search}
+          onValueChange={onSearchChange}
+          placeholder="Search objects"
+          aria-label="Search objects"
+          size="default"
+          className="w-full"
+        />
         <div className="flex rounded-md border border-border p-0.5">
           <button
             type="button"

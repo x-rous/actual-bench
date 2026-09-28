@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { recurSummary } from "../lib/recurSummary";
 import { RecurPatternEditor, type RecurValues } from "./RecurPatternEditor";
 import type { ScheduleFormValues } from "../schemas/schedule.schema";
+import { DateInput } from "@/components/ui/date-input";
 
 type SetScheduleValue = <K extends Path<ScheduleFormValues>>(
   key: K,
@@ -110,11 +111,9 @@ export function ScheduleDateSection({ control, errors, setFieldValue }: Props) {
 
       {dateMode === "once" ? (
         <div>
-          <input
-            type="date"
-            value={onceDate}
-            onChange={(e) => setFieldValue("onceDate", e.target.value)}
-            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring/50"
+          <DateInput
+            value={onceDate ?? ""}
+            onValueChange={(value) => setFieldValue("onceDate", value)}
           />
           {errors.onceDate && <p className="mt-1 text-xs text-destructive">{errors.onceDate}</p>}
         </div>

@@ -9,10 +9,8 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   FileText,
-  Search,
   Trash2,
   Users,
-  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +19,8 @@ import { MultiPillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { formatDateLabel } from "../lib/pdfReviewTable";
 import type { ReconciliationSessionRecord } from "../lib/reconciliationApi";
+import { Select } from "@/components/ui/select";
+import { SearchInput } from "@/components/ui/search-input";
 
 /**
  * Screen 1 — the reconciliation home (UX §3).
@@ -438,26 +438,12 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
       {/* One filter row, matching the other list pages: search, then the
           filters, then the count. */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
-        <div className="relative flex items-center">
-          <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search…"
-            aria-label="Search reconciliation sessions"
-            className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              aria-label="Clear the search"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          value={search}
+          onValueChange={setSearch}
+          aria-label="Search reconciliation sessions"
+          clearLabel="Clear the search"
+        />
 
         {statusOptions.length > 1 && (
           <MultiPillGroup
@@ -468,35 +454,23 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         )}
 
         {accounts.length > 0 && (
-          <select
+          <Select
+            className="h-6 w-auto max-w-56"
             value={accountFilter}
-            onChange={(event) => setAccountFilter(event.target.value)}
+            onValueChange={setAccountFilter}
             aria-label="Filter by account"
-            className="h-6 max-w-56 rounded border border-border bg-background px-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="all">Any account</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.label}
-              </option>
-            ))}
-          </select>
+            options={[{ value: "all", label: "Any account" }, ...accounts.map((account) => ({ value: account.id, label: account.label }))]}
+          />
         )}
 
         {tags.length > 0 && (
-          <select
+          <Select
+            className="h-6 w-auto"
             value={tagFilter}
-            onChange={(event) => setTagFilter(event.target.value)}
+            onValueChange={setTagFilter}
             aria-label="Filter by tag"
-            className="h-6 rounded border border-border bg-background px-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="all">Any tag</option>
-            {tags.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
+            options={[{ value: "all", label: "Any tag" }, ...tags.map((entry) => ({ value: entry, label: entry }))]}
+          />
         )}
 
         {/* The statement's own period, not when the session was worked on —
@@ -504,19 +478,13 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         {years.length > 0 && (
           <div className="flex items-center gap-1">
             <span className="text-xs text-muted-foreground">Period</span>
-            <select
+            <Select
+              className="h-6 w-auto"
               value={year}
-              onChange={(event) => setYear(event.target.value)}
+              onValueChange={setYear}
               aria-label="Filter by statement year"
-              className="h-6 rounded border border-border bg-background px-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-            >
-              <option value="all">Any year</option>
-              {years.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
-            </select>
+              options={[{ value: "all", label: "Any year" }, ...years.map((entry) => ({ value: String(entry), label: String(entry) }))]}
+            />
           </div>
         )}
 

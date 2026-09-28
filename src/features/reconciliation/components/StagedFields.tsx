@@ -9,6 +9,7 @@ import { canStageField } from "@/lib/reconciliation/session/staging";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationItem, StagedPatch } from "@/lib/reconciliation/types";
 import { formatMinorUnits } from "../lib/format";
+import { Textarea } from "@/components/ui/textarea";
 
 /**
  * Editing the transaction that will result (feature spec §21).
@@ -159,10 +160,9 @@ export function StagedFields({
           </Label>
           <ChangedMark patch={patch} field="notes" onUnstage={() => onUnstage("notes")} />
         </div>
-        <textarea
+        <Textarea
           id="staged-notes"
           rows={3}
-          className="rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
           value={notesValue}
           disabled={!field("notes").allowed}
           onChange={(event) => setNotesDraft(event.target.value)}

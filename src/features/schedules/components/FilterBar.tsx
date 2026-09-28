@@ -1,8 +1,9 @@
 "use client";
 
-import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
+import { Select } from "@/components/ui/select";
+import { SearchInput } from "@/components/ui/search-input";
 
 export type StatusFilter = "active" | "all" | "missed" | "completed";
 export type AutoAddFilter = "all" | "auto" | "manual";
@@ -54,9 +55,6 @@ type Props = {
   onDeselect: () => void;
 };
 
-const selectCls =
-  "h-6 rounded border border-border bg-background px-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring";
-
 export function FilterBar({
   search, onSearchChange,
   statusFilter, onStatusFilterChange,
@@ -86,21 +84,11 @@ export function FilterBar({
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
       {/* Search */}
-      <div className="relative flex items-center">
-        <Search className="absolute left-1.5 h-3.5 w-3.5 text-muted-foreground" />
-        <input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search…"
-          aria-label="Search schedules"
-          className="h-6 w-44 rounded border border-border bg-background pl-6 pr-6 text-xs outline-none focus:ring-1 focus:ring-ring"
-        />
-        {search && (
-          <button aria-label="Clear search" onClick={() => onSearchChange("")} className="absolute right-1.5 text-muted-foreground hover:text-foreground">
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
+      <SearchInput
+        value={search}
+        onValueChange={onSearchChange}
+        aria-label="Search schedules"
+      />
 
       <PillGroup options={STATUS_OPTIONS}    value={statusFilter}    onChange={onStatusFilterChange} />
       <PillGroup options={AUTO_ADD_OPTIONS}  value={autoAddFilter}   onChange={onAutoAddFilterChange} />
@@ -108,32 +96,24 @@ export function FilterBar({
 
       {/* Payee filter */}
       {payeeOptions.length > 0 && (
-        <select
-          className={selectCls}
+        <Select
+          className="h-6 w-auto"
           value={payeeFilter}
-          onChange={(e) => onPayeeFilterChange(e.target.value)}
+          onValueChange={onPayeeFilterChange}
           aria-label="Filter by payee"
-        >
-          <option value="">All Payees</option>
-          {payeeOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          options={[{ value: "", label: "All Payees" }, ...payeeOptions]}
+        />
       )}
 
       {/* Account filter */}
       {accountOptions.length > 0 && (
-        <select
-          className={selectCls}
+        <Select
+          className="h-6 w-auto"
           value={accountFilter}
-          onChange={(e) => onAccountFilterChange(e.target.value)}
+          onValueChange={onAccountFilterChange}
           aria-label="Filter by account"
-        >
-          <option value="">All Accounts</option>
-          {accountOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+          options={[{ value: "", label: "All Accounts" }, ...accountOptions]}
+        />
       )}
 
       {hasFilters && (

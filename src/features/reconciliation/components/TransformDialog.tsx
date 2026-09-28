@@ -25,6 +25,11 @@ import type { ReconciliationItem } from "@/lib/reconciliation/types";
 import { statementText } from "@/lib/reconciliation/statement/text";
 import { findNoteTags } from "@/lib/reconciliation/noteTags";
 import type { Option } from "./StagedFields";
+import { Select } from "@/components/ui/select";
+import { SearchableCombobox } from "@/components/ui/combobox";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 
 /**
  * Bulk transformation (feature spec §47).
@@ -173,12 +178,12 @@ function TagField({
   ariaLabel: string;
   onChange: (value: string) => void;
 }) {
-  const className = "h-7 w-32 rounded-md border border-input bg-background px-2 text-xs";
 
   if (tags.length === 0) {
     return (
-      <input
-        className={className}
+      <Input
+        size="sm"
+        className="w-32"
         value={value}
         placeholder={placeholder}
         aria-label={ariaLabel}
@@ -188,19 +193,16 @@ function TagField({
   }
 
   return (
-    <select
-      className={className}
-      value={value}
-      aria-label={ariaLabel}
-      onChange={(event) => onChange(event.target.value)}
-    >
-      <option value="">- choose -</option>
-      {tags.map((tag) => (
-        <option key={tag.id} value={tag.name}>
-          {tag.name}
-        </option>
-      ))}
-    </select>
+    <div className="w-32">
+      <SearchableCombobox
+        ariaLabel={ariaLabel}
+        triggerClassName="h-7"
+        placeholder="- choose -"
+        value={value}
+        onChange={onChange}
+        options={tags.map((tag) => ({ id: tag.name, name: tag.name }))}
+      />
+    </div>
   );
 }
 
@@ -383,10 +385,12 @@ export function TransformDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-        {/* Bounded, so a rule with several conditions scrolls rather than
-            squeezing the impact table it exists to explain. */}
-        <div className="max-h-[45%] shrink-0 space-y-3 overflow-y-auto pr-1">
+        {/* The rule takes its natural height and the table the rest, down to a
+            floor; past that the body scrolls as one. The rule is never its own
+            scroll box, or an open picker would scroll inside it instead of
+            opening over the table. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+        <div className="shrink-0 space-y-3">
 
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 text-xs">
@@ -414,12 +418,14 @@ export function TransformDialog({
         <Label className="text-xs font-semibold uppercase tracking-wide">If</Label>
         {conditions.map((condition, index) => (
           <div key={index} className="flex flex-wrap items-center gap-1.5">
-            <select
-              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+            <Select
+              size="sm"
+              className="w-auto"
               value={condition.field}
               aria-label="Field"
-              onChange={(event) => {
-                const field = event.target.value as ConditionField;
+              options={FIELDS.map((field) => ({ value: field.id, label: field.label }))}
+              onValueChange={(value) => {
+                const field = value as ConditionField;
                 setConditions((previous) =>
                   previous.map((entry, i) => {
                     if (i !== index) return entry;
@@ -435,34 +441,25 @@ export function TransformDialog({
                   })
                 );
               }}
-            >
-              {FIELDS.map((field) => (
-                <option key={field.id} value={field.id}>
-                  {field.label}
-                </option>
-              ))}
-            </select>
+            />
 
-            <select
-              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+            <Select
+              size="sm"
+              className="w-auto"
               value={condition.operator}
               aria-label="Comparison"
-              onChange={(event) =>
+              onValueChange={(value) =>
                 setConditions((previous) =>
                   previous.map((entry, i) =>
-                    i === index
-                      ? { ...entry, operator: event.target.value as ConditionOperator }
-                      : entry
+                    i === index ? { ...entry, operator: value as ConditionOperator } : entry
                   )
                 )
               }
-            >
-              {OPERATORS_BY_FIELD[condition.field].map((operator) => (
-                <option key={operator} value={operator}>
-                  {operatorLabel(condition.field, operator)}
-                </option>
-              ))}
-            </select>
+              options={OPERATORS_BY_FIELD[condition.field].map((operator) => ({
+                value: operator,
+                label: operatorLabel(condition.field, operator),
+              }))}
+            />
 
             {/*
               Chosen rather than typed wherever the value has to match something
@@ -475,49 +472,54 @@ export function TransformDialog({
               open - a substring of a note, words the bank wrote, a new tag.
             */}
             {condition.field === "matchStatus" ? (
-              <select
-                className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+              <Select
+                size="sm"
+                className="w-40"
                 value={condition.value}
                 aria-label="Decision"
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setConditions((previous) =>
-                    previous.map((entry, i) =>
-                      i === index ? { ...entry, value: event.target.value } : entry
-                    )
+                    previous.map((entry, i) => (i === index ? { ...entry, value } : entry))
                   )
                 }
-              >
-                {DECISION_VALUES.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.label}
-                  </option>
-                ))}
-              </select>
+                options={DECISION_VALUES.map((entry) => ({ value: entry.id, label: entry.label }))}
+              />
             ) : pickerFor(condition, { payees, categories, tags: tagOptions }) ? (
-              <select
-                className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+              <div className="w-40">
+                <SearchableCombobox
+                  ariaLabel="Value"
+                  triggerClassName="h-7"
+                  placeholder="- choose -"
+                  value={condition.value}
+                  onChange={(value) =>
+                    setConditions((previous) =>
+                      previous.map((entry, i) => (i === index ? { ...entry, value } : entry))
+                    )
+                  }
+                  options={pickerFor(condition, { payees, categories, tags: tagOptions })!.map((option) => ({
+                    id: option.name,
+                    name: option.name,
+                  }))}
+                />
+              </div>
+            ) : condition.field === "date" ? (
+              <DateInput
+                size="sm"
+                className="w-40"
                 value={condition.value}
                 aria-label="Value"
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setConditions((previous) =>
-                    previous.map((entry, i) =>
-                      i === index ? { ...entry, value: event.target.value } : entry
-                    )
+                    previous.map((entry, i) => (i === index ? { ...entry, value } : entry))
                   )
                 }
-              >
-                <option value="">- choose -</option>
-                {pickerFor(condition, { payees, categories, tags: tagOptions })!.map((option) => (
-                  <option key={option.id} value={option.name}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
+              />
             ) : (
-              <input
-                className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+              <Input
+                size="sm"
+                className="w-40"
                 value={condition.value}
-                type={condition.field === "amount" ? "number" : condition.field === "date" ? "date" : "text"}
+                type={condition.field === "amount" ? "number" : "text"}
                 step={condition.field === "amount" ? "0.01" : undefined}
                 aria-label="Value"
                 onChange={(event) =>
@@ -530,20 +532,37 @@ export function TransformDialog({
               />
             )}
 
-            {condition.operator === "between" && (
-              <input
-                className="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs"
-                value={condition.value2 ?? ""}
-                aria-label="Upper bound"
-                onChange={(event) =>
-                  setConditions((previous) =>
-                    previous.map((entry, i) =>
-                      i === index ? { ...entry, value2: event.target.value } : entry
+            {condition.operator === "between" &&
+              (condition.field === "date" ? (
+                // Stored as ISO like the lower bound, so the two compare as dates.
+                <DateInput
+                  size="sm"
+                  className="w-40"
+                  value={condition.value2 ?? ""}
+                  aria-label="Upper bound"
+                  onValueChange={(value2) =>
+                    setConditions((previous) =>
+                      previous.map((entry, i) => (i === index ? { ...entry, value2 } : entry))
                     )
-                  )
-                }
-              />
-            )}
+                  }
+                />
+              ) : (
+                <Input
+                  size="sm"
+                  className="w-28"
+                  value={condition.value2 ?? ""}
+                  type={condition.field === "amount" ? "number" : "text"}
+                  step={condition.field === "amount" ? "0.01" : undefined}
+                  aria-label="Upper bound"
+                  onChange={(event) =>
+                    setConditions((previous) =>
+                      previous.map((entry, i) =>
+                        i === index ? { ...entry, value2: event.target.value } : entry
+                      )
+                    )
+                  }
+                />
+              ))}
 
             <Button
               variant="ghost"
@@ -576,24 +595,18 @@ export function TransformDialog({
         <Label className="text-xs font-semibold uppercase tracking-wide">Then</Label>
         {actions.map((action, index) => (
           <div key={index} className="flex flex-wrap items-center gap-1.5">
-            <select
-              className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+            <Select
+              size="sm"
+              className="w-auto"
               value={action.kind}
               aria-label="Action"
-              onChange={(event) =>
+              onValueChange={(value) =>
                 setActions((previous) =>
-                  previous.map((entry, i) =>
-                    i === index ? emptyAction(event.target.value as ActionKind) : entry
-                  )
+                  previous.map((entry, i) => (i === index ? emptyAction(value as ActionKind) : entry))
                 )
               }
-            >
-              {ACTIONS.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
+              options={ACTIONS.map((entry) => ({ value: entry.id, label: entry.label }))}
+            />
 
             {action.kind === "replaceTag" && (
               <>
@@ -615,8 +628,9 @@ export function TransformDialog({
                   }
                 />
                 <span className="text-xs text-muted-foreground">with</span>
-                <input
-                  className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
+                <Input
+                  size="sm"
+                  className="w-32"
                   value={action.to}
                   placeholder="#2026-07"
                   aria-label="Replacement tag"
@@ -634,23 +648,25 @@ export function TransformDialog({
             )}
 
             {action.kind === "addTag" && (
-              <select
-                className="h-7 rounded-md border border-input bg-background px-2 text-xs"
+              <Select
+                size="sm"
+                className="w-auto"
                 aria-label="Where the tag goes"
                 value={action.position ?? "end"}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   setActions((previous) =>
                     previous.map((entry, i) =>
                       i === index && entry.kind === "addTag"
-                        ? { ...entry, position: event.target.value as "start" | "end" }
+                        ? { ...entry, position: value as "start" | "end" }
                         : entry
                     )
                   )
                 }
-              >
-                <option value="end">at the end</option>
-                <option value="start">at the start</option>
-              </select>
+                options={[
+                  { value: "end", label: "at the end" },
+                  { value: "start", label: "at the start" },
+                ]}
+              />
             )}
 
             {/* Removing names a tag that is there; adding names one that is
@@ -672,8 +688,9 @@ export function TransformDialog({
             )}
 
             {action.kind === "addTag" && (
-              <input
-                className="h-7 w-32 rounded-md border border-input bg-background px-2 text-xs"
+              <Input
+                size="sm"
+                className="w-32"
                 value={action.tag}
                 placeholder="#2026-07"
                 aria-label="Tag"
@@ -691,8 +708,9 @@ export function TransformDialog({
 
             {action.kind === "replaceNoteText" && (
               <>
-                <input
-                  className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                <Input
+                  size="sm"
+                  className="w-40"
                   value={action.from}
                   placeholder="AMZN Mktp"
                   aria-label="Text to replace"
@@ -707,8 +725,9 @@ export function TransformDialog({
                   }
                 />
                 <span className="text-xs text-muted-foreground">with</span>
-                <input
-                  className="h-7 w-40 rounded-md border border-input bg-background px-2 text-xs"
+                <Input
+                  size="sm"
+                  className="w-40"
                   value={action.to}
                   placeholder="Amazon"
                   aria-label="Replacement text"
@@ -731,8 +750,9 @@ export function TransformDialog({
             )}
 
             {(action.kind === "appendNote" || action.kind === "prependNote") && (
-              <input
-                className="h-7 w-64 rounded-md border border-input bg-background px-2 text-xs"
+              <Input
+                size="sm"
+                className="w-64"
                 value={action.text}
                 placeholder="Checked against statement"
                 aria-label="Text to append"
@@ -755,27 +775,22 @@ export function TransformDialog({
             )}
 
             {action.kind === "setPayee" && (
-              <select
-                className="h-7 w-52 rounded-md border border-input bg-background px-2 text-xs"
-                aria-label="Payee"
-                value={action.payeeId ?? ""}
-                onChange={(event) =>
-                  setActions((previous) =>
-                    previous.map((entry, i) =>
-                      i === index && entry.kind === "setPayee"
-                        ? { ...entry, payeeId: event.target.value || null }
-                        : entry
+              <div className="w-52">
+                <SearchableCombobox
+                  ariaLabel="Payee"
+                  triggerClassName="h-7"
+                  placeholder="None"
+                  value={action.payeeId ?? ""}
+                  onChange={(value) =>
+                    setActions((previous) =>
+                      previous.map((entry, i) =>
+                        i === index && entry.kind === "setPayee" ? { ...entry, payeeId: value || null } : entry
+                      )
                     )
-                  )
-                }
-              >
-                <option value="">None</option>
-                {payees.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
+                  }
+                  options={payees.map((option) => ({ id: option.id, name: option.name }))}
+                />
+              </div>
             )}
 
             <Button
@@ -801,11 +816,9 @@ export function TransformDialog({
       </section>
 
       <label className="flex items-start gap-2 text-xs">
-        <input
-          type="checkbox"
-          className="mt-0.5"
+        <Checkbox className="mt-0.5"
           checked={overrideManual}
-          onChange={(event) => setOverrideManual(event.target.checked)}
+          onCheckedChange={(checked) => setOverrideManual(checked)}
         />
         <span>
           Also change rows I edited by hand
@@ -817,7 +830,7 @@ export function TransformDialog({
 
         </div>
 
-        <section className="flex min-h-0 flex-1 flex-col rounded-md border border-border/60 bg-background">
+        <section className="flex min-h-64 flex-1 flex-col rounded-md border border-border/60 bg-background">
           <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border/50 px-3 py-2">
             <p className="text-xs font-medium">
               {preview.changed.length} row{preview.changed.length === 1 ? "" : "s"} will change

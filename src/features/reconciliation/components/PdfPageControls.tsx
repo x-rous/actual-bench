@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /**
  * Paging for a statement that may be two pages or two hundred.
@@ -35,7 +36,7 @@ export function PdfPageControls({
       {pageCount > JUMP_THRESHOLD ? (
         <span className="flex items-center gap-1 text-xs whitespace-nowrap">
           <label htmlFor="pdf-page-number" className="sr-only">Go to PDF page</label>
-          <input
+          <Input
             id="pdf-page-number"
             type="number"
             min={1}
@@ -45,7 +46,7 @@ export function PdfPageControls({
               const next = Number(event.target.value);
               if (Number.isFinite(next) && next >= 1 && next <= pageCount) onChange(next);
             }}
-            className="h-6 w-12 rounded border border-border bg-background px-1 text-center tabular-nums outline-none focus:ring-1 focus:ring-ring"
+            className="h-6 w-12 px-1 text-center tabular-nums"
           />
           of {pageCount}
         </span>

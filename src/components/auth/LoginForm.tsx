@@ -19,6 +19,7 @@ import {
   type VaultUnlockDuration,
 } from "@/lib/connectionVault/unlockDuration";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
+import { Select } from "@/components/ui/select";
 
 /**
  * Sign in, or on a fresh install set the password (RD-096). One password:
@@ -120,7 +121,7 @@ export function LoginForm({ next }: { next: string }) {
               <Label htmlFor="password" className="text-sm text-muted-foreground">
                 Password
               </Label>
-              <Input
+              <Input size="lg"
                 id="password"
                 type="password"
                 value={password}
@@ -136,7 +137,7 @@ export function LoginForm({ next }: { next: string }) {
                 <Label htmlFor="confirm" className="text-sm text-muted-foreground">
                   Confirm password
                 </Label>
-                <Input
+                <Input size="lg"
                   id="confirm"
                   type="password"
                   value={confirm}
@@ -149,16 +150,14 @@ export function LoginForm({ next }: { next: string }) {
 
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>Keep me signed in for</span>
-              <select
+              <Select
+                aria-label="Keep me signed in for"
+                className="w-auto"
                 value={duration}
-                onChange={(event) => setDuration(event.target.value as VaultUnlockDuration)}
+                onValueChange={(next) => setDuration(next as VaultUnlockDuration)}
                 disabled={busy}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground disabled:opacity-50"
-              >
-                {VAULT_UNLOCK_DURATION_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+                options={VAULT_UNLOCK_DURATION_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+              />
             </label>
 
             {error && (
