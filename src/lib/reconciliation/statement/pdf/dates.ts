@@ -69,7 +69,7 @@ export function parsePdfDateCandidate(
     const year = printedYear ?? inferYear(Number(textualDmy[1]), month ?? 0, period);
     return month && year
       ? result(raw, date(year, month, Number(textualDmy[1])), sourceIds, printedYear ? [] : ["DATE_YEAR_INFERRED_FROM_PERIOD"])
-      : rejected(raw, sourceIds);
+      : month ? withoutYear(raw, sourceIds, printedYear, period) : rejected(raw, sourceIds);
   }
   const textualMdy = raw.match(/\b([\p{L}]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{2,4}))?\b/iu);
   if (textualMdy) {
@@ -78,7 +78,7 @@ export function parsePdfDateCandidate(
     const year = printedYear ?? inferYear(Number(textualMdy[2]), month ?? 0, period);
     return month && year
       ? result(raw, date(year, month, Number(textualMdy[2])), sourceIds, printedYear ? [] : ["DATE_YEAR_INFERRED_FROM_PERIOD"])
-      : rejected(raw, sourceIds);
+      : month ? withoutYear(raw, sourceIds, printedYear, period) : rejected(raw, sourceIds);
   }
 
   const numeric = raw.match(/\b(\d{1,4})[-/.](\d{1,2})(?:[-/.](\d{2,4}))?\b/);
@@ -93,25 +93,25 @@ export function parsePdfDateCandidate(
   }
   if (format === "dmy" || format === "dmy-name") {
     const year = printedYear ?? inferYearForMonth(second, period);
-    return year ? result(raw, date(year, second, first), sourceIds, inferredReason) : rejected(raw, sourceIds);
+    return year ? result(raw, date(year, second, first), sourceIds, inferredReason) : withoutYear(raw, sourceIds, printedYear, period);
   }
   if (format === "mdy") {
     const year = printedYear ?? inferYearForMonth(first, period);
-    return year ? result(raw, date(year, first, second), sourceIds, inferredReason) : rejected(raw, sourceIds);
+    return year ? result(raw, date(year, first, second), sourceIds, inferredReason) : withoutYear(raw, sourceIds, printedYear, period);
   }
   if (format === "iso" || format === "ymd-compact") return rejected(raw, sourceIds);
 
   if (first > 12 && second <= 12) {
     const year = printedYear ?? inferYearForMonth(second, period);
-    return year ? result(raw, date(year, second, first), sourceIds, inferredReason) : rejected(raw, sourceIds);
+    return year ? result(raw, date(year, second, first), sourceIds, inferredReason) : withoutYear(raw, sourceIds, printedYear, period);
   }
   if (second > 12 && first <= 12) {
     const year = printedYear ?? inferYearForMonth(first, period);
-    return year ? result(raw, date(year, first, second), sourceIds, inferredReason) : rejected(raw, sourceIds);
+    return year ? result(raw, date(year, first, second), sourceIds, inferredReason) : withoutYear(raw, sourceIds, printedYear, period);
   }
   const dmyYear = printedYear ?? inferYearForMonth(second, period);
   const mdyYear = printedYear ?? inferYearForMonth(first, period);
-  if (!dmyYear || !mdyYear) return rejected(raw, sourceIds);
+  if (!dmyYear || !mdyYear) return withoutYear(raw, sourceIds, printedYear, period);
   const dmy = date(dmyYear, second, first);
   const mdy = date(mdyYear, first, second);
   const alternatives = [
@@ -191,6 +191,24 @@ function result(
 
 function accepted(raw: string, value: string | null, sourceIds: string[]): PdfDateCandidateResult {
   return value ? { value, raw, confidence: { status: "accepted", score: 1, reasons: [], sourceIds } } : rejected(raw, sourceIds);
+}
+
+/**
+ * A date the statement printed without its year, when nothing supplies one.
+ *
+ * Told apart from an unreadable date because it asks for something specific,
+ * in any language: the statement period, which gives the year. Only when no
+ * period is known; a period that does not contain the date is a different
+ * problem and stays "could not be read".
+ */
+function withoutYear(
+  raw: string,
+  sourceIds: string[],
+  printedYear: number | null,
+  period: { start: string | null; end: string | null }
+): PdfDateCandidateResult {
+  if (printedYear || period.start || period.end) return rejected(raw, sourceIds);
+  return { value: null, raw, confidence: { status: "rejected", score: 0, reasons: ["DATE_YEAR_MISSING"], sourceIds } };
 }
 
 function rejected(raw: string | null, sourceIds: string[]): PdfDateCandidateResult {

@@ -99,7 +99,10 @@ export function interpretPdfBlocks(
       index
     );
     const dates = dateFieldsForTransaction(transaction);
-    if (dates.transaction.value || dates.posting.value || dates.value.value) {
+    // A date waiting only on its year is still the date the next rows share,
+    // so they wait on the same answer instead of reading as undated.
+    const waitingOnYear = dates.transaction.confidence.reasons.includes("DATE_YEAR_MISSING");
+    if (dates.transaction.value || dates.posting.value || dates.value.value || waitingOnYear) {
       previousDates.set(block.sectionId, dates);
     }
     return transaction;
@@ -175,7 +178,11 @@ function interpretBlock(
     : guidance.importDate === "posting"
       ? dateValues.posting
       : dateValues.value;
-  const requiredImportField = importField.value ? importField : requiredDate(importField.confidence.sourceIds);
+  // A date waiting only on its year keeps saying so, rather than becoming a
+  // generic unreadable date once it is required for import.
+  const requiredImportField = importField.value || importField.confidence.reasons.includes("DATE_YEAR_MISSING")
+    ? importField
+    : requiredDate(importField.confidence.sourceIds);
   // An ordinary wrapped description is not an assumption worth reviewing. A
   // continuation only earns review when it carries its own money or date
   // token, or when the block spans a page break, because those are the cases
@@ -771,7 +778,13 @@ function inheritedDate(
   previous: PdfDateCandidateResult,
   sourceIds: string[]
 ): PdfDateCandidateResult {
-  if (!previous.value) return emptyOptionalDate();
+  if (!previous.value) {
+    // The row above printed a date without its year: this one waits on the
+    // same answer.
+    return previous.confidence.reasons.includes("DATE_YEAR_MISSING")
+      ? { value: null, raw: null, confidence: { status: "rejected", score: 0, reasons: ["DATE_YEAR_MISSING"], sourceIds } }
+      : emptyOptionalDate();
+  }
   return {
     value: previous.value,
     raw: null,

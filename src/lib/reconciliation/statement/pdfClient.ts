@@ -25,6 +25,26 @@ export class PdfExtractionError extends Error {
   }
 }
 
+/**
+ * Where PDF.js finds the data it loads only when a PDF needs it, copied into
+ * `public/pdfjs/` from the installed package by `scripts/copy-pdfjs-assets.mjs`.
+ * Same-origin, so the page security policy already allows the requests.
+ * Without character maps, a statement whose fonts use one cannot have its text
+ * read; the fonts, decoders and colour profiles are for previews.
+ */
+export function pdfSupportAssets(origin: string) {
+  // Absolute, because PDF.js may fetch them from inside its worker, where a
+  // path would resolve against the worker script rather than the page.
+  const at = (path: string) => new URL(path, origin).href;
+  return {
+    cMapUrl: at("/pdfjs/cmaps/"),
+    cMapPacked: true,
+    standardFontDataUrl: at("/pdfjs/standard_fonts/"),
+    wasmUrl: at("/pdfjs/wasm/"),
+    iccUrl: at("/pdfjs/iccs/"),
+  };
+}
+
 export type PdfExtractionProgress = {
   phase: "opening" | "extracting" | "parsing";
   completedPages: number;
@@ -54,9 +74,7 @@ export async function extractPdfStatement(
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(await file.arrayBuffer()),
     password: options.password,
-    // PDF.js would otherwise probe for eval, which the Content-Security-Policy
-    // refuses; it has a non-eval path and uses it anyway when the probe fails.
-    isEvalSupported: false,
+    ...pdfSupportAssets(window.location.origin),
   });
   const abort = () => { void loadingTask.destroy(); };
   options.signal?.addEventListener("abort", abort, { once: true });
@@ -141,14 +159,23 @@ export async function extractPdfStatement(
     }
     throwIfAborted(options.signal);
     options.onProgress?.({ phase: "parsing", completedPages: document.numPages, totalPages: document.numPages });
+    const extractedAt = Date.now();
     const result = await parsePdfStatementOffMainThread({ version: 2, pages }, {}, options.signal, startedAt);
+    result.extraction = {
+      pdfjsVersion: pdfjs.version,
+      extractMs: extractedAt - startedAt,
+      parseMs: Date.now() - extractedAt,
+      unreadablePages: failedPages,
+    };
     result.document.pages.forEach((page, index) => {
       const previewDataUrl = pagePreviews[index];
       if (previewDataUrl) page.previewDataUrl = previewDataUrl;
     });
     result.metrics.unreadablePages = failedPages.length;
     if (failedPages.length) {
-      result.warnings.push(`${failedPages.length} PDF ${failedPages.length === 1 ? "page could" : "pages could"} not be read. Review the remaining pages before importing.`);
+      const message = `${failedPages.length} PDF ${failedPages.length === 1 ? "page could" : "pages could"} not be read. Review the remaining pages before importing.`;
+      result.warnings.push(message);
+      result.notices.push({ code: "UNREADABLE_PAGES", kind: "note", message, pageNumbers: failedPages });
       failedPages.forEach((pageNumber) => result.diagnostics.push({
         stage: "extract",
         code: "PDF_PAGE_UNREADABLE",
@@ -211,7 +238,7 @@ async function renderPdfPagePreview(page: PDFPageProxy, startedAt: number) {
     canvas.height = Math.max(1, Math.ceil(viewport.height));
     const canvasContext = canvas.getContext("2d");
     if (!canvasContext) return null;
-    await withBudget(page.render({ canvasContext, viewport }).promise, startedAt);
+    await withBudget(page.render({ canvas, canvasContext, viewport }).promise, startedAt);
     return await canvasPreviewUrl(canvas);
   } catch {
     // Text extraction remains usable when a browser cannot render a preview.

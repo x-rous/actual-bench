@@ -25,9 +25,12 @@ export function PdfPanelSection({
   onOpenChange,
   defaultOpen = true,
   footer,
+  attention = false,
   children,
 }: {
   title: string;
+  /** Something in the section is waiting on the reader: said on the frame and in the summary. */
+  attention?: boolean;
   /** The current answer, for when the section is closed. */
   summary?: React.ReactNode;
   /** A control that belongs to the section rather than to its contents. */
@@ -44,7 +47,10 @@ export function PdfPanelSection({
   const headingId = useId();
 
   return (
-    <section aria-labelledby={headingId} className="rounded-md border">
+    <section
+      aria-labelledby={headingId}
+      className={cn("rounded-md border", attention && "border-amber-500/60 dark:border-amber-400/60")}
+    >
       <div className="flex items-center gap-2 px-3 py-2">
         <button
           type="button"
@@ -57,6 +63,7 @@ export function PdfPanelSection({
             className={cn("size-3.5 shrink-0 transition-transform", !isOpen && "-rotate-90")}
           />
           <h3 id={headingId} className="shrink-0 text-sm font-medium">{title}</h3>
+          {attention && <span className="shrink-0 text-[11px] font-medium text-amber-700 dark:text-amber-300">Needs attention</span>}
           {summary && <span className="min-w-0 truncate text-[11px] text-muted-foreground">{summary}</span>}
         </button>
         {action}

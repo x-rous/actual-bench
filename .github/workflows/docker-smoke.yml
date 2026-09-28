@@ -114,6 +114,20 @@ jobs:
             -d "{\"passphrase\":\"$SMOKE_PASSWORD\"}" \
             http://127.0.0.1:3000/api/connection-vault/unlock > /dev/null
 
+      - name: Confirm PDF.js support assets ship in the production image
+        # Copied from pdfjs-dist at install time; without them PDF.js cannot
+        # read text in PDFs that use predefined character maps. A missing copy
+        # step would otherwise only show up as a statement that fails to read.
+        run: |
+          for path in pdfjs/VERSION pdfjs/cmaps/UniGB-UCS2-H.bcmap pdfjs/standard_fonts/FoxitSerif.pfb pdfjs/wasm/openjpeg.wasm pdfjs/iccs/CGATS001Compat-v2-micro.icc; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -b cookies.txt "http://127.0.0.1:3000/$path")
+            if [ "$code" != "200" ]; then
+              echo "::error::/$path returned ${code}, expected 200"
+              exit 1
+            fi
+          done
+          echo "PDF.js $(curl -sf -b cookies.txt http://127.0.0.1:3000/pdfjs/VERSION) assets are served."
+
       - name: Confirm the app responds and the metadata DB is initialized
         run: |
           curl -sf -b cookies.txt http://127.0.0.1:3000/ > /dev/null

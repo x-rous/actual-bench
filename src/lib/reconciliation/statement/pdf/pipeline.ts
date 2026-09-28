@@ -1,6 +1,6 @@
 import { assemblePdfTransactionBlocks } from "./blocks";
 import { divideCellsAcrossColumns, rowValuesForColumn } from "./columns";
-import { dateCandidates } from "./candidates";
+import { dateCandidates, looksLikeMoney } from "./candidates";
 import { applyBlockCorrections, applyFieldCorrections, applyGuidanceCorrections, type PdfCorrection } from "./corrections";
 import { inferPdfDateFormat, parsePdfDateCandidate } from "./dates";
 import { reconstructPdfLayout } from "./layout";
@@ -8,12 +8,13 @@ import { interpretPdfBlocks } from "./interpret";
 import {
   DEFAULT_PDF_PARSER_GUIDANCE,
   PDF_PARSER_MODEL_VERSION,
+  type PdfParseNotice,
   type PdfParserGuidance,
   type PdfStatementDocument,
   type PdfStatementParseResult,
 } from "./model";
 import { createPdfLayoutSignature } from "./profiles";
-import { classifyPdfRegions, extendRegionsWithMappedColumns } from "./regions";
+import { applyPageRules, classifyPdfRegions, extendRegionsWithMappedColumns } from "./regions";
 import { detectPdfTableSchemas } from "./schema";
 import { validatePdfTransactions } from "./validate";
 
@@ -49,12 +50,14 @@ export function parsePdfStatementDocumentV2(
   // A layout describes a table, not a page count: pages the layout never saw
   // still belong to the statement when their rows line up with its columns.
   const extendedRegions = extendRegionsWithMappedColumns(layout.pages, guidedRegions, detectedColumns);
+  // Applied last, so a page the rules ignore cannot be carried back in above.
+  const pageRuled = applyPageRules(extendedRegions.regions, layout.pages.length, guidance.pageRules);
   const detectedPeriod = detectStatementPeriod(layout.pages);
   const statementPeriod = {
     start: guidance.statementPeriod.start ?? detectedPeriod.start,
     end: guidance.statementPeriod.end ?? detectedPeriod.end,
   };
-  const samplesByRole = dateSamples(layout.pages, extendedRegions.regions, detectedColumns);
+  const samplesByRole = dateSamples(layout.pages, pageRuled.regions, detectedColumns);
   const inferredFormats = Object.fromEntries(Object.entries(samplesByRole).map(([role, samples]) => [
     role,
     guidance.dateFormat === "auto"
@@ -87,7 +90,7 @@ export function parsePdfStatementDocumentV2(
     currency: options.guidance?.currency !== undefined ? guidance.currency : detectedGuidance.currency,
     dateFormat: guidance.dateFormat === "auto" ? displayedDateFormat : guidance.dateFormat,
     statementPeriod,
-    regions: extendedRegions.regions,
+    regions: pageRuled.regions,
     columns: guidance.columns.length ? guidance.columns : schemas.active?.columns ?? [],
   };
   effectiveGuidance.importDate = availableImportDate(effectiveGuidance.importDate, effectiveGuidance.columns);
@@ -141,6 +144,13 @@ export function parsePdfStatementDocumentV2(
     validated.transactions,
     corrections.filter((correction) => correction.kind === "accept-transaction")
   );
+  // Only a row that prints an amount can be a transaction the parser missed.
+  // Lines of text inside the table - a translated label, a column heading
+  // wrapped onto its own line, a disclaimer - cannot, in any language, so they
+  // stay in the diagnostics rather than asking the reader to check them.
+  const possiblyMissed = assembled.unassignedRows
+    .filter((row) => !assignedRowIds.has(row.id) && row.cells.some((cell) => looksLikeMoney(cell.text)))
+    .sort((left, right) => left.pageNumber - right.pageNumber || left.y - right.y);
   const likelyScanned = layout.pages.length > 0 && layout.pages.every((page) => page.imageOnlyLikelihood >= 0.75);
   const imageOnlyPages = layout.pages.filter((page) => page.imageOnlyLikelihood >= 0.75);
   const metrics = {
@@ -156,33 +166,63 @@ export function parsePdfStatementDocumentV2(
     // as a transaction now belongs to a block, and a warning that keeps
     // reporting it is a warning that cannot be acted on - the reader does the
     // one thing it asks for and it stays.
-    unassignedRows: assembled.unassignedRows.filter((row) => !assignedRowIds.has(row.id)).length,
+    unassignedRows: possiblyMissed.length,
     imageOnlyPages: likelyScanned ? 0 : imageOnlyPages.length,
     // Extraction owns this count; the parser never sees a page it could not read.
     unreadablePages: 0,
   };
-  const warnings = [
-    ...(likelyScanned ? ["The document does not contain enough selectable text to parse safely."] : []),
+  const notices: PdfParseNotice[] = [
+    ...(likelyScanned
+      ? [{ code: "NO_TEXT" as const, kind: "note" as const, message: "The PDF has no selectable text, so it cannot be read." }]
+      : []),
     ...(metrics.imageOnlyPages
-      ? [`${pageList(imageOnlyPages.map((page) => page.pageNumber))} has no readable text layer, so any transactions printed there are missing.`]
+      ? [{
+        code: "IMAGE_ONLY_PAGES" as const,
+        kind: "note" as const,
+        message: `${pageList(imageOnlyPages.map((page) => page.pageNumber))} ${imageOnlyPages.length === 1 ? "has" : "have"} no readable text layer, so any transactions printed there are missing.`,
+        pageNumbers: imageOnlyPages.map((page) => page.pageNumber),
+      }]
       : []),
-    ...(metrics.unassignedRows
-      ? [`${metrics.unassignedRows} ${metrics.unassignedRows === 1 ? "row" : "rows"} inside the transaction area did not become a transaction. Check detection and mark any that are transactions.`]
+    ...(possiblyMissed.length
+      ? [{
+        code: "UNASSIGNED_ROWS" as const,
+        kind: "answer" as const,
+        message: `${possiblyMissed.length} ${possiblyMissed.length === 1 ? "row" : "rows"} ${onPages(possiblyMissed.map((row) => row.pageNumber))} ${possiblyMissed.length === 1 ? "was" : "were"} not read as ${possiblyMissed.length === 1 ? "a transaction" : "transactions"}.`,
+        pageNumbers: [...new Set(possiblyMissed.map((row) => row.pageNumber))],
+        rows: possiblyMissed.map((row) => ({ pageNumber: row.pageNumber, rowId: row.id })),
+      }]
       : []),
-    ...(effectiveGuidance.currency ? [] : ["The statement currency was not detected. Set it in Statement interpretation."]),
-    ...(symbolCurrency?.ambiguous
-      && options.guidance?.currency === undefined
-      && effectiveGuidance.currency === symbolCurrency.currency
-      ? [`The statement prints ${symbolCurrency.symbol} without a currency code, and was read as ${symbolCurrency.currency}. Change it in Statement interpretation if this account is in another ${symbolCurrency.symbol} currency.`]
+    ...(pageRuled.coversEveryPage
+      ? [{
+        code: "PAGE_RULES_NOT_APPLIED" as const,
+        kind: "answer" as const,
+        message: "The page rules would ignore every page of this statement, so they were not applied.",
+        setting: "pageRules" as const,
+      }]
+      : []),
+    ...(effectiveGuidance.currency
+      ? []
+      : [{ code: "CURRENCY_MISSING" as const, kind: "answer" as const, message: "The statement currency was not detected.", setting: "currency" as const }]),
+    ...(interpreted.balancePolarity?.source === "detected-type"
+      ? [{
+        code: "ACCOUNT_TYPE_FROM_BALANCE" as const,
+        kind: "answer" as const,
+        message: "Money in and out were worked out from the balance, using the detected account type.",
+        setting: "accountType" as const,
+      }]
+      : []),
+    ...(["loan", "investment"].includes(interpreted.accountType)
+      ? [{ code: "SPECIALIZED_ACCOUNT" as const, kind: "note" as const, message: "Loan and investment statements need specialized review before import." }]
       : []),
     ...(metrics.rejected
-      ? [`${metrics.rejected} ${metrics.rejected === 1 ? "transaction has" : "transactions have"} unresolved required fields.`]
-      : []),
-    ...(["loan", "investment"].includes(interpreted.accountType) ? ["This statement type needs specialized review before import."] : []),
-    ...(interpreted.balancePolarity?.source === "detected-type"
-      ? ["Money in and money out were derived from the balance column using a detected account type. Confirm the account type in Statement interpretation."]
+      ? [{
+        code: "ROWS_BLOCKED" as const,
+        kind: "note" as const,
+        message: `${metrics.rejected} ${metrics.rejected === 1 ? "transaction has" : "transactions have"} unresolved required fields.`,
+      }]
       : []),
   ];
+  const warnings = notices.map((notice) => notice.message);
   return {
     modelVersion: PDF_PARSER_MODEL_VERSION,
     document,
@@ -202,6 +242,7 @@ export function parsePdfStatementDocumentV2(
     metrics,
     likelyScanned,
     warnings,
+    notices,
   };
 }
 
@@ -219,6 +260,12 @@ function currencyFromAmountColumn(columns: PdfParserGuidance["columns"]) {
     [...header.matchAll(/\b(AED|AUD|BHD|CAD|CHF|CNY|DKK|EGP|EUR|GBP|HKD|INR|JPY|KWD|NOK|NZD|OMR|QAR|SAR|SEK|SGD|USD|ZAR)\b/gi)]
       .map((match) => match[1].toUpperCase())))];
   return codes.length === 1 ? codes[0] : null;
+}
+
+/** "on page 5", "on pages 2, 4 and 5": where, in words. */
+function onPages(pageNumbers: number[]) {
+  const unique = [...new Set(pageNumbers)];
+  return `on ${pageList(unique).replace(/^Page/, "page")}`;
 }
 
 function pageList(pageNumbers: number[]) {
@@ -286,26 +333,61 @@ function dateSamples(
   return { "transaction-date": rows.flatMap(({ row }) => row.cells.flatMap((cell) => dateMatches(cell.text))) };
 }
 
+/**
+ * The statement period, read from the upper part of the first two pages, page
+ * one first. Some statements print it on a second summary page rather than
+ * the cover.
+ */
 function detectStatementPeriod(
   pages: PdfStatementParseResult["reconstructedPages"]
 ) {
-  const firstPage = pages[0];
-  const rows = firstPage
-    ? firstPage.rows.filter((row) => row.y <= firstPage.height * 0.45)
-    : [];
-  const candidates = rows
-    .filter((row) => /statement\s+(?:period|cycle)|period\s+(?:covered|from)|(?:statement|period)\b.+\bfrom\b.+\bto\b|open(?:ing)?\s+date.+clos(?:ing|e)\s+date/i.test(row.text))
-    .map((row) => dateMatches(row.text))
+  for (const page of pages.slice(0, 2)) {
+    const period = periodOnPage(page);
+    if (period) return period;
+  }
+  return { start: null, end: null };
+}
+
+function periodOnPage(page: PdfStatementParseResult["reconstructedPages"][number]) {
+  const upper = page.rows.filter((row) => row.y <= page.height * 0.45);
+  // The upper part first, where most statements print it; then the rest of
+  // the page, for a cover page that prints its summary lower down.
+  return periodInRows(page, upper) ?? periodInRows(page, page.rows);
+}
+
+function periodInRows(
+  page: PdfStatementParseResult["reconstructedPages"][number],
+  rows: PdfStatementParseResult["reconstructedPages"][number]["rows"]
+) {
+  const labelled = rows.filter((row) =>
+    /statement\s+(?:period|cycle)|period\s+(?:covered|from)|(?:statement|period)\b.+\bfrom\b.+\bto\b|open(?:ing)?\s+date.+clos(?:ing|e)\s+date/i.test(row.text));
+  const candidates = labelled
+    .map((row) => {
+      const own = dateMatches(row.text);
+      if (own.length >= 2) return own;
+      // A label on one line and its dates on the next: "Statement Period"
+      // above "From 22 August 25 to 21 September 25".
+      const next = page.rows.find((candidate) => candidate.y > row.y);
+      return next ? dateMatches(next.text) : own;
+    })
     .filter((matches) => matches.length >= 2);
   for (const matches of candidates) {
-    const format = inferPdfDateFormat([matches], { start: null, end: null });
+    // A month written as a word says which part is the month, as it does for
+    // a statement date below; the order of numbers is what needs inferring.
+    const format = matches.some((value) => /\p{L}/u.test(value))
+      ? "dmy-name" as const
+      : inferPdfDateFormat([matches], { start: null, end: null });
     if (format === "auto") continue;
     const parsed = matches.flatMap((value) => {
       const result = parsePdfDateCandidate(value, format, [], { start: null, end: null });
       return result.value ? [result.value] : [];
     });
     if (parsed.length < 2) continue;
-    return { start: [...parsed].sort()[0], end: [...parsed].sort().at(-1) ?? null };
+    // The first two dates are the period, printed start then end. A line can
+    // go on to print another date - the payment due date, say - which the
+    // earliest-and-latest reading used to take as the period's end.
+    const [start, end] = parsed.slice(0, 2).sort();
+    return { start, end };
   }
 
   const ending = rows.find((row) =>
@@ -316,7 +398,8 @@ function detectStatementPeriod(
     const value = parseMetadataDate(dateMatches(ending.text)[0]);
     if (value) return { start: null, end: value };
   }
-  return { start: null, end: null };
+
+  return null;
 }
 
 function parseMetadataDate(value: string) {

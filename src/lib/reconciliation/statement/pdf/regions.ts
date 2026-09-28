@@ -10,6 +10,7 @@ import type {
   PdfRegion,
   PdfRegionKind,
 } from "./model";
+import { NO_PAGE_RULES, type PdfPageRules } from "./model";
 
 export type PdfRegionResult = { regions: PdfRegion[]; diagnostics: PdfDiagnosticEvent[] };
 
@@ -253,5 +254,37 @@ export function extendRegionsWithMappedColumns(
       pageNumber: region.pageNumber,
       metrics: { rows: region.rowIds.length },
     })),
+  };
+}
+
+/**
+ * Switch off the transaction areas on pages the layout's page rules ignore.
+ *
+ * Only areas: the pages are still read for the period, currency and balances,
+ * and still shown. An area the reader has included for this statement stays
+ * included, and one the rules switched off comes back when the rules no
+ * longer cover its page. Rules that would leave no page at all are not
+ * applied - an empty result would look like a statement with no transactions.
+ */
+export function applyPageRules(
+  regions: PdfRegion[],
+  pageCount: number,
+  rules: PdfPageRules | undefined
+): { regions: PdfRegion[]; coversEveryPage: boolean } {
+  const { ignoreFirst, ignoreLast } = rules ?? NO_PAGE_RULES;
+  const coversEveryPage = pageCount > 0 && ignoreFirst + ignoreLast >= pageCount;
+  const ignored = (pageNumber: number) => !coversEveryPage
+    && (pageNumber <= ignoreFirst || pageNumber > pageCount - ignoreLast);
+  return {
+    coversEveryPage,
+    regions: regions.map((region) => {
+      if (region.kind !== "transactions") return region;
+      if (ignored(region.pageNumber)) {
+        return region.included && !region.layoutOverride
+          ? { ...region, included: false, ignoredByLayout: true }
+          : region;
+      }
+      return region.ignoredByLayout ? { ...region, included: true, ignoredByLayout: false } : region;
+    }),
   };
 }

@@ -25,16 +25,30 @@ export function dateCandidates(value: string) {
     /\b(?:\d{8}|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?)\b/giu,
     /\b(?:\d{1,2}(?:st|nd|rd|th)?[-\s][\p{L}]{3,}\.?(?:[-\s]\d{2,4})?|[\p{L}]{3,}\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{2,4})?)\b/giu,
   ];
-  return patterns.flatMap((pattern) => [...text.matchAll(pattern)].map((match) => ({
-    raw: match[0],
-    index: match.index ?? 0,
-  })))
-    .filter(({ raw }) => validDateCandidate(raw))
+  return patterns.flatMap((pattern) => validMatches(pattern, text))
     .sort((left, right) => left.index - right.index)
     .filter((entry, index, entries) => entries.findIndex((candidate) =>
       candidate.index === entry.index && candidate.raw === entry.raw
     ) === index)
     .map((entry) => entry.raw);
+}
+
+/**
+ * Every valid match, including one that starts inside a rejected one.
+ *
+ * `matchAll` consumes what it matched, so a word that only looks like the
+ * start of a date - "PERIOD 12" read as a month and a day - swallowed the day
+ * of the real date after it, and "12 Feb 2026" was never seen. A rejected
+ * match is retried one character further on instead.
+ */
+function validMatches(pattern: RegExp, text: string) {
+  const found: { raw: string; index: number }[] = [];
+  pattern.lastIndex = 0;
+  for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
+    if (validDateCandidate(match[0])) found.push({ raw: match[0], index: match.index });
+    else pattern.lastIndex = match.index + 1;
+  }
+  return found;
 }
 
 export function normalizePdfDateText(value: string) {

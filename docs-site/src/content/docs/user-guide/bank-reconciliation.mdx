@@ -78,11 +78,17 @@ in its own colour with a role label and examples taken from inside its current b
 ignore an area, select a missed one, change a column role, or drag its boundaries.
 
 The panel beside the page holds everything that decides how the statement is read: the **Statement
-layout** in use, **Statement interpretation** for the account type, currency, statement period, date
-or number format, import date, printed sign and unsigned amount direction, and the column mapping.
-What still needs attention is listed above those settings, and where one setting answers the
-question - an unresolved money-in or money-out rule, or a missing currency - **Fix this** opens that
-control with the cursor in it.
+Layout** in use, **Statement Interpretation** for the account type, currency, statement period, date
+or number format, import date, printed sign, unsigned amount direction and pages to ignore, and the
+**Column Mapping**. Each setting has an (i) that says what it changes and whether it is saved with the
+layout, and the book icon on **Statement Interpretation** opens this guide.
+
+**What needs attention**, above those settings, is the one place messages appear. Each item says what
+happened and where, then offers one action named for what it does: **Set period**, **Choose a
+rule**, **Set currency**, **Confirm**, **Change**, or **Show**, which opens the page with the row
+selected (with several rows, it steps through them). Items waiting on you come first, in amber; notes
+that are only worth knowing follow, muted. The setting an item points at, and the **Statement
+Interpretation** section itself, are outlined in amber until it is answered.
 
 The mapping list is always in the order the statement prints its columns, left to right, so it never
 disagrees with the page. Drag a column's label to move the whole column, or its edges to change one
@@ -192,13 +198,20 @@ balances are used for reconciliation; available and periodic balances are not le
 **Dates.** A date cell takes whatever the statement prints - `15 Jun 19`, `15/06/2019`, `2019-06-15` -
 reads it through the **Date format** setting, and stores the date it means; a value it cannot read
 stays on screen and is marked. Unambiguous dates establish whether the rest use day/month or
-month/day order, and the statement period supplies missing years across December and January.
+month/day order, and the statement period supplies missing years across December and January. The
+period is read from the first two pages, including a label printed on one line with its dates on the
+next. A date printed without a year, on a statement whose period cannot be found, is not guessed:
+those rows ask for the statement period, and set once, it supplies every year.
 Transaction date is the default import date, marked by the check in its column header. Posting and
 value dates are optional and stay separate; removing one of their mappings stops it being validated.
 
 **Amounts and direction.** The parser reads signed, parenthesized, and trailing-minus amounts,
 mixed-case `DR` and `CR` markers, separate debit and credit columns, explicit debit and credit
-sections, and one **Amount** column where a suffix such as `113.61CR` marks money in. Common US,
+sections, and one **Amount** column where a suffix such as `113.61CR` marks money in. When some amounts are marked
+`CR` and the rest are bare, the bare ones are not assumed to be money out: **Amount direction** says
+**Auto-detect (unmarked amounts need a rule)** and those rows wait until you choose. The choice is saved
+with the layout, so each bank asks once. When direction is proven, the setting says by what - the
+Debit and Credit columns, printed signs, the balance column, or section headings. Common US,
 European, space-grouped, Indian, Swiss, Arabic-digit, and East Asian number layouts are supported.
 
 Money in and money out are never guessed from the account type alone. Printed directions decide
@@ -207,16 +220,23 @@ the parser knows which way that balance moves - from printed directions that alr
 or from an account type you have confirmed. A heading that is ambiguous, or that disagrees with the
 printed directions, leaves the balance column unused and those rows unresolved.
 
+**Pages to ignore.** **Ignore first / last N pages** treats that many pages at each end as carrying no
+transactions - a cover page, terms at the back - counted from each end so it holds however long next
+month's statement is. Those pages are still read for the period, currency, account type, and balances,
+and still shown; only their transaction areas are switched off (shown as **Ignored by the layout**,
+and you can include one for a single statement). It is saved with the layout. Rules that would ignore
+every page are not applied.
+
 **Printed sign means** states whose side the printed sign takes: a bank account prints a minus for
 money out, while a card or loan issuer prints a minus for a payment that reduces what is owed. Until
 that convention is confirmed on a card or loan statement, rows that take their direction from a
 printed sign stay in review. The account type behind it is read from the statement heading, never
 from transaction descriptions, so a checking statement that pays a credit card is not classified by
 those payments; a type read from the heading alone resolves directions but keeps them in review until
-you confirm it in **Statement interpretation**.
+you confirm it in **Statement Interpretation**.
 
 **Currency and precision.** The amount column states the statement's currency in its header, and when
-it cannot be read it is asked for once in **Statement interpretation** rather than on every row.
+it cannot be read it is asked for once in **Statement Interpretation** rather than on every row.
 Currency is a statement-level reading: Actual holds one currency per budget file and the import
 carries no currency code, so what it decides here is how many decimal places an amount may have. A
 row printing a different currency is flagged, because it usually means the original amount was read
@@ -238,14 +258,37 @@ are not kept here; they appear in **What needs attention**, beside the settings 
 A page that has no readable text layer, or that could not be read at all, is reported above the
 transaction table, and import stays disabled until you confirm that you checked those pages: their
 transactions are missing from the statement. Selecting **I checked these pages** dismisses the
-message and leaves a marker in the toolbar that brings it back. Rows inside a transaction area that
-did not become a transaction are counted the same way, so you can mark them in **Check detection**
-instead of losing them silently.
+message and leaves a marker in the toolbar that brings it back. A row inside a transaction area that prints
+an amount but did not become a transaction is reported in **What needs attention** with its page, and
+**Show** takes you to it, so you can mark it in **Check detection** instead of losing it silently.
+Lines of text alone - a translated label, a heading on its own line, a disclaimer - cannot be
+transactions and are not reported.
 
 Scanned or image-only PDFs have no usable text layer, and OCR is not included. A damaged page is
 reported instead of being silently ignored. Large files are limited by file size, page count, text
 item count, and processing time so they cannot keep the browser busy indefinitely. Use CSV, OFX,
 QFX, or QIF when the bank can provide a structured export.
+
+#### Changes to PDF reading
+
+How statements are read changes between releases. **Parser details** says which version read a
+statement, and copied diagnostics include it.
+
+- **Next release**
+  - PDF.js 6, with its character maps, fonts and image decoders served by Actual Bench: statements
+    whose fonts rely on predefined character maps (common in Chinese, Japanese and Korean PDFs) are
+    now read, and previews show the right fonts and images.
+  - **Ignore first / last N pages**, saved with the layout.
+  - The statement period is read from the first two pages, including a label with its dates on the
+    next line; a period printed as "STATEMENT PERIOD 12 Feb 2026 TO 11 Mar 2026" no longer loses its
+    first date.
+  - A date without a year asks for the statement period instead of reading as unreadable.
+  - **Amount direction** only applies what the statement proves, and says what that was.
+  - **What needs attention** is the one place for messages, each with a named action; only rows that
+    print an amount are reported as not read.
+  - The review no longer closes on a click outside it. **Esc**, the close button, and **Cancel** ask
+    before discarding corrections or detection changes, and the browser warns before leaving the page
+    while there are any.
 
 ![The import screen: statement source, date and amount conventions and matching options on the left, the whole parsed statement on the right with its column mapping.](../../../assets/screenshots/user-guide/recon-import.png)
 

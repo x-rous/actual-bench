@@ -18,6 +18,7 @@ export const PDF_REASON_TEXT = {
   DATE_INHERITED_FROM_PREVIOUS_ROW: "Date was inherited from the previous statement row",
   DATE_OUTSIDE_STATEMENT_PERIOD: "Date is outside the statement period",
   DATE_INVALID: "Date could not be read",
+  DATE_YEAR_MISSING: "Date has no year: set the statement period",
   AMOUNT_MULTIPLE_CANDIDATES: "More than one amount could apply",
   AMOUNT_DEBIT_CREDIT_CONFLICT: "Both money-out and money-in columns contain values",
   AMOUNT_FROM_MAPPED_COLUMN: "Amount came from the mapped column",

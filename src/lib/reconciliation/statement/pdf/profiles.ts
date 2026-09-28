@@ -1,3 +1,4 @@
+import { NO_PAGE_RULES, type PdfPageRules } from "./model";
 import type {
   PdfColumnRole,
   PdfLayoutSignature,
@@ -44,6 +45,8 @@ export type PdfLayoutReading = {
   printedSign: PdfParserGuidance["printedSign"];
   transactionAnchorRole: PdfParserGuidance["transactionAnchorRole"];
   columns: PdfLayoutColumn[];
+  /** Absent on layouts saved before page rules existed, which ignore no pages. */
+  pageRules?: PdfPageRules;
 };
 
 export type PdfLayoutProfile = {
@@ -207,6 +210,7 @@ export function layoutReadingFromGuidance(guidance: PdfParserGuidance, pageWidth
     unsignedDirection: guidance.unsignedDirection,
     printedSign: guidance.printedSign,
     transactionAnchorRole: guidance.transactionAnchorRole,
+    pageRules: { ...(guidance.pageRules ?? NO_PAGE_RULES) },
     columns: guidance.columns.map((column) => ({
       id: column.id,
       role: column.role,
@@ -237,6 +241,7 @@ export function layoutReadingKey(reading: PdfLayoutReading): string {
     unsignedDirection: reading.unsignedDirection,
     printedSign: reading.printedSign ?? "auto",
     transactionAnchorRole: reading.transactionAnchorRole,
+    pageRules: reading.pageRules ?? NO_PAGE_RULES,
     columns: [...reading.columns]
       .sort((left, right) => left.xStart - right.xStart)
       .map((column) => [column.role, column.pageNumber, round(column.xStart), round(column.xEnd)]),
@@ -296,6 +301,7 @@ export function guidanceFromPdfLayoutProfile(
     unsignedDirection: profile.reading.unsignedDirection,
     printedSign: profile.reading.printedSign,
     transactionAnchorRole: profile.reading.transactionAnchorRole,
+    pageRules: profile.reading.pageRules ?? NO_PAGE_RULES,
     statementPeriod: current.guidance?.statementPeriod ?? current.detectedGuidance.statementPeriod,
     regions: current.detectedGuidance.regions,
     columns: profile.reading.columns.map((column) => ({
@@ -348,8 +354,11 @@ const UNSIGNED_DIRECTIONS = new Set(["review", "debit", "credit"]);
 const PRINTED_SIGNS = new Set(["auto", "account-holder", "issuer"]);
 const ANCHOR_ROLES = new Set(["transaction-date", "posting-date", "value-date"]);
 const COLUMN_ROLES = new Set(["transaction-date", "posting-date", "value-date", "description", "reference", "debit", "credit", "amount", "direction", "balance", "original-amount", "original-currency", "exchange-rate", "currency", "fee", "vat", "ignore"]);
-/** Letters and digits masked to A and 9, with spaces and punctuation left. */
-const MASKED_SHAPE = /^[^A-Za-z0-8]*(?:[A9][^A-Za-z0-8]*)*$/;
+/**
+ * Letters and digits masked to A and 9, with spaces and punctuation left. Any
+ * other letter or digit, in any script, is statement text.
+ */
+const MASKED_SHAPE = /^(?:[^\p{L}\p{N}]|A|9)*$/u;
 
 function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
   const reading = profile.reading;
@@ -365,6 +374,7 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
   if (!PRINTED_SIGNS.has(reading.printedSign ?? "auto")) return null;
   if (!ANCHOR_ROLES.has(reading.transactionAnchorRole)) return null;
   if (reading.currency !== null && !/^[A-Z]{3}$/.test(reading.currency)) return null;
+  if (reading.pageRules !== undefined && !validPageRules(reading.pageRules)) return null;
   if (!Array.isArray(reading.columns) || !reading.columns.length) return null;
   if (!reading.columns.every((column) =>
     typeof column.id === "string"
@@ -411,6 +421,9 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
       unsignedDirection: reading.unsignedDirection,
       printedSign: reading.printedSign ?? "auto",
       transactionAnchorRole: reading.transactionAnchorRole,
+      ...(reading.pageRules
+        ? { pageRules: { ignoreFirst: reading.pageRules.ignoreFirst, ignoreLast: reading.pageRules.ignoreLast } }
+        : {}),
       columns: reading.columns.map((column) => ({
         id: column.id,
         role: column.role,
@@ -422,4 +435,12 @@ function sanitizeProfile(profile: PdfLayoutProfile): PdfLayoutProfile | null {
     createdAt: profile.createdAt,
     updatedAt: typeof profile.updatedAt === "string" ? profile.updatedAt : profile.createdAt,
   };
+}
+
+/** Whole pages, from nought to twenty at each end. */
+export const MAX_PAGE_RULE = 20;
+
+function validPageRules(rules: PdfPageRules) {
+  return [rules?.ignoreFirst, rules?.ignoreLast].every((value) =>
+    Number.isInteger(value) && value >= 0 && value <= MAX_PAGE_RULE);
 }

@@ -70,10 +70,11 @@ export function PdfStatementLayoutPanel({
 
   return (
     <PdfPanelSection
-      title="Statement layout"
+      title="Statement Layout"
       open={open}
       onOpenChange={setOpen}
-      summary={open ? undefined : selected ? `${selected.bankName} · ${selected.envelope.profile.name}` : "Automatic detection"}
+      // Said in the header rather than as a line under the controls.
+      summary={selected ? (open ? undefined : `${selected.bankName} · ${selected.envelope.profile.name}`) : "Not saved · save to reuse next month"}
       action={onManage && (
         <Button size="xs" variant="ghost" disabled={disabled} onClick={onManage}>
           <Settings2 aria-hidden="true" className="mr-1 size-3.5" />Manage
@@ -129,13 +130,13 @@ export function PdfStatementLayoutPanel({
         <PdfPanelNote>{saveBlockedReason}</PdfPanelNote>
       )}
 
-      <PdfPanelNote>
-        {selected
-          ? isAccountLayout
+      {selected && (
+        <PdfPanelNote>
+          {isAccountLayout
             ? `${selected.bankName} · assigned to ${accountName}`
-            : `${selected.bankName} · used for this statement only`
-          : "Detected from this statement only. Save a layout to reuse it next month."}
-      </PdfPanelNote>
+            : `${selected.bankName} · used for this statement only`}
+        </PdfPanelNote>
+      )}
 
       {selected && !isAccountLayout && onAssign && (
         <Button size="xs" variant="ghost" disabled={disabled} onClick={onAssign}>
