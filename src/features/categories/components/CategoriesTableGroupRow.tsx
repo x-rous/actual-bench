@@ -81,6 +81,7 @@ export function CategoriesTableGroupRow({
         <Checkbox
           checked={isChecked}
           onCheckedChange={(checked) => onToggleSelect(entity.id, checked)}
+          aria-label={`Select category group ${entity.name || "Unnamed group"}`}
           onClick={(e) => e.stopPropagation()}
         />
       </td>

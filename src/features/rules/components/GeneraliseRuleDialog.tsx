@@ -320,7 +320,6 @@ export function GeneraliseRuleDialog({ open, onOpenChange, ruleId, onConfirmed }
                   <Checkbox className="mt-0.5"
                     checked={acknowledged}
                     onCheckedChange={(checked) => setAcknowledged(checked)}
-                    aria-label="Accept a rewrite that also matches another payee's transactions"
                   />
                   <span>
                     I understand this condition also matches transactions that currently belong to
