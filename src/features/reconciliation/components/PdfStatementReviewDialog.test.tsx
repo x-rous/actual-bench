@@ -134,6 +134,8 @@ describe("PdfStatementReviewDialog v2", () => {
     };
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={withReviewRows} open onOpenChange={() => {}} onImport={() => {}} />);
 
+    // A row that could not be read opens the dialog on Check detection.
+    fireEvent.click(screen.getByRole("button", { name: /Review transactions/ }));
     expect(screen.getByRole("group", { name: "Needs review filters" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Structure/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Reconciliation/ })).not.toBeInTheDocument();
@@ -350,6 +352,42 @@ describe("PdfStatementReviewDialog v2", () => {
       [expect.objectContaining({ amount: "-7500.00", exactAmount: expect.objectContaining({ coefficient: "-750000", scale: 2 }) })],
       expect.anything()
     );
+  });
+
+  it("opens on Check detection when even one row could not be read, and says so there", () => {
+    const parsed = ordinaryResult();
+    const row = parsed.transactions[0];
+    const oneUnread = {
+      ...parsed,
+      transactions: [{ ...row, status: "rejected" as const, issueCodes: ["AMOUNT_DEBIT_CREDIT_CONFLICT"] as typeof row.issueCodes }],
+      metrics: { ...parsed.metrics, accepted: 0, rejected: 1 },
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={oneUnread} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    expect(screen.getByRole("button", { name: /Check detection/ })).toHaveAttribute("aria-current", "step");
+    expect(screen.getByText(/1 row could not be read\. Check the column mapping, or fix it in Review\./)).toBeInTheDocument();
+  });
+
+  it("opens on Check detection when amounts need a direction rule or dates need the period", () => {
+    const parsed = ordinaryResult();
+    const row = parsed.transactions[0];
+    const unsigned = {
+      ...parsed,
+      guidance: { ...parsed.guidance, unsignedDirection: "review" as const },
+      transactions: [{ ...row, directionEvidence: "unknown" as const }],
+    };
+    const { unmount } = render(<PdfStatementReviewDialog fileName="statement.pdf" result={unsigned} open onOpenChange={() => {}} onImport={() => {}} />);
+    expect(screen.getByRole("button", { name: /Check detection/ })).toHaveAttribute("aria-current", "step");
+    unmount();
+
+    const noYear = {
+      ...parsed,
+      transactions: [{ ...row, status: "review" as const, issueCodes: ["DATE_YEAR_MISSING"] as typeof row.issueCodes }],
+      metrics: { ...parsed.metrics, accepted: 0, review: 1 },
+    };
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={noYear} open onOpenChange={() => {}} onImport={() => {}} />);
+    expect(screen.getByRole("button", { name: /Check detection/ })).toHaveAttribute("aria-current", "step");
+    expect(screen.getByText(/a date without a year/)).toBeInTheDocument();
   });
 
   it("revalidates a corrected import date in one parser run", () => {

@@ -1088,9 +1088,17 @@ export function PdfStatementReviewDialog({
   );
 }
 
+/**
+ * Opens on Check detection whenever something there needs the reader: a row
+ * that could not be read (even one: the column mapping may be off), or a
+ * statement-wide question - the period for dates without a year, or the rule
+ * for amounts without a sign - that one answer settles for every row. Only a
+ * statement with nothing to settle opens straight on Review.
+ */
 function initialModeForResult(result: PdfStatementParseResult | null, profileNeedsReview = false): WorkbenchMode {
   if (profileNeedsReview || !result || result.transactions.length === 0) return "adjust";
-  return result.metrics.rejected / result.transactions.length > 0.5 ? "adjust" : "review";
+  const questions = openParserQuestions(result);
+  return result.metrics.rejected > 0 || questions.missingYear > 0 || questions.unmarkedAmounts > 0 ? "adjust" : "review";
 }
 
 function initialReviewFilter(result: PdfStatementParseResult | null): PdfReviewCategory {
@@ -1145,8 +1153,28 @@ function detectionIssuesFor(
     });
   }
   const missingAmount = result.transactions.filter((row) => row.issueCodes.includes("AMOUNT_MISSING")).length;
-  if (missingAmount && missingAmount >= result.transactions.length / 2) {
+  const mostLackAmount = missingAmount > 0 && missingAmount >= result.transactions.length / 2;
+  if (mostLackAmount) {
     issues.push({ message: `${rowsPhrase(missingAmount)} no amount. Map the column that holds the account amount.`, kind: "answer" });
+  }
+  // Any other row that could not be read: often a column mapped wrongly, so
+  // it is said here, with the rows to look at. Rows already explained above
+  // (no year, no amount) are not counted twice.
+  const blocks = new Map(result.blocks.map((block) => [block.id, block]));
+  const unread = result.transactions.filter((row) =>
+    row.status === "rejected"
+    && !row.issueCodes.includes("DATE_YEAR_MISSING")
+    && !(mostLackAmount && row.issueCodes.includes("AMOUNT_MISSING")));
+  if (unread.length) {
+    const goTo = unread.flatMap((row) => {
+      const block = blocks.get(row.id);
+      return block?.rowIds[0] ? [{ pageNumber: block.pageNumber, rowId: block.rowIds[0] }] : [];
+    });
+    issues.push({
+      message: `${unread.length} ${unread.length === 1 ? "row" : "rows"} could not be read. Check the column mapping, or fix ${unread.length === 1 ? "it" : "them"} in Review.`,
+      kind: "answer",
+      ...(goTo.length ? { goTo } : {}),
+    });
   }
 
   for (const notice of result.notices ?? []) {
