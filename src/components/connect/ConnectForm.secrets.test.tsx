@@ -188,6 +188,14 @@ it("filters a long budget list by name or sync ID", async () => {
   expect(screen.getByText("Kids")).toBeInTheDocument();
   expect(screen.queryByText("Rental")).not.toBeInTheDocument();
 
+  // The selected budget stays in view, so Connect never opens a hidden one.
+  fireEvent.change(filter, { target: { value: "" } });
+  fireEvent.click(screen.getByText("Travel"));
   fireEvent.change(filter, { target: { value: "nothing like it" } });
-  expect(screen.getByText("No budgets match.")).toBeInTheDocument();
+  expect(screen.getByText("Travel")).toBeInTheDocument();
+  expect(screen.queryByText("No budgets match.")).not.toBeInTheDocument();
+  fireEvent.change(filter, { target: { value: "rent" } });
+  expect(screen.getByText("Rental")).toBeInTheDocument();
+  expect(screen.getByText("Travel")).toBeInTheDocument();
+  expect(screen.queryByText("Business")).not.toBeInTheDocument();
 });

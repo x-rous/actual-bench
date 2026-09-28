@@ -391,12 +391,14 @@ export function ConnectForm() {
   );
 
   // ── Step 2: choose a budget ─────────────────────────────────────────────────
-  // The filter belongs to one budget list: a new list starts unfiltered.
+  // The filter belongs to one budget list: a new list starts unfiltered. The
+  // selected budget always stays in view, so what Connect opens is on screen.
   const budgetQuery = budgetFilter.list === budgets ? budgetFilter.query : "";
   const budgetNeedle = budgetQuery.trim().toLowerCase();
   const shownBudgets = (budgets ?? []).filter(
     (budget) =>
       !budgetNeedle ||
+      (budget.groupId !== undefined && budget.groupId === selectedGroupId) ||
       (budget.name || budget.cloudFileId).toLowerCase().includes(budgetNeedle) ||
       (budget.groupId ?? "").toLowerCase().includes(budgetNeedle)
   );
