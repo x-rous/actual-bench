@@ -131,6 +131,41 @@ const eslintConfig = defineConfig([
               message:
                 "src/lib/financial-models is pure calculation: no app DB, Actual transport, automation, credentials, providers, routes or UI.",
             },
+            {
+              group: ["@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**"],
+              message: "Production calculation must not depend on the test-only reference oracle.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  /*
+   * The RD-084 reference oracle stays independent of the engine it checks.
+   *
+   * Fixture expected values come from published sources or from this oracle,
+   * never from the code under test. If the oracle could import the engine, a
+   * shared bug would pass both sides, so any path into src/lib/financial-models
+   * is refused. It reads the fixture files as data, which needs no import.
+   */
+  {
+    files: ["src/test-oracles/rd084/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/lib/financial-models",
+                "@/lib/financial-models/**",
+                "**/financial-models",
+                "**/financial-models/**",
+              ],
+              message:
+                "The RD-084 reference oracle must not import or reuse the production financial models it verifies.",
+            },
           ],
         },
       ],
