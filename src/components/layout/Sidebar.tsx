@@ -33,6 +33,7 @@ import {
   Sparkles,
   Timer,
   DatabaseBackup,
+  HandCoins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectionStore } from "@/store/connection";
@@ -111,6 +112,8 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
         // Directly under Sync: exchange rates exist to serve cross-currency
         // syncing, not as a feature anyone comes here for on its own.
         { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
+        // Loans, debts and later assets (RD-084): its own workspace, set up per budget.
+        { id: "assets-debt", label: "Assets & Debt", href: "/assets-debt", icon: HandCoins },
         // Sits with the tools rather than in the footer: a backup is about a
         // budget's data, not about the app's own configuration. Above
         // Automations because it is a thing you set up, where Automations is
