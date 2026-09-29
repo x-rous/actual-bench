@@ -61,7 +61,7 @@ describe("rd084.debt-revision v1 snapshot", () => {
   it("does not depend on the order rows were read in", () => {
     const a = input();
     const b = input();
-    b.rates.reverse();
+    b.rates = [...b.rates].reverse();
     expect(hash(a)).toBe(hash(b));
   });
 
