@@ -165,7 +165,7 @@ The default order within a day follows FR-047:
 8. close.
 
 `end-of-day`, or a lender placement, moves scheduled repayments, other payments (extra
-repayments, draws) and/or offset changes to after the accrual, but still before the charge.
+repayments, draws) and/or offset changes to after the accrual and after that day's charge (as Figura does).
 Events are sorted by date, then by step, then by a stable key, so input order never matters.
 
 Two boundaries follow from this order:
