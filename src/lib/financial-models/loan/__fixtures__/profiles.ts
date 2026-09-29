@@ -15,7 +15,7 @@ export const AU_PROFILE: CalculationProfile = {
   repaymentDerivation: "monthly-equivalent-pro-rata",
   recast: "on-rate-change",
   rateEffectiveTiming: "on-accrual-effective-date",
-  repaymentEffectiveTiming: "on-payment-date",
+  repaymentEffectiveTiming: "transaction-date",
   rounding: {
     paymentRounding: "half-up",
     interestPostingRounding: "half-up",

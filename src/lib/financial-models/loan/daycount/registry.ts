@@ -56,12 +56,13 @@ export const DAY_COUNT_CATALOG: Readonly<Record<DayCountId, DayCountEntry>> = {
     selectable: false,
     unavailableReason: "No verified published source yet (loan/__fixtures__/monthly-alloc/SOURCES.md).",
   },
-  "30u-360": {
-    id: "30u-360",
-    fixtureFamily: "30u360",
+  "msrb-g33-30-360": {
+    id: "msrb-g33-30-360",
+    fixtureFamily: "msrb-g33-30-360",
     current: null,
     selectable: false,
-    unavailableReason: "Gated: the exact US 30/360 algorithm and its primary source are not settled (loan/daycount/THIRTY_U_360.md).",
+    unavailableReason:
+      "Frozen and fixture-backed (MSRB Rule G-33(e)), but not implemented or exposed: no loan source yet requires this day count (loan/daycount/THIRTY_360.md).",
   },
 };
 

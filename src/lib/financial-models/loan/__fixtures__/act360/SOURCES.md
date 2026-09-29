@@ -2,7 +2,7 @@
 
 status: verified
 convention: actual-360
-reviewed: 2026-09-29
+reviewed: 2026-09-29 (upgraded in the second pass)
 
 ## Verified
 
@@ -16,12 +16,28 @@ reviewed: 2026-09-29
    count and shows converting a 10% Actual/360 rate to Actual/365 (Fixed) by 365/360 = 10.139%.
    Used to check that the oracle's Actual/360 and Actual/365 Fixed differ by exactly 365/360.
 
+3. **Fannie Mae Multifamily Guide, Part III Ch. 11 §1103 "Actual Amortization Calculation"**,
+   https://mfguide.fanniemae.com/node/5286 (retrieved 2026-09-29; found through mortgagemath's
+   fixture, then read at source). It is a worked Tier 2 SARM example with published anchors: a
+   6.8134680% debt service constant at 5.500%, $4,114,494.17 aggregate principal over 120
+   payments, and a $34,287.45 fixed monthly principal. Encoded as `fanniemae-mf-1103`; every
+   published value is claimed.
+
+## What the sources establish
+
+- Interest per period is balance × annual rate × actual days / 360. For §1103 the days are those of
+  the month before each payment date.
+- The **payment** is an ordinary level annuity at annual rate / 12. It is **not** derived with a
+  365/360-bumped rate: the published debt service constant fixes this.
+- The §1103 aggregate is reproduced only with the payment and interest at full precision. It is a
+  prescribed calculation, not a cent-rounded servicer schedule; see the fixture's source.md.
+- Nothing in these sources restricts Actual/360 to monthly payments. mortgagemath does, because its
+  only fixtures are monthly; RD-084 treats that as a fixture gap, not a rule.
+
 ## Coverage limits
 
-No publicly available worked Actual/360 **interest amount** was found. The fixture's figures are
-computed by the independent oracle from the verified definition (research R-14 allows oracle
-expected values; they are never produced by the engine). The published 365/360 conversion is
-checked in the oracle's own tests.
+The `variable-month-lengths` amounts remain oracle-derived. `fanniemae-mf-1103` is the published
+numerical anchor. Fannie Mae §1104 and §1106 (cited by mortgagemath) were not read.
 
 ## Not coverage
 
@@ -31,3 +47,4 @@ checked in the oracle's own tests.
 ## Fixtures
 
 - `variable-month-lengths`: synthetic, oracle-derived (28, 29, 30 and 31-day months; a leap year).
+- `fanniemae-mf-1103`: reference (every published §1103 value).

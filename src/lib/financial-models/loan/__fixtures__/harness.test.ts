@@ -30,7 +30,7 @@ const BASE = {
 describe("fixture harness", () => {
   it("loads every committed fixture with a complete source record", () => {
     const families = listFamilies();
-    expect(families).toEqual(expect.arrayContaining(["act360", "act365f", "actact", "au-daily", "canada-j2", "monthly-alloc", "30u360"]));
+    expect(families).toEqual(expect.arrayContaining(["act360", "act365f", "actact", "au-daily", "canada-j2", "monthly-alloc", "msrb-g33-30-360"]));
     for (const family of families) {
       familyStatus(family);
       for (const fixture of loadFamily(family)) {

@@ -55,7 +55,7 @@ is then an exact fraction, and interest rounds once (`periodInterest`).
 | `actual-actual-calendar` | each day / its own year's length (ISDA method) | `daycount-actact-calendar@1` | yes |
 | `actual-360` | actual days / 360 | `daycount-act360@1` | yes |
 | `monthly-30-360-actual-day-allocation` | each month = 1/12 year, spread over its actual days | `daycount-monthly-alloc@1` | **no** (no verified source) |
-| `30u-360` | not implemented | none | **no** (gated; see `loan/daycount/THIRTY_U_360.md`) |
+| `msrb-g33-30-360` | MSRB Rule G-33(e) 30/360 (no February rule) | none (frozen, not implemented) | **no** (fixture-backed; loan relevance not established, see `loan/daycount/THIRTY_360.md`) |
 
 Implemented is not the same as selectable. `daycount/registry.ts` declares which
 conventions are selectable, and `registry.test.ts` checks that claim against the
@@ -93,10 +93,31 @@ The level payment uses `P·r·(1+r)^n / ((1+r)^n − 1)`, or P ÷ n at a zero ra
 
 ## Profile and config (`loan/profile.ts`, `loan/configSchema.ts`)
 
-The calculation profile stores every FR-035 axis on its own. `validateProfile` refuses
-contradictory combinations as `inconsistent-profile` and names the conflicting axes. For
-example, daily simple accrual cannot be combined with daily capitalization, and a
-split-monthly derivation needs weekly or fortnightly repayments.
+The calculation profile stores every FR-035 axis on its own. A combination is refused only for a
+stated reason, and "not built yet" is never treated as "impossible":
+
+| Check | Meaning | Result |
+|---|---|---|
+| `validateProfile` | contradicts an axis's own definition (e.g. daily simple accrual capitalized daily; a split-monthly derivation paid monthly) | `inconsistent-profile` |
+| `checkProfileSupport` | well-defined but not implemented (a semi-monthly split derivation; daily accrual under G-33 30/360; an intermediate scale beyond 30) | `unsupported-config` |
+| day-count registry | no verified reference evidence (monthly allocation) or not exposed (G-33) | `unsupported-config` |
+
+Nothing restricts Actual/360 to monthly payments or monthly compounding. Other libraries do,
+because of where their fixtures come from, not because of the mathematics.
+
+**Balance precision:**
+
+- `round-each-posting` rounds the balance at each posting, and the next interest is computed on
+  that rounded balance (mortgagemath's ROUND_EACH).
+- `round-each-event` rounds after every event.
+- `carry-full-precision` carries the unrounded interest remainder into the next period. Posted
+  amounts are always whole minor units.
+
+A schedule that reduces principal by an *unrounded* payment (mortgagemath's CARRY_PRECISION;
+Fannie Mae §1103's aggregate) is a theoretical calculation, not a posting mode.
+
+**Repayment value date:** `repaymentEffectiveTiming` is `transaction-date` or `next-calendar-day`.
+It shifts the date of the event. Where the event falls within that day is `eventOrder`'s job.
 
 `parseDebtConfig` reads `rd084.debt-config` version 1 and never throws. It returns one
 of:
@@ -124,9 +145,20 @@ The default order within a day follows FR-047:
 7. charge;
 8. close.
 
-`end-of-day`, or a lender placement, moves payments and/or offset changes to after the
-accrual, but still before the charge. Events are sorted by date, then by step, then by a
-stable key, so input order never matters.
+`end-of-day`, or a lender placement, moves scheduled repayments, other payments (extra
+repayments, draws) and/or offset changes to after the accrual, but still before the charge.
+Events are sorted by date, then by step, then by a stable key, so input order never matters.
+
+Two boundaries follow from this order:
+
+- **The charge includes its own day.** A charge on date C is taken after C's accrual, so it covers
+  the days after the previous charge date up to and including C.
+- **Accrual starts after the anchor.** A simulation starts from an anchor's closing state, so the
+  first day to accrue is the day after the anchor.
+
+The Figura calculator's code does the same, and places extra repayments before the accrual and
+scheduled repayments after it (`loan/__fixtures__/au-daily/SOURCES.md`). That is calculator
+evidence, not a lender's rule.
 
 ## Versions (`loan/versions.ts`)
 
@@ -150,6 +182,11 @@ A fixture without a complete `source.md` does not load. Each family's `SOURCES.m
 records its status: `verified`, `verified-behavior`, `no-verified-source` or `gated`. It
 also lists every source consulted and says why any source was not used.
 
+If a published worked example prints several values, a fixture that cites it reproduces **all**
+the values it claims, or the fixture is narrowed in writing, or it is not adopted.
+`loan/__fixtures__/CANDIDATES.md` lists sources that were examined but narrowed, deferred or
+rejected, and records the reasons.
+
 Expected values come **only** from a cited publication or from the independent oracle
 in `src/test-oracles/rd084/`. They never come from the engine under test:
 
@@ -165,6 +202,11 @@ No preset may claim to match a named lender unless a verified reference fixture 
 
 ## Known source issues
 
-The ISDA 1998 memo prints the ISDA-method figure for 15 Jul 2003 to 15 Jan 2004 as
-184/365 (£504.11). Its own rule gives 170/365 + 14/366 (£504.00), so that row is
-excluded (`__fixtures__/actact/SOURCES.md`).
+See `loan/__fixtures__/CANDIDATES.md`. It covers:
+
+- the ISDA 1998 memo erratum;
+- Reg Z H-14 (no reading reproduces all 30 printed cells);
+- the withdrawn P1.1 claims about the February rule in MSRB G-33 and about the Australian daily
+  fixture's boundary.
+
+`docs/assets-debt/reference-crosswalk.md` compares this layer with mortgagemath.

@@ -18,14 +18,14 @@ export type DayCountId =
   | "actual-actual-calendar"
   | "actual-360"
   | "monthly-30-360-actual-day-allocation"
-  | "30u-360";
+  | "msrb-g33-30-360";
 
 export const DAY_COUNT_IDS: readonly DayCountId[] = [
   "actual-365-fixed",
   "actual-actual-calendar",
   "actual-360",
   "monthly-30-360-actual-day-allocation",
-  "30u-360",
+  "msrb-g33-30-360",
 ];
 
 /** `days / denominator` of a year, for the days in [from, to). */

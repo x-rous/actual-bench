@@ -51,10 +51,10 @@ describe("parseDebtConfig", () => {
   });
 
   it("returns unsupported-config for a known but unselectable convention", () => {
-    expect(parseDebtConfig(withProfile({ dayCount: "30u-360", accrual: "per-period" }))).toMatchObject({
+    expect(parseDebtConfig(withProfile({ dayCount: "msrb-g33-30-360", accrual: "per-period" }))).toMatchObject({
       ok: false,
       code: "unsupported-config",
-      issues: ["profile.dayCount: 30u-360 is not available in this build"],
+      issues: ["profile.dayCount: msrb-g33-30-360 is not available in this build"],
     });
     expect(parseDebtConfig(withProfile({ dayCount: "monthly-30-360-actual-day-allocation" }))).toMatchObject({ ok: false, code: "unsupported-config" });
   });
@@ -70,6 +70,11 @@ describe("parseDebtConfig", () => {
     const badDate = validConfig();
     (badDate.terms as Record<string, unknown>).openingDate = "2023-02-29";
     expect(parseDebtConfig(badDate)).toMatchObject({ ok: false, code: "invalid-config" });
+  });
+
+  it("returns unsupported-config for a well-defined combination this build does not implement", () => {
+    const result = parseDebtConfig(withProfile({ repaymentDerivation: "split-monthly", repaymentFrequency: "semi-monthly" }));
+    expect(result).toMatchObject({ ok: false, code: "unsupported-config" });
   });
 
   it("returns inconsistent-profile with the conflicting axes", () => {

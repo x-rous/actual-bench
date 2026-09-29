@@ -12,9 +12,17 @@ import type { RepaymentDerivation } from "./repayment";
  * calculates, stored separately and never inferred from another. Contractual
  * term, amortization term and maturity live in the config's `terms`.
  *
- * Axes are independent, but some combinations contradict each other. Those
- * are refused as `inconsistent-profile` (Blocked), naming the axes that
- * conflict, rather than silently picking one reading.
+ * Axes are independent. Two separate checks guard combinations, and neither
+ * treats "not built yet" as "impossible":
+ *
+ * - `validateProfile`: combinations that contradict their own definitions
+ *   (mathematically or contractually invalid). Refused as
+ *   `inconsistent-profile`, naming the axes.
+ * - `checkProfileSupport`: well-defined combinations this build does not
+ *   implement. Refused as `unsupported-config`, like an unknown identifier.
+ *
+ * Conventions without verified reference evidence are gated separately, by
+ * the day-count registry (daycount/registry.ts), not here.
  */
 
 export const PROFILE_VERSION = "profile@1";
@@ -47,9 +55,14 @@ export const RECAST_POLICIES: readonly RecastPolicy[] = ["never", "on-rate-chang
 export type RateEffectiveTiming = "on-accrual-effective-date" | "from-next-charge-period";
 export const RATE_EFFECTIVE_TIMINGS: readonly RateEffectiveTiming[] = ["on-accrual-effective-date", "from-next-charge-period"];
 
-/** When a repayment reduces the interest-bearing balance. */
-export type RepaymentEffectiveTiming = "on-payment-date" | "next-day";
-export const REPAYMENT_EFFECTIVE_TIMINGS: readonly RepaymentEffectiveTiming[] = ["on-payment-date", "next-day"];
+/**
+ * The value date a repayment takes effect on, before same-day ordering
+ * applies: the transaction's own date, or the next calendar day. Where in the
+ * day an event falls (before or after the accrual) is `eventOrder`'s job, not
+ * this axis. Business-day calendars are not modelled.
+ */
+export type RepaymentEffectiveTiming = "transaction-date" | "next-calendar-day";
+export const REPAYMENT_EFFECTIVE_TIMINGS: readonly RepaymentEffectiveTiming[] = ["transaction-date", "next-calendar-day"];
 
 export type FinalPaymentPolicy = "true-up-to-zero" | "contractual-balloon" | "keep-level-payment-with-residual" | "continue-until-paid";
 export const FINAL_PAYMENT_POLICIES: readonly FinalPaymentPolicy[] = [
@@ -101,50 +114,43 @@ export type ProfileConflict = { axes: ProfileAxis[]; message: string };
 
 export type ProfileCheck = { ok: true } | { ok: false; code: "inconsistent-profile"; conflicts: ProfileConflict[] };
 
+export type SupportCheck = { ok: true } | { ok: false; code: "unsupported-combination"; conflicts: ProfileConflict[] };
+
 /**
- * The `profile@1` conflict table. Each rule names the axes it ties together
- * and the requirement it enforces.
+ * Invalid combinations (`profile@1`): each contradicts the definition of one
+ * of its axes, so no implementation could honor it.
  */
 export function validateProfile(profile: CalculationProfile): ProfileCheck {
   const conflicts: ProfileConflict[] = [];
   const conflict = (axes: ProfileAxis[], message: string) => conflicts.push({ axes, message });
   const p = profile;
 
-  // FR-041: pro-rata and split derivations convert a monthly payment to a weekly or fortnightly one.
+  // FR-041 defines pro-rata and split as converting a monthly payment into a more
+  // frequent one; applied to a monthly or less frequent cadence they are undefined.
   if ((p.repaymentDerivation === "monthly-equivalent-pro-rata" || p.repaymentDerivation === "split-monthly") &&
-      p.repaymentFrequency !== "weekly" && p.repaymentFrequency !== "fortnightly") {
-    conflict(["repaymentDerivation", "repaymentFrequency"], `${p.repaymentDerivation} converts a monthly payment, so repayments must be weekly or fortnightly.`);
+      (p.repaymentFrequency === "monthly" || p.repaymentFrequency === "quarterly" || p.repaymentFrequency === "annual" || p.repaymentFrequency === "custom-dated")) {
+    conflict(["repaymentDerivation", "repaymentFrequency"], `${p.repaymentDerivation} converts a monthly payment into a more frequent one; ${p.repaymentFrequency} repayments are not that.`);
   }
 
-  // An annuity needs a fixed number of payments a year.
+  // An annuity at the payment frequency needs a periodic rate and a payment count.
   if (p.repaymentDerivation === "annuity-at-payment-frequency" && p.repaymentFrequency === "custom-dated") {
     conflict(["repaymentDerivation", "repaymentFrequency"], "An annuity at the payment frequency needs a regular frequency, not custom dates.");
   }
 
-  // FR-036: constant principal sets principal per period; an annuity payment contradicts it.
+  // FR-036: constant principal pays principal ÷ periods plus interest, which is not a level annuity.
   if (p.amortization === "constant-principal" && p.repaymentDerivation === "annuity-at-payment-frequency") {
     conflict(["amortization", "repaymentDerivation"], "Constant principal pays principal ÷ periods plus interest, not a level annuity.");
   }
 
-  // FR-039: simple accrual only bears interest once charged; compounding capitalizes daily.
+  // FR-039: simple accrual bears no interest until charged; compounding capitalizes daily.
   if (p.accrual === "daily-simple" && p.capitalization === "daily") {
     conflict(["accrual", "capitalization"], "Daily simple accrual must not bear interest until charged; daily capitalization would compound it.");
   }
   if (p.accrual === "daily-compounded" && p.capitalization !== "daily") {
-    conflict(["accrual", "capitalization"], "Daily compounding needs daily capitalization.");
+    conflict(["accrual", "capitalization"], "Daily compounding means capitalizing daily.");
   }
   if (p.accrual === "per-period" && p.capitalization === "daily") {
     conflict(["accrual", "capitalization"], "Per-period accrual has no daily interest to capitalize.");
-  }
-
-  // FR-038: the monthly allocation convention is defined per calendar month.
-  if (p.dayCount === "monthly-30-360-actual-day-allocation" && p.chargeFrequency !== "monthly") {
-    conflict(["dayCount", "chargeFrequency"], "Monthly 30/360 actual-day allocation spreads each month's interest, so interest must be charged monthly.");
-  }
-
-  // 30/360 counts are not additive day by day, so they cannot drive a daily accrual.
-  if (p.dayCount === "30u-360" && p.accrual !== "per-period") {
-    conflict(["dayCount", "accrual"], "30/360 day counting cannot be accrued day by day.");
   }
 
   if (p.chargeFrequency === "at-repayment" && p.chargeDay !== null) {
@@ -154,10 +160,34 @@ export function validateProfile(profile: CalculationProfile): ProfileCheck {
     conflict(["chargeDay"], "The charge day must be a day of the month from 1 to 31.");
   }
 
-  const scale = p.rounding.intermediateScale;
-  if (scale.mode === "fixed" && !(Number.isInteger(scale.places) && scale.places >= 0 && scale.places <= WORKING_SCALE)) {
-    conflict(["rounding.intermediateScale"], `A fixed intermediate scale must be 0 to ${WORKING_SCALE} places.`);
+  return conflicts.length === 0 ? { ok: true } : { ok: false, code: "inconsistent-profile", conflicts };
+}
+
+/**
+ * Well-defined combinations this build does not implement. They are refused
+ * rather than approximated (FR-215), and may become supported later without
+ * any change to the configuration.
+ */
+export function checkProfileSupport(profile: CalculationProfile): SupportCheck {
+  const conflicts: ProfileConflict[] = [];
+  const conflict = (axes: ProfileAxis[], message: string) => conflicts.push({ axes, message });
+  const p = profile;
+
+  // Semi-monthly from a monthly figure is meaningful (÷ 2 either way), but
+  // derivation here implements only weekly and fortnightly conversions.
+  if ((p.repaymentDerivation === "monthly-equivalent-pro-rata" || p.repaymentDerivation === "split-monthly") && p.repaymentFrequency === "semi-monthly") {
+    conflict(["repaymentDerivation", "repaymentFrequency"], "Deriving a semi-monthly payment from a monthly one is not implemented.");
   }
 
-  return conflicts.length === 0 ? { ok: true } : { ok: false, code: "inconsistent-profile", conflicts };
+  // MSRB G-33 counts periods, not single days; a daily decomposition is not defined by the rule.
+  if (p.dayCount === "msrb-g33-30-360" && p.accrual !== "per-period") {
+    conflict(["dayCount", "accrual"], "MSRB G-33 30/360 defines period day counts, not a daily accrual.");
+  }
+
+  const scale = p.rounding.intermediateScale;
+  if (scale.mode === "fixed" && !(Number.isInteger(scale.places) && scale.places >= 0 && scale.places <= WORKING_SCALE)) {
+    conflict(["rounding.intermediateScale"], `A fixed intermediate scale must be 0 to ${WORKING_SCALE} places in this build.`);
+  }
+
+  return conflicts.length === 0 ? { ok: true } : { ok: false, code: "unsupported-combination", conflicts };
 }

@@ -1,6 +1,16 @@
-import { dayCount, levelPayment, periodicRate, periodInterest, simulateDailyLoan, yearFraction, type OracleConvention } from "./conventions";
+import {
+  actual360AggregatePrincipal,
+  dayCount,
+  levelPayment,
+  msrbG33Days,
+  periodicRate,
+  periodInterest,
+  simulateDailyLoan,
+  yearFraction,
+  type OracleConvention,
+} from "./conventions";
 import { allFixtures } from "./fixtureFiles";
-import { qdiv, qmul, qToFixed, roundHalfAwayScaled, qs } from "./rational";
+import { q, qadd, qdiv, qmul, qsub, qToFixed, roundHalfAwayScaled, qs } from "./rational";
 
 /*
  * Two jobs. First, the oracle must reproduce published figures on its own,
@@ -46,13 +56,49 @@ describe("oracle reproduces published figures", () => {
     expect(qToFixed(pvFactor, 6)).toBe("156.297225");
     expect(qToFixed(payment, 2)).toBe("639.81");
   });
+  it("MSRB G-33 interpretation of June 2, 1982: June 15 → July 1 is 16 days, June 15 → Sept 1 is 76", () => {
+    expect(msrbG33Days("1982-06-15", "1982-07-01")).toBe(16);
+    expect(msrbG33Days("1982-06-15", "1982-09-01")).toBe(76);
+  });
+
+  it("Fannie Mae §1103: 6.8134680% constant, $4,114,494.17 aggregate principal, $34,287.45 a month", () => {
+    const input = { principal: "25000000", annualRate: "0.055", amortizationPayments: 360, termPayments: 120, firstPaymentDate: "2019-01-01" };
+    const { payment, aggregatePrincipal } = actual360AggregatePrincipal(input);
+    expect(qToFixed(qdiv(qmul(payment, q(1200)), qs("25000000")), 7)).toBe("6.8134680");
+    expect(qToFixed(aggregatePrincipal, 2)).toBe("4114494.17");
+    expect(qToFixed(qdiv(qs("4114494.17"), q(120)), 2)).toBe("34287.45");
+  });
+
+  it("§1103 is not a 365/360-bumped payment, and not a cent-rounded cash schedule", () => {
+    // A bumped rate gives a different debt service constant.
+    const bumped = levelPayment("25000000", qdiv(qmul(qs("0.055"), q(365, 360)), q(12)), 360).payment;
+    expect(qToFixed(qdiv(qmul(bumped, q(1200)), qs("25000000")), 7)).not.toBe("6.8134680");
+    // Rounding the payment to cents misses the published aggregate, whether or not interest is also rounded.
+    const cashAggregate = (roundInterest: boolean) => {
+      let balance = qs("25000000");
+      let aggregate = q(0);
+      const pay = qs("141947.25");
+      for (let k = 0; k < 120; k++) {
+        const prev = 2019 * 12 + k - 1;
+        const days = new Date(Date.UTC(Math.floor(prev / 12), (prev % 12) + 1, 0)).getUTCDate();
+        const exact = qdiv(qmul(qmul(balance, qs("0.055")), q(days)), q(360));
+        const interest = roundInterest ? q(roundHalfAwayScaled(exact, 2), 100) : exact;
+        const principal = qsub(pay, interest);
+        aggregate = qadd(aggregate, principal);
+        balance = qsub(balance, principal);
+      }
+      return qToFixed(aggregate, 2);
+    };
+    expect(cashAggregate(false)).toBe("4114494.11");
+    expect(cashAggregate(true)).toBe("4114494.10");
+  });
 });
 
 describe("every fixture's expected values are the oracle's", () => {
   const fixtures = allFixtures();
 
   it("finds fixtures", () => {
-    expect(fixtures.length).toBeGreaterThanOrEqual(8);
+    expect(fixtures.length).toBeGreaterThanOrEqual(11);
   });
 
   it.each(fixtures.map((f) => [`${f.family}/${f.name}`, f] as const))("%s", (_id, fixture) => {
@@ -68,10 +114,28 @@ describe("every fixture's expected values are the oracle's", () => {
       }));
       expect(computed).toEqual(fixture.expected);
     } else if (input.kind === "daily-loan") {
-      const rows = simulateDailyLoan(input as never, fixture.events.map((e) => ({ date: e.date, amountMinor: Number(e.amount_minor) })));
+      const events = fixture.events.map((e) => ({ date: e.date, kind: e.kind, amountMinor: Number(e.amount_minor) }));
+      const rows = simulateDailyLoan(input as never, events);
       expect(
         rows.map((r) => ({ date: r.date, event: r.event, amount_minor: String(r.amountMinor), balance_after_minor: String(r.balanceAfterMinor) }))
       ).toEqual(fixture.expected);
+    } else if (input.kind === "day-count") {
+      expect(input.convention).toBe("msrb-g33-30-360");
+      expect(fixture.expected.map((r) => ({ ...r, days: String(msrbG33Days(r.start, r.end)) }))).toEqual(fixture.expected);
+    } else if (input.kind === "actual360-aggregate-amortization") {
+      const i2 = input as unknown as { principal: string; annualRate: string; amortizationPayments: number; termPayments: number; firstPaymentDate: string };
+      const { payment, aggregatePrincipal } = actual360AggregatePrincipal(i2);
+      const aggregateMinor = roundHalfAwayScaled(aggregatePrincipal, 2);
+      const constantPct = qToFixed(qdiv(qmul(payment, q(1200)), qs(i2.principal)), 7);
+      expect([
+        {
+          debt_service_constant_pct_7dp: constantPct,
+          monthly_pi_minor: String(roundHalfAwayScaled(qdiv(qmul(qs(i2.principal), qs(constantPct)), q(1200)), 2)),
+          aggregate_principal_minor: String(aggregateMinor),
+          fixed_monthly_principal_minor: String(roundHalfAwayScaled(q(aggregateMinor, 100 * i2.termPayments), 2)),
+          balance_after_term_minor: String(roundHalfAwayScaled(qs(i2.principal), 2) - aggregateMinor),
+        },
+      ]).toEqual(fixture.expected);
     } else if (input.kind === "level-payment") {
       const { annualRate, paymentsPerYear, principal, payments, rateQuote } = input as unknown as {
         annualRate: string; paymentsPerYear: number; principal: string; payments: number; rateQuote: string;

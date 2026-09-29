@@ -23,6 +23,9 @@ encoded.
 
 ## Not coverage
 
+- Figura's "Actual/Actual" method uses a 365 or 366 denominator depending on the 12 months from the
+  loan anniversary, not the calendar year. It is a different convention and is not implemented.
+
 - The ISMA/ICMA and AFB variants in the same memo are different conventions and are not
   implemented.
 - ISDA 2006 Definitions §4.16(b) (the current text) is not publicly available and was not read.

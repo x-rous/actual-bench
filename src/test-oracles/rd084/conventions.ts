@@ -90,50 +90,104 @@ export function levelPayment(principal: string, r: Q, n: number): { pvFactor: Q;
   return { pvFactor, payment: qdiv(qs(principal), pvFactor) };
 }
 
+/**
+ * MSRB Rule G-33(e)(ii) 30/360 day count, written from the rule's text:
+ * days = (Y2 − Y1) 360 + (M2 − M1) 30 + (D2 − D1); D2 = 31 becomes 30 when
+ * D1 is 30 or 31; D1 = 31 becomes 30. No February rule exists in the text.
+ */
+export function msrbG33Days(start: string, end: string): number {
+  const [y1, m1, d1raw] = start.split("-").map(Number);
+  const [y2, m2, d2raw] = end.split("-").map(Number);
+  const d2 = d2raw === 31 && (d1raw === 30 || d1raw === 31) ? 30 : d2raw;
+  const d1 = d1raw === 31 ? 30 : d1raw;
+  return (y2 - y1) * 360 + (m2 - m1) * 30 + (d2 - d1);
+}
+
+/**
+ * Fannie Mae §1103 aggregate amortization, exact: a level payment at r/12
+ * over the amortization count, and interest each period at
+ * balance × annual rate × (days in the month before the payment) / 360, with
+ * nothing rounded until the total.
+ */
+export function actual360AggregatePrincipal(input: {
+  principal: string;
+  annualRate: string;
+  amortizationPayments: number;
+  termPayments: number;
+  firstPaymentDate: string;
+}): { payment: Q; aggregatePrincipal: Q } {
+  const r = qdiv(qs(input.annualRate), q(12));
+  const { payment } = levelPayment(input.principal, r, input.amortizationPayments);
+  const [fy, fm] = input.firstPaymentDate.split("-").map(Number);
+  let balance = qs(input.principal);
+  let aggregate = q(0);
+  for (let k = 0; k < input.termPayments; k++) {
+    // The month before payment k+1: payment months start at the first payment's month.
+    const payMonthIndex = fy * 12 + (fm - 1) + k;
+    const prev = payMonthIndex - 1;
+    const days = monthLength(Math.floor(prev / 12), (prev % 12) + 1);
+    const interest = qdiv(qmul(qmul(balance, qs(input.annualRate)), q(days)), q(360));
+    const principalPart = qsub(payment, interest);
+    aggregate = qadd(aggregate, principalPart);
+    balance = qsub(balance, principalPart);
+  }
+  return { payment, aggregatePrincipal: aggregate };
+}
+
+export type Placement = "before-accrual" | "after-accrual";
+
 export type DailyLoanInput = {
-  openingDate: string;
+  anchorDate: string;
   openingPrincipal: string;
   annualRate: string;
   convention: OracleConvention;
   dailyInterestScale: number;
   chargeDates: string[];
   until: string;
-  eventTiming: "start-of-day" | "end-of-day";
+  eventOrder: { scheduledRepayments: Placement; otherPayments: Placement; offsets: Placement };
 };
 
 export type DailyLoanRow = { date: string; event: string; amountMinor: bigint; balanceAfterMinor: bigint };
 
 /**
- * A daily-accrual, monthly-charge loan as described by the au-daily sources:
- * each day's interest on that day's balance, rounded to `dailyInterestScale`
- * places; the sum rounded to cents and capitalized at the end of the day
- * before each charge date (so the charge covers [previous charge, charge date)
- * and is posted on the charge date). Repayments on a date apply before that
- * day's accrual for `start-of-day`, after it for `end-of-day`. Half-up ties.
+ * A daily-accrual, monthly-charge loan following FR-047's day order, the
+ * order Figura's calculator code also uses:
+ *
+ * - the first day to accrue is the day after the anchor (drawdown);
+ * - each day: payments placed before the accrual, then the accrual on the
+ *   balance (rounded to `dailyInterestScale` places, half-up), then a charge
+ *   if the day is a charge date (the period total rounded to cents,
+ *   half-up, capitalized), then payments placed after the accrual;
+ * - scheduled repayments (`repayment`) and other payments
+ *   (`extra-repayment`, `draw`) are placed independently.
  */
-export function simulateDailyLoan(input: DailyLoanInput, repayments: { date: string; amountMinor: number }[]): DailyLoanRow[] {
+export function simulateDailyLoan(input: DailyLoanInput, events: { date: string; kind: string; amountMinor: number }[]): DailyLoanRow[] {
   let balance = qs(input.openingPrincipal);
   let accrued = q(0);
   const rows: DailyLoanRow[] = [];
   const charges = new Set(input.chargeDates);
   const cents = (x: Q) => (x.n * BigInt(100)) / x.d;
-  const repay = (day: string) => {
-    for (const r of repayments.filter((p) => p.date === day)) {
-      balance = qadd(balance, q(r.amountMinor, 100));
-      rows.push({ date: day, event: "repayment", amountMinor: BigInt(r.amountMinor), balanceAfterMinor: cents(balance) });
+  const placementOf = (kind: string): Placement =>
+    kind === "repayment" ? input.eventOrder.scheduledRepayments : input.eventOrder.otherPayments;
+  const apply = (day: string, where: Placement) => {
+    for (const e of events.filter((p) => p.date === day && placementOf(p.kind) === where)) {
+      balance = qadd(balance, q(e.amountMinor, 100));
+      rows.push({ date: day, event: e.kind, amountMinor: BigInt(e.amountMinor), balanceAfterMinor: cents(balance) });
     }
   };
-  for (const day of eachDay(input.openingDate, input.until)) {
-    if (input.eventTiming === "start-of-day") repay(day);
+  const firstDay = isoOf(utcDay(input.anchorDate) + 1);
+  const afterUntil = isoOf(utcDay(input.until) + 1);
+  for (const day of eachDay(firstDay, afterUntil)) {
+    apply(day, "before-accrual");
     const next = isoOf(utcDay(day) + 1);
     accrued = qadd(accrued, roundHalfAway(qmul(qmul(balance, qs(input.annualRate)), yearFraction(input.convention, day, next)), input.dailyInterestScale));
-    if (input.eventTiming === "end-of-day") repay(day);
-    if (charges.has(next)) {
+    if (charges.has(day)) {
       const charge = roundHalfAway(accrued, 2);
       balance = qadd(balance, charge);
-      rows.push({ date: next, event: "interest-charge", amountMinor: cents(charge), balanceAfterMinor: cents(balance) });
+      rows.push({ date: day, event: "interest-charge", amountMinor: cents(charge), balanceAfterMinor: cents(balance) });
       accrued = q(0);
     }
+    apply(day, "after-accrual");
   }
   return rows;
 }

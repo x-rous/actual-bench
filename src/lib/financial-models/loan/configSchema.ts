@@ -4,7 +4,7 @@ import { SCHEDULE_FREQUENCIES } from "../calendar/schedule";
 import { ROUNDING_MODES } from "../money/rounding";
 import { isSelectableDayCount } from "./daycount/registry";
 import { DAY_COUNT_IDS } from "./daycount/types";
-import { SAME_DAY_TIMINGS } from "./events";
+import { EVENT_ORDER_PLACEMENT_KEYS, PLACEMENTS, SAME_DAY_TIMINGS } from "./events";
 import {
   ACCRUAL_METHODS,
   AMORTIZATION_METHODS,
@@ -15,6 +15,7 @@ import {
   RATE_EFFECTIVE_TIMINGS,
   RECAST_POLICIES,
   REPAYMENT_EFFECTIVE_TIMINGS,
+  checkProfileSupport,
   validateProfile,
   type CalculationProfile,
   type ProfileConflict,
@@ -65,7 +66,7 @@ const rounding = z.strictObject({
   balancePrecision: enumOf(BALANCE_PRECISIONS),
 });
 
-const placement = enumOf(["before-accrual", "after-accrual"] as const);
+const placement = enumOf(PLACEMENTS);
 
 const profile = z.strictObject({
   amortization: enumOf(AMORTIZATION_METHODS),
@@ -83,7 +84,7 @@ const profile = z.strictObject({
   rounding,
   eventOrder: z.union([
     z.strictObject({ timing: enumOf(SAME_DAY_TIMINGS) }),
-    z.strictObject({ payments: placement, offsets: placement }),
+    z.strictObject(Object.fromEntries(EVENT_ORDER_PLACEMENT_KEYS.map((k) => [k, placement])) as Record<(typeof EVENT_ORDER_PLACEMENT_KEYS)[number], typeof placement>),
   ]),
   finalPayment: enumOf(FINAL_PAYMENT_POLICIES),
   shortMonth: enumOf(SHORT_MONTH_POLICIES),
@@ -196,5 +197,14 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
       conflicts: check.conflicts,
     };
   }
+  const support = checkProfileSupport(config.profile as CalculationProfile);
+  if (!support.ok) {
+    return {
+      ok: false,
+      code: "unsupported-config",
+      issues: support.conflicts.map((c) => `${c.axes.join(" + ")}: ${c.message}`),
+    };
+  }
+
   return { ok: true, config };
 }

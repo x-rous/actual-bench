@@ -9,6 +9,7 @@ describe("day step order", () => {
       "contract-change",
       "external-cash",
       "payment",
+      "scheduled-repayment",
       "offset-change",
       "determine-balance",
       "accrue",
@@ -24,16 +25,20 @@ describe("day step order", () => {
       "determine-balance",
       "accrue",
       "payment",
+      "scheduled-repayment",
       "offset-change",
       "charge",
       "close",
     ]);
   });
 
-  it("lets a lender profile place payments and offsets separately", () => {
-    const order = dayStepOrder({ payments: "after-accrual", offsets: "before-accrual" });
+  it("lets a lender profile place scheduled repayments, other payments and offsets separately", () => {
+    // Figura: extra repayments and offset deposits before the accrual, scheduled repayments after it.
+    const order = dayStepOrder({ scheduledRepayments: "after-accrual", otherPayments: "before-accrual", offsets: "before-accrual" });
+    expect(order.indexOf("payment")).toBeLessThan(order.indexOf("accrue"));
     expect(order.indexOf("offset-change")).toBeLessThan(order.indexOf("accrue"));
-    expect(order.indexOf("payment")).toBeGreaterThan(order.indexOf("accrue"));
+    expect(order.indexOf("scheduled-repayment")).toBeGreaterThan(order.indexOf("accrue"));
+    expect(order.indexOf("scheduled-repayment")).toBeLessThan(order.indexOf("charge"));
   });
 });
 
@@ -57,6 +62,8 @@ describe("orderEvents", () => {
   it("refuses an event kind with no step", () => {
     expect(() => orderEvents([{ date: "2024-01-01", kind: "mystery", key: "x" }])).toThrow(RangeError);
     expect(stepForEvent("draw")).toBe("payment");
+    expect(stepForEvent("extra-repayment")).toBe("payment");
+    expect(stepForEvent("repayment")).toBe("scheduled-repayment");
   });
 });
 

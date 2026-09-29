@@ -1,5 +1,5 @@
 import { AU_PROFILE } from "./__fixtures__/profiles";
-import { validateProfile, type CalculationProfile, type ProfileAxis } from "./profile";
+import { checkProfileSupport, validateProfile, type CalculationProfile, type ProfileAxis } from "./profile";
 
 
 const axesOf = (p: CalculationProfile) => {
@@ -28,17 +28,29 @@ describe("profile consistency", () => {
     ["daily simple accrual capitalized daily", { capitalization: "daily" }, ["accrual", "capitalization"]],
     ["daily compounding capitalized at charge", { accrual: "daily-compounded" }, ["accrual", "capitalization"]],
     ["per-period accrual capitalized daily", { accrual: "per-period", capitalization: "daily" }, ["accrual", "capitalization"]],
-    ["monthly allocation charged quarterly", { dayCount: "monthly-30-360-actual-day-allocation", chargeFrequency: "quarterly" }, ["dayCount", "chargeFrequency"]],
-    ["30/360 accrued daily", { dayCount: "30u-360" }, ["dayCount", "accrual"]],
     ["a charge day with charge-at-repayment", { chargeFrequency: "at-repayment" }, ["chargeFrequency", "chargeDay"]],
     ["a charge day of 32", { chargeDay: 32 }, ["chargeDay"]],
   ])("refuses %s, naming the axes", (_label, change, axes) => {
     expect(axesOf({ ...AU_PROFILE, ...change })).toContainEqual(axes);
   });
 
-  it("refuses a fixed intermediate scale beyond the working scale", () => {
-    const p = { ...AU_PROFILE, rounding: { ...AU_PROFILE.rounding, intermediateScale: { mode: "fixed" as const, places: 31 } } };
-    expect(axesOf(p)).toEqual([["rounding.intermediateScale"]]);
+  it.each<[string, Partial<CalculationProfile>]>([
+    ["monthly allocation charged quarterly (well-defined: three twelfths)", { dayCount: "monthly-30-360-actual-day-allocation", chargeFrequency: "quarterly" }],
+    ["Actual/360 with fortnightly repayments", { dayCount: "actual-360" }],
+    ["Actual/360 with semi-annual quoting", { dayCount: "actual-360", rateQuote: "nominal-compounded-semiannual" }],
+    ["a split derivation paid semi-monthly", { repaymentDerivation: "split-monthly", repaymentFrequency: "semi-monthly" }],
+  ])("does not call %s invalid", (_label, change) => {
+    expect(validateProfile({ ...AU_PROFILE, ...change })).toEqual({ ok: true });
+  });
+  it("reports well-defined but unimplemented combinations as unsupported, not invalid", () => {
+    const unsupported = (change: Partial<CalculationProfile>) => {
+      const r = checkProfileSupport({ ...AU_PROFILE, ...change });
+      return r.ok ? [] : r.conflicts.map((c) => c.axes);
+    };
+    expect(unsupported({ repaymentDerivation: "split-monthly", repaymentFrequency: "semi-monthly" })).toEqual([["repaymentDerivation", "repaymentFrequency"]]);
+    expect(unsupported({ dayCount: "msrb-g33-30-360" })).toEqual([["dayCount", "accrual"]]);
+    expect(unsupported({ rounding: { ...AU_PROFILE.rounding, intermediateScale: { mode: "fixed", places: 31 } } })).toEqual([["rounding.intermediateScale"]]);
+    expect(checkProfileSupport(AU_PROFILE)).toEqual({ ok: true });
   });
 
   it("reports every conflict, not just the first", () => {

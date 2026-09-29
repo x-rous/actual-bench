@@ -1,0 +1,14 @@
+{
+  "kind": "daily-loan",
+  "convention": "actual-365-fixed",
+  "currency": { "code": "AUD", "minorDigits": 2 },
+  "anchorDate": "2024-01-31",
+  "openingPrincipal": "500000.00",
+  "annualRate": "0.06",
+  "dailyInterestScale": 5,
+  "dailyInterestRounding": "half-up",
+  "postingRounding": "half-up",
+  "chargeDates": ["2024-02-29", "2024-03-31", "2024-04-30"],
+  "eventOrder": { "scheduledRepayments": "after-accrual", "otherPayments": "before-accrual", "offsets": "before-accrual" },
+  "until": "2024-04-30"
+}

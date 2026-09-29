@@ -9,7 +9,7 @@ import {
   REVOLVING_PAYMENT_MODELS,
 } from "./configSchema";
 import { DAY_COUNT_IDS } from "./daycount/types";
-import { SAME_DAY_TIMINGS } from "./events";
+import { EVENT_ORDER_PLACEMENT_KEYS, PLACEMENTS, SAME_DAY_TIMINGS } from "./events";
 import {
   ACCRUAL_METHODS,
   AMORTIZATION_METHODS,
@@ -66,6 +66,11 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     ["phaseKind", PHASE_KINDS],
   ] as const)("%s", (axis, values) => {
     expect([...values]).toEqual([...FROZEN[axis]]);
+  });
+
+  it("eventOrder placement keys and values", () => {
+    expect([...EVENT_ORDER_PLACEMENT_KEYS]).toEqual([...FROZEN.eventOrderPlacementKeys]);
+    expect([...PLACEMENTS]).toEqual([...FROZEN.placement]);
   });
 
   it("keeps the component version map at its P1.1 values", () => {
