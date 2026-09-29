@@ -3,6 +3,13 @@ import type { ConnectionMode } from "@/store/connection";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import {
   APP_META_TABLE_SQL,
+  ASSETS_DEBT_V38_INDEX_SQL,
+  ASSETS_DEBT_V38_TRIGGER_SQL,
+  DEBT_FUTURE_ASSUMPTION_TABLE_SQL,
+  DEBT_OFFSET_LINK_TABLE_SQL,
+  DEBT_RATE_PERIOD_TABLE_SQL,
+  DEBT_TABLE_SQL,
+  MODEL_REVISION_TABLE_SQL,
   BACKUP_ARTIFACT_LOCATION_TABLE_SQL,
   BACKUP_ARTIFACT_TABLE_SQL,
   BACKUP_CREDENTIAL_TABLE_SQL,
@@ -51,7 +58,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 37;
+export const LATEST_SCHEMA_VERSION = 38;
 
 type Migration = {
   version: number;
@@ -459,6 +466,23 @@ const MIGRATIONS: readonly Migration[] = [
          last_snapshot_at TEXT NOT NULL,
          PRIMARY KEY (server_fingerprint, budget_sync_id)
        )`,
+    ],
+  },
+  {
+    version: 38,
+    // Assets & Debt configuration (RD-084 P1.3, approved at gate G1): debts,
+    // their rate periods, offset links and baseline assumptions, and immutable
+    // model revisions. Configuration and provenance only; no balance of record,
+    // no copy of Actual transactions. Additive: five new tables, their indexes,
+    // and two triggers on the new tables.
+    statements: [
+      DEBT_TABLE_SQL,
+      DEBT_RATE_PERIOD_TABLE_SQL,
+      DEBT_OFFSET_LINK_TABLE_SQL,
+      DEBT_FUTURE_ASSUMPTION_TABLE_SQL,
+      MODEL_REVISION_TABLE_SQL,
+      ...ASSETS_DEBT_V38_INDEX_SQL,
+      ...ASSETS_DEBT_V38_TRIGGER_SQL,
     ],
   },
 ];

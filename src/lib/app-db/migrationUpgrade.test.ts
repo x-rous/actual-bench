@@ -15,6 +15,7 @@ import { sealSecret, sealWithKey } from "@/lib/sync/vault";
 import { connectionFingerprint, serverFingerprint } from "@/lib/sync/connectionRef";
 import { randomBytes } from "node:crypto";
 import { LATEST_SCHEMA_VERSION, runMigrations } from "./migrations";
+import type { SqliteDatabase } from "./types";
 import { getLastSnapshotAt, recordSnapshotUploaded } from "./budgetRuntimeStateRepository";
 import {
   getReconciliationSession,
@@ -1043,7 +1044,7 @@ describe("upgrading an existing database", () => {
 
     try {
       const db = getAppDb(path);
-      expect(runMigrations(db).schemaVersion).toBe(37);
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const key = { serverFingerprint: "srv", budgetSyncId: "budget-1" };
       expect(getLastSnapshotAt(db, key)).toBeNull();
       recordSnapshotUploaded(db, key, now);
@@ -1298,6 +1299,143 @@ describe("upgrading an existing database", () => {
           )
           .run(now)
       ).not.toThrow();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/*
+ * v38: Assets & Debt configuration (RD-084 P1.3, gate G1). A v37 database is
+ * built by running every migration and removing only what v38 adds, which v38
+ * can do because it is purely additive.
+ */
+const V38_TABLES = ["debt_future_assumptions", "debt_offset_links", "debt_rate_periods", "debts", "model_revisions"];
+const V38_INDEXES = [
+  "idx_debt_future_assumptions_debt",
+  "idx_debt_offset_links_account",
+  "idx_debt_offset_links_debt",
+  "idx_debt_rate_periods_debt_accrual",
+  "idx_debts_budget_status",
+  "idx_debts_live_liability_account",
+];
+const V38_TRIGGERS = ["debts_delete_revisions", "model_revisions_immutable"];
+
+function v37Database(): { root: string; path: string } {
+  const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v38-"));
+  const path = join(root, "metadata.sqlite");
+  getAppDb(path);
+  resetAppDbForTests();
+  const db = new Database(path);
+  for (const trigger of V38_TRIGGERS) db.exec(`DROP TRIGGER ${trigger}`);
+  for (const table of ["model_revisions", "debt_future_assumptions", "debt_offset_links", "debt_rate_periods", "debts"]) db.exec(`DROP TABLE ${table}`);
+  db.prepare("UPDATE app_meta SET value = '37' WHERE key = 'schema_version'").run();
+  // Real work already in the database.
+  db.prepare("INSERT INTO saved_queries (id, name, query, is_favorite, created_at, updated_at) VALUES ('q1', 'Uncategorized', '{}', 1, 't', 't')").run();
+  db.prepare("INSERT INTO budget_runtime_state (server_fingerprint, budget_sync_id, last_snapshot_at) VALUES ('srv', 'b1', 't')").run();
+  db.close();
+  return { root, path };
+}
+
+function objectNames(db: SqliteDatabase, type: "table" | "index" | "trigger"): string[] {
+  return db
+    .prepare("SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .all<{ name: string }>(type)
+    .map((r) => r.name);
+}
+
+function dumpTables(db: SqliteDatabase, tables: string[]): Record<string, unknown[]> {
+  return Object.fromEntries(tables.map((t) => [t, db.prepare(`SELECT * FROM "${t}" ORDER BY rowid`).all()]));
+}
+
+describe("v38 Assets & Debt configuration", () => {
+  afterEach(() => {
+    resetAppDbForTests();
+  });
+
+  it("a fresh database reaches v38 with exactly the five tables, their indexes, triggers and foreign keys", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v38-"));
+    try {
+      const db = getAppDb(join(root, "metadata.sqlite"));
+      expect(LATEST_SCHEMA_VERSION).toBe(38);
+      expect(runMigrations(db).schemaVersion).toBe(38);
+      const tables = objectNames(db, "table");
+      for (const t of V38_TABLES) expect(tables).toContain(t);
+      expect(tables.filter((t) => t.startsWith("debt") || t === "model_revisions")).toEqual(V38_TABLES);
+      expect(objectNames(db, "index").filter((i) => V38_INDEXES.includes(i))).toEqual(V38_INDEXES);
+      expect(objectNames(db, "trigger")).toEqual(expect.arrayContaining(V38_TRIGGERS));
+      for (const child of ["debt_rate_periods", "debt_offset_links", "debt_future_assumptions"]) {
+        expect(db.prepare(`PRAGMA foreign_key_list(${child})`).all()).toEqual([
+          expect.objectContaining({ table: "debts", from: "debt_id", to: "id", on_delete: "CASCADE" }),
+        ]);
+      }
+      expect(db.prepare("PRAGMA foreign_key_list(model_revisions)").all()).toEqual([]);
+      const assumptionColumns = db.prepare("PRAGMA table_info(debt_future_assumptions)").all<{ name: string }>().map((c) => c.name);
+      expect(assumptionColumns).toEqual(["id", "debt_id", "assumption_kind", "effective_from", "recurrence_json", "amount_minor", "fee_treatment", "offset_account_id", "note", "created_at", "updated_at"]);
+      expect(assumptionColumns).not.toContain("rate_decimal");
+      const partial = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'idx_debts_live_liability_account'").get<{ sql: string }>();
+      expect(partial?.sql).toMatch(/UNIQUE INDEX .* WHERE status <> 'archived'/);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades a v37 database: existing rows are unchanged, the new tables are empty, and a second run changes nothing", () => {
+    const { root, path } = v37Database();
+    try {
+      const before = new Database(path);
+      const existing = before.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'app_meta'").all() as { name: string }[];
+      const snapshot = dumpTables(before as unknown as SqliteDatabase, existing.map((t) => t.name));
+      before.close();
+
+      const db = getAppDb(path);
+      const meta = runMigrations(db);
+      expect(meta.schemaVersion).toBe(38);
+      expect(dumpTables(db, existing.map((t) => t.name))).toEqual(snapshot);
+      for (const t of V38_TABLES) expect(db.prepare(`SELECT count(*) AS n FROM ${t}`).get<{ n: number }>()?.n).toBe(0);
+
+      const again = runMigrations(db);
+      expect(again).toEqual(meta);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rolls back entirely when v38 fails: the database stays at v37 with no Assets & Debt objects", () => {
+    const { root, path } = v37Database();
+    try {
+      const seed = new Database(path);
+      // A view in the way of the third table makes that CREATE TABLE fail mid-migration.
+      seed.exec("CREATE VIEW debt_offset_links AS SELECT 1 AS x");
+      seed.close();
+      expect(() => getAppDb(path)).toThrow();
+      resetAppDbForTests();
+      const db = new Database(path);
+      expect(db.prepare("SELECT value FROM app_meta WHERE key = 'schema_version'").get()).toEqual({ value: "37" });
+      const names = (db.prepare("SELECT name, type FROM sqlite_master WHERE name LIKE 'debt%' OR name LIKE 'model_revisions%' OR name LIKE 'idx_debt%'").all() as { name: string; type: string }[]);
+      expect(names).toEqual([{ name: "debt_offset_links", type: "view" }]);
+      db.close();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("an older build refuses a database newer than it supports", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-newer-v38-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      getAppDb(path);
+      resetAppDbForTests();
+      const seed = new Database(path);
+      seed.prepare("UPDATE app_meta SET value = ? WHERE key = 'schema_version'").run(String(LATEST_SCHEMA_VERSION + 1));
+      seed.close();
+      const raw = new Database(path);
+      expect(() => runMigrations(raw as unknown as SqliteDatabase)).toThrow(/newer than this app supports/);
+      raw.close();
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

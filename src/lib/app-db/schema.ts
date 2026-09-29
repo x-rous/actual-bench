@@ -813,3 +813,165 @@ CREATE TABLE IF NOT EXISTS backup_credentials (
   updated_at text NOT NULL
 );
 `;
+
+// ── Assets & Debt configuration (RD-084 P1.3, v38) ───────────────────────────
+//
+// Five configuration tables, approved at gate G1 (data-model.md). Enum columns
+// are text with no CHECK listing their values; CHECKs are structural, or state
+// a cross-column invariant that has to name a discriminator value (AGENTS.md).
+// Nothing here is a balance of record: amounts are contract inputs, and the
+// ledger stays in Actual.
+
+/** A canonical non-negative decimal string: digits, at most one point, no sign or exponent. */
+function decimalSyntax(column: string): string {
+  return (
+    `(typeof(${column}) = 'text' AND ${column} <> '' AND ${column} NOT GLOB '*[^0-9.]*' ` +
+    `AND ${column} NOT GLOB '*.*.*' AND ${column} GLOB '[0-9]*' AND ${column} NOT GLOB '*.')`
+  );
+}
+
+const integerAtLeast = (column: string, min: number) => `(typeof(${column}) = 'integer' AND ${column} >= ${min})`;
+
+export const DEBT_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS debts (
+  id text PRIMARY KEY,
+  budget_sync_id text NOT NULL,
+  name text NOT NULL CHECK (length(trim(name)) > 0),
+  debt_type text NOT NULL,
+  behavior_class text NOT NULL,
+  currency text NOT NULL CHECK (length(currency) = 3 AND currency = upper(currency) AND currency NOT GLOB '*[^A-Z]*'),
+  currency_minor_digits integer NOT NULL CHECK (typeof(currency_minor_digits) = 'integer' AND currency_minor_digits BETWEEN 0 AND 4),
+  liability_account_id text,
+  payment_account_id text,
+  sign_convention text NOT NULL,
+  lender_pattern text,
+  execution_strategy text NOT NULL,
+  drift_tolerance_minor integer NOT NULL CHECK ${integerAtLeast("drift_tolerance_minor", 0)},
+  lender_charge_grace_days integer NOT NULL CHECK ${integerAtLeast("lender_charge_grace_days", 0)},
+  onboarding_date text,
+  loan_payment_category_id text,
+  draw_category_id text,
+  expected_observation_interval_days integer CHECK (expected_observation_interval_days IS NULL OR ${integerAtLeast("expected_observation_interval_days", 1)}),
+  auto_apply_enabled integer NOT NULL DEFAULT 0 CHECK (auto_apply_enabled IN (0, 1)),
+  drift_accepted_revision integer CHECK (drift_accepted_revision IS NULL OR (typeof(drift_accepted_revision) = 'integer' AND drift_accepted_revision BETWEEN 1 AND current_revision)),
+  current_revision integer NOT NULL CHECK ${integerAtLeast("current_revision", 1)},
+  current_config_json text NOT NULL CHECK (json_valid(current_config_json)),
+  -- 'draft' | 'active' | 'archived'
+  status text NOT NULL,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  archived_at text,
+  CHECK ((status IS 'archived') = (archived_at IS NOT NULL)),
+  CHECK (liability_account_id IS NULL OR payment_account_id IS NULL OR liability_account_id <> payment_account_id)
+);
+`;
+
+export const DEBT_RATE_PERIOD_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS debt_rate_periods (
+  id text PRIMARY KEY,
+  debt_id text NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+  announced_at text,
+  accrual_effective_from text NOT NULL,
+  -- A fraction: 0.0612 is 6.12%.
+  annual_rate_decimal text NOT NULL CHECK ${decimalSyntax("annual_rate_decimal")},
+  payment_recalc_policy text,
+  payment_effective_from text,
+  rate_cap_decimal text CHECK (rate_cap_decimal IS NULL OR ${decimalSyntax("rate_cap_decimal")}),
+  rate_floor_decimal text CHECK (rate_floor_decimal IS NULL OR ${decimalSyntax("rate_floor_decimal")}),
+  -- NULL | 'absolute' | 'previous-payment-factor'
+  payment_cap_kind text,
+  payment_cap_amount_minor integer,
+  payment_cap_factor_decimal text,
+  source text,
+  note text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  -- One shape per kind. IS, not =: a NULL kind must make a branch false, since a CHECK that is NULL passes.
+  CHECK (
+       (payment_cap_kind IS NULL AND payment_cap_amount_minor IS NULL AND payment_cap_factor_decimal IS NULL)
+    OR (payment_cap_kind IS 'absolute' AND payment_cap_amount_minor IS NOT NULL AND payment_cap_factor_decimal IS NULL)
+    OR (payment_cap_kind IS 'previous-payment-factor' AND payment_cap_factor_decimal IS NOT NULL AND payment_cap_amount_minor IS NULL)
+  ),
+  CHECK (payment_cap_amount_minor IS NULL OR ${integerAtLeast("payment_cap_amount_minor", 1)}),
+  CHECK (payment_cap_factor_decimal IS NULL OR (${decimalSyntax("payment_cap_factor_decimal")} AND trim(replace(payment_cap_factor_decimal, '.', ''), '0') <> ''))
+);
+`;
+
+export const DEBT_OFFSET_LINK_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS debt_offset_links (
+  id text PRIMARY KEY,
+  debt_id text NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+  actual_account_id text NOT NULL,
+  effective_from text NOT NULL,
+  -- Exclusive; NULL is open-ended.
+  effective_to text,
+  offset_percentage_bps integer NOT NULL CHECK (typeof(offset_percentage_bps) = 'integer' AND offset_percentage_bps BETWEEN 1 AND 10000),
+  -- 'cleared' | 'total'
+  balance_basis text NOT NULL,
+  cap_minor integer CHECK (cap_minor IS NULL OR ${integerAtLeast("cap_minor", 1)}),
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  CHECK (effective_to IS NULL OR effective_to > effective_from)
+);
+`;
+
+export const DEBT_FUTURE_ASSUMPTION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS debt_future_assumptions (
+  id text PRIMARY KEY,
+  debt_id text NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+  -- 'extra-repayment' | 'draw' | 'fee' | 'payment-change' | 'offset-balance'
+  assumption_kind text NOT NULL,
+  effective_from text NOT NULL,
+  recurrence_json text CHECK (recurrence_json IS NULL OR json_valid(recurrence_json)),
+  amount_minor integer CHECK (amount_minor IS NULL OR ${integerAtLeast("amount_minor", 0)}),
+  -- Fee assumptions only: 'cash-paid' | 'capitalized'.
+  fee_treatment text,
+  -- Offset-balance assumptions only: an Actual account id, so not a foreign key.
+  offset_account_id text,
+  note text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  CHECK ((assumption_kind IS 'fee') = (fee_treatment IS NOT NULL)),
+  CHECK ((assumption_kind IS 'offset-balance') = (offset_account_id IS NOT NULL))
+);
+`;
+
+export const MODEL_REVISION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS model_revisions (
+  -- 'debt' | 'asset' | 'balance-link'. Polymorphic, so no foreign key.
+  subject_kind text NOT NULL,
+  subject_id text NOT NULL,
+  revision integer NOT NULL CHECK ${integerAtLeast("revision", 1)},
+  config_format text NOT NULL,
+  config_version integer NOT NULL CHECK ${integerAtLeast("config_version", 1)},
+  config_json text NOT NULL CHECK (json_valid(config_json)),
+  config_hash text NOT NULL CHECK (length(config_hash) = 64 AND config_hash NOT GLOB '*[^0-9a-f]*'),
+  change_summary text NOT NULL DEFAULT '',
+  created_at text NOT NULL,
+  PRIMARY KEY (subject_kind, subject_id, revision)
+);
+`;
+
+export const ASSETS_DEBT_V38_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_debts_budget_status ON debts(budget_sync_id, status)",
+  // One live debt per liability account in a budget; archived debts may share it.
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_debts_live_liability_account ON debts(budget_sync_id, liability_account_id) WHERE status <> 'archived'",
+  // One contractual rate per accrual date (G1 D-5).
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_debt_rate_periods_debt_accrual ON debt_rate_periods(debt_id, accrual_effective_from)",
+  "CREATE INDEX IF NOT EXISTS idx_debt_offset_links_debt ON debt_offset_links(debt_id, effective_from)",
+  "CREATE INDEX IF NOT EXISTS idx_debt_offset_links_account ON debt_offset_links(actual_account_id)",
+  "CREATE INDEX IF NOT EXISTS idx_debt_future_assumptions_debt ON debt_future_assumptions(debt_id, effective_from)",
+] as const;
+
+export const ASSETS_DEBT_V38_TRIGGER_SQL = [
+  // A revision is evidence: it is never changed. A correction is a new revision.
+  `CREATE TRIGGER IF NOT EXISTS model_revisions_immutable
+     BEFORE UPDATE ON model_revisions
+     BEGIN SELECT RAISE(ABORT, 'model_revisions rows are immutable'); END`,
+  // model_revisions has no foreign key (it also serves assets and balance links), so a
+  // physically deleted debt's revisions go with it here. Debts with history are archived,
+  // and later audit tables reference revisions with ON DELETE RESTRICT.
+  `CREATE TRIGGER IF NOT EXISTS debts_delete_revisions
+     AFTER DELETE ON debts
+     BEGIN DELETE FROM model_revisions WHERE subject_kind = 'debt' AND subject_id = OLD.id; END`,
+] as const;
