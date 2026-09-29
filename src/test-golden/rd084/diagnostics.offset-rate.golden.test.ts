@@ -64,7 +64,7 @@ describe("offset diagnostics (O4)", () => {
 
   it("do not change any calculated amount", () => {
     const withOffset = run({ profile: DAILY, offsets: [offsetLink()], assumptions: [offsetBalance(5_000_000)] });
-    const strip = (es: ModelEvent[]) => es.map(({ diagnostics: _d, ...rest }) => rest);
+    const strip = (es: ModelEvent[]) => es.map((e) => ({ ...e, diagnostics: {} }));
     const again = run({ profile: DAILY, offsets: [offsetLink()], assumptions: [offsetBalance(5_000_000)] });
     expect(strip(withOffset)).toEqual(strip(again));
     // Interest with a 5,000 offset is less than without, by the engine's own arithmetic.
