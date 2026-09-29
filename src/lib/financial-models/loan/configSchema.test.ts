@@ -51,11 +51,10 @@ describe("parseDebtConfig", () => {
   });
 
   it("returns unsupported-config for a known but unselectable convention", () => {
-    expect(parseDebtConfig(withProfile({ dayCount: "msrb-g33-30-360", accrual: "per-period" }))).toMatchObject({
-      ok: false,
-      code: "unsupported-config",
-      issues: ["profile.dayCount: msrb-g33-30-360 is not available in this build"],
-    });
+    // Researched but not a loan convention: not even in the vocabulary.
+    expect(parseDebtConfig(withProfile({ dayCount: "msrb-g33-30-360", accrual: "per-period" }))).toMatchObject({ ok: false, code: "unsupported-config" });
+    expect(parseDebtConfig(withProfile({ dayCount: "30u-360", accrual: "per-period" }))).toMatchObject({ ok: false, code: "unsupported-config" });
+    expect(parseDebtConfig(withProfile({ amortization: "interest-only-phase" }))).toMatchObject({ ok: false, code: "unsupported-config" });
     expect(parseDebtConfig(withProfile({ dayCount: "monthly-30-360-actual-day-allocation" }))).toMatchObject({ ok: false, code: "unsupported-config" });
   });
 

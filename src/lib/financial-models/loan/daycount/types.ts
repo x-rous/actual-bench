@@ -17,16 +17,24 @@ export type DayCountId =
   | "actual-365-fixed"
   | "actual-actual-calendar"
   | "actual-360"
-  | "monthly-30-360-actual-day-allocation"
-  | "msrb-g33-30-360";
+  | "monthly-30-360-actual-day-allocation";
 
 export const DAY_COUNT_IDS: readonly DayCountId[] = [
   "actual-365-fixed",
   "actual-actual-calendar",
   "actual-360",
   "monthly-30-360-actual-day-allocation",
-  "msrb-g33-30-360",
 ];
+
+/**
+ * Conventions researched and fixture-backed but deliberately **not** loan
+ * day counts: absent from `DayCountId`, the config vocabulary and the
+ * registry, so a config naming one is an unknown identifier. Kept so the
+ * research and fixtures stay discoverable (owner decision 2026-09-29).
+ */
+export const RESEARCHED_NOT_EXPOSED = {
+  "msrb-g33-30-360": { fixtureFamily: "msrb-g33-30-360", record: "loan/daycount/THIRTY_360.md" },
+} as const;
 
 /** `days / denominator` of a year, for the days in [from, to). */
 export type DayCountSegment = { from: IsoDate; to: IsoDate; days: number; denominator: number };

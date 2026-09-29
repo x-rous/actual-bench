@@ -1,7 +1,7 @@
 # MSRB Rule G-33 30/360: reference sources
 
 status: verified
-convention: msrb-g33-30-360 (not exposed; see ../../daycount/THIRTY_360.md)
+convention: msrb-g33-30-360 (researched, not a loan convention: owner decision 2026-09-29; see ../../daycount/THIRTY_360.md)
 reviewed: 2026-09-29
 
 ## Verified

@@ -36,6 +36,10 @@ What this changes:
 
 ## Consequence
 
+**Owner decision 2026-09-29:** the convention stays unselectable. Figura's calculator is evidence
+of how Figura models the method, not a lender's contractual method. P1.2 does not depend on it, and
+it is not to be offered in configuration unless new lender evidence closes the gate.
+
 The convention is implemented and tested against the independent oracle, but it is **not
 selectable** (FR-050, FR-215). It becomes selectable only when a verified lender or regulator source
 (and a reference fixture) is added here, or the owner decides that Figura's calculator evidence

@@ -28,17 +28,17 @@ Classifications used in the table:
 | CARRY_PRECISION | Unrounded balance, **reduced by an unrounded payment**; display rounded | `carry-full-precision` keeps the unrounded interest remainder, but posted payments are cash (whole minor units) | Deliberate: RD-084 posts real cash. mortgagemath's mode is a *theoretical* schedule (Fannie §1103 is one). RD-084 reproduces §1103 at the primitive level. Whether the projection offers a theoretical unrounded-payment mode is a P1.2 question |
 | Actual/360 forces carry | Yes, for every Actual/360 loan | No: precision is its own axis | Deliberate: no source ties them. §1103 shows its *aggregate* is full precision, not that every Actual/360 loan is |
 | Quote / compounding | MONTHLY (r/ppy), SEMI_ANNUAL (j2), ANNUAL | `nominal-simple-periodic`, `nominal-compounded-monthly`, `nominal-compounded-semiannual`, `annual-effective` | RD-084 broader |
-| 30/360 | `THIRTY_360`: `annual / 12` per payment; **no date arithmetic** | Regular periods: `nominal-simple-periodic`. Date-sensitive: `msrb-g33-30-360` (frozen, not exposed) | Deliberate: the names differ in meaning; mm's label does not close the 30/360 gate |
+| 30/360 | `THIRTY_360`: `annual / 12` per payment; **no date arithmetic** | Regular periods: `nominal-simple-periodic`. `msrb-g33-30-360` researched only, not a loan convention | Deliberate: the names differ in meaning; mm's label does not close the 30/360 gate |
 | Actual/360 | Days of the calendar month containing the period start; monthly only | Day-count segments for any period; any cadence | RD-084 broader. mm's monthly-only rule reflects its fixtures, not a financial constraint |
 | Actual/365F, Actual/Actual | Not implemented (Actual/365 listed as future work) | Implemented and selectable | RD-084 broader |
 | Frequencies | 52/26/24/12/4/1 abstract periods; `term × ppy` divisible by 12 | Real dates: every 7 or 14 days, semi-monthly, monthly, quarterly, annual, custom | Deliberate: RD-084 schedules are dated; 52 and 26 appear only in payment *derivation* |
 | Payment derivation | Annuity at the frequency; accelerated bi-weekly = monthly ÷ 2 (constructor) | Five named derivations, independent of frequency | RD-084 broader |
 | Term vs amortization | `term_months` and `amortization_period_months` (balloon) | Separate contractual and amortization terms (FR-045) | Same |
 | Balloon | The final row keeps the balance (balloon at term) | `finalPayment: contractual-balloon` | Same |
-| Interest-only | Leading IO months, then recast over the rest | `phases[]` IO windows with `recastAtEnd` | RD-084 broader (windows anywhere) |
+| Interest-only | Leading IO months, then recast over the rest | `phases[]` IO windows with `recastAtEnd`, the only representation (whole-term IO = one phase + balloon) | RD-084 broader (windows anywhere) |
 | Variable rates | Payment-numbered `rate_schedule` (30/360 only) | Effective-dated rate periods, rate gap blocks | RD-084 broader; translate mm fixtures into dates |
 | Recast | `recast` flag per change | `never`, `on-rate-change`, `annual`, `on-contract-date`, `lender-provided` | RD-084 broader |
-| Payment cap | Factor of the prior payment | `payment_cap_minor` (absolute) per rate period | **Investigate**: a percentage cap cannot be expressed today (human decision) |
+| Payment cap | Factor of the prior payment | `PaymentLimit`: `absolute` or `previous-payment-factor`, per rate period (decision 2026-09-29) | Same concept; RD-084 broader (absolute caps too) |
 | Negative amortization | Allowed when the cap binds | `negativeAmortizationAllowed`, else Review or Blocked | Same concept |
 | Final true-up | Final row lands at exactly zero; early payoff truncates with a warning | `true-up-to-zero`, `continue-until-paid`; never pushed through zero (FR-048) | Same; add P1.2 tests (below) |
 | Payment override | `payment_override`; the final row absorbs the residual | `contractual-fixed` or `lender-provided` derivation | Same |
@@ -68,8 +68,8 @@ Classifications used in the table:
    payment is balance plus interest, and the schedule never goes into credit (FR-048).
 4. **Continue-until-paid:** a fixed payment ends with a short final payment (FHLBB 1935, once read
    at source).
-5. **Payment cap:** negative amortization appears when the capped payment is below the interest.
-   The ProEducate figures apply only once a percentage cap can be configured.
+5. **Payment cap:** negative amortization appears when the capped payment is below the interest
+   (`previous-payment-factor` 1.075; ProEducate candidate, all six figures).
 6. **Recast:** annual recast versus recast on rate change, each asserted separately (Reg Z H-14,
    narrowed as described).
 7. **IO to amortizing:** the IO payment equals interest, then recasts over the remaining term.

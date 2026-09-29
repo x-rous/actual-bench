@@ -7,7 +7,7 @@ import {
   selectableDayCount,
   selectableDayCounts,
 } from "./registry";
-import { DAY_COUNT_IDS, type DayCountConvention } from "./types";
+import { DAY_COUNT_IDS, RESEARCHED_NOT_EXPOSED, type DayCountConvention } from "./types";
 
 /*
  * The selectable list is a claim; this test checks it against the fixtures.
@@ -24,7 +24,7 @@ function familyPasses(family: string, convention: DayCountConvention): boolean {
 describe("day-count registry", () => {
   it("lists every convention FR-038 names", () => {
     expect([...DAY_COUNT_IDS].sort()).toEqual(
-      ["msrb-g33-30-360", "actual-360", "actual-365-fixed", "actual-actual-calendar", "monthly-30-360-actual-day-allocation"].sort()
+      ["actual-360", "actual-365-fixed", "actual-actual-calendar", "monthly-30-360-actual-day-allocation"].sort()
     );
     expect(Object.keys(DAY_COUNT_CATALOG).sort()).toEqual([...DAY_COUNT_IDS].sort());
   });
@@ -49,8 +49,10 @@ describe("day-count registry", () => {
     expect(DAY_COUNT_CATALOG["monthly-30-360-actual-day-allocation"].current).not.toBeNull();
     expect(familyPasses("monthly-alloc", DAY_COUNT_CATALOG["monthly-30-360-actual-day-allocation"].current!)).toBe(true);
     // Frozen and fixture-backed (both fixtures pass the oracle), but not implemented or exposed.
-    expect(DAY_COUNT_CATALOG["msrb-g33-30-360"].current).toBeNull();
-    expect(loadFamily("msrb-g33-30-360").map((f) => f.source.coverage).sort()).toEqual(["reference", "synthetic"]);
+    // Researched and fixture-backed, but not a loan convention: kept out of the catalog entirely.
+    expect("msrb-g33-30-360" in DAY_COUNT_CATALOG).toBe(false);
+    expect(Object.keys(RESEARCHED_NOT_EXPOSED)).toEqual(["msrb-g33-30-360"]);
+    expect(loadFamily(RESEARCHED_NOT_EXPOSED["msrb-g33-30-360"].fixtureFamily).map((f) => f.source.coverage).sort()).toEqual(["reference", "synthetic"]);
   });
 
   it("rejects unknown and unselectable conventions", () => {

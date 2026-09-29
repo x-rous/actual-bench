@@ -54,8 +54,12 @@ is then an exact fraction, and interest rounds once (`periodInterest`).
 | `actual-365-fixed` | actual days / 365, also on 29 Feb | `daycount-act365f@1` | yes |
 | `actual-actual-calendar` | each day / its own year's length (ISDA method) | `daycount-actact-calendar@1` | yes |
 | `actual-360` | actual days / 360 | `daycount-act360@1` | yes |
-| `monthly-30-360-actual-day-allocation` | each month = 1/12 year, spread over its actual days | `daycount-monthly-alloc@1` | **no** (no verified source) |
-| `msrb-g33-30-360` | MSRB Rule G-33(e) 30/360 (no February rule) | none (frozen, not implemented) | **no** (fixture-backed; loan relevance not established, see `loan/daycount/THIRTY_360.md`) |
+| `monthly-30-360-actual-day-allocation` | each month = 1/12 year, spread over its actual days | `daycount-monthly-alloc@1` | **no** (owner decision 2026-09-29: no lender or regulator source) |
+
+**Researched, not a loan convention:** `msrb-g33-30-360` (MSRB Rule G-33(e) 30/360, no
+February rule) is frozen with fixtures (`loan/daycount/THIRTY_360.md`), but by owner decision it
+is not in `DayCountId`, the config vocabulary or the registry. A config naming it, or the
+withdrawn generic `30u-360`, is an unknown identifier (`unsupported-config`).
 
 Implemented is not the same as selectable. `daycount/registry.ts` declares which
 conventions are selectable, and `registry.test.ts` checks that claim against the
@@ -99,8 +103,8 @@ stated reason, and "not built yet" is never treated as "impossible":
 | Check | Meaning | Result |
 |---|---|---|
 | `validateProfile` | contradicts an axis's own definition (e.g. daily simple accrual capitalized daily; a split-monthly derivation paid monthly) | `inconsistent-profile` |
-| `checkProfileSupport` | well-defined but not implemented (a semi-monthly split derivation; daily accrual under G-33 30/360; an intermediate scale beyond 30) | `unsupported-config` |
-| day-count registry | no verified reference evidence (monthly allocation) or not exposed (G-33) | `unsupported-config` |
+| `checkProfileSupport` | well-defined but not implemented (a semi-monthly split derivation; an intermediate scale beyond 30) | `unsupported-config` |
+| day-count registry | no verified reference evidence (monthly allocation) | `unsupported-config` |
 
 Nothing restricts Actual/360 to monthly payments or monthly compounding. Other libraries do,
 because of where their fixtures come from, not because of the mathematics.
@@ -113,8 +117,23 @@ because of where their fixtures come from, not because of the mathematics.
 - `carry-full-precision` carries the unrounded interest remainder into the next period. Posted
   amounts are always whole minor units.
 
-A schedule that reduces principal by an *unrounded* payment (mortgagemath's CARRY_PRECISION;
-Fannie Mae §1103's aggregate) is a theoretical calculation, not a posting mode.
+`carry-full-precision` (owner decision 2026-09-29) means:
+
+- every posted or cash amount is a valid currency-unit amount;
+- the configured interest and payment rounding is honored;
+- any sub-minor remainder is carried separately and deterministically into the next period.
+
+RD-084 never pretends an unpostable fractional-cent payment happened. A schedule that reduces
+principal by an *unrounded* payment (mortgagemath's CARRY_PRECISION; Fannie Mae §1103's aggregate)
+is a theoretical calculation. It is not offered as a mode, unless a product need and an independent
+fixture justify it later.
+
+**Interest-only** is a phase (config `phases`), never an amortization method. A whole-term
+interest-only loan is one phase covering the term, plus `contractual-balloon`.
+
+**Payment caps** (`PaymentLimit`, on rate periods) are either `absolute` (minor units) or a
+`previous-payment-factor` (an exact decimal; `1.075` caps an increase at 7.5%). They are separate
+from rate caps and floors, derivation and recast. Payment floors are not modelled.
 
 **Repayment value date:** `repaymentEffectiveTiming` is `transaction-date` or `next-calendar-day`.
 It shifts the date of the event. Where the event falls within that day is `eventOrder`'s job.
@@ -156,9 +175,17 @@ Two boundaries follow from this order:
 - **Accrual starts after the anchor.** A simulation starts from an anchor's closing state, so the
   first day to accrue is the day after the anchor.
 
-The Figura calculator's code does the same, and places extra repayments before the accrual and
-scheduled repayments after it (`loan/__fixtures__/au-daily/SOURCES.md`). That is calculator
-evidence, not a lender's rule.
+| Behavior | Status |
+|---|---|
+| Steps 1–8 above, and the two boundaries | **RD-084 product default** (FR-047, `event-order@1`) |
+| Repayments before the accrual (`start-of-day`) | **RD-084 product default**; configurable |
+| Charge including its own day; accrual from the day after drawdown | Default, **also shown by the Figura calculator** |
+| Redraws, extra repayments and offset deposits before the accrual; scheduled repayments after it and after the charge | **Figura calculator behavior** (verified from its shipped code); expressible as a placement, not the default |
+| Daily interest to 5 places, charge rounded to cents, charge day clamped to the month end | **Figura calculator behavior** (method notes and code) |
+| Any of the above as a lender's contractual rule | **Not established.** No lender publication was found |
+
+Figura is a calculator. Its behavior is evidence of how it models a loan, not a universal
+Australian lender rule (`loan/__fixtures__/au-daily/SOURCES.md`).
 
 ## Versions (`loan/versions.ts`)
 

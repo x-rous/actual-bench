@@ -21,7 +21,7 @@ import {
   RECAST_POLICIES,
   REPAYMENT_EFFECTIVE_TIMINGS,
 } from "./profile";
-import { RATE_QUOTES } from "./rates";
+import { PAYMENT_LIMIT_KINDS, RATE_QUOTES } from "./rates";
 import { REPAYMENT_DERIVATIONS } from "./repayment";
 import { CALENDAR_VERSION } from "../calendar/dates";
 import { SCHEDULE_VERSION } from "../calendar/schedule";
@@ -64,6 +64,7 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     ["componentAmountRule", COMPONENT_AMOUNT_RULES],
     ["revolvingPaymentModel", REVOLVING_PAYMENT_MODELS],
     ["phaseKind", PHASE_KINDS],
+    ["paymentLimitKind", PAYMENT_LIMIT_KINDS],
   ] as const)("%s", (axis, values) => {
     expect([...values]).toEqual([...FROZEN[axis]]);
   });

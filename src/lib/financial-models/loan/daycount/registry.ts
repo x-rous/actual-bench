@@ -56,14 +56,6 @@ export const DAY_COUNT_CATALOG: Readonly<Record<DayCountId, DayCountEntry>> = {
     selectable: false,
     unavailableReason: "No verified published source yet (loan/__fixtures__/monthly-alloc/SOURCES.md).",
   },
-  "msrb-g33-30-360": {
-    id: "msrb-g33-30-360",
-    fixtureFamily: "msrb-g33-30-360",
-    current: null,
-    selectable: false,
-    unavailableReason:
-      "Frozen and fixture-backed (MSRB Rule G-33(e)), but not implemented or exposed: no loan source yet requires this day count (loan/daycount/THIRTY_360.md).",
-  },
 };
 
 export function isDayCountId(value: string): value is DayCountId {

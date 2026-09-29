@@ -1,8 +1,10 @@
 # 30/360: freeze record
 
-**Status:** the algorithm is frozen as `msrb-g33-30-360` and fixture-backed. It is **not
-implemented and not selectable** until someone decides that RD-084 loans need it (tasks T035 done;
-T041 open).
+**Status (owner decision 2026-09-29):** the algorithm is frozen as `msrb-g33-30-360` and
+fixture-backed, but it is **researched, not exposed**. It is not a loan day count: it is absent
+from `DayCountId`, the config vocabulary and the registry, and appears only in
+`RESEARCHED_NOT_EXPOSED`. T035 is done; T041 is deferred as not applicable to the supported loan
+scope. The generic `30u-360` name is withdrawn everywhere.
 
 ## Why not "30U/360"
 
@@ -60,7 +62,7 @@ These are two separate questions:
   a month, or a rate change mid-period. No loan source seen so far says which variant applies to
   those.
 
-## What would expose it
+## What would expose it (not planned)
 
 1. An owner decision that a loan contract needs a date-sensitive 30/360. The best evidence would be a
    lender document naming its part-period rule.

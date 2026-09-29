@@ -48,7 +48,6 @@ describe("profile consistency", () => {
       return r.ok ? [] : r.conflicts.map((c) => c.axes);
     };
     expect(unsupported({ repaymentDerivation: "split-monthly", repaymentFrequency: "semi-monthly" })).toEqual([["repaymentDerivation", "repaymentFrequency"]]);
-    expect(unsupported({ dayCount: "msrb-g33-30-360" })).toEqual([["dayCount", "accrual"]]);
     expect(unsupported({ rounding: { ...AU_PROFILE.rounding, intermediateScale: { mode: "fixed", places: 31 } } })).toEqual([["rounding.intermediateScale"]]);
     expect(checkProfileSupport(AU_PROFILE)).toEqual({ ok: true });
   });

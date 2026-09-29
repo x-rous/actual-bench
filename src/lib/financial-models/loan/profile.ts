@@ -27,11 +27,14 @@ import type { RepaymentDerivation } from "./repayment";
 
 export const PROFILE_VERSION = "profile@1";
 
-export type AmortizationMethod = "level-payment" | "constant-principal" | "interest-only-phase" | "custom-payment" | "revolving";
+/**
+ * Interest-only is not a method: it is a phase (config `phases`), including a
+ * whole-term interest-only loan (one phase plus `contractual-balloon`).
+ */
+export type AmortizationMethod = "level-payment" | "constant-principal" | "custom-payment" | "revolving";
 export const AMORTIZATION_METHODS: readonly AmortizationMethod[] = [
   "level-payment",
   "constant-principal",
-  "interest-only-phase",
   "custom-payment",
   "revolving",
 ];
@@ -177,11 +180,6 @@ export function checkProfileSupport(profile: CalculationProfile): SupportCheck {
   // derivation here implements only weekly and fortnightly conversions.
   if ((p.repaymentDerivation === "monthly-equivalent-pro-rata" || p.repaymentDerivation === "split-monthly") && p.repaymentFrequency === "semi-monthly") {
     conflict(["repaymentDerivation", "repaymentFrequency"], "Deriving a semi-monthly payment from a monthly one is not implemented.");
-  }
-
-  // MSRB G-33 counts periods, not single days; a daily decomposition is not defined by the rule.
-  if (p.dayCount === "msrb-g33-30-360" && p.accrual !== "per-period") {
-    conflict(["dayCount", "accrual"], "MSRB G-33 30/360 defines period day counts, not a daily accrual.");
   }
 
   const scale = p.rounding.intermediateScale;

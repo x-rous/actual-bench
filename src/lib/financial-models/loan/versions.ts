@@ -90,9 +90,10 @@ export const CURRENT_COMPONENT_VERSIONS = {
  * A listed identifier may still be unselectable (see daycount/registry.ts).
  */
 export const DEBT_CONFIG_V1_IDENTIFIERS = {
-  amortization: ["level-payment", "constant-principal", "interest-only-phase", "custom-payment", "revolving"],
+  amortization: ["level-payment", "constant-principal", "custom-payment", "revolving"],
   rateQuote: ["nominal-simple-periodic", "nominal-compounded-monthly", "nominal-compounded-semiannual", "annual-effective"],
-  dayCount: ["actual-365-fixed", "actual-actual-calendar", "actual-360", "monthly-30-360-actual-day-allocation", "msrb-g33-30-360"],
+  dayCount: ["actual-365-fixed", "actual-actual-calendar", "actual-360", "monthly-30-360-actual-day-allocation"],
+  paymentLimitKind: ["absolute", "previous-payment-factor"],
   accrual: ["per-period", "daily-simple", "daily-compounded"],
   chargeFrequency: ["monthly", "quarterly", "annual", "at-repayment"],
   capitalization: ["at-charge", "daily"],

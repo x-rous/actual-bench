@@ -19,14 +19,29 @@ export type RatePeriod = {
   accrualEffectiveFrom: IsoDate;
   annualRateDecimal: string;
   announcedAt?: IsoDate | null;
+  /** Per-change recast override (a `RecastPolicy`); null uses the profile's. */
   paymentRecalcPolicy?: string | null;
+  /** When the recalculated payment starts; may differ from the accrual date (FR-044). */
   paymentEffectiveFrom?: IsoDate | null;
+  /** Limits on the rate itself. */
   rateCapDecimal?: string | null;
   rateFloorDecimal?: string | null;
-  paymentCapMinor?: number | null;
+  /** Limit on the payment; never a rate limit (decision 2026-09-29). */
+  paymentCap?: PaymentLimit | null;
   source?: string | null;
   note?: string | null;
 };
+
+/**
+ * A cap on a recalculated payment: an absolute amount, or a factor of the
+ * previous scheduled payment (`1.075` caps an increase at 7.5%). Factors are
+ * exact decimal strings.
+ */
+export type PaymentLimit =
+  | { kind: "absolute"; amountMinor: number }
+  | { kind: "previous-payment-factor"; factor: string };
+
+export const PAYMENT_LIMIT_KINDS: readonly PaymentLimit["kind"][] = ["absolute", "previous-payment-factor"];
 
 export type RateLookup =
   | { ok: true; rate: Dec; period: RatePeriod }
