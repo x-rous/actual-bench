@@ -75,6 +75,10 @@ export const FINAL_PAYMENT_POLICIES: readonly FinalPaymentPolicy[] = [
   "continue-until-paid",
 ];
 
+/** Whether the contract lets fees be added to the debt (FR-057). Cash-paid fees need no permission. */
+export type FeeCapitalization = "not-permitted" | "permitted";
+export const FEE_CAPITALIZATIONS: readonly FeeCapitalization[] = ["not-permitted", "permitted"];
+
 export type BalancePrecision = "round-each-event" | "round-each-posting" | "carry-full-precision";
 export const BALANCE_PRECISIONS: readonly BalancePrecision[] = ["round-each-event", "round-each-posting", "carry-full-precision"];
 
@@ -108,6 +112,7 @@ export type CalculationProfile = {
   finalPayment: FinalPaymentPolicy;
   shortMonth: ShortMonthPolicy;
   negativeAmortizationAllowed: boolean;
+  feeCapitalization: FeeCapitalization;
   presetId: string | null;
 };
 

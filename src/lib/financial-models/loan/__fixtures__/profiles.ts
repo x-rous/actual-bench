@@ -27,5 +27,6 @@ export const AU_PROFILE: CalculationProfile = {
   finalPayment: "true-up-to-zero",
   shortMonth: "clamp-to-last-calendar-day",
   negativeAmortizationAllowed: false,
+  feeCapitalization: "not-permitted",
   presetId: null,
 };

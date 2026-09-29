@@ -49,9 +49,10 @@ export const qcmp = (a: Q, b: Q) => {
   return l < r ? -1 : l > r ? 1 : 0;
 };
 
+/** a^e exactly. A reduced fraction stays reduced under powers, so no gcd is needed. */
 export function qpow(a: Q, e: number): Q {
-  let out = q(1);
-  for (let i = 0; i < Math.abs(e); i++) out = qmul(out, a);
+  const k = BigInt(Math.abs(e));
+  const out = { n: a.n ** k, d: a.d ** k };
   return e >= 0 ? out : qdiv(q(1), out);
 }
 

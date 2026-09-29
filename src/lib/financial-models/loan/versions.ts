@@ -80,6 +80,23 @@ export const CURRENT_COMPONENT_VERSIONS = {
   "profile": "profile@1",
   "event-order": "event-order@1",
   "repayment": "repayment@1",
+  // P1.2 engines and their parts.
+  "accrual": "accrual@1",
+  "charge": "charge@1",
+  "daily-precision": "daily-precision@1",
+  "offsets": "offsets@1",
+  "recast": "recast@1",
+  "phases": "phases@1",
+  "fees": "fees@1",
+  "allocation": "allocation@1",
+  "final-payment": "final-payment@1",
+  "loan-periodic": "loan-periodic@1",
+  "loan-daily": "loan-daily@1",
+  "revolving": "revolving@1",
+  "receivable": "receivable@1",
+  "eligibility": "eligibility@1",
+  "diagnostics": "diagnostics@1",
+  "projection": "projection@1",
 } as const satisfies EngineVersions;
 
 /**
@@ -94,6 +111,7 @@ export const DEBT_CONFIG_V1_IDENTIFIERS = {
   rateQuote: ["nominal-simple-periodic", "nominal-compounded-monthly", "nominal-compounded-semiannual", "annual-effective"],
   dayCount: ["actual-365-fixed", "actual-actual-calendar", "actual-360", "monthly-30-360-actual-day-allocation"],
   paymentLimitKind: ["absolute", "previous-payment-factor"],
+  feeCapitalization: ["not-permitted", "permitted"],
   accrual: ["per-period", "daily-simple", "daily-compounded"],
   chargeFrequency: ["monthly", "quarterly", "annual", "at-repayment"],
   capitalization: ["at-charge", "daily"],

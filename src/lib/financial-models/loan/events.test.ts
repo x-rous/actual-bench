@@ -18,16 +18,16 @@ describe("day step order", () => {
     ]);
   });
 
-  it("moves payments and offsets after the accrual for end-of-day, still before the charge", () => {
+  it("moves payments and offsets after the accrual and the charge for end-of-day", () => {
     expect(dayStepOrder({ timing: "end-of-day" })).toEqual([
       "contract-change",
       "external-cash",
       "determine-balance",
       "accrue",
+      "charge",
       "payment",
       "scheduled-repayment",
       "offset-change",
-      "charge",
       "close",
     ]);
   });
@@ -38,7 +38,7 @@ describe("day step order", () => {
     expect(order.indexOf("payment")).toBeLessThan(order.indexOf("accrue"));
     expect(order.indexOf("offset-change")).toBeLessThan(order.indexOf("accrue"));
     expect(order.indexOf("scheduled-repayment")).toBeGreaterThan(order.indexOf("accrue"));
-    expect(order.indexOf("scheduled-repayment")).toBeLessThan(order.indexOf("charge"));
+    expect(order.indexOf("scheduled-repayment")).toBeGreaterThan(order.indexOf("charge"));
   });
 });
 

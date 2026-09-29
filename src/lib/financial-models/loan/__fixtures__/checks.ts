@@ -1,4 +1,7 @@
 import { addMonths, daysBetween } from "../../calendar/dates";
+import { simulateDaily } from "../daily-engine";
+import type { LedgerEvent, LoanModelSnapshot } from "../model";
+import type { CalculationProfile } from "../profile";
 import { add, dec, decInt, div, mul, round, sub, toDecString, toMinor, WORKING_SCALE, type Dec } from "../../money/kernel";
 import type { RoundingMode } from "../../money/rounding";
 import { yearFractionExact, periodInterest, type DayCountConvention } from "../daycount/types";
@@ -88,4 +91,136 @@ function aggregateRows(input: Actual360AggregateInput, convention: DayCountConve
       balance_after_term_minor: String(toMinor(P, digits, "half-up") - aggregateMinor),
     },
   ];
+}
+
+// ─── daily-loan fixtures through bench-daily ──────────────────────────────────
+
+type DailyLoanFixtureInput = {
+  kind: "daily-loan";
+  convention: DayCountConvention["id"];
+  currency: { code: string; minorDigits: number };
+  anchorDate: string;
+  openingPrincipal: string;
+  annualRate: string;
+  dailyInterestScale: number;
+  dailyInterestRounding: RoundingMode;
+  postingRounding: RoundingMode;
+  chargeDates: string[];
+  eventOrder: { scheduledRepayments: "before-accrual" | "after-accrual"; otherPayments: "before-accrual" | "after-accrual"; offsets: "before-accrual" | "after-accrual" };
+  until: string;
+};
+
+/**
+ * A daily-loan fixture as a model: monthly charges on the fixture's dates,
+ * scheduled repayments at the fixture's cadence and amount, other events as
+ * observed ledger events. Returns rows in the fixture's CSV shape.
+ */
+export function runDailyLoanFixture(fixture: Fixture): CsvRow[] | string {
+  const input = fixture.input as DailyLoanFixtureInput;
+  const scheduled = fixture.events.filter((e) => e.kind === "repayment");
+  const gaps = scheduled.slice(1).map((e, i) => daysBetween(scheduled[i].date, e.date));
+  const frequency = gaps.every((g) => g === 14) ? "fortnightly" : gaps.every((g) => g === 7) ? "weekly" : null;
+  if (!frequency) return "fixture repayments are not a regular weekly or fortnightly series";
+  const amount = Math.abs(Number(scheduled[0].amount_minor));
+  const model = baseDailyModel({
+    anchorDate: input.anchorDate,
+    principalMinor: toMinor(dec(input.openingPrincipal), input.currency.minorDigits, "down"),
+    annualRate: input.annualRate,
+    currency: input.currency,
+    convention: input.convention,
+    firstChargeDate: input.chargeDates[0],
+    chargeDay: Number(input.anchorDate.slice(8, 10)),
+    firstPaymentDate: scheduled[0].date,
+    repaymentFrequency: frequency,
+    paymentMinor: amount,
+    intermediatePlaces: input.dailyInterestScale,
+    intermediateRounding: input.dailyInterestRounding,
+    postingRounding: input.postingRounding,
+    eventOrder: input.eventOrder,
+  });
+  const ledger: LedgerEvent[] = fixture.events
+    .filter((e) => e.kind !== "repayment")
+    .map((e, i) => ({ kind: e.kind as "extra-repayment", date: e.date, amountMinor: Math.abs(Number(e.amount_minor)), ref: { source: "actual", id: `fixture-${i}` } }));
+  const result = simulateDaily({ model, anchor: { date: input.anchorDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "fixture" }, events: ledger, to: input.until });
+  if (!result.ok) return result.blocked.map((b) => b.message).join("; ");
+  return result.events
+    .filter((e) => e.type === "repayment" || e.type === "extra-repayment" || e.type === "interest-charge")
+    .map((e) => ({
+      date: e.date,
+      event: e.type,
+      amount_minor: String(e.type === "interest-charge" ? e.interestMinor : e.cashMovementMinor),
+      balance_after_minor: String(e.balanceAfterMinor),
+    }));
+}
+
+export type BaseDailyModelInput = {
+  anchorDate: string;
+  principalMinor: number;
+  annualRate: string;
+  currency: { code: string; minorDigits: number };
+  convention: DayCountConvention["id"];
+  firstChargeDate: string;
+  chargeDay: number | null;
+  firstPaymentDate: string;
+  repaymentFrequency: "weekly" | "fortnightly" | "monthly";
+  paymentMinor: number | null;
+  intermediatePlaces: number | null;
+  intermediateRounding: RoundingMode;
+  postingRounding: RoundingMode;
+  eventOrder: CalculationProfile["eventOrder"];
+};
+
+/** A daily-simple, monthly-charge model with a contractual fixed payment: the shape the AU fixtures use. */
+export function baseDailyModel(input: BaseDailyModelInput): LoanModelSnapshot {
+  return {
+    debtId: "fixture",
+    revision: 1,
+    currency: input.currency,
+    behaviorClass: "term-loan",
+    lenderPattern: "separate-interest",
+    terms: {
+      openingDate: input.anchorDate,
+      openingPrincipalMinor: input.principalMinor,
+      maturityDate: addMonths(input.anchorDate, 360),
+      contractualTermMonths: 360,
+      amortizationTermMonths: 360,
+      contractualPaymentMinor: input.paymentMinor,
+      creditLimitMinor: null,
+      firstPaymentDate: input.firstPaymentDate,
+      firstInterestChargeDate: input.firstChargeDate,
+    },
+    profile: {
+      amortization: "level-payment",
+      rateQuote: "nominal-simple-periodic",
+      dayCount: input.convention,
+      accrual: "daily-simple",
+      chargeFrequency: "monthly",
+      chargeDay: input.chargeDay,
+      capitalization: "at-charge",
+      repaymentFrequency: input.repaymentFrequency,
+      repaymentDerivation: "contractual-fixed",
+      recast: "never",
+      rateEffectiveTiming: "on-accrual-effective-date",
+      repaymentEffectiveTiming: "transaction-date",
+      rounding: {
+        paymentRounding: "half-up",
+        interestPostingRounding: input.postingRounding,
+        intermediateScale: input.intermediatePlaces === null ? { mode: "full" } : { mode: "fixed", places: input.intermediatePlaces },
+        intermediateRounding: input.intermediateRounding,
+        balancePrecision: "round-each-posting",
+      },
+      eventOrder: input.eventOrder,
+      finalPayment: "true-up-to-zero",
+      shortMonth: "clamp-to-last-calendar-day",
+      negativeAmortizationAllowed: false,
+      feeCapitalization: "not-permitted",
+      presetId: null,
+    },
+    rates: [{ accrualEffectiveFrom: input.anchorDate, annualRateDecimal: input.annualRate }],
+    phases: [],
+    offsets: [],
+    components: [],
+    assumptions: [],
+    revolving: null,
+  };
 }

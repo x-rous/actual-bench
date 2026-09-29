@@ -11,6 +11,7 @@ import {
   BALANCE_PRECISIONS,
   CAPITALIZATIONS,
   CHARGE_FREQUENCIES,
+  FEE_CAPITALIZATIONS,
   FINAL_PAYMENT_POLICIES,
   RATE_EFFECTIVE_TIMINGS,
   RECAST_POLICIES,
@@ -89,6 +90,7 @@ const profile = z.strictObject({
   finalPayment: enumOf(FINAL_PAYMENT_POLICIES),
   shortMonth: enumOf(SHORT_MONTH_POLICIES),
   negativeAmortizationAllowed: z.boolean(),
+  feeCapitalization: enumOf(FEE_CAPITALIZATIONS),
   presetId: z.string().min(1).nullable(),
 });
 

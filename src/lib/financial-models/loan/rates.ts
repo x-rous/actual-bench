@@ -1,5 +1,5 @@
 import { compareDates, isIsoDate, type IsoDate } from "../calendar/dates";
-import { dec, div, max, min, nthRoot, sub, WORKING_SCALE, DEC_ONE, type Dec } from "../money/kernel";
+import { dec, div, max, min, mul, nthRoot, sub, WORKING_SCALE, DEC_ONE, type Dec } from "../money/kernel";
 import { pow10, round } from "../money/rounding";
 
 /**
@@ -181,3 +181,19 @@ export function isRateQuote(value: string): value is RateQuote {
   return (RATE_QUOTES as readonly string[]).includes(value);
 }
 
+
+/**
+ * Interest for one period at a quote's periodic rate, rounded once. When the
+ * periodic rate is an exact ratio (a simple periodic quote, or compounding at
+ * the payment frequency: r ÷ k), the product is formed exactly as
+ * `balance × r ÷ k`, so a result that should be a whole number of minor units
+ * is one. Only compounded conversions, whose rate is irrational, go through
+ * the rate at `scale` places.
+ */
+export function periodInterestAt(quote: RateQuote, annualRate: Dec, paymentsPerYear: number, balance: Dec, scale: number, mode: Parameters<typeof round>[2]): Dec {
+  const m = quote === "nominal-compounded-monthly" ? 12 : quote === "nominal-compounded-semiannual" ? 2 : quote === "annual-effective" ? 1 : 0;
+  if (quote === "nominal-simple-periodic" || m === paymentsPerYear) {
+    return div(mul(balance, annualRate), { int: BigInt(paymentsPerYear), scale: 0 }, scale, mode);
+  }
+  return round(mul(balance, periodicRate(quote, annualRate, paymentsPerYear, WORKING_SCALE + ROOT_GUARD_DIGITS)), scale, mode);
+}

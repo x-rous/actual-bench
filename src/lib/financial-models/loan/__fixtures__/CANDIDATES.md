@@ -28,8 +28,10 @@ each family's `SOURCES.md`.
 
 ## Candidates for P1.2
 
-These were read at source and verified by the oracle. They are not encoded yet, because P1.2 must
-first translate their payment numbers into dated events.
+These were read at source and verified by the oracle. **P1.2 update:** MoneyVox (all 48 cells),
+ProEducate (all six figures) and H-14 (the 15 balances, with its three-payment gap asserted) are now
+checked directly against RD-084's periodic engine in `src/test-golden/rd084/periodic.golden.test.ts`.
+The others are still candidates.
 
 | Source (original) | Evidence | Status | P1.2 use |
 |---|---|---|---|

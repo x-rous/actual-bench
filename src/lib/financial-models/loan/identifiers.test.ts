@@ -16,6 +16,7 @@ import {
   BALANCE_PRECISIONS,
   CAPITALIZATIONS,
   CHARGE_FREQUENCIES,
+  FEE_CAPITALIZATIONS,
   FINAL_PAYMENT_POLICIES,
   RATE_EFFECTIVE_TIMINGS,
   RECAST_POLICIES,
@@ -34,6 +35,22 @@ import { EVENT_ORDER_VERSION } from "./events";
 import { PROFILE_VERSION } from "./profile";
 import { RATE_QUOTE_VERSION, RATES_VERSION } from "./rates";
 import { REPAYMENT_VERSION } from "./repayment";
+import { ACCRUAL_VERSION } from "./accrual";
+import { CHARGE_VERSION } from "./charge";
+import { DAILY_PRECISION_VERSION } from "./dailyPrecision";
+import { OFFSETS_VERSION } from "./offsets";
+import { RECAST_VERSION } from "./recast";
+import { PHASES_VERSION } from "./phases";
+import { FEES_VERSION } from "./fees";
+import { ALLOCATION_VERSION } from "./allocation";
+import { FINAL_PAYMENT_VERSION } from "./finalPayment";
+import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
+import { DAILY_ENGINE_VERSION } from "./daily-engine";
+import { REVOLVING_VERSION } from "./revolving";
+import { RECEIVABLE_VERSION } from "./receivable";
+import { ELIGIBILITY_VERSION } from "./eligibility";
+import { DIAGNOSTICS_VERSION } from "./diagnostics";
+import { PROJECTION_VERSION } from "./projection";
 import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN } from "./versions";
 
 /*
@@ -65,6 +82,7 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     ["revolvingPaymentModel", REVOLVING_PAYMENT_MODELS],
     ["phaseKind", PHASE_KINDS],
     ["paymentLimitKind", PAYMENT_LIMIT_KINDS],
+    ["feeCapitalization", FEE_CAPITALIZATIONS],
   ] as const)("%s", (axis, values) => {
     expect([...values]).toEqual([...FROZEN[axis]]);
   });
@@ -74,8 +92,8 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     expect([...PLACEMENTS]).toEqual([...FROZEN.placement]);
   });
 
-  it("keeps the component version map at its P1.1 values", () => {
-    expect(CURRENT_COMPONENT_VERSIONS).toEqual({
+  it("keeps the P1.1 component versions unchanged", () => {
+    expect(CURRENT_COMPONENT_VERSIONS).toMatchObject({
       "money-kernel": "money-kernel@1",
       calendar: "calendar@1",
       schedule: "schedule@1",
@@ -105,6 +123,22 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
       profile: PROFILE_VERSION,
       "event-order": EVENT_ORDER_VERSION,
       repayment: REPAYMENT_VERSION,
+      accrual: ACCRUAL_VERSION,
+      charge: CHARGE_VERSION,
+      "daily-precision": DAILY_PRECISION_VERSION,
+      offsets: OFFSETS_VERSION,
+      recast: RECAST_VERSION,
+      phases: PHASES_VERSION,
+      fees: FEES_VERSION,
+      allocation: ALLOCATION_VERSION,
+      "final-payment": FINAL_PAYMENT_VERSION,
+      "loan-periodic": PERIODIC_ENGINE_VERSION,
+      "loan-daily": DAILY_ENGINE_VERSION,
+      revolving: REVOLVING_VERSION,
+      receivable: RECEIVABLE_VERSION,
+      eligibility: ELIGIBILITY_VERSION,
+      diagnostics: DIAGNOSTICS_VERSION,
+      projection: PROJECTION_VERSION,
     });
   });
 });

@@ -1,4 +1,4 @@
-/** Loan calculation primitives (RD-084 P1.1); engines and projection arrive in P1.2. */
+/** Loan calculation: P1.1 primitives and the P1.2 engines and projection (RD-084). */
 export * from "./versions";
 export * from "./rates";
 export * from "./repayment";
@@ -6,3 +6,20 @@ export * from "./events";
 export * from "./profile";
 export * from "./configSchema";
 export * from "./daycount";
+export * from "./model";
+export * from "./accrual";
+export * from "./charge";
+export * from "./dailyPrecision";
+export * from "./offsets";
+export * from "./recast";
+export * from "./phases";
+export * from "./fees";
+export * from "./allocation";
+export * from "./finalPayment";
+export * from "./periodic-engine";
+export * from "./daily-engine";
+export * from "./revolving";
+export * from "./receivable";
+export * from "./eligibility";
+export * from "./diagnostics";
+export * from "./projection";

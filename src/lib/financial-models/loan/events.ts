@@ -1,4 +1,6 @@
 import { compareDates, type IsoDate } from "../calendar/dates";
+import { generateSchedule } from "../calendar/schedule";
+import type { Certainty, EventRef, FutureAssumption, LedgerEvent } from "./model";
 
 /**
  * Same-day event order (FR-047, V3 §10.12).
@@ -30,8 +32,9 @@ import { compareDates, type IsoDate } from "../calendar/dates";
  * draws) or offset changes to after the accrual, or choose a plain
  * `start-of-day` (the default above) or `end-of-day` (all three after the
  * accrual) when the lender's exact rule is unknown. Anything moved after the
- * accrual still precedes the charge; the order of a repayment and a charge on
- * the same day changes no balance that bears interest.
+ * accrual also follows that day's charge (as in Figura's calculator); the
+ * order of a repayment and a charge on the same day changes no balance that
+ * bears interest, only the per-row balances reported.
  */
 
 export const EVENT_ORDER_VERSION = "event-order@1";
@@ -76,7 +79,7 @@ function placements(profile: EventOrderProfile): { scheduledRepayments: Placemen
   return profile;
 }
 
-/** The day's steps in order for a profile. Anything moved after the accrual still precedes the charge. */
+/** The day's steps in order for a profile. Anything moved after the accrual also follows the charge. */
 export function dayStepOrder(profile: EventOrderProfile = DEFAULT_EVENT_ORDER): DayStep[] {
   const { scheduledRepayments, otherPayments, offsets } = placements(profile);
   const before: DayStep[] = ["contract-change", "external-cash"];
@@ -84,7 +87,7 @@ export function dayStepOrder(profile: EventOrderProfile = DEFAULT_EVENT_ORDER): 
   (otherPayments === "before-accrual" ? before : after).push("payment");
   (scheduledRepayments === "before-accrual" ? before : after).push("scheduled-repayment");
   (offsets === "before-accrual" ? before : after).push("offset-change");
-  return [...before, "determine-balance", "accrue", ...after, "charge", "close"];
+  return [...before, "determine-balance", "accrue", "charge", ...after, "close"];
 }
 
 /** Which step a dated event belongs to (contracts/engine-and-projection `LedgerEvent` kinds and rate changes). */
@@ -102,6 +105,8 @@ export function stepForEvent(kind: string): DayStep {
       return "payment";
     case "offset-balance":
       return "offset-change";
+    case "payment-change":
+      return "contract-change";
     case "lender-interest-charge":
     case "interest-charge":
       return "charge";
@@ -126,4 +131,82 @@ export function orderEvents<T extends OrderableEvent>(events: readonly T[], prof
       (a.event.key < b.event.key ? -1 : a.event.key > b.event.key ? 1 : 0)
   );
   return keyed.map((k) => k.event);
+}
+
+// ─── Normalized engine events (T054, T055) ────────────────────────────────────
+
+/** A dated event as both engines consume it: validated, expanded and keyed. */
+export type EngineEvent = {
+  date: IsoDate;
+  kind: "repayment" | "extra-repayment" | "draw" | "fee" | "offset-balance" | "lender-interest-charge" | "payment-change";
+  /** Positive magnitude (a draw increases the debt by it; a repayment reduces it). */
+  amountMinor: number;
+  capitalized: boolean;
+  accountId: string | null;
+  clearedBalanceMinor: number | null;
+  certainty: Certainty;
+  ref: EventRef | null;
+  key: string;
+};
+
+export type NormalizedEvents = { ok: true; events: EngineEvent[] } | { ok: false; date: IsoDate; message: string };
+
+/**
+ * Validate and merge observed ledger events with baseline assumptions.
+ *
+ * - Repayments, extra repayments, draws and fees are positive magnitudes. A
+ *   negative repayment is refused, never read as a draw (FR-018); a draw is
+ *   its own event that increases the debt.
+ * - Recurring assumptions expand to real dates at their frequency.
+ * - Events after `to` are dropped; the result is in same-day order.
+ */
+export function normalizeEvents(
+  ledger: readonly LedgerEvent[],
+  assumptions: readonly FutureAssumption[],
+  window: { after: IsoDate; to: IsoDate },
+  profile: EventOrderProfile
+): NormalizedEvents {
+  const out: EngineEvent[] = [];
+  const inWindow = (d: IsoDate) => compareDates(d, window.after) > 0 && compareDates(d, window.to) <= 0;
+
+  for (const [i, e] of ledger.entries()) {
+    if (e.kind === "offset-balance") {
+      out.push({ date: e.date, kind: e.kind, amountMinor: e.balanceMinor, capitalized: false, accountId: e.accountId, clearedBalanceMinor: e.clearedBalanceMinor, certainty: "observed", ref: null, key: `offset:${e.accountId}:${e.date}:${i}` });
+      continue;
+    }
+    if (!Number.isSafeInteger(e.amountMinor) || e.amountMinor < 0) {
+      const what = e.kind === "repayment" || e.kind === "extra-repayment" ? "A repayment cannot be negative; record a draw instead." : `A ${e.kind} amount must be a positive number of minor units.`;
+      return { ok: false, date: e.date, message: what };
+    }
+    if (!inWindow(e.date)) continue;
+    out.push({
+      date: e.date,
+      kind: e.kind,
+      amountMinor: e.amountMinor,
+      capitalized: e.kind === "fee" ? e.capitalized : false,
+      accountId: null,
+      clearedBalanceMinor: null,
+      certainty: "observed",
+      ref: e.ref,
+      key: `${e.ref.source}:${e.ref.id}`,
+    });
+  }
+
+  for (const [i, a] of assumptions.entries()) {
+    if (a.kind !== "offset-balance" && (!Number.isSafeInteger(a.amountMinor) || a.amountMinor < 0)) {
+      return { ok: false, date: a.date, message: `A ${a.kind} assumption must be a positive number of minor units.` };
+    }
+    const recurrence = "recurrence" in a ? a.recurrence : undefined;
+    const dates = recurrence
+      ? generateSchedule({ frequency: recurrence.frequency, firstDate: a.date }, { from: a.date, to: compareDates(recurrence.until, window.to) < 0 ? recurrence.until : window.to })
+      : [a.date];
+    for (const date of dates) {
+      if (!inWindow(date) && !(a.kind === "offset-balance" && compareDates(date, window.after) <= 0)) continue;
+      const base = { date, capitalized: false, accountId: null, clearedBalanceMinor: null, certainty: "assumed" as const, ref: { source: "assumption" as const, id: `${i}:${date}` }, key: `assumption:${i}:${date}` };
+      if (a.kind === "offset-balance") out.push({ ...base, kind: "offset-balance", amountMinor: a.balanceMinor, accountId: a.accountId, clearedBalanceMinor: a.balanceMinor });
+      else if (a.kind === "fee") out.push({ ...base, kind: "fee", amountMinor: a.amountMinor, capitalized: a.capitalized });
+      else out.push({ ...base, kind: a.kind, amountMinor: a.amountMinor });
+    }
+  }
+  return { ok: true, events: orderEvents(out, profile) };
 }
