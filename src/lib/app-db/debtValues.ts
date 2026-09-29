@@ -69,7 +69,8 @@ export function requireOneOf<T extends string>(values: readonly T[], value: unkn
 
 /** A SQLite constraint failure, reported as a validation error with a readable reason. */
 export function rethrowConstraint(error: unknown, messages: Record<string, string>): never {
-  const message = error instanceof Error ? error.message : String(error);
+  // The native SQLite error may come from another realm, so read its text rather than test instanceof.
+  const message = String((error as { message?: unknown })?.message ?? error);
   if (/constraint failed/i.test(message)) {
     for (const [needle, readable] of Object.entries(messages)) {
       if (message.includes(needle)) throw new AppDbValidationError(readable);

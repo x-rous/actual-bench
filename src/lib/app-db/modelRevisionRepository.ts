@@ -85,7 +85,8 @@ export function insertModelRevision(
       now
     );
   } catch (error) {
-    if (error instanceof Error && /UNIQUE|PRIMARY KEY/i.test(error.message)) {
+    // The native SQLite error may come from another realm, so read its text rather than test instanceof.
+    if (/UNIQUE|PRIMARY KEY/i.test(String((error as { message?: unknown })?.message ?? error))) {
       throw new AppDbValidationError(`Revision ${revision} already exists for this ${subjectKind}`);
     }
     throw error;
