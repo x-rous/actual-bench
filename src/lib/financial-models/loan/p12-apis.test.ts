@@ -103,7 +103,7 @@ describe("projection (T067)", () => {
       ["balanceAfterMinor", "balanceBeforeMinor", "cashMovementMinor", "categoryAllocations", "certainty", "date", "debtAccountId", "diagnostics", "engineVersions", "eventType", "feesMinor", "interestMinor", "modelRevision", "principalMovementMinor", "sourceAccountId"].sort()
     );
     expect(e.modelRevision).toBe(3);
-    expect(e.engineVersions.engine).toBe("loan-daily@1");
+    expect(e.engineVersions.engine).toBe("loan-daily@2");
     expect(p.events.every((x) => x.date >= "2024-03-01")).toBe(true);
     expect(JSON.stringify(p)).not.toMatch(/operations|transactionId|writeActual/);
   });

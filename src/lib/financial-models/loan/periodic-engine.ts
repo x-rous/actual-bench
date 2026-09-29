@@ -1,6 +1,6 @@
 import { addDays, addMonths, compareDates, type IsoDate } from "../calendar/dates";
 import { generateSchedule } from "../calendar/schedule";
-import { add, dec, decInt, div, fromMinor, round, sub, toDecString, toMinor, DEC_ZERO, WORKING_SCALE, type Dec } from "../money/kernel";
+import { add, dec, decInt, div, fromMinor, round, sub, toDecString, toMinor, toPlainString, DEC_ZERO, WORKING_SCALE, type Dec } from "../money/kernel";
 import { allocate } from "./allocation";
 import { engineVersions, monthlySummaries, rateTable, repaymentScheduleSpec, validateModel, wholeMonthsBetween } from "./engineCommon";
 import { normalizeEvents, type EngineEvent } from "./events";
@@ -29,7 +29,7 @@ import { annualRecastDates, applyPaymentCap, derivePayment, paymentCount, paymen
  * the payment is allocated with principal as the residual.
  */
 
-export const PERIODIC_ENGINE_VERSION = "loan-periodic@1";
+export const PERIODIC_ENGINE_VERSION = "loan-periodic@2";
 
 function periodBefore(date: IsoDate, frequency: string): IsoDate {
   switch (frequency) {
@@ -202,6 +202,9 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
       lines: alloc.lines,
       diagnostics: {
         periodStart, annualRate: toDecString(rate), periodicRate: toDecString(round(r, 12, "half-even")), interestExact: toDecString(exact),
+        // The exact annual rate this period's interest used (O2), for display; never a UI lookup.
+        effectiveAnnualRateDecimal: toPlainString(rate),
+        interestRatesDecimal: toPlainString(rate),
         carriedRemainder: toDecString(carry), decision: decision.kind, interestOnly: inPhase,
         negativeAmortizationMinor: alloc.capitalizedInterestMinor,
       },

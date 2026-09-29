@@ -1,6 +1,6 @@
 import { addDays, compareDates, type IsoDate } from "../calendar/dates";
 import { generateSchedule } from "../calendar/schedule";
-import { add, dec, fromMinor, sub, toDecString, toMinor, DEC_ZERO, type Dec } from "../money/kernel";
+import { add, dec, fromMinor, max, min, sub, toDecString, toMinor, toPlainString, DEC_ZERO, type Dec } from "../money/kernel";
 import { dayInterest, intermediateScale, interestBase } from "./accrual";
 import { chargeDates } from "./charge";
 import { eventRoundingScale, postCharge } from "./dailyPrecision";
@@ -33,7 +33,7 @@ import { revolvingPayment, revolvingState } from "./revolving";
  * Events are loaded once and simulated locally: nothing here reads Actual.
  */
 
-export const DAILY_ENGINE_VERSION = "loan-daily@1";
+export const DAILY_ENGINE_VERSION = "loan-daily@2";
 
 type Day = { date: IsoDate; events: EngineEvent[] };
 
@@ -153,7 +153,19 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
    * payoff). A standalone charge is its own event; one taken with a payment
    * is folded into that payment's event, so interest appears exactly once.
    */
+  /**
+   * Distinct annual rates the accrual used since the last charge, in order (O2): the rates behind a
+   * charge. Reported as `interestRatesDecimal`, exact decimals joined by ";" (diagnostics are scalar).
+   */
+  let ratesSinceCharge: string[] = [];
+  /** Rates behind the interest folded into the current repayment. */
+  let repaymentRates: string[] = [];
+  const noteRate = (list: string[], rate: string) => (list.at(-1) === rate ? list : [...list, rate]);
+
   function charge(date: IsoDate, why: string, standalone: boolean): number {
+    const chargedRates = ratesSinceCharge;
+    ratesSinceCharge = [];
+    if (!standalone) for (const r of chargedRates) repaymentRates = noteRate(repaymentRates, r);
     const posted = postCharge(accrued, carry, profile, digits);
     const before = minor(debt);
     debt = add(debt, fromMinor(posted.chargedMinor, digits));
@@ -164,7 +176,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
       emit({
         date, type: "interest-charge", certainty: "modelled", ref: null, cashMovementMinor: 0, principalMovementMinor: posted.chargedMinor, interestMinor: posted.chargedMinor, feesMinor: 0,
         balanceBeforeMinor: before, balanceAfterMinor: minor(debt), lines: [{ kind: "interest", amountMinor: posted.chargedMinor }],
-        diagnostics: { reason: why, accruedExact, carriedRemainder: toDecString(posted.carry), droppedRemainder: toDecString(posted.dropped) },
+        diagnostics: { reason: why, accruedExact, carriedRemainder: toDecString(posted.carry), droppedRemainder: toDecString(posted.dropped), interestRatesDecimal: chargedRates.join(";") },
       });
     }
     // Under `from-next-charge-period`, a new rate starts with the next charge period.
@@ -186,6 +198,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
       const problem = derive(date, "initial");
       if (problem) return problem;
     }
+    repaymentRates = [];
     if (atRepaymentCharge) interestWithPayment = charge(date, "with-repayment", false);
     let level: number;
     let ioCharged = 0;
@@ -237,6 +250,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
       ],
       diagnostics: {
         decision: decision.kind, interestOnly: phase !== null, levelPaymentMinor: level,
+        ...(interestWithPayment > 0 ? { interestRatesDecimal: repaymentRates.join(";") } : {}),
         ...(phase ? { interestOnlyBasis: atRepaymentCharge ? "charged-with-repayment" : profile.interestOnlyRepayment, chargedInterestPaidMinor: atRepaymentCharge ? interestWithPayment : ioCharged } : {}),
         negativeAmortizationMinor: interestWithPayment > decision.paymentMinor ? interestWithPayment - decision.paymentMinor : 0,
       },
@@ -262,6 +276,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
   /** A revolving facility's payment, from its payment model only: no amortization, no final payment. */
   function revolvingRepayment(date: IsoDate, balanceBeforeAll: number, atRepaymentCharge: boolean): BlockReason | null {
     let interestWithPayment = 0;
+    repaymentRates = [];
     if (atRepaymentCharge) interestWithPayment = charge(date, "with-repayment", false);
     const p = revolvingPayment(model.revolving!, { balanceMinor: minor(debt), lastChargeMinor: atRepaymentCharge ? interestWithPayment : lastChargeMinor, contractualPaymentMinor: terms.contractualPaymentMinor, minorDigits: digits, mode: profile.rounding.paymentRounding });
     if (!p.ok) return { code: "unsupported-profile", classification: "blocked", date, message: p.reason };
@@ -274,7 +289,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
         ...(p.minor - Math.min(interestWithPayment, p.minor) > 0 ? [{ kind: "principal" as const, amountMinor: p.minor - Math.min(interestWithPayment, p.minor) }] : []),
         ...(Math.min(interestWithPayment, p.minor) > 0 ? [{ kind: "interest" as const, amountMinor: Math.min(interestWithPayment, p.minor) }] : []),
       ],
-      diagnostics: { paymentModel: model.revolving!.paymentModel, ...revolvingState(model, minor(debt)) },
+      diagnostics: { paymentModel: model.revolving!.paymentModel, ...revolvingState(model, minor(debt)), ...(interestWithPayment > 0 ? { interestRatesDecimal: repaymentRates.join(";") } : {}) },
     });
     paymentsMade++;
     return null;
@@ -331,8 +346,13 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
   }
 
   const openingMinor = minor(debt);
+  const hasOffsets = model.offsets.length > 0;
+  /** Event types that carry the day's rate and offset diagnostics (O2, O4). */
+  const DIAGNOSED: readonly ModelEventType[] = ["repayment", "final-payment", "interest-charge"];
   for (let date = firstDay; compareDates(date, req.to) <= 0; date = addDays(date, 1)) {
     const day: Day = { date, events: byDay.get(date) ?? [] };
+    const firstEventOfDay = events.length;
+    let dayDiagnostics: Record<string, string | number> | null = null;
     for (const step of order) {
       let problem: BlockReason | null = null;
       currentStep = step;
@@ -374,6 +394,17 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
           if (!rate) return fail({ code: "rate-gap", classification: "blocked", date, message: `No rate applies on ${date}.` });
           const offset = eligibleOffset(model.offsets, offsetBalances as OffsetBalances, date, digits);
           const baseAmount = interestBase(profile.accrual, debt, offset, accrued);
+          // Explanatory values from this very step (O2, O4); display only, never fed back into interest.
+          // The engine applies an offset to the debt only (accrued interest, when compounding, is added
+          // after), so the applied offset is capped at the debt and the interest-bearing amount is the
+          // base the accrual just used.
+          dayDiagnostics = { effectiveAnnualRateDecimal: toPlainString(rate) };
+          ratesSinceCharge = noteRate(ratesSinceCharge, toPlainString(rate));
+          if (hasOffsets) {
+            const applied = min(max(offset, DEC_ZERO), max(debt, DEC_ZERO));
+            dayDiagnostics.offsetAppliedMinor = toMinor(applied, digits, "down");
+            dayDiagnostics.interestBearingMinor = toMinor(max(baseAmount, DEC_ZERO), digits, "down");
+          }
           accrued = add(accrued, dayInterest(baseAmount, rate, dc, date, scale, profile.rounding.intermediateRounding));
           break;
         }
@@ -384,6 +415,12 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
           break;
       }
       if (problem) return fail(problem);
+    }
+    // Events emitted before the accrue step on this date get the step's values too.
+    if (dayDiagnostics) {
+      for (let i = firstEventOfDay; i < events.length; i++) {
+        if (DIAGNOSED.includes(events[i].type)) events[i] = { ...events[i], diagnostics: { ...events[i].diagnostics, ...dayDiagnostics } };
+      }
     }
   }
 
