@@ -7,6 +7,7 @@ import type { DayCountConvention } from "./daycount/types";
 import type { BlockReason, LoanModelSnapshot, ModelEvent, PeriodSummary } from "./model";
 import { validatePhases } from "./phases";
 import { checkProfileSupport, validateProfile } from "./profile";
+import { recastScheduleConflict } from "./configSchema";
 import type { RatePeriod } from "./rates";
 import { CURRENT_COMPONENT_VERSIONS, type EngineVersions } from "./versions";
 
@@ -38,9 +39,8 @@ export function validateModel(model: LoanModelSnapshot): BlockReason | null {
   }
   const phaseProblem = validatePhases(model.phases);
   if (phaseProblem) return { code: "inconsistent-profile", classification: "blocked", date: null, message: phaseProblem };
-  if (model.profile.recast === "on-contract-date") {
-    return { code: "unsupported-profile", classification: "blocked", date: null, message: "Recast on contract dates needs recast dates, which configuration version 1 cannot hold." };
-  }
+  const recast = recastScheduleConflict(model.profile.recast, model.paymentRecasts.length);
+  if (recast) return { code: "inconsistent-profile", classification: "blocked", date: null, message: recast.message };
   return null;
 }
 

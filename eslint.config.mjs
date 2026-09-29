@@ -78,6 +78,30 @@ const eslintConfig = defineConfig([
   },
 
   /*
+   * The RD-084 golden suite and reference oracle are test infrastructure.
+   *
+   * No runtime code may import them. The financial-models and oracle blocks
+   * below replace this rule for their own files and restate it there.
+   */
+  {
+    files: ["src/**"],
+    ignores: ["src/test-golden/**", "src/test-oracles/**", "src/**/*.test.*", "src/**/__fixtures__/**", "src/**/__tests__/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/test-golden", "@/test-golden/**", "**/test-golden", "**/test-golden/**", "@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**"],
+              message: "The RD-084 golden suite and reference oracle are test-only; runtime code must not import them.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  /*
    * Assets & Debt calculations stay pure (RD-084, Constitution XIII).
    *
    * Every applied financial result must be reproducible from its recorded
@@ -132,8 +156,8 @@ const eslintConfig = defineConfig([
                 "src/lib/financial-models is pure calculation: no app DB, Actual transport, automation, credentials, providers, routes or UI.",
             },
             {
-              group: ["@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**"],
-              message: "Production calculation must not depend on the test-only reference oracle.",
+              group: ["@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**", "@/test-golden", "@/test-golden/**", "**/test-golden", "**/test-golden/**"],
+              message: "Production calculation must not depend on the test-only reference oracle or golden suite.",
             },
           ],
         },
@@ -162,9 +186,13 @@ const eslintConfig = defineConfig([
                 "@/lib/financial-models/**",
                 "**/financial-models",
                 "**/financial-models/**",
+                "@/test-golden",
+                "@/test-golden/**",
+                "**/test-golden",
+                "**/test-golden/**",
               ],
               message:
-                "The RD-084 reference oracle must not import or reuse the production financial models it verifies.",
+                "The RD-084 reference oracle must not import or reuse the production financial models it verifies, or the golden suite that compares them.",
             },
           ],
         },

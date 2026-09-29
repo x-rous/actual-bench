@@ -103,7 +103,7 @@ stated reason, and "not built yet" is never treated as "impossible":
 | Check | Meaning | Result |
 |---|---|---|
 | `validateProfile` | contradicts an axis's own definition (e.g. daily simple accrual capitalized daily; a split-monthly derivation paid monthly) | `inconsistent-profile` |
-| `checkProfileSupport` | well-defined but not implemented (a semi-monthly split derivation; an intermediate scale beyond 30) | `unsupported-config` |
+| `checkProfileSupport` | well-defined but not implemented (generated semi-monthly schedules in config v1; an intermediate scale beyond 30) | `unsupported-config` |
 | day-count registry | no verified reference evidence (monthly allocation) | `unsupported-config` |
 
 Nothing restricts Actual/360 to monthly payments or monthly compounding. Other libraries do,

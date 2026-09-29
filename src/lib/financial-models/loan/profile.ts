@@ -75,9 +75,20 @@ export const FINAL_PAYMENT_POLICIES: readonly FinalPaymentPolicy[] = [
   "continue-until-paid",
 ];
 
-/** Whether the contract lets fees be added to the debt (FR-057). Cash-paid fees need no permission. */
-export type FeeCapitalization = "not-permitted" | "permitted";
-export const FEE_CAPITALIZATIONS: readonly FeeCapitalization[] = ["not-permitted", "permitted"];
+/**
+ * What an interest-only repayment pays when interest is charged on its own
+ * cadence (with interest charged at each repayment the two agree):
+ *
+ * - `charged-interest-outstanding`: the interest charged to the loan since the
+ *   previous scheduled repayment (nothing before the first charge; one
+ *   repayment per charge period pays it, later ones in the period pay nothing);
+ *
+ * It is not claimed as a lender rule. Paying interest accrued but not yet
+ * charged is not offered: whether a lender holds it as prepaid interest or
+ * charges it at the repayment is an open decision.
+ */
+export type InterestOnlyRepayment = "charged-interest-outstanding";
+export const INTEREST_ONLY_REPAYMENTS: readonly InterestOnlyRepayment[] = ["charged-interest-outstanding"];
 
 export type BalancePrecision = "round-each-event" | "round-each-posting" | "carry-full-precision";
 export const BALANCE_PRECISIONS: readonly BalancePrecision[] = ["round-each-event", "round-each-posting", "carry-full-precision"];
@@ -112,7 +123,7 @@ export type CalculationProfile = {
   finalPayment: FinalPaymentPolicy;
   shortMonth: ShortMonthPolicy;
   negativeAmortizationAllowed: boolean;
-  feeCapitalization: FeeCapitalization;
+  interestOnlyRepayment: InterestOnlyRepayment;
   presetId: string | null;
 };
 
@@ -181,10 +192,11 @@ export function checkProfileSupport(profile: CalculationProfile): SupportCheck {
   const conflict = (axes: ProfileAxis[], message: string) => conflicts.push({ axes, message });
   const p = profile;
 
-  // Semi-monthly from a monthly figure is meaningful (÷ 2 either way), but
-  // derivation here implements only weekly and fortnightly conversions.
-  if ((p.repaymentDerivation === "monthly-equivalent-pro-rata" || p.repaymentDerivation === "split-monthly") && p.repaymentFrequency === "semi-monthly") {
-    conflict(["repaymentDerivation", "repaymentFrequency"], "Deriving a semi-monthly payment from a monthly one is not implemented.");
+  // Generating semi-monthly dates needs the two days of the month, which config v1 cannot hold.
+  // The calendar can generate them (tested), but nothing configures them yet; explicit dated
+  // repayment events represent such a schedule instead.
+  if (p.repaymentFrequency === "semi-monthly") {
+    conflict(["repaymentFrequency"], "Generated semi-monthly repayments are not supported in configuration version 1; supply the dates as repayment events.");
   }
 
   const scale = p.rounding.intermediateScale;

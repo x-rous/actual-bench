@@ -19,9 +19,10 @@ function validConfig(): Record<string, unknown> {
     profile: structuredClone(AU_PROFILE),
     phases: [{ kind: "interest-only", from: "2024-01-01", to: "2026-01-01", recastAtEnd: "on-contract-date" }],
     components: [
-      { economicKind: "principal", label: "Principal", destination: "transfer", categoryId: null, amountRule: "calculated", fixedAmountMinor: null, order: 0 },
-      { economicKind: "fee", label: "Account fee", destination: "category", categoryId: "cat-fees", amountRule: "fixed", fixedAmountMinor: 1000, order: 1 },
+      { economicKind: "principal", label: "Principal", destination: "transfer", categoryId: null, amountRule: "calculated", fixedAmountMinor: null, treatment: null, order: 0 },
+      { economicKind: "fee", label: "Account fee", destination: "category", categoryId: "cat-fees", amountRule: "fixed", fixedAmountMinor: 1000, treatment: "cash-paid", order: 1 },
     ],
+    paymentRecasts: [],
     revolving: null,
   };
 }
@@ -99,6 +100,37 @@ describe("parseDebtConfig", () => {
     expect(parseDebtConfig(c).ok).toBe(true);
     c.revolving = { paymentModel: "minimum-due", percentOfBalanceBps: null, minimumFloorMinor: null };
     expect(parseDebtConfig(c)).toMatchObject({ ok: false, code: "unsupported-config" });
+  });
+
+  it("requires each fee to state its treatment, and only a fee to carry one", () => {
+    const withComponent = (patch: Record<string, unknown>) => {
+      const c = validConfig();
+      (c.components as Record<string, unknown>[])[1] = { ...(c.components as Record<string, unknown>[])[1], ...patch };
+      return c;
+    };
+    expect(parseDebtConfig(withComponent({ treatment: "capitalized" })).ok).toBe(true);
+    expect(parseDebtConfig(withComponent({ treatment: null }))).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig(withComponent({ economicKind: "insurance", treatment: "cash-paid" }))).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig(withComponent({ economicKind: "insurance", treatment: null })).ok).toBe(true);
+    expect(parseDebtConfig(withComponent({ treatment: "financed-at-origination" }))).toMatchObject({ ok: false, code: "unsupported-config" });
+    const principal = validConfig();
+    (principal.components as Record<string, unknown>[])[0].treatment = "cash-paid";
+    expect(parseDebtConfig(principal)).toMatchObject({ ok: false, code: "invalid-config" });
+  });
+
+  it("holds dated recasts separately from rate changes, consistent with the recast policy", () => {
+    const withRecasts = (recast: string, dates: string[]) => ({ ...withProfile({ recast }), paymentRecasts: dates.map((date) => ({ date, note: null })) });
+    expect(parseDebtConfig(withRecasts("on-contract-date", ["2027-01-12", "2029-01-12"])).ok).toBe(true);
+    expect(parseDebtConfig(withRecasts("on-rate-change", ["2027-01-12"])).ok).toBe(true);
+    expect(parseDebtConfig(withRecasts("never", ["2027-01-12"]))).toMatchObject({ ok: false, code: "inconsistent-profile" });
+    expect(parseDebtConfig(withRecasts("on-contract-date", []))).toMatchObject({ ok: false, code: "inconsistent-profile" });
+    expect(parseDebtConfig(withRecasts("on-contract-date", ["2029-01-12", "2027-01-12"]))).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig(withRecasts("on-contract-date", ["2027-01-12", "2027-01-12"]))).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig({ ...withRecasts("on-contract-date", []), paymentRecasts: [{ date: "2027-02-30", note: null }] })).toMatchObject({ ok: false, code: "invalid-config" });
+  });
+
+  it("offers generated semi-monthly schedules as unsupported in version 1", () => {
+    expect(parseDebtConfig(withProfile({ repaymentFrequency: "semi-monthly", repaymentDerivation: "annuity-at-payment-frequency" }))).toMatchObject({ ok: false, code: "unsupported-config" });
   });
 
   it("never throws on hostile input", () => {

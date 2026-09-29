@@ -27,7 +27,7 @@ function auModel(overrides: Partial<LoanModelSnapshot> = {}, profile: Partial<Lo
     terms: { openingDate: OPEN, openingPrincipalMinor: 40000000, maturityDate: null, contractualTermMonths: 360, amortizationTermMonths: 360, contractualPaymentMinor: 120000, creditLimitMinor: null, firstPaymentDate: "2024-01-29", firstInterestChargeDate: "2024-02-15" },
     profile: { ...AU_PROFILE, repaymentDerivation: "contractual-fixed", chargeDay: 15, ...profile },
     rates: [{ accrualEffectiveFrom: OPEN, annualRateDecimal: "0.0612" }],
-    phases: [], offsets: [], components: [], assumptions: [], revolving: null,
+    phases: [], offsets: [], components: [], paymentRecasts: [], assumptions: [], revolving: null,
     ...overrides,
   };
 }
@@ -160,21 +160,146 @@ describe("extra repayments and draws (T054, T055)", () => {
   });
 });
 
-describe("fees (T056)", () => {
-  const fee = (capitalized: boolean): LedgerEvent => ({ kind: "fee", date: "2024-02-15", amountMinor: 1000, capitalized, ref: ref("f") });
+describe("fees (T056): treatment is stated on each fee", () => {
+  const fee = (treatment: "cash-paid" | "capitalized"): LedgerEvent => ({ kind: "fee", date: "2024-02-15", amountMinor: 1000, treatment, ref: ref("f") });
 
-  it("a capitalized fee raises the debt only when the contract permits it", () => {
-    expect(simulateDaily(req(auModel(), [fee(true)])).ok).toBe(false);
-    const permitted = ok(simulateDaily(req(auModel({}, { feeCapitalization: "permitted" }), [fee(true)], "2024-02-15")));
+  it("a capitalized fee raises the debt by its amount, with no cash and no principal repayment", () => {
+    const capitalized = ok(simulateDaily(req(auModel(), [fee("capitalized")], "2024-02-15")));
     const base = ok(simulateDaily(req(auModel(), [], "2024-02-15")));
-    expect(permitted.closing.principalMinor).toBeGreaterThan(base.closing.principalMinor);
+    // The fee is added on 15 Feb before that day's accrual, so the debt rises by the fee plus one day's interest on it.
+    expect(capitalized.closing.principalMinor - base.closing.principalMinor).toBeGreaterThanOrEqual(1000);
+    expect(capitalized.events.find((e) => e.type === "fee")).toMatchObject({ cashMovementMinor: 0, principalMovementMinor: 1000, feesMinor: 1000, lines: [{ kind: "fee", amountMinor: 1000 }], diagnostics: { treatment: "capitalized" } });
+    expect(capitalized.events.some((e) => e.type === "repayment" && e.date === "2024-02-15")).toBe(false);
   });
 
   it("a cash-paid fee moves cash but never the debt", () => {
-    const paid = ok(simulateDaily(req(auModel(), [fee(false)], "2024-02-15")));
+    const paid = ok(simulateDaily(req(auModel(), [fee("cash-paid")], "2024-02-15")));
     const base = ok(simulateDaily(req(auModel(), [], "2024-02-15")));
     expect(paid.closing.principalMinor).toBe(base.closing.principalMinor);
-    expect(paid.events.find((e) => e.type === "fee")).toMatchObject({ cashMovementMinor: -1000, principalMovementMinor: 0, feesMinor: 1000 });
+    expect(paid.events.find((e) => e.type === "fee")).toMatchObject({ cashMovementMinor: -1000, principalMovementMinor: 0, feesMinor: 1000, diagnostics: { treatment: "cash-paid" } });
+  });
+
+  it("two fee components with different treatments are each handled their own way", () => {
+    const components = [
+      { economicKind: "fee" as const, label: "Account fee", destination: "category" as const, categoryId: "c", amountRule: "fixed" as const, fixedAmountMinor: 800, treatment: "capitalized" as const, order: 1 },
+      { economicKind: "fee" as const, label: "Service fee", destination: "category" as const, categoryId: "c", amountRule: "fixed" as const, fixedAmountMinor: 300, treatment: "cash-paid" as const, order: 2 },
+    ];
+    const r = ok(simulateDaily(req(auModel({ components }), [], "2024-01-29")));
+    const repayment = r.events.find((e) => e.type === "repayment" && e.date === "2024-01-29")!;
+    const feeEvent = r.events.find((e) => e.type === "fee" && e.date === "2024-01-29")!;
+    expect(feeEvent).toMatchObject({ principalMovementMinor: 800, cashMovementMinor: 0 });
+    expect(repayment).toMatchObject({ cashMovementMinor: -(120000 + 300), feesMinor: 300 });
+    expect(repayment.lines).toContainEqual({ kind: "fee", amountMinor: 300 });
+  });
+});
+
+describe("same-day order (event-order@1): before-accrual → accrue → charge → after-accrual", () => {
+  // 15 Feb is a charge date; on it: an extra repayment, a scheduled repayment, an offset change and a redraw.
+  const sameDay: LedgerEvent[] = [
+    { kind: "extra-repayment", date: "2024-02-15", amountMinor: 500000, ref: ref("x") },
+    { kind: "draw", date: "2024-02-15", amountMinor: 200000, ref: ref("d") },
+    { kind: "offset-balance", date: "2024-02-15", accountId: "a", balanceMinor: 1000000, clearedBalanceMinor: 1000000 },
+  ];
+  const withOffset = (profile: Partial<LoanModelSnapshot["profile"]>) =>
+    auModel({ terms: { ...auModel().terms, firstPaymentDate: "2024-02-15" }, offsets: [{ id: "o", accountId: "a", effectiveFrom: OPEN, effectiveTo: null, percentageBps: 10000, basis: "total", capMinor: null }] }, { repaymentFrequency: "monthly", ...profile });
+  // Events within one placement group keep the ledger's deterministic order (here, by reference id).
+  const dayOf = (r: ReturnType<typeof ok>) => r.events.filter((e) => e.date === "2024-02-15").map((e) => [e.type, e.diagnostics.sameDayStep]);
+
+  it("start-of-day: every event precedes the accrual and the charge", () => {
+    const r = ok(simulateDaily(req(withOffset({ eventOrder: { timing: "start-of-day" } }), sameDay, "2024-02-15")));
+    expect(dayOf(r)).toEqual([["draw", "payment"], ["extra-repayment", "payment"], ["repayment", "scheduled-repayment"], ["interest-charge", "charge"]]);
+    expect(r.events.every((e) => e.diagnostics.eventOrder === "event-order@1")).toBe(true);
+  });
+
+  it("end-of-day: every event follows the day's charge", () => {
+    const r = ok(simulateDaily(req(withOffset({ eventOrder: { timing: "end-of-day" } }), sameDay, "2024-02-15")));
+    expect(dayOf(r)).toEqual([["interest-charge", "charge"], ["draw", "payment"], ["extra-repayment", "payment"], ["repayment", "scheduled-repayment"]]);
+  });
+
+  it("a split placement (Figura-compatible): other payments and offsets before, the scheduled repayment after the charge", () => {
+    const figura = ok(simulateDaily(req(withOffset({ eventOrder: { scheduledRepayments: "after-accrual", otherPayments: "before-accrual", offsets: "before-accrual" } }), sameDay, "2024-02-15")));
+    expect(dayOf(figura)).toEqual([["draw", "payment"], ["extra-repayment", "payment"], ["interest-charge", "charge"], ["repayment", "scheduled-repayment"]]);
+  });
+
+  it("placement changes that day's interest: events before the accrual count, events after it do not", () => {
+    const before = ok(simulateDaily(req(withOffset({ eventOrder: { timing: "start-of-day" } }), sameDay, "2024-02-15")));
+    const after = ok(simulateDaily(req(withOffset({ eventOrder: { timing: "end-of-day" } }), sameDay, "2024-02-15")));
+    const charge = (r: typeof before) => r.events.find((e) => e.type === "interest-charge")!.interestMinor;
+    // Before: the day accrues on a debt net of 5,000 − 2,000 + 1,200 and a 10,000 offset, so less interest.
+    expect(charge(before)).toBeLessThan(charge(after));
+    // Either way the closing debt differs only by that day's interest.
+    expect(after.closing.principalMinor - before.closing.principalMinor).toBe(charge(after) - charge(before));
+  });
+});
+
+describe("dated payment recasts (FR-044)", () => {
+  const rates = [
+    { accrualEffectiveFrom: OPEN, annualRateDecimal: "0.0612" },
+    { accrualEffectiveFrom: "2024-06-01", annualRateDecimal: "0.0712" },
+  ];
+  const model = (profile: Partial<LoanModelSnapshot["profile"]>, recasts: { date: string }[]) =>
+    auModel({ rates, paymentRecasts: recasts, terms: { ...auModel().terms, contractualPaymentMinor: null } }, { repaymentDerivation: "annuity-at-payment-frequency", ...profile });
+
+  it("on-contract-date: the rate change alone does not recast; the payment changes on the dated recast", () => {
+    const r = ok(simulateDaily(req(model({ recast: "on-contract-date" }, [{ date: "2024-09-01" }]), [], "2024-12-31")));
+    const recasts = r.events.filter((e) => e.type === "recast");
+    expect(recasts.map((e) => [e.date, e.diagnostics.reason])).toEqual([["2024-09-01", "contract-date"]]);
+    const payments = r.events.filter((e) => e.type === "repayment").map((e) => [e.date, -e.cashMovementMinor]);
+    const level = (from: string, to: string) => new Set(payments.filter(([d]) => d >= from && d < to).map(([, a]) => a));
+    expect(level("2024-01-01", "2024-09-01").size).toBe(1);
+    expect(level("2024-09-01", "2025-01-01").size).toBe(1);
+    expect([...level("2024-09-01", "2025-01-01")][0]).toBeGreaterThan([...level("2024-01-01", "2024-09-01")][0] as number);
+  });
+
+  it("on-rate-change still recasts at the rate's payment date, and a dated recast adds its own", () => {
+    const r = ok(simulateDaily(req(model({ recast: "on-rate-change" }, [{ date: "2024-11-01" }]), [], "2024-12-31")));
+    expect(r.events.filter((e) => e.type === "recast").map((e) => [e.date, e.diagnostics.reason])).toEqual([["2024-06-01", "rate-change"], ["2024-11-01", "contract-date"]]);
+  });
+
+  it("refuses contradictory recast settings", () => {
+    expect(simulateDaily(req(model({ recast: "never" }, [{ date: "2024-09-01" }]))).ok).toBe(false);
+    expect(simulateDaily(req(model({ recast: "on-contract-date" }, []))).ok).toBe(false);
+  });
+});
+
+describe("daily interest-only with its own repayment cadence", () => {
+  // Monthly charges on the 15th, fortnightly repayments from 29 Jan, an interest-only phase for the year.
+  const io = auModel({ phases: [{ kind: "interest-only", from: "2024-01-29", to: "2024-12-31", recastAtEnd: "on-rate-change" }], terms: { ...auModel().terms, contractualPaymentMinor: null } }, { interestOnlyRepayment: "charged-interest-outstanding", repaymentDerivation: "annuity-at-payment-frequency" });
+  const repayments = (r: ReturnType<typeof ok>) => r.events.filter((e) => e.type === "repayment");
+
+  it("charged-interest-outstanding: nothing before the first charge; the next repayment pays the charge; later ones in the period pay nothing", () => {
+    const r = ok(simulateDaily(req(io, [], "2024-04-30")));
+    const charges = r.events.filter((e) => e.type === "interest-charge");
+    // 29 Jan (before the first charge on 15 Feb) and 12 Feb pay nothing; 26 Feb pays the 15 Feb charge.
+    expect(repayments(r)[0].date).toBe("2024-02-26");
+    expect(-repayments(r)[0].cashMovementMinor).toBe(charges[0].interestMinor);
+    // One repayment per charge period pays it; each paid amount equals a charge.
+    expect(repayments(r).map((e) => -e.cashMovementMinor)).toEqual(charges.slice(0, repayments(r).length).map((e) => e.interestMinor));
+    // The principal stays at 400,000 after each interest-only repayment.
+    expect(repayments(r).every((e) => e.balanceAfterMinor === 40000000)).toBe(true);
+  });
+
+  it("several repayments inside one charge period: only the first after the charge pays, and each pays exactly what was charged", () => {
+    const r = ok(simulateDaily(req(io, [], "2024-06-30")));
+    const charges = r.events.filter((e) => e.type === "interest-charge");
+    for (let i = 0; i + 1 < charges.length; i++) {
+      const inPeriod = repayments(r).filter((e) => e.date > charges[i].date && e.date <= charges[i + 1].date);
+      expect(inPeriod).toHaveLength(1);
+      expect(inPeriod[0].diagnostics).toMatchObject({ interestOnly: true, interestOnlyBasis: "charged-interest-outstanding", chargedInterestPaidMinor: charges[i].interestMinor });
+    }
+    // The interest was already posted by its charge event, so each repayment only returns the debt to the principal.
+    expect(repayments(r).every((e) => e.interestMinor === 0 && e.balanceAfterMinor === 40000000)).toBe(true);
+  });
+
+  it("the interest-only phase ends with a recast to an amortizing payment over the remaining term", () => {
+    const m = auModel({ phases: [{ kind: "interest-only", from: "2024-01-29", to: "2024-03-31", recastAtEnd: "on-rate-change" }], terms: { ...auModel().terms, contractualPaymentMinor: null } }, { repaymentDerivation: "annuity-at-payment-frequency" });
+    const r = ok(simulateDaily(req(m, [], "2024-06-30")));
+    const after = repayments(r).filter((e) => e.date > "2024-03-31");
+    expect(after.length).toBeGreaterThan(0);
+    expect(new Set(after.map((e) => e.cashMovementMinor)).size).toBe(1);
+    expect(after.every((e) => e.diagnostics.interestOnly === false)).toBe(true);
+    // Amortizing now: the debt falls below the principal.
+    expect(r.closing.principalMinor).toBeLessThan(40000000);
   });
 });
 
@@ -260,17 +385,6 @@ describe("engine invariants (T060, requirement 22)", () => {
     const charges = r.events.filter((e) => e.type === "interest-charge");
     expect(payments.slice(0, -1).map((e) => -e.cashMovementMinor)).toEqual(charges.slice(0, payments.length - 1).map((e) => e.interestMinor));
     expect(r.events.find((e) => e.type === "balloon")?.balanceBeforeMinor).toBe(40000000);
-  });
-
-  it("refuses an interest-only repayment it cannot size, rather than paying zero", () => {
-    const io = auModel({ terms: { ...auModel().terms, firstPaymentDate: "2024-02-15" }, phases: [{ kind: "interest-only", from: "2024-02-15", to: "2025-01-15", recastAtEnd: "never" }] }, { repaymentFrequency: "monthly" });
-    const r = simulateDaily(req(io, [], "2024-06-30"));
-    expect(r.ok ? null : r.blocked[0].code).toBe("unsupported-profile");
-  });
-
-  it("V3 case 9: the unselectable monthly allocation convention is refused, not simulated", () => {
-    const r = simulateDaily(req(auModel({}, { dayCount: "monthly-30-360-actual-day-allocation" })));
-    expect(r.ok ? null : r.blocked[0].code).toBe("unsupported-profile");
   });
 
   it("projections read nothing and write nothing: the request is not mutated", () => {

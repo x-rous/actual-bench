@@ -85,7 +85,6 @@ function engineRows(c: DailyCase): DailyRow[] | string {
       repaymentFrequency: c.repayments.every,
       repaymentDerivation: "contractual-fixed",
       eventOrder: c.order ? { scheduledRepayments: c.order.scheduled, otherPayments: c.order.other, offsets: c.order.offsets } : { timing: "start-of-day" },
-      feeCapitalization: "permitted",
       ...c.profile,
       rounding: {
         ...BASE_PROFILE.rounding,
@@ -102,7 +101,7 @@ function engineRows(c: DailyCase): DailyRow[] | string {
     if (e.kind === "offset") return { kind: "offset-balance", date: e.date, accountId: e.account!, balanceMinor: cents(e.amount), clearedBalanceMinor: cents(e.amount) };
     if (e.kind === "extra") return { kind: "extra-repayment", date: e.date, amountMinor: cents(e.amount), ref };
     if (e.kind === "draw") return { kind: "draw", date: e.date, amountMinor: cents(e.amount), ref };
-    return { kind: "fee", date: e.date, amountMinor: cents(e.amount), capitalized: true, ref };
+    return { kind: "fee", date: e.date, amountMinor: cents(e.amount), treatment: "capitalized", ref };
   });
   const result: SimulationResult = simulateDaily({ model: m, anchor: { date: c.anchor, principalMinor: cents(c.principal), accruedInterestMinor: 0, source: "opening" }, events: ledger, to: c.until });
   if (!result.ok) return result.blocked.map((b) => `${b.code}: ${b.message}`).join("; ");

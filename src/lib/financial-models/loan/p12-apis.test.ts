@@ -14,7 +14,7 @@ function monthlyModel(o: Partial<LoanModelSnapshot> = {}, profile: Partial<LoanM
     terms: { openingDate: OPEN, openingPrincipalMinor: 2500000, maturityDate: null, contractualTermMonths: 60, amortizationTermMonths: 60, contractualPaymentMinor: 120000, creditLimitMinor: null, firstPaymentDate: "2024-02-01", firstInterestChargeDate: null },
     profile: { ...AU_PROFILE, accrual: "per-period", chargeFrequency: "at-repayment", chargeDay: null, repaymentFrequency: "monthly", repaymentDerivation: "contractual-fixed", ...profile },
     rates: [{ accrualEffectiveFrom: OPEN, annualRateDecimal: "0.096" }],
-    phases: [], offsets: [], components: [], assumptions: [], revolving: null,
+    phases: [], offsets: [], components: [], paymentRecasts: [], assumptions: [], revolving: null,
     ...o,
   };
 }

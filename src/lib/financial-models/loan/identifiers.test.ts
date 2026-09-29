@@ -16,7 +16,7 @@ import {
   BALANCE_PRECISIONS,
   CAPITALIZATIONS,
   CHARGE_FREQUENCIES,
-  FEE_CAPITALIZATIONS,
+  INTEREST_ONLY_REPAYMENTS,
   FINAL_PAYMENT_POLICIES,
   RATE_EFFECTIVE_TIMINGS,
   RECAST_POLICIES,
@@ -41,7 +41,7 @@ import { DAILY_PRECISION_VERSION } from "./dailyPrecision";
 import { OFFSETS_VERSION } from "./offsets";
 import { RECAST_VERSION } from "./recast";
 import { PHASES_VERSION } from "./phases";
-import { FEES_VERSION } from "./fees";
+import { FEE_TREATMENTS, FEES_VERSION } from "./fees";
 import { ALLOCATION_VERSION } from "./allocation";
 import { FINAL_PAYMENT_VERSION } from "./finalPayment";
 import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
@@ -82,7 +82,8 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     ["revolvingPaymentModel", REVOLVING_PAYMENT_MODELS],
     ["phaseKind", PHASE_KINDS],
     ["paymentLimitKind", PAYMENT_LIMIT_KINDS],
-    ["feeCapitalization", FEE_CAPITALIZATIONS],
+    ["feeTreatment", FEE_TREATMENTS],
+    ["interestOnlyRepayment", INTEREST_ONLY_REPAYMENTS],
   ] as const)("%s", (axis, values) => {
     expect([...values]).toEqual([...FROZEN[axis]]);
   });

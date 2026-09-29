@@ -47,7 +47,8 @@ describe("profile consistency", () => {
       const r = checkProfileSupport({ ...AU_PROFILE, ...change });
       return r.ok ? [] : r.conflicts.map((c) => c.axes);
     };
-    expect(unsupported({ repaymentDerivation: "split-monthly", repaymentFrequency: "semi-monthly" })).toEqual([["repaymentDerivation", "repaymentFrequency"]]);
+    // Generated semi-monthly schedules have no specified rule in version 1; explicit dated repayments stand in.
+    expect(unsupported({ repaymentFrequency: "semi-monthly" })).toEqual([["repaymentFrequency"]]);
     expect(unsupported({ rounding: { ...AU_PROFILE.rounding, intermediateScale: { mode: "fixed", places: 31 } } })).toEqual([["rounding.intermediateScale"]]);
     expect(checkProfileSupport(AU_PROFILE)).toEqual({ ok: true });
   });

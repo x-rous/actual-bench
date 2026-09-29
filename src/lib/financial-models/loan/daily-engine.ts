@@ -5,8 +5,8 @@ import { dayInterest, intermediateScale, interestBase } from "./accrual";
 import { chargeDates } from "./charge";
 import { eventRoundingScale, postCharge } from "./dailyPrecision";
 import { dayCountOf, engineVersions, monthlySummaries, rateTable, validateModel, wholeMonthsBetween } from "./engineCommon";
-import { dayStepOrder, normalizeEvents, type EngineEvent } from "./events";
-import { cashComponents, feeCapitalizationPermitted } from "./fees";
+import { dayStepOrder, EVENT_ORDER_VERSION, normalizeEvents, type EngineEvent } from "./events";
+import { capitalizedComponents, cashComponents } from "./fees";
 import { amortizationMonths, contractualEnd, finalDecision } from "./finalPayment";
 import type { BlockReason, ModelEvent, ModelEventType, SimulationRequest, SimulationResult } from "./model";
 import { eligibleOffset, type OffsetBalances } from "./offsets";
@@ -94,6 +94,8 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
     const after = addDays(phase.to, 1);
     if (compareDates(after, anchor.date) > 0) recasts.set(after, "interest-only-phase-end");
   }
+  // Dated contractual recasts apply on their own date, whatever the rate changes do.
+  for (const r of model.paymentRecasts) if (compareDates(r.date, anchor.date) > 0) recasts.set(r.date, "contract-date");
 
   // ── State ─────────────────────────────────────────────────────────────────
   let debt: Dec = fromMinor(anchor.principalMinor, digits);
@@ -104,6 +106,9 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
   let paidOff = false;
   let stopScheduling = false;
   let lastChargeMinor = 0;
+  /** Interest charged since the last scheduled repayment (what an interest-only repayment owes). */
+  let chargedSinceRepayment = 0;
+  let currentStep = "";
   const offsetBalances = new Map<string, { balanceMinor: number; clearedBalanceMinor: number }>();
   for (const e of normalized.events) {
     if (e.kind === "offset-balance" && compareDates(e.date, anchor.date) <= 0) offsetBalances.set(e.accountId!, { balanceMinor: e.amountMinor, clearedBalanceMinor: e.clearedBalanceMinor ?? e.amountMinor });
@@ -111,12 +116,15 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
   let periodRate: Dec | null = rates.rateOn(firstDay);
   const events: ModelEvent[] = [];
   const components = cashComponents(model.components);
+  const capitalized = capitalizedComponents(model.components);
   const scale = eventRoundingScale(profile, digits) ?? intermediateScale(profile, digits);
   const order = dayStepOrder(profile.eventOrder);
   const minor = (d: Dec) => toMinor(d, digits, "down");
   const revolving = model.behaviorClass === "revolving-credit" && model.revolving !== null;
 
-  const emit = (e: Omit<ModelEvent, "diagnostics"> & { diagnostics?: ModelEvent["diagnostics"] }) => events.push({ diagnostics: {}, ...e });
+  // Every event records the same-day step it ran in, under the versioned order.
+  const emit = (e: Omit<ModelEvent, "diagnostics"> & { diagnostics?: ModelEvent["diagnostics"] }) =>
+    events.push({ ...e, diagnostics: { sameDayStep: currentStep, eventOrder: EVENT_ORDER_VERSION, ...e.diagnostics } });
 
   const remainingPayments = () => (totalPayments === null ? 0 : Math.max(totalPayments - paymentsMade, 1));
   const remainingMonths = (date: IsoDate) => (amortMonths === null ? 0 : Math.max(amortMonths - wholeMonthsBetween(terms.openingDate, date), 1));
@@ -162,6 +170,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
     // Under `from-next-charge-period`, a new rate starts with the next charge period.
     periodRate = rates.rateOn(addDays(date, 1));
     lastChargeMinor = posted.chargedMinor;
+    if (standalone) chargedSinceRepayment += posted.chargedMinor;
     return posted.chargedMinor;
   }
 
@@ -179,14 +188,22 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
     }
     if (atRepaymentCharge) interestWithPayment = charge(date, "with-repayment", false);
     let level: number;
+    let ioCharged = 0;
     if (phase) {
-      // An interest-only payment pays the interest charged for its period. With a separate charge
-      // cadence that is only well defined when the payment falls on the charge date, after the charge.
-      const afterCharge = order.indexOf("scheduled-repayment") > order.indexOf("charge");
-      if (!atRepaymentCharge && !(chargeSet?.has(date) && afterCharge)) {
-        return { code: "unsupported-profile", classification: "blocked", date, message: "Interest-only repayments need interest charged with each repayment, or repayments on the charge date placed after the accrual." };
+      // An interest-only repayment pays interest, sized from the charged state by the profile's
+      // `interestOnlyRepayment` convention; the repayment cadence need not match the charges.
+      if (atRepaymentCharge) {
+        level = interestWithPayment;
+      } else {
+        ioCharged = chargedSinceRepayment;
+        level = ioCharged;
       }
-      level = atRepaymentCharge ? interestWithPayment : lastChargeMinor;
+      if (level === 0) {
+        // Nothing is owed yet (no interest charged since the last repayment).
+        paymentsMade++;
+        chargedSinceRepayment = 0;
+        return null;
+      }
     } else {
       level = payment!;
     }
@@ -220,9 +237,11 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
       ],
       diagnostics: {
         decision: decision.kind, interestOnly: phase !== null, levelPaymentMinor: level,
+        ...(phase ? { interestOnlyBasis: atRepaymentCharge ? "charged-with-repayment" : profile.interestOnlyRepayment, chargedInterestPaidMinor: atRepaymentCharge ? interestWithPayment : ioCharged } : {}),
         negativeAmortizationMinor: interestWithPayment > decision.paymentMinor ? interestWithPayment - decision.paymentMinor : 0,
       },
     });
+    chargedSinceRepayment = 0;
     if (interestWithPayment > decision.paymentMinor) {
       emit({ date, type: "negative-amortization", certainty: "modelled", ref: null, cashMovementMinor: 0, principalMovementMinor: 0, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: minor(debt), balanceAfterMinor: minor(debt), lines: [], diagnostics: { unpaidInterestCapitalizedMinor: interestWithPayment - decision.paymentMinor } });
     }
@@ -283,12 +302,12 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
         return null;
       }
       case "fee": {
+        // The fee's own treatment decides: capitalized adds to the debt with no cash; cash-paid moves cash only.
         if (e.capitalized) {
-          if (!feeCapitalizationPermitted(profile)) return { code: "fee-capitalization-not-permitted", classification: "review", date: e.date, message: "A capitalized fee was given but the contract does not permit capitalizing fees." };
           debt = add(debt, fromMinor(e.amountMinor, digits));
-          emit({ ...base, type: "fee", feesMinor: e.amountMinor, cashMovementMinor: 0, principalMovementMinor: e.amountMinor, balanceBeforeMinor: before, balanceAfterMinor: minor(debt), lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { capitalized: true } });
+          emit({ ...base, type: "fee", feesMinor: e.amountMinor, cashMovementMinor: 0, principalMovementMinor: e.amountMinor, balanceBeforeMinor: before, balanceAfterMinor: minor(debt), lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { treatment: "capitalized" } });
         } else {
-          emit({ ...base, type: "fee", feesMinor: e.amountMinor, cashMovementMinor: -e.amountMinor, principalMovementMinor: 0, balanceBeforeMinor: before, balanceAfterMinor: before, lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { capitalized: false } });
+          emit({ ...base, type: "fee", feesMinor: e.amountMinor, cashMovementMinor: -e.amountMinor, principalMovementMinor: 0, balanceBeforeMinor: before, balanceAfterMinor: before, lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { treatment: "cash-paid" } });
         }
         return null;
       }
@@ -316,6 +335,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
     const day: Day = { date, events: byDay.get(date) ?? [] };
     for (const step of order) {
       let problem: BlockReason | null = null;
+      currentStep = step;
       switch (step) {
         case "contract-change": {
           if (rates.changes.some((p) => p.accrualEffectiveFrom === date)) {
@@ -329,6 +349,14 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
         }
         case "external-cash":
           for (const e of day.events.filter((x) => x.kind === "fee")) problem ??= applyEvent(e);
+          // Recurring capitalized fee components are added to the debt on each scheduled repayment date.
+          if (scheduledSet.has(date) && !paidOff && !stopScheduling) {
+            for (const fee of capitalized) {
+              const before = minor(debt);
+              debt = add(debt, fromMinor(fee.amountMinor, digits));
+              emit({ date, type: "fee", certainty: "contractual", ref: null, cashMovementMinor: 0, principalMovementMinor: fee.amountMinor, interestMinor: 0, feesMinor: fee.amountMinor, balanceBeforeMinor: before, balanceAfterMinor: minor(debt), lines: [{ kind: "fee", amountMinor: fee.amountMinor }], diagnostics: { treatment: "capitalized", label: fee.label } });
+            }
+          }
           break;
         case "payment":
           for (const e of day.events.filter((x) => x.kind === "extra-repayment" || x.kind === "draw" || x.kind === "repayment")) problem ??= applyEvent(e);

@@ -183,7 +183,7 @@ export function normalizeEvents(
       date: e.date,
       kind: e.kind,
       amountMinor: e.amountMinor,
-      capitalized: e.kind === "fee" ? e.capitalized : false,
+      capitalized: e.kind === "fee" ? e.treatment === "capitalized" : false,
       accountId: null,
       clearedBalanceMinor: null,
       certainty: "observed",
@@ -204,7 +204,7 @@ export function normalizeEvents(
       if (!inWindow(date) && !(a.kind === "offset-balance" && compareDates(date, window.after) <= 0)) continue;
       const base = { date, capitalized: false, accountId: null, clearedBalanceMinor: null, certainty: "assumed" as const, ref: { source: "assumption" as const, id: `${i}:${date}` }, key: `assumption:${i}:${date}` };
       if (a.kind === "offset-balance") out.push({ ...base, kind: "offset-balance", amountMinor: a.balanceMinor, accountId: a.accountId, clearedBalanceMinor: a.balanceMinor });
-      else if (a.kind === "fee") out.push({ ...base, kind: "fee", amountMinor: a.amountMinor, capitalized: a.capitalized });
+      else if (a.kind === "fee") out.push({ ...base, kind: "fee", amountMinor: a.amountMinor, capitalized: a.treatment === "capitalized" });
       else out.push({ ...base, kind: a.kind, amountMinor: a.amountMinor });
     }
   }

@@ -4,7 +4,7 @@ import { add, dec, decInt, div, fromMinor, round, sub, toDecString, toMinor, DEC
 import { allocate } from "./allocation";
 import { engineVersions, monthlySummaries, rateTable, repaymentScheduleSpec, validateModel, wholeMonthsBetween } from "./engineCommon";
 import { normalizeEvents, type EngineEvent } from "./events";
-import { cashComponents, feeCapitalizationPermitted } from "./fees";
+import { capitalizedComponents, cashComponents } from "./fees";
 import { amortizationMonths, contractualEnd, finalDecision } from "./finalPayment";
 import type { BlockReason, ModelEvent, SimulationRequest, SimulationResult } from "./model";
 import { interestOnlyPhaseOn } from "./phases";
@@ -102,6 +102,7 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
   let paymentsMade = all.filter((d) => compareDates(d, anchor.date) <= 0).length;
   const components = cashComponents(model.components);
   const componentCash = components.reduce((s, c) => s + c.amountMinor, 0);
+  const capitalized = capitalizedComponents(model.components);
 
   let balance = anchor.principalMinor;
   let carry: Dec = anchor.carriedRemainder ? dec(anchor.carriedRemainder) : DEC_ZERO;
@@ -116,6 +117,7 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
       : null;
 
   let periodStart = anchor.date;
+  const firedRateRecasts = new Set<(typeof rates.changes)[number]>();
   for (const date of dates) {
     if (stopped) break;
     const rate = rates.rateOn(periodStart);
@@ -125,12 +127,21 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
     // Payment changes due by this payment: lender-provided amounts, rate-change and annual recasts, end of interest-only.
     for (const e of byDate.get(date) ?? []) if (e.kind === "payment-change") payment = e.amountMinor;
     const recastReasons: string[] = [];
-    for (const change of rates.changes.slice(1)) {
-      const effective = paymentEffectiveDate(change);
-      if (compareDates(effective, periodStart) > 0 && compareDates(effective, date) <= 0 && recastPolicyFor(change, profile) === "on-rate-change") recastReasons.push("rate-change");
+    // A rate change recasts at the first payment on or after its payment date whose period accrues
+    // at the new rate. A payment date that falls on a boundary still accruing the old rate (the
+    // default, when it equals the accrual date) waits for the next payment, never recasting at the old rate.
+    const recastChange = rates.changes.slice(1).find((change) =>
+      !firedRateRecasts.has(change) && recastPolicyFor(change, profile) === "on-rate-change" &&
+      compareDates(paymentEffectiveDate(change), anchor.date) > 0 &&
+      compareDates(change.accrualEffectiveFrom, periodStart) <= 0 && compareDates(paymentEffectiveDate(change), date) <= 0);
+    if (recastChange) {
+      firedRateRecasts.add(recastChange);
+      recastReasons.push("rate-change");
     }
     if (profile.recast === "annual" && annualRecastDates(terms.firstPaymentDate, periodStart, date).length > 0) recastReasons.push("annual");
     if (model.phases.some((p) => compareDates(p.to, periodStart) >= 0 && compareDates(p.to, date) < 0)) recastReasons.push("interest-only-phase-end");
+    // A dated contractual recast takes effect from the first payment on or after its date.
+    if (model.paymentRecasts.some((r) => compareDates(r.date, periodStart) > 0 && compareDates(r.date, date) <= 0)) recastReasons.push("contract-date");
 
     const inPhase = interestOnlyPhaseOn(model.phases, date) !== null;
     if (!inPhase && (payment === null || recastReasons.length > 0) && profile.amortization !== "constant-principal") {
@@ -142,7 +153,7 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
         currentPaymentMinor: payment,
       });
       if (!derived.ok) return block("missing-payment", derived.reason, date);
-      const cap = recastReasons.includes("rate-change") ? rates.changes.find((c) => compareDates(paymentEffectiveDate(c), periodStart) > 0 && compareDates(paymentEffectiveDate(c), date) <= 0)?.paymentCap : null;
+      const cap = recastChange ? recastChange.paymentCap : null;
       const capped = applyPaymentCap(derived.minor, previous, cap, profile, digits);
       payment = capped.minor;
       if (previous !== null) {
@@ -210,6 +221,16 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
     if (decision.paidOff) paidOff = true;
     if (!decision.continues) stopped = true;
 
+    // Recurring capitalized fees join the debt on each payment date, after the payment (so they bear
+    // interest from the next period).
+    if (!paidOff) {
+      for (const fee of capitalized) {
+        const b = balance;
+        balance += fee.amountMinor;
+        emit({ date, type: "fee", certainty: "contractual", ref: null, cashMovementMinor: 0, principalMovementMinor: fee.amountMinor, interestMinor: 0, feesMinor: fee.amountMinor, balanceBeforeMinor: b, balanceAfterMinor: balance, lines: [{ kind: "fee", amountMinor: fee.amountMinor }], diagnostics: { treatment: "capitalized", label: fee.label } });
+      }
+    }
+
     // Observed or assumed events on this payment date, after the scheduled payment.
     for (const e of byDate.get(date) ?? []) {
       const b = balance;
@@ -222,9 +243,8 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
         balance += e.amountMinor;
         emit({ date, type: "draw", certainty: e.certainty, ref: e.ref, cashMovementMinor: e.amountMinor, principalMovementMinor: e.amountMinor, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: b, balanceAfterMinor: balance, lines: [{ kind: "draw", amountMinor: e.amountMinor }], diagnostics: {} });
       } else if (e.kind === "fee") {
-        if (e.capitalized && !feeCapitalizationPermitted(profile)) return fail({ code: "fee-capitalization-not-permitted", classification: "review", date, message: "A capitalized fee was given but the contract does not permit capitalizing fees." });
         if (e.capitalized) balance += e.amountMinor;
-        emit({ date, type: "fee", certainty: e.certainty, ref: e.ref, cashMovementMinor: e.capitalized ? 0 : -e.amountMinor, principalMovementMinor: e.capitalized ? e.amountMinor : 0, interestMinor: 0, feesMinor: e.amountMinor, balanceBeforeMinor: b, balanceAfterMinor: balance, lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { capitalized: e.capitalized } });
+        emit({ date, type: "fee", certainty: e.certainty, ref: e.ref, cashMovementMinor: e.capitalized ? 0 : -e.amountMinor, principalMovementMinor: e.capitalized ? e.amountMinor : 0, interestMinor: 0, feesMinor: e.amountMinor, balanceBeforeMinor: b, balanceAfterMinor: balance, lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { treatment: e.capitalized ? "capitalized" : "cash-paid", sameDayStep: "external-cash" } });
       }
     }
     periodStart = date;

@@ -67,6 +67,16 @@ const CASES: Case[] = [
     oracle: stdOracle({ rateChanges: [{ payment: 25, annualRate: "0.065", recast: false }], recastAt: [27] }),
   },
   {
+    name: "dated recast: the rate changes at payment 25, the payment only at the contract's recast date (payment 31)",
+    engine: std({ profile: { recast: "on-contract-date" }, rates: [{ accrualEffectiveFrom: OPEN, annualRateDecimal: "0.06" }, { accrualEffectiveFrom: monthsLater(24), annualRateDecimal: "0.07" }], paymentRecasts: [{ date: monthsLater(31) }] }),
+    oracle: stdOracle({ rateChanges: [{ payment: 25, annualRate: "0.07", recast: false }], recastAt: [31] }),
+  },
+  {
+    name: "dated recast alongside on-rate-change: recasts at the rate change (payment 25) and again at payment 40",
+    engine: std({ profile: { recast: "on-rate-change" }, rates: [{ accrualEffectiveFrom: OPEN, annualRateDecimal: "0.06" }, { accrualEffectiveFrom: monthsLater(24), annualRateDecimal: "0.055" }], paymentRecasts: [{ date: monthsLater(40) }] }),
+    oracle: stdOracle({ rateChanges: [{ payment: 25, annualRate: "0.055", recast: true }], recastAt: [40] }),
+  },
+  {
     name: "29 interest-only phase then recast over the rest",
     engine: std({ phases: [{ kind: "interest-only", from: FIRST, to: monthsLater(60), recastAtEnd: "on-rate-change" }] }),
     oracle: stdOracle({ interestOnlyPayments: 60 }),
@@ -145,7 +155,7 @@ describe("bench-periodic against published anchors", () => {
     const m = model({
       principalMinor: 1000000, openingDate: OPEN, firstPaymentDate: FIRST, contractualTermMonths: 12,
       rates: [{ accrualEffectiveFrom: OPEN, annualRateDecimal: "0.05" }],
-      components: [{ economicKind: "insurance", label: "Assurance", destination: "category", categoryId: "c", amountRule: "fixed", fixedAmountMinor: 292, order: 1 }],
+      components: [{ economicKind: "insurance", label: "Assurance", destination: "category", categoryId: "c", amountRule: "fixed", fixedAmountMinor: 292, treatment: "cash-paid", order: 1 }],
     });
     const rows = rowsOf(simulatePeriodic({ model: m, anchor: { date: OPEN, principalMinor: 1000000, accruedInterestMinor: 0, source: "opening" }, events: [], to: "2025-01-01" }));
     const published = [

@@ -4,6 +4,7 @@ import type { DebtConfigV1 } from "./configSchema";
 import type { CalculationProfile, RecastPolicy } from "./profile";
 import type { RatePeriod } from "./rates";
 import type { EngineVersions } from "./versions";
+import type { FeeTreatment } from "./fees";
 
 /**
  * Engine inputs and outputs (contracts/engine-and-projection.md).
@@ -36,7 +37,7 @@ export type OffsetLink = {
 export type FutureAssumption =
   | { kind: "extra-repayment"; date: IsoDate; amountMinor: number; recurrence?: Recurrence }
   | { kind: "draw"; date: IsoDate; amountMinor: number; recurrence?: Recurrence }
-  | { kind: "fee"; date: IsoDate; amountMinor: number; capitalized: boolean; recurrence?: Recurrence }
+  | { kind: "fee"; date: IsoDate; amountMinor: number; treatment: FeeTreatment; recurrence?: Recurrence }
   | { kind: "payment-change"; date: IsoDate; amountMinor: number }
   | { kind: "offset-balance"; date: IsoDate; accountId: string; balanceMinor: number };
 
@@ -54,6 +55,8 @@ export type LoanModelSnapshot = {
   phases: DebtPhase[];
   offsets: OffsetLink[];
   components: PaymentComponent[];
+  /** Contractual dates on which the payment is recalculated, independent of rate changes. */
+  paymentRecasts: { date: IsoDate }[];
   assumptions: FutureAssumption[];
   revolving: RevolvingModel | null;
 };
@@ -80,7 +83,7 @@ export type LedgerEvent =
   | { kind: "repayment"; date: IsoDate; amountMinor: number; ref: EventRef }
   | { kind: "extra-repayment"; date: IsoDate; amountMinor: number; ref: EventRef }
   | { kind: "draw"; date: IsoDate; amountMinor: number; ref: EventRef }
-  | { kind: "fee"; date: IsoDate; amountMinor: number; capitalized: boolean; ref: EventRef }
+  | { kind: "fee"; date: IsoDate; amountMinor: number; treatment: FeeTreatment; ref: EventRef }
   | { kind: "offset-balance"; date: IsoDate; accountId: string; balanceMinor: number; clearedBalanceMinor: number }
   | { kind: "lender-interest-charge"; date: IsoDate; amountMinor: number; ref: EventRef };
 
@@ -180,7 +183,6 @@ export type BlockReason = {
     | "negative-amortization"
     | "negative-repayment"
     | "credit-balance"
-    | "fee-capitalization-not-permitted"
     | "missing-payment"
     | "credit-limit-exceeded";
   classification: "review" | "blocked";

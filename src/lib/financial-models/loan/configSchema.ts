@@ -11,7 +11,7 @@ import {
   BALANCE_PRECISIONS,
   CAPITALIZATIONS,
   CHARGE_FREQUENCIES,
-  FEE_CAPITALIZATIONS,
+  INTEREST_ONLY_REPAYMENTS,
   FINAL_PAYMENT_POLICIES,
   RATE_EFFECTIVE_TIMINGS,
   RECAST_POLICIES,
@@ -22,6 +22,7 @@ import {
   type ProfileConflict,
 } from "./profile";
 import { RATE_QUOTES } from "./rates";
+import { FEE_TREATMENTS } from "./fees";
 import { REPAYMENT_DERIVATIONS } from "./repayment";
 
 /**
@@ -90,7 +91,7 @@ const profile = z.strictObject({
   finalPayment: enumOf(FINAL_PAYMENT_POLICIES),
   shortMonth: enumOf(SHORT_MONTH_POLICIES),
   negativeAmortizationAllowed: z.boolean(),
-  feeCapitalization: enumOf(FEE_CAPITALIZATIONS),
+  interestOnlyRepayment: enumOf(INTEREST_ONLY_REPAYMENTS),
   presetId: z.string().min(1).nullable(),
 });
 
@@ -120,8 +121,13 @@ const component = z.strictObject({
   categoryId: z.string().min(1).nullable(),
   amountRule: enumOf(COMPONENT_AMOUNT_RULES),
   fixedAmountMinor: minor.nullable(),
+  /** Fees only: paid in cash with the repayment, or added to the debt. Null for every other kind. */
+  treatment: enumOf(FEE_TREATMENTS).nullable(),
   order: z.number().int().min(0),
 });
+
+/** A contractual date on which the scheduled payment is recalculated (FR-044), independent of any rate change. */
+const paymentRecast = z.strictObject({ date: isoDate, note: z.string().min(1).nullable() });
 
 const revolving = z.strictObject({
   paymentModel: enumOf(REVOLVING_PAYMENT_MODELS),
@@ -136,10 +142,18 @@ const debtConfigV1 = z.strictObject({
   profile,
   phases: z.array(phase),
   components: z.array(component),
+  paymentRecasts: z.array(paymentRecast),
   revolving: revolving.nullable(),
 });
 
 export type DebtConfigV1 = z.infer<typeof debtConfigV1>;
+
+/** `never` contradicts dated recasts; `on-contract-date` needs at least one date. */
+export function recastScheduleConflict(policy: string, datedRecasts: number): ProfileConflict | null {
+  if (policy === "never" && datedRecasts > 0) return { axes: ["recast"], message: "The recast policy is never, but the contract lists dated payment recasts." };
+  if (policy === "on-contract-date" && datedRecasts === 0) return { axes: ["recast"], message: "Recasting on contract dates needs at least one dated payment recast." };
+  return null;
+}
 
 export type DebtConfigParse =
   | { ok: true; config: DebtConfigV1 }
@@ -182,6 +196,27 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
   }
 
   const config = parsed.data;
+
+  // Fee treatment belongs to fees only: required on a fee, null on every other component (which is
+  // always paid in cash). One meaning, one spelling, so equal configurations hash equally.
+  for (const [i, c] of config.components.entries()) {
+    if (c.economicKind === "fee" && c.treatment === null) {
+      return { ok: false, code: "invalid-config", issues: [`components.${i}.treatment: a fee must say whether it is cash-paid or capitalized`] };
+    }
+    if (c.economicKind !== "fee" && c.treatment !== null) {
+      return { ok: false, code: "invalid-config", issues: [`components.${i}.treatment: only a fee carries a treatment`] };
+    }
+  }
+  // Dated recasts are kept in date order with no duplicates, for the same reason.
+  for (let i = 1; i < config.paymentRecasts.length; i++) {
+    if (config.paymentRecasts[i].date <= config.paymentRecasts[i - 1].date) {
+      return { ok: false, code: "invalid-config", issues: [`paymentRecasts.${i}.date: dated recasts must be in increasing date order, one per date`] };
+    }
+  }
+  const recastConflict = recastScheduleConflict(config.profile.recast, config.paymentRecasts.length);
+  if (recastConflict) {
+    return { ok: false, code: "inconsistent-profile", issues: [recastConflict.message], conflicts: [recastConflict] };
+  }
   if (!isSelectableDayCount(config.profile.dayCount)) {
     return {
       ok: false,
