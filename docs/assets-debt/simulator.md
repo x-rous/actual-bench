@@ -30,6 +30,17 @@ offset, an event between repayment dates, a rate change part-way through a perio
 first period). The simulator then asks "This feature needs day-by-day interest calculation" before
 applying the change; `switchToDayByDay` changes only the interest method. Nothing switches silently.
 
+The calculation-method drawer also offers a dated cash-flow level payment for lenders that solve
+the payment over the real daily-accrual schedule (for example, unequal Actual/360 month lengths).
+That method requires a compatible day-by-day profile and stores config format v2; conventional
+payment-frequency annuities remain config v1 and retain their existing arithmetic.
+
+Extra repayments entered in the simulator are "up to" amounts on a normal amortizing loan. If an
+occurrence pays the remaining charged debt, it is capped and shown at the amount actually applied;
+later occurrences with nothing to pay do not create rows. The recurrence itself is kept intact so
+a later redraw or capitalized fee can make a later occurrence relevant. Imported/observed cash is
+not silently capped.
+
 ## Live projection
 
 `useLiveProjection` debounces input by 200 ms (typing only), then runs the projection through a
@@ -69,5 +80,5 @@ The chart (`components/chart/`) is the only code that imports Recharts, loaded l
   precision.
 - **Tracking setup:** everything Actual-specific.
 
-`lib/fieldCoverage.test.ts` pins this: every config v1 path and every saved column has a named
+`lib/fieldCoverage.test.ts` pins this: every config path and every saved column has a named
 control or a stated reason, and the test fails when one loses its home.

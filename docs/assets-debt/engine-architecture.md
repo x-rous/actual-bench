@@ -11,8 +11,8 @@ posts, and it never reads Actual during a run.
 
 `projection.ts#simulate` picks the engine from the profile:
 
-- `accrual: per-period` → **bench-periodic** (`periodic-engine.ts`, `loan-periodic@1`);
-- `daily-simple` or `daily-compounded` → **bench-daily** (`daily-engine.ts`, `loan-daily@1`).
+- `accrual: per-period` → **bench-periodic** (`periodic-engine.ts`, `loan-periodic@2`);
+- `daily-simple` or `daily-compounded` → **bench-daily** (`daily-engine.ts`, `loan-daily@3`).
 
 `eligibility.ts#evaluateStrategyEligibility` gives the recommended strategy (FR-026). It walks the
 ladder Actual formula rule → bench-periodic → bench-daily, and gives a reason for every strategy
@@ -33,6 +33,8 @@ A period runs from one scheduled payment date to the next. Each period's interes
   - interest-only phases pay the interest;
   - a constant-principal loan pays its installment plus interest;
   - a payment is allocated with principal as the residual (`allocation.ts`).
+- `dated-cashflow-annuity` is deliberately ineligible here: a periodic engine cannot reproduce
+  real Actual/360 dates by substituting rate ÷ payments-per-year.
 - **Recasts.** A rate-change recast takes effect at the first payment on or after its payment
   effective date whose period accrues at the new rate, so a payment date left at the accrual date
   never recasts at the old rate. A dated contractual recast (`paymentRecasts`) takes effect at the
@@ -83,6 +85,16 @@ The engine keeps three pieces of state apart:
   the days after the previous charge up to and including C.
 - **Payoffs.** A payoff or a true-up charges any accrued interest first, so the debt never goes into
   credit (FR-048).
+- **Dated level payments.** `dated-cashflow-annuity` solves over every real remaining payment date
+  and the configured daily factors, using exact decimals. The payment is rounded only after the
+  root is found; interest, balance precision and final true-up still follow the ordinary posting
+  engine. Recasts repeat the solve over the remaining dated schedule.
+- **Assumed extras.** On a normal amortizing loan, a one-off or recurring simulator extra means
+  "up to this amount while debt remains outstanding". The engine applies the lesser of requested
+  and charged debt, records requested/applied diagnostics when capped, and emits nothing when the
+  applied amount is zero. Observed cash is never rewritten and an excess remains Review. Recurrence
+  expansion is not trimmed: a later draw or capitalized fee can make a later occurrence relevant.
+  Residual debt remains payable; revolving facilities keep their separate non-terminal behavior.
 - **Interest-only with its own cadence.** Repayments need not fall on charge dates. Under
   `interestOnlyRepayment: charged-interest-outstanding` (the only v1 convention), a repayment pays
   the interest charged since the previous scheduled repayment: nothing before the first charge, and
@@ -149,7 +161,7 @@ Every event carries deterministic diagnostics for preview and audit, for example
 - negative amortization.
 
 Two diagnostic groups feed the simulator's schedule, so the UI never recomputes them
-(`loan-daily@2`, `loan-periodic@2`):
+(`loan-daily@3`, `loan-periodic@2`):
 
 - **Rate:** `effectiveAnnualRateDecimal` is the exact annual rate the engine accrued with on that
   event's day (so `from-next-charge-period` timing shows the old rate until the rate takes effect).
@@ -180,7 +192,10 @@ configuration change (FR-093).
   - Reg Z H-14, narrowed;
   - York j2;
   - Figura's day order;
-  - Fannie Mae §1103's cash schedule.
+  - Fannie Mae §1103's cash schedule;
+  - The HSBC UAE Ijara fixture compares all 300 engine rows with an independent integer-rational
+    Actual/360 oracle. Its first five rows, payment, final payment, totals and maturity are
+    bank-published; later checkpoints are explicitly derived.
 
   The oracle and the engine cannot import each other; only the golden folder sees both.
 - **mortgagemath cross-check (P1.2, research only).** 39 of its 45 comparable fixtures match

@@ -88,12 +88,18 @@ Repayment frequency (how often) and derivation (how much) are separate axes, nev
 conflated:
 
 - `annuity-at-payment-frequency`: level payment at the payment frequency's own rate.
+- `dated-cashflow-annuity`: generate every remaining repayment date, form that period's simple
+  accrual factor from its real days, day count and effective rates, then solve the one payment that
+  reduces the dated recurrence to zero. Payment rounding happens once after the solve. This method
+  requires daily simple accrual with interest charged at repayment and runs only in bench-daily.
 - `monthly-equivalent-pro-rata`: monthly × 12 ÷ 26 or × 12 ÷ 52.
 - `split-monthly`: monthly ÷ 2 or ÷ 4. Over a year this pays about one extra monthly
   payment.
 - `contractual-fixed` and `lender-provided`: the amount is taken as given.
 
-The level payment uses `P·r·(1+r)^n / ((1+r)^n − 1)`, or P ÷ n at a zero rate.
+The conventional level payment uses `P·r·(1+r)^n / ((1+r)^n − 1)`, or P ÷ n at a zero
+rate. Its meaning is unchanged by the dated method. A qualifying dated recast repeats the dated
+solve over the remaining schedule and current financial state.
 
 ## Profile and config (`loan/profile.ts`, `loan/configSchema.ts`)
 
@@ -138,7 +144,7 @@ from rate caps and floors, derivation and recast. Payment floors are not modelle
 **Repayment value date:** `repaymentEffectiveTiming` is `transaction-date` or `next-calendar-day`.
 It shifts the date of the event. Where the event falls within that day is `eventOrder`'s job.
 
-`parseDebtConfig` reads `rd084.debt-config` version 1 and never throws. It returns one
+`parseDebtConfig` reads `rd084.debt-config` versions 1 and 2 and never throws. It returns one
 of:
 
 - `ok`;
@@ -149,7 +155,8 @@ of:
 
 Every identifier version 1 accepts is frozen in
 `loan/versions.ts#DEBT_CONFIG_V1_IDENTIFIERS`, and `identifiers.test.ts` holds that
-freeze. Adding an identifier means adding a config version, not editing version 1.
+freeze. Version 2 adds only `dated-cashflow-annuity`; documents using the older identifiers keep
+version 1. This per-record JSON version requires no relational schema migration.
 
 ## Same-day order (`loan/events.ts`, `event-order@1`)
 
