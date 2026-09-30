@@ -1,6 +1,6 @@
 import { addMonths, compareDates, type IsoDate } from "../calendar/dates";
 import type { ScheduleFrequency } from "../calendar/schedule";
-import { dec, fromMinor, mul, round, toMinor, type Dec } from "../money/kernel";
+import { dec, fromMinor, mul, round, toMinor, DEC_ZERO, type Dec } from "../money/kernel";
 import type { LoanModelSnapshot } from "./model";
 import type { CalculationProfile, RecastPolicy } from "./profile";
 import { periodicRate, type PaymentLimit, type RatePeriod } from "./rates";
@@ -16,7 +16,8 @@ import { deriveRepayment, levelPayment } from "./repayment";
  * anything.
  */
 
-export const RECAST_VERSION = "recast@1";
+export const RECAST_VERSION_V1 = "recast@1";
+export const RECAST_VERSION = "recast@2";
 
 /** Payments a year for amount derivation only; custom-dated schedules have none. */
 export function paymentsPerYear(frequency: ScheduleFrequency): number | null {
@@ -54,12 +55,25 @@ export type PaymentDerivationInput = {
   remainingMonths: number;
   /** The payment in force, used by `contractual-fixed` and `lender-provided` when no contract amount is set. */
   currentPaymentMinor: number | null;
+  /** Exact simple-accrual fractions for each remaining real dated period. */
+  datedAccrualFractions?: readonly Dec[];
+  /** Interest already accrued at the derivation boundary, before the first remaining payment. */
+  openingAccrued?: Dec;
 };
 
 export type DerivedPayment = { ok: true; minor: number; exact: Dec } | { ok: false; reason: string };
 
 /** The level scheduled payment for the profile's derivation method, rounded by `paymentRounding`. */
 export function derivePayment(input: PaymentDerivationInput): DerivedPayment {
+  return derivePaymentImpl(input, true);
+}
+
+/** Frozen recast@1 entry point for historical reproduction. */
+export function derivePaymentV1(input: PaymentDerivationInput): DerivedPayment {
+  return derivePaymentImpl(input, false);
+}
+
+function derivePaymentImpl(input: PaymentDerivationInput, allowDatedCashflow: boolean): DerivedPayment {
   const { model, annualRate } = input;
   const { profile, currency } = model;
   const rounding = { minorDigits: currency.minorDigits, mode: profile.rounding.paymentRounding };
@@ -71,6 +85,20 @@ export function derivePayment(input: PaymentDerivationInput): DerivedPayment {
       if (input.remainingPayments < 1) return { ok: false, reason: "No payments remain on the amortization basis." };
       const r = periodicRate(profile.rateQuote, annualRate, ppy);
       const d = deriveRepayment({ method: "annuity-at-payment-frequency", principal: balance, periodicRate: r, payments: input.remainingPayments }, rounding);
+      return { ok: true, minor: d.minor, exact: d.exact };
+    }
+    case "dated-cashflow-annuity": {
+      if (!allowDatedCashflow) return { ok: false, reason: "repayment@1 does not support dated-cashflow-annuity." };
+      if (!input.datedAccrualFractions?.length) return { ok: false, reason: "A dated cash-flow annuity needs the remaining dated accrual schedule." };
+      const d = deriveRepayment(
+        {
+          method: "dated-cashflow-annuity",
+          principal: balance,
+          periodAccrualFractions: input.datedAccrualFractions,
+          openingAccrued: input.openingAccrued ?? DEC_ZERO,
+        },
+        rounding
+      );
       return { ok: true, minor: d.minor, exact: d.exact };
     }
     case "monthly-equivalent-pro-rata":
@@ -151,4 +179,3 @@ export function annualRecastDates(firstPaymentDate: IsoDate, after: IsoDate, onO
     if (compareDates(date, after) > 0) out.push(date);
   }
 }
-

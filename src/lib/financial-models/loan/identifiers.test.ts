@@ -23,7 +23,7 @@ import {
   REPAYMENT_EFFECTIVE_TIMINGS,
 } from "./profile";
 import { PAYMENT_LIMIT_KINDS, RATE_QUOTES } from "./rates";
-import { REPAYMENT_DERIVATIONS } from "./repayment";
+import { REPAYMENT_DERIVATIONS, REPAYMENT_DERIVATIONS_V1 } from "./repayment";
 import { CALENDAR_VERSION } from "../calendar/dates";
 import { SCHEDULE_VERSION } from "../calendar/schedule";
 import { MONEY_KERNEL_VERSION } from "../money/kernel";
@@ -34,24 +34,24 @@ import { MONTHLY_ALLOC_VERSION } from "./daycount/monthly-30-360-alloc";
 import { EVENT_ORDER_VERSION } from "./events";
 import { PROFILE_VERSION } from "./profile";
 import { RATE_QUOTE_VERSION, RATES_VERSION } from "./rates";
-import { REPAYMENT_VERSION } from "./repayment";
+import { REPAYMENT_VERSION, REPAYMENT_VERSION_V1 } from "./repayment";
 import { ACCRUAL_VERSION } from "./accrual";
 import { CHARGE_VERSION } from "./charge";
 import { DAILY_PRECISION_VERSION } from "./dailyPrecision";
 import { OFFSETS_VERSION } from "./offsets";
-import { RECAST_VERSION } from "./recast";
+import { RECAST_VERSION, RECAST_VERSION_V1 } from "./recast";
 import { PHASES_VERSION } from "./phases";
 import { FEE_TREATMENTS, FEES_VERSION } from "./fees";
 import { ALLOCATION_VERSION } from "./allocation";
 import { FINAL_PAYMENT_VERSION } from "./finalPayment";
 import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
-import { DAILY_ENGINE_VERSION } from "./daily-engine";
+import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2 } from "./daily-engine";
 import { REVOLVING_VERSION } from "./revolving";
 import { RECEIVABLE_VERSION } from "./receivable";
 import { ELIGIBILITY_VERSION } from "./eligibility";
 import { DIAGNOSTICS_VERSION } from "./diagnostics";
 import { PROJECTION_VERSION } from "./projection";
-import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN } from "./versions";
+import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN, DEBT_CONFIG_V2_IDENTIFIERS } from "./versions";
 
 /*
  * The freeze. If this fails, an identifier accepted by config version 1
@@ -67,7 +67,7 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     ["chargeFrequency", CHARGE_FREQUENCIES],
     ["capitalization", CAPITALIZATIONS],
     ["repaymentFrequency", SCHEDULE_FREQUENCIES],
-    ["repaymentDerivation", REPAYMENT_DERIVATIONS],
+    ["repaymentDerivation", REPAYMENT_DERIVATIONS_V1],
     ["recast", RECAST_POLICIES],
     ["rateEffectiveTiming", RATE_EFFECTIVE_TIMINGS],
     ["repaymentEffectiveTiming", REPAYMENT_EFFECTIVE_TIMINGS],
@@ -93,7 +93,7 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     expect([...PLACEMENTS]).toEqual([...FROZEN.placement]);
   });
 
-  it("keeps the P1.1 component versions unchanged", () => {
+  it("keeps unaffected P1.1 component versions unchanged and retains old affected ids", () => {
     expect(CURRENT_COMPONENT_VERSIONS).toMatchObject({
       "money-kernel": "money-kernel@1",
       calendar: "calendar@1",
@@ -106,8 +106,16 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
       "rate-quote": "rate-quote@1",
       profile: "profile@1",
       "event-order": "event-order@1",
-      repayment: "repayment@1",
+      repayment: REPAYMENT_VERSION,
     });
+    expect(REPAYMENT_VERSION_V1).toBe("repayment@1");
+    expect(RECAST_VERSION_V1).toBe("recast@1");
+    expect(DAILY_ENGINE_VERSION_V2).toBe("loan-daily@2");
+  });
+
+  it("adds only the dated repayment identifier in config v2", () => {
+    expect(REPAYMENT_DERIVATIONS).toEqual(DEBT_CONFIG_V2_IDENTIFIERS.repaymentDerivation);
+    expect(DEBT_CONFIG_V2_IDENTIFIERS).toEqual({ ...FROZEN, repaymentDerivation: [...FROZEN.repaymentDerivation, "dated-cashflow-annuity"] });
   });
 
   it("matches each module's own version constant", () => {

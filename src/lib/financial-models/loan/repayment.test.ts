@@ -1,7 +1,7 @@
 import { loadFamily } from "./__fixtures__/harness";
 import { dec, fromMinor, mul, decInt, toDecString, toMinor } from "../money/kernel";
 import { periodicRate } from "./rates";
-import { constantPrincipalInstallment, deriveRepayment, levelPayment } from "./repayment";
+import { constantPrincipalInstallment, datedCashflowLevelPayment, deriveRepayment, levelPayment } from "./repayment";
 
 /*
  * Expected payments are from Python's `decimal` (100 digits, half-up to
@@ -77,6 +77,12 @@ describe("repayment derivation (never conflated)", () => {
     );
     expect(annuity.minor).toBe(148599);
     expect(annuity.minor).not.toBe(148685);
+  });
+
+  it("solves a constant payment over unequal dated accrual factors", () => {
+    // B1 = 1,000 × 1.1 − P; B2 = B1 × 1.2 − P; B2 = 0 gives P = 600.
+    expect(toDecString(datedCashflowLevelPayment(dec("1000"), [dec("0.1"), dec("0.2")]))).toBe("600.000000000000000000000000000000");
+    expect(deriveRepayment({ method: "dated-cashflow-annuity", principal: dec("1000"), periodAccrualFractions: [dec("0.1"), dec("0.2")] }, cents)).toMatchObject({ method: "dated-cashflow-annuity", minor: 60000 });
   });
 
   it("takes contractual and lender-provided amounts as given, labelled by method", () => {

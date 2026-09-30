@@ -9,7 +9,7 @@ import { amortizationMonths, contractualEnd, finalDecision } from "./finalPaymen
 import type { BlockReason, ModelEvent, SimulationRequest, SimulationResult } from "./model";
 import { interestOnlyPhaseOn } from "./phases";
 import { periodicRate, periodInterestAt } from "./rates";
-import { annualRecastDates, applyPaymentCap, derivePayment, paymentCount, paymentEffectiveDate, paymentsPerYear, recastPolicyFor } from "./recast";
+import { annualRecastDates, applyPaymentCap, derivePaymentV1, paymentCount, paymentEffectiveDate, paymentsPerYear, recastPolicyFor } from "./recast";
 
 /**
  * `bench-periodic`: deterministic period-by-period amortization (FR-028).
@@ -48,7 +48,7 @@ function periodBefore(date: IsoDate, frequency: string): IsoDate {
 
 export function simulatePeriodic(req: SimulationRequest): SimulationResult {
   const { model, anchor } = req;
-  const versions = engineVersions("loan-periodic", model);
+  const versions = engineVersions("loan-periodic", model, { repayment: "repayment@1", recast: "recast@1" });
   const fail = (reason: BlockReason): SimulationResult => ({ ok: false, blocked: [reason], versions });
 
   const invalid = validateModel(model);
@@ -146,7 +146,7 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
     const inPhase = interestOnlyPhaseOn(model.phases, date) !== null;
     if (!inPhase && (payment === null || recastReasons.length > 0) && profile.amortization !== "constant-principal") {
       const previous = payment;
-      const derived = derivePayment({
+      const derived = derivePaymentV1({
         model, balanceMinor: balance, annualRate: rate,
         remainingPayments: totalPayments === null ? 0 : Math.max(totalPayments - paymentsMade, 1),
         remainingMonths: amortMonths === null ? 0 : Math.max(amortMonths - wholeMonthsBetween(terms.openingDate, periodStart), 1),

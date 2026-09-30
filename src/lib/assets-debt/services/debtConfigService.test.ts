@@ -122,7 +122,7 @@ describe("saving a debt configuration", () => {
   });
 
   it("refuses unsupported config identifiers, and allows a draft without accounts", () => {
-    expect(issuesOf(saveInput({ config: debtConfig({ version: 2 }) }))[0]).toMatch(/unsupported-config/);
+    expect(issuesOf(saveInput({ config: debtConfig({ version: 3 }) }))[0]).toMatch(/unsupported-config/);
     const gated = debtConfig();
     (gated.profile as Record<string, unknown>).dayCount = "monthly-30-360-actual-day-allocation";
     expect(issuesOf(saveInput({ config: gated }))[0]).toMatch(/unsupported-config/);
@@ -160,7 +160,7 @@ describe("config compatibility (schema-review A-2)", () => {
   it("Blocks only the debt whose stored config is a newer version; the others stay usable", () => {
     const newer = createDebtConfiguration(db, saveInput({ name: "Newer" }), directory());
     const fine = createDebtConfiguration(db, saveInput({ name: "Fine", liabilityAccountId: "acc-car" }), directory());
-    db.prepare("UPDATE debts SET current_config_json = ? WHERE id = ?").run(JSON.stringify({ ...debtConfig(), version: 2 }), newer.debt.id);
+    db.prepare("UPDATE debts SET current_config_json = ? WHERE id = ?").run(JSON.stringify({ ...debtConfig(), version: 3 }), newer.debt.id);
     const summaries = listDebtSummaries(db, BUDGET);
     expect(summaries.find((s) => s.id === newer.debt.id)?.blocked).toEqual({ code: "unsupported-config", message: expect.stringMatching(/newer version of Actual Bench/) });
     expect(summaries.find((s) => s.id === fine.debt.id)?.blocked).toBeNull();

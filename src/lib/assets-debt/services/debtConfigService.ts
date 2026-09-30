@@ -32,7 +32,7 @@ import {
   type SqliteDatabase,
 } from "@/lib/app-db/types";
 import { isIsoDate } from "@/lib/financial-models/calendar/dates";
-import { parseDebtConfig, type DebtConfigParse, type DebtConfigV1 } from "@/lib/financial-models/loan/configSchema";
+import { parseDebtConfig, type DebtConfig, type DebtConfigParse } from "@/lib/financial-models/loan/configSchema";
 import { cmp, dec, sign, toPlainString } from "@/lib/financial-models/money/kernel";
 import { recastPolicyFor } from "@/lib/financial-models/loan/recast";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
@@ -121,7 +121,7 @@ function canonicalDecimal(value: unknown, field: string, issues: ValidationIssue
   return toPlainString(parsed);
 }
 
-type Normalized = { fields: DebtFields; config: DebtConfigV1; rates: RatePeriodInput[]; offsets: OffsetLinkInput[]; assumptions: AssumptionInput[] };
+type Normalized = { fields: DebtFields; config: DebtConfig; rates: RatePeriodInput[]; offsets: OffsetLinkInput[]; assumptions: AssumptionInput[] };
 
 export function validateDebtSave(
   db: SqliteDatabase,
@@ -167,7 +167,7 @@ export function validateDebtSave(
 
   // The calculation contract: strict, versioned, supported identifiers only.
   const parsed = parseDebtConfig(input.config);
-  let config: DebtConfigV1 | null = null;
+  let config: DebtConfig | null = null;
   if (!parsed.ok) for (const issue of parsed.issues) add(`config.${issue}`.replace(/^config\.\(root\)/, "config"), parsed.code);
   else config = parsed.config;
 

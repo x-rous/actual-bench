@@ -1,6 +1,6 @@
 import type { IsoDate } from "../calendar/dates";
 import type { ScheduleFrequency } from "../calendar/schedule";
-import type { DebtConfigV1 } from "./configSchema";
+import type { DebtConfig } from "./configSchema";
 import type { CalculationProfile, RecastPolicy } from "./profile";
 import type { RatePeriod } from "./rates";
 import type { EngineVersions } from "./versions";
@@ -16,9 +16,9 @@ import type { FeeTreatment } from "./fees";
 
 export type Currency = { code: string; minorDigits: number };
 
-export type DebtTerms = DebtConfigV1["terms"];
-export type PaymentComponent = DebtConfigV1["components"][number];
-export type RevolvingModel = NonNullable<DebtConfigV1["revolving"]>;
+export type DebtTerms = DebtConfig["terms"];
+export type PaymentComponent = DebtConfig["components"][number];
+export type RevolvingModel = NonNullable<DebtConfig["revolving"]>;
 
 /** An interest-only window, the only representation of interest-only (FR-036, FR-058). */
 export type DebtPhase = { kind: "interest-only"; from: IsoDate; to: IsoDate; recastAtEnd: RecastPolicy };

@@ -149,6 +149,28 @@ describe("state boundary and saving", () => {
     // The existing fixture still validates as before.
     expect(validateDebtSave(db, saveInput({ name: "Other", liabilityAccountId: "acc-car" }), directory()).ok).toBe(true);
   });
+
+  it("writes config v2 only for the dated cash-flow repayment identifier", () => {
+    const base = sim();
+    const dated = {
+      ...base,
+      profile: {
+        ...base.profile,
+        accrual: "daily-simple" as const,
+        dayCount: "actual-360" as const,
+        chargeFrequency: "at-repayment" as const,
+        chargeDay: null,
+        capitalization: "at-charge" as const,
+        repaymentDerivation: "dated-cashflow-annuity" as const,
+        eventOrder: { timing: "end-of-day" as const },
+      },
+    };
+    const tracking = { ...newTracking(dated), name: "Dated loan", status: "draft" as const };
+    const saved = statesToSaveInput(dated, tracking, "budget-1", "bench-daily");
+    expect(saved.ok && (saved.input.config as { version: number }).version).toBe(2);
+    const conventional = statesToSaveInput(base, { ...newTracking(base), name: "Conventional", status: "draft" }, "budget-1", "bench-periodic");
+    expect(conventional.ok && (conventional.input.config as { version: number }).version).toBe(1);
+  });
 });
 
 describe("headline, deltas and chart series", () => {

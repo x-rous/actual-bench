@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { chartSeries, deltas, headline } from "../../lib/results";
-import { dailyEngineReason, endRecurringExtrasBefore, minorDigitsFor, switchToDayByDay, type SimulationState } from "../../lib/simulatorModel";
+import { dailyEngineReason, minorDigitsFor, switchToDayByDay, type SimulationState } from "../../lib/simulatorModel";
 import { useLiveProjection } from "../../lib/useLiveProjection";
 import { labelOf, REPAYMENT_FREQUENCY_OPTIONS } from "../../lib/vocabulary";
 import { LoanChartPanel } from "../chart/LoanChartPanel";
@@ -71,7 +71,6 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, readO
   const delta = head && compared ? deltas(head, compared) : null;
   const frequency = labelOf(REPAYMENT_FREQUENCY_OPTIONS, sim.profile.repaymentFrequency).toLowerCase();
   const chart = useMemo(() => (live.projection?.ok ? chartSeries(live.projection, sim, { view: chartView, comparison: live.comparison }) : null), [live.projection, live.comparison, sim, chartView]);
-  const overpay = live.blocked.find((b) => b.code === "credit-balance" && b.date);
   const extras = sim.assumptions.filter((a) => !(a.kind === "offset-balance" && a.effectiveFrom <= sim.startDate));
 
   return (
@@ -161,11 +160,6 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, readO
                   <li key={p}>{p}</li>
                 ))}
               </ul>
-              {overpay?.date && sim.assumptions.some((a) => a.kind === "extra-repayment" && a.recurrence) ? (
-                <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => change(endRecurringExtrasBefore(sim, overpay.date!))}>
-                  End extra repayments at payoff
-                </Button>
-              ) : null}
             </div>
           ) : null}
           {chart && chart.points.length ? <LoanChartPanel data={chart} view={chartView} onViewChange={setChartView} currency={sim.currency} digits={sim.minorDigits} /> : null}

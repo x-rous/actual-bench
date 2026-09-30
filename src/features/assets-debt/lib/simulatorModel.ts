@@ -1,6 +1,6 @@
 import type { DebtDetail, DebtSaveInput } from "@/lib/assets-debt/services/debtConfigService";
 import { addDays, addMonths, isIsoDate } from "@/lib/financial-models/calendar/dates";
-import type { DebtConfigV1 } from "@/lib/financial-models/loan/configSchema";
+import { debtConfigVersionFor, type DebtConfig } from "@/lib/financial-models/loan/configSchema";
 import type { DebtPhase, FutureAssumption, LoanModelSnapshot, PaymentComponent } from "@/lib/financial-models/loan/model";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { simulate } from "@/lib/financial-models/loan/projection";
@@ -100,7 +100,7 @@ export type SimulationState = {
   components: SimComponent[];
   offsets: SimOffset[];
   assumptions: SimAssumption[];
-  revolving: DebtConfigV1["revolving"];
+  revolving: DebtConfig["revolving"];
 };
 
 export type TrackingComponent = {
@@ -556,7 +556,7 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
   const behaviorClass: DebtSaveInput["behaviorClass"] = sim.shape === "revolving-credit" ? "revolving-credit" : tracking.direction === "owed-to-me" ? "receivable-loan" : "term-loan";
   const config = {
     format: "rd084.debt-config",
-    version: 1,
+    version: debtConfigVersionFor(model.profile.repaymentDerivation),
     terms: model.terms,
     profile: model.profile,
     phases: model.phases,
@@ -605,20 +605,5 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
       assumptions: sim.assumptions.map((a) => ({ id: a.id ?? null, kind: a.kind, effectiveFrom: a.effectiveFrom, recurrence: a.recurrence, amountMinor: a.amountMinor, feeTreatment: a.kind === "fee" ? (a.feeTreatment ?? "cash-paid") : null, offsetAccountId: a.kind === "offset-balance" ? mapAccount(a.offsetAccountId) : null, note: a.note })),
       ...(tracking.changeSummary.trim() ? { changeSummary: tracking.changeSummary.trim() } : {}),
     },
-  };
-}
-
-/**
- * An assumed extra repayment that would pay more than is owed blocks the
- * projection (the engine treats overpayment as needing review). This offers the
- * user's fix: recurring extra repayments end the day before the first one that
- * would overpay. Only recurring extras change; nothing is silent.
- */
-export function endRecurringExtrasBefore(sim: SimulationState, date: string): SimulationState {
-  return {
-    ...sim,
-    assumptions: sim.assumptions.map((a) =>
-      a.kind === "extra-repayment" && a.recurrence && a.effectiveFrom < date && a.recurrence.until >= date ? { ...a, recurrence: { ...a.recurrence, until: addDays(date, -1) } } : a
-    ),
   };
 }

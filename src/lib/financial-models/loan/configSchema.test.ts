@@ -1,4 +1,4 @@
-import { DEBT_CONFIG_FORMAT, parseDebtConfig } from "./configSchema";
+import { DEBT_CONFIG_FORMAT, debtConfigVersionFor, parseDebtConfig } from "./configSchema";
 import { AU_PROFILE } from "./__fixtures__/profiles";
 
 function validConfig(): Record<string, unknown> {
@@ -40,8 +40,17 @@ describe("parseDebtConfig", () => {
   });
 
   it("returns unsupported-config for a future version instead of throwing", () => {
-    expect(parseDebtConfig({ ...validConfig(), version: 2 })).toMatchObject({ ok: false, code: "unsupported-config" });
+    expect(parseDebtConfig({ ...validConfig(), version: 3 })).toMatchObject({ ok: false, code: "unsupported-config" });
     expect(parseDebtConfig({ ...validConfig(), format: "rd084.debt-config-next" })).toMatchObject({ ok: false, code: "unsupported-config" });
+  });
+
+  it("keeps v1 frozen and uses v2 only for the new dated repayment identifier", () => {
+    const datedV1 = withProfile({ repaymentDerivation: "dated-cashflow-annuity", accrual: "daily-simple", chargeFrequency: "at-repayment", chargeDay: null, repaymentFrequency: "monthly" });
+    expect(parseDebtConfig(datedV1)).toMatchObject({ ok: false, code: "unsupported-config" });
+    expect(parseDebtConfig({ ...datedV1, version: 2 })).toMatchObject({ ok: true, config: { version: 2 } });
+    expect(parseDebtConfig({ ...validConfig(), version: 2 })).toMatchObject({ ok: true, config: { version: 2 } });
+    expect(debtConfigVersionFor("annuity-at-payment-frequency")).toBe(1);
+    expect(debtConfigVersionFor("dated-cashflow-annuity")).toBe(2);
   });
 
   it("returns unsupported-config for an identifier this build does not know", () => {

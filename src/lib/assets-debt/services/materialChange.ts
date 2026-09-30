@@ -1,6 +1,6 @@
 import { canonicalJson } from "@/lib/app-db/canonicalJson";
 import type { DebtAssumptionRecord, DebtOffsetLinkRecord, DebtRatePeriodRecord, DebtRecord } from "@/lib/app-db/types";
-import type { DebtConfigV1 } from "@/lib/financial-models/loan/configSchema";
+import type { DebtConfig } from "@/lib/financial-models/loan/configSchema";
 
 /**
  * What a debt's model revision contains (RD-084 P1.3; FR-023, G1 D-10/D-13).
@@ -56,7 +56,7 @@ export type DebtRevisionSnapshot = {
 
 export type DebtRevisionInput = {
   debt: DebtRecord;
-  config: DebtConfigV1;
+  config: DebtConfig;
   rates: readonly DebtRatePeriodRecord[];
   offsets: readonly DebtOffsetLinkRecord[];
   assumptions: readonly DebtAssumptionRecord[];
@@ -80,7 +80,7 @@ function sortRows(rows: Record<string, unknown>[], keys: string[]): Record<strin
 }
 
 export function buildDebtRevisionSnapshot(input: DebtRevisionInput): DebtRevisionSnapshot {
-  const config = structuredClone(input.config) as DebtConfigV1;
+  const config = structuredClone(input.config) as DebtConfig;
   const paymentRecasts = config.paymentRecasts.map((r) => without(r, COSMETIC_FIELDS.paymentRecast));
   return {
     format: DEBT_REVISION_FORMAT,

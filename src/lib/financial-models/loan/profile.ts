@@ -156,6 +156,21 @@ export function validateProfile(profile: CalculationProfile): ProfileCheck {
     conflict(["repaymentDerivation", "repaymentFrequency"], "An annuity at the payment frequency needs a regular frequency, not custom dates.");
   }
 
+  if (p.repaymentDerivation === "dated-cashflow-annuity") {
+    if (p.amortization !== "level-payment") {
+      conflict(["amortization", "repaymentDerivation"], "A dated cash-flow annuity is a level-payment amortization method.");
+    }
+    if (p.accrual !== "daily-simple" || p.chargeFrequency !== "at-repayment" || p.capitalization !== "at-charge") {
+      conflict(
+        ["repaymentDerivation", "accrual", "chargeFrequency", "capitalization"],
+        "A dated cash-flow annuity needs daily simple accrual, interest charged at repayment, and capitalization at charge."
+      );
+    }
+    if (p.repaymentFrequency === "custom-dated" || p.repaymentFrequency === "semi-monthly") {
+      conflict(["repaymentDerivation", "repaymentFrequency"], "A dated cash-flow annuity needs a repayment schedule this config can generate.");
+    }
+  }
+
   // FR-036: constant principal pays principal ÷ periods plus interest, which is not a level annuity.
   if (p.amortization === "constant-principal" && p.repaymentDerivation === "annuity-at-payment-frequency") {
     conflict(["amortization", "repaymentDerivation"], "Constant principal pays principal ÷ periods plus interest, not a level annuity.");

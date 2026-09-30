@@ -20,6 +20,23 @@ describe("profile consistency", () => {
     }
   });
 
+  it("accepts dated annuity only with its compatible daily-simple posting profile", () => {
+    const dated: CalculationProfile = {
+      ...AU_PROFILE,
+      repaymentDerivation: "dated-cashflow-annuity",
+      repaymentFrequency: "monthly",
+      chargeFrequency: "at-repayment",
+      chargeDay: null,
+    };
+    expect(validateProfile(dated)).toEqual({ ok: true });
+    for (const change of [
+      { accrual: "per-period" as const },
+      { chargeFrequency: "monthly" as const, chargeDay: 1 },
+      { capitalization: "daily" as const, accrual: "daily-compounded" as const },
+      { repaymentFrequency: "custom-dated" as const },
+    ]) expect(validateProfile({ ...dated, ...change }).ok).toBe(false);
+  });
+
   it.each<[string, Partial<CalculationProfile>, ProfileAxis[]]>([
     ["pro-rata derivation with monthly repayments", { repaymentFrequency: "monthly" }, ["repaymentDerivation", "repaymentFrequency"]],
     ["split derivation with quarterly repayments", { repaymentDerivation: "split-monthly", repaymentFrequency: "quarterly" }, ["repaymentDerivation", "repaymentFrequency"]],

@@ -18,6 +18,7 @@ function config(): DebtConfigV1 {
     { economicKind: "fee", label: "Account fee", destination: "category", categoryId: "cat-fees", amountRule: "fixed", fixedAmountMinor: 1000, treatment: "cash-paid", order: 1 },
   ] }));
   if (!parsed.ok) throw new Error(parsed.issues.join("; "));
+  if (parsed.config.version !== 1) throw new Error("fixture must remain config v1");
   return parsed.config;
 }
 

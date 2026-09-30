@@ -79,19 +79,19 @@ export const CURRENT_COMPONENT_VERSIONS = {
   "rate-quote": "rate-quote@1",
   "profile": "profile@1",
   "event-order": "event-order@1",
-  "repayment": "repayment@1",
+  "repayment": "repayment@2",
   // P1.2 engines and their parts.
   "accrual": "accrual@1",
   "charge": "charge@1",
   "daily-precision": "daily-precision@1",
   "offsets": "offsets@1",
-  "recast": "recast@1",
+  "recast": "recast@2",
   "phases": "phases@1",
   "fees": "fees@1",
   "allocation": "allocation@1",
   "final-payment": "final-payment@1",
   "loan-periodic": "loan-periodic@2",
-  "loan-daily": "loan-daily@2",
+  "loan-daily": "loan-daily@3",
   "revolving": "revolving@1",
   "receivable": "receivable@1",
   "eligibility": "eligibility@1",
@@ -134,4 +134,10 @@ export const DEBT_CONFIG_V1_IDENTIFIERS = {
   componentAmountRule: ["fixed", "calculated", "lender-provided"],
   revolvingPaymentModel: ["fixed-scheduled", "interest-only", "percent-of-balance"],
   phaseKind: ["interest-only"],
+} as const;
+
+/** Config-v2 identifier vocabulary: v1 plus one repayment derivation. */
+export const DEBT_CONFIG_V2_IDENTIFIERS = {
+  ...DEBT_CONFIG_V1_IDENTIFIERS,
+  repaymentDerivation: [...DEBT_CONFIG_V1_IDENTIFIERS.repaymentDerivation, "dated-cashflow-annuity"],
 } as const;

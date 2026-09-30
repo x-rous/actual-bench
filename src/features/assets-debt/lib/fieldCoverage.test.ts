@@ -6,7 +6,7 @@ import type { OffsetLinkInput } from "@/lib/app-db/debtOffsetLinkRepository";
 import type { RatePeriodInput } from "@/lib/app-db/debtRateRepository";
 import type { DebtFields } from "@/lib/app-db/debtRepository";
 import type { DebtConfigV1 } from "@/lib/financial-models/loan/configSchema";
-import { DEBT_CONFIG_V1_IDENTIFIERS } from "@/lib/financial-models/loan/versions";
+import { DEBT_CONFIG_V2_IDENTIFIERS } from "@/lib/financial-models/loan/versions";
 import { newTracking, statesToSaveInput, simKey, type SimulationState } from "./simulatorModel";
 import { DAILY_MONTHLY_CHARGE, offsetOf, sim } from "./simulatorTestKit";
 import * as vocabulary from "./vocabulary";
@@ -230,9 +230,9 @@ describe("saved configurations hold only classified paths", () => {
   });
 });
 
-describe("every config v1 identifier a person can choose is offered", () => {
+describe("every current config identifier a person can choose is offered", () => {
   const offered = (options: { value: string }[]) => options.map((o) => o.value).filter(Boolean).sort();
-  const groups: [keyof typeof DEBT_CONFIG_V1_IDENTIFIERS, { value: string }[], string[]][] = [
+  const groups: [keyof typeof DEBT_CONFIG_V2_IDENTIFIERS, { value: string }[], string[]][] = [
     ["amortization", vocabulary.AMORTIZATION_OPTIONS, []],
     ["rateQuote", vocabulary.RATE_QUOTE_OPTIONS, []],
     ["dayCount", vocabulary.DAY_COUNT_OPTIONS, []],
@@ -250,6 +250,6 @@ describe("every config v1 identifier a person can choose is offered", () => {
     ["revolvingPaymentModel", vocabulary.REVOLVING_MODEL_OPTIONS, []],
   ];
   it.each(groups)("%s", (group, options, notOffered) => {
-    expect(offered(options)).toEqual([...DEBT_CONFIG_V1_IDENTIFIERS[group]].filter((v) => !notOffered.includes(v)).sort());
+    expect(offered(options)).toEqual([...DEBT_CONFIG_V2_IDENTIFIERS[group]].filter((v) => !notOffered.includes(v)).sort());
   });
 });

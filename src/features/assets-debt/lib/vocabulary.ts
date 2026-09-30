@@ -104,6 +104,7 @@ export const REPAYMENT_FREQUENCY_OPTIONS: SelectOption[] = toSelect([
 
 export const REPAYMENT_DERIVATION_OPTIONS: SelectOption[] = toSelect([
   { value: "annuity-at-payment-frequency", label: "Level payment at the repayment frequency" },
+  { value: "dated-cashflow-annuity", label: "Level payment over the dated cash-flow schedule" },
   { value: "monthly-equivalent-pro-rata", label: "Monthly payment × 12 ÷ payments per year" },
   { value: "split-monthly", label: "Monthly payment split evenly" },
   { value: "contractual-fixed", label: "The contract's fixed payment" },

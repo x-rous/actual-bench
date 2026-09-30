@@ -23,7 +23,7 @@ import {
 } from "./profile";
 import { RATE_QUOTES } from "./rates";
 import { FEE_TREATMENTS } from "./fees";
-import { REPAYMENT_DERIVATIONS } from "./repayment";
+import { REPAYMENT_DERIVATIONS, REPAYMENT_DERIVATIONS_V1, type RepaymentDerivation } from "./repayment";
 
 /**
  * The versioned debt configuration JSON, `rd084.debt-config` (data-model
@@ -43,8 +43,8 @@ import { REPAYMENT_DERIVATIONS } from "./repayment";
  */
 
 export const DEBT_CONFIG_FORMAT = "rd084.debt-config";
-export const DEBT_CONFIG_VERSION = 1;
-export const SUPPORTED_DEBT_CONFIG_VERSIONS: readonly number[] = [1];
+export const DEBT_CONFIG_VERSION = 2;
+export const SUPPORTED_DEBT_CONFIG_VERSIONS: readonly number[] = [1, 2];
 
 export const ECONOMIC_KINDS = ["principal", "interest", "fee", "escrow", "insurance", "tax", "draw", "other"] as const;
 export const COMPONENT_DESTINATIONS = ["transfer", "category", "income-category", "tracking-only"] as const;
@@ -70,7 +70,7 @@ const rounding = z.strictObject({
 
 const placement = enumOf(PLACEMENTS);
 
-const profile = z.strictObject({
+const profileSchema = <T extends string>(repaymentDerivations: readonly [T, ...T[]]) => z.strictObject({
   amortization: enumOf(AMORTIZATION_METHODS),
   rateQuote: enumOf(RATE_QUOTES),
   dayCount: enumOf(DAY_COUNT_IDS),
@@ -79,7 +79,7 @@ const profile = z.strictObject({
   chargeDay: z.number().int().nullable(),
   capitalization: enumOf(CAPITALIZATIONS),
   repaymentFrequency: enumOf(SCHEDULE_FREQUENCIES),
-  repaymentDerivation: enumOf(REPAYMENT_DERIVATIONS),
+  repaymentDerivation: enumOf(repaymentDerivations),
   recast: enumOf(RECAST_POLICIES),
   rateEffectiveTiming: enumOf(RATE_EFFECTIVE_TIMINGS),
   repaymentEffectiveTiming: enumOf(REPAYMENT_EFFECTIVE_TIMINGS),
@@ -94,6 +94,9 @@ const profile = z.strictObject({
   interestOnlyRepayment: enumOf(INTEREST_ONLY_REPAYMENTS),
   presetId: z.string().min(1).nullable(),
 });
+
+const profileV1 = profileSchema(REPAYMENT_DERIVATIONS_V1);
+const profileV2 = profileSchema(REPAYMENT_DERIVATIONS);
 
 const terms = z.strictObject({
   openingDate: isoDate,
@@ -139,7 +142,7 @@ const debtConfigV1 = z.strictObject({
   format: z.literal(DEBT_CONFIG_FORMAT),
   version: z.literal(1),
   terms,
-  profile,
+  profile: profileV1,
   phases: z.array(phase),
   components: z.array(component),
   paymentRecasts: z.array(paymentRecast),
@@ -147,6 +150,19 @@ const debtConfigV1 = z.strictObject({
 });
 
 export type DebtConfigV1 = z.infer<typeof debtConfigV1>;
+
+const debtConfigV2 = debtConfigV1.extend({
+  version: z.literal(2),
+  profile: profileV2,
+});
+
+export type DebtConfigV2 = z.infer<typeof debtConfigV2>;
+export type DebtConfig = DebtConfigV1 | DebtConfigV2;
+
+/** New records need v2 only when they use the identifier added by v2. */
+export function debtConfigVersionFor(repaymentDerivation: RepaymentDerivation): 1 | 2 {
+  return repaymentDerivation === "dated-cashflow-annuity" ? 2 : 1;
+}
 
 /** `never` contradicts dated recasts; `on-contract-date` needs at least one date. */
 export function recastScheduleConflict(policy: string, datedRecasts: number): ProfileConflict | null {
@@ -156,7 +172,7 @@ export function recastScheduleConflict(policy: string, datedRecasts: number): Pr
 }
 
 export type DebtConfigParse =
-  | { ok: true; config: DebtConfigV1 }
+  | { ok: true; config: DebtConfig }
   | { ok: false; code: "unsupported-config"; issues: string[] }
   | { ok: false; code: "invalid-config"; issues: string[] }
   | { ok: false; code: "inconsistent-profile"; issues: string[]; conflicts: ProfileConflict[] };
@@ -184,7 +200,7 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
     return { ok: false, code: "unsupported-config", issues: [`version: ${JSON.stringify(version)} is not supported by this build`] };
   }
 
-  const parsed = debtConfigV1.safeParse(value);
+  const parsed = (version === 1 ? debtConfigV1 : debtConfigV2).safeParse(value);
   if (!parsed.success) {
     // An enum value this build does not know is an identifier from a newer
     // build, not a typo in structure: that is unsupported, not invalid.

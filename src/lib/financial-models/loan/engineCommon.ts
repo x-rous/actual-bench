@@ -9,20 +9,24 @@ import { validatePhases } from "./phases";
 import { checkProfileSupport, validateProfile } from "./profile";
 import { recastScheduleConflict } from "./configSchema";
 import type { RatePeriod } from "./rates";
-import { CURRENT_COMPONENT_VERSIONS, type EngineVersions } from "./versions";
+import { CURRENT_COMPONENT_VERSIONS, type ComponentVersion, type EngineVersions } from "./versions";
 
 /** Shared by the periodic and daily engines. Pure. */
 
-export function engineVersions(engine: "loan-periodic" | "loan-daily", model: LoanModelSnapshot): EngineVersions {
+export function engineVersions(
+  engine: "loan-periodic" | "loan-daily",
+  model: LoanModelSnapshot,
+  overrides: Partial<Record<"engine" | "repayment" | "recast", ComponentVersion>> = {}
+): EngineVersions {
   const dc = selectableDayCount(model.profile.dayCount);
   return {
-    engine: engine === "loan-periodic" ? CURRENT_COMPONENT_VERSIONS["loan-periodic"] : CURRENT_COMPONENT_VERSIONS["loan-daily"],
+    engine: overrides.engine ?? (engine === "loan-periodic" ? CURRENT_COMPONENT_VERSIONS["loan-periodic"] : CURRENT_COMPONENT_VERSIONS["loan-daily"]),
     "money-kernel": MONEY_KERNEL_VERSION,
     ...(dc ? { daycount: dc.version } : {}),
     "rate-quote": CURRENT_COMPONENT_VERSIONS["rate-quote"],
     "event-order": CURRENT_COMPONENT_VERSIONS["event-order"],
-    repayment: CURRENT_COMPONENT_VERSIONS.repayment,
-    recast: CURRENT_COMPONENT_VERSIONS.recast,
+    repayment: overrides.repayment ?? CURRENT_COMPONENT_VERSIONS.repayment,
+    recast: overrides.recast ?? CURRENT_COMPONENT_VERSIONS.recast,
     allocation: CURRENT_COMPONENT_VERSIONS.allocation,
     "final-payment": CURRENT_COMPONENT_VERSIONS["final-payment"],
   };

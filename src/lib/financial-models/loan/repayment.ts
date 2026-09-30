@@ -11,7 +11,8 @@ import type { RoundingMode } from "../money/rounding";
  * pays about one extra monthly payment more than a year of the first.
  */
 
-export const REPAYMENT_VERSION = "repayment@1";
+export const REPAYMENT_VERSION_V1 = "repayment@1";
+export const REPAYMENT_VERSION = "repayment@2";
 
 /** Digits carried in the annuity growth factor before the single division. */
 const ANNUITY_GUARD_DIGITS = 10;
@@ -37,18 +38,60 @@ export function constantPrincipalInstallment(originalPrincipal: Dec, principalPe
 
 export type RepaymentDerivation =
   | "annuity-at-payment-frequency"
+  | "dated-cashflow-annuity"
   | "monthly-equivalent-pro-rata"
   | "split-monthly"
   | "contractual-fixed"
   | "lender-provided";
 
-export const REPAYMENT_DERIVATIONS: readonly RepaymentDerivation[] = [
+export type RepaymentDerivationV1 = Exclude<RepaymentDerivation, "dated-cashflow-annuity">;
+
+/** Frozen config-v1 vocabulary. */
+export const REPAYMENT_DERIVATIONS_V1 = [
   "annuity-at-payment-frequency",
   "monthly-equivalent-pro-rata",
   "split-monthly",
   "contractual-fixed",
   "lender-provided",
-];
+] as const satisfies readonly RepaymentDerivationV1[];
+
+/** Config-v2 vocabulary: v1 plus the dated cash-flow annuity. */
+export const REPAYMENT_DERIVATIONS = [
+  ...REPAYMENT_DERIVATIONS_V1,
+  "dated-cashflow-annuity",
+] as const satisfies readonly RepaymentDerivation[];
+
+/**
+ * Constant payment for a dated simple-interest schedule.
+ *
+ * Each period supplies its exact decimal simple-accrual fraction `a_i`, so
+ * the balance evolves as `B_i = B_(i-1) × (1 + a_i) - payment`. Existing
+ * uncharged interest is added immediately before the first payment. The
+ * result is unrounded; callers apply the profile's payment rounding once.
+ */
+export function datedCashflowLevelPayment(
+  principal: Dec,
+  periodAccrualFractions: readonly Dec[],
+  openingAccrued: Dec = DEC_ZERO,
+  scale: number = WORKING_SCALE
+): Dec {
+  assertPayments(periodAccrualFractions.length);
+  if (cmp(principal, DEC_ZERO) < 0 || cmp(openingAccrued, DEC_ZERO) < 0) {
+    throw new RangeError("A dated cash-flow annuity needs non-negative opening amounts");
+  }
+  const workScale = scale + ANNUITY_GUARD_DIGITS;
+  let noPaymentBalance = principal;
+  let paymentCoefficient = DEC_ZERO;
+  for (let i = 0; i < periodAccrualFractions.length; i++) {
+    const accrual = periodAccrualFractions[i];
+    if (cmp(accrual, DEC_ZERO) < 0) throw new RangeError("A dated cash-flow accrual fraction cannot be negative");
+    const growth = add(DEC_ONE, accrual);
+    noPaymentBalance = mul(noPaymentBalance, growth, workScale, "half-even");
+    if (i === 0) noPaymentBalance = add(noPaymentBalance, openingAccrued);
+    paymentCoefficient = add(mul(paymentCoefficient, growth, workScale, "half-even"), DEC_ONE);
+  }
+  return div(noPaymentBalance, paymentCoefficient, scale, "half-even");
+}
 
 /** Frequencies a monthly figure can be converted to. */
 export type SubMonthlyFrequency = "weekly" | "fortnightly";
@@ -56,6 +99,8 @@ export type SubMonthlyFrequency = "weekly" | "fortnightly";
 export type DerivationInput =
   /** A level payment computed directly at the payment frequency's periodic rate. */
   | { method: "annuity-at-payment-frequency"; principal: Dec; periodicRate: Dec; payments: number }
+  /** A level payment solved over the real dated simple-interest accrual fractions. */
+  | { method: "dated-cashflow-annuity"; principal: Dec; periodAccrualFractions: readonly Dec[]; openingAccrued?: Dec }
   /** Monthly × 12 ÷ 26 (fortnightly) or × 12 ÷ 52 (weekly): the same yearly total, paid more often. */
   | { method: "monthly-equivalent-pro-rata"; monthlyPayment: Dec; frequency: SubMonthlyFrequency }
   /** Monthly ÷ 2 (fortnightly) or ÷ 4 (weekly): a larger yearly total. */
@@ -74,10 +119,20 @@ export function deriveRepayment(input: DerivationInput, rounding: { minorDigits:
   return { method: input.method, exact, minor: toMinor(exact, rounding.minorDigits, rounding.mode) };
 }
 
+/** Frozen repayment@1 entry point for historical reproduction. */
+export function deriveRepaymentV1(
+  input: Exclude<DerivationInput, { method: "dated-cashflow-annuity" }>,
+  rounding: { minorDigits: number; mode: RoundingMode }
+): DerivedRepayment {
+  return deriveRepayment(input, rounding);
+}
+
 function exactRepayment(input: DerivationInput): Dec {
   switch (input.method) {
     case "annuity-at-payment-frequency":
       return levelPayment(input.principal, input.periodicRate, input.payments);
+    case "dated-cashflow-annuity":
+      return datedCashflowLevelPayment(input.principal, input.periodAccrualFractions, input.openingAccrued);
     case "monthly-equivalent-pro-rata":
       return div(mul(input.monthlyPayment, decInt(12)), decInt(input.frequency === "fortnightly" ? 26 : 52), WORKING_SCALE, "half-even");
     case "split-monthly":

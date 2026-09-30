@@ -1,0 +1,21 @@
+{
+  "sourceStatus": "bank-published values transcribed from a private schedule supplied by the product owner",
+  "currency": "AED",
+  "principalMinor": 150000000,
+  "openingDate": "2026-07-03",
+  "firstPaymentDate": "2026-07-27",
+  "paymentCount": 300,
+  "maturityDate": "2051-06-27",
+  "annualRateDecimal": "0.0449",
+  "regularPaymentMinor": 837891,
+  "finalPaymentMinor": 837663,
+  "totalProfitMinor": 101367072,
+  "totalRepaymentsMinor": 251367072,
+  "rows": [
+    { "date": "2026-07-27", "principalMinor": 388891, "profitMinor": 449000, "paymentMinor": 837891, "balanceMinor": 149611109 },
+    { "date": "2026-08-27", "principalMinor": 259436, "profitMinor": 578455, "paymentMinor": 837891, "balanceMinor": 149351673 },
+    { "date": "2026-09-27", "principalMinor": 260439, "profitMinor": 577452, "paymentMinor": 837891, "balanceMinor": 149091234 },
+    { "date": "2026-10-27", "principalMinor": 280041, "profitMinor": 557850, "paymentMinor": 837891, "balanceMinor": 148811193 },
+    { "date": "2026-11-27", "principalMinor": 262529, "profitMinor": 575362, "paymentMinor": 837891, "balanceMinor": 148548664 }
+  ]
+}

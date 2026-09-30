@@ -1,6 +1,6 @@
-import { addDays, compareDates, type IsoDate } from "../calendar/dates";
+import { addDays, addMonths, compareDates, type IsoDate } from "../calendar/dates";
 import { generateSchedule } from "../calendar/schedule";
-import { add, dec, fromMinor, max, min, sub, toDecString, toMinor, toPlainString, DEC_ZERO, type Dec } from "../money/kernel";
+import { add, dec, decInt, div, fromMinor, max, min, sub, toDecString, toMinor, toPlainString, DEC_ZERO, WORKING_SCALE, type Dec } from "../money/kernel";
 import { dayInterest, intermediateScale, interestBase } from "./accrual";
 import { chargeDates } from "./charge";
 import { eventRoundingScale, postCharge } from "./dailyPrecision";
@@ -11,7 +11,7 @@ import { amortizationMonths, contractualEnd, finalDecision } from "./finalPaymen
 import type { BlockReason, ModelEvent, ModelEventType, SimulationRequest, SimulationResult } from "./model";
 import { eligibleOffset, type OffsetBalances } from "./offsets";
 import { interestOnlyPhaseOn } from "./phases";
-import { annualRecastDates, applyPaymentCap, derivePayment, paymentCount, paymentEffectiveDate, recastPolicyFor } from "./recast";
+import { annualRecastDates, applyPaymentCap, derivePayment, derivePaymentV1, paymentCount, paymentEffectiveDate, recastPolicyFor } from "./recast";
 import { revolvingPayment, revolvingState } from "./revolving";
 
 /**
@@ -33,13 +33,61 @@ import { revolvingPayment, revolvingState } from "./revolving";
  * Events are loaded once and simulated locally: nothing here reads Actual.
  */
 
-export const DAILY_ENGINE_VERSION = "loan-daily@2";
+export const DAILY_ENGINE_VERSION_V2 = "loan-daily@2";
+export const DAILY_ENGINE_VERSION = "loan-daily@3";
 
 type Day = { date: IsoDate; events: EngineEvent[] };
 
+type DailyEngineBehavior = {
+  engineVersion: "loan-daily@2" | "loan-daily@3";
+  repaymentVersion: "repayment@1" | "repayment@2";
+  recastVersion: "recast@1" | "recast@2";
+  datedCashflow: boolean;
+  capAssumedExtras: boolean;
+  completePayoffState: boolean;
+};
+
+const DAILY_V2: DailyEngineBehavior = {
+  engineVersion: "loan-daily@2",
+  repaymentVersion: "repayment@1",
+  recastVersion: "recast@1",
+  datedCashflow: false,
+  capAssumedExtras: false,
+  completePayoffState: false,
+};
+
+const DAILY_V3: DailyEngineBehavior = {
+  engineVersion: "loan-daily@3",
+  repaymentVersion: "repayment@2",
+  recastVersion: "recast@2",
+  datedCashflow: true,
+  capAssumedExtras: true,
+  completePayoffState: true,
+};
+
 export function simulateDaily(req: SimulationRequest): SimulationResult {
+  return simulateDailyImpl(req, DAILY_V3);
+}
+
+/** Historical loan-daily@2, kept callable for stored-result reproduction. */
+export function simulateDailyV2(req: SimulationRequest): SimulationResult {
+  return simulateDailyImpl(req, DAILY_V2);
+}
+
+/** Resolve an exact daily-engine version; unknown versions never fall forward. */
+export function simulateDailyAtVersion(version: string, req: SimulationRequest): SimulationResult {
+  if (version === DAILY_ENGINE_VERSION_V2) return simulateDailyV2(req);
+  if (version === DAILY_ENGINE_VERSION) return simulateDaily(req);
+  throw new RangeError(`Unsupported daily engine version: ${version}`);
+}
+
+function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior): SimulationResult {
   const { model, anchor } = req;
-  const versions = engineVersions("loan-daily", model);
+  const versions = engineVersions("loan-daily", model, {
+    engine: behavior.engineVersion,
+    repayment: behavior.repaymentVersion,
+    recast: behavior.recastVersion,
+  });
   const fail = (reason: BlockReason): SimulationResult => ({ ok: false, blocked: [reason], versions });
 
   const invalid = validateModel(model);
@@ -62,21 +110,27 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
   const amortMonths = amortizationMonths(model);
 
   // ── Scheduled repayment dates (real dates) ────────────────────────────────
-  let scheduled: IsoDate[] = [];
+  let allScheduled: IsoDate[] = [];
+  let derivationSchedule: IsoDate[] = [];
   if (generate) {
     if (!terms.firstPaymentDate) return fail({ code: "missing-payment", classification: "blocked", date: null, message: "Scheduled repayments need a first payment date." });
     if (profile.repaymentFrequency === "custom-dated" || profile.repaymentFrequency === "semi-monthly") {
       return fail({ code: "unsupported-profile", classification: "blocked", date: null, message: `Generating ${profile.repaymentFrequency} repayments needs dates configuration version 1 cannot hold; supply them as events.` });
     }
-    // Generated through the later of the run's end and the contract's, so the contract's last
-    // payment is known even when the run stops earlier.
-    const horizon = end && compareDates(end, req.to) > 0 ? end : req.to;
-    scheduled = generateSchedule({ frequency: profile.repaymentFrequency, firstDate: terms.firstPaymentDate, shortMonthPolicy: profile.shortMonth }, { from: terms.firstPaymentDate, to: horizon });
+    // Generate the whole amortization basis even when this projection ends earlier. Dated payment
+    // derivation needs every remaining cash-flow date, not only dates visible in this run.
+    const amortizationHorizon = amortMonths ? addMonths(terms.firstPaymentDate, amortMonths + 12) : req.to;
+    const horizon = [req.to, end, amortizationHorizon]
+      .filter((d): d is IsoDate => d !== null)
+      .reduce((latest, d) => compareDates(d, latest) > 0 ? d : latest, req.to);
+    allScheduled = generateSchedule({ frequency: profile.repaymentFrequency, firstDate: terms.firstPaymentDate, shortMonthPolicy: profile.shortMonth }, { from: terms.firstPaymentDate, to: horizon });
+    const count = amortMonths !== null ? paymentCount(profile.repaymentFrequency, amortMonths) : null;
+    derivationSchedule = count === null ? allScheduled : allScheduled.slice(0, count);
   }
-  const lastContractual = end && model.behaviorClass !== "revolving-credit" ? [...scheduled].reverse().find((d) => compareDates(d, end) <= 0) ?? null : null;
-  scheduled = scheduled.filter((d) => compareDates(d, req.to) <= 0);
+  const lastContractual = end && model.behaviorClass !== "revolving-credit" ? [...allScheduled].reverse().find((d) => compareDates(d, end) <= 0) ?? null : null;
+  const scheduled = allScheduled.filter((d) => compareDates(d, req.to) <= 0);
   const scheduledSet = new Set(scheduled.filter((d) => compareDates(d, anchor.date) > 0));
-  const madeBeforeAnchor = scheduled.filter((d) => compareDates(d, anchor.date) <= 0).length;
+  const madeBeforeAnchor = allScheduled.filter((d) => compareDates(d, anchor.date) <= 0).length;
   const totalPayments = amortMonths !== null ? paymentCount(profile.repaymentFrequency, amortMonths) : null;
 
   const charges = chargeDates(model, firstDay, req.to);
@@ -119,6 +173,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
   const capitalized = capitalizedComponents(model.components);
   const scale = eventRoundingScale(profile, digits) ?? intermediateScale(profile, digits);
   const order = dayStepOrder(profile.eventOrder);
+  const scheduledAfterAccrual = order.indexOf("scheduled-repayment") > order.indexOf("accrue");
   const minor = (d: Dec) => toMinor(d, digits, "down");
   const revolving = model.behaviorClass === "revolving-credit" && model.revolving !== null;
 
@@ -129,11 +184,57 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
   const remainingPayments = () => (totalPayments === null ? 0 : Math.max(totalPayments - paymentsMade, 1));
   const remainingMonths = (date: IsoDate) => (amortMonths === null ? 0 : Math.max(amortMonths - wholeMonthsBetween(terms.openingDate, date), 1));
 
+  function datedAccrualFractions(date: IsoDate): { ok: true; fractions: Dec[] } | { ok: false; date: IsoDate } {
+    const remainingDates = derivationSchedule.filter((d) => compareDates(d, date) >= 0);
+    if (remainingDates.length === 0) return { ok: true, fractions: [] };
+    const fractions: Dec[] = [];
+    let previousPayment: IsoDate | null = null;
+    for (let i = 0; i < remainingDates.length; i++) {
+      const paymentDate = remainingDates[i];
+      const firstAccrualDate = previousPayment === null
+        ? date
+        : scheduledAfterAccrual ? addDays(previousPayment, 1) : previousPayment;
+      const lastAccrualDate = scheduledAfterAccrual ? paymentDate : addDays(paymentDate, -1);
+      let fraction = DEC_ZERO;
+      const lockedRate = profile.rateEffectiveTiming === "from-next-charge-period"
+        ? (previousPayment === null ? periodRate : rates.rateOn(firstAccrualDate))
+        : null;
+      for (let day = firstAccrualDate; compareDates(day, lastAccrualDate) <= 0; day = addDays(day, 1)) {
+        const rate = lockedRate ?? rates.rateOn(day);
+        if (!rate) return { ok: false, date: day };
+        fraction = add(fraction, div(rate, decInt(dc.dailyDenominator(day)), WORKING_SCALE + 10, "half-even"));
+      }
+      fractions.push(fraction);
+      previousPayment = paymentDate;
+    }
+    return { ok: true, fractions };
+  }
+
   function derive(date: IsoDate, reason: string): BlockReason | null {
     const rate = rates.rateOn(date);
     if (!rate) return { code: "rate-gap", classification: "blocked", date, message: `No rate applies on ${date}.` };
     const previous = payment;
-    const derived = derivePayment({ model, balanceMinor: minor(debt), annualRate: rate, remainingPayments: remainingPayments(), remainingMonths: remainingMonths(date), currentPaymentMinor: payment });
+    let datedFractions: readonly Dec[] | undefined;
+    if (profile.repaymentDerivation === "dated-cashflow-annuity") {
+      if (!behavior.datedCashflow) return { code: "unsupported-profile", classification: "blocked", date, message: `${behavior.repaymentVersion} does not support dated-cashflow-annuity.` };
+      if (model.offsets.length > 0 || model.phases.length > 0) {
+        return { code: "unsupported-profile", classification: "blocked", date, message: "Dated cash-flow annuity derivation does not approximate offsets or interest-only phases." };
+      }
+      const dated = datedAccrualFractions(date);
+      if (!dated.ok) return { code: "rate-gap", classification: "blocked", date: dated.date, message: `No rate applies on ${dated.date}.` };
+      datedFractions = dated.fractions;
+    }
+    const deriveForVersion = behavior.recastVersion === "recast@1" ? derivePaymentV1 : derivePayment;
+    const derived = deriveForVersion({
+      model,
+      balanceMinor: minor(debt),
+      annualRate: rate,
+      remainingPayments: remainingPayments(),
+      remainingMonths: remainingMonths(date),
+      currentPaymentMinor: payment,
+      datedAccrualFractions: datedFractions,
+      openingAccrued: add(accrued, carry),
+    });
     if (!derived.ok) return { code: "missing-payment", classification: "blocked", date, message: derived.reason };
     const cap = reason === "rate-change" ? rates.changes.find((p) => paymentEffectiveDate(p) === date)?.paymentCap : null;
     const capped = applyPaymentCap(derived.minor, previous, cap, profile, digits);
@@ -146,6 +247,14 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
       });
     }
     return null;
+  }
+
+  // A dated annuity is derived from the anchor's closing state before any projection-day accrual
+  // or posting occurs. That keeps payment derivation separate from the engine's intermediate and
+  // posting rounding; the ordinary engine then produces every scheduled row from the rounded level.
+  if (payment === null && profile.repaymentDerivation === "dated-cashflow-annuity") {
+    const problem = derive(firstDay, "initial");
+    if (problem) return fail(problem);
   }
 
   /**
@@ -253,6 +362,9 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
         ...(interestWithPayment > 0 ? { interestRatesDecimal: repaymentRates.join(";") } : {}),
         ...(phase ? { interestOnlyBasis: atRepaymentCharge ? "charged-with-repayment" : profile.interestOnlyRepayment, chargedInterestPaidMinor: atRepaymentCharge ? interestWithPayment : ioCharged } : {}),
         negativeAmortizationMinor: interestWithPayment > decision.paymentMinor ? interestWithPayment - decision.paymentMinor : 0,
+        ...(behavior.completePayoffState && decision.paidOff && carry.int !== BigInt(0)
+          ? { settledCarriedRemainder: toDecString(carry) }
+          : {}),
       },
     });
     chargedSinceRepayment = 0;
@@ -268,7 +380,10 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
     if (decision.residualMinor > 0) {
       emit({ date, type: "residual", certainty: "contractual", ref: null, cashMovementMinor: 0, principalMovementMinor: 0, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: minor(debt), balanceAfterMinor: minor(debt), lines: [], diagnostics: { policy: "keep-level-payment-with-residual", residualMinor: decision.residualMinor } });
     }
-    if (decision.paidOff) paidOff = true;
+    if (decision.paidOff) {
+      paidOff = true;
+      if (behavior.completePayoffState) carry = DEC_ZERO;
+    }
     if (!decision.continues) stopScheduling = true;
     return null;
   }
@@ -301,11 +416,28 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
     switch (e.kind) {
       case "repayment":
       case "extra-repayment": {
-        if (e.amountMinor > before) return { code: "credit-balance", classification: "review", date: e.date, message: `A repayment of ${e.amountMinor} exceeds the ${before} owed; the excess needs review.` };
-        debt = sub(debt, fromMinor(e.amountMinor, digits));
-        emit({ ...base, type: e.kind === "repayment" ? "repayment" : "extra-repayment", cashMovementMinor: -e.amountMinor, principalMovementMinor: -e.amountMinor, balanceBeforeMinor: before, balanceAfterMinor: minor(debt), lines: [{ kind: "principal", amountMinor: e.amountMinor }] });
+        const capAssumed = behavior.capAssumedExtras && e.kind === "extra-repayment" && e.certainty === "assumed" && !revolving;
+        if (!capAssumed && e.amountMinor > before) return { code: "credit-balance", classification: "review", date: e.date, message: `A repayment of ${e.amountMinor} exceeds the ${before} owed; the excess needs review.` };
+        const applied = capAssumed ? Math.min(e.amountMinor, before) : e.amountMinor;
+        if (applied === 0) return null;
+        debt = sub(debt, fromMinor(applied, digits));
+        emit({
+          ...base,
+          type: e.kind === "repayment" ? "repayment" : "extra-repayment",
+          cashMovementMinor: -applied,
+          principalMovementMinor: -applied,
+          balanceBeforeMinor: before,
+          balanceAfterMinor: minor(debt),
+          lines: [{ kind: "principal", amountMinor: applied }],
+          ...(applied < e.amountMinor ? { diagnostics: { requestedAmountMinor: e.amountMinor, appliedAmountMinor: applied, cappedAtOutstanding: true } } : {}),
+        });
         if (e.kind === "repayment") paymentsMade++;
-        if (minor(debt) === 0) paidOff = true;
+        if (minor(debt) === 0) {
+          paidOff = behavior.completePayoffState
+            ? accrued.int === BigInt(0) && carry.int === BigInt(0)
+            : true;
+          if (paidOff) stopScheduling = true;
+        }
         return null;
       }
       case "draw": {
@@ -320,6 +452,7 @@ export function simulateDaily(req: SimulationRequest): SimulationResult {
         // The fee's own treatment decides: capitalized adds to the debt with no cash; cash-paid moves cash only.
         if (e.capitalized) {
           debt = add(debt, fromMinor(e.amountMinor, digits));
+          paidOff = false;
           emit({ ...base, type: "fee", feesMinor: e.amountMinor, cashMovementMinor: 0, principalMovementMinor: e.amountMinor, balanceBeforeMinor: before, balanceAfterMinor: minor(debt), lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { treatment: "capitalized" } });
         } else {
           emit({ ...base, type: "fee", feesMinor: e.amountMinor, cashMovementMinor: -e.amountMinor, principalMovementMinor: 0, balanceBeforeMinor: before, balanceAfterMinor: before, lines: [{ kind: "fee", amountMinor: e.amountMinor }], diagnostics: { treatment: "cash-paid" } });
