@@ -95,6 +95,29 @@ const eslintConfig = defineConfig([
               group: ["@/test-golden", "@/test-golden/**", "**/test-golden", "**/test-golden/**", "@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**"],
               message: "The RD-084 golden suite and reference oracle are test-only; runtime code must not import them.",
             },
+            {
+              group: ["recharts", "recharts/**"],
+              message: "Recharts is loaded lazily from src/features/assets-debt/components/chart/ only (RD-084 P1.3b chart gate).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  /* The loan chart module is the one place Recharts may be imported; the test-only rule still applies. */
+  {
+    files: ["src/features/assets-debt/components/chart/**"],
+    ignores: ["src/**/*.test.*"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/test-golden", "@/test-golden/**", "**/test-golden", "**/test-golden/**", "@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**"],
+              message: "The RD-084 golden suite and reference oracle are test-only; runtime code must not import them.",
+            },
           ],
         },
       ],
