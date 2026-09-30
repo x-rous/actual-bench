@@ -336,6 +336,26 @@ describe("O1: features that need day-by-day interest", () => {
   });
 });
 
+describe("contract terms and lender-stated repayment", () => {
+  withViewport();
+
+  it("uses the optional contractual repayment and preserves an ordinary-loan maturity", async () => {
+    const states: SimulationState[] = [];
+    wrap(<Harness initial={shortLoan()} onState={(s) => states.push(s)} />);
+    fireEvent.click(screen.getByRole("button", { name: "More options" }));
+    expect(screen.getByLabelText("Contractual maturity")).toHaveAccessibleDescription(/term counts repayments from the first repayment date/i);
+    expect(screen.getByLabelText("Contractual repayment amount")).toHaveAccessibleDescription(/used instead of a calculated repayment/i);
+
+    type("Contractual maturity", "2027-11-01");
+    fireEvent.keyDown(screen.getByLabelText("Contractual maturity"), { key: "Enter" });
+    type("Contractual repayment amount", "8379.57");
+    await waitFor(() => expect(states.at(-1)?.contractualPaymentMinor).toBe(837_957), WAIT);
+    expect(states.at(-1)?.maturityDate).toBe("2027-11-01");
+    expect(states.at(-1)?.profile.repaymentDerivation).toBe("contractual-fixed");
+    expect(screen.getByText(/contract's fixed payment/)).toBeInTheDocument();
+  });
+});
+
 describe("the schedule (O2 rate column, O5 labels)", () => {
   withViewport();
   const eventsOf = (s: SimulationState) => {

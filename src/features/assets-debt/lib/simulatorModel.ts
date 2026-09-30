@@ -1,9 +1,12 @@
 import type { DebtDetail, DebtSaveInput } from "@/lib/assets-debt/services/debtConfigService";
-import { addDays, addMonths, isIsoDate } from "@/lib/financial-models/calendar/dates";
+import { addDays, addMonths, compareDates, isIsoDate } from "@/lib/financial-models/calendar/dates";
+import { generateSchedule } from "@/lib/financial-models/calendar/schedule";
 import { debtConfigVersionFor, type DebtConfig } from "@/lib/financial-models/loan/configSchema";
 import type { DebtPhase, FutureAssumption, LoanModelSnapshot, PaymentComponent } from "@/lib/financial-models/loan/model";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { simulate } from "@/lib/financial-models/loan/projection";
+import { repaymentScheduleSpec } from "@/lib/financial-models/loan/engineCommon";
+import { paymentCount } from "@/lib/financial-models/loan/recast";
 import type { PaymentLimit } from "@/lib/financial-models/loan/rates";
 import { labelOf, CHARGE_FREQUENCY_OPTIONS, REPAYMENT_DERIVATION_OPTIONS } from "./vocabulary";
 
@@ -258,8 +261,21 @@ export const SIMULATION_HORIZON_CAP_MONTHS = 50 * 12;
 export function projectionWindow(sim: SimulationState): { from: string; to: string } {
   const months = Math.max(sim.termMonths ?? 0, sim.contractTermMonths ?? 0, 1);
   const extra = sim.profile.finalPayment === "continue-until-paid" || sim.shape === "revolving-credit" ? SIMULATION_HORIZON_CAP_MONTHS - months : 1;
-  const end = sim.maturityDate ?? addMonths(sim.startDate, months);
+  const end = sim.maturityDate ?? inferredLastPaymentDate(sim, months) ?? addMonths(sim.startDate, months);
   return { from: sim.startDate, to: addMonths(end, Math.max(extra, 1)) };
+}
+
+/** Last generated contractual date when a term is a count of payment periods. */
+function inferredLastPaymentDate(sim: SimulationState, months: number): string | null {
+  if (sim.profile.repaymentFrequency !== "monthly" && sim.profile.repaymentFrequency !== "quarterly" && sim.profile.repaymentFrequency !== "annual") return null;
+  const first = derivedFirstPaymentDate(sim);
+  const count = paymentCount(sim.profile.repaymentFrequency, months);
+  const spec = repaymentScheduleSpec(sim.profile.repaymentFrequency, first, sim.profile.shortMonth);
+  if (count === null || spec === null) return null;
+  const horizon = addMonths(first, months + 12);
+  const dates = generateSchedule(spec, { from: first, to: horizon });
+  const last = dates[count - 1] ?? null;
+  return last && compareDates(last, sim.startDate) > 0 ? last : null;
 }
 
 const componentLabel = (kind: string) => kind.charAt(0).toUpperCase() + kind.slice(1);
@@ -335,7 +351,7 @@ export function simulationToModel(sim: SimulationState, identity: { debtId?: str
       terms: {
         openingDate: sim.startDate,
         openingPrincipalMinor: sim.principalMinor!,
-        maturityDate: sim.contractTermMonths !== null ? sim.maturityDate : null,
+        maturityDate: sim.shape === "term-loan" ? sim.maturityDate : null,
         contractualTermMonths: sim.contractTermMonths ?? sim.termMonths,
         amortizationTermMonths: sim.termMonths,
         contractualPaymentMinor: needsContractualPayment(profile) ? sim.contractualPaymentMinor : null,
@@ -356,7 +372,7 @@ export function simulationToModel(sim: SimulationState, identity: { debtId?: str
 }
 
 export function needsContractualPayment(profile: CalculationProfile): boolean {
-  return profile.repaymentDerivation === "contractual-fixed" || profile.repaymentDerivation === "monthly-equivalent-pro-rata" || profile.repaymentDerivation === "split-monthly";
+  return profile.repaymentDerivation === "contractual-fixed" || profile.repaymentDerivation === "lender-provided";
 }
 
 // ── O1: features the period-by-period engine cannot represent ───────────────

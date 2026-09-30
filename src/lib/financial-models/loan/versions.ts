@@ -91,7 +91,7 @@ export const CURRENT_COMPONENT_VERSIONS = {
   "allocation": "allocation@1",
   "final-payment": "final-payment@1",
   "loan-periodic": "loan-periodic@2",
-  "loan-daily": "loan-daily@3",
+  "loan-daily": "loan-daily@4",
   "revolving": "revolving@1",
   "receivable": "receivable@1",
   "eligibility": "eligibility@1",

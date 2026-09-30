@@ -45,7 +45,7 @@ import { FEE_TREATMENTS, FEES_VERSION } from "./fees";
 import { ALLOCATION_VERSION } from "./allocation";
 import { FINAL_PAYMENT_VERSION } from "./finalPayment";
 import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
-import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2 } from "./daily-engine";
+import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3 } from "./daily-engine";
 import { REVOLVING_VERSION } from "./revolving";
 import { RECEIVABLE_VERSION } from "./receivable";
 import { ELIGIBILITY_VERSION } from "./eligibility";
@@ -111,6 +111,7 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     expect(REPAYMENT_VERSION_V1).toBe("repayment@1");
     expect(RECAST_VERSION_V1).toBe("recast@1");
     expect(DAILY_ENGINE_VERSION_V2).toBe("loan-daily@2");
+    expect(DAILY_ENGINE_VERSION_V3).toBe("loan-daily@3");
   });
 
   it("adds only the dated repayment identifier in config v2", () => {

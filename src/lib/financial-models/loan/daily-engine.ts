@@ -34,17 +34,19 @@ import { revolvingPayment, revolvingState } from "./revolving";
  */
 
 export const DAILY_ENGINE_VERSION_V2 = "loan-daily@2";
-export const DAILY_ENGINE_VERSION = "loan-daily@3";
+export const DAILY_ENGINE_VERSION_V3 = "loan-daily@3";
+export const DAILY_ENGINE_VERSION = "loan-daily@4";
 
 type Day = { date: IsoDate; events: EngineEvent[] };
 
 type DailyEngineBehavior = {
-  engineVersion: "loan-daily@2" | "loan-daily@3";
+  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4";
   repaymentVersion: "repayment@1" | "repayment@2";
   recastVersion: "recast@1" | "recast@2";
   datedCashflow: boolean;
   capAssumedExtras: boolean;
   completePayoffState: boolean;
+  contractualTermCountsPayments: boolean;
 };
 
 const DAILY_V2: DailyEngineBehavior = {
@@ -54,6 +56,7 @@ const DAILY_V2: DailyEngineBehavior = {
   datedCashflow: false,
   capAssumedExtras: false,
   completePayoffState: false,
+  contractualTermCountsPayments: false,
 };
 
 const DAILY_V3: DailyEngineBehavior = {
@@ -63,10 +66,17 @@ const DAILY_V3: DailyEngineBehavior = {
   datedCashflow: true,
   capAssumedExtras: true,
   completePayoffState: true,
+  contractualTermCountsPayments: false,
+};
+
+const DAILY_V4: DailyEngineBehavior = {
+  ...DAILY_V3,
+  engineVersion: "loan-daily@4",
+  contractualTermCountsPayments: true,
 };
 
 export function simulateDaily(req: SimulationRequest): SimulationResult {
-  return simulateDailyImpl(req, DAILY_V3);
+  return simulateDailyImpl(req, DAILY_V4);
 }
 
 /** Historical loan-daily@2, kept callable for stored-result reproduction. */
@@ -74,9 +84,15 @@ export function simulateDailyV2(req: SimulationRequest): SimulationResult {
   return simulateDailyImpl(req, DAILY_V2);
 }
 
+/** Historical loan-daily@3, before contractual terms counted from the first due date. */
+export function simulateDailyV3(req: SimulationRequest): SimulationResult {
+  return simulateDailyImpl(req, DAILY_V3);
+}
+
 /** Resolve an exact daily-engine version; unknown versions never fall forward. */
 export function simulateDailyAtVersion(version: string, req: SimulationRequest): SimulationResult {
   if (version === DAILY_ENGINE_VERSION_V2) return simulateDailyV2(req);
+  if (version === DAILY_ENGINE_VERSION_V3) return simulateDailyV3(req);
   if (version === DAILY_ENGINE_VERSION) return simulateDaily(req);
   throw new RangeError(`Unsupported daily engine version: ${version}`);
 }
@@ -127,7 +143,19 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
     const count = amortMonths !== null ? paymentCount(profile.repaymentFrequency, amortMonths) : null;
     derivationSchedule = count === null ? allScheduled : allScheduled.slice(0, count);
   }
-  const lastContractual = end && model.behaviorClass !== "revolving-credit" ? [...allScheduled].reverse().find((d) => compareDates(d, end) <= 0) ?? null : null;
+  const contractualPayments = terms.contractualTermMonths !== null
+    ? paymentCount(profile.repaymentFrequency, terms.contractualTermMonths)
+    : null;
+  const termHasUnambiguousPeriodCount = profile.repaymentFrequency === "monthly"
+    || profile.repaymentFrequency === "quarterly"
+    || profile.repaymentFrequency === "annual";
+  const lastContractual = model.behaviorClass === "revolving-credit"
+    ? null
+    : behavior.contractualTermCountsPayments && termHasUnambiguousPeriodCount && terms.maturityDate === null && contractualPayments !== null
+      ? allScheduled[contractualPayments - 1] ?? null
+      : end
+        ? [...allScheduled].reverse().find((d) => compareDates(d, end) <= 0) ?? null
+        : null;
   const scheduled = allScheduled.filter((d) => compareDates(d, req.to) <= 0);
   const scheduledSet = new Set(scheduled.filter((d) => compareDates(d, anchor.date) > 0));
   const madeBeforeAnchor = allScheduled.filter((d) => compareDates(d, anchor.date) <= 0).length;

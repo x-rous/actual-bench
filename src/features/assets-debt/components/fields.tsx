@@ -168,7 +168,7 @@ export function DateField({ label, hint, issue, value, onChange, className }: Co
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
       <Label htmlFor={id}>{label}</Label>
-      <DateInput id={id} value={value} onValueChange={onChange} aria-label={label} aria-invalid={issue ? true : undefined} />
+      <DateInput id={id} value={value} onValueChange={onChange} aria-label={label} aria-invalid={issue ? true : undefined} aria-describedby={describedBy(id, hint, issue)} />
       <Described id={id} hint={hint} issue={issue} />
     </div>
   );

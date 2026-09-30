@@ -155,7 +155,7 @@ describe("HSBC UAE Actual/360 Ijara golden fixture", () => {
   it("derives the bank's regular payment without a contractual payment override", () => {
     expect(MODEL.terms.contractualPaymentMinor).toBeNull();
     expect(result.closing.scheduledPaymentMinor).toBe(published.regularPaymentMinor);
-    expect(result.versions).toMatchObject({ engine: "loan-daily@3", repayment: "repayment@2", recast: "recast@2" });
+    expect(result.versions).toMatchObject({ engine: "loan-daily@4", repayment: "repayment@2", recast: "recast@2" });
   });
 
   it("leaves the conventional payment-frequency PMT behavior unchanged", () => {

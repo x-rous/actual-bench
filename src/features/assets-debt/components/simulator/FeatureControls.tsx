@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { addMonths } from "@/lib/financial-models/calendar/dates";
 import { bpsToFraction, formatMinor, fractionToBps } from "../../lib/money";
-import { needsContractualPayment, simKey, type SimComponent, type SimOffset, type SimulationState } from "../../lib/simulatorModel";
+import { simKey, type SimComponent, type SimOffset, type SimulationState } from "../../lib/simulatorModel";
 import { OFFSET_BASIS_OPTIONS, RECAST_OPTIONS, REVOLVING_MODEL_OPTIONS } from "../../lib/vocabulary";
 import { DateField, FeatureSwitch, IntegerField, MoneyField, PercentField, SelectField } from "../fields";
 
@@ -25,6 +25,11 @@ export function FeatureControls({ sim, change, propose }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [feesOpen, setFeesOpen] = useState(false);
   const [phasesOpen, setPhasesOpen] = useState(false);
+  const derivedRepayment = useRef<SimulationState["profile"]["repaymentDerivation"]>(
+    sim.profile.repaymentDerivation === "contractual-fixed" || sim.profile.repaymentDerivation === "lender-provided"
+      ? "annuity-at-payment-frequency"
+      : sim.profile.repaymentDerivation,
+  );
   const offset = sim.offsets[0];
   const startingBalance = offset ? sim.assumptions.find((a) => a.kind === "offset-balance" && a.offsetAccountId === offset.placeholderAccountId && a.effectiveFrom <= offset.effectiveFrom) : undefined;
   const ioMonths = sim.phases[0] ? monthsBetween(sim.phases[0].from, sim.phases[0].to) : 24;
@@ -72,6 +77,24 @@ export function FeatureControls({ sim, change, propose }: Props) {
   };
 
   const balloon = sim.contractTermMonths !== null;
+  const setContractualPayment = (amount: number | null) => {
+    if (amount !== null) {
+      if (sim.profile.repaymentDerivation !== "contractual-fixed" && sim.profile.repaymentDerivation !== "lender-provided") {
+        derivedRepayment.current = sim.profile.repaymentDerivation;
+      }
+      change({ ...sim, contractualPaymentMinor: amount, profile: { ...sim.profile, repaymentDerivation: "contractual-fixed", presetId: null } });
+      return;
+    }
+    change({
+      ...sim,
+      contractualPaymentMinor: null,
+      profile: {
+        ...sim.profile,
+        repaymentDerivation: sim.profile.repaymentDerivation === "contractual-fixed" ? derivedRepayment.current : sim.profile.repaymentDerivation,
+        presetId: null,
+      },
+    });
+  };
   return (
     <div className="flex flex-col gap-3">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Features</h3>
@@ -143,6 +166,8 @@ export function FeatureControls({ sim, change, propose }: Props) {
         <div className="flex flex-col gap-2 rounded-md border border-border p-2">
           <FeatureSwitch label="Choose the first repayment date" description="Otherwise it is one repayment period after the start." checked={sim.firstPaymentDate !== null} onChange={(on) => propose({ ...sim, firstPaymentDate: on ? addMonths(sim.startDate, 1) : null })} />
           {sim.firstPaymentDate !== null ? <DateField label="First repayment" value={sim.firstPaymentDate} onChange={(d) => propose({ ...sim, firstPaymentDate: d })} /> : null}
+          {sim.shape === "term-loan" ? <DateField label="Contractual maturity" hint="Optional. When blank, the term counts repayments from the first repayment date." value={sim.maturityDate ?? ""} onChange={(d) => change({ ...sim, maturityDate: d || null })} /> : null}
+          {sim.shape === "term-loan" ? <MoneyField label="Contractual repayment amount" hint="Optional. When entered, this fixed lender-stated amount is used instead of a calculated repayment." valueMinor={sim.contractualPaymentMinor} minorDigits={sim.minorDigits} suffix={sim.currency} onChange={setContractualPayment} /> : null}
           <FeatureSwitch
             label="Balloon: the contract ends before the loan is repaid"
             checked={balloon}
@@ -156,8 +181,6 @@ export function FeatureControls({ sim, change, propose }: Props) {
             }
           />
           {balloon ? <IntegerField label="Contract term" suffix="months" min={1} value={sim.contractTermMonths} onChange={(m) => change({ ...sim, contractTermMonths: m })} hint="The loan is repaid over the main term; the rest is due at the end of the contract." /> : null}
-          {balloon ? <DateField label="Contract ends on" hint="Optional: the maturity date the contract states." value={sim.maturityDate ?? ""} onChange={(d) => change({ ...sim, maturityDate: d || null })} /> : null}
-          {needsContractualPayment(sim.profile) ? <MoneyField label="Contract repayment" hint="The repayment the contract states." valueMinor={sim.contractualPaymentMinor} minorDigits={sim.minorDigits} suffix={sim.currency} onChange={(v) => change({ ...sim, contractualPaymentMinor: v })} /> : null}
         </div>
       ) : null}
 

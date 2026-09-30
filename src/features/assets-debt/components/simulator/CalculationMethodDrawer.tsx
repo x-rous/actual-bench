@@ -115,7 +115,19 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
           <fieldset className="flex flex-col gap-2">
             <legend className="text-sm font-semibold">Repayment</legend>
             <SelectField label="Amortization" value={p.amortization} options={AMORTIZATION_OPTIONS.filter((o) => o.value !== "revolving")} onChange={(v) => set({ amortization: v as Profile["amortization"] })} />
-            <SelectField label="Repayment amount" value={p.repaymentDerivation} options={REPAYMENT_DERIVATION_OPTIONS} onChange={(v) => set({ repaymentDerivation: v as Profile["repaymentDerivation"] })} />
+            <SelectField
+              label="Repayment amount"
+              value={p.repaymentDerivation}
+              options={REPAYMENT_DERIVATION_OPTIONS}
+              onChange={(v) => {
+                const repaymentDerivation = v as Profile["repaymentDerivation"];
+                change({
+                  ...sim,
+                  contractualPaymentMinor: repaymentDerivation === "contractual-fixed" || repaymentDerivation === "lender-provided" ? sim.contractualPaymentMinor : null,
+                  profile: { ...p, repaymentDerivation, presetId: null },
+                });
+              }}
+            />
             <SelectField label="Recalculate the repayment" value={p.recast} options={RECAST_OPTIONS} onChange={(v) => set({ recast: v as Profile["recast"] })} />
             {p.recast === "on-contract-date" ? (
               <div className="flex flex-col gap-2">

@@ -12,6 +12,7 @@ import {
   missingInputs,
   newSimulation,
   newTracking,
+  projectionWindow,
   simulationToModel,
   statesToSaveInput,
   summarizeProfile,
@@ -69,6 +70,48 @@ describe("the five-input path", () => {
     expect(off.ok && off.model.phases).toEqual([]);
     expect(off.ok && off.model.paymentRecasts).toEqual([]);
     expect(off.ok && off.model.terms.contractualPaymentMinor).toBeNull();
+  });
+
+  it("keeps lender-stated repayment and maturity explicit instead of relabelling them derived", () => {
+    const input = sim({
+      startDate: "2023-10-25",
+      termMonths: 48,
+      firstPaymentDate: "2023-12-01",
+      maturityDate: "2027-11-01",
+      contractualPaymentMinor: 837_957,
+      profile: { ...sim().profile, repaymentDerivation: "contractual-fixed" },
+    }, "0.0699");
+    const built = simulationToModel(input);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.model.terms).toMatchObject({ maturityDate: "2027-11-01", contractualPaymentMinor: 837_957, firstPaymentDate: "2023-12-01" });
+    expect(built.model.profile.repaymentDerivation).toBe("contractual-fixed");
+    expect(projectionWindow(input)).toEqual({ from: "2023-10-25", to: "2027-12-01" });
+  });
+
+  it("projects 48 irregular-first-period repayments through the anchored final date", () => {
+    const base = sim();
+    const input = sim({
+      principalMinor: 35_000_000,
+      startDate: "2023-10-25",
+      termMonths: 48,
+      firstPaymentDate: "2023-12-01",
+      maturityDate: null,
+      contractualPaymentMinor: 837_957,
+      profile: {
+        ...base.profile,
+        dayCount: "actual-365-fixed",
+        accrual: "daily-simple",
+        capitalization: "at-charge",
+        repaymentDerivation: "contractual-fixed",
+        eventOrder: { scheduledRepayments: "after-accrual", otherPayments: "before-accrual", offsets: "before-accrual" },
+      },
+    }, "0.06990005");
+    const result = project(input);
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    const repayments = result.events.filter((e) => e.eventType === "repayment" || e.eventType === "final-payment");
+    expect(repayments).toHaveLength(48);
+    expect(repayments.at(-1)).toMatchObject({ date: "2027-11-01", cashMovementMinor: -902_257, balanceAfterMinor: 0 });
   });
 });
 
@@ -170,6 +213,27 @@ describe("state boundary and saving", () => {
     expect(saved.ok && (saved.input.config as { version: number }).version).toBe(2);
     const conventional = statesToSaveInput(base, { ...newTracking(base), name: "Conventional", status: "draft" }, "budget-1", "bench-periodic");
     expect(conventional.ok && (conventional.input.config as { version: number }).version).toBe(1);
+  });
+
+  it("saves contractual repayment and ordinary maturity in config v1", () => {
+    const base = sim();
+    const s = sim({
+      termMonths: 48,
+      startDate: "2023-10-25",
+      firstPaymentDate: "2023-12-01",
+      maturityDate: "2027-11-01",
+      contractualPaymentMinor: 837_957,
+      profile: { ...base.profile, repaymentDerivation: "contractual-fixed" },
+    });
+    const saved = statesToSaveInput(s, { ...newTracking(s), name: "HSBC loan", status: "draft" }, "budget-1", "bench-periodic");
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(saved.input.config).toMatchObject({
+      version: 1,
+      terms: { maturityDate: "2027-11-01", contractualPaymentMinor: 837_957, firstPaymentDate: "2023-12-01" },
+      profile: { repaymentDerivation: "contractual-fixed" },
+    });
+    expect(parseDebtConfig(saved.input.config).ok).toBe(true);
   });
 });
 
