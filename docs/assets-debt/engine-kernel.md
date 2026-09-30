@@ -43,6 +43,10 @@ transfer links, settle timing) belong to the write path, never here.
 - Weekly and fortnightly schedules step exactly 7 or 14 days, so a year can hold 53
   weekly or 27 fortnightly dates. Monthly, quarterly and annual schedules count from the
   first date.
+- A month-based contractual term with no explicit maturity counts those generated repayment
+  periods from the first payment date. It is not truncated at `opening date + term` when the first
+  period is irregular. Weekly/fortnightly terms retain their real calendar boundary, and explicit
+  maturity remains authoritative.
 
 ## Day counts (`loan/daycount/`)
 
@@ -96,6 +100,9 @@ conflated:
 - `split-monthly`: monthly ÷ 2 or ÷ 4. Over a year this pays about one extra monthly
   payment.
 - `contractual-fixed` and `lender-provided`: the amount is taken as given.
+
+The simulator maps a lender-stated amount to `contractual-fixed`. It never keeps an annuity
+identifier while secretly substituting that amount.
 
 The conventional level payment uses `P·r·(1+r)^n / ((1+r)^n − 1)`, or P ÷ n at a zero
 rate. Its meaning is unchanged by the dated method. A qualifying dated recast repeats the dated
@@ -157,6 +164,7 @@ Every identifier version 1 accepts is frozen in
 `loan/versions.ts#DEBT_CONFIG_V1_IDENTIFIERS`, and `identifiers.test.ts` holds that
 freeze. Version 2 adds only `dated-cashflow-annuity`; documents using the older identifiers keep
 version 1. This per-record JSON version requires no relational schema migration.
+The irregular-term correction adds no config field or identifier, so it does not create config v3.
 
 ## Same-day order (`loan/events.ts`, `event-order@1`)
 

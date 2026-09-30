@@ -12,7 +12,7 @@ posts, and it never reads Actual during a run.
 `projection.ts#simulate` picks the engine from the profile:
 
 - `accrual: per-period` → **bench-periodic** (`periodic-engine.ts`, `loan-periodic@2`);
-- `daily-simple` or `daily-compounded` → **bench-daily** (`daily-engine.ts`, `loan-daily@3`).
+- `daily-simple` or `daily-compounded` → **bench-daily** (`daily-engine.ts`, `loan-daily@4`).
 
 `eligibility.ts#evaluateStrategyEligibility` gives the recommended strategy (FR-026). It walks the
 ladder Actual formula rule → bench-periodic → bench-daily, and gives a reason for every strategy
@@ -161,7 +161,7 @@ Every event carries deterministic diagnostics for preview and audit, for example
 - negative amortization.
 
 Two diagnostic groups feed the simulator's schedule, so the UI never recomputes them
-(`loan-daily@3`, `loan-periodic@2`):
+(`loan-daily@4`, `loan-periodic@2`):
 
 - **Rate:** `effectiveAnnualRateDecimal` is the exact annual rate the engine accrued with on that
   event's day (so `from-next-charge-period` timing shows the old rate until the rate takes effect).
@@ -177,6 +177,15 @@ Two diagnostic groups feed the simulator's schedule, so the UI never recomputes 
 
 These are added to repayment, final-payment and interest-charge events after the day's steps. The
 projection contract stays v1: diagnostics are an open scalar record.
+
+### Contractual end of an irregular first period
+
+When `maturityDate` is present, it is the authoritative contractual boundary. Otherwise a
+month-based term counts repayment periods from `firstPaymentDate`: 48 monthly repayments beginning
+01-Dec-2023 end on 01-Nov-2027 even though `openingDate + 48 months` is 25-Oct-2027. Weekly and
+fortnightly terms keep a calendar boundary so real 53rd/27th-payment years remain. `loan-daily@3`
+retains the old month-based cutoff for historical reproduction; `loan-daily@4` owns the corrected
+rule. The schedule generator and final-payment decision are unchanged.
 
 `diagnostics.ts#diagnoseConventions` re-runs a request under each selectable day count, same-day
 timing and posting rounding, and ranks them against a lender balance. It returns evidence, never a

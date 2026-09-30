@@ -41,6 +41,12 @@ later occurrences with nothing to pay do not create rows. The recurrence itself 
 a later redraw or capitalized fee can make a later occurrence relevant. Imported/observed cash is
 not silently capped.
 
+For an irregular first period, the term counts scheduled repayments from the first repayment date
+unless the user supplies an explicit contractual maturity. More options exposes that maturity for
+every term loan, not only balloons. It also exposes an optional **Contractual repayment amount**:
+entering one selects the distinct `contractual-fixed` derivation; it does not silently replace an
+annuity while leaving the result labelled derived.
+
 ## Live projection
 
 `useLiveProjection` debounces input by 200 ms (typing only), then runs the projection through a
@@ -73,7 +79,8 @@ The chart (`components/chart/`) is the only code that imports Recharts, loaded l
 ## Where each setting lives
 
 - **On the main surface:** the five inputs, then feature switches (interest-only, offset, fees,
-  revolving terms, and under More options the first repayment date, balloon and contract repayment).
+  revolving terms, and under More options the first repayment date, contractual maturity,
+  contractual repayment amount and balloon).
 - **Dialogs:** rate changes, extra transactions (extra repayments, redraws, fees, repayment changes,
   offset balance changes), fees and costs, interest-only periods.
 - **Calculation method drawer:** every profile convention, including timing, same-day placements and
