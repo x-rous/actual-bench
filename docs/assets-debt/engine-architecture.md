@@ -148,6 +148,24 @@ Every event carries deterministic diagnostics for preview and audit, for example
 - the recast's previous, recalculated and capped payments;
 - negative amortization.
 
+Two diagnostic groups feed the simulator's schedule, so the UI never recomputes them
+(`loan-daily@2`, `loan-periodic@2`):
+
+- **Rate:** `effectiveAnnualRateDecimal` is the exact annual rate the engine accrued with on that
+  event's day (so `from-next-charge-period` timing shows the old rate until the rate takes effect).
+  `interestRatesDecimal` lists, separated by `;`, every rate that accrued into the interest the
+  event charges or pays; more than one means the period mixed rates, and the schedule shows
+  "Multiple".
+- **Offset** (only when the loan has an offset): with `base` the engine's own pre-offset
+  interest base for the day (the debt, plus accrued interest under daily compounding) and
+  `eligible` the offset after its share, basis and cap,
+  `offsetAppliedMinor = floor(min(max(0, eligible), max(0, debt)))` and
+  `interestBearingMinor = floor(max(0, base - applied))`, both rounded down to minor units.
+  They explain the calculation and are never fed back into it.
+
+These are added to repayment, final-payment and interest-charge events after the day's steps. The
+projection contract stays v1: diagnostics are an open scalar record.
+
 `diagnostics.ts#diagnoseConventions` re-runs a request under each selectable day count, same-day
 timing and posting rounding, and ranks them against a lender balance. It returns evidence, never a
 configuration change (FR-093).
