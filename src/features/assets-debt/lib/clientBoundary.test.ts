@@ -21,7 +21,7 @@ it("no runtime import of a server-only module from the simulator or the model bu
   const offenders: string[] = [];
   for (const file of roots.flatMap(files)) {
     const source = readFileSync(file, "utf8");
-    for (const m of source.matchAll(/^import\s+(type\s+)?[^;]*?from\s+"([^"]+)";/gms)) {
+    for (const m of source.matchAll(/^import\s+(type\s+)?[^;]*?from\s+"([^"]+)";/gm)) {
       if (!m[1] && SERVER_ONLY.some((re) => re.test(m[2]))) offenders.push(`${file}: ${m[2]}`);
     }
   }

@@ -60,3 +60,15 @@ export function parseFactor(text: string): Parsed<string | null> {
   if (value === "0") return { ok: false, message: "The multiplier must be greater than zero" };
   return { ok: true, value };
 }
+
+/** 2550 bps → "0.255" (a fraction), exactly. */
+export function bpsToFraction(bps: number): string {
+  return toPlainString({ int: BigInt(bps), scale: 4 });
+}
+
+/** "0.255" → 2550 bps, exactly; null when the fraction is not a whole number of basis points. */
+export function fractionToBps(fraction: string | null): number | null {
+  if (fraction === null) return null;
+  const bps = toPlainString(mul(dec(fraction), dec("10000")));
+  return /^\d+$/.test(bps) ? Number(bps) : null;
+}

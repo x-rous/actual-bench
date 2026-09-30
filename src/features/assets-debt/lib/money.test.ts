@@ -1,8 +1,7 @@
-import { directory, saveInput, tempDebtDb } from "@/lib/assets-debt/testing/debtFixtures";
-import { resetAppDbForTests } from "@/lib/app-db/connection";
-import { createDebtConfiguration } from "@/lib/assets-debt/services/debtConfigService";
-import { applyPreset, DEFAULT_PROFILE, newDebtState, stateFromDetail, toSaveInput } from "./editorModel";
-import { formatMinor, fractionToPercent, minorToMajorText, parseFactor, parseMajorToMinor, percentToFraction } from "./money";
+import { parseDebtConfig } from "@/lib/financial-models/loan/configSchema";
+import { SIMULATOR_DEFAULT_PROFILE as DEFAULT_PROFILE, simulationToModel } from "./simulatorModel";
+import { sim } from "./simulatorTestKit";
+import { bpsToFraction, formatMinor, fractionToBps, fractionToPercent, minorToMajorText, parseFactor, parseMajorToMinor, percentToFraction } from "./money";
 import { DAY_COUNT_OPTIONS, PROFILE_PRESETS, REPAYMENT_FREQUENCY_OPTIONS, PER_RATE_RECAST_OPTIONS } from "./vocabulary";
 
 describe("exact money and rate conversion", () => {
@@ -27,6 +26,9 @@ describe("exact money and rate conversion", () => {
     expect(fractionToPercent("0.0612")).toBe("6.12");
     expect(parseFactor("1.0750")).toEqual({ ok: true, value: "1.075" });
     expect(parseFactor("0").ok).toBe(false);
+    expect(bpsToFraction(2550)).toBe("0.255");
+    expect(fractionToBps("0.255")).toBe(2550);
+    expect(fractionToBps("0.00001")).toBeNull();
   });
 });
 
@@ -46,41 +48,12 @@ describe("support surface (configuration v1)", () => {
   it("presets fill explicit profile fields, never name a lender, and every preset is a valid v1 profile", () => {
     for (const preset of PROFILE_PRESETS) {
       expect(`${preset.label} ${preset.description}`).not.toMatch(/bank|lender|ANZ|Westpac|Chase|Wells|CommBank|NAB|RBC|TD/i);
-      const profile = applyPreset(DEFAULT_PROFILE, preset.id);
-      expect(profile.presetId).toBe(preset.id);
-      const state = { ...newDebtState("b"), profile, status: "draft" as const, name: "x", terms: { ...newDebtState("b").terms, openingDate: "2024-01-01", openingPrincipal: "1000" } };
-      state.rates = [{ ...state.rates[0], accrualEffectiveFrom: "2024-01-01", ratePercent: "5" }];
-      expect(toSaveInput(state).ok).toBe(true);
+      const profile = { ...DEFAULT_PROFILE, ...preset.profile, presetId: preset.id };
+      const built = simulationToModel(sim({ profile }));
+      expect(built.ok).toBe(true);
+      if (!built.ok) continue;
+      const config = { format: "rd084.debt-config", version: 1, terms: built.model.terms, profile: built.model.profile, phases: [], components: [], paymentRecasts: [], revolving: null };
+      expect(parseDebtConfig(config).ok).toBe(true);
     }
-  });
-});
-
-describe("editor state round trip", () => {
-  afterEach(() => resetAppDbForTests());
-
-  it("a saved debt loads into the editor and saves back to the same configuration", () => {
-    const db = tempDebtDb();
-    const input = saveInput({
-      rates: [{ ...saveInput().rates[0], paymentCap: { kind: "previous-payment-factor", factor: "1.075" }, rateCapDecimal: "0.1" }],
-      offsets: [{ actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 2550, balanceBasis: "cleared", capMinor: 500_000 }],
-    });
-    const detail = createDebtConfiguration(db, input, directory());
-    const state = stateFromDetail(detail)!;
-    expect(state.rates[0]).toMatchObject({ ratePercent: "6.12", capKind: "previous-payment-factor", capFactor: "1.075", rateCapPercent: "10" });
-    expect(state.offsets[0]).toMatchObject({ percent: "25.5", cap: "5000.00", balanceBasis: "cleared" });
-    const back = toSaveInput(state);
-    if (!back.ok) throw new Error(JSON.stringify(back.issues));
-    expect(back.input.rates[0]).toMatchObject({ annualRateDecimal: "0.0612", paymentCap: { kind: "previous-payment-factor", factor: "1.075" }, rateCapDecimal: "0.1" });
-    expect(back.input.offsets[0]).toMatchObject({ offsetPercentageBps: 2550, capMinor: 500_000 });
-    expect(back.input.config).toEqual(JSON.parse(detail.debt.currentConfigJson));
-  });
-
-  it("reports unparseable input by field instead of sending it", () => {
-    const state = newDebtState("b");
-    state.terms.openingPrincipal = "lots";
-    state.rates[0].ratePercent = "-2";
-    const result = toSaveInput(state);
-    expect(result.ok).toBe(false);
-    expect(result.ok ? [] : result.issues.map((i) => i.field)).toEqual(expect.arrayContaining(["config.terms.openingPrincipalMinor", "rates.0.annualRateDecimal", "config.terms.openingDate"]));
   });
 });

@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
-import { NewDebtView } from "@/features/assets-debt/components/AssetsDebtViews";
+import { AssetsDebtShell } from "@/features/assets-debt/components/AssetsDebtViews";
+import { NewLoanView } from "@/features/assets-debt/components/LoanPages";
 
 export const metadata: Metadata = {
-  title: "New debt - Actual Bench",
+  title: "New loan - Actual Bench",
 };
 
-export default function NewDebtPage() {
-  return <NewDebtView />;
+export default function NewLoanPage() {
+  return (
+    <AssetsDebtShell title="Assets & Debt">
+      <NewLoanView />
+    </AssetsDebtShell>
+  );
 }

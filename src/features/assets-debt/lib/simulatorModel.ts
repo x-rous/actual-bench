@@ -607,3 +607,18 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
     },
   };
 }
+
+/**
+ * An assumed extra repayment that would pay more than is owed blocks the
+ * projection (the engine treats overpayment as needing review). This offers the
+ * user's fix: recurring extra repayments end the day before the first one that
+ * would overpay. Only recurring extras change; nothing is silent.
+ */
+export function endRecurringExtrasBefore(sim: SimulationState, date: string): SimulationState {
+  return {
+    ...sim,
+    assumptions: sim.assumptions.map((a) =>
+      a.kind === "extra-repayment" && a.recurrence && a.effectiveFrom < date && a.recurrence.until >= date ? { ...a, recurrence: { ...a.recurrence, until: addDays(date, -1) } } : a
+    ),
+  };
+}
