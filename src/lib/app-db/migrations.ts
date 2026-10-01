@@ -58,7 +58,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 38;
+export const LATEST_SCHEMA_VERSION = 39;
 
 type Migration = {
   version: number;
@@ -485,7 +485,35 @@ const MIGRATIONS: readonly Migration[] = [
       ...ASSETS_DEBT_V38_TRIGGER_SQL,
     ],
   },
+  {
+    version: 39,
+    // RD-084 P1.3f: offset deposits and withdrawals use the existing account
+    // column. Rebuild only to broaden its cross-column invariant; every value
+    // is copied byte for byte and no financial row is created or transformed.
+    apply: applyOffsetAssumptionKinds,
+  },
 ];
+
+function applyOffsetAssumptionKinds(db: SqliteDatabase): void {
+  if (!tableExists(db, "debt_future_assumptions")) return;
+  const nextSql = DEBT_FUTURE_ASSUMPTION_TABLE_SQL.replace(
+    "CREATE TABLE IF NOT EXISTS debt_future_assumptions",
+    "CREATE TABLE debt_future_assumptions_v39"
+  );
+  db.exec(nextSql);
+  db.exec(`
+    INSERT INTO debt_future_assumptions_v39
+      (id, debt_id, assumption_kind, effective_from, recurrence_json, amount_minor,
+       fee_treatment, offset_account_id, note, created_at, updated_at)
+    SELECT id, debt_id, assumption_kind, effective_from, recurrence_json, amount_minor,
+           fee_treatment, offset_account_id, note, created_at, updated_at
+      FROM debt_future_assumptions
+  `);
+  db.exec("DROP TABLE debt_future_assumptions");
+  db.exec("ALTER TABLE debt_future_assumptions_v39 RENAME TO debt_future_assumptions");
+  const index = ASSETS_DEBT_V38_INDEX_SQL.find((statement) => statement.includes("idx_debt_future_assumptions_debt"));
+  if (index) db.exec(index);
+}
 
 function applyCredentialStore(db: SqliteDatabase): void {
   db.exec(`

@@ -21,6 +21,7 @@ import {
   EXECUTION_STRATEGIES,
   FEE_TREATMENT_VALUES,
   LENDER_PATTERNS,
+  OFFSET_ASSUMPTION_KINDS,
   OFFSET_BALANCE_BASES,
   PER_RATE_RECAST_POLICIES,
   SIGN_CONVENTIONS,
@@ -290,17 +291,17 @@ export function validateDebtSave(
     const f = (name: string) => `assumptions.${i}.${name}`;
     oneOf(DEBT_ASSUMPTION_KINDS, a.kind, f("kind"));
     if (!isIsoDate(a.effectiveFrom)) add(f("effectiveFrom"), "must be a date");
-    const positive = a.kind === "extra-repayment" || a.kind === "draw" || a.kind === "fee";
+    const positive = a.kind === "extra-repayment" || a.kind === "draw" || a.kind === "fee" || a.kind === "offset-deposit" || a.kind === "offset-withdrawal";
     if (!Number.isSafeInteger(a.amountMinor) || a.amountMinor < (positive ? 1 : 0)) add(f("amountMinor"), positive ? "must be a positive amount" : "must be zero or more");
     if (a.kind === "fee") oneOf(FEE_TREATMENT_VALUES, a.feeTreatment, f("feeTreatment"));
     else if (a.feeTreatment) add(f("feeTreatment"), "only a fee has a treatment");
-    if (a.kind === "offset-balance") {
+    if (OFFSET_ASSUMPTION_KINDS.includes(a.kind)) {
       if (!a.offsetAccountId || !offsetAccounts.has(a.offsetAccountId)) add(f("offsetAccountId"), "must be one of this debt's offset accounts");
     } else if (a.offsetAccountId) {
-      add(f("offsetAccountId"), "only an offset-balance assumption names an account");
+      add(f("offsetAccountId"), "only an offset assumption names an account");
     }
     if (a.recurrence) {
-      if (!["extra-repayment", "draw", "fee"].includes(a.kind)) add(f("recurrence"), "only extra repayments, draws and fees can recur");
+      if (!["extra-repayment", "draw", "fee", "offset-deposit", "offset-withdrawal"].includes(a.kind)) add(f("recurrence"), "only extra repayments, draws, fees, offset deposits and offset withdrawals can recur");
       if (!["weekly", "fortnightly", "monthly", "quarterly", "annual"].includes(a.recurrence.frequency)) add(f("recurrence.frequency"), "must be weekly, fortnightly, monthly, quarterly or annual");
       if (!isIsoDate(a.recurrence.until) || a.recurrence.until < a.effectiveFrom) add(f("recurrence.until"), "must be a date on or after the first date");
     }
@@ -474,8 +475,8 @@ export function saveBaselineAssumptions(db: SqliteDatabase, id: string, assumpti
   const offsetAccounts = new Set(detail.offsets.map((o) => o.actualAccountId));
   assumptions.forEach((a, i) => {
     if (!(DEBT_ASSUMPTION_KINDS as readonly string[]).includes(a.kind)) issues.push({ field: `assumptions.${i}.kind`, message: "is not a known assumption kind" });
-    if (a.kind === "offset-balance" && (!a.offsetAccountId || !offsetAccounts.has(a.offsetAccountId))) issues.push({ field: `assumptions.${i}.offsetAccountId`, message: "must be one of this debt's offset accounts" });
-    const positive = a.kind === "extra-repayment" || a.kind === "draw" || a.kind === "fee";
+    if (OFFSET_ASSUMPTION_KINDS.includes(a.kind) && (!a.offsetAccountId || !offsetAccounts.has(a.offsetAccountId))) issues.push({ field: `assumptions.${i}.offsetAccountId`, message: "must be one of this debt's offset accounts" });
+    const positive = a.kind === "extra-repayment" || a.kind === "draw" || a.kind === "fee" || a.kind === "offset-deposit" || a.kind === "offset-withdrawal";
     if (!Number.isSafeInteger(a.amountMinor) || a.amountMinor < (positive ? 1 : 0)) issues.push({ field: `assumptions.${i}.amountMinor`, message: "must be a valid amount" });
   });
   if (issues.length) throw new DebtConfigValidationError(issues);

@@ -73,7 +73,7 @@ const recurring = (from = "2024-01-10", amountMinor = 6_000, until = "2024-05-10
   recurrence: { frequency: "monthly", until },
 });
 
-describe("assumed extra repayments after payoff (loan-daily@4)", () => {
+describe("assumed extra repayments after payoff (loan-daily@5)", () => {
   it("caps the payoff occurrence, emits no later zero-value events, and keeps requested/applied diagnostics", () => {
     const result = run(model({ assumptions: [recurring()] }));
     const extras = result.events.filter((e) => e.type === "extra-repayment");

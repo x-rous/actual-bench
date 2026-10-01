@@ -37,7 +37,8 @@ import type { Certainty, EventRef, FutureAssumption, LedgerEvent } from "./model
  * bears interest, only the per-row balances reported.
  */
 
-export const EVENT_ORDER_VERSION = "event-order@1";
+export const EVENT_ORDER_VERSION_V1 = "event-order@1";
+export const EVENT_ORDER_VERSION = "event-order@2";
 
 export type DayStep =
   | "contract-change"
@@ -104,6 +105,8 @@ export function stepForEvent(kind: string): DayStep {
     case "draw":
       return "payment";
     case "offset-balance":
+    case "offset-deposit":
+    case "offset-withdrawal":
       return "offset-change";
     case "payment-change":
       return "contract-change";
@@ -138,7 +141,7 @@ export function orderEvents<T extends OrderableEvent>(events: readonly T[], prof
 /** A dated event as both engines consume it: validated, expanded and keyed. */
 export type EngineEvent = {
   date: IsoDate;
-  kind: "repayment" | "extra-repayment" | "draw" | "fee" | "offset-balance" | "lender-interest-charge" | "payment-change";
+  kind: "repayment" | "extra-repayment" | "draw" | "fee" | "offset-balance" | "offset-deposit" | "offset-withdrawal" | "lender-interest-charge" | "payment-change";
   /** Positive magnitude (a draw increases the debt by it; a repayment reduces it). */
   amountMinor: number;
   capitalized: boolean;
@@ -150,6 +153,14 @@ export type EngineEvent = {
 };
 
 export type NormalizedEvents = { ok: true; events: EngineEvent[] } | { ok: false; date: IsoDate; message: string };
+
+export const OFFSET_STATE_EVENT_KINDS = ["offset-balance", "offset-deposit", "offset-withdrawal"] as const;
+export type OffsetStateEventKind = (typeof OFFSET_STATE_EVENT_KINDS)[number];
+export const isOffsetStateEventKind = (kind: string): kind is OffsetStateEventKind =>
+  (OFFSET_STATE_EVENT_KINDS as readonly string[]).includes(kind);
+type OffsetStateLedgerEvent = Extract<LedgerEvent, { kind: OffsetStateEventKind }>;
+const isOffsetStateLedgerEvent = (event: LedgerEvent): event is OffsetStateLedgerEvent =>
+  isOffsetStateEventKind(event.kind);
 
 /**
  * Validate and merge observed ledger events with baseline assumptions.
@@ -170,8 +181,23 @@ export function normalizeEvents(
   const inWindow = (d: IsoDate) => compareDates(d, window.after) > 0 && compareDates(d, window.to) <= 0;
 
   for (const [i, e] of ledger.entries()) {
-    if (e.kind === "offset-balance") {
-      out.push({ date: e.date, kind: e.kind, amountMinor: e.balanceMinor, capitalized: false, accountId: e.accountId, clearedBalanceMinor: e.clearedBalanceMinor, certainty: "observed", ref: null, key: `offset:${e.accountId}:${e.date}:${i}` });
+    if (isOffsetStateLedgerEvent(e)) {
+      const amountMinor = e.kind === "offset-balance" ? e.balanceMinor : e.amountMinor;
+      if (!Number.isSafeInteger(amountMinor) || amountMinor < 0 || (e.kind !== "offset-balance" && amountMinor === 0)) {
+        return { ok: false, date: e.date, message: `A ${e.kind} amount must be a positive number of minor units.` };
+      }
+      if (compareDates(e.date, window.to) > 0) continue;
+      out.push({
+        date: e.date,
+        kind: e.kind,
+        amountMinor,
+        capitalized: false,
+        accountId: e.accountId,
+        clearedBalanceMinor: e.kind === "offset-balance" ? e.clearedBalanceMinor : null,
+        certainty: "observed",
+        ref: e.kind === "offset-balance" ? null : e.ref,
+        key: `offset:${e.accountId}:${e.date}:${e.kind}:${i}`,
+      });
       continue;
     }
     if (!Number.isSafeInteger(e.amountMinor) || e.amountMinor < 0) {
@@ -196,14 +222,18 @@ export function normalizeEvents(
     if (a.kind !== "offset-balance" && (!Number.isSafeInteger(a.amountMinor) || a.amountMinor < 0)) {
       return { ok: false, date: a.date, message: `A ${a.kind} assumption must be a positive number of minor units.` };
     }
+    if ((a.kind === "offset-deposit" || a.kind === "offset-withdrawal") && a.amountMinor === 0) {
+      return { ok: false, date: a.date, message: `A ${a.kind} assumption must be a positive number of minor units.` };
+    }
     const recurrence = "recurrence" in a ? a.recurrence : undefined;
     const dates = recurrence
       ? generateSchedule({ frequency: recurrence.frequency, firstDate: a.date }, { from: a.date, to: compareDates(recurrence.until, window.to) < 0 ? recurrence.until : window.to })
       : [a.date];
     for (const date of dates) {
-      if (!inWindow(date) && !(a.kind === "offset-balance" && compareDates(date, window.after) <= 0)) continue;
+      if (!inWindow(date) && !(isOffsetStateEventKind(a.kind) && compareDates(date, window.after) <= 0)) continue;
       const base = { date, capitalized: false, accountId: null, clearedBalanceMinor: null, certainty: "assumed" as const, ref: { source: "assumption" as const, id: `${i}:${date}` }, key: `assumption:${i}:${date}` };
       if (a.kind === "offset-balance") out.push({ ...base, kind: "offset-balance", amountMinor: a.balanceMinor, accountId: a.accountId, clearedBalanceMinor: a.balanceMinor });
+      else if (a.kind === "offset-deposit" || a.kind === "offset-withdrawal") out.push({ ...base, kind: a.kind, amountMinor: a.amountMinor, accountId: a.accountId });
       else if (a.kind === "fee") out.push({ ...base, kind: "fee", amountMinor: a.amountMinor, capitalized: a.treatment === "capitalized" });
       else out.push({ ...base, kind: a.kind, amountMinor: a.amountMinor });
     }

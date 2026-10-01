@@ -92,6 +92,29 @@ describe("/api/assets-debt/debts", () => {
     expect((await schedule(json({ from: "2024-01-01", to: "2024-12-31" }), ctx("missing"))).status).toBe(404);
   });
 
+  it("round-trips one-off and recurring offset deltas through the API without relabelling them", async () => {
+    const offset = { actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10_000, balanceBasis: "total" as const, capMinor: null };
+    const debt = await create({
+      offsets: [offset],
+      assumptions: [
+        { kind: "offset-balance", effectiveFrom: "2024-01-01", recurrence: null, amountMinor: 50_000, feeTreatment: null, offsetAccountId: "acc-offset", note: "Opening snapshot" },
+        { kind: "offset-deposit", effectiveFrom: "2024-02-01", recurrence: { frequency: "monthly", until: "2024-04-01" }, amountMinor: 10_000, feeTreatment: null, offsetAccountId: "acc-offset", note: "Salary" },
+        { kind: "offset-withdrawal", effectiveFrom: "2024-03-15", recurrence: null, amountMinor: 5_000, feeTreatment: null, offsetAccountId: "acc-offset", note: "Expense" },
+      ],
+    });
+    const read = await getOne(new Request("http://bench/api"), ctx(debt.id));
+    const assumptions = ((await read.json()) as { debt: { assumptions: Array<{ assumptionKind: string; recurrence: unknown; offsetAccountId: string | null }> } }).debt.assumptions;
+    expect(assumptions.map((assumption) => assumption.assumptionKind)).toEqual([
+      "offset-balance",
+      "offset-deposit",
+      "offset-withdrawal",
+    ]);
+    expect(assumptions[1]).toMatchObject({
+      recurrence: { frequency: "monthly", until: "2024-04-01" },
+      offsetAccountId: "acc-offset",
+    });
+  });
+
   it("handlers hold no SQL and no calculation", () => {
     const files: string[] = [];
     const walk = (dir: string) => {

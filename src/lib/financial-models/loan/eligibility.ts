@@ -25,7 +25,7 @@ function periodicReasons(model: LoanModelSnapshot): string[] {
   if (model.offsets.length > 0) reasons.push("Offset balances change interest day by day.");
   if (profile.repaymentFrequency === "custom-dated" || profile.repaymentFrequency === "semi-monthly") reasons.push(`${profile.repaymentFrequency} repayments are not a regular period.`);
   if (model.behaviorClass === "revolving-credit") reasons.push("A revolving facility has no amortization periods.");
-  if (model.assumptions.some((a) => a.kind === "extra-repayment" || a.kind === "draw" || a.kind === "offset-balance")) {
+  if (model.assumptions.some((a) => a.kind === "extra-repayment" || a.kind === "draw" || a.kind === "offset-balance" || a.kind === "offset-deposit" || a.kind === "offset-withdrawal")) {
     reasons.push("Extra repayments, draws or offset changes can fall between payment dates.");
   }
   if (profile.chargeFrequency !== "at-repayment" && profile.accrual === "per-period") reasons.push("Interest is charged on its own cadence, not with each payment.");

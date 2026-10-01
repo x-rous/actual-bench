@@ -39,7 +39,9 @@ export type FutureAssumption =
   | { kind: "draw"; date: IsoDate; amountMinor: number; recurrence?: Recurrence }
   | { kind: "fee"; date: IsoDate; amountMinor: number; treatment: FeeTreatment; recurrence?: Recurrence }
   | { kind: "payment-change"; date: IsoDate; amountMinor: number }
-  | { kind: "offset-balance"; date: IsoDate; accountId: string; balanceMinor: number };
+  | { kind: "offset-balance"; date: IsoDate; accountId: string; balanceMinor: number }
+  | { kind: "offset-deposit"; date: IsoDate; accountId: string; amountMinor: number; recurrence?: Recurrence }
+  | { kind: "offset-withdrawal"; date: IsoDate; accountId: string; amountMinor: number; recurrence?: Recurrence };
 
 export type Recurrence = { frequency: Exclude<ScheduleFrequency, "custom-dated" | "semi-monthly">; until: IsoDate };
 
@@ -85,6 +87,8 @@ export type LedgerEvent =
   | { kind: "draw"; date: IsoDate; amountMinor: number; ref: EventRef }
   | { kind: "fee"; date: IsoDate; amountMinor: number; treatment: FeeTreatment; ref: EventRef }
   | { kind: "offset-balance"; date: IsoDate; accountId: string; balanceMinor: number; clearedBalanceMinor: number }
+  | { kind: "offset-deposit"; date: IsoDate; accountId: string; amountMinor: number; ref: EventRef }
+  | { kind: "offset-withdrawal"; date: IsoDate; accountId: string; amountMinor: number; ref: EventRef }
   | { kind: "lender-interest-charge"; date: IsoDate; amountMinor: number; ref: EventRef };
 
 export type SimulationOptions = {
@@ -159,6 +163,16 @@ export type ClosingState = {
   paidOff: boolean;
 };
 
+/** Authoritative offset state after every effective dated offset transition. */
+export type OffsetStatePoint = {
+  date: IsoDate;
+  accountId: string;
+  balanceMinor: number;
+  clearedBalanceMinor: number;
+  /** Sum of non-negative balances for offset accounts whose links are in force on this date. */
+  totalBalanceMinor: number;
+};
+
 export type PeriodSummary = {
   period: string;
   from: IsoDate;
@@ -183,15 +197,18 @@ export type BlockReason = {
     | "negative-amortization"
     | "negative-repayment"
     | "credit-balance"
+    | "offset-withdrawal-exceeds-balance"
+    | "conflicting-offset-snapshot"
     | "missing-payment"
     | "credit-limit-exceeded";
   classification: "review" | "blocked";
   date: IsoDate | null;
   message: string;
+  diagnostics?: Record<string, string | number | boolean | null>;
 };
 
 export type SimulationResult =
-  | { ok: true; events: ModelEvent[]; periods: PeriodSummary[]; closing: ClosingState; versions: EngineVersions }
+  | { ok: true; events: ModelEvent[]; offsetStates: OffsetStatePoint[]; periods: PeriodSummary[]; closing: ClosingState; versions: EngineVersions }
   | { ok: false; blocked: BlockReason[]; versions: EngineVersions };
 
 export function blocked(reason: BlockReason, versions: EngineVersions): SimulationResult {

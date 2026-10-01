@@ -110,12 +110,18 @@ describe("saving a debt configuration", () => {
 
   it("validates each assumption kind's required and forbidden fields", () => {
     const a = { kind: "extra-repayment" as const, effectiveFrom: "2025-01-01", recurrence: null, amountMinor: 5000, feeTreatment: null, offsetAccountId: null, note: null };
-    const one = (patch: Record<string, unknown>) => issuesOf(saveInput({ assumptions: [{ ...a, ...patch } as never] }));
+    const one = (patch: Record<string, unknown>) => issuesOf(saveInput({
+      offsets: [{ actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10_000, balanceBasis: "total", capMinor: null }],
+      assumptions: [{ ...a, ...patch } as never],
+    }));
     expect(one({})).toEqual([]);
     expect(one({ amountMinor: 0 })[0]).toMatch(/positive amount/);
     expect(one({ kind: "fee" })[0]).toMatch(/feeTreatment/);
     expect(one({ feeTreatment: "capitalized" })[0]).toMatch(/only a fee/);
     expect(one({ kind: "offset-balance", amountMinor: 0 })[0]).toMatch(/offset accounts/);
+    expect(one({ kind: "offset-deposit", offsetAccountId: "acc-offset", recurrence: { frequency: "monthly", until: "2026-01-01" } })).toEqual([]);
+    expect(one({ kind: "offset-withdrawal", offsetAccountId: "acc-offset", recurrence: { frequency: "monthly", until: "2026-01-01" } })).toEqual([]);
+    expect(one({ kind: "offset-deposit", offsetAccountId: null })[0]).toMatch(/offset accounts/);
     expect(one({ kind: "payment-change", recurrence: { frequency: "monthly", until: "2026-01-01" } })[0]).toMatch(/can recur/);
     expect(one({ recurrence: { frequency: "semi-monthly", until: "2026-01-01" } })[0]).toMatch(/frequency/);
     expect(one({ recurrence: { frequency: "monthly", until: "2024-01-01" } })[0]).toMatch(/until/);

@@ -4,6 +4,7 @@ import { optionalText, requireInteger, requireIsoDate, requireOneOf, requireText
 import {
   DEBT_ASSUMPTION_KINDS,
   FEE_TREATMENT_VALUES,
+  OFFSET_ASSUMPTION_KINDS,
   readStoredEnum,
   type DebtAssumptionKind,
   type DebtAssumptionRecord,
@@ -18,7 +19,7 @@ import {
  * applies it, as rows here plus a new model revision.
  *
  * `fee_treatment` belongs to fee assumptions only and `offset_account_id` to
- * offset-balance assumptions only (G1 D-3); table CHECKs enforce both. The
+ * offset assumptions only (G1 D-3); table CHECKs enforce both. The
  * offset account is an Actual id, so it is not a foreign key.
  */
 
@@ -26,7 +27,7 @@ import {
 export const RECURRENCE_ENVELOPE_VERSION = 1;
 /** Recurring assumptions repeat on a regular cadence; custom dates are separate rows. */
 export const ASSUMPTION_RECURRENCE_FREQUENCIES = ["weekly", "fortnightly", "monthly", "quarterly", "annual"] as const;
-const RECURRING_KINDS: readonly DebtAssumptionKind[] = ["extra-repayment", "draw", "fee"];
+const RECURRING_KINDS: readonly DebtAssumptionKind[] = ["extra-repayment", "draw", "fee", "offset-deposit", "offset-withdrawal"];
 
 type AssumptionRow = {
   id: string;
@@ -96,9 +97,11 @@ function columns(row: AssumptionInput) {
   }
   const feeTreatment = kind === "fee" ? requireOneOf(FEE_TREATMENT_VALUES, row.feeTreatment, "feeTreatment") : null;
   if (kind !== "fee" && row.feeTreatment) throw new AppDbValidationError("Only a fee assumption has a treatment");
-  const offsetAccountId = kind === "offset-balance" ? requireText(row.offsetAccountId, "offsetAccountId") : null;
-  if (kind !== "offset-balance" && row.offsetAccountId) throw new AppDbValidationError("Only an offset-balance assumption names an account");
-  return [kind, from, recurrence, requireInteger(row.amountMinor, "amountMinor", 0), feeTreatment, offsetAccountId, optionalText(row.note, "note")] as const;
+  const offsetKind = OFFSET_ASSUMPTION_KINDS.includes(kind);
+  const offsetAccountId = offsetKind ? requireText(row.offsetAccountId, "offsetAccountId") : null;
+  if (!offsetKind && row.offsetAccountId) throw new AppDbValidationError("Only an offset assumption names an account");
+  const minimum = kind === "extra-repayment" || kind === "draw" || kind === "fee" || kind === "offset-deposit" || kind === "offset-withdrawal" ? 1 : 0;
+  return [kind, from, recurrence, requireInteger(row.amountMinor, "amountMinor", minimum), feeTreatment, offsetAccountId, optionalText(row.note, "note")] as const;
 }
 
 export function listDebtAssumptions(db: SqliteDatabase, debtId: string): DebtAssumptionRecord[] {

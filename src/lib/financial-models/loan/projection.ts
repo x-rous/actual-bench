@@ -1,6 +1,6 @@
 import { compareDates, type IsoDate } from "../calendar/dates";
-import { simulateDaily } from "./daily-engine";
-import type { BlockReason, Certainty, FutureAssumption, LedgerEvent, LoanModelSnapshot, ModelEvent, PeriodSummary, SimulationRequest, SimulationResult, Anchor } from "./model";
+import { DAILY_ENGINE_VERSION_V4, simulateDaily, simulateDailyAtVersion } from "./daily-engine";
+import type { BlockReason, Certainty, FutureAssumption, LedgerEvent, LoanModelSnapshot, ModelEvent, OffsetStatePoint, PeriodSummary, SimulationRequest, SimulationResult, Anchor } from "./model";
 import { simulatePeriodic } from "./periodic-engine";
 import type { RatePeriod } from "./rates";
 import type { EngineVersions } from "./versions";
@@ -15,8 +15,9 @@ import type { EngineVersions } from "./versions";
  * copy of the model and are never persisted (FR-110, FR-114).
  */
 
-export const PROJECTION_VERSION = "projection@1";
-export const PROJECTION_SCHEMA_VERSION = 1;
+export const PROJECTION_VERSION_V1 = "projection@1";
+export const PROJECTION_VERSION = "projection@2";
+export const PROJECTION_SCHEMA_VERSION = 2;
 
 export type DebtProjectionOverrides = {
   /** Added to the baseline assumptions for this projection only. */
@@ -78,11 +79,17 @@ export type DebtProjection =
       schemaVersion: typeof PROJECTION_SCHEMA_VERSION;
       debtId: string;
       events: DebtProjectionEvent[];
+      /** State-only points; never repayments or amortization rows. */
+      offsetStates: OffsetStatePoint[];
       monthly: PeriodSummary[];
       yearly?: PeriodSummary[];
       stale: boolean;
     }
   | { ok: false; schemaVersion: typeof PROJECTION_SCHEMA_VERSION; debtId: string; blocked: BlockReason[] };
+
+export type DebtProjectionV1 =
+  | { ok: true; schemaVersion: 1; debtId: string; events: DebtProjectionEvent[]; monthly: PeriodSummary[]; yearly?: PeriodSummary[]; stale: boolean }
+  | { ok: false; schemaVersion: 1; debtId: string; blocked: BlockReason[] };
 
 /** The engine the profile calls for: per-period accrual runs periodic, daily accrual runs daily. */
 export function simulate(req: SimulationRequest): SimulationResult {
@@ -99,10 +106,22 @@ function withOverrides(model: LoanModelSnapshot, overrides: DebtProjectionOverri
   };
 }
 
-export function projectDebt(input: DebtProjectionInput): DebtProjection {
+function projectDebtImpl(input: DebtProjectionInput, version: typeof PROJECTION_VERSION | typeof PROJECTION_VERSION_V1): DebtProjection | DebtProjectionV1 {
   const model = withOverrides(input.model, input.overrides);
-  const result = simulate({ model, anchor: input.anchor, events: input.events, to: input.to });
-  if (!result.ok) return { ok: false, schemaVersion: PROJECTION_SCHEMA_VERSION, debtId: model.debtId, blocked: result.blocked };
+  if (version === PROJECTION_VERSION_V1 && [...model.assumptions, ...input.events].some((event) => event.kind === "offset-deposit" || event.kind === "offset-withdrawal")) {
+    return {
+      ok: false,
+      schemaVersion: 1,
+      debtId: model.debtId,
+      blocked: [{ code: "unsupported-profile", classification: "blocked", date: null, message: "projection@1 does not support offset deposits or withdrawals." }],
+    };
+  }
+  const request = { model, anchor: input.anchor, events: input.events, to: input.to };
+  const result = version === PROJECTION_VERSION_V1 && model.profile.accrual !== "per-period"
+    ? simulateDailyAtVersion(DAILY_ENGINE_VERSION_V4, request)
+    : simulate(request);
+  const schemaVersion = version === PROJECTION_VERSION ? 2 : 1;
+  if (!result.ok) return { ok: false, schemaVersion, debtId: model.debtId, blocked: result.blocked } as DebtProjection | DebtProjectionV1;
   const events = result.events
     .filter((e) => compareDates(e.date, input.from) >= 0)
     .map(
@@ -120,21 +139,48 @@ export function projectDebt(input: DebtProjectionInput): DebtProjection {
         debtAccountId: null,
         categoryAllocations: [],
         modelRevision: model.revision,
-        engineVersions: result.versions,
+        engineVersions: { ...result.versions, projection: version },
         diagnostics: e.diagnostics,
       })
     );
   const monthly = result.periods.filter((p) => compareDates(p.to, input.from) >= 0);
   const stale = input.baselineAnchorDate ? compareDates(input.baselineAnchorDate, input.anchor.date) < 0 : false;
-  return {
-    ok: true,
-    schemaVersion: PROJECTION_SCHEMA_VERSION,
+  const base = {
+    ok: true as const,
+    schemaVersion,
     debtId: model.debtId,
     events: input.resolution === "monthly" || input.resolution === "yearly" ? events.filter((e) => e.eventType !== "rate-change") : events,
     monthly,
     ...(input.resolution === "yearly" ? { yearly: yearly(monthly) } : {}),
     stale,
   };
+  const offsetStates = result.offsetStates.filter((point) => compareDates(point.date, input.from) >= 0);
+  if (version === PROJECTION_VERSION && result.offsetStates.length && offsetStates[0]?.date !== input.from) {
+    const prior = result.offsetStates.filter((point) => compareDates(point.date, input.from) < 0);
+    const totalBalanceMinor = prior.at(-1)?.totalBalanceMinor;
+    const latestByAccount = new Map(prior.map((point) => [point.accountId, point]));
+    if (totalBalanceMinor !== undefined) {
+      offsetStates.unshift(...[...latestByAccount.values()].sort((a, b) => a.accountId.localeCompare(b.accountId)).map((point) => ({ ...point, date: input.from, totalBalanceMinor })));
+    }
+  }
+  return version === PROJECTION_VERSION
+    ? { ...base, schemaVersion: 2, offsetStates }
+    : { ...base, schemaVersion: 1 };
+}
+
+export function projectDebt(input: DebtProjectionInput): DebtProjection {
+  return projectDebtImpl(input, PROJECTION_VERSION) as DebtProjection;
+}
+
+/** Historical projection contract, kept callable for stored-result reproduction. */
+export function projectDebtV1(input: DebtProjectionInput): DebtProjectionV1 {
+  return projectDebtImpl(input, PROJECTION_VERSION_V1) as DebtProjectionV1;
+}
+
+export function projectDebtAtVersion(version: string, input: DebtProjectionInput): DebtProjection | DebtProjectionV1 {
+  if (version === PROJECTION_VERSION_V1) return projectDebtV1(input);
+  if (version === PROJECTION_VERSION) return projectDebt(input);
+  throw new RangeError(`Unsupported projection version: ${version}`);
 }
 
 function yearly(monthly: readonly PeriodSummary[]): PeriodSummary[] {

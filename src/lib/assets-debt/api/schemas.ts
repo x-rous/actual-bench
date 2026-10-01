@@ -55,7 +55,7 @@ const offset = z.strictObject({
 
 export const assumptionSchema = z.strictObject({
   id: id.nullish(),
-  kind: z.enum(["extra-repayment", "draw", "fee", "payment-change", "offset-balance"]),
+  kind: z.enum(["extra-repayment", "draw", "fee", "payment-change", "offset-balance", "offset-deposit", "offset-withdrawal"]),
   effectiveFrom: isoDate,
   recurrence: z.strictObject({ frequency: z.string(), until: isoDate }).nullable(),
   amountMinor: minor,
@@ -103,6 +103,7 @@ export const scheduleRequestSchema = z.strictObject({
         .array(
           z.union([
             z.strictObject({ kind: z.enum(["extra-repayment", "draw"]), date: isoDate, amountMinor: minor, recurrence: z.strictObject({ frequency: z.enum(["weekly", "fortnightly", "monthly", "quarterly", "annual"]), until: isoDate }).optional() }),
+            z.strictObject({ kind: z.enum(["offset-deposit", "offset-withdrawal"]), date: isoDate, accountId: id, amountMinor: minor, recurrence: z.strictObject({ frequency: z.enum(["weekly", "fortnightly", "monthly", "quarterly", "annual"]), until: isoDate }).optional() }),
             z.strictObject({ kind: z.literal("payment-change"), date: isoDate, amountMinor: minor }),
           ])
         )

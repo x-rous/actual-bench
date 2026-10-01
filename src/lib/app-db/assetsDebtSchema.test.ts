@@ -3,7 +3,7 @@ import { tempDebtDb } from "@/lib/assets-debt/testing/debtFixtures";
 import type { SqliteDatabase } from "./types";
 
 /*
- * v38 constraints, exercised with raw SQL (G1 test plan): the database itself
+ * v38 configuration constraints plus v39's offset-kind invariant, exercised with raw SQL: the database itself
  * refuses structurally invalid rows, whatever code path writes them. Semantic
  * rules are the service's; these are the structural floor under it.
  */
@@ -138,12 +138,16 @@ describe("offset links and assumptions", () => {
     }
   });
 
-  it("ties fee treatment to fee assumptions and the account to offset-balance assumptions", () => {
+  it("ties fee treatment to fees and the account to all offset assumptions", () => {
     expect(() => assumption({ assumption_kind: "fee", fee_treatment: "capitalized" })).not.toThrow();
     expect(() => assumption({ assumption_kind: "offset-balance", offset_account_id: "acc-o" })).not.toThrow();
+    expect(() => assumption({ assumption_kind: "offset-deposit", offset_account_id: "acc-o", amount_minor: 1 })).not.toThrow();
+    expect(() => assumption({ assumption_kind: "offset-withdrawal", offset_account_id: "acc-o", amount_minor: 1 })).not.toThrow();
     expect(() => assumption({ assumption_kind: "fee" })).toThrow();
     expect(() => assumption({ fee_treatment: "cash-paid" })).toThrow();
     expect(() => assumption({ assumption_kind: "offset-balance" })).toThrow();
+    expect(() => assumption({ assumption_kind: "offset-deposit" })).toThrow();
+    expect(() => assumption({ assumption_kind: "offset-withdrawal" })).toThrow();
     expect(() => assumption({ offset_account_id: "acc-o" })).toThrow();
     expect(() => assumption({ recurrence_json: "{oops" })).toThrow();
     expect(() => assumption({ amount_minor: -1 })).toThrow();

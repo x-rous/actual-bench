@@ -197,10 +197,12 @@ describe("offset link and assumption repositories", () => {
       { kind: "extra-repayment", effectiveFrom: "2025-01-01", recurrence: { frequency: "monthly", until: "2025-12-01" }, amountMinor: 50000, feeTreatment: null, offsetAccountId: null, note: "bonus" },
       { kind: "fee", effectiveFrom: "2025-06-01", recurrence: null, amountMinor: 3000, feeTreatment: "capitalized", offsetAccountId: null, note: null },
       { kind: "offset-balance", effectiveFrom: "2025-02-01", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: "acc-o", note: null },
+      { kind: "offset-deposit", effectiveFrom: "2025-03-01", recurrence: { frequency: "monthly", until: "2025-05-01" }, amountMinor: 25_000, feeTreatment: null, offsetAccountId: "acc-o", note: "salary" },
+      { kind: "offset-withdrawal", effectiveFrom: "2025-04-01", recurrence: null, amountMinor: 10_000, feeTreatment: null, offsetAccountId: "acc-o", note: null },
     ];
     replaceDebtAssumptions(db, debtId, rows);
     const stored = listDebtAssumptions(db, debtId);
-    expect(stored.map((a) => a.assumptionKind)).toEqual(["extra-repayment", "offset-balance", "fee"]);
+    expect(stored.map((a) => a.assumptionKind)).toEqual(["extra-repayment", "offset-balance", "offset-deposit", "offset-withdrawal", "fee"]);
     expect(stored[0].recurrence).toEqual({ frequency: "monthly", until: "2025-12-01" });
     expect(db.prepare("SELECT recurrence_json FROM debt_future_assumptions WHERE assumption_kind = 'extra-repayment'").get()).toEqual({
       recurrence_json: '{"version":1,"data":{"frequency":"monthly","until":"2025-12-01"}}',
@@ -208,6 +210,7 @@ describe("offset link and assumption repositories", () => {
     expect(() => replaceDebtAssumptions(db, debtId, [{ ...rows[1], feeTreatment: null }])).toThrow(/feeTreatment/);
     expect(() => replaceDebtAssumptions(db, debtId, [{ ...rows[0], feeTreatment: "cash-paid" }])).toThrow(/Only a fee/);
     expect(() => replaceDebtAssumptions(db, debtId, [{ ...rows[2], offsetAccountId: null }])).toThrow(/offsetAccountId/);
+    expect(() => replaceDebtAssumptions(db, debtId, [{ ...rows[3], offsetAccountId: null }])).toThrow(/offsetAccountId/);
     expect(() => replaceDebtAssumptions(db, debtId, [{ ...rows[0], kind: "payment-change" }])).toThrow(/cannot recur/);
   });
 

@@ -155,7 +155,7 @@ describe("HSBC UAE Actual/360 Ijara golden fixture", () => {
   it("derives the bank's regular payment without a contractual payment override", () => {
     expect(MODEL.terms.contractualPaymentMinor).toBeNull();
     expect(result.closing.scheduledPaymentMinor).toBe(published.regularPaymentMinor);
-    expect(result.versions).toMatchObject({ engine: "loan-daily@4", repayment: "repayment@2", recast: "recast@2" });
+    expect(result.versions).toMatchObject({ engine: "loan-daily@5", repayment: "repayment@2", recast: "recast@2" });
   });
 
   it("leaves the conventional payment-frequency PMT behavior unchanged", () => {
@@ -172,8 +172,13 @@ describe("HSBC UAE Actual/360 Ijara golden fixture", () => {
     const historical = simulateDailyV2(request);
     expect(historical.ok).toBe(true);
     if (!conventional.ok || !historical.ok) return;
-    expect({ events: conventional.events, periods: conventional.periods, closing: conventional.closing })
-      .toEqual({ events: historical.events, periods: historical.periods, closing: historical.closing });
+    const financialEvents = (events: typeof conventional.events) => events.map((event) => {
+      const diagnostics = { ...event.diagnostics };
+      delete diagnostics.eventOrder;
+      return { ...event, diagnostics };
+    });
+    expect({ events: financialEvents(conventional.events), periods: conventional.periods, closing: conventional.closing })
+      .toEqual({ events: financialEvents(historical.events), periods: historical.periods, closing: historical.closing });
     expect(historical.versions).toMatchObject({ engine: "loan-daily@2", repayment: "repayment@1", recast: "recast@1" });
   });
 

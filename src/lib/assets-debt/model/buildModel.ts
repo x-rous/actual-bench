@@ -43,6 +43,9 @@ export function modelFromDetail(detail: DebtDetail): ModelBuild {
         return { kind: "fee", date: a.effectiveFrom, amountMinor: a.amountMinor ?? 0, treatment: a.feeTreatment as "cash-paid" | "capitalized", ...recurrence };
       case "offset-balance":
         return { kind: "offset-balance", date: a.effectiveFrom, accountId: a.offsetAccountId!, balanceMinor: a.amountMinor ?? 0 };
+      case "offset-deposit":
+      case "offset-withdrawal":
+        return { kind: a.assumptionKind, date: a.effectiveFrom, accountId: a.offsetAccountId!, amountMinor: a.amountMinor ?? 0, ...recurrence };
       case "payment-change":
         return { kind: "payment-change", date: a.effectiveFrom, amountMinor: a.amountMinor ?? 0 };
       case "draw":
@@ -80,4 +83,3 @@ export function modelFromDetail(detail: DebtDetail): ModelBuild {
     },
   };
 }
-

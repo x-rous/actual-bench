@@ -919,20 +919,20 @@ export const DEBT_FUTURE_ASSUMPTION_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS debt_future_assumptions (
   id text PRIMARY KEY,
   debt_id text NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
-  -- 'extra-repayment' | 'draw' | 'fee' | 'payment-change' | 'offset-balance'
+  -- 'extra-repayment' | 'draw' | 'fee' | 'payment-change' | 'offset-balance' | 'offset-deposit' | 'offset-withdrawal'
   assumption_kind text NOT NULL,
   effective_from text NOT NULL,
   recurrence_json text CHECK (recurrence_json IS NULL OR json_valid(recurrence_json)),
   amount_minor integer CHECK (amount_minor IS NULL OR ${integerAtLeast("amount_minor", 0)}),
   -- Fee assumptions only: 'cash-paid' | 'capitalized'.
   fee_treatment text,
-  -- Offset-balance assumptions only: an Actual account id, so not a foreign key.
+  -- Offset assumptions only: an Actual account id, so not a foreign key.
   offset_account_id text,
   note text,
   created_at text NOT NULL,
   updated_at text NOT NULL,
   CHECK ((assumption_kind IS 'fee') = (fee_treatment IS NOT NULL)),
-  CHECK ((assumption_kind IS 'offset-balance') = (offset_account_id IS NOT NULL))
+  CHECK ((assumption_kind IN ('offset-balance', 'offset-deposit', 'offset-withdrawal')) = (offset_account_id IS NOT NULL))
 );
 `;
 

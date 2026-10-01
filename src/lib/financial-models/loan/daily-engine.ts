@@ -5,11 +5,11 @@ import { dayInterest, intermediateScale, interestBase } from "./accrual";
 import { chargeDates } from "./charge";
 import { eventRoundingScale, postCharge } from "./dailyPrecision";
 import { dayCountOf, engineVersions, monthlySummaries, rateTable, validateModel, wholeMonthsBetween } from "./engineCommon";
-import { dayStepOrder, EVENT_ORDER_VERSION, normalizeEvents, type EngineEvent } from "./events";
+import { dayStepOrder, EVENT_ORDER_VERSION, EVENT_ORDER_VERSION_V1, isOffsetStateEventKind, normalizeEvents, type EngineEvent } from "./events";
 import { capitalizedComponents, cashComponents } from "./fees";
 import { amortizationMonths, contractualEnd, finalDecision } from "./finalPayment";
 import type { BlockReason, ModelEvent, ModelEventType, SimulationRequest, SimulationResult } from "./model";
-import { eligibleOffset, type OffsetBalances } from "./offsets";
+import { applyOffsetTransitions, eligibleOffset, OFFSETS_VERSION_V1, offsetStatePoints, totalOffsetBalanceMinor, type OffsetBalances } from "./offsets";
 import { interestOnlyPhaseOn } from "./phases";
 import { annualRecastDates, applyPaymentCap, derivePayment, derivePaymentV1, paymentCount, paymentEffectiveDate, recastPolicyFor } from "./recast";
 import { revolvingPayment, revolvingState } from "./revolving";
@@ -35,31 +35,39 @@ import { revolvingPayment, revolvingState } from "./revolving";
 
 export const DAILY_ENGINE_VERSION_V2 = "loan-daily@2";
 export const DAILY_ENGINE_VERSION_V3 = "loan-daily@3";
-export const DAILY_ENGINE_VERSION = "loan-daily@4";
+export const DAILY_ENGINE_VERSION_V4 = "loan-daily@4";
+export const DAILY_ENGINE_VERSION = "loan-daily@5";
 
 type Day = { date: IsoDate; events: EngineEvent[] };
 
 type DailyEngineBehavior = {
-  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4";
+  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5";
   repaymentVersion: "repayment@1" | "repayment@2";
   recastVersion: "recast@1" | "recast@2";
+  eventOrderVersion: "event-order@1" | "event-order@2";
+  offsetsVersion: "offsets@1" | "offsets@2";
   datedCashflow: boolean;
   capAssumedExtras: boolean;
   completePayoffState: boolean;
   contractualTermCountsPayments: boolean;
+  offsetDeltas: boolean;
 };
 
 const DAILY_V2: DailyEngineBehavior = {
   engineVersion: "loan-daily@2",
   repaymentVersion: "repayment@1",
   recastVersion: "recast@1",
+  eventOrderVersion: EVENT_ORDER_VERSION_V1,
+  offsetsVersion: OFFSETS_VERSION_V1,
   datedCashflow: false,
   capAssumedExtras: false,
   completePayoffState: false,
   contractualTermCountsPayments: false,
+  offsetDeltas: false,
 };
 
 const DAILY_V3: DailyEngineBehavior = {
+  ...DAILY_V2,
   engineVersion: "loan-daily@3",
   repaymentVersion: "repayment@2",
   recastVersion: "recast@2",
@@ -71,12 +79,20 @@ const DAILY_V3: DailyEngineBehavior = {
 
 const DAILY_V4: DailyEngineBehavior = {
   ...DAILY_V3,
-  engineVersion: "loan-daily@4",
+  engineVersion: DAILY_ENGINE_VERSION_V4,
   contractualTermCountsPayments: true,
 };
 
+const DAILY_V5: DailyEngineBehavior = {
+  ...DAILY_V4,
+  engineVersion: DAILY_ENGINE_VERSION,
+  eventOrderVersion: EVENT_ORDER_VERSION,
+  offsetsVersion: "offsets@2",
+  offsetDeltas: true,
+};
+
 export function simulateDaily(req: SimulationRequest): SimulationResult {
-  return simulateDailyImpl(req, DAILY_V4);
+  return simulateDailyImpl(req, DAILY_V5);
 }
 
 /** Historical loan-daily@2, kept callable for stored-result reproduction. */
@@ -89,10 +105,16 @@ export function simulateDailyV3(req: SimulationRequest): SimulationResult {
   return simulateDailyImpl(req, DAILY_V3);
 }
 
+/** Historical loan-daily@4, before explicit offset deltas and projection state points. */
+export function simulateDailyV4(req: SimulationRequest): SimulationResult {
+  return simulateDailyImpl(req, DAILY_V4);
+}
+
 /** Resolve an exact daily-engine version; unknown versions never fall forward. */
 export function simulateDailyAtVersion(version: string, req: SimulationRequest): SimulationResult {
   if (version === DAILY_ENGINE_VERSION_V2) return simulateDailyV2(req);
   if (version === DAILY_ENGINE_VERSION_V3) return simulateDailyV3(req);
+  if (version === DAILY_ENGINE_VERSION_V4) return simulateDailyV4(req);
   if (version === DAILY_ENGINE_VERSION) return simulateDaily(req);
   throw new RangeError(`Unsupported daily engine version: ${version}`);
 }
@@ -103,6 +125,8 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
     engine: behavior.engineVersion,
     repayment: behavior.repaymentVersion,
     recast: behavior.recastVersion,
+    eventOrder: behavior.eventOrderVersion,
+    offsets: behavior.offsetDeltas ? behavior.offsetsVersion : null,
   });
   const fail = (reason: BlockReason): SimulationResult => ({ ok: false, blocked: [reason], versions });
 
@@ -117,7 +141,11 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   const firstDay = addDays(anchor.date, 1);
   if (compareDates(req.to, anchor.date) <= 0) return fail({ code: "inconsistent-profile", classification: "blocked", date: req.to, message: "The simulation must end after its anchor." });
 
-  const normalized = normalizeEvents(req.events, req.options?.applyAssumptions === false ? [] : model.assumptions, { after: anchor.date, to: req.to }, profile.eventOrder);
+  const assumptions = req.options?.applyAssumptions === false ? [] : model.assumptions;
+  if (!behavior.offsetDeltas && [...req.events, ...assumptions].some((event) => event.kind === "offset-deposit" || event.kind === "offset-withdrawal")) {
+    return fail({ code: "unsupported-profile", classification: "blocked", date: null, message: `${behavior.engineVersion} does not support offset deposits or withdrawals.` });
+  }
+  const normalized = normalizeEvents(req.events, assumptions, { after: anchor.date, to: req.to }, profile.eventOrder);
   if (!normalized.ok) return fail({ code: "negative-repayment", classification: "blocked", date: normalized.date, message: normalized.message });
 
   const rates = rateTable(model.rates);
@@ -192,8 +220,33 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   let chargedSinceRepayment = 0;
   let currentStep = "";
   const offsetBalances = new Map<string, { balanceMinor: number; clearedBalanceMinor: number }>();
-  for (const e of normalized.events) {
-    if (e.kind === "offset-balance" && compareDates(e.date, anchor.date) <= 0) offsetBalances.set(e.accountId!, { balanceMinor: e.amountMinor, clearedBalanceMinor: e.clearedBalanceMinor ?? e.amountMinor });
+  const offsetStates = [] as NonNullable<Extract<SimulationResult, { ok: true }>["offsetStates"]>;
+  if (behavior.offsetDeltas) {
+    const preAnchorOffsetDays = new Map<IsoDate, EngineEvent[]>();
+    for (const event of normalized.events) {
+      if (!isOffsetStateEventKind(event.kind) || compareDates(event.date, anchor.date) > 0) continue;
+      preAnchorOffsetDays.set(event.date, [...(preAnchorOffsetDays.get(event.date) ?? []), event]);
+    }
+    for (const link of model.offsets) {
+      for (const date of [link.effectiveFrom, link.effectiveTo]) {
+        if (date !== null && compareDates(date, anchor.date) <= 0 && !preAnchorOffsetDays.has(date)) preAnchorOffsetDays.set(date, []);
+      }
+    }
+    for (const [date, dayEvents] of [...preAnchorOffsetDays].sort(([a], [b]) => compareDates(a, b))) {
+      const transition = applyOffsetTransitions(date, dayEvents, offsetBalances, model.offsets);
+      if (!transition.ok) return fail(transition.reason);
+      const boundaryAccounts = model.offsets.filter((link) => link.effectiveFrom === date || link.effectiveTo === date).map((link) => link.accountId);
+      offsetStates.push(...offsetStatePoints(date, [...transition.points.map((point) => point.accountId), ...boundaryAccounts], offsetBalances, model.offsets));
+    }
+    if (model.offsets.length && offsetStates.at(-1)?.date !== anchor.date) {
+      offsetStates.push(...offsetStatePoints(anchor.date, model.offsets.map((link) => link.accountId), offsetBalances, model.offsets));
+    }
+  } else {
+    for (const event of normalized.events) {
+      if (event.kind === "offset-balance" && compareDates(event.date, anchor.date) <= 0) {
+        offsetBalances.set(event.accountId!, { balanceMinor: event.amountMinor, clearedBalanceMinor: event.clearedBalanceMinor ?? event.amountMinor });
+      }
+    }
   }
   let periodRate: Dec | null = rates.rateOn(firstDay);
   const events: ModelEvent[] = [];
@@ -207,7 +260,7 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
 
   // Every event records the same-day step it ran in, under the versioned order.
   const emit = (e: Omit<ModelEvent, "diagnostics"> & { diagnostics?: ModelEvent["diagnostics"] }) =>
-    events.push({ ...e, diagnostics: { sameDayStep: currentStep, eventOrder: EVENT_ORDER_VERSION, ...e.diagnostics } });
+    events.push({ ...e, diagnostics: { sameDayStep: currentStep, eventOrder: behavior.eventOrderVersion, ...e.diagnostics } });
 
   const remainingPayments = () => (totalPayments === null ? 0 : Math.max(totalPayments - paymentsMade, 1));
   const remainingMonths = (date: IsoDate) => (amortMonths === null ? 0 : Math.max(amortMonths - wholeMonthsBetween(terms.openingDate, date), 1));
@@ -490,6 +543,14 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
       case "offset-balance":
         offsetBalances.set(e.accountId!, { balanceMinor: e.amountMinor, clearedBalanceMinor: e.clearedBalanceMinor ?? e.amountMinor });
         return null;
+      case "offset-deposit":
+      case "offset-withdrawal":
+        return {
+          code: "unsupported-profile",
+          classification: "blocked",
+          date: e.date,
+          message: "Offset deposits and withdrawals must be applied by the versioned offset transition step.",
+        };
       case "payment-change":
         payment = e.amountMinor;
         return null;
@@ -546,7 +607,16 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
           if (scheduledSet.has(date)) problem = scheduledRepayment(date);
           break;
         case "offset-change":
-          for (const e of day.events.filter((x) => x.kind === "offset-balance")) problem ??= applyEvent(e);
+          if (behavior.offsetDeltas) {
+            const transition = applyOffsetTransitions(date, day.events, offsetBalances, model.offsets);
+            if (!transition.ok) problem = transition.reason;
+            else {
+              const boundaryAccounts = model.offsets.filter((link) => link.effectiveFrom === date || link.effectiveTo === date).map((link) => link.accountId);
+              offsetStates.push(...offsetStatePoints(date, [...transition.points.map((point) => point.accountId), ...boundaryAccounts], offsetBalances, model.offsets));
+            }
+          } else {
+            for (const event of day.events.filter((candidate) => candidate.kind === "offset-balance")) problem ??= applyEvent(event);
+          }
           break;
         case "determine-balance":
           break;
@@ -563,6 +633,7 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
           ratesSinceCharge = noteRate(ratesSinceCharge, toPlainString(rate));
           if (hasOffsets) {
             const applied = min(max(offset, DEC_ZERO), max(debt, DEC_ZERO));
+            dayDiagnostics.offsetBalanceMinor = totalOffsetBalanceMinor(model.offsets, offsetBalances, date);
             dayDiagnostics.offsetAppliedMinor = toMinor(applied, digits, "down");
             dayDiagnostics.interestBearingMinor = toMinor(max(baseAmount, DEC_ZERO), digits, "down");
           }
@@ -588,6 +659,7 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   return {
     ok: true,
     events,
+    offsetStates,
     periods: monthlySummaries(events, openingMinor),
     closing: {
       date: req.to,

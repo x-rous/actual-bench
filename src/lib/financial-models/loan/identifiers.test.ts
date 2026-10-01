@@ -31,26 +31,26 @@ import { ACT360_VERSION } from "./daycount/act360";
 import { ACT365F_VERSION } from "./daycount/act365f";
 import { ACTACT_VERSION } from "./daycount/actact";
 import { MONTHLY_ALLOC_VERSION } from "./daycount/monthly-30-360-alloc";
-import { EVENT_ORDER_VERSION } from "./events";
+import { EVENT_ORDER_VERSION, EVENT_ORDER_VERSION_V1 } from "./events";
 import { PROFILE_VERSION } from "./profile";
 import { RATE_QUOTE_VERSION, RATES_VERSION } from "./rates";
 import { REPAYMENT_VERSION, REPAYMENT_VERSION_V1 } from "./repayment";
 import { ACCRUAL_VERSION } from "./accrual";
 import { CHARGE_VERSION } from "./charge";
 import { DAILY_PRECISION_VERSION } from "./dailyPrecision";
-import { OFFSETS_VERSION } from "./offsets";
+import { OFFSETS_VERSION, OFFSETS_VERSION_V1 } from "./offsets";
 import { RECAST_VERSION, RECAST_VERSION_V1 } from "./recast";
 import { PHASES_VERSION } from "./phases";
 import { FEE_TREATMENTS, FEES_VERSION } from "./fees";
 import { ALLOCATION_VERSION } from "./allocation";
 import { FINAL_PAYMENT_VERSION } from "./finalPayment";
 import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
-import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3 } from "./daily-engine";
+import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3, DAILY_ENGINE_VERSION_V4 } from "./daily-engine";
 import { REVOLVING_VERSION } from "./revolving";
 import { RECEIVABLE_VERSION } from "./receivable";
 import { ELIGIBILITY_VERSION } from "./eligibility";
 import { DIAGNOSTICS_VERSION } from "./diagnostics";
-import { PROJECTION_VERSION } from "./projection";
+import { PROJECTION_VERSION, PROJECTION_VERSION_V1 } from "./projection";
 import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN, DEBT_CONFIG_V2_IDENTIFIERS } from "./versions";
 
 /*
@@ -105,13 +105,17 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
       rates: "rates@1",
       "rate-quote": "rate-quote@1",
       profile: "profile@1",
-      "event-order": "event-order@1",
+      "event-order": "event-order@2",
       repayment: REPAYMENT_VERSION,
     });
     expect(REPAYMENT_VERSION_V1).toBe("repayment@1");
     expect(RECAST_VERSION_V1).toBe("recast@1");
     expect(DAILY_ENGINE_VERSION_V2).toBe("loan-daily@2");
     expect(DAILY_ENGINE_VERSION_V3).toBe("loan-daily@3");
+    expect(DAILY_ENGINE_VERSION_V4).toBe("loan-daily@4");
+    expect(EVENT_ORDER_VERSION_V1).toBe("event-order@1");
+    expect(OFFSETS_VERSION_V1).toBe("offsets@1");
+    expect(PROJECTION_VERSION_V1).toBe("projection@1");
   });
 
   it("adds only the dated repayment identifier in config v2", () => {

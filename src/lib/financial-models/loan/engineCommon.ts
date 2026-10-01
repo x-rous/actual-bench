@@ -16,7 +16,7 @@ import { CURRENT_COMPONENT_VERSIONS, type ComponentVersion, type EngineVersions 
 export function engineVersions(
   engine: "loan-periodic" | "loan-daily",
   model: LoanModelSnapshot,
-  overrides: Partial<Record<"engine" | "repayment" | "recast", ComponentVersion>> = {}
+  overrides: Partial<Record<"engine" | "repayment" | "recast" | "eventOrder", ComponentVersion>> & { offsets?: ComponentVersion | null } = {}
 ): EngineVersions {
   const dc = selectableDayCount(model.profile.dayCount);
   return {
@@ -24,7 +24,8 @@ export function engineVersions(
     "money-kernel": MONEY_KERNEL_VERSION,
     ...(dc ? { daycount: dc.version } : {}),
     "rate-quote": CURRENT_COMPONENT_VERSIONS["rate-quote"],
-    "event-order": CURRENT_COMPONENT_VERSIONS["event-order"],
+    "event-order": overrides.eventOrder ?? CURRENT_COMPONENT_VERSIONS["event-order"],
+    ...(engine === "loan-daily" && overrides.offsets !== null ? { offsets: overrides.offsets ?? CURRENT_COMPONENT_VERSIONS.offsets } : {}),
     repayment: overrides.repayment ?? CURRENT_COMPONENT_VERSIONS.repayment,
     recast: overrides.recast ?? CURRENT_COMPONENT_VERSIONS.recast,
     allocation: CURRENT_COMPONENT_VERSIONS.allocation,

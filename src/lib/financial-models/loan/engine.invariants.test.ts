@@ -193,7 +193,7 @@ describe("fees (T056): treatment is stated on each fee", () => {
   });
 });
 
-describe("same-day order (event-order@1): before-accrual → accrue → charge → after-accrual", () => {
+describe("same-day order (event-order@2): before-accrual → accrue → charge → after-accrual", () => {
   // 15 Feb is a charge date; on it: an extra repayment, a scheduled repayment, an offset change and a redraw.
   const sameDay: LedgerEvent[] = [
     { kind: "extra-repayment", date: "2024-02-15", amountMinor: 500000, ref: ref("x") },
@@ -208,7 +208,7 @@ describe("same-day order (event-order@1): before-accrual → accrue → charge �
   it("start-of-day: every event precedes the accrual and the charge", () => {
     const r = ok(simulateDaily(req(withOffset({ eventOrder: { timing: "start-of-day" } }), sameDay, "2024-02-15")));
     expect(dayOf(r)).toEqual([["draw", "payment"], ["extra-repayment", "payment"], ["repayment", "scheduled-repayment"], ["interest-charge", "charge"]]);
-    expect(r.events.every((e) => e.diagnostics.eventOrder === "event-order@1")).toBe(true);
+    expect(r.events.every((e) => e.diagnostics.eventOrder === "event-order@2")).toBe(true);
   });
 
   it("end-of-day: every event follows the day's charge", () => {

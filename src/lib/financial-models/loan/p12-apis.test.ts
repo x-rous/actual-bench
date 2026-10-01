@@ -97,13 +97,14 @@ describe("projection (T067)", () => {
   it("returns versioned events with every FR-111 field and no ledger operations", () => {
     const p = projectDebt(input);
     if (!p.ok) throw new Error(p.blocked[0].message);
-    expect(p.schemaVersion).toBe(1);
+    expect(p.schemaVersion).toBe(2);
+    expect(p.offsetStates).toEqual([]);
     const e = p.events[0];
     expect(Object.keys(e).sort()).toEqual(
       ["balanceAfterMinor", "balanceBeforeMinor", "cashMovementMinor", "categoryAllocations", "certainty", "date", "debtAccountId", "diagnostics", "engineVersions", "eventType", "feesMinor", "interestMinor", "modelRevision", "principalMovementMinor", "sourceAccountId"].sort()
     );
     expect(e.modelRevision).toBe(3);
-    expect(e.engineVersions.engine).toBe("loan-daily@4");
+    expect(e.engineVersions).toMatchObject({ engine: "loan-daily@5", projection: "projection@2" });
     expect(p.events.every((x) => x.date >= "2024-03-01")).toBe(true);
     expect(JSON.stringify(p)).not.toMatch(/operations|transactionId|writeActual/);
   });

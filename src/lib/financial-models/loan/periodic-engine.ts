@@ -3,7 +3,7 @@ import { generateSchedule } from "../calendar/schedule";
 import { add, dec, decInt, div, fromMinor, round, sub, toDecString, toMinor, toPlainString, DEC_ZERO, WORKING_SCALE, type Dec } from "../money/kernel";
 import { allocate } from "./allocation";
 import { engineVersions, monthlySummaries, rateTable, repaymentScheduleSpec, validateModel, wholeMonthsBetween } from "./engineCommon";
-import { normalizeEvents, type EngineEvent } from "./events";
+import { isOffsetStateEventKind, normalizeEvents, type EngineEvent } from "./events";
 import { capitalizedComponents, cashComponents } from "./fees";
 import { amortizationMonths, contractualEnd, finalDecision } from "./finalPayment";
 import type { BlockReason, ModelEvent, SimulationRequest, SimulationResult } from "./model";
@@ -83,7 +83,7 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
   for (const e of normalized.events) {
     if (compareDates(e.date, anchor.date) <= 0) continue;
     if (e.kind === "lender-interest-charge") continue; // evidence for reconciliation, not an input
-    if (e.kind === "offset-balance") return block("offsets-need-daily-engine", "Offset balances change interest day by day; use bench-daily.", e.date);
+    if (isOffsetStateEventKind(e.kind)) return block("offsets-need-daily-engine", "Offset balances change interest day by day; use bench-daily.", e.date);
     if (!dateSet.has(e.date)) return block("irregular-event", `A ${e.kind} on ${e.date} falls between payment dates; use bench-daily.`, e.date);
     byDate.set(e.date, [...(byDate.get(e.date) ?? []), e]);
   }
@@ -256,6 +256,7 @@ export function simulatePeriodic(req: SimulationRequest): SimulationResult {
   return {
     ok: true,
     events,
+    offsetStates: [],
     periods: monthlySummaries(events, anchor.principalMinor),
     closing: { date: req.to, principalMinor: balance, accruedInterestMinor: 0, accruedInterestExact: "0", carriedRemainder: toDecString(carry), scheduledPaymentMinor: payment, paidOff },
     versions,

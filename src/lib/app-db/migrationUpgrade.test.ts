@@ -52,6 +52,9 @@ import { createPdfLayoutProfile, parsePdfStatementPages } from "@/lib/reconcilia
 import { getSyncFlow } from "./syncFlowRepository";
 import { getAllSyncMappingsForFlow } from "./syncMappingRepository";
 import { listSyncFlowRuns } from "./syncRunRepository";
+import { insertDebt } from "./debtRepository";
+import { listDebtAssumptions, replaceDebtAssumptions } from "./debtAssumptionRepository";
+import { ASSETS_DEBT_V38_INDEX_SQL, DEBT_FUTURE_ASSUMPTION_TABLE_SQL } from "./schema";
 
 /**
  * Upgrading a database that already holds real work.
@@ -1349,17 +1352,17 @@ function dumpTables(db: SqliteDatabase, tables: string[]): Record<string, unknow
   return Object.fromEntries(tables.map((t) => [t, db.prepare(`SELECT * FROM "${t}" ORDER BY rowid`).all()]));
 }
 
-describe("v38 Assets & Debt configuration", () => {
+describe("v38 Assets & Debt configuration and v39 offset events", () => {
   afterEach(() => {
     resetAppDbForTests();
   });
 
-  it("a fresh database reaches v38 with exactly the five tables, their indexes, triggers and foreign keys", () => {
+  it("a fresh database reaches the latest schema with exactly the five Assets & Debt tables, indexes, triggers and foreign keys", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v38-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(38);
-      expect(runMigrations(db).schemaVersion).toBe(38);
+      expect(LATEST_SCHEMA_VERSION).toBe(39);
+      expect(runMigrations(db).schemaVersion).toBe(39);
       const tables = objectNames(db, "table");
       for (const t of V38_TABLES) expect(tables).toContain(t);
       expect(tables.filter((t) => t.startsWith("debt") || t === "model_revisions")).toEqual(V38_TABLES);
@@ -1392,12 +1395,84 @@ describe("v38 Assets & Debt configuration", () => {
 
       const db = getAppDb(path);
       const meta = runMigrations(db);
-      expect(meta.schemaVersion).toBe(38);
+      expect(meta.schemaVersion).toBe(39);
       expect(dumpTables(db, existing.map((t) => t.name))).toEqual(snapshot);
       for (const t of V38_TABLES) expect(db.prepare(`SELECT count(*) AS n FROM ${t}`).get<{ n: number }>()?.n).toBe(0);
 
       const again = runMigrations(db);
       expect(again).toEqual(meta);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades v38 to v39 without changing existing assumptions and accepts the two new stored kinds", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v39-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v39",
+        budgetSyncId: "budget-v39",
+        name: "Existing debt",
+        debtType: "mortgage",
+        behaviorClass: "term-loan",
+        currency: "AED",
+        currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v39",
+        paymentAccountId: "payment-v39",
+        signConvention: "negative-is-debt",
+        lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily",
+        lenderChargeGraceDays: 0,
+        onboardingDate: null,
+        loanPaymentCategoryId: null,
+        drawCategoryId: null,
+        expectedObservationIntervalDays: null,
+        currentConfigJson: "{}",
+        status: "active",
+        currentRevision: 1,
+      }, "2026-10-01T00:00:00.000Z");
+      replaceDebtAssumptions(latest, "debt-v39", [{
+        id: "snapshot-v38",
+        kind: "offset-balance",
+        effectiveFrom: "2026-01-01",
+        recurrence: null,
+        amountMinor: 125_000,
+        feeTreatment: null,
+        offsetAccountId: "offset-v39",
+        note: "Existing v38 row",
+      }], "2026-10-01T00:00:00.000Z");
+      const existingAssumptions = listDebtAssumptions(latest, "debt-v39");
+      resetAppDbForTests();
+
+      const seed = new Database(path);
+      seed.exec("DROP INDEX idx_debt_future_assumptions_debt");
+      seed.exec("ALTER TABLE debt_future_assumptions RENAME TO debt_future_assumptions_latest");
+      seed.exec(DEBT_FUTURE_ASSUMPTION_TABLE_SQL
+        .replace("CREATE TABLE IF NOT EXISTS debt_future_assumptions", "CREATE TABLE debt_future_assumptions")
+        .replace(
+          "assumption_kind IN ('offset-balance', 'offset-deposit', 'offset-withdrawal')",
+          "assumption_kind IS 'offset-balance'"
+        ));
+      seed.exec(`INSERT INTO debt_future_assumptions SELECT * FROM debt_future_assumptions_latest`);
+      seed.exec("DROP TABLE debt_future_assumptions_latest");
+      seed.exec(ASSETS_DEBT_V38_INDEX_SQL.find((sql) => sql.includes("idx_debt_future_assumptions_debt"))!);
+      seed.prepare("UPDATE app_meta SET value = '38' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(39);
+      expect(listDebtAssumptions(upgraded, "debt-v39")).toEqual(existingAssumptions);
+      replaceDebtAssumptions(upgraded, "debt-v39", [
+        { kind: "offset-deposit", effectiveFrom: "2026-02-01", recurrence: null, amountMinor: 10_000, feeTreatment: null, offsetAccountId: "offset-v39", note: null },
+        { kind: "offset-withdrawal", effectiveFrom: "2026-03-01", recurrence: null, amountMinor: 2_500, feeTreatment: null, offsetAccountId: "offset-v39", note: null },
+      ]);
+      expect(listDebtAssumptions(upgraded, "debt-v39").map((row) => row.assumptionKind)).toEqual([
+        "offset-deposit",
+        "offset-withdrawal",
+      ]);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
