@@ -1,6 +1,6 @@
 "use client";
 
-import { formatMinor } from "../../lib/money";
+import { formatAmount } from "../../lib/money";
 import type { Deltas, Headline } from "../../lib/results";
 
 /**
@@ -19,9 +19,9 @@ function payoffDelta(days: number): string {
   return days < 0 ? `${span} earlier` : `${span} later`;
 }
 
-export function headlineSentence(h: Headline, currency: string, digits: number, frequencyLabel: string): string {
-  const repayment = h.regularRepaymentMinor === null ? "no scheduled repayment" : `repayment ${formatMinor(h.regularRepaymentMinor, digits, currency)} ${frequencyLabel}${h.repaymentChanges ? ", changing over the loan" : ""}`;
-  return `${repayment}; total repayments ${formatMinor(h.totalRepaidMinor, digits, currency)}; total interest ${formatMinor(h.totalInterestMinor, digits, currency)}; ${h.payoffDate ? `paid off ${h.payoffDate}` : "not paid off within the loan term"}.`;
+export function headlineSentence(h: Headline, digits: number, frequencyLabel: string): string {
+  const repayment = h.regularRepaymentMinor === null ? "no scheduled repayment" : `repayment ${formatAmount(h.regularRepaymentMinor, digits)} ${frequencyLabel}${h.repaymentChanges ? ", changing over the loan" : ""}`;
+  return `${repayment}; total repayments ${formatAmount(h.totalRepaidMinor, digits)}; total interest ${formatAmount(h.totalInterestMinor, digits)}; ${h.payoffDate ? `paid off ${h.payoffDate}` : "not paid off within the loan term"}.`;
 }
 
 function Tile({ label, value, delta }: { label: string; value: string; delta?: string | null }) {
@@ -37,7 +37,6 @@ function Tile({ label, value, delta }: { label: string; value: string; delta?: s
 export function HeadlineMetrics({
   headline,
   deltas,
-  currency,
   digits,
   frequencyLabel,
   announce,
@@ -45,14 +44,13 @@ export function HeadlineMetrics({
 }: {
   headline: Headline | null;
   deltas: Deltas | null;
-  currency: string;
   digits: number;
   frequencyLabel: string;
   /** The settled sentence to announce, or null while inputs are incomplete or calculating. */
   announce: string | null;
   calculating: boolean;
 }) {
-  const money = (m: number | null) => (m === null ? "None" : formatMinor(m, digits, currency));
+  const money = (m: number | null) => (m === null ? "None" : formatAmount(m, digits));
   return (
     <section aria-labelledby="headline-heading" className="flex flex-col gap-2">
       <h2 id="headline-heading" className="sr-only">
@@ -62,13 +60,13 @@ export function HeadlineMetrics({
         <Tile
           label="Repayment"
           value={headline ? `${money(headline.regularRepaymentMinor)}` : "–"}
-          delta={headline ? [frequencyLabel, headline.repaymentChanges ? "changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatMinor(Math.abs(deltas.repaymentMinor), digits, currency)} vs saved` : null].filter(Boolean).join(" · ") : null}
+          delta={headline ? [frequencyLabel, headline.repaymentChanges ? "changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
         />
         <Tile label="Total repayments" value={headline ? money(headline.totalRepaidMinor) : "–"} />
         <Tile
           label="Total interest"
           value={headline ? money(headline.totalInterestMinor) : "–"}
-          delta={deltas && deltas.interestMinor !== 0 ? `${formatMinor(Math.abs(deltas.interestMinor), digits, currency)} ${deltas.interestMinor < 0 ? "less" : "more"} than saved` : null}
+          delta={deltas && deltas.interestMinor !== 0 ? `${formatAmount(Math.abs(deltas.interestMinor), digits)} ${deltas.interestMinor < 0 ? "less" : "more"} than saved` : null}
         />
         <Tile label="Payoff date" value={headline ? (headline.payoffDate ?? "Not within the term") : "–"} delta={deltas?.payoffDays != null ? payoffDelta(deltas.payoffDays) : null} />
       </div>

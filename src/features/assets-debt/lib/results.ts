@@ -52,37 +52,44 @@ export function deltas(current: Headline, baseline: Headline): Deltas {
 
 export type SeriesId = "balance" | "comparison" | "offsetBalance" | "interestBearing" | "cumulativeInterest";
 export type ChartPoint = { period: string } & Partial<Record<SeriesId, number>>;
-export type ChartData = { points: ChartPoint[]; series: SeriesId[] };
-
-/** Offset balances as entered (dated absolute values), summed across offsets, in force at `date`. */
-function offsetBalanceAt(sim: SimulationState, date: string): number {
-  let total = 0;
-  for (const o of sim.offsets) {
-    if (o.effectiveFrom > date || (o.effectiveTo !== null && o.effectiveTo <= date)) continue;
-    const changes = sim.assumptions.filter((a) => a.kind === "offset-balance" && a.offsetAccountId === o.placeholderAccountId && a.effectiveFrom <= date).sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-    total += changes.at(-1)?.amountMinor ?? 0;
-  }
-  return total;
-}
+export type ChartRateChange = { date: string; annualRateDecimal: string };
+export type ChartRateChangeGroup = { period: string; changes: ChartRateChange[] };
+export type ChartPayoff = { period: string; date: string };
+export type ChartData = {
+  points: ChartPoint[];
+  series: SeriesId[];
+  /** Contract rate changes after the opening rate, grouped at the chart's current resolution. */
+  rateChanges: ChartRateChangeGroup[];
+  /** The final event that settles the projected debt, provided the projection closes at zero. */
+  payoff: ChartPayoff | null;
+};
 
 /**
  * Chart series per month or year. The balance and comparison come from the
- * engine; the interest-bearing balance from its diagnostics; the offset
- * balance is the input itself. A series whose values are all zero is dropped.
+ * engine; the interest-bearing balance from its diagnostics; and the offset
+ * balance from projection v2's authoritative state points. A series whose
+ * values are all zero is dropped.
  */
 export function chartSeries(projection: DebtProjection, sim: SimulationState, options: { view: "month" | "year"; comparison?: DebtProjection | null }): ChartData {
-  if (!projection.ok) return { points: [], series: [] };
+  if (!projection.ok) return { points: [], series: [], rateChanges: [], payoff: null };
   const keyOf = (date: string) => (options.view === "month" ? date.slice(0, 7) : date.slice(0, 4));
   const byPeriod = new Map<string, ChartPoint>();
+  const projectionPeriods = new Set<string>();
   let cumulative = 0;
   for (const e of projection.events) {
     const period = keyOf(e.date);
+    projectionPeriods.add(period);
     const point = byPeriod.get(period) ?? { period };
     cumulative += e.interestMinor;
     point.balance = e.balanceAfterMinor;
     point.cumulativeInterest = cumulative;
     if (typeof e.diagnostics.interestBearingMinor === "number") point.interestBearing = e.diagnostics.interestBearingMinor;
-    if (sim.offsets.length) point.offsetBalance = offsetBalanceAt(sim, e.date);
+    byPeriod.set(period, point);
+  }
+  for (const state of projection.offsetStates) {
+    const period = keyOf(state.date);
+    const point = byPeriod.get(period) ?? { period };
+    point.offsetBalance = state.totalBalanceMinor;
     byPeriod.set(period, point);
   }
   if (options.comparison?.ok) {
@@ -94,7 +101,36 @@ export function chartSeries(projection: DebtProjection, sim: SimulationState, op
     }
   }
   const points = [...byPeriod.values()].sort((a, b) => a.period.localeCompare(b.period));
+  let offsetBalance: number | undefined;
+  for (const point of points) {
+    if (point.offsetBalance !== undefined) offsetBalance = point.offsetBalance;
+    else if (offsetBalance !== undefined) point.offsetBalance = offsetBalance;
+  }
   const candidates: SeriesId[] = ["balance", ...(options.comparison?.ok ? (["comparison"] as const) : []), "offsetBalance", "interestBearing", "cumulativeInterest"];
   const series = candidates.filter((id) => points.some((p) => (p[id] ?? 0) !== 0));
-  return { points, series };
+  const rateChangesByPeriod = new Map<string, ChartRateChange[]>();
+  for (const rate of sim.rates.slice(1).sort((a, b) => a.accrualEffectiveFrom.localeCompare(b.accrualEffectiveFrom))) {
+    if (rate.annualRateDecimal === null) continue;
+    const period = keyOf(rate.accrualEffectiveFrom);
+    if (!projectionPeriods.has(period)) continue;
+    const changes = rateChangesByPeriod.get(period) ?? [];
+    changes.push({ date: rate.accrualEffectiveFrom, annualRateDecimal: rate.annualRateDecimal });
+    rateChangesByPeriod.set(period, changes);
+  }
+  let payoffEvent: DebtProjectionEvent | undefined;
+  if (projection.events.at(-1)?.balanceAfterMinor === 0) {
+    for (let index = projection.events.length - 1; index >= 0; index -= 1) {
+      const event = projection.events[index];
+      if (event.balanceBeforeMinor > 0 && event.balanceAfterMinor === 0 && event.eventType !== "interest-charge") {
+        payoffEvent = event;
+        break;
+      }
+    }
+  }
+  return {
+    points,
+    series,
+    rateChanges: [...rateChangesByPeriod].map(([period, changes]) => ({ period, changes })),
+    payoff: payoffEvent ? { period: keyOf(payoffEvent.date), date: payoffEvent.date } : null,
+  };
 }

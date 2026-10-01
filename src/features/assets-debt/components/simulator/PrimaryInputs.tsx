@@ -1,17 +1,36 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
-import { fractionToPercent, percentToFraction } from "../../lib/money";
-import { REPAYMENT_FREQUENCY_OPTIONS } from "../../lib/vocabulary";
+import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/ui/info-hint";
+import { cn } from "@/lib/utils";
 import type { SimulationState } from "../../lib/simulatorModel";
 import { DateField, IntegerField, MoneyField, PercentField, SelectField } from "../fields";
+import { CalculationMethodSummary } from "./CalculationMethodDrawer";
+import { InterestOnlyControl } from "./InterestOnlyControl";
 
-/**
- * The five primary inputs (P1.3b T205; FR-216): loan amount, term, start date,
- * interest rate (typed, or with the slider) and repayment frequency. Nothing else is needed to see a
- * complete simulation; nothing here is Actual-specific.
- */
-export function PrimaryInputs({ sim, change, onRateChanges }: { sim: SimulationState; change: (next: SimulationState) => void; onRateChanges: () => void }) {
+type Props = {
+  sim: SimulationState;
+  change: (next: SimulationState) => void;
+  propose: (next: SimulationState) => void;
+  onRateChanges: () => void;
+};
+
+export function ConfigurationSection({ title, help, children, className }: { title: string; help: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <fieldset aria-label={title} className={cn("flex min-w-0 flex-col gap-3 rounded-lg border border-border p-4", className)}>
+      <legend className="px-1 text-sm font-semibold">
+        <span className="inline-flex items-center gap-1.5">
+          {title}
+          <InfoHint label={`${title} fields`}>{help}</InfoHint>
+        </span>
+      </legend>
+      {children}
+    </fieldset>
+  );
+}
+
+/** The ordinary modelling path, grouped by contract concept instead of one long field list. */
+export function PrimaryInputs({ sim, change, propose, onRateChanges }: Props) {
   const years = sim.termMonths === null ? null : Math.floor(sim.termMonths / 12);
   const months = sim.termMonths === null ? null : sim.termMonths % 12;
   const setTerm = (y: number | null, m: number | null) => {
@@ -19,38 +38,43 @@ export function PrimaryInputs({ sim, change, onRateChanges }: { sim: SimulationS
     change({ ...sim, termMonths: y === null && m === null ? null : total > 0 ? total : null });
   };
   const laterRates = sim.rates.length - 1;
-  const setRate = (v: string | null) => change({ ...sim, rates: sim.rates.map((r, i) => (i === 0 ? { ...r, annualRateDecimal: v } : r)) });
+  const setRate = (annualRateDecimal: string | null) => change({ ...sim, rates: sim.rates.map((rate, index) => (index === 0 ? { ...rate, annualRateDecimal } : rate)) });
+
   return (
-    <div className="flex flex-col gap-3">
-      <MoneyField label={sim.shape === "revolving-credit" ? "Amount drawn" : "Loan amount"} valueMinor={sim.principalMinor} minorDigits={sim.minorDigits} suffix={sim.currency} onChange={(v) => change({ ...sim, principalMinor: v })} />
-      <fieldset className="flex flex-col gap-1">
-        <legend className="text-sm font-medium">Term</legend>
+    <>
+      <ConfigurationSection
+        title="1. Loan"
+        help="Loan type selects a fixed-term loan or line of credit. Loan amount is the opening principal or amount drawn; Years and Months define the term, and Start date is when the loan and its first rate begin."
+      >
         <div className="grid grid-cols-2 gap-2">
-          <IntegerField label="Years" value={years} onChange={(y) => setTerm(y, months)} />
-          <IntegerField label="Months" value={months} onChange={(m) => setTerm(years, m)} />
+          <SelectField
+            label="Loan type"
+            value={sim.shape}
+            onChange={(shape) => change({ ...sim, shape: shape as SimulationState["shape"] })}
+            options={[
+              { value: "term-loan", label: "Term loan" },
+              { value: "revolving-credit", label: "Line of credit" },
+            ]}
+          />
+          <MoneyField label={sim.shape === "revolving-credit" ? "Amount drawn" : "Loan amount"} valueMinor={sim.principalMinor} minorDigits={sim.minorDigits} onChange={(principalMinor) => change({ ...sim, principalMinor })} />
+          <IntegerField label="Years" value={years} onChange={(value) => setTerm(value, months)} />
+          <IntegerField label="Months" value={months} onChange={(value) => setTerm(years, value)} />
+          <DateField className="col-span-2" label="Start date" value={sim.startDate} onChange={(startDate) => change({ ...sim, startDate, rates: sim.rates.map((rate, index) => (index === 0 ? { ...rate, accrualEffectiveFrom: startDate } : rate)) })} />
         </div>
-      </fieldset>
-      <DateField label="Start date" value={sim.startDate} onChange={(d) => change({ ...sim, startDate: d, rates: sim.rates.map((r, i) => (i === 0 ? { ...r, accrualEffectiveFrom: d } : r)) })} />
-      <div className="flex flex-col gap-1">
-        <PercentField label="Interest rate (per year)" valueFraction={sim.rates[0]?.annualRateDecimal ?? null} onChange={setRate} />
-        <Input
-          type="range"
-          aria-label="Interest rate slider"
-          min={0}
-          max={15}
-          step={0.05}
-          value={Number(fractionToPercent(sim.rates[0]?.annualRateDecimal ?? null) || 0)}
-          onChange={(e) => {
-            const r = percentToFraction(e.target.value);
-            if (r.ok) setRate(r.value);
-          }}
-          className="h-4 border-0 bg-transparent px-0 accent-primary"
-        />
-        <button type="button" className="self-start text-[11px] text-primary underline-offset-2 hover:underline" onClick={onRateChanges}>
-          {laterRates > 0 ? `Rate changes (${laterRates})` : "Add rate changes"}
-        </button>
-      </div>
-      <SelectField label="Repayment frequency" value={sim.profile.repaymentFrequency} options={REPAYMENT_FREQUENCY_OPTIONS} onChange={(v) => change({ ...sim, profile: { ...sim.profile, repaymentFrequency: v as SimulationState["profile"]["repaymentFrequency"] } })} />
-    </div>
+      </ConfigurationSection>
+
+      <ConfigurationSection
+        title="2. Interest"
+        help="Interest rate is the opening annual rate. Rate changes schedule later rates, Calculation method summarizes the accrual and posting conventions, and Interest-only period defines any phase where scheduled payments cover interest without amortizing principal."
+      >
+        <PercentField label="Interest rate" suffix="% p.a." valueFraction={sim.rates[0]?.annualRateDecimal ?? null} onChange={setRate} />
+        <CalculationMethodSummary sim={sim} />
+        <Button type="button" variant="outline" size="sm" className="justify-between" onClick={onRateChanges}>
+          <span>Rate changes <span className="text-muted-foreground">(optional)</span></span>
+          <span className="text-xs text-muted-foreground">{laterRates > 0 ? laterRates : "None"}</span>
+        </Button>
+        <InterestOnlyControl sim={sim} propose={propose} />
+      </ConfigurationSection>
+    </>
   );
 }

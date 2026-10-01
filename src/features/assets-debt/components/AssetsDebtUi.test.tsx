@@ -7,7 +7,7 @@ import { directory as fixtureDirectory, tempDebtDb } from "@/lib/assets-debt/tes
 import * as api from "../lib/debtsApi";
 import { createSyncRunner } from "../lib/projectionRunner";
 import { newSimulation, newTracking, statesToSaveInput, type SimulationState, type TrackingState } from "../lib/simulatorModel";
-import { DAILY_MONTHLY_CHARGE, project, sim } from "../lib/simulatorTestKit";
+import { DAILY_MONTHLY_CHARGE, offsetOf, project, sim } from "../lib/simulatorTestKit";
 import { ProjectionRunnerContext } from "../lib/useLiveProjection";
 import { AssetsDebtTabs } from "./AssetsDebtTabs";
 import { DebtList } from "./DebtList";
@@ -15,6 +15,7 @@ import { LoanView, NewLoanView } from "./LoanPages";
 import { SAVE_BOUNDARY } from "./saveBoundary";
 import { ScheduleTable } from "./simulator/ScheduleTable";
 import { NOT_ADVICE, SimulatorView } from "./simulator/SimulatorView";
+import { extraImpact } from "./simulator/ExtraTransactionsSection";
 import { TrackingSetup } from "./tracking/TrackingSetup";
 
 /**
@@ -106,7 +107,18 @@ function Harness({ initial, saved = null, onState }: { initial: SimulationState;
 
 const type = (label: string | RegExp, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const shortLoan = (patch: Partial<SimulationState> = {}) => sim({ termMonths: 36, principalMinor: 3_000_000, ...patch });
+const periodicShortLoan = () => {
+  const base = shortLoan();
+  return { ...base, profile: { ...base.profile, accrual: "per-period" as const } };
+};
 const prompt = () => screen.queryByRole("dialog", { name: "This feature needs day-by-day interest calculation" });
+
+it("describes extra-transaction impact without negative saved values", () => {
+  const baseline = { regularRepaymentMinor: 100, repaymentChanges: false, totalRepaidMinor: 1_000, totalInterestMinor: 200, payoffDate: "2026-01-01", closingBalanceMinor: 0 };
+  expect(extraImpact({ ...baseline, totalInterestMinor: 150, payoffDate: "2025-07-01" }, baseline, 2)).toMatch(/^Interest saved 0\.50 · Time saved /);
+  expect(extraImpact({ ...baseline, totalInterestMinor: 250, payoffDate: "2026-07-01" }, baseline, 2)).toMatch(/^Interest added 0\.50 · Time added /);
+  expect(extraImpact({ ...baseline, payoffDate: null }, baseline, 2)).toBe("No interest change · Payoff not reached with transactions");
+});
 
 describe("Assets & Debt tabs", () => {
   it("labels the section navigation, marks the current tab, and moves with the arrow keys", () => {
@@ -146,24 +158,21 @@ describe("Loans & Debt list", () => {
   });
 });
 
-describe("the simulator (five-input path, layout, live results)", () => {
+describe("the simulator workspace", () => {
   withViewport();
   beforeEach(() => jest.clearAllMocks());
 
-  it("five inputs give the four headline figures, the chart and the schedule on one screen, with nothing from Actual", async () => {
+  it("opens with the sample loan and shows the four headline figures, chart and schedule without reading Actual", async () => {
     wrap(<Harness initial={newSimulation({ currency: "AUD", today: "2024-01-01" })} />);
-    expect(screen.getByText(/Enter the loan amount, term, interest rate to see the loan/)).toBeInTheDocument();
-    // Start date and repayment frequency are already filled in; three values complete the loan.
     expect(screen.getByLabelText("Start date")).toBeInTheDocument();
-    expect(screen.getByLabelText("Repayment frequency")).toBeInTheDocument();
-    type("Loan amount", "30000");
-    type("Years", "3");
-    type("Interest rate (per year)", "6");
+    expect(screen.getByLabelText("Frequency")).toBeInTheDocument();
+    expect(screen.getByLabelText("Loan amount")).toHaveValue("500,000");
+    expect(screen.getByLabelText("Years")).toHaveValue("20");
+    expect(screen.getByLabelText("Interest rate")).toHaveValue("5.4");
 
     const results = screen.getByTestId("results-region");
     await waitFor(() => expect(within(results).getByText("Total interest").nextSibling).not.toHaveTextContent("–"), WAIT);
     for (const tile of ["Repayment", "Total repayments", "Total interest", "Payoff date"]) expect(within(results).getByText(tile)).toBeInTheDocument();
-    expect(within(results).getByText("Payoff date").nextSibling).toHaveTextContent("2027-01-01");
     expect(screen.getByTestId("chart")).toBeInTheDocument();
     expect(within(screen.getByTestId("schedule-region")).getByRole("table", { name: /Schedule/ })).toBeInTheDocument();
 
@@ -173,22 +182,121 @@ describe("the simulator (five-input path, layout, live results)", () => {
     expect(mocked.updateDebt).not.toHaveBeenCalled();
   });
 
-  it("lays out a narrow control rail beside the results, the schedule beneath at full width, and says it is not advice", async () => {
+  it("keeps events and the schedule beneath the chart in the right results column", async () => {
     wrap(<Harness initial={shortLoan()} />);
     const rail = screen.getByTestId("control-rail");
-    expect(rail.className).toContain("lg:w-[360px]");
+    expect(rail.className).toContain("lg:w-[380px]");
+    expect(rail.className).toContain("lg:border-r");
     expect(rail).toHaveAttribute("aria-label", "Loan inputs");
     const results = screen.getByTestId("results-region");
     expect(results.className).toContain("flex-1");
-    // Rail and results share a row; the schedule sits after that row, outside both.
+    // Rail and results share a row; the lower modelling surfaces stay in results, never under the rail.
     expect(rail.parentElement).toBe(results.parentElement);
     const schedule = await screen.findByTestId("schedule-region", undefined, WAIT);
-    expect(rail.contains(schedule) || results.contains(schedule)).toBe(false);
-    expect(rail.parentElement!.compareDocumentPosition(schedule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(results).toContainElement(schedule);
+    expect(rail).not.toContainElement(schedule);
+    expect(results).toContainElement(screen.getByRole("region", { name: "Events" }));
     expect(screen.getByTestId("not-advice")).toHaveTextContent(NOT_ADVICE);
     // No tab switching between inputs and results.
     expect(screen.queryByRole("tablist")).toBeNull();
   });
+
+  it("shows rate periods with transaction events and opens the shared rate editor from both surfaces", async () => {
+    const states: SimulationState[] = [];
+    const base = shortLoan();
+    const initial = {
+      ...base,
+      rates: [...base.rates, { ...base.rates[0], key: "r2", accrualEffectiveFrom: "2024-03-01", annualRateDecimal: "0.07" }],
+      assumptions: [{ key: "extra", kind: "extra-repayment" as const, effectiveFrom: "2024-04-01", recurrence: null, amountMinor: 50_000, feeTreatment: null, offsetAccountId: null, note: "Bonus" }],
+    };
+    wrap(<Harness initial={initial} onState={(state) => states.push(state)} />);
+
+    const events = await screen.findByRole("region", { name: "Events" }, WAIT);
+    expect(within(events).getByText("Additional payments, deposits, withdrawals, fees and loan changes.")).toBeInTheDocument();
+    const table = await within(events).findByRole("table", { name: "Events" }, WAIT);
+    const rows = within(table).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent(/2024-03-01\s*Rate change\s*6% → 7%/);
+    expect(rows[2]).toHaveTextContent(/2024-04-01\s*Extra payment\s*500\.00/);
+    expect(within(events).getByText(/Contractual rate changes remain included/)).toBeInTheDocument();
+
+    const interest = screen.getByRole("group", { name: "2. Interest" });
+    fireEvent.click(within(interest).getByRole("button", { name: /Rate changes/ }));
+    expect(await screen.findByRole("dialog", { name: "Rate changes" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    fireEvent.click(within(events).getByRole("button", { name: "Rate change" }));
+    expect(await screen.findByRole("dialog", { name: "Rate change" })).toBeInTheDocument();
+    expect(screen.getByLabelText("New rate (per year)")).toHaveValue("6");
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Rate change" }), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rate change" })).toBeNull());
+
+    fireEvent.click(within(events).getByRole("button", { name: "Edit rate change on 2024-03-01" }));
+    expect(await screen.findByLabelText("New rate (per year)")).toHaveValue("7");
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Rate change" }), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rate change" })).toBeNull());
+    fireEvent.click(within(events).getByRole("button", { name: "Remove rate change on 2024-03-01" }));
+    await waitFor(() => expect(states.at(-1)?.rates).toHaveLength(1), WAIT);
+  }, 15_000);
+
+  it("routes unified payment and withdrawal actions to the active offset account and restores them after re-enabling it", async () => {
+    const states: SimulationState[] = [];
+    const offset = offsetOf(100_000);
+    wrap(<Harness initial={shortLoan(offset)} onState={(state) => states.push(state)} />);
+
+    const events = await screen.findByRole("region", { name: "Events" }, WAIT);
+    fireEvent.click(within(events).getByRole("button", { name: "Extra payment" }));
+    let dialog = await screen.findByRole("dialog", { name: "Extra payment" });
+    const destination = within(dialog).getByRole("combobox", { name: "Destination" });
+    fireEvent.click(destination);
+    const offsetDestination = screen.getByRole("option", { name: "Offset account" });
+    fireEvent.pointerDown(offsetDestination, { pointerType: "mouse" });
+    fireEvent.pointerUp(offsetDestination, { pointerType: "mouse" });
+    fireEvent.mouseUp(offsetDestination, { button: 0 });
+    fireEvent.click(offsetDestination);
+    const depositAmount = await within(dialog).findByLabelText("Deposit amount", undefined, WAIT);
+    fireEvent.change(depositAmount, { target: { value: "50" } });
+    fireEvent.change(within(dialog).getByLabelText("Date"), { target: { value: "2024-02-10" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save event" }));
+    await waitFor(() => expect(states.at(-1)?.assumptions.at(-1)).toMatchObject({
+      kind: "offset-deposit",
+      amountMinor: 5_000,
+      offsetAccountId: offset.offsets[0].placeholderAccountId,
+    }), WAIT);
+
+    fireEvent.click(within(events).getByRole("button", { name: "Redraw / withdrawal" }));
+    dialog = await screen.findByRole("dialog", { name: "Redraw / withdrawal" });
+    const source = within(dialog).getByRole("combobox", { name: "Source" });
+    fireEvent.click(source);
+    const offsetSource = screen.getByRole("option", { name: "Offset account" });
+    fireEvent.pointerDown(offsetSource, { pointerType: "mouse" });
+    fireEvent.pointerUp(offsetSource, { pointerType: "mouse" });
+    fireEvent.mouseUp(offsetSource, { button: 0 });
+    fireEvent.click(offsetSource);
+    const withdrawalAmount = await within(dialog).findByLabelText("Withdrawal amount", undefined, WAIT);
+    fireEvent.change(withdrawalAmount, { target: { value: "25" } });
+    fireEvent.change(within(dialog).getByLabelText("Date"), { target: { value: "2024-03-10" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save event" }));
+    await waitFor(() => expect(states.at(-1)?.assumptions.at(-1)).toMatchObject({
+      kind: "offset-withdrawal",
+      amountMinor: 2_500,
+      offsetAccountId: offset.offsets[0].placeholderAccountId,
+    }), WAIT);
+
+    const table = await within(events).findByRole("table", { name: "Events" }, WAIT);
+    expect(within(table).getByText("Offset deposit")).toBeInTheDocument();
+    expect(within(table).getByText("Offset withdrawal")).toBeInTheDocument();
+
+    const offsetSwitch = screen.getByRole("switch", { name: /Offset account/ });
+    fireEvent.click(offsetSwitch);
+    await waitFor(() => expect(states.at(-1)?.offsets).toEqual([]), WAIT);
+    expect(states.at(-1)?.assumptions.some((assumption) => assumption.kind.startsWith("offset-"))).toBe(false);
+    fireEvent.click(offsetSwitch);
+    await waitFor(() => expect(states.at(-1)?.assumptions.filter((assumption) => assumption.kind.startsWith("offset-")).map((assumption) => assumption.kind)).toEqual([
+      "offset-balance",
+      "offset-deposit",
+      "offset-withdrawal",
+    ]), WAIT);
+  }, 20_000);
 
   it("announces one settled summary per recalculation, not every keystroke", async () => {
     wrap(<Harness initial={shortLoan()} />);
@@ -205,7 +313,7 @@ describe("the simulator (five-input path, layout, live results)", () => {
     expect(live.textContent).not.toBe(before);
   });
 
-  it("ties each validation message to its input, and the rate slider sets the same exact rate", async () => {
+  it("ties validation to inputs, formats amounts without cursor jumping, and has no rate slider", async () => {
     wrap(<Harness initial={shortLoan()} />);
     // A person focuses a field before typing; while focused it keeps what was typed.
     const amount = screen.getByLabelText("Loan amount");
@@ -218,8 +326,13 @@ describe("the simulator (five-input path, layout, live results)", () => {
     type("Years", "-1");
     expect(screen.getByLabelText("Years")).toHaveAccessibleDescription("Enter a whole number of at least 0");
 
-    fireEvent.change(screen.getByRole("slider", { name: "Interest rate slider" }), { target: { value: "4.25" } });
-    expect(screen.getByLabelText("Interest rate (per year)")).toHaveValue("4.25");
+    fireEvent.focus(amount);
+    type("Loan amount", "20000.00");
+    expect(amount).toHaveValue("20000.00");
+    fireEvent.blur(amount);
+    expect(amount).toHaveValue("20,000.00");
+    expect(screen.queryByRole("slider")).toBeNull();
+    expect(screen.getByLabelText("Interest rate")).toHaveValue("6");
   });
 
   it("the chart has a text alternative, keyboard-operable series and detail switches", async () => {
@@ -236,6 +349,69 @@ describe("the simulator (five-input path, layout, live results)", () => {
     expect(within(detail).getByRole("radio", { name: "Monthly" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("group", { name: /Loan balance chart/ })).toBeInTheDocument();
   });
+
+  it("uses accessible switches, hides disabled feature controls, and exposes the calculation drawer", async () => {
+    wrap(<Harness initial={shortLoan()} />);
+    const configurationSections = ["1. Loan", "2. Interest", "3. Repayments", "4. Offset account", "5. Fees and other costs"].map((name) => screen.getByRole("group", { name }));
+    for (const section of configurationSections) expect(section).toHaveClass("rounded-lg", "border");
+    expect(within(configurationSections[0]).getByRole("button", { name: "More about 1. Loan fields" })).toBeInTheDocument();
+    expect(within(configurationSections[1]).getByRole("button", { name: "More about 2. Interest fields" })).toBeInTheDocument();
+    expect(within(configurationSections[2]).getByRole("button", { name: "More about 3. Repayments fields" })).toBeInTheDocument();
+    expect(within(configurationSections[3]).getByRole("button", { name: "More about 4. Offset account fields" })).toBeInTheDocument();
+    expect(within(configurationSections[4]).getByRole("button", { name: "More about 5. Fees and other costs fields" })).toBeInTheDocument();
+    for (const label of ["Interest-only period", "Choose first repayment date", "Balloon payment", "Offset account", "Fees and other costs"]) {
+      const control = screen.getByRole("switch", { name: new RegExp(label) });
+      expect(control).toHaveAttribute("aria-checked", "false");
+      expect(control).toHaveAttribute("tabindex", "0");
+    }
+    expect(within(configurationSections[1]).getByRole("switch", { name: /Interest-only period/ })).toBeInTheDocument();
+    expect(within(configurationSections[2]).queryByRole("switch", { name: /Interest-only period/ })).toBeNull();
+    expect(screen.queryByLabelText("First repayment date")).toBeNull();
+    expect(screen.queryByLabelText("Contract term")).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: /Choose first repayment date/ }));
+    expect(screen.getByRole("switch", { name: /Choose first repayment date/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByLabelText("First repayment date")).toBeInTheDocument();
+
+    expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Set calculation method" }));
+    const drawer = await screen.findByRole("dialog", { name: "Calculation method" });
+    expect(drawer).toHaveAttribute("data-side", "left");
+    expect(drawer).toHaveStyle({ width: "min(820px, 92vw)", maxWidth: "none" });
+    expect(drawer.className).toContain("overflow-x-hidden");
+    const overlay = document.querySelector('[data-slot="sheet-overlay"]');
+    expect(overlay).toHaveClass("bg-transparent", "supports-backdrop-filter:backdrop-blur-none");
+    expect(within(drawer).queryByText(/Most loans never need these/i)).toBeNull();
+    expect(within(drawer).queryByText(/not any particular lender/i)).toBeNull();
+    expect(within(drawer).getByText("A preset describes a calculation shape.")).toBeInTheDocument();
+    const interestSection = within(drawer).getByRole("group", { name: "Interest" });
+    expect(within(interestSection).getByRole("button", { name: "More about interest calculation fields" })).toBeInTheDocument();
+    expect(within(interestSection).getByLabelText("Rate quoted as")).toBeInTheDocument();
+    expect(within(interestSection).getByLabelText("Transactions on the same day as interest")).toBeInTheDocument();
+    const repaymentSection = within(drawer).getByRole("group", { name: "Repayment" });
+    expect(within(repaymentSection).getByRole("button", { name: "More about repayment calculation fields" })).toBeInTheDocument();
+    expect(within(repaymentSection).getByLabelText("Repayment amount")).toBeInTheDocument();
+    expect(within(repaymentSection).getByLabelText("Final repayment (end of loan)")).toBeInTheDocument();
+    expect(within(repaymentSection).queryByText("End of the loan")).toBeNull();
+    const precisionSection = within(drawer).getByRole("group", { name: "Precision and rounding" });
+    expect(within(precisionSection).getByRole("button", { name: "More about precision and rounding fields" })).toBeInTheDocument();
+    expect(precisionSection).toHaveClass("lg:col-span-2", "border");
+    expect(within(drawer).getByLabelText("Amount decimal places")).toBeInTheDocument();
+    expect(within(drawer).queryByText(/Currency decimal places/i)).toBeNull();
+  });
+
+  it("shows no currency markers and confirms before resetting changed inputs to the sample loan", async () => {
+    wrap(<Harness initial={newSimulation({ currency: "AUD", today: "2026-10-01" })} />);
+    await screen.findByTestId("schedule-region", undefined, WAIT);
+    expect(document.body).not.toHaveTextContent(/\bAUD\b|\bAED\b|\bUSD\b|\$/);
+    type("Loan amount", "12345");
+    fireEvent.click(screen.getByRole("button", { name: "Reset loan" }));
+    const confirm = await screen.findByRole("dialog", { name: "Reset this loan?" });
+    expect(confirm).toHaveTextContent(/discards the current simulation inputs/i);
+    fireEvent.click(within(confirm).getByRole("button", { name: "Reset loan" }));
+    expect(screen.getByLabelText("Loan amount")).toHaveValue("500,000");
+    expect(screen.getByLabelText("Years")).toHaveValue("20");
+    expect(screen.getByLabelText("Interest rate")).toHaveValue("5.4");
+  });
 });
 
 describe("O1: features that need day-by-day interest", () => {
@@ -243,7 +419,7 @@ describe("O1: features that need day-by-day interest", () => {
 
   it("an offset under the period-by-period method asks first; Cancel leaves the loan unchanged", async () => {
     const states: SimulationState[] = [];
-    const initial = shortLoan();
+    const initial = periodicShortLoan();
     wrap(<Harness initial={initial} onState={(s) => states.push(s)} />);
     fireEvent.click(screen.getByRole("switch", { name: /Offset account/ }));
     const dialog = await screen.findByRole("dialog", { name: "This feature needs day-by-day interest calculation" });
@@ -253,12 +429,12 @@ describe("O1: features that need day-by-day interest", () => {
     await waitFor(() => expect(prompt()).toBeNull());
     expect(states).toEqual([]);
     expect(screen.getByRole("switch", { name: /Offset account/ })).not.toBeChecked();
-    expect(screen.queryByLabelText("Offset balance")).toBeNull();
+    expect(screen.queryByLabelText("Offset account starting balance")).toBeNull();
   });
 
   it("Escape also cancels the prompt", async () => {
     const states: SimulationState[] = [];
-    wrap(<Harness initial={shortLoan()} onState={(s) => states.push(s)} />);
+    wrap(<Harness initial={periodicShortLoan()} onState={(s) => states.push(s)} />);
     fireEvent.click(screen.getByRole("switch", { name: /Offset account/ }));
     const dialog = await screen.findByRole("dialog", { name: "This feature needs day-by-day interest calculation" });
     fireEvent.keyDown(dialog, { key: "Escape" });
@@ -268,7 +444,7 @@ describe("O1: features that need day-by-day interest", () => {
 
   it("accepting switches only the interest method, keeps every value, and recalculates", async () => {
     const states: SimulationState[] = [];
-    const initial = shortLoan();
+    const initial = periodicShortLoan();
     wrap(<Harness initial={initial} onState={(s) => states.push(s)} />);
     fireEvent.click(screen.getByRole("switch", { name: /Offset account/ }));
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Switch to day-by-day" }));
@@ -278,7 +454,8 @@ describe("O1: features that need day-by-day interest", () => {
     expect(next.offsets).toHaveLength(1);
     expect({ ...next, profile: null, offsets: [], assumptions: [] }).toEqual({ ...initial, profile: null, offsets: [], assumptions: [] });
     expect(project(next).ok).toBe(true);
-    expect(await screen.findByLabelText("Offset balance")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Offset account starting balance")).toBeInTheDocument();
+    expect(screen.getByText("Enter the starting balance of your offset account.")).toBeInTheDocument();
     // The Calculation method summary follows the switch.
     expect(screen.getByText(/daily interest · charged with each repayment/)).toBeInTheDocument();
     expect(mocked.createDebt).not.toHaveBeenCalled();
@@ -287,33 +464,36 @@ describe("O1: features that need day-by-day interest", () => {
 
   it("an extra repayment between repayment dates asks; one on a repayment date does not", async () => {
     const states: SimulationState[] = [];
-    wrap(<Harness initial={shortLoan()} onState={(s) => states.push(s)} />);
+    wrap(<Harness initial={periodicShortLoan()} onState={(s) => states.push(s)} />);
     const addExtra = async (date: string) => {
-      fireEvent.click(screen.getByRole("button", { name: /extra transactions/ }));
-      const dialog = await screen.findByRole("dialog", { name: "Extra transactions" });
-      fireEvent.click(within(dialog).getByRole("button", { name: "Add extra repayment" }));
-      type("Amount", "500");
-      const field = screen.getByLabelText("Date");
+      fireEvent.click(await screen.findByRole("button", { name: "Extra payment" }, WAIT));
+      const dialog = await screen.findByRole("dialog", { name: "Extra payment" });
+      fireEvent.change(within(dialog).getByLabelText("Amount"), { target: { value: "500" } });
+      const field = within(dialog).getByLabelText("Date");
       fireEvent.change(field, { target: { value: date } });
       fireEvent.keyDown(field, { key: "Enter" });
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save event" }));
     };
     await addExtra("2024-06-01");
     await waitFor(() => expect(states).toHaveLength(1));
     expect(prompt()).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Extra transactions" })).toBeNull());
+    const transactions = await screen.findByRole("table", { name: "Events" }, WAIT);
+    expect(within(transactions).getByText("500.00")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("events-impact")).not.toHaveTextContent("calculating"), WAIT);
+    expect(screen.getByTestId("events-impact")).toHaveTextContent(/Interest saved 83\.57 · No payoff-time change/);
+    expect(screen.getByText(/Contractual rate changes remain included/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Extra repayment" })).toBeNull());
 
     await addExtra("2024-06-15");
     expect(await screen.findByRole("dialog", { name: "This feature needs day-by-day interest calculation" })).toHaveTextContent(/between repayment dates/);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(prompt()).toBeNull());
     expect(states).toHaveLength(1);
-  });
+  }, 15_000);
 
   it("a rate change part-way through a period asks; compatible features do not", async () => {
     const states: SimulationState[] = [];
-    wrap(<Harness initial={shortLoan()} onState={(s) => states.push(s)} />);
+    wrap(<Harness initial={periodicShortLoan()} onState={(s) => states.push(s)} />);
     fireEvent.click(screen.getByRole("switch", { name: /Fees and other costs/ }));
     fireEvent.keyDown(await screen.findByRole("dialog"), { key: "Escape" });
     fireEvent.click(screen.getByRole("switch", { name: /Interest-only period/ }));
@@ -321,7 +501,7 @@ describe("O1: features that need day-by-day interest", () => {
     const accepted = states.length;
     expect(accepted).toBe(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add rate changes" }));
+    fireEvent.click(screen.getByRole("button", { name: /Rate changes/ }));
     const dialog = await screen.findByRole("dialog", { name: "Rate changes" });
     fireEvent.click(within(dialog).getByRole("button", { name: /Add a rate change/ }));
     const field = screen.getByLabelText("Starts accruing");
@@ -342,17 +522,20 @@ describe("contract terms and lender-stated repayment", () => {
   it("uses the optional contractual repayment and preserves an ordinary-loan maturity", async () => {
     const states: SimulationState[] = [];
     wrap(<Harness initial={shortLoan()} onState={(s) => states.push(s)} />);
-    fireEvent.click(screen.getByRole("button", { name: "More options" }));
-    expect(screen.getByLabelText("Contractual maturity")).toHaveAccessibleDescription(/term counts repayments from the first repayment date/i);
-    expect(screen.getByLabelText("Contractual repayment amount")).toHaveAccessibleDescription(/used instead of a calculated repayment/i);
+    expect(screen.getByLabelText("Contract maturity date (optional)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Contract repayment amount (optional)")).toBeInTheDocument();
 
-    type("Contractual maturity", "2027-11-01");
-    fireEvent.keyDown(screen.getByLabelText("Contractual maturity"), { key: "Enter" });
-    type("Contractual repayment amount", "8379.57");
+    type("Contract maturity date (optional)", "2027-11-01");
+    fireEvent.keyDown(screen.getByLabelText("Contract maturity date (optional)"), { key: "Enter" });
+    type("Contract repayment amount (optional)", "8379.57");
     await waitFor(() => expect(states.at(-1)?.contractualPaymentMinor).toBe(837_957), WAIT);
     expect(states.at(-1)?.maturityDate).toBe("2027-11-01");
     expect(states.at(-1)?.profile.repaymentDerivation).toBe("contractual-fixed");
     expect(screen.getByText(/contract's fixed payment/)).toBeInTheDocument();
+
+    type("Contract repayment amount (optional)", "");
+    await waitFor(() => expect(states.at(-1)?.contractualPaymentMinor).toBeNull(), WAIT);
+    expect(states.at(-1)?.profile.repaymentDerivation).toBe("annuity-at-payment-frequency");
   });
 });
 
@@ -367,14 +550,16 @@ describe("the schedule (O2 rate column, O5 labels)", () => {
 
   it("says Principal when interest is part of each repayment, with no Rate column for one rate", () => {
     const s = shortLoan();
-    render(<ScheduleTable events={eventsOf(s)} profile={s.profile} currency="AUD" digits={2} />);
-    expect(headers()).toEqual(["Period", "Payment", "Principal", "Interest", "Balance"]);
+    render(<ScheduleTable events={eventsOf(s)} profile={s.profile} startDate={s.startDate} digits={2} />);
+    expect(headers()).toEqual(["Payment #", "Period", "Payment", "Principal", "Interest", "Balance"]);
+    expect(screen.getAllByRole("cell").some((cell) => cell.textContent === "1")).toBe(true);
+    expect(screen.getByText("Yr 1, Mo 2 · Feb 2024")).toBeInTheDocument();
     expect(screen.queryByText(/Interest is charged separately/)).toBeNull();
   });
 
   it("says Debt reduction, with help, when interest is charged separately; interest charges are their own events", () => {
     const s = shortLoan({ profile: { ...shortLoan().profile, ...DAILY_MONTHLY_CHARGE } });
-    render(<ScheduleTable events={eventsOf(s)} profile={s.profile} currency="AUD" digits={2} />);
+    render(<ScheduleTable events={eventsOf(s)} profile={s.profile} startDate={s.startDate} digits={2} />);
     expect(headers()).toContain("Debt reduction");
     expect(headers()).not.toContain("Principal");
     expect(screen.getByText(/Interest is charged separately, so repayments reduce the outstanding loan balance/)).toBeInTheDocument();
@@ -386,14 +571,14 @@ describe("the schedule (O2 rate column, O5 labels)", () => {
   it("shows the engine's rate, and Multiple for a month with a mid-month change", () => {
     const base = shortLoan({ profile: { ...shortLoan().profile, ...DAILY_MONTHLY_CHARGE } });
     const s = { ...base, rates: [...base.rates, { ...base.rates[0], key: "r2", accrualEffectiveFrom: "2024-03-15", annualRateDecimal: "0.07" }] };
-    render(<ScheduleTable events={eventsOf(s)} profile={s.profile} currency="AUD" digits={2} />);
+    render(<ScheduleTable events={eventsOf(s)} profile={s.profile} startDate={s.startDate} digits={2} />);
     expect(headers()).toContain("Rate");
     const rows = screen.getAllByRole("row").slice(1);
-    const cellsOf = (period: string) => within(rows.find((r) => within(r).queryByText(period))!).getAllByRole("cell").map((c) => c.textContent);
+    const cellsOf = (period: RegExp) => within(rows.find((r) => within(r).queryByText(period))!).getAllByRole("cell").map((c) => c.textContent);
     const rateAt = headers().indexOf("Rate");
-    expect(cellsOf("2024-02")[rateAt]).toBe("6%");
-    expect(cellsOf("2024-04")[rateAt]).toBe("Multiple");
-    expect(cellsOf("2024-06")[rateAt]).toBe("7%");
+    expect(cellsOf(/Feb 2024/)[rateAt]).toBe("6%");
+    expect(cellsOf(/Apr 2024/)[rateAt]).toBe("Multiple");
+    expect(cellsOf(/Jun 2024/)[rateAt]).toBe("7%");
   });
 });
 
@@ -435,14 +620,27 @@ describe("the new-loan flow", () => {
   it("keeps the unsaved simulation per connection and budget in this tab, and the review says nothing reaches Actual", async () => {
     wrap(<NewLoanView />);
     await screen.findByLabelText("Loan amount");
+    expect(screen.getByText("Step 1 of 3 · Model loan")).toBeInTheDocument();
+    const how = screen.getByRole("button", { name: "How this loan is calculated" });
+    const method = screen.getByRole("button", { name: "Set calculation method" });
+    const reset = screen.getByRole("button", { name: "Reset loan" });
+    const setup = screen.getByRole("button", { name: "Set up tracking in Actual" });
+    expect(how.compareDocumentPosition(method) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(method.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reset.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(how).toHaveClass("border-border");
+    expect(method).toHaveClass("border-border");
+    expect(reset).toHaveClass("border-border");
+    for (const button of [how, method, reset, setup]) expect(button.querySelector("svg")).not.toBeNull();
+    expect(setup.querySelector(".lucide-arrow-right")).not.toBeNull();
     type("Loan amount", "30000");
     type("Years", "3");
-    type("Interest rate (per year)", "6");
+    type("Interest rate", "6");
     await waitFor(() => expect(sessionStorage.getItem("assets-debt:new-loan:c1:b1")).toContain("3000000"));
     expect(Object.keys(sessionStorage)).toEqual(["assets-debt:new-loan:c1:b1"]);
     expect(mocked.createDebt).not.toHaveBeenCalled();
 
-    const next = screen.getByRole("button", { name: "Set up tracking in Actual" });
+    const next = setup;
     await waitFor(() => expect(next).toBeEnabled(), WAIT);
     fireEvent.click(next);
     expect(await screen.findByRole("heading", { name: "Set up tracking in Actual" })).toBeInTheDocument();
@@ -462,7 +660,7 @@ describe("an existing loan", () => {
     const saved = shortLoan();
     wrap(<Harness initial={saved} saved={saved} />);
     await waitFor(() => expect(screen.getByText("Total interest").nextSibling).not.toHaveTextContent("–"), WAIT);
-    type("Interest rate (per year)", "5");
+    type("Interest rate", "5");
     fireEvent.click(screen.getByRole("checkbox", { name: "Compare with saved" }));
     await waitFor(() => expect(screen.getByText(/less than saved/)).toBeInTheDocument(), WAIT);
     await waitFor(() => expect(screen.getByTestId("chart").dataset.series).toContain("comparison"));
@@ -495,14 +693,14 @@ describe("an existing loan page", () => {
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     await waitFor(() => expect(screen.getByText("Payoff date").nextSibling).toHaveTextContent("2027-01-01"), WAIT);
 
-    type("Interest rate (per year)", "5");
+    type("Interest rate", "5");
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
     expect(await screen.findByText("Saved, revision 1")).toBeInTheDocument();
-    expect(screen.getByLabelText("Interest rate (per year)")).toHaveValue("6");
+    expect(screen.getByLabelText("Interest rate")).toHaveValue("6");
     expect(mocked.updateDebt).not.toHaveBeenCalled();
 
-    type("Interest rate (per year)", "5");
+    type("Interest rate", "5");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mocked.updateDebt).toHaveBeenCalledTimes(1));
     const [id, body, dir] = mocked.updateDebt.mock.calls[0];

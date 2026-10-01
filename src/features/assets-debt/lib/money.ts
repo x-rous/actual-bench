@@ -8,14 +8,14 @@ import { dec, mul, toPlainString } from "@/lib/financial-models/money/kernel";
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; message: string };
 
-/** "400,000.50" → 40000050 (two-decimal currency). Empty text is null. */
+/** "400,000.50" → 40000050 (two-decimal amount). Empty text is null. */
 export function parseMajorToMinor(text: string, minorDigits: number): Parsed<number | null> {
   const clean = text.replace(/[,\s_]/g, "");
   if (clean === "") return { ok: true, value: null };
   const match = /^(\d+)(?:\.(\d*))?$/.exec(clean);
   if (!match) return { ok: false, message: "Enter an amount such as 1250.00" };
   const [, whole, frac = ""] = match;
-  if (frac.length > minorDigits) return { ok: false, message: minorDigits === 0 ? "This currency has no minor units" : `Use at most ${minorDigits} decimal places` };
+  if (frac.length > minorDigits) return { ok: false, message: minorDigits === 0 ? "Use whole amounts only" : `Use at most ${minorDigits} decimal places` };
   const minor = BigInt(whole) * BigInt(10) ** BigInt(minorDigits) + BigInt((frac + "0".repeat(minorDigits)).slice(0, minorDigits) || "0");
   if (minor > BigInt(Number.MAX_SAFE_INTEGER)) return { ok: false, message: "The amount is too large" };
   return { ok: true, value: Number(minor) };
@@ -31,11 +31,16 @@ export function minorToMajorText(minor: number | null, minorDigits: number): str
   return `${negative ? "-" : ""}${whole}${frac}`;
 }
 
-/** 40000050 → "400,000.50 AUD", for display. */
-export function formatMinor(minor: number, minorDigits: number, currency: string): string {
+/** 40000050 → "400,000.50", for an amount-only display. */
+export function formatAmount(minor: number, minorDigits: number): string {
   const [whole, frac] = minorToMajorText(Math.abs(minor), minorDigits).split(".");
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${minor < 0 ? "-" : ""}${grouped}${frac !== undefined ? `.${frac}` : ""} ${currency}`;
+  return `${minor < 0 ? "-" : ""}${grouped}${frac !== undefined ? `.${frac}` : ""}`;
+}
+
+/** 40000050 → "400,000.50 AUD", retained for non-simulator records that display a currency. */
+export function formatMinor(minor: number, minorDigits: number, currency: string): string {
+  return `${formatAmount(minor, minorDigits)} ${currency}`;
 }
 
 /** "6.12" (percent) → "0.0612" (the stored fraction), exactly. Empty text is null. */

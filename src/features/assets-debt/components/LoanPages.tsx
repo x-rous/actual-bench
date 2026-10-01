@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
@@ -105,7 +106,7 @@ export function NewLoanView() {
   const queryClient = useQueryClient();
 
   // Start from this tab's unsaved simulation for this budget, if any (sessionStorage is a per-tab
-  // convenience, never a debt), else a fresh one in the budget's usual currency.
+  // convenience, never a debt), else a fresh one using the budget's usual amount precision.
   useEffect(() => {
     if (!key || !budget || sim || existing.isLoading) return;
     const restored = readSession<{ sim: SimulationState; tracking: TrackingState }>(key);
@@ -165,10 +166,12 @@ export function NewLoanView() {
         onChange={setSim}
         title="New loan"
         badge="Not saved: simulation only"
+        stepLabel="Step 1 of 3 · Model loan"
         revision={null}
         actions={
           <Button type="button" size="sm" disabled={!complete} onClick={() => setStep("track")}>
             Set up tracking in Actual
+            <ArrowRight data-icon="inline-end" aria-hidden="true" />
           </Button>
         }
       />
@@ -178,7 +181,7 @@ export function NewLoanView() {
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
       <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <h1 className="text-base font-semibold">{step === "track" ? "Set up tracking in Actual" : "Review"}</h1>
-        <span className="text-xs text-muted-foreground">Step {step === "track" ? 2 : 3} of 3</span>
+        <span className="text-xs text-muted-foreground">Step {step === "track" ? "2 of 3 · Set up tracking" : "3 of 3 · Review"}</span>
         <div className="ml-auto flex gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => setStep(step === "review" ? "track" : "simulate")}>
             Back

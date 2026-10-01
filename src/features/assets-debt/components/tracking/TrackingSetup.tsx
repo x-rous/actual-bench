@@ -182,7 +182,7 @@ export function TrackingSetup({ sim, tracking, setTracking, directory, issues }:
 
       <Group title="Monitoring">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <MoneyField label="Drift tolerance" hint="Blank uses one unit of the currency." valueMinor={tracking.driftToleranceMinor} minorDigits={sim.minorDigits} onChange={(v) => set({ driftToleranceMinor: v })} />
+          <MoneyField label="Drift tolerance" hint="Blank uses one minor amount unit." valueMinor={tracking.driftToleranceMinor} minorDigits={sim.minorDigits} onChange={(v) => set({ driftToleranceMinor: v })} />
           <IntegerField label="Lender charge grace" suffix="days" value={tracking.lenderChargeGraceDays} onChange={(v) => set({ lenderChargeGraceDays: v ?? 0 })} />
           <IntegerField label="Expected statement every" suffix="days" min={1} value={tracking.expectedObservationIntervalDays} onChange={(v) => set({ expectedObservationIntervalDays: v })} hint="Optional." />
         </div>

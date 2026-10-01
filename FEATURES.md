@@ -46,6 +46,16 @@
 - Budget File Health opens a read-only exported-snapshot workspace for inspecting budget health locally in the browser
 - Data Browser opens the exported budget's raw SQLite tables, views, and rows directly (its own page, sharing the cached snapshot)
 
+## Assets & Debt
+
+- **Loans & Debt simulator:** a compact modelling workspace with bordered, section-level help for the grouped loan, interest, repayment, offset, and fee controls beside four headline results and a balance chart. The chart combines distinct colours and line styles, labels dated rate changes, and marks payoff without hiding exact dates from its accessible summary. A new simulator starts from a 500,000, 20-year, 5.4% monthly sample that can be reset after confirmation
+- Amounts are currency-agnostic throughout the simulator. Editable amounts group digits without moving the cursor while typing, and advanced calculation conventions stay in a responsive Calculation Method drawer
+- Optional loan features use accessible switches and reveal their controls only when enabled. Optional blank fields are labelled explicitly; interest-only periods live with Interest, while rate timelines, recurring costs, and transactions retain their detailed dialog editors
+- Extra payments can target the loan or an active offset account; redraw/withdrawal can likewise come from either. One-off and recurring offset deposits and withdrawals change the engine-owned daily offset balance, while the separately labelled absolute balance action remains available for snapshots/resets. These events, fees, repayment changes, and contractual rate changes share one chronological **Events** table below the chart. Rate rows reuse the Interest editor and remain rate periods; the interest/time impact comparison removes optional event assumptions while retaining contractual rate changes in both projections
+- Offset withdrawals never overdraw silently: an amount above the available modelled balance stops the projection for review. Offset state changes appear in the balance chart on their effective dates but are not repayments and never enter the amortization schedule
+- The amortization schedule supports Monthly, Yearly, and All Events views, distinguishes repayment number from elapsed loan time, and reconciles directly to engine events
+- Simulation remains separate from Actual tracking: the Step 1 toolbar separates the read-only calculation explanation from editing its method, and modelling does not write to the connected budget; **Set up tracking in Actual** begins the explicit tracking workflow
+
 ## Budget File Health
 
 - Read-only diagnostics workspace for the active budget export; snapshot processing happens locally in the browser and no diagnostics changes are written back to the budget

@@ -4,10 +4,11 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { addMonths } from "@/lib/financial-models/calendar/dates";
-import { bpsToFraction, formatMinor, fractionToBps } from "../../lib/money";
-import { simKey, type SimComponent, type SimOffset, type SimulationState } from "../../lib/simulatorModel";
-import { OFFSET_BASIS_OPTIONS, RECAST_OPTIONS, REVOLVING_MODEL_OPTIONS } from "../../lib/vocabulary";
+import { bpsToFraction, formatAmount, fractionToBps } from "../../lib/money";
+import { isOffsetAssumptionKind, simKey, type SimComponent, type SimOffset, type SimulationState } from "../../lib/simulatorModel";
+import { OFFSET_BASIS_OPTIONS, REPAYMENT_FREQUENCY_OPTIONS, REVOLVING_MODEL_OPTIONS } from "../../lib/vocabulary";
 import { DateField, FeatureSwitch, IntegerField, MoneyField, PercentField, SelectField } from "../fields";
+import { ConfigurationSection } from "./PrimaryInputs";
 
 /**
  * Optional features (P1.3b T206; FR-220). Each appears only when switched on
@@ -21,10 +22,8 @@ type Props = { sim: SimulationState; change: (next: SimulationState) => void; pr
 
 
 export function FeatureControls({ sim, change, propose }: Props) {
-  const [stash, setStash] = useState<{ offsets: SimOffset[]; offsetBalances: SimulationState["assumptions"]; components: SimComponent[] }>({ offsets: [], offsetBalances: [], components: [] });
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [stash, setStash] = useState<{ offsets: SimOffset[]; offsetEvents: SimulationState["assumptions"]; components: SimComponent[] }>({ offsets: [], offsetEvents: [], components: [] });
   const [feesOpen, setFeesOpen] = useState(false);
-  const [phasesOpen, setPhasesOpen] = useState(false);
   const derivedRepayment = useRef<SimulationState["profile"]["repaymentDerivation"]>(
     sim.profile.repaymentDerivation === "contractual-fixed" || sim.profile.repaymentDerivation === "lender-provided"
       ? "annuity-at-payment-frequency"
@@ -32,18 +31,17 @@ export function FeatureControls({ sim, change, propose }: Props) {
   );
   const offset = sim.offsets[0];
   const startingBalance = offset ? sim.assumptions.find((a) => a.kind === "offset-balance" && a.offsetAccountId === offset.placeholderAccountId && a.effectiveFrom <= offset.effectiveFrom) : undefined;
-  const ioMonths = sim.phases[0] ? monthsBetween(sim.phases[0].from, sim.phases[0].to) : 24;
 
   const toggleOffset = (on: boolean) => {
     if (!on) {
-      setStash((s) => ({ ...s, offsets: sim.offsets, offsetBalances: sim.assumptions.filter((a) => a.kind === "offset-balance") }));
-      change({ ...sim, offsets: [], assumptions: sim.assumptions.filter((a) => a.kind !== "offset-balance") });
+      setStash((s) => ({ ...s, offsets: sim.offsets, offsetEvents: sim.assumptions.filter((a) => isOffsetAssumptionKind(a.kind)) }));
+      change({ ...sim, offsets: [], assumptions: sim.assumptions.filter((a) => !isOffsetAssumptionKind(a.kind)) });
       return;
     }
     const key = simKey("offset");
     const offsets = stash.offsets.length ? stash.offsets : [{ key, placeholderAccountId: key, effectiveFrom: sim.startDate, effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null }];
-    const balances = stash.offsets.length ? stash.offsetBalances : [{ key: simKey("offset-balance"), kind: "offset-balance" as const, effectiveFrom: sim.startDate, recurrence: null, amountMinor: 0, feeTreatment: null, offsetAccountId: offsets[0].placeholderAccountId, note: null }];
-    propose({ ...sim, offsets, assumptions: [...sim.assumptions, ...balances] });
+    const offsetEvents = stash.offsets.length ? stash.offsetEvents : [{ key: simKey("offset-balance"), kind: "offset-balance" as const, effectiveFrom: sim.startDate, recurrence: null, amountMinor: 0, feeTreatment: null, offsetAccountId: offsets[0].placeholderAccountId, note: null }];
+    propose({ ...sim, offsets, assumptions: [...sim.assumptions, ...offsetEvents] });
   };
 
   const setOffset = (patch: Partial<SimOffset>) => change({ ...sim, offsets: sim.offsets.map((o, i) => (i === 0 ? { ...o, ...patch } : o)) });
@@ -59,11 +57,6 @@ export function FeatureControls({ sim, change, propose }: Props) {
   const setStartingBalance = (minor: number | null) => {
     if (!offset || !startingBalance) return;
     change({ ...sim, assumptions: sim.assumptions.map((a) => (a.key === startingBalance.key ? { ...a, amountMinor: minor ?? 0 } : a)) });
-  };
-
-  const toggleInterestOnly = (on: boolean) => {
-    const phases = sim.phases.length ? sim.phases : [{ kind: "interest-only" as const, from: sim.startDate, to: addMonths(sim.startDate, 24), recastAtEnd: "on-rate-change" as const }];
-    propose({ ...sim, interestOnly: on, phases });
   };
 
   const toggleFees = (on: boolean) => {
@@ -90,110 +83,82 @@ export function FeatureControls({ sim, change, propose }: Props) {
       contractualPaymentMinor: null,
       profile: {
         ...sim.profile,
-        repaymentDerivation: sim.profile.repaymentDerivation === "contractual-fixed" ? derivedRepayment.current : sim.profile.repaymentDerivation,
+        repaymentDerivation: sim.profile.repaymentDerivation === "contractual-fixed" || sim.profile.repaymentDerivation === "lender-provided" ? derivedRepayment.current : sim.profile.repaymentDerivation,
         presetId: null,
       },
     });
   };
   return (
-    <div className="flex flex-col gap-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Features</h3>
+    <>
+      <ConfigurationSection
+        title="3. Repayments"
+        help="Frequency generates the contractual repayment dates. Contract repayment amount overrides a derived amount; first repayment and maturity anchor lender dates, while Balloon payment ends the contract before the amortization term. Lines of credit use the minimum-payment fields instead."
+      >
+        <SelectField label="Frequency" value={sim.profile.repaymentFrequency} options={REPAYMENT_FREQUENCY_OPTIONS} onChange={(repaymentFrequency) => change({ ...sim, profile: { ...sim.profile, repaymentFrequency: repaymentFrequency as SimulationState["profile"]["repaymentFrequency"] } })} />
+        {sim.shape === "term-loan" ? <MoneyField label="Contract repayment amount (optional)" valueMinor={sim.contractualPaymentMinor} minorDigits={sim.minorDigits} onChange={setContractualPayment} /> : null}
 
-      <FeatureSwitch label="Interest-only period" description="Pay only interest for a while, then repay the loan over the rest of the term." checked={sim.interestOnly} onChange={toggleInterestOnly} />
-      {sim.interestOnly ? (
-        <div className="ml-6 flex flex-col gap-2">
-          {sim.phases.length <= 1 ? (
-            <IntegerField
-              label="Interest-only for"
-              suffix="months"
-              min={1}
-              value={ioMonths}
-              onChange={(m) => m && propose({ ...sim, phases: [{ ...(sim.phases[0] ?? { kind: "interest-only", from: sim.startDate, recastAtEnd: "on-rate-change" }), to: addMonths(sim.phases[0]?.from ?? sim.startDate, m) }] })}
-            />
-          ) : (
-            <p className="text-xs">{sim.phases.length} interest-only periods</p>
-          )}
-          <Button type="button" variant="link" size="sm" className="self-start px-0" onClick={() => setPhasesOpen(true)}>
-            Edit periods
-          </Button>
+        <div className="border-t border-border pt-3">
+          <FeatureSwitch label="Choose first repayment date" description={sim.firstPaymentDate ?? "Derived from the frequency"} checked={sim.firstPaymentDate !== null} onChange={(on) => propose({ ...sim, firstPaymentDate: on ? addMonths(sim.startDate, 1) : null })} />
+          {sim.firstPaymentDate !== null ? <DateField className="mt-2 pl-2" label="First repayment date" value={sim.firstPaymentDate} onChange={(firstPaymentDate) => propose({ ...sim, firstPaymentDate })} /> : null}
         </div>
-      ) : null}
 
-      <FeatureSwitch label="Offset account" description="A savings balance that reduces the interest charged." checked={sim.offsets.length > 0} onChange={toggleOffset} />
-      {offset ? (
-        <div className="ml-6 grid grid-cols-2 gap-2">
-          <MoneyField className="col-span-2" label="Offset balance" hint="Change it over time with Offset balance changes." valueMinor={startingBalance?.amountMinor ?? 0} minorDigits={sim.minorDigits} suffix={sim.currency} onChange={setStartingBalance} />
-          <PercentField label="Offset share" valueFraction={bpsToFraction(offset.percentageBps)} onChange={(f) => { const bps = fractionToBps(f); if (bps && bps >= 1 && bps <= 10_000) setOffset({ percentageBps: bps }); }} />
-          <SelectField label="Balance used" value={offset.basis} options={OFFSET_BASIS_OPTIONS} onChange={(v) => setOffset({ basis: v as SimOffset["basis"] })} />
-          <MoneyField className="col-span-2" label="Offset cap" hint="Blank for no cap." valueMinor={offset.capMinor} minorDigits={sim.minorDigits} onChange={(v) => setOffset({ capMinor: v && v > 0 ? v : null })} />
-          <DateField label="Offset from" value={offset.effectiveFrom} onChange={setOffsetFrom} />
-          <DateField label="Offset until" hint="Blank while it continues." value={offset.effectiveTo ?? ""} onChange={(d) => setOffset({ effectiveTo: d || null })} />
-        </div>
-      ) : null}
+        {sim.shape === "term-loan" ? <DateField label="Contract maturity date (optional)" value={sim.maturityDate ?? ""} onChange={(maturityDate) => change({ ...sim, maturityDate: maturityDate || null })} /> : null}
 
-      <FeatureSwitch label="Fees and other costs" description="Account fees, insurance or other amounts paid with each repayment." checked={sim.components.length > 0} onChange={toggleFees} />
-      {sim.components.length ? (
-        <div className="ml-6 flex flex-col gap-1 text-xs">
-          {sim.components.map((c) => (
-            <span key={c.key}>
-              {labelOfKind(c.economicKind)}: {c.fixedAmountMinor === null ? "amount not set" : formatMinor(c.fixedAmountMinor, sim.minorDigits, sim.currency)}
-              {c.economicKind === "fee" ? ` · ${c.treatment === "capitalized" ? "added to the loan" : "paid in cash"}` : ""}
-            </span>
-          ))}
-          <Button type="button" variant="link" size="sm" className="self-start px-0" onClick={() => setFeesOpen(true)}>
-            Edit fees and costs
-          </Button>
-        </div>
-      ) : null}
-
-      {sim.shape === "revolving-credit" ? (
-        <div className="flex flex-col gap-2 rounded-md border border-border p-2">
-          <MoneyField label="Credit limit" valueMinor={sim.creditLimitMinor} minorDigits={sim.minorDigits} suffix={sim.currency} onChange={(v) => change({ ...sim, creditLimitMinor: v })} />
-          <SelectField label="Minimum payment" value={sim.revolving?.paymentModel ?? ""} options={REVOLVING_MODEL_OPTIONS} onChange={(v) => change({ ...sim, revolving: { paymentModel: v as NonNullable<SimulationState["revolving"]>["paymentModel"], percentOfBalanceBps: sim.revolving?.percentOfBalanceBps ?? null, minimumFloorMinor: sim.revolving?.minimumFloorMinor ?? null } })} />
-          {sim.revolving?.paymentModel === "percent-of-balance" ? (
-            <>
-              <PercentField label="Share of the balance" valueFraction={sim.revolving.percentOfBalanceBps === null ? null : bpsToFraction(sim.revolving.percentOfBalanceBps)} onChange={(f) => change({ ...sim, revolving: { ...sim.revolving!, percentOfBalanceBps: fractionToBps(f) } })} />
-              <MoneyField label="But at least" valueMinor={sim.revolving.minimumFloorMinor} minorDigits={sim.minorDigits} onChange={(v) => change({ ...sim, revolving: { ...sim.revolving!, minimumFloorMinor: v } })} />
-            </>
-          ) : null}
-        </div>
-      ) : null}
-
-      <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)} className="self-start text-xs font-medium text-primary">
-        {moreOpen ? "Fewer options" : "More options"}
-      </button>
-      {moreOpen ? (
-        <div className="flex flex-col gap-2 rounded-md border border-border p-2">
-          <FeatureSwitch label="Choose the first repayment date" description="Otherwise it is one repayment period after the start." checked={sim.firstPaymentDate !== null} onChange={(on) => propose({ ...sim, firstPaymentDate: on ? addMonths(sim.startDate, 1) : null })} />
-          {sim.firstPaymentDate !== null ? <DateField label="First repayment" value={sim.firstPaymentDate} onChange={(d) => propose({ ...sim, firstPaymentDate: d })} /> : null}
-          {sim.shape === "term-loan" ? <DateField label="Contractual maturity" hint="Optional. When blank, the term counts repayments from the first repayment date." value={sim.maturityDate ?? ""} onChange={(d) => change({ ...sim, maturityDate: d || null })} /> : null}
-          {sim.shape === "term-loan" ? <MoneyField label="Contractual repayment amount" hint="Optional. When entered, this fixed lender-stated amount is used instead of a calculated repayment." valueMinor={sim.contractualPaymentMinor} minorDigits={sim.minorDigits} suffix={sim.currency} onChange={setContractualPayment} /> : null}
+        <div className="border-t border-border pt-3">
           <FeatureSwitch
-            label="Balloon: the contract ends before the loan is repaid"
+            label="Balloon payment"
+            description={balloon ? `Contract ends after ${sim.contractTermMonths ?? 0} months` : "End the contract before full amortization"}
             checked={balloon}
-            onChange={(on) =>
-              change({
-                ...sim,
-                contractTermMonths: on ? Math.min(sim.termMonths ?? 60, 60) : null,
-                maturityDate: on ? sim.maturityDate : null,
-                profile: { ...sim.profile, finalPayment: on ? "contractual-balloon" : sim.profile.finalPayment === "contractual-balloon" ? "true-up-to-zero" : sim.profile.finalPayment },
-              })
-            }
+            onChange={(on) => change({ ...sim, contractTermMonths: on ? Math.min(sim.termMonths ?? 60, 60) : null, profile: { ...sim.profile, finalPayment: on ? "contractual-balloon" : sim.profile.finalPayment === "contractual-balloon" ? "true-up-to-zero" : sim.profile.finalPayment } })}
           />
-          {balloon ? <IntegerField label="Contract term" suffix="months" min={1} value={sim.contractTermMonths} onChange={(m) => change({ ...sim, contractTermMonths: m })} hint="The loan is repaid over the main term; the rest is due at the end of the contract." /> : null}
+          {balloon ? <IntegerField className="mt-2 pl-2" label="Contract term" suffix="months" min={1} value={sim.contractTermMonths} onChange={(contractTermMonths) => change({ ...sim, contractTermMonths })} /> : null}
         </div>
-      ) : null}
+
+        {sim.shape === "revolving-credit" ? (
+          <div className="grid grid-cols-2 gap-2 border-t border-border pt-3">
+            <MoneyField className="col-span-2" label="Credit limit" valueMinor={sim.creditLimitMinor} minorDigits={sim.minorDigits} onChange={(creditLimitMinor) => change({ ...sim, creditLimitMinor })} />
+            <SelectField className="col-span-2" label="Minimum payment" value={sim.revolving?.paymentModel ?? ""} options={REVOLVING_MODEL_OPTIONS} onChange={(paymentModel) => change({ ...sim, revolving: { paymentModel: paymentModel as NonNullable<SimulationState["revolving"]>["paymentModel"], percentOfBalanceBps: sim.revolving?.percentOfBalanceBps ?? null, minimumFloorMinor: sim.revolving?.minimumFloorMinor ?? null } })} />
+            {sim.revolving?.paymentModel === "percent-of-balance" ? <>
+              <PercentField label="Share of balance" valueFraction={sim.revolving.percentOfBalanceBps === null ? null : bpsToFraction(sim.revolving.percentOfBalanceBps)} onChange={(fraction) => change({ ...sim, revolving: { ...sim.revolving!, percentOfBalanceBps: fractionToBps(fraction) } })} />
+              <MoneyField label="Minimum amount" valueMinor={sim.revolving.minimumFloorMinor} minorDigits={sim.minorDigits} onChange={(minimumFloorMinor) => change({ ...sim, revolving: { ...sim.revolving!, minimumFloorMinor } })} />
+            </> : null}
+          </div>
+        ) : null}
+      </ConfigurationSection>
+
+      <ConfigurationSection
+        title="4. Offset account"
+        help="Offset account starting balance is the eligible balance when the offset begins. Offset share controls how much qualifies, Balance used selects the debt basis, and the optional cap and end date limit the amount or period applied. Add later deposits and withdrawals under Events; use Set absolute offset balance only to reset the modelled balance."
+      >
+        <FeatureSwitch label="Offset account" description={offset ? `Starting balance ${formatAmount(startingBalance?.amountMinor ?? 0, sim.minorDigits)}` : "Reduce interest with an eligible balance"} checked={sim.offsets.length > 0} onChange={toggleOffset} />
+        {offset ? (
+          <div className="grid grid-cols-2 gap-2 border-t border-border pt-3">
+            <MoneyField className="col-span-2" label="Offset account starting balance" hint="Enter the starting balance of your offset account." valueMinor={startingBalance?.amountMinor ?? 0} minorDigits={sim.minorDigits} onChange={setStartingBalance} />
+            <PercentField label="Offset share" valueFraction={bpsToFraction(offset.percentageBps)} onChange={(fraction) => { const bps = fractionToBps(fraction); if (bps && bps >= 1 && bps <= 10_000) setOffset({ percentageBps: bps }); }} />
+            <SelectField label="Balance used" value={offset.basis} options={OFFSET_BASIS_OPTIONS} onChange={(basis) => setOffset({ basis: basis as SimOffset["basis"] })} />
+            <MoneyField className="col-span-2" label="Offset cap (optional)" valueMinor={offset.capMinor} minorDigits={sim.minorDigits} onChange={(capMinor) => setOffset({ capMinor: capMinor && capMinor > 0 ? capMinor : null })} />
+            <DateField label="Offset from" value={offset.effectiveFrom} onChange={setOffsetFrom} />
+            <DateField label="Offset until (optional)" value={offset.effectiveTo ?? ""} onChange={(effectiveTo) => setOffset({ effectiveTo: effectiveTo || null })} />
+          </div>
+        ) : null}
+      </ConfigurationSection>
+
+      <ConfigurationSection
+        title="5. Fees and other costs"
+        help="Enable this section for recurring fees, insurance, escrow, tax, or other costs paid with repayments. Each item has an amount and treatment; one-off fees belong under Events."
+      >
+        <FeatureSwitch label="Fees and other costs" description={sim.components.length ? `${sim.components.length} recurring cost${sim.components.length === 1 ? "" : "s"}` : "Include recurring fees, insurance or other costs"} checked={sim.components.length > 0} onChange={toggleFees} />
+        {sim.components.length ? (
+          <div className="flex flex-col gap-2 border-t border-border pt-3 text-xs">
+            {sim.components.map((component) => <span key={component.key}>{labelOfKind(component.economicKind)} · {component.fixedAmountMinor === null ? "Amount not set" : formatAmount(component.fixedAmountMinor, sim.minorDigits)}{component.economicKind === "fee" ? ` · ${component.treatment === "capitalized" ? "Added to loan" : "Paid in cash"}` : ""}</span>)}
+            <Button type="button" variant="outline" size="sm" onClick={() => setFeesOpen(true)}>Edit fees and costs</Button>
+          </div>
+        ) : null}
+      </ConfigurationSection>
 
       <FeesDialog open={feesOpen} onClose={() => setFeesOpen(false)} sim={sim} change={change} />
-      <PhasesDialog open={phasesOpen} onClose={() => setPhasesOpen(false)} sim={sim} propose={propose} />
-    </div>
+    </>
   );
-}
-
-function monthsBetween(from: string, to: string): number {
-  const [fy, fm] = from.split("-").map(Number);
-  const [ty, tm] = to.split("-").map(Number);
-  return Math.max(1, (ty - fy) * 12 + (tm - fm));
 }
 
 const KIND_OPTIONS = [
@@ -209,10 +174,10 @@ function FeesDialog({ open, onClose, sim, change }: { open: boolean; onClose: ()
   const set = (key: string, patch: Partial<SimComponent>) => change({ ...sim, components: sim.components.map((c) => (c.key === key ? { ...c, ...patch } : c)) });
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[640px]">
         <DialogHeader>
           <DialogTitle>Fees and other costs</DialogTitle>
-          <DialogDescription>Amounts paid with each repayment. A fee can instead be added to the loan. One-off fees are extra transactions.</DialogDescription>
+          <DialogDescription>Amounts paid with each repayment. A fee can instead be added to the loan. One-off fees are added under Events.</DialogDescription>
         </DialogHeader>
         <ul className="flex flex-col gap-3">
           {sim.components.map((c, i) => (
@@ -240,40 +205,6 @@ function FeesDialog({ open, onClose, sim, change }: { open: boolean; onClose: ()
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => change({ ...sim, components: [...sim.components, { key: simKey("cost"), economicKind: "fee", amountRule: "fixed", fixedAmountMinor: null, treatment: "cash-paid" }] })}>
             Add a cost
-          </Button>
-          <Button type="button" onClick={onClose}>
-            Done
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function PhasesDialog({ open, onClose, sim, propose }: { open: boolean; onClose: () => void; sim: SimulationState; propose: (next: SimulationState) => void }) {
-  const setPhase = (i: number, patch: Partial<SimulationState["phases"][number]>) => propose({ ...sim, phases: sim.phases.map((p, j) => (j === i ? { ...p, ...patch } : p)) });
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Interest-only periods</DialogTitle>
-          <DialogDescription>During each period only interest is paid. At its end the repayment is recalculated as chosen.</DialogDescription>
-        </DialogHeader>
-        <ul className="flex flex-col gap-3">
-          {sim.phases.map((p, i) => (
-            <li key={`${p.from}:${i}`} className="grid grid-cols-2 gap-2 rounded border border-border p-2">
-              <DateField label={`Period ${i + 1} from`} value={p.from} onChange={(d) => setPhase(i, { from: d })} />
-              <DateField label="Until" value={p.to} onChange={(d) => setPhase(i, { to: d })} />
-              <SelectField className="col-span-2" label="At the end" value={p.recastAtEnd} options={RECAST_OPTIONS} onChange={(v) => setPhase(i, { recastAtEnd: v as typeof p.recastAtEnd })} />
-              <Button type="button" variant="ghost" size="sm" className="col-span-2 justify-self-start" onClick={() => propose({ ...sim, phases: sim.phases.filter((_, j) => j !== i) })}>
-                Remove period {i + 1}
-              </Button>
-            </li>
-          ))}
-        </ul>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => { const last = sim.phases.at(-1); const from = last?.to ?? sim.startDate; propose({ ...sim, phases: [...sim.phases, { kind: "interest-only", from, to: addMonths(from, 12), recastAtEnd: "on-rate-change" }] }); }}>
-            Add a period
           </Button>
           <Button type="button" onClick={onClose}>
             Done

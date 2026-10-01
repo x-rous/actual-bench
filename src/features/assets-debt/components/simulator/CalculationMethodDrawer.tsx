@@ -2,6 +2,7 @@
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/ui/info-hint";
 import { validateProfile, type CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
 import {
@@ -47,18 +48,17 @@ const REPAYMENT_TIMING_OPTIONS = [
 ];
 const SCALE_OPTIONS = [
   { value: "full", label: "Full precision" },
-  { value: "currency", label: "Currency precision" },
+  { value: "currency", label: "Amount precision" },
   { value: "fixed", label: "A fixed number of places" },
 ];
 
-export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState; onOpen: () => void }) {
+export function CalculationMethodSummary({ sim }: { sim: SimulationState }) {
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-border p-2">
-      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Calculation method</span>
-      <span className="text-xs">{summarizeProfile(sim.profile)}</span>
-      <Button type="button" variant="link" size="sm" className="self-start px-0" onClick={onOpen}>
-        Change calculation method
-      </Button>
+    <div className="rounded-md bg-muted/50 px-3 py-2">
+      <div className="min-w-0">
+        <span className="block text-xs font-medium text-muted-foreground">Calculation method</span>
+        <span className="block truncate text-xs text-foreground">{summarizeProfile(sim.profile)}</span>
+      </div>
     </div>
   );
 }
@@ -72,17 +72,22 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
   const daily = p.accrual !== "per-period";
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-        <SheetHeader>
+      <SheetContent
+        side="left"
+        className="max-w-full gap-0 overflow-x-hidden overflow-y-auto"
+        overlayClassName="bg-transparent supports-backdrop-filter:backdrop-blur-none"
+        style={{ width: "min(820px, 92vw)", maxWidth: "none" }}
+      >
+        <SheetHeader className="pb-2">
           <SheetTitle>Calculation method</SheetTitle>
-          <SheetDescription>{summarizeProfile(p)}. Most loans never need these; change them only to match how your lender calculates.</SheetDescription>
+          <SheetDescription>{summarizeProfile(p)}.</SheetDescription>
         </SheetHeader>
-        <div className="flex flex-col gap-4 px-4 pb-6">
+        <div className="flex min-w-0 flex-col gap-4 px-4 pb-6">
           <SelectField
             label="Start from a preset"
+            labelAccessory="A preset describes a calculation shape."
             value={p.presetId ?? ""}
             options={[{ value: "", label: "No preset" }, ...PROFILE_PRESETS.map((x) => ({ value: x.id, label: x.label }))]}
-            hint="A preset describes a calculation shape, not any particular lender. Every field stays editable."
             onChange={(id) => {
               const preset = PROFILE_PRESETS.find((x) => x.id === id);
               if (preset) change({ ...sim, profile: { ...p, ...preset.profile, presetId: preset.id } });
@@ -96,8 +101,16 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
             </ul>
           ) : null}
 
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-semibold">Interest</legend>
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start">
+          <fieldset aria-label="Interest" className="flex min-w-0 flex-col gap-2 rounded-lg border p-4">
+            <legend className="px-1 text-sm font-semibold">
+              <span className="inline-flex items-center gap-1.5">
+                Interest
+                <InfoHint label="interest calculation fields">
+                  Rate quote and day count define how the annual rate is interpreted. Accrual, charging, and capitalization control when interest is calculated and posted; rate timing and same-day order control when dated changes take effect.
+                </InfoHint>
+              </span>
+            </legend>
             <SelectField label="Rate quoted as" value={p.rateQuote} options={RATE_QUOTE_OPTIONS} onChange={(v) => set({ rateQuote: v as Profile["rateQuote"] })} />
             <SelectField label="Interest accrues" value={p.accrual} options={ACCRUAL_OPTIONS} onChange={(v) => set({ accrual: v as Profile["accrual"], capitalization: v === "daily-compounded" ? "daily" : "at-charge" })} />
             {daily ? <SelectField label="Day count" value={p.dayCount} options={DAY_COUNT_OPTIONS} onChange={(v) => set({ dayCount: v as Profile["dayCount"] })} /> : null}
@@ -110,10 +123,34 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
             ) : null}
             <SelectField label="Interest capitalizes" value={p.capitalization} options={CAPITALIZATION_OPTIONS} onChange={(v) => set({ capitalization: v as Profile["capitalization"] })} />
             <SelectField label="A new rate applies" value={p.rateEffectiveTiming} options={RATE_TIMING_OPTIONS} onChange={(v) => set({ rateEffectiveTiming: v as Profile["rateEffectiveTiming"] })} />
+
+            <div className="mt-2 flex min-w-0 flex-col gap-2 border-t pt-4">
+              <h3 className="text-xs font-semibold text-muted-foreground">Same-day order</h3>
+              <SelectField
+                label="Transactions on the same day as interest"
+                value={timing}
+                options={TIMING_OPTIONS}
+                onChange={(v) => set({ eventOrder: v === "custom" ? { scheduledRepayments: "before-accrual", otherPayments: "before-accrual", offsets: "before-accrual" } : { timing: v as "start-of-day" | "end-of-day" } })}
+              />
+              {placements ? (
+                <>
+                  <SelectField label="Scheduled repayments" value={placements.scheduledRepayments} options={PLACEMENT_OPTIONS} onChange={(v) => set({ eventOrder: { ...placements, scheduledRepayments: v as "before-accrual" | "after-accrual" } })} />
+                  <SelectField label="Other payments and draws" value={placements.otherPayments} options={PLACEMENT_OPTIONS} onChange={(v) => set({ eventOrder: { ...placements, otherPayments: v as "before-accrual" | "after-accrual" } })} />
+                  <SelectField label="Offset balance changes" value={placements.offsets} options={PLACEMENT_OPTIONS} onChange={(v) => set({ eventOrder: { ...placements, offsets: v as "before-accrual" | "after-accrual" } })} />
+                </>
+              ) : null}
+            </div>
           </fieldset>
 
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-semibold">Repayment</legend>
+          <fieldset aria-label="Repayment" className="flex min-w-0 flex-col gap-2 rounded-lg border p-4">
+            <legend className="px-1 text-sm font-semibold">
+              <span className="inline-flex items-center gap-1.5">
+                Repayment
+                <InfoHint label="repayment calculation fields">
+                  Amortization defines the balance pattern. Repayment amount and recalculate settings control how payments are derived and recast; repayment timing, final-payment handling, and negative amortization control how those payments affect the loan.
+                </InfoHint>
+              </span>
+            </legend>
             <SelectField label="Amortization" value={p.amortization} options={AMORTIZATION_OPTIONS.filter((o) => o.value !== "revolving")} onChange={(v) => set({ amortization: v as Profile["amortization"] })} />
             <SelectField
               label="Repayment amount"
@@ -133,7 +170,7 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-medium">Contract recast dates</span>
                 {sim.paymentRecasts.map((r, i) => (
-                  <div key={`${r.date}:${i}`} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+                  <div key={`${r.date}:${i}`} className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
                     <DateField label={`Recast ${i + 1}`} value={r.date} onChange={(d) => change({ ...sim, paymentRecasts: sim.paymentRecasts.map((x, j) => (j === i ? { ...x, date: d } : x)) })} />
                     <TextField label="Note" value={r.note ?? ""} onChange={(t) => change({ ...sim, paymentRecasts: sim.paymentRecasts.map((x, j) => (j === i ? { ...x, note: t || null } : x)) })} />
                     <Button type="button" variant="ghost" size="sm" aria-label={`Remove recast ${i + 1}`} onClick={() => change({ ...sim, paymentRecasts: sim.paymentRecasts.filter((_, j) => j !== i) })}>
@@ -148,49 +185,41 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
             ) : null}
             <SelectField label="A repayment counts" value={p.repaymentEffectiveTiming} options={REPAYMENT_TIMING_OPTIONS} onChange={(v) => set({ repaymentEffectiveTiming: v as Profile["repaymentEffectiveTiming"] })} />
             <p className="text-[11px] text-muted-foreground">Interest-only repayments pay the interest charged since the previous repayment.</p>
+
+            <div className="mt-2 flex min-w-0 flex-col gap-2 border-t pt-4">
+              <SelectField label="Final repayment (end of loan)" value={p.finalPayment} options={FINAL_PAYMENT_OPTIONS} onChange={(v) => set({ finalPayment: v as Profile["finalPayment"] })} />
+              <FeatureSwitch label="The contract allows negative amortization" description="Unpaid interest may be added to the loan when a repayment does not cover it." checked={p.negativeAmortizationAllowed} onChange={(on) => set({ negativeAmortizationAllowed: on })} />
+            </div>
           </fieldset>
 
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-semibold">Same-day order</legend>
-            <SelectField
-              label="Transactions on the same day as interest"
-              value={timing}
-              options={TIMING_OPTIONS}
-              onChange={(v) => set({ eventOrder: v === "custom" ? { scheduledRepayments: "before-accrual", otherPayments: "before-accrual", offsets: "before-accrual" } : { timing: v as "start-of-day" | "end-of-day" } })}
-            />
-            {placements ? (
-              <>
-                <SelectField label="Scheduled repayments" value={placements.scheduledRepayments} options={PLACEMENT_OPTIONS} onChange={(v) => set({ eventOrder: { ...placements, scheduledRepayments: v as "before-accrual" | "after-accrual" } })} />
-                <SelectField label="Other payments and draws" value={placements.otherPayments} options={PLACEMENT_OPTIONS} onChange={(v) => set({ eventOrder: { ...placements, otherPayments: v as "before-accrual" | "after-accrual" } })} />
-                <SelectField label="Offset balance changes" value={placements.offsets} options={PLACEMENT_OPTIONS} onChange={(v) => set({ eventOrder: { ...placements, offsets: v as "before-accrual" | "after-accrual" } })} />
-              </>
-            ) : null}
+          <fieldset aria-label="Precision and rounding" className="flex min-w-0 flex-col gap-2 rounded-lg border p-4 lg:col-span-2">
+            <legend className="px-1 text-sm font-semibold">
+              <span className="inline-flex items-center gap-1.5">
+                Precision and rounding
+                <InfoHint label="precision and rounding fields">
+                  Repayment and interest rounding choose the posting rules. Working precision applies between postings, balance precision controls whether each posted balance is rounded, and amount decimal places defines the amount scale.
+                </InfoHint>
+              </span>
+            </legend>
+            <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+              <SelectField label="Repayment rounding" value={p.rounding.paymentRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, paymentRounding: v as Profile["rounding"]["paymentRounding"] } })} />
+              <SelectField label="Interest rounding" value={p.rounding.interestPostingRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, interestPostingRounding: v as Profile["rounding"]["interestPostingRounding"] } })} />
+              <SelectField
+                label="Working precision"
+                value={p.rounding.intermediateScale.mode}
+                options={SCALE_OPTIONS}
+                onChange={(v) => set({ rounding: { ...p.rounding, intermediateScale: v === "fixed" ? { mode: "fixed", places: 10 } : { mode: v as "full" | "currency" } } })}
+              />
+              {p.rounding.intermediateScale.mode === "fixed" ? (
+                <IntegerField label="Decimal places" value={p.rounding.intermediateScale.places} onChange={(n) => n !== null && n <= 30 && set({ rounding: { ...p.rounding, intermediateScale: { mode: "fixed", places: n } } })} hint="0 to 30." />
+              ) : null}
+              <SelectField label="Working rounding" value={p.rounding.intermediateRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, intermediateRounding: v as Profile["rounding"]["intermediateRounding"] } })} />
+              <SelectField label="Balance precision" value={p.rounding.balancePrecision} options={BALANCE_PRECISION_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, balancePrecision: v as Profile["rounding"]["balancePrecision"] } })} />
+              <IntegerField label="Amount decimal places" min={0} value={sim.minorDigits} onChange={(n) => n !== null && n <= 4 && change({ ...sim, minorDigits: n })} />
+              <p className="text-[11px] text-muted-foreground sm:col-span-2">Short months: a date past the end of the month moves to its last day.</p>
+            </div>
           </fieldset>
-
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-semibold">Precision and rounding</legend>
-            <SelectField label="Repayment rounding" value={p.rounding.paymentRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, paymentRounding: v as Profile["rounding"]["paymentRounding"] } })} />
-            <SelectField label="Interest rounding" value={p.rounding.interestPostingRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, interestPostingRounding: v as Profile["rounding"]["interestPostingRounding"] } })} />
-            <SelectField
-              label="Working precision"
-              value={p.rounding.intermediateScale.mode}
-              options={SCALE_OPTIONS}
-              onChange={(v) => set({ rounding: { ...p.rounding, intermediateScale: v === "fixed" ? { mode: "fixed", places: 10 } : { mode: v as "full" | "currency" } } })}
-            />
-            {p.rounding.intermediateScale.mode === "fixed" ? (
-              <IntegerField label="Decimal places" value={p.rounding.intermediateScale.places} onChange={(n) => n !== null && n <= 30 && set({ rounding: { ...p.rounding, intermediateScale: { mode: "fixed", places: n } } })} hint="0 to 30." />
-            ) : null}
-            <SelectField label="Working rounding" value={p.rounding.intermediateRounding} options={ROUNDING_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, intermediateRounding: v as Profile["rounding"]["intermediateRounding"] } })} />
-            <SelectField label="Balance precision" value={p.rounding.balancePrecision} options={BALANCE_PRECISION_OPTIONS} onChange={(v) => set({ rounding: { ...p.rounding, balancePrecision: v as Profile["rounding"]["balancePrecision"] } })} />
-            <IntegerField label="Currency decimal places" min={0} value={sim.minorDigits} onChange={(n) => n !== null && n <= 4 && change({ ...sim, minorDigits: n })} hint={`Set from ${sim.currency}; change only for an unusual currency.`} />
-            <p className="text-[11px] text-muted-foreground">Short months: a date past the end of the month moves to its last day.</p>
-          </fieldset>
-
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-sm font-semibold">End of the loan</legend>
-            <SelectField label="Final repayment" value={p.finalPayment} options={FINAL_PAYMENT_OPTIONS} onChange={(v) => set({ finalPayment: v as Profile["finalPayment"] })} />
-            <FeatureSwitch label="The contract allows negative amortization" description="Unpaid interest may be added to the loan when a repayment does not cover it." checked={p.negativeAmortizationAllowed} onChange={(on) => set({ negativeAmortizationAllowed: on })} />
-          </fieldset>
+          </div>
         </div>
       </SheetContent>
     </Sheet>

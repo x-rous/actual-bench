@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { formatMinor } from "../../lib/money";
+import { formatAmount, fractionToPercent } from "../../lib/money";
+import { formatChartDate, formatChartPeriod, SERIES_META } from "./chartMeta";
 import type { ChartData, SeriesId } from "../../lib/results";
 
 /**
@@ -25,35 +26,47 @@ const LABELS: Record<SeriesId, string> = {
   cumulativeInterest: "Interest paid so far",
 };
 
-export function LoanChartPanel({ data, view, onViewChange, currency, digits }: { data: ChartData; view: "month" | "year"; onViewChange: (v: "month" | "year") => void; currency: string; digits: number }) {
+export function LoanChartPanel({ data, view, onViewChange, digits }: { data: ChartData; view: "month" | "year"; onViewChange: (v: "month" | "year") => void; digits: number }) {
   const [hidden, setHidden] = useState<SeriesId[]>([]);
   const visible = data.series.filter((s) => !hidden.includes(s));
   const first = data.points[0];
   const last = data.points.at(-1);
   const peak = data.points.reduce((m, p) => Math.max(m, p.balance ?? 0), 0);
-  const summary = first && last ? `Loan balance from ${first.period} to ${last.period}: highest ${formatMinor(peak, digits, currency)}, ending at ${formatMinor(last.balance ?? 0, digits, currency)}.${data.series.includes("comparison") ? " A second line shows the saved loan for comparison." : ""}` : "No chart yet.";
+  const rateSummary = data.rateChanges.flatMap((group) => group.changes).map((change) => `${formatChartDate(change.date)} to ${fractionToPercent(change.annualRateDecimal)}%`).join("; ");
+  const summary = first && last
+    ? `Loan balance from ${formatChartPeriod(first.period)} to ${formatChartPeriod(last.period)}: highest ${formatAmount(peak, digits)}, ending at ${formatAmount(last.balance ?? 0, digits)}.${data.payoff ? ` Paid off on ${formatChartDate(data.payoff.date)}.` : ""}${rateSummary ? ` Rate changes: ${rateSummary}.` : ""}${data.series.includes("comparison") ? " A second line shows the saved loan for comparison." : ""}`
+    : "No chart yet.";
   return (
     <section aria-labelledby="chart-heading" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="chart-heading" className="text-sm font-semibold">
           Balance over time
         </h2>
-        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Series shown">
-          {data.series.map((id) => {
-            const on = !hidden.includes(id);
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={on}
-                onClick={() => setHidden((h) => (on ? [...h, id] : h.filter((x) => x !== id)))}
-                className={cn("rounded-full border px-2 py-0.5 text-[11px]", on ? "border-primary font-medium" : "border-border text-muted-foreground line-through")}
-              >
-                {LABELS[id]}
-                <span className="sr-only">{on ? " (shown)" : " (hidden)"}</span>
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Chart controls">
+          <div className="flex flex-wrap items-center gap-1" aria-label="Chart legend">
+            {data.series.map((id) => {
+              const on = !hidden.includes(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setHidden((h) => (on ? [...h, id] : h.filter((x) => x !== id)))}
+                  className={cn("flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px]", on ? "border-border bg-background font-medium" : "border-border text-muted-foreground line-through")}
+                >
+                  <span className="h-0 w-4 border-t-2" style={{ borderColor: SERIES_META[id].color, borderTopStyle: SERIES_META[id].dash ? "dashed" : "solid" }} aria-hidden />
+                  {LABELS[id]}
+                  <span className="sr-only">{on ? " (shown)" : " (hidden)"}</span>
+                </button>
+              );
+            })}
+            {data.rateChanges.length ? (
+              <span className="flex items-center gap-1.5 rounded-full border border-border bg-background px-2 py-1 text-[11px] font-medium">
+                <span className="h-4 border-l-2 border-dotted" style={{ borderColor: "var(--chart-rate-change)" }} aria-hidden />
+                Rate change
+              </span>
+            ) : null}
+          </div>
           <span className="mx-1 h-4 w-px bg-border" aria-hidden />
           <div role="radiogroup" aria-label="Chart detail" className="flex gap-1">
             {(["month", "year"] as const).map((v) => (
@@ -66,7 +79,7 @@ export function LoanChartPanel({ data, view, onViewChange, currency, digits }: {
       </div>
       <figure className="m-0" aria-describedby="chart-summary">
         <div role="group" aria-label="Loan balance chart. Focus it and use the arrow keys to step through periods.">
-          <LoanProjectionChart data={data} visible={visible} currency={currency} digits={digits} />
+          <LoanProjectionChart data={data} visible={visible} digits={digits} />
         </div>
         <figcaption id="chart-summary" className="text-[11px] text-muted-foreground">
           {summary} The schedule below lists every figure.

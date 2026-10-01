@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Ban, CircleCheck, CircleDashed, Archive } from "lucide-react";
 import type { DebtSummary } from "@/lib/assets-debt/services/debtConfigService";
-import { formatMinor } from "../lib/money";
+import { formatAmount } from "../lib/money";
 import { DEBT_TYPE_OPTIONS, labelOf, STRATEGY_OPTIONS } from "../lib/vocabulary";
 
 /**
@@ -70,7 +70,7 @@ export function DebtList({ debts }: { debts: DebtSummary[] }) {
                   </span>
                 </span>
                 {debt.openingPrincipalMinor !== null && !debt.blocked ? (
-                  <span className="hidden text-xs tabular-nums text-muted-foreground sm:inline">Opened at {formatMinor(debt.openingPrincipalMinor, debt.currencyMinorDigits, debt.currency)}</span>
+                  <span className="hidden text-xs tabular-nums text-muted-foreground sm:inline">Opened at {formatAmount(debt.openingPrincipalMinor, debt.currencyMinorDigits)}</span>
                 ) : null}
                 <span className={`text-xs font-medium ${status.tone}`}>{status.label}</span>
               </Link>

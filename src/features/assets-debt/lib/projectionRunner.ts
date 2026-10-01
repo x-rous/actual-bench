@@ -10,10 +10,10 @@ import { projectDebt, type DebtProjection, type DebtProjectionInput } from "@/li
  * Worker exists (tests, server rendering) the same engine runs synchronously.
  */
 
-export type ProjectionOutcome = { projection: DebtProjection; comparison: DebtProjection | null; durationMs: number };
+export type ProjectionOutcome = { projection: DebtProjection; comparison: DebtProjection | null; impactBaseline: DebtProjection | null; durationMs: number };
 
 export interface ProjectionRunner {
-  run(primary: DebtProjectionInput, comparison: DebtProjectionInput | null): Promise<ProjectionOutcome>;
+  run(primary: DebtProjectionInput, comparison: DebtProjectionInput | null, impactBaseline?: DebtProjectionInput | null): Promise<ProjectionOutcome>;
   dispose(): void;
 }
 
@@ -26,9 +26,9 @@ export class SupersededError extends Error {
 
 export function createSyncRunner(): ProjectionRunner {
   return {
-    async run(primary, comparison) {
+    async run(primary, comparison, impactBaseline = null) {
       const started = performance.now();
-      return { projection: projectDebt(primary), comparison: comparison ? projectDebt(comparison) : null, durationMs: performance.now() - started };
+      return { projection: projectDebt(primary), comparison: comparison ? projectDebt(comparison) : null, impactBaseline: impactBaseline ? projectDebt(impactBaseline) : null, durationMs: performance.now() - started };
     },
     dispose() {},
   };
@@ -40,12 +40,12 @@ export function createWorkerRunner(spawn: () => Worker): ProjectionRunner {
   let nextId = 0;
 
   const attach = (w: Worker) => {
-    w.onmessage = (event: MessageEvent<{ id: number; ok: boolean; projection?: DebtProjection; comparison?: DebtProjection | null; durationMs?: number; error?: string }>) => {
+    w.onmessage = (event: MessageEvent<{ id: number; ok: boolean; projection?: DebtProjection; comparison?: DebtProjection | null; impactBaseline?: DebtProjection | null; durationMs?: number; error?: string }>) => {
       const data = event.data;
       if (!pending || data.id !== pending.id) return;
       const { resolve, reject } = pending;
       pending = null;
-      if (data.ok) resolve({ projection: data.projection!, comparison: data.comparison ?? null, durationMs: data.durationMs ?? 0 });
+      if (data.ok) resolve({ projection: data.projection!, comparison: data.comparison ?? null, impactBaseline: data.impactBaseline ?? null, durationMs: data.durationMs ?? 0 });
       else reject(new Error(data.error ?? "The calculation failed"));
     };
     w.onerror = (event) => {
@@ -57,7 +57,7 @@ export function createWorkerRunner(spawn: () => Worker): ProjectionRunner {
   };
 
   return {
-    run(primary, comparison) {
+    run(primary, comparison, impactBaseline = null) {
       if (pending) {
         // Latest wins: stop the busy worker rather than wait for a result nobody needs.
         pending.reject(new SupersededError());
@@ -72,7 +72,7 @@ export function createWorkerRunner(spawn: () => Worker): ProjectionRunner {
       const id = ++nextId;
       return new Promise<ProjectionOutcome>((resolve, reject) => {
         pending = { id, resolve, reject };
-        worker!.postMessage({ id, primary, comparison });
+        worker!.postMessage({ id, primary, comparison, impactBaseline });
       });
     },
     dispose() {

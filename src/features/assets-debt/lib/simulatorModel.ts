@@ -62,7 +62,10 @@ export type SimOffset = {
   capMinor: number | null;
 };
 
-export type SimAssumptionKind = "extra-repayment" | "draw" | "fee" | "payment-change" | "offset-balance";
+export type SimAssumptionKind = "extra-repayment" | "draw" | "fee" | "payment-change" | "offset-balance" | "offset-deposit" | "offset-withdrawal";
+
+export const isOffsetAssumptionKind = (kind: SimAssumptionKind): boolean =>
+  kind === "offset-balance" || kind === "offset-deposit" || kind === "offset-withdrawal";
 
 export type SimAssumption = {
   key: string;
@@ -73,7 +76,7 @@ export type SimAssumption = {
   /** Minor units: the amount, or for an offset balance change the offset balance from that date. */
   amountMinor: number;
   feeTreatment: "cash-paid" | "capitalized" | null;
-  /** Offset balance changes only: the simulated offset's placeholder id. */
+  /** Offset state assumptions only: the simulated offset's placeholder id. */
   offsetAccountId: string | null;
   note: string | null;
 };
@@ -105,6 +108,20 @@ export type SimulationState = {
   assumptions: SimAssumption[];
   revolving: DebtConfig["revolving"];
 };
+
+/** Assumptions shown under Events; opening offset state is part of the offset itself. */
+export function extraTransactions(sim: SimulationState): SimAssumption[] {
+  return sim.assumptions.filter((assumption) => !(
+    assumption.kind === "offset-balance"
+    && sim.offsets.some((offset) => assumption.offsetAccountId === offset.placeholderAccountId && assumption.effectiveFrom <= offset.effectiveFrom)
+  ));
+}
+
+/** Identical calculation settings with optional Event assumptions removed; rate periods remain. */
+export function withoutExtraTransactions(sim: SimulationState): SimulationState {
+  const extras = new Set(extraTransactions(sim).map((assumption) => assumption.key));
+  return extras.size ? { ...sim, assumptions: sim.assumptions.filter((assumption) => !extras.has(assumption.key)) } : sim;
+}
 
 export type TrackingComponent = {
   key: string;
@@ -140,12 +157,12 @@ export type TrackingState = {
 let seq = 0;
 export const simKey = (prefix = "k") => `${prefix}-${++seq}`;
 
-/** The five-input default: a simple level payment, interest for each period at rate ÷ payments per year. */
+/** The sample-loan default: a conventional level payment with Actual/365 Fixed daily interest. */
 export const SIMULATOR_DEFAULT_PROFILE: CalculationProfile = {
   amortization: "level-payment",
   rateQuote: "nominal-simple-periodic",
   dayCount: "actual-365-fixed",
-  accrual: "per-period",
+  accrual: "daily-simple",
   chargeFrequency: "at-repayment",
   chargeDay: null,
   capitalization: "at-charge",
@@ -155,7 +172,7 @@ export const SIMULATOR_DEFAULT_PROFILE: CalculationProfile = {
   rateEffectiveTiming: "on-accrual-effective-date",
   repaymentEffectiveTiming: "transaction-date",
   rounding: { paymentRounding: "half-up", interestPostingRounding: "half-up", intermediateScale: { mode: "full" }, intermediateRounding: "half-even", balancePrecision: "round-each-posting" },
-  eventOrder: { timing: "start-of-day" },
+  eventOrder: { timing: "end-of-day" },
   finalPayment: "true-up-to-zero",
   shortMonth: "clamp-to-last-calendar-day",
   negativeAmortizationAllowed: false,
@@ -177,16 +194,18 @@ export function openingRate(date: string): SimRate {
   return { key: simKey("rate"), id: null, accrualEffectiveFrom: date, annualRateDecimal: null, paymentRecalcPolicy: null, paymentEffectiveFrom: null, rateCapDecimal: null, rateFloorDecimal: null, paymentCap: null, announcedAt: null, source: null, note: null };
 }
 
-export function newSimulation(input: { currency: string; today: string }): SimulationState {
+export function newSimulation(input: { currency: string; today: string; minorDigits?: number }): SimulationState {
+  const minorDigits = input.minorDigits ?? minorDigitsFor(input.currency);
+  const rate = openingRate(input.today);
   return {
     currency: input.currency,
-    minorDigits: minorDigitsFor(input.currency),
+    minorDigits,
     shape: "term-loan",
-    principalMinor: null,
-    termMonths: null,
+    principalMinor: 500_000 * 10 ** minorDigits,
+    termMonths: 20 * 12,
     startDate: input.today,
     profile: structuredClone(SIMULATOR_DEFAULT_PROFILE),
-    rates: [openingRate(input.today)],
+    rates: [{ ...rate, annualRateDecimal: "0.054" }],
     interestOnly: false,
     phases: [],
     contractTermMonths: null,
@@ -305,6 +324,9 @@ function modelAssumptions(sim: SimulationState): FutureAssumption[] {
         return { kind: "payment-change", date: a.effectiveFrom, amountMinor: a.amountMinor };
       case "offset-balance":
         return { kind: "offset-balance", date: a.effectiveFrom, accountId: a.offsetAccountId ?? "", balanceMinor: a.amountMinor };
+      case "offset-deposit":
+      case "offset-withdrawal":
+        return { kind: a.kind, date: a.effectiveFrom, accountId: a.offsetAccountId ?? "", amountMinor: a.amountMinor, ...recurrence };
       default:
         return { kind: "extra-repayment", date: a.effectiveFrom, amountMinor: a.amountMinor, ...recurrence };
     }
@@ -618,7 +640,7 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
           note: r.note,
         })),
       offsets: sim.offsets.map((o) => ({ id: o.key.startsWith("offset:") ? o.key.slice("offset:".length) : null, actualAccountId: mapAccount(o.placeholderAccountId)!, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, offsetPercentageBps: o.percentageBps, balanceBasis: o.basis, capMinor: o.capMinor })),
-      assumptions: sim.assumptions.map((a) => ({ id: a.id ?? null, kind: a.kind, effectiveFrom: a.effectiveFrom, recurrence: a.recurrence, amountMinor: a.amountMinor, feeTreatment: a.kind === "fee" ? (a.feeTreatment ?? "cash-paid") : null, offsetAccountId: a.kind === "offset-balance" ? mapAccount(a.offsetAccountId) : null, note: a.note })),
+      assumptions: sim.assumptions.map((a) => ({ id: a.id ?? null, kind: a.kind, effectiveFrom: a.effectiveFrom, recurrence: a.recurrence, amountMinor: a.amountMinor, feeTreatment: a.kind === "fee" ? (a.feeTreatment ?? "cash-paid") : null, offsetAccountId: isOffsetAssumptionKind(a.kind) ? mapAccount(a.offsetAccountId) : null, note: a.note })),
       ...(tracking.changeSummary.trim() ? { changeSummary: tracking.changeSummary.trim() } : {}),
     },
   };

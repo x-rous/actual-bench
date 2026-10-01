@@ -1,7 +1,7 @@
 import { parseDebtConfig } from "@/lib/financial-models/loan/configSchema";
 import { SIMULATOR_DEFAULT_PROFILE as DEFAULT_PROFILE, simulationToModel } from "./simulatorModel";
 import { sim } from "./simulatorTestKit";
-import { bpsToFraction, formatMinor, fractionToBps, fractionToPercent, minorToMajorText, parseFactor, parseMajorToMinor, percentToFraction } from "./money";
+import { bpsToFraction, formatAmount, formatMinor, fractionToBps, fractionToPercent, minorToMajorText, parseFactor, parseMajorToMinor, percentToFraction } from "./money";
 import { DAY_COUNT_OPTIONS, PROFILE_PRESETS, REPAYMENT_FREQUENCY_OPTIONS, PER_RATE_RECAST_OPTIONS } from "./vocabulary";
 
 describe("exact money and rate conversion", () => {
@@ -14,6 +14,8 @@ describe("exact money and rate conversion", () => {
     expect(parseMajorToMinor("-5", 2).ok).toBe(false);
     expect(parseMajorToMinor("1e3", 2).ok).toBe(false);
     expect(minorToMajorText(5, 2)).toBe("0.05");
+    expect(formatAmount(40_000_050, 2)).toBe("400,000.50");
+    expect(formatAmount(-1234, 0)).toBe("-1,234");
     expect(formatMinor(40_000_050, 2, "AUD")).toBe("400,000.50 AUD");
     expect(formatMinor(-1234, 0, "JPY")).toBe("-1,234 JPY");
   });

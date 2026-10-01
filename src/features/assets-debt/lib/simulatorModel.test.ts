@@ -17,18 +17,26 @@ import {
   statesToSaveInput,
   summarizeProfile,
   switchToDayByDay,
+  withoutExtraTransactions,
   SIMULATOR_DEFAULT_PROFILE,
   type SimulationState,
 } from "./simulatorModel";
 import { DAILY_MONTHLY_CHARGE, offsetOf, project, sim } from "./simulatorTestKit";
 
-describe("the five-input path", () => {
-  it("a new simulation needs exactly amount, term and rate; start date and frequency come pre-filled", () => {
+describe("the simulator defaults", () => {
+  it("starts with a complete, currency-agnostic sample loan", () => {
     const fresh = newSimulation({ currency: "AUD", today: "2026-09-29" });
     expect(fresh.shape).toBe("term-loan");
+    expect(fresh.principalMinor).toBe(50_000_000);
+    expect(fresh.termMonths).toBe(240);
+    expect(fresh.rates[0].annualRateDecimal).toBe("0.054");
     expect(fresh.startDate).toBe("2026-09-29");
     expect(fresh.profile.repaymentFrequency).toBe("monthly");
-    expect(missingInputs(fresh)).toEqual(["loan amount", "term", "interest rate"]);
+    expect(fresh.interestOnly).toBe(false);
+    expect(fresh.offsets).toEqual([]);
+    expect(fresh.components).toEqual([]);
+    expect(fresh.assumptions).toEqual([]);
+    expect(missingInputs(fresh)).toEqual([]);
   });
 
   it("the five inputs alone build a valid config v1 model and a complete projection", () => {
@@ -51,9 +59,25 @@ describe("the five-input path", () => {
     expect(h.totalRepaidMinor).toBe(40_000_000 + h.totalInterestMinor);
   });
 
-  it("the default profile is explicit, periodic and names no lender", () => {
-    expect(SIMULATOR_DEFAULT_PROFILE).toMatchObject({ accrual: "per-period", rateQuote: "nominal-simple-periodic", repaymentDerivation: "annuity-at-payment-frequency", presetId: null });
-    expect(summarizeProfile(SIMULATOR_DEFAULT_PROFILE)).toBe("interest per repayment period · level payment");
+  it("the default profile is explicit, uses conventional payment derivation with daily interest, and names no lender", () => {
+    expect(SIMULATOR_DEFAULT_PROFILE).toMatchObject({
+      amortization: "level-payment",
+      rateQuote: "nominal-simple-periodic",
+      accrual: "daily-simple",
+      dayCount: "actual-365-fixed",
+      chargeFrequency: "at-repayment",
+      chargeDay: null,
+      capitalization: "at-charge",
+      repaymentDerivation: "annuity-at-payment-frequency",
+      recast: "on-rate-change",
+      rateEffectiveTiming: "on-accrual-effective-date",
+      repaymentEffectiveTiming: "transaction-date",
+      eventOrder: { timing: "end-of-day" },
+      finalPayment: "true-up-to-zero",
+      negativeAmortizationAllowed: false,
+      presetId: null,
+    });
+    expect(summarizeProfile(SIMULATOR_DEFAULT_PROFILE)).toBe("Actual/365 Fixed · daily interest · charged with each repayment · level payment");
     expect(summarizeProfile({ ...SIMULATOR_DEFAULT_PROFILE, ...DAILY_MONTHLY_CHARGE })).toBe("Actual/365 Fixed · daily interest · charged monthly on day 1 · level payment");
   });
 
@@ -70,6 +94,39 @@ describe("the five-input path", () => {
     expect(off.ok && off.model.phases).toEqual([]);
     expect(off.ok && off.model.paymentRecasts).toEqual([]);
     expect(off.ok && off.model.terms.contractualPaymentMinor).toBeNull();
+  });
+
+  it("builds an impact baseline by removing transactions while retaining the opening offset balance and contractual rates", () => {
+    const offset = offsetOf(5_000_000);
+    const base = sim(offset);
+    const extra = { key: "extra", kind: "extra-repayment" as const, effectiveFrom: "2024-03-01", recurrence: null, amountMinor: 100_000, feeTreatment: null, offsetAccountId: null, note: null };
+    const rates = [
+      ...base.rates,
+      { ...base.rates[0], key: "later-rate", accrualEffectiveFrom: "2025-01-01", annualRateDecimal: "0.07" },
+    ];
+    const input = sim({ ...offset, assumptions: [...offset.assumptions, extra], rates });
+    const baseline = withoutExtraTransactions(input);
+    expect(baseline.assumptions).toEqual(offset.assumptions);
+    expect(baseline.offsets).toEqual(offset.offsets);
+    expect(baseline.rates).toEqual(rates);
+    expect(input.assumptions).toContain(extra);
+  });
+
+  it("maps offset deposits and withdrawals to account-scoped engine assumptions", () => {
+    const offset = offsetOf(500_000);
+    const input = sim({
+      ...offset,
+      assumptions: [
+        ...offset.assumptions,
+        { key: "deposit", kind: "offset-deposit", effectiveFrom: "2024-03-01", recurrence: { frequency: "monthly", until: "2024-05-01" }, amountMinor: 25_000, feeTreatment: null, offsetAccountId: offset.offsets[0].placeholderAccountId, note: "Salary" },
+        { key: "withdrawal", kind: "offset-withdrawal", effectiveFrom: "2024-04-15", recurrence: null, amountMinor: 10_000, feeTreatment: null, offsetAccountId: offset.offsets[0].placeholderAccountId, note: "Expense" },
+      ],
+    });
+    const built = simulationToModel(input);
+    expect(built.ok && built.model.assumptions.slice(-2)).toEqual([
+      { kind: "offset-deposit", date: "2024-03-01", accountId: offset.offsets[0].placeholderAccountId, amountMinor: 25_000, recurrence: { frequency: "monthly", until: "2024-05-01" } },
+      { kind: "offset-withdrawal", date: "2024-04-15", accountId: offset.offsets[0].placeholderAccountId, amountMinor: 10_000 },
+    ]);
   });
 
   it("keeps lender-stated repayment and maturity explicit instead of relabelling them derived", () => {
@@ -116,7 +173,8 @@ describe("the five-input path", () => {
 });
 
 describe("O1: features that need day-by-day interest", () => {
-  const periodic = sim();
+  const base = sim();
+  const periodic = sim({ profile: { ...base.profile, accrual: "per-period" } });
 
   it("an offset under a period-by-period profile asks to switch", () => {
     expect(dailyEngineReason({ ...periodic, ...offsetOf(5_000_000) })).toMatch(/offset/i);
@@ -251,12 +309,45 @@ describe("headline, deltas and chart series", () => {
   it("chart series include only what the loan has", () => {
     const plain = sim();
     const p = project(plain);
-    expect(chartSeries(p, plain, { view: "year" }).series).toEqual(["balance", "cumulativeInterest"]);
+    const plainData = chartSeries(p, plain, { view: "year" });
+    expect(plainData.series).toEqual(["balance", "cumulativeInterest"]);
+    expect(plainData.rateChanges).toEqual([]);
+    expect(plainData.payoff).toEqual({ period: "2054", date: "2054-01-01" });
     const withOffset = { ...sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE } }), ...offsetOf(5_000_000) };
     const po = project(withOffset);
     const data = chartSeries(po, withOffset, { view: "month", comparison: p });
     expect(data.series).toEqual(["balance", "comparison", "offsetBalance", "interestBearing", "cumulativeInterest"]);
     const jan = data.points[0];
     expect(jan.offsetBalance).toBe(5_000_000);
+  });
+
+  it("keeps exact rate-change dates while grouping their chart markers by period", () => {
+    const base = sim();
+    const changing = sim({
+      rates: [
+        base.rates[0],
+        { ...base.rates[0], key: "r2", accrualEffectiveFrom: "2025-03-01", annualRateDecimal: "0.07" },
+      ],
+    });
+    const projection = project(changing);
+    const data = chartSeries(projection, changing, { view: "month" });
+    expect(data.rateChanges).toEqual([{ period: "2025-03", changes: [{ date: "2025-03-01", annualRateDecimal: "0.07" }] }]);
+  });
+
+  it("plots authoritative projection offset states on deposit and withdrawal dates without replaying UI assumptions", () => {
+    const offset = offsetOf(100_000);
+    const input = sim({
+      ...offset,
+      assumptions: [
+        ...offset.assumptions,
+        { key: "deposit", kind: "offset-deposit", effectiveFrom: "2024-02-10", recurrence: null, amountMinor: 50_000, feeTreatment: null, offsetAccountId: offset.offsets[0].placeholderAccountId, note: null },
+        { key: "withdrawal", kind: "offset-withdrawal", effectiveFrom: "2024-03-10", recurrence: null, amountMinor: 25_000, feeTreatment: null, offsetAccountId: offset.offsets[0].placeholderAccountId, note: null },
+      ],
+    });
+    const projection = project(input, "2024-03-31");
+    const staleUiState = { ...input, assumptions: input.assumptions.filter((assumption) => assumption.kind === "offset-balance") };
+    const points = chartSeries(projection, staleUiState, { view: "month" }).points;
+    expect(points.find((point) => point.period === "2024-02")?.offsetBalance).toBe(150_000);
+    expect(points.find((point) => point.period === "2024-03")?.offsetBalance).toBe(125_000);
   });
 });

@@ -2,7 +2,7 @@
 
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import type { DebtProjection } from "@/lib/financial-models/loan/projection";
-import { fractionToPercent, formatMinor } from "../../lib/money";
+import { fractionToPercent, formatAmount } from "../../lib/money";
 import { derivedFirstPaymentDate, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
 import {
   ACCRUAL_OPTIONS,
@@ -62,12 +62,12 @@ export function HowCalculatedDrawer({ open, onClose, sim, projection, revision, 
               Conventions and assumptions
             </h3>
             <dl className="divide-y divide-border/50">
-              <Row term="Loan">{sim.principalMinor === null ? "Not entered" : `${formatMinor(sim.principalMinor, sim.minorDigits, sim.currency)} from ${sim.startDate}`}</Row>
+              <Row term="Loan">{sim.principalMinor === null ? "Not entered" : `${formatAmount(sim.principalMinor, sim.minorDigits)} from ${sim.startDate}`}</Row>
               <Row term="Rates">{sim.rates.filter((r) => r.annualRateDecimal !== null).map((r, i) => `${fractionToPercent(r.annualRateDecimal)}% from ${i === 0 ? sim.startDate : r.accrualEffectiveFrom}`).join("; ") || "None"}</Row>
               <Row term="Rate quoted as">{labelOf(RATE_QUOTE_OPTIONS, p.rateQuote)}</Row>
               <Row term="Interest accrues">{labelOf(ACCRUAL_OPTIONS, p.accrual)}{daily ? `, ${labelOf(DAY_COUNT_OPTIONS, p.dayCount)}` : ""}</Row>
               <Row term="Interest is charged">{labelOf(CHARGE_FREQUENCY_OPTIONS, p.chargeFrequency)}{p.chargeDay ? ` on day ${p.chargeDay}` : ""}</Row>
-              <Row term="Repayments">{labelOf(REPAYMENT_FREQUENCY_OPTIONS, p.repaymentFrequency)} from {derivedFirstPaymentDate(sim)}; {labelOf(REPAYMENT_DERIVATION_OPTIONS, p.repaymentDerivation).toLowerCase()}{sim.contractualPaymentMinor !== null ? ` (${formatMinor(sim.contractualPaymentMinor, sim.minorDigits, sim.currency)})` : ""}</Row>
+              <Row term="Repayments">{labelOf(REPAYMENT_FREQUENCY_OPTIONS, p.repaymentFrequency)} from {derivedFirstPaymentDate(sim)}; {labelOf(REPAYMENT_DERIVATION_OPTIONS, p.repaymentDerivation).toLowerCase()}{sim.contractualPaymentMinor !== null ? ` (${formatAmount(sim.contractualPaymentMinor, sim.minorDigits)})` : ""}</Row>
               <Row term="Maturity">{sim.maturityDate ?? "From the term and first repayment date"}</Row>
               <Row term="Recalculated">{labelOf(RECAST_OPTIONS, p.recast)}</Row>
               <Row term="Interest-only">{sim.interestOnly && sim.phases.length ? sim.phases.map((ph) => `${ph.from} to ${ph.to}`).join("; ") : "None"}</Row>

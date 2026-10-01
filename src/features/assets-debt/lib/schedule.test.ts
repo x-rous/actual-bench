@@ -1,5 +1,5 @@
 import { simulate } from "@/lib/financial-models/loan/projection";
-import { aggregateSchedule, principalLabel, rateCell, scheduleColumns, type ScheduleRow } from "./schedule";
+import { aggregateSchedule, paymentNumberCell, principalLabel, rateCell, scheduleColumns, schedulePeriodLabel, type ScheduleRow } from "./schedule";
 import { projectionWindow, simKey, simulationToModel, type SimulationState } from "./simulatorModel";
 import { DAILY_MONTHLY_CHARGE, offsetOf, project, sim } from "./simulatorTestKit";
 
@@ -66,9 +66,9 @@ describe("dynamic columns", () => {
     return scheduleColumns(aggregateSchedule(p.events, view), view);
   };
 
-  it("a simple loan has exactly the five base columns", () => {
-    expect(cols(sim())).toEqual(["period", "payment", "principal", "interest", "balance"]);
-    expect(cols(sim(), "events")).toEqual(["period", "event", "payment", "principal", "interest", "balance"]);
+  it("a simple loan has payment sequence plus the five financial columns", () => {
+    expect(cols(sim())).toEqual(["paymentNumber", "period", "payment", "principal", "interest", "balance"]);
+    expect(cols(sim(), "events")).toEqual(["paymentNumber", "period", "event", "payment", "principal", "interest", "balance"]);
   });
 
   it.each([
@@ -79,7 +79,7 @@ describe("dynamic columns", () => {
     ["draw", FIXTURES[6][1], ["draw"]],
     ["negative amortization", FIXTURES[7][1], ["unpaidInterest"]],
   ] as const)("%s adds only its own column(s)", (_n, s, added) => {
-    const extraCols = cols(s).filter((c) => !["period", "payment", "principal", "interest", "balance"].includes(c));
+    const extraCols = cols(s).filter((c) => !["paymentNumber", "period", "payment", "principal", "interest", "balance"].includes(c));
     expect(extraCols).toEqual(added);
   });
 
@@ -87,6 +87,17 @@ describe("dynamic columns", () => {
     // An offset with a zero balance applies nothing: no offset columns.
     const s = sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE }, ...offsetOf(0) });
     expect(cols(s)).not.toContain("offset");
+  });
+});
+
+describe("schedule labels", () => {
+  it("separates repayment sequence from elapsed loan time", () => {
+    const projection = project(sim({ termMonths: 3 }), "2024-05-01");
+    if (!projection.ok) throw new Error(projection.blocked[0].message);
+    const rows = aggregateSchedule(projection.events, "month");
+    expect(rows.map(paymentNumberCell).filter(Boolean)).toEqual(["1", "2", "3"]);
+    expect(schedulePeriodLabel("2024-02", "month", "2024-01-01")).toBe("Yr 1, Mo 2 · Feb 2024");
+    expect(schedulePeriodLabel("2025-01", "month", "2024-01-01")).toBe("Yr 2, Mo 1 · Jan 2025");
   });
 });
 

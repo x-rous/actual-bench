@@ -15,8 +15,11 @@ import { DateField, FeatureSwitch, MoneyField, PercentField, SelectField, TextFi
  * change are offered. Saving a row goes through `propose`, so a change inside
  * a payment period asks before switching to day-by-day (O1).
  */
-export function RateChangesDialog({ open, onClose, sim, propose }: { open: boolean; onClose: () => void; sim: SimulationState; propose: (next: SimulationState) => void }) {
-  const [editing, setEditing] = useState<SimRate | null>(null);
+export type RateChangesEditor = "list" | "new" | SimRate;
+
+export function RateChangesDialog({ onClose, sim, propose, initialEditor = "list" }: { onClose: () => void; sim: SimulationState; propose: (next: SimulationState) => void; initialEditor?: RateChangesEditor }) {
+  const createNewRate = () => ({ ...openingRate(addMonths(sim.startDate, 12)), annualRateDecimal: sim.rates[0]?.annualRateDecimal ?? null });
+  const [editing, setEditing] = useState<SimRate | null>(() => initialEditor === "new" ? createNewRate() : initialEditor === "list" ? null : initialEditor);
   const later = sim.rates.slice(1).sort((a, b) => a.accrualEffectiveFrom.localeCompare(b.accrualEffectiveFrom));
   const save = (row: SimRate) => {
     const exists = sim.rates.some((r) => r.key === row.key);
@@ -24,8 +27,8 @@ export function RateChangesDialog({ open, onClose, sim, propose }: { open: boole
     setEditing(null);
   };
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && (setEditing(null), onClose())}>
-      <DialogContent className="max-w-lg">
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[640px]">
         <DialogHeader>
           <DialogTitle>{editing ? "Rate change" : "Rate changes"}</DialogTitle>
           <DialogDescription>{editing ? "The date the new rate starts accruing, and what happens to the repayment." : `The loan starts at ${fractionToPercent(sim.rates[0]?.annualRateDecimal ?? null) || "?"}%. Later rates start on their own dates.`}</DialogDescription>
@@ -56,7 +59,7 @@ export function RateChangesDialog({ open, onClose, sim, propose }: { open: boole
               ))}
             </ul>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditing({ ...openingRate(addMonths(sim.startDate, 12)), annualRateDecimal: sim.rates[0]?.annualRateDecimal ?? null })}>
+              <Button type="button" variant="outline" onClick={() => setEditing(createNewRate())}>
                 Add a rate change
               </Button>
               <Button type="button" onClick={onClose}>

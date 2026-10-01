@@ -1,4 +1,5 @@
-import { render } from "@testing-library/react";
+import { cloneElement, isValidElement, type ReactElement } from "react";
+import { render, screen } from "@testing-library/react";
 import type { ChartData } from "../../lib/results";
 import LoanProjectionChart from "./LoanProjectionChart";
 
@@ -9,9 +10,22 @@ import LoanProjectionChart from "./LoanProjectionChart";
  * jsdom has no layout, and what is under test is what this module asks of it.
  */
 
-const calls: { chart: Record<string, unknown>[]; lines: Record<string, unknown>[]; tooltip: Record<string, unknown>[] } = { chart: [], lines: [], tooltip: [] };
+const calls: Record<"chart" | "lines" | "tooltip" | "grids" | "xAxes" | "yAxes" | "referenceLines" | "referenceDots", Record<string, unknown>[]> = {
+  chart: [],
+  lines: [],
+  tooltip: [],
+  grids: [],
+  xAxes: [],
+  yAxes: [],
+  referenceLines: [],
+  referenceDots: [],
+};
 jest.mock("recharts", () => {
   const passthrough = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
+  const capture = (key: "grids" | "xAxes" | "yAxes" | "referenceLines" | "referenceDots") => (props: Record<string, unknown>) => {
+    calls[key].push(props);
+    return null;
+  };
   return {
     ResponsiveContainer: passthrough,
     ComposedChart: (props: Record<string, unknown> & { children?: React.ReactNode }) => {
@@ -26,19 +40,23 @@ jest.mock("recharts", () => {
       calls.tooltip.push(props);
       return null;
     },
-    CartesianGrid: () => null,
-    XAxis: () => null,
-    YAxis: () => null,
+    CartesianGrid: capture("grids"),
+    XAxis: capture("xAxes"),
+    YAxis: capture("yAxes"),
+    ReferenceLine: capture("referenceLines"),
+    ReferenceDot: capture("referenceDots"),
   };
 });
 
 const data: ChartData = {
   series: ["balance", "offsetBalance", "cumulativeInterest"],
   points: [
-    { period: "2024", balance: 100_000, offsetBalance: 5_000, cumulativeInterest: 500 },
-    { period: "2025", balance: 50_000, offsetBalance: 5_000, cumulativeInterest: 900 },
+    { period: "2026-10", balance: 100_000, offsetBalance: 5_000, cumulativeInterest: 500 },
+    { period: "2026-11", balance: 0, offsetBalance: 5_000, cumulativeInterest: 900 },
   ],
-} as unknown as ChartData;
+  rateChanges: [{ period: "2026-11", changes: [{ date: "2026-11-15", annualRateDecimal: "0.0612" }] }],
+  payoff: { period: "2026-11", date: "2026-11-30" },
+};
 
 function reducedMotion(reduce: boolean) {
   Object.defineProperty(window, "matchMedia", {
@@ -48,25 +66,42 @@ function reducedMotion(reduce: boolean) {
 }
 
 beforeEach(() => {
-  calls.chart = [];
-  calls.lines = [];
-  calls.tooltip = [];
+  for (const key of Object.keys(calls) as (keyof typeof calls)[]) calls[key] = [];
 });
 
-it("turns on keyboard navigation and draws each visible series with its own dash pattern", () => {
+it("draws an accessible, distinctly encoded chart with rate and payoff annotations", () => {
   reducedMotion(false);
-  render(<LoanProjectionChart data={data} visible={["balance", "offsetBalance"]} currency="AUD" digits={2} />);
+  render(<LoanProjectionChart data={data} visible={["balance", "offsetBalance"]} digits={2} />);
   expect(calls.chart.at(-1)).toMatchObject({ accessibilityLayer: true });
+  expect(calls.grids.at(-1)).toMatchObject({ vertical: false });
+  expect(calls.xAxes.at(-1)?.tickFormatter).toEqual(expect.any(Function));
+  expect((calls.xAxes.at(-1)?.tickFormatter as (period: string) => string)("2026-11")).toBe("Nov ’26");
+  expect(calls.yAxes[0]).toMatchObject({ yAxisId: "balance", domain: [0, "auto"], label: expect.objectContaining({ value: "Balance" }) });
   const last = calls.lines.slice(-2);
   expect(last.map((l) => l.dataKey)).toEqual(["balance", "offsetBalance"]);
   expect(last[0].strokeDasharray).toBeUndefined();
   expect(last[1].strokeDasharray).toBe("2 3");
+  expect(last[0].stroke).not.toBe(last[1].stroke);
   expect(last.every((l) => l.isAnimationActive === true)).toBe(true);
+  expect(calls.referenceLines).toEqual(expect.arrayContaining([
+    expect.objectContaining({ yAxisId: "balance", y: 0 }),
+    expect.objectContaining({ x: "2026-11", yAxisId: "balance", stroke: "var(--chart-rate-change)", strokeDasharray: "2 4", label: expect.objectContaining({ value: "6.12%" }) }),
+  ]));
+  expect(calls.referenceDots.at(-1)).toMatchObject({ x: "2026-11", y: 0, label: expect.objectContaining({ value: "Paid off" }) });
+
+  const content = calls.tooltip.at(-1)?.content;
+  expect(isValidElement(content)).toBe(true);
+  render(cloneElement(content as ReactElement<{ active?: boolean; label?: string; payload?: unknown[] }>, { active: true, label: "2026-11", payload: [{ dataKey: "balance", value: 100_000, color: "var(--chart-1)" }] }));
+  expect(screen.getByText("Nov ’26")).toBeInTheDocument();
+  expect(screen.getByText("1,000.00")).toBeInTheDocument();
+  expect(screen.getByText("Rate changed · 15 Nov 2026")).toBeInTheDocument();
+  expect(screen.getByText("6.12%")).toBeInTheDocument();
+  expect(document.body).not.toHaveTextContent(/AUD|\$/);
 });
 
 it("does not animate under reduced motion", () => {
   reducedMotion(true);
-  render(<LoanProjectionChart data={data} visible={["balance", "cumulativeInterest"]} currency="AUD" digits={2} />);
+  render(<LoanProjectionChart data={data} visible={["balance", "cumulativeInterest"]} digits={2} />);
   const settled = calls.lines.slice(-2);
   expect(settled.every((l) => l.isAnimationActive === false)).toBe(true);
   expect(calls.tooltip.at(-1)).toMatchObject({ isAnimationActive: false });

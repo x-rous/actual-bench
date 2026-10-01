@@ -5,8 +5,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { cn } from "@/lib/utils";
-import { fractionToPercent, formatMinor } from "../../lib/money";
-import { aggregateSchedule, principalLabel, rateCell, scheduleColumns, type ColumnId, type ScheduleRow, type ScheduleView } from "../../lib/schedule";
+import { formatAmount, fractionToPercent } from "../../lib/money";
+import { aggregateSchedule, paymentNumberCell, principalLabel, rateCell, scheduleColumns, schedulePeriodLabel, type ColumnId, type ScheduleRow, type ScheduleView } from "../../lib/schedule";
 
 /**
  * The amortization / event schedule (P1.3b T212; FR-224, O2, O5). Columns
@@ -35,14 +35,15 @@ const VIEWS: { id: ScheduleView; label: string }[] = [
   { id: "year", label: "Yearly" },
 ];
 
-export function ScheduleTable({ events, profile, currency, digits }: { events: readonly DebtProjectionEvent[]; profile: Pick<CalculationProfile, "chargeFrequency">; currency: string; digits: number }) {
+export function ScheduleTable({ events, profile, startDate, digits }: { events: readonly DebtProjectionEvent[]; profile: Pick<CalculationProfile, "chargeFrequency">; startDate: string; digits: number }) {
   "use no memo";
   const [view, setView] = useState<ScheduleView>("month");
   const rows = useMemo(() => aggregateSchedule(events, view), [events, view]);
   const columns = useMemo(() => scheduleColumns(rows, view), [rows, view]);
   const principal = principalLabel(profile);
-  const money = (m: number) => (m === 0 ? "" : formatMinor(m, digits, currency));
+  const money = (m: number) => (m === 0 ? "" : formatAmount(m, digits));
   const heading: Record<ColumnId, string> = {
+    paymentNumber: "Payment #",
     period: view === "events" ? "Date" : "Period",
     event: "Event",
     payment: "Payment",
@@ -61,8 +62,10 @@ export function ScheduleTable({ events, profile, currency, digits }: { events: r
   };
   const cell = (r: ScheduleRow, c: ColumnId): string => {
     switch (c) {
+      case "paymentNumber":
+        return paymentNumberCell(r);
       case "period":
-        return r.period;
+        return schedulePeriodLabel(r.period, view, startDate);
       case "event":
         return EVENT_LABELS[r.eventType ?? ""] ?? r.eventType ?? "";
       case "payment":
@@ -72,15 +75,15 @@ export function ScheduleTable({ events, profile, currency, digits }: { events: r
       case "interest":
         return money(r.interestMinor);
       case "balance":
-        return formatMinor(r.closingBalanceMinor, digits, currency);
+        return formatAmount(r.closingBalanceMinor, digits);
       case "extra":
         return money(r.extraRepaymentMinor);
       case "fees":
         return money(r.feesMinor);
       case "offset":
-        return r.offsetAppliedMinor === null ? "" : formatMinor(r.offsetAppliedMinor, digits, currency);
+        return r.offsetAppliedMinor === null ? "" : formatAmount(r.offsetAppliedMinor, digits);
       case "interestBearing":
-        return r.interestBearingMinor === null ? "" : formatMinor(r.interestBearingMinor, digits, currency);
+        return r.interestBearingMinor === null ? "" : formatAmount(r.interestBearingMinor, digits);
       case "rate": {
         const shown = rateCell(r.rates);
         return shown === "Multiple" || shown === "" ? shown : `${fractionToPercent(shown)}%`;
@@ -99,13 +102,20 @@ export function ScheduleTable({ events, profile, currency, digits }: { events: r
   const scrollRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual; the compiler skips this component, which is what it needs.
   const virtualizer = useVirtualizer({ count: rows.length, getScrollElement: () => scrollRef.current, estimateSize: () => 30, overscan: 12, initialRect: { width: 1000, height: 480 } });
-  const template = `repeat(${columns.length}, minmax(7rem, 1fr))`;
+  const template = columns.map((column) => (column === "paymentNumber" ? "minmax(5rem,.55fr)" : column === "period" ? "minmax(12rem,1.4fr)" : "minmax(7rem,1fr)")).join(" ");
+  const alignment = (column: ColumnId) => (column === "period" || column === "event" ? "" : "text-right");
+  const emphasis = (column: ColumnId) => {
+    if (column === "principal") return "text-emerald-700 dark:text-emerald-400";
+    if (column === "interest" || column === "fees") return "text-destructive/80";
+    if (column === "balance") return "font-semibold text-foreground";
+    return "";
+  };
 
   return (
     <section aria-labelledby="schedule-heading" className="flex min-h-0 flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="schedule-heading" className="text-sm font-semibold">
-          Schedule
+          Amortization schedule
         </h2>
         <div role="radiogroup" aria-label="Schedule view" className="flex gap-1">
           {VIEWS.map((v) => (
@@ -128,7 +138,7 @@ export function ScheduleTable({ events, profile, currency, digits }: { events: r
           <div role="rowgroup" className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
             <div role="row" aria-rowindex={1} className="grid gap-2 px-3 py-1.5 text-[11px] font-medium" style={{ gridTemplateColumns: template }}>
               {columns.map((c) => (
-                <span key={c} role="columnheader" className={c === "period" || c === "event" ? "" : "text-right"} title={c === "principal" ? (principal.help ?? undefined) : undefined}>
+                <span key={c} role="columnheader" className={alignment(c)} title={c === "principal" ? (principal.help ?? undefined) : undefined}>
                   {heading[c]}
                 </span>
               ))}
@@ -146,7 +156,7 @@ export function ScheduleTable({ events, profile, currency, digits }: { events: r
                   style={{ gridTemplateColumns: template, height: 30, transform: `translateY(${item.start}px)` }}
                 >
                   {columns.map((c) => (
-                    <span key={c} role="cell" className={c === "period" || c === "event" ? "truncate" : "truncate text-right"} title={c === "rate" && r.rates.length > 1 ? `Rates: ${r.rates.map((x) => `${fractionToPercent(x)}%`).join(" then ")}` : undefined}>
+                    <span key={c} role="cell" className={cn("truncate", alignment(c), emphasis(c))} title={c === "rate" && r.rates.length > 1 ? `Rates: ${r.rates.map((x) => `${fractionToPercent(x)}%`).join(" then ")}` : undefined}>
                       {cell(r, c)}
                     </span>
                   ))}
