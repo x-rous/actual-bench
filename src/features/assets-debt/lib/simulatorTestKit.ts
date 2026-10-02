@@ -24,7 +24,7 @@ export function project(s: SimulationState, to?: string): DebtProjection {
 export const offsetOf = (balanceMinor: number) => {
   const key = simKey("offset");
   return {
-    offsets: [{ key, placeholderAccountId: key, effectiveFrom: "2024-01-01", effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null, fundScheduledRepayments: false }],
+    offsets: [{ key, placeholderAccountId: key, effectiveFrom: "2024-01-01", effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null, fundScheduledRepayments: false, fundScheduledRepaymentsFrom: null }],
     assumptions: [{ key: simKey("a"), kind: "offset-balance" as const, effectiveFrom: "2024-01-01", recurrence: null, amountMinor: balanceMinor, feeTreatment: null, offsetAccountId: key, note: null }],
   };
 };

@@ -678,6 +678,8 @@ export type DebtOffsetLinkRecord = {
   capMinor: number | null;
   /** Added in schema v40; absent in historical revision JSON means false. */
   fundScheduledRepayments?: boolean;
+  /** Added in schema v41; absent in historical revision JSON means immediate funding. */
+  fundScheduledRepaymentsFrom?: string | null;
   createdAt: string;
   updatedAt: string;
 };

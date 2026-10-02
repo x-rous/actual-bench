@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { addMonths } from "@/lib/financial-models/calendar/dates";
 import { bpsToFraction, formatAmount, fractionToBps } from "../../lib/money";
-import { isOffsetAssumptionKind, simKey, type SimComponent, type SimOffset, type SimulationState } from "../../lib/simulatorModel";
+import { firstEligibleFundingRepaymentDate, isOffsetAssumptionKind, simKey, type SimComponent, type SimOffset, type SimulationState } from "../../lib/simulatorModel";
 import { OFFSET_BASIS_OPTIONS, REPAYMENT_FREQUENCY_OPTIONS, REVOLVING_MODEL_OPTIONS } from "../../lib/vocabulary";
 import { DateField, FeatureSwitch, IntegerField, MoneyField, PercentField, SelectField } from "../fields";
 import { ConfigurationSection } from "./PrimaryInputs";
@@ -30,6 +30,8 @@ export function FeatureControls({ sim, change, propose }: Props) {
       : sim.profile.repaymentDerivation,
   );
   const offset = sim.offsets[0];
+  const fundingOffset = sim.offsets.find((item) => item.fundScheduledRepayments) ?? null;
+  const firstEligibleFundingDate = fundingOffset ? firstEligibleFundingRepaymentDate(sim, fundingOffset) : null;
   const startingBalance = offset ? sim.assumptions.find((a) => a.kind === "offset-balance" && a.offsetAccountId === offset.placeholderAccountId && a.effectiveFrom <= offset.effectiveFrom) : undefined;
 
   const toggleOffset = (on: boolean) => {
@@ -39,7 +41,7 @@ export function FeatureControls({ sim, change, propose }: Props) {
       return;
     }
     const key = simKey("offset");
-    const offsets = stash.offsets.length ? stash.offsets : [{ key, placeholderAccountId: key, effectiveFrom: sim.startDate, effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null, fundScheduledRepayments: false }];
+    const offsets = stash.offsets.length ? stash.offsets : [{ key, placeholderAccountId: key, effectiveFrom: sim.startDate, effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null, fundScheduledRepayments: false, fundScheduledRepaymentsFrom: null }];
     const offsetEvents = stash.offsets.length ? stash.offsetEvents : [{ key: simKey("offset-balance"), kind: "offset-balance" as const, effectiveFrom: sim.startDate, recurrence: null, amountMinor: 0, feeTreatment: null, offsetAccountId: offsets[0].placeholderAccountId, note: null }];
     propose({ ...sim, offsets, assumptions: [...sim.assumptions, ...offsetEvents] });
   };
@@ -48,6 +50,10 @@ export function FeatureControls({ sim, change, propose }: Props) {
   const setFundingSource = (key: string | null) => propose({
     ...sim,
     offsets: sim.offsets.map((item) => ({ ...item, fundScheduledRepayments: item.key === key })),
+  });
+  const setFundingStart = (date: string) => change({
+    ...sim,
+    offsets: sim.offsets.map((item) => item.key === fundingOffset?.key ? { ...item, fundScheduledRepaymentsFrom: date || null } : item),
   });
   /** The starting offset balance moves with the offset's start date. */
   const setOffsetFrom = (date: string) => {
@@ -132,7 +138,7 @@ export function FeatureControls({ sim, change, propose }: Props) {
 
       <ConfigurationSection
         title="4. Offset account"
-        help="Offset account starting balance is the eligible balance when the offset begins. Offset share controls how much qualifies, Balance used selects the debt basis, and the optional cap and end date limit the amount or period applied. Add later deposits and withdrawals under Events; use Set absolute offset balance only to reset the modelled balance."
+        help="Offset account starting balance is the eligible balance when the offset begins. Offset share controls how much qualifies, Balance used selects the debt basis, and the optional cap and end date limit the amount or period applied. Add later deposits and withdrawals under Events."
       >
         <FeatureSwitch label="Offset account" description={offset ? `Starting balance ${formatAmount(startingBalance?.amountMinor ?? 0, sim.minorDigits)}` : "Reduce interest with an eligible balance"} checked={sim.offsets.length > 0} onChange={toggleOffset} />
         {offset ? (
@@ -162,6 +168,19 @@ export function FeatureControls({ sim, change, propose }: Props) {
                   onChange={(value) => setFundingSource(value === "none" ? null : value)}
                 />
               )}
+              {fundingOffset ? (
+                <DateField
+                  className="mt-3"
+                  label="Start drawing repayments (optional)"
+                  value={fundingOffset.fundScheduledRepaymentsFrom ?? ""}
+                  hint={fundingOffset.fundScheduledRepaymentsFrom
+                    ? firstEligibleFundingDate
+                      ? `First eligible funded repayment: ${firstEligibleFundingDate}. The offset reduces interest before then.`
+                      : "No scheduled repayment falls within this funding interval. The offset still reduces interest while active."
+                    : "Leave empty to draw from the first scheduled repayment while this offset link is active."}
+                  onChange={setFundingStart}
+                />
+              ) : null}
               <p className="mt-2 text-xs text-muted-foreground">
                 Simulation only. This does not create, move, or match transactions in Actual.
               </p>

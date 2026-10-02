@@ -33,6 +33,8 @@ export type OffsetLink = {
   capMinor: number | null;
   /** Simulated funding rule; absent in historical snapshots and therefore false. */
   fundScheduledRepayments?: boolean;
+  /** Optional first date that generated repayments may draw cash; absent means the link start. */
+  fundScheduledRepaymentsFrom?: IsoDate | null;
 };
 
 /** Baseline future assumptions (data-model `debt_future_assumptions`); never a scenario. */

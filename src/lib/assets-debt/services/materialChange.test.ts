@@ -97,6 +97,7 @@ describe("rd084.debt-revision v1 snapshot", () => {
     ["an offset account", (i: DebtRevisionInput) => { i.offsets[0].actualAccountId = "acc-o2"; }],
     ["an offset percentage", (i: DebtRevisionInput) => { i.offsets[0].offsetPercentageBps = 5000; }],
     ["offset repayment funding", (i: DebtRevisionInput) => { i.offsets[0].fundScheduledRepayments = true; }],
+    ["offset repayment funding start", (i: DebtRevisionInput) => { i.offsets[0].fundScheduledRepaymentsFrom = "2025-03-01"; }],
     ["an assumption amount", (i: DebtRevisionInput) => { i.assumptions[0].amountMinor = 3001; }],
     ["a fee treatment", (i: DebtRevisionInput) => { i.assumptions[0].feeTreatment = "cash-paid"; }],
     ["a component label (material under G1)", (i: DebtRevisionInput) => { i.config.components[1].label = "Package fee"; }],

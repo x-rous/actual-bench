@@ -133,6 +133,7 @@ describe("offset links and assumptions", () => {
   it("checks offset percentages, caps and date order", () => {
     expect(() => offset({})).not.toThrow();
     expect(() => offset({ effective_to: "2025-01-01", cap_minor: 100 })).not.toThrow();
+    expect(() => offset({ fund_scheduled_repayments: 1, fund_scheduled_repayments_from: "2024-06-01" })).not.toThrow();
     for (const bad of [{ offset_percentage_bps: 0 }, { offset_percentage_bps: 10001 }, { cap_minor: 0 }, { fund_scheduled_repayments: 2 }, { effective_to: "2024-01-01" }, { effective_to: "2023-12-31" }, { actual_account_id: null }]) {
       expect(() => offset(bad)).toThrow();
     }

@@ -92,6 +92,17 @@ describe("saving a debt configuration", () => {
       { ...overlapping, effectiveFrom: "2025-01-01" },
     ];
     expect(issuesOf(saveInput({ executionStrategy: "bench-daily", config: dailyConfig, offsets: nonOverlapping }))).toEqual([]);
+    const overlappingLinksWithSeparateFundingIntervals = [
+      { ...first, effectiveTo: "2025-01-01" },
+      { ...overlapping, effectiveFrom: "2024-06-01", fundScheduledRepaymentsFrom: "2025-01-01" },
+    ];
+    expect(issuesOf(saveInput({ executionStrategy: "bench-daily", config: dailyConfig, offsets: overlappingLinksWithSeparateFundingIntervals }))).toEqual([]);
+    expect(issuesOf(saveInput({ executionStrategy: "bench-daily", config: dailyConfig, offsets: [{ ...first, effectiveTo: "2025-01-01", fundScheduledRepaymentsFrom: "2025-01-01" }] }))).toEqual([
+      expect.stringMatching(/must be before the offset link ends/),
+    ]);
+    expect(issuesOf(saveInput({ executionStrategy: "bench-daily", config: dailyConfig, offsets: [{ ...first, fundScheduledRepaymentsFrom: "not-a-date" }] }))).toEqual([
+      expect.stringMatching(/must be a date/),
+    ]);
     expect(issuesOf(saveInput({ executionStrategy: "bench-periodic", offsets: [first] }))).toEqual([
       expect.stringMatching(/requires the daily loan engine/),
       expect.stringMatching(/requires a daily-accrual calculation method/),

@@ -7,6 +7,8 @@ import { chartSeries, deltas, headline } from "./results";
 import {
   dailyEngineReason,
   derivedFirstPaymentDate,
+  extraTransactions,
+  firstEligibleFundingRepaymentDate,
   detailToStates,
   minorDigitsFor,
   missingInputs,
@@ -110,6 +112,17 @@ describe("the simulator defaults", () => {
     expect(baseline.offsets).toEqual(offset.offsets);
     expect(baseline.rates).toEqual(rates);
     expect(input.assumptions).toContain(extra);
+  });
+
+  it("keeps absolute offset snapshots out of ordinary Events and derives funding-date guidance from the repayment calendar", () => {
+    const offset = offsetOf(5_000_000);
+    const laterSnapshot = { ...offset.assumptions[0], key: "observed", effectiveFrom: "2024-04-10", amountMinor: 4_000_000 };
+    const input = sim({ ...offset, assumptions: [...offset.assumptions, laterSnapshot] });
+    expect(extraTransactions(input)).toEqual([]);
+
+    const funded = { ...input.offsets[0], fundScheduledRepayments: true, fundScheduledRepaymentsFrom: "2024-02-15" };
+    expect(firstEligibleFundingRepaymentDate(input, funded)).toBe("2024-03-01");
+    expect(firstEligibleFundingRepaymentDate(input, { ...funded, effectiveTo: "2024-03-01" })).toBeNull();
   });
 
   it("maps offset deposits and withdrawals to account-scoped engine assumptions", () => {

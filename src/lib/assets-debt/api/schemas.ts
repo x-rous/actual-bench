@@ -52,6 +52,7 @@ const offset = z.strictObject({
   balanceBasis: z.enum(["cleared", "total"]),
   capMinor: minor.nullable(),
   fundScheduledRepayments: z.boolean().default(false),
+  fundScheduledRepaymentsFrom: isoDate.nullable().default(null),
 });
 
 export const assumptionSchema = z.strictObject({

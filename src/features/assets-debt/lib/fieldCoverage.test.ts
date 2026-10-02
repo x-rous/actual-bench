@@ -156,6 +156,7 @@ const OFFSET_COLUMNS: Record<keyof OffsetLinkInput, Home> = {
   balanceBasis: on("C", "features", "Balance used"),
   capMinor: on("C", "features", "Offset cap"),
   fundScheduledRepayments: on("C", "features", "Draw scheduled repayments from offset"),
+  fundScheduledRepaymentsFrom: on("C", "features", "Start drawing repayments"),
 };
 
 const ASSUMPTION_COLUMNS: Record<keyof AssumptionInput, Home> = {
@@ -174,7 +175,7 @@ const ASSUMPTION_KINDS: Record<DebtAssumptionKind, Home> = {
   draw: on("D", "extras", "Redraw"),
   fee: on("D", "extras", "Fee"),
   "payment-change": on("D", "extras", "Repayment change"),
-  "offset-balance": on("D", "extras", "Set absolute offset balance"),
+  "offset-balance": hidden("authoritative observation/reconciliation state; not an ordinary simulator action"),
   "offset-deposit": on("D", "extras", "Offset deposit"),
   "offset-withdrawal": on("D", "extras", "Offset withdrawal"),
 };

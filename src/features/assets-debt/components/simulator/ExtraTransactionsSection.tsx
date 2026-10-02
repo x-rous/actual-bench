@@ -7,7 +7,7 @@ import { deltas, type Headline } from "../../lib/results";
 import type { SimAssumption, SimAssumptionKind, SimRate, SimulationState } from "../../lib/simulatorModel";
 import { assumptionDetails, KIND_LABEL, listedExtraTransactions, type ExtraEditor } from "./ExtraTransactionsDialog";
 
-const ADD_KINDS: SimAssumptionKind[] = ["extra-repayment", "draw", "fee", "payment-change", "offset-balance"];
+const ADD_KINDS: SimAssumptionKind[] = ["extra-repayment", "draw", "fee", "payment-change"];
 
 function duration(days: number): string {
   const totalMonths = Math.max(0, Math.round(Math.abs(days) / 30.4375));
@@ -63,7 +63,6 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
   const transactions = listedExtraTransactions(sim);
   const rows = eventRows(sim);
   const hasImpactEvents = transactions.length > 0;
-  const addKinds = sim.offsets.length ? ADD_KINDS : ADD_KINDS.filter((kind) => kind !== "offset-balance");
   return (
     <section aria-labelledby="events-heading" className="flex flex-col gap-2">
       <h2 id="events-heading" className="text-sm font-semibold">Events</h2>
@@ -77,7 +76,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
             {hasImpactEvents ? <p className="text-[11px] text-muted-foreground">Compared with the same loan without optional payment, balance and fee events. Contractual rate changes remain included.</p> : null}
           </div>
           <div className="flex flex-wrap gap-2" aria-label="Add an event">
-            {addKinds.map((kind) => <Button key={kind} type="button" variant="outline" size="sm" onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</Button>)}
+            {ADD_KINDS.map((kind) => <Button key={kind} type="button" variant="outline" size="sm" onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</Button>)}
             <Button type="button" variant="outline" size="sm" onClick={() => onEditRate("new")}>Rate change</Button>
           </div>
         </div>

@@ -58,7 +58,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 40;
+export const LATEST_SCHEMA_VERSION = 41;
 
 type Migration = {
   version: number;
@@ -498,7 +498,17 @@ const MIGRATIONS: readonly Migration[] = [
     // source for generated scheduled repayments. Existing links remain off.
     apply: applyOffsetFundedRepayments,
   },
+  {
+    version: 41,
+    // RD-084 P1.3h: optionally delay offset cash funding without delaying
+    // the link's interest benefit. Null exactly preserves v40 behavior.
+    apply: applyOffsetFundingStart,
+  },
 ];
+
+function applyOffsetFundingStart(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "debt_offset_links", "fund_scheduled_repayments_from", "text");
+}
 
 function applyOffsetFundedRepayments(db: SqliteDatabase): void {
   addColumnIfMissing(

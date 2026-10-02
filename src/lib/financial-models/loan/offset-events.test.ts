@@ -33,7 +33,7 @@ function request(m: LoanModelSnapshot, to = "2024-04-30", events: LedgerEvent[] 
   return { model: m, anchor: { date: anchorDate, principalMinor: m.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "test" }, events, to, options: { generateScheduledRepayments: false } };
 }
 
-describe("offset deposits and withdrawals (loan-daily@6)", () => {
+describe("offset deposits and withdrawals (loan-daily@7)", () => {
   it("applies one-off and recurring deltas without emitting amortization events", () => {
     const m = model([
       { kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor: 1_000 },
@@ -194,7 +194,7 @@ describe("offset deposits and withdrawals (loan-daily@6)", () => {
   });
 });
 
-describe("offset-funded scheduled repayments (loan-daily@6)", () => {
+describe("offset-funded scheduled repayments (loan-daily@7)", () => {
   const fundedModel = (balanceMinor: number, patch: Partial<LoanModelSnapshot> = {}) => {
     const base = model([{ kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor }]);
     return {
@@ -304,6 +304,70 @@ describe("offset-funded scheduled repayments (loan-daily@6)", () => {
     if (!scheduledFirst.ok || !offsetFirst.ok) throw new Error("unexpected block");
     expect(scheduledFirst.events.find((event) => event.type === "repayment")!.diagnostics.offsetFundedMinor).toBe(0);
     expect(offsetFirst.events.find((event) => event.type === "repayment")!.diagnostics.offsetFundedMinor).toBe(10_000);
+  });
+
+  it("keeps reducing interest before funding starts between installments", () => {
+    const delayed = fundedModel(20_000);
+    delayed.offsets = delayed.offsets.map((link) => ({ ...link, fundScheduledRepaymentsFrom: "2024-02-15" }));
+    const result = simulateDaily(scheduledRequest(delayed, "2024-03-01"));
+    const withoutOffset = simulateDaily(scheduledRequest(fundedModel(0), "2024-03-01"));
+    if (!result.ok || !withoutOffset.ok) throw new Error("unexpected block");
+    const payments = result.events.filter((event) => event.type === "repayment");
+    const comparison = withoutOffset.events.filter((event) => event.type === "repayment");
+    expect(payments).toHaveLength(2);
+    expect(payments[0].diagnostics).not.toHaveProperty("offsetFundedMinor");
+    expect(payments[0].interestMinor).toBeLessThan(comparison[0].interestMinor);
+    expect(payments[1].diagnostics).toMatchObject({ repaymentFundingAccountId: "offset-1", offsetFundedMinor: 10_000 });
+  });
+
+  it("uses a same-day deposit when ordering applies offset changes before an eligible repayment", () => {
+    const m = fundedModel(0);
+    m.offsets = m.offsets.map((link) => ({ ...link, fundScheduledRepaymentsFrom: "2024-02-01" }));
+    m.assumptions.push({ kind: "offset-deposit", date: "2024-02-01", accountId: "offset-1", amountMinor: 4_000 });
+    m.profile = { ...m.profile, eventOrder: { scheduledRepayments: "after-accrual", otherPayments: "before-accrual", offsets: "before-accrual" } };
+    const result = simulateDaily(scheduledRequest(m));
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    expect(result.events.find((event) => event.type === "repayment")?.diagnostics).toMatchObject({ offsetFundedMinor: 4_000, otherFundsMinor: 6_000 });
+    expect(result.offsetStates.at(-1)).toMatchObject({ date: "2024-02-01", balanceMinor: 0 });
+  });
+
+  it("keeps a configured start dormant while funding is disabled and old engines reject it", () => {
+    const m = fundedModel(20_000);
+    m.offsets = m.offsets.map((link) => ({ ...link, fundScheduledRepayments: false, fundScheduledRepaymentsFrom: "2024-02-01" }));
+    const current = simulateDaily(scheduledRequest(m));
+    if (!current.ok) throw new Error(current.blocked[0].message);
+    expect(current.events.find((event) => event.type === "repayment")?.diagnostics).not.toHaveProperty("offsetFundedMinor");
+    expect(current.offsetStates.at(-1)).toMatchObject({ balanceMinor: 20_000 });
+
+    const historical = simulateDailyAtVersion("loan-daily@6", scheduledRequest(m));
+    expect(historical.ok ? null : historical.blocked[0]).toMatchObject({ code: "unsupported-profile" });
+    expect(historical.versions).toMatchObject({ engine: "loan-daily@6", offsets: "offsets@3" });
+  });
+
+  it("keeps loan-daily@6 reproducible when no funding start is configured", () => {
+    const m = fundedModel(20_000);
+    const current = simulateDaily(scheduledRequest(m, "2024-03-01"));
+    const historical = simulateDailyAtVersion("loan-daily@6", scheduledRequest(m, "2024-03-01"));
+    if (!current.ok || !historical.ok) throw new Error("unexpected block");
+    expect(current.events).toEqual(historical.events);
+    expect(current.offsetStates).toEqual(historical.offsetStates);
+    expect(current.closing).toEqual(historical.closing);
+  });
+
+  it("uses actual funding intervals when effective-dated offset links overlap", () => {
+    const m = model([
+      { kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor: 20_000 },
+      { kind: "offset-balance", date: OPEN, accountId: "offset-2", balanceMinor: 20_000 },
+    ], [
+      { id: "o1", accountId: "offset-1", effectiveFrom: OPEN, effectiveTo: "2024-03-01", percentageBps: 10_000, basis: "total", capMinor: null, fundScheduledRepayments: true },
+      { id: "o2", accountId: "offset-2", effectiveFrom: OPEN, effectiveTo: null, percentageBps: 10_000, basis: "total", capMinor: null, fundScheduledRepayments: true, fundScheduledRepaymentsFrom: "2024-03-01" },
+    ]);
+    const result = simulateDaily(scheduledRequest(m, "2024-03-01"));
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    expect(result.events.filter((event) => event.type === "repayment").map((event) => event.diagnostics.repaymentFundingAccountId)).toEqual([
+      "offset-1",
+      "offset-2",
+    ]);
   });
 
   it("rejects overlapping funding sources and old engine versions", () => {

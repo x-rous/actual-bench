@@ -186,10 +186,11 @@ describe("offset link and assumption repositories", () => {
   });
 
   it("stores offset links and finds the debts an account offsets", () => {
-    replaceDebtOffsetLinks(db, debtId, [{ actualAccountId: "acc-o", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10000, balanceBasis: "cleared", capMinor: null, fundScheduledRepayments: true }]);
-    expect(listDebtOffsetLinks(db, debtId)).toEqual([expect.objectContaining({ actualAccountId: "acc-o", balanceBasis: "cleared", offsetPercentageBps: 10000, fundScheduledRepayments: true })]);
+    replaceDebtOffsetLinks(db, debtId, [{ actualAccountId: "acc-o", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10000, balanceBasis: "cleared", capMinor: null, fundScheduledRepayments: true, fundScheduledRepaymentsFrom: "2024-06-15" }]);
+    expect(listDebtOffsetLinks(db, debtId)).toEqual([expect.objectContaining({ actualAccountId: "acc-o", balanceBasis: "cleared", offsetPercentageBps: 10000, fundScheduledRepayments: true, fundScheduledRepaymentsFrom: "2024-06-15" })]);
     expect(listDebtIdsOffsetByAccount(db, "acc-o")).toEqual([debtId]);
     expect(() => replaceDebtOffsetLinks(db, debtId, [{ actualAccountId: "acc-o", effectiveFrom: "2024-01-01", effectiveTo: "2024-01-01", offsetPercentageBps: 10000, balanceBasis: "total", capMinor: null }])).toThrow(/end after/);
+    expect(() => replaceDebtOffsetLinks(db, debtId, [{ actualAccountId: "acc-o", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10000, balanceBasis: "total", capMinor: null, fundScheduledRepaymentsFrom: "June" }])).toThrow(/must be a date/);
   });
 
   it("stores assumptions with a versioned recurrence envelope and kind-specific fields", () => {

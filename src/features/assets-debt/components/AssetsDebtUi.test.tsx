@@ -212,6 +212,7 @@ describe("the simulator workspace", () => {
     wrap(<Harness initial={initial} onState={(state) => states.push(state)} />);
 
     const events = await screen.findByRole("region", { name: "Events" }, WAIT);
+    expect(within(events).queryByRole("button", { name: "Set absolute offset balance" })).toBeNull();
     expect(within(events).getByText("Additional payments, deposits, withdrawals, fees and loan changes.")).toBeInTheDocument();
     const table = await within(events).findByRole("table", { name: "Events" }, WAIT);
     const rows = within(table).getAllByRole("row");
@@ -244,6 +245,7 @@ describe("the simulator workspace", () => {
     wrap(<Harness initial={shortLoan(offset)} onState={(state) => states.push(state)} />);
 
     const events = await screen.findByRole("region", { name: "Events" }, WAIT);
+    expect(within(events).queryByRole("button", { name: "Set absolute offset balance" })).toBeNull();
     fireEvent.click(within(events).getByRole("button", { name: "Extra payment" }));
     let dialog = await screen.findByRole("dialog", { name: "Extra payment" });
     const destination = within(dialog).getByRole("combobox", { name: "Destination" });
@@ -472,6 +474,11 @@ describe("O1: features that need day-by-day interest", () => {
     expect(screen.getByText(/Simulation only.*does not create, move, or match transactions in Actual/)).toBeInTheDocument();
     fireEvent.click(funding);
     await waitFor(() => expect(states.at(-1)?.offsets[0].fundScheduledRepayments).toBe(true));
+    const fundingStart = await screen.findByLabelText("Start drawing repayments (optional)");
+    fireEvent.change(fundingStart, { target: { value: "2024-02-15" } });
+    fireEvent.keyDown(fundingStart, { key: "Enter" });
+    await waitFor(() => expect(states.at(-1)?.offsets[0].fundScheduledRepaymentsFrom).toBe("2024-02-15"));
+    expect(screen.getByText(/First eligible funded repayment: 2024-03-01/)).toBeInTheDocument();
     firstRender.unmount();
 
     const second = { ...initial.offsets[0], key: "offset-2", placeholderAccountId: "offset-2", fundScheduledRepayments: false };

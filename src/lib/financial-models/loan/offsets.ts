@@ -18,23 +18,40 @@ import type { BlockReason, OffsetLink, OffsetStatePoint } from "./model";
 
 export const OFFSETS_VERSION_V1 = "offsets@1";
 export const OFFSETS_VERSION_V2 = "offsets@2";
-export const OFFSETS_VERSION = "offsets@3";
+export const OFFSETS_VERSION_V3 = "offsets@3";
+export const OFFSETS_VERSION = "offsets@4";
 
 /** Latest known balance of each offset account, keyed by account id, in minor units. */
 export type OffsetBalances = ReadonlyMap<string, { balanceMinor: number; clearedBalanceMinor: number }>;
 export type MutableOffsetBalances = Map<string, { balanceMinor: number; clearedBalanceMinor: number }>;
 
-/** First overlapping pair of enabled effective-dated funding links, if any. */
+function fundingFrom(link: OffsetLink): IsoDate {
+  const configured = link.fundScheduledRepaymentsFrom;
+  return configured !== null && configured !== undefined && compareDates(configured, link.effectiveFrom) > 0
+    ? configured
+    : link.effectiveFrom;
+}
+
+/** Whether this link may fund a generated repayment on `date`; interest eligibility is separate. */
+export function fundingLinkInForce(link: OffsetLink, date: IsoDate): boolean {
+  return link.fundScheduledRepayments === true
+    && compareDates(fundingFrom(link), date) <= 0
+    && (link.effectiveTo === null || compareDates(date, link.effectiveTo) < 0);
+}
+
+/** First overlapping pair of enabled effective-dated funding intervals, if any. */
 export function offsetFundingConflict(links: readonly OffsetLink[]): { date: IsoDate; firstId: string; secondId: string } | null {
   const enabled = links.filter((link) => link.fundScheduledRepayments === true)
-    .sort((a, b) => compareDates(a.effectiveFrom, b.effectiveFrom) || a.id.localeCompare(b.id));
+    .map((link) => ({ link, from: fundingFrom(link) }))
+    .filter(({ link, from }) => link.effectiveTo === null || compareDates(from, link.effectiveTo) < 0)
+    .sort((a, b) => compareDates(a.from, b.from) || a.link.id.localeCompare(b.link.id));
   for (let index = 0; index < enabled.length; index += 1) {
     for (let other = index + 1; other < enabled.length; other += 1) {
       const first = enabled[index];
       const second = enabled[other];
-      if (first.effectiveTo !== null && compareDates(first.effectiveTo, second.effectiveFrom) <= 0) break;
-      if (second.effectiveTo === null || compareDates(first.effectiveFrom, second.effectiveTo) < 0) {
-        return { date: second.effectiveFrom, firstId: first.id, secondId: second.id };
+      if (first.link.effectiveTo !== null && compareDates(first.link.effectiveTo, second.from) <= 0) break;
+      if (second.link.effectiveTo === null || compareDates(first.from, second.link.effectiveTo) < 0) {
+        return { date: second.from, firstId: first.link.id, secondId: second.link.id };
       }
     }
   }
@@ -99,7 +116,7 @@ export function fundScheduledRepayment(
   balances: MutableOffsetBalances,
   links: readonly OffsetLink[]
 ): ScheduledRepaymentFundingResult {
-  const active = links.filter((link) => link.fundScheduledRepayments === true && linkInForce(link, date));
+  const active = links.filter((link) => fundingLinkInForce(link, date));
   if (active.length > 1) {
     return {
       ok: false,

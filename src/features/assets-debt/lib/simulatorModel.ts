@@ -61,6 +61,7 @@ export type SimOffset = {
   basis: "total" | "cleared";
   capMinor: number | null;
   fundScheduledRepayments: boolean;
+  fundScheduledRepaymentsFrom: string | null;
 };
 
 export type SimAssumptionKind = "extra-repayment" | "draw" | "fee" | "payment-change" | "offset-balance" | "offset-deposit" | "offset-withdrawal";
@@ -112,10 +113,7 @@ export type SimulationState = {
 
 /** Assumptions shown under Events; opening offset state is part of the offset itself. */
 export function extraTransactions(sim: SimulationState): SimAssumption[] {
-  return sim.assumptions.filter((assumption) => !(
-    assumption.kind === "offset-balance"
-    && sim.offsets.some((offset) => assumption.offsetAccountId === offset.placeholderAccountId && assumption.effectiveFrom <= offset.effectiveFrom)
-  ));
+  return sim.assumptions.filter((assumption) => assumption.kind !== "offset-balance");
 }
 
 /** Identical calculation settings with optional Event assumptions removed; rate periods remain. */
@@ -285,6 +283,26 @@ export function projectionWindow(sim: SimulationState): { from: string; to: stri
   return { from: sim.startDate, to: addMonths(end, Math.max(extra, 1)) };
 }
 
+/** Calendar-only guidance for the first repayment inside an offset's funding interval. */
+export function firstEligibleFundingRepaymentDate(sim: SimulationState, offset: SimOffset): string | null {
+  if (!offset.fundScheduledRepayments || !isIsoDate(sim.startDate) || !isIsoDate(offset.effectiveFrom)) return null;
+  if (offset.fundScheduledRepaymentsFrom !== null && !isIsoDate(offset.fundScheduledRepaymentsFrom)) return null;
+  if (offset.effectiveTo !== null && !isIsoDate(offset.effectiveTo)) return null;
+  const first = derivedFirstPaymentDate(sim);
+  const spec = repaymentScheduleSpec(sim.profile.repaymentFrequency, first, sim.profile.shortMonth);
+  if (!spec) return null;
+  const fundingFrom = offset.fundScheduledRepaymentsFrom !== null && compareDates(offset.fundScheduledRepaymentsFrom, offset.effectiveFrom) > 0
+    ? offset.fundScheduledRepaymentsFrom
+    : offset.effectiveFrom;
+  const from = compareDates(first, fundingFrom) > 0 ? first : fundingFrom;
+  const months = Math.max(sim.contractTermMonths ?? sim.termMonths ?? 1, 1);
+  const contractualEnd = sim.maturityDate ?? inferredLastPaymentDate(sim, months) ?? addMonths(sim.startDate, months);
+  const scheduleEnd = sim.profile.finalPayment === "continue-until-paid" ? projectionWindow(sim).to : contractualEnd;
+  const to = offset.effectiveTo === null || compareDates(scheduleEnd, offset.effectiveTo) < 0 ? scheduleEnd : addDays(offset.effectiveTo, -1);
+  if (compareDates(from, to) > 0) return null;
+  return generateSchedule(spec, { from, to })[0] ?? null;
+}
+
 /** Last generated contractual date when a term is a count of payment periods. */
 function inferredLastPaymentDate(sim: SimulationState, months: number): string | null {
   if (sim.profile.repaymentFrequency !== "monthly" && sim.profile.repaymentFrequency !== "quarterly" && sim.profile.repaymentFrequency !== "annual") return null;
@@ -385,7 +403,7 @@ export function simulationToModel(sim: SimulationState, identity: { debtId?: str
       profile,
       rates,
       phases: sim.interestOnly ? sim.phases : [],
-      offsets: sim.offsets.map((o) => ({ id: o.key, accountId: o.placeholderAccountId, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.percentageBps, basis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments })),
+      offsets: sim.offsets.map((o) => ({ id: o.key, accountId: o.placeholderAccountId, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.percentageBps, basis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom })),
       components: modelComponents(sim),
       paymentRecasts: profile.recast === "on-contract-date" ? sim.paymentRecasts.map((r) => ({ date: r.date })) : [],
       assumptions: modelAssumptions(sim),
@@ -507,7 +525,7 @@ export function detailToStates(detail: DebtDetail): { simulation: SimulationStat
     creditLimitMinor: c.terms.creditLimitMinor,
     paymentRecasts: c.paymentRecasts.map((r) => ({ date: r.date, note: r.note })),
     components: simComponents,
-    offsets: detail.offsets.map((o) => ({ key: `offset:${o.id}`, placeholderAccountId: `offset:${o.id}`, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.offsetPercentageBps, basis: o.balanceBasis === "cleared" ? "cleared" : "total", capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments === true })),
+    offsets: detail.offsets.map((o) => ({ key: `offset:${o.id}`, placeholderAccountId: `offset:${o.id}`, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.offsetPercentageBps, basis: o.balanceBasis === "cleared" ? "cleared" : "total", capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments === true, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom ?? null })),
     assumptions: detail.assumptions.map((a) => ({
       key: simKey("assumption"),
       id: a.id,
@@ -640,7 +658,7 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
           source: r.source,
           note: r.note,
         })),
-      offsets: sim.offsets.map((o) => ({ id: o.key.startsWith("offset:") ? o.key.slice("offset:".length) : null, actualAccountId: mapAccount(o.placeholderAccountId)!, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, offsetPercentageBps: o.percentageBps, balanceBasis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments })),
+      offsets: sim.offsets.map((o) => ({ id: o.key.startsWith("offset:") ? o.key.slice("offset:".length) : null, actualAccountId: mapAccount(o.placeholderAccountId)!, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, offsetPercentageBps: o.percentageBps, balanceBasis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom })),
       assumptions: sim.assumptions.map((a) => ({ id: a.id ?? null, kind: a.kind, effectiveFrom: a.effectiveFrom, recurrence: a.recurrence, amountMinor: a.amountMinor, feeTreatment: a.kind === "fee" ? (a.feeTreatment ?? "cash-paid") : null, offsetAccountId: isOffsetAssumptionKind(a.kind) ? mapAccount(a.offsetAccountId) : null, note: a.note })),
       ...(tracking.changeSummary.trim() ? { changeSummary: tracking.changeSummary.trim() } : {}),
     },

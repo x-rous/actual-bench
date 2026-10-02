@@ -911,6 +911,8 @@ CREATE TABLE IF NOT EXISTS debt_offset_links (
   cap_minor integer CHECK (cap_minor IS NULL OR ${integerAtLeast("cap_minor", 1)}),
   fund_scheduled_repayments integer NOT NULL DEFAULT 0
     CHECK (typeof(fund_scheduled_repayments) = 'integer' AND fund_scheduled_repayments IN (0, 1)),
+  -- NULL means funding starts with the link; interest eligibility always starts at effective_from.
+  fund_scheduled_repayments_from text,
   created_at text NOT NULL,
   updated_at text NOT NULL,
   CHECK (effective_to IS NULL OR effective_to > effective_from)

@@ -9,7 +9,7 @@ import { dayStepOrder, EVENT_ORDER_VERSION, EVENT_ORDER_VERSION_V1, EVENT_ORDER_
 import { capitalizedComponents, cashComponents } from "./fees";
 import { amortizationMonths, contractualEnd, finalDecision } from "./finalPayment";
 import type { BlockReason, ModelEvent, ModelEventType, SimulationRequest, SimulationResult } from "./model";
-import { applyOffsetTransitions, eligibleOffset, fundScheduledRepayment, OFFSETS_VERSION, OFFSETS_VERSION_V1, OFFSETS_VERSION_V2, offsetFundingConflict, offsetStatePoints, totalOffsetBalanceMinor, type OffsetBalances } from "./offsets";
+import { applyOffsetTransitions, eligibleOffset, fundScheduledRepayment, OFFSETS_VERSION, OFFSETS_VERSION_V1, OFFSETS_VERSION_V2, OFFSETS_VERSION_V3, offsetFundingConflict, offsetStatePoints, totalOffsetBalanceMinor, type OffsetBalances } from "./offsets";
 import { interestOnlyPhaseOn } from "./phases";
 import { annualRecastDates, applyPaymentCap, derivePayment, derivePaymentV1, paymentCount, paymentEffectiveDate, recastPolicyFor } from "./recast";
 import { revolvingPayment, revolvingState } from "./revolving";
@@ -37,22 +37,24 @@ export const DAILY_ENGINE_VERSION_V2 = "loan-daily@2";
 export const DAILY_ENGINE_VERSION_V3 = "loan-daily@3";
 export const DAILY_ENGINE_VERSION_V4 = "loan-daily@4";
 export const DAILY_ENGINE_VERSION_V5 = "loan-daily@5";
-export const DAILY_ENGINE_VERSION = "loan-daily@6";
+export const DAILY_ENGINE_VERSION_V6 = "loan-daily@6";
+export const DAILY_ENGINE_VERSION = "loan-daily@7";
 
 type Day = { date: IsoDate; events: EngineEvent[] };
 
 type DailyEngineBehavior = {
-  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5" | "loan-daily@6";
+  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5" | "loan-daily@6" | "loan-daily@7";
   repaymentVersion: "repayment@1" | "repayment@2";
   recastVersion: "recast@1" | "recast@2";
   eventOrderVersion: "event-order@1" | "event-order@2" | "event-order@3";
-  offsetsVersion: "offsets@1" | "offsets@2" | "offsets@3";
+  offsetsVersion: "offsets@1" | "offsets@2" | "offsets@3" | "offsets@4";
   datedCashflow: boolean;
   capAssumedExtras: boolean;
   completePayoffState: boolean;
   contractualTermCountsPayments: boolean;
   offsetDeltas: boolean;
   offsetFunding: boolean;
+  offsetFundingStart: boolean;
 };
 
 const DAILY_V2: DailyEngineBehavior = {
@@ -67,6 +69,7 @@ const DAILY_V2: DailyEngineBehavior = {
   contractualTermCountsPayments: false,
   offsetDeltas: false,
   offsetFunding: false,
+  offsetFundingStart: false,
 };
 
 const DAILY_V3: DailyEngineBehavior = {
@@ -96,14 +99,21 @@ const DAILY_V5: DailyEngineBehavior = {
 
 const DAILY_V6: DailyEngineBehavior = {
   ...DAILY_V5,
-  engineVersion: DAILY_ENGINE_VERSION,
+  engineVersion: DAILY_ENGINE_VERSION_V6,
   eventOrderVersion: EVENT_ORDER_VERSION,
-  offsetsVersion: OFFSETS_VERSION,
+  offsetsVersion: OFFSETS_VERSION_V3,
   offsetFunding: true,
 };
 
+const DAILY_V7: DailyEngineBehavior = {
+  ...DAILY_V6,
+  engineVersion: DAILY_ENGINE_VERSION,
+  offsetsVersion: OFFSETS_VERSION,
+  offsetFundingStart: true,
+};
+
 export function simulateDaily(req: SimulationRequest): SimulationResult {
-  return simulateDailyImpl(req, DAILY_V6);
+  return simulateDailyImpl(req, DAILY_V7);
 }
 
 /** Historical loan-daily@2, kept callable for stored-result reproduction. */
@@ -126,12 +136,18 @@ export function simulateDailyV5(req: SimulationRequest): SimulationResult {
   return simulateDailyImpl(req, DAILY_V5);
 }
 
+/** Historical loan-daily@6, before an offset funding source could start independently. */
+export function simulateDailyV6(req: SimulationRequest): SimulationResult {
+  return simulateDailyImpl(req, DAILY_V6);
+}
+
 /** Resolve an exact daily-engine version; unknown versions never fall forward. */
 export function simulateDailyAtVersion(version: string, req: SimulationRequest): SimulationResult {
   if (version === DAILY_ENGINE_VERSION_V2) return simulateDailyV2(req);
   if (version === DAILY_ENGINE_VERSION_V3) return simulateDailyV3(req);
   if (version === DAILY_ENGINE_VERSION_V4) return simulateDailyV4(req);
   if (version === DAILY_ENGINE_VERSION_V5) return simulateDailyV5(req);
+  if (version === DAILY_ENGINE_VERSION_V6) return simulateDailyV6(req);
   if (version === DAILY_ENGINE_VERSION) return simulateDaily(req);
   throw new RangeError(`Unsupported daily engine version: ${version}`);
 }
@@ -155,6 +171,10 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
     return fail({ code: "unsupported-profile", classification: "blocked", date: null, message: "bench-daily needs daily accrual; per-period loans use bench-periodic." });
   }
   const hasOffsetFunding = model.offsets.some((link) => link.fundScheduledRepayments === true);
+  const hasOffsetFundingStart = model.offsets.some((link) => link.fundScheduledRepaymentsFrom !== null && link.fundScheduledRepaymentsFrom !== undefined);
+  if (hasOffsetFundingStart && !behavior.offsetFundingStart) {
+    return fail({ code: "unsupported-profile", classification: "blocked", date: null, message: `${behavior.engineVersion} does not support an offset repayment-funding start date.` });
+  }
   if (hasOffsetFunding && !behavior.offsetFunding) {
     return fail({ code: "unsupported-profile", classification: "blocked", date: null, message: `${behavior.engineVersion} does not support offset-funded scheduled repayments.` });
   }

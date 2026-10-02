@@ -279,12 +279,18 @@ export function validateDebtSave(
     if (!Number.isInteger(o.offsetPercentageBps) || o.offsetPercentageBps < 1 || o.offsetPercentageBps > 10_000) add(f("offsetPercentageBps"), "must be between 0.01% and 100%");
     oneOf(OFFSET_BALANCE_BASES, o.balanceBasis, f("balanceBasis"));
     if (o.capMinor != null && (!Number.isSafeInteger(o.capMinor) || o.capMinor < 1)) add(f("capMinor"), "must be a positive amount, or empty");
+    if (o.fundScheduledRepaymentsFrom != null && !isIsoDate(o.fundScheduledRepaymentsFrom)) add(f("fundScheduledRepaymentsFrom"), "must be a date");
+    if (o.fundScheduledRepayments && o.fundScheduledRepaymentsFrom != null && o.effectiveTo != null && o.fundScheduledRepaymentsFrom >= o.effectiveTo) {
+      add(f("fundScheduledRepaymentsFrom"), "must be before the offset link ends");
+    }
     input.offsets.slice(0, i).forEach((prev) => {
       const overlaps = prev.actualAccountId === o.actualAccountId && (prev.effectiveTo == null || prev.effectiveTo > o.effectiveFrom) && (o.effectiveTo == null || o.effectiveTo > prev.effectiveFrom);
       if (overlaps) add(f("effectiveFrom"), "overlaps another link for the same account");
+      const previousFundingFrom = prev.fundScheduledRepaymentsFrom != null && prev.fundScheduledRepaymentsFrom > prev.effectiveFrom ? prev.fundScheduledRepaymentsFrom : prev.effectiveFrom;
+      const fundingFrom = o.fundScheduledRepaymentsFrom != null && o.fundScheduledRepaymentsFrom > o.effectiveFrom ? o.fundScheduledRepaymentsFrom : o.effectiveFrom;
       const fundingOverlaps = prev.fundScheduledRepayments === true && o.fundScheduledRepayments === true
-        && (prev.effectiveTo == null || prev.effectiveTo > o.effectiveFrom)
-        && (o.effectiveTo == null || o.effectiveTo > prev.effectiveFrom);
+        && (prev.effectiveTo == null || prev.effectiveTo > fundingFrom)
+        && (o.effectiveTo == null || o.effectiveTo > previousFundingFrom);
       if (fundingOverlaps) add(f("fundScheduledRepayments"), "overlaps another scheduled-repayment funding source");
     });
     if (o.fundScheduledRepayments && input.behaviorClass !== "term-loan") add(f("fundScheduledRepayments"), "is available only for term loans");
@@ -340,7 +346,7 @@ export function validateDebtSave(
       },
       config,
       rates,
-      offsets: input.offsets.map((o) => ({ ...o, effectiveTo: o.effectiveTo ?? null, capMinor: o.capMinor ?? null, fundScheduledRepayments: o.fundScheduledRepayments === true })),
+      offsets: input.offsets.map((o) => ({ ...o, effectiveTo: o.effectiveTo ?? null, capMinor: o.capMinor ?? null, fundScheduledRepayments: o.fundScheduledRepayments === true, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom ?? null })),
       assumptions: input.assumptions.map((a) => ({ ...a, recurrence: a.recurrence ?? null, feeTreatment: a.feeTreatment ?? null, offsetAccountId: a.offsetAccountId ?? null, note: a.note ?? null })),
     },
   };

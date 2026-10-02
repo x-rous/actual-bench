@@ -163,7 +163,7 @@ describe("HSBC AED 350,000 irregular-first-period fixture", () => {
     expect(payments.reduce((sum, row) => sum + row.interestMinor, 0)).toBe(published.derivedUnadjusted.totalInterestMinor);
     expect(payments.reduce((sum, row) => sum - row.cashMovementMinor, 0)).toBe(published.derivedUnadjusted.totalRepaymentsMinor);
     expect(result.closing).toMatchObject({ principalMinor: 0, paidOff: true });
-    expect(result.versions.engine).toBe("loan-daily@6");
+    expect(result.versions.engine).toBe("loan-daily@7");
   });
 
   it("keeps the full unadjusted schedule tied to an independent oracle", () => {

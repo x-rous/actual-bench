@@ -1353,7 +1353,7 @@ function dumpTables(db: SqliteDatabase, tables: string[]): Record<string, unknow
   return Object.fromEntries(tables.map((t) => [t, db.prepare(`SELECT * FROM "${t}" ORDER BY rowid`).all()]));
 }
 
-describe("v38 Assets & Debt configuration, v39 offset events and v40 offset funding", () => {
+describe("v38 Assets & Debt configuration through v41 offset funding start", () => {
   afterEach(() => {
     resetAppDbForTests();
   });
@@ -1362,8 +1362,8 @@ describe("v38 Assets & Debt configuration, v39 offset events and v40 offset fund
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v38-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(40);
-      expect(runMigrations(db).schemaVersion).toBe(40);
+      expect(LATEST_SCHEMA_VERSION).toBe(41);
+      expect(runMigrations(db).schemaVersion).toBe(41);
       const tables = objectNames(db, "table");
       for (const t of V38_TABLES) expect(tables).toContain(t);
       expect(tables.filter((t) => t.startsWith("debt") || t === "model_revisions")).toEqual(V38_TABLES);
@@ -1378,7 +1378,7 @@ describe("v38 Assets & Debt configuration, v39 offset events and v40 offset fund
       const assumptionColumns = db.prepare("PRAGMA table_info(debt_future_assumptions)").all<{ name: string }>().map((c) => c.name);
       expect(assumptionColumns).toEqual(["id", "debt_id", "assumption_kind", "effective_from", "recurrence_json", "amount_minor", "fee_treatment", "offset_account_id", "note", "created_at", "updated_at"]);
       expect(assumptionColumns).not.toContain("rate_decimal");
-      expect(db.prepare("PRAGMA table_info(debt_offset_links)").all<{ name: string }>().map((c) => c.name)).toContain("fund_scheduled_repayments");
+      expect(db.prepare("PRAGMA table_info(debt_offset_links)").all<{ name: string }>().map((c) => c.name)).toEqual(expect.arrayContaining(["fund_scheduled_repayments", "fund_scheduled_repayments_from"]));
       const partial = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'idx_debts_live_liability_account'").get<{ sql: string }>();
       expect(partial?.sql).toMatch(/UNIQUE INDEX .* WHERE status <> 'archived'/);
     } finally {
@@ -1397,7 +1397,7 @@ describe("v38 Assets & Debt configuration, v39 offset events and v40 offset fund
 
       const db = getAppDb(path);
       const meta = runMigrations(db);
-      expect(meta.schemaVersion).toBe(40);
+      expect(meta.schemaVersion).toBe(41);
       expect(dumpTables(db, existing.map((t) => t.name))).toEqual(snapshot);
       for (const t of V38_TABLES) expect(db.prepare(`SELECT count(*) AS n FROM ${t}`).get<{ n: number }>()?.n).toBe(0);
 
@@ -1465,7 +1465,7 @@ describe("v38 Assets & Debt configuration, v39 offset events and v40 offset fund
       seed.close();
 
       const upgraded = getAppDb(path);
-      expect(runMigrations(upgraded).schemaVersion).toBe(40);
+      expect(runMigrations(upgraded).schemaVersion).toBe(41);
       expect(listDebtAssumptions(upgraded, "debt-v39")).toEqual(existingAssumptions);
       replaceDebtAssumptions(upgraded, "debt-v39", [
         { kind: "offset-deposit", effectiveFrom: "2026-02-01", recurrence: null, amountMinor: 10_000, feeTreatment: null, offsetAccountId: "offset-v39", note: null },
@@ -1503,14 +1503,52 @@ describe("v38 Assets & Debt configuration, v39 offset events and v40 offset fund
       resetAppDbForTests();
 
       const seed = new Database(path);
+      seed.exec("ALTER TABLE debt_offset_links DROP COLUMN fund_scheduled_repayments_from");
       seed.exec("ALTER TABLE debt_offset_links DROP COLUMN fund_scheduled_repayments");
       seed.prepare("UPDATE app_meta SET value = '39' WHERE key = 'schema_version'").run();
       seed.close();
 
       const upgraded = getAppDb(path);
-      expect(runMigrations(upgraded).schemaVersion).toBe(40);
+      expect(runMigrations(upgraded).schemaVersion).toBe(41);
       expect(listDebtOffsetLinks(upgraded, "debt-v40")).toEqual([
-        expect.objectContaining({ id: "offset-v40", fundScheduledRepayments: false }),
+        expect.objectContaining({ id: "offset-v40", fundScheduledRepayments: false, fundScheduledRepaymentsFrom: null }),
+      ]);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades an applied v40 database to v41 with immediate funding preserved", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v41-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v41", budgetSyncId: "budget-v41", name: "Existing debt", debtType: "mortgage",
+        behaviorClass: "term-loan", currency: "AED", currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v41", paymentAccountId: "payment-v41",
+        signConvention: "negative-is-debt", lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+        loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null,
+        currentConfigJson: "{}", status: "active", currentRevision: 1,
+      }, "2026-10-02T00:00:00.000Z");
+      latest.prepare(`INSERT INTO debt_offset_links
+        (id, debt_id, actual_account_id, effective_from, effective_to, offset_percentage_bps,
+         balance_basis, cap_minor, fund_scheduled_repayments, created_at, updated_at)
+        VALUES ('offset-v41', 'debt-v41', 'cash-v41', '2026-01-01', NULL, 10000,
+                'total', NULL, 1, '2026-10-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z')`).run();
+      resetAppDbForTests();
+
+      const seed = new Database(path);
+      seed.exec("ALTER TABLE debt_offset_links DROP COLUMN fund_scheduled_repayments_from");
+      seed.prepare("UPDATE app_meta SET value = '40' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(41);
+      expect(listDebtOffsetLinks(upgraded, "debt-v41")).toEqual([
+        expect.objectContaining({ id: "offset-v41", fundScheduledRepayments: true, fundScheduledRepaymentsFrom: null }),
       ]);
     } finally {
       resetAppDbForTests();
