@@ -51,6 +51,7 @@ const offset = z.strictObject({
   offsetPercentageBps: z.number().int(),
   balanceBasis: z.enum(["cleared", "total"]),
   capMinor: minor.nullable(),
+  fundScheduledRepayments: z.boolean().default(false),
 });
 
 export const assumptionSchema = z.strictObject({

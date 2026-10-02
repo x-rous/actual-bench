@@ -350,4 +350,17 @@ describe("headline, deltas and chart series", () => {
     expect(points.find((point) => point.period === "2024-02")?.offsetBalance).toBe(150_000);
     expect(points.find((point) => point.period === "2024-03")?.offsetBalance).toBe(125_000);
   });
+
+  it("plots the engine-owned offset draw on a funded repayment date", () => {
+    const offset = offsetOf(5_000_000);
+    offset.offsets[0].fundScheduledRepayments = true;
+    const input = sim({ ...offset, profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE } });
+    const projection = project(input, "2024-02-29");
+    if (!projection.ok) throw new Error(projection.blocked[0].message);
+    const payment = projection.events.find((event) => event.eventType === "repayment");
+    const funded = Number(payment?.diagnostics.offsetFundedMinor ?? 0);
+    expect(funded).toBeGreaterThan(0);
+    const points = chartSeries(projection, { ...input, offsets: input.offsets.map((item) => ({ ...item, fundScheduledRepayments: false })) }, { view: "month" }).points;
+    expect(points.find((point) => point.period === payment?.date.slice(0, 7))?.offsetBalance).toBe(5_000_000 - funded);
+  });
 });

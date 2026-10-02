@@ -58,7 +58,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 39;
+export const LATEST_SCHEMA_VERSION = 40;
 
 type Migration = {
   version: number;
@@ -492,7 +492,22 @@ const MIGRATIONS: readonly Migration[] = [
     // is copied byte for byte and no financial row is created or transformed.
     apply: applyOffsetAssumptionKinds,
   },
+  {
+    version: 40,
+    // RD-084 P1.3g: select an effective-dated offset link as the simulated
+    // source for generated scheduled repayments. Existing links remain off.
+    apply: applyOffsetFundedRepayments,
+  },
 ];
+
+function applyOffsetFundedRepayments(db: SqliteDatabase): void {
+  addColumnIfMissing(
+    db,
+    "debt_offset_links",
+    "fund_scheduled_repayments",
+    "integer NOT NULL DEFAULT 0 CHECK (typeof(fund_scheduled_repayments) = 'integer' AND fund_scheduled_repayments IN (0, 1))"
+  );
+}
 
 function applyOffsetAssumptionKinds(db: SqliteDatabase): void {
   if (!tableExists(db, "debt_future_assumptions")) return;

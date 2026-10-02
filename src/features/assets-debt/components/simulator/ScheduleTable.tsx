@@ -52,6 +52,8 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
     balance: "Balance",
     extra: "Extra repayment",
     fees: "Fees",
+    fromOffset: "From offset",
+    otherFunds: "Other funds",
     offset: "Offset applied",
     interestBearing: "Interest-bearing balance",
     rate: "Rate",
@@ -80,6 +82,10 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
         return money(r.extraRepaymentMinor);
       case "fees":
         return money(r.feesMinor);
+      case "fromOffset":
+        return r.hasRepaymentFunding ? formatAmount(r.offsetFundedMinor, digits) : "";
+      case "otherFunds":
+        return r.hasRepaymentFunding ? formatAmount(r.otherFundsMinor, digits) : "";
       case "offset":
         return r.offsetAppliedMinor === null ? "" : formatAmount(r.offsetAppliedMinor, digits);
       case "interestBearing":
@@ -133,6 +139,11 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
         </div>
       </div>
       {principal.help ? <p className="text-[11px] text-muted-foreground">{principal.help}</p> : null}
+      {columns.includes("fromOffset") ? (
+        <p className="text-[11px] text-muted-foreground">
+          From offset + Other funds equals Payment. Payment already includes any cash-paid fees shown in this row.
+        </p>
+      ) : null}
       <div role="table" aria-label={`Schedule, ${VIEWS.find((v) => v.id === view)!.label.toLowerCase()}`} aria-rowcount={rows.length + 1} aria-colcount={columns.length} className="rounded-md border border-border">
         <div ref={scrollRef} className="max-h-[480px] overflow-auto">
           <div role="rowgroup" className="sticky top-0 z-10 bg-muted/80 backdrop-blur">

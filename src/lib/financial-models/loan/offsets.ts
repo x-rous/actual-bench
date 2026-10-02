@@ -17,11 +17,29 @@ import type { BlockReason, OffsetLink, OffsetStatePoint } from "./model";
  */
 
 export const OFFSETS_VERSION_V1 = "offsets@1";
-export const OFFSETS_VERSION = "offsets@2";
+export const OFFSETS_VERSION_V2 = "offsets@2";
+export const OFFSETS_VERSION = "offsets@3";
 
 /** Latest known balance of each offset account, keyed by account id, in minor units. */
 export type OffsetBalances = ReadonlyMap<string, { balanceMinor: number; clearedBalanceMinor: number }>;
 export type MutableOffsetBalances = Map<string, { balanceMinor: number; clearedBalanceMinor: number }>;
+
+/** First overlapping pair of enabled effective-dated funding links, if any. */
+export function offsetFundingConflict(links: readonly OffsetLink[]): { date: IsoDate; firstId: string; secondId: string } | null {
+  const enabled = links.filter((link) => link.fundScheduledRepayments === true)
+    .sort((a, b) => compareDates(a.effectiveFrom, b.effectiveFrom) || a.id.localeCompare(b.id));
+  for (let index = 0; index < enabled.length; index += 1) {
+    for (let other = index + 1; other < enabled.length; other += 1) {
+      const first = enabled[index];
+      const second = enabled[other];
+      if (first.effectiveTo !== null && compareDates(first.effectiveTo, second.effectiveFrom) <= 0) break;
+      if (second.effectiveTo === null || compareDates(first.effectiveFrom, second.effectiveTo) < 0) {
+        return { date: second.effectiveFrom, firstId: first.id, secondId: second.id };
+      }
+    }
+  }
+  return null;
+}
 
 export function linkInForce(link: OffsetLink, date: IsoDate): boolean {
   return compareDates(link.effectiveFrom, date) <= 0 && (link.effectiveTo === null || compareDates(date, link.effectiveTo) < 0);
@@ -63,6 +81,57 @@ export function totalOffsetBalanceMinor(links: readonly OffsetLink[], balances: 
 type OffsetTransitionResult =
   | { ok: true; points: OffsetStatePoint[] }
   | { ok: false; reason: BlockReason };
+
+export type ScheduledRepaymentFundingResult =
+  | {
+      ok: true;
+      configured: boolean;
+      accountId: string | null;
+      offsetFundedMinor: number;
+      points: OffsetStatePoint[];
+    }
+  | { ok: false; reason: BlockReason };
+
+/** Atomically draw up to the available cash for a generated scheduled debt payment. */
+export function fundScheduledRepayment(
+  date: IsoDate,
+  scheduledDebtPaymentMinor: number,
+  balances: MutableOffsetBalances,
+  links: readonly OffsetLink[]
+): ScheduledRepaymentFundingResult {
+  const active = links.filter((link) => link.fundScheduledRepayments === true && linkInForce(link, date));
+  if (active.length > 1) {
+    return {
+      ok: false,
+      reason: {
+        code: "conflicting-offset-funding-source",
+        classification: "blocked",
+        date,
+        message: `More than one offset account is configured to fund scheduled repayments on ${date}.`,
+        diagnostics: { activeFundingLinkCount: active.length },
+      },
+    };
+  }
+  const link = active[0];
+  if (!link) return { ok: true, configured: false, accountId: null, offsetFundedMinor: 0, points: [] };
+  const state = balances.get(link.accountId) ?? { balanceMinor: 0, clearedBalanceMinor: 0 };
+  const availableMinor = Math.max(0, Math.min(state.balanceMinor, state.clearedBalanceMinor));
+  const offsetFundedMinor = Math.min(scheduledDebtPaymentMinor, availableMinor);
+  if (offsetFundedMinor === 0) {
+    return { ok: true, configured: true, accountId: link.accountId, offsetFundedMinor: 0, points: [] };
+  }
+  balances.set(link.accountId, {
+    balanceMinor: state.balanceMinor - offsetFundedMinor,
+    clearedBalanceMinor: state.clearedBalanceMinor - offsetFundedMinor,
+  });
+  return {
+    ok: true,
+    configured: true,
+    accountId: link.accountId,
+    offsetFundedMinor,
+    points: offsetStatePoints(date, [link.accountId], balances, links),
+  };
+}
 
 /** Materialize post-transition state for selected accounts with one authoritative linked total. */
 export function offsetStatePoints(

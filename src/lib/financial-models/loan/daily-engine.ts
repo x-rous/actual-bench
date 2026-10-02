@@ -5,11 +5,11 @@ import { dayInterest, intermediateScale, interestBase } from "./accrual";
 import { chargeDates } from "./charge";
 import { eventRoundingScale, postCharge } from "./dailyPrecision";
 import { dayCountOf, engineVersions, monthlySummaries, rateTable, validateModel, wholeMonthsBetween } from "./engineCommon";
-import { dayStepOrder, EVENT_ORDER_VERSION, EVENT_ORDER_VERSION_V1, isOffsetStateEventKind, normalizeEvents, type EngineEvent } from "./events";
+import { dayStepOrder, EVENT_ORDER_VERSION, EVENT_ORDER_VERSION_V1, EVENT_ORDER_VERSION_V2, isOffsetStateEventKind, normalizeEvents, type EngineEvent } from "./events";
 import { capitalizedComponents, cashComponents } from "./fees";
 import { amortizationMonths, contractualEnd, finalDecision } from "./finalPayment";
 import type { BlockReason, ModelEvent, ModelEventType, SimulationRequest, SimulationResult } from "./model";
-import { applyOffsetTransitions, eligibleOffset, OFFSETS_VERSION_V1, offsetStatePoints, totalOffsetBalanceMinor, type OffsetBalances } from "./offsets";
+import { applyOffsetTransitions, eligibleOffset, fundScheduledRepayment, OFFSETS_VERSION, OFFSETS_VERSION_V1, OFFSETS_VERSION_V2, offsetFundingConflict, offsetStatePoints, totalOffsetBalanceMinor, type OffsetBalances } from "./offsets";
 import { interestOnlyPhaseOn } from "./phases";
 import { annualRecastDates, applyPaymentCap, derivePayment, derivePaymentV1, paymentCount, paymentEffectiveDate, recastPolicyFor } from "./recast";
 import { revolvingPayment, revolvingState } from "./revolving";
@@ -36,21 +36,23 @@ import { revolvingPayment, revolvingState } from "./revolving";
 export const DAILY_ENGINE_VERSION_V2 = "loan-daily@2";
 export const DAILY_ENGINE_VERSION_V3 = "loan-daily@3";
 export const DAILY_ENGINE_VERSION_V4 = "loan-daily@4";
-export const DAILY_ENGINE_VERSION = "loan-daily@5";
+export const DAILY_ENGINE_VERSION_V5 = "loan-daily@5";
+export const DAILY_ENGINE_VERSION = "loan-daily@6";
 
 type Day = { date: IsoDate; events: EngineEvent[] };
 
 type DailyEngineBehavior = {
-  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5";
+  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5" | "loan-daily@6";
   repaymentVersion: "repayment@1" | "repayment@2";
   recastVersion: "recast@1" | "recast@2";
-  eventOrderVersion: "event-order@1" | "event-order@2";
-  offsetsVersion: "offsets@1" | "offsets@2";
+  eventOrderVersion: "event-order@1" | "event-order@2" | "event-order@3";
+  offsetsVersion: "offsets@1" | "offsets@2" | "offsets@3";
   datedCashflow: boolean;
   capAssumedExtras: boolean;
   completePayoffState: boolean;
   contractualTermCountsPayments: boolean;
   offsetDeltas: boolean;
+  offsetFunding: boolean;
 };
 
 const DAILY_V2: DailyEngineBehavior = {
@@ -64,6 +66,7 @@ const DAILY_V2: DailyEngineBehavior = {
   completePayoffState: false,
   contractualTermCountsPayments: false,
   offsetDeltas: false,
+  offsetFunding: false,
 };
 
 const DAILY_V3: DailyEngineBehavior = {
@@ -85,14 +88,22 @@ const DAILY_V4: DailyEngineBehavior = {
 
 const DAILY_V5: DailyEngineBehavior = {
   ...DAILY_V4,
-  engineVersion: DAILY_ENGINE_VERSION,
-  eventOrderVersion: EVENT_ORDER_VERSION,
-  offsetsVersion: "offsets@2",
+  engineVersion: DAILY_ENGINE_VERSION_V5,
+  eventOrderVersion: EVENT_ORDER_VERSION_V2,
+  offsetsVersion: OFFSETS_VERSION_V2,
   offsetDeltas: true,
 };
 
+const DAILY_V6: DailyEngineBehavior = {
+  ...DAILY_V5,
+  engineVersion: DAILY_ENGINE_VERSION,
+  eventOrderVersion: EVENT_ORDER_VERSION,
+  offsetsVersion: OFFSETS_VERSION,
+  offsetFunding: true,
+};
+
 export function simulateDaily(req: SimulationRequest): SimulationResult {
-  return simulateDailyImpl(req, DAILY_V5);
+  return simulateDailyImpl(req, DAILY_V6);
 }
 
 /** Historical loan-daily@2, kept callable for stored-result reproduction. */
@@ -110,11 +121,17 @@ export function simulateDailyV4(req: SimulationRequest): SimulationResult {
   return simulateDailyImpl(req, DAILY_V4);
 }
 
+/** Historical loan-daily@5, before scheduled repayments could draw from offset cash. */
+export function simulateDailyV5(req: SimulationRequest): SimulationResult {
+  return simulateDailyImpl(req, DAILY_V5);
+}
+
 /** Resolve an exact daily-engine version; unknown versions never fall forward. */
 export function simulateDailyAtVersion(version: string, req: SimulationRequest): SimulationResult {
   if (version === DAILY_ENGINE_VERSION_V2) return simulateDailyV2(req);
   if (version === DAILY_ENGINE_VERSION_V3) return simulateDailyV3(req);
   if (version === DAILY_ENGINE_VERSION_V4) return simulateDailyV4(req);
+  if (version === DAILY_ENGINE_VERSION_V5) return simulateDailyV5(req);
   if (version === DAILY_ENGINE_VERSION) return simulateDaily(req);
   throw new RangeError(`Unsupported daily engine version: ${version}`);
 }
@@ -136,6 +153,23 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   const digits = currency.minorDigits;
   if (profile.accrual === "per-period") {
     return fail({ code: "unsupported-profile", classification: "blocked", date: null, message: "bench-daily needs daily accrual; per-period loans use bench-periodic." });
+  }
+  const hasOffsetFunding = model.offsets.some((link) => link.fundScheduledRepayments === true);
+  if (hasOffsetFunding && !behavior.offsetFunding) {
+    return fail({ code: "unsupported-profile", classification: "blocked", date: null, message: `${behavior.engineVersion} does not support offset-funded scheduled repayments.` });
+  }
+  if (hasOffsetFunding && model.behaviorClass !== "term-loan") {
+    return fail({ code: "unsupported-profile", classification: "blocked", date: null, message: "Offset-funded scheduled repayments are supported only for daily-accrual term loans." });
+  }
+  const fundingConflict = behavior.offsetFunding ? offsetFundingConflict(model.offsets) : null;
+  if (fundingConflict) {
+    return fail({
+      code: "conflicting-offset-funding-source",
+      classification: "blocked",
+      date: fundingConflict.date,
+      message: "Offset funding-source effective dates overlap; only one source may be active on a date.",
+      diagnostics: { firstFundingLinkId: fundingConflict.firstId, secondFundingLinkId: fundingConflict.secondId },
+    });
   }
   const dc = dayCountOf(model);
   const firstDay = addDays(anchor.date, 1);
@@ -424,12 +458,18 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
       }
     }
     const decision = finalDecision({ policy: profile.finalPayment, owedMinor: owed, levelMinor: level, contractualFinal });
+    const totalCashPaymentMinor = decision.paymentMinor + cash;
+    const funding = behavior.offsetFunding
+      ? fundScheduledRepayment(date, decision.paymentMinor, offsetBalances, model.offsets)
+      : { ok: true as const, configured: false, accountId: null, offsetFundedMinor: 0, points: [] };
+    if (!funding.ok) return funding.reason;
+    offsetStates.push(...funding.points);
     debt = sub(debt, fromMinor(decision.paymentMinor, digits));
     const interestPart = Math.min(interestWithPayment, decision.paymentMinor);
     const type: ModelEventType = decision.kind === "regular" || decision.kind === "continue" ? "repayment" : "final-payment";
     emit({
       date, type, certainty: "scheduled", ref: null,
-      cashMovementMinor: -(decision.paymentMinor + cash),
+      cashMovementMinor: -totalCashPaymentMinor,
       principalMovementMinor: minor(debt) - balanceBeforeAll,
       interestMinor: interestWithPayment, feesMinor: cash,
       balanceBeforeMinor: balanceBeforeAll, balanceAfterMinor: minor(debt),
@@ -445,6 +485,17 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
         negativeAmortizationMinor: interestWithPayment > decision.paymentMinor ? interestWithPayment - decision.paymentMinor : 0,
         ...(behavior.completePayoffState && decision.paidOff && carry.int !== BigInt(0)
           ? { settledCarriedRemainder: toDecString(carry) }
+          : {}),
+        ...(funding.configured
+          ? {
+              repaymentFundingMode: "simulated-offset",
+              repaymentFundingAccountId: funding.accountId,
+              scheduledDebtPaymentMinor: decision.paymentMinor,
+              additionalCashPaidMinor: cash,
+              totalCashPaymentMinor,
+              offsetFundedMinor: funding.offsetFundedMinor,
+              otherFundsMinor: totalCashPaymentMinor - funding.offsetFundedMinor,
+            }
           : {}),
       },
     });

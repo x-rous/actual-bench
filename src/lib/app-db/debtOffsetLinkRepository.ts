@@ -19,6 +19,7 @@ type OffsetRow = {
   offset_percentage_bps: number;
   balance_basis: string;
   cap_minor: number | null;
+  fund_scheduled_repayments: number;
   created_at: string;
   updated_at: string;
 };
@@ -32,6 +33,7 @@ export type OffsetLinkInput = {
   offsetPercentageBps: number;
   balanceBasis: OffsetBalanceBasis;
   capMinor: number | null;
+  fundScheduledRepayments?: boolean;
 };
 
 function rowToRecord(row: OffsetRow): DebtOffsetLinkRecord {
@@ -44,6 +46,7 @@ function rowToRecord(row: OffsetRow): DebtOffsetLinkRecord {
     offsetPercentageBps: row.offset_percentage_bps,
     balanceBasis: readStoredEnum(OFFSET_BALANCE_BASES, row.balance_basis),
     capMinor: row.cap_minor,
+    fundScheduledRepayments: row.fund_scheduled_repayments === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -62,6 +65,7 @@ function columns(row: OffsetLinkInput) {
     bps,
     requireOneOf(OFFSET_BALANCE_BASES, row.balanceBasis, "balanceBasis"),
     optionalInteger(row.capMinor, "capMinor", 1),
+    row.fundScheduledRepayments ? 1 : 0,
   ] as const;
 }
 
@@ -88,15 +92,15 @@ export function replaceDebtOffsetLinks(db: SqliteDatabase, debtId: string, rows:
         db
           .prepare(
             `INSERT INTO debt_offset_links (id, debt_id, actual_account_id, effective_from, effective_to,
-               offset_percentage_bps, balance_basis, cap_minor, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+               offset_percentage_bps, balance_basis, cap_minor, fund_scheduled_repayments, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(id, debtId, ...r.cols, now, now),
       update: (id, r) =>
         db
           .prepare(
             `UPDATE debt_offset_links SET actual_account_id = ?, effective_from = ?, effective_to = ?,
-               offset_percentage_bps = ?, balance_basis = ?, cap_minor = ?, updated_at = ?
+               offset_percentage_bps = ?, balance_basis = ?, cap_minor = ?, fund_scheduled_repayments = ?, updated_at = ?
              WHERE id = ? AND debt_id = ?`
           )
           .run(...r.cols, now, id, debtId),

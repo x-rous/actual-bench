@@ -31,21 +31,21 @@ import { ACT360_VERSION } from "./daycount/act360";
 import { ACT365F_VERSION } from "./daycount/act365f";
 import { ACTACT_VERSION } from "./daycount/actact";
 import { MONTHLY_ALLOC_VERSION } from "./daycount/monthly-30-360-alloc";
-import { EVENT_ORDER_VERSION, EVENT_ORDER_VERSION_V1 } from "./events";
+import { EVENT_ORDER_VERSION, EVENT_ORDER_VERSION_V1, EVENT_ORDER_VERSION_V2 } from "./events";
 import { PROFILE_VERSION } from "./profile";
 import { RATE_QUOTE_VERSION, RATES_VERSION } from "./rates";
 import { REPAYMENT_VERSION, REPAYMENT_VERSION_V1 } from "./repayment";
 import { ACCRUAL_VERSION } from "./accrual";
 import { CHARGE_VERSION } from "./charge";
 import { DAILY_PRECISION_VERSION } from "./dailyPrecision";
-import { OFFSETS_VERSION, OFFSETS_VERSION_V1 } from "./offsets";
+import { OFFSETS_VERSION, OFFSETS_VERSION_V1, OFFSETS_VERSION_V2 } from "./offsets";
 import { RECAST_VERSION, RECAST_VERSION_V1 } from "./recast";
 import { PHASES_VERSION } from "./phases";
 import { FEE_TREATMENTS, FEES_VERSION } from "./fees";
 import { ALLOCATION_VERSION } from "./allocation";
 import { FINAL_PAYMENT_VERSION } from "./finalPayment";
 import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
-import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3, DAILY_ENGINE_VERSION_V4 } from "./daily-engine";
+import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3, DAILY_ENGINE_VERSION_V4, DAILY_ENGINE_VERSION_V5 } from "./daily-engine";
 import { REVOLVING_VERSION } from "./revolving";
 import { RECEIVABLE_VERSION } from "./receivable";
 import { ELIGIBILITY_VERSION } from "./eligibility";
@@ -105,7 +105,7 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
       rates: "rates@1",
       "rate-quote": "rate-quote@1",
       profile: "profile@1",
-      "event-order": "event-order@2",
+      "event-order": "event-order@3",
       repayment: REPAYMENT_VERSION,
     });
     expect(REPAYMENT_VERSION_V1).toBe("repayment@1");
@@ -113,8 +113,11 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     expect(DAILY_ENGINE_VERSION_V2).toBe("loan-daily@2");
     expect(DAILY_ENGINE_VERSION_V3).toBe("loan-daily@3");
     expect(DAILY_ENGINE_VERSION_V4).toBe("loan-daily@4");
+    expect(DAILY_ENGINE_VERSION_V5).toBe("loan-daily@5");
     expect(EVENT_ORDER_VERSION_V1).toBe("event-order@1");
+    expect(EVENT_ORDER_VERSION_V2).toBe("event-order@2");
     expect(OFFSETS_VERSION_V1).toBe("offsets@1");
+    expect(OFFSETS_VERSION_V2).toBe("offsets@2");
     expect(PROJECTION_VERSION_V1).toBe("projection@1");
   });
 

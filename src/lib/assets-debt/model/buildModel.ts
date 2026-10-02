@@ -75,6 +75,7 @@ export function modelFromDetail(detail: DebtDetail): ModelBuild {
         percentageBps: o.offsetPercentageBps,
         basis: o.balanceBasis as "cleared" | "total",
         capMinor: o.capMinor,
+        fundScheduledRepayments: o.fundScheduledRepayments,
       })),
       components: config.components,
       paymentRecasts: config.paymentRecasts.map((r) => ({ date: r.date })),

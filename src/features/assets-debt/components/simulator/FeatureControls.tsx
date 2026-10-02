@@ -39,12 +39,16 @@ export function FeatureControls({ sim, change, propose }: Props) {
       return;
     }
     const key = simKey("offset");
-    const offsets = stash.offsets.length ? stash.offsets : [{ key, placeholderAccountId: key, effectiveFrom: sim.startDate, effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null }];
+    const offsets = stash.offsets.length ? stash.offsets : [{ key, placeholderAccountId: key, effectiveFrom: sim.startDate, effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null, fundScheduledRepayments: false }];
     const offsetEvents = stash.offsets.length ? stash.offsetEvents : [{ key: simKey("offset-balance"), kind: "offset-balance" as const, effectiveFrom: sim.startDate, recurrence: null, amountMinor: 0, feeTreatment: null, offsetAccountId: offsets[0].placeholderAccountId, note: null }];
     propose({ ...sim, offsets, assumptions: [...sim.assumptions, ...offsetEvents] });
   };
 
   const setOffset = (patch: Partial<SimOffset>) => change({ ...sim, offsets: sim.offsets.map((o, i) => (i === 0 ? { ...o, ...patch } : o)) });
+  const setFundingSource = (key: string | null) => propose({
+    ...sim,
+    offsets: sim.offsets.map((item) => ({ ...item, fundScheduledRepayments: item.key === key })),
+  });
   /** The starting offset balance moves with the offset's start date. */
   const setOffsetFrom = (date: string) => {
     if (!offset || !date) return;
@@ -139,6 +143,29 @@ export function FeatureControls({ sim, change, propose }: Props) {
             <MoneyField className="col-span-2" label="Offset cap (optional)" valueMinor={offset.capMinor} minorDigits={sim.minorDigits} onChange={(capMinor) => setOffset({ capMinor: capMinor && capMinor > 0 ? capMinor : null })} />
             <DateField label="Offset from" value={offset.effectiveFrom} onChange={setOffsetFrom} />
             <DateField label="Offset until (optional)" value={offset.effectiveTo ?? ""} onChange={(effectiveTo) => setOffset({ effectiveTo: effectiveTo || null })} />
+            <div className="col-span-2 border-t border-border pt-3">
+              {sim.offsets.length === 1 ? (
+                <FeatureSwitch
+                  label="Draw scheduled repayments from offset"
+                  description="Use available offset funds for regular repayments and the final true-up. Any remainder comes from other funds."
+                  checked={offset.fundScheduledRepayments}
+                  onChange={(on) => setFundingSource(on ? offset.key : null)}
+                />
+              ) : (
+                <SelectField
+                  label="Scheduled repayment funding account"
+                  value={sim.offsets.find((item) => item.fundScheduledRepayments)?.key ?? "none"}
+                  options={[
+                    { value: "none", label: "Other funds only" },
+                    ...sim.offsets.map((item, index) => ({ value: item.key, label: `Offset account ${index + 1}` })),
+                  ]}
+                  onChange={(value) => setFundingSource(value === "none" ? null : value)}
+                />
+              )}
+              <p className="mt-2 text-xs text-muted-foreground">
+                Simulation only. This does not create, move, or match transactions in Actual.
+              </p>
+            </div>
           </div>
         ) : null}
       </ConfigurationSection>

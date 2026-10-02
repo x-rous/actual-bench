@@ -1,6 +1,9 @@
 import { projectDebt } from "./projection";
 import { simulateDaily, simulateDailyAtVersion } from "./daily-engine";
 import type { FutureAssumption, LedgerEvent, LoanModelSnapshot, SimulationRequest } from "./model";
+import { eligibleOffset, fundScheduledRepayment } from "./offsets";
+import { fromMinor, sub, toMinor } from "../money/kernel";
+import { interestBase } from "./accrual";
 
 const OPEN = "2024-01-01";
 
@@ -30,7 +33,7 @@ function request(m: LoanModelSnapshot, to = "2024-04-30", events: LedgerEvent[] 
   return { model: m, anchor: { date: anchorDate, principalMinor: m.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "test" }, events, to, options: { generateScheduledRepayments: false } };
 }
 
-describe("offset deposits and withdrawals (loan-daily@5)", () => {
+describe("offset deposits and withdrawals (loan-daily@6)", () => {
   it("applies one-off and recurring deltas without emitting amortization events", () => {
     const m = model([
       { kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor: 1_000 },
@@ -188,5 +191,206 @@ describe("offset deposits and withdrawals (loan-daily@5)", () => {
     expect(result.ok ? null : result.blocked[0]).toMatchObject({ code: "unsupported-profile" });
     expect(result.versions).toMatchObject({ engine: "loan-daily@4", "event-order": "event-order@1" });
     expect(result.versions).not.toHaveProperty("offsets");
+  });
+});
+
+describe("offset-funded scheduled repayments (loan-daily@6)", () => {
+  const fundedModel = (balanceMinor: number, patch: Partial<LoanModelSnapshot> = {}) => {
+    const base = model([{ kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor }]);
+    return {
+      ...base,
+      offsets: base.offsets.map((link) => ({ ...link, fundScheduledRepayments: true })),
+      ...patch,
+    };
+  };
+  const scheduledRequest = (m: LoanModelSnapshot, to = "2024-02-01"): SimulationRequest => ({
+    model: m,
+    anchor: { date: OPEN, principalMinor: m.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "test" },
+    events: [],
+    to,
+  });
+
+  it.each([
+    [20_000, 10_000, 0],
+    [4_000, 4_000, 6_000],
+    [0, 0, 10_000],
+  ])("funds a regular payment from a full, partial or zero balance", (balance, fromOffset, otherFunds) => {
+    const result = simulateDaily(scheduledRequest(fundedModel(balance)));
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    const payment = result.events.find((event) => event.type === "repayment")!;
+    expect(payment.cashMovementMinor).toBe(-10_000);
+    expect(payment.diagnostics).toMatchObject({
+      repaymentFundingMode: "simulated-offset",
+      scheduledDebtPaymentMinor: 10_000,
+      additionalCashPaidMinor: 0,
+      totalCashPaymentMinor: 10_000,
+      offsetFundedMinor: fromOffset,
+      otherFundsMinor: otherFunds,
+    });
+    expect(Number(payment.diagnostics.offsetFundedMinor) + Number(payment.diagnostics.otherFundsMinor)).toBe(-payment.cashMovementMinor);
+    expect(result.offsetStates.at(-1)).toMatchObject({ balanceMinor: balance - fromOffset });
+  });
+
+  it("funds the final true-up without changing its amount", () => {
+    const m = fundedModel(2_000, {
+      terms: { ...fundedModel(2_000).terms, openingPrincipalMinor: 5_000 },
+    });
+    const result = simulateDaily(scheduledRequest(m));
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    const payment = result.events.find((event) => event.type === "final-payment")!;
+    expect(payment.interestMinor).toBe(90);
+    expect(payment.cashMovementMinor).toBe(-5_090);
+    expect(payment.diagnostics).toMatchObject({ offsetFundedMinor: 2_000, otherFundsMinor: 3_090 });
+    expect(result.closing.principalMinor).toBe(0);
+  });
+
+  it("keeps additional cash-paid fees in Other funds exactly once", () => {
+    const m = fundedModel(20_000, {
+      components: [{ economicKind: "fee", label: "Service fee", destination: "category", categoryId: "fees", amountRule: "fixed", fixedAmountMinor: 1_000, treatment: "cash-paid", order: 1 }],
+    });
+    const result = simulateDaily(scheduledRequest(m));
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    const payment = result.events.find((event) => event.type === "repayment")!;
+    expect(payment.cashMovementMinor).toBe(-11_000);
+    expect(payment.feesMinor).toBe(1_000);
+    expect(payment.diagnostics).toMatchObject({
+      scheduledDebtPaymentMinor: 10_000,
+      additionalCashPaidMinor: 1_000,
+      totalCashPaymentMinor: 11_000,
+      offsetFundedMinor: 10_000,
+      otherFundsMinor: 1_000,
+    });
+  });
+
+  it("funds the ordinary scheduled part but not a separate contractual balloon", () => {
+    const base = fundedModel(50_000);
+    const m = {
+      ...base,
+      terms: { ...base.terms, contractualTermMonths: 1, amortizationTermMonths: 12 },
+      profile: { ...base.profile, finalPayment: "contractual-balloon" as const },
+    };
+    const result = simulateDaily(scheduledRequest(m));
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    const payment = result.events.find((event) => event.type === "final-payment")!;
+    const balloon = result.events.find((event) => event.type === "balloon")!;
+    expect(payment.diagnostics.offsetFundedMinor).toBe(10_000);
+    expect(balloon.cashMovementMinor).toBeLessThan(0);
+    expect(balloon.diagnostics).not.toHaveProperty("offsetFundedMinor");
+    expect(result.offsetStates.at(-1)).toMatchObject({ balanceMinor: 40_000 });
+  });
+
+  it("does not fund an observed repayment", () => {
+    const m = fundedModel(20_000);
+    const result = simulateDaily({
+      ...scheduledRequest(m),
+      events: [{ kind: "repayment", date: "2024-01-15", amountMinor: 5_000, ref: { source: "actual", id: "observed" } }],
+      options: { generateScheduledRepayments: false },
+    });
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    expect(result.events[0].diagnostics).not.toHaveProperty("offsetFundedMinor");
+    expect(result.offsetStates.at(-1)).toMatchObject({ balanceMinor: 20_000 });
+  });
+
+  it("uses only offset state already applied at the scheduled-repayment step", () => {
+    const assumptions: FutureAssumption[] = [
+      { kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor: 0 },
+      { kind: "offset-deposit", date: "2024-02-01", accountId: "offset-1", amountMinor: 10_000 },
+    ];
+    const base = model(assumptions);
+    base.offsets = base.offsets.map((link) => ({ ...link, fundScheduledRepayments: true }));
+    const scheduledFirst = simulateDaily(scheduledRequest(base));
+    const offsetFirstModel = { ...base, profile: { ...base.profile, eventOrder: { scheduledRepayments: "after-accrual" as const, otherPayments: "before-accrual" as const, offsets: "before-accrual" as const } } };
+    const offsetFirst = simulateDaily(scheduledRequest(offsetFirstModel));
+    if (!scheduledFirst.ok || !offsetFirst.ok) throw new Error("unexpected block");
+    expect(scheduledFirst.events.find((event) => event.type === "repayment")!.diagnostics.offsetFundedMinor).toBe(0);
+    expect(offsetFirst.events.find((event) => event.type === "repayment")!.diagnostics.offsetFundedMinor).toBe(10_000);
+  });
+
+  it("rejects overlapping funding sources and old engine versions", () => {
+    const m = fundedModel(20_000);
+    m.offsets.push({ ...m.offsets[0], id: "o2", accountId: "offset-2" });
+    const conflict = simulateDaily(scheduledRequest(m));
+    expect(conflict.ok ? null : conflict.blocked[0]).toMatchObject({ code: "conflicting-offset-funding-source", classification: "blocked" });
+
+    const old = simulateDailyAtVersion("loan-daily@5", scheduledRequest(fundedModel(20_000)));
+    expect(old.ok ? null : old.blocked[0]).toMatchObject({ code: "unsupported-profile" });
+    expect(old.versions).toMatchObject({ engine: "loan-daily@5", "event-order": "event-order@2", offsets: "offsets@2" });
+  });
+
+  it("draws only the selected account while every linked account still affects interest", () => {
+    const assumptions: FutureAssumption[] = [
+      { kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor: 20_000 },
+      { kind: "offset-balance", date: OPEN, accountId: "offset-2", balanceMinor: 30_000 },
+    ];
+    const m = model(assumptions, [
+      { id: "o1", accountId: "offset-1", effectiveFrom: OPEN, effectiveTo: null, percentageBps: 10_000, basis: "total", capMinor: null, fundScheduledRepayments: true },
+      { id: "o2", accountId: "offset-2", effectiveFrom: OPEN, effectiveTo: null, percentageBps: 10_000, basis: "total", capMinor: null, fundScheduledRepayments: false },
+    ]);
+    const result = simulateDaily(scheduledRequest(m));
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    expect(result.events.find((event) => event.type === "repayment")?.diagnostics).toMatchObject({
+      repaymentFundingAccountId: "offset-1",
+      offsetFundedMinor: 10_000,
+    });
+    expect(result.offsetStates.filter((point) => point.date === "2024-02-01")).toEqual([
+      expect.objectContaining({ accountId: "offset-1", balanceMinor: 10_000, totalBalanceMinor: 40_000 }),
+    ]);
+    expect(result.offsetStates.findLast((point) => point.accountId === "offset-2")).toMatchObject({ balanceMinor: 30_000 });
+  });
+
+  it("switches between non-overlapping effective-dated funding sources", () => {
+    const m = model([
+      { kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor: 20_000 },
+      { kind: "offset-balance", date: OPEN, accountId: "offset-2", balanceMinor: 20_000 },
+    ], [
+      { id: "o1", accountId: "offset-1", effectiveFrom: OPEN, effectiveTo: "2024-02-15", percentageBps: 10_000, basis: "total", capMinor: null, fundScheduledRepayments: true },
+      { id: "o2", accountId: "offset-2", effectiveFrom: "2024-02-15", effectiveTo: null, percentageBps: 10_000, basis: "total", capMinor: null, fundScheduledRepayments: true },
+    ]);
+    const result = simulateDaily(scheduledRequest(m, "2024-03-01"));
+    if (!result.ok) throw new Error(result.blocked[0].message);
+    expect(result.events.filter((event) => event.type === "repayment").map((event) => event.diagnostics.repaymentFundingAccountId)).toEqual([
+      "offset-1",
+      "offset-2",
+    ]);
+  });
+
+  it("keeps loan-daily@5 callable and financially identical when the new setting is off", () => {
+    const m = model([
+      { kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor: 20_000 },
+      { kind: "offset-deposit", date: "2024-01-15", accountId: "offset-1", amountMinor: 2_000 },
+    ]);
+    const current = simulateDaily(scheduledRequest(m, "2024-03-01"));
+    const historical = simulateDailyAtVersion("loan-daily@5", scheduledRequest(m, "2024-03-01"));
+    if (!current.ok || !historical.ok) throw new Error("unexpected block");
+    const financial = (events: typeof current.events) => events.map((event) => ({
+      ...event,
+      diagnostics: Object.fromEntries(Object.entries(event.diagnostics).filter(([key]) => key !== "eventOrder")),
+    }));
+    expect(financial(current.events)).toEqual(financial(historical.events));
+    expect(current.offsetStates).toEqual(historical.offsetStates);
+    expect(current.closing).toEqual(historical.closing);
+  });
+
+  it("recomputes partial and capped eligibility instead of assuming funding is neutral", () => {
+    const assertBaseChange = (percentageBps: number, capMinor: number | null, expectedBefore: number, expectedAfter: number) => {
+      const links = [{ id: "o", accountId: "offset-1", effectiveFrom: OPEN, effectiveTo: null, percentageBps, basis: "total" as const, capMinor, fundScheduledRepayments: true }];
+      const balances = new Map([["offset-1", { balanceMinor: 500_000, clearedBalanceMinor: 500_000 }]]);
+      const before = interestBase("daily-simple", fromMinor(1_000_000, 2), eligibleOffset(links, balances, OPEN, 2), fromMinor(0, 2));
+      const funded = fundScheduledRepayment(OPEN, 100_000, balances, links);
+      expect(funded.ok).toBe(true);
+      const after = interestBase("daily-simple", sub(fromMinor(1_000_000, 2), fromMinor(100_000, 2)), eligibleOffset(links, balances, OPEN, 2), fromMinor(0, 2));
+      expect(toMinor(before, 2, "down")).toBe(expectedBefore);
+      expect(toMinor(after, 2, "down")).toBe(expectedAfter);
+    };
+    assertBaseChange(5_000, null, 750_000, 700_000);
+    assertBaseChange(10_000, 200_000, 800_000, 700_000);
+  });
+
+  it("never draws more than the lesser cleared and total balance", () => {
+    const links = [{ id: "o", accountId: "offset-1", effectiveFrom: OPEN, effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null, fundScheduledRepayments: true }];
+    const balances = new Map([["offset-1", { balanceMinor: 10_000, clearedBalanceMinor: 3_000 }]]);
+    const funded = fundScheduledRepayment(OPEN, 5_000, balances, links);
+    expect(funded).toMatchObject({ ok: true, offsetFundedMinor: 3_000 });
+    expect(balances.get("offset-1")).toEqual({ balanceMinor: 7_000, clearedBalanceMinor: 0 });
   });
 });

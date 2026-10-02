@@ -282,7 +282,14 @@ export function validateDebtSave(
     input.offsets.slice(0, i).forEach((prev) => {
       const overlaps = prev.actualAccountId === o.actualAccountId && (prev.effectiveTo == null || prev.effectiveTo > o.effectiveFrom) && (o.effectiveTo == null || o.effectiveTo > prev.effectiveFrom);
       if (overlaps) add(f("effectiveFrom"), "overlaps another link for the same account");
+      const fundingOverlaps = prev.fundScheduledRepayments === true && o.fundScheduledRepayments === true
+        && (prev.effectiveTo == null || prev.effectiveTo > o.effectiveFrom)
+        && (o.effectiveTo == null || o.effectiveTo > prev.effectiveFrom);
+      if (fundingOverlaps) add(f("fundScheduledRepayments"), "overlaps another scheduled-repayment funding source");
     });
+    if (o.fundScheduledRepayments && input.behaviorClass !== "term-loan") add(f("fundScheduledRepayments"), "is available only for term loans");
+    if (o.fundScheduledRepayments && input.executionStrategy !== "bench-daily") add(f("fundScheduledRepayments"), "requires the daily loan engine");
+    if (o.fundScheduledRepayments && config?.profile.accrual === "per-period") add(f("fundScheduledRepayments"), "requires a daily-accrual calculation method");
   });
 
   // Baseline assumptions (FR-110): each kind's required and forbidden fields.
@@ -333,7 +340,7 @@ export function validateDebtSave(
       },
       config,
       rates,
-      offsets: input.offsets.map((o) => ({ ...o, effectiveTo: o.effectiveTo ?? null, capMinor: o.capMinor ?? null })),
+      offsets: input.offsets.map((o) => ({ ...o, effectiveTo: o.effectiveTo ?? null, capMinor: o.capMinor ?? null, fundScheduledRepayments: o.fundScheduledRepayments === true })),
       assumptions: input.assumptions.map((a) => ({ ...a, recurrence: a.recurrence ?? null, feeTreatment: a.feeTreatment ?? null, offsetAccountId: a.offsetAccountId ?? null, note: a.note ?? null })),
     },
   };

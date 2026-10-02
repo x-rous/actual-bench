@@ -909,6 +909,8 @@ CREATE TABLE IF NOT EXISTS debt_offset_links (
   -- 'cleared' | 'total'
   balance_basis text NOT NULL,
   cap_minor integer CHECK (cap_minor IS NULL OR ${integerAtLeast("cap_minor", 1)}),
+  fund_scheduled_repayments integer NOT NULL DEFAULT 0
+    CHECK (typeof(fund_scheduled_repayments) = 'integer' AND fund_scheduled_repayments IN (0, 1)),
   created_at text NOT NULL,
   updated_at text NOT NULL,
   CHECK (effective_to IS NULL OR effective_to > effective_from)

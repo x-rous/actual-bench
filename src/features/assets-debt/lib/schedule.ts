@@ -30,6 +30,9 @@ export type ScheduleRow = {
   unpaidInterestMinor: number;
   balloonMinor: number;
   residualMinor: number;
+  offsetFundedMinor: number;
+  otherFundsMinor: number;
+  hasRepaymentFunding: boolean;
   offsetAppliedMinor: number | null;
   interestBearingMinor: number | null;
   /** The rates behind this row's interest, in order; more than one displays as "Multiple". */
@@ -65,6 +68,9 @@ export function eventRow(e: DebtProjectionEvent, index: number, paymentNumber: n
     unpaidInterestMinor: e.eventType === "negative-amortization" ? num(e.diagnostics.unpaidInterestCapitalizedMinor) : 0,
     balloonMinor: e.eventType === "balloon" ? -e.cashMovementMinor : 0,
     residualMinor: e.eventType === "residual" ? num(e.diagnostics.residualMinor) : 0,
+    offsetFundedMinor: num(e.diagnostics.offsetFundedMinor),
+    otherFundsMinor: num(e.diagnostics.otherFundsMinor),
+    hasRepaymentFunding: e.diagnostics.repaymentFundingMode === "simulated-offset",
     offsetAppliedMinor: typeof e.diagnostics.offsetAppliedMinor === "number" ? e.diagnostics.offsetAppliedMinor : null,
     interestBearingMinor: typeof e.diagnostics.interestBearingMinor === "number" ? e.diagnostics.interestBearingMinor : null,
     rates: ratesOf(e),
@@ -74,7 +80,7 @@ export function eventRow(e: DebtProjectionEvent, index: number, paymentNumber: n
   };
 }
 
-const SUMMED = ["paymentMinor", "principalMinor", "interestMinor", "extraRepaymentMinor", "feesMinor", "drawMinor", "unpaidInterestMinor", "balloonMinor", "residualMinor", "principalMovementMinor"] as const;
+const SUMMED = ["paymentMinor", "principalMinor", "interestMinor", "extraRepaymentMinor", "feesMinor", "drawMinor", "unpaidInterestMinor", "balloonMinor", "residualMinor", "offsetFundedMinor", "otherFundsMinor", "principalMovementMinor"] as const;
 
 /** All events, or monthly / yearly rows aggregated from the same events. */
 export function aggregateSchedule(events: readonly DebtProjectionEvent[], view: ScheduleView): ScheduleRow[] {
@@ -100,6 +106,7 @@ export function aggregateSchedule(events: readonly DebtProjectionEvent[], view: 
       agg.paymentNumberTo = r.paymentNumberTo;
     }
     for (const rate of r.rates) if (!agg.rates.includes(rate)) agg.rates.push(rate);
+    agg.hasRepaymentFunding ||= r.hasRepaymentFunding;
     if (r.offsetAppliedMinor !== null) agg.offsetAppliedMinor = r.offsetAppliedMinor;
     if (r.interestBearingMinor !== null) agg.interestBearingMinor = r.interestBearingMinor;
     agg.closingBalanceMinor = r.closingBalanceMinor;
@@ -107,7 +114,7 @@ export function aggregateSchedule(events: readonly DebtProjectionEvent[], view: 
   return out;
 }
 
-export type ColumnId = "paymentNumber" | "period" | "event" | "payment" | "principal" | "interest" | "balance" | "extra" | "fees" | "offset" | "interestBearing" | "rate" | "draw" | "unpaidInterest" | "balloon" | "residual";
+export type ColumnId = "paymentNumber" | "period" | "event" | "payment" | "principal" | "interest" | "balance" | "extra" | "fees" | "fromOffset" | "otherFunds" | "offset" | "interestBearing" | "rate" | "draw" | "unpaidInterest" | "balloon" | "residual";
 
 /**
  * Columns relevant to what the projection actually contains: repayment
@@ -124,6 +131,7 @@ export function scheduleColumns(rows: readonly ScheduleRow[], view: ScheduleView
     "payment",
     "principal",
     "interest",
+    ...(any((r) => r.hasRepaymentFunding) ? (["fromOffset", "otherFunds"] as const) : []),
     ...(any((r) => r.extraRepaymentMinor !== 0) ? (["extra"] as const) : []),
     ...(any((r) => r.feesMinor !== 0) ? (["fees"] as const) : []),
     ...(any((r) => (r.offsetAppliedMinor ?? 0) > 0) ? (["offset", "interestBearing"] as const) : []),

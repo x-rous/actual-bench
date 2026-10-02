@@ -8,6 +8,11 @@ import { DAILY_MONTHLY_CHARGE, offsetOf, project, sim } from "./simulatorTestKit
  */
 
 const extra = (date: string, amountMinor: number, recurrence: SimulationState["assumptions"][number]["recurrence"] = null) => ({ key: simKey("x"), kind: "extra-repayment" as const, effectiveFrom: date, recurrence, amountMinor, feeTreatment: null, offsetAccountId: null, note: null });
+const fundedOffset = (balanceMinor: number) => {
+  const value = offsetOf(balanceMinor);
+  value.offsets[0].fundScheduledRepayments = true;
+  return value;
+};
 
 const FIXTURES: [string, SimulationState][] = [
   ["ordinary amortizing (five-input default)", sim()],
@@ -20,10 +25,11 @@ const FIXTURES: [string, SimulationState][] = [
   ["negative amortization", sim({ contractualPaymentMinor: 150_000, profile: { ...sim().profile, repaymentDerivation: "contractual-fixed", negativeAmortizationAllowed: true, finalPayment: "continue-until-paid" } }, "0.06")],
   ["balloon", sim({ contractTermMonths: 60, profile: { ...sim().profile, finalPayment: "contractual-balloon" } })],
   ["offset", sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE }, ...offsetOf(5_000_000) })],
+  ["offset-funded repayments", sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE }, ...fundedOffset(5_000_000) })],
   ["mid-period rate change", sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE }, rates: [{ ...sim().rates[0] }, { ...sim().rates[0], key: "r2", accrualEffectiveFrom: "2025-03-15", annualRateDecimal: "0.07" }] })],
 ];
 
-const SUMMED: (keyof ScheduleRow)[] = ["paymentMinor", "principalMinor", "interestMinor", "extraRepaymentMinor", "feesMinor", "drawMinor", "unpaidInterestMinor", "balloonMinor", "residualMinor", "principalMovementMinor"];
+const SUMMED: (keyof ScheduleRow)[] = ["paymentMinor", "principalMinor", "interestMinor", "extraRepaymentMinor", "feesMinor", "drawMinor", "unpaidInterestMinor", "balloonMinor", "residualMinor", "offsetFundedMinor", "otherFundsMinor", "principalMovementMinor"];
 const total = (rows: ScheduleRow[], f: keyof ScheduleRow) => rows.reduce((s, r) => s + (r[f] as number), 0);
 
 describe.each(FIXTURES)("%s", (_name, s) => {
@@ -75,7 +81,8 @@ describe("dynamic columns", () => {
     ["extras", FIXTURES[5][1], ["extra"]],
     ["fees", FIXTURES[3][1], ["fees"]],
     ["offset", FIXTURES[9][1], ["offset", "interestBearing"]],
-    ["rate change", FIXTURES[10][1], ["rate"]],
+    ["funding", FIXTURES[10][1], ["fromOffset", "otherFunds", "offset", "interestBearing"]],
+    ["rate change", FIXTURES[11][1], ["rate"]],
     ["draw", FIXTURES[6][1], ["draw"]],
     ["negative amortization", FIXTURES[7][1], ["unpaidInterest"]],
   ] as const)("%s adds only its own column(s)", (_n, s, added) => {
@@ -87,6 +94,15 @@ describe("dynamic columns", () => {
     // An offset with a zero balance applies nothing: no offset columns.
     const s = sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE }, ...offsetOf(0) });
     expect(cols(s)).not.toContain("offset");
+  });
+
+  it("funding columns reconcile to total Payment, including zero-balance rows", () => {
+    const s = sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE }, components: [{ key: "fee", economicKind: "fee", amountRule: "fixed", fixedAmountMinor: 1_000, treatment: "cash-paid" }], ...fundedOffset(0) });
+    const p = project(s, "2024-04-01");
+    if (!p.ok) throw new Error(p.blocked[0].message);
+    const rows = aggregateSchedule(p.events, "events").filter((row) => row.hasRepaymentFunding);
+    expect(scheduleColumns(rows, "events")).toEqual(expect.arrayContaining(["fromOffset", "otherFunds"]));
+    for (const row of rows) expect(row.offsetFundedMinor + row.otherFundsMinor).toBe(row.paymentMinor);
   });
 });
 

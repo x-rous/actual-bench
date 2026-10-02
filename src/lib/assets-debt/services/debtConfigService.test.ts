@@ -79,6 +79,25 @@ describe("saving a debt configuration", () => {
     expect(ok.offsets[0].actualAccountId).toBe("acc-offset");
   });
 
+  it("allows one in-force repayment funding source and rejects overlapping or incompatible sources", () => {
+    const first = { actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10_000, balanceBasis: "total" as const, capMinor: null, fundScheduledRepayments: true };
+    const dailyConfig = debtConfig({ profile: { ...(debtConfig().profile as Record<string, unknown>), accrual: "daily-simple" } });
+    expect(issuesOf(saveInput({ executionStrategy: "bench-daily", config: dailyConfig, offsets: [first] }))).toEqual([]);
+    const overlapping = { ...first, actualAccountId: "acc-checking", effectiveFrom: "2025-01-01" };
+    expect(issuesOf(saveInput({ executionStrategy: "bench-daily", config: dailyConfig, offsets: [first, overlapping] }))).toEqual([
+      expect.stringMatching(/overlaps another scheduled-repayment funding source/),
+    ]);
+    const nonOverlapping = [
+      { ...first, effectiveTo: "2025-01-01" },
+      { ...overlapping, effectiveFrom: "2025-01-01" },
+    ];
+    expect(issuesOf(saveInput({ executionStrategy: "bench-daily", config: dailyConfig, offsets: nonOverlapping }))).toEqual([]);
+    expect(issuesOf(saveInput({ executionStrategy: "bench-periodic", offsets: [first] }))).toEqual([
+      expect.stringMatching(/requires the daily loan engine/),
+      expect.stringMatching(/requires a daily-accrual calculation method/),
+    ]);
+  });
+
   it("requires boundary categories only when the relationship crosses the budget boundary, and only existing expense categories", () => {
     expect(issuesOf(saveInput({ loanPaymentCategoryId: null }))).toEqual([expect.stringMatching(/loanPaymentCategoryId: is required/)]);
     expect(issuesOf(saveInput({ loanPaymentCategoryId: "cat-missing" }))[0]).toMatch(/not a category in this budget/);

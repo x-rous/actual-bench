@@ -31,6 +31,8 @@ export type OffsetLink = {
   percentageBps: number;
   basis: "cleared" | "total";
   capMinor: number | null;
+  /** Simulated funding rule; absent in historical snapshots and therefore false. */
+  fundScheduledRepayments?: boolean;
 };
 
 /** Baseline future assumptions (data-model `debt_future_assumptions`); never a scenario. */
@@ -199,6 +201,7 @@ export type BlockReason = {
     | "credit-balance"
     | "offset-withdrawal-exceeds-balance"
     | "conflicting-offset-snapshot"
+    | "conflicting-offset-funding-source"
     | "missing-payment"
     | "credit-limit-exceeded";
   classification: "review" | "blocked";

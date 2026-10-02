@@ -462,6 +462,23 @@ describe("O1: features that need day-by-day interest", () => {
     expect(mocked.updateDebt).not.toHaveBeenCalled();
   });
 
+  it("enables simulated offset funding and labels the multiple-account source selector", async () => {
+    const states: SimulationState[] = [];
+    const offset = offsetOf(2_000_000);
+    const initial = sim({ ...offset, profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE } });
+    const firstRender = wrap(<Harness initial={initial} onState={(s) => states.push(s)} />);
+    const funding = screen.getByRole("switch", { name: /Draw scheduled repayments from offset/ });
+    expect(funding).not.toBeChecked();
+    expect(screen.getByText(/Simulation only.*does not create, move, or match transactions in Actual/)).toBeInTheDocument();
+    fireEvent.click(funding);
+    await waitFor(() => expect(states.at(-1)?.offsets[0].fundScheduledRepayments).toBe(true));
+    firstRender.unmount();
+
+    const second = { ...initial.offsets[0], key: "offset-2", placeholderAccountId: "offset-2", fundScheduledRepayments: false };
+    wrap(<Harness initial={{ ...initial, offsets: [...initial.offsets, second] }} />);
+    expect(screen.getByLabelText("Scheduled repayment funding account")).toBeInTheDocument();
+  });
+
   it("an extra repayment between repayment dates asks; one on a repayment date does not", async () => {
     const states: SimulationState[] = [];
     wrap(<Harness initial={periodicShortLoan()} onState={(s) => states.push(s)} />);

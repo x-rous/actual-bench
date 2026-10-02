@@ -155,6 +155,7 @@ const OFFSET_COLUMNS: Record<keyof OffsetLinkInput, Home> = {
   offsetPercentageBps: on("C", "features", "Offset share"),
   balanceBasis: on("C", "features", "Balance used"),
   capMinor: on("C", "features", "Offset cap"),
+  fundScheduledRepayments: on("C", "features", "Draw scheduled repayments from offset"),
 };
 
 const ASSUMPTION_COLUMNS: Record<keyof AssumptionInput, Home> = {

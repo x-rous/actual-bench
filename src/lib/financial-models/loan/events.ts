@@ -38,7 +38,8 @@ import type { Certainty, EventRef, FutureAssumption, LedgerEvent } from "./model
  */
 
 export const EVENT_ORDER_VERSION_V1 = "event-order@1";
-export const EVENT_ORDER_VERSION = "event-order@2";
+export const EVENT_ORDER_VERSION_V2 = "event-order@2";
+export const EVENT_ORDER_VERSION = "event-order@3";
 
 export type DayStep =
   | "contract-change"

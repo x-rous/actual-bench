@@ -676,6 +676,8 @@ export type DebtOffsetLinkRecord = {
   offsetPercentageBps: number;
   balanceBasis: StoredEnum<OffsetBalanceBasis>;
   capMinor: number | null;
+  /** Added in schema v40; absent in historical revision JSON means false. */
+  fundScheduledRepayments?: boolean;
   createdAt: string;
   updatedAt: string;
 };
