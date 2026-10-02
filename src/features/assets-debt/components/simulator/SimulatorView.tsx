@@ -119,7 +119,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
 
       <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start">
         <aside aria-label="Loan inputs" className="flex w-full shrink-0 flex-col gap-3 lg:w-[380px] lg:border-r lg:border-border lg:pr-4" data-testid="control-rail">
-          <PrimaryInputs sim={sim} change={change} propose={propose} onRateChanges={() => setRateEditor("list")} />
+          <PrimaryInputs sim={sim} change={change} onCalculationMethod={() => setDialog("method")} onRateChanges={() => setRateEditor("list")} />
           <FeatureControls sim={sim} change={change} propose={propose} />
         </aside>
 

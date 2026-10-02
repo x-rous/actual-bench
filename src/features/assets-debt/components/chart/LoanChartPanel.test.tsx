@@ -23,7 +23,13 @@ it("pairs the visual annotations with a currency-neutral text summary", () => {
   render(<LoanChartPanel data={data} view="month" onViewChange={() => {}} digits={2} />);
 
   expect(screen.getByText("Rate change")).toBeInTheDocument();
-  expect(screen.getByText(/Loan balance from Oct ’26 to Nov ’26/)).toHaveTextContent("Paid off on 30 Nov 2026. Rate changes: 15 Nov 2026 to 6.12%.");
+  const accessibleSummary = screen.getByText(/Loan balance from Oct ’26 to Nov ’26/);
+  expect(accessibleSummary).toHaveClass("sr-only");
+  expect(accessibleSummary).toHaveTextContent("Paid off on 30 Nov 2026. Rate changes: 15 Nov 2026 to 6.12%.");
+  fireEvent.click(screen.getByRole("button", { name: "About Balance chart help" }));
+  const help = screen.getByRole("dialog", { name: "Balance chart help" });
+  expect(help).toHaveTextContent("Paid off on 30 Nov 2026. Rate changes: 15 Nov 2026 to 6.12%.");
+  fireEvent.keyDown(help, { key: "Escape" });
   expect(document.body).not.toHaveTextContent(/AUD|\$/);
 
   const balance = screen.getByRole("button", { name: /Loan balance/ });

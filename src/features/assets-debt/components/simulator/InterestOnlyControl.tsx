@@ -6,7 +6,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { addMonths } from "@/lib/financial-models/calendar/dates";
 import type { SimulationState } from "../../lib/simulatorModel";
 import { RECAST_OPTIONS } from "../../lib/vocabulary";
-import { DateField, FeatureSwitch, IntegerField, SelectField } from "../fields";
+import { DateField, SelectField } from "../fields";
+import { formatChartDate } from "../chart/chartMeta";
+import { ConfigurationSection } from "./ConfigurationSection";
 
 type Props = {
   sim: SimulationState;
@@ -16,34 +18,38 @@ type Props = {
 /** Interest-only is an interest convention phase, edited here rather than among repayment dates. */
 export function InterestOnlyControl({ sim, propose }: Props) {
   const [open, setOpen] = useState(false);
-  const months = sim.phases[0] ? monthsBetween(sim.phases[0].from, sim.phases[0].to) : 24;
   const toggle = (on: boolean) => {
     const phases = sim.phases.length ? sim.phases : [{ kind: "interest-only" as const, from: sim.startDate, to: addMonths(sim.startDate, 24), recastAtEnd: "on-rate-change" as const }];
     propose({ ...sim, interestOnly: on, phases });
   };
+  const first = sim.phases[0];
+  const last = sim.phases.at(-1);
+  const summary = first && last
+    ? `${sim.phases.length} ${sim.phases.length === 1 ? "period" : "periods"} · ${formatChartDate(first.from)} – ${formatChartDate(last.to)}`
+    : "No periods configured";
 
   return (
     <>
-      <div className="border-t border-border pt-3">
-        <FeatureSwitch label="Interest-only period" description={sim.interestOnly ? `${sim.phases.length || 1} configured period${sim.phases.length === 1 ? "" : "s"}` : "Pay only interest for a defined period"} checked={sim.interestOnly} onChange={toggle} />
-        {sim.interestOnly ? (
-          <div className="mt-2 grid grid-cols-[1fr_auto] items-end gap-2 pl-2">
-            {sim.phases.length <= 1 ? (
-              <IntegerField label="Interest-only for" suffix="months" min={1} value={months} onChange={(value) => value && propose({ ...sim, phases: [{ ...(sim.phases[0] ?? { kind: "interest-only", from: sim.startDate, recastAtEnd: "on-rate-change" }), to: addMonths(sim.phases[0]?.from ?? sim.startDate, value) }] })} />
-            ) : <span className="text-xs text-muted-foreground">{sim.phases.length} periods</span>}
-            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>Edit</Button>
-          </div>
-        ) : null}
-      </div>
+      <ConfigurationSection
+        title="Interest-only periods"
+        enabled={sim.interestOnly}
+        onEnabledChange={toggle}
+        collapsedSummary="Pay only interest during configured periods"
+        helpDescription="Optional periods where scheduled repayments follow the existing interest-only rules."
+        help={[{ items: [
+          { term: "Periods", description: "Each period has an effective start and end date. The section defaults off; enabling it creates a 24-month period only when none already exists." },
+          { term: "At the end", description: "Controls whether and when the scheduled repayment is recalculated after that period. Existing calculation-method semantics are unchanged." },
+          { term: "Disabled", description: "The periods remain available in the simulator so they can be restored, but they do not affect the projection while this section is off." },
+        ] }]}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="min-w-0 text-xs text-muted-foreground">{summary}</p>
+          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => setOpen(true)}>Edit periods</Button>
+        </div>
+      </ConfigurationSection>
       <InterestOnlyDialog open={open} onClose={() => setOpen(false)} sim={sim} propose={propose} />
     </>
   );
-}
-
-function monthsBetween(from: string, to: string): number {
-  const [fy, fm] = from.split("-").map(Number);
-  const [ty, tm] = to.split("-").map(Number);
-  return Math.max(1, (ty - fy) * 12 + (tm - fm));
 }
 
 function InterestOnlyDialog({ open, onClose, sim, propose }: { open: boolean; onClose: () => void; sim: SimulationState; propose: (next: SimulationState) => void }) {

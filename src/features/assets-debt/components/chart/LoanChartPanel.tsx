@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatAmount, fractionToPercent } from "../../lib/money";
 import { formatChartDate, formatChartPeriod, SERIES_META } from "./chartMeta";
 import type { ChartData, SeriesId } from "../../lib/results";
+import { HelpDialogButton } from "../simulator/ConfigurationSection";
 
 /**
  * The chart's frame: series chips, the monthly/yearly switch and a text
@@ -39,9 +40,19 @@ export function LoanChartPanel({ data, view, onViewChange, digits }: { data: Cha
   return (
     <section aria-labelledby="chart-heading" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="chart-heading" className="text-sm font-semibold">
-          Balance over time
-        </h2>
+        <div className="flex items-center gap-1">
+          <h2 id="chart-heading" className="text-sm font-semibold">Balance over time</h2>
+          <HelpDialogButton
+            title="Balance chart help"
+            description={summary}
+            groups={[{ items: [
+              { term: "Series", description: "Use the legend buttons to show or hide each line. Colour and line style both distinguish the series." },
+              { term: "Rate changes", description: "Amber dotted markers show the effective date and new annual rate." },
+              { term: "Monthly / Yearly", description: "Changes the chart detail only. It does not change the projection or repayment frequency." },
+              { term: "Exact figures", description: "Use the tooltip for a plotted period and the amortization schedule for the underlying event detail." },
+            ] }]}
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Chart controls">
           <div className="flex flex-wrap items-center gap-1" aria-label="Chart legend">
             {data.series.map((id) => {
@@ -81,9 +92,7 @@ export function LoanChartPanel({ data, view, onViewChange, digits }: { data: Cha
         <div role="group" aria-label="Loan balance chart. Focus it and use the arrow keys to step through periods.">
           <LoanProjectionChart data={data} visible={visible} digits={digits} />
         </div>
-        <figcaption id="chart-summary" className="text-[11px] text-muted-foreground">
-          {summary} The schedule below lists every figure.
-        </figcaption>
+        <figcaption id="chart-summary" className="sr-only">{summary} The schedule below lists every figure.</figcaption>
       </figure>
     </section>
   );

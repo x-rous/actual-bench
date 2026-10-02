@@ -2,6 +2,7 @@
 
 import { formatAmount } from "../../lib/money";
 import type { Deltas, Headline } from "../../lib/results";
+import { formatChartDate } from "../chart/chartMeta";
 
 /**
  * The four headline results (P1.3b T210; FR-219). Deltas are in words and
@@ -21,14 +22,22 @@ function payoffDelta(days: number): string {
 
 export function headlineSentence(h: Headline, digits: number, frequencyLabel: string): string {
   const repayment = h.regularRepaymentMinor === null ? "no scheduled repayment" : `repayment ${formatAmount(h.regularRepaymentMinor, digits)} ${frequencyLabel}${h.repaymentChanges ? ", changing over the loan" : ""}`;
-  return `${repayment}; total repayments ${formatAmount(h.totalRepaidMinor, digits)}; total interest ${formatAmount(h.totalInterestMinor, digits)}; ${h.payoffDate ? `paid off ${h.payoffDate}` : "not paid off within the loan term"}.`;
+  return `${repayment}; total repayments ${formatAmount(h.totalRepaidMinor, digits)}; total interest ${formatAmount(h.totalInterestMinor, digits)}; ${h.payoffDate ? `paid off ${formatChartDate(h.payoffDate)}` : "not paid off within the loan term"}.`;
 }
 
-function Tile({ label, value, delta }: { label: string; value: string; delta?: string | null }) {
+function AmountValue({ value }: { value: string }) {
+  const parts = value.match(/^(.*)([.,]\d+)$/);
+  if (!parts) return value;
+  return <>{parts[1]}<span className="text-base">{parts[2]}</span></>;
+}
+
+function Tile({ label, labelDetail, value, delta, amount = false }: { label: string; labelDetail?: string; value: string; delta?: string | null; amount?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-card px-3 py-2">
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className="truncate text-lg font-semibold tabular-nums">{value}</span>
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}{labelDetail ? <span className="normal-case"> ({labelDetail})</span> : null}
+      </span>
+      <span className="truncate text-2xl font-semibold leading-tight tabular-nums">{amount ? <AmountValue value={value} /> : value}</span>
       {delta ? <span className="text-[11px] text-muted-foreground">{delta}</span> : null}
     </div>
   );
@@ -59,16 +68,19 @@ export function HeadlineMetrics({
       <div className="grid grid-cols-2 gap-2 xl:grid-cols-4" aria-busy={calculating || undefined}>
         <Tile
           label="Repayment"
+          labelDetail={frequencyLabel}
           value={headline ? `${money(headline.regularRepaymentMinor)}` : "–"}
-          delta={headline ? [frequencyLabel, headline.repaymentChanges ? "changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
+          delta={headline ? [headline.repaymentChanges ? "Changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
+          amount
         />
-        <Tile label="Total repayments" value={headline ? money(headline.totalRepaidMinor) : "–"} />
+        <Tile label="Total repayments" value={headline ? money(headline.totalRepaidMinor) : "–"} amount />
         <Tile
           label="Total interest"
           value={headline ? money(headline.totalInterestMinor) : "–"}
           delta={deltas && deltas.interestMinor !== 0 ? `${formatAmount(Math.abs(deltas.interestMinor), digits)} ${deltas.interestMinor < 0 ? "less" : "more"} than saved` : null}
+          amount
         />
-        <Tile label="Payoff date" value={headline ? (headline.payoffDate ?? "Not within the term") : "–"} delta={deltas?.payoffDays != null ? payoffDelta(deltas.payoffDays) : null} />
+        <Tile label="Payoff date" value={headline ? (headline.payoffDate ? formatChartDate(headline.payoffDate) : "Not within the term") : "–"} delta={deltas?.payoffDays != null ? payoffDelta(deltas.payoffDays) : null} />
       </div>
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {announce ?? ""}

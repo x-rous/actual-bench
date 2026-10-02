@@ -13,6 +13,7 @@ import {
   CHARGE_FREQUENCY_OPTIONS,
   DAY_COUNT_OPTIONS,
   FINAL_PAYMENT_OPTIONS,
+  labelOf,
   PROFILE_PRESETS,
   RATE_QUOTE_OPTIONS,
   RECAST_OPTIONS,
@@ -52,14 +53,25 @@ const SCALE_OPTIONS = [
   { value: "fixed", label: "A fixed number of places" },
 ];
 
-export function CalculationMethodSummary({ sim }: { sim: SimulationState }) {
+export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState; onOpen: () => void }) {
+  const profile = sim.profile;
+  const accrual = profile.accrual === "daily-simple" ? "Daily interest" : profile.accrual === "daily-compounded" ? "Daily compounded interest" : "Periodic interest";
+  const derivation = profile.repaymentDerivation === "annuity-at-payment-frequency" ? null : labelOf(REPAYMENT_DERIVATION_OPTIONS, profile.repaymentDerivation);
   return (
-    <div className="rounded-md bg-muted/50 px-3 py-2">
+    <button
+      type="button"
+      className="w-full rounded-md bg-muted/50 px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      onClick={onOpen}
+      aria-label="Open calculation method settings"
+    >
       <div className="min-w-0">
         <span className="block text-xs font-medium text-muted-foreground">Calculation method</span>
-        <span className="block truncate text-xs text-foreground">{summarizeProfile(sim.profile)}</span>
+        <span className="block truncate text-xs text-foreground">
+          {profile.accrual === "per-period" ? labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote) : labelOf(DAY_COUNT_OPTIONS, profile.dayCount)} · {labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency)}
+        </span>
+        <span className="block truncate text-[11px] text-muted-foreground">{[accrual, labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation].filter(Boolean).join(" · ")}</span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -76,7 +88,7 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
         side="left"
         className="max-w-full gap-0 overflow-x-hidden overflow-y-auto"
         overlayClassName="bg-transparent supports-backdrop-filter:backdrop-blur-none"
-        style={{ width: "min(820px, 92vw)", maxWidth: "none" }}
+        style={{ width: "min(615px, 92vw)", maxWidth: "none" }}
       >
         <SheetHeader className="pb-2">
           <SheetTitle>Calculation method</SheetTitle>

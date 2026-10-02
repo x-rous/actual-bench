@@ -41,11 +41,9 @@ export function RateChangesDialog({ onClose, sim, propose, initialEditor = "list
             <ul className="flex flex-col divide-y divide-border rounded border border-border">
               {later.map((r) => (
                 <li key={r.key} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                  <span>
-                    From {r.accrualEffectiveFrom}: {fractionToPercent(r.annualRateDecimal)}%
-                    {r.paymentEffectiveFrom ? ` · payment changes ${r.paymentEffectiveFrom}` : ""}
-                    {r.paymentCap ? " · payment capped" : ""}
-                    {r.rateCapDecimal || r.rateFloorDecimal ? " · rate limits" : ""}
+                  <span className="grid min-w-0 grid-cols-[6.5rem_1fr] gap-3 tabular-nums">
+                    <span className="text-muted-foreground">{r.accrualEffectiveFrom}</span>
+                    <span className="font-medium">{fractionToPercent(r.annualRateDecimal)}% p.a.</span>
                   </span>
                   <span className="flex gap-1">
                     <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(r)} aria-label={`Edit the rate from ${r.accrualEffectiveFrom}`}>

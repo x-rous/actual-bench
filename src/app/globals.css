@@ -113,6 +113,8 @@
   --json-punct:   oklch(0.55 0.02 250);
   /* ── Editor overlay ──────────────────────────────────────────────────────── */
   --editor-line-highlight: oklch(0.92 0.005 250 / 0.7);
+  -webkit-font-smoothing: auto !important;
+  -moz-osx-font-smoothing: auto !important;
 }
 
 .dark {

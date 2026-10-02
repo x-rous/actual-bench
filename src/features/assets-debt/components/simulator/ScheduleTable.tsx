@@ -7,6 +7,7 @@ import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { cn } from "@/lib/utils";
 import { formatAmount, fractionToPercent } from "../../lib/money";
 import { aggregateSchedule, paymentNumberCell, principalLabel, rateCell, scheduleColumns, schedulePeriodLabel, type ColumnId, type ScheduleRow, type ScheduleView } from "../../lib/schedule";
+import { HelpDialogButton } from "./ConfigurationSection";
 
 /**
  * The amortization / event schedule (P1.3b T212; FR-224, O2, O5). Columns
@@ -109,7 +110,8 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual; the compiler skips this component, which is what it needs.
   const virtualizer = useVirtualizer({ count: rows.length, getScrollElement: () => scrollRef.current, estimateSize: () => 30, overscan: 12, initialRect: { width: 1000, height: 480 } });
   const template = columns.map((column) => (column === "paymentNumber" ? "minmax(5rem,.55fr)" : column === "period" ? "minmax(12rem,1.4fr)" : "minmax(7rem,1fr)")).join(" ");
-  const alignment = (column: ColumnId) => (column === "period" || column === "event" ? "" : "text-right");
+  const tableMinWidth = 80 + 192 + Math.max(0, columns.length - 2) * 112;
+  const alignment = (column: ColumnId) => (column === "paymentNumber" || column === "period" || column === "event" ? "text-left" : "text-right");
   const emphasis = (column: ColumnId) => {
     if (column === "principal") return "text-emerald-700 dark:text-emerald-400";
     if (column === "interest" || column === "fees") return "text-destructive/80";
@@ -120,9 +122,19 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
   return (
     <section aria-labelledby="schedule-heading" className="flex min-h-0 flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="schedule-heading" className="text-sm font-semibold">
-          Amortization schedule
-        </h2>
+        <div className="flex items-center gap-1">
+          <h2 id="schedule-heading" className="text-sm font-semibold">Amortization schedule</h2>
+          <HelpDialogButton
+            title="Amortization schedule help"
+            description="How to read the schedule and reconcile optional columns."
+            groups={[{ items: [
+              { term: "Payment #", description: "Counts scheduled and final repayments only. Non-payment events have no payment number; monthly and yearly views show the repayment-number range in that period." },
+              { term: principal.label, description: principal.help ?? "The portion of a scheduled repayment allocated to principal under the configured interest-charging method." },
+              { term: "Offset funding", description: "When shown, From offset plus Other funds equals Payment. Payment already includes any cash-paid fees shown on the same row." },
+              { term: "Views", description: "Monthly and Yearly aggregate the same engine events shown in All events. Optional columns appear only when the projection contains those values." },
+            ] }]}
+          />
+        </div>
         <div role="radiogroup" aria-label="Schedule view" className="flex gap-1">
           {VIEWS.map((v) => (
             <button
@@ -138,24 +150,18 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
           ))}
         </div>
       </div>
-      {principal.help ? <p className="text-[11px] text-muted-foreground">{principal.help}</p> : null}
-      {columns.includes("fromOffset") ? (
-        <p className="text-[11px] text-muted-foreground">
-          From offset + Other funds equals Payment. Payment already includes any cash-paid fees shown in this row.
-        </p>
-      ) : null}
-      <div role="table" aria-label={`Schedule, ${VIEWS.find((v) => v.id === view)!.label.toLowerCase()}`} aria-rowcount={rows.length + 1} aria-colcount={columns.length} className="rounded-md border border-border">
-        <div ref={scrollRef} className="max-h-[480px] overflow-auto">
-          <div role="rowgroup" className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
-            <div role="row" aria-rowindex={1} className="grid gap-2 px-3 py-1.5 text-[11px] font-medium" style={{ gridTemplateColumns: template }}>
+      <div role="table" aria-label={`Schedule, ${VIEWS.find((v) => v.id === view)!.label.toLowerCase()}`} aria-rowcount={rows.length + 1} aria-colcount={columns.length} className="isolate overflow-hidden rounded-md border border-border">
+        <div ref={scrollRef} data-testid="schedule-scroll-container" className="relative max-h-[480px] overflow-auto">
+          <div role="rowgroup" className="sticky top-0 z-20 bg-muted">
+            <div role="row" aria-rowindex={1} className="grid gap-2 bg-muted px-3 py-1.5 text-[11px] font-medium" style={{ gridTemplateColumns: template, minWidth: tableMinWidth }}>
               {columns.map((c) => (
-                <span key={c} role="columnheader" className={alignment(c)} title={c === "principal" ? (principal.help ?? undefined) : undefined}>
+                <span key={c} role="columnheader" className={cn("min-w-0", alignment(c))}>
                   {heading[c]}
                 </span>
               ))}
             </div>
           </div>
-          <div role="rowgroup" style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+          <div role="rowgroup" style={{ height: virtualizer.getTotalSize(), minWidth: tableMinWidth, position: "relative" }}>
             {virtualizer.getVirtualItems().map((item) => {
               const r = rows[item.index];
               return (
@@ -163,7 +169,7 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
                   key={r.key}
                   role="row"
                   aria-rowindex={item.index + 2}
-                  className="absolute inset-x-0 grid items-center gap-2 border-b border-border/40 px-3 text-xs tabular-nums"
+                  className="absolute inset-x-0 grid items-center gap-2 border-b border-border/40 bg-background px-3 text-xs tabular-nums"
                   style={{ gridTemplateColumns: template, height: 30, transform: `translateY(${item.start}px)` }}
                 >
                   {columns.map((c) => (

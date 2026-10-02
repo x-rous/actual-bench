@@ -44,7 +44,7 @@ export function TextField({ label, hint, issue, value, onChange, inputMode, plac
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
       <Label className={FIELD_LABEL} htmlFor={id}>{label}</Label>
-      <Input id={id} value={value} inputMode={inputMode} placeholder={placeholder} aria-invalid={issue ? true : undefined} aria-describedby={describedBy(id, hint, issue)} onChange={(e) => onChange(e.target.value)} />
+      <Input id={id} className="text-[13px]" value={value} inputMode={inputMode} placeholder={placeholder} aria-invalid={issue ? true : undefined} aria-describedby={describedBy(id, hint, issue)} onChange={(e) => onChange(e.target.value)} />
       <Described id={id} hint={hint} issue={issue} />
     </div>
   );
@@ -76,7 +76,7 @@ export function MoneyField({ label, hint, issue, valueMinor, minorDigits, onChan
           id={id}
           value={text}
           inputMode="decimal"
-          className={suffix ? "pr-16" : undefined}
+          className={suffix ? "pr-16 text-[13px]" : "text-[13px]"}
           aria-invalid={problem ? true : undefined}
           aria-describedby={describedBy(id, hint, problem)}
           onFocus={() => {
@@ -113,7 +113,7 @@ export function PercentField({ label, hint, issue, valueFraction, onChange, clas
           id={id}
           value={text}
           inputMode="decimal"
-          className="pr-14"
+          className="pr-14 text-[13px]"
           aria-invalid={problem ? true : undefined}
           aria-describedby={describedBy(id, hint, problem)}
           onFocus={onFocus}
@@ -144,6 +144,7 @@ export function IntegerField({ label, hint, issue, value, onChange, min = 0, cla
       <div className="flex items-center gap-1">
         <Input
           id={id}
+          className="text-[13px]"
           value={text}
           inputMode="numeric"
           aria-invalid={problem ? true : undefined}
@@ -171,7 +172,7 @@ export function SelectField({ label, labelAccessory, hint, issue, value, onChang
         <Label className={FIELD_LABEL} id={`${id}-label`}>{label}</Label>
         {labelAccessory ? <span className="text-right text-[11px] text-muted-foreground">{labelAccessory}</span> : null}
       </div>
-      <Select value={value} onValueChange={onChange} options={options} placeholder={placeholder ?? "Choose…"} aria-labelledby={`${id}-label`} id={id} />
+      <Select className="text-[13px]" value={value} onValueChange={onChange} options={options} placeholder={placeholder ?? "Choose…"} aria-labelledby={`${id}-label`} id={id} />
       <Described id={id} hint={hint} issue={issue} />
     </div>
   );
@@ -182,7 +183,7 @@ export function DateField({ label, hint, issue, value, onChange, className }: Co
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
       <Label className={FIELD_LABEL} htmlFor={id}>{label}</Label>
-      <DateInput id={id} value={value} onValueChange={onChange} aria-label={label} aria-invalid={issue ? true : undefined} aria-describedby={describedBy(id, hint, issue)} />
+      <DateInput id={id} inputClassName="text-[13px]" value={value} onValueChange={onChange} aria-label={label} aria-invalid={issue ? true : undefined} aria-describedby={describedBy(id, hint, issue)} />
       <Described id={id} hint={hint} issue={issue} />
     </div>
   );

@@ -150,13 +150,13 @@ const RATE_COLUMNS: Record<keyof RatePeriodInput, Home> = {
 const OFFSET_COLUMNS: Record<keyof OffsetLinkInput, Home> = {
   id: hidden("row identity"),
   actualAccountId: on("I", "tracking", "Offset account"),
-  effectiveFrom: on("C", "features", "Offset from"),
-  effectiveTo: on("C", "features", "Offset until"),
+  effectiveFrom: on("C", "features", "Offset start date"),
+  effectiveTo: on("C", "features", "Offset end date"),
   offsetPercentageBps: on("C", "features", "Offset share"),
   balanceBasis: on("C", "features", "Balance used"),
   capMinor: on("C", "features", "Offset cap"),
   fundScheduledRepayments: on("C", "features", "Draw scheduled repayments from offset"),
-  fundScheduledRepaymentsFrom: on("C", "features", "Start drawing repayments"),
+  fundScheduledRepaymentsFrom: on("C", "features", "Start drawing from"),
 };
 
 const ASSUMPTION_COLUMNS: Record<keyof AssumptionInput, Home> = {

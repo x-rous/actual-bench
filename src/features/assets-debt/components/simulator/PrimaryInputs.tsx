@@ -1,36 +1,20 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { InfoHint } from "@/components/ui/info-hint";
-import { cn } from "@/lib/utils";
 import type { SimulationState } from "../../lib/simulatorModel";
 import { DateField, IntegerField, MoneyField, PercentField, SelectField } from "../fields";
 import { CalculationMethodSummary } from "./CalculationMethodDrawer";
-import { InterestOnlyControl } from "./InterestOnlyControl";
+import { ConfigurationSection } from "./ConfigurationSection";
 
 type Props = {
   sim: SimulationState;
   change: (next: SimulationState) => void;
-  propose: (next: SimulationState) => void;
+  onCalculationMethod: () => void;
   onRateChanges: () => void;
 };
 
-export function ConfigurationSection({ title, help, children, className }: { title: string; help: React.ReactNode; children: React.ReactNode; className?: string }) {
-  return (
-    <fieldset aria-label={title} className={cn("flex min-w-0 flex-col gap-3 rounded-lg border border-border p-4", className)}>
-      <legend className="px-1 text-sm font-semibold">
-        <span className="inline-flex items-center gap-1.5">
-          {title}
-          <InfoHint label={`${title} fields`}>{help}</InfoHint>
-        </span>
-      </legend>
-      {children}
-    </fieldset>
-  );
-}
-
 /** The ordinary modelling path, grouped by contract concept instead of one long field list. */
-export function PrimaryInputs({ sim, change, propose, onRateChanges }: Props) {
+export function PrimaryInputs({ sim, change, onCalculationMethod, onRateChanges }: Props) {
   const years = sim.termMonths === null ? null : Math.floor(sim.termMonths / 12);
   const months = sim.termMonths === null ? null : sim.termMonths % 12;
   const setTerm = (y: number | null, m: number | null) => {
@@ -43,8 +27,14 @@ export function PrimaryInputs({ sim, change, propose, onRateChanges }: Props) {
   return (
     <>
       <ConfigurationSection
-        title="1. Loan"
-        help="Loan type selects a fixed-term loan or line of credit. Loan amount is the opening principal or amount drawn; Years and Months define the term, and Start date is when the loan and its first rate begin."
+        title="Loan"
+        helpDescription="The core contract inputs used to build the loan timeline."
+        help={[{ items: [
+          { term: "Loan type", description: "Defaults to Term loan. Choosing a revolving line of credit changes which repayment fields are available." },
+          { term: "Loan amount", description: "The opening principal, or the amount initially drawn for a line of credit. A new simulator starts with the sample amount 500,000." },
+          { term: "Years and months", description: "The amortization term. A new simulator starts at 20 years; leave both blank only when the selected loan type does not require a fixed term." },
+          { term: "Start date", description: "The date the opening balance and opening interest rate take effect. A new simulator uses today's date." },
+        ] }]}
       >
         <div className="grid grid-cols-2 gap-2">
           <SelectField
@@ -64,16 +54,20 @@ export function PrimaryInputs({ sim, change, propose, onRateChanges }: Props) {
       </ConfigurationSection>
 
       <ConfigurationSection
-        title="2. Interest"
-        help="Interest rate is the opening annual rate. Rate changes schedule later rates, Calculation method summarizes the accrual and posting conventions, and Interest-only period defines any phase where scheduled payments cover interest without amortizing principal."
+        title="Interest Rate"
+        helpDescription="The opening rate and the calculation conventions applied to it."
+        help={[{ items: [
+          { term: "Interest rate", description: "The opening annual rate. A new simulator starts at 5.4% p.a.; it applies until a later rate change takes effect." },
+          { term: "Calculation method", description: "Summarizes the configured day count, accrual, charging and repayment conventions. Use Set calculation method in the top bar to edit them." },
+          { term: "Rate changes", description: "Defaults to none. Effective-dated later rates use the same rate-change editor available from Events." },
+        ] }]}
       >
         <PercentField label="Interest rate" suffix="% p.a." valueFraction={sim.rates[0]?.annualRateDecimal ?? null} onChange={setRate} />
-        <CalculationMethodSummary sim={sim} />
+        <CalculationMethodSummary sim={sim} onOpen={onCalculationMethod} />
         <Button type="button" variant="outline" size="sm" className="justify-between" onClick={onRateChanges}>
           <span>Rate changes <span className="text-muted-foreground">(optional)</span></span>
           <span className="text-xs text-muted-foreground">{laterRates > 0 ? laterRates : "None"}</span>
         </Button>
-        <InterestOnlyControl sim={sim} propose={propose} />
       </ConfigurationSection>
     </>
   );

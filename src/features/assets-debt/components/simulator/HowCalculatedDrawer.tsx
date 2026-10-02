@@ -40,7 +40,11 @@ export function HowCalculatedDrawer({ open, onClose, sim, projection, revision, 
   const engine = projection?.ok ? projection.events[0]?.engineVersions.engine : undefined;
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+      <SheetContent
+        side="right"
+        className="w-full max-w-full overflow-y-auto"
+        style={{ width: "min(806px, 92vw)", maxWidth: "none" }}
+      >
         <SheetHeader>
           <SheetTitle>How this loan is calculated</SheetTitle>
           <SheetDescription>{summarizeProfile(p)}</SheetDescription>
