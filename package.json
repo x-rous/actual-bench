@@ -21,7 +21,7 @@
     "clean": "rm -rf .next .next-build tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@actual-app/api": "26.9.0",
+    "@actual-app/api": "26.10.0",
     "@base-ui/react": "^1.8.0",
     "@hookform/resolvers": "^5.9.1",
     "@sqlite.org/sqlite-wasm": "^3.41.2",

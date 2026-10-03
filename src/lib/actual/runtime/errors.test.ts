@@ -1,7 +1,7 @@
 import { ActualRuntimeError, classifyActualError, toActualRuntimeError } from "./errors";
 
 /**
- * Pins what `@actual-app/api` actually says (26.9.0, and the M0 runs against a
+ * Pins what `@actual-app/api` actually says (26.10.0, and the M0 runs against a
  * real server). An upstream wording or code change fails here first - this
  * file is on the Actual release-review checklist.
  */
