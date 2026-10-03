@@ -97,6 +97,26 @@ export type SyncSourceSplitLine = {
   categoryId: string | null;
   categoryName: string | null;
   notes: string | null;
+  /**
+   * Transaction-level state resolved from the child when present, otherwise
+   * inherited from its split parent. Optional keeps older/custom transports
+   * distinguishable from a transport that positively reports `false`.
+   */
+  cleared?: boolean;
+  reconciled?: boolean;
+  /** Imported provenance resolved from the child, then its parent. */
+  importedId?: string | null;
+  importedPayee?: string | null;
+  /**
+   * The child's own transfer counterpart. Never inherited from the parent:
+   * one child may be a transfer while its siblings are not.
+   */
+  transferId?: string | null;
+  /** Schedule identity resolved from the child, then its parent. */
+  scheduleId?: string | null;
+  /** Explicit structural identity for per-child matching and claims. */
+  isChild?: boolean;
+  parentId?: string | null;
 };
 
 /** A source transaction with the fields Budget File Sync needs. */

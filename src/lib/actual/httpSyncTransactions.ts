@@ -83,7 +83,7 @@ async function loadNameMaps(connection: ConnectionInstance): Promise<NameMaps> {
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-function toSplitLine(raw: RawHttpTransaction, names: NameMaps): SyncSourceSplitLine {
+function toSplitLine(raw: RawHttpTransaction, parent: RawHttpTransaction, names: NameMaps): SyncSourceSplitLine {
   return {
     id: raw.id ?? null,
     amount: num(raw.amount),
@@ -92,6 +92,16 @@ function toSplitLine(raw: RawHttpTransaction, names: NameMaps): SyncSourceSplitL
     categoryId: raw.category ?? null,
     categoryName: raw.category ? names.category.get(raw.category) ?? null : null,
     notes: raw.notes ?? null,
+    cleared: parent.cleared === true || raw.cleared === true,
+    reconciled: parent.reconciled === true || raw.reconciled === true,
+    importedId: raw.imported_id ?? parent.imported_id ?? null,
+    importedPayee: raw.imported_payee ?? parent.imported_payee ?? null,
+    transferId: Object.prototype.hasOwnProperty.call(raw, "transfer_id")
+      ? raw.transfer_id ?? null
+      : undefined,
+    scheduleId: raw.schedule ?? parent.schedule ?? null,
+    isChild: true,
+    parentId: raw.parent_id ?? parent.id,
   };
 }
 
@@ -116,7 +126,7 @@ function toSourceTransaction(raw: RawHttpTransaction, names: NameMaps): SyncSour
     isParent,
     isChild: raw.is_child === true,
     parentId: raw.parent_id ?? null,
-    splitLines: isParent && Array.isArray(raw.subtransactions) ? raw.subtransactions.map((s) => toSplitLine(s, names)) : [],
+    splitLines: isParent && Array.isArray(raw.subtransactions) ? raw.subtransactions.map((s) => toSplitLine(s, raw, names)) : [],
   };
 }
 

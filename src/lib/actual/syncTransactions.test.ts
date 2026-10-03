@@ -195,10 +195,15 @@ describe("listTransactionsForSync (Direct)", () => {
           date: "2026-07-02",
           amount: -3000,
           payee: "p1",
+          cleared: true,
+          reconciled: true,
+          imported_id: "bank-parent",
+          imported_payee: "MARKET CARD 42",
+          schedule: "schedule-1",
           is_parent: true,
           subtransactions: [
-            { id: "s1", account: "acct-src", date: "2026-07-02", amount: -1000, category: "cat-a" },
-            { id: "s2", account: "acct-src", date: "2026-07-02", amount: -2000, category: "cat-b", notes: "soap" },
+            { id: "s1", account: "acct-src", date: "2026-07-02", amount: -1000, category: "cat-a", transfer_id: "counterpart-1", is_child: true, parent_id: "parent" },
+            { id: "s2", account: "acct-src", date: "2026-07-02", amount: -2000, category: "cat-b", notes: "soap", transfer_id: null },
           ],
         },
         // A stray top-level child should be ignored (already inline in parent).
@@ -212,8 +217,20 @@ describe("listTransactionsForSync (Direct)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].isParent).toBe(true);
     expect(rows[0].splitLines).toEqual([
-      { id: "s1", amount: -1000, payeeId: null, payeeName: null, categoryId: "cat-a", categoryName: "Groceries", notes: null },
-      { id: "s2", amount: -2000, payeeId: null, payeeName: null, categoryId: "cat-b", categoryName: "Household", notes: "soap" },
+      {
+        id: "s1", amount: -1000, payeeId: null, payeeName: null,
+        categoryId: "cat-a", categoryName: "Groceries", notes: null,
+        cleared: true, reconciled: true, importedId: "bank-parent",
+        importedPayee: "MARKET CARD 42", transferId: "counterpart-1",
+        scheduleId: "schedule-1", isChild: true, parentId: "parent",
+      },
+      {
+        id: "s2", amount: -2000, payeeId: null, payeeName: null,
+        categoryId: "cat-b", categoryName: "Household", notes: "soap",
+        cleared: true, reconciled: true, importedId: "bank-parent",
+        importedPayee: "MARKET CARD 42", transferId: null,
+        scheduleId: "schedule-1", isChild: true, parentId: "parent",
+      },
     ]);
   });
 });

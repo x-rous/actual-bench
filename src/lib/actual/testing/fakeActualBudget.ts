@@ -37,13 +37,15 @@ export type FakeActualBudget = {
 export function createFakeActualBudget(options: {
   accounts: FakeAccount[];
   payees?: { id: string; name: string }[];
+  /** Existing ledger rows used by read-only transport parity tests. */
+  initialRows?: Row[];
 }): FakeActualBudget {
   const payees: Array<{ id: string; name: string; transfer_acct: string | null }> = [
     ...(options.payees ?? []).map((p) => ({ ...p, transfer_acct: null })),
     // Actual lists transfer payees under the account's name.
     ...options.accounts.map((a) => ({ id: `tp-${a.id}`, name: a.name, transfer_acct: a.id })),
   ];
-  const rows: Row[] = [];
+  const rows: Row[] = (options.initialRows ?? []).map((row) => ({ ...row }));
   const inserts: Array<{ runTransfers: boolean; learnCategories: unknown }> = [];
   let nextId = 1;
 

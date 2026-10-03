@@ -688,6 +688,7 @@ async function loadSyncNameLookup(
 
 function toSyncSplitLine(
   raw: ApiTransaction,
+  parent: ApiTransaction,
   lookup: NameLookup
 ): SyncSourceSplitLine {
   const payeeId = asString(raw.payee) ?? null;
@@ -700,6 +701,16 @@ function toSyncSplitLine(
     categoryId,
     categoryName: categoryId ? lookup.categoryNames.get(categoryId) ?? null : null,
     notes: asString(raw.notes) ?? null,
+    cleared: parent.cleared === true || raw.cleared === true,
+    reconciled: parent.reconciled === true || raw.reconciled === true,
+    importedId: asString(raw.imported_id) ?? asString(parent.imported_id) ?? null,
+    importedPayee: asString(raw.imported_payee) ?? asString(parent.imported_payee) ?? null,
+    transferId: Object.prototype.hasOwnProperty.call(raw, "transfer_id")
+      ? asString(raw.transfer_id) ?? null
+      : undefined,
+    scheduleId: asString(raw.schedule) ?? asString(parent.schedule) ?? null,
+    isChild: true,
+    parentId: asString(raw.parent_id) ?? parent.id,
   };
 }
 
@@ -711,7 +722,7 @@ function toSyncSourceTransaction(
   const categoryId = asString(raw.category) ?? null;
   const isParent = raw.is_parent === true;
   const splitLines = isParent && Array.isArray(raw.subtransactions)
-    ? raw.subtransactions.map((child) => toSyncSplitLine(child, lookup))
+    ? raw.subtransactions.map((child) => toSyncSplitLine(child, raw, lookup))
     : [];
 
   return {

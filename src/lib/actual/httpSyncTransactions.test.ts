@@ -106,7 +106,7 @@ describe("listHttpTransactionsForSync", () => {
       categories: [{ id: "c1", name: "Dining" }],
       transactions: [
         { id: "t1", account: "acct-src", date: "2026-01-05", amount: -500, payee: "p1", category: "c1", notes: "hi", cleared: true, reconciled: false, imported_id: "m1", is_parent: false, is_child: false, parent_id: null },
-        { id: "t2", account: "acct-src", date: "2026-01-06", amount: -800, payee: null, category: null, notes: null, cleared: false, reconciled: false, imported_id: null, is_parent: true, is_child: false, parent_id: null, subtransactions: [{ id: "s1", amount: -300, payee: "p1", category: "c1", notes: "part" }] },
+        { id: "t2", account: "acct-src", date: "2026-01-06", amount: -800, payee: null, category: null, notes: null, cleared: true, reconciled: true, imported_id: "bank-parent", imported_payee: "COFFEE CARD", schedule: "schedule-1", is_parent: true, is_child: false, parent_id: null, subtransactions: [{ id: "s1", amount: -300, payee: "p1", category: "c1", notes: "part", transfer_id: "counterpart-1", is_child: true, parent_id: "t2" }] },
         { id: "t3", account: "acct-src", date: "2026-01-06", amount: -300, payee: null, category: "c1", notes: null, cleared: false, reconciled: false, imported_id: null, is_parent: false, is_child: true, parent_id: "t2" },
       ],
     });
@@ -117,7 +117,12 @@ describe("listHttpTransactionsForSync", () => {
     expect(rows[0]).toMatchObject({ id: "t1", payeeName: "Coffee Bar", categoryName: "Dining", importedId: "m1", cleared: true });
     expect(rows[1]).toMatchObject({ id: "t2", isParent: true });
     expect(rows[1].splitLines).toEqual([
-      expect.objectContaining({ id: "s1", amount: -300, payeeName: "Coffee Bar", categoryName: "Dining" }),
+      expect.objectContaining({
+        id: "s1", amount: -300, payeeName: "Coffee Bar", categoryName: "Dining",
+        cleared: true, reconciled: true, importedId: "bank-parent",
+        importedPayee: "COFFEE CARD", transferId: "counterpart-1",
+        scheduleId: "schedule-1", isChild: true, parentId: "t2",
+      }),
     ]);
   });
 
