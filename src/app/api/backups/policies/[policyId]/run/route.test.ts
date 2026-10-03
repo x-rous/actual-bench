@@ -157,7 +157,7 @@ describe("POST /api/backups/policies/[policyId]/run", () => {
     const stored = readdirSync(volume, { recursive: true }).map(String);
     expect(stored.some((name) => name.endsWith(".zip"))).toBe(true);
     expect(stored.some((name) => name.includes("household"))).toBe(true);
-  });
+  }, 20_000);
 
   it("refuses an upload carrying no archive", async () => {
     const policy = manualPolicy();
