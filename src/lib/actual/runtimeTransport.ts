@@ -1,4 +1,5 @@
 import { normalizeAccount } from "../api/accounts";
+import { normalizeAccountGroup } from "../api/accountGroups";
 import {
   normalizeCategory,
   normalizeCategoryGroup,
@@ -18,6 +19,7 @@ import { normalizeTag } from "../api/tags";
 import type { BrowserApiConnection } from "@/store/connection";
 import type {
   ApiAccount,
+  ApiAccountGroup,
   ApiCategory,
   ApiCategoryGroup,
   ApiPayee,
@@ -27,6 +29,7 @@ import type {
 } from "@/types/api";
 import type {
   Account,
+  AccountGroup,
   Payee,
   Rule,
   Schedule,
@@ -91,6 +94,7 @@ function normalizeDirectAccount(raw: unknown): Account | null {
     name,
     offbudget: asBoolean(raw.offbudget),
     closed: asBoolean(raw.closed),
+    account_group_id: asString(raw.account_group_id) || null,
   } satisfies ApiAccount);
 }
 
@@ -1061,6 +1065,57 @@ async function getBrowserTargetLookupForSync(
   return { payees, importedIdIndex, transactions };
 }
 
+/**
+ * Account-group methods for the Direct runtime. Groups live in the budget file
+ * itself, so they work against any sync server; the only requirement is an
+ * `@actual-app/api` build that has them (26.9+, which Bench pins).
+ */
+function accountGroupMethods(
+  host: ActualRuntimeHost,
+  connection: BrowserApiConnection
+): Pick<
+  ActualBenchTransport,
+  "getAccountGroups" | "createAccountGroup" | "updateAccountGroup" | "deleteAccountGroup"
+> {
+  async function runtimeWithGroups() {
+    const api = await host.getRuntime(connection);
+    if (
+      typeof api.getAccountGroups !== "function" ||
+      typeof api.createAccountGroup !== "function" ||
+      typeof api.updateAccountGroup !== "function" ||
+      typeof api.deleteAccountGroup !== "function"
+    ) {
+      throw new Error("This Actual API build does not support account groups.");
+    }
+    return api as typeof api &
+      Required<Pick<typeof api, "getAccountGroups" | "createAccountGroup" | "updateAccountGroup" | "deleteAccountGroup">>;
+  }
+
+  return {
+    getAccountGroups: async () => {
+      const api = await runtimeWithGroups();
+      return (await api.getAccountGroups())
+        .map((raw) => (isRecord(raw) ? normalizeAccountGroup(raw as ApiAccountGroup) : null))
+        .filter((group): group is AccountGroup => group !== null);
+    },
+    createAccountGroup: async (input) => {
+      const api = await runtimeWithGroups();
+      const id = await api.createAccountGroup({ name: input.name });
+      return { id, name: input.name };
+    },
+    updateAccountGroup: async (id, patch) => {
+      const api = await runtimeWithGroups();
+      const fields: { name?: string } = {};
+      if (patch.name !== undefined) fields.name = patch.name;
+      if (Object.keys(fields).length > 0) await api.updateAccountGroup(id, fields);
+    },
+    deleteAccountGroup: async (id) => {
+      const api = await runtimeWithGroups();
+      await api.deleteAccountGroup(id);
+    },
+  };
+}
+
 export function createActualRuntimeTransport(
   connection: BrowserApiConnection,
   host: ActualRuntimeHost
@@ -1099,6 +1154,7 @@ export function createActualRuntimeTransport(
       const fields: Partial<ApiAccount> = {};
       if (patch.name !== undefined) fields.name = patch.name;
       if (patch.offBudget !== undefined) fields.offbudget = patch.offBudget;
+      if (patch.groupId !== undefined) fields.account_group_id = patch.groupId;
       if (Object.keys(fields).length > 0) await api.updateAccount(id, fields);
       if (patch.closed === true) await api.closeAccount(id);
       if (patch.closed === false) await api.reopenAccount(id);
@@ -1107,6 +1163,7 @@ export function createActualRuntimeTransport(
       const api = await host.getRuntime(connection);
       await api.deleteAccount(id);
     },
+    ...accountGroupMethods(host, connection),
 
     getPayees: async () => {
       const api = await host.getRuntime(connection);

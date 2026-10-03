@@ -5,6 +5,7 @@ import type { BankSyncOutcome } from "./bankSync";
 import type { ConnectionMode } from "@/store/connection";
 import type {
   Account,
+  AccountGroup,
   Category,
   CategoryGroup,
   Payee,
@@ -312,6 +313,18 @@ export interface ActualBenchTransport {
   createAccount(input: Omit<Account, "id">): Promise<Account>;
   updateAccount(id: string, patch: Partial<Omit<Account, "id" | "initialBalance">>): Promise<void>;
   deleteAccount(id: string): Promise<void>;
+
+  /**
+   * Account groups (Actual 26.9+). Optional like `runBankSync`: a transport or
+   * server without them omits the methods or rejects, and the Accounts page
+   * hides every group control. `updateAccount({ groupId })` assigns (a group
+   * id) or un-assigns (`null`) an account.
+   */
+  getAccountGroups?(): Promise<AccountGroup[]>;
+  createAccountGroup?(input: Pick<AccountGroup, "name">): Promise<AccountGroup>;
+  updateAccountGroup?(id: string, patch: Partial<Pick<AccountGroup, "name">>): Promise<void>;
+  /** The server leaves the group's accounts in place, ungrouped. */
+  deleteAccountGroup?(id: string): Promise<void>;
 
   getPayees(): Promise<Payee[]>;
   createPayee(input: Pick<Payee, "name">): Promise<Payee>;

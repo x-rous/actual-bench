@@ -220,3 +220,57 @@ describe("notes", () => {
     expect(updateNote).toHaveBeenCalledWith(id, null);
   });
 });
+
+describe("account groups", () => {
+  it("reads an account's group id, null when absent", async () => {
+    const getAccounts = jest.fn().mockResolvedValue([
+      { id: "a1", name: "Checking", offbudget: false, closed: false, account_group_id: "g1" },
+      { id: "a2", name: "Cash", offbudget: false, closed: false, account_group_id: null },
+      { id: "a3", name: "Old", offbudget: true, closed: false },
+    ]);
+    const accounts = await withRuntime({ getAccounts }).getAccounts();
+    expect(accounts.map((a) => a.groupId)).toEqual(["g1", null, null]);
+  });
+
+  it("lists groups, dropping malformed rows", async () => {
+    const getAccountGroups = jest.fn().mockResolvedValue([{ id: "g1", name: "Everyday" }, { name: "no id" }, null]);
+    const groups = await withRuntime({
+      getAccountGroups,
+      createAccountGroup: jest.fn(),
+      updateAccountGroup: jest.fn(),
+      deleteAccountGroup: jest.fn(),
+    }).getAccountGroups!();
+    expect(groups).toEqual([{ id: "g1", name: "Everyday" }]);
+  });
+
+  it("creates, renames and deletes groups through the runtime", async () => {
+    const stub = {
+      getAccountGroups: jest.fn(),
+      createAccountGroup: jest.fn().mockResolvedValue("g-new"),
+      updateAccountGroup: jest.fn().mockResolvedValue(undefined),
+      deleteAccountGroup: jest.fn().mockResolvedValue(undefined),
+    };
+    const transport = withRuntime(stub);
+    await expect(transport.createAccountGroup!({ name: "Savings" })).resolves.toEqual({ id: "g-new", name: "Savings" });
+    await transport.updateAccountGroup!("g1", { name: "Renamed" });
+    await transport.deleteAccountGroup!("g1");
+    expect(stub.createAccountGroup).toHaveBeenCalledWith({ name: "Savings" });
+    expect(stub.updateAccountGroup).toHaveBeenCalledWith("g1", { name: "Renamed" });
+    expect(stub.deleteAccountGroup).toHaveBeenCalledWith("g1");
+  });
+
+  it("assigns and un-assigns an account with account_group_id", async () => {
+    const updateAccount = jest.fn().mockResolvedValue(undefined);
+    const transport = withRuntime({ updateAccount });
+    await transport.updateAccount("a1", { groupId: "g1" });
+    await transport.updateAccount("a1", { groupId: null });
+    expect(updateAccount).toHaveBeenNthCalledWith(1, "a1", { account_group_id: "g1" });
+    expect(updateAccount).toHaveBeenNthCalledWith(2, "a1", { account_group_id: null });
+  });
+
+  it("refuses with a clear error when the API build has no account groups", async () => {
+    await expect(withRuntime({ getAccounts: jest.fn() }).getAccountGroups!()).rejects.toThrow(
+      /does not support account groups/
+    );
+  });
+});

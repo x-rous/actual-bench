@@ -108,3 +108,18 @@ describe("importAccountsFromCsv", () => {
     expect(result.accounts[0].name).toBe("Smith, John");
   });
 });
+
+describe("group column", () => {
+  it("reads the group name, trimmed, and leaves it off rows without one", () => {
+    const result = importAccountsFromCsv("name,group\nChecking, Everyday \nCash,");
+    if ("error" in result) throw new Error(result.error);
+    expect(result.accounts[0]).toMatchObject({ name: "Checking", groupName: "Everyday" });
+    expect(result.accounts[1]).not.toHaveProperty("groupName");
+  });
+
+  it("still imports the original columns when there is no group column", () => {
+    const result = importAccountsFromCsv("name,offBudget\nChecking,true");
+    if ("error" in result) throw new Error(result.error);
+    expect(result.accounts[0]).toEqual({ name: "Checking", offBudget: true, closed: false });
+  });
+});

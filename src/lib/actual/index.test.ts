@@ -161,8 +161,8 @@ describe("Actual transport factory", () => {
     } as never);
 
     await expect(getTransport(browserConnection).getAccounts()).resolves.toEqual([
-      { id: "account-1", name: "Checking", offBudget: true, closed: false },
-      { id: "account-2", name: "Savings", offBudget: false, closed: true },
+      { id: "account-1", name: "Checking", offBudget: true, closed: false, groupId: null },
+      { id: "account-2", name: "Savings", offBudget: false, closed: true, groupId: null },
     ]);
     expect(mockGetAccounts).not.toHaveBeenCalled();
     expect(mockGetBrowserApiRuntime).toHaveBeenCalledWith(browserConnection);

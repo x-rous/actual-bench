@@ -1,8 +1,11 @@
 import { parseCsvLine, parseBoolean } from "@/lib/csv";
 import type { Account } from "@/types/entities";
 
+/** An imported account. `groupName` is the "group" column; the caller resolves it to a group id. */
+export type ImportedAccount = Omit<Account, "id" | "groupId"> & { groupName?: string };
+
 export type AccountsImportResult = {
-  accounts: Omit<Account, "id">[];
+  accounts: ImportedAccount[];
   skipped: number;
 };
 
@@ -13,7 +16,7 @@ export type AccountsImportError = { error: string };
  * Pure function — does not touch the store. Caller is responsible for staging.
  *
  * Required column: name
- * Optional columns: offBudget, closed
+ * Optional columns: offBudget, closed, group (an account group name)
  */
 export function importAccountsFromCsv(
   text: string
@@ -28,8 +31,9 @@ export function importAccountsFromCsv(
 
   const budgetIdx = headers.indexOf("offbudget");
   const closedIdx = headers.indexOf("closed");
+  const groupIdx = headers.indexOf("group");
 
-  const accounts: Omit<Account, "id">[] = [];
+  const accounts: ImportedAccount[] = [];
   let skipped = 0;
 
   for (let i = 1; i < nonEmpty.length; i++) {
@@ -41,6 +45,7 @@ export function importAccountsFromCsv(
       name,
       offBudget: budgetIdx !== -1 ? parseBoolean(fields[budgetIdx] ?? "") : false,
       closed: closedIdx !== -1 ? parseBoolean(fields[closedIdx] ?? "") : false,
+      ...(groupIdx !== -1 && fields[groupIdx]?.trim() ? { groupName: fields[groupIdx].trim() } : {}),
     });
   }
 

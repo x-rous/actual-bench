@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 type EntityKey =
   | "accounts"
+  | "accountGroups"
   | "payees"
   | "categoryGroups"
   | "categories"
@@ -38,6 +39,7 @@ type EntityMaps = {
 
 const ENTITY_LABELS: Record<EntityKey, string> = {
   accounts: "Accounts",
+  accountGroups: "Account Groups",
   payees: "Payees",
   categoryGroups: "Category Groups",
   categories: "Categories",
@@ -48,6 +50,7 @@ const ENTITY_LABELS: Record<EntityKey, string> = {
 
 const ENTITY_ROUTES: Partial<Record<EntityKey, string>> = {
   accounts: "/accounts",
+  accountGroups: "/accounts",
   payees: "/payees",
   categoryGroups: "/categories",
   categories: "/categories",
@@ -250,6 +253,7 @@ export function DraftPanel() {
   const mergeDependencies   = useStagedStore((s) => s.mergeDependencies);
   const pendingPayeeMerges  = useStagedStore((s) => s.pendingPayeeMerges);
   const accounts          = useStagedStore((s) => s.accounts);
+  const accountGroups     = useStagedStore((s) => s.accountGroups);
   const payees            = useStagedStore((s) => s.payees);
   const categoryGroups    = useStagedStore((s) => s.categoryGroups);
   const categories        = useStagedStore((s) => s.categories);
@@ -260,6 +264,7 @@ export function DraftPanel() {
   const slices = useMemo<Record<EntityKey, StagedMap<BaseEntity>>>(
     () => ({
       accounts:       accounts       as StagedMap<BaseEntity>,
+      accountGroups:  accountGroups  as StagedMap<BaseEntity>,
       payees:         payees         as StagedMap<BaseEntity>,
       categoryGroups: categoryGroups as StagedMap<BaseEntity>,
       categories:     categories     as StagedMap<BaseEntity>,
@@ -267,7 +272,7 @@ export function DraftPanel() {
       schedules:      schedules      as StagedMap<BaseEntity>,
       tags:           tags           as StagedMap<BaseEntity>,
     }),
-    [accounts, payees, categoryGroups, categories, rules, schedules, tags]
+    [accounts, accountGroups, payees, categoryGroups, categories, rules, schedules, tags]
   );
 
   const { errorCount, totalCount } = useMemo(() => {
