@@ -2,7 +2,7 @@
  * What went wrong opening a Direct budget, in words a person can act on
  * (RD-095 M3).
  *
- * `@actual-app/api` 26.9 tags most of these failures with a machine-readable
+ * `@actual-app/api` 26.9+ tags most of these failures with a machine-readable
  * `code` (`withErrorCode`), which is read first. Older builds - and a few
  * paths still - report them with message text only (M0, Appendix B.4), so the
  * text is the fallback. This is the one place that reads either, and it is on

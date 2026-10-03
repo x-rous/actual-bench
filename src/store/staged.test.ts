@@ -10,6 +10,7 @@ import type { Account } from "@/types/entities";
 beforeEach(() => {
   useStagedStore.setState({
     accounts: {},
+    accountGroups: {},
     payees: {},
     categoryGroups: {},
     categories: {},
@@ -595,5 +596,38 @@ describe("selectCanUndo / selectCanRedo", () => {
     st().discardAll();
     expect(selectCanUndo(useStagedStore.getState())).toBe(false);
     expect(selectCanRedo(useStagedStore.getState())).toBe(false);
+  });
+});
+
+describe("account groups", () => {
+  beforeEach(() => useStagedStore.getState().discardAll());
+
+  it("keeps an unsaved rename and unsaved new groups across a refetch", () => {
+    const store = () => useStagedStore.getState();
+    store().loadAccountGroups([{ id: "g1", name: "Everyday" }]);
+    store().stageUpdate("accountGroups", "g1", { name: "Renamed" });
+    store().stageNew("accountGroups", { id: "tmp", name: "Draft" });
+
+    store().loadAccountGroups([{ id: "g1", name: "Everyday" }]);
+
+    expect(store().accountGroups["g1"]).toMatchObject({ isUpdated: true, entity: { name: "Renamed" } });
+    expect(store().accountGroups["tmp"]?.isNew).toBe(true);
+  });
+
+  it("undoes an assignment together with the rest of the draft", () => {
+    const store = () => useStagedStore.getState();
+    store().loadAccounts([{ id: "a1", name: "Checking", offBudget: false, closed: false, groupId: null }]);
+    store().pushUndo();
+    store().stageUpdate("accounts", "a1", { groupId: "g1" });
+    store().undo();
+    expect(store().accounts["a1"]?.entity.groupId).toBeNull();
+  });
+
+  it("counts group changes as pending and clears them on discard", () => {
+    const store = () => useStagedStore.getState();
+    store().stageNew("accountGroups", { id: "tmp", name: "Draft" });
+    expect(selectHasChanges(store())).toBe(true);
+    store().discardAll();
+    expect(selectHasChanges(store())).toBe(false);
   });
 });

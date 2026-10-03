@@ -1,4 +1,10 @@
 import {
+  createAccountGroup,
+  deleteAccountGroup,
+  getAccountGroups,
+  updateAccountGroup,
+} from "../api/accountGroups";
+import {
   createAccount,
   deleteAccount,
   getAccounts,
@@ -103,6 +109,10 @@ export function createHttpApiTransport(
     createAccount: (input) => createAccount(connection, input),
     updateAccount: (id, patch) => updateAccount(connection, id, patch),
     deleteAccount: (id) => deleteAccount(connection, id),
+    getAccountGroups: () => getAccountGroups(connection),
+    createAccountGroup: (input) => createAccountGroup(connection, input),
+    updateAccountGroup: (id, patch) => updateAccountGroup(connection, id, patch),
+    deleteAccountGroup: (id) => deleteAccountGroup(connection, id),
 
     getPayees: () => getPayees(connection),
     createPayee: (input) => createPayee(connection, input),

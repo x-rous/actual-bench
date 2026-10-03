@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { BaseEntity } from "@/types/entities";
 import type {
   Account,
+  AccountGroup,
   Payee,
   CategoryGroup,
   Category,
@@ -79,6 +80,7 @@ function applyRestore<T extends BaseEntity>(
 
 type StagedStoreState = {
   accounts: StagedMap<Account>;
+  accountGroups: StagedMap<AccountGroup>;
   payees: StagedMap<Payee>;
   categoryGroups: StagedMap<CategoryGroup>;
   categories: StagedMap<Category>;
@@ -111,11 +113,12 @@ type StagedStoreSnapshot = Omit<StagedStoreState, "undoStack" | "redoStack" | "m
 // EntityKey must be defined explicitly (not derived from StagedStoreSnapshot) so that
 // the generic entity actions (stageNew, stageUpdate, etc.) do not accidentally accept
 // pendingPayeeMerges as a valid entity-map key.
-type EntityKey = "accounts" | "payees" | "categoryGroups" | "categories" | "rules" | "schedules" | "tags";
+type EntityKey = "accounts" | "accountGroups" | "payees" | "categoryGroups" | "categories" | "rules" | "schedules" | "tags";
 
 type StagedStoreActions = {
   /** Load the server snapshot for an entity type, replacing any existing staged data */
   loadAccounts: (accounts: Account[]) => void;
+  loadAccountGroups: (groups: AccountGroup[]) => void;
   loadPayees: (payees: Payee[]) => void;
   loadCategoryGroups: (groups: CategoryGroup[], categories: Category[]) => void;
   loadCategories: (categories: Category[]) => void;
@@ -188,6 +191,7 @@ type StagedStoreActions = {
 
 type EntityTypeMap = {
   accounts: Account;
+  accountGroups: AccountGroup;
   payees: Payee;
   categoryGroups: CategoryGroup;
   categories: Category;
@@ -200,6 +204,7 @@ type EntityTypeMap = {
 
 const emptySnapshot = (): StagedStoreSnapshot => ({
   accounts: {},
+  accountGroups: {},
   payees: {},
   categoryGroups: {},
   categories: {},
@@ -212,6 +217,7 @@ const emptySnapshot = (): StagedStoreSnapshot => ({
 function snapshot(state: StagedStoreState): StagedStoreSnapshot {
   return {
     accounts: state.accounts,
+    accountGroups: state.accountGroups,
     payees: state.payees,
     categoryGroups: state.categoryGroups,
     categories: state.categories,
@@ -255,6 +261,30 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
       }
 
       return { accounts: newMap };
+    }),
+
+  loadAccountGroups: (groups) =>
+    set((state) => {
+      const serverIds = new Set(groups.map((g) => g.id));
+      const newMap: StagedMap<AccountGroup> = {};
+
+      // Same rule as accounts: a background refetch never discards unsaved edits.
+      for (const g of groups) {
+        const existing = state.accountGroups[g.id];
+        if (existing && (existing.isUpdated || existing.isDeleted)) {
+          newMap[g.id] = existing;
+          continue;
+        }
+        const entry = makeStaged(g);
+        if (existing?.saveError) entry.saveError = existing.saveError;
+        newMap[g.id] = entry;
+      }
+
+      for (const [id, entry] of Object.entries(state.accountGroups)) {
+        if (!serverIds.has(id) && entry.isNew) newMap[id] = entry;
+      }
+
+      return { accountGroups: newMap };
     }),
 
   loadPayees: (payees) =>
@@ -564,6 +594,7 @@ export function selectHasChanges(state: StagedStoreState): boolean {
   if (state.pendingPayeeMerges.length > 0) return true;
   const keys: EntityKey[] = [
     "accounts",
+    "accountGroups",
     "payees",
     "categoryGroups",
     "categories",

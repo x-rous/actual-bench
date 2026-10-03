@@ -315,10 +315,11 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Open and close accounts
 - Inline editing: double-click, Enter, or F2 to edit; Escape to cancel
 - Bulk select with bulk close, reopen, and delete
-- Filter by name, status (open / closed / all), budget type (on / off / all), and whether an account has associated rules
-- Sort by name, status, or budget type; staged (unsaved) rows are kept at the top of the list regardless of selected sort until saved
+- **Account groups** (Actual 26.9+; hidden on a server that does not have them): a **Group** column assigns each account to a group, or to none, from a dropdown that also offers **New group…**. Select several accounts and use **Move to group…** to assign or un-assign them at once. The **Groups** button opens a dialog to create, rename, and delete groups; deleting a group keeps its accounts and shows them as ungrouped, exactly as Actual does. Group names are unique ignoring case. Every group change is staged with the rest of the draft — undoable, listed in the draft panel, and written only on **Save**: new groups are created first, accounts are written next, and group deletes run last. Reordering groups and drag-and-drop are not offered, because Actual's API cannot reorder them
+- Filter by name, status (open / closed / all), budget type (on / off / all), whether an account has associated rules, and group (any, none, or a specific group)
+- Sort by name, status, budget type, or group; staged (unsaved) rows are kept at the top of the list regardless of selected sort until saved
 - Paste tab-separated data directly from Excel or Google Sheets
-- CSV import and export
+- CSV import and export; on a server with account groups the file also carries a `group` column (by name), and importing a name that matches no group stages a new group
 - Duplicate name detection with visual warning
 - Rules count displayed per account — click it to jump to the rules list filtered to that account
 - Every account row has a note button beside the name (filled when a note exists, faint otherwise); click it to read the note (Markdown-rendered) or to add, edit, and clear it inline without leaving the table — note changes save immediately, independent of the staged account edits
@@ -700,7 +701,7 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 
 ### CSV Formats
 
-**Accounts** — columns: `name` (required), `offBudget`, `closed`
+**Accounts** — columns: `name` (required), `offBudget`, `closed`, `group` (optional account group name; created if it does not exist, ignored on a server without account groups)
 
 **Payees** — columns: `name` (required)
 

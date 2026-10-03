@@ -14,7 +14,12 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useAccountBalances } from "../hooks/useAccountBalances";
 import { buildRuleReferenceMap } from "@/lib/referenceCheck";
-import { FilterBar } from "./FilterBar";
+import { FilterBar, ALL_GROUPS } from "./FilterBar";
+import { AccountGroupsDialog } from "./AccountGroupsDialog";
+import { buildGroupOptions } from "./AccountGroupCell";
+import { useAccountGroups } from "../hooks/useAccountGroups";
+import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
+import { NEW_GROUP, NO_GROUP, groupLabel, liveGroups } from "../lib/accountGroups";
 import { AccountsTableRow } from "./AccountsTableRow";
 import type { AccountDeleteIntent } from "./AccountsTableOverlays";
 import type { StatusFilter, BudgetFilter, RulesFilter } from "./FilterBar";
@@ -27,7 +32,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 const NAVIGABLE_COLS = ["name"] as const;
 type NavigableCol = (typeof NAVIGABLE_COLS)[number];
 type AccountRow = StagedEntity<Account>;
-type SortCol = "name" | "offBudget" | "closed";
+type SortCol = "name" | "offBudget" | "closed" | "group";
 type SortDir = "asc" | "desc";
 
 // ─── Sort helpers ──────────────────────────────────────────────────────────────
@@ -59,12 +64,14 @@ export function AccountsTable({
     statusFilter: "all" as StatusFilter,
     budgetFilter: "all" as BudgetFilter,
     rulesFilter: "all" as RulesFilter,
+    groupFilter: ALL_GROUPS as string,
   });
-  const { search, statusFilter, budgetFilter, rulesFilter } = filters;
+  const { search, statusFilter, budgetFilter, rulesFilter, groupFilter } = filters;
   const setSearch       = (v: string)       => setFilters((f) => ({ ...f, search: v }));
   const setStatusFilter = (v: StatusFilter) => setFilters((f) => ({ ...f, statusFilter: v }));
   const setBudgetFilter = (v: BudgetFilter) => setFilters((f) => ({ ...f, budgetFilter: v }));
   const setRulesFilter  = (v: RulesFilter)  => setFilters((f) => ({ ...f, rulesFilter: v }));
+  const setGroupFilter  = (v: string)       => setFilters((f) => ({ ...f, groupFilter: v }));
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -83,6 +90,31 @@ export function AccountsTable({
   const revertEntity = useStagedStore((s) => s.revertEntity);
   const clearSaveError = useStagedStore((s) => s.clearSaveError);
   const pushUndo = useStagedStore((s) => s.pushUndo);
+
+  // ── Account groups ───────────────────────────────────────────────────────────
+  // `groups` is undefined when the server has no account groups: the Group
+  // column, filter and bulk assign are then all hidden.
+  const { supported: groupsSupported } = useAccountGroups();
+  const stagedGroups = useStagedStore((s) => s.accountGroups);
+  const { assignAccounts } = useAccountGroupActions();
+  const allGroups = useMemo(() => liveGroups(stagedGroups), [stagedGroups]);
+  const groups = groupsSupported ? allGroups : undefined;
+  const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
+  const groupAssignOptions = useMemo(() => (groups ? buildGroupOptions(groups) : undefined), [groups]);
+  const groupFilterOptions = useMemo(
+    () =>
+      groups
+        ? [
+            { value: ALL_GROUPS, label: "All groups" },
+            { value: NO_GROUP, label: "No group" },
+            ...groups.map((g) => ({ value: g.id, label: g.name })),
+          ]
+        : undefined,
+    [groups]
+  );
+  // A filter on a group that no longer exists (deleted in this draft) is ignored.
+  const activeGroupFilter =
+    groups && (groupFilter === NO_GROUP || groups.some((g) => g.id === groupFilter)) ? groupFilter : ALL_GROUPS;
 
   // ── Account balances ─────────────────────────────────────────────────────────
   const { data: balances } = useAccountBalances();
@@ -131,6 +163,8 @@ export function AccountsTable({
       if (budgetFilter === "off" && !r.entity.offBudget) continue;
       if (rulesFilter === "with_rules" && !(accountRuleCount.get(r.entity.id) ?? 0)) continue;
       if (rulesFilter === "no_rules"   &&  (accountRuleCount.get(r.entity.id) ?? 0)) continue;
+      if (activeGroupFilter === NO_GROUP && r.entity.groupId && groups?.some((g) => g.id === r.entity.groupId)) continue;
+      if (activeGroupFilter !== ALL_GROUPS && activeGroupFilter !== NO_GROUP && r.entity.groupId !== activeGroupFilter) continue;
       result.push(r);
     }
 
@@ -141,6 +175,11 @@ export function AccountsTable({
       if (!sortCol) return 0;
       let av: string | boolean, bv: string | boolean;
       if (sortCol === "name") { av = a.entity.name.toLowerCase(); bv = b.entity.name.toLowerCase(); }
+      else if (sortCol === "group") {
+        // Ungrouped accounts sort last in ascending order.
+        av = groups && a.entity.groupId ? groupLabel(a.entity.groupId, groups).toLowerCase() : "\uffff";
+        bv = groups && b.entity.groupId ? groupLabel(b.entity.groupId, groups).toLowerCase() : "\uffff";
+      }
       else if (sortCol === "offBudget") { av = a.entity.offBudget; bv = b.entity.offBudget; }
       else { av = a.entity.closed; bv = b.entity.closed; }
       if (av < bv) return sortDir === "asc" ? -1 : 1;
@@ -148,7 +187,7 @@ export function AccountsTable({
       return 0;
     });
     return result;
-  }, [staged, search, statusFilter, budgetFilter, rulesFilter, accountRuleCount, sortCol, sortDir]);
+  }, [staged, search, statusFilter, budgetFilter, rulesFilter, activeGroupFilter, groups, accountRuleCount, sortCol, sortDir]);
 
   const rowIds = useMemo(() => rows.map((row) => row.entity.id), [rows]);
 
@@ -273,6 +312,19 @@ export function AccountsTable({
     }
   }
 
+  function handleAssignGroup(accountId: string, groupId: string | null) {
+    assignAccounts([accountId], groupId);
+  }
+
+  function handleBulkAssignGroup(groupId: string | null | typeof NEW_GROUP) {
+    const ids = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted);
+    if (groupId === NEW_GROUP) {
+      setNewGroupFor(ids);
+      return;
+    }
+    assignAccounts(ids, groupId);
+  }
+
   // ── Paste from Excel / Sheets ─────────────────────────────────────────────────
   function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
     if (editingCell) return; // let the input field handle it
@@ -387,6 +439,7 @@ export function AccountsTable({
   // ── Stable row callbacks ─────────────────────────────────────────────────────
   const handleSelectNameCell = useCallback((id: string) => selectCell(id, "name"), [selectCell]);
   const handleStartEditingName = useCallback((id: string) => startEditing(id, "name"), [startEditing]);
+  const handleRequestNewGroup = useCallback((accountId: string) => setNewGroupFor([accountId]), []);
   const handleClearSaveError = useCallback((id: string) => clearSaveError("accounts", id), [clearSaveError]);
   const handleRevert = useCallback((id: string) => revertEntity("accounts", id), [revertEntity]);
 
@@ -402,6 +455,10 @@ export function AccountsTable({
           statusFilter={statusFilter} onStatusChange={setStatusFilter}
           budgetFilter={budgetFilter} onBudgetChange={setBudgetFilter}
           rulesFilter={rulesFilter} onRulesFilterChange={setRulesFilter}
+          groupFilter={activeGroupFilter} onGroupFilterChange={setGroupFilter}
+          groupFilterOptions={groupFilterOptions}
+          groupAssignOptions={groupAssignOptions}
+          onBulkAssignGroup={handleBulkAssignGroup}
           filteredCount={rows.length} totalCount={totalCount}
           selectedCount={activeSelectedCount}
           onBulkClose={handleBulkClose}
@@ -413,8 +470,8 @@ export function AccountsTable({
         <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-            <span>{search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" ? "No accounts match the current filters." : "No accounts yet."}</span>
-            {(search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all") && (
+            <span>{search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || activeGroupFilter !== ALL_GROUPS ? "No accounts match the current filters." : "No accounts yet."}</span>
+            {(search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || activeGroupFilter !== ALL_GROUPS) && (
               <button
                 className="text-xs underline hover:text-foreground"
                 onClick={clearFilters}
@@ -453,6 +510,22 @@ export function AccountsTable({
                   <th className="w-8 p-0">
                     <span className="sr-only">Notes</span>
                   </th>
+
+                  {groups && (
+                    <th
+                      className="w-44 px-2 py-1.5 text-left"
+                      aria-sort={sortCol === "group" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSort("group")}
+                        className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                      >
+                        Group
+                        <SortIndicator col="group" sortCol={sortCol} sortDir={sortDir} />
+                      </button>
+                    </th>
+                  )}
 
                   <th className="w-32 px-4 py-1.5 text-right">
                     <span className="text-xs font-medium text-muted-foreground">Balance</span>
@@ -511,6 +584,9 @@ export function AccountsTable({
                       hasNote={!row.isNew && accountIdsWithNotes.has(entity.id)}
                       balance={balances?.get(entity.id)}
                       ruleCount={accountRuleCount.get(entity.id) ?? 0}
+                      groups={groups}
+                      onAssignGroup={handleAssignGroup}
+                      onRequestNewGroup={handleRequestNewGroup}
                       onToggleSelect={toggleSelectRow}
                       onSelectNameCell={handleSelectNameCell}
                       onStartEditingName={handleStartEditingName}
@@ -535,6 +611,14 @@ export function AccountsTable({
 
         <TableBulkAddBar bulkCount={bulkCount} onBulkCountChange={setBulkCount} onAdd={(n) => addRows(n, true)} />
       </div>
+
+      <AccountGroupsDialog
+        open={newGroupFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setNewGroupFor(null);
+        }}
+        assignAccountIds={newGroupFor ?? undefined}
+      />
     </>
   );
 }

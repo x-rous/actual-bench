@@ -1,4 +1,4 @@
-import { parseCsvLine, csvField, parseBoolean } from "./csv";
+import { parseCsvLine, csvField, csvCell, unguardCsvCell, parseBoolean } from "./csv";
 
 describe("parseCsvLine", () => {
   it("parses simple fields", () => {
@@ -80,5 +80,39 @@ describe("parseBoolean", () => {
   it("trims whitespace before parsing", () => {
     expect(parseBoolean("  true  ")).toBe(true);
     expect(parseBoolean("  false  ")).toBe(false);
+  });
+});
+
+describe("csvCell / unguardCsvCell", () => {
+  it("guards a value that could run as a formula, and leaves numbers and plain text alone", () => {
+    expect(csvCell("=SUM(A1)")).toBe("'=SUM(A1)");
+    expect(csvCell("+1")).toBe("'+1");
+    expect(csvCell("@user")).toBe("'@user");
+    expect(csvCell("-300.00")).toBe("-300.00");
+    expect(csvCell("Savings")).toBe("Savings");
+    expect(csvCell("it's fine")).toBe("it's fine");
+  });
+
+  it.each([
+    "=SUM(A1)",
+    "+1 plan",
+    "@home",
+    "-dash name",
+    "'=already quoted",
+    "''=two quotes",
+    "'plain apostrophe",
+    "it's fine",
+    "Savings, \"main\"",
+    "-300.00",
+    "",
+  ])("round-trips %j through csvCell, the CSV parser and unguardCsvCell", (value) => {
+    const cell = csvCell(value);
+    const parsed = parseCsvLine(cell)[0] ?? "";
+    expect(unguardCsvCell(parsed)).toBe(value);
+  });
+
+  it("leaves an apostrophe the person typed alone", () => {
+    expect(unguardCsvCell("'plain")).toBe("'plain");
+    expect(unguardCsvCell("rock 'n' roll")).toBe("rock 'n' roll");
   });
 });

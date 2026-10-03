@@ -16,7 +16,8 @@ import { EntityNoteButton } from "@/components/ui/entity-note-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Account } from "@/types/entities";
+import type { Account, AccountGroup } from "@/types/entities";
+import { AccountGroupCell } from "./AccountGroupCell";
 import type { StagedEntity } from "@/types/staged";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -33,6 +34,10 @@ type AccountsTableRowProps = {
   hasNote: boolean;
   balance?: number;
   ruleCount: number;
+  /** Live groups, or undefined when the server has no account groups (the Group column is hidden). */
+  groups?: AccountGroup[];
+  onAssignGroup: (accountId: string, groupId: string | null) => void;
+  onRequestNewGroup: (accountId: string) => void;
   onToggleSelect: (id: string, checked: boolean) => void;
   onSelectNameCell: (id: string) => void;
   onStartEditingName: (id: string) => void;
@@ -105,6 +110,9 @@ function AccountsTableRowComponent({
   hasNote,
   balance,
   ruleCount,
+  groups,
+  onAssignGroup,
+  onRequestNewGroup,
   onToggleSelect,
   onSelectNameCell,
   onStartEditingName,
@@ -217,6 +225,20 @@ function AccountsTableRowComponent({
           />
         )}
       </td>
+
+      {groups && (
+        <td className="w-44 px-2 py-0.5">
+          <AccountGroupCell
+            accountId={entity.id}
+            accountName={entity.name}
+            groupId={entity.groupId}
+            groups={groups}
+            disabled={isDeleted}
+            onAssign={onAssignGroup}
+            onRequestNewGroup={onRequestNewGroup}
+          />
+        </td>
+      )}
 
       <td className="w-32 px-4 py-0.5 text-right tabular-nums">
         {isNew ? (
@@ -373,6 +395,7 @@ function areEqual(prev: AccountsTableRowProps, next: AccountsTableRowProps) {
     prev.hasNote === next.hasNote &&
     prev.balance === next.balance &&
     prev.ruleCount === next.ruleCount &&
+    prev.groups === next.groups &&
     prev.isAnotherCellEditing === next.isAnotherCellEditing
   );
 }

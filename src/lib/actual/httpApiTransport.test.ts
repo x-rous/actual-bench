@@ -316,3 +316,56 @@ describe("rule amounts cross the wire in minor units", () => {
     expect(body).toContain("500");
   });
 });
+
+describe("account groups", () => {
+  it("reads accounts with their group id, null when ungrouped or absent", async () => {
+    respond = () => ({
+      json: {
+        data: [
+          { id: "a1", name: "Checking", offbudget: false, closed: false, account_group_id: "g1" },
+          { id: "a2", name: "Cash", offbudget: false, closed: false, account_group_id: null },
+          { id: "a3", name: "Old", offbudget: true, closed: false },
+        ],
+      },
+    });
+    const accounts = await transport().getAccounts();
+    expect(accounts.map((a) => a.groupId)).toEqual(["g1", null, null]);
+  });
+
+  it("lists groups, dropping rows without an id", async () => {
+    respond = () => ({ json: { data: [{ id: "g1", name: "Everyday" }, { name: "No id" }] } });
+    await expect(transport().getAccountGroups!()).resolves.toEqual([{ id: "g1", name: "Everyday" }]);
+    expect(only().url).toBe("https://actual.example.com/v1/budgets/budget-abc/accountgroups");
+  });
+
+  it("creates a group under the account_group key and returns the new id", async () => {
+    respond = () => ({ json: { data: "new-id" } });
+    await expect(transport().createAccountGroup!({ name: "Savings" })).resolves.toEqual({
+      id: "new-id",
+      name: "Savings",
+    });
+    expect(only()).toMatchObject({ method: "POST", body: { account_group: { name: "Savings" } } });
+  });
+
+  it("renames and deletes a group by id", async () => {
+    await transport().updateAccountGroup!("g1", { name: "Renamed" });
+    await transport().deleteAccountGroup!("g1");
+    expect(calls.map((c) => [c.method, c.url.split("/budget-abc")[1]])).toEqual([
+      ["PATCH", "/accountgroups/g1"],
+      ["DELETE", "/accountgroups/g1"],
+    ]);
+    expect(calls[0].body).toEqual({ account_group: { name: "Renamed" } });
+  });
+
+  it("assigns and un-assigns an account through account_group_id", async () => {
+    await transport().updateAccount("a1", { groupId: "g1" });
+    await transport().updateAccount("a1", { groupId: null });
+    expect(calls[0].body).toEqual({ account: { account_group_id: "g1" } });
+    expect(calls[1].body).toEqual({ account: { account_group_id: null } });
+  });
+
+  it("leaves the group out of an account patch that does not mention it", async () => {
+    await transport().updateAccount("a1", { name: "Renamed" });
+    expect(only().body).toEqual({ account: { name: "Renamed" } });
+  });
+});

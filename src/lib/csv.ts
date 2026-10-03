@@ -62,12 +62,26 @@ export const CSV_MAX_BYTES = 5 * 1024 * 1024;
  *
  * Genuine numbers are left alone: `-300.00` is a negative amount, not an
  * attack, and guarding it would stop the numeric columns parsing.
+ *
+ * The guard is reversible with `unguardCsvCell`. A value that already starts
+ * with apostrophes followed by a formula character (`'=x`) is guarded too, so
+ * the decoder can tell "an apostrophe we added" from "an apostrophe the person
+ * typed" and a value survives export then import unchanged.
  */
 export function csvCell(value: unknown): string {
   const s = value == null ? "" : String(value);
   const isNumber = /^-?\d+(\.\d+)?$/.test(s);
-  const guarded = !isNumber && /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  const guarded = !isNumber && /^'*[=+\-@\t\r]/.test(s) ? `'${s}` : s;
   return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
+}
+
+/**
+ * Undo `csvCell`'s formula guard on a cell that has already been unquoted
+ * (`parseCsvLine` does that): drops the one apostrophe `csvCell` added, and
+ * leaves any other leading apostrophe alone.
+ */
+export function unguardCsvCell(value: string): string {
+  return /^'+[=+\-@\t\r]/.test(value) ? value.slice(1) : value;
 }
 
 /** Rows to a CSV document, CRLF separated as the format expects. */

@@ -23,6 +23,8 @@ export function normalizeAccount(raw: ApiAccount): Account {
     name: raw.name,
     offBudget: raw.offbudget,
     closed: raw.closed,
+    // Absent on servers without account groups; null/absent both mean ungrouped.
+    groupId: raw.account_group_id ?? null,
   };
 }
 
@@ -76,6 +78,8 @@ export async function updateAccount(
   if (patch.name !== undefined) fields.name = patch.name;
   if (patch.offBudget !== undefined) fields.offbudget = patch.offBudget;
   if (patch.closed !== undefined) fields.closed = patch.closed;
+  // `null` clears the group; `undefined` leaves it untouched.
+  if (patch.groupId !== undefined) fields.account_group_id = patch.groupId;
 
   // The API expects the payload wrapped in an "account" key
   await apiRequest<void>(connection, `/accounts/${id}`, {

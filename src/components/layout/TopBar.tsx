@@ -275,6 +275,7 @@ export function TopBar() {
     return countStagedRisk({
       slices: [
         state.accounts,
+        state.accountGroups,
         state.payees,
         state.categoryGroups,
         state.categories,

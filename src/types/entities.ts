@@ -17,6 +17,19 @@ export type Account = BaseEntity & {
   closed: boolean;
   /** Whole-currency-unit balance to seed on creation. Create-time only — never returned by the API. */
   initialBalance?: number;
+  /**
+   * ID of the account group this account belongs to (from API: account_group_id).
+   * `null` or absent means ungrouped. Only populated when the server supports
+   * account groups (Actual 26.9+).
+   */
+  groupId?: string | null;
+};
+
+// ─── Account Group ───────────────────────────────────────────────────────────
+
+/** A single-level, named grouping of accounts. Order is the server's list order. */
+export type AccountGroup = BaseEntity & {
+  name: string;
 };
 
 // ─── Payee ───────────────────────────────────────────────────────────────────

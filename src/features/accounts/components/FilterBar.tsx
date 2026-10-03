@@ -3,10 +3,16 @@
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 import { SearchInput } from "@/components/ui/search-input";
+import { Select } from "@/components/ui/select";
+import type { SelectOption } from "@/components/ui/select";
+import { NEW_GROUP, NO_GROUP } from "../lib/accountGroups";
 
 export type StatusFilter = "all" | "open" | "closed";
 export type BudgetFilter = "all" | "on" | "off";
 export type RulesFilter = "all" | "with_rules" | "no_rules";
+
+/** Group filter value for "any group"; NO_GROUP and group ids are the other values. */
+export const ALL_GROUPS = "all";
 
 export const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -35,6 +41,11 @@ export function FilterBar({
   onBudgetChange,
   rulesFilter,
   onRulesFilterChange,
+  groupFilter,
+  onGroupFilterChange,
+  groupFilterOptions,
+  groupAssignOptions,
+  onBulkAssignGroup,
   filteredCount,
   totalCount,
   selectedCount,
@@ -51,6 +62,13 @@ export function FilterBar({
   onBudgetChange: (v: BudgetFilter) => void;
   rulesFilter: RulesFilter;
   onRulesFilterChange: (v: RulesFilter) => void;
+  /** Group filter and bulk assign are shown only when these options are provided (server has groups). */
+  groupFilter: string;
+  onGroupFilterChange: (v: string) => void;
+  groupFilterOptions?: SelectOption[];
+  groupAssignOptions?: SelectOption[];
+  /** `groupId` is a group id, NO_GROUP-resolved `null`, or NEW_GROUP to open the new-group dialog. */
+  onBulkAssignGroup: (groupId: string | null | typeof NEW_GROUP) => void;
   filteredCount: number;
   totalCount: number;
   selectedCount: number;
@@ -59,7 +77,8 @@ export function FilterBar({
   onBulkDelete: () => void;
   onDeselect: () => void;
 }) {
-  const hasFilters = search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all";
+  const hasFilters =
+    search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || groupFilter !== ALL_GROUPS;
 
   if (selectedCount > 0) {
     return (
@@ -71,6 +90,21 @@ export function FilterBar({
         <Button size="xs" variant="outline" onClick={onBulkReopen}>
           Reopen All
         </Button>
+        {groupAssignOptions && (
+          <div className="w-40">
+            <Select
+              size="sm"
+              value=""
+              placeholder="Move to group…"
+              aria-label="Move selected accounts to a group"
+              options={groupAssignOptions}
+              onValueChange={(next) => {
+                if (next === NEW_GROUP) onBulkAssignGroup(NEW_GROUP);
+                else onBulkAssignGroup(next === "" || next === NO_GROUP ? null : next);
+              }}
+            />
+          </div>
+        )}
         <Button size="xs" variant="destructive" onClick={onBulkDelete}>
           Delete
         </Button>
@@ -95,6 +129,17 @@ export function FilterBar({
       <PillGroup options={STATUS_OPTIONS} value={statusFilter} onChange={onStatusChange} />
       <PillGroup options={BUDGET_OPTIONS} value={budgetFilter} onChange={onBudgetChange} />
       <PillGroup options={RULES_OPTIONS} value={rulesFilter} onChange={onRulesFilterChange} />
+      {groupFilterOptions && (
+        <div className="w-40">
+          <Select
+            size="sm"
+            value={groupFilter}
+            aria-label="Filter by account group"
+            options={groupFilterOptions}
+            onValueChange={onGroupFilterChange}
+          />
+        </div>
+      )}
 
       {hasFilters && (
         <button
@@ -103,6 +148,7 @@ export function FilterBar({
             onStatusChange("all");
             onBudgetChange("all");
             onRulesFilterChange("all");
+            onGroupFilterChange(ALL_GROUPS);
           }}
           className="text-xs text-muted-foreground underline hover:text-foreground"
         >

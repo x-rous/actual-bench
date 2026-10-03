@@ -1,5 +1,5 @@
 import type { BudgetDiagnostic, MetadataJson } from "../types";
-import { EXPECTED_COLUMNS, EXPECTED_TABLES, EXPECTED_VIEWS } from "./expectedSchema";
+import { EXPECTED_COLUMNS, EXPECTED_TABLES, EXPECTED_VIEWS, OPTIONAL_COLUMNS } from "./expectedSchema";
 import { RELATIONSHIPS } from "./relationshipMap";
 
 export type DiagnosticDb = {
@@ -91,6 +91,21 @@ function sqliteChecks(db: DiagnosticDb): BudgetDiagnostic[] {
   return findings;
 }
 
+/** Ids of the migrations the budget file says it has run; empty when it cannot be read. */
+function readAppliedMigrations(db: DiagnosticDb): Set<number> {
+  if (!db.objectExists("__migrations__", "table")) return new Set();
+  try {
+    return new Set(
+      db
+        .selectRows<{ id: unknown }>("SELECT id FROM __migrations__")
+        .map((row) => Number(row.id))
+        .filter((id) => Number.isFinite(id))
+    );
+  } catch {
+    return new Set();
+  }
+}
+
 function schemaChecks(db: DiagnosticDb): BudgetDiagnostic[] {
   const findings: BudgetDiagnostic[] = [];
 
@@ -148,6 +163,27 @@ function schemaChecks(db: DiagnosticDb): BudgetDiagnostic[] {
         severity: "warning",
         title: "Expected columns are missing",
         message: `${object} is missing ${missing.length} expected column${missing.length === 1 ? "" : "s"}.`,
+        table: object,
+        details: missing,
+      });
+    }
+  }
+
+  // Columns added by newer migrations: expected only where the budget records
+  // having run the migration, so an older, unmigrated budget is not flagged.
+  const appliedMigrations = readAppliedMigrations(db);
+  for (const [object, optional] of Object.entries(OPTIONAL_COLUMNS)) {
+    if (!db.objectExists(object)) continue;
+    const actual = new Set(db.getColumns(object));
+    const missing = optional
+      .filter((entry) => appliedMigrations.has(entry.migration) && !actual.has(entry.column))
+      .map((entry) => entry.column);
+    if (missing.length > 0) {
+      findings.push({
+        code: "SCHEMA_MISSING_COLUMNS",
+        severity: "warning",
+        title: "Expected columns are missing",
+        message: `${object} is missing ${missing.length} column${missing.length === 1 ? "" : "s"} that applied migrations add.`,
         table: object,
         details: missing,
       });

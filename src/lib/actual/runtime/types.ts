@@ -1,5 +1,6 @@
 import type {
   ApiAccount,
+  ApiAccountGroup,
   ApiCategory,
   ApiCategoryGroup,
   ApiPayee,
@@ -117,6 +118,11 @@ export type ActualApi = {
   closeAccount(accountId: string): Promise<void>;
   reopenAccount(accountId: string): Promise<void>;
   deleteAccount(accountId: string): Promise<void>;
+  /** Account groups (Actual 26.9+); optional so an older API build degrades gracefully. */
+  getAccountGroups?(): Promise<ApiAccountGroup[]>;
+  createAccountGroup?(group: { name: string }): Promise<string>;
+  updateAccountGroup?(id: string, fields: { name?: string }): Promise<void>;
+  deleteAccountGroup?(id: string): Promise<void>;
   getAccountBalance(accountId: string): Promise<number>;
   getCategoryGroups(options?: { hidden?: boolean }): Promise<ApiCategoryGroup[]>;
   createCategoryGroup(group: Omit<ApiCategoryGroup, "id">): Promise<string>;

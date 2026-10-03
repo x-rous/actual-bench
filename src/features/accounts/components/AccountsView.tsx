@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, Download, Upload, RefreshCw, Landmark } from "lucide-react";
+import { Plus, Download, Upload, RefreshCw, Landmark, FolderTree } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -18,7 +18,11 @@ import type { AccountFormValues } from "../schemas/account.schema";
 import dynamic from "next/dynamic";
 import type { RuleSeed } from "@/features/rules/components/RuleDrawer";
 import { AccountsTableOverlays } from "./AccountsTableOverlays";
+import { AccountGroupsDialog } from "./AccountGroupsDialog";
+import { useAccountGroups } from "../hooks/useAccountGroups";
 import type { AccountDeleteIntent } from "./AccountsTableOverlays";
+import { liveGroups } from "../lib/accountGroups";
+import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { exportAccountsToCsv } from "../csv/accountsCsvExport";
 import { importAccountsFromCsv } from "../csv/accountsCsvImport";
 
@@ -35,11 +39,14 @@ export function AccountsView() {
   const [formDrawerOpen, setFormDrawerOpen] = useState(false);
   const [deleteIntent, setDeleteIntent] = useState<AccountDeleteIntent | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
+  const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoading, isError, error, refetch } = useAccounts();
   const { refetch: refetchBalances, isFetching: isRefreshingBalances } = useAccountBalances();
   const { supported: bankSyncSupported, syncBanks, isSyncing } = useBankSync();
+  const { supported: groupsSupported } = useAccountGroups();
+  const { createGroup } = useAccountGroupActions();
 
   const staged = useStagedStore((s) => s.accounts);
   const stageNew = useStagedStore((s) => s.stageNew);
@@ -78,7 +85,10 @@ export function AccountsView() {
   }
 
   function handleExportCsv() {
-    const csv = exportAccountsToCsv(staged);
+    const csv = exportAccountsToCsv(
+      staged,
+      groupsSupported ? liveGroups(useStagedStore.getState().accountGroups) : undefined
+    );
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -110,8 +120,42 @@ export function AccountsView() {
       if ("error" in result) { toast.error(result.error); return; }
 
       pushUndo();
-      for (const account of result.accounts) {
-        stageNew("accounts", { id: generateId(), ...account });
+      // Resolve the "group" column: reuse a live group of that name (ignoring
+      // case) or stage a new one. Without server support the column is ignored.
+      const groupIdByName = new Map<string, string>();
+      for (const group of liveGroups(useStagedStore.getState().accountGroups)) {
+        groupIdByName.set(group.name.trim().toLowerCase(), group.id);
+      }
+      let ignoredGroups = false;
+      const rejectedGroups: string[] = [];
+      for (const { groupName, ...account } of result.accounts) {
+        let groupId: string | null = null;
+        if (groupName) {
+          if (!groupsSupported) {
+            ignoredGroups = true;
+          } else {
+            const key = groupName.toLowerCase();
+            let id = groupIdByName.get(key);
+            if (!id) {
+              const created = createGroup(groupName, [], false);
+              if ("id" in created) {
+                id = created.id;
+                groupIdByName.set(key, id);
+              } else if (!rejectedGroups.includes(groupName)) {
+                // e.g. a name over the length limit: the account is still imported, ungrouped.
+                rejectedGroups.push(groupName);
+              }
+            }
+            groupId = id ?? null;
+          }
+        }
+        stageNew("accounts", { id: generateId(), ...account, ...(groupId ? { groupId } : {}) });
+      }
+      if (ignoredGroups) toast.info("The group column was ignored: this server has no account groups.");
+      if (rejectedGroups.length > 0) {
+        const shown = rejectedGroups.slice(0, 3).map((name) => `"${name.length > 40 ? `${name.slice(0, 40)}…` : name}"`);
+        const more = rejectedGroups.length > shown.length ? ` and ${rejectedGroups.length - shown.length} more` : "";
+        toast.warning(`Imported without a group because the group name is not valid: ${shown.join(", ")}${more}.`);
       }
 
       const imported = result.accounts.length;
@@ -170,6 +214,17 @@ export function AccountsView() {
             <RefreshCw className={cn(isRefreshingBalances && "animate-spin")} />
             Refresh
           </Button>
+          {groupsSupported && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setGroupsDialogOpen(true)}
+              title="Create, rename and delete account groups"
+            >
+              <FolderTree />
+              Groups
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
             <Download />
             Import
@@ -203,6 +258,8 @@ export function AccountsView() {
         onOpenChange={setFormDrawerOpen}
         onSubmit={handleCreateAccount}
       />
+
+      <AccountGroupsDialog open={groupsDialogOpen} onOpenChange={setGroupsDialogOpen} />
 
       <AccountsTableOverlays
         deleteIntent={deleteIntent}
