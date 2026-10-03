@@ -46,17 +46,25 @@ export const EXPECTED_TABLES = [
 export const OPTIONAL_TABLES = ["account_groups", "cleanup_groups", "messages_pending"] as const;
 
 /**
- * Columns added to existing tables and views by recent releases, for the same
- * reason: not required, so an older budget is not flagged for lacking them.
+ * Columns added to existing tables by recent releases, with the id of the
+ * Actual migration that adds each one. A budget not yet migrated by an Actual
+ * that has the migration legitimately lacks the column, so it is expected only
+ * once the budget's `__migrations__` lists that id - then a missing column is a
+ * real finding. (View columns added the same way are not listed: a view is
+ * recreated by several migrations, so none of them proves a column.)
  */
-export const OPTIONAL_COLUMNS: Record<string, readonly string[]> = {
-  accounts: ["bank_sync_status", "account_group_id"],
-  categories: ["cleanup_def"],
-  custom_reports: ["show_trend_lines"],
-  schedules: ["custom_upcoming_length", "sort_order"],
-  tags: ["hidden"],
-  v_categories: ["cleanup_def"],
-  v_schedules: ["custom_upcoming_length", "sort_order", "_has_splits"],
+export const OPTIONAL_COLUMNS: Record<string, readonly { column: string; migration: number }[]> = {
+  accounts: [
+    { column: "bank_sync_status", migration: 1780606215000 },
+    { column: "account_group_id", migration: 1787013118115 },
+  ],
+  categories: [{ column: "cleanup_def", migration: 1778510362740 }],
+  custom_reports: [{ column: "show_trend_lines", migration: 1780099200000 }],
+  schedules: [
+    { column: "custom_upcoming_length", migration: 1769000000000 },
+    { column: "sort_order", migration: 1783004650757 },
+  ],
+  tags: [{ column: "hidden", migration: 1780327681000 }],
 };
 
 export const EXPECTED_VIEWS = [

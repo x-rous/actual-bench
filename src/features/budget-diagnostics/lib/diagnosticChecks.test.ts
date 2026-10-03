@@ -42,6 +42,9 @@ class FakeDiagnosticDb implements DiagnosticDb {
 
   selectRows<T extends Row>(sql: string): T[] {
     if (sql === "PRAGMA foreign_key_check") return [];
+    if (sql === "SELECT id FROM __migrations__") {
+      return (this.objects.get("__migrations__")?.rows ?? []).map((row) => ({ id: row.id })) as unknown as T[];
+    }
     if (sql === "SELECT id FROM notes") {
       return (this.objects.get("notes")?.rows ?? []).map((row) => ({ id: row.id })) as unknown as T[];
     }
@@ -200,6 +203,36 @@ function relationshipFindings(db: FakeDiagnosticDb) {
 }
 
 describe("diagnosticChecks", () => {
+  describe("columns added by newer migrations", () => {
+    const missingColumnFindings = (db: FakeDiagnosticDb) =>
+      runDiagnosticChecks(db, FULL_METADATA).filter(
+        (finding) => finding.code === "SCHEMA_MISSING_COLUMNS" && finding.table === "accounts"
+      );
+
+    function accountsWithoutGroupColumn(migrationIds: number[]) {
+      const db = buildDb();
+      db.addObject("accounts", "table", EXPECTED_COLUMNS.accounts, [{ id: "account-1" }]);
+      db.addObject("__migrations__", "table", ["id"], migrationIds.map((id) => ({ id })));
+      return db;
+    }
+
+    it("does not flag a budget that has not run the migration yet", () => {
+      expect(missingColumnFindings(accountsWithoutGroupColumn([1768872504000]))).toEqual([]);
+    });
+
+    it("flags a budget that recorded the migration but lacks the column", () => {
+      const findings = missingColumnFindings(accountsWithoutGroupColumn([1787013118115]));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({ severity: "warning", details: ["account_group_id"] });
+    });
+
+    it("accepts a budget that has the column once the migration ran", () => {
+      const db = accountsWithoutGroupColumn([1787013118115]);
+      db.addObject("accounts", "table", [...EXPECTED_COLUMNS.accounts, "account_group_id"], [{ id: "account-1" }]);
+      expect(missingColumnFindings(db)).toEqual([]);
+    });
+  });
+
   it("does not produce errors for a clean schema snapshot", () => {
     const findings = runDiagnosticChecks(buildDb(), FULL_METADATA);
 

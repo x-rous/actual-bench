@@ -221,6 +221,56 @@ describe("useAccountsSave with account groups", () => {
     expect(summary.failed).toEqual([
       expect.objectContaining({ id: "server-account-1", message: expect.stringContaining("Account created, but") }),
     ]);
+
+    // The unfinished assignment stays in the draft under the real id, with the
+    // error on it, instead of vanishing with the temp row.
+    expect(store().accounts["tmp-a"]).toBeUndefined();
+    expect(store().accounts["server-account-1"]).toMatchObject({
+      isNew: false,
+      isUpdated: true,
+      saveError: expect.stringContaining("Save again to retry the group"),
+      entity: { id: "server-account-1", name: "ETF", groupId: "g1" },
+      original: { groupId: null },
+    });
+  });
+
+  it("retries only the group assignment on the next save, without creating the account again", async () => {
+    const calls: Calls = [];
+    let failAssign = true;
+    const transport = makeTransport(calls, {
+      updateAccount: jest.fn(async (id, patch) => {
+        calls.push(`updateAccount:${id}:${JSON.stringify(patch)}`);
+        if (failAssign) throw new Error("boom");
+      }),
+    });
+    mockGetTransport.mockReturnValue(transport);
+    loadServerState();
+    store().stageNew("accounts", { id: "tmp-a", name: "ETF", offBudget: true, closed: false, groupId: "g1" });
+
+    const { result } = renderSave();
+    await act(async () => {
+      await result.current.save();
+    });
+
+    // A refetch lands before the user saves again; it must not wipe the retry.
+    store().loadAccounts([
+      { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" },
+      { id: "a2", name: "Cash", offBudget: false, closed: false, groupId: null },
+      { id: "server-account-1", name: "ETF", offBudget: true, closed: false, groupId: null },
+    ]);
+    expect(store().accounts["server-account-1"]).toMatchObject({ isUpdated: true, entity: { groupId: "g1" } });
+
+    failAssign = false;
+    calls.length = 0;
+    await act(async () => {
+      await result.current.save();
+    });
+
+    expect(calls).toEqual([
+      'updateAccount:server-account-1:{"name":"ETF","offBudget":true,"closed":false,"groupId":"g1"}',
+    ]);
+    // A saved update is cleared from the draft; the refetch then shows the server row.
+    expect(store().accounts["server-account-1"]).toBeUndefined();
   });
 
   it("never sends a group field to a transport without account groups", async () => {

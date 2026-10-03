@@ -127,6 +127,7 @@ export function AccountsView() {
         groupIdByName.set(group.name.trim().toLowerCase(), group.id);
       }
       let ignoredGroups = false;
+      const rejectedGroups: string[] = [];
       for (const { groupName, ...account } of result.accounts) {
         let groupId: string | null = null;
         if (groupName) {
@@ -140,6 +141,9 @@ export function AccountsView() {
               if ("id" in created) {
                 id = created.id;
                 groupIdByName.set(key, id);
+              } else if (!rejectedGroups.includes(groupName)) {
+                // e.g. a name over the length limit: the account is still imported, ungrouped.
+                rejectedGroups.push(groupName);
               }
             }
             groupId = id ?? null;
@@ -148,6 +152,11 @@ export function AccountsView() {
         stageNew("accounts", { id: generateId(), ...account, ...(groupId ? { groupId } : {}) });
       }
       if (ignoredGroups) toast.info("The group column was ignored: this server has no account groups.");
+      if (rejectedGroups.length > 0) {
+        const shown = rejectedGroups.slice(0, 3).map((name) => `"${name.length > 40 ? `${name.slice(0, 40)}…` : name}"`);
+        const more = rejectedGroups.length > shown.length ? ` and ${rejectedGroups.length - shown.length} more` : "";
+        toast.warning(`Imported without a group because the group name is not valid: ${shown.join(", ")}${more}.`);
+      }
 
       const imported = result.accounts.length;
       if (imported === 0) {

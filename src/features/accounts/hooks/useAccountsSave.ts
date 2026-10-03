@@ -41,6 +41,8 @@ export function useAccountsSave() {
       const succeeded: SaveResult[] = [];
       const failed: SaveResult[] = [];
       const succeededCreateIds = new Set<string>();
+      /** Created accounts whose group could not be assigned: the assignment is kept as a staged update to retry. */
+      const pendingAssignments: { account: Account; realId: string; message: string }[] = [];
       const idMap: Record<string, string> = {};
 
       // ── Account groups: creates and renames first ───────────────────────────
@@ -132,11 +134,9 @@ export function useAccountsSave() {
           if (r.value.groupError) {
             // The account exists; only its group is missing. Reported against
             // the real id, because the staged temp row is cleared below.
-            failed.push({
-              status: "error",
-              id: r.value.created.id,
-              message: `Account created, but ${r.value.groupError}. Assign its group again.`,
-            });
+            const message = `Account created, but ${r.value.groupError}. Save again to retry the group.`;
+            failed.push({ status: "error", id: r.value.created.id, message });
+            pendingAssignments.push({ account: toCreate[i], realId: r.value.created.id, message });
           }
         } else {
           failed.push({ status: "error", id, message: extractMessage(r.reason, "Create failed") });
@@ -220,6 +220,34 @@ export function useAccountsSave() {
       // response, causing the temp entry to linger alongside the newly-created row.
       if (succeededCreateIds.size > 0) {
         for (const id of succeededCreateIds) store.stageDelete("accounts", id);
+      }
+
+      // The account now exists under its real id but is not in the group the
+      // user chose. Stage it there as an update (original: ungrouped), so the
+      // error has a row to sit on, the refetch keeps it, and the next Save
+      // retries only the assignment instead of leaving it unnoticed.
+      if (pendingAssignments.length > 0) {
+        useStagedStore.setState((state) => {
+          const accounts = { ...state.accounts };
+          for (const { account, realId, message } of pendingAssignments) {
+            const entity: Account = {
+              ...account,
+              id: realId,
+              initialBalance: undefined,
+              groupId: account.groupId ? (idMap[account.groupId] ?? account.groupId) : null,
+            };
+            accounts[realId] = {
+              entity,
+              original: { ...entity, groupId: null },
+              isNew: false,
+              isUpdated: true,
+              isDeleted: false,
+              validationErrors: {},
+              saveError: message,
+            };
+          }
+          return { accounts };
+        });
       }
 
       // Remove staged entries for successfully saved updates/deletes. Without this,

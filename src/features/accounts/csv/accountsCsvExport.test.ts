@@ -18,6 +18,14 @@ const staged: StagedMap<Account> = {
 };
 
 describe("exportAccountsToCsv", () => {
+  it("keeps a group name that looks like a formula from running as one", () => {
+    const csv = exportAccountsToCsv(
+      { a1: entry({ id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" }) },
+      [{ id: "g1", name: "=HYPERLINK(\"http://example.com\")" }]
+    );
+    expect(csv.split("\n")[1]).toBe('a1,Checking,false,false,"\'=HYPERLINK(""http://example.com"")"');
+  });
+
   it("keeps the original four columns when the server has no account groups", () => {
     expect(exportAccountsToCsv(staged).split("\n")[0]).toBe("id,name,offBudget,closed");
   });
