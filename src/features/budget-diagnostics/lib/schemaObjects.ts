@@ -80,6 +80,7 @@ const ROWID_COLUMN: ColumnInfo = {
 const FEATURED_VIEW_SET = new Set<string>(FEATURED_VIEWS);
 const CORE_TABLES = new Set([
   "accounts",
+  "account_groups",
   "category_groups",
   "categories",
   "payees",
@@ -102,6 +103,7 @@ const SYSTEM_METADATA_TABLES = new Set([
   "preferences",
   "messages_clock",
   "messages_crdt",
+  "messages_pending",
   "kvcache",
   "kvcache_key",
 ]);

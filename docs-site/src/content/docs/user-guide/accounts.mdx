@@ -1,6 +1,6 @@
 ---
 title: Accounts
-description: Create, rename, close, reopen, import, export, and delete accounts in bulk.
+description: Create, rename, close, reopen, import, export, group, and delete accounts in bulk.
 sidebar:
   order: 3
 ---
@@ -26,6 +26,7 @@ uses.
 - **Set a starting balance as you create it.** The Balance column stays editable while the row is
   staged.
 - **Bulk close, reopen, and delete** with a single action across selected accounts.
+- **Organise accounts into groups** and move several accounts between them at once.
 - **See which rules reference an account** and jump straight to them.
 - **Impact-aware deletion** - every close and delete shows the balance, the transaction count and the
   rule references first. A non-zero balance gets its own warning.
@@ -54,10 +55,32 @@ shows it as a read-only badge afterwards. Get it right the first time.
 - Deleting or closing always confirms first, with the balance, the transaction count and the rule
   count in front of you. Money still in the account gets a budget-consistency warning.
 
+## Account groups
+
+Account groups are named collections that Actual shows together in its sidebar. Bench supports them
+on Actual 26.9 or later; on an older server the Group column and controls do not appear.
+
+- **Assign an account:** click its **Group** cell and choose a group, **No group**, or **New group…**.
+- **Move several at once:** select the accounts, then use **Move to group…** in the selection bar.
+- **Manage groups:** select **Groups** in the page toolbar to create, rename, or delete groups. Names
+  must be unique, ignoring case.
+- **Deleting a group** keeps its accounts - they become ungrouped. The dialog says how many are
+  affected first.
+
+Like every other account edit, group changes are drafted and written only when you **Save**, and
+**Undo** reverses them. New groups are created first, then accounts, and deleted groups last.
+
+Groups cannot be reordered from Bench: Actual's API does not allow it. Reorder them in Actual itself.
+
+:::note[HTTP API mode]
+In HTTP API mode your `actual-http-api` must expose the `/accountgroups` endpoints (the release for
+Actual 26.9 or later does).
+:::
+
 ## Filter and sort
 
-Filter by name, status, budget type, and whether any rules reference the account. Sort by name, status
-or budget type. Staged rows ignore the sort and stay at the top until you Save.
+Filter by name, status, budget type, whether any rules reference the account, and group. Sort by name,
+status, budget type or group. Staged rows ignore the sort and stay at the top until you Save.
 
 ## Notes
 
@@ -69,6 +92,10 @@ immediately** - nothing to do with your staged edits.
 Export accounts to CSV or import them (staged before saving). CSV columns:
 
 - `name` (required), `offBudget`, `closed`.
+- `group` (optional, account groups only) - the group's name. A name that matches no existing group
+  stages a new one. On a server without account groups the column is ignored.
+
+Exported files include the `group` column when the server supports groups.
 
 ## Common problems
 

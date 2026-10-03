@@ -1,4 +1,5 @@
-export const DDL_SOURCE_DATE = "2026-04-20";
+/** When the reference schema was last regenerated, from a fresh budget on Actual 26.10.0. */
+export const DDL_SOURCE_DATE = "2026-10-03";
 
 export const EXPECTED_TABLES = [
   "__meta__",
@@ -33,6 +34,30 @@ export const EXPECTED_TABLES = [
   "zero_budget_months",
   "zero_budgets",
 ] as const;
+
+/**
+ * Tables added by recent Actual releases. A budget opened by an older Actual
+ * does not have them until it is migrated, so a missing one is not a finding;
+ * when one is present its columns are checked like any other table's.
+ * - account_groups, accounts.account_group_id: account groups (26.9)
+ * - messages_pending: sync changes deferred from a newer version (26.10)
+ * - cleanup_groups: budget cleanup groups
+ */
+export const OPTIONAL_TABLES = ["account_groups", "cleanup_groups", "messages_pending"] as const;
+
+/**
+ * Columns added to existing tables and views by recent releases, for the same
+ * reason: not required, so an older budget is not flagged for lacking them.
+ */
+export const OPTIONAL_COLUMNS: Record<string, readonly string[]> = {
+  accounts: ["bank_sync_status", "account_group_id"],
+  categories: ["cleanup_def"],
+  custom_reports: ["show_trend_lines"],
+  schedules: ["custom_upcoming_length", "sort_order"],
+  tags: ["hidden"],
+  v_categories: ["cleanup_def"],
+  v_schedules: ["custom_upcoming_length", "sort_order", "_has_splits"],
+};
 
 export const EXPECTED_VIEWS = [
   "v_categories",
@@ -73,6 +98,7 @@ export const EXPECTED_COLUMNS: Record<string, readonly string[]> = {
     "last_sync",
     "last_reconciled",
   ],
+  account_groups: ["id", "name", "sort_order", "tombstone"],
   banks: ["id", "bank_id", "name", "tombstone"],
   categories: [
     "id",
@@ -86,6 +112,7 @@ export const EXPECTED_COLUMNS: Record<string, readonly string[]> = {
     "template_settings",
   ],
   category_groups: ["id", "name", "is_income", "sort_order", "tombstone", "hidden"],
+  cleanup_groups: ["id", "name", "tombstone"],
   category_mapping: ["id", "transferId"],
   created_budgets: ["month"],
   custom_reports: [
@@ -120,6 +147,7 @@ export const EXPECTED_COLUMNS: Record<string, readonly string[]> = {
   kvcache_key: ["id", "key"],
   messages_clock: ["id", "clock"],
   messages_crdt: ["id", "timestamp", "dataset", "row", "column", "value"],
+  messages_pending: ["dataset", "row", "column", "timestamp", "value"],
   notes: ["id", "note"],
   payee_locations: ["id", "payee_id", "latitude", "longitude", "created_at", "tombstone"],
   payee_mapping: ["id", "targetId"],
