@@ -17,8 +17,8 @@ import { DebtList } from "./DebtList";
 /**
  * The Assets & Debt workspace pages (RD-084 P1.3, P1.3b). The loan pages
  * themselves are the simulator (LoanPages.tsx). Configuration, calculation and
- * forecasts only: matching, lender statements, postings and automation arrive
- * in later phases, and nothing on these pages writes to Actual.
+ * forecasts plus P1.4 read-only matching. Lender statements, postings and
+ * automation arrive in later phases, and nothing on these pages writes to Actual.
  */
 
 export function AssetsDebtShell({ title, actions, children, scrollManaged = true }: { title: string; actions?: React.ReactNode; children: React.ReactNode; scrollManaged?: boolean }) {

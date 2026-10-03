@@ -57,6 +57,8 @@
 - Offset setup owns the starting balance; later simulated balance changes use offset deposits and withdrawals under **Events**. Absolute offset snapshots remain an internal observation/reconciliation mechanism and are not offered as an ordinary simulator action
 - The amortization schedule supports Monthly, Yearly, and All Events views, distinguishes repayment number from elapsed loan time, and reconciles directly to engine events
 - Simulation remains separate from Actual tracking: the Step 1 toolbar separates the read-only calculation explanation from editing its method, and modelling does not write to the connected budget; **Set up tracking in Actual** begins the explicit tracking workflow
+- **Read-only repayment matching:** the Assets & Debt Rules tab stores versioned Bench matching rules and backtests them against a bounded Actual transaction window without creating or changing transactions or Actual rules
+- Backtests compare each expected period with normalized Direct or HTTP transaction history and show unique, missing, multiple and unsafe results, amount/date differences, projected allocation, structural flags and broad-rule warnings in a virtualized table. Partial, multi-source and partially offset-funded evidence always remains reviewable rather than being guessed
 
 ## Budget File Health
 

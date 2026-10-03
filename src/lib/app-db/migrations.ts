@@ -5,6 +5,9 @@ import {
   APP_META_TABLE_SQL,
   ASSETS_DEBT_V38_INDEX_SQL,
   ASSETS_DEBT_V38_TRIGGER_SQL,
+  ASSETS_DEBT_V42_INDEX_SQL,
+  DEBT_MATCH_RULE_TABLE_SQL,
+  DEBT_TRANSACTION_LINK_TABLE_SQL,
   DEBT_FUTURE_ASSUMPTION_TABLE_SQL,
   DEBT_OFFSET_LINK_TABLE_SQL,
   DEBT_RATE_PERIOD_TABLE_SQL,
@@ -58,7 +61,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 41;
+export const LATEST_SCHEMA_VERSION = 42;
 
 type Migration = {
   version: number;
@@ -503,6 +506,19 @@ const MIGRATIONS: readonly Migration[] = [
     // RD-084 P1.3h: optionally delay offset cash funding without delaying
     // the link's interest benefit. Null exactly preserves v40 behavior.
     apply: applyOffsetFundingStart,
+  },
+  {
+    version: 42,
+    // RD-084 P1.4: Bench-owned matching rules and budget-scoped links to
+    // existing Actual rows. Read-only workflow state; no posting FK exists
+    // until financial_postings is introduced in v44.
+    statements: [
+      DEBT_MATCH_RULE_TABLE_SQL,
+      // SQLite requires the referenced composite parent key to be unique.
+      ASSETS_DEBT_V42_INDEX_SQL[0],
+      DEBT_TRANSACTION_LINK_TABLE_SQL,
+      ...ASSETS_DEBT_V42_INDEX_SQL.slice(1),
+    ],
   },
 ];
 

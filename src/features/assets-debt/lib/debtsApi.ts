@@ -3,6 +3,9 @@ import type { DebtDetail, DebtSaveInput, DebtSummary, ValidationIssue } from "@/
 import type { AssumptionInput } from "@/lib/app-db/debtAssumptionRepository";
 import type { DebtProjection, DebtProjectionOverrides } from "@/lib/financial-models/loan/projection";
 import type { Eligibility } from "@/lib/financial-models/loan/eligibility";
+import type { MatchingHistorySnapshot } from "@/lib/assets-debt/actual/ledgerPort";
+import type { MatchRuleSave, MatchRuleView } from "@/lib/assets-debt/services/matchingService";
+import type { DebtBacktestResult } from "@/lib/financial-models/matching";
 
 /**
  * Client for `/api/assets-debt/debts/**` (RD-084 P1.3). Configuration and
@@ -52,3 +55,18 @@ export const getSchedule = (id: string, body: { from: string; to: string; overri
 
 export const saveAssumptions = (id: string, assumptions: AssumptionInput[], changeSummary: string) =>
   request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/assumptions`, { method: "PUT", body: JSON.stringify({ assumptions, changeSummary }) }).then((r) => r.debt);
+
+export const listMatchRules = (id: string) =>
+  request<{ rules: MatchRuleView[] }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`).then((r) => r.rules);
+
+export const createMatchRule = (id: string, rule: MatchRuleSave) =>
+  request<{ rule: MatchRuleView }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`, { method: "POST", body: JSON.stringify({ rule }) }).then((r) => r.rule);
+
+export const updateMatchRule = (id: string, ruleId: string, rule: MatchRuleSave) =>
+  request<{ rule: MatchRuleView }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`, { method: "PATCH", body: JSON.stringify({ ruleId, rule }) }).then((r) => r.rule);
+
+export const deleteMatchRule = (id: string, ruleId: string) =>
+  request<void>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules?ruleId=${encodeURIComponent(ruleId)}`, { method: "DELETE" });
+
+export const runMatchBacktest = (id: string, body: { ruleId: string; from: string; to: string; snapshots: MatchingHistorySnapshot[] }) =>
+  request<{ backtest: DebtBacktestResult }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/backtest`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.backtest);

@@ -713,3 +713,46 @@ export type ModelRevisionRecord = {
   changeSummary: string;
   createdAt: string;
 };
+
+// ── Assets & Debt matching (RD-084 P1.4, v42) ───────────────────────────────
+
+export const DEBT_MATCH_PURPOSES = ["repayment", "interest-charge", "lender-repayment-row"] as const;
+export type DebtMatchPurpose = (typeof DEBT_MATCH_PURPOSES)[number];
+export const DEBT_TRANSACTION_LINK_ROLES = [
+  "repayment",
+  "lender-repayment-row",
+  "lender-interest-charge",
+  "extra-repayment",
+  "draw",
+  "fee",
+  "evidence-only",
+] as const;
+export type DebtTransactionLinkRole = (typeof DEBT_TRANSACTION_LINK_ROLES)[number];
+export const DEBT_TRANSACTION_LINK_SOURCES = ["match-rule", "user"] as const;
+export type DebtTransactionLinkSource = (typeof DEBT_TRANSACTION_LINK_SOURCES)[number];
+
+export type DebtMatchRuleRecord = {
+  id: string;
+  debtId: string;
+  purpose: StoredEnum<DebtMatchPurpose>;
+  ruleFormatVersion: number;
+  conditionsJson: string;
+  actionsJson: string;
+  enabled: boolean;
+  lastBacktestJson: string | null;
+  lastBacktestAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DebtTransactionLinkRecord = {
+  id: string;
+  debtId: string;
+  budgetSyncId: string;
+  actualTransactionId: string;
+  actualParentId: string | null;
+  role: StoredEnum<DebtTransactionLinkRole>;
+  periodKey: string;
+  linkSource: StoredEnum<DebtTransactionLinkSource>;
+  linkedAt: string;
+};

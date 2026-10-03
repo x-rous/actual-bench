@@ -15,6 +15,7 @@ import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/t
  */
 
 export type LedgerReadTransport = Pick<ActualBenchTransport, "getAccounts" | "getAccountBalances" | "getCategoryGroups" | "listTransactionsForSync">;
+export type MatchingReadTransport = Pick<ActualBenchTransport, "listTransactionsForSync">;
 
 /** The only transport methods the port may call. Tests assert nothing else is touched. */
 export const LEDGER_READ_METHODS = ["getAccounts", "getAccountBalances", "getCategoryGroups", "listTransactionsForSync"] as const;
@@ -76,6 +77,34 @@ export function actualUnitsToMinor(value: number): number {
 }
 
 export const DEFAULT_MAX_TRANSACTIONS = 5_000;
+
+export type MatchingHistorySnapshot = {
+  accountId: string;
+  transactions: SyncSourceTransaction[];
+};
+
+/**
+ * Read each matching source account exactly once for one bounded window.
+ * Supplying duplicate ids never creates duplicate reads. An oversized account
+ * is refused rather than truncated, because truncation could create a false
+ * unique match.
+ */
+export async function readMatchingHistory(
+  transport: MatchingReadTransport,
+  input: { accountIds: readonly string[]; from: string; to: string; maxTransactionsPerAccount?: number }
+): Promise<MatchingHistorySnapshot[]> {
+  const accountIds = [...new Set(input.accountIds)].sort();
+  const max = input.maxTransactionsPerAccount ?? DEFAULT_MAX_TRANSACTIONS;
+  const snapshots: MatchingHistorySnapshot[] = [];
+  for (const accountId of accountIds) {
+    const transactions = await transport.listTransactionsForSync({ accountId, startDate: input.from, endDate: input.to });
+    if (transactions.length > max) {
+      throw new RangeError(`More than ${max} transactions were returned for ${accountId}; choose a smaller backtest window.`);
+    }
+    snapshots.push({ accountId, transactions });
+  }
+  return snapshots;
+}
 
 export type DatedBalance =
   | { ok: true; accountId: string; date: string; balanceMinor: number; transactionsRead: number }

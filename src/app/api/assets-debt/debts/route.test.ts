@@ -10,6 +10,8 @@ import { DELETE, GET as getOne, PATCH } from "./[id]/route";
 import { PUT as putAssumptions } from "./[id]/assumptions/route";
 import { GET as eligibility } from "./[id]/eligibility/route";
 import { POST as schedule } from "./[id]/schedule/route";
+import { POST as backtest } from "./[id]/backtest/route";
+import { DELETE as deleteRule, GET as getRules, PATCH as patchRule, POST as postRule } from "./[id]/match-rules/route";
 import { GET, POST } from "./route";
 
 const saved = process.env.ACTUAL_BENCH_DB_PATH;
@@ -27,6 +29,18 @@ afterEach(() => {
 
 const json = (body: unknown, method = "POST") => new Request("http://bench/api", { method, body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+const conditions = {
+  format: "rd084.debt-match-conditions",
+  version: 1,
+  operator: "all",
+  items: [
+    { kind: "source-account", accountId: "acc-checking" },
+    { kind: "expected-date", daysBefore: 3, daysAfter: 3 },
+    { kind: "bench-marker", value: "exclude" },
+    { kind: "posting-link", value: "exclude" },
+  ],
+};
+const actions = { format: "rd084.debt-match-actions", version: 1, items: [{ kind: "link-repayment" }] };
 
 async function create(patch = {}) {
   const response = await POST(json({ debt: saveInput(patch), accountDirectory: directory() }));
@@ -115,6 +129,39 @@ describe("/api/assets-debt/debts", () => {
     });
   });
 
+  it("creates, backtests, edits, lists and deletes a read-only matching rule", async () => {
+    const debt = await create();
+    const createdResponse = await postRule(json({ rule: { purpose: "repayment", conditions, actions, enabled: false } }), ctx(debt.id));
+    expect(createdResponse.status).toBe(201);
+    const created = ((await createdResponse.json()) as { rule: { record: { id: string }; blocked: string | null } }).rule;
+    expect(created.blocked).toBeNull();
+
+    const listed = (await (await getRules(new Request("http://bench/api"), ctx(debt.id))).json()) as { rules: unknown[] };
+    expect(listed.rules).toHaveLength(1);
+
+    const tested = await backtest(json({
+      ruleId: created.record.id,
+      from: "2024-02-01",
+      to: "2024-02-01",
+      snapshots: [{ accountId: "acc-checking", transactions: [{
+        id: "tx-1", accountId: "acc-checking", date: "2024-02-01", amount: -500_000,
+        payeeId: "bank", payeeName: "Bank", categoryId: null, categoryName: null, notes: null,
+        cleared: true, reconciled: false, importedId: null, transferId: null, scheduleId: null,
+        isParent: false, isChild: false, parentId: null, splitLines: [],
+      }] }],
+    }), ctx(debt.id));
+    const testedBody = (await tested.json()) as { backtest?: { summary: { unique: number } }; error?: string };
+    expect({ status: tested.status, error: testedBody.error }).toEqual({ status: 200, error: undefined });
+    expect(testedBody.backtest?.summary.unique).toBe(1);
+
+    const edited = await patchRule(json({ ruleId: created.record.id, rule: { purpose: "interest-charge", conditions, actions, enabled: false } }, "PATCH"), ctx(debt.id));
+    expect(((await edited.json()) as { rule: { record: { purpose: string } } }).rule.record.purpose).toBe("interest-charge");
+
+    const deleted = await deleteRule(new Request(`http://bench/api/assets-debt/debts/${debt.id}/match-rules?ruleId=${created.record.id}`, { method: "DELETE" }), ctx(debt.id));
+    expect(deleted.status).toBe(204);
+    expect(((await (await getRules(new Request("http://bench/api"), ctx(debt.id))).json()) as { rules: unknown[] }).rules).toHaveLength(0);
+  });
+
   it("handlers hold no SQL and no calculation", () => {
     const files: string[] = [];
     const walk = (dir: string) => {
@@ -125,7 +172,7 @@ describe("/api/assets-debt/debts", () => {
       }
     };
     walk(__dirname);
-    expect(files.length).toBe(5);
+    expect(files.length).toBe(7);
     for (const file of files) {
       const source = readFileSync(file, "utf8");
       expect({ file, sql: /prepare\(|SELECT |INSERT |UPDATE |DELETE FROM/.test(source) }).toEqual({ file, sql: false });

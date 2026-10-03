@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appDbErrorResponse } from "@/lib/app-db/routeResponses";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import { DebtConfigValidationError } from "../services/debtConfigService";
+import { MatchDslValidationError } from "@/lib/financial-models/matching";
 
 /**
  * Request schemas for `/api/assets-debt/**` (RD-084 P1.3).
@@ -118,6 +119,74 @@ export const scheduleRequestSchema = z.strictObject({
 
 export const assumptionsRequestSchema = z.strictObject({ assumptions: z.array(assumptionSchema).max(1_000), changeSummary: z.string().max(500) });
 
+const splitLineSchema = z.strictObject({
+  id: id.nullable(),
+  amount: minor,
+  payeeId: id.nullable(),
+  payeeName: z.string().nullable(),
+  categoryId: id.nullable(),
+  categoryName: z.string().nullable(),
+  notes: z.string().nullable(),
+  cleared: z.boolean().optional(),
+  reconciled: z.boolean().optional(),
+  importedId: z.string().nullable().optional(),
+  importedPayee: z.string().nullable().optional(),
+  transferId: z.string().nullable().optional(),
+  scheduleId: z.string().nullable().optional(),
+  isChild: z.boolean().optional(),
+  parentId: z.string().nullable().optional(),
+});
+
+export const matchingTransactionSchema = z.strictObject({
+  id,
+  accountId: id,
+  date: isoDate,
+  amount: minor,
+  payeeId: id.nullable(),
+  payeeName: z.string().nullable(),
+  categoryId: id.nullable(),
+  categoryName: z.string().nullable(),
+  notes: z.string().nullable(),
+  cleared: z.boolean(),
+  reconciled: z.boolean(),
+  importedId: z.string().nullable(),
+  importedPayee: z.string().nullable().optional(),
+  transferId: z.string().nullable().optional(),
+  scheduleId: z.string().nullable().optional(),
+  isParent: z.boolean(),
+  isChild: z.boolean(),
+  parentId: z.string().nullable(),
+  splitLines: z.array(splitLineSchema).max(500),
+});
+
+export const matchingSnapshotSchema = z.strictObject({
+  accountId: id,
+  transactions: z.array(matchingTransactionSchema).max(5_000),
+});
+
+export const debtBacktestRequestSchema = z.strictObject({
+  ruleId: id,
+  from: isoDate,
+  to: isoDate,
+  snapshots: z.array(matchingSnapshotSchema).max(50),
+});
+
+export const matchRuleSaveSchema = z.strictObject({
+  purpose: z.enum(["repayment", "interest-charge", "lender-repayment-row"]),
+  conditions: z.unknown(),
+  actions: z.unknown(),
+  enabled: z.boolean().default(false),
+});
+
+const optionalEnableBacktest = z.strictObject({
+  from: isoDate,
+  to: isoDate,
+  snapshots: z.array(matchingSnapshotSchema).max(50),
+});
+
+export const createMatchRuleRequestSchema = z.strictObject({ rule: matchRuleSaveSchema, enableBacktest: optionalEnableBacktest.optional() });
+export const updateMatchRuleRequestSchema = z.strictObject({ ruleId: id, rule: matchRuleSaveSchema, enableBacktest: optionalEnableBacktest.optional() });
+
 /** Parse a body or throw a validation error naming the first problems. */
 export function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
@@ -129,10 +198,13 @@ export function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
 
 /** Validation issues come back field by field; everything else uses the app-DB mapping. */
 export function assetsDebtErrorResponse(error: unknown): NextResponse {
+  if (error instanceof MatchDslValidationError) {
+    return NextResponse.json({ error: "The matching rule is not valid.", code: "DEBT_MATCH_RULE_INVALID", issues: error.issues }, { status: 400 });
+  }
   if (error instanceof DebtConfigValidationError) {
     return NextResponse.json({ error: "The debt configuration is not valid.", code: "DEBT_CONFIG_INVALID", issues: error.issues }, { status: 400 });
   }
-  if (error instanceof AppDbValidationError && error.message === "Debt not found") {
+  if (error instanceof AppDbValidationError && (error.message === "Debt not found" || error.message === "Matching rule not found")) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
   return appDbErrorResponse(error);

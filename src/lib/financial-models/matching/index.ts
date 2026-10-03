@@ -1,2 +1,3 @@
-/** Repayment matching DSL and backtest evaluation (RD-084, P1.4). */
-export {};
+export * from "./dsl";
+export * from "./evaluate";
+export * from "./backtest";

@@ -979,3 +979,43 @@ export const ASSETS_DEBT_V38_TRIGGER_SQL = [
      AFTER DELETE ON debts
      BEGIN DELETE FROM model_revisions WHERE subject_kind = 'debt' AND subject_id = OLD.id; END`,
 ] as const;
+
+// ── Assets & Debt matching (RD-084 P1.4, v42) ───────────────────────────────
+
+export const DEBT_MATCH_RULE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS debt_match_rules (
+  id text PRIMARY KEY,
+  debt_id text NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+  purpose text NOT NULL,
+  rule_format_version integer NOT NULL CHECK ${integerAtLeast("rule_format_version", 1)},
+  conditions_json text NOT NULL CHECK (json_valid(conditions_json)),
+  actions_json text NOT NULL CHECK (json_valid(actions_json)),
+  enabled integer NOT NULL DEFAULT 0 CHECK (typeof(enabled) = 'integer' AND enabled IN (0, 1)),
+  last_backtest_json text CHECK (last_backtest_json IS NULL OR json_valid(last_backtest_json)),
+  last_backtest_at text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const DEBT_TRANSACTION_LINK_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS debt_transaction_links (
+  id text PRIMARY KEY,
+  debt_id text NOT NULL,
+  budget_sync_id text NOT NULL,
+  actual_transaction_id text NOT NULL,
+  actual_parent_id text,
+  role text NOT NULL,
+  period_key text NOT NULL,
+  link_source text NOT NULL,
+  linked_at text NOT NULL,
+  FOREIGN KEY (debt_id, budget_sync_id) REFERENCES debts(id, budget_sync_id) ON DELETE RESTRICT
+);
+`;
+
+export const ASSETS_DEBT_V42_INDEX_SQL = [
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_debts_id_budget ON debts(id, budget_sync_id)",
+  "CREATE INDEX IF NOT EXISTS idx_debt_match_rules_debt ON debt_match_rules(debt_id, purpose)",
+  "CREATE INDEX IF NOT EXISTS idx_debt_transaction_links_debt_period ON debt_transaction_links(debt_id, period_key)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_debt_transaction_links_claim ON debt_transaction_links(budget_sync_id, actual_transaction_id, role) WHERE role <> 'evidence-only'",
+] as const;
