@@ -18,7 +18,6 @@ function makeStagedEntity<T extends { id: string; name: string }>(entity: T) {
 const payeeAlice = makeStagedEntity({ id: "p1", name: "Alice" });
 const categoryFood = makeStagedEntity({ id: "c1", name: "Food", groupId: "g1", isIncome: false, hidden: false });
 const accountChecking = makeStagedEntity({ id: "a1", name: "Checking", offBudget: false, closed: false });
-const groupGroceries = makeStagedEntity({ id: "g1", name: "Groceries", isIncome: false, hidden: false, categoryIds: [] });
 const scheduleRent = makeStagedEntity({ id: "s1", name: "Rent", completed: false, postsTransaction: true });
 
 const fullMaps: EntityMaps = {

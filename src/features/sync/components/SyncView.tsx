@@ -587,7 +587,10 @@ export function SyncView() {
                   onSelectAllSafeNew={() => setSelectedIds(new Set(selectableRowIds(rows)))}
                   onSelectRows={(ids, selected) => setSelectedIds((prev) => {
                     const next = new Set(prev);
-                    for (const id of ids) selected ? next.add(id) : next.delete(id);
+                    for (const id of ids) {
+                      if (selected) next.add(id);
+                      else next.delete(id);
+                    }
                     return next;
                   })}
                   onClearSelection={() => setSelectedIds(new Set())}

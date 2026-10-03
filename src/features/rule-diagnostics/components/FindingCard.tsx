@@ -19,13 +19,6 @@ type Props = {
   onDismiss?: (finding: Finding) => void;
   /** Present only on the Dismissed tab, where the action is the other way. */
   onRestore?: (finding: Finding) => void;
-  /**
-   * False when the section heading already names this rule — grouping by rule
-   * put the same summary directly above the card, twice on screen for the
-   * common case of one finding per rule. A finding about several rules always
-   * lists them, because the list is the evidence.
-   */
-  showRules?: boolean;
   /** Opens the rule editor over this page. Absent renders the rule as plain text. */
   onOpenRule?: (ruleId: string) => void;
 };
@@ -351,7 +344,6 @@ export function FindingCard({
   rulesById,
   onDismiss,
   onRestore,
-  showRules = true,
   onOpenRule,
 }: Props) {
   const counterpartLabel = COUNTERPART_LABEL[finding.code];
