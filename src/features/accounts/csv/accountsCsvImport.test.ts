@@ -1,4 +1,5 @@
 import { importAccountsFromCsv } from "./accountsCsvImport";
+import { exportAccountsToCsv } from "./accountsCsvExport";
 
 describe("importAccountsFromCsv", () => {
   it("imports accounts from valid CSV", () => {
@@ -121,5 +122,30 @@ describe("group column", () => {
     const result = importAccountsFromCsv("name,offBudget\nChecking,true");
     if ("error" in result) throw new Error(result.error);
     expect(result.accounts[0]).toEqual({ name: "Checking", offBudget: true, closed: false });
+  });
+});
+
+describe("group column round trip", () => {
+  it("reads back a formula-like group name exactly as it was exported", () => {
+    const staged = {
+      a1: {
+        entity: { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" },
+        original: null,
+        isNew: false,
+        isUpdated: false,
+        isDeleted: false,
+        validationErrors: {},
+      },
+    };
+    const csv = exportAccountsToCsv(staged, [{ id: "g1", name: "=Savings" }]);
+    const result = importAccountsFromCsv(csv);
+    if ("error" in result) throw new Error(result.error);
+    expect(result.accounts[0]).toMatchObject({ name: "Checking", groupName: "=Savings" });
+  });
+
+  it("keeps a leading apostrophe the person typed", () => {
+    const result = importAccountsFromCsv("name,group\nChecking,'Rainy day");
+    if ("error" in result) throw new Error(result.error);
+    expect(result.accounts[0]).toMatchObject({ groupName: "'Rainy day" });
   });
 });

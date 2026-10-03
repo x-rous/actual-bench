@@ -1,4 +1,4 @@
-import { parseCsvLine, parseBoolean } from "@/lib/csv";
+import { parseCsvLine, parseBoolean, unguardCsvCell } from "@/lib/csv";
 import type { Account } from "@/types/entities";
 
 /** An imported account. `groupName` is the "group" column; the caller resolves it to a group id. */
@@ -45,7 +45,8 @@ export function importAccountsFromCsv(
       name,
       offBudget: budgetIdx !== -1 ? parseBoolean(fields[budgetIdx] ?? "") : false,
       closed: closedIdx !== -1 ? parseBoolean(fields[closedIdx] ?? "") : false,
-      ...(groupIdx !== -1 && fields[groupIdx]?.trim() ? { groupName: fields[groupIdx].trim() } : {}),
+      // The export guards names that could run as formulas; undo that before the lookup.
+      ...(groupIdx !== -1 && fields[groupIdx]?.trim() ? { groupName: unguardCsvCell(fields[groupIdx].trim()) } : {}),
     });
   }
 
