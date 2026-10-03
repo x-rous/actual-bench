@@ -1019,3 +1019,41 @@ export const ASSETS_DEBT_V42_INDEX_SQL = [
   "CREATE INDEX IF NOT EXISTS idx_debt_transaction_links_debt_period ON debt_transaction_links(debt_id, period_key)",
   "CREATE UNIQUE INDEX IF NOT EXISTS idx_debt_transaction_links_claim ON debt_transaction_links(budget_sync_id, actual_transaction_id, role) WHERE role <> 'evidence-only'",
 ] as const;
+
+// ── Assets & Debt lender observations and anchors (RD-084 P1.5, v43) ──
+
+export const DEBT_OBSERVATION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS debt_observations (
+  id text PRIMARY KEY,
+  debt_id text NOT NULL REFERENCES debts(id) ON DELETE RESTRICT,
+  observed_on text NOT NULL,
+  recorded_at text NOT NULL,
+  principal_minor integer NOT NULL CHECK (typeof(principal_minor) = 'integer' AND principal_minor >= 0),
+  accrued_interest_minor integer CHECK (accrued_interest_minor IS NULL OR (typeof(accrued_interest_minor) = 'integer' AND accrued_interest_minor >= 0)),
+  source text NOT NULL,
+  supersedes_observation_id text REFERENCES debt_observations(id) ON DELETE RESTRICT,
+  note text,
+  created_at text NOT NULL
+);
+`;
+
+export const DEBT_ANCHOR_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS debt_anchors (
+  id text PRIMARY KEY,
+  debt_id text NOT NULL REFERENCES debts(id) ON DELETE RESTRICT,
+  anchor_date text NOT NULL,
+  principal_minor integer NOT NULL CHECK (typeof(principal_minor) = 'integer' AND principal_minor >= 0),
+  accrued_interest_minor integer CHECK (accrued_interest_minor IS NULL OR (typeof(accrued_interest_minor) = 'integer' AND accrued_interest_minor >= 0)),
+  carried_remainder_decimal text,
+  source text NOT NULL,
+  observation_kind text,
+  observation_id text,
+  config_revision integer NOT NULL CHECK ${integerAtLeast("config_revision", 1)},
+  created_at text NOT NULL
+);
+`;
+
+export const ASSETS_DEBT_V43_INDEX_SQL = [
+  "CREATE INDEX IF NOT EXISTS idx_debt_observations_debt_date ON debt_observations(debt_id, observed_on)",
+  "CREATE INDEX IF NOT EXISTS idx_debt_anchors_debt_date ON debt_anchors(debt_id, anchor_date)",
+] as const;

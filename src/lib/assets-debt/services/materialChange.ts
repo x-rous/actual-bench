@@ -5,7 +5,9 @@ import type { DebtConfig } from "@/lib/financial-models/loan/configSchema";
 /**
  * What a debt's model revision contains (RD-084 P1.3; FR-023, G1 D-10/D-13).
  *
- * A revision snapshot, `rd084.debt-revision` v1, wraps every material input:
+ * A revision snapshot, `rd084.debt-revision` v2, wraps every material input.
+ * v2 adds each offset link's Actual-history source flag; v1 remains readable
+ * and an absent flag means false.
  * the debt's own columns, its `rd084.debt-config` document, and its rate
  * periods, offset links and baseline assumptions. A save creates a revision
  * exactly when the snapshot's hash changes.
@@ -26,7 +28,7 @@ import type { DebtConfig } from "@/lib/financial-models/loan/configSchema";
  */
 
 export const DEBT_REVISION_FORMAT = "rd084.debt-revision";
-export const DEBT_REVISION_VERSION = 1;
+export const DEBT_REVISION_VERSION = 2;
 
 /** Bench bookkeeping: ids, timestamps, revision pointers, derived flags. Never hashed. */
 const BOOKKEEPING = {

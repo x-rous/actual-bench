@@ -58,6 +58,7 @@
 - The amortization schedule supports Monthly, Yearly, and All Events views, distinguishes repayment number from elapsed loan time, and reconciles directly to engine events
 - Simulation remains separate from Actual tracking: the Step 1 toolbar separates the read-only calculation explanation from editing its method, and modelling does not write to the connected budget; **Set up tracking in Actual** begins the explicit tracking workflow
 - **Read-only repayment matching:** the Assets & Debt Rules tab stores versioned Bench matching rules and backtests them against a bounded Actual transaction window without creating or changing transactions or Actual rules
+- **Lender reconciliation and optional Actual-linked offsets:** immutable statement observations compare the model, Actual and lender on one date, while mapped offset accounts can supply exact total/cleared history through an explicit cutoff. Reads are bounded and read-only; incomplete history blocks instead of silently falling back, and future simulated offset events resume after the cutoff.
 - Backtests compare each expected period with normalized Direct or HTTP transaction history and show unique, missing, multiple and unsafe results, amount/date differences, projected allocation, structural flags and broad-rule warnings in a virtualized table. Partial, multi-source and partially offset-funded evidence always remains reviewable rather than being guessed
 
 ## Budget File Health

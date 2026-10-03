@@ -4,11 +4,13 @@ import { useMemo, useState } from "react";
 import { BookOpen, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { chartSeries, deltas, headline } from "../../lib/results";
 import { dailyEngineReason, newSimulation, switchToDayByDay, withoutExtraTransactions, type SimAssumption, type SimRate, type SimulationState } from "../../lib/simulatorModel";
 import { useLiveProjection } from "../../lib/useLiveProjection";
+import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import { labelOf, REPAYMENT_FREQUENCY_OPTIONS } from "../../lib/vocabulary";
 import { LoanChartPanel } from "../chart/LoanChartPanel";
 import { CalculationMethodDrawer } from "./CalculationMethodDrawer";
@@ -48,9 +50,16 @@ export type SimulatorViewProps = {
   readOnly?: boolean;
   revision: number | null;
   actions: React.ReactNode;
+  offsetTracking?: {
+    asOfDate: string;
+    onAsOfDateChange: (date: string) => void;
+    snapshots: OffsetHistorySnapshot[] | undefined;
+    loading: boolean;
+    problems: string[];
+  };
 };
 
-export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions }: SimulatorViewProps) {
+export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking }: SimulatorViewProps) {
   const [comparing, setComparing] = useState(false);
   const [prompt, setPrompt] = useState<{ reason: string; candidate: SimulationState } | null>(null);
   const [dialog, setDialog] = useState<"method" | "how" | null>(null);
@@ -61,7 +70,9 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
   const unsaved = saved !== null && JSON.stringify(saved) !== JSON.stringify(sim);
   const noExtras = useMemo(() => withoutExtraTransactions(sim), [sim]);
   const hasExtras = noExtras !== sim;
-  const live = useLiveProjection(sim, { compareWith: comparing && saved ? saved : null, impactBaseline: hasExtras ? noExtras : null });
+  const needsActualOffsetHistory = sim.offsets.some((offset) => offset.useActualBalance);
+  const offsetProblems = offsetTracking?.problems ?? (needsActualOffsetHistory ? ["Save the Actual-linked offset mapping before calculating with its history."] : undefined);
+  const live = useLiveProjection(sim, { compareWith: comparing && saved ? saved : null, impactBaseline: hasExtras ? noExtras : null, offsetHistories: offsetTracking?.snapshots, suspend: offsetTracking?.loading, externalProblems: offsetProblems });
 
   const change = (next: SimulationState) => {
     if (!readOnly) onChange(next);
@@ -124,6 +135,13 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
         </aside>
 
         <main aria-label="Results" className="flex min-w-0 flex-1 flex-col gap-4" data-testid="results-region">
+          {offsetTracking ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+              <label htmlFor="offset-observation-cutoff" className="font-medium">Actual offset history through</label>
+              <Input id="offset-observation-cutoff" type="date" value={offsetTracking.asOfDate} onChange={(event) => offsetTracking.onAsOfDateChange(event.target.value)} className="h-7 w-40 text-xs" />
+              <span className="text-muted-foreground">Observed balances are authoritative through this inclusive date; simulated events resume afterward.</span>
+            </div>
+          ) : null}
           <HeadlineMetrics
             headline={head}
             deltas={delta}

@@ -6,6 +6,9 @@ import {
   ASSETS_DEBT_V38_INDEX_SQL,
   ASSETS_DEBT_V38_TRIGGER_SQL,
   ASSETS_DEBT_V42_INDEX_SQL,
+  ASSETS_DEBT_V43_INDEX_SQL,
+  DEBT_ANCHOR_TABLE_SQL,
+  DEBT_OBSERVATION_TABLE_SQL,
   DEBT_MATCH_RULE_TABLE_SQL,
   DEBT_TRANSACTION_LINK_TABLE_SQL,
   DEBT_FUTURE_ASSUMPTION_TABLE_SQL,
@@ -61,7 +64,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 42;
+export const LATEST_SCHEMA_VERSION = 43;
 
 type Migration = {
   version: number;
@@ -519,6 +522,22 @@ const MIGRATIONS: readonly Migration[] = [
       DEBT_TRANSACTION_LINK_TABLE_SQL,
       ...ASSETS_DEBT_V42_INDEX_SQL.slice(1),
     ],
+  },
+  {
+    version: 43,
+    // RD-084 P1.5: immutable lender evidence, append-only model anchors and
+    // opt-in Actual-linked offset history. Existing offset links remain manual.
+    apply: (db) => {
+      addColumnIfMissing(
+        db,
+        "debt_offset_links",
+        "use_actual_balance",
+        "integer NOT NULL DEFAULT 0 CHECK (typeof(use_actual_balance) = 'integer' AND use_actual_balance IN (0, 1))"
+      );
+      db.exec(DEBT_OBSERVATION_TABLE_SQL);
+      db.exec(DEBT_ANCHOR_TABLE_SQL);
+      for (const statement of ASSETS_DEBT_V43_INDEX_SQL) db.exec(statement);
+    },
   },
 ];
 

@@ -62,6 +62,7 @@ export type SimOffset = {
   capMinor: number | null;
   fundScheduledRepayments: boolean;
   fundScheduledRepaymentsFrom: string | null;
+  useActualBalance: boolean;
 };
 
 export type SimAssumptionKind = "extra-repayment" | "draw" | "fee" | "payment-change" | "offset-balance" | "offset-deposit" | "offset-withdrawal";
@@ -403,7 +404,7 @@ export function simulationToModel(sim: SimulationState, identity: { debtId?: str
       profile,
       rates,
       phases: sim.interestOnly ? sim.phases : [],
-      offsets: sim.offsets.map((o) => ({ id: o.key, accountId: o.placeholderAccountId, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.percentageBps, basis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom })),
+      offsets: sim.offsets.map((o) => ({ id: o.key, accountId: o.placeholderAccountId, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.percentageBps, basis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom, useActualBalance: o.useActualBalance })),
       components: modelComponents(sim),
       paymentRecasts: profile.recast === "on-contract-date" ? sim.paymentRecasts.map((r) => ({ date: r.date })) : [],
       assumptions: modelAssumptions(sim),
@@ -525,7 +526,7 @@ export function detailToStates(detail: DebtDetail): { simulation: SimulationStat
     creditLimitMinor: c.terms.creditLimitMinor,
     paymentRecasts: c.paymentRecasts.map((r) => ({ date: r.date, note: r.note })),
     components: simComponents,
-    offsets: detail.offsets.map((o) => ({ key: `offset:${o.id}`, placeholderAccountId: `offset:${o.id}`, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.offsetPercentageBps, basis: o.balanceBasis === "cleared" ? "cleared" : "total", capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments === true, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom ?? null })),
+    offsets: detail.offsets.map((o) => ({ key: `offset:${o.id}`, placeholderAccountId: `offset:${o.id}`, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.offsetPercentageBps, basis: o.balanceBasis === "cleared" ? "cleared" : "total", capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments === true, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom ?? null, useActualBalance: o.useActualBalance === true })),
     assumptions: detail.assumptions.map((a) => ({
       key: simKey("assumption"),
       id: a.id,
@@ -658,7 +659,7 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
           source: r.source,
           note: r.note,
         })),
-      offsets: sim.offsets.map((o) => ({ id: o.key.startsWith("offset:") ? o.key.slice("offset:".length) : null, actualAccountId: mapAccount(o.placeholderAccountId)!, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, offsetPercentageBps: o.percentageBps, balanceBasis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom })),
+      offsets: sim.offsets.map((o) => ({ id: o.key.startsWith("offset:") ? o.key.slice("offset:".length) : null, actualAccountId: mapAccount(o.placeholderAccountId)!, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, offsetPercentageBps: o.percentageBps, balanceBasis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom, useActualBalance: o.useActualBalance })),
       assumptions: sim.assumptions.map((a) => ({ id: a.id ?? null, kind: a.kind, effectiveFrom: a.effectiveFrom, recurrence: a.recurrence, amountMinor: a.amountMinor, feeTreatment: a.kind === "fee" ? (a.feeTreatment ?? "cash-paid") : null, offsetAccountId: isOffsetAssumptionKind(a.kind) ? mapAccount(a.offsetAccountId) : null, note: a.note })),
       ...(tracking.changeSummary.trim() ? { changeSummary: tracking.changeSummary.trim() } : {}),
     },

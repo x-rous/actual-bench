@@ -292,3 +292,18 @@ export function setDebtCurrentRevision(db: SqliteDatabase, id: string, revision:
   if (revision < existing.currentRevision) throw new AppDbValidationError("A debt's revision cannot move backwards");
   db.prepare("UPDATE debts SET current_revision = ? WHERE id = ?").run(revision, id);
 }
+
+/** Accept only the current revision's drift. A later material revision invalidates it naturally. */
+export function setDebtDriftAcceptedRevision(db: SqliteDatabase, id: string, revision: number | null, now = new Date().toISOString()): DebtRecord {
+  const debt = getDebt(db, id);
+  if (!debt) throw new AppDbValidationError("Debt not found");
+  if (revision !== null && revision !== debt.currentRevision) throw new AppDbValidationError("Only the current debt revision can accept drift");
+  db.prepare("UPDATE debts SET drift_accepted_revision = ?, updated_at = ? WHERE id = ?").run(revision, now, id);
+  return getDebt(db, id)!;
+}
+
+export function setDebtOnboardingDate(db: SqliteDatabase, id: string, date: string, now = new Date().toISOString()): DebtRecord {
+  if (!getDebt(db, id)) throw new AppDbValidationError("Debt not found");
+  db.prepare("UPDATE debts SET onboarding_date = ?, updated_at = ? WHERE id = ?").run(requireIsoDate(date, "onboardingDate"), now, id);
+  return getDebt(db, id)!;
+}

@@ -6,6 +6,10 @@ import type { Eligibility } from "@/lib/financial-models/loan/eligibility";
 import type { MatchingHistorySnapshot } from "@/lib/assets-debt/actual/ledgerPort";
 import type { MatchRuleSave, MatchRuleView } from "@/lib/assets-debt/services/matchingService";
 import type { DebtBacktestResult } from "@/lib/financial-models/matching";
+import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
+import type { DebtObservationRecord } from "@/lib/app-db/debtObservationRepository";
+import type { DebtAnchorRecord } from "@/lib/app-db/debtAnchorRepository";
+import type { DriftComparison, DriftState } from "@/lib/assets-debt/classification/drift";
 
 /**
  * Client for `/api/assets-debt/debts/**` (RD-084 P1.3). Configuration and
@@ -50,7 +54,7 @@ export const archiveDebt = (id: string) => request<{ debt?: DebtDetail } | undef
 
 export const getEligibility = (id: string) => request<{ eligibility: Eligibility }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/eligibility`).then((r) => r.eligibility);
 
-export const getSchedule = (id: string, body: { from: string; to: string; overrides?: DebtProjectionOverrides; resolution?: "events" | "monthly" | "yearly" }) =>
+export const getSchedule = (id: string, body: { from: string; to: string; overrides?: DebtProjectionOverrides; resolution?: "events" | "monthly" | "yearly"; offsetHistories?: OffsetHistorySnapshot[] }) =>
   request<{ projection: DebtProjection }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/schedule`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.projection);
 
 export const saveAssumptions = (id: string, assumptions: AssumptionInput[], changeSummary: string) =>
@@ -70,3 +74,14 @@ export const deleteMatchRule = (id: string, ruleId: string) =>
 
 export const runMatchBacktest = (id: string, body: { ruleId: string; from: string; to: string; snapshots: MatchingHistorySnapshot[] }) =>
   request<{ backtest: DebtBacktestResult }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/backtest`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.backtest);
+
+export const listDebtObservations = (id: string) => request<{ observations: DebtObservationRecord[]; history: DebtObservationRecord[] }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/observations`);
+export const recordDebtObservation = (id: string, body: { observedOn: string; recordedAt: string; principalMinor: number; accruedInterestMinor: number | null; supersedesObservationId?: string | null; note: string | null }) =>
+  request<{ observation: DebtObservationRecord }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/observations`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.observation);
+export const listDebtAnchors = (id: string) => request<{ effective: DebtAnchorRecord | null; anchors: DebtAnchorRecord[] }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/anchors`);
+export const createDebtAnchor = (id: string, observationId: string) => request<{ anchor: DebtAnchorRecord }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/anchors`, { method: "POST", body: JSON.stringify({ observationId, carriedRemainderDecimal: null }) }).then((r) => r.anchor);
+export type DebtReconciliationView = { comparison: DriftComparison; drift: DriftState; health: { overdue: boolean; dueDate: string | null }; lenderObservation: DebtObservationRecord | null; projectedBalanceVariance: null };
+export const getDebtReconciliation = (id: string, body: { comparisonDate: string; actualBalanceMinor: number; offsetHistories?: OffsetHistorySnapshot[] }) =>
+  request<{ reconciliation: DebtReconciliationView }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/reconciliation`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.reconciliation);
+export const acceptDebtDrift = (id: string) => request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/reconciliation`, { method: "PATCH", body: JSON.stringify({ accept: true }) }).then((r) => r.debt);
+export const runConventionDiagnostic = (id: string, observationId: string) => request<{ candidates: Array<{ variant: { dayCount: string; timing: string; interestPostingRounding: string }; isCurrent: boolean; ok: boolean; principalMinor: number | null; differenceMinor: number | null }> }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/diagnostics/conventions`, { method: "POST", body: JSON.stringify({ observationId }) }).then((r) => r.candidates);

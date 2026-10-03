@@ -39,7 +39,7 @@ describe("saving a debt configuration", () => {
     expect(detail.blocked).toBeNull();
     const revisions = listModelRevisions(db, "debt", detail.debt.id);
     expect(revisions).toHaveLength(1);
-    expect(revisions[0]).toMatchObject({ revision: 1, configFormat: "rd084.debt-revision", configVersion: 1, changeSummary: "Created" });
+    expect(revisions[0]).toMatchObject({ revision: 1, configFormat: "rd084.debt-revision", configVersion: 2, changeSummary: "Created" });
     expect(detail.revision.hash).toBe(revisions[0].configHash);
   });
 

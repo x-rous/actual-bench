@@ -44,7 +44,7 @@ export function FeatureControls({ sim, change, propose }: Props) {
       return;
     }
     const key = simKey("offset");
-    const offsets = stash.offsets.length ? stash.offsets : [{ key, placeholderAccountId: key, effectiveFrom: sim.startDate, effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null, fundScheduledRepayments: false, fundScheduledRepaymentsFrom: null }];
+    const offsets = stash.offsets.length ? stash.offsets : [{ key, placeholderAccountId: key, effectiveFrom: sim.startDate, effectiveTo: null, percentageBps: 10_000, basis: "total" as const, capMinor: null, fundScheduledRepayments: false, fundScheduledRepaymentsFrom: null, useActualBalance: false }];
     const offsetEvents = stash.offsets.length ? stash.offsetEvents : [{ key: simKey("offset-balance"), kind: "offset-balance" as const, effectiveFrom: sim.startDate, recurrence: null, amountMinor: 0, feeTreatment: null, offsetAccountId: offsets[0].placeholderAccountId, note: null }];
     propose({ ...sim, offsets, assumptions: [...sim.assumptions, ...offsetEvents] });
   };

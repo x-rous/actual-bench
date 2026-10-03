@@ -855,14 +855,14 @@ describe("an existing loan page", () => {
     expect(mocked.createDebt).not.toHaveBeenCalled();
   });
 
-  it("the Activity view shows the current revision and saved state, with full history deferred", async () => {
+  it("the Activity view opens lender reconciliation", async () => {
     const nav = jest.requireMock("next/navigation") as { useSearchParams: () => URLSearchParams };
     const original = nav.useSearchParams;
     nav.useSearchParams = () => new URLSearchParams("view=activity");
     try {
       wrap(<LoanView id={detail.debt.id} />);
-      expect(await screen.findByText(/Saved revision 1/)).toHaveTextContent("No unsaved changes.");
-      expect(screen.getByText(/full revision history.*later phases/i)).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Lender reconciliation" })).toBeInTheDocument();
+      expect(screen.getByText(/read-only in Actual/i)).toBeInTheDocument();
     } finally {
       nav.useSearchParams = original;
     }

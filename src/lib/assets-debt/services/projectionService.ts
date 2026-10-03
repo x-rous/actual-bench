@@ -4,6 +4,8 @@ import type { LoanModelSnapshot } from "@/lib/financial-models/loan/model";
 import { projectDebt, type DebtProjection, type DebtProjectionInput } from "@/lib/financial-models/loan/projection";
 import { modelFromDetail } from "../model/buildModel";
 import { getDebtDetail, type DebtBlock } from "./debtConfigService";
+import { getEffectiveDebtAnchor } from "@/lib/app-db/debtAnchorRepository";
+import { mergeOffsetHistories, type OffsetHistorySnapshot } from "./offsetHistoryService";
 
 export { modelFromDetail };
 
@@ -20,7 +22,7 @@ export { modelFromDetail };
  * contract's opening principal. Later phases supply an anchor instead.
  */
 
-export type ProjectionRequest = Pick<DebtProjectionInput, "from" | "to" | "overrides" | "resolution">;
+export type ProjectionRequest = Pick<DebtProjectionInput, "from" | "to" | "overrides" | "resolution"> & { offsetHistories?: OffsetHistorySnapshot[] };
 
 export type StoredProjection = { ok: true; projection: DebtProjection; model: LoanModelSnapshot } | { ok: false; blocked: DebtBlock } | { ok: false; notFound: true };
 
@@ -31,16 +33,26 @@ export function projectStoredDebt(db: SqliteDatabase, debtId: string, request: P
   const built = modelFromDetail(detail);
   if (!built.ok) return built;
   const { model } = built;
+  const tracked = model.offsets.some((offset) => offset.useActualBalance === true);
+  if (tracked && request.offsetHistories === undefined) {
+    return { ok: false, blocked: { code: "invalid-config", message: "Actual-linked offset history is required for this projection; the manual starting balance was not used as a fallback." } };
+  }
+  const merged = request.offsetHistories ? mergeOffsetHistories(model, request.offsetHistories) : { model, events: [] };
+  const savedAnchor = getEffectiveDebtAnchor(db, debtId);
+  const anchor = savedAnchor
+    ? { date: savedAnchor.anchorDate, principalMinor: savedAnchor.principalMinor, accruedInterestMinor: savedAnchor.accruedInterestMinor, carriedRemainder: savedAnchor.carriedRemainderDecimal, source: savedAnchor.source }
+    : { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" };
   const projection = projectDebt({
-    model,
-    anchor: { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" },
-    events: [],
+    model: merged.model,
+    anchor,
+    events: merged.events,
     from: request.from,
     to: request.to,
     overrides: request.overrides,
     resolution: request.resolution,
+    baselineAnchorDate: model.terms.openingDate,
   });
-  return { ok: true, projection, model };
+  return { ok: true, projection, model: merged.model };
 }
 
 export type StoredEligibility = { ok: true; eligibility: Eligibility } | { ok: false; blocked: DebtBlock } | { ok: false; notFound: true };

@@ -35,6 +35,8 @@ export type OffsetLink = {
   fundScheduledRepayments?: boolean;
   /** Optional first date that generated repayments may draw cash; absent means the link start. */
   fundScheduledRepaymentsFrom?: IsoDate | null;
+  /** Read-only Actual history source; absent in historical snapshots means false. */
+  useActualBalance?: boolean;
 };
 
 /** Baseline future assumptions (data-model `debt_future_assumptions`); never a scenario. */

@@ -12,6 +12,10 @@ import { GET as eligibility } from "./[id]/eligibility/route";
 import { POST as schedule } from "./[id]/schedule/route";
 import { POST as backtest } from "./[id]/backtest/route";
 import { DELETE as deleteRule, GET as getRules, PATCH as patchRule, POST as postRule } from "./[id]/match-rules/route";
+import { GET as getObservations, POST as postObservation } from "./[id]/observations/route";
+import { GET as getAnchors, POST as postAnchor } from "./[id]/anchors/route";
+import { POST as reconcile } from "./[id]/reconciliation/route";
+import { POST as diagnose } from "./[id]/diagnostics/conventions/route";
 import { GET, POST } from "./route";
 
 const saved = process.env.ACTUAL_BENCH_DB_PATH;
@@ -162,6 +166,28 @@ describe("/api/assets-debt/debts", () => {
     expect(((await (await getRules(new Request("http://bench/api"), ctx(debt.id))).json()) as { rules: unknown[] }).rules).toHaveLength(0);
   });
 
+  it("records immutable observations, diagnoses without changing config, reconciles and appends an anchor", async () => {
+    const debt = await create();
+    const before = (await (await getOne(new Request("http://bench/api"), ctx(debt.id))).json()) as { debt: { revision: { hash: string } } };
+    const observed = await postObservation(json({ observedOn: "2024-06-01", recordedAt: "2024-06-02T00:00:00Z", principalMinor: 39_000_000, accruedInterestMinor: 12_345, supersedesObservationId: null, note: "Statement" }), ctx(debt.id));
+    expect(observed.status).toBe(201);
+    const observation = ((await observed.json()) as { observation: { id: string } }).observation;
+    expect(((await (await getObservations(new Request("http://bench/api"), ctx(debt.id))).json()) as { observations: unknown[] }).observations).toHaveLength(1);
+
+    const diagnostic = await diagnose(json({ observationId: observation.id }), ctx(debt.id));
+    expect(diagnostic.status).toBe(200);
+    expect(((await diagnostic.json()) as { candidates: unknown[] }).candidates.length).toBeGreaterThan(0);
+    const after = (await (await getOne(new Request("http://bench/api"), ctx(debt.id))).json()) as { debt: { revision: { hash: string } } };
+    expect(after.debt.revision.hash).toBe(before.debt.revision.hash);
+
+    const reconciled = await reconcile(json({ comparisonDate: "2024-06-01", actualBalanceMinor: 39_100_000 }), ctx(debt.id));
+    expect(reconciled.status).toBe(200);
+    expect(await reconciled.json()).toMatchObject({ reconciliation: { comparison: { comparisonDate: "2024-06-01", actualMinor: 39_100_000 } } });
+
+    expect((await postAnchor(json({ observationId: observation.id, carriedRemainderDecimal: null }), ctx(debt.id))).status).toBe(201);
+    expect(((await (await getAnchors(new Request("http://bench/api"), ctx(debt.id))).json()) as { anchors: unknown[] }).anchors).toHaveLength(1);
+  });
+
   it("handlers hold no SQL and no calculation", () => {
     const files: string[] = [];
     const walk = (dir: string) => {
@@ -172,7 +198,7 @@ describe("/api/assets-debt/debts", () => {
       }
     };
     walk(__dirname);
-    expect(files.length).toBe(7);
+    expect(files.length).toBe(11);
     for (const file of files) {
       const source = readFileSync(file, "utf8");
       expect({ file, sql: /prepare\(|SELECT |INSERT |UPDATE |DELETE FROM/.test(source) }).toEqual({ file, sql: false });

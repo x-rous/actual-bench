@@ -10,6 +10,8 @@ import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
+import { getTransport } from "@/lib/actual";
+import { readOffsetHistories, type OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import { archiveDebt, createDebt, DebtApiError, getDebt, listDebts, updateDebt } from "../lib/debtsApi";
 import { detailToStates, newSimulation, newTracking, statesToSaveInput, summarizeProfile, type SaveIssue, type SimulationState, type TrackingState } from "../lib/simulatorModel";
@@ -17,6 +19,7 @@ import { useAccountDirectory } from "../lib/useAccountDirectory";
 import { SAVE_BOUNDARY } from "./saveBoundary";
 import { SimulatorView } from "./simulator/SimulatorView";
 import { strategyAdvice, TrackingSetup } from "./tracking/TrackingSetup";
+import { LenderReconciliation } from "./reconciliation/LenderReconciliation";
 
 /**
  * The loan pages (RD-084 P1.3b T204, T214, T216).
@@ -194,7 +197,7 @@ export function NewLoanView() {
         </div>
       </header>
       <IssueList issues={issues} />
-      {step === "track" ? <TrackingSetup sim={sim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} /> : null}
+      {step === "track" ? <TrackingSetup sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} /> : null}
       {step === "review" ? (
         <Review sim={sim} tracking={tracking}>
           <div className="flex flex-wrap gap-2">
@@ -218,6 +221,7 @@ const VIEWS = [
 ] as const;
 
 export function LoanView({ id }: { id: string }) {
+  const connection = useConnectionStore(selectActiveInstance);
   const debt = useQuery({ queryKey: ["assets-debt", "debt", id], queryFn: () => getDebt(id) });
   const directory = useAccountDirectory();
   const params = useSearchParams();
@@ -230,6 +234,24 @@ export function LoanView({ id }: { id: string }) {
   const [tracking, setTracking] = useState<TrackingState | null>(null);
   const [issues, setIssues] = useState<SaveIssue[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [offsetAsOfDate, setOffsetAsOfDate] = useState(today());
+  const trackedOffsetAccounts = useMemo(
+    () => debt.data?.offsets.filter((offset) => offset.useActualBalance === true).map((offset) => offset.actualAccountId) ?? [],
+    [debt.data]
+  );
+  const offsetHistory = useQuery({
+    queryKey: ["assets-debt", "offset-history", connection?.id, id, offsetAsOfDate, trackedOffsetAccounts.join("|")],
+    queryFn: () => {
+      if (!connection) throw new Error("No active connection");
+      return readOffsetHistories(getTransport(connection), { accountIds: trackedOffsetAccounts, asOfDate: offsetAsOfDate });
+    },
+    enabled: !!connection && trackedOffsetAccounts.length > 0,
+  });
+  const offsetSnapshots = useMemo((): OffsetHistorySnapshot[] | undefined => {
+    if (!offsetHistory.data?.ok || !debt.data) return undefined;
+    const placeholder = new Map(debt.data.offsets.map((offset) => [offset.actualAccountId, `offset:${offset.id}`]));
+    return offsetHistory.data.snapshots.map((snapshot) => ({ ...snapshot, accountId: placeholder.get(snapshot.accountId) ?? snapshot.accountId }));
+  }, [offsetHistory.data, debt.data]);
 
   useEffect(() => {
     // Load (or reload after a save) the saved states into the editable copies.
@@ -336,7 +358,17 @@ export function LoanView({ id }: { id: string }) {
       </nav>
       <IssueList issues={issues} />
       {staleStrategy && !readOnly ? <p className="mx-4 mt-2 text-xs text-muted-foreground">{staleStrategy}</p> : null}
-      {view === "simulator" ? <SimulatorView sim={sim} onChange={setSim} saved={saved.simulation} title={tracking.name || detail.debt.name} badge={badge} readOnly={readOnly} revision={detail.debt.currentRevision} actions={actions} /> : null}
+      {view === "simulator" ? <SimulatorView sim={sim} onChange={setSim} saved={saved.simulation} title={tracking.name || detail.debt.name} badge={badge} readOnly={readOnly} revision={detail.debt.currentRevision} actions={actions} offsetTracking={trackedOffsetAccounts.length ? {
+        asOfDate: offsetAsOfDate,
+        onAsOfDateChange: setOffsetAsOfDate,
+        snapshots: offsetSnapshots,
+        loading: offsetHistory.isLoading || offsetHistory.isFetching,
+        problems: offsetHistory.isError
+          ? [offsetHistory.error instanceof Error ? offsetHistory.error.message : "Actual offset history could not be read."]
+          : offsetHistory.data && !offsetHistory.data.ok
+            ? offsetHistory.data.failures.map((failure) => `${failure.accountId}: ${failure.message}`)
+            : [],
+      } : undefined} /> : null}
       {view === "tracking" ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-auto">
           <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
@@ -347,20 +379,11 @@ export function LoanView({ id }: { id: string }) {
             <div className="ml-auto flex gap-2">{actions}</div>
           </div>
           <p className="px-4 pt-3 text-xs text-muted-foreground">{SAVE_BOUNDARY}</p>
-          <TrackingSetup sim={sim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} />
+          <TrackingSetup sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} />
         </div>
       ) : null}
       {view === "activity" ? (
-        <section aria-labelledby="activity-heading" className="flex flex-col gap-2 px-4 py-4 text-sm">
-          <h1 id="activity-heading" className="text-base font-semibold">
-            {detail.debt.name}: activity
-          </h1>
-          <p>
-            Saved revision {detail.debt.currentRevision}
-            {detail.revision.createdAt ? `, recorded ${new Date(detail.revision.createdAt).toLocaleString()}` : ""}. {dirty ? "There are unsaved changes." : "No unsaved changes."}
-          </p>
-          <p className="text-xs text-muted-foreground">Last saved {new Date(detail.debt.updatedAt).toLocaleString()}. The full revision history, lender statements and postings will appear here in later phases.</p>
-        </section>
+        <LenderReconciliation debt={detail} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} />
       ) : null}
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)} state={confirm} />
     </div>

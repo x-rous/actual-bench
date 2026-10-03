@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import { crossesBudgetBoundary } from "@/lib/assets-debt/actual/ledgerPort";
@@ -78,7 +79,7 @@ function RadioQuestion({ legend, name, value, options, onChange, issue }: { lege
   );
 }
 
-export function TrackingSetup({ sim, tracking, setTracking, directory, issues }: { sim: SimulationState; tracking: TrackingState; setTracking: (t: TrackingState) => void; directory: AccountDirectory | undefined; issues: SaveIssue[] }) {
+export function TrackingSetup({ sim, setSimulation, tracking, setTracking, directory, issues }: { sim: SimulationState; setSimulation?: (sim: SimulationState) => void; tracking: TrackingState; setTracking: (t: TrackingState) => void; directory: AccountDirectory | undefined; issues: SaveIssue[] }) {
   const [componentsOpen, setComponentsOpen] = useState(false);
   const set = (patch: Partial<TrackingState>) => setTracking({ ...tracking, ...patch });
   const issue = (field: string) => issues.find((i) => i.field === field)?.message;
@@ -136,15 +137,29 @@ export function TrackingSetup({ sim, tracking, setTracking, directory, issues }:
           <SelectField label="Balance sign in Actual" value={tracking.signConvention} options={SIGN_CONVENTION_OPTIONS} onChange={(v) => set({ signConvention: v as TrackingState["signConvention"] })} />
         </div>
         {sim.offsets.map((o, i) => (
-          <SelectField
-            key={o.key}
-            label={sim.offsets.length > 1 ? `Offset account ${i + 1}` : "Offset account"}
-            value={tracking.offsetAccountMap[o.placeholderAccountId] ?? ""}
-            options={accounts.filter((a) => a.value !== tracking.liabilityAccountId)}
-            onChange={(v) => set({ offsetAccountMap: { ...tracking.offsetAccountMap, [o.placeholderAccountId]: v } })}
-            issue={issue(`offset:${o.key}`)}
-            hint="The account whose balance you simulated as the offset. Required even for a draft."
-          />
+          <div key={o.key} className="flex flex-col gap-2 rounded border border-border p-2">
+            <SelectField
+              label={sim.offsets.length > 1 ? `Offset account ${i + 1}` : "Offset account"}
+              value={tracking.offsetAccountMap[o.placeholderAccountId] ?? ""}
+              options={accounts.filter((a) => a.value !== tracking.liabilityAccountId)}
+              onChange={(v) => set({ offsetAccountMap: { ...tracking.offsetAccountMap, [o.placeholderAccountId]: v } })}
+              issue={issue(`offset:${o.key}`)}
+              hint="The account whose balance you simulated as the offset. Required even for a draft."
+            />
+            <label className="flex items-start justify-between gap-3 text-sm">
+              <span>
+                <span className="font-medium">Track offset balance from Actual</span>
+                <span className="block text-xs text-muted-foreground">Use bounded, read-only historical balances through an explicit observation date. Nothing is written to Actual.</span>
+              </span>
+              <Switch
+                aria-label={`Track ${sim.offsets.length > 1 ? `offset account ${i + 1}` : "offset account"} balance from Actual`}
+                checked={o.useActualBalance}
+                disabled={!setSimulation}
+                onCheckedChange={(checked) => setSimulation?.({ ...sim, offsets: sim.offsets.map((item) => item.key === o.key ? { ...item, useActualBalance: checked } : item) })}
+              />
+            </label>
+            {issue(`offsets.${i}.useActualBalance`) ? <p className="text-[11px] font-medium text-destructive">{issue(`offsets.${i}.useActualBalance`)}</p> : null}
+          </div>
         ))}
       </Group>
 

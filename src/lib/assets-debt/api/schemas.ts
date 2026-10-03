@@ -54,6 +54,7 @@ const offset = z.strictObject({
   capMinor: minor.nullable(),
   fundScheduledRepayments: z.boolean().default(false),
   fundScheduledRepaymentsFrom: isoDate.nullable().default(null),
+  useActualBalance: z.boolean().default(false),
 });
 
 export const assumptionSchema = z.strictObject({
@@ -100,6 +101,12 @@ export const scheduleRequestSchema = z.strictObject({
   from: isoDate,
   to: isoDate,
   resolution: z.enum(["events", "monthly", "yearly"]).optional(),
+  offsetHistories: z.array(z.strictObject({
+    accountId: id,
+    asOfDate: isoDate,
+    transactionCount: z.number().int().nonnegative().max(5_000),
+    points: z.array(z.strictObject({ date: isoDate, totalBalanceMinor: minor, clearedBalanceMinor: minor })).max(5_001),
+  })).max(50).optional(),
   overrides: z
     .strictObject({
       assumptions: z
@@ -177,6 +184,26 @@ export const matchRuleSaveSchema = z.strictObject({
   actions: z.unknown(),
   enabled: z.boolean().default(false),
 });
+
+export const observationRequestSchema = z.strictObject({
+  observedOn: isoDate,
+  recordedAt: z.string().min(1).max(100),
+  principalMinor: minor.nonnegative(),
+  accruedInterestMinor: minor.nonnegative().nullable(),
+  supersedesObservationId: id.nullable().optional(),
+  note: z.string().max(2_000).nullable(),
+});
+
+export const anchorRequestSchema = z.strictObject({ observationId: id, carriedRemainderDecimal: decimal.nullable().default(null) });
+
+const offsetHistorySchema = z.array(z.strictObject({
+  accountId: id, asOfDate: isoDate, transactionCount: z.number().int().nonnegative().max(5_000),
+  points: z.array(z.strictObject({ date: isoDate, totalBalanceMinor: minor, clearedBalanceMinor: minor })).max(5_001),
+})).max(50).optional();
+
+export const reconciliationRequestSchema = z.strictObject({ comparisonDate: isoDate, actualBalanceMinor: minor.nonnegative(), offsetHistories: offsetHistorySchema });
+export const conventionDiagnosticRequestSchema = z.strictObject({ observationId: id });
+export const driftAcceptanceRequestSchema = z.strictObject({ accept: z.literal(true) });
 
 const optionalEnableBacktest = z.strictObject({
   from: isoDate,

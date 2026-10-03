@@ -680,6 +680,8 @@ export type DebtOffsetLinkRecord = {
   fundScheduledRepayments?: boolean;
   /** Added in schema v41; absent in historical revision JSON means immediate funding. */
   fundScheduledRepaymentsFrom?: string | null;
+  /** Added in schema v43; absent in historical revision JSON means false. */
+  useActualBalance?: boolean;
   createdAt: string;
   updatedAt: string;
 };

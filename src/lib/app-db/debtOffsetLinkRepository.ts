@@ -21,6 +21,7 @@ type OffsetRow = {
   cap_minor: number | null;
   fund_scheduled_repayments: number;
   fund_scheduled_repayments_from: string | null;
+  use_actual_balance: number;
   created_at: string;
   updated_at: string;
 };
@@ -36,6 +37,7 @@ export type OffsetLinkInput = {
   capMinor: number | null;
   fundScheduledRepayments?: boolean;
   fundScheduledRepaymentsFrom?: string | null;
+  useActualBalance?: boolean;
 };
 
 function rowToRecord(row: OffsetRow): DebtOffsetLinkRecord {
@@ -50,6 +52,7 @@ function rowToRecord(row: OffsetRow): DebtOffsetLinkRecord {
     capMinor: row.cap_minor,
     fundScheduledRepayments: row.fund_scheduled_repayments === 1,
     fundScheduledRepaymentsFrom: row.fund_scheduled_repayments_from,
+    useActualBalance: row.use_actual_balance === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -70,6 +73,7 @@ function columns(row: OffsetLinkInput) {
     optionalInteger(row.capMinor, "capMinor", 1),
     row.fundScheduledRepayments ? 1 : 0,
     optionalIsoDate(row.fundScheduledRepaymentsFrom, "fundScheduledRepaymentsFrom"),
+    row.useActualBalance ? 1 : 0,
   ] as const;
 }
 
@@ -97,8 +101,8 @@ export function replaceDebtOffsetLinks(db: SqliteDatabase, debtId: string, rows:
           .prepare(
             `INSERT INTO debt_offset_links (id, debt_id, actual_account_id, effective_from, effective_to,
                offset_percentage_bps, balance_basis, cap_minor, fund_scheduled_repayments,
-               fund_scheduled_repayments_from, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+               fund_scheduled_repayments_from, use_actual_balance, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(id, debtId, ...r.cols, now, now),
       update: (id, r) =>
@@ -106,7 +110,7 @@ export function replaceDebtOffsetLinks(db: SqliteDatabase, debtId: string, rows:
           .prepare(
             `UPDATE debt_offset_links SET actual_account_id = ?, effective_from = ?, effective_to = ?,
                offset_percentage_bps = ?, balance_basis = ?, cap_minor = ?, fund_scheduled_repayments = ?,
-               fund_scheduled_repayments_from = ?, updated_at = ?
+               fund_scheduled_repayments_from = ?, use_actual_balance = ?, updated_at = ?
              WHERE id = ? AND debt_id = ?`
           )
           .run(...r.cols, now, id, debtId),

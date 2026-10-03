@@ -296,6 +296,8 @@ export function validateDebtSave(
     if (o.fundScheduledRepayments && input.behaviorClass !== "term-loan") add(f("fundScheduledRepayments"), "is available only for term loans");
     if (o.fundScheduledRepayments && input.executionStrategy !== "bench-daily") add(f("fundScheduledRepayments"), "requires the daily loan engine");
     if (o.fundScheduledRepayments && config?.profile.accrual === "per-period") add(f("fundScheduledRepayments"), "requires a daily-accrual calculation method");
+    if (o.useActualBalance && input.executionStrategy !== "bench-daily") add(f("useActualBalance"), "requires the daily loan engine");
+    if (o.useActualBalance && config?.profile.accrual === "per-period") add(f("useActualBalance"), "requires a daily-accrual calculation method");
   });
 
   // Baseline assumptions (FR-110): each kind's required and forbidden fields.
@@ -346,7 +348,7 @@ export function validateDebtSave(
       },
       config,
       rates,
-      offsets: input.offsets.map((o) => ({ ...o, effectiveTo: o.effectiveTo ?? null, capMinor: o.capMinor ?? null, fundScheduledRepayments: o.fundScheduledRepayments === true, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom ?? null })),
+      offsets: input.offsets.map((o) => ({ ...o, effectiveTo: o.effectiveTo ?? null, capMinor: o.capMinor ?? null, fundScheduledRepayments: o.fundScheduledRepayments === true, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom ?? null, useActualBalance: o.useActualBalance === true })),
       assumptions: input.assumptions.map((a) => ({ ...a, recurrence: a.recurrence ?? null, feeTreatment: a.feeTreatment ?? null, offsetAccountId: a.offsetAccountId ?? null, note: a.note ?? null })),
     },
   };
