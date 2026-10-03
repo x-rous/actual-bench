@@ -511,6 +511,22 @@ export function AccountsTable({
                     <span className="sr-only">Notes</span>
                   </th>
 
+                  {groups && (
+                    <th
+                      className="w-44 px-2 py-1.5 text-left"
+                      aria-sort={sortCol === "group" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSort("group")}
+                        className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                      >
+                        Group
+                        <SortIndicator col="group" sortCol={sortCol} sortDir={sortDir} />
+                      </button>
+                    </th>
+                  )}
+
                   <th className="w-32 px-4 py-1.5 text-right">
                     <span className="text-xs font-medium text-muted-foreground">Balance</span>
                   </th>
@@ -542,22 +558,6 @@ export function AccountsTable({
                       <SortIndicator col="closed" sortCol={sortCol} sortDir={sortDir} />
                     </button>
                   </th>
-
-                  {groups && (
-                    <th
-                      className="w-44 px-2 py-1.5 text-left"
-                      aria-sort={sortCol === "group" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleSort("group")}
-                        className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
-                      >
-                        Group
-                        <SortIndicator col="group" sortCol={sortCol} sortDir={sortDir} />
-                      </button>
-                    </th>
-                  )}
 
                   <th className="w-40 px-2 py-1.5 text-left">
                     <span className="text-xs font-medium text-muted-foreground">Rules</span>

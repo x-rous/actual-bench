@@ -226,6 +226,20 @@ function AccountsTableRowComponent({
         )}
       </td>
 
+      {groups && (
+        <td className="w-44 px-2 py-0.5">
+          <AccountGroupCell
+            accountId={entity.id}
+            accountName={entity.name}
+            groupId={entity.groupId}
+            groups={groups}
+            disabled={isDeleted}
+            onAssign={onAssignGroup}
+            onRequestNewGroup={onRequestNewGroup}
+          />
+        </td>
+      )}
+
       <td className="w-32 px-4 py-0.5 text-right tabular-nums">
         {isNew ? (
           <InitialBalanceInput
@@ -284,20 +298,6 @@ function AccountsTableRowComponent({
           {entity.closed ? "Closed" : "Open"}
         </Badge>
       </td>
-
-      {groups && (
-        <td className="w-44 px-2 py-0.5">
-          <AccountGroupCell
-            accountId={entity.id}
-            accountName={entity.name}
-            groupId={entity.groupId}
-            groups={groups}
-            disabled={isDeleted}
-            onAssign={onAssignGroup}
-            onRequestNewGroup={onRequestNewGroup}
-          />
-        </td>
-      )}
 
       <td className="w-40 px-2 py-0.5">
         {!isDeleted && (
