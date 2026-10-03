@@ -1,5 +1,5 @@
 import { resetAppDbForTests } from "@/lib/app-db/connection";
-import { insertDebt } from "@/lib/app-db/debtRepository";
+import { getDebt, insertDebt, setDebtDriftAcceptedRevision } from "@/lib/app-db/debtRepository";
 import { insertDebtObservation, listCurrentDebtObservations, listDebtObservationHistory } from "@/lib/app-db/debtObservationRepository";
 import { getEffectiveDebtAnchor, insertDebtAnchor, listDebtAnchors } from "@/lib/app-db/debtAnchorRepository";
 import { listDebtOffsetLinks, replaceDebtOffsetLinks } from "@/lib/app-db/debtOffsetLinkRepository";
@@ -41,6 +41,13 @@ describe("RD-084 P1.5 evidence persistence", () => {
     const latest = insertDebtAnchor(db, { debtId: d.id, anchorDate: "2026-02-01", principalMinor: 98_900, accruedInterestMinor: 100, carriedRemainderDecimal: "0.004", source: "correction", observationKind: "manual-statement", observationId: correction.id, configRevision: 2 }, "2026-02-03T00:00:00Z");
     expect(getEffectiveDebtAnchor(db, d.id)?.id).toBe(latest.id);
     expect(listDebtAnchors(db, d.id)).toHaveLength(2);
+  });
+
+  it("persists the exact accepted comparison alongside its revision", () => {
+    const d = debt();
+    setDebtDriftAcceptedRevision(db, d.id, 2, "comparison-v1", "2026-02-01T00:00:00Z");
+    expect(getDebt(db, d.id)).toMatchObject({ driftAcceptedRevision: 2, driftAcceptedFingerprint: "comparison-v1" });
+    expect(() => setDebtDriftAcceptedRevision(db, d.id, 2, null)).toThrow(/both a revision and comparison fingerprint/);
   });
 });
 

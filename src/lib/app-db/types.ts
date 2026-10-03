@@ -634,6 +634,7 @@ export type DebtRecord = {
   expectedObservationIntervalDays: number | null;
   autoApplyEnabled: boolean;
   driftAcceptedRevision: number | null;
+  driftAcceptedFingerprint: string | null;
   currentRevision: number;
   /** Raw `rd084.debt-config` JSON; the service parses it (an unsupported version Blocks only this debt). */
   currentConfigJson: string;

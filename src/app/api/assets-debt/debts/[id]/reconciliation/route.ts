@@ -22,10 +22,12 @@ export async function POST(request: Request, context: Context) {
 export async function PATCH(request: Request, context: Context) {
   try {
     const { id } = await context.params;
-    parseBody(driftAcceptanceRequestSchema, await readJsonBody(request));
+    const body = parseBody(driftAcceptanceRequestSchema, await readJsonBody(request));
     const db = getAppDb();
     const debt = getDebt(db, id);
     if (!debt) return NextResponse.json({ error: "Debt not found" }, { status: 404 });
-    return NextResponse.json({ debt: setDebtDriftAcceptedRevision(db, id, debt.currentRevision) });
+    const result = reconcileDebt(db, { debtId: id, comparisonDate: body.comparisonDate, actualBalanceMinor: body.actualBalanceMinor, offsetHistories: body.offsetHistories });
+    if (!result.ok) return "notFound" in result ? NextResponse.json({ error: "Debt not found" }, { status: 404 }) : NextResponse.json({ blocked: result.blocked }, { status: 409 });
+    return NextResponse.json({ debt: setDebtDriftAcceptedRevision(db, id, debt.currentRevision, result.fingerprint) });
   } catch (error) { return assetsDebtErrorResponse(error); }
 }

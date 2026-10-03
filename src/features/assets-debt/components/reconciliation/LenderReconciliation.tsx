@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
+import { Label } from "@/components/ui/label";
 import { getTransport } from "@/lib/actual";
 import { readDatedBalance, toDebtMagnitude } from "@/lib/assets-debt/actual/ledgerPort";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
@@ -18,14 +19,11 @@ export function LenderReconciliation({ debt, offsetHistories }: { debt: DebtDeta
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
   const observations = useQuery({ queryKey: ["assets-debt", "observations", debt.debt.id], queryFn: () => listDebtObservations(debt.debt.id) });
-  const [date, setDate] = useState(today());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const date = selectedDate ?? observations.data?.observations[0]?.observedOn ?? today();
   const [principalMinor, setPrincipalMinor] = useState<number | null>(null);
   const [interestMinor, setInterestMinor] = useState<number | null>(0);
   const [correctionId, setCorrectionId] = useState<string | null>(null);
-  useEffect(() => {
-    const latest = observations.data?.observations[0]?.observedOn;
-    if (latest) setDate(latest);
-  }, [observations.data]);
   const actual = useQuery({
     queryKey: ["assets-debt", "dated-liability-balance", connection?.id, debt.debt.liabilityAccountId, date],
     queryFn: async () => {
@@ -46,14 +44,14 @@ export function LenderReconciliation({ debt, offsetHistories }: { debt: DebtDeta
   });
   const anchor = useMutation({ mutationFn: (observationId: string) => createDebtAnchor(debt.debt.id, observationId), onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["assets-debt"] }) });
   const diagnostic = useMutation({ mutationFn: (observationId: string) => runConventionDiagnostic(debt.debt.id, observationId) });
-  const accept = useMutation({ mutationFn: () => acceptDebtDrift(debt.debt.id), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["assets-debt"] }); } });
+  const accept = useMutation({ mutationFn: () => acceptDebtDrift(debt.debt.id, { comparisonDate: date, actualBalanceMinor: actualMagnitude!, offsetHistories }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["assets-debt"] }); void queryClient.invalidateQueries({ queryKey: ["assets-debt", "reconciliation", debt.debt.id] }); } });
   const format = (minor: number | null) => minor === null ? "Not available" : new Intl.NumberFormat(undefined, { minimumFractionDigits: debt.debt.currencyMinorDigits, maximumFractionDigits: debt.debt.currencyMinorDigits }).format(minor / 10 ** debt.debt.currencyMinorDigits);
 
   return (
     <section aria-labelledby="lender-reconciliation-heading" className="flex flex-col gap-4 px-4 py-4 text-sm">
       <div><h1 id="lender-reconciliation-heading" className="text-base font-semibold">Lender reconciliation</h1><p className="text-xs text-muted-foreground">Compare the model, Actual and immutable lender-statement evidence on one date. This workflow is read-only in Actual.</p></div>
       <div className="grid gap-3 rounded border border-border p-3 md:grid-cols-3">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">Comparison date<Input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+        <div className="flex flex-col gap-1"><Label htmlFor="reconciliation-date" className="text-xs text-muted-foreground">Comparison date</Label><DateInput id="reconciliation-date" value={date} onValueChange={setSelectedDate} /></div>
         <MoneyField label="Lender principal" valueMinor={principalMinor} minorDigits={debt.debt.currencyMinorDigits} onChange={setPrincipalMinor} />
         <MoneyField label="Accrued lender interest" valueMinor={interestMinor} minorDigits={debt.debt.currencyMinorDigits} onChange={setInterestMinor} />
         <Button type="button" size="sm" className="self-end" disabled={principalMinor === null || save.isPending} onClick={() => save.mutate()}>{correctionId ? "Record correction" : "Record statement balance"}</Button>
@@ -73,7 +71,7 @@ export function LenderReconciliation({ debt, offsetHistories }: { debt: DebtDeta
       ) : null}
       <div>
         <h2 className="text-sm font-semibold">Statement history</h2>
-        {observations.data?.observations.length ? <ul className="divide-y divide-border">{observations.data.observations.map((observation) => <li key={observation.id} className="flex flex-wrap items-center gap-2 py-2"><span className="tabular-nums">{observation.observedOn}</span><span>{format(observation.principalMinor)} principal</span><Button type="button" size="sm" variant="outline" className="ml-auto" onClick={() => { setCorrectionId(observation.id); setDate(observation.observedOn); setPrincipalMinor(observation.principalMinor); setInterestMinor(observation.accruedInterestMinor); }}>Correct</Button><Button type="button" size="sm" variant="outline" onClick={() => diagnostic.mutate(observation.id)}>Run convention diagnostic</Button><Button type="button" size="sm" variant="outline" onClick={() => anchor.mutate(observation.id)}>Use as new anchor</Button></li>)}</ul> : <p className="text-xs text-muted-foreground">No lender statement balances recorded.</p>}
+        {observations.data?.observations.length ? <ul className="divide-y divide-border">{observations.data.observations.map((observation) => <li key={observation.id} className="flex flex-wrap items-center gap-2 py-2"><span className="tabular-nums">{observation.observedOn}</span><span>{format(observation.principalMinor)} principal</span><Button type="button" size="sm" variant="outline" className="ml-auto" onClick={() => { setCorrectionId(observation.id); setSelectedDate(observation.observedOn); setPrincipalMinor(observation.principalMinor); setInterestMinor(observation.accruedInterestMinor); }}>Correct</Button><Button type="button" size="sm" variant="outline" onClick={() => diagnostic.mutate(observation.id)}>Run convention diagnostic</Button><Button type="button" size="sm" variant="outline" onClick={() => anchor.mutate(observation.id)}>Use as new anchor</Button></li>)}</ul> : <p className="text-xs text-muted-foreground">No lender statement balances recorded.</p>}
         {diagnostic.data ? <div className="mt-3 rounded border border-border p-2 text-xs"><p className="font-medium">Closest compatible conventions</p><ul>{diagnostic.data.slice(0, 3).map((candidate) => <li key={JSON.stringify(candidate.variant)}>{candidate.variant.dayCount}, {candidate.variant.timing}, {candidate.variant.interestPostingRounding}: {format(candidate.differenceMinor)} difference{candidate.isCurrent ? " (current)" : ""}</li>)}</ul><p className="text-muted-foreground">Diagnostic results never change the saved calculation method.</p></div> : null}
       </div>
     </section>

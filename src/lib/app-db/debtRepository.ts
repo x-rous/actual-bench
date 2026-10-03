@@ -5,6 +5,7 @@ import {
   optionalIsoDate,
   optionalText,
   requireInteger,
+  requireIsoDate,
   requireOneOf,
   requireText,
   rethrowConstraint,
@@ -57,6 +58,7 @@ type DebtRow = {
   expected_observation_interval_days: number | null;
   auto_apply_enabled: number;
   drift_accepted_revision: number | null;
+  drift_accepted_fingerprint: string | null;
   current_revision: number;
   current_config_json: string;
   status: string;
@@ -115,6 +117,7 @@ function rowToRecord(row: DebtRow): DebtRecord {
     expectedObservationIntervalDays: row.expected_observation_interval_days,
     autoApplyEnabled: row.auto_apply_enabled === 1,
     driftAcceptedRevision: row.drift_accepted_revision,
+    driftAcceptedFingerprint: row.drift_accepted_fingerprint,
     currentRevision: row.current_revision,
     currentConfigJson: row.current_config_json,
     status: readStoredEnum(DEBT_STATUSES, row.status),
@@ -208,9 +211,9 @@ export function insertDebt(
         id, budget_sync_id, name, debt_type, behavior_class, currency, currency_minor_digits,
         liability_account_id, payment_account_id, sign_convention, lender_pattern, execution_strategy,
         drift_tolerance_minor, lender_charge_grace_days, onboarding_date, loan_payment_category_id,
-        draw_category_id, expected_observation_interval_days, auto_apply_enabled, drift_accepted_revision,
+        draw_category_id, expected_observation_interval_days, auto_apply_enabled, drift_accepted_revision, drift_accepted_fingerprint,
         current_revision, current_config_json, status, created_at, updated_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, NULL)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL)`
     ).run(
       id, f.budget_sync_id, f.name, f.debt_type, f.behavior_class, f.currency, f.currency_minor_digits,
       f.liability_account_id, f.payment_account_id, f.sign_convention, f.lender_pattern, f.execution_strategy,
@@ -294,11 +297,12 @@ export function setDebtCurrentRevision(db: SqliteDatabase, id: string, revision:
 }
 
 /** Accept only the current revision's drift. A later material revision invalidates it naturally. */
-export function setDebtDriftAcceptedRevision(db: SqliteDatabase, id: string, revision: number | null, now = new Date().toISOString()): DebtRecord {
+export function setDebtDriftAcceptedRevision(db: SqliteDatabase, id: string, revision: number | null, fingerprint: string | null, now = new Date().toISOString()): DebtRecord {
   const debt = getDebt(db, id);
   if (!debt) throw new AppDbValidationError("Debt not found");
   if (revision !== null && revision !== debt.currentRevision) throw new AppDbValidationError("Only the current debt revision can accept drift");
-  db.prepare("UPDATE debts SET drift_accepted_revision = ?, updated_at = ? WHERE id = ?").run(revision, now, id);
+  if ((revision === null) !== (fingerprint === null)) throw new AppDbValidationError("Drift acceptance needs both a revision and comparison fingerprint");
+  db.prepare("UPDATE debts SET drift_accepted_revision = ?, drift_accepted_fingerprint = ?, updated_at = ? WHERE id = ?").run(revision, fingerprint, now, id);
   return getDebt(db, id)!;
 }
 

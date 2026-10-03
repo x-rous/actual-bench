@@ -854,6 +854,7 @@ CREATE TABLE IF NOT EXISTS debts (
   expected_observation_interval_days integer CHECK (expected_observation_interval_days IS NULL OR ${integerAtLeast("expected_observation_interval_days", 1)}),
   auto_apply_enabled integer NOT NULL DEFAULT 0 CHECK (auto_apply_enabled IN (0, 1)),
   drift_accepted_revision integer CHECK (drift_accepted_revision IS NULL OR (typeof(drift_accepted_revision) = 'integer' AND drift_accepted_revision BETWEEN 1 AND current_revision)),
+  drift_accepted_fingerprint text,
   current_revision integer NOT NULL CHECK ${integerAtLeast("current_revision", 1)},
   current_config_json text NOT NULL CHECK (json_valid(current_config_json)),
   -- 'draft' | 'active' | 'archived'

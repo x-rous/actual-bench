@@ -203,7 +203,7 @@ const offsetHistorySchema = z.array(z.strictObject({
 
 export const reconciliationRequestSchema = z.strictObject({ comparisonDate: isoDate, actualBalanceMinor: minor.nonnegative(), offsetHistories: offsetHistorySchema });
 export const conventionDiagnosticRequestSchema = z.strictObject({ observationId: id });
-export const driftAcceptanceRequestSchema = z.strictObject({ accept: z.literal(true) });
+export const driftAcceptanceRequestSchema = reconciliationRequestSchema.extend({ accept: z.literal(true) });
 
 const optionalEnableBacktest = z.strictObject({
   from: isoDate,

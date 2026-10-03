@@ -534,6 +534,7 @@ const MIGRATIONS: readonly Migration[] = [
         "use_actual_balance",
         "integer NOT NULL DEFAULT 0 CHECK (typeof(use_actual_balance) = 'integer' AND use_actual_balance IN (0, 1))"
       );
+      addColumnIfMissing(db, "debts", "drift_accepted_fingerprint", "text");
       db.exec(DEBT_OBSERVATION_TABLE_SQL);
       db.exec(DEBT_ANCHOR_TABLE_SQL);
       for (const statement of ASSETS_DEBT_V43_INDEX_SQL) db.exec(statement);

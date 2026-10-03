@@ -1629,12 +1629,14 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
       seed.exec("DROP TABLE debt_anchors");
       seed.exec("DROP TABLE debt_observations");
       seed.exec("ALTER TABLE debt_offset_links DROP COLUMN use_actual_balance");
+      seed.exec("ALTER TABLE debts DROP COLUMN drift_accepted_fingerprint");
       seed.prepare("UPDATE app_meta SET value = '42' WHERE key = 'schema_version'").run();
       seed.close();
 
       const upgraded = getAppDb(path);
       expect(runMigrations(upgraded).schemaVersion).toBe(43);
       expect(listDebtOffsetLinks(upgraded, "debt-v43")[0]).toMatchObject({ useActualBalance: false });
+      expect(upgraded.prepare("SELECT drift_accepted_fingerprint FROM debts WHERE id = 'debt-v43'").get()).toEqual({ drift_accepted_fingerprint: null });
       expect(upgraded.prepare("SELECT count(*) AS n FROM debt_observations").get()).toEqual({ n: 0 });
       expect(upgraded.prepare("SELECT count(*) AS n FROM debt_anchors").get()).toEqual({ n: 0 });
     } finally {

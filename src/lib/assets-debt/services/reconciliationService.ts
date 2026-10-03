@@ -22,13 +22,12 @@ export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; compa
   const fingerprint = driftFingerprint(comparison);
   // Acceptance predating changed evidence is not carried forward. Observation
   // rows are immutable, so createdAt is a reliable boundary.
-  const evidenceChangedAfterAcceptance = lenderObservation ? lenderObservation.createdAt > debt.updatedAt : false;
   const drift = debtDriftState({
     comparison, toleranceMinor: debt.driftToleranceMinor, currentRevision: debt.currentRevision,
-    acceptedRevision: evidenceChangedAfterAcceptance ? null : debt.driftAcceptedRevision,
-    acceptedFingerprint: evidenceChangedAfterAcceptance ? null : fingerprint,
+    acceptedRevision: debt.driftAcceptedRevision,
+    acceptedFingerprint: debt.driftAcceptedFingerprint,
     currentFingerprint: fingerprint,
   });
   const health = reconciliationHealth({ expectedIntervalDays: debt.expectedObservationIntervalDays, graceDays: debt.lenderChargeGraceDays, latestObservationDate: observations[0]?.observedOn ?? null, asOfDate: input.comparisonDate });
-  return { ok: true as const, comparison, drift, health, lenderObservation, projectedBalanceVariance: null };
+  return { ok: true as const, comparison, drift, health, lenderObservation, projectedBalanceVariance: null, fingerprint };
 }

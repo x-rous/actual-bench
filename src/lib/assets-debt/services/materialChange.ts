@@ -32,7 +32,7 @@ export const DEBT_REVISION_VERSION = 2;
 
 /** Bench bookkeeping: ids, timestamps, revision pointers, derived flags. Never hashed. */
 const BOOKKEEPING = {
-  debt: ["id", "createdAt", "updatedAt", "archivedAt", "currentRevision", "driftAcceptedRevision", "currentConfigJson", "unknownValues"],
+  debt: ["id", "createdAt", "updatedAt", "archivedAt", "currentRevision", "driftAcceptedRevision", "driftAcceptedFingerprint", "currentConfigJson", "unknownValues"],
   child: ["id", "debtId", "createdAt", "updatedAt"],
 } as const;
 

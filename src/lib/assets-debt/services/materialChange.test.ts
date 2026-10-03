@@ -27,7 +27,7 @@ function input(): DebtRevisionInput {
     id: "d1", budgetSyncId: "b1", name: "Home loan", debtType: "mortgage", behaviorClass: "term-loan", currency: "AUD", currencyMinorDigits: 2,
     liabilityAccountId: "acc-l", paymentAccountId: "acc-p", signConvention: "negative-is-debt", lenderPattern: "separate-interest",
     executionStrategy: "bench-periodic", driftToleranceMinor: 100, lenderChargeGraceDays: 3, onboardingDate: null, loanPaymentCategoryId: "cat-loan",
-    drawCategoryId: null, expectedObservationIntervalDays: 30, autoApplyEnabled: false, driftAcceptedRevision: null, currentRevision: 1,
+    drawCategoryId: null, expectedObservationIntervalDays: 30, autoApplyEnabled: false, driftAcceptedRevision: null, driftAcceptedFingerprint: null, currentRevision: 1,
     currentConfigJson: "{}", status: "active", createdAt: T, updatedAt: T, archivedAt: null, unknownValues: [],
   };
   const rates: DebtRatePeriodRecord[] = [
@@ -51,7 +51,7 @@ describe("rd084.debt-revision v2 snapshot", () => {
     expect(s.rates.map((r) => r.accrualEffectiveFrom)).toEqual(["2024-01-01", "2025-01-01"]);
     // Bench bookkeeping and cosmetic fields are left out; semantic external ids stay.
     expect(Object.keys(s.debt)).not.toEqual(expect.arrayContaining(["id"]));
-    for (const k of ["id", "name", "createdAt", "updatedAt", "archivedAt", "currentRevision", "driftAcceptedRevision", "currentConfigJson", "unknownValues"]) expect(s.debt).not.toHaveProperty(k);
+    for (const k of ["id", "name", "createdAt", "updatedAt", "archivedAt", "currentRevision", "driftAcceptedRevision", "driftAcceptedFingerprint", "currentConfigJson", "unknownValues"]) expect(s.debt).not.toHaveProperty(k);
     for (const k of ["liabilityAccountId", "paymentAccountId", "loanPaymentCategoryId", "status", "executionStrategy", "lenderPattern", "driftToleranceMinor", "autoApplyEnabled"]) expect(s.debt).toHaveProperty(k);
     expect(s.rates[0]).not.toHaveProperty("source");
     expect(s.rates[0]).not.toHaveProperty("id");
