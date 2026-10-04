@@ -82,7 +82,7 @@ export const TRANSACTION_SIGNAL_LABELS: Record<TransactionSignal, string> = {
   unbudgeted: "Unbudgeted",
   refund: "Refund",
   largest: "Largest in view",
-  "deficit-month": "Month ended in deficit",
+  "deficit-month": "Month in deficit",
 };
 
 /**

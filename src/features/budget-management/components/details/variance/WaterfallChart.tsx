@@ -105,7 +105,7 @@ export function WaterfallChart({ model, format, selectedIds, onSelect }: Props) 
           <g key={tick}>
             <line x1={LEFT} x2={width - RIGHT} y1={y(tick)} y2={y(tick)} className="stroke-border" />
             <text x={LEFT - 6} y={y(tick) + 3} textAnchor="end" className="fill-muted-foreground text-[10px]">
-              {format.money(Math.round(tick))}
+              {format.axis(tick)}
             </text>
           </g>
         ))}
@@ -215,7 +215,7 @@ export function WaterfallChart({ model, format, selectedIds, onSelect }: Props) 
       </svg>
       {axis.truncated && (
         <p className="mt-1 text-[10.5px] text-muted-foreground">
-          Axis starts at {format.money(Math.round(axis.min))} so the drivers are visible. {model.vocab.budget} and {model.vocab.actual.toLowerCase()} bars are cut at the break.
+          Axis starts at {format.axis(axis.min)} so the drivers are visible. {model.vocab.budget} and {model.vocab.actual.toLowerCase()} bars are cut at the break.
         </p>
       )}
       <ChartTip tip={tip} width={width} />
