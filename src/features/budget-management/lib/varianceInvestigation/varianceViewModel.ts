@@ -340,6 +340,51 @@ function compareDrivers(a: Driver, b: Driver): number {
   );
 }
 
+/**
+ * One point per month for a set of categories. `cumulative` is the running
+ * total of variance from the first month listed, so it is only meaningful over
+ * the period itself.
+ */
+export function monthPoints(
+  categories: readonly ScopedCategory[],
+  months: readonly string[],
+  side: VarianceSide,
+  mode: VarianceMode,
+  statesByMonth: ReadonlyMap<string, LoadedMonthState>
+): MonthPoint[] {
+  const total = aggregateCategories(categories, months, side, mode);
+  let cumulative = 0;
+  return months.map((month, k) => {
+    cumulative += total.varianceByMonth[k];
+    const env = total.envelope;
+    return {
+      month,
+      present: statesByMonth.has(month),
+      budget: total.budgetByMonth[k],
+      actual: total.actualByMonth[k],
+      variance: total.varianceByMonth[k],
+      cumulative,
+      envelope: env
+        ? {
+            available: env.availableByMonth[k],
+            deficit: env.deficitByMonth[k],
+            closing: env.closingByMonth[k],
+            clearedFromToBudget: env.clearedByMonth[k],
+            rolledOver: env.rolledByMonth[k],
+          }
+        : null,
+    };
+  });
+}
+
+/** Points for any run of months over the model's own scope, e.g. the recent months. */
+export function buildMonthPoints(
+  model: VarianceModel,
+  months: readonly string[]
+): MonthPoint[] {
+  return monthPoints(model.categories, months, model.side, model.mode, model.statesByMonth);
+}
+
 export function buildVarianceModel(input: VarianceInput): VarianceModel {
   const { mode, side, months, statesByMonth } = input;
   const vocab = vocabulary(mode, side);
@@ -412,28 +457,7 @@ export function buildVarianceModel(input: VarianceInput): VarianceModel {
     .sort(compareDrivers);
 
   const total = aggregateCategories(categories, months, side, mode);
-  let cumulative = 0;
-  const monthly: MonthPoint[] = months.map((month, k) => {
-    cumulative += total.varianceByMonth[k];
-    const env = total.envelope;
-    return {
-      month,
-      present: statesByMonth.has(month),
-      budget: total.budgetByMonth[k],
-      actual: total.actualByMonth[k],
-      variance: total.varianceByMonth[k],
-      cumulative,
-      envelope: env
-        ? {
-            available: env.availableByMonth[k],
-            deficit: env.deficitByMonth[k],
-            closing: env.closingByMonth[k],
-            clearedFromToBudget: env.clearedByMonth[k],
-            rolledOver: env.rolledByMonth[k],
-          }
-        : null,
-    };
-  });
+  const monthly = monthPoints(categories, months, side, mode, statesByMonth);
 
   return {
     mode,

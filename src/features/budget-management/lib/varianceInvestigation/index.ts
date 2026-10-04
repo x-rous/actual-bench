@@ -4,3 +4,6 @@ export * from "./varianceWaterfall";
 export * from "./varianceSelection";
 export * from "./varianceBaseline";
 export * from "./varianceFacts";
+export * from "./varianceBreakdown";
+export * from "./varianceEvidence";
+export * from "./varianceCsv";
