@@ -35,6 +35,24 @@ export function historyMonths(months: readonly string[]): string[] {
   return [...new Set([...yearAgo, ...before])].sort();
 }
 
+/**
+ * The months worth loading for a baseline, chosen the way `buildBaseline`
+ * will choose, so one set is fetched rather than every candidate.
+ */
+export function chooseHistoryMonths(
+  months: readonly string[],
+  available: ReadonlySet<string>,
+  isClosed: (month: string) => boolean
+): string[] {
+  if (months.length === 0) return [];
+  const usable = (m: string) => available.has(m) && isClosed(m);
+  const yearAgo = months.map((m) => addMonths(m, -12));
+  if (months.length >= MIN_HISTORY_MONTHS && yearAgo.every(usable)) return yearAgo;
+  return Array.from({ length: MEDIAN_WINDOW }, (_, i) =>
+    addMonths(months[0], -(MEDIAN_WINDOW - i))
+  ).filter(usable);
+}
+
 export function buildBaseline(args: {
   model: VarianceModel;
   categoryIds: readonly string[];
