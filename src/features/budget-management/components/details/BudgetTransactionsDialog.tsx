@@ -15,28 +15,22 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  CalendarRange,
   Clock3,
   Upload,
-  FolderOpen,
   X,
 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { PillGroup } from "@/components/ui/pill-group";
-import { MultiSearchableCombobox, type ComboboxOption } from "@/components/ui/combobox";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { formatMonthLabel, monthsInRange, parseMonth } from "@/lib/budget/monthMath";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MonthRangePicker } from "@/components/ui/monthrangepicker";
+import { formatMonthLabel, monthsInRange } from "@/lib/budget/monthMath";
+import { AnalysisHeader } from "./analysis/AnalysisHeader";
 import {
   amountTone,
+  ANALYSIS_DIALOG_WIDE,
   elapsedDaysInMonths,
   errorMessage,
   exportTransactionsCsv,
@@ -83,7 +77,6 @@ import type {
 } from "../../lib/budgetTransactionBrowser";
 import type { BudgetTransactionRow } from "../../lib/budgetTransactionsQuery";
 import { SearchInput } from "@/components/ui/search-input";
-import { FIELD_FOCUS, FIELD_OPEN } from "@/components/ui/field-focus";
 
 type Props = {
   target: BudgetTransactionsDrilldown | null;
@@ -100,14 +93,17 @@ type Props = {
    * same set because asking for a month is what loads it.
    */
   onClose: () => void;
+  /**
+   * Where the budget is open, a way across to Variance Drivers on whatever is
+   * being looked at now. Absent where there is no budget to compare with, or
+   * where this was opened from Variance Drivers and closing it is the way back.
+   */
+  varianceLink?: { label: string; onOpen: (target: BudgetTransactionsDrilldown) => void };
 };
 
 const EMPTY_TRANSACTION_ROWS: BudgetTransactionRow[] = [];
 const EMPTY_CATEGORY_IDS: string[] = [];
-const EMPTY_SELECTION: string[] = [];
-const EMPTY_MONTHS: string[] = [];
 const EMPTY_FILTERS: string[] = [];
-const SELECT_CLASS = `h-7 min-w-0 rounded-md border border-input bg-background px-2 text-[11px] outline-none transition-colors disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-60 dark:bg-input/30 ${FIELD_FOCUS} ${FIELD_OPEN}`;
 
 
 // ─── column setup ─────────────────────────────────────────────────────────────
@@ -227,113 +223,6 @@ transactionSearchFilter.autoRemove = (value: TransactionSearchFilter) =>
 // ─── primitives ───────────────────────────────────────────────────────────────
 
 /**
- * A labelled header control.
- *
- * The two controls that decide what the dialog is showing used to sit
- * unlabelled among the buttons, so what they selected had to be inferred from
- * their contents. An uppercase caption above each one says what the value
- * underneath is choosing before it is read.
- */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    /*
-      The row centres boxes, not text, so items of different type sizes only
-      line up if their boxes match. Pinning every item in the header to the
-      control height makes that true by construction, rather than leaving a
-      caption, a title and a 28px control to find their own centres.
-    */
-    <div className="flex h-7 min-w-0 items-center gap-2">
-      <span className="shrink-0 whitespace-nowrap text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-/**
- * How many categories the figures cover, and - on demand - which ones.
- *
- * Opens on hover for the glance and on focus for the keyboard, so the list is
- * reachable without a mouse. Read-only: removing is what the picker's own rows
- * and the trigger's clear button are for, and a popover that appears on hover
- * is a poor place to put a click target.
- */
-function SelectionSummaryBadge({
-  count,
-  selected,
-  fallbackTitle,
-}: {
-  count: number;
-  selected: BudgetTransactionCategoryOption[] | null;
-  /** What the dialog is reporting on when the picker has not been touched. */
-  fallbackTitle: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const label = count === 1 ? "1 category" : `${count.toLocaleString()} categories`;
-  const groups = (selected ?? []).filter((option) => option.entity === "group");
-  const categories = (selected ?? []).filter((option) => option.entity === "category");
-
-  return (
-    <span
-      className="relative flex h-7 shrink-0 items-center"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <button
-        type="button"
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        aria-expanded={open}
-        className="whitespace-nowrap rounded text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        {label}
-      </button>
-
-      {open && (
-        <span className="absolute left-0 top-full z-50 mt-0.5 block max-h-64 w-64 overflow-y-auto rounded-md border border-border bg-popover p-2 text-xs shadow-md">
-          {selected === null ? (
-            <span className="block text-muted-foreground">{fallbackTitle}</span>
-          ) : (
-            <>
-              {groups.length > 0 && (
-                <>
-                  <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Groups
-                  </span>
-                  {groups.map((option) => (
-                    <span key={optionKey(option)} className="block truncate text-foreground">
-                      {option.title}
-                    </span>
-                  ))}
-                </>
-              )}
-              {categories.length > 0 && (
-                <>
-                  <span
-                    className={cn(
-                      "block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground",
-                      groups.length > 0 ? "mb-1 mt-2" : "mb-1"
-                    )}
-                  >
-                    Categories
-                  </span>
-                  {categories.map((option) => (
-                    <span key={optionKey(option)} className="block truncate text-foreground">
-                      {option.title}
-                    </span>
-                  ))}
-                </>
-              )}
-            </>
-          )}
-        </span>
-      )}
-    </span>
-  );
-}
-
-/**
  * A trailing figure in the summary strip - a count, an average, a verdict.
  *
  * All of them share a minimum width so they read as columns of one set rather
@@ -345,11 +234,16 @@ function StripItem({
   label,
   value,
   tone,
+  onClick,
+  title,
 }: {
   label: string;
   value: string;
   /** Colour for the value, where the figure carries a judgement. */
   tone?: string;
+  /** Makes the figure a way into the dialog that explains it. */
+  onClick?: () => void;
+  title?: string;
 }) {
   return (
     /*
@@ -359,14 +253,25 @@ function StripItem({
       the rest of the dialog lines up on. The padding between items stays, since
       that is what the dividers need.
     */
-    <div className="flex min-w-24 shrink-0 flex-col items-center px-4 first:pl-0 last:pr-0">
+    <div className="flex w-28 shrink-0 flex-col items-center px-4 first:pl-0 last:pr-0">
       <div
         className={cn(
           "truncate font-sans text-base font-semibold tabular-nums",
           tone ?? "text-foreground"
         )}
       >
-        {value}
+        {onClick ? (
+          <button
+            type="button"
+            onClick={onClick}
+            title={title}
+            className="rounded underline decoration-dotted underline-offset-4 hover:decoration-solid focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {value}
+          </button>
+        ) : (
+          value
+        )}
       </div>
       <div className="whitespace-nowrap text-[10px] text-muted-foreground">{label}</div>
     </div>
@@ -426,17 +331,14 @@ function BudgetProgress({
   const labelOnLeft = markerPct !== null && markerPct >= 30;
 
   /*
-   * A fixed width, not a share of the row.
-   *
-   * As the flexible item it absorbed whatever the row had left, so every change
-   * in a neighbour's text - a verdict going from "9.4% over budget" to "0.03%
-   * below target" - lengthened or shortened the bar by that much. A bar whose
-   * length means "how far through the plan" cannot also change length for
-   * reasons that have nothing to do with the plan. It still shrinks below this
-   * on a narrow viewport, since overflowing would be worse.
+   * The bar takes whatever the row has left, so it fills the strip at any
+   * dialog width instead of stopping at a fixed length and leaving a gap before
+   * the figures. Its fill is a share of the track, so the track changing length
+   * does not change what it says; the figures on the right are fixed-width
+   * columns, so neighbouring text does not move it either.
    */
   return (
-    <div className="relative mr-2 flex h-10 w-[32rem] min-w-0 shrink flex-col justify-center">
+    <div className="relative mr-2 flex h-10 min-w-[18rem] flex-1 basis-[24rem] flex-col justify-center">
       {/*
         The empty part of the track has to read as a trough, not as background.
         `bg-muted` sits a few percent off the strip behind it, so an under-budget
@@ -562,119 +464,6 @@ function FilterChip({
 }
 
 
-/**
- * The header's month range control: a label that opens the range picker.
- *
- * A popover rather than two fields inline, because the range is a single idea
- * and reading it as one phrase - "Jan 2026 - Aug 2026" - is what tells someone
- * what the figures beside it cover.
- *
- * Quick selectors are given rather than left to the component's defaults: the
- * useful ranges here are the ones the budget itself has, not "last 6 months".
- */
-function MonthRangeField({
-  monthStart,
-  monthEnd,
-  availableMonths,
-  disabled,
-  onChange,
-}: {
-  monthStart: string;
-  monthEnd: string;
-  /** Months the budget window holds, oldest first. Bounds the picker. */
-  availableMonths: string[];
-  disabled?: boolean;
-  onChange: (monthStart: string, monthEnd: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const toDate = (month: string): Date => {
-    const [year, mo] = parseMonth(month);
-    return new Date(year, mo - 1, 1);
-  };
-  const toMonth = (date: Date): string =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-
-  const first = availableMonths[0];
-  const last = availableMonths[availableMonths.length - 1];
-  const label =
-    monthStart === monthEnd
-      ? formatMonthLabel(monthStart, "long")
-      : `${formatMonthLabel(monthStart, "long")} - ${formatMonthLabel(monthEnd, "long")}`;
-
-  /*
-   * The ranges worth one click, ordered widest to narrowest.
-   *
-   * "This year" is the whole calendar year including months not yet reached;
-   * "Year to date" stops at the current one. They are different questions -
-   * what is planned for the year against what has actually happened - and a
-   * budget is one of the few places both get asked.
-   *
-   * Anchored on the real clock rather than the window, so they keep meaning
-   * what they say when the window is somewhere else entirely.
-   */
-  const quickSelectors = useMemo(() => {
-    if (!first || !last) return [];
-    const now = new Date();
-    const year = now.getFullYear();
-    const monthsBack = (count: number) =>
-      new Date(year, now.getMonth() - count + 1, 1);
-
-    return [
-      { label: "This year", startMonth: new Date(year, 0), endMonth: new Date(year, 11) },
-      { label: "Year to date", startMonth: new Date(year, 0), endMonth: new Date(year, now.getMonth()) },
-      { label: "Last 12 months", startMonth: monthsBack(12), endMonth: new Date(year, now.getMonth()) },
-      { label: "Last 6 months", startMonth: monthsBack(6), endMonth: new Date(year, now.getMonth()) },
-      { label: "Last year", startMonth: new Date(year - 1, 0), endMonth: new Date(year - 1, 11) },
-    ];
-    // `first` and `last` bound the window; the rest is clock-derived and stable
-    // for the life of the dialog.
-  }, [first, last]);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <button
-            type="button"
-            disabled={disabled}
-            className={cn(
-              SELECT_CLASS,
-              // `inline-flex` is the fix, not decoration: SELECT_CLASS styles a
-              // <select>, which lays its own content out. On a <button> the
-              // label and the icon are just two blocks, so they stacked.
-              "inline-flex w-[15rem] items-center justify-between gap-2 text-left"
-            )}
-            aria-label={`Months shown: ${label}. Change the range`}
-            title="Change the months shown"
-          >
-            <span className="truncate tabular-nums">{label}</span>
-            <CalendarRange className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden="true" />
-          </button>
-        }
-      />
-      <PopoverContent align="end" className="w-auto p-0">
-        <MonthRangePicker
-          selectedMonthRange={
-            monthStart && monthEnd
-              ? { start: toDate(monthStart), end: toDate(monthEnd) }
-              : undefined
-          }
-          minDate={first ? toDate(first) : undefined}
-          maxDate={last ? toDate(last) : undefined}
-          quickSelectors={quickSelectors}
-          showQuickSelectors={quickSelectors.length > 0}
-          onMonthRangeSelect={({ start, end }) => {
-            onChange(toMonth(start), toMonth(end));
-            setOpen(false);
-          }}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-
 function LoadingState() {
   return (
     <div className="flex h-full items-center justify-center">
@@ -699,7 +488,7 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── dialog ───────────────────────────────────────────────────────────────────
 
-export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Props) {
+export function BudgetTransactionsDialog({ target, browserOptions, onClose, varianceLink }: Props) {
   /*
    * The breakdown and chart selections, each a set rather than a single id.
    *
@@ -1114,21 +903,6 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
         ? timeBreakdown.spendByMonth
         : timeBreakdown.spendByWeek;
 
-  /*
-   * The picker's rows: each group followed by its own categories, indented
-   * under it. The options list already arrives in that order, so the shape of
-   * the menu is the shape of the budget.
-   */
-  const pickerOptions = useMemo<ComboboxOption[]>(
-    () =>
-      categoryOptions.map((option) => ({
-        id: optionKey(option),
-        name: option.title,
-        ...(option.entity === "group" ? { isGroupHeader: true as const } : {}),
-      })),
-    [categoryOptions]
-  );
-
   // What the trigger says before the picker has been touched: the drill-through
   // came from a figure on the page, and that figure's own name is the honest
   // description of what is on screen - including for the synthetic whole-month
@@ -1174,6 +948,10 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
   // How many categories the figures actually cover, after groups are expanded
   // and any overlap between them is removed.
   const selectedCategoryCount = effectiveTarget?.categoryIds.length ?? 0;
+  // Opens Variance Drivers on what is on screen now, not on what this opened with.
+  const openVariance = varianceLink && effectiveTarget
+    ? () => varianceLink.onOpen(effectiveTarget)
+    : undefined;
 
   /*
    * One line describing the selection, whatever its size.
@@ -1455,83 +1233,31 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) closeDialog(); }}>
-      <DialogContent className="flex h-[86vh] max-w-[min(72rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(72rem,calc(100vw-2rem))]">
+      <DialogContent
+        className={cn(
+          "flex flex-col gap-0 overflow-hidden p-0",
+          ANALYSIS_DIALOG_WIDE
+        )}
+      >
         {/* Header */}
-        <DialogHeader className="shrink-0 border-b border-border bg-background px-5 py-2.5 pr-12">
-          {/*
-            One row, not three. The title, its caption and the two controls used
-            to stack, and the height that cost came straight out of the panels
-            below - where it was the difference between five breakdown rows and
-            seven. The caption said "Expense analysis" under a title that read
-            "Spending details", so it was the easiest of the three to lose.
-          */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            <DialogTitle className="flex h-7 shrink-0 items-center text-base leading-none">
-              {flowNoun} Analysis
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              {monthLabel}
-              {effectiveTarget ? ` · ${effectiveTarget.title}` : ""}
-            </DialogDescription>
-
-            <Field label="Categories">
-              <div className="flex min-w-0 items-center gap-2">
-                <FolderOpen
-                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <div className="flex w-[22rem] max-w-full min-w-0">
-                  <MultiSearchableCombobox
-                    options={pickerOptions}
-                    values={selectedKeys ?? EMPTY_SELECTION}
-                    onChange={handleSelectionChange}
-                    placeholder={pickerPlaceholder}
-                    summary={selectionSummary}
-                    coveredIds={coveredCategoryKeys}
-                    exclusiveIds={exclusiveKeys}
-                    onClear={() => handleSelectionChange([])}
-                    selectableGroups
-                    ariaLabel="Select categories or category groups"
-                    triggerClassName="min-h-7 py-0.5"
-                  />
-                </div>
-              </div>
-            </Field>
-
-            {/*
-              Outside the control, not inside it. It describes what the selected
-              value contains rather than offering anything to select, and sitting
-              within the bordered box made the control two lines tall to hold a
-              caption.
-
-              It is also where the selection can be read in full. The trigger
-              says "2 groups + 1 category" because it has one line to say it in;
-              this says which ones, on demand, without the picker having to grow
-              a row per selection to keep them on screen.
-            */}
-            <SelectionSummaryBadge
-              count={selectedCategoryCount}
-              selected={selectedOptions}
-              fallbackTitle={effectiveTarget?.title ?? ""}
-            />
-
-            <Field label="Period">
-              <MonthRangeField
-                monthStart={effectiveTarget?.monthStart ?? ""}
-                monthEnd={effectiveTarget?.monthEnd ?? ""}
-                /*
-                  Bounded by the budget file, not by the page's window. The
-                  window is where someone last navigated; the file is what
-                  actually exists, and it is the only honest limit on what can
-                  be asked for.
-                */
-                availableMonths={availableMonths ?? EMPTY_MONTHS}
-                disabled={!effectiveTarget}
-                onChange={handleRangeChange}
-              />
-            </Field>
-          </div>
-        </DialogHeader>
+        <AnalysisHeader
+          title={`${flowNoun} Analysis`}
+          description={`${monthLabel}${effectiveTarget ? ` · ${effectiveTarget.title}` : ""}`}
+          options={categoryOptions}
+          selectedKeys={selectedKeys}
+          placeholder={pickerPlaceholder}
+          coveredKeys={coveredCategoryKeys}
+          exclusiveKeys={exclusiveKeys}
+          summary={selectionSummary}
+          selectedOptions={selectedOptions}
+          categoryCount={selectedCategoryCount}
+          onSelectionChange={handleSelectionChange}
+          monthStart={effectiveTarget?.monthStart ?? ""}
+          monthEnd={effectiveTarget?.monthEnd ?? ""}
+          availableMonths={availableMonths}
+          periodDisabled={!effectiveTarget}
+          onRangeChange={handleRangeChange}
+        />
 
         {/* Summary strip - only when data is loaded */}
         {hasData && (
@@ -1580,7 +1306,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
                   states the absence instead, so the strip holds its shape and
                   the missing bar is explained rather than merely missing.
                 */
-                <div className="flex h-10 w-[32rem] min-w-0 shrink items-center pr-2">
+                <div className="flex h-10 min-w-[18rem] flex-1 basis-[24rem] items-center pr-2">
                   {/*
                     "No budget" is a claim, and it cannot be made until the
                     plans are in. Fetching them per range means there is now a
@@ -1626,6 +1352,8 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
                     label={varianceLabel(variance, budgetValues.budgeted, isIncome)}
                     value={formatSignedWhole(Math.abs(variance))}
                     tone={varianceTone(variance, isIncome)}
+                    onClick={openVariance}
+                    title={varianceLink?.label.replace(" →", "")}
                   />
                 )}
                 <StripItem label="transactions" value={headlineCount.toLocaleString()} />
@@ -1664,7 +1392,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
           ) : (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {/* Visual panels, divided by a rule rather than a gap. */}
-              <div className="grid h-[362px] shrink-0 grid-cols-2 divide-x divide-border/70 border-b border-border/70">
+              <div className="grid h-[376px] shrink-0 grid-cols-2 divide-x divide-border/70 border-b border-border/70">
                 <Panel
                   title={isIncome ? "Where the income came from" : "Where the money went"}
                   /*

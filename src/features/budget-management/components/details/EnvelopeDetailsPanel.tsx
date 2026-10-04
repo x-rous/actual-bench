@@ -28,6 +28,7 @@ import {
   toneFromValue,
 } from "./DetailsPrimitives";
 import { BudgetTransactionsDialog } from "./BudgetTransactionsDialog";
+import { TopVarianceDriversDialog } from "./TopVarianceDriversDialog";
 import { BudgetMeter, MeterSection } from "./BudgetMeter";
 import { BudgetNoteSection, type BudgetNoteTarget } from "./BudgetNoteSection";
 import { useSpendingDetailsShortcut } from "./useSpendingDetailsShortcut";
@@ -78,6 +79,15 @@ export function EnvelopeDetailsPanel({
    */
   const periodIncomeDrilldown = metrics.periodActualsDrilldown?.income ?? null;
   const periodExpenseDrilldown = metrics.periodActualsDrilldown?.expense ?? null;
+  /*
+   * Variance Drivers opens on the same drill-through target as the spent figure
+   * beside the number clicked. Envelope reads it as balances: which envelopes
+   * ended below zero, and what that did to funding.
+   */
+  const [varianceTarget, setVarianceTarget] =
+    useState<BudgetTransactionsDrilldown | null>(null);
+  // Spending Analysis opened from Variance Drivers stacks over it, at the same size.
+  const [spendingOverVariance, setSpendingOverVariance] = useState(false);
   const openSelectionTransactions = selectionDrilldown
     ? () => setTransactionTarget(selectionDrilldown)
     : undefined;
@@ -202,6 +212,12 @@ export function EnvelopeDetailsPanel({
               value={formatSignedWhole(periodView.focusBalance)}
               tone={toneFromValue(periodView.focusBalance)}
               tooltip="Money still assigned to envelopes as of the focus month - a snapshot, not a sum of monthly balances."
+              onValueClick={
+                periodExpenseDrilldown
+                  ? () => setVarianceTarget(periodExpenseDrilldown)
+                  : undefined
+              }
+              valueAriaLabel="View which envelopes drove the balance"
             />
           )}
           <MetricLine
@@ -239,6 +255,12 @@ export function EnvelopeDetailsPanel({
             label="Net assigned/spent"
             value={formatDeltaWhole(metrics.selectionActivity.netAssignedSpent)}
             tone={toneFromValue(metrics.selectionActivity.netAssignedSpent)}
+            onValueClick={
+              selectionDrilldown?.side === "expense"
+                ? () => setVarianceTarget(selectionDrilldown)
+                : undefined
+            }
+            valueAriaLabel={`View which envelopes drove the balance in ${metrics.title}`}
           />
           {metrics.selectionActivity.carryover != null && (
             <MetricLine
@@ -277,6 +299,12 @@ export function EnvelopeDetailsPanel({
               label="Balance"
               value={formatSignedWhole(metrics.monthValues.balance)}
               tone={toneFromValue(metrics.monthValues.balance)}
+              onValueClick={
+                metrics.monthValues.transactionDrilldown?.side === "expense"
+                  ? () => setVarianceTarget(metrics.monthValues!.transactionDrilldown)
+                  : undefined
+              }
+              valueAriaLabel={`View which envelopes drove the balance in ${metrics.title}`}
             />
           )}
           {!metrics.isIncome &&
@@ -321,14 +349,46 @@ export function EnvelopeDetailsPanel({
         <BudgetNoteSection key={noteTarget.id} target={noteTarget} />
       )}
 
+      {varianceTarget && (
+        <TopVarianceDriversDialog
+          key={`${varianceTarget.entity}:${varianceTarget.id}:${varianceTarget.monthStart}:${varianceTarget.monthEnd}`}
+          target={varianceTarget}
+          browserOptions={transactionBrowserOptions}
+          budgetMode="envelope"
+          onClose={() => setVarianceTarget(null)}
+          onOpenSpendingAnalysis={(next) => {
+            setSpendingOverVariance(true);
+            setTransactionTarget(next);
+          }}
+        />
+      )}
+
       {transactionTarget && (
         <BudgetTransactionsDialog
           key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
           target={transactionTarget}
           browserOptions={transactionBrowserOptions}
-          onClose={() => setTransactionTarget(null)}
+          // Only when this was opened directly: from Variance Drivers the way
+          // back is to close it, and a link there would stack the two forever.
+          varianceLink={
+            // Envelope has no income budgets to compare, so there is nothing to open.
+            spendingOverVariance || transactionTarget.side !== "expense"
+              ? undefined
+              : {
+                  label: "View balance impact →",
+                  onOpen: (next) => {
+                    setTransactionTarget(null);
+                    setVarianceTarget(next);
+                  },
+                }
+          }
+          onClose={() => {
+            setTransactionTarget(null);
+            setSpendingOverVariance(false);
+          }}
         />
       )}
+
     </div>
   );
 }

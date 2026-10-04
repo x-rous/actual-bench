@@ -66,7 +66,7 @@ export type BudgetTransactionsQueryParams = {
  * derives the length rather than assuming it, so a February in a leap year does
  * not quietly lose its 29th.
  */
-function budgetTransactionsFilter(
+export function budgetTransactionsFilter(
   monthStart: string,
   monthEnd: string,
   categoryIds: string[]
@@ -187,13 +187,19 @@ export async function fetchBudgetTransactions(
     buildBudgetTransactionsQuery(params)
   );
 
-  if (!hasTransactionData(response)) {
+  return parseBudgetTransactionRows(response);
+}
+
+/** Validate and normalise a row-query response; shared by every caller that selects the same columns. */
+export function parseBudgetTransactionRows(
+  response: { data?: unknown } | null | undefined
+): BudgetTransactionRow[] {
+  if (!hasTransactionData(response as BudgetTransactionsResponse | null | undefined)) {
     throw new Error(
       "Budget transactions query returned an invalid response: missing data array"
     );
   }
-
-  return response.data
+  return (response as BudgetTransactionsResponse).data
     .filter(isRawTransactionRow)
     .map(normalizeTransactionRow)
     .filter((row): row is BudgetTransactionRow => row != null);

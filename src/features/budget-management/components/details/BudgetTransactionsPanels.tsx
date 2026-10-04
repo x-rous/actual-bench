@@ -69,7 +69,7 @@ export const BREAKDOWN_LABELS: Record<BreakdownDimension, string> = {
  * show a difference - and length is the only thing a bar has to say with.
  */
 const BREAKDOWN_GRID =
-  "grid grid-cols-[minmax(0,1fr)_4.25rem_2.5rem_2.5rem] items-baseline gap-x-1.5";
+  "grid grid-cols-[minmax(0,1fr)_5.5rem_3rem_3rem] items-baseline gap-x-3";
 /*
  * The same grid with a monthly-average column, used when the range spans more
  * than one month. Over eight months a row's total is hard to hold against a
@@ -79,7 +79,7 @@ const BREAKDOWN_GRID =
  * why it appears exactly when the division is not one.
  */
 const BREAKDOWN_GRID_RANGE =
-  "grid grid-cols-[minmax(0,1fr)_4.25rem_4.25rem_2.5rem_2.5rem] items-baseline gap-x-1.5";
+  "grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_3rem_3rem] items-baseline gap-x-3";
 
 export type BreakdownSortKey = "label" | "amount" | "count";
 
@@ -219,6 +219,10 @@ export function SpendBreakdown({
   const hiddenCount = Math.max(0, buckets.length - BREAKDOWN_VISIBLE_LIMIT);
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
   const hasSelection = selected.size > 0;
+  // Bars are measured against the largest row, not against the whole: at
+  // "26% of the total" the longest bar was a quarter of the track, and the
+  // differences between rows were a few pixels. The % column still gives the share.
+  const largest = Math.max(...buckets.map((bucket) => bucket.amount), 1);
 
   if (visible.length === 0) {
     return (
@@ -339,7 +343,7 @@ export function SpendBreakdown({
                 <span
                   className="flex h-full overflow-hidden rounded-full"
                   style={{
-                    width: `${Math.max(bucket.percentage * 100, bucket.amount > 0 ? 2 : 0)}%`,
+                    width: `${Math.max((Math.max(bucket.amount, 0) / largest) * 100, bucket.amount > 0 ? 2 : 0)}%`,
                   }}
                 >
                   <span
@@ -385,9 +389,9 @@ export function SpendBreakdown({
           type="button"
           onClick={() => setExpanded((open) => !open)}
           aria-expanded={expanded}
-          className="w-full shrink-0 rounded text-center text-[10px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+          className="w-full shrink-0 rounded py-0.5 text-center text-xs text-muted-foreground hover:text-foreground"
         >
-          {expanded ? "Show fewer" : `+ ${hiddenCount} more`}
+          {expanded ? "Show fewer" : `Show ${hiddenCount} more`}
         </button>
       )}
     </div>
@@ -518,7 +522,7 @@ export function WeeklySpending({
                 */}
                 <span
                   className={cn(
-                    "mx-auto block w-full max-w-[2.25rem] shrink-0 rounded-t-sm transition-[height,background-color]",
+                    "mx-auto block w-full max-w-[3.5rem] shrink-0 rounded-t-sm transition-[height,background-color]",
                     isActive ? accent.solid : cn(accent.soft, "group-hover:opacity-80")
                   )}
                   style={{ height: `${heightPct}%` }}

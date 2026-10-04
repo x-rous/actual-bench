@@ -248,3 +248,10 @@ export function elapsedDaysInMonths(months: string[], today: Date = new Date()):
   for (const month of months) total += elapsedDaysBetween(month, month, today);
   return total;
 }
+
+/**
+ * The size of the analysis dialogs. Spending Analysis and Variance Drivers
+ * share it, so they look like one tool and stack at the same size.
+ */
+export const ANALYSIS_DIALOG_WIDE =
+  "h-[92vh] max-w-[min(92rem,calc(100vw-2rem))] sm:max-w-[min(92rem,calc(100vw-2rem))]";

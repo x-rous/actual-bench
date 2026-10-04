@@ -82,6 +82,15 @@ export function BudgetMonthSummaryPanel({
       state && !isFuture ? buildMonthCategoriesDrilldown(state, month, "income") : null,
     [state, month, isFuture]
   );
+  // Variance Drivers opens on the same whole-month target as the figure beside it.
+  const [varianceTarget, setVarianceTarget] =
+    useState<BudgetTransactionsDrilldown | null>(null);
+  // Spending Analysis opened from Variance Drivers stacks over it, at the same size.
+  const [spendingOverVariance, setSpendingOverVariance] = useState(false);
+  const openVariance = (side: "expense" | "income") => {
+    const target = side === "income" ? incomeDrill : expenseDrill;
+    if (target) setVarianceTarget(target);
+  };
   const openExpense = expenseDrill ? () => setTransactionTarget(expenseDrill) : undefined;
   const openIncome = incomeDrill ? () => setTransactionTarget(incomeDrill) : undefined;
   useSpendingDetailsShortcut({ target: expenseDrill, onOpen: setTransactionTarget });
@@ -146,6 +155,7 @@ export function BudgetMonthSummaryPanel({
             monthLabel={monthLabel}
             onExpenseClick={openExpense}
             onIncomeClick={openIncome}
+            onVarianceClick={openVariance}
           />
         ) : (
           <EnvelopeMonthBody
@@ -159,6 +169,7 @@ export function BudgetMonthSummaryPanel({
             }
             onExpenseClick={openExpense}
             onIncomeClick={openIncome}
+            onBalanceClick={expenseDrill ? () => openVariance("expense") : undefined}
           />
         )
       ) : (
@@ -167,14 +178,46 @@ export function BudgetMonthSummaryPanel({
 
       <BudgetNoteSection target={{ kind: "budgetMonth", id: month }} />
 
+      {varianceTarget && (
+        <TopVarianceDriversDialog
+          key={`${varianceTarget.entity}:${varianceTarget.id}:${varianceTarget.monthStart}`}
+          target={varianceTarget}
+          browserOptions={transactionBrowserOptions}
+          budgetMode={isTracking ? "tracking" : "envelope"}
+          onClose={() => setVarianceTarget(null)}
+          onOpenSpendingAnalysis={(next) => {
+            setSpendingOverVariance(true);
+            setTransactionTarget(next);
+          }}
+        />
+      )}
+
       {transactionTarget && (
         <BudgetTransactionsDialog
           key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
           target={transactionTarget}
           browserOptions={transactionBrowserOptions}
-          onClose={() => setTransactionTarget(null)}
+          // Only when this was opened directly: from Variance Drivers the way
+          // back is to close it, and a link there would stack the two forever.
+          varianceLink={
+            // Envelope has no income budgets to compare, so there is nothing to open.
+            spendingOverVariance || (!isTracking && transactionTarget.side !== "expense")
+              ? undefined
+              : {
+                  label: isTracking ? "View variance →" : "View balance impact →",
+                  onOpen: (next) => {
+                    setTransactionTarget(null);
+                    setVarianceTarget(next);
+                  },
+                }
+          }
+          onClose={() => {
+            setTransactionTarget(null);
+            setSpendingOverVariance(false);
+          }}
         />
       )}
+
     </div>
   );
 }
@@ -188,6 +231,7 @@ function EnvelopeMonthBody({
   nextMonthLastOverspent,
   onExpenseClick,
   onIncomeClick,
+  onBalanceClick,
 }: {
   state: LoadedMonthState;
   month: string;
@@ -197,6 +241,8 @@ function EnvelopeMonthBody({
   nextMonthLastOverspent: number | null;
   onExpenseClick?: () => void;
   onIncomeClick?: () => void;
+  /** Opens Variance Drivers on this month's expenses. */
+  onBalanceClick?: () => void;
 }) {
   const status = classifyMonthActualStatus(month);
   const phase: MonthTimePhase =
@@ -278,6 +324,8 @@ function EnvelopeMonthBody({
               value={formatSignedWhole(view.balance)}
               tone={toneFromValue(view.balance)}
               tooltip="Money still assigned to envelopes (carryover-inclusive) - not a plan variance."
+              onValueClick={onBalanceClick}
+              valueAriaLabel={`View which envelopes drove the balance in ${monthLabel}`}
             />
             {view.thisMonthOverspent != null && (
               <MetricLine
@@ -378,6 +426,7 @@ function TrackingMonthBody({
   monthLabel,
   onExpenseClick,
   onIncomeClick,
+  onVarianceClick,
 }: {
   state: LoadedMonthState;
   month: string;
@@ -386,6 +435,8 @@ function TrackingMonthBody({
   monthLabel: string;
   onExpenseClick?: () => void;
   onIncomeClick?: () => void;
+  /** Opens Variance Drivers on this month's expenses or income. */
+  onVarianceClick?: (side: "expense" | "income") => void;
 }) {
   const status = classifyMonthActualStatus(month);
   const phase: MonthTimePhase =
@@ -400,9 +451,6 @@ function TrackingMonthBody({
     () => buildTrackingMonthView(computeTrackingMonth(trackingInputsFromState(state)), phase),
     [state, phase]
   );
-
-  const [driversSide, setDriversSide] = useState<VarianceSide | null>(null);
-  const scopeLabel = provisional ? `${monthLabel} · Current month` : monthLabel;
 
   return (
     <>
@@ -457,7 +505,7 @@ function TrackingMonthBody({
             minor={view.income.variance}
             side="income"
             provisional={provisional}
-            onValueClick={() => setDriversSide("income")}
+            onValueClick={onVarianceClick ? () => onVarianceClick("income") : undefined}
             valueAriaLabel="View variance drivers"
           />
         )}
@@ -485,7 +533,7 @@ function TrackingMonthBody({
             minor={view.expenses.variance}
             side="expense"
             provisional={provisional}
-            onValueClick={() => setDriversSide("expense")}
+            onValueClick={onVarianceClick ? () => onVarianceClick("expense") : undefined}
             valueAriaLabel="View variance drivers"
           />
         )}
@@ -501,16 +549,6 @@ function TrackingMonthBody({
         )}
       </DetailsSection>
 
-      {driversSide && !isFuture && (
-        <TopVarianceDriversDialog
-          open
-          onClose={() => setDriversSide(null)}
-          scopeLabel={scopeLabel}
-          provisional={provisional}
-          initialSide={driversSide}
-          monthStates={[state]}
-        />
-      )}
     </>
   );
 }

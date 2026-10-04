@@ -217,7 +217,7 @@ function MonthRangeCal({
                     <tbody>
                         {MONTHS.map((monthRow, a) => {
                             return (
-                                <tr key={"row-" + a} className="flex w-full mt-1">  {/* local */}
+                                <tr key={"row-" + a} className="flex w-full mt-1">
                                     {monthRow.map((m, i) => {
                                         return (
                                             <td
