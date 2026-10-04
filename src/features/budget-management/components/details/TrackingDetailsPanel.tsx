@@ -601,11 +601,23 @@ export function TrackingDetailsPanel({
           key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
           target={transactionTarget}
           browserOptions={transactionBrowserOptions}
+          // Only when this was opened directly: from Variance Drivers the way
+          // back is to close it, and a link there would stack the two forever.
+          varianceLink={
+            spendingOverVariance
+              ? undefined
+              : {
+                  label: "View variance →",
+                  onOpen: (next) => {
+                    setTransactionTarget(null);
+                    setVarianceTarget(next);
+                  },
+                }
+          }
           onClose={() => {
             setTransactionTarget(null);
             setSpendingOverVariance(false);
           }}
-          size={spendingOverVariance ? "wide" : "default"}
         />
       )}
 

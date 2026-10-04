@@ -250,9 +250,8 @@ export function elapsedDaysInMonths(months: string[], today: Date = new Date()):
 }
 
 /**
- * The size of the larger analysis dialogs. Variance Drivers uses it, and
- * Spending Analysis takes it when it is opened from there, so the two stack at
- * the same size instead of one sheet sitting smaller on top of another.
+ * The size of the analysis dialogs. Spending Analysis and Variance Drivers
+ * share it, so they look like one tool and stack at the same size.
  */
 export const ANALYSIS_DIALOG_WIDE =
   "h-[92vh] max-w-[min(92rem,calc(100vw-2rem))] sm:max-w-[min(92rem,calc(100vw-2rem))]";
