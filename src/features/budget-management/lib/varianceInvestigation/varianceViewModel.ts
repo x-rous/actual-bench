@@ -36,8 +36,17 @@ export type VarianceInput = {
    * the period's totals.
    */
   statesByMonth: ReadonlyMap<string, LoadedMonthState>;
-  /** Category ids in scope. `null` or empty means every category on the side. */
+  /**
+   * Category ids in scope. With no ids and no groups, every category on the
+   * side is in scope.
+   */
   categoryIds?: readonly string[] | null;
+  /**
+   * Groups in scope, whole. A group stands for every category in it in every
+   * loaded month, including hidden ones when the mode counts them, which a
+   * list of visible category ids would leave out.
+   */
+  groupIds?: readonly string[] | null;
   /** `auto` shows groups when the scope spans more than one, else categories. */
   level?: VarianceLevel | "auto";
 };
@@ -176,13 +185,12 @@ function isCounted(
 }
 
 export function collectScopedCategories(
-  input: Pick<VarianceInput, "mode" | "side" | "statesByMonth" | "categoryIds">
+  input: Pick<VarianceInput, "mode" | "side" | "statesByMonth" | "categoryIds" | "groupIds">
 ): ScopedCategory[] {
   const wantIncome = input.side === "income";
-  const scope =
-    input.categoryIds && input.categoryIds.length > 0
-      ? new Set(input.categoryIds)
-      : null;
+  const ids = new Set(input.categoryIds ?? []);
+  const groups = new Set(input.groupIds ?? []);
+  const scoped = ids.size > 0 || groups.size > 0;
   const byId = new Map<
     string,
     {
@@ -201,7 +209,7 @@ export function collectScopedCategories(
     const state = input.statesByMonth.get(month)!;
     for (const category of Object.values(state.categoriesById)) {
       if (category.isIncome !== wantIncome) continue;
-      if (scope && !scope.has(category.id)) continue;
+      if (scoped && !ids.has(category.id) && !groups.has(category.groupId)) continue;
       if (!isCounted(state, category.hidden, category.groupId, input.mode)) continue;
 
       let entry = byId.get(category.id);
@@ -340,7 +348,13 @@ export function buildVarianceModel(input: VarianceInput): VarianceModel {
   const supported = !(mode === "envelope" && side === "income");
 
   const categories = supported
-    ? collectScopedCategories({ mode, side, statesByMonth, categoryIds: input.categoryIds })
+    ? collectScopedCategories({
+        mode,
+        side,
+        statesByMonth,
+        categoryIds: input.categoryIds,
+        groupIds: input.groupIds,
+      })
     : [];
   const groupIds = new Set(categories.map((c) => c.groupId));
   const canChooseLevel = groupIds.size > 1;
