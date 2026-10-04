@@ -28,7 +28,7 @@ describe("buildLargestTransactionsQuery", () => {
     monthEnd: "2026-08",
     categoryIds: ["flights", "hotels"],
     side: "expense" as const,
-    limit: 8,
+    limit: 5,
   };
 
   it("filters like Spending Analysis: dates, categories, on-budget only", () => {
@@ -45,7 +45,7 @@ describe("buildLargestTransactionsQuery", () => {
   it("asks for the largest outflow first, capped, with a stable tie-break", () => {
     const query = buildLargestTransactionsQuery(params).ActualQLquery;
     expect(query.orderBy).toEqual([{ amount: "asc" }, { date: "desc" }, { id: "asc" }]);
-    expect(query.limit).toBe(8);
+    expect(query.limit).toBe(5);
     expect(query.options).toEqual({ splits: "inline" });
   });
 
@@ -64,8 +64,8 @@ describe("buildLargestTransactionsQuery", () => {
 });
 
 describe("paging", () => {
-  it("steps 8, 25, 50 and stops", () => {
-    expect(nextEvidenceLimit(8)).toBe(25);
+  it("steps 5, 25, 50 and stops", () => {
+    expect(nextEvidenceLimit(5)).toBe(25);
     expect(nextEvidenceLimit(25)).toBe(50);
     expect(nextEvidenceLimit(50)).toBe(50);
     expect(hasMoreEvidence(25)).toBe(true);

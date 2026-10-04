@@ -51,7 +51,7 @@ const SIGNAL_TONE: Record<TransactionSignal, string> = {
  * The largest transactions in view, loaded on demand.
  *
  * A supporting view: every variance figure comes from the monthly budget, and
- * nothing here is summed into one. Eight rows load first; "Show more" asks for
+ * nothing here is summed into one. Five rows load first; "Show more" asks for
  * the next page, and changing the driver, month or period starts again.
  */
 export function EvidenceTransactions({
@@ -113,7 +113,7 @@ export function EvidenceTransactions({
           </thead>
           <tbody>
             {isLoading && !data
-              ? Array.from({ length: 6 }, (_, i) => (
+              ? Array.from({ length: 5 }, (_, i) => (
                   <tr key={i} className="border-t border-border/60">
                     <td colSpan={6} className="px-2.5 py-2">
                       <span className="block h-3 animate-pulse rounded bg-muted motion-reduce:animate-none" />

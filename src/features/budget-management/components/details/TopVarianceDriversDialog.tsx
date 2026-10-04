@@ -16,6 +16,7 @@ import {
   buildBaseline,
   buildMonthPoints,
   buildSelectionFacts,
+  buildVarianceModel,
   buildVarianceCsvRows,
   defaultSelection,
   recentMonths,
@@ -113,26 +114,58 @@ export function TopVarianceDriversDialog({
     scope,
     level: levelChoice,
   });
-  const { model } = data;
+  const fullModel = data.model;
   const { data: availableMonths } = useAvailableMonths();
 
-  const single = model.months.length === 1;
-  const activeMonth = month && model.months.includes(month) && !single ? month : null;
+  /*
+   * A month clicked in a multi-month view narrows everything that describes the
+   * period: the headline, the waterfall, the drivers and the investigation. The
+   * month chart keeps the whole period, so the click can be undone from where
+   * it was made. If the month has nothing in scope the filter is ignored rather
+   * than leaving empty panels.
+   */
+  const single = fullModel.months.length === 1;
+  const requestedMonth = month && fullModel.months.includes(month) && !single ? month : null;
+  const monthModel = useMemo(
+    () =>
+      requestedMonth
+        ? buildVarianceModel({
+            mode: budgetMode,
+            side,
+            months: [requestedMonth],
+            statesByMonth: fullModel.statesByMonth,
+            categoryIds: scope.wholeSide ? null : scope.categoryIds,
+            groupIds: scope.wholeSide ? null : scope.groupIds,
+            level: levelChoice,
+          })
+        : null,
+    [requestedMonth, budgetMode, side, fullModel.statesByMonth, scope, levelChoice]
+  );
+  const activeMonth = monthModel && monthModel.drivers.length > 0 ? requestedMonth : null;
+  const model = activeMonth && monthModel ? monthModel : fullModel;
+
   const driverIds = useMemo(() => resolveSelection(model, selection), [model, selection]);
   const selectionCustom = selection != null && !sameSet(driverIds, defaultSelection(model));
   const categoryIds = useMemo(() => selectedCategoryIds(model, driverIds), [model, driverIds]);
+  // History belongs to the period, so a month filter does not change what is typical.
   const baseline = useMemo(
-    () => buildBaseline({ model, categoryIds, months: model.months, isClosed: isClosedMonth }),
-    [model, categoryIds]
+    () => buildBaseline({ model: fullModel, categoryIds, months: fullModel.months, isClosed: isClosedMonth }),
+    [fullModel, categoryIds]
   );
   const facts = useMemo(
-    () => buildSelectionFacts({ model, driverIds, baseline }),
-    [model, driverIds, baseline]
+    () =>
+      buildSelectionFacts({
+        model,
+        driverIds,
+        baseline,
+        context: activeMonth ? fullModel.months : undefined,
+      }),
+    [model, driverIds, baseline, activeMonth, fullModel.months]
   );
-  const recent = useMemo(() => recentMonths(model.months), [model.months]);
+  const recent = useMemo(() => recentMonths(fullModel.months), [fullModel.months]);
   const points = useMemo(
-    () => (single ? buildMonthPoints(model, recent).filter((p) => p.present) : model.monthly),
-    [single, model, recent]
+    () => (single ? buildMonthPoints(fullModel, recent).filter((p) => p.present) : fullModel.monthly),
+    [single, fullModel, recent]
   );
 
   function resetView() {
@@ -203,6 +236,7 @@ export function TopVarianceDriversDialog({
       : null;
   const periodLabel =
     monthStart === monthEnd ? formatMonthLabel(monthStart, "long") : `${formatMonthLabel(monthStart, "long")} - ${formatMonthLabel(monthEnd, "long")}`;
+  const viewLabel = activeMonth ? formatMonthLabel(activeMonth, "long") : periodLabel;
 
   let body: React.ReactNode;
   if (data.isLoading) {
@@ -211,13 +245,18 @@ export function TopVarianceDriversDialog({
     body = <div className="flex flex-1 items-center justify-center p-10 text-sm text-destructive">Could not load the budget months for this period.</div>;
   } else if (data.months.length === 0) {
     body = <div className="flex flex-1 items-center justify-center p-10 text-sm text-muted-foreground">These months have no actuals yet, so there is no variance to explain.</div>;
-  } else if (model.drivers.length === 0) {
+  } else if (fullModel.drivers.length === 0) {
     body = <div className="flex flex-1 items-center justify-center p-10 text-sm text-muted-foreground">No budget or spending in these categories for this period.</div>;
   } else {
     const envelope = model.mode === "envelope";
     body = (
       <div className="min-h-0 flex-1 overflow-auto">
-        <VarianceSummary model={model} format={format} provisional={data.provisional} />
+        <VarianceSummary
+          model={model}
+          format={format}
+          provisional={data.provisional}
+          focus={activeMonth ? { month: activeMonth, periodLabel } : undefined}
+        />
         {data.hasFutureMonths && (
           <p className="border-b border-border px-5 py-1.5 text-[11px] text-muted-foreground">Months that have not happened yet are left out.</p>
         )}
@@ -226,7 +265,7 @@ export function TopVarianceDriversDialog({
             <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h3 className="text-sm font-semibold">{envelope ? "How allocation became spending" : "How budget became actual"}</h3>
-                <p className="text-xs text-muted-foreground">{periodLabel} · amounts shown as positive values</p>
+                <p className="text-xs text-muted-foreground">{viewLabel} · amounts shown as positive values</p>
               </div>
               {model.canChooseLevel && (
                 <div className="flex gap-px rounded border border-border bg-muted/40 p-px" role="group" aria-label="Group by">
@@ -257,15 +296,15 @@ export function TopVarianceDriversDialog({
               </h3>
               <p className="text-xs text-muted-foreground">
                 {envelope
-                  ? single ? `Closing balance per month · ${formatMonthLabel(model.months[0], "long")} highlighted` : `Closing balance at the end of each month · ${periodLabel}`
-                  : single ? `Net variance per month · ${formatMonthLabel(model.months[0], "long")} highlighted` : `Net monthly variance and running total · ${periodLabel}`}
+                  ? single ? `Closing balance per month · ${formatMonthLabel(fullModel.months[0], "long")} highlighted` : `Closing balance at the end of each month · ${periodLabel}`
+                  : single ? `Net variance per month · ${formatMonthLabel(fullModel.months[0], "long")} highlighted` : `Net monthly variance and running total · ${periodLabel}`}
               </p>
             </div>
             <TimelineChart
-              model={model}
+              model={fullModel}
               format={format}
               points={points}
-              periodMonths={model.months}
+              periodMonths={fullModel.months}
               showCumulative={!envelope && !single}
               selectedMonth={activeMonth}
               onMonthClick={single ? undefined : (m) => setMonth((current) => (current === m ? null : m))}
@@ -285,7 +324,7 @@ export function TopVarianceDriversDialog({
               )}
               {!single && <span>Click a month to filter the breakdown</span>}
             </div>
-            {envelope && <DeficitImpact points={points} periodMonths={model.months} format={format} />}
+            {envelope && <DeficitImpact points={points} periodMonths={fullModel.months} format={format} />}
           </Section>
 
           <Section className="border-b-0 lg:border-r">
@@ -317,7 +356,7 @@ export function TopVarianceDriversDialog({
               format={format}
               facts={facts}
               baseline={baseline}
-              recentMonths={recent.filter((m) => points.some((p) => p.month === m))}
+              recentMonths={activeMonth ? fullModel.months : recent.filter((m) => points.some((p) => p.month === m))}
               monthFilter={activeMonth}
               onClearMonthFilter={() => setMonth(null)}
               selectionCustom={selectionCustom}
@@ -334,7 +373,7 @@ export function TopVarianceDriversDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="flex h-[86vh] max-w-[min(72rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(72rem,calc(100vw-2rem))]">
+      <DialogContent className="flex h-[92vh] max-w-[min(92rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(92rem,calc(100vw-2rem))]">
         <VarianceHeader
           options={categoryOptions}
           selectedKeys={selectedKeys}
@@ -343,7 +382,7 @@ export function TopVarianceDriversDialog({
           exclusiveKeys={exclusiveKeys}
           summary={selectionSummary}
           selectedOptions={selectedOptions}
-          categoryCount={model.categories.length}
+          categoryCount={fullModel.categories.length}
           onSelectionChange={handleSelectionChange}
           monthStart={monthStart}
           monthEnd={monthEnd}
