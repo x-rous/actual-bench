@@ -17,6 +17,7 @@ import { BudgetImportDialog } from "./BudgetImportDialog";
 import { StagedCategoryTransferDialog } from "./StagedCategoryTransferDialog";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
+import { BudgetDisplayProvider } from "../context/BudgetDisplayContext";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -354,6 +355,7 @@ export function BudgetManagementView() {
   }
 
   return (
+    <BudgetDisplayProvider value={{ showDecimals }}>
     <div className="flex flex-col h-full min-h-0">
       <BudgetToolbar
         budgetMode={budgetMode ?? "unidentified"}
@@ -445,5 +447,6 @@ export function BudgetManagementView() {
       />
 
     </div>
+    </BudgetDisplayProvider>
   );
 }
