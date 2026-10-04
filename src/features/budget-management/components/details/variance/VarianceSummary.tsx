@@ -10,7 +10,17 @@ type Props = {
   model: VarianceModel;
   format: VarianceFormat;
   provisional: boolean;
+  /** A month picked from the chart, narrowing every figure here to it. */
+  focus?: { month: string; periodLabel: string };
 };
+
+function FocusNote({ focus }: { focus: NonNullable<Props["focus"]> }) {
+  return (
+    <p className="basis-full text-[11.5px] text-muted-foreground">
+      Showing {formatMonthLabel(focus.month, "long")} only, from {focus.periodLabel}. Click the month again to clear.
+    </p>
+  );
+}
 
 function Term({ value, label, tone }: { value: string; label: string; tone?: string }) {
   return (
@@ -31,7 +41,7 @@ const Op = ({ children }: { children: string }) => (
  * Tracking: net variance = overspent - saved (or shortfall - surplus).
  * Envelope: how many envelopes ended below zero, and what the balances add up to.
  */
-export function VarianceSummary({ model, format, provisional }: Props) {
+export function VarianceSummary({ model, format, provisional, focus }: Props) {
   const v = model.vocab;
   const total = model.total;
   const soFar = provisional ? " so far" : "";
@@ -74,6 +84,7 @@ export function VarianceSummary({ model, format, provisional }: Props) {
           Balance bridge: carried in {format.money(env.carriedIn)} + allocated {format.money(total.budget)} − spent {format.money(total.actual)} + deficits cleared from To Budget {format.money(env.clearedFromToBudget)}
           {env.otherAdjustments !== 0 && <> {env.otherAdjustments > 0 ? "+" : "−"} other adjustments {format.money(env.otherAdjustments)}</>} = {signedClosing}
         </p>
+        {focus && <FocusNote focus={focus} />}
       </div>
     );
   }
@@ -109,6 +120,7 @@ export function VarianceSummary({ model, format, provisional }: Props) {
         <Op>=</Op>
         <Term value={format.money(net)} label={netWord} tone={tone} />
       </div>
+      {focus && <FocusNote focus={focus} />}
     </div>
   );
 }

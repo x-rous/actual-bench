@@ -48,7 +48,7 @@ const PATTERN_TONE: Record<PatternTag, string> = {
 
 function Tile({ value, label }: { value: string; label: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border px-1.5 py-2 text-center">
+    <div className="min-w-0 rounded-lg border border-border px-1.5 py-1.5 text-center">
       <div className="truncate text-[15px] font-semibold tabular-nums">{value}</div>
       <div className="text-[11px] leading-tight text-muted-foreground">{label}</div>
     </div>
@@ -146,34 +146,26 @@ export function InvestigationPanel(props: Props) {
         ))}
       </p>
 
-      <div className="mb-3 grid grid-cols-4 gap-2 max-sm:grid-cols-2">
+      <div className="mb-2.5 grid grid-cols-4 gap-2 max-sm:grid-cols-2">
         {tiles.map(([value, label]) => (
           <Tile key={label} value={value} label={label} />
         ))}
       </div>
 
       {baseline && (
-        <div className="mb-3">
-          <div className="mb-1 text-xs font-semibold">
+        <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1 rounded-lg bg-muted/60 px-3 py-1.5 tabular-nums">
+          <span className="text-xs font-semibold">
             Historical context <span className="font-normal text-muted-foreground">(monthly average)</span>
-          </div>
-          <div className="grid grid-cols-3 divide-x divide-border rounded-lg bg-muted/60 py-2 text-center tabular-nums">
-            <div>
-              <div className="text-[11px] text-muted-foreground">{v.budget}</div>
-              <div className="text-[15px] font-semibold">{format.money(agg.budget / Math.max(n, 1))}/mo</div>
-            </div>
-            <div>
-              <div className="text-[11px] text-muted-foreground">{v.actual}</div>
-              <div className="text-[15px] font-semibold">{format.money(agg.actual / Math.max(n, 1))}/mo</div>
-            </div>
-            <div>
-              <div className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground">
-                Typical
-                <InfoHint label="typical spending">{baselineWhy(baseline)}</InfoHint>
-              </div>
-              <div className="text-[15px] font-semibold">{format.money(baseline.typicalPerMonth)}/mo</div>
-            </div>
-          </div>
+          </span>
+          <span className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-[13px]">
+            <span><span className="text-[11px] text-muted-foreground">{v.budget}</span> <b>{format.money(agg.budget / Math.max(n, 1))}/mo</b></span>
+            <span><span className="text-[11px] text-muted-foreground">{v.actual}</span> <b>{format.money(agg.actual / Math.max(n, 1))}/mo</b></span>
+            <span className="inline-flex items-baseline gap-1">
+              <span className="text-[11px] text-muted-foreground">Typical</span>
+              <InfoHint label="typical spending">{baselineWhy(baseline)}</InfoHint>
+              <b>{format.money(baseline.typicalPerMonth)}/mo</b>
+            </span>
+          </span>
         </div>
       )}
 
