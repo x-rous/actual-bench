@@ -304,8 +304,8 @@ export function PdfStatementReviewDialog({
     ])
   ), [draftGuidance?.columns, draftGuidance?.regions, parsed]);
   const detectionIssues = useMemo(
-    () => detectionIssuesFor(parsed, draftGuidance),
-    [draftGuidance, parsed]
+    () => detectionIssuesFor(parsed, draftGuidance, preview),
+    [draftGuidance, parsed, preview]
   );
   // Pages the parser could not read are missing transactions, not a detail in
   // a secondary view: import stays disabled until they are acknowledged.
@@ -1118,10 +1118,16 @@ function initialReviewFilter(result: PdfStatementParseResult | null): PdfReviewC
  * Items waiting on the reader come first; the rest are notes.
  */
 function detectionIssuesFor(
-  result: PdfStatementParseResult | null,
-  guidance: PdfParserGuidance | null
+  applied: PdfStatementParseResult | null,
+  guidance: PdfParserGuidance | null,
+  preview: PdfStatementParseResult | null = null
 ): PdfDetectionIssue[] {
-  if (!result || !guidance) return [{ message: "No detection result is available.", kind: "answer" }];
+  if (!applied || !guidance) return [{ message: "No detection result is available.", kind: "answer" }];
+  // What the rows say is read from the previewed re-read when there is one: it
+  // is the statement as the draft settings would read it, so a question the
+  // reader has answered stops being asked once the answer has been tried. Any
+  // further edit drops the preview, and the applied result speaks again.
+  const result = preview ?? applied;
   const issues: PdfDetectionIssue[] = [];
   // Not the statement-layout notice: that is about the layout in force, and it
   // is said in the panel that holds the control for it, immediately below.
@@ -1135,7 +1141,12 @@ function detectionIssuesFor(
     issues.push({ message: "Map the account amount, money-out, or money-in column.", kind: "answer" });
   }
 
-  const questions = openParserQuestions(result);
+  // Judged against the draft, not the applied guidance: an explicit amount
+  // direction settles every unsigned row by definition, so that question is
+  // answered the moment it is chosen. The period is not treated that way - a
+  // value in the field does not prove the dates resolve, so it waits for a
+  // preview to say so.
+  const questions = openParserQuestions({ transactions: result.transactions, guidance });
   if (questions.missingYear) {
     issues.push({
       message: `${rowsPhrase(questions.missingYear)} a date without a year. Set the statement period to read ${questions.missingYear === 1 ? "it" : "them"}.`,
