@@ -55,7 +55,7 @@ import { listSyncFlowRuns } from "./syncRunRepository";
 import { insertDebt } from "./debtRepository";
 import { listDebtOffsetLinks } from "./debtOffsetLinkRepository";
 import { listDebtAssumptions, replaceDebtAssumptions } from "./debtAssumptionRepository";
-import { ASSETS_DEBT_V38_INDEX_SQL, ASSETS_DEBT_V42_INDEX_SQL, ASSETS_DEBT_V43_INDEX_SQL, DEBT_FUTURE_ASSUMPTION_TABLE_SQL } from "./schema";
+import { ASSETS_DEBT_V38_INDEX_SQL, ASSETS_DEBT_V42_INDEX_SQL, ASSETS_DEBT_V43_INDEX_SQL, ASSETS_DEBT_V44_INDEX_SQL, DEBT_FUTURE_ASSUMPTION_TABLE_SQL } from "./schema";
 
 /**
  * Upgrading a database that already holds real work.
@@ -1345,7 +1345,7 @@ function v37Database(): { root: string; path: string } {
   resetAppDbForTests();
   const db = new Database(path);
   for (const trigger of V38_TRIGGERS) db.exec(`DROP TRIGGER ${trigger}`);
-  for (const table of ["debt_anchors", "debt_observations", "debt_transaction_links", "debt_match_rules", "model_revisions", "debt_future_assumptions", "debt_offset_links", "debt_rate_periods", "debts"]) db.exec(`DROP TABLE ${table}`);
+  for (const table of ["debt_anchors", "debt_observations", "debt_transaction_links", "financial_postings", "debt_match_rules", "model_revisions", "debt_future_assumptions", "debt_offset_links", "debt_rate_periods", "debts"]) db.exec(`DROP TABLE ${table}`);
   db.prepare("UPDATE app_meta SET value = '37' WHERE key = 'schema_version'").run();
   // Real work already in the database.
   db.prepare("INSERT INTO saved_queries (id, name, query, is_favorite, created_at, updated_at) VALUES ('q1', 'Uncategorized', '{}', 1, 't', 't')").run();
@@ -1374,8 +1374,8 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(43);
-      expect(runMigrations(db).schemaVersion).toBe(43);
+      expect(LATEST_SCHEMA_VERSION).toBe(44);
+      expect(runMigrations(db).schemaVersion).toBe(44);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
       expect(tables.filter((t) => t.startsWith("debt") || t === "model_revisions")).toEqual(V43_TABLES);
@@ -1409,7 +1409,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
 
       const db = getAppDb(path);
       const meta = runMigrations(db);
-      expect(meta.schemaVersion).toBe(43);
+      expect(meta.schemaVersion).toBe(44);
       expect(dumpTables(db, existing.map((t) => t.name))).toEqual(snapshot);
       for (const t of V38_TABLES) expect(db.prepare(`SELECT count(*) AS n FROM ${t}`).get<{ n: number }>()?.n).toBe(0);
 
@@ -1477,7 +1477,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
       seed.close();
 
       const upgraded = getAppDb(path);
-      expect(runMigrations(upgraded).schemaVersion).toBe(43);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
       expect(listDebtAssumptions(upgraded, "debt-v39")).toEqual(existingAssumptions);
       replaceDebtAssumptions(upgraded, "debt-v39", [
         { kind: "offset-deposit", effectiveFrom: "2026-02-01", recurrence: null, amountMinor: 10_000, feeTreatment: null, offsetAccountId: "offset-v39", note: null },
@@ -1521,7 +1521,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
       seed.close();
 
       const upgraded = getAppDb(path);
-      expect(runMigrations(upgraded).schemaVersion).toBe(43);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
       expect(listDebtOffsetLinks(upgraded, "debt-v40")).toEqual([
         expect.objectContaining({ id: "offset-v40", fundScheduledRepayments: false, fundScheduledRepaymentsFrom: null }),
       ]);
@@ -1558,7 +1558,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
       seed.close();
 
       const upgraded = getAppDb(path);
-      expect(runMigrations(upgraded).schemaVersion).toBe(43);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
       expect(listDebtOffsetLinks(upgraded, "debt-v41")).toEqual([
         expect.objectContaining({ id: "offset-v41", fundScheduledRepayments: true, fundScheduledRepaymentsFrom: null }),
       ]);
@@ -1593,7 +1593,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
       seed.close();
 
       const upgraded = getAppDb(path);
-      expect(runMigrations(upgraded).schemaVersion).toBe(43);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
       expect(upgraded.prepare("SELECT * FROM debts WHERE id = 'debt-v42'").get()).toEqual(before);
       expect(upgraded.prepare("SELECT count(*) AS n FROM debt_match_rules").get()).toEqual({ n: 0 });
       expect(upgraded.prepare("SELECT count(*) AS n FROM debt_transaction_links").get()).toEqual({ n: 0 });
@@ -1634,11 +1634,77 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
       seed.close();
 
       const upgraded = getAppDb(path);
-      expect(runMigrations(upgraded).schemaVersion).toBe(43);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
       expect(listDebtOffsetLinks(upgraded, "debt-v43")[0]).toMatchObject({ useActualBalance: false });
       expect(upgraded.prepare("SELECT drift_accepted_fingerprint FROM debts WHERE id = 'debt-v43'").get()).toEqual({ drift_accepted_fingerprint: null });
       expect(upgraded.prepare("SELECT count(*) AS n FROM debt_observations").get()).toEqual({ n: 0 });
       expect(upgraded.prepare("SELECT count(*) AS n FROM debt_anchors").get()).toEqual({ n: 0 });
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("v44: a fresh database has exactly the trimmed financial_postings design and the posting-backed link column", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v44-"));
+    try {
+      const db = getAppDb(join(root, "metadata.sqlite"));
+      expect(runMigrations(db).schemaVersion).toBe(44);
+      const columns = db.prepare("PRAGMA table_info(financial_postings)").all<{ name: string }>().map((c) => c.name);
+      expect(columns).toEqual([
+        "id", "budget_sync_id", "subject_kind", "subject_id", "posting_kind", "period_key", "generation", "config_revision",
+        "input_format_version", "input_snapshot_json", "input_hash", "engine_versions_json", "output_snapshot_json",
+        "classification", "classification_reasons_json", "idempotency_marker", "status", "decided_at", "applied_at",
+        "actual_ids_json", "reversal_of", "error_json", "created_at", "updated_at",
+      ]);
+      for (const removed of ["automation_run_id", "decided_by", "previewed_at", "before_snapshot_json", "after_snapshot_json", "observation_kind", "observation_id"]) {
+        expect(columns).not.toContain(removed);
+      }
+      const indexes = ASSETS_DEBT_V44_INDEX_SQL.map((sql) => sql.match(/INDEX IF NOT EXISTS (\S+)/)?.[1]);
+      expect(objectNames(db, "index")).toEqual(expect.arrayContaining(indexes));
+      expect(objectNames(db, "trigger")).toContain("financial_postings_identity_immutable");
+      expect(db.prepare("PRAGMA table_info(debt_transaction_links)").all<{ name: string }>().map((c) => c.name)).toContain("posting_id");
+      expect(db.prepare("PRAGMA foreign_key_list(debt_transaction_links)").all()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ table: "financial_postings", from: "posting_id", to: "id", on_delete: "RESTRICT" }),
+      ]));
+      // v38-v43 shapes are untouched: auto_apply_enabled is still there, still inert.
+      expect(db.prepare("PRAGMA table_info(debts)").all<{ name: string }>().map((c) => c.name)).toContain("auto_apply_enabled");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades an applied v43 database to v44 with existing links and debts unchanged", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v44-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v44", budgetSyncId: "budget-v44", name: "Existing debt", debtType: "mortgage",
+        behaviorClass: "term-loan", currency: "AED", currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v44", paymentAccountId: "payment-v44",
+        signConvention: "negative-is-debt", lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+        loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null,
+        currentConfigJson: "{}", status: "active", currentRevision: 1,
+      }, "2026-10-04T00:00:00.000Z");
+      resetAppDbForTests();
+      const seed = new Database(path);
+      seed.exec("DROP TRIGGER financial_postings_identity_immutable");
+      seed.exec("ALTER TABLE debt_transaction_links DROP COLUMN posting_id");
+      seed.exec("DROP TABLE financial_postings");
+      seed.prepare(`INSERT INTO debt_transaction_links (id, debt_id, budget_sync_id, actual_transaction_id, actual_parent_id, role, period_key, link_source, linked_at)
+        VALUES ('link-v44', 'debt-v44', 'budget-v44', 'txn-1', NULL, 'repayment', '2026-09-01', 'match-rule', 't')`).run();
+      seed.prepare("UPDATE app_meta SET value = '43' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
+      expect(upgraded.prepare("SELECT link_source, posting_id FROM debt_transaction_links WHERE id = 'link-v44'").get()).toEqual({ link_source: "match-rule", posting_id: null });
+      expect(upgraded.prepare("SELECT count(*) AS n FROM financial_postings").get()).toEqual({ n: 0 });
+      expect(upgraded.prepare("SELECT auto_apply_enabled FROM debts WHERE id = 'debt-v44'").get()).toEqual({ auto_apply_enabled: 0 });
+      expect(upgraded.pragma("foreign_key_check")).toEqual([]);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

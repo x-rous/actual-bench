@@ -1058,3 +1058,60 @@ export const ASSETS_DEBT_V43_INDEX_SQL = [
   "CREATE INDEX IF NOT EXISTS idx_debt_observations_debt_date ON debt_observations(debt_id, observed_on)",
   "CREATE INDEX IF NOT EXISTS idx_debt_anchors_debt_date ON debt_anchors(debt_id, anchor_date)",
 ] as const;
+
+// ── Assets & Debt postings (RD-084 P1.6, v44) ──
+//
+// The trimmed manual-apply design (data-model.md "financial_postings"). Enum
+// membership is not checked (D-1); the cross-column check below is the
+// database's own guard that no posting reaches a decided state without the
+// user's recorded decision time (SC-018).
+export const FINANCIAL_POSTING_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS financial_postings (
+  id text PRIMARY KEY,
+  budget_sync_id text NOT NULL,
+  subject_kind text NOT NULL,
+  subject_id text NOT NULL,
+  posting_kind text NOT NULL,
+  period_key text NOT NULL,
+  generation integer NOT NULL CHECK ${integerAtLeast("generation", 1)},
+  config_revision integer NOT NULL CHECK ${integerAtLeast("config_revision", 1)},
+  input_format_version integer NOT NULL CHECK ${integerAtLeast("input_format_version", 1)},
+  input_snapshot_json text NOT NULL CHECK (json_valid(input_snapshot_json)),
+  input_hash text NOT NULL,
+  engine_versions_json text NOT NULL CHECK (json_valid(engine_versions_json)),
+  output_snapshot_json text NOT NULL CHECK (json_valid(output_snapshot_json)),
+  classification text NOT NULL,
+  classification_reasons_json text NOT NULL CHECK (json_valid(classification_reasons_json)),
+  idempotency_marker text,
+  status text NOT NULL,
+  decided_at text,
+  applied_at text,
+  actual_ids_json text CHECK (actual_ids_json IS NULL OR json_valid(actual_ids_json)),
+  reversal_of text REFERENCES financial_postings(id) ON DELETE RESTRICT,
+  error_json text CHECK (error_json IS NULL OR json_valid(error_json)),
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  CHECK (status NOT IN ('approved', 'applying', 'applied', 'failed', 'indeterminate', 'declined', 'reversed') OR decided_at IS NOT NULL)
+);
+`;
+
+export const ASSETS_DEBT_V44_INDEX_SQL = [
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_financial_postings_live ON financial_postings(subject_kind, subject_id, posting_kind, period_key) WHERE status IN ('applying', 'applied', 'indeterminate')",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_financial_postings_marker ON financial_postings(idempotency_marker) WHERE idempotency_marker IS NOT NULL AND status IN ('applying', 'applied', 'indeterminate')",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_financial_postings_reuse ON financial_postings(subject_kind, subject_id, posting_kind, period_key, input_hash) WHERE status = 'proposed'",
+  "CREATE INDEX IF NOT EXISTS idx_financial_postings_subject_status ON financial_postings(subject_kind, subject_id, status)",
+] as const;
+
+/**
+ * Snapshots, identity and the marker never change after insert; only workflow
+ * columns move. Classification may change only on `indeterminate -> proposed`
+ * (recovery found nothing, so the retry is reviewed), which the repository owns.
+ */
+export const ASSETS_DEBT_V44_TRIGGER_SQL = [
+  `CREATE TRIGGER IF NOT EXISTS financial_postings_identity_immutable
+   BEFORE UPDATE OF budget_sync_id, subject_kind, subject_id, posting_kind, period_key, generation,
+     config_revision, input_format_version, input_snapshot_json, input_hash, engine_versions_json,
+     output_snapshot_json, idempotency_marker, reversal_of, created_at
+   ON financial_postings
+   BEGIN SELECT RAISE(ABORT, 'financial_postings snapshots and identity are immutable'); END`,
+] as const;

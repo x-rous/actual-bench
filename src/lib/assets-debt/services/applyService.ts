@@ -1,0 +1,206 @@
+import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
+import type { LinkTransferInput } from "@/lib/actual/transactionStructure";
+import { PostingNotApproved } from "./postingErrors";
+import { toTransactionPreflight, type PostingOutputSnapshot } from "./snapshot";
+import { verifyCreatedRows, verifyLinkOutcome, verifySplitOutcome } from "./verify";
+
+/**
+ * The browser half of applying a posting (RD-084 P1.6 T125–T127; SC-018).
+ *
+ * Actual is reached from the browser, through the shared transport, so the
+ * writes happen here. This executor accepts only a ticket the server issued
+ * after recording the user's explicit approval (`status = applying`,
+ * `decided_at` set); anything else throws `PostingNotApproved` before a single
+ * read. Its only caller is the preview's **Apply this change** handler.
+ *
+ * Outcomes are honest about what Actual holds:
+ *
+ * - `applied`: written (or found by its marker) and verified;
+ * - `failed`: nothing was written (preflight refused) or verification found a
+ *   problem with what was written;
+ * - `indeterminate`: the write may or may not have landed; only recovery or a
+ *   reviewed decision resolves it, never a blind retry.
+ */
+
+export type ApplyTicketView = {
+  posting: {
+    id: string;
+    status: unknown;
+    decidedAt: string | null;
+    idempotencyMarker: string | null;
+    output: PostingOutputSnapshot;
+  };
+  mode: "apply" | "complete-link";
+};
+
+export type ExecutorContext = {
+  transport: ActualBenchTransport;
+  transferPayeeByAccount: Record<string, string>;
+  offBudgetAccountIds: ReadonlySet<string>;
+  liabilityAccountId: string;
+  now?: () => string;
+};
+
+export type ExecutorOutcome =
+  | { status: "applied"; actualIds: string[]; appliedAt: string; recovered?: boolean }
+  | { status: "failed"; error: Record<string, unknown> }
+  | { status: "indeterminate"; error: Record<string, unknown> };
+
+/** SC-018: the executor runs only for a posting the user approved and the server started applying. */
+export function assertApproved(ticket: ApplyTicketView): void {
+  const { posting } = ticket;
+  if (posting.decidedAt === null || posting.decidedAt === undefined) throw new PostingNotApproved();
+  if (ticket.mode === "apply" && posting.status !== "applying") throw new PostingNotApproved();
+  if (ticket.mode === "complete-link" && posting.status !== "indeterminate") throw new PostingNotApproved();
+}
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/**
+ * The transport refused before writing anything (expected-state difference or a
+ * structural refusal). Recognised by name so this module keeps only type-only
+ * imports from the Actual layer (the P1.3 zero-write guard).
+ */
+const beforeWrite = (error: unknown) => error instanceof Error && (error.name === "TransactionChangedError" || error.name === "TransactionStructureRefusedError");
+
+function linkInput(output: Extract<PostingOutputSnapshot, { kind: "link" }>): LinkTransferInput {
+  return { source: toTransactionPreflight(output.sourceBefore), counterpart: toTransactionPreflight(output.counterpartBefore), transferPayeeId: output.transferPayeeId };
+}
+
+async function read(transport: ActualBenchTransport, accountId: string, from: string): Promise<SyncSourceTransaction[]> {
+  return transport.listTransactionsForSync({ accountId, startDate: from });
+}
+
+export async function executeApprovedPosting(ticket: ApplyTicketView, ctx: ExecutorContext): Promise<ExecutorOutcome> {
+  assertApproved(ticket);
+  const output = ticket.posting.output;
+  const now = ctx.now ?? (() => new Date().toISOString());
+  switch (output.kind) {
+    case "create": return applyCreate(output, ctx, now);
+    case "restructure": return applyRestructure(output, ctx, now);
+    case "link": return ticket.mode === "complete-link" ? completeLink(output, ctx, now) : applyLink(output, ctx, now);
+    case "claim": return applyClaim(output, ctx, now);
+  }
+}
+
+/** T125: re-read, marker check, create, re-read, recover by marker, verify. */
+async function applyCreate(output: Extract<PostingOutputSnapshot, { kind: "create" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  const from = output.operations.reduce((min, op) => (op.date < min ? op.date : min), output.operations[0]?.date ?? "0001-01-01");
+  const accounts = [...new Set(output.operations.map((op) => op.accountId))];
+  let existing: SyncSourceTransaction[];
+  try {
+    existing = (await Promise.all(accounts.map((a) => read(ctx.transport, a, from)))).flat();
+  } catch (error) {
+    return { status: "failed", error: { stage: "preflight-read", message: message(error), written: false } };
+  }
+  const missing = output.operations.filter((op) => !existing.some((row) => row.importedId === op.importedId));
+  if (missing.length) {
+    try {
+      await ctx.transport.createTransactionsForSync(missing.map((op) => ({
+        accountId: op.accountId, date: op.date, amount: op.amountMinor, payeeId: op.payeeId, categoryId: op.categoryId,
+        notes: op.notes, cleared: op.cleared, importedId: op.importedId,
+      })));
+    } catch (error) {
+      return { status: "indeterminate", error: { stage: "create", message: message(error) } };
+    }
+  }
+  let latest: SyncSourceTransaction[];
+  try {
+    latest = (await Promise.all(accounts.map((a) => read(ctx.transport, a, from)))).flat();
+  } catch (error) {
+    return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
+  }
+  const verified = verifyCreatedRows({ operations: output.operations, latest, offBudgetAccountIds: ctx.offBudgetAccountIds });
+  if (verified.issues.length) return { status: "failed", error: { stage: "verify", issues: verified.issues, written: true } };
+  return { status: "applied", actualIds: verified.createdIds, appliedAt: now(), ...(missing.length === 0 ? { recovered: true } : {}) };
+}
+
+/** T126: expected-state preflight inside the transport, restructure, verify the exact post-state. */
+async function applyRestructure(output: Extract<PostingOutputSnapshot, { kind: "restructure" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (!ctx.transport.restructureTransactionAsSplit) return { status: "failed", error: { stage: "capability", message: "This connection cannot restructure transactions.", written: false } };
+  let result;
+  try {
+    result = await ctx.transport.restructureTransactionAsSplit({
+      accountId: output.before.accountId,
+      transactionId: output.before.id,
+      expected: toTransactionPreflight(output.before),
+      children: output.operations.map((c) => ({
+        amount: c.amountMinor,
+        categoryId: c.categoryId,
+        payeeId: c.transferAccountId ? ctx.transferPayeeByAccount[c.transferAccountId] ?? null : c.payeeId,
+        notes: c.notes,
+      })),
+    });
+  } catch (error) {
+    return beforeWrite(error)
+      ? { status: "failed", error: { stage: "preflight", message: message(error), written: false } }
+      : { status: "indeterminate", error: { stage: "restructure", message: message(error) } };
+  }
+  let liabilityRows: SyncSourceTransaction[] = [];
+  try {
+    liabilityRows = await read(ctx.transport, ctx.liabilityAccountId, output.before.date);
+  } catch (error) {
+    return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
+  }
+  const issues = verifySplitOutcome({ expected: output.expectedPostState, result, transferPayeeByAccount: ctx.transferPayeeByAccount, liabilityRows, before: output.before });
+  if (issues.length) return { status: "failed", error: { stage: "verify", issues, written: true } };
+  const counterparts = result.children.filter((c) => c.transferId).map((c) => c.transferId as string);
+  return { status: "applied", actualIds: [result.parentId, ...result.children.map((c) => c.id), ...counterparts], appliedAt: now() };
+}
+
+async function verifyLink(output: Extract<PostingOutputSnapshot, { kind: "link" }>, ctx: ExecutorContext, result: Awaited<ReturnType<NonNullable<ActualBenchTransport["linkTransferCounterpart"]>>>, now: () => string): Promise<ExecutorOutcome> {
+  let counterpartRows: SyncSourceTransaction[] = [];
+  let sourceRows: SyncSourceTransaction[] = [];
+  try {
+    counterpartRows = await read(ctx.transport, output.counterpartBefore.accountId, output.counterpartBefore.date);
+    sourceRows = await read(ctx.transport, output.sourceBefore.accountId, output.sourceBefore.date);
+  } catch (error) {
+    return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
+  }
+  const issues = verifyLinkOutcome({
+    result, expected: output.expectedPairState, counterpartBefore: output.counterpartBefore,
+    counterpartNow: counterpartRows.find((r) => r.id === output.counterpartBefore.id) ?? null, sourceAccountRows: sourceRows,
+  });
+  if (issues.length) return { status: "failed", error: { stage: "verify", issues, written: true } };
+  return { status: "applied", actualIds: [output.sourceBefore.id, output.counterpartBefore.id], appliedAt: now() };
+}
+
+/** T127: amount-equality preflight, two-call link, verify one liability-side row and the imported id kept. */
+async function applyLink(output: Extract<PostingOutputSnapshot, { kind: "link" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (!ctx.transport.linkTransferCounterpart) return { status: "failed", error: { stage: "capability", message: "This connection cannot link transfers.", written: false } };
+  let result;
+  try {
+    result = await ctx.transport.linkTransferCounterpart(linkInput(output));
+  } catch (error) {
+    return beforeWrite(error)
+      ? { status: "failed", error: { stage: "preflight", message: message(error), written: false } }
+      : { status: "indeterminate", error: { stage: "link", message: message(error) } };
+  }
+  return verifyLink(output, ctx, result, now);
+}
+
+/** T131: the user's explicit completion of an interrupted link; the second call only. */
+async function completeLink(output: Extract<PostingOutputSnapshot, { kind: "link" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (!ctx.transport.completeTransferLink) return { status: "indeterminate", error: { stage: "capability", message: "This connection cannot complete transfer links." } };
+  let result;
+  try {
+    result = await ctx.transport.completeTransferLink(linkInput(output));
+  } catch (error) {
+    return { status: "indeterminate", error: { stage: "complete-link", message: message(error) } };
+  }
+  return verifyLink(output, ctx, result, now);
+}
+
+/** A claim writes nothing to Actual: confirm the rows are still as previewed, then record the link. */
+async function applyClaim(output: Extract<PostingOutputSnapshot, { kind: "claim" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (output.release) return { status: "applied", actualIds: output.rows.map((r) => r.id), appliedAt: now() };
+  try {
+    for (const row of output.rows) {
+      const rows = await read(ctx.transport, row.accountId, row.date);
+      const found = rows.flatMap((r) => [r, ...r.splitLines.map((l) => ({ ...r, ...l, id: l.id ?? "", amount: l.amount }))]).find((r) => r.id === row.id);
+      if (!found || found.amount !== row.amountMinor) return { status: "failed", error: { stage: "preflight", message: "A claimed row changed in Actual. Preview again.", written: false } };
+    }
+  } catch (error) {
+    return { status: "failed", error: { stage: "preflight-read", message: message(error), written: false } };
+  }
+  return { status: "applied", actualIds: output.rows.map((r) => r.id), appliedAt: now() };
+}

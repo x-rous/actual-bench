@@ -4,6 +4,16 @@ import type { SyncCapabilityReport } from "@/lib/app-db/types";
 import type { BankSyncOutcome } from "./bankSync";
 import type { ConnectionMode } from "@/store/connection";
 import type {
+  ExpectedSplitState,
+  HalfLinkState,
+  LinkTransferInput,
+  LinkTransferResult,
+  RestructureSplitInput,
+  RestructureSplitResult,
+  RestructureVerification,
+  StructureChild,
+} from "./transactionStructure";
+import type {
   Account,
   AccountGroup,
   Category,
@@ -455,6 +465,30 @@ export interface ActualBenchTransport {
     updated: BatchTransactionUpdate[];
     deleted: string[];
   }): Promise<void>;
+  // --- Assets & Debt restructure and transfer linking (RD-084 P1.6) --------
+  //
+  // Optional, like `runBankSync`: a transport without them cannot restructure
+  // or link, and RD-084 classifies those proposals Blocked. Both shipped
+  // transports implement them through the shared `transactionStructure`
+  // module, so Direct and HTTP behave identically.
+  /** Re-read, refuse on any preflight difference, then `updateTransaction(id, { subtransactions })` (T121/T122). */
+  restructureTransactionAsSplit?(input: RestructureSplitInput): Promise<RestructureSplitResult>;
+  /** The two-call counterpart link; inserts nothing (T123). */
+  linkTransferCounterpart?(input: LinkTransferInput): Promise<LinkTransferResult>;
+  /** Finish a half-linked pair with the second call only (T123/T131). */
+  completeTransferLink?(input: LinkTransferInput): Promise<LinkTransferResult>;
+  /** Read-only half-link detection, including stray counterparts (T131). */
+  inspectTransferLink?(input: LinkTransferInput): Promise<HalfLinkState>;
+  /** Read-only: does the row hold exactly the expected split? (T124) */
+  verifyRestructure?(input: {
+    accountId: string;
+    transactionId: string;
+    date: string;
+    expected: ExpectedSplitState;
+    transferPayeeByAccount: Record<string, string>;
+  }): Promise<{ result: RestructureVerification; children: StructureChild[] }>;
+  /** Whether reads report `transfer_id`; without it a link cannot be verified and is Blocked (R-07). */
+  canVerifyTransferLinks?(input: { accountId: string; sinceDate: string }): Promise<boolean>;
   /** Load target payees + existing sync markers for dedupe/apply checks. */
   getTargetLookupForSync(
     input: ListTransactionsForSyncInput

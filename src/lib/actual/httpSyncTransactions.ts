@@ -2,6 +2,7 @@ import { apiRequest } from "../api/client";
 import { getCategoryGroups } from "../api/categoryGroups";
 import { createPayee, getPayees } from "../api/payees";
 import { normalizeName } from "@/lib/sync/normalize";
+import type { RawTxn, StructurePrimitives } from "./transactionStructure";
 import type { ConnectionInstance } from "@/store/connection";
 import type {
   CreateTransactionsForSyncResult,
@@ -341,4 +342,22 @@ export async function createHttpTransactionsForSync(
     }
   }
   return { created };
+}
+
+/**
+ * The two primitives the shared restructure/link logic needs, over
+ * actual-http-api (RD-084 P1.6 T122/T123). `PATCH /transactions/{id}` forwards
+ * the body to `actualApi.updateTransaction` verbatim and returns after the
+ * handler, so no settle loop is needed here (R-18).
+ */
+export function httpStructurePrimitives(connection: ConnectionInstance): StructurePrimitives {
+  return {
+    async readAccount(accountId, sinceDate) {
+      const rows = await fetchTransactions(connection, accountId, sinceDate);
+      return rows.filter((row) => row.is_child !== true) as unknown as RawTxn[];
+    },
+    async update(id, fields) {
+      await apiRequest(connection, `/transactions/${id}`, { method: "PATCH", body: { transaction: fields } });
+    },
+  };
 }

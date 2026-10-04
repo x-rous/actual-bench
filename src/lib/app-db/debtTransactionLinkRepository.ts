@@ -21,6 +21,7 @@ type LinkRow = {
   period_key: string;
   link_source: string;
   linked_at: string;
+  posting_id: string | null;
 };
 
 export type DebtTransactionLinkInput = {
@@ -32,6 +33,8 @@ export type DebtTransactionLinkInput = {
   role: DebtTransactionLinkRole;
   periodKey: string;
   linkSource: DebtTransactionLinkSource;
+  /** Required when `linkSource` is `posting`, refused otherwise (v44). */
+  postingId?: string | null;
   /** Read-shape fact used to refuse claims on split parents; it is not persisted. */
   isSplitParent?: boolean;
 };
@@ -46,6 +49,7 @@ const rowToRecord = (row: LinkRow): DebtTransactionLinkRecord => ({
   periodKey: row.period_key,
   linkSource: readStoredEnum(DEBT_TRANSACTION_LINK_SOURCES, row.link_source),
   linkedAt: row.linked_at,
+  postingId: row.posting_id ?? null,
 });
 
 export function getDebtTransactionLink(db: SqliteDatabase, id: string): DebtTransactionLinkRecord | null {
@@ -69,13 +73,18 @@ export function insertDebtTransactionLink(
   if (input.isSplitParent && role !== "evidence-only") {
     throw new AppDbValidationError("A split parent cannot be claimed; link its specific child instead.");
   }
+  const linkSource = requireOneOf(DEBT_TRANSACTION_LINK_SOURCES, input.linkSource, "linkSource");
+  const postingId = optionalText(input.postingId, "postingId");
+  if ((linkSource === "posting") !== (postingId !== null)) {
+    throw new AppDbValidationError("A posting-backed link needs its posting id, and only posting-backed links carry one.");
+  }
   const id = input.id ?? generateId();
   try {
     db.prepare(
       `INSERT INTO debt_transaction_links
        (id, debt_id, budget_sync_id, actual_transaction_id, actual_parent_id, role,
-        period_key, link_source, linked_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        period_key, link_source, linked_at, posting_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       requireText(input.debtId, "debtId"),
@@ -84,15 +93,16 @@ export function insertDebtTransactionLink(
       optionalText(input.actualParentId, "actualParentId"),
       role,
       requireText(input.periodKey, "periodKey"),
-      requireOneOf(DEBT_TRANSACTION_LINK_SOURCES, input.linkSource, "linkSource"),
-      now
+      linkSource,
+      now,
+      postingId
     );
   } catch (error) {
     rethrowConstraint(error, {
       idx_debt_transaction_links_claim: "That Actual transaction is already claimed in this role in this budget.",
       "debt_transaction_links.budget_sync_id, debt_transaction_links.actual_transaction_id, debt_transaction_links.role":
         "That Actual transaction is already claimed in this role in this budget.",
-      FOREIGN: "The debt does not exist in that Actual budget.",
+      FOREIGN: "The debt does not exist in that Actual budget, or the posting does not exist.",
     });
   }
   const created = getDebtTransactionLink(db, id);
@@ -102,4 +112,11 @@ export function insertDebtTransactionLink(
 
 export function deleteDebtTransactionLink(db: SqliteDatabase, id: string): boolean {
   return db.prepare("DELETE FROM debt_transaction_links WHERE id = ?").run(id).changes > 0;
+}
+
+export function listPostingTransactionLinks(db: SqliteDatabase, postingId: string): DebtTransactionLinkRecord[] {
+  return db
+    .prepare("SELECT * FROM debt_transaction_links WHERE posting_id = ? ORDER BY linked_at, id")
+    .all<LinkRow>(postingId)
+    .map(rowToRecord);
 }

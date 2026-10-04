@@ -731,7 +731,7 @@ export const DEBT_TRANSACTION_LINK_ROLES = [
   "evidence-only",
 ] as const;
 export type DebtTransactionLinkRole = (typeof DEBT_TRANSACTION_LINK_ROLES)[number];
-export const DEBT_TRANSACTION_LINK_SOURCES = ["match-rule", "user"] as const;
+export const DEBT_TRANSACTION_LINK_SOURCES = ["match-rule", "user", "posting"] as const;
 export type DebtTransactionLinkSource = (typeof DEBT_TRANSACTION_LINK_SOURCES)[number];
 
 export type DebtMatchRuleRecord = {
@@ -758,4 +758,75 @@ export type DebtTransactionLinkRecord = {
   periodKey: string;
   linkSource: StoredEnum<DebtTransactionLinkSource>;
   linkedAt: string;
+  /** v44: the posting that created this link, when `linkSource` is `posting`. */
+  postingId: string | null;
+};
+
+// ── Assets & Debt postings (RD-084 P1.6, v44) ───────────────────────────────
+
+/** v44 registers `debt`; v45 (Phase 3) registers `asset`. `balance-link` is deferred. */
+export const POSTING_SUBJECT_KINDS = ["debt"] as const;
+export type PostingSubjectKind = (typeof POSTING_SUBJECT_KINDS)[number];
+
+/** Phase 1 posting kinds, including P1.9's (owner decision D8: P1.9 has no migration). */
+export const POSTING_KINDS = [
+  "repayment-split",
+  "repayment-link",
+  "interest-charge",
+  "interest-link",
+  "opening-adjustment",
+  "reconciliation-adjustment",
+  "fee-charge",
+  "reversal",
+  "receivable-split",
+  "revolving-interest",
+  "anchor-only",
+] as const;
+export type PostingKind = (typeof POSTING_KINDS)[number];
+
+/** Persisted vocabulary, unchanged by the scope revision (owner clarification 3). */
+export const POSTING_CLASSIFICATIONS = ["safe", "review", "blocked"] as const;
+export type PostingClassification = (typeof POSTING_CLASSIFICATIONS)[number];
+
+export const POSTING_STATUSES = [
+  "proposed",
+  "approved",
+  "applying",
+  "applied",
+  "failed",
+  "indeterminate",
+  "declined",
+  "superseded",
+  "reversed",
+] as const;
+export type PostingStatus = (typeof POSTING_STATUSES)[number];
+
+export type PostingReason = { code: string; text: string };
+
+export type FinancialPostingRecord = {
+  id: string;
+  budgetSyncId: string;
+  subjectKind: StoredEnum<PostingSubjectKind>;
+  subjectId: string;
+  postingKind: StoredEnum<PostingKind>;
+  periodKey: string;
+  generation: number;
+  configRevision: number;
+  inputFormatVersion: number;
+  /** Canonical JSON exactly as hashed; parsed by the snapshot module. */
+  inputSnapshotJson: string;
+  inputHash: string;
+  engineVersions: Record<string, string>;
+  outputSnapshotJson: string;
+  classification: StoredEnum<PostingClassification>;
+  reasons: PostingReason[];
+  idempotencyMarker: string | null;
+  status: StoredEnum<PostingStatus>;
+  decidedAt: string | null;
+  appliedAt: string | null;
+  actualIds: string[] | null;
+  reversalOf: string | null;
+  error: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
 };

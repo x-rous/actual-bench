@@ -214,6 +214,47 @@ const optionalEnableBacktest = z.strictObject({
 export const createMatchRuleRequestSchema = z.strictObject({ rule: matchRuleSaveSchema, enableBacktest: optionalEnableBacktest.optional() });
 export const updateMatchRuleRequestSchema = z.strictObject({ ruleId: id, rule: matchRuleSaveSchema, enableBacktest: optionalEnableBacktest.optional() });
 
+// ── P1.6 postings ──────────────────────────────────────────────────────────
+
+/** A row's preflight fields as the browser re-read them (FR-162). Amounts are integer minor units. */
+export const rowSnapshotSchema = z.strictObject({
+  id, accountId: id, date: isoDate, amountMinor: minor, payeeId: id.nullable(), payeeName: z.string().nullable(),
+  categoryId: id.nullable(), notes: z.string().nullable(), cleared: z.boolean(), reconciled: z.boolean(),
+  importedId: z.string().nullable(), importedPayee: z.string().nullable(), transferId: z.string().nullable(),
+  isParent: z.boolean(), isChild: z.boolean(), parentId: z.string().nullable(), childCount: z.number().int().nonnegative(),
+});
+
+export const previewRequestSchema = z.strictObject({
+  from: isoDate,
+  to: isoDate,
+  snapshots: z.array(matchingSnapshotSchema).max(50),
+  accountDirectory: accountDirectorySchema,
+  transferPayees: z.record(id, id),
+  capabilities: z.strictObject({ canRestructure: z.boolean(), canVerifyTransferLinks: z.boolean() }),
+  offsetHistories: offsetHistorySchema,
+  comparison: z.strictObject({ comparisonDate: isoDate, actualBalanceMinor: minor.nonnegative() }).nullable().optional(),
+  parameters: z.strictObject({
+    openingAdjustmentCategoryId: id.nullable().optional(),
+    adjustmentCategoryId: id.nullable().optional(),
+    actualBalanceAtOnboardingMinor: minor.nonnegative().nullable().optional(),
+  }).optional(),
+});
+
+/** The user's explicit Apply: the rows re-read just before, so the server can re-run preflight. */
+export const applyRequestSchema = z.strictObject({
+  action: z.enum(["apply", "complete-link"]).default("apply"),
+  fresh: z.array(rowSnapshotSchema).max(50).default([]),
+});
+
+export const applyOutcomeSchema = z.discriminatedUnion("status", [
+  z.strictObject({ status: z.literal("applied"), actualIds: z.array(id).max(50), appliedAt: z.string().min(1).max(100), recovered: z.boolean().optional() }),
+  z.strictObject({ status: z.literal("failed"), error: z.record(z.string(), z.unknown()) }),
+  z.strictObject({ status: z.literal("indeterminate"), error: z.record(z.string(), z.unknown()) }),
+  z.strictObject({ status: z.literal("not-found"), reason: z.strictObject({ code: z.string().min(1).max(100), text: z.string().min(1).max(1_000) }) }),
+]);
+
+export const reverseRequestSchema = z.strictObject({ accountDirectory: accountDirectorySchema, transferPayees: z.record(id, id) });
+
 /** Parse a body or throw a validation error naming the first problems. */
 export function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
@@ -231,7 +272,7 @@ export function assetsDebtErrorResponse(error: unknown): NextResponse {
   if (error instanceof DebtConfigValidationError) {
     return NextResponse.json({ error: "The debt configuration is not valid.", code: "DEBT_CONFIG_INVALID", issues: error.issues }, { status: 400 });
   }
-  if (error instanceof AppDbValidationError && (error.message === "Debt not found" || error.message === "Matching rule not found")) {
+  if (error instanceof AppDbValidationError && (error.message === "Debt not found" || error.message === "Matching rule not found" || error.message === "Posting not found")) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
   return appDbErrorResponse(error);

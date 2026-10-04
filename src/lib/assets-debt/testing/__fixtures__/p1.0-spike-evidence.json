@@ -1,0 +1,249 @@
+{
+  "direct": {
+    "t010": {
+      "isParent": true,
+      "childCount": 3,
+      "childSum": -830000,
+      "principalTransferId": "336855d8-92bb-44d3-9de9-f3f45dd44ec2",
+      "principalCategory": "80bc0388-e70a-4558-a195-ee05be047a6f",
+      "counterpart": {
+        "amount": 695000,
+        "category": null,
+        "transfer_id": "953168f0-f75e-4187-bc87-bc0f48142072"
+      },
+      "mortgageRowsAdded": 1
+    },
+    "t010b": {
+      "childAmountAfterPartialUpdate": 0,
+      "childCategoryAfterPartialUpdate": null,
+      "parentError": {
+        "type": "SplitTransactionError",
+        "version": 1,
+        "difference": -695000
+      }
+    },
+    "t011": {
+      "mortgageRowsAddedByCall1": 0,
+      "afterCall1": {
+        "childTransferId": "057291df-802b-446e-a73f-e0fbba9fcb47",
+        "lenderTransferId": null,
+        "lenderPayee": "e5a5d3a9-c381-4960-8ae8-5ddf1e2f1e98"
+      },
+      "final": {
+        "childTransferId": "057291df-802b-446e-a73f-e0fbba9fcb47",
+        "childPayee": "7f619554-3db2-429c-92dc-fbed0cfb4660",
+        "childCategory": "80bc0388-e70a-4558-a195-ee05be047a6f",
+        "lenderTransferId": "d8db3899-2f26-48ce-b299-9fc7aaece5bf",
+        "lenderPayee": "e5a5d3a9-c381-4960-8ae8-5ddf1e2f1e98",
+        "lenderAmount": 695000,
+        "lenderCategory": null,
+        "lenderNotes": "lender import",
+        "lenderImportedId": "lender:t011:mulpa65c",
+        "lenderImportedPayee": "LENDER REPAYMENT RECEIVED",
+        "lenderCleared": true,
+        "lenderDate": "2026-01-06"
+      },
+      "mortgageRowsAddedTotal": 0
+    },
+    "t012": {
+      "halfLinkedDetectable": true,
+      "completedReciprocal": true,
+      "mortgageRowsAddedByCompletion": 0,
+      "editWhileHalfLinkedInsertedRowsInChecking": 1
+    },
+    "t013": {
+      "rawRowsWithTransferId": 27,
+      "transportRowsWithTransferId": 27
+    },
+    "t011b": {
+      "mismatchedLenderAmountBefore": 695100,
+      "mismatchedLenderAmountAfterCall1": 695000,
+      "reconciledLender": {
+        "reconciledBefore": true,
+        "reconciledAfter": true,
+        "payeeChanged": true,
+        "notesBefore": "lender import",
+        "notesAfter": "principal"
+      },
+      "reconciledBankRowRestructure": {
+        "rejectedByActual": null,
+        "isParentAfter": true
+      }
+    },
+    "t014": {
+      "offBudgetChargeCategory": null,
+      "onBudgetLiabilityChargeCategory": "162c1dd2-c04a-4fec-94ad-7963a4925f26",
+      "boundaryOnBudgetSideCategory": "80bc0388-e70a-4558-a195-ee05be047a6f",
+      "boundaryOffBudgetSideCategory": null,
+      "bothOnBudgetSourceCategory": null,
+      "bothOnBudgetCounterpartCategory": null,
+      "drawCounterpartOnBudgetCategory": null
+    },
+    "t015PayeeCreate": {
+      "transportReturnedId": true
+    },
+    "t015": {
+      "ruleActionsReadBack": [
+        {
+          "op": "set-split-amount",
+          "field": null,
+          "value": null,
+          "type": "number",
+          "options": {
+            "splitIndex": 1,
+            "method": "formula",
+            "formula": "=IPMT(0.05/12, 1, 360, 300000)"
+          }
+        },
+        {
+          "op": "set-split-amount",
+          "field": null,
+          "value": null,
+          "type": "number",
+          "options": {
+            "splitIndex": 2,
+            "method": "remainder"
+          }
+        }
+      ],
+      "appliedSplit": [
+        -125000,
+        -36000
+      ]
+    },
+    "updateSettleMs": [
+      545,
+      543,
+      560,
+      551,
+      544,
+      456,
+      567,
+      561,
+      466,
+      575,
+      550,
+      881,
+      553,
+      541,
+      577,
+      438,
+      542,
+      540,
+      546
+    ]
+  },
+  "http": {
+    "t010": {
+      "isParent": true,
+      "childCount": 3,
+      "childSum": -830000,
+      "principalTransferId": "eee831e8-a467-4e43-a50e-91d5d704a8f4",
+      "principalCategory": "5ef0f0b1-ce9f-4c40-a3e1-b2306dbc3503",
+      "counterpart": {
+        "amount": 695000,
+        "category": null,
+        "transfer_id": "018e97d0-14ba-41b7-aa33-6ba83c0f645f"
+      },
+      "mortgageRowsAdded": 1
+    },
+    "t010b": {
+      "childAmountAfterPartialUpdate": 0,
+      "childCategoryAfterPartialUpdate": null,
+      "parentError": {
+        "type": "SplitTransactionError",
+        "version": 1,
+        "difference": -695000
+      }
+    },
+    "t011": {
+      "mortgageRowsAddedByCall1": 0,
+      "afterCall1": {
+        "childTransferId": "b62711d3-2352-4df4-919e-513f6b703b0c",
+        "lenderTransferId": null,
+        "lenderPayee": "cea3da7c-58c3-4ec3-a019-3d8d90e85053"
+      },
+      "final": {
+        "childTransferId": "b62711d3-2352-4df4-919e-513f6b703b0c",
+        "childPayee": "68632bf9-071b-466a-9911-7f1d20abbbe5",
+        "childCategory": "5ef0f0b1-ce9f-4c40-a3e1-b2306dbc3503",
+        "lenderTransferId": "0aca784d-5f0e-483f-aacc-c74059e6eafc",
+        "lenderPayee": "cea3da7c-58c3-4ec3-a019-3d8d90e85053",
+        "lenderAmount": 695000,
+        "lenderCategory": null,
+        "lenderNotes": "lender import",
+        "lenderImportedId": "lender:t011:mulpa65c",
+        "lenderImportedPayee": "LENDER REPAYMENT RECEIVED",
+        "lenderCleared": true,
+        "lenderDate": "2026-01-07"
+      },
+      "mortgageRowsAddedTotal": 0
+    },
+    "t012": {
+      "halfLinkedDetectable": true,
+      "completedReciprocal": true,
+      "mortgageRowsAddedByCompletion": 0,
+      "editWhileHalfLinkedInsertedRowsInChecking": 1
+    },
+    "t013": {
+      "rawRowsWithTransferId": 19,
+      "transportRowsWithTransferId": 19
+    },
+    "t011b": {
+      "mismatchedLenderAmountBefore": 695100,
+      "mismatchedLenderAmountAfterCall1": 695000,
+      "reconciledLender": {
+        "reconciledBefore": true,
+        "reconciledAfter": true,
+        "payeeChanged": true,
+        "notesBefore": "lender import",
+        "notesAfter": "principal"
+      },
+      "reconciledBankRowRestructure": {
+        "rejectedByActual": null,
+        "isParentAfter": true
+      }
+    },
+    "t014": {
+      "offBudgetChargeCategory": null,
+      "onBudgetLiabilityChargeCategory": "20d61d96-3e38-42f2-9767-a58b16a1dcf8",
+      "boundaryOnBudgetSideCategory": "5ef0f0b1-ce9f-4c40-a3e1-b2306dbc3503",
+      "boundaryOffBudgetSideCategory": null,
+      "bothOnBudgetSourceCategory": null,
+      "bothOnBudgetCounterpartCategory": null,
+      "drawCounterpartOnBudgetCategory": null
+    },
+    "t015PayeeCreate": {
+      "transportReturnedId": false
+    },
+    "t015": {
+      "ruleActionsReadBack": [
+        {
+          "op": "set-split-amount",
+          "field": null,
+          "value": null,
+          "type": "number",
+          "options": {
+            "splitIndex": 1,
+            "method": "formula",
+            "formula": "=IPMT(0.05/12, 1, 360, 300000)"
+          }
+        },
+        {
+          "op": "set-split-amount",
+          "field": null,
+          "value": null,
+          "type": "number",
+          "options": {
+            "splitIndex": 2,
+            "method": "remainder"
+          }
+        }
+      ],
+      "appliedSplit": [
+        -125000,
+        -36000
+      ]
+    }
+  }
+}

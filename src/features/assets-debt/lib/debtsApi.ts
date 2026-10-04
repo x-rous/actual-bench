@@ -27,7 +27,7 @@ export class DebtApiError extends Error {
   }
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init, headers: { "content-type": "application/json", ...init?.headers } });
   if (response.status === 204) return undefined as T;
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;

@@ -60,11 +60,14 @@ import {
   SYNC_PLATFORM_V2_INDEX_SQL,
   SYNC_PLATFORM_V3_INDEX_SQL,
   TRANSACTION_FX_TABLE_SQL,
+  FINANCIAL_POSTING_TABLE_SQL,
+  ASSETS_DEBT_V44_INDEX_SQL,
+  ASSETS_DEBT_V44_TRIGGER_SQL,
 } from "./schema";
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 43;
+export const LATEST_SCHEMA_VERSION = 44;
 
 type Migration = {
   version: number;
@@ -538,6 +541,18 @@ const MIGRATIONS: readonly Migration[] = [
       db.exec(DEBT_OBSERVATION_TABLE_SQL);
       db.exec(DEBT_ANCHOR_TABLE_SQL);
       for (const statement of ASSETS_DEBT_V43_INDEX_SQL) db.exec(statement);
+    },
+  },
+  {
+    version: 44,
+    // RD-084 P1.6: user-approved postings (the trimmed manual-apply design) and
+    // posting-backed transaction links. v38-v43 tables are untouched apart from
+    // the new nullable link column; `debts.auto_apply_enabled` stays inert.
+    apply: (db) => {
+      db.exec(FINANCIAL_POSTING_TABLE_SQL);
+      for (const statement of ASSETS_DEBT_V44_INDEX_SQL) db.exec(statement);
+      for (const statement of ASSETS_DEBT_V44_TRIGGER_SQL) db.exec(statement);
+      addColumnIfMissing(db, "debt_transaction_links", "posting_id", "text REFERENCES financial_postings(id) ON DELETE RESTRICT");
     },
   },
 ];

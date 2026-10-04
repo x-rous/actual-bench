@@ -20,6 +20,8 @@ import { SAVE_BOUNDARY } from "./saveBoundary";
 import { SimulatorView } from "./simulator/SimulatorView";
 import { strategyAdvice, TrackingSetup } from "./tracking/TrackingSetup";
 import { LenderReconciliation } from "./reconciliation/LenderReconciliation";
+import { PostingsPanel } from "./preview/PostingsPanel";
+import { ActivityTimeline } from "./activity/ActivityTimeline";
 
 /**
  * The loan pages (RD-084 P1.3b T204, T214, T216).
@@ -383,7 +385,11 @@ export function LoanView({ id }: { id: string }) {
         </div>
       ) : null}
       {view === "activity" ? (
-        <LenderReconciliation debt={detail} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <PostingsPanel debt={detail} directory={directory.data} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} />
+          <ActivityTimeline debtId={detail.debt.id} currencyMinorDigits={detail.debt.currencyMinorDigits} />
+          <LenderReconciliation debt={detail} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} />
+        </div>
       ) : null}
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)} state={confirm} />
     </div>

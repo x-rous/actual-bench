@@ -64,6 +64,14 @@ import {
 import { listAccountsForBankSync } from "./bankSyncAccounts";
 import { exportHttpApiBudget } from "./httpBudgetExport";
 import { runBankSyncForAccounts } from "./runBankSync";
+import {
+  completeTransferLink,
+  inspectTransferLink,
+  linkCounterpart,
+  readsReportTransferIds,
+  restructureAsSplit,
+  verifySplit,
+} from "./transactionStructure";
 import type { HttpApiConnection } from "@/store/connection";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
 import {
@@ -79,6 +87,7 @@ import {
   listHttpTransactionsForSync,
   readHttpTargetTransactionForSync,
   updateHttpTransactionForSync,
+  httpStructurePrimitives,
 } from "./httpSyncTransactions";
 
 export function createHttpApiTransport(
@@ -212,6 +221,12 @@ export function createHttpApiTransport(
     readTargetTransactionForSync: (input) => readHttpTargetTransactionForSync(connection, input),
     deleteTransactionForSync: (input) => deleteHttpTransactionForSync(connection, input),
     getTargetLookupForSync: (input) => getHttpTargetLookupForSync(connection, input),
+    restructureTransactionAsSplit: (input) => restructureAsSplit(httpStructurePrimitives(connection), input),
+    linkTransferCounterpart: (input) => linkCounterpart(httpStructurePrimitives(connection), input),
+    completeTransferLink: (input) => completeTransferLink(httpStructurePrimitives(connection), input),
+    inspectTransferLink: (input) => inspectTransferLink(httpStructurePrimitives(connection), input),
+    verifyRestructure: (input) => verifySplit(httpStructurePrimitives(connection), input),
+    canVerifyTransferLinks: (input) => readsReportTransferIds(httpStructurePrimitives(connection), input.accountId, input.sinceDate),
 
     getNotesIndex: () => getNotesIndex(connection),
     getAccountNote: (accountId) => getAccountNote(connection, accountId),

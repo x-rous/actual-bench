@@ -1,0 +1,203 @@
+import type { PostingReason } from "@/lib/app-db/types";
+import { paymentChildCategory, transferLegCategory } from "../../actual/representation";
+import { existingStructureReason, REASONS } from "../../classification/policy";
+import { classifyExistingStructure } from "../../classification/existingStructure";
+import { POSTING_OUTPUT_FORMAT, POSTING_OUTPUT_FORMAT_VERSION, type ChildSpec, type ComponentLine, type EconomicKind, type RowSnapshot } from "../snapshot";
+import {
+  baseBlockers,
+  budgetStatusOf,
+  eventsOn,
+  finalize,
+  generationFor,
+  inputSnapshot,
+  livePosting,
+  matchPeriod,
+  usableAccount,
+  type ComponentConfig,
+  type PlanResult,
+  type PlanningContext,
+} from "./common";
+import { eventsInWindow, planLink } from "./patternB";
+
+/**
+ * Pattern A: interest embedded in the repayment (RD-084 P1.6 T119; FR-013,
+ * FR-013a, FR-069, FR-073, SC-007a).
+ *
+ * The matched bank repayment is restructured into split children: interest
+ * and cash-paid fee children by category, and a principal child that is the
+ * exact residual, so the children always sum to the parent.
+ *
+ * - Without a lender feed, the principal child uses the liability's transfer
+ *   payee, so Actual itself creates the one liability-side row.
+ * - With a lender feed (an enabled `lender-repayment-row` rule), the
+ *   principal child has no transfer payee; once the split is applied, Bench
+ *   proposes linking that child and the lender's row as the transfer pair. No
+ *   counterpart is ever created, so the principal has exactly one
+ *   representation in the liability account.
+ *
+ * A reconciled payment, an existing split or an ambiguous structure is never
+ * restructured; a reconciled lender row is never the counterpart; an amount
+ * mismatch Blocks the link because Actual would overwrite the lender amount.
+ */
+export function planPatternA(ctx: PlanningContext): PlanResult {
+  const out: PlanResult = { postings: [], notices: [] };
+  const window = eventsInWindow(ctx);
+  if ("error" in window) {
+    out.notices.push({ code: "calculation-blocked", periodKey: ctx.window.from, text: `The loan cannot be calculated: ${window.error}` });
+    return out;
+  }
+  const lenderFeed = ctx.rules["lender-repayment-row"] !== undefined;
+
+  for (const date of window.repaymentDates) {
+    const calc = eventsOn(ctx, date);
+    if ("error" in calc) continue;
+    const repayment = calc.events.find((e) => e.eventType === "repayment" || e.eventType === "final-payment");
+    if (!repayment) continue;
+    const period = { key: date, from: date, to: date, chargeDates: [date] };
+
+    const split = livePosting(ctx, "repayment-split", date);
+    if (split) {
+      // Second step with a lender feed: link the applied principal child and the lender row.
+      if (lenderFeed && split.status === "applied" && !livePosting(ctx, "repayment-link", date)) planLenderLink(ctx, out, split, date, calc);
+      continue;
+    }
+    if (!ctx.rules.repayment) {
+      out.notices.push({ code: "no-repayment-rule", periodKey: date, text: "Add and enable a repayment matching rule so Bench can find this payment." });
+      continue;
+    }
+    const expectedPayment = Math.abs(repayment.cashMovementMinor);
+    const match = matchPeriod(ctx, "repayment", { periodKey: date, date, paymentMinor: expectedPayment, interestMinor: Math.abs(repayment.interestMinor), principalMinor: Math.abs(repayment.principalMovementMinor), feesMinor: Math.abs(repayment.feesMinor) });
+    if (!match || match.status === "missing") {
+      out.notices.push({ code: "repayment-missing", periodKey: date, text: "The repayment has not been found in Actual yet." });
+      continue;
+    }
+    if (match.status === "multiple") {
+      out.notices.push({ code: "repayment-ambiguous", periodKey: date, text: REASONS.multipleCandidates.text });
+      continue;
+    }
+    const evaluation = match.candidates[0];
+    const row = ctx.rows.get(evaluation.candidate.id);
+    if (!row) continue;
+    const decision = classifyExistingStructure({ candidate: evaluation.candidate, lenderPattern: "embedded-interest", rowRole: "payment" });
+    if (decision.disposition !== "restructure" && decision.classification !== "blocked") {
+      out.notices.push({ code: decision.reasons[0] ?? "manual-review", periodKey: date, text: existingStructureReason(decision.reasons[0] ?? "").text });
+      continue;
+    }
+    if (decision.classification === "blocked" && !row.reconciled) {
+      out.notices.push({ code: decision.reasons[0] ?? "blocked", periodKey: date, text: existingStructureReason(decision.reasons[0] ?? "").text });
+      continue;
+    }
+
+    const blockers: PostingReason[] = [...baseBlockers(ctx)];
+    const reviews: PostingReason[] = decision.reasons.filter((code) => code !== "reconciled-row-read-only").map(existingStructureReason);
+    if (row.reconciled) blockers.push(REASONS.reconciledRow);
+    if (row.transferId) blockers.push(existingStructureReason("embedded-interest-transfer-needs-split"), { code: "existing-transfer-not-restructured", text: "The payment is already a transfer; Bench does not restructure an existing transfer. Convert it in Actual, then re-run." });
+    if (match.status === "unsafe") blockers.push(...evaluation.unsafeReasons.map((code) => ({ code, text: `The matched row is unsafe to change (${code}). Resolve it in Actual, then re-run.` })));
+    if (!ctx.canRestructure) blockers.push({ code: "restructure-unavailable", text: "This connection cannot restructure transactions. Use a supported Actual Bench connection." });
+
+    const payment = usableAccount(ctx, row.accountId);
+    const liability = usableAccount(ctx, ctx.debt.liabilityAccountId);
+    if (!payment || !liability) blockers.push(REASONS.missingAccount);
+    const plan = payment && liability ? splitChildren(ctx, row, { interest: Math.abs(repayment.interestMinor), fees: Math.abs(repayment.feesMinor) }, lenderFeed) : null;
+    if (plan && !plan.ok) blockers.push(...plan.blockers);
+    const children = plan?.ok ? plan.children : [];
+    const components: ComponentLine[] = children.map((c) => ({ kind: c.economicKind, amountMinor: Math.abs(c.amountMinor) }));
+
+    out.postings.push(finalize(ctx, {
+      postingKind: "repayment-split", periodKey: date, shape: "restructure", generation: generationFor(ctx, "repayment-split", date), marker: null,
+      inputSnapshot: inputSnapshot(ctx, period, [row], { lenderFeed }),
+      outputSnapshot: {
+        format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "restructure",
+        before: row,
+        operations: children,
+        expectedPostState: { parentId: row.id, parentAmountMinor: row.amountMinor, children },
+        accountBudgetStatus: budgetStatusOf(ctx, [row.accountId, ctx.debt.liabilityAccountId]),
+        components,
+        closing: calc.closing,
+      },
+      engineVersions: calc.versions,
+      policy: { blockers, reviews },
+    }));
+  }
+  return out;
+}
+
+type SplitPlan = { ok: true; children: ChildSpec[] } | { ok: false; blockers: PostingReason[] };
+
+/** Interest and cash-paid fee children by category; principal is the exact residual (FR-069). */
+export function splitChildren(ctx: PlanningContext, row: RowSnapshot, amounts: { interest: number; fees: number }, lenderFeed: boolean): SplitPlan {
+  const payment = usableAccount(ctx, row.accountId)!;
+  const liability = usableAccount(ctx, ctx.debt.liabilityAccountId)!;
+  const sign = row.amountMinor < 0 ? -1 : 1;
+  const blockers: PostingReason[] = [];
+  const sorted = [...ctx.components].sort((a, b) => a.order - b.order);
+  const children: ChildSpec[] = [];
+  const nonPrincipal: Array<{ component: ComponentConfig | null; kind: EconomicKind; amount: number }> = [];
+  if (amounts.interest > 0) nonPrincipal.push({ component: sorted.find((c) => c.economicKind === "interest") ?? null, kind: "interest", amount: amounts.interest });
+  const fee = sorted.find((c) => c.economicKind === "fee" && c.treatment !== "capitalized");
+  const feeAmount = amounts.fees > 0 ? amounts.fees : fee?.amountRule === "fixed" ? fee.fixedAmountMinor ?? 0 : 0;
+  if (feeAmount > 0) nonPrincipal.push({ component: fee ?? null, kind: "fee", amount: feeAmount });
+  for (const c of sorted) {
+    if (["principal", "interest", "fee", "draw"].includes(c.economicKind)) continue;
+    if (c.destination === "tracking-only") continue;
+    if (c.destination === "transfer") {
+      blockers.push({ code: "unsupported-component-destination", text: `The "${c.label}" component is a transfer; Bench only splits principal as a transfer. Change it in Tracking setup.` });
+      continue;
+    }
+    if (c.amountRule === "fixed" && (c.fixedAmountMinor ?? 0) > 0) nonPrincipal.push({ component: c, kind: c.economicKind as EconomicKind, amount: c.fixedAmountMinor ?? 0 });
+    else if (c.amountRule !== "fixed") blockers.push({ code: "lender-provided-component", text: `The "${c.label}" amount comes from the lender; record it before Bench splits this payment.` });
+  }
+  for (const part of nonPrincipal) {
+    const category = paymentChildCategory(payment, part.component?.categoryId ?? null, part.component?.label.toLowerCase() ?? part.kind);
+    if (!category.ok) blockers.push({ code: category.code, text: category.text });
+    children.push({ economicKind: part.kind, amountMinor: sign * part.amount, categoryId: category.ok ? category.categoryId : null, payeeId: row.payeeId, transferAccountId: null, notes: part.component?.label ?? labelFor(part.kind) });
+  }
+  const principal = row.amountMinor - children.reduce((sum, c) => sum + c.amountMinor, 0);
+  if (Math.sign(principal) !== sign || principal === 0) blockers.push(REASONS.invalidPrincipal);
+  const principalCategory = transferLegCategory(payment, liability, ctx.debt.loanPaymentCategoryId, "loan payment");
+  if (!principalCategory.ok) blockers.push(REASONS.missingLoanPaymentCategory);
+  const principalComponent = sorted.find((c) => c.economicKind === "principal");
+  const transferPayee = ctx.transferPayeeByAccount[liability.id];
+  if (!lenderFeed && !transferPayee) blockers.push(REASONS.missingAccount);
+  children.unshift({
+    economicKind: "principal",
+    amountMinor: principal,
+    categoryId: principalCategory.ok ? principalCategory.categoryId : null,
+    // With a lender feed the principal child is linked to the lender row in a second, reviewed step.
+    payeeId: lenderFeed ? row.payeeId : transferPayee ?? null,
+    transferAccountId: lenderFeed ? null : liability.id,
+    notes: principalComponent?.label ?? "Principal",
+  });
+  return blockers.length ? { ok: false, blockers } : { ok: true, children };
+}
+
+function labelFor(kind: EconomicKind): string {
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
+function planLenderLink(ctx: PlanningContext, out: PlanResult, split: NonNullable<ReturnType<typeof livePosting>>, date: string, calc: { closing: import("../snapshot").ClosingState; versions: Record<string, string> }): void {
+  if (split.outputSnapshot.kind !== "restructure") return;
+  const childIndex = split.outputSnapshot.operations.findIndex((c) => c.economicKind === "principal");
+  const parent = ctx.rows.get(split.outputSnapshot.before.id);
+  const childId = split.actualIds?.[childIndex + 1] ?? null;
+  const child = childId ? ctx.rows.get(childId) : undefined;
+  if (!parent || !child) {
+    out.notices.push({ code: "split-not-visible", periodKey: date, text: "The applied split is not in the read window; widen the preview window to link the lender row." });
+    return;
+  }
+  const lenderMatch = matchPeriod(ctx, "lender-repayment-row", { periodKey: date, date, paymentMinor: Math.abs(child.amountMinor) });
+  if (!lenderMatch || lenderMatch.status === "missing") {
+    out.notices.push({ code: "waiting-for-lender", periodKey: date, text: "Nothing will be written for this period until the lender's row arrives." });
+    return;
+  }
+  if (lenderMatch.status === "multiple") {
+    out.notices.push({ code: "lender-row-ambiguous", periodKey: date, text: REASONS.multipleCandidates.text });
+    return;
+  }
+  const lender = ctx.rows.get(lenderMatch.candidates[0].candidate.id);
+  if (!lender) return;
+  out.postings.push(planLink(ctx, {
+    postingKind: "repayment-link", periodKey: date, generation: generationFor(ctx, "repayment-link", date),
+    source: child, counterpart: lender, closing: calc.closing, versions: calc.versions, period: { key: date, from: date, to: date, chargeDates: [date] },
+  }));
+}

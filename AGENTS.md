@@ -71,6 +71,7 @@ Rules:
 | Notes | Intentional immediate-save exception through transport note methods |
 | Budget File Sync | Preview first; write only through explicit **Apply** or an opted-in safe-only automation policy |
 | Bank Statement Reconciliation | Stage decisions in the session; write only through explicit **Apply**, and only after a pre-flight re-read confirms the targeted rows have not changed in Actual. Never writes a category |
+| RD-084 Assets & Debt | Preview first; write only through explicit user-approved Apply. No auto-apply. Every write carries a deterministic marker and an immutable audit snapshot. |
 | Sync flows, run history, FX registry, app health metadata | Persist to the Actual Bench app database according to the action |
 | Diagnostics and ActualQL | Read-only unless a separately named workflow explicitly applies changes |
 
