@@ -161,7 +161,6 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
       // Edge case: rules already cached for this connection — no fetch will
       // happen so the transition above never fires; run immediately.
       awaitingPostSwitchRefreshRef.current = false;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRunToken((t) => t + 1);
     }
   }, [isLoadingEntities, rulesAlreadyCached]);

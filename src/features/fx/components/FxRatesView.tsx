@@ -12,7 +12,6 @@ import { invertRate } from "@/lib/fx/fxMath";
 import { listFlows } from "@/features/sync/lib/syncApi";
 import { addManualFxRate, fillFxRange, fxRecalcImpact, listFxPairs, listFxRates } from "../lib/fxApi";
 import { FxImportPanel } from "./FxImportPanel";
-import type { FxRateRecord } from "@/lib/fx/types";
 import { DateInput } from "@/components/ui/date-input";
 
 type Pair = { base: string; quote: string };
@@ -201,7 +200,8 @@ function PairPanel({ pair }: { pair: Pair }) {
     ratesQuery.refetch();
     queryClient.invalidateQueries({ queryKey: ["fx-stored-pairs"] });
   };
-  const rates = ratesQuery.data?.rates ?? [];
+  const ratesData = ratesQuery.data?.rates;
+  const rates = useMemo(() => ratesData ?? [], [ratesData]);
   const rateByDate = useMemo(() => new Map(rates.map((r) => [r.requestedDate, r])), [rates]);
   const days = useMemo(() => daysBetween(from, to), [from, to]);
   const covered = days.filter((d) => rateByDate.has(d)).length;

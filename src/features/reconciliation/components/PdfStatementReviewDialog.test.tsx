@@ -840,6 +840,51 @@ describe("PdfStatementReviewDialog v2", () => {
     await waitFor(() => expect(screen.getByLabelText("Amount direction")).toHaveFocus());
   });
 
+  it("stops asking for an amount direction as soon as one is chosen", async () => {
+    const parsed = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "ANON CAFE" }, { x: 480, text: "4.00" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "What needs attention" })).getByRole("button", { name: "Choose a rule" }));
+    await waitFor(() => expect(screen.getByLabelText("Amount direction")).toHaveClass("border-amber-500"));
+
+    // Neither previewed nor applied: the answer alone settles the question.
+    await chooseSelectOption(screen.getByLabelText("Amount direction"), "CR = money in; unmarked = money out");
+    expect(screen.getByLabelText("Amount direction")).not.toHaveClass("border-amber-500");
+    expect(screen.queryByText(/an amount without a sign/)).toBeNull();
+  });
+
+  it("keeps asking for the period until a preview shows the dates resolve", async () => {
+    const parsed = result([
+      { y: 740, cells: [{ x: 20, text: "Transaction Date" }, { x: 120, text: "Description" }, { x: 480, text: "Amount" }] },
+      { y: 700, cells: [{ x: 20, text: "08/15" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+    ]);
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "What needs attention" })).getByRole("button", { name: "Set period" }));
+    await waitFor(() => expect(screen.getByLabelText("Statement period start")).toHaveClass("border-amber-500"));
+
+    const start = screen.getByLabelText("Statement period start");
+    fireEvent.change(start, { target: { value: "08/01/2026" } });
+    fireEvent.blur(start);
+    const end = screen.getByLabelText("Statement period end");
+    fireEvent.change(end, { target: { value: "08/31/2026" } });
+    fireEvent.blur(end);
+
+    // A value in the field does not prove the dates resolve, so it is still asked for.
+    expect(screen.getByLabelText("Statement period start")).toHaveClass("border-amber-500");
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview updated transactions" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Detection change preview" })).toBeInTheDocument());
+    expect(screen.getByLabelText("Statement period start")).not.toHaveClass("border-amber-500");
+    expect(screen.queryByText(/a date without a year/)).toBeNull();
+  });
+
   it("asks to save a layout only when the layout itself would change", async () => {
     const parsed = ordinaryResult();
     const layout = createPdfLayoutProfile({ id: "layout-1", name: "Credit card", result: parsed });

@@ -5,7 +5,6 @@ import type { OverviewRefreshResult } from "../types";
 
 type UseOverviewHeaderStateParams = {
   hasStats: boolean;
-  isLoading: boolean;
   refresh: () => Promise<OverviewRefreshResult>;
 };
 
@@ -31,7 +30,6 @@ const ELLIPSIS_FRAMES = [".", "..", "..."] as const;
 
 export function useOverviewHeaderState({
   hasStats,
-  isLoading,
   refresh,
 }: UseOverviewHeaderStateParams) {
   const [isRefreshing, setIsRefreshing] = useState(false);

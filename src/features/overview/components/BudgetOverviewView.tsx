@@ -13,7 +13,6 @@ export function BudgetOverviewView() {
   const { snapshot, isLoading, refresh } = useBudgetOverview();
   const headerState = useOverviewHeaderState({
     hasStats: !!snapshot,
-    isLoading,
     refresh,
   });
   const [exportOpen, setExportOpen] = useState(false);

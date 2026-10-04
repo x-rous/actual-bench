@@ -20,7 +20,7 @@ import {
   type SyncKindAdapter,
 } from "../syncKind";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
-import type { JsonObject, SyncCapabilitySet, SyncFlow, SyncMapping } from "@/lib/app-db/types";
+import type { JsonObject, SyncFlow, SyncMapping } from "@/lib/app-db/types";
 import type { EntityTargetPayload, SyncPlanResult } from "../plannedChanges";
 
 /** Category master-data adapter for the unified sync engine (RD-055). */
@@ -167,7 +167,7 @@ export const categoryAdapter: SyncKindAdapter = {
     return { markerIndex: new Map() };
   },
 
-  assertCanApply(_caps: SyncCapabilitySet, _willCreate: boolean): void {
+  assertCanApply(): void {
     // Direct mode (the only supported mode, enforced in validate) can create
     // categories and groups; no dedicated capability flag exists.
   },
