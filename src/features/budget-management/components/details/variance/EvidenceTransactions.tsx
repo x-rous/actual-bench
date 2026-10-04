@@ -56,7 +56,7 @@ export function EvidenceTransactions({ model, format, rows, isLoading, isFetchin
         </thead>
         <tbody>
           {isLoading && rows.length === 0
-            ? Array.from({ length: 5 }, (_, i) => (
+            ? Array.from({ length: 10 }, (_, i) => (
                 <tr key={i} className="border-t border-border/60">
                   <td colSpan={6} className="px-2.5 py-2">
                     <span className="block h-3 animate-pulse rounded bg-muted motion-reduce:animate-none" />

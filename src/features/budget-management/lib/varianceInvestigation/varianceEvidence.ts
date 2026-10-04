@@ -13,8 +13,8 @@ import type { VarianceSide } from "./varianceMath";
  * one, and the panel says so.
  */
 
-/** Rows asked for at first (five keeps the panel short), then on each "Show more". */
-export const EVIDENCE_PAGE_SIZES = [5, 25, 50] as const;
+/** Rows asked for at first, then on each "Show more". */
+export const EVIDENCE_PAGE_SIZES = [10, 25, 50] as const;
 
 export function nextEvidenceLimit(current: number): number {
   return EVIDENCE_PAGE_SIZES.find((size) => size > current) ?? current;

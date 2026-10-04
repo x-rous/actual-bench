@@ -155,13 +155,36 @@ describe("DriverList", () => {
     expect(props.onFilter).toHaveBeenCalledWith("favourable");
   });
 
-  it("lists every driver on one line each; the column scrolls rather than truncating", () => {
+  it("shows each driver on one line", () => {
     setup();
     expect(model.drivers).toHaveLength(9);
     expect(screen.getAllByRole("listitem")).toHaveLength(9);
     // One row, one button, no second line of text under the name.
     const row = screen.getByRole("button", { name: /^Group travel/ });
     expect(row.querySelectorAll("span").length).toBeLessThanOrEqual(4);
+  });
+
+  it("shows thirteen drivers and reveals the rest with show more", () => {
+    const many = tracking(
+      ["2026-08"],
+      Array.from({ length: 16 }, (_, i) => exp(`cat${i}`, 1000, 1200 + i * 10))
+    );
+    render(
+      <DriverList model={many} format={format} selectedIds={[]} filter="all" onFilter={jest.fn()} onSelect={jest.fn()} />
+    );
+    expect(screen.getAllByRole("listitem")).toHaveLength(13);
+    fireEvent.click(screen.getByRole("button", { name: "+ 3 more" }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(16);
+    expect(screen.queryByRole("button", { name: /more$/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps the heading rows above the scrolling rows", () => {
+    setup();
+    const heading = screen.getByText("Variance").closest(".sticky");
+    expect(heading).not.toBeNull();
+    // Above every row and any control inside one.
+    expect(heading!.className).toContain("z-20");
+    expect(screen.getAllByRole("button", { name: /Drill into/ }).every((b) => !/\bz-\d+/.test(b.className))).toBe(true);
   });
 });
 

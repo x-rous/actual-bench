@@ -64,8 +64,8 @@ describe("buildLargestTransactionsQuery", () => {
 });
 
 describe("paging", () => {
-  it("steps 5, 25, 50 and stops", () => {
-    expect(nextEvidenceLimit(5)).toBe(25);
+  it("steps 10, 25, 50 and stops", () => {
+    expect(nextEvidenceLimit(10)).toBe(25);
     expect(nextEvidenceLimit(25)).toBe(50);
     expect(nextEvidenceLimit(50)).toBe(50);
     expect(hasMoreEvidence(25)).toBe(true);

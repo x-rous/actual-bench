@@ -190,14 +190,23 @@ export function InvestigationPanel(props: Props) {
             </span>
           ))}
         </p>
-        <button
-          type="button"
-          onClick={props.onExport}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
-          aria-label="Export the drivers shown as CSV"
-        >
-          <Download className="size-3" aria-hidden="true" /> Export
-        </button>
+        <div className="flex shrink-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={() => props.onOpenSpendingAnalysis({ categoryIds: facts.categoryIds, title: names, monthStart, monthEnd })}
+            className="text-[12.5px] text-primary hover:underline"
+          >
+            View all in Spending Analysis →
+          </button>
+          <button
+            type="button"
+            onClick={props.onExport}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground"
+            aria-label="Export the drivers shown as CSV"
+          >
+            <Download className="size-3" aria-hidden="true" /> Export
+          </button>
+        </div>
       </div>
 
       <div className="mb-2.5 grid grid-cols-4 gap-2 max-sm:grid-cols-2">
@@ -306,13 +315,6 @@ export function InvestigationPanel(props: Props) {
         />
       )}
 
-      <button
-        type="button"
-        onClick={() => props.onOpenSpendingAnalysis({ categoryIds: facts.categoryIds, title: names, monthStart, monthEnd })}
-        className="mt-2.5 text-[12.5px] text-primary hover:underline"
-      >
-        View all in Spending Analysis →
-      </button>
     </div>
   );
 }

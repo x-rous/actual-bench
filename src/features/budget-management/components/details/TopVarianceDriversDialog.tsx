@@ -357,10 +357,10 @@ export function TopVarianceDriversDialog({
         <div
           className={`grid min-h-[26rem] flex-1 max-lg:grid-cols-1 lg:[@media(min-height:900px)]:min-h-0 lg:[@media(min-height:900px)]:grid-rows-[minmax(0,1fr)] ${
             // Envelope adds a balance column, so its driver names get more room.
-            envelope ? "grid-cols-[31rem_minmax(0,1fr)]" : "grid-cols-[26rem_minmax(0,1fr)]"
+            envelope ? "grid-cols-[37rem_minmax(0,1fr)]" : "grid-cols-[31rem_minmax(0,1fr)]"
           }`}
         >
-          <div className="min-w-0 px-5 py-3 lg:overflow-auto lg:[@media(min-height:900px)]:pr-2">
+          <div className="min-w-0 px-5 pb-3 lg:overflow-auto lg:[@media(min-height:900px)]:pr-2">
             <DriverList
               model={model}
               format={format}

@@ -92,9 +92,9 @@ describe("InvestigationPanel", () => {
     expect(screen.queryByText("Everything in view")).not.toBeInTheDocument();
   });
 
-  it("asks for five transactions first and shows the count", () => {
+  it("asks for ten transactions first and shows the count", () => {
     renderPanel([]);
-    expect(mockUse.mock.calls[0][0].limit).toBe(5);
+    expect(mockUse.mock.calls[0][0].limit).toBe(10);
     expect(screen.getByText(/Largest 5 of 1,157/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Show more \(5 of 1,157\)/ })).toBeInTheDocument();
   });
@@ -105,9 +105,12 @@ describe("InvestigationPanel", () => {
     expect(mockUse.mock.calls.at(-1)![0].limit).toBe(25);
   });
 
-  it("puts Export at the top and has no evidence footnote", () => {
+  it("puts Spending Analysis and Export at the top, link first, and has no evidence footnote", () => {
     const props = renderPanel([]);
     const exportButton = screen.getByRole("button", { name: /Export the drivers shown/ });
+    const link = screen.getByRole("button", { name: /View all in Spending Analysis/ });
+    expect(link.compareDocumentPosition(exportButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.parentElement).toBe(exportButton.parentElement);
     fireEvent.click(exportButton);
     expect(props.onExport).toHaveBeenCalled();
     // It sits on the sentence line, before the toggles.

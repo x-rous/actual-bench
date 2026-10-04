@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PillGroup } from "@/components/ui/pill-group";
@@ -26,6 +26,9 @@ type Props = {
   breadcrumb?: ReactNode;
 };
 
+/** Rows shown before "show more"; the rest are one click away. */
+const VISIBLE_ROWS = 13;
+
 const STATUS_LABEL = {
   deficit: "Deficit",
   covered: "Covered by balance",
@@ -39,6 +42,7 @@ const STATUS_LABEL = {
  * Scrolling belongs to the parent, so the heading rows stick to its top.
  */
 export function DriverList({ model, format, selectedIds, filter, onFilter, onSelect, onDrill, breadcrumb }: Props) {
+  const [showAll, setShowAll] = useState(false);
   const v = model.vocab;
   const envelope = model.mode === "envelope";
   const filters: { value: DriverFilter; label: string }[] = envelope
@@ -53,18 +57,19 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
         { value: "unfavourable", label: v.unfavourable },
         { value: "favourable", label: v.favourable },
       ];
-  const rows = filterDrivers(model.drivers, filter);
+  const filtered = filterDrivers(model.drivers, filter);
+  const rows = showAll ? filtered : filtered.slice(0, VISIBLE_ROWS);
   const selected = new Set(selectedIds);
   const noun = model.level === "group" ? "groups" : "categories";
   const shareHeader =
     filter === "favourable" ? v.shareHeaderFavourable : filter === "all" ? v.shareHeaderBoth : v.shareHeaderUnfavourable;
   const columns = envelope
-    ? "grid-cols-[minmax(0,1fr)_4.75rem_4.5rem_7.25rem]"
-    : "grid-cols-[minmax(0,1fr)_4.75rem_7.25rem]";
+    ? "grid-cols-[minmax(0,1fr)_4.5rem_4.75rem_6.5rem]"
+    : "grid-cols-[minmax(0,1fr)_5rem_6.5rem]";
 
   return (
     <div className="min-w-0">
-      <div className="sticky top-0 z-10 bg-background pb-1">
+      <div className="sticky top-0 z-20 -mx-5 bg-background px-5 pb-1 pt-3 lg:[@media(min-height:900px)]:-mr-2 lg:[@media(min-height:900px)]:pr-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">
             Drivers <span className="font-normal text-muted-foreground">· {model.drivers.length} {noun}</span>
@@ -81,7 +86,7 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
           <span>{model.level === "group" ? "Group" : "Category"}</span>
           {envelope && <span className="text-right">Balance</span>}
           <span className="text-right">Variance</span>
-          <span className="text-right normal-case tracking-normal" title="Each share is measured against its own side, never against the net">
+          <span className="text-left normal-case tracking-normal" title="Each share is measured against its own side, never against the net">
             {shareHeader}
           </span>
         </div>
@@ -120,7 +125,7 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
                     aria-label={`Drill into ${driver.name} categories`}
                     title="Drill into categories"
                     onClick={() => onDrill(driver)}
-                    className="absolute left-1 top-0.5 z-10 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="absolute left-1 top-0.5 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
                     <ChevronRight className="size-3.5" aria-hidden="true" />
                   </button>
@@ -149,7 +154,7 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
                   <span className={cn("text-right font-semibold tabular-nums", tone)}>
                     {driver.variance === 0 ? "On plan" : format.money(driver.variance)}
                   </span>
-                  <span className="text-right tabular-nums text-muted-foreground">
+                  <span className="text-left tabular-nums text-muted-foreground">
                     {driver.variance === 0 ? "" : share == null ? "–" : `${Math.round(share * 100)}%`}
                   </span>
                 </button>
@@ -163,6 +168,11 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
             );
           })}
         </ul>
+      )}
+      {!showAll && filtered.length > VISIBLE_ROWS && (
+        <button type="button" onClick={() => setShowAll(true)} className="w-full py-2 text-xs text-muted-foreground hover:text-foreground">
+          + {filtered.length - VISIBLE_ROWS} more
+        </button>
       )}
     </div>
   );
