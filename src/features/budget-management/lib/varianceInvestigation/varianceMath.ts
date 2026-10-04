@@ -42,15 +42,21 @@ export const EMPTY_CELL: CategoryCell = {
 /**
  * Convert a loaded category into display magnitudes.
  *
- * Expense budgets arrive negative in Tracking and positive elsewhere, and
- * spending arrives negative, so both are normalised here, once. Income
- * `received` and its budget are already positive.
+ * Tracking expense budgets arrive negative and spending arrives negative, so
+ * both are normalised here, once. Income `received` and its budget are already
+ * positive.
+ *
+ * An Envelope expense allocation keeps its sign: money moved out of an envelope
+ * is a negative allocation, and flipping it would change the carried-in amount
+ * the balance bridge derives from it.
  */
 export function normalizeCategoryCell(
   category: LoadedCategory,
-  side: VarianceSide
+  side: VarianceSide,
+  mode: VarianceMode
 ): CategoryCell {
-  const budget = Math.abs(category.budgeted);
+  const budget =
+    mode === "envelope" && side === "expense" ? category.budgeted : Math.abs(category.budgeted);
   const actual = side === "expense" ? -category.actuals : category.actuals;
   const balance = category.balance;
   return {

@@ -228,7 +228,7 @@ export function collectScopedCategories(
       entry.groupId = category.groupId;
       entry.groupName = category.groupName;
       entry.hidden = category.hidden;
-      entry.cells.set(month, normalizeCategoryCell(category, input.side));
+      entry.cells.set(month, normalizeCategoryCell(category, input.side, input.mode));
     }
   }
   return [...byId.values()];

@@ -200,10 +200,11 @@ export function BudgetMonthSummaryPanel({
           // Only when this was opened directly: from Variance Drivers the way
           // back is to close it, and a link there would stack the two forever.
           varianceLink={
-            spendingOverVariance
+            // Envelope has no income budgets to compare, so there is nothing to open.
+            spendingOverVariance || (!isTracking && transactionTarget.side !== "expense")
               ? undefined
               : {
-                  label: (isTracking ? "View variance →" : "View balance impact →"),
+                  label: isTracking ? "View variance →" : "View balance impact →",
                   onOpen: (next) => {
                     setTransactionTarget(null);
                     setVarianceTarget(next);

@@ -371,7 +371,8 @@ export function EnvelopeDetailsPanel({
           // Only when this was opened directly: from Variance Drivers the way
           // back is to close it, and a link there would stack the two forever.
           varianceLink={
-            spendingOverVariance
+            // Envelope has no income budgets to compare, so there is nothing to open.
+            spendingOverVariance || transactionTarget.side !== "expense"
               ? undefined
               : {
                   label: "View balance impact →",

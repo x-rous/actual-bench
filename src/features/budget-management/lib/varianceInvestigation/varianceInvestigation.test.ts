@@ -47,7 +47,7 @@ function model(
 describe("sign handling", () => {
   it("shows expenses as positive magnitudes", () => {
     const category = statesFor({ m: [exp("a", 3000, 4200)] }).get("m")!.categoriesById.a;
-    const cell = normalizeCategoryCell(category, "expense");
+    const cell = normalizeCategoryCell(category, "expense", "tracking");
     expect(cell.budget).toBe(3000);
     expect(cell.actual).toBe(4200);
   });
@@ -55,13 +55,31 @@ describe("sign handling", () => {
   it("keeps a refund as a negative spend", () => {
     const category = statesFor({ m: [{ id: "a", budgeted: -1000, actuals: 250 }] }).get("m")!
       .categoriesById.a;
-    expect(normalizeCategoryCell(category, "expense").actual).toBe(-250);
+    expect(normalizeCategoryCell(category, "expense", "tracking").actual).toBe(-250);
+  });
+
+  it("keeps a negative Envelope allocation negative so the bridge holds", () => {
+    const category = statesFor({
+      m: [{ id: "e", budgeted: -500, actuals: -200, balance: 300 }],
+    }).get("m")!.categoriesById.e;
+    const cell = normalizeCategoryCell(category, "expense", "envelope");
+    expect(cell.budget).toBe(-500);
+    expect(cell.carriedIn).toBe(1000);
+    expect(cell.carriedIn + cell.budget - cell.actual).toBe(cell.balance);
+  });
+
+  it("uses the budget magnitude in Tracking whichever way it arrives", () => {
+    for (const budgeted of [-1000, 1000]) {
+      const category = statesFor({ m: [{ id: "a", budgeted, actuals: -400 }] }).get("m")!
+        .categoriesById.a;
+      expect(normalizeCategoryCell(category, "expense", "tracking").budget).toBe(1000);
+    }
   });
 
   it("leaves income as received", () => {
     const category = statesFor({ m: [{ id: "i", income: true, budgeted: 5000, actuals: 4200 }] }).get("m")!
       .categoriesById.i;
-    const cell = normalizeCategoryCell(category, "income");
+    const cell = normalizeCategoryCell(category, "income", "tracking");
     expect(cell.budget).toBe(5000);
     expect(cell.actual).toBe(4200);
   });
@@ -70,7 +88,7 @@ describe("sign handling", () => {
     const category = statesFor({
       m: [{ id: "e", budgeted: 2000, actuals: -2600, balance: 900 }],
     }).get("m")!.categoriesById.e;
-    const cell = normalizeCategoryCell(category, "expense");
+    const cell = normalizeCategoryCell(category, "expense", "tracking");
     expect(cell.carriedIn).toBe(1500);
     expect(cell.carriedIn + cell.budget - cell.actual).toBe(cell.balance);
   });
@@ -264,7 +282,16 @@ describe("hidden categories", () => {
       side: "expense",
       months: [MONTH],
       level: "category",
-      statesByMonth: statesFor({ [MONTH]: specs }, { hiddenGroups: ["g3"] }),
+      // `exp` writes Tracking's negative budgets; an Envelope allocation is positive.
+      statesByMonth: statesFor(
+        {
+          [MONTH]:
+            mode === "envelope"
+              ? specs.map((spec) => ({ ...spec, budgeted: Math.abs(spec.budgeted) }))
+              : specs,
+        },
+        { hiddenGroups: ["g3"] }
+      ),
     });
 
   it("excludes hidden categories and groups in Tracking", () => {

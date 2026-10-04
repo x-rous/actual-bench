@@ -120,7 +120,10 @@ export function useVarianceInvestigation({
     }
     return [...ids];
   }, [wantsIncomeFallback, merged]);
-  const { data: incomeBudgets } = useIncomeBudgets(fallbackIds, fallbackIds.length > 0);
+  const { data: incomeBudgets, isLoading: incomeBudgetsLoading } = useIncomeBudgets(
+    fallbackIds,
+    fallbackIds.length > 0
+  );
 
   const statesByMonth = useMemo(() => {
     if (fallbackIds.length === 0) return merged;
@@ -153,7 +156,9 @@ export function useVarianceInvestigation({
     provisional,
     allClosed: months.length > 0 && months.every(isClosedMonth),
     contextMonths,
-    isLoading: monthsLoading || primary.isLoading,
+    // The fallback budgets are part of the model: without them every income
+    // category reads as unbudgeted until they arrive.
+    isLoading: monthsLoading || primary.isLoading || (fallbackIds.length > 0 && incomeBudgetsLoading),
     error: primary.error,
     historyLoading: history.isLoading,
   };
