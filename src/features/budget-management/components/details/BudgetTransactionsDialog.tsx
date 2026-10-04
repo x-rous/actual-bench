@@ -253,7 +253,7 @@ function StripItem({
       the rest of the dialog lines up on. The padding between items stays, since
       that is what the dividers need.
     */
-    <div className="flex min-w-24 shrink-0 flex-col items-center px-4 first:pl-0 last:pr-0">
+    <div className="flex w-28 shrink-0 flex-col items-center px-4 first:pl-0 last:pr-0">
       <div
         className={cn(
           "truncate font-sans text-base font-semibold tabular-nums",
@@ -331,17 +331,14 @@ function BudgetProgress({
   const labelOnLeft = markerPct !== null && markerPct >= 30;
 
   /*
-   * A fixed width, not a share of the row.
-   *
-   * As the flexible item it absorbed whatever the row had left, so every change
-   * in a neighbour's text - a verdict going from "9.4% over budget" to "0.03%
-   * below target" - lengthened or shortened the bar by that much. A bar whose
-   * length means "how far through the plan" cannot also change length for
-   * reasons that have nothing to do with the plan. It still shrinks below this
-   * on a narrow viewport, since overflowing would be worse.
+   * The bar takes whatever the row has left, so it fills the strip at any
+   * dialog width instead of stopping at a fixed length and leaving a gap before
+   * the figures. Its fill is a share of the track, so the track changing length
+   * does not change what it says; the figures on the right are fixed-width
+   * columns, so neighbouring text does not move it either.
    */
   return (
-    <div className="relative mr-2 flex h-10 w-[32rem] min-w-0 shrink flex-col justify-center">
+    <div className="relative mr-2 flex h-10 min-w-[18rem] flex-1 basis-[24rem] flex-col justify-center">
       {/*
         The empty part of the track has to read as a trough, not as background.
         `bg-muted` sits a few percent off the strip behind it, so an under-budget
@@ -1309,7 +1306,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose, vari
                   states the absence instead, so the strip holds its shape and
                   the missing bar is explained rather than merely missing.
                 */
-                <div className="flex h-10 w-[32rem] min-w-0 shrink items-center pr-2">
+                <div className="flex h-10 min-w-[18rem] flex-1 basis-[24rem] items-center pr-2">
                   {/*
                     "No budget" is a claim, and it cannot be made until the
                     plans are in. Fetching them per range means there is now a
@@ -1395,7 +1392,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose, vari
           ) : (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {/* Visual panels, divided by a rule rather than a gap. */}
-              <div className="grid h-[362px] shrink-0 grid-cols-2 divide-x divide-border/70 border-b border-border/70">
+              <div className="grid h-[376px] shrink-0 grid-cols-2 divide-x divide-border/70 border-b border-border/70">
                 <Panel
                   title={isIncome ? "Where the income came from" : "Where the money went"}
                   /*
