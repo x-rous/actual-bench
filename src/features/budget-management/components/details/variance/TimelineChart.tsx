@@ -87,7 +87,7 @@ export function TimelineChart({
   const zeroY = TOP + axis.upMax * perUnit;
   const y = (value: number) => zeroY - value * perUnit;
   const minUnits = MIN_BAR_PX / perUnit;
-  const label = (value: number) => (value < 0 ? "−" : "") + format.money(value);
+  const label = (value: number) => (value < 0 ? "−" : "") + format.axis(value);
 
   const last = points.length - 1;
   const finalCumulative = cumulative[last] ?? 0;
@@ -221,8 +221,9 @@ export function TimelineChart({
           );
         })}
 
+        {/* The running total is drawn over the columns, so it must never take their clicks. */}
         {cumulative.length > 1 && (
-          <>
+          <g className="pointer-events-none">
             <polyline
               fill="none"
               strokeWidth={2}
@@ -239,16 +240,16 @@ export function TimelineChart({
                 className="fill-foreground stroke-background"
               />
             ))}
-          </>
+          </g>
         )}
         {cumulative.length > 0 && (
-          <g>
+          <g className="pointer-events-none">
             <text
               x={LEFT + band * last + band / 2 + barWidth / 2 + 8}
               y={y(finalCumulative) - 2}
               className={cn("text-[13px] font-semibold", finalCumulative > 0 ? "fill-destructive" : "fill-emerald-600 dark:fill-emerald-400")}
             >
-              {format.money(finalCumulative)}
+              {format.axis(finalCumulative)}
             </text>
             <text x={LEFT + band * last + band / 2 + barWidth / 2 + 8} y={y(finalCumulative) + 11} className="fill-muted-foreground text-[10px]">
               {finalCumulative > 0 ? v.netUnfavourable : finalCumulative < 0 ? v.netFavourable : "on plan"}

@@ -264,18 +264,39 @@ it like any other table.*
 
 ### See what moved a month off plan
 
-On a Tracking budget, the month summary tells you *how far* off plan a month is. **Variance Drivers**
-tells you what did it. Click either variance figure to open it. Category groups come back ranked by how
-much of the gap each one accounts for, expandable to the categories underneath, and filterable to just
-the over-budget or just the under-budget side.
+The month summary tells you *how far* off plan a month is. **Variance Drivers** tells you what did it.
+Click a variance figure to open it - a month's variance, the period's, or a group's or category's - and
+it opens on exactly the categories and months of the number you clicked. The category and period
+pickers at the top are the same ones Spending Analysis uses, so you can widen or narrow it from there.
 
 ![The Variance Drivers dialog ranking category groups and categories by their share of the month's budget variance.](../../../assets/screenshots/dialogs/dialog-variance-drivers.png)
 
-*Groups ranked by their share of the variance, expanded to the categories underneath. Export takes the
-same breakdown to CSV.*
+*The screenshot shows the earlier table layout and is due a refresh.*
 
-This one is Tracking-only. Envelope budgets have no plan to vary from - their equivalent question is
-answered by the balance and the spending bars.
+On a **Tracking** budget it answers five questions:
+
+- **How did budget become actual?** A waterfall from budgeted to spent, with the largest overspends, the
+  savings that offset them, and an "Other" bar for the rest. Click a bar to select it; an "Other" bar
+  selects everything it holds. The headline reads as an equation, such as *10,074 overspent - 3,648 saved
+  = 6,426 net over*.
+- **Which groups or categories did it?** A ranked driver list. Each share says what it is a share of
+  ("44% of overspend"), never of the net. Use the chevron to drill from a group into its categories.
+- **When did it develop?** For a period, a bar per month with a running total. For a single month, the
+  months around it, so you can tell a one-off from a pattern. Click a month to filter the rest.
+- **Is it unusual?** Facts for the selected driver (over in 6 of 8 months, its share, its peak month) and,
+  when there is enough history, what it typically costs per month.
+- **What is behind it?** The largest transactions in the driver, loaded when you ask for them, with a
+  link to open all of them in Spending Analysis. They are evidence: the figures above come from the
+  monthly budget, not from adding up these rows.
+
+On an **Envelope** budget the same dialog reads balances, because an overspend there is a funding
+question. It leads with how much is in deficit, shows how the closing balance is made up (carried in,
+allocated, spent, deficits cleared from To Budget), and for each month which deficits reduced the next
+month's To Budget and which rolled over. A category can spend more than it was allocated and still be
+fine if money carried in covers it, so each driver is tagged *Deficit*, *Covered by balance* or
+*Available*. Hidden categories are included, because their money is still assigned. There is no income
+view, since Envelope budgets do not plan income. Export takes the drivers shown to CSV, and amounts
+follow the decimals setting in the grid toolbar.
 
 Tracking mode speaks in plans, not envelopes. Closed months report what happened, the current month is
 flagged as partial, and future months show what is budgeted rather than a misleading zero. Rollover is

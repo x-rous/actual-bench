@@ -28,6 +28,14 @@ describe("number format", () => {
     expect(createVarianceFormat(false).signed(-40)).toBe("0");
   });
 
+  it("keeps chart labels and axes whole when the decimals setting is on", () => {
+    const f = createVarianceFormat(true);
+    expect(f.compact(324050)).toBe("3,241");
+    expect(f.compactSigned(-324050)).toBe("−3,241");
+    expect(f.axis(1000050)).toBe("10,001");
+    expect(f.money(324050)).toBe("3,240.50");
+  });
+
   it("shortens large chart labels and keeps small ones whole", () => {
     const f = createVarianceFormat(false);
     expect(f.compact(1260000)).toBe("12.6k");
