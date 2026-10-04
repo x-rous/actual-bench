@@ -1349,21 +1349,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose, vari
                 distraction than a bar that changes length, which reads as the
                 figure itself moving.
               */}
-              {varianceLink && (
-                <button
-                  type="button"
-                  onClick={openVariance}
-                  className="ml-auto shrink-0 text-[12.5px] text-primary hover:underline"
-                >
-                  {varianceLink.label}
-                </button>
-              )}
-              <div
-                className={cn(
-                  "flex items-stretch divide-x divide-border/50",
-                  !varianceLink && "ml-auto"
-                )}
-              >
+              <div className="ml-auto flex items-stretch divide-x divide-border/50">
                 {variance !== null && budgetValues !== null && (
                   <StripItem
                     label={varianceLabel(variance, budgetValues.budgeted, isIncome)}
