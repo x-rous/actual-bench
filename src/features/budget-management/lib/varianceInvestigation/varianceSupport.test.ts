@@ -28,6 +28,13 @@ describe("number format", () => {
     expect(createVarianceFormat(false).signed(-40)).toBe("0");
   });
 
+  it("knows when an amount prints as zero", () => {
+    expect(createVarianceFormat(false).isZero(40)).toBe(true);
+    expect(createVarianceFormat(false).isZero(60)).toBe(false);
+    expect(createVarianceFormat(true).isZero(40)).toBe(false);
+    expect(createVarianceFormat(true).isZero(0.2)).toBe(true);
+  });
+
   it("keeps chart labels and axes whole when the decimals setting is on", () => {
     const f = createVarianceFormat(true);
     expect(f.compact(324050)).toBe("3,241");

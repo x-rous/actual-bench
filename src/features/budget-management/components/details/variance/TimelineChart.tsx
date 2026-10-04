@@ -56,7 +56,14 @@ export function TimelineChart({
   const envelope = model.mode === "envelope";
   const v = model.vocab;
   const width = Math.max(280, frameWidth);
-  const right = showCumulative ? 88 : 8;
+  // The running-total label sits right of the last point; reserve exactly what it needs.
+  const finalCumulative = showCumulative ? (points[points.length - 1]?.cumulative ?? 0) : 0;
+  const finalWord = finalCumulative > 0 ? v.netUnfavourable : finalCumulative < 0 ? v.netFavourable : "on plan";
+  const labelWidth = Math.max(format.axis(finalCumulative).length * 7.8, finalWord.length * 5.4);
+  const bandGuess = (width - LEFT - 8) / Math.max(points.length, 1);
+  const right = showCumulative
+    ? Math.max(8, Math.ceil(labelWidth + Math.min(bandGuess * 0.5, 46) / 2 + 10 - bandGuess / 2))
+    : 8;
   const plotWidth = width - LEFT - right;
   const band = plotWidth / Math.max(points.length, 1);
   const barWidth = Math.min(band * 0.5, 46);
@@ -90,7 +97,6 @@ export function TimelineChart({
   const label = (value: number) => (value < 0 ? "−" : "") + format.axis(value);
 
   const last = points.length - 1;
-  const finalCumulative = cumulative[last] ?? 0;
 
   return (
     <div ref={attach} className="relative min-w-0">

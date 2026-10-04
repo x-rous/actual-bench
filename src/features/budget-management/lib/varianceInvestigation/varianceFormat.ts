@@ -23,6 +23,8 @@ export type VarianceFormat = {
   axis: (minor: number) => string;
   /** Always two decimals, for rows that are a single transaction. */
   exact: (minor: number) => string;
+  /** The amount prints as zero at the current precision. */
+  isZero: (minor: number) => boolean;
 };
 
 export function createVarianceFormat(showDecimals: boolean): VarianceFormat {
@@ -46,5 +48,6 @@ export function createVarianceFormat(showDecimals: boolean): VarianceFormat {
     compactSigned: (minor) => `${isWholeZero(minor) ? "" : minor > 0 ? "+" : "−"}${compact(minor)}`,
     axis: whole,
     exact: (minor) => formatMinor(Math.abs(minor)),
+    isZero,
   };
 }

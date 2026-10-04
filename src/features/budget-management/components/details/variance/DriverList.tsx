@@ -64,8 +64,8 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
   const shareHeader =
     filter === "favourable" ? v.shareHeaderFavourable : filter === "all" ? v.shareHeaderBoth : v.shareHeaderUnfavourable;
   const columns = envelope
-    ? "grid-cols-[minmax(0,1fr)_4.5rem_4.75rem_6.5rem]"
-    : "grid-cols-[minmax(0,1fr)_5rem_6.5rem]";
+    ? "grid-cols-[minmax(0,1fr)_4.5rem_5rem_5.25rem]"
+    : "grid-cols-[minmax(0,1fr)_5.5rem_5.25rem]";
 
   return (
     <div className="min-w-0">
@@ -86,7 +86,7 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
           <span>{model.level === "group" ? "Group" : "Category"}</span>
           {envelope && <span className="text-right">Balance</span>}
           <span className="text-right">Variance</span>
-          <span className="text-left normal-case tracking-normal" title="Each share is measured against its own side, never against the net">
+          <span className="text-right normal-case leading-tight tracking-normal" title="Each share is measured against its own side, never against the net">
             {shareHeader}
           </span>
         </div>
@@ -98,10 +98,12 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
         <ul>
           {rows.map((driver) => {
             const isSelected = selected.has(driver.id);
-            const tone = driver.variance > 0 ? UNFAVOURABLE_TEXT : driver.variance < 0 ? FAVOURABLE_TEXT : "";
+            // A variance that rounds to nothing reads as on plan, not as "0" with a share.
+            const flat = driver.variance === 0 || format.isZero(driver.variance);
+            const tone = flat ? "" : driver.variance > 0 ? UNFAVOURABLE_TEXT : FAVOURABLE_TEXT;
             const share = driver.share;
             const closing = driver.aggregate.envelope?.closing ?? 0;
-            const word = driver.variance > 0 ? v.unfavourableLower : driver.variance < 0 ? v.favourableLower : "on plan";
+            const word = flat ? "on plan" : driver.variance > 0 ? v.unfavourableLower : v.favourableLower;
             const shareWord = driver.variance > 0 ? v.shareUnfavourable : v.shareFavourable;
             const status = STATUS_LABEL[driver.status];
             const tip = [
@@ -134,7 +136,7 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
                 <button
                   type="button"
                   aria-pressed={isSelected}
-                  aria-label={`${driver.name}, ${format.money(driver.variance)} ${word}${share == null ? "" : `, ${Math.round(share * 100)}% ${shareWord}`}${status ? `, ${status}` : ""}`}
+                  aria-label={`${driver.name}, ${format.money(driver.variance)} ${word}${share == null || flat ? "" : `, ${Math.round(share * 100)}% ${shareWord}`}${status ? `, ${status}` : ""}`}
                   title={tip}
                   onClick={(e) => onSelect([driver.id], e.ctrlKey || e.metaKey)}
                   className={cn(
@@ -152,10 +154,10 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
                     </span>
                   )}
                   <span className={cn("text-right font-semibold tabular-nums", tone)}>
-                    {driver.variance === 0 ? "On plan" : format.money(driver.variance)}
+                    {flat ? "On plan" : format.money(driver.variance)}
                   </span>
-                  <span className="text-left tabular-nums text-muted-foreground">
-                    {driver.variance === 0 ? "" : share == null ? "–" : `${Math.round(share * 100)}%`}
+                  <span className="text-right tabular-nums text-muted-foreground">
+                    {flat ? "" : share == null ? "–" : `${Math.round(share * 100)}%`}
                   </span>
                 </button>
                 <span className="pointer-events-none absolute inset-x-8 bottom-0.5 h-[3px] overflow-hidden rounded-full bg-muted" aria-hidden="true">
