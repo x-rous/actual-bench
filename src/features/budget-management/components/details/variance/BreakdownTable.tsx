@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import {
@@ -25,6 +24,8 @@ type Props = {
   monthRows: readonly string[];
   /** A month to highlight in the by-month view. */
   highlightMonth: string | null;
+  /** By category or by month; chosen in the panel's toggle row. */
+  kind: "category" | "month";
 };
 
 type SortKey = "label" | "budget" | "actual" | "variance" | "cin" | "balance";
@@ -53,10 +54,8 @@ function sortValue(row: BreakdownRow, key: SortKey): number | string {
  * Month figures for the selected driver: by category, or month by month.
  * Everything here comes from the monthly budget.
  */
-export function BreakdownTable({ model, format, categoryIds, months, monthRows, highlightMonth }: Props) {
-  const [kind, setKind] = useState<"category" | "month" | null>(null);
+export function BreakdownTable({ model, format, categoryIds, months, monthRows, highlightMonth, kind: effective }: Props) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "variance", dir: -1 });
-  const effective = kind ?? (categoryIds.length > 1 ? "category" : "month");
   const envelope = model.mode === "envelope";
   const v = model.vocab;
 
@@ -98,20 +97,9 @@ export function BreakdownTable({ model, format, categoryIds, months, monthRows, 
 
   return (
     <div className="min-w-0">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] text-muted-foreground">Figures from the monthly budget</span>
-        <PillGroup
-          options={[
-            { value: "category", label: "By category" },
-            { value: "month", label: "By month" },
-          ]}
-          value={effective}
-          onChange={setKind}
-        />
-      </div>
-      <div className="max-h-[17rem] overflow-auto rounded-md border border-border">
-        <table className="w-full min-w-[30rem] border-collapse text-xs">
-          <thead className="sticky top-0 bg-muted text-[10.5px] text-muted-foreground">
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full min-w-[28rem] border-collapse text-xs">
+          <thead className="bg-muted text-[10.5px] text-muted-foreground">
             <tr>
               {head("label", effective === "category" ? "Category" : "Month", false)}
               {head("budget", v.budget)}

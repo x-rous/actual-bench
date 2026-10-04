@@ -8,7 +8,7 @@ import type { VarianceFormat } from "../../../lib/varianceInvestigation/variance
 import type { MonthPoint, VarianceModel } from "../../../lib/varianceInvestigation";
 import { ChartTip, FAVOURABLE_TEXT, TipRow, UNFAVOURABLE_TEXT, useChartFrame } from "./useChartFrame";
 
-const HEIGHT = 290;
+const HEIGHT = 262;
 const TOP = 24;
 const BOTTOM = 46;
 const LEFT = 54;

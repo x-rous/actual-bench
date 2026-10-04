@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { InfoHint } from "@/components/ui/info-hint";
 import { downloadCsv } from "@/lib/csv";
 import { formatMonthLabel } from "@/lib/budget/monthMath";
 import { useAvailableMonths } from "../../hooks/useAvailableMonths";
@@ -18,7 +19,7 @@ import {
   buildSelectionFacts,
   buildVarianceModel,
   buildVarianceCsvRows,
-  defaultSelection,
+  effectiveDriverIds,
   recentMonths,
   resolveSelection,
   selectedCategoryIds,
@@ -36,6 +37,7 @@ import {
   spendingAnalysisTarget,
   type VarianceScope,
 } from "../../lib/varianceInvestigation/varianceScope";
+import { ANALYSIS_DIALOG_WIDE } from "./budgetTransactionsDialog.helpers";
 import { DriverList } from "./variance/DriverList";
 import { InvestigationPanel } from "./variance/InvestigationPanel";
 import { DeficitImpact, TimelineChart } from "./variance/TimelineChart";
@@ -62,10 +64,6 @@ const EMPTY_SCOPE: VarianceScope = { wholeSide: true, categoryIds: [], groupIds:
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
-}
-
-function Section({ className = "", children }: { className?: string; children: React.ReactNode }) {
-  return <section className={`min-w-0 border-b border-border px-5 py-4 ${className}`}>{children}</section>;
 }
 
 export function TopVarianceDriversDialog({
@@ -144,9 +142,12 @@ export function TopVarianceDriversDialog({
   const activeMonth = monthModel && monthModel.drivers.length > 0 ? requestedMonth : null;
   const model = activeMonth && monthModel ? monthModel : fullModel;
 
+  // Nothing selected means everything in view; the analysis describes all drivers then.
   const driverIds = useMemo(() => resolveSelection(model, selection), [model, selection]);
-  const selectionCustom = selection != null && !sameSet(driverIds, defaultSelection(model));
-  const categoryIds = useMemo(() => selectedCategoryIds(model, driverIds), [model, driverIds]);
+  const wholeView = driverIds.length === 0;
+  const analysisIds = useMemo(() => effectiveDriverIds(model, driverIds), [model, driverIds]);
+  const selectionCustom = !wholeView && model.drivers.length > 1;
+  const categoryIds = useMemo(() => selectedCategoryIds(model, analysisIds), [model, analysisIds]);
   // History belongs to the period, so a month filter does not change what is typical.
   const baseline = useMemo(
     () => buildBaseline({ model: fullModel, categoryIds, months: fullModel.months, isClosed: isClosedMonth }),
@@ -156,11 +157,11 @@ export function TopVarianceDriversDialog({
     () =>
       buildSelectionFacts({
         model,
-        driverIds,
+        driverIds: analysisIds,
         baseline,
         context: activeMonth ? fullModel.months : undefined,
       }),
-    [model, driverIds, baseline, activeMonth, fullModel.months]
+    [model, analysisIds, baseline, activeMonth, fullModel.months]
   );
   const recent = useMemo(() => recentMonths(fullModel.months), [fullModel.months]);
   const points = useMemo(
@@ -191,7 +192,12 @@ export function TopVarianceDriversDialog({
     resetView();
   }
   function handleSelect(ids: string[], additive: boolean) {
-    setSelection((current) => toggleSelection(current ?? driverIds, ids, additive));
+    setSelection((current) => {
+      const now = current ?? driverIds;
+      // Clicking what is already the whole selection puts it back to everything.
+      if (!additive && sameSet(now, ids)) return null;
+      return toggleSelection(now, ids, additive);
+    });
   }
   function handleDrill(driver: Driver) {
     const key = `group:${driver.id}`;
@@ -249,8 +255,17 @@ export function TopVarianceDriversDialog({
     body = <div className="flex flex-1 items-center justify-center p-10 text-sm text-muted-foreground">No budget or spending in these categories for this period.</div>;
   } else {
     const envelope = model.mode === "envelope";
+    const hint = (label: string, text: string) => (
+      <InfoHint label={label}>{text}</InfoHint>
+    );
+    const swatch = (cls: string, text: string) => (
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <i className={`inline-block size-2 rounded-[2px] ${cls}`} />
+        {text}
+      </span>
+    );
     body = (
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto lg:[@media(min-height:900px)]:overflow-hidden">
         <VarianceSummary
           model={model}
           format={format}
@@ -260,45 +275,71 @@ export function TopVarianceDriversDialog({
         {data.hasFutureMonths && (
           <p className="border-b border-border px-5 py-1.5 text-[11px] text-muted-foreground">Months that have not happened yet are left out.</p>
         )}
-        <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,6fr)] max-lg:grid-cols-1">
-          <Section className="lg:border-r">
-            <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">{envelope ? "How allocation became spending" : "How budget became actual"}</h3>
-                <p className="text-xs text-muted-foreground">{viewLabel} · amounts shown as positive values</p>
+
+        <div className="grid shrink-0 grid-cols-[minmax(0,6fr)_minmax(0,5fr)] border-b border-border max-lg:grid-cols-1">
+          <section className="min-w-0 px-5 py-3 lg:border-r lg:border-border">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+              <h3 className="text-sm font-semibold">
+                {envelope ? "How allocation became spending" : "How budget became actual"}{" "}
+                <span className="font-normal text-muted-foreground">· {viewLabel}</span>
+              </h3>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                {swatch("bg-muted-foreground", `${model.vocab.budget} / ${model.vocab.actual}`)}
+                {swatch("bg-destructive", model.vocab.unfavourable)}
+                {swatch("bg-emerald-500", model.vocab.favourable)}
+                {model.canChooseLevel && (
+                  <div className="flex gap-px rounded border border-border bg-muted/40 p-px" role="group" aria-label="Group by">
+                    {(["group", "category"] as const).map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        aria-pressed={model.level === level}
+                        onClick={() => {
+                          setLevelChoice(level);
+                          resetView();
+                        }}
+                        className={`rounded px-2 py-0.5 text-xs transition-colors ${model.level === level ? "bg-background font-medium text-foreground shadow-sm" : "hover:text-foreground"}`}
+                      >
+                        {level === "group" ? "Groups" : "Categories"}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              {model.canChooseLevel && (
-                <div className="flex gap-px rounded border border-border bg-muted/40 p-px" role="group" aria-label="Group by">
-                  {(["group", "category"] as const).map((level) => (
-                    <button
-                      key={level}
-                      type="button"
-                      aria-pressed={model.level === level}
-                      onClick={() => {
-                        setLevelChoice(level);
-                        resetView();
-                      }}
-                      className={`rounded px-2 py-0.5 text-xs transition-colors ${model.level === level ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                    >
-                      {level === "group" ? "Groups" : "Categories"}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
             <WaterfallChart model={model} format={format} selectedIds={driverIds} onSelect={handleSelect} />
-          </Section>
+          </section>
 
-          <Section>
-            <div className="mb-2">
-              <h3 className="text-sm font-semibold">
-                {envelope ? "How balances moved" : single ? "Recent months" : "When the variance developed"}
+          <section className="min-w-0 px-5 py-3">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                <span>
+                  {envelope ? "How balances moved" : single ? "Recent months" : "When the variance developed"}{" "}
+                  <span className="font-normal text-muted-foreground">
+                    · {single ? `${formatMonthLabel(fullModel.months[0], "long")} highlighted` : periodLabel}
+                  </span>
+                </span>
+                {!single && hint("filtering by month", "Click a month to narrow the headline, the waterfall, the drivers and the analysis to it. Click it again to clear.")}
               </h3>
-              <p className="text-xs text-muted-foreground">
-                {envelope
-                  ? single ? `Closing balance per month · ${formatMonthLabel(fullModel.months[0], "long")} highlighted` : `Closing balance at the end of each month · ${periodLabel}`
-                  : single ? `Net variance per month · ${formatMonthLabel(fullModel.months[0], "long")} highlighted` : `Net monthly variance and running total · ${periodLabel}`}
-              </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                {envelope ? (
+                  <>
+                    {swatch("bg-muted-foreground/60", "Available")}
+                    {swatch("bg-destructive", "Deficit")}
+                  </>
+                ) : (
+                  <>
+                    {swatch("bg-destructive", model.vocab.unfavourable)}
+                    {swatch("bg-emerald-500", model.vocab.favourable)}
+                    {!single && (
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <i className="inline-block h-0.5 w-3 bg-foreground" />
+                        Cumulative
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
             <TimelineChart
               model={fullModel}
@@ -309,25 +350,17 @@ export function TopVarianceDriversDialog({
               selectedMonth={activeMonth}
               onMonthClick={single ? undefined : (m) => setMonth((current) => (current === m ? null : m))}
             />
-            <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-              {envelope ? (
-                <>
-                  <span><i className="mr-1.5 inline-block size-2 rounded-[2px] bg-muted-foreground/60" />Available (above zero)</span>
-                  <span><i className="mr-1.5 inline-block size-2 rounded-[2px] bg-destructive" />Deficit (below zero)</span>
-                </>
-              ) : (
-                <>
-                  <span><i className="mr-1.5 inline-block size-2 rounded-[2px] bg-destructive" />{model.vocab.unfavourable} (above zero)</span>
-                  <span><i className="mr-1.5 inline-block size-2 rounded-[2px] bg-emerald-500" />{model.vocab.favourable} (below zero)</span>
-                  {!single && <span><i className="mr-1.5 inline-block h-0.5 w-3 bg-foreground align-middle" />Cumulative variance</span>}
-                </>
-              )}
-              {!single && <span>Click a month to filter the breakdown</span>}
-            </div>
             {envelope && <DeficitImpact points={points} periodMonths={fullModel.months} format={format} />}
-          </Section>
+          </section>
+        </div>
 
-          <Section className="border-b-0 lg:border-r">
+        <div
+          className={`grid min-h-[26rem] flex-1 max-lg:grid-cols-1 lg:[@media(min-height:900px)]:min-h-0 lg:[@media(min-height:900px)]:grid-rows-[minmax(0,1fr)] ${
+            // Envelope adds a balance column, so its driver names get more room.
+            envelope ? "grid-cols-[31rem_minmax(0,1fr)]" : "grid-cols-[26rem_minmax(0,1fr)]"
+          }`}
+        >
+          <div className="min-w-0 px-5 py-3 lg:overflow-auto lg:[@media(min-height:900px)]:pr-2">
             <DriverList
               model={model}
               format={format}
@@ -338,7 +371,7 @@ export function TopVarianceDriversDialog({
               onDrill={model.level === "group" ? handleDrill : undefined}
               breadcrumb={
                 canGoBack ? (
-                  <div className="my-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
                     <button type="button" className="text-primary hover:underline" onClick={() => { setSelectedKeys([wholeSideKey]); resetView(); }}>
                       {side === "income" ? "All income" : "All expenses"}
                     </button>
@@ -348,14 +381,15 @@ export function TopVarianceDriversDialog({
                 ) : null
               }
             />
-          </Section>
-
-          <Section className="border-b-0">
+          </div>
+          <div className="min-w-0 px-5 py-3 lg:overflow-auto lg:pl-3">
             <InvestigationPanel
               model={model}
               format={format}
               facts={facts}
               baseline={baseline}
+              wholeView={wholeView}
+              scopeTitle={selectionSummary ?? target?.title ?? "Everything in view"}
               recentMonths={activeMonth ? fullModel.months : recent.filter((m) => points.some((p) => p.month === m))}
               monthFilter={activeMonth}
               onClearMonthFilter={() => setMonth(null)}
@@ -365,7 +399,7 @@ export function TopVarianceDriversDialog({
               onOpenSpendingAnalysis={handleOpenSpendingAnalysis}
               onExport={() => downloadCsv(`variance-drivers-${model.mode}-${side}.csv`, buildVarianceCsvRows(model))}
             />
-          </Section>
+          </div>
         </div>
       </div>
     );
@@ -373,7 +407,7 @@ export function TopVarianceDriversDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="flex h-[92vh] max-w-[min(92rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(92rem,calc(100vw-2rem))]">
+      <DialogContent className={`flex flex-col gap-0 overflow-hidden p-0 ${ANALYSIS_DIALOG_WIDE}`}>
         <VarianceHeader
           options={categoryOptions}
           selectedKeys={selectedKeys}

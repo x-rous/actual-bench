@@ -140,6 +140,10 @@ export type VarianceVocabulary = {
   actualVerb: string;
   /** What `budget` is called in a sentence: "budgeted", "allocated". */
   budgetVerb: string;
+  /** Column heading for a share, by the side the rows on screen belong to. */
+  shareHeaderBoth: string;
+  shareHeaderUnfavourable: string;
+  shareHeaderFavourable: string;
 };
 
 /**
@@ -168,6 +172,9 @@ export function vocabulary(
       otherFavourable: "Other unspent",
       actualVerb: "spent",
       budgetVerb: "allocated",
+      shareHeaderBoth: "% of over / unspent",
+      shareHeaderUnfavourable: "% of over-allocation",
+      shareHeaderFavourable: "% of unspent",
     };
   }
   if (side === "income") {
@@ -186,6 +193,9 @@ export function vocabulary(
       otherFavourable: "Other surplus",
       actualVerb: "received",
       budgetVerb: "budgeted",
+      shareHeaderBoth: "% of shortfall / surplus",
+      shareHeaderUnfavourable: "% of shortfall",
+      shareHeaderFavourable: "% of surplus",
     };
   }
   return {
@@ -203,6 +213,9 @@ export function vocabulary(
     otherFavourable: "Other savings",
     actualVerb: "spent",
     budgetVerb: "budgeted",
+    shareHeaderBoth: "% of overspend / savings",
+    shareHeaderUnfavourable: "% of overspend",
+    shareHeaderFavourable: "% of savings",
   };
 }
 

@@ -11,6 +11,7 @@ import {
 } from "./varianceMath";
 import {
   defaultSelection,
+  effectiveDriverIds,
   filterDrivers,
   resolveSelection,
   selectedCategoryIds,
@@ -216,7 +217,8 @@ describe("variance model", () => {
     const m = model([exp("a", 1000, 400), exp("b", 2000, 1500, { group: "g2" })]);
     expect(m.gross.unfavourable).toBe(0);
     expect(m.gross.net).toBe(-1100);
-    expect(defaultSelection(m)).toEqual(["g1"]);
+    // Nothing is selected, so the analysis leads with the whole (favourable) result.
+    expect(defaultSelection(m)).toEqual([]);
   });
 
   it("reconciles income with shortfall and surplus", () => {
@@ -461,7 +463,7 @@ describe("Envelope balances", () => {
     });
     const status = Object.fromEntries(covered.drivers.map((d) => [d.id, d.status]));
     expect(status).toEqual({ covered: "covered", deficit: "deficit", spare: "available" });
-    expect(defaultSelection(covered)).toEqual(["deficit"]);
+    expect(defaultSelection(covered)).toEqual([]);
     expect(filterDrivers(covered.drivers, "deficit").map((d) => d.id)).toEqual(["deficit"]);
   });
 });
@@ -469,8 +471,16 @@ describe("Envelope balances", () => {
 describe("selection", () => {
   const m = model([exp("a", 1000, 1500, { group: "g1" }), exp("b", 1000, 1200, { group: "g2" }), exp("c", 1000, 400, { group: "g3" })]);
 
-  it("opens on the largest unfavourable driver", () => {
-    expect(defaultSelection(m)).toEqual(["g1"]);
+  it("opens with nothing selected, which means everything in view", () => {
+    expect(defaultSelection(m)).toEqual([]);
+    expect(effectiveDriverIds(m, [])).toEqual(["g1", "g2", "g3"]);
+    expect(effectiveDriverIds(m, ["g2"])).toEqual(["g2"]);
+  });
+
+  it("selects the only driver when there is just one", () => {
+    const single = model([exp("only", 1000, 1400)]);
+    expect(single.drivers).toHaveLength(1);
+    expect(defaultSelection(single)).toEqual(["only"]);
   });
 
   it("replaces on a plain click and toggles on Ctrl/Cmd", () => {
@@ -486,8 +496,8 @@ describe("selection", () => {
   });
 
   it("falls back to the default when a selection no longer exists", () => {
-    expect(resolveSelection(m, ["gone"])).toEqual(["g1"]);
-    expect(resolveSelection(m, null)).toEqual(["g1"]);
+    expect(resolveSelection(m, ["gone"])).toEqual([]);
+    expect(resolveSelection(m, null)).toEqual([]);
     expect(resolveSelection(m, ["g3"])).toEqual(["g3"]);
   });
 

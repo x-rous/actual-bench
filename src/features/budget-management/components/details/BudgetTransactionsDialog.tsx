@@ -37,6 +37,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { MonthRangePicker } from "@/components/ui/monthrangepicker";
 import {
   amountTone,
+  ANALYSIS_DIALOG_WIDE,
   elapsedDaysInMonths,
   errorMessage,
   exportTransactionsCsv,
@@ -100,6 +101,11 @@ type Props = {
    * same set because asking for a month is what loads it.
    */
   onClose: () => void;
+  /**
+   * `wide` matches the Variance Drivers dialog, for when this is opened on top of
+   * it, so the two stack at one size. Everywhere else it keeps its own.
+   */
+  size?: "default" | "wide";
 };
 
 const EMPTY_TRANSACTION_ROWS: BudgetTransactionRow[] = [];
@@ -699,7 +705,7 @@ function EmptyState({ message }: { message: string }) {
 
 // ─── dialog ───────────────────────────────────────────────────────────────────
 
-export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Props) {
+export function BudgetTransactionsDialog({ target, browserOptions, onClose, size = "default" }: Props) {
   /*
    * The breakdown and chart selections, each a set rather than a single id.
    *
@@ -1455,7 +1461,14 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose }: Pr
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) closeDialog(); }}>
-      <DialogContent className="flex h-[86vh] max-w-[min(72rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(72rem,calc(100vw-2rem))]">
+      <DialogContent
+        className={cn(
+          "flex flex-col gap-0 overflow-hidden p-0",
+          size === "wide"
+            ? ANALYSIS_DIALOG_WIDE
+            : "h-[86vh] max-w-[min(72rem,calc(100vw-2rem))] sm:max-w-[min(72rem,calc(100vw-2rem))]"
+        )}
+      >
         {/* Header */}
         <DialogHeader className="shrink-0 border-b border-border bg-background px-5 py-2.5 pr-12">
           {/*

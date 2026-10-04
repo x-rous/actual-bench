@@ -85,6 +85,8 @@ export function BudgetMonthSummaryPanel({
   // Variance Drivers opens on the same whole-month target as the figure beside it.
   const [varianceTarget, setVarianceTarget] =
     useState<BudgetTransactionsDrilldown | null>(null);
+  // Spending Analysis opened from Variance Drivers stacks over it, at the same size.
+  const [spendingOverVariance, setSpendingOverVariance] = useState(false);
   const openVariance = (side: "expense" | "income") => {
     const target = side === "income" ? incomeDrill : expenseDrill;
     if (target) setVarianceTarget(target);
@@ -176,15 +178,6 @@ export function BudgetMonthSummaryPanel({
 
       <BudgetNoteSection target={{ kind: "budgetMonth", id: month }} />
 
-      {transactionTarget && (
-        <BudgetTransactionsDialog
-          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
-          target={transactionTarget}
-          browserOptions={transactionBrowserOptions}
-          onClose={() => setTransactionTarget(null)}
-        />
-      )}
-
       {varianceTarget && (
         <TopVarianceDriversDialog
           key={`${varianceTarget.entity}:${varianceTarget.id}:${varianceTarget.monthStart}`}
@@ -193,11 +186,25 @@ export function BudgetMonthSummaryPanel({
           budgetMode={isTracking ? "tracking" : "envelope"}
           onClose={() => setVarianceTarget(null)}
           onOpenSpendingAnalysis={(next) => {
-            setVarianceTarget(null);
+            setSpendingOverVariance(true);
             setTransactionTarget(next);
           }}
         />
       )}
+
+      {transactionTarget && (
+        <BudgetTransactionsDialog
+          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
+          target={transactionTarget}
+          browserOptions={transactionBrowserOptions}
+          onClose={() => {
+            setTransactionTarget(null);
+            setSpendingOverVariance(false);
+          }}
+          size={spendingOverVariance ? "wide" : "default"}
+        />
+      )}
+
     </div>
   );
 }

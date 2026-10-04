@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PillGroup } from "@/components/ui/pill-group";
@@ -12,8 +12,6 @@ import {
   type VarianceModel,
 } from "../../../lib/varianceInvestigation";
 import { FAVOURABLE_TEXT, UNFAVOURABLE_TEXT } from "./useChartFrame";
-
-const VISIBLE_ROWS = 8;
 
 type Props = {
   model: VarianceModel;
@@ -35,8 +33,12 @@ const STATUS_LABEL = {
   none: "",
 } as const;
 
+/**
+ * Ranked drivers, one line each. A thin bar under the line carries the share;
+ * the column headings say what the share and the variance are measured against.
+ * Scrolling belongs to the parent, so the heading rows stick to its top.
+ */
 export function DriverList({ model, format, selectedIds, filter, onFilter, onSelect, onDrill, breadcrumb }: Props) {
-  const [showAll, setShowAll] = useState(false);
   const v = model.vocab;
   const envelope = model.mode === "envelope";
   const filters: { value: DriverFilter; label: string }[] = envelope
@@ -51,101 +53,116 @@ export function DriverList({ model, format, selectedIds, filter, onFilter, onSel
         { value: "unfavourable", label: v.unfavourable },
         { value: "favourable", label: v.favourable },
       ];
-  const filtered = filterDrivers(model.drivers, filter);
-  const shown = showAll ? filtered : filtered.slice(0, VISIBLE_ROWS);
+  const rows = filterDrivers(model.drivers, filter);
   const selected = new Set(selectedIds);
-  const noun = model.level === "group" ? "group" : "category";
+  const noun = model.level === "group" ? "groups" : "categories";
+  const shareHeader =
+    filter === "favourable" ? v.shareHeaderFavourable : filter === "all" ? v.shareHeaderBoth : v.shareHeaderUnfavourable;
+  const columns = envelope
+    ? "grid-cols-[minmax(0,1fr)_4.75rem_4.5rem_7.25rem]"
+    : "grid-cols-[minmax(0,1fr)_4.75rem_7.25rem]";
 
   return (
     <div className="min-w-0">
-      <div className="mb-1">
-        <h3 className="text-sm font-semibold">Drivers</h3>
-        <p className="text-xs text-muted-foreground">How each {noun} contributed to the variance</p>
+      <div className="sticky top-0 z-10 bg-background pb-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">
+            Drivers <span className="font-normal text-muted-foreground">· {model.drivers.length} {noun}</span>
+          </h3>
+          <PillGroup options={filters} value={filter} onChange={onFilter} />
+        </div>
+        {breadcrumb}
+        <div
+          className={cn(
+            "mt-1.5 grid items-end gap-x-2 border-b border-border pb-1 pl-8 pr-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground",
+            columns
+          )}
+        >
+          <span>{model.level === "group" ? "Group" : "Category"}</span>
+          {envelope && <span className="text-right">Balance</span>}
+          <span className="text-right">Variance</span>
+          <span className="text-right normal-case tracking-normal" title="Each share is measured against its own side, never against the net">
+            {shareHeader}
+          </span>
+        </div>
       </div>
-      {breadcrumb}
-      <PillGroup options={filters} value={filter} onChange={onFilter} className="my-2 w-fit" />
 
-      {shown.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted-foreground">No drivers match this filter.</p>
       ) : (
-        <ul className="flex flex-col">
-          {shown.map((driver) => {
+        <ul>
+          {rows.map((driver) => {
             const isSelected = selected.has(driver.id);
             const tone = driver.variance > 0 ? UNFAVOURABLE_TEXT : driver.variance < 0 ? FAVOURABLE_TEXT : "";
             const share = driver.share;
+            const closing = driver.aggregate.envelope?.closing ?? 0;
+            const word = driver.variance > 0 ? v.unfavourableLower : driver.variance < 0 ? v.favourableLower : "on plan";
+            const shareWord = driver.variance > 0 ? v.shareUnfavourable : v.shareFavourable;
             const status = STATUS_LABEL[driver.status];
-            const sub = envelope
-              ? status
-                ? `${status} · balance ${(driver.aggregate.envelope?.closing ?? 0) < 0 ? "−" : ""}${format.money(driver.aggregate.envelope?.closing ?? 0)}`
-                : ""
-              : driver.unbudgeted
-                ? "Unbudgeted · % of budget –"
-                : "";
+            const tip = [
+              driver.name,
+              status && status,
+              driver.unbudgeted ? "Unbudgeted, so no percentage of budget" : "",
+            ]
+              .filter(Boolean)
+              .join(" · ");
             return (
-              <li key={driver.id} className={cn("flex items-center rounded-md border-b border-border/60 last:border-b-0", isSelected ? "bg-primary/10" : "hover:bg-muted/60")}>
-                {onDrill && driver.kind === "group" ? (
+              <li
+                key={driver.id}
+                className={cn(
+                  "relative rounded-md",
+                  isSelected ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted/60"
+                )}
+              >
+                {onDrill && driver.kind === "group" && (
                   <button
                     type="button"
                     aria-label={`Drill into ${driver.name} categories`}
                     title="Drill into categories"
                     onClick={() => onDrill(driver)}
-                    className="flex h-8 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="absolute left-1 top-0.5 z-10 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
                   >
                     <ChevronRight className="size-3.5" aria-hidden="true" />
                   </button>
-                ) : (
-                  <span className="w-6 shrink-0" aria-hidden="true" />
                 )}
+                {/* One button spans the row so the whole line is the click target. */}
                 <button
                   type="button"
                   aria-pressed={isSelected}
+                  aria-label={`${driver.name}, ${format.money(driver.variance)} ${word}${share == null ? "" : `, ${Math.round(share * 100)}% ${shareWord}`}${status ? `, ${status}` : ""}`}
+                  title={tip}
                   onClick={(e) => onSelect([driver.id], e.ctrlKey || e.metaKey)}
-                  className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_3.5rem] items-center gap-2 py-1.5 pr-2 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-sm:grid-cols-[minmax(0,1fr)_auto]"
+                  className={cn(
+                    "grid w-full min-w-0 items-center gap-x-2 rounded py-1 pb-2 pl-8 pr-2 text-left text-[12.5px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    columns
+                  )}
                 >
-                  <span className="min-w-0">
-                    <span className="block text-[12.5px] font-medium sm:truncate">
-                      {driver.name}
-                      {driver.hidden && envelope && (
-                        <span className="ml-1.5 rounded-full bg-muted px-1.5 py-px align-middle text-[10px] font-semibold text-muted-foreground">Hidden</span>
-                      )}
-                    </span>
-                    {sub && (
-                      <span
-                        className={cn(
-                          "block text-[10.5px]",
-                          driver.status === "deficit" ? UNFAVOURABLE_TEXT : driver.status === "available" ? FAVOURABLE_TEXT : "text-muted-foreground"
-                        )}
-                      >
-                        {sub}
-                      </span>
-                    )}
+                  <span className="truncate font-medium">
+                    {driver.name}
+                    {driver.hidden && envelope && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">hidden</span>}
                   </span>
-                  <span className="text-right leading-tight tabular-nums">
-                    <span className={cn("block text-[12.5px] font-semibold", tone)}>
-                      {driver.variance === 0 ? "On plan" : format.money(driver.variance)}
+                  {envelope && (
+                    <span className={cn("text-right tabular-nums", closing < 0 ? UNFAVOURABLE_TEXT : driver.status === "available" ? FAVOURABLE_TEXT : "text-muted-foreground")}>
+                      {closing < 0 ? "−" : ""}{format.money(closing)}
                     </span>
-                    {driver.variance !== 0 && (
-                      <span className="block text-[10.5px] text-muted-foreground">
-                        {share == null ? "–" : `${Math.round(share * 100)}% ${driver.variance > 0 ? v.shareUnfavourable : v.shareFavourable}`}
-                      </span>
-                    )}
+                  )}
+                  <span className={cn("text-right font-semibold tabular-nums", tone)}>
+                    {driver.variance === 0 ? "On plan" : format.money(driver.variance)}
                   </span>
-                  <span className="h-1.5 overflow-hidden rounded-full bg-muted max-sm:hidden" aria-hidden="true">
-                    <span
-                      className={cn("block h-full rounded-full", driver.variance > 0 ? "bg-destructive" : "bg-emerald-500")}
-                      style={{ width: `${Math.round((share ?? 0) * 100)}%` }}
-                    />
+                  <span className="text-right tabular-nums text-muted-foreground">
+                    {driver.variance === 0 ? "" : share == null ? "–" : `${Math.round(share * 100)}%`}
                   </span>
                 </button>
+                <span className="pointer-events-none absolute inset-x-8 bottom-0.5 h-[3px] overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                  <span
+                    className={cn("block h-full rounded-full", driver.variance > 0 ? "bg-destructive" : "bg-emerald-500")}
+                    style={{ width: `${Math.round((share ?? 0) * 100)}%` }}
+                  />
+                </span>
               </li>
             );
           })}
         </ul>
-      )}
-      {!showAll && filtered.length > VISIBLE_ROWS && (
-        <button type="button" onClick={() => setShowAll(true)} className="w-full py-2 text-xs text-muted-foreground hover:text-foreground">
-          + {filtered.length - VISIBLE_ROWS} more
-        </button>
       )}
     </div>
   );

@@ -201,6 +201,8 @@ export function TrackingDetailsPanel({
    */
   const [varianceTarget, setVarianceTarget] =
     useState<BudgetTransactionsDrilldown | null>(null);
+  // Spending Analysis opened from Variance Drivers stacks over it, at the same size.
+  const [spendingOverVariance, setSpendingOverVariance] = useState(false);
 
   // Period view on the parity semantics — refund-safe closed-month savings and
   // true income/expense variance, with Balance as a snapshot (PR-033 / F-088).
@@ -580,15 +582,6 @@ export function TrackingDetailsPanel({
         <BudgetNoteSection key={noteTarget.id} target={noteTarget} />
       )}
 
-      {transactionTarget && (
-        <BudgetTransactionsDialog
-          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
-          target={transactionTarget}
-          browserOptions={transactionBrowserOptions}
-          onClose={() => setTransactionTarget(null)}
-        />
-      )}
-
       {varianceTarget && (
         <TopVarianceDriversDialog
           key={`${varianceTarget.entity}:${varianceTarget.id}:${varianceTarget.monthStart}:${varianceTarget.monthEnd}`}
@@ -597,11 +590,25 @@ export function TrackingDetailsPanel({
           budgetMode="tracking"
           onClose={() => setVarianceTarget(null)}
           onOpenSpendingAnalysis={(next) => {
-            setVarianceTarget(null);
+            setSpendingOverVariance(true);
             setTransactionTarget(next);
           }}
         />
       )}
+
+      {transactionTarget && (
+        <BudgetTransactionsDialog
+          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
+          target={transactionTarget}
+          browserOptions={transactionBrowserOptions}
+          onClose={() => {
+            setTransactionTarget(null);
+            setSpendingOverVariance(false);
+          }}
+          size={spendingOverVariance ? "wide" : "default"}
+        />
+      )}
+
     </div>
   );
 }

@@ -86,6 +86,8 @@ export function EnvelopeDetailsPanel({
    */
   const [varianceTarget, setVarianceTarget] =
     useState<BudgetTransactionsDrilldown | null>(null);
+  // Spending Analysis opened from Variance Drivers stacks over it, at the same size.
+  const [spendingOverVariance, setSpendingOverVariance] = useState(false);
   const openSelectionTransactions = selectionDrilldown
     ? () => setTransactionTarget(selectionDrilldown)
     : undefined;
@@ -347,15 +349,6 @@ export function EnvelopeDetailsPanel({
         <BudgetNoteSection key={noteTarget.id} target={noteTarget} />
       )}
 
-      {transactionTarget && (
-        <BudgetTransactionsDialog
-          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
-          target={transactionTarget}
-          browserOptions={transactionBrowserOptions}
-          onClose={() => setTransactionTarget(null)}
-        />
-      )}
-
       {varianceTarget && (
         <TopVarianceDriversDialog
           key={`${varianceTarget.entity}:${varianceTarget.id}:${varianceTarget.monthStart}:${varianceTarget.monthEnd}`}
@@ -364,11 +357,25 @@ export function EnvelopeDetailsPanel({
           budgetMode="envelope"
           onClose={() => setVarianceTarget(null)}
           onOpenSpendingAnalysis={(next) => {
-            setVarianceTarget(null);
+            setSpendingOverVariance(true);
             setTransactionTarget(next);
           }}
         />
       )}
+
+      {transactionTarget && (
+        <BudgetTransactionsDialog
+          key={`${transactionTarget.entity}:${transactionTarget.id}:${transactionTarget.monthStart}:${transactionTarget.monthEnd}`}
+          target={transactionTarget}
+          browserOptions={transactionBrowserOptions}
+          onClose={() => {
+            setTransactionTarget(null);
+            setSpendingOverVariance(false);
+          }}
+          size={spendingOverVariance ? "wide" : "default"}
+        />
+      )}
+
     </div>
   );
 }

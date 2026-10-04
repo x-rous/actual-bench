@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
+import { InfoHint } from "@/components/ui/info-hint";
 import { cn } from "@/lib/utils";
 import { MIN_BAR_PX, waterfallAxis, wrapLabel } from "../../../lib/varianceInvestigation/varianceChartScale";
 import type { VarianceFormat } from "../../../lib/varianceInvestigation/varianceFormat";
@@ -11,7 +12,7 @@ import {
 } from "../../../lib/varianceInvestigation";
 import { ChartTip, FAVOURABLE_TEXT, TipRow, UNFAVOURABLE_TEXT, useChartFrame } from "./useChartFrame";
 
-const HEIGHT = 300;
+const HEIGHT = 262;
 const TOP = 24;
 const LEFT = 54;
 const RIGHT = 6;
@@ -80,7 +81,7 @@ export function WaterfallChart({ model, format, selectedIds, onSelect }: Props) 
   const axis = useMemo(() => waterfallAxis(segments), [segments]);
   const band = plotWidth / segments.length;
   const compact = band < 64;
-  const bottom = compact ? 80 : 50;
+  const bottom = compact ? 74 : 46;
   const plotHeight = HEIGHT - TOP - bottom;
   const barWidth = Math.min(band * 0.62, 66);
   const y = (value: number) => TOP + plotHeight - ((value - axis.min) / (axis.max - axis.min)) * plotHeight;
@@ -152,7 +153,7 @@ export function WaterfallChart({ model, format, selectedIds, onSelect }: Props) 
                 tabIndex={interactive ? 0 : undefined}
                 aria-pressed={interactive ? isSelected : undefined}
                 aria-label={`${segment.name}: ${label}`}
-                className={cn(interactive && "cursor-pointer outline-none focus-visible:[&_rect.bar]:stroke-ring focus-visible:[&_rect.bar]:stroke-2", interactive && !isSelected && "opacity-60")}
+                className={cn(interactive && "cursor-pointer outline-none focus-visible:[&_rect.bar]:stroke-ring focus-visible:[&_rect.bar]:stroke-2", interactive && selected.size > 0 && !isSelected && "opacity-60")}
                 onClick={interactive ? (e) => activate(segment, e) : undefined}
                 onKeyDown={
                   interactive
@@ -214,9 +215,11 @@ export function WaterfallChart({ model, format, selectedIds, onSelect }: Props) 
         )}
       </svg>
       {axis.truncated && (
-        <p className="mt-1 text-[10.5px] text-muted-foreground">
-          Axis starts at {format.axis(axis.min)} so the drivers are visible. {model.vocab.budget} and {model.vocab.actual.toLowerCase()} bars are cut at the break.
-        </p>
+        <span className="absolute right-0 top-0">
+          <InfoHint label="the cut axis">
+            The axis starts at {format.axis(axis.min)} so the drivers are visible. The {model.vocab.budget.toLowerCase()} and {model.vocab.actual.toLowerCase()} bars are cut at the break; the numbers on every bar are exact.
+          </InfoHint>
+        </span>
       )}
       <ChartTip tip={tip} width={width} />
     </div>

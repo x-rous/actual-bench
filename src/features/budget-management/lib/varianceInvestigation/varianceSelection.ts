@@ -11,23 +11,28 @@ import type { Driver, VarianceModel } from "./varianceViewModel";
 export type DriverFilter = "all" | "unfavourable" | "favourable" | "deficit";
 
 /**
- * What opens selected: the Envelope driver with the biggest deficit (the real
- * overspend), else the largest unfavourable driver, else the largest
- * favourable one. Drivers arrive sorted, so the first of each kind is largest.
+ * What opens selected: nothing, when there is more than one driver. "Nothing
+ * selected" means everything in view, so the dialog starts by describing the
+ * whole scope rather than whichever driver happens to rank first. A scope with
+ * a single driver (one category) has nothing to choose between, so that driver
+ * is the selection.
  */
 export function defaultSelection(model: VarianceModel): string[] {
-  const { drivers } = model;
-  if (drivers.length === 0) return [];
-  if (model.mode === "envelope") {
-    const deficits = drivers
-      .filter((d) => (d.aggregate.envelope?.deficit ?? 0) > 0)
-      .sort((a, b) => b.aggregate.envelope!.deficit - a.aggregate.envelope!.deficit);
-    if (deficits.length > 0) return [deficits[0].id];
-  }
-  return [drivers[0].id];
+  return model.drivers.length === 1 ? [model.drivers[0].id] : [];
 }
 
-/** Keep the requested ids that still exist, or fall back to the default. */
+/**
+ * The drivers the analysis describes: the selection, or every driver when
+ * nothing is selected.
+ */
+export function effectiveDriverIds(
+  model: VarianceModel,
+  selection: readonly string[]
+): string[] {
+  return selection.length > 0 ? [...selection] : model.drivers.map((d) => d.id);
+}
+
+/** Keep the requested ids that still exist, or fall back to the default (nothing). */
 export function resolveSelection(
   model: VarianceModel,
   requested: readonly string[] | null | undefined

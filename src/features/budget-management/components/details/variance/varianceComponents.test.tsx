@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { buildVarianceModel } from "../../../lib/varianceInvestigation";
 import { createVarianceFormat } from "../../../lib/varianceInvestigation/varianceFormat";
 import { statesFor, type CategorySpec } from "../../../lib/varianceInvestigation/testing";
@@ -63,11 +63,27 @@ describe("DriverList", () => {
     return props;
   };
 
-  it("labels each share with the side it is a share of, never the net", () => {
+  it("names what each share is measured against in the column heading, never the net", () => {
     setup();
-    // travel: 4,000 over of 9,300 gross overspend... the label names the denominator.
-    expect(screen.getAllByText(/% of overspend/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/% of savings/)).toBeInTheDocument();
+    expect(screen.getByText("% of overspend / savings")).toBeInTheDocument();
+    // Each row still says it in full for a screen reader.
+    expect(screen.getByRole("button", { name: /^Group travel, .*% of overspend/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Group leisure, .*% of savings/ })).toBeInTheDocument();
+  });
+
+  it("narrows the share heading to the side being filtered", () => {
+    setup({ filter: "favourable" });
+    expect(screen.getByText("% of savings")).toBeInTheDocument();
+    cleanup();
+    setup({ filter: "unfavourable" });
+    expect(screen.getByText("% of overspend")).toBeInTheDocument();
+  });
+
+  it("starts with nothing pressed when nothing is selected", () => {
+    setup({ selectedIds: [] });
+    for (const item of screen.getAllByRole("listitem")) {
+      expect(within(item).getAllByRole("button").some((b) => b.getAttribute("aria-pressed") === "true")).toBe(false);
+    }
   });
 
   it("selects on click and adds on Ctrl/Cmd-click", () => {
@@ -127,7 +143,10 @@ describe("DriverList", () => {
       expect(screen.getByRole("button", { name })).toBeInTheDocument()
     );
     expect(container.textContent?.toLowerCase()).not.toContain("saved");
-    expect(screen.getByText(/Deficit · balance/)).toBeInTheDocument();
+    // The balance is a column, in red when below zero; the status is spoken on the row.
+    expect(screen.getByText("Balance")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^a, .*Deficit$/ })).toBeInTheDocument();
+    expect(screen.getByText("−50")).toBeInTheDocument();
   });
 
   it("calls onFilter with the chosen filter", () => {
@@ -136,13 +155,13 @@ describe("DriverList", () => {
     expect(props.onFilter).toHaveBeenCalledWith("favourable");
   });
 
-  it("shows the first eight rows and reveals the rest on request", () => {
+  it("lists every driver on one line each; the column scrolls rather than truncating", () => {
     setup();
-    const last = model.drivers.at(-1)!;
     expect(model.drivers).toHaveLength(9);
-    expect(screen.queryByText(`Group ${last.id}`)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /\+ 1 more/ }));
-    expect(screen.getByText(`Group ${last.id}`)).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(9);
+    // One row, one button, no second line of text under the name.
+    const row = screen.getByRole("button", { name: /^Group travel/ });
+    expect(row.querySelectorAll("span").length).toBeLessThanOrEqual(4);
   });
 });
 
@@ -179,6 +198,14 @@ describe("WaterfallChart", () => {
   it("does not make the budget and actual bars clickable", () => {
     render(<WaterfallChart model={model} format={format} selectedIds={[]} onSelect={jest.fn()} />);
     expect(screen.queryByRole("button", { name: /^Budgeted:/ })).not.toBeInTheDocument();
+  });
+
+  it("does not fade any bar when nothing is selected", () => {
+    const { container } = render(<WaterfallChart model={model} format={format} selectedIds={[]} onSelect={jest.fn()} />);
+    expect(container.querySelectorAll(".opacity-60")).toHaveLength(0);
+    cleanup();
+    const selected = render(<WaterfallChart model={model} format={format} selectedIds={["travel"]} onSelect={jest.fn()} />);
+    expect(selected.container.querySelectorAll(".opacity-60").length).toBeGreaterThan(0);
   });
 
   it("marks selected bars as pressed", () => {
