@@ -51,7 +51,9 @@ import { RECEIVABLE_VERSION } from "./receivable";
 import { ELIGIBILITY_VERSION } from "./eligibility";
 import { DIAGNOSTICS_VERSION } from "./diagnostics";
 import { PROJECTION_VERSION, PROJECTION_VERSION_V1 } from "./projection";
-import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN, DEBT_CONFIG_V2_IDENTIFIERS } from "./versions";
+import { BUSINESS_DAY_ADJUSTMENTS, BUSINESS_DAYS_VERSION } from "../calendar/businessDays";
+import { INTEREST_ALLOCATIONS, STATEMENT_ALLOCATION_VERSION } from "./statementAllocation";
+import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN, DEBT_CONFIG_V2_IDENTIFIERS, DEBT_CONFIG_V3_IDENTIFIERS } from "./versions";
 
 /*
  * The freeze. If this fails, an identifier accepted by config version 1
@@ -128,6 +130,10 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     expect(DEBT_CONFIG_V2_IDENTIFIERS).toEqual({ ...FROZEN, repaymentDerivation: [...FROZEN.repaymentDerivation, "dated-cashflow-annuity"] });
   });
 
+  it("adds only the business-day and lender statement fields in config v3", () => {
+    expect(DEBT_CONFIG_V3_IDENTIFIERS).toEqual({ ...DEBT_CONFIG_V2_IDENTIFIERS, businessDayAdjustment: [...BUSINESS_DAY_ADJUSTMENTS], interestAllocation: [...INTEREST_ALLOCATIONS] });
+  });
+
   it("matches each module's own version constant", () => {
     expect(CURRENT_COMPONENT_VERSIONS).toEqual({
       "money-kernel": MONEY_KERNEL_VERSION,
@@ -158,6 +164,8 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
       eligibility: ELIGIBILITY_VERSION,
       diagnostics: DIAGNOSTICS_VERSION,
       projection: PROJECTION_VERSION,
+      "business-days": BUSINESS_DAYS_VERSION,
+      "statement-allocation": STATEMENT_ALLOCATION_VERSION,
     });
   });
 });

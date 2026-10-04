@@ -62,7 +62,8 @@ export const RATE_EFFECTIVE_TIMINGS: readonly RateEffectiveTiming[] = ["on-accru
  * The value date a repayment takes effect on, before same-day ordering
  * applies: the transaction's own date, or the next calendar day. Where in the
  * day an event falls (before or after the accrual) is `eventOrder`'s job, not
- * this axis. Business-day calendars are not modelled.
+ * this axis. Due dates on non-business days move by the config v3 business-day
+ * convention (calendar/businessDays.ts), not by this axis.
  */
 export type RepaymentEffectiveTiming = "transaction-date" | "next-calendar-day";
 export const REPAYMENT_EFFECTIVE_TIMINGS: readonly RepaymentEffectiveTiming[] = ["transaction-date", "next-calendar-day"];

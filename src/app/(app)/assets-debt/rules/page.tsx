@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
-import { RulesView } from "@/features/assets-debt/components/rules/RulesView";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Assets & Debt rules - Actual Bench",
-};
-
+/** Repayment matching moved to each loan's own tab; the old link opens the loans list. */
 export default function RulesPage() {
-  return <RulesView />;
+  redirect("/assets-debt/loans");
 }

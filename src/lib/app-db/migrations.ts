@@ -553,9 +553,27 @@ const MIGRATIONS: readonly Migration[] = [
       for (const statement of ASSETS_DEBT_V44_INDEX_SQL) db.exec(statement);
       for (const statement of ASSETS_DEBT_V44_TRIGGER_SQL) db.exec(statement);
       addColumnIfMissing(db, "debt_transaction_links", "posting_id", "text REFERENCES financial_postings(id) ON DELETE RESTRICT");
+      // Repair: `debts.drift_accepted_fingerprint` was added to v43 after v43 had
+      // already run on some databases, which recorded v43 without it.
+      repairSchemaDrift(db);
     },
   },
 ];
+
+/**
+ * Columns that were added to a migration after that migration had already run
+ * somewhere (the v18 `running_since` case, again). Such a database records the
+ * version as done and never receives the column, and the first write that
+ * names it fails ("table debts has no column named ...").
+ *
+ * Applied by the next migration and, because that migration may itself have
+ * already run on a development database built from intermediate code, also on
+ * every open. Idempotent and narrow: only the listed columns, only when the
+ * table exists and the column is missing.
+ */
+function repairSchemaDrift(db: SqliteDatabase): void {
+  if (tableExists(db, "debts")) addColumnIfMissing(db, "debts", "drift_accepted_fingerprint", "text");
+}
 
 function applyOffsetFundingStart(db: SqliteDatabase): void {
   addColumnIfMissing(db, "debt_offset_links", "fund_scheduled_repayments_from", "text");
@@ -1131,6 +1149,7 @@ export function runMigrations(db: SqliteDatabase): AppDbMigrationMeta {
 
   const pending = MIGRATIONS.filter((migration) => migration.version > currentVersion);
   if (pending.length === 0) {
+    if (currentVersion >= 43) repairSchemaDrift(db);
     return readMigrationMeta(db);
   }
 

@@ -97,6 +97,9 @@ export const CURRENT_COMPONENT_VERSIONS = {
   "eligibility": "eligibility@1",
   "diagnostics": "diagnostics@1",
   "projection": "projection@2",
+  // P1.6: scheduled-date business-day adjustment and lender statement allocation.
+  "business-days": "business-days@1",
+  "statement-allocation": "statement-allocation@1",
 } as const satisfies EngineVersions;
 
 /**
@@ -140,4 +143,11 @@ export const DEBT_CONFIG_V1_IDENTIFIERS = {
 export const DEBT_CONFIG_V2_IDENTIFIERS = {
   ...DEBT_CONFIG_V1_IDENTIFIERS,
   repaymentDerivation: [...DEBT_CONFIG_V1_IDENTIFIERS.repaymentDerivation, "dated-cashflow-annuity"],
+} as const;
+
+/** Config-v3 identifier vocabulary: v2 plus the business-day adjustment and the lender statement allocation. */
+export const DEBT_CONFIG_V3_IDENTIFIERS = {
+  ...DEBT_CONFIG_V2_IDENTIFIERS,
+  businessDayAdjustment: ["none", "following", "modified-following", "preceding", "modified-preceding"],
+  interestAllocation: ["as-calculated", "accrued-to-due-date"],
 } as const;

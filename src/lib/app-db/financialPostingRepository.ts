@@ -339,6 +339,30 @@ export function findReversalProposal(db: SqliteDatabase, originalId: string): Fi
 }
 
 /**
+ * Proposals a preview no longer stands behind become `superseded`: every
+ * undecided proposal of the subject that this preview did not produce, when it
+ * was made from an older configuration revision or falls in the previewed
+ * window. Without this, a proposal whose period no longer exists (for example
+ * after a due date moved to the next business day) stayed listed with its old
+ * figures. Reversal proposals are the user's own request and are never touched.
+ */
+export function supersedeStaleProposals(
+  db: SqliteDatabase,
+  input: { subjectKind: string; subjectId: string; keepIds: readonly string[]; configRevision: number; window: { from: string; to: string } },
+  now = new Date().toISOString()
+): number {
+  const keep = JSON.stringify([...input.keepIds]);
+  return db
+    .prepare(
+      `UPDATE financial_postings SET status = 'superseded', updated_at = ?
+       WHERE subject_kind = ? AND subject_id = ? AND status = 'proposed' AND reversal_of IS NULL
+         AND id NOT IN (SELECT value FROM json_each(?))
+         AND (config_revision < ? OR period_key BETWEEN ? AND ?)`
+    )
+    .run(now, input.subjectKind, input.subjectId, keep, input.configRevision, input.window.from, input.window.to).changes;
+}
+
+/**
  * A-3 retention: superseded proposals nobody decided on, older than 90 days.
  * Never a row with a decision, an apply, Actual ids or a reversal link, and
  * never one another row still references.

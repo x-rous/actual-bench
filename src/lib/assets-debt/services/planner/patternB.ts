@@ -1,7 +1,7 @@
 import { chargeCategory } from "../../actual/representation";
 import { existingStructureReason, REASONS } from "../../classification/policy";
 import { classifyExistingStructure } from "../../classification/existingStructure";
-import { calculatePeriod, POSTING_OUTPUT_FORMAT, POSTING_OUTPUT_FORMAT_VERSION, type ClosingState, type RowSnapshot } from "../snapshot";
+import { POSTING_OUTPUT_FORMAT, POSTING_OUTPUT_FORMAT_VERSION, type ClosingState, type RowSnapshot } from "../snapshot";
 import {
   addIsoDays,
   baseBlockers,
@@ -17,6 +17,7 @@ import {
   markerFor,
   matchPeriod,
   usableAccount,
+  windowRun,
   type PlanResult,
   type PlanningContext,
 } from "./common";
@@ -125,7 +126,7 @@ export function planPatternB(ctx: PlanningContext): PlanResult {
 
 /** One projection across the preview window gives the event dates; each posting then recomputes its own day. */
 export function eventsInWindow(ctx: PlanningContext): { chargeDates: string[]; repaymentDates: string[]; feeDates: string[] } | { error: string } {
-  const result = calculatePeriod({ model: ctx.model, opening: ctx.opening, offsets: ctx.offsets, from: ctx.window.from, to: ctx.window.to });
+  const result = windowRun(ctx);
   if (!result.ok) return { error: result.message };
   const pick = (types: string[]) => [...new Set(result.events.filter((e) => types.includes(e.eventType)).map((e) => e.date))].sort();
   return { chargeDates: pick(["interest-charge"]), repaymentDates: pick(["repayment", "final-payment"]), feeDates: pick(["fee"]) };
@@ -143,7 +144,7 @@ function planPatternBRepayments(ctx: PlanningContext, out: PlanResult, repayment
     const payment = Math.abs(repayment.cashMovementMinor);
     const match = matchPeriod(ctx, "repayment", { periodKey: date, date, paymentMinor: payment, principalMinor: Math.abs(repayment.principalMovementMinor) });
     if (!match || match.status === "missing") {
-      out.notices.push({ code: "repayment-missing", periodKey: date, text: "The repayment has not been found in Actual yet." });
+      out.notices.push({ code: "repayment-missing", periodKey: date, text: "The repayment has not been found in Actual yet. If it was paid earlier or later than the matching rule allows, adjust the days in the Repayment matching tab." });
       continue;
     }
     if (match.status !== "unique") {

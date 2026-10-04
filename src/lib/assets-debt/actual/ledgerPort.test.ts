@@ -5,6 +5,7 @@ import {
   crossesBudgetBoundary,
   fromDebtMagnitude,
   readAccountDirectory,
+  datedBalanceFromTransactions,
   readDatedBalance,
   toDebtMagnitude,
   type LedgerReadTransport,
@@ -68,11 +69,14 @@ describe("ledger port (read side)", () => {
     expect(() => actualUnitsToMinor(1.001)).toThrow();
   });
 
-  it("derives a dated balance as the current balance minus later transactions, counting each split once", async () => {
-    const t = fake([row("2024-03-02", 120000), row("2024-03-15", -2000, { isParent: true }), row("2024-03-15", -1500, { isChild: true, parentId: "p" }), row("2024-03-15", -500, { isChild: true, parentId: "p" })]);
+  it("derives a dated balance from one read of the account, counting each split once and never reading every account's balance", async () => {
+    const t = fake([row("2024-01-01", -500000), row("2024-03-01", 100), row("2024-03-02", 120000), row("2024-03-15", -2000, { isParent: true }), row("2024-03-15", -1500, { isChild: true, parentId: "p" }), row("2024-03-15", -500, { isChild: true, parentId: "p" })]);
+    const balances = jest.spyOn(t, "getAccountBalances");
     const result = await readDatedBalance(t, { accountId: "acc", date: "2024-03-01" });
-    expect(t.lastInput).toEqual({ accountId: "acc", startDate: "2024-03-02" });
-    expect(result).toEqual({ ok: true, accountId: "acc", date: "2024-03-01", balanceMinor: -399050 - 120000 + 2000, transactionsRead: 4 });
+    expect(t.lastInput).toEqual({ accountId: "acc" });
+    expect(result).toEqual({ ok: true, accountId: "acc", date: "2024-03-01", balanceMinor: -499900, transactionsRead: 6 });
+    expect(datedBalanceFromTransactions("acc", [row("2024-03-15", -2000, { isParent: true }), row("2024-03-15", -1500, { isChild: true })], "2024-03-15").balanceMinor).toBe(-2000);
+    expect(balances).not.toHaveBeenCalled();
   });
 
   it("refuses rather than truncates an unbounded read, and reports an unknown account", async () => {

@@ -1,6 +1,7 @@
 import type { DebtBlock, DebtDetail } from "../services/debtConfigService";
 import type { FutureAssumption, LoanModelSnapshot, Recurrence } from "@/lib/financial-models/loan/model";
 import type { RatePeriod } from "@/lib/financial-models/loan/rates";
+import { configBusinessDays, configLenderStatement } from "@/lib/financial-models/loan/configSchema";
 
 /**
  * The engine's `LoanModelSnapshot` from a stored debt (RD-084 P1.3b T201).
@@ -83,6 +84,8 @@ export function modelFromDetail(detail: DebtDetail): ModelBuild {
       paymentRecasts: config.paymentRecasts.map((r) => ({ date: r.date })),
       assumptions,
       revolving: config.revolving,
+      businessDays: configBusinessDays(config),
+      lenderStatement: configLenderStatement(config),
     },
   };
 }

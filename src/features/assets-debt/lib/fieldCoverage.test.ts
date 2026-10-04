@@ -5,8 +5,8 @@ import type { AssumptionInput } from "@/lib/app-db/debtAssumptionRepository";
 import type { OffsetLinkInput } from "@/lib/app-db/debtOffsetLinkRepository";
 import type { RatePeriodInput } from "@/lib/app-db/debtRateRepository";
 import type { DebtFields } from "@/lib/app-db/debtRepository";
-import type { DebtConfigV1 } from "@/lib/financial-models/loan/configSchema";
-import { DEBT_CONFIG_V2_IDENTIFIERS } from "@/lib/financial-models/loan/versions";
+import type { DebtConfigV1, DebtConfigV3 } from "@/lib/financial-models/loan/configSchema";
+import { DEBT_CONFIG_V2_IDENTIFIERS, DEBT_CONFIG_V3_IDENTIFIERS } from "@/lib/financial-models/loan/versions";
 import { newTracking, statesToSaveInput, simKey, type SimulationState } from "./simulatorModel";
 import { DAILY_MONTHLY_CHARGE, offsetOf, sim } from "./simulatorTestKit";
 import * as vocabulary from "./vocabulary";
@@ -39,6 +39,7 @@ const SURFACES = {
   features: "components/simulator/FeatureControls.tsx",
   interestOnly: "components/simulator/InterestOnlyControl.tsx",
   drawer: "components/simulator/CalculationMethodDrawer.tsx",
+  dueDates: "components/simulator/DueDateSettings.tsx",
   rates: "components/simulator/RateChangesDialog.tsx",
   extras: "components/simulator/ExtraTransactionsDialog.tsx",
   tracking: "components/tracking/TrackingSetup.tsx",
@@ -192,7 +193,17 @@ function checkHomes(name: string, map: Record<string, Home>) {
   });
 }
 
+/** Config v3 adds the business-day convention and the lender statement allocation (P1.6 T281-T283). */
+const CONFIG_V3: Record<Exclude<Paths<DebtConfigV3, "config">, keyof typeof CONFIG>, Home> = {
+  "config.businessDays.adjustment": on("A", "dueDates", "A due date on a non-business day"),
+  "config.businessDays.nonBusinessWeekdays[]": on("A", "dueDates", "Non-business weekdays"),
+  "config.businessDays.holidays[]": on("A", "dueDates", "Holidays"),
+  "config.lenderStatement.interestAllocation": on("A", "dueDates", "Lender statements split repayments using"),
+};
+const ALL_CONFIG: Record<string, Home> = { ...CONFIG, ...CONFIG_V3 };
+
 checkHomes("config v1 paths", CONFIG);
+checkHomes("config v3 paths", CONFIG_V3);
 checkHomes("debt columns", DEBT_COLUMNS);
 checkHomes("rate period columns", RATE_COLUMNS);
 checkHomes("offset link columns", OFFSET_COLUMNS);
@@ -219,6 +230,11 @@ describe("saved configurations hold only classified paths", () => {
       contractTermMonths: 60,
       maturityDate: "2029-01-01",
     }),
+    sim({
+      profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE },
+      businessDays: { adjustment: "following", nonBusinessWeekdays: [6, 7], holidays: ["2025-01-01"] },
+      lenderStatement: { interestAllocation: "accrued-to-due-date" },
+    }),
     sim({ shape: "revolving-credit", creditLimitMinor: 50_000_000, revolving: { paymentModel: "percent-of-balance", percentOfBalanceBps: 200, minimumFloorMinor: 2_500 }, profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE, amortization: "revolving" } }),
   ];
 
@@ -226,7 +242,7 @@ describe("saved configurations hold only classified paths", () => {
     const t = { ...newTracking(s), name: "Loan", offsetAccountMap: Object.fromEntries(s.offsets.map((o) => [o.placeholderAccountId, "acc-offset"])) };
     const built = statesToSaveInput(s, { ...t, status: "draft" }, "b1", "bench-daily");
     if (!built.ok) throw new Error(JSON.stringify(built.issues));
-    const unlisted = [...pathsOf(built.input.config, "config")].filter((p) => !(p in CONFIG) && !Object.keys(CONFIG).some((k) => k.startsWith(`${p}.`)));
+    const unlisted = [...pathsOf(built.input.config, "config")].filter((p) => !(p in ALL_CONFIG) && !Object.keys(ALL_CONFIG).some((k) => k.startsWith(`${p}.`)));
     expect(unlisted).toEqual([]);
     const columns = { ...DEBT_COLUMNS } as Record<string, Home>;
     for (const key of Object.keys(built.input)) if (!["config", "rates", "offsets", "assumptions"].includes(key)) expect(columns).toHaveProperty([key]);
@@ -257,5 +273,13 @@ describe("every current config identifier a person can choose is offered", () =>
   ];
   it.each(groups)("%s", (group, options, notOffered) => {
     expect(offered(options)).toEqual([...DEBT_CONFIG_V2_IDENTIFIERS[group]].filter((v) => !notOffered.includes(v)).sort());
+  });
+});
+
+describe("every config v3 identifier is offered", () => {
+  const offered = (source: string, values: readonly string[]) => values.filter((v) => source.includes(`value: "${v}"`));
+  const dueDates = readFileSync(join(__dirname, "..", SURFACES.dueDates), "utf8");
+  it.each([["businessDayAdjustment"], ["interestAllocation"]] as const)("%s", (group) => {
+    expect(offered(dueDates, DEBT_CONFIG_V3_IDENTIFIERS[group])).toEqual([...DEBT_CONFIG_V3_IDENTIFIERS[group]]);
   });
 });

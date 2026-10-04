@@ -1,4 +1,5 @@
-import { addMonths, parseIsoDate, type IsoDate } from "../calendar/dates";
+import { adjustSchedule, isActiveConvention, MAX_NON_BUSINESS_RUN } from "../calendar/businessDays";
+import { addDays, addMonths, compareDates, parseIsoDate, type IsoDate } from "../calendar/dates";
 import { generateSchedule } from "../calendar/schedule";
 import type { LoanModelSnapshot } from "./model";
 
@@ -30,8 +31,11 @@ export function chargeDates(model: LoanModelSnapshot, from: IsoDate, to: IsoDate
   if (profile.chargeFrequency === "at-repayment") return null;
   const first = firstChargeDate(model);
   const frequency = profile.chargeFrequency === "monthly" ? "monthly" : profile.chargeFrequency === "quarterly" ? "quarterly" : "annual";
-  return generateSchedule(
+  // Business-day adjustment may move a date by a few days, so generate a little wider and filter after.
+  const dates = generateSchedule(
     { frequency, firstDate: first, anchorDay: profile.chargeDay ?? undefined, shortMonthPolicy: profile.shortMonth },
-    { from, to }
+    isActiveConvention(model.businessDays) ? { from: addDays(from, -MAX_NON_BUSINESS_RUN), to: addDays(to, MAX_NON_BUSINESS_RUN) } : { from, to }
   );
+  if (!isActiveConvention(model.businessDays)) return dates;
+  return adjustSchedule(dates, model.businessDays).filter((d) => compareDates(d, from) >= 0 && compareDates(d, to) <= 0);
 }

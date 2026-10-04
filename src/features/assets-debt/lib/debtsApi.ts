@@ -63,11 +63,14 @@ export const saveAssumptions = (id: string, assumptions: AssumptionInput[], chan
 export const listMatchRules = (id: string) =>
   request<{ rules: MatchRuleView[] }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`).then((r) => r.rules);
 
-export const createMatchRule = (id: string, rule: MatchRuleSave) =>
-  request<{ rule: MatchRuleView }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`, { method: "POST", body: JSON.stringify({ rule }) }).then((r) => r.rule);
+/** A fresh read-only backtest; the server requires one to enable a rule and refuses weak or ambiguous rules. */
+export type EnableBacktest = { from: string; to: string; snapshots: MatchingHistorySnapshot[] };
 
-export const updateMatchRule = (id: string, ruleId: string, rule: MatchRuleSave) =>
-  request<{ rule: MatchRuleView }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`, { method: "PATCH", body: JSON.stringify({ ruleId, rule }) }).then((r) => r.rule);
+export const createMatchRule = (id: string, rule: MatchRuleSave, enableBacktest?: EnableBacktest) =>
+  request<{ rule: MatchRuleView }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`, { method: "POST", body: JSON.stringify({ rule, ...(enableBacktest ? { enableBacktest } : {}) }) }).then((r) => r.rule);
+
+export const updateMatchRule = (id: string, ruleId: string, rule: MatchRuleSave, enableBacktest?: EnableBacktest) =>
+  request<{ rule: MatchRuleView }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`, { method: "PATCH", body: JSON.stringify({ ruleId, rule, ...(enableBacktest ? { enableBacktest } : {}) }) }).then((r) => r.rule);
 
 export const deleteMatchRule = (id: string, ruleId: string) =>
   request<void>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules?ruleId=${encodeURIComponent(ruleId)}`, { method: "DELETE" });

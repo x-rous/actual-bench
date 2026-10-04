@@ -40,7 +40,7 @@ describe("parseDebtConfig", () => {
   });
 
   it("returns unsupported-config for a future version instead of throwing", () => {
-    expect(parseDebtConfig({ ...validConfig(), version: 3 })).toMatchObject({ ok: false, code: "unsupported-config" });
+    expect(parseDebtConfig({ ...validConfig(), version: 4 })).toMatchObject({ ok: false, code: "unsupported-config" });
     expect(parseDebtConfig({ ...validConfig(), format: "rd084.debt-config-next" })).toMatchObject({ ok: false, code: "unsupported-config" });
   });
 
@@ -51,6 +51,22 @@ describe("parseDebtConfig", () => {
     expect(parseDebtConfig({ ...validConfig(), version: 2 })).toMatchObject({ ok: true, config: { version: 2 } });
     expect(debtConfigVersionFor("annuity-at-payment-frequency")).toBe(1);
     expect(debtConfigVersionFor("dated-cashflow-annuity")).toBe(2);
+  });
+
+  it("adds the business-day convention and lender statement allocation in v3, with null as the only spelling of unused", () => {
+    const businessDays = { adjustment: "following", nonBusinessWeekdays: [7], holidays: ["2024-01-01", "2024-12-02"] };
+    const v3 = { ...validConfig(), version: 3, businessDays, lenderStatement: { interestAllocation: "accrued-to-due-date" } };
+    expect(parseDebtConfig(v3)).toMatchObject({ ok: true, config: { version: 3, businessDays, lenderStatement: { interestAllocation: "accrued-to-due-date" } } });
+    expect(parseDebtConfig({ ...validConfig(), version: 3, businessDays: null, lenderStatement: null }).ok).toBe(true);
+    // v1 and v2 cannot hold the new fields; v3 must state both.
+    expect(parseDebtConfig({ ...validConfig(), businessDays })).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig({ ...validConfig(), version: 3 })).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig({ ...v3, businessDays: { ...businessDays, adjustment: "none" } })).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig({ ...v3, lenderStatement: { interestAllocation: "as-calculated" } })).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig({ ...v3, businessDays: { ...businessDays, holidays: ["2024-12-02", "2024-01-01"] } })).toMatchObject({ ok: false, code: "invalid-config" });
+    expect(parseDebtConfig({ ...v3, businessDays: { ...businessDays, adjustment: "end-of-month" } })).toMatchObject({ ok: false, code: "unsupported-config" });
+    expect(debtConfigVersionFor("annuity-at-payment-frequency", { businessDays: businessDays as never })).toBe(3);
+    expect(debtConfigVersionFor("annuity-at-payment-frequency", { businessDays: null, lenderStatement: null })).toBe(1);
   });
 
   it("returns unsupported-config for an identifier this build does not know", () => {

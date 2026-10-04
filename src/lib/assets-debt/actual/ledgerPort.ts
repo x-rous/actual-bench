@@ -110,28 +110,45 @@ export type DatedBalance =
   | { ok: true; accountId: string; date: string; balanceMinor: number; transactionsRead: number }
   | { ok: false; accountId: string; date: string; reason: "account-not-found" | "too-many-transactions"; message: string };
 
-const nextDay = (iso: string) => new Date(Date.parse(`${iso}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 
 /**
- * An account's total balance at the end of `date`, derived locally (R-09):
- * the current balance minus every transaction after `date`. One bounded read
- * per account; a read larger than `maxTransactions` is refused rather than
- * truncated, because a partial sum would be a wrong balance.
+ * An account's total balance at the end of `date` from the account's full
+ * transaction list: Actual's account balance is the sum of its transactions,
+ * so the dated balance is the sum of those on or before `date`. A split parent
+ * carries the sum of its children, so each movement counts once.
  */
+export function datedBalanceFromTransactions(accountId: string, transactions: readonly SyncSourceTransaction[], date: string): Extract<DatedBalance, { ok: true }> {
+  const balanceMinor = transactions.filter((t) => !t.isChild && t.date <= date).reduce((sum, t) => sum + t.amount, 0);
+  return { ok: true, accountId, date, balanceMinor, transactionsRead: transactions.length };
+}
+
+/**
+ * Every transaction of one account, for dated balances (R-09). One read of
+ * that account only: reading every account's current balance one call at a
+ * time was the slowest step of a Direct-mode preview. A read larger than
+ * `maxTransactions` is refused rather than truncated, because a partial sum
+ * would be a wrong balance.
+ */
+export async function readAccountLedger(
+  transport: LedgerReadTransport,
+  input: { accountId: string; maxTransactions?: number }
+): Promise<{ ok: true; transactions: SyncSourceTransaction[] } | { ok: false; reason: "account-not-found" | "too-many-transactions"; message: string }> {
+  const transactions = await transport.listTransactionsForSync({ accountId: input.accountId });
+  const max = input.maxTransactions ?? DEFAULT_MAX_TRANSACTIONS;
+  if (transactions.length > max) return { ok: false, reason: "too-many-transactions", message: `The account has more than ${max} transactions.` };
+  if (transactions.length === 0 && !(await transport.getAccounts()).some((a) => a.id === input.accountId)) {
+    return { ok: false, reason: "account-not-found", message: "The account is not in this budget." };
+  }
+  return { ok: true, transactions };
+}
+
+/** An account's total balance at the end of `date` (one read of that account). */
 export async function readDatedBalance(
   transport: LedgerReadTransport,
   input: { accountId: string; date: string; maxTransactions?: number }
 ): Promise<DatedBalance> {
   const { accountId, date } = input;
-  const balances = await transport.getAccountBalances();
-  const current = balances.get(accountId);
-  if (current === undefined) return { ok: false, accountId, date, reason: "account-not-found", message: "The account is not in this budget." };
-  const later: SyncSourceTransaction[] = await transport.listTransactionsForSync({ accountId, startDate: nextDay(date) });
-  const max = input.maxTransactions ?? DEFAULT_MAX_TRANSACTIONS;
-  if (later.length > max) {
-    return { ok: false, accountId, date, reason: "too-many-transactions", message: `More than ${max} transactions after ${date}; choose a later date.` };
-  }
-  // A split parent's amount is the sum of its children; count each movement once.
-  const afterMinor = later.filter((t) => !t.isChild).reduce((sum, t) => sum + t.amount, 0);
-  return { ok: true, accountId, date, balanceMinor: actualUnitsToMinor(current) - afterMinor, transactionsRead: later.length };
+  const ledger = await readAccountLedger(transport, input);
+  if (!ledger.ok) return { ok: false, accountId, date, reason: ledger.reason, message: ledger.message };
+  return datedBalanceFromTransactions(accountId, ledger.transactions, date);
 }

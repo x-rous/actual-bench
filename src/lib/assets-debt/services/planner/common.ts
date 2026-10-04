@@ -184,8 +184,35 @@ export function engineVersionsFor(events: DebtProjectionEvent[]): Record<string,
   return versions;
 }
 
-/** Engine events of one day from the stored model and the recorded opening (the same call reproduction makes). */
+/**
+ * One projection of the whole preview window per planning context. The engine
+ * simulates forward from the recorded opening, so a day's events are the same
+ * whether the run stops on that day or at the window end; planning slices this
+ * single run instead of re-simulating from the opening for every period, which
+ * made a multi-year preview re-run the daily engine dozens of times.
+ * Reproduction still recomputes each period on its own (`calculatePeriod` with
+ * `from = to = date`), and the exact-match tests prove the two agree.
+ */
+const windowRuns = new WeakMap<PlanningContext, ReturnType<typeof calculatePeriod>>();
+
+export function windowRun(ctx: PlanningContext): ReturnType<typeof calculatePeriod> {
+  let run = windowRuns.get(ctx);
+  if (!run) {
+    run = calculatePeriod({ model: ctx.model, opening: ctx.opening, offsets: ctx.offsets, from: ctx.window.from, to: ctx.window.to });
+    windowRuns.set(ctx, run);
+  }
+  return run;
+}
+
+/** Engine events of one day from the stored model and the recorded opening (the result reproduction recomputes). */
 export function eventsOn(ctx: PlanningContext, date: string): { events: DebtProjectionEvent[]; closing: ClosingState; versions: Record<string, string> } | { error: string } {
+  if (date >= ctx.window.from && date <= ctx.window.to) {
+    const run = windowRun(ctx);
+    if (!run.ok) return { error: run.message };
+    const events = run.events.filter((e) => e.date === date);
+    const closing: ClosingState = { date, principalMinor: events.at(-1)?.balanceAfterMinor ?? ctx.opening.principalMinor, accruedInterestMinor: 0, carriedRemainder: null };
+    return { events, closing, versions: engineVersionsFor(events) };
+  }
   const result = calculatePeriod({ model: ctx.model, opening: ctx.opening, offsets: ctx.offsets, from: date, to: date });
   if (!result.ok) return { error: result.message };
   return { events: result.events, closing: result.closing, versions: engineVersionsFor(result.events) };

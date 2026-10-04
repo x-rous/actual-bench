@@ -26,7 +26,7 @@ import { TrackingSetup } from "./tracking/TrackingSetup";
 
 jest.mock("../lib/debtsApi", () => {
   const actual = jest.requireActual("../lib/debtsApi");
-  return { ...actual, listDebts: jest.fn(async () => []), createDebt: jest.fn(), updateDebt: jest.fn(), getDebt: jest.fn(), archiveDebt: jest.fn() };
+  return { ...actual, listDebts: jest.fn(async () => []), createDebt: jest.fn(), updateDebt: jest.fn(), getDebt: jest.fn(), archiveDebt: jest.fn(), listMatchRules: jest.fn(async () => []) };
 });
 const mockDirectory: { current: AccountDirectory | undefined } = { current: undefined };
 jest.mock("../lib/useAccountDirectory", () => ({
@@ -125,14 +125,14 @@ describe("Assets & Debt tabs", () => {
     render(<AssetsDebtTabs />);
     const nav = screen.getByRole("navigation", { name: "Assets & Debt sections" });
     const links = within(nav).getAllByRole("link");
-    expect(links.map((l) => l.textContent)).toEqual(["Overview", "Loans & Debt", "Assets", "Rules", "Activity"]);
+    expect(links.map((l) => l.textContent)).toEqual(["Overview", "Loans & Debt", "Assets", "Activity"]);
     expect(screen.getByRole("link", { name: "Loans & Debt" })).toHaveAttribute("aria-current", "page");
     links[1].focus();
     fireEvent.keyDown(links[1], { key: "ArrowRight" });
     expect(document.activeElement).toBe(links[2]);
     fireEvent.keyDown(links[2], { key: "End" });
-    expect(document.activeElement).toBe(links[4]);
-    fireEvent.keyDown(links[4], { key: "ArrowRight" });
+    expect(document.activeElement).toBe(links[3]);
+    fireEvent.keyDown(links[3], { key: "ArrowRight" });
     expect(document.activeElement).toBe(links[0]);
   });
 });
@@ -853,6 +853,22 @@ describe("an existing loan page", () => {
     expect(body.rates).toEqual([expect.objectContaining({ annualRateDecimal: "0.05" })]);
     expect(dir).toBe(mockDirectory.current);
     expect(mocked.createDebt).not.toHaveBeenCalled();
+  });
+
+  it("has a Repayment matching tab between Tracking setup and Activity, scoped to this loan", async () => {
+    const nav = jest.requireMock("next/navigation") as { useSearchParams: () => URLSearchParams };
+    const original = nav.useSearchParams;
+    nav.useSearchParams = () => new URLSearchParams("view=matching");
+    try {
+      wrap(<LoanView id={detail.debt.id} />);
+      const views = await screen.findByRole("navigation", { name: "Loan views" });
+      expect(within(views).getAllByRole("button").map((b) => b.textContent)).toEqual(["Simulator", "Tracking setup", "Repayment matching", "Activity"]);
+      expect(within(views).getByRole("button", { name: "Repayment matching" })).toHaveAttribute("aria-current", "page");
+      expect(await screen.findByRole("heading", { name: "Repayment matching rules" })).toBeInTheDocument();
+      expect(screen.queryByLabelText("Debt")).toBeNull();
+    } finally {
+      nav.useSearchParams = original;
+    }
   });
 
   it("the Activity view opens lender reconciliation", async () => {

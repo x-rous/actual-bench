@@ -2,31 +2,27 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, FlaskConical, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, FlaskConical, Pencil, Plus, Power, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { getTransport } from "@/lib/actual";
 import { readMatchingHistory } from "@/lib/assets-debt/actual/ledgerPort";
 import type { MatchRuleSave, MatchRuleView } from "@/lib/assets-debt/services/matchingService";
-import type { DebtBacktestResult } from "@/lib/financial-models/matching";
+import type { DebtBacktestResult, MatchConditionsV1 } from "@/lib/financial-models/matching";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
-import { createMatchRule, deleteMatchRule, getDebt, listDebts, listMatchRules, runMatchBacktest, updateMatchRule } from "../../lib/debtsApi";
+import { createMatchRule, deleteMatchRule, getDebt, getSchedule, listMatchRules, runMatchBacktest, updateMatchRule } from "../../lib/debtsApi";
 import { useAccountDirectory } from "../../lib/useAccountDirectory";
-import { AssetsDebtShell } from "../AssetsDebtViews";
 import { BacktestResultsTable } from "./BacktestResultsTable";
-import { RuleEditorDialog } from "./RuleEditorDialog";
+import { RuleEditorDialog, type RecommendationContext } from "./RuleEditorDialog";
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function twoYearsBefore(iso: string): string {
-  const date = new Date(`${iso}T00:00:00Z`);
-  date.setUTCFullYear(date.getUTCFullYear() - 2);
-  return date.toISOString().slice(0, 10);
+function inDays(iso: string, days: number): string {
+  return new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function ruleLabel(rule: MatchRuleView): string {
@@ -36,36 +32,80 @@ function ruleLabel(rule: MatchRuleView): string {
   return "Scheduled repayment";
 }
 
-export function RulesView() {
+/**
+ * Repayment matching for one loan (RD-084; the loan's Repayment matching tab).
+ * Every rule belongs to a single loan, so the rules live with it, beside the
+ * Tracking setup the recommendation comes from and the Activity that uses them.
+ */
+export function RulesView({ debtId }: { debtId: string }) {
   const connection = useConnectionStore(selectActiveInstance);
   const directory = useAccountDirectory();
   const queryClient = useQueryClient();
   const today = useMemo(isoToday, []);
-  const [selectedId, setSelectedId] = useState("");
-  const [from, setFrom] = useState(twoYearsBefore(today));
+  // The history defaults to the whole loan: from its start date to today.
+  const [chosenFrom, setFrom] = useState<string | null>(null);
   const [to, setTo] = useState(today);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MatchRuleView | null>(null);
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [result, setResult] = useState<{ ruleId: string; value: DebtBacktestResult } | null>(null);
 
-  const debts = useQuery({
-    queryKey: ["assets-debt", "debts", connection?.budgetSyncId],
-    queryFn: () => listDebts(connection!.budgetSyncId),
-    enabled: !!connection,
-  });
-  const debtId = selectedId || debts.data?.[0]?.id || "";
   const detail = useQuery({ queryKey: ["assets-debt", "debt", debtId], queryFn: () => getDebt(debtId), enabled: !!debtId });
   const rules = useQuery({ queryKey: ["assets-debt", "match-rules", debtId], queryFn: () => listMatchRules(debtId), enabled: !!debtId });
-  const debt = debts.data?.find((item) => item.id === debtId);
+  const openingDate = detail.data?.config.ok ? detail.data.config.config.terms.openingDate : null;
+  const from = chosenFrom ?? openingDate ?? today;
   const defaultSource = detail.data?.debt.paymentAccountId ?? directory.data?.accounts.find((account) => !account.closed)?.id ?? "";
+  const contractualPaymentMinor = detail.data?.config.ok ? detail.data.config.config.terms.contractualPaymentMinor : null;
+  // Without a contractual repayment, recommend the next projected one.
+  const nextRepayment = useQuery({
+    queryKey: ["assets-debt", "next-repayment", debtId, today],
+    queryFn: () => getSchedule(debtId, { from: today, to: inDays(today, 400), resolution: "events" }),
+    enabled: !!debtId && !!detail.data && contractualPaymentMinor === null,
+  });
+  const projectedPaymentMinor = nextRepayment.data?.ok
+    ? Math.abs(nextRepayment.data.events.find((event) => event.eventType === "repayment")?.cashMovementMinor ?? 0) || null
+    : null;
+  const recommendation: RecommendationContext = useMemo(() => ({
+    paymentAccountId: detail.data?.debt.paymentAccountId ?? null,
+    liabilityAccountId: detail.data?.debt.liabilityAccountId ?? null,
+    signConvention: detail.data?.debt.signConvention === "positive-is-debt" ? "positive-is-debt" : "negative-is-debt",
+    expectedPaymentMinor: contractualPaymentMinor ?? projectedPaymentMinor,
+    toleranceMinor: detail.data?.debt.driftToleranceMinor ?? 100,
+  }), [detail.data, contractualPaymentMinor, projectedPaymentMinor]);
 
   const refreshRules = () => queryClient.invalidateQueries({ queryKey: ["assets-debt", "match-rules", debtId] });
+
+  /** The bounded, read-only history a backtest needs: every account the rule names. */
+  const backtestFor = async (conditions: MatchConditionsV1) => {
+    if (!connection) throw new Error("Connect to the budget first.");
+    const named = conditions.items.filter((condition) => condition.kind === "source-account").map((condition) => condition.accountId);
+    const accountIds = named.length ? named : [defaultSource].filter(Boolean);
+    return { from, to, snapshots: await readMatchingHistory(getTransport(connection), { accountIds, from, to }) };
+  };
+
+  // Enabling always runs a fresh backtest over the chosen history; the server refuses a weak rule or
+  // one with ambiguous or unsafe periods and says why.
   const save = async (value: MatchRuleSave) => {
-    if (editing) await updateMatchRule(debtId, editing.record.id, value);
-    else await createMatchRule(debtId, value);
+    const enableBacktest = value.enabled ? await backtestFor(value.conditions as MatchConditionsV1) : undefined;
+    if (editing) await updateMatchRule(debtId, editing.record.id, value, enableBacktest);
+    else await createMatchRule(debtId, value, enableBacktest);
     await refreshRules();
-    toast.success(editing ? "Matching rule updated" : "Matching rule added");
+    toast.success(value.enabled ? "Matching saved and enabled" : editing ? "Matching updated (draft)" : "Matching saved as a draft");
+  };
+
+  const setEnabled = async (rule: MatchRuleView, enabled: boolean) => {
+    if (!rule.conditions || !rule.actions || typeof rule.record.purpose !== "string") return;
+    try {
+      setRunningRuleId(rule.record.id);
+      const value: MatchRuleSave = { purpose: rule.record.purpose, conditions: rule.conditions, actions: rule.actions, enabled };
+      await updateMatchRule(debtId, rule.record.id, value, enabled ? await backtestFor(rule.conditions) : undefined);
+      await refreshRules();
+      toast.success(enabled ? "Matching enabled. Proposed changes now use it." : "Matching disabled");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunningRuleId(null);
+    }
   };
 
   const remove = async (rule: MatchRuleView) => {
@@ -93,7 +133,7 @@ export function RulesView() {
   };
 
   return (
-    <AssetsDebtShell title="Assets & Debt" scrollManaged>
+    <>
       {!connection ? (
         <p className="px-4 py-6 text-sm text-muted-foreground">Connect to a budget to backtest debt matching rules.</p>
       ) : (
@@ -107,21 +147,17 @@ export function RulesView() {
               size="sm"
               disabled={!debtId || !defaultSource}
               onClick={() => { setEditing(null); setEditorOpen(true); }}
-            ><Plus aria-hidden /> Add rule</Button>
+            ><Plus aria-hidden /> Set up matching</Button>
           </header>
 
-          <section className="grid gap-3 rounded-xl border border-border p-3 md:grid-cols-[minmax(220px,1fr)_150px_150px]" aria-label="Backtest scope">
-            <div className="grid gap-1.5">
-              <Label htmlFor="matching-debt">Debt</Label>
-              <Select id="matching-debt" value={debtId} onValueChange={(value) => { setSelectedId(value); setResult(null); }} options={(debts.data ?? []).map((item) => ({ value: item.id, label: item.name }))} placeholder="Choose a debt" />
-            </div>
+          <section className="grid gap-3 rounded-xl border border-border p-3 md:grid-cols-[150px_150px]" aria-label="Backtest scope">
             <div className="grid gap-1.5"><Label htmlFor="backtest-from">History from</Label><DateInput id="backtest-from" value={from} onValueChange={setFrom} /></div>
             <div className="grid gap-1.5"><Label htmlFor="backtest-to">History to</Label><DateInput id="backtest-to" value={to} onValueChange={setTo} /></div>
           </section>
 
-          {debts.isLoading || rules.isLoading ? <p className="text-sm text-muted-foreground">Loading matching rules…</p> : null}
-          {debts.isError || rules.isError ? <p role="alert" className="text-sm text-destructive">{String(debts.error ?? rules.error)}</p> : null}
-          {debt?.blocked ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">This debt is blocked: {debt.blocked.message}</p> : null}
+          {rules.isLoading ? <p className="text-sm text-muted-foreground">Loading matching rules…</p> : null}
+          {rules.isError ? <p role="alert" className="text-sm text-destructive">{String(rules.error)}</p> : null}
+          {detail.data?.blocked ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">This loan is blocked: {detail.data.blocked.message}</p> : null}
 
           <div className="grid gap-2" role="list" aria-label="Matching rules">
             {(rules.data ?? []).map((rule) => (
@@ -130,7 +166,7 @@ export function RulesView() {
                 <div className="min-w-48 flex-1">
                   <p className="text-sm font-medium">{ruleLabel(rule)}</p>
                   <p className="text-xs text-muted-foreground">
-                    {rule.blocked ? `Blocked: ${rule.blocked}` : `${rule.conditions?.items.length ?? 0} conditions · ${rule.record.enabled ? "Enabled" : "Draft"}`}
+                    {rule.blocked ? `Blocked: ${rule.blocked}` : `${rule.conditions?.items.length ?? 0} conditions · ${rule.record.enabled ? "Enabled" : "Draft: not used by Proposed changes until enabled"}`}
                   </p>
                 </div>
                 {rule.conditions ? (
@@ -138,12 +174,17 @@ export function RulesView() {
                     <FlaskConical aria-hidden />{runningRuleId === rule.record.id ? "Running…" : "Run backtest"}
                   </Button>
                 ) : null}
+                {rule.conditions && !rule.blocked ? (
+                  <Button size="sm" variant={rule.record.enabled ? "outline" : "default"} disabled={runningRuleId !== null || (!rule.record.enabled && (!from || !to || from > to))} onClick={() => void setEnabled(rule, !rule.record.enabled)}>
+                    <Power aria-hidden />{rule.record.enabled ? "Disable" : "Enable"}
+                  </Button>
+                ) : null}
                 <Button size="icon-sm" variant="ghost" disabled={!!rule.blocked || typeof rule.record.purpose !== "string"} aria-label={`Edit ${ruleLabel(rule)} rule`} onClick={() => { setEditing(rule); setEditorOpen(true); }}><Pencil aria-hidden /></Button>
                 <Button size="icon-sm" variant="ghost" aria-label={`Remove ${ruleLabel(rule)} rule`} onClick={() => void remove(rule)}><Trash2 aria-hidden /></Button>
               </article>
             ))}
           </div>
-          {rules.data?.length === 0 ? <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No matching rules yet. Add a draft rule, then backtest it against history.</p> : null}
+          {rules.data?.length === 0 ? <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No matching yet. Choose Set up matching for the recommended setup from Tracking setup, then backtest it against history.</p> : null}
 
           {result ? (
             <section className="grid gap-3" aria-labelledby="backtest-heading">
@@ -155,14 +196,24 @@ export function RulesView() {
                 <p className="text-xs text-muted-foreground">Read {result.value.read.transactions} transactions from {result.value.read.accounts} account{result.value.read.accounts === 1 ? "" : "s"}</p>
               </div>
               {result.value.warnings.length ? <div role="alert" className="flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden /><span>{result.value.warnings.join(" ")}</span></div> : null}
-              <BacktestResultsTable result={result.value} minorDigits={debt?.currencyMinorDigits ?? 2} />
+              <BacktestResultsTable result={result.value} minorDigits={detail.data?.debt.currencyMinorDigits ?? 2} />
               <p className="text-xs text-muted-foreground">Projected balance variance is a read-only matching counterfactual, not a lender-balance observation or reconciliation anchor.</p>
             </section>
           ) : null}
         </div>
       )}
 
-      <RuleEditorDialog open={editorOpen} rule={editing} sourceAccountId={defaultSource} onOpenChange={setEditorOpen} onSave={save} />
-    </AssetsDebtShell>
+      <RuleEditorDialog
+        open={editorOpen}
+        rule={editing}
+        recommendation={recommendation}
+        accounts={directory.data?.accounts ?? []}
+        categories={directory.data?.categories ?? []}
+        currency={detail.data?.debt.currency ?? ""}
+        minorDigits={detail.data?.debt.currencyMinorDigits ?? 2}
+        onOpenChange={setEditorOpen}
+        onSave={save}
+      />
+    </>
   );
 }

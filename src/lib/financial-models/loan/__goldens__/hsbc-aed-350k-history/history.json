@@ -1,0 +1,389 @@
+{
+ "source": "Private HSBC loan account history supplied by the repository owner (35 repayments, 2023-11-25 to 2026-09-25)",
+ "scope": "Lender-reported principal, interest and balance per repayment; due dates and holidays inferred and verified in the spec evidence (hsbc-350k-2023-history.md)",
+ "currency": "AED",
+ "minorDigits": 2,
+ "openingDate": "2023-10-25",
+ "principalMinor": 35000000,
+ "annualRateDecimal": "0.0699",
+ "contractualPaymentMinor": 837957,
+ "firstPaymentDate": "2023-12-01",
+ "paymentCount": 48,
+ "maturityDate": "2027-11-01",
+ "businessDays": {
+  "adjustment": "following",
+  "nonBusinessWeekdays": [
+   7
+  ],
+  "holidays": [
+   "2024-01-01",
+   "2024-12-02",
+   "2024-12-03",
+   "2025-01-01",
+   "2025-03-30",
+   "2025-03-31",
+   "2025-04-01",
+   "2025-04-02",
+   "2026-01-01"
+  ]
+ },
+ "interestAllocation": "accrued-to-due-date",
+ "roundingResidualMinor": 1,
+ "rows": [
+  {
+   "paidDate": "2023-11-25",
+   "contractualDueDate": "2023-12-01",
+   "adjustedDueDate": "2023-12-01",
+   "paymentMinor": 837957,
+   "principalMinor": 589956,
+   "interestMinor": 248001,
+   "balanceMinor": 34410044,
+   "pendingEarlyCreditMinor": 678
+  },
+  {
+   "paidDate": "2023-12-22",
+   "contractualDueDate": "2024-01-01",
+   "adjustedDueDate": "2024-01-02",
+   "paymentMinor": 837957,
+   "principalMinor": 627763,
+   "interestMinor": 210194,
+   "balanceMinor": 33782281,
+   "pendingEarlyCreditMinor": 1322
+  },
+  {
+   "paidDate": "2024-01-25",
+   "contractualDueDate": "2024-02-01",
+   "adjustedDueDate": "2024-02-01",
+   "paymentMinor": 837957,
+   "principalMinor": 645192,
+   "interestMinor": 192765,
+   "balanceMinor": 33137089,
+   "pendingEarlyCreditMinor": 865
+  },
+  {
+   "paidDate": "2024-02-23",
+   "contractualDueDate": "2024-03-01",
+   "adjustedDueDate": "2024-03-01",
+   "paymentMinor": 837957,
+   "principalMinor": 654789,
+   "interestMinor": 183168,
+   "balanceMinor": 32482300,
+   "pendingEarlyCreditMinor": 878
+  },
+  {
+   "paidDate": "2024-03-23",
+   "contractualDueDate": "2024-04-01",
+   "adjustedDueDate": "2024-04-01",
+   "paymentMinor": 837957,
+   "principalMinor": 645997,
+   "interestMinor": 191960,
+   "balanceMinor": 31836303,
+   "pendingEarlyCreditMinor": 1113
+  },
+  {
+   "paidDate": "2024-04-25",
+   "contractualDueDate": "2024-05-01",
+   "adjustedDueDate": "2024-05-01",
+   "paymentMinor": 837957,
+   "principalMinor": 656164,
+   "interestMinor": 181793,
+   "balanceMinor": 31180139,
+   "pendingEarlyCreditMinor": 754
+  },
+  {
+   "paidDate": "2024-05-24",
+   "contractualDueDate": "2024-06-01",
+   "adjustedDueDate": "2024-06-01",
+   "paymentMinor": 837957,
+   "principalMinor": 653603,
+   "interestMinor": 184354,
+   "balanceMinor": 30526536,
+   "pendingEarlyCreditMinor": 1001
+  },
+  {
+   "paidDate": "2024-06-25",
+   "contractualDueDate": "2024-07-01",
+   "adjustedDueDate": "2024-07-01",
+   "paymentMinor": 837957,
+   "principalMinor": 663578,
+   "interestMinor": 174379,
+   "balanceMinor": 29862958,
+   "pendingEarlyCreditMinor": 762
+  },
+  {
+   "paidDate": "2024-07-25",
+   "contractualDueDate": "2024-08-01",
+   "adjustedDueDate": "2024-08-01",
+   "paymentMinor": 837957,
+   "principalMinor": 661431,
+   "interestMinor": 176526,
+   "balanceMinor": 29201527,
+   "pendingEarlyCreditMinor": 887
+  },
+  {
+   "paidDate": "2024-08-26",
+   "contractualDueDate": "2024-09-01",
+   "adjustedDueDate": "2024-09-02",
+   "paymentMinor": 837957,
+   "principalMinor": 659891,
+   "interestMinor": 178066,
+   "balanceMinor": 28541636,
+   "pendingEarlyCreditMinor": 885
+  },
+  {
+   "paidDate": "2024-09-25",
+   "contractualDueDate": "2024-10-01",
+   "adjustedDueDate": "2024-10-01",
+   "paymentMinor": 837957,
+   "principalMinor": 680329,
+   "interestMinor": 157628,
+   "balanceMinor": 27861307,
+   "pendingEarlyCreditMinor": 782
+  },
+  {
+   "paidDate": "2024-10-25",
+   "contractualDueDate": "2024-11-01",
+   "adjustedDueDate": "2024-11-01",
+   "paymentMinor": 837957,
+   "principalMinor": 673335,
+   "interestMinor": 164622,
+   "balanceMinor": 27187972,
+   "pendingEarlyCreditMinor": 903
+  },
+  {
+   "paidDate": "2024-11-26",
+   "contractualDueDate": "2024-12-01",
+   "adjustedDueDate": "2024-12-04",
+   "paymentMinor": 837957,
+   "principalMinor": 667040,
+   "interestMinor": 170917,
+   "balanceMinor": 26520932,
+   "pendingEarlyCreditMinor": 1022
+  },
+  {
+   "paidDate": "2024-12-23",
+   "contractualDueDate": "2025-01-01",
+   "adjustedDueDate": "2025-01-02",
+   "paymentMinor": 837957,
+   "principalMinor": 691689,
+   "interestMinor": 146268,
+   "balanceMinor": 25829243,
+   "pendingEarlyCreditMinor": 1325
+  },
+  {
+   "paidDate": "2025-01-27",
+   "contractualDueDate": "2025-02-01",
+   "adjustedDueDate": "2025-02-01",
+   "paymentMinor": 837957,
+   "principalMinor": 690887,
+   "interestMinor": 147070,
+   "balanceMinor": 25138356,
+   "pendingEarlyCreditMinor": 662
+  },
+  {
+   "paidDate": "2025-02-26",
+   "contractualDueDate": "2025-03-01",
+   "adjustedDueDate": "2025-03-01",
+   "paymentMinor": 837957,
+   "principalMinor": 703821,
+   "interestMinor": 134136,
+   "balanceMinor": 24434535,
+   "pendingEarlyCreditMinor": 404
+  },
+  {
+   "paidDate": "2025-03-26",
+   "contractualDueDate": "2025-04-01",
+   "adjustedDueDate": "2025-04-03",
+   "paymentMinor": 837957,
+   "principalMinor": 683943,
+   "interestMinor": 154014,
+   "balanceMinor": 23750592,
+   "pendingEarlyCreditMinor": 1048
+  },
+  {
+   "paidDate": "2025-04-25",
+   "contractualDueDate": "2025-05-01",
+   "adjustedDueDate": "2025-05-01",
+   "paymentMinor": 837957,
+   "principalMinor": 711650,
+   "interestMinor": 126307,
+   "balanceMinor": 23038942,
+   "pendingEarlyCreditMinor": 818
+  },
+  {
+   "paidDate": "2025-05-27",
+   "contractualDueDate": "2025-06-01",
+   "adjustedDueDate": "2025-06-02",
+   "paymentMinor": 837957,
+   "principalMinor": 697586,
+   "interestMinor": 140371,
+   "balanceMinor": 22341356,
+   "pendingEarlyCreditMinor": 802
+  },
+  {
+   "paidDate": "2025-06-25",
+   "contractualDueDate": "2025-07-01",
+   "adjustedDueDate": "2025-07-01",
+   "paymentMinor": 837957,
+   "principalMinor": 714682,
+   "interestMinor": 123275,
+   "balanceMinor": 21626674,
+   "pendingEarlyCreditMinor": 821
+  },
+  {
+   "paidDate": "2025-07-25",
+   "contractualDueDate": "2025-08-01",
+   "adjustedDueDate": "2025-08-01",
+   "paymentMinor": 837957,
+   "principalMinor": 710386,
+   "interestMinor": 127571,
+   "balanceMinor": 20916288,
+   "pendingEarlyCreditMinor": 952
+  },
+  {
+   "paidDate": "2025-08-28",
+   "contractualDueDate": "2025-09-01",
+   "adjustedDueDate": "2025-09-01",
+   "paymentMinor": 837957,
+   "principalMinor": 714736,
+   "interestMinor": 123221,
+   "balanceMinor": 20201552,
+   "pendingEarlyCreditMinor": 548
+  },
+  {
+   "paidDate": "2025-09-25",
+   "contractualDueDate": "2025-10-01",
+   "adjustedDueDate": "2025-10-01",
+   "paymentMinor": 837957,
+   "principalMinor": 722442,
+   "interestMinor": 115515,
+   "balanceMinor": 19479110,
+   "pendingEarlyCreditMinor": 830
+  },
+  {
+   "paidDate": "2025-10-22",
+   "contractualDueDate": "2025-11-01",
+   "adjustedDueDate": "2025-11-01",
+   "paymentMinor": 837957,
+   "principalMinor": 723145,
+   "interestMinor": 114812,
+   "balanceMinor": 18755965,
+   "pendingEarlyCreditMinor": 1385
+  },
+  {
+   "paidDate": "2025-11-25",
+   "contractualDueDate": "2025-12-01",
+   "adjustedDueDate": "2025-12-01",
+   "paymentMinor": 837957,
+   "principalMinor": 731586,
+   "interestMinor": 106371,
+   "balanceMinor": 18024379,
+   "pendingEarlyCreditMinor": 841
+  },
+  {
+   "paidDate": "2025-12-23",
+   "contractualDueDate": "2026-01-01",
+   "adjustedDueDate": "2026-01-02",
+   "paymentMinor": 837957,
+   "principalMinor": 728339,
+   "interestMinor": 109618,
+   "balanceMinor": 17296040,
+   "pendingEarlyCreditMinor": 1395
+  },
+  {
+   "paidDate": "2026-01-23",
+   "contractualDueDate": "2026-02-01",
+   "adjustedDueDate": "2026-02-02",
+   "paymentMinor": 837957,
+   "principalMinor": 736671,
+   "interestMinor": 101286,
+   "balanceMinor": 16559369,
+   "pendingEarlyCreditMinor": 1411
+  },
+  {
+   "paidDate": "2026-02-25",
+   "contractualDueDate": "2026-03-01",
+   "adjustedDueDate": "2026-03-02",
+   "paymentMinor": 837957,
+   "principalMinor": 750573,
+   "interestMinor": 87384,
+   "balanceMinor": 15808796,
+   "pendingEarlyCreditMinor": 719
+  },
+  {
+   "paidDate": "2026-03-25",
+   "contractualDueDate": "2026-04-01",
+   "adjustedDueDate": "2026-04-01",
+   "paymentMinor": 837957,
+   "principalMinor": 747852,
+   "interestMinor": 90105,
+   "balanceMinor": 15060944,
+   "pendingEarlyCreditMinor": 1003
+  },
+  {
+   "paidDate": "2026-04-24",
+   "contractualDueDate": "2026-05-01",
+   "adjustedDueDate": "2026-05-01",
+   "paymentMinor": 837957,
+   "principalMinor": 752430,
+   "interestMinor": 85527,
+   "balanceMinor": 14308514,
+   "pendingEarlyCreditMinor": 1009
+  },
+  {
+   "paidDate": "2026-05-22",
+   "contractualDueDate": "2026-06-01",
+   "adjustedDueDate": "2026-06-01",
+   "paymentMinor": 837957,
+   "principalMinor": 754020,
+   "interestMinor": 83937,
+   "balanceMinor": 13554494,
+   "pendingEarlyCreditMinor": 1444
+  },
+  {
+   "paidDate": "2026-06-25",
+   "contractualDueDate": "2026-07-01",
+   "adjustedDueDate": "2026-07-01",
+   "paymentMinor": 837957,
+   "principalMinor": 761528,
+   "interestMinor": 76429,
+   "balanceMinor": 12792966,
+   "pendingEarlyCreditMinor": 875
+  },
+  {
+   "paidDate": "2026-07-24",
+   "contractualDueDate": "2026-08-01",
+   "adjustedDueDate": "2026-08-01",
+   "paymentMinor": 837957,
+   "principalMinor": 762884,
+   "interestMinor": 75073,
+   "balanceMinor": 12030082,
+   "pendingEarlyCreditMinor": 1169
+  },
+  {
+   "paidDate": "2026-08-24",
+   "contractualDueDate": "2026-09-01",
+   "adjustedDueDate": "2026-09-01",
+   "paymentMinor": 837957,
+   "principalMinor": 767707,
+   "interestMinor": 70250,
+   "balanceMinor": 11262375,
+   "pendingEarlyCreditMinor": 1176
+  },
+  {
+   "paidDate": "2026-09-25",
+   "contractualDueDate": "2026-10-01",
+   "adjustedDueDate": "2026-10-01",
+   "paymentMinor": 837957,
+   "principalMinor": 764428,
+   "interestMinor": 73529,
+   "balanceMinor": 10497947,
+   "pendingEarlyCreditMinor": 878,
+   "anomaly": {
+    "kind": "unexplained-lender-charge",
+    "amountMinor": 10000,
+    "note": "The lender reported 100.00 more interest than the convention explains, with a normal due date. Kept as a separate, unexplained charge; never fitted."
+   }
+  }
+ ]
+}

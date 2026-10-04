@@ -1,3 +1,4 @@
+import type { BusinessDayConvention } from "../calendar/businessDays";
 import type { IsoDate } from "../calendar/dates";
 import type { ScheduleFrequency } from "../calendar/schedule";
 import type { DebtConfig } from "./configSchema";
@@ -5,6 +6,7 @@ import type { CalculationProfile, RecastPolicy } from "./profile";
 import type { RatePeriod } from "./rates";
 import type { EngineVersions } from "./versions";
 import type { FeeTreatment } from "./fees";
+import type { LenderStatementSettings } from "./lenderStatement";
 
 /**
  * Engine inputs and outputs (contracts/engine-and-projection.md).
@@ -67,6 +69,10 @@ export type LoanModelSnapshot = {
   paymentRecasts: { date: IsoDate }[];
   assumptions: FutureAssumption[];
   revolving: RevolvingModel | null;
+  /** Scheduled-date business-day adjustment (config v3); absent or `none` leaves dates as generated. */
+  businessDays?: BusinessDayConvention | null;
+  /** How lender statements allocate interest (config v3); reporting only, never the accrual. */
+  lenderStatement?: LenderStatementSettings | null;
 };
 
 /** Modelled starting state (FR-060): the closing state of `date`. */

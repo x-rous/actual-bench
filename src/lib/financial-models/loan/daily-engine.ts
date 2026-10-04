@@ -1,4 +1,5 @@
 import { addDays, addMonths, compareDates, type IsoDate } from "../calendar/dates";
+import { adjustBusinessDay, adjustSchedule, isActiveConvention } from "../calendar/businessDays";
 import { generateSchedule } from "../calendar/schedule";
 import { add, dec, decInt, div, fromMinor, max, min, sub, toDecString, toMinor, toPlainString, DEC_ZERO, WORKING_SCALE, type Dec } from "../money/kernel";
 import { dayInterest, intermediateScale, interestBase } from "./accrual";
@@ -231,13 +232,24 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
   const termHasUnambiguousPeriodCount = profile.repaymentFrequency === "monthly"
     || profile.repaymentFrequency === "quarterly"
     || profile.repaymentFrequency === "annual";
-  const lastContractual = model.behaviorClass === "revolving-credit"
+  const lastContractualUnadjusted = model.behaviorClass === "revolving-credit"
     ? null
     : behavior.contractualTermCountsPayments && termHasUnambiguousPeriodCount && terms.maturityDate === null && contractualPayments !== null
       ? allScheduled[contractualPayments - 1] ?? null
       : end
         ? [...allScheduled].reverse().find((d) => compareDates(d, end) <= 0) ?? null
         : null;
+  // Business-day adjustment (config v3) moves each contractual date; the payment count and the
+  // contractual final payment are decided on the contractual dates first, so a maturity date that
+  // rolls past the end date still carries the final payment.
+  let lastContractual = lastContractualUnadjusted;
+  if (isActiveConvention(model.businessDays)) {
+    const holidays = new Set(model.businessDays.holidays);
+    const adjust = (d: IsoDate) => adjustBusinessDay(d, model.businessDays!, holidays);
+    allScheduled = adjustSchedule(allScheduled, model.businessDays);
+    derivationSchedule = adjustSchedule(derivationSchedule, model.businessDays);
+    lastContractual = lastContractualUnadjusted === null ? null : adjust(lastContractualUnadjusted);
+  }
   const scheduled = allScheduled.filter((d) => compareDates(d, req.to) <= 0);
   const scheduledSet = new Set(scheduled.filter((d) => compareDates(d, anchor.date) > 0));
   const madeBeforeAnchor = allScheduled.filter((d) => compareDates(d, anchor.date) <= 0).length;

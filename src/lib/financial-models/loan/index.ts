@@ -23,3 +23,4 @@ export * from "./receivable";
 export * from "./eligibility";
 export * from "./diagnostics";
 export * from "./projection";
+export * from "./statementAllocation";

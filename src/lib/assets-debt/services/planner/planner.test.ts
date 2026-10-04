@@ -1,6 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
-import { ACCOUNTS, CATEGORIES, byKind, createScenario } from "../../testing/postingScenario";
+import { ACCOUNTS, CATEGORIES, byKind, createScenario, type Scenario } from "../../testing/postingScenario";
+import { reproducePosting } from "../reproduceService";
+import type { PostingInputSnapshot } from "../snapshot";
 
 jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
 const mockApiRequest = apiRequest as unknown as jest.Mock;
@@ -123,5 +125,76 @@ describe("planners (T118–T120)", () => {
     const [adjustment] = byKind(result.postings, "reconciliation-adjustment");
     expect(adjustment.classification).toBe("review");
     expect(adjustment.output).toMatchObject({ kind: "create", operations: [{ amountMinor: 10_000 }] });
+  });
+
+  describe("actual-dated repayment splits (T284)", () => {
+    const interestOf = (split: { output: { kind: string } & Record<string, unknown> }) => {
+      if (split.output.kind !== "restructure") throw new Error("expected restructure");
+      return -((split.output as unknown as { expectedPostState: { children: { economicKind: string; amountMinor: number }[] } }).expectedPostState.children.find((c) => c.economicKind === "interest")?.amountMinor ?? 0);
+    };
+    const firstSplit = async (s: Scenario, window = { from: "2024-02-01", to: "2024-02-29" }) => byKind((await s.preview(window)).postings, "repayment-split")[0];
+    const inputOf = (s: Scenario, id: string) => JSON.parse((s.db.prepare("SELECT input_snapshot_json FROM financial_postings WHERE id = ?").get(id) as { input_snapshot_json: string }).input_snapshot_json) as PostingInputSnapshot;
+
+    it("splits a payment made early by its actual date: fewer days of interest, recorded and reproducible", async () => {
+      const onTime = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      onTime.seedPayment("2024-02-01");
+      const scheduled = interestOf(await firstSplit(onTime));
+      resetAppDbForTests();
+
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      s.seedPayment("2024-01-29");
+      const split = await firstSplit(s);
+      const early = interestOf(split);
+      // 28 days instead of 31 on AED 400,000 at the fixture rate.
+      expect(early).toBeLessThan(scheduled);
+      expect(Math.abs(early - Math.round((scheduled * 28) / 31))).toBeLessThanOrEqual(1);
+      const input = inputOf(s, split.id);
+      expect(input.version).toBe(2);
+      expect(input.observedRepayments).toEqual({ allocation: "as-calculated", repayments: [{ dueDate: "2024-02-01", paidDate: "2024-01-29", amountMinor: 242915, feesMinor: 0 }] });
+      expect(split.engineVersions["statement-allocation"]).toBe("statement-allocation@1");
+      expect(reproducePosting(s.db, split.id)).toMatchObject({ status: "exact-match" });
+    });
+
+    it("allocates to the due date when the lender statements do, without changing the default", async () => {
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest", configV3: { lenderStatement: { interestAllocation: "accrued-to-due-date" } } });
+      s.seedPayment("2024-01-29");
+      const split = await firstSplit(s);
+      expect(inputOf(s, split.id).observedRepayments?.allocation).toBe("accrued-to-due-date");
+      resetAppDbForTests();
+      const onTime = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      onTime.seedPayment("2024-02-01");
+      // Accrued to the due date: the first early payment carries the full period, as if paid on time.
+      expect(interestOf(split)).toBe(interestOf(await firstSplit(onTime)));
+    });
+
+    it("supersedes the old proposal when a new configuration moves the period, instead of leaving it listed", async () => {
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      s.seedPayment("2024-01-31");
+      const window = { from: "2024-01-01", to: "2024-02-29" };
+      const [old] = byKind((await s.preview(window)).postings, "repayment-split");
+      expect(old.periodKey).toBe("2024-02-01");
+      // 1 Feb 2024 becomes a holiday: the due date moves to 2 Feb, a new period.
+      const { getDebtDetail, updateDebtConfiguration } = await import("../debtConfigService");
+      const { saveInput } = await import("../../testing/debtFixtures");
+      const detail = getDebtDetail(s.db, s.debtId)!;
+      const config = { ...JSON.parse(detail.debt.currentConfigJson), version: 3, businessDays: { adjustment: "following", nonBusinessWeekdays: [7], holidays: ["2024-02-01"] }, lenderStatement: null };
+      updateDebtConfiguration(s.db, s.debtId, saveInput({ lenderPattern: "embedded-interest", executionStrategy: "bench-daily", liabilityAccountId: ACCOUNTS.mortgage, paymentAccountId: ACCOUNTS.checking, loanPaymentCategoryId: CATEGORIES.loan, lenderChargeGraceDays: 3, config }), { budgetSyncId: "budget-1", accounts: s.directory.accounts, categories: s.directory.categories });
+      const after = await s.preview(window);
+      expect(byKind(after.postings, "repayment-split").map((p) => p.periodKey)).toEqual(["2024-02-02"]);
+      const { listDebtPostings } = await import("../proposalService");
+      const stillProposed = listDebtPostings(s.db, s.debtId).filter((p) => p.status === "proposed");
+      expect(stillProposed.map((p) => p.periodKey)).toEqual(["2024-02-02"]);
+      expect(listDebtPostings(s.db, s.debtId).find((p) => p.id === old.id)?.status).toBe("superseded");
+    });
+
+    it("asks for review when an earlier repayment was not found and had to be assumed on schedule", async () => {
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      s.seedPayment("2024-03-01");
+      const splits = byKind((await s.preview({ from: "2024-02-01", to: "2024-03-31" })).postings, "repayment-split");
+      expect(splits).toHaveLength(1);
+      expect(splits[0].reasons.map((r) => r.code)).toContain("earlier-repayment-assumed");
+      expect(inputOf(s, splits[0].id).observedRepayments?.repayments.map((r) => r.assumed ?? false)).toEqual([true, false]);
+      expect(reproducePosting(s.db, splits[0].id)).toMatchObject({ status: "exact-match" });
+    });
   });
 });

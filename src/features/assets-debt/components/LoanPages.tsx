@@ -22,6 +22,7 @@ import { strategyAdvice, TrackingSetup } from "./tracking/TrackingSetup";
 import { LenderReconciliation } from "./reconciliation/LenderReconciliation";
 import { PostingsPanel } from "./preview/PostingsPanel";
 import { ActivityTimeline } from "./activity/ActivityTimeline";
+import { RulesView } from "./rules/RulesView";
 
 /**
  * The loan pages (RD-084 P1.3b T204, T214, T216).
@@ -219,6 +220,7 @@ export function NewLoanView() {
 const VIEWS = [
   { id: "simulator", label: "Simulator" },
   { id: "tracking", label: "Tracking setup" },
+  { id: "matching", label: "Repayment matching" },
   { id: "activity", label: "Activity" },
 ] as const;
 
@@ -382,6 +384,11 @@ export function LoanView({ id }: { id: string }) {
           </div>
           <p className="px-4 pt-3 text-xs text-muted-foreground">{SAVE_BOUNDARY}</p>
           <TrackingSetup sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} />
+        </div>
+      ) : null}
+      {view === "matching" ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <RulesView debtId={detail.debt.id} />
         </div>
       ) : null}
       {view === "activity" ? (

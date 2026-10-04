@@ -264,6 +264,29 @@ describe("state boundary and saving", () => {
     expect(validateDebtSave(db, saveInput({ name: "Other", liabilityAccountId: "acc-car" }), directory()).ok).toBe(true);
   });
 
+  it("writes config v3 only when business days or the statement allocation are used, and round-trips them", () => {
+    const db = tempDebtDb();
+    const daily = sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE } });
+    const t = { ...newTracking(daily), name: "Home loan", lenderPattern: "embedded-interest" as const, liabilityAccountId: "acc-mortgage", paymentAccountId: "acc-checking", loanPaymentCategoryId: "cat-loan" };
+    const plain = statesToSaveInput({ ...daily, businessDays: { adjustment: "none", nonBusinessWeekdays: [6, 7], holidays: [] }, lenderStatement: { interestAllocation: "as-calculated" } }, t, "budget-1", "bench-daily");
+    expect(plain.ok && plain.input.config).toMatchObject({ version: 1 });
+    expect(plain.ok && "businessDays" in (plain.input.config as object)).toBe(false);
+
+    const businessDays = { adjustment: "following" as const, nonBusinessWeekdays: [7 as const], holidays: ["2024-03-01", "2024-04-01"] };
+    const s = { ...daily, businessDays, lenderStatement: { interestAllocation: "accrued-to-due-date" as const } };
+    const built = statesToSaveInput(s, t, "budget-1", "bench-daily");
+    if (!built.ok) throw new Error(JSON.stringify(built.issues));
+    expect(built.input.config).toMatchObject({ version: 3, businessDays, lenderStatement: { interestAllocation: "accrued-to-due-date" } });
+    const saved = createDebtConfiguration(db, built.input, directory());
+    const states = detailToStates(getDebtDetail(db, saved.debt.id)!)!;
+    expect(states.simulation).toMatchObject({ businessDays, lenderStatement: { interestAllocation: "accrued-to-due-date" } });
+    const again = statesToSaveInput(states.simulation, states.tracking, "budget-1", "bench-daily");
+    expect(again.ok && again.input.config).toEqual(JSON.parse(saved.debt.currentConfigJson));
+    // A periodic-accrual loan cannot move due dates; the convention is not saved.
+    const periodic = statesToSaveInput({ ...sim({ profile: { ...sim().profile, accrual: "per-period" } }), businessDays }, t, "budget-1", "bench-periodic");
+    expect(periodic.ok && "businessDays" in (periodic.input.config as object)).toBe(false);
+  });
+
   it("writes config v2 only for the dated cash-flow repayment identifier", () => {
     const base = sim();
     const dated = {

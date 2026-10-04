@@ -5,7 +5,7 @@ import { CURRENT_COMPONENT_VERSIONS } from "@/lib/financial-models/loan/versions
 import { parseDebtConfig } from "@/lib/financial-models/loan/configSchema";
 import { modelFromDetail } from "../model/buildModel";
 import type { DebtDetail } from "./debtConfigService";
-import { calculatePeriod, type ComponentLine, type PostingInputSnapshot, type PostingOutputSnapshot } from "./snapshot";
+import { allocateRepaymentSplit, calculatePeriod, type ComponentLine, type PostingInputSnapshot, type PostingOutputSnapshot } from "./snapshot";
 
 /**
  * Reproduction (RD-084 P1.6 T135; FR-182, FR-183, SC-005).
@@ -27,7 +27,7 @@ export type ReproductionResult = {
 
 const ENGINE_KINDS = new Set(["interest-charge", "fee-charge", "repayment-split"]);
 
-function componentsFor(postingKind: string, events: ReturnType<typeof calculatePeriod> & { ok: true }, stored: ComponentLine[]): ComponentLine[] {
+function componentsFor(postingKind: string, events: ReturnType<typeof calculatePeriod> & { ok: true }, stored: ComponentLine[], actualDated: { interestMinor: number } | null): ComponentLine[] {
   if (postingKind === "interest-charge") {
     const charge = events.events.find((e) => e.eventType === "interest-charge");
     return charge ? [{ kind: "interest", amountMinor: Math.abs(charge.interestMinor) }] : [];
@@ -37,11 +37,12 @@ function componentsFor(postingKind: string, events: ReturnType<typeof calculateP
     return fee ? [{ kind: "fee", amountMinor: Math.abs(fee.feesMinor) || fee.principalMovementMinor }] : [];
   }
   // repayment-split: the engine owns interest and fees; principal is the residual of the matched payment.
+  // A split recorded with its observed repayments was allocated on actual dates (input v2).
   const repayment = events.events.find((e) => e.eventType === "repayment" || e.eventType === "final-payment");
   if (!repayment) return [];
   const total = stored.reduce((sum, c) => sum + c.amountMinor, 0);
   const out: ComponentLine[] = [];
-  const interest = Math.abs(repayment.interestMinor);
+  const interest = actualDated ? actualDated.interestMinor : Math.abs(repayment.interestMinor);
   const fees = Math.abs(repayment.feesMinor);
   for (const c of stored) {
     if (c.kind === "interest") out.push({ kind: "interest", amountMinor: interest });
@@ -90,7 +91,13 @@ export function reproducePosting(db: SqliteDatabase, postingId: string, transpor
   if (!built || !built.ok) return { ...base, status: "not-reproducible", recomputed: [], detail: "The stored configuration revision cannot be read by this build." };
   const result = calculatePeriod({ model: built.model, opening: input.opening, offsets: input.offsets, from: input.period.from, to: input.period.to });
   if (!result.ok) return { ...base, status: "mismatch", recomputed: [], detail: result.message };
-  const recomputed = componentsFor(kind, result, stored);
+  let actualDated: { interestMinor: number } | null = null;
+  if (kind === "repayment-split" && input.observedRepayments) {
+    const allocated = allocateRepaymentSplit({ model: built.model, opening: input.opening, observed: input.observedRepayments });
+    if (!allocated.ok) return { ...base, status: "mismatch", recomputed: [], detail: allocated.message };
+    actualDated = { interestMinor: allocated.row.interestMinor };
+  }
+  const recomputed = componentsFor(kind, result, stored, actualDated);
   const exact = recomputed.length === stored.length && recomputed.every((c, i) => c.kind === stored[i].kind && c.amountMinor === stored[i].amountMinor);
   return { ...base, status: exact ? "exact-match" : "mismatch", recomputed, detail: exact ? "Recomputed from stored inputs at the recorded engine versions." : "The recomputed result differs from the stored one. Treat this as a defect unless a documented migration explains it." };
 }

@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { getTransport } from "@/lib/actual";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
-import { readDatedBalance, readMatchingHistory, toDebtMagnitude, type AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
+import { datedBalanceFromTransactions, readAccountLedger, readMatchingHistory, toDebtMagnitude, type AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import type { PostingView } from "@/lib/assets-debt/services/proposalService";
@@ -30,6 +31,31 @@ import type { PreviewDirectory } from "./renderPreviewRows";
 const today = () => new Date().toISOString().slice(0, 10);
 const shift = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 const PAD_DAYS = 31;
+/** Notices the loan's matching rules can resolve: offer the tab directly. */
+const MATCHING_NOTICES = new Set(["no-repayment-rule", "repayment-missing", "repayment-ambiguous"]);
+
+type Lap = { phase: string; ms: number };
+
+/** Elapsed time per Preview phase: reading Actual in the browser, then planning on the server. */
+function phaseClock() {
+  const laps: Lap[] = [];
+  let last = performance.now();
+  return {
+    laps,
+    lap(phase: string) {
+      const now = performance.now();
+      laps.push({ phase, ms: now - last });
+      last = now;
+    },
+  };
+}
+
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
+export function describeTimings(laps: readonly Lap[]): string {
+  const total = laps.reduce((sum, l) => sum + l.ms, 0);
+  return `Preview took ${seconds(total)}: ${laps.map((l) => `${l.phase} ${seconds(l.ms)}`).join(", ")}.`;
+}
 
 async function transferPayees(transport: ActualBenchTransport): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
@@ -40,7 +66,8 @@ async function transferPayees(transport: ActualBenchTransport): Promise<Record<s
 export function PostingsPanel({ debt, directory, offsetHistories }: { debt: DebtDetail; directory: AccountDirectory | undefined; offsetHistories?: OffsetHistorySnapshot[] }) {
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
-  const [from, setFrom] = useState(() => shift(today(), -31));
+  // The whole loan by default: from its start date (a saved loan always has one) to today.
+  const [from, setFrom] = useState(() => (debt.config.ok ? debt.config.config.terms.openingDate : shift(today(), -31)));
   const [to, setTo] = useState(today);
   const [openingCategory, setOpeningCategory] = useState("");
   const [adjustmentCategory, setAdjustmentCategory] = useState("");
@@ -48,6 +75,7 @@ export function PostingsPanel({ debt, directory, offsetHistories }: { debt: Debt
   const [payeeMap, setPayeeMap] = useState<Record<string, string>>({});
   const [completion, setCompletion] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<string | null>(null);
+  const [timings, setTimings] = useState<Lap[] | null>(null);
   const liabilityId = debt.debt.liabilityAccountId;
   const liability = directory?.accounts.find((a) => a.id === liabilityId) ?? null;
   const sign = typeof debt.debt.signConvention === "string" ? debt.debt.signConvention : "negative-is-debt";
@@ -71,17 +99,29 @@ export function PostingsPanel({ debt, directory, offsetHistories }: { debt: Debt
     mutationFn: async () => {
       if (!connection || !directory || !liabilityId) throw new Error("Connect to the budget and choose the loan's Actual account first.");
       const transport = getTransport(connection);
+      const clock = phaseClock();
       const payees = await transferPayees(transport);
       setPayeeMap(payees);
-      const accountIds = [liabilityId, debt.debt.paymentAccountId].filter((id): id is string => !!id);
-      const snapshots = await readMatchingHistory(transport, { accountIds, from: shift(from, -PAD_DAYS), to: shift(to, PAD_DAYS) });
+      clock.lap("payees");
+      // The loan account is read once, in full: it gives both dated balances and its matching history.
+      const readFrom = shift(from, -PAD_DAYS);
+      const readTo = shift(to, PAD_DAYS);
+      const ledger = await readAccountLedger(transport, { accountId: liabilityId });
+      if (!ledger.ok) throw new Error(ledger.message);
+      const paymentAccountId = debt.debt.paymentAccountId && debt.debt.paymentAccountId !== liabilityId ? debt.debt.paymentAccountId : null;
+      const snapshots = [
+        { accountId: liabilityId, transactions: ledger.transactions.filter((t) => t.date >= readFrom && t.date <= readTo) },
+        ...(paymentAccountId ? await readMatchingHistory(transport, { accountIds: [paymentAccountId], from: readFrom, to: readTo }) : []),
+      ];
+      clock.lap("transactions");
       const comparisonDate = observations.data?.observations[0]?.observedOn ?? to;
-      const balance = await readDatedBalance(transport, { accountId: liabilityId, date: comparisonDate });
-      const onboarding = debt.debt.onboardingDate ? await readDatedBalance(transport, { accountId: liabilityId, date: debt.debt.onboardingDate }) : null;
+      const balance = datedBalanceFromTransactions(liabilityId, ledger.transactions, comparisonDate);
+      const onboarding = debt.debt.onboardingDate ? datedBalanceFromTransactions(liabilityId, ledger.transactions, debt.debt.onboardingDate) : null;
       const magnitude = (b: typeof balance | null) => (b && b.ok ? toDebtMagnitude(b.balanceMinor, sign) : null);
       const comparisonMagnitude = magnitude(balance);
       const canVerifyTransferLinks = transport.canVerifyTransferLinks ? await transport.canVerifyTransferLinks({ accountId: liabilityId, sinceDate: shift(from, -PAD_DAYS) }) : false;
-      return previewPostings(debt.debt.id, {
+      clock.lap("transfer check");
+      const result = await previewPostings(debt.debt.id, {
         from, to, snapshots, accountDirectory: directory, transferPayees: payees,
         capabilities: { canRestructure: typeof transport.restructureTransactionAsSplit === "function" && typeof transport.linkTransferCounterpart === "function", canVerifyTransferLinks },
         offsetHistories,
@@ -92,6 +132,9 @@ export function PostingsPanel({ debt, directory, offsetHistories }: { debt: Debt
           actualBalanceAtOnboardingMinor: magnitude(onboarding),
         },
       });
+      clock.lap("planning");
+      setTimings(clock.laps);
+      return result;
     },
     onSuccess: (result) => { setPreview(result); setProblem(null); void queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debt.debt.id] }); },
     onError: (error) => setProblem(error instanceof Error ? error.message : String(error)),
@@ -139,10 +182,16 @@ export function PostingsPanel({ debt, directory, offsetHistories }: { debt: Debt
         </Button>
       </div>
       {problem ? <p role="alert" className="text-xs text-destructive">{problem}</p> : null}
+      {timings && !run.isPending ? <p className="text-[11px] text-muted-foreground">{describeTimings(timings)}</p> : null}
       {preview?.driftMaterial ? <p role="status" className="text-xs">The model and Actual or the lender disagree beyond the drift tolerance, so every proposal needs review. Reconcile below or review each change.</p> : null}
       {preview?.notices.length ? (
         <ul aria-label="Notes from the preview" className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {preview.notices.map((notice) => <li key={`${notice.code}-${notice.periodKey}`}>{notice.periodKey}: {notice.text}</li>)}
+          {preview.notices.map((notice) => (
+            <li key={`${notice.code}-${notice.periodKey}`}>
+              {notice.periodKey}: {notice.text}
+              {MATCHING_NOTICES.has(notice.code) ? <> <Link href="?view=matching" className="underline underline-offset-2">Open Repayment matching</Link></> : null}
+            </li>
+          ))}
         </ul>
       ) : null}
       {waiting ? <p className="text-xs">{WAITING_COPY}</p> : null}

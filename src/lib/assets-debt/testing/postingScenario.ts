@@ -36,6 +36,8 @@ export type ScenarioOptions = {
   lenderFeed?: boolean;
   loanPaymentCategoryId?: string | null;
   interestCategoryId?: string | null;
+  /** Config v3 additions (business days, lender statement allocation). */
+  configV3?: { businessDays?: unknown; lenderStatement?: unknown };
 };
 
 export type Scenario = Awaited<ReturnType<typeof createScenario>>;
@@ -78,6 +80,7 @@ export function createScenario(options: ScenarioOptions) {
   const base = debtConfig();
   const config = {
     ...base,
+    ...(options.configV3 ? { version: 3, businessDays: options.configV3.businessDays ?? null, lenderStatement: options.configV3.lenderStatement ?? null } : {}),
     profile: { ...(base.profile as Record<string, unknown>), ...profile },
     components: [
       { economicKind: "principal", label: "Principal", destination: "transfer", categoryId: null, amountRule: "calculated", fixedAmountMinor: null, treatment: null, order: 0 },

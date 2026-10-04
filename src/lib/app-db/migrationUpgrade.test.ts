@@ -1711,6 +1711,40 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     }
   });
 
+  it("repairs a database that recorded v43 or v44 without debts.drift_accepted_fingerprint (column added to v43 after it ran)", () => {
+    for (const recorded of ["43", "44"]) {
+      const root = mkdtempSync(join(tmpdir(), `actual-bench-drift-repair-${recorded}-`));
+      const path = join(root, "metadata.sqlite");
+      try {
+        getAppDb(path);
+        resetAppDbForTests();
+        const seed = new Database(path);
+        seed.exec("ALTER TABLE debts DROP COLUMN drift_accepted_fingerprint");
+        if (recorded === "43") {
+          seed.exec("DROP TRIGGER financial_postings_identity_immutable");
+          seed.exec("ALTER TABLE debt_transaction_links DROP COLUMN posting_id");
+          seed.exec("DROP TABLE financial_postings");
+        }
+        seed.prepare("UPDATE app_meta SET value = ? WHERE key = 'schema_version'").run(recorded);
+        seed.close();
+
+        const repaired = getAppDb(path);
+        expect(runMigrations(repaired).schemaVersion).toBe(44);
+        expect(repaired.prepare("PRAGMA table_info(debts)").all<{ name: string }>().map((c) => c.name)).toContain("drift_accepted_fingerprint");
+        insertDebt(repaired, {
+          id: `debt-repair-${recorded}`, budgetSyncId: "budget-repair", name: "Repaired", debtType: "mortgage", behaviorClass: "term-loan",
+          currency: "AED", currencyMinorDigits: 2, liabilityAccountId: `loan-${recorded}`, paymentAccountId: "cash", signConvention: "negative-is-debt",
+          lenderPattern: "embedded-interest", executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+          loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null, currentConfigJson: "{}", status: "active", currentRevision: 1,
+        }, "2026-10-04T00:00:00.000Z");
+        expect(runMigrations(repaired).schemaVersion).toBe(44);
+      } finally {
+        resetAppDbForTests();
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   it("rolls back entirely when v38 fails: the database stays at v37 with no Assets & Debt objects", () => {
     const { root, path } = v37Database();
     try {

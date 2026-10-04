@@ -2,10 +2,23 @@ import type { PostingReason } from "@/lib/app-db/types";
 import { paymentChildCategory, transferLegCategory } from "../../actual/representation";
 import { existingStructureReason, REASONS } from "../../classification/policy";
 import { classifyExistingStructure } from "../../classification/existingStructure";
-import { POSTING_OUTPUT_FORMAT, POSTING_OUTPUT_FORMAT_VERSION, type ChildSpec, type ComponentLine, type EconomicKind, type RowSnapshot } from "../snapshot";
+import { createObservedRepaymentAllocator, interestAllocationOf, type InterestAllocation, type ObservedRepaymentAllocator } from "@/lib/financial-models/loan/statementAllocation";
 import {
+  calculatePeriod,
+  POSTING_OUTPUT_FORMAT,
+  POSTING_OUTPUT_FORMAT_VERSION,
+  type ChildSpec,
+  type ComponentLine,
+  type EconomicKind,
+  type PostingInputSnapshot,
+  type PostingOutputSnapshot,
+  type RowSnapshot,
+} from "../snapshot";
+import {
+  addIsoDays,
   baseBlockers,
   budgetStatusOf,
+  compareIso,
   eventsOn,
   finalize,
   generationFor,
@@ -47,6 +60,10 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     return out;
   }
   const lenderFeed = ctx.rules["lender-repayment-row"] !== undefined;
+  const actualDated = ctx.model.profile.accrual !== "per-period";
+  const allocation = interestAllocationOf(ctx.model);
+  // Every repayment from the opening, in order: the split of a matched repayment is allocated on actual dates (T284).
+  const chain = repaymentChain(ctx, actualDated, allocation);
 
   for (const date of window.repaymentDates) {
     const calc = eventsOn(ctx, date);
@@ -54,30 +71,43 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     const repayment = calc.events.find((e) => e.eventType === "repayment" || e.eventType === "final-payment");
     if (!repayment) continue;
     const period = { key: date, from: date, to: date, chargeDates: [date] };
+    const assumedEntry = (): ChainEntry => ({ dueDate: date, paidDate: date, amountMinor: Math.abs(repayment.cashMovementMinor), feesMinor: Math.abs(repayment.feesMinor), assumed: true });
 
     const split = livePosting(ctx, "repayment-split", date);
     if (split) {
+      chain.add(split.outputSnapshot.kind === "restructure" ? entryFromSplit(split.outputSnapshot, date) : assumedEntry());
       // Second step with a lender feed: link the applied principal child and the lender row.
       if (lenderFeed && split.status === "applied" && !livePosting(ctx, "repayment-link", date)) planLenderLink(ctx, out, split, date, calc);
       continue;
     }
     if (!ctx.rules.repayment) {
-      out.notices.push({ code: "no-repayment-rule", periodKey: date, text: "Add and enable a repayment matching rule so Bench can find this payment." });
+      chain.add(assumedEntry());
+      out.notices.push({ code: "no-repayment-rule", periodKey: date, text: "Set up and enable repayment matching in this loan's Repayment matching tab (the recommended setup comes from Tracking setup) so Bench can find this payment." });
       continue;
     }
     const expectedPayment = Math.abs(repayment.cashMovementMinor);
     const match = matchPeriod(ctx, "repayment", { periodKey: date, date, paymentMinor: expectedPayment, interestMinor: Math.abs(repayment.interestMinor), principalMinor: Math.abs(repayment.principalMovementMinor), feesMinor: Math.abs(repayment.feesMinor) });
     if (!match || match.status === "missing") {
-      out.notices.push({ code: "repayment-missing", periodKey: date, text: "The repayment has not been found in Actual yet." });
+      chain.add(assumedEntry());
+      out.notices.push({ code: "repayment-missing", periodKey: date, text: "The repayment has not been found in Actual yet. If it was paid earlier or later than the matching rule allows, adjust the days in the Repayment matching tab." });
       continue;
     }
     if (match.status === "multiple") {
+      chain.add(assumedEntry());
       out.notices.push({ code: "repayment-ambiguous", periodKey: date, text: REASONS.multipleCandidates.text });
       continue;
     }
     const evaluation = match.candidates[0];
     const row = ctx.rows.get(evaluation.candidate.id);
-    if (!row) continue;
+    if (!row) {
+      chain.add(assumedEntry());
+      continue;
+    }
+    // The matched payment happened on its own date, whatever Bench does with it below.
+    const parts = nonPrincipalParts(ctx, { interest: 0, fees: Math.abs(repayment.feesMinor) });
+    const observedEntry: ChainEntry = { dueDate: date, paidDate: row.date, amountMinor: Math.abs(row.amountMinor), feesMinor: parts.parts.reduce((sum, p) => sum + p.amount, 0) };
+    const earlier = chain.entries.slice();
+    const allocated = chain.add(observedEntry);
     const decision = classifyExistingStructure({ candidate: evaluation.candidate, lenderPattern: "embedded-interest", rowRole: "payment" });
     if (decision.disposition !== "restructure" && decision.classification !== "blocked") {
       out.notices.push({ code: decision.reasons[0] ?? "manual-review", periodKey: date, text: existingStructureReason(decision.reasons[0] ?? "").text });
@@ -95,17 +125,36 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     if (match.status === "unsafe") blockers.push(...evaluation.unsafeReasons.map((code) => ({ code, text: `The matched row is unsafe to change (${code}). Resolve it in Actual, then re-run.` })));
     if (!ctx.canRestructure) blockers.push({ code: "restructure-unavailable", text: "This connection cannot restructure transactions. Use a supported Actual Bench connection." });
 
+    // The split from the actual date (T284); the scheduled calculation only when the loan is not daily.
+    let interestMinor = Math.abs(repayment.interestMinor);
+    let closing = calc.closing;
+    let versions = calc.versions;
+    let observedRepayments: PostingInputSnapshot["observedRepayments"];
+    if (actualDated) {
+      const observed = { allocation, repayments: [...earlier, observedEntry] };
+      if (allocated.ok) {
+        interestMinor = allocated.row.interestMinor;
+        closing = { date: row.date, principalMinor: allocated.row.balanceAfterMinor, accruedInterestMinor: 0, carriedRemainder: null };
+        versions = { ...calc.versions, ...chain.engineVersions };
+        observedRepayments = observed;
+        const assumed = earlier.filter((e) => e.assumed).map((e) => e.dueDate);
+        if (assumed.length) reviews.push(assumedRepaymentsReason(assumed));
+      } else {
+        reviews.push({ code: "actual-date-split-unavailable", text: `Bench could not split this payment by its actual date (${allocated.message}). The split uses the scheduled calculation; review it before applying.` });
+      }
+    }
+
     const payment = usableAccount(ctx, row.accountId);
     const liability = usableAccount(ctx, ctx.debt.liabilityAccountId);
     if (!payment || !liability) blockers.push(REASONS.missingAccount);
-    const plan = payment && liability ? splitChildren(ctx, row, { interest: Math.abs(repayment.interestMinor), fees: Math.abs(repayment.feesMinor) }, lenderFeed) : null;
+    const plan = payment && liability ? splitChildren(ctx, row, { interest: interestMinor, fees: Math.abs(repayment.feesMinor) }, lenderFeed) : null;
     if (plan && !plan.ok) blockers.push(...plan.blockers);
     const children = plan?.ok ? plan.children : [];
     const components: ComponentLine[] = children.map((c) => ({ kind: c.economicKind, amountMinor: Math.abs(c.amountMinor) }));
 
     out.postings.push(finalize(ctx, {
       postingKind: "repayment-split", periodKey: date, shape: "restructure", generation: generationFor(ctx, "repayment-split", date), marker: null,
-      inputSnapshot: inputSnapshot(ctx, period, [row], { lenderFeed }),
+      inputSnapshot: { ...inputSnapshot(ctx, period, [row], { lenderFeed }), ...(observedRepayments ? { observedRepayments } : {}) },
       outputSnapshot: {
         format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "restructure",
         before: row,
@@ -113,9 +162,9 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
         expectedPostState: { parentId: row.id, parentAmountMinor: row.amountMinor, children },
         accountBudgetStatus: budgetStatusOf(ctx, [row.accountId, ctx.debt.liabilityAccountId]),
         components,
-        closing: calc.closing,
+        closing,
       },
-      engineVersions: calc.versions,
+      engineVersions: versions,
       policy: { blockers, reviews },
     }));
   }
@@ -129,24 +178,9 @@ export function splitChildren(ctx: PlanningContext, row: RowSnapshot, amounts: {
   const payment = usableAccount(ctx, row.accountId)!;
   const liability = usableAccount(ctx, ctx.debt.liabilityAccountId)!;
   const sign = row.amountMinor < 0 ? -1 : 1;
-  const blockers: PostingReason[] = [];
   const sorted = [...ctx.components].sort((a, b) => a.order - b.order);
   const children: ChildSpec[] = [];
-  const nonPrincipal: Array<{ component: ComponentConfig | null; kind: EconomicKind; amount: number }> = [];
-  if (amounts.interest > 0) nonPrincipal.push({ component: sorted.find((c) => c.economicKind === "interest") ?? null, kind: "interest", amount: amounts.interest });
-  const fee = sorted.find((c) => c.economicKind === "fee" && c.treatment !== "capitalized");
-  const feeAmount = amounts.fees > 0 ? amounts.fees : fee?.amountRule === "fixed" ? fee.fixedAmountMinor ?? 0 : 0;
-  if (feeAmount > 0) nonPrincipal.push({ component: fee ?? null, kind: "fee", amount: feeAmount });
-  for (const c of sorted) {
-    if (["principal", "interest", "fee", "draw"].includes(c.economicKind)) continue;
-    if (c.destination === "tracking-only") continue;
-    if (c.destination === "transfer") {
-      blockers.push({ code: "unsupported-component-destination", text: `The "${c.label}" component is a transfer; Bench only splits principal as a transfer. Change it in Tracking setup.` });
-      continue;
-    }
-    if (c.amountRule === "fixed" && (c.fixedAmountMinor ?? 0) > 0) nonPrincipal.push({ component: c, kind: c.economicKind as EconomicKind, amount: c.fixedAmountMinor ?? 0 });
-    else if (c.amountRule !== "fixed") blockers.push({ code: "lender-provided-component", text: `The "${c.label}" amount comes from the lender; record it before Bench splits this payment.` });
-  }
+  const { parts: nonPrincipal, blockers } = nonPrincipalParts(ctx, amounts);
   for (const part of nonPrincipal) {
     const category = paymentChildCategory(payment, part.component?.categoryId ?? null, part.component?.label.toLowerCase() ?? part.kind);
     if (!category.ok) blockers.push({ code: category.code, text: category.text });
@@ -169,6 +203,80 @@ export function splitChildren(ctx: PlanningContext, row: RowSnapshot, amounts: {
     notes: principalComponent?.label ?? "Principal",
   });
   return blockers.length ? { ok: false, blockers } : { ok: true, children };
+}
+
+type NonPrincipalPart = { component: ComponentConfig | null; kind: EconomicKind; amount: number };
+
+/** Interest, the cash-paid fee and fixed other components, in split order; principal is the residual. */
+function nonPrincipalParts(ctx: PlanningContext, amounts: { interest: number; fees: number }): { parts: NonPrincipalPart[]; blockers: PostingReason[] } {
+  const blockers: PostingReason[] = [];
+  const sorted = [...ctx.components].sort((a, b) => a.order - b.order);
+  const parts: NonPrincipalPart[] = [];
+  if (amounts.interest > 0) parts.push({ component: sorted.find((c) => c.economicKind === "interest") ?? null, kind: "interest", amount: amounts.interest });
+  const fee = sorted.find((c) => c.economicKind === "fee" && c.treatment !== "capitalized");
+  const feeAmount = amounts.fees > 0 ? amounts.fees : fee?.amountRule === "fixed" ? fee.fixedAmountMinor ?? 0 : 0;
+  if (feeAmount > 0) parts.push({ component: fee ?? null, kind: "fee", amount: feeAmount });
+  for (const c of sorted) {
+    if (["principal", "interest", "fee", "draw"].includes(c.economicKind)) continue;
+    if (c.destination === "tracking-only") continue;
+    if (c.destination === "transfer") {
+      blockers.push({ code: "unsupported-component-destination", text: `The "${c.label}" component is a transfer; Bench only splits principal as a transfer. Change it in Tracking setup.` });
+      continue;
+    }
+    if (c.amountRule === "fixed" && (c.fixedAmountMinor ?? 0) > 0) parts.push({ component: c, kind: c.economicKind as EconomicKind, amount: c.fixedAmountMinor ?? 0 });
+    else if (c.amountRule !== "fixed") blockers.push({ code: "lender-provided-component", text: `The "${c.label}" amount comes from the lender; record it before Bench splits this payment.` });
+  }
+  return { parts, blockers };
+}
+
+type ChainEntry = NonNullable<PostingInputSnapshot["observedRepayments"]>["repayments"][number];
+
+/** An applied split: its actual date, amount and non-interest, non-principal children. */
+function entryFromSplit(output: Extract<PostingOutputSnapshot, { kind: "restructure" }>, dueDate: string): ChainEntry {
+  const feesMinor = output.operations.filter((c) => c.economicKind !== "principal" && c.economicKind !== "interest").reduce((sum, c) => sum + Math.abs(c.amountMinor), 0);
+  return { dueDate, paidDate: output.before.date, amountMinor: Math.abs(output.before.amountMinor), feesMinor };
+}
+
+/**
+ * The repayments from the opening, in order, with one incremental allocator:
+ * each repayment is allocated once, however many periods the preview plans.
+ * The posting still records the whole chain, so reproduction recomputes it
+ * from scratch (`allocateRepaymentSplit`) and must agree.
+ */
+function repaymentChain(ctx: PlanningContext, actualDated: boolean, allocation: InterestAllocation) {
+  const entries: ChainEntry[] = [];
+  const created = actualDated ? createObservedRepaymentAllocator({ model: ctx.model, opening: ctx.opening, allocation }) : null;
+  const unavailable = created && !created.ok ? created.message : "the loan does not accrue daily";
+  const allocator = created?.ok ? created.allocator : null;
+  const add = (entry: ChainEntry): ReturnType<ObservedRepaymentAllocator["push"]> => {
+    entries.push(entry);
+    return allocator ? allocator.push(entry) : { ok: false, message: unavailable };
+  };
+  if (actualDated) for (const entry of repaymentsBeforeWindow(ctx)) add(entry);
+  return { entries, add, engineVersions: allocator?.engineVersions ?? {} };
+}
+
+/**
+ * Repayments between the opening and the preview window: applied splits by
+ * their actual dates, anything else as scheduled (assumed). Usually empty,
+ * because the preview starts at the opening.
+ */
+function repaymentsBeforeWindow(ctx: PlanningContext): ChainEntry[] {
+  const from = addIsoDays(ctx.opening.date, 1);
+  if (compareIso(ctx.window.from, from) <= 0) return [];
+  const run = calculatePeriod({ model: ctx.model, opening: ctx.opening, offsets: ctx.offsets, from, to: addIsoDays(ctx.window.from, -1) });
+  if (!run.ok) return [];
+  return run.events.filter((e) => e.eventType === "repayment" || e.eventType === "final-payment").map((e) => {
+    const split = livePosting(ctx, "repayment-split", e.date);
+    return split?.outputSnapshot.kind === "restructure"
+      ? entryFromSplit(split.outputSnapshot, e.date)
+      : { dueDate: e.date, paidDate: e.date, amountMinor: Math.abs(e.cashMovementMinor), feesMinor: Math.abs(e.feesMinor), assumed: true };
+  });
+}
+
+function assumedRepaymentsReason(dates: string[]): PostingReason {
+  const shown = dates.length > 3 ? `${dates.slice(0, 3).join(", ")} and ${dates.length - 3} more` : dates.join(", ");
+  return { code: "earlier-repayment-assumed", text: `Earlier repayments due ${shown} were not found in Actual, so this split assumes they were paid on time for the scheduled amount. Review the interest before applying.` };
 }
 
 function labelFor(kind: EconomicKind): string {

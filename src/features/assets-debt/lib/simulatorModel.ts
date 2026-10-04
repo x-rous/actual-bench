@@ -1,7 +1,9 @@
 import type { DebtDetail, DebtSaveInput } from "@/lib/assets-debt/services/debtConfigService";
 import { addDays, addMonths, compareDates, isIsoDate } from "@/lib/financial-models/calendar/dates";
 import { generateSchedule } from "@/lib/financial-models/calendar/schedule";
-import { debtConfigVersionFor, type DebtConfig } from "@/lib/financial-models/loan/configSchema";
+import type { BusinessDayConvention } from "@/lib/financial-models/calendar/businessDays";
+import { configBusinessDays, configLenderStatement, debtConfigVersionFor, type DebtConfig } from "@/lib/financial-models/loan/configSchema";
+import type { LenderStatementSettings } from "@/lib/financial-models/loan/statementAllocation";
 import type { DebtPhase, FutureAssumption, LoanModelSnapshot, PaymentComponent } from "@/lib/financial-models/loan/model";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { simulate } from "@/lib/financial-models/loan/projection";
@@ -110,6 +112,10 @@ export type SimulationState = {
   offsets: SimOffset[];
   assumptions: SimAssumption[];
   revolving: DebtConfig["revolving"];
+  /** Scheduled-date business-day adjustment, with its saved holidays; null or absent is none. */
+  businessDays?: BusinessDayConvention | null;
+  /** How the lender's statements allocate interest; null or absent is the default (as calculated). */
+  lenderStatement?: LenderStatementSettings | null;
 };
 
 /** Assumptions shown under Events; opening offset state is part of the offset itself. */
@@ -409,8 +415,19 @@ export function simulationToModel(sim: SimulationState, identity: { debtId?: str
       paymentRecasts: profile.recast === "on-contract-date" ? sim.paymentRecasts.map((r) => ({ date: r.date })) : [],
       assumptions: modelAssumptions(sim),
       revolving: sim.shape === "revolving-credit" ? sim.revolving : null,
+      businessDays: activeBusinessDays(sim),
+      lenderStatement: activeLenderStatement(sim),
     },
   };
+}
+
+/** The convention only when it moves dates, so "none" and absent are one configuration. */
+export function activeBusinessDays(sim: SimulationState): BusinessDayConvention | null {
+  return sim.businessDays && sim.businessDays.adjustment !== "none" && sim.profile.accrual !== "per-period" ? sim.businessDays : null;
+}
+
+export function activeLenderStatement(sim: SimulationState): LenderStatementSettings | null {
+  return sim.lenderStatement && sim.lenderStatement.interestAllocation !== "as-calculated" ? sim.lenderStatement : null;
 }
 
 export function needsContractualPayment(profile: CalculationProfile): boolean {
@@ -525,6 +542,8 @@ export function detailToStates(detail: DebtDetail): { simulation: SimulationStat
     contractualPaymentMinor: c.terms.contractualPaymentMinor,
     creditLimitMinor: c.terms.creditLimitMinor,
     paymentRecasts: c.paymentRecasts.map((r) => ({ date: r.date, note: r.note })),
+    businessDays: configBusinessDays(c),
+    lenderStatement: configLenderStatement(c),
     components: simComponents,
     offsets: detail.offsets.map((o) => ({ key: `offset:${o.id}`, placeholderAccountId: `offset:${o.id}`, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, percentageBps: o.offsetPercentageBps, basis: o.balanceBasis === "cleared" ? "cleared" : "total", capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments === true, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom ?? null, useActualBalance: o.useActualBalance === true })),
     assumptions: detail.assumptions.map((a) => ({
@@ -614,13 +633,14 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
   const behaviorClass: DebtSaveInput["behaviorClass"] = sim.shape === "revolving-credit" ? "revolving-credit" : tracking.direction === "owed-to-me" ? "receivable-loan" : "term-loan";
   const config = {
     format: "rd084.debt-config",
-    version: debtConfigVersionFor(model.profile.repaymentDerivation),
+    version: debtConfigVersionFor(model.profile.repaymentDerivation, model),
     terms: model.terms,
     profile: model.profile,
     phases: model.phases,
     components,
     paymentRecasts: model.profile.recast === "on-contract-date" ? sim.paymentRecasts : [],
     revolving: model.revolving,
+    ...(model.businessDays || model.lenderStatement ? { businessDays: model.businessDays ?? null, lenderStatement: model.lenderStatement ?? null } : {}),
   };
   return {
     ok: true,

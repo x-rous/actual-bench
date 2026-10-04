@@ -1,3 +1,4 @@
+import { businessDayProblem, isActiveConvention } from "../calendar/businessDays";
 import { compareDates, parseIsoDate, type IsoDate, type ShortMonthPolicy } from "../calendar/dates";
 import type { ScheduleFrequency, ScheduleSpec } from "../calendar/schedule";
 import { dec, max, min, type Dec } from "../money/kernel";
@@ -30,6 +31,7 @@ export function engineVersions(
     recast: overrides.recast ?? CURRENT_COMPONENT_VERSIONS.recast,
     allocation: CURRENT_COMPONENT_VERSIONS.allocation,
     "final-payment": CURRENT_COMPONENT_VERSIONS["final-payment"],
+    ...(isActiveConvention(model.businessDays) ? { "business-days": CURRENT_COMPONENT_VERSIONS["business-days"] } : {}),
   };
 }
 
@@ -46,6 +48,11 @@ export function validateModel(model: LoanModelSnapshot): BlockReason | null {
   if (phaseProblem) return { code: "inconsistent-profile", classification: "blocked", date: null, message: phaseProblem };
   const recast = recastScheduleConflict(model.profile.recast, model.paymentRecasts.length);
   if (recast) return { code: "inconsistent-profile", classification: "blocked", date: null, message: recast.message };
+  if (isActiveConvention(model.businessDays)) {
+    const problem = businessDayProblem(model.businessDays);
+    if (problem) return { code: "inconsistent-profile", classification: "blocked", date: null, message: problem.message };
+    if (model.profile.accrual === "per-period") return { code: "unsupported-profile", classification: "blocked", date: null, message: "Business-day adjustment of scheduled dates needs daily accrual." };
+  }
   return null;
 }
 

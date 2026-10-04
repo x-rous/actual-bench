@@ -16,7 +16,6 @@ export const ASSETS_DEBT_TABS = [
   { href: "/assets-debt", label: "Overview", exact: true },
   { href: "/assets-debt/loans", label: "Loans & Debt" },
   { href: "/assets-debt/assets", label: "Assets" },
-  { href: "/assets-debt/rules", label: "Rules" },
   { href: "/assets-debt/activity", label: "Activity" },
 ];
 

@@ -24,6 +24,8 @@ import {
 import { RATE_QUOTES } from "./rates";
 import { FEE_TREATMENTS } from "./fees";
 import { REPAYMENT_DERIVATIONS, REPAYMENT_DERIVATIONS_V1, type RepaymentDerivation } from "./repayment";
+import { BUSINESS_DAY_ADJUSTMENTS, businessDayProblem, type BusinessDayConvention } from "../calendar/businessDays";
+import { INTEREST_ALLOCATIONS, type LenderStatementSettings } from "./lenderStatement";
 
 /**
  * The versioned debt configuration JSON, `rd084.debt-config` (data-model
@@ -43,8 +45,8 @@ import { REPAYMENT_DERIVATIONS, REPAYMENT_DERIVATIONS_V1, type RepaymentDerivati
  */
 
 export const DEBT_CONFIG_FORMAT = "rd084.debt-config";
-export const DEBT_CONFIG_VERSION = 2;
-export const SUPPORTED_DEBT_CONFIG_VERSIONS: readonly number[] = [1, 2];
+export const DEBT_CONFIG_VERSION = 3;
+export const SUPPORTED_DEBT_CONFIG_VERSIONS: readonly number[] = [1, 2, 3];
 
 export const ECONOMIC_KINDS = ["principal", "interest", "fee", "escrow", "insurance", "tax", "draw", "other"] as const;
 export const COMPONENT_DESTINATIONS = ["transfer", "category", "income-category", "tracking-only"] as const;
@@ -157,10 +159,46 @@ const debtConfigV2 = debtConfigV1.extend({
 });
 
 export type DebtConfigV2 = z.infer<typeof debtConfigV2>;
-export type DebtConfig = DebtConfigV1 | DebtConfigV2;
 
-/** New records need v2 only when they use the identifier added by v2. */
-export function debtConfigVersionFor(repaymentDerivation: RepaymentDerivation): 1 | 2 {
+/**
+ * v3 adds the scheduled-date business-day convention (holidays are saved in
+ * the config, so the revision reproduces the same dates) and the lender
+ * statement interest allocation. Null is the only spelling of "not used":
+ * no adjustment, and the default as-calculated allocation.
+ */
+const businessDays = z.strictObject({
+  adjustment: enumOf(BUSINESS_DAY_ADJUSTMENTS),
+  /** ISO weekdays, 1 = Monday … 7 = Sunday. */
+  nonBusinessWeekdays: z.array(z.number().int().min(1).max(7)),
+  holidays: z.array(isoDate),
+});
+
+const lenderStatement = z.strictObject({ interestAllocation: enumOf(INTEREST_ALLOCATIONS) });
+
+const debtConfigV3 = debtConfigV2.extend({
+  version: z.literal(3),
+  businessDays: businessDays.nullable(),
+  lenderStatement: lenderStatement.nullable(),
+});
+
+export type DebtConfigV3 = z.infer<typeof debtConfigV3>;
+export type DebtConfig = DebtConfigV1 | DebtConfigV2 | DebtConfigV3;
+
+/** The v3 additions read from any config version (v1 and v2 hold neither). */
+export function configBusinessDays(config: DebtConfig): BusinessDayConvention | null {
+  return config.version === 3 ? (config.businessDays as BusinessDayConvention | null) : null;
+}
+
+export function configLenderStatement(config: DebtConfig): LenderStatementSettings | null {
+  return config.version === 3 ? config.lenderStatement : null;
+}
+
+/** New records use the lowest version that holds what they use. */
+export function debtConfigVersionFor(
+  repaymentDerivation: RepaymentDerivation,
+  v3?: { businessDays?: BusinessDayConvention | null; lenderStatement?: LenderStatementSettings | null }
+): 1 | 2 | 3 {
+  if (v3?.businessDays || v3?.lenderStatement) return 3;
   return repaymentDerivation === "dated-cashflow-annuity" ? 2 : 1;
 }
 
@@ -200,7 +238,7 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
     return { ok: false, code: "unsupported-config", issues: [`version: ${JSON.stringify(version)} is not supported by this build`] };
   }
 
-  const parsed = (version === 1 ? debtConfigV1 : debtConfigV2).safeParse(value);
+  const parsed = (version === 1 ? debtConfigV1 : version === 2 ? debtConfigV2 : debtConfigV3).safeParse(value);
   if (!parsed.success) {
     // An enum value this build does not know is an identifier from a newer
     // build, not a typo in structure: that is unsupported, not invalid.
@@ -227,6 +265,16 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
   for (let i = 1; i < config.paymentRecasts.length; i++) {
     if (config.paymentRecasts[i].date <= config.paymentRecasts[i - 1].date) {
       return { ok: false, code: "invalid-config", issues: [`paymentRecasts.${i}.date: dated recasts must be in increasing date order, one per date`] };
+    }
+  }
+  if (config.version === 3) {
+    if (config.businessDays?.adjustment === "none") {
+      return { ok: false, code: "invalid-config", issues: ["businessDays: no adjustment is stored as null"] };
+    }
+    const problem = config.businessDays ? businessDayProblem(config.businessDays as BusinessDayConvention) : null;
+    if (problem) return { ok: false, code: "invalid-config", issues: [`businessDays.${problem.field}: ${problem.message}`] };
+    if (config.lenderStatement?.interestAllocation === "as-calculated") {
+      return { ok: false, code: "invalid-config", issues: ["lenderStatement: the default allocation is stored as null"] };
     }
   }
   const recastConflict = recastScheduleConflict(config.profile.recast, config.paymentRecasts.length);

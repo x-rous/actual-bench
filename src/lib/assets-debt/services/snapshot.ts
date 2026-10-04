@@ -1,5 +1,6 @@
 import type { Anchor, LoanModelSnapshot } from "@/lib/financial-models/loan/model";
 import { projectDebt, type DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
+import { allocateObservedRepayments, type AllocatedRepayment, type InterestAllocation, type ObservedRepayment } from "@/lib/financial-models/loan/statementAllocation";
 import { mergeOffsetHistories, type OffsetHistorySnapshot } from "./offsetHistoryService";
 
 /**
@@ -24,7 +25,8 @@ import { mergeOffsetHistories, type OffsetHistorySnapshot } from "./offsetHistor
  */
 
 export const POSTING_INPUT_FORMAT = "rd084.posting-input";
-export const POSTING_INPUT_FORMAT_VERSION = 1;
+/** v2 adds `observedRepayments` (actual-dated repayment splits); v1 snapshots stay readable. */
+export const POSTING_INPUT_FORMAT_VERSION = 2;
 export const POSTING_OUTPUT_FORMAT = "rd084.posting-output";
 export const POSTING_OUTPUT_FORMAT_VERSION = 1;
 
@@ -154,7 +156,7 @@ export type PostingOpening = {
 
 export type PostingInputSnapshot = {
   format: typeof POSTING_INPUT_FORMAT;
-  version: typeof POSTING_INPUT_FORMAT_VERSION;
+  version: 1 | typeof POSTING_INPUT_FORMAT_VERSION;
   subject: { kind: "debt"; id: string; configRevision: number; configHash: string };
   period: { key: string; from: string; to: string; chargeDates: string[] };
   opening: PostingOpening;
@@ -169,6 +171,17 @@ export type PostingInputSnapshot = {
   /** Plan parameters that change the output: categories the user chose, the adjustment basis. */
   parameters: Record<string, string | number | boolean | null>;
   observation?: { kind: "debt"; id: string; canonicalHash: string };
+  /**
+   * v2, repayment splits only: every repayment from the opening to this one,
+   * with its due date, actual date and amount, and how the lender allocates
+   * interest. The split is allocated from these, so reproduction needs
+   * nothing else. `assumed` marks a repayment not seen in Actual, taken as
+   * paid on its due date for the scheduled amount.
+   */
+  observedRepayments?: {
+    allocation: InterestAllocation;
+    repayments: (ObservedRepayment & { assumed?: boolean })[];
+  };
 };
 
 export class InexactMoneyError extends RangeError {
@@ -301,6 +314,28 @@ export function calculatePeriod(input: {
       carriedRemainder: null,
     },
   };
+}
+
+/**
+ * The interest and fee split of the last observed repayment, allocated on
+ * actual dates from the recorded opening (RD-084 P1.6 T284). Planning and
+ * reproduction both call exactly this.
+ */
+export function allocateRepaymentSplit(input: {
+  model: LoanModelSnapshot;
+  opening: PostingOpening;
+  observed: NonNullable<PostingInputSnapshot["observedRepayments"]>;
+}): { ok: true; row: AllocatedRepayment; engineVersions: Record<string, string> } | { ok: false; message: string } {
+  const result = allocateObservedRepayments({
+    model: input.model,
+    opening: { date: input.opening.date, principalMinor: input.opening.principalMinor, accruedInterestMinor: input.opening.accruedInterestMinor },
+    repayments: input.observed.repayments.map(({ dueDate, paidDate, amountMinor, feesMinor }) => ({ dueDate, paidDate, amountMinor, feesMinor })),
+    allocation: input.observed.allocation,
+  });
+  if (!result.ok) return result;
+  const row = result.rows.at(-1);
+  if (!row) return { ok: false, message: "No repayment to allocate." };
+  return { ok: true, row, engineVersions: result.engineVersions };
 }
 
 /** Every row and split child of a bounded read, as preflight snapshots by id. */

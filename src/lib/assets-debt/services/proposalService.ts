@@ -3,7 +3,7 @@ import { getEffectiveDebtAnchor } from "@/lib/app-db/debtAnchorRepository";
 import { listDebtMatchRules } from "@/lib/app-db/debtMatchRuleRepository";
 import { listDebtTransactionLinks } from "@/lib/app-db/debtTransactionLinkRepository";
 import { AppDbValidationError } from "@/lib/app-db/errors";
-import { listSubjectPostings, pruneSupersededProposals, upsertProposal } from "@/lib/app-db/financialPostingRepository";
+import { listSubjectPostings, pruneSupersededProposals, supersedeStaleProposals, upsertProposal } from "@/lib/app-db/financialPostingRepository";
 import { getLatestModelRevision } from "@/lib/app-db/modelRevisionRepository";
 import type { DebtRecord, FinancialPostingRecord, SqliteDatabase } from "@/lib/app-db/types";
 import { parseStoredMatchRule, type MatchConditionsV1 } from "@/lib/financial-models/matching";
@@ -103,7 +103,7 @@ function enabledRules(db: SqliteDatabase, debtId: string): PlanningContext["rule
     try {
       rules[record.purpose] = parseStoredMatchRule(record).conditions as MatchConditionsV1;
     } catch {
-      // An unreadable rule is not used; the Rules tab already shows it as Blocked.
+      // An unreadable rule is not used; the loan's Repayment matching tab already shows it as Blocked.
     }
   }
   return rules;
@@ -228,6 +228,7 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
       postings.push(postingView(result.posting, result.reused));
     }
   }
+  supersedeStaleProposals(db, { subjectKind: "debt", subjectId: ctx.debt.id, keepIds: postings.map((p) => p.id), configRevision: ctx.debt.currentRevision, window: ctx.window }, now);
   return { ok: true, postings, notices: plans.flatMap((p) => p.notices), driftMaterial: ctx.driftMaterial };
 }
 

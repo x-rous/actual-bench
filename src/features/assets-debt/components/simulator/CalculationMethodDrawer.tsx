@@ -4,7 +4,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Button } from "@/components/ui/button";
 import { InfoHint } from "@/components/ui/info-hint";
 import { validateProfile, type CalculationProfile } from "@/lib/financial-models/loan/profile";
-import { summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
+import { activeBusinessDays, activeLenderStatement, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
 import {
   ACCRUAL_OPTIONS,
   AMORTIZATION_OPTIONS,
@@ -21,6 +21,7 @@ import {
   ROUNDING_OPTIONS,
 } from "../../lib/vocabulary";
 import { DateField, FeatureSwitch, IntegerField, SelectField, TextField } from "../fields";
+import { DueDateSettings } from "./DueDateSettings";
 
 /**
  * Calculation method (P1.3b T207; FR-221). Every config v1 convention, kept
@@ -57,6 +58,8 @@ export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState
   const profile = sim.profile;
   const accrual = profile.accrual === "daily-simple" ? "Daily interest" : profile.accrual === "daily-compounded" ? "Daily compounded interest" : "Periodic interest";
   const derivation = profile.repaymentDerivation === "annuity-at-payment-frequency" ? null : labelOf(REPAYMENT_DERIVATION_OPTIONS, profile.repaymentDerivation);
+  const businessDays = activeBusinessDays(sim) ? "Business-day due dates" : null;
+  const statement = activeLenderStatement(sim) ? "Interest to due date" : null;
   return (
     <button
       type="button"
@@ -69,7 +72,7 @@ export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState
         <span className="block truncate text-xs text-foreground">
           {profile.accrual === "per-period" ? labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote) : labelOf(DAY_COUNT_OPTIONS, profile.dayCount)} · {labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency)}
         </span>
-        <span className="block truncate text-[11px] text-muted-foreground">{[accrual, labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation].filter(Boolean).join(" · ")}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{[accrual, labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation, businessDays, statement].filter(Boolean).join(" · ")}</span>
       </div>
     </button>
   );
@@ -203,6 +206,8 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
               <FeatureSwitch label="The contract allows negative amortization" description="Unpaid interest may be added to the loan when a repayment does not cover it." checked={p.negativeAmortizationAllowed} onChange={(on) => set({ negativeAmortizationAllowed: on })} />
             </div>
           </fieldset>
+
+          {daily ? <DueDateSettings sim={sim} change={change} /> : null}
 
           <fieldset aria-label="Precision and rounding" className="flex min-w-0 flex-col gap-2 rounded-lg border p-4 lg:col-span-2">
             <legend className="px-1 text-sm font-semibold">
