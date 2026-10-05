@@ -121,7 +121,18 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     const blockers: PostingReason[] = [...baseBlockers(ctx)];
     const reviews: PostingReason[] = decision.reasons.filter((code) => code !== "reconciled-row-read-only").map(existingStructureReason);
     if (row.reconciled) blockers.push(REASONS.reconciledRow);
-    if (row.transferId) blockers.push(existingStructureReason("embedded-interest-transfer-needs-split"), { code: "existing-transfer-not-restructured", text: "The payment is already a transfer; Bench does not restructure an existing transfer. Convert it in Actual, then re-run." });
+    // T279: a payment that is already a transfer is split only when its loan-side row is exactly as
+    // Actual made it; Actual deletes that row on the split and Undo re-creates it (with a new id).
+    let replacesCounterpart: RowSnapshot | null = null;
+    if (row.transferId) {
+      const verdict = transferCounterpartVerdict(ctx, row);
+      if (verdict.ok) {
+        replacesCounterpart = verdict.counterpart;
+        reviews.push(REASONS.replacesCounterpart);
+      } else {
+        blockers.push(verdict.reason);
+      }
+    }
     if (match.status === "unsafe") blockers.push(...evaluation.unsafeReasons.map((code) => ({ code, text: `The matched row is unsafe to change (${code}). Resolve it in Actual, then re-run.` })));
     if (!ctx.canRestructure) blockers.push({ code: "restructure-unavailable", text: "This connection cannot restructure transactions. Use a supported Actual Bench connection." });
 
@@ -154,7 +165,7 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
 
     out.postings.push(finalize(ctx, {
       postingKind: "repayment-split", periodKey: date, shape: "restructure", generation: generationFor(ctx, "repayment-split", date), marker: null,
-      inputSnapshot: { ...inputSnapshot(ctx, period, [row], { lenderFeed }), ...(observedRepayments ? { observedRepayments } : {}) },
+      inputSnapshot: { ...inputSnapshot(ctx, period, replacesCounterpart ? [row, replacesCounterpart] : [row], { lenderFeed }), ...(observedRepayments ? { observedRepayments } : {}) },
       outputSnapshot: {
         format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "restructure",
         before: row,
@@ -163,12 +174,40 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
         accountBudgetStatus: budgetStatusOf(ctx, [row.accountId, ctx.debt.liabilityAccountId]),
         components,
         closing,
+        ...(replacesCounterpart ? { replacesCounterpart } : {}),
       },
       engineVersions: versions,
       policy: { blockers, reviews },
     }));
   }
   return out;
+}
+
+/**
+ * Whether an existing transfer's loan-side row may be replaced (T279). The
+ * same rule the write layer enforces (`untouchedCounterpartProblems`): Actual
+ * made it and nobody touched it, so the counterpart Undo re-creates is the
+ * same row in everything but its id. An imported row (the lender's) is never
+ * replaced: splitting would delete it and Undo could not bring it back.
+ */
+function transferCounterpartVerdict(ctx: PlanningContext, payment: RowSnapshot): { ok: true; counterpart: RowSnapshot } | { ok: false; reason: PostingReason } {
+  const counterpart = payment.transferId ? ctx.rows.get(payment.transferId) : undefined;
+  if (!counterpart) return { ok: false, reason: { code: "counterpart-not-visible", text: "The payment is already a transfer, but Bench cannot see its loan-side row. Widen the preview window, or check the transfer in Actual." } };
+  if (counterpart.accountId !== ctx.debt.liabilityAccountId) return { ok: false, reason: { code: "transfer-elsewhere", text: "The payment is a transfer to a different account than this loan. Fix it in Actual, then re-run." } };
+  if (counterpart.importedId || counterpart.importedPayee) return { ok: false, reason: REASONS.lenderCounterpartProtected };
+  if (ctx.candidates.some((c) => c.id === counterpart.id && c.postingLinked)) return { ok: false, reason: REASONS.alreadyLinked };
+  const problems: string[] = [];
+  if (counterpart.reconciled) problems.push("it is reconciled");
+  if (counterpart.cleared) problems.push("it is cleared");
+  if (counterpart.categoryId) problems.push("it has a category");
+  if (counterpart.isParent || counterpart.isChild) problems.push("it is split");
+  if (counterpart.amountMinor !== -payment.amountMinor || counterpart.date !== payment.date) problems.push("its amount or date differs");
+  if ((counterpart.notes ?? null) !== (payment.notes ?? null)) problems.push("its notes were edited");
+  if (counterpart.payeeId !== ctx.transferPayeeByAccount[payment.accountId]) problems.push("its payee was changed");
+  if (problems.length) {
+    return { ok: false, reason: { code: "counterpart-edited", text: `The payment is already a transfer whose loan-side row was changed in Actual (${problems.join("; ")}). Splitting would delete that row and Undo could not bring the changes back. Undo those edits or remove the transfer in Actual, then re-run.` } };
+  }
+  return { ok: true, counterpart };
 }
 
 type SplitPlan = { ok: true; children: ChildSpec[] } | { ok: false; blockers: PostingReason[] };
@@ -181,10 +220,13 @@ export function splitChildren(ctx: PlanningContext, row: RowSnapshot, amounts: {
   const sorted = [...ctx.components].sort((a, b) => a.order - b.order);
   const children: ChildSpec[] = [];
   const { parts: nonPrincipal, blockers } = nonPrincipalParts(ctx, amounts);
+  // A payment that is already a transfer (T279) has the loan's transfer payee; no other line may
+  // inherit it, or Actual would make it a transfer too.
+  const linePayee = Object.values(ctx.transferPayeeByAccount).includes(row.payeeId ?? "") ? null : row.payeeId;
   for (const part of nonPrincipal) {
     const category = paymentChildCategory(payment, part.component?.categoryId ?? null, part.component?.label.toLowerCase() ?? part.kind);
     if (!category.ok) blockers.push({ code: category.code, text: category.text });
-    children.push({ economicKind: part.kind, amountMinor: sign * part.amount, categoryId: category.ok ? category.categoryId : null, payeeId: row.payeeId, transferAccountId: null, notes: part.component?.label ?? labelFor(part.kind) });
+    children.push({ economicKind: part.kind, amountMinor: sign * part.amount, categoryId: category.ok ? category.categoryId : null, payeeId: linePayee, transferAccountId: null, notes: part.component?.label ?? labelFor(part.kind) });
   }
   const principal = row.amountMinor - children.reduce((sum, c) => sum + c.amountMinor, 0);
   if (Math.sign(principal) !== sign || principal === 0) blockers.push(REASONS.invalidPrincipal);
@@ -198,7 +240,7 @@ export function splitChildren(ctx: PlanningContext, row: RowSnapshot, amounts: {
     amountMinor: principal,
     categoryId: principalCategory.ok ? principalCategory.categoryId : null,
     // With a lender feed the principal child is linked to the lender row in a second, reviewed step.
-    payeeId: lenderFeed ? row.payeeId : transferPayee ?? null,
+    payeeId: lenderFeed ? linePayee : transferPayee ?? null,
     transferAccountId: lenderFeed ? null : liability.id,
     notes: principalComponent?.label ?? "Principal",
   });

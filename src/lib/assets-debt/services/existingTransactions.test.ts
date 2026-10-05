@@ -25,14 +25,21 @@ describe("existing-transaction safety matrix", () => {
     expect(split.reasons.map((r) => r.code)).toContain("user-category-would-be-replaced");
   });
 
-  it("full transfer already (embedded interest): Blocked, an existing transfer is never restructured", async () => {
-    const s = embedded();
-    const counterpart = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-01", amount: 242915, payee: s.fake.transferPayeeId(ACCOUNTS.checking) });
-    s.seedPayment("2024-02-01", -242915, { payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), transfer_id: counterpart });
-    s.fake.row(counterpart)!.transfer_id = s.fake.rows().find((r) => r.imported_id === "bank:2024-02-01")!.id;
-    s.db.prepare("UPDATE debt_match_rules SET conditions_json = replace(conditions_json, ?, ?) WHERE purpose = 'repayment'").run(`"payeeId":"${LENDER}"`, `"payeeId":"${s.fake.transferPayeeId(ACCOUNTS.mortgage)}"`);
-    const [split] = byKind((await s.preview(window)).postings, "repayment-split");
-    expect(split).toMatchObject({ classification: "blocked" });
+  it("full transfer already (embedded interest): Review when the loan-side row is Actual's own and untouched (T279); Blocked when it was imported", async () => {
+    for (const imported of [false, true]) {
+      const s = embedded();
+      const counterpart = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-01", amount: 242915, payee: s.fake.transferPayeeId(ACCOUNTS.checking), ...(imported ? { imported_id: "lender:feed", imported_payee: "LENDER", cleared: true } : {}) });
+      s.seedPayment("2024-02-01", -242915, { payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), transfer_id: counterpart });
+      s.fake.row(counterpart)!.transfer_id = s.fake.rows().find((r) => r.imported_id === "bank:2024-02-01")!.id;
+      s.db.prepare("UPDATE debt_match_rules SET conditions_json = replace(conditions_json, ?, ?) WHERE purpose = 'repayment'").run(`"payeeId":"${LENDER}"`, `"payeeId":"${s.fake.transferPayeeId(ACCOUNTS.mortgage)}"`);
+      const [split] = byKind((await s.preview(window)).postings, "repayment-split");
+      if (imported) {
+        expect(split).toMatchObject({ classification: "blocked", reasons: expect.arrayContaining([expect.objectContaining({ code: "imported-counterpart-protected" })]) });
+      } else {
+        expect(split).toMatchObject({ classification: "review", reasons: expect.arrayContaining([expect.objectContaining({ code: "replaces-transfer-counterpart" })]) });
+      }
+      resetAppDbForTests();
+    }
   });
 
   it("manual split already: never claimed as a parent and never restructured", async () => {

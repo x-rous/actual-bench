@@ -2,7 +2,7 @@ import type { PostingReason } from "@/lib/app-db/types";
 import { chargeCategory, openingAdjustmentCategory } from "../../actual/representation";
 import { REASONS } from "../../classification/policy";
 import { buildPostingMarker } from "../../markers";
-import { POSTING_OUTPUT_FORMAT, POSTING_OUTPUT_FORMAT_VERSION, type CreateOperation } from "../snapshot";
+import { POSTING_OUTPUT_FORMAT, POSTING_OUTPUT_FORMAT_VERSION, type CreateOperation, type PostingOutputSnapshot, type RowSnapshot } from "../snapshot";
 import {
   baseBlockers,
   budgetStatusOf,
@@ -157,18 +157,20 @@ export function planFeeCharges(ctx: PlanningContext): PlannedPosting[] {
 }
 
 /**
- * A compensating reversal proposal for an applied posting (FR-184, T132).
- * Creates: the same rows negated, under the reversal's own marker
+ * A compensating reversal proposal for an applied posting (FR-184, T132, T276,
+ * T277). Creates: the same rows negated, under the reversal's own marker
  * (`…:reversal:<postingId>:g1`). Claims: release the Bench link (no Actual
- * write). Restructures and counterpart links cannot be undone automatically:
- * restoring a split is not verified against a live server, so the proposal is
- * Blocked with the next action instead of guessing.
+ * write). Restructures, counterpart links and conversions restore the original
+ * rows exactly, by the sequences proven on a live server (see
+ * `src/lib/actual/transactionStructure.ts`). Every reversal is a Review
+ * proposal the user applies explicitly.
  */
 export function planReversal(ctx: PlanningContext, original: ExistingPostingSummary, extraReasons: PostingReason[] = []): PlannedPosting {
   const periodKey = original.id;
   const generation = 1;
   const output = original.outputSnapshot;
   const period = { key: periodKey, from: ctx.today, to: ctx.today, chargeDates: [] as string[] };
+  const common = { postingKind: "reversal" as const, periodKey, generation, reversalOf: original.id, engineVersions: {} };
   if (output.kind === "create") {
     const marker = buildPostingMarker({ budgetSyncId: ctx.debt.budgetSyncId, subjectId: ctx.debt.id, postingKind: "reversal", periodKey, generation });
     const operations = output.operations.map((op, index) => ({
@@ -178,36 +180,121 @@ export function planReversal(ctx: PlanningContext, original: ExistingPostingSumm
       importedId: output.operations.length > 1 ? `${marker}:${index}` : marker,
     }));
     return finalize(ctx, {
-      postingKind: "reversal", periodKey, shape: "create", generation, marker, reversalOf: original.id,
+      ...common, shape: "create", marker,
       inputSnapshot: inputSnapshot(ctx, period, [], { reversalOf: original.id }),
       outputSnapshot: { ...output, operations, components: output.components.map((c) => ({ ...c })) },
-      engineVersions: {},
       policy: { reviews: extraReasons },
     });
   }
   if (output.kind === "claim") {
     return finalize(ctx, {
-      postingKind: "reversal", periodKey, shape: "claim", generation, marker: null, reversalOf: original.id,
+      ...common, shape: "claim", marker: null,
       inputSnapshot: inputSnapshot(ctx, period, output.rows, { reversalOf: original.id }),
       outputSnapshot: { ...output, release: { postingId: original.id } },
-      engineVersions: {},
       policy: { reviews: extraReasons },
     });
   }
+  const ids = original.actualIds ?? [];
+  const blockers: PostingReason[] = [];
+  if (!ctx.canRestructure) blockers.push({ code: "restore-unavailable", text: "This connection cannot change existing transactions. Use a supported Actual Bench connection." });
+  const head = { format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION } as const;
+  if (output.kind === "restructure") {
+    const children = appliedChildren(ctx, output, ids);
+    // Pattern A with a lender feed: the principal line is linked to the lender's row; that link goes first.
+    const linked = ctx.postings.some((p) => p.status === "applied" && p.outputSnapshot.kind === "link" && children.some((c) => c.id === (p.outputSnapshot as { sourceBefore: RowSnapshot }).sourceBefore.id));
+    if (linked) blockers.push(REASONS.undoLinkFirst);
+    if (ids.length === 0) blockers.push({ code: "applied-ids-missing", text: "Bench has no record of the rows this split wrote. Restore the transaction in Actual using the before state shown here." });
+    const parent: RowSnapshot = { ...output.before, categoryId: null, transferId: null, isParent: true, childCount: children.length };
+    const restoreOutput: PostingOutputSnapshot = {
+      ...head, kind: "restore-split", parent, children,
+      counterpartAccountIds: [...new Set(output.expectedPostState.children.map((c) => c.transferAccountId).filter((id): id is string => id !== null))],
+      restoreTo: output.before,
+      recreatedCounterpart: output.replacesCounterpart ?? null,
+      closing: null,
+    };
+    return finalize(ctx, {
+      ...common, shape: "restructure", marker: null,
+      inputSnapshot: inputSnapshot(ctx, period, [parent, ...children], { reversalOf: original.id }),
+      outputSnapshot: restoreOutput,
+      policy: { blockers, reviews: [...extraReasons, ...(output.replacesCounterpart ? [{ code: "recreates-counterpart", text: "Undoing the split makes the payment a full transfer again; Actual re-creates the loan-side row with a new id." }] : [])] },
+    });
+  }
+  if (output.kind === "link") {
+    const { sourceBefore, counterpartBefore } = output;
+    const sameStatus = budgetStatus(ctx, sourceBefore.accountId) === budgetStatus(ctx, counterpartBefore.accountId);
+    const source: RowSnapshot = { ...sourceBefore, payeeId: output.transferPayeeId, notes: counterpartBefore.notes, transferId: counterpartBefore.id, categoryId: sameStatus ? null : sourceBefore.categoryId };
+    const counterpart: RowSnapshot = {
+      ...counterpartBefore, payeeId: ctx.transferPayeeByAccount[sourceBefore.accountId] ?? null, notes: counterpartBefore.notes,
+      amountMinor: output.expectedPairState.counterpartAmountMinor, transferId: sourceBefore.id, categoryId: sameStatus ? null : counterpartBefore.categoryId,
+    };
+    return finalize(ctx, {
+      ...common, shape: "link", marker: null,
+      inputSnapshot: inputSnapshot(ctx, period, [source, counterpart], { reversalOf: original.id }),
+      outputSnapshot: { ...head, kind: "unlink", source, counterpart, sourceRestore: sourceBefore, counterpartRestore: counterpartBefore, closing: null },
+      policy: { blockers, reviews: extraReasons },
+    });
+  }
+  if (output.kind === "convert") {
+    const payment = output.before;
+    const counterpartId = ids[1] ?? null;
+    if (!counterpartId) blockers.push({ code: "applied-ids-missing", text: "Bench has no record of the loan-side row Actual made. Change the payment's payee back in Actual." });
+    const sameStatus = budgetStatus(ctx, payment.accountId) === budgetStatus(ctx, output.transferAccountId);
+    const converted: RowSnapshot = { ...payment, payeeId: output.transferPayeeId, transferId: counterpartId, categoryId: sameStatus ? null : payment.categoryId };
+    const counterpart: RowSnapshot = {
+      id: counterpartId ?? "", accountId: output.transferAccountId, date: payment.date, amountMinor: -payment.amountMinor,
+      payeeId: ctx.transferPayeeByAccount[payment.accountId] ?? null, payeeName: null, categoryId: null, notes: payment.notes,
+      cleared: false, reconciled: false, importedId: null, importedPayee: null, transferId: payment.id,
+      isParent: false, isChild: false, parentId: null, childCount: 0,
+    };
+    return finalize(ctx, {
+      ...common, shape: "convert", marker: null,
+      inputSnapshot: inputSnapshot(ctx, period, [converted, counterpart], { reversalOf: original.id }),
+      outputSnapshot: { ...head, kind: "revert-convert", converted, counterpart, restoreTo: payment, closing: null },
+      policy: { blockers, reviews: extraReasons },
+    });
+  }
+  // An Undo is never reversed again; a new correction is planned instead.
   return finalize(ctx, {
-    postingKind: "reversal", periodKey, shape: output.kind === "link" ? "link" : "restructure", generation, marker: null, reversalOf: original.id,
+    ...common, shape: "restructure", marker: null,
     inputSnapshot: inputSnapshot(ctx, period, [], { reversalOf: original.id }),
     outputSnapshot: output,
-    engineVersions: {},
-    policy: {
-      blockers: [{
-        code: "manual-restore-required",
-        text: output.kind === "link"
-          ? "Bench cannot unlink a transfer pair automatically. Remove the link in Actual, then re-run."
-          : "Bench cannot restore a split automatically yet. Restore the original transaction in Actual using the before state shown here, then re-run.",
-      }],
-    },
+    policy: { blockers: [{ code: "undo-not-reversible", text: "An undo is not undone again. Preview the period again to propose a new change." }] },
   });
+}
+
+function budgetStatus(ctx: PlanningContext, accountId: string): "on-budget" | "off-budget" | null {
+  const found = ctx.accounts.find((a) => a.id === accountId);
+  return found ? (found.offBudget ? "off-budget" : "on-budget") : null;
+}
+
+/**
+ * The split lines exactly as the applied restructure left them (verified at
+ * apply): ids from `actualIds` (parent, children, then the counterparts of
+ * transfer children, in order).
+ */
+function appliedChildren(ctx: PlanningContext, output: Extract<PostingOutputSnapshot, { kind: "restructure" }>, ids: string[]): RowSnapshot[] {
+  const spec = output.expectedPostState.children;
+  const counterpartIds = ids.slice(1 + spec.length);
+  let nextCounterpart = 0;
+  return spec.map((child, index) => ({
+    id: ids[index + 1] ?? "",
+    accountId: output.before.accountId,
+    date: output.before.date,
+    amountMinor: child.amountMinor,
+    payeeId: child.transferAccountId ? ctx.transferPayeeByAccount[child.transferAccountId] ?? child.payeeId : child.payeeId,
+    payeeName: null,
+    categoryId: child.categoryId,
+    notes: child.notes,
+    cleared: output.before.cleared,
+    reconciled: false,
+    importedId: null,
+    importedPayee: null,
+    transferId: child.transferAccountId ? counterpartIds[nextCounterpart++] ?? null : null,
+    isParent: false,
+    isChild: true,
+    parentId: output.before.id,
+    childCount: 0,
+  }));
 }
 
 export const ADJUSTMENT_REASONS = { opening: REASONS.openingAdjustment, reconciliation: REASONS.reconciliationAdjustment };

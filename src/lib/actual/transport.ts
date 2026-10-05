@@ -12,6 +12,14 @@ import type {
   RestructureSplitResult,
   RestructureVerification,
   StructureChild,
+  ConvertToTransferInput,
+  ConvertToTransferResult,
+  RestoreSplitInput,
+  RestoreSplitResult,
+  RevertTransferInput,
+  RevertTransferResult,
+  UnlinkTransferInput,
+  UnlinkTransferResult,
 } from "./transactionStructure";
 import type {
   Account,
@@ -487,6 +495,14 @@ export interface ActualBenchTransport {
     expected: ExpectedSplitState;
     transferPayeeByAccount: Record<string, string>;
   }): Promise<{ result: RestructureVerification; children: StructureChild[] }>;
+  /** Undo a restructure: delete the children one at a time, then restore the parent (T276). */
+  restoreSplit?(input: RestoreSplitInput): Promise<RestoreSplitResult>;
+  /** Undo a counterpart link: detach the counterpart, then restore the source (T276). */
+  unlinkTransfer?(input: UnlinkTransferInput): Promise<UnlinkTransferResult>;
+  /** Make an existing payment the loan transfer by its payee (T277). */
+  convertToTransfer?(input: ConvertToTransferInput): Promise<ConvertToTransferResult>;
+  /** Undo a conversion: the payment's own payee back; Actual deletes its counterpart (T277). */
+  revertTransferConversion?(input: RevertTransferInput): Promise<RevertTransferResult>;
   /** Whether reads report `transfer_id`; without it a link cannot be verified and is Blocked (R-07). */
   canVerifyTransferLinks?(input: { accountId: string; sinceDate: string }): Promise<boolean>;
   /** Load target payees + existing sync markers for dedupe/apply checks. */

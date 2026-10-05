@@ -19,6 +19,20 @@
  * 4. category clearing: off-budget rows never keep a category, and a transfer
  *    between two on-budget accounts keeps none on either side.
  *
+ * Live-calibrated in P1.6 (`__fixtures__/p1.6-undo-evidence.json`, Actual 26.10.0,
+ * identical in Direct and HTTP):
+ * 5. `onUpdate` without a transfer payee but with a `transfer_id` removes the
+ *    transfer: a counterpart that is a split child loses its transfer id and
+ *    payee; any other counterpart is deleted. Setting `transfer_id: null` in
+ *    the same write detaches the row and touches nothing else.
+ * 6. Deleting a row runs the same removal for its transfer. Deleting a split
+ *    child leaves the parent a split while children remain; deleting the last
+ *    child makes the parent an ordinary row again with its own category (a
+ *    split parent keeps its category stored; reads show none), and Actual's
+ *    update rule then runs on it (a transfer payee re-creates a counterpart).
+ * 7. A row that becomes a split parent loses its transfer: its existing
+ *    counterpart is deleted.
+ *
  * Test facilities only (not calibrated): split grouping for
  * `updateTransaction(id, { subtransactions })`, and a crash injection point
  * before or after the next write.
@@ -29,7 +43,7 @@
 
 export type FakeAccountSpec = { id: string; name: string; offbudget?: boolean };
 export type FakeRow = Record<string, unknown> & { id: string; account: string; date: string; amount: number };
-export type CrashPoint = { phase: "before-write" | "after-write"; op: "insert" | "update"; times?: number };
+export type CrashPoint = { phase: "before-write" | "after-write"; op: "insert" | "update" | "delete"; times?: number };
 
 export class InjectedCrash extends Error {
   constructor(phase: string) {
@@ -64,13 +78,15 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
   const rows: FakeRow[] = [];
   let nextId = 1;
   let crash: CrashPoint | null = null;
-  const writes: Array<{ op: "insert" | "update"; id?: string; fields?: Record<string, unknown> }> = [];
+  const writes: Array<{ op: "insert" | "update" | "delete"; id?: string; fields?: Record<string, unknown> }> = [];
+  /** Behaviour 6: a split parent keeps its own category stored while reads show none. */
+  const parentCategory = new Map<string, unknown>();
 
   const accountOf = (id: string) => accounts.find((a) => a.id === id);
   const transferAccountOf = (payeeId: unknown): string | null => payees.find((p) => p.id === payeeId)?.transfer_acct ?? null;
   const find = (id: unknown) => rows.find((r) => r.id === id);
 
-  function maybeCrash(op: "insert" | "update", phase: CrashPoint["phase"]): void {
+  function maybeCrash(op: "insert" | "update" | "delete", phase: CrashPoint["phase"]): void {
     if (!crash || crash.op !== op || crash.phase !== phase) return;
     const remaining = (crash.times ?? 1) - 1;
     crash = remaining > 0 ? { ...crash, times: remaining } : null;
@@ -120,13 +136,54 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
     clearCategory(row);
   }
 
+  /** Behaviours 5–7: a child counterpart is detached; any other counterpart is deleted. */
+  function removeTransfer(row: FakeRow): void {
+    const counterpart = find(row.transfer_id);
+    if (counterpart) {
+      if (counterpart.is_child) {
+        counterpart.transfer_id = null;
+        counterpart.payee = null;
+      } else {
+        rows.splice(rows.indexOf(counterpart), 1);
+      }
+    }
+    row.transfer_id = null;
+  }
+
+  /** Actual's transfer update rule, in its own order (loot-core `transfer.onUpdate`). */
   function onUpdate(row: FakeRow): void {
-    if (!transferAccountOf(row.payee)) {
-      clearCategory(row);
+    const target = transferAccountOf(row.payee);
+    if (row.is_parent) {
+      if (row.transfer_id) removeTransfer(row);
       return;
     }
-    if (row.transfer_id) updateTransfer(row);
-    else addTransfer(row);
+    if (target && !row.transfer_id) addTransfer(row);
+    else if (!target && row.transfer_id) removeTransfer(row);
+    else if (target && row.transfer_id) updateTransfer(row);
+    else clearCategory(row);
+  }
+
+  /** Behaviour 6: Actual `deleteTransaction(id)`. */
+  function remove(id: string): void {
+    maybeCrash("delete", "before-write");
+    const row = find(id);
+    if (!row) throw new Error(`fake actual: no transaction ${id}`);
+    writes.push({ op: "delete", id });
+    const doomed = row.is_parent ? [row, ...rows.filter((r) => r.parent_id === row.id)] : [row];
+    for (const r of doomed) {
+      if (r.transfer_id) removeTransfer(r);
+      rows.splice(rows.indexOf(r), 1);
+    }
+    if (row.is_child) {
+      const parent = find(row.parent_id);
+      if (parent && !rows.some((r) => r.parent_id === parent.id)) {
+        parent.is_parent = false;
+        parent.category = parentCategory.get(parent.id) ?? null;
+        parentCategory.delete(parent.id);
+        onUpdate(parent);
+      }
+    }
+    maybeCrash("delete", "after-write");
   }
 
   function insert(accountId: string, input: Record<string, unknown>[], runTransfers: boolean): void {
@@ -164,8 +221,11 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
     if (subtransactions) {
       // Test facility: split grouping. Replace any children with exactly these.
       for (const old of rows.filter((r) => r.parent_id === row.id)) rows.splice(rows.indexOf(old), 1);
+      if (subtransactions.length > 0 && !row.is_parent) parentCategory.set(row.id, row.category ?? null);
       row.is_parent = subtransactions.length > 0;
       row.category = null;
+      // Behaviour 7: a new split parent loses its transfer.
+      if (row.is_parent && row.transfer_id) removeTransfer(row);
       const children: FakeRow[] = subtransactions.map(
         (sub) => ({ ...ROW_DEFAULTS, ...sub, id: `txn-${nextId++}`, account: row.account, date: row.date, cleared: row.cleared, is_child: true, parent_id: row.id }) as unknown as FakeRow
       );
@@ -210,6 +270,8 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
     crashOn(point: CrashPoint): void {
       crash = point;
     },
+    /** Delete a row as Actual does (behaviour 6). */
+    remove,
     /** Edit a row behind Bench's back, as a user in Actual would (runs Actual's update rule). */
     editInActual(id: string, fields: Record<string, unknown>): void {
       update(id, fields);
@@ -243,6 +305,10 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
         update(patch[1], (opts?.body as { transaction: Record<string, unknown> }).transaction);
         return { message: "ok" };
       }
+      if (patch && method === "DELETE") {
+        remove(patch[1]);
+        return { message: "ok" };
+      }
       throw new Error(`fake actual: unexpected request ${method} ${path}`);
     },
 
@@ -265,6 +331,10 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
           accountRows(accountId).filter((r) => (!start || r.date >= start) && (!end || r.date <= end)),
         updateTransaction: async (id: string, fields: Record<string, unknown>) => {
           update(id, fields);
+          return "ok";
+        },
+        deleteTransaction: async (id: string) => {
+          remove(id);
           return "ok";
         },
       };

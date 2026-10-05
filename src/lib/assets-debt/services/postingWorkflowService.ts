@@ -62,12 +62,17 @@ function outputOf(posting: FinancialPostingRecord): PostingOutputSnapshot {
   return JSON.parse(posting.outputSnapshotJson) as PostingOutputSnapshot;
 }
 
-function rowsToCheck(output: PostingOutputSnapshot): RowSnapshot[] {
+/** The rows a posting's preflight compares, as they must still be when it is applied (FR-162). */
+export function rowsToCheck(output: PostingOutputSnapshot): RowSnapshot[] {
   switch (output.kind) {
-    case "restructure": return [output.before];
+    case "restructure": return output.replacesCounterpart ? [output.before, output.replacesCounterpart] : [output.before];
     case "link": return [output.sourceBefore, output.counterpartBefore];
     case "claim": return output.release ? [] : output.rows;
     case "create": return [];
+    case "restore-split": return [output.parent, ...output.children];
+    case "unlink": return [output.source, output.counterpart];
+    case "convert": return [output.before];
+    case "revert-convert": return [output.converted, output.counterpart];
   }
 }
 
@@ -147,6 +152,7 @@ function linkRoles(posting: FinancialPostingRecord, output: PostingOutputSnapsho
       { id: output.counterpartBefore.id, parentId: null, role: "lender-repayment-row" },
     ];
   }
+  if (output.kind === "convert") return [{ id: output.before.id, parentId: null, role: "repayment" }];
   return [];
 }
 
@@ -170,9 +176,9 @@ export function recordApplyOutcome(db: SqliteDatabase, postingId: string, outcom
       }, now);
     }
     if (posting.reversalOf) {
-      if (output.kind === "claim" && output.release) {
-        for (const link of listPostingTransactionLinks(db, posting.reversalOf)) deleteDebtTransactionLink(db, link.id);
-      }
+      // The reversed posting's rows are gone or restored: none of its links may outlive it, so no
+      // Bench reference points at a deleted Actual id (a re-created counterpart is in actualIds).
+      for (const link of listPostingTransactionLinks(db, posting.reversalOf)) deleteDebtTransactionLink(db, link.id);
       markPostingReversed(db, posting.reversalOf, now);
     }
     return postingView(applied);
@@ -197,8 +203,11 @@ export function proposeReversal(
   if (!original) throw new AppDbValidationError("Posting not found");
   if (original.status !== "applied") throw new AppDbValidationError("Only an applied posting can be reversed");
   if (original.reversalOf) throw new AppDbValidationError("A reversal is not reversed; apply a new correction instead");
+  // An Undo already approved or under way is the one; an undecided proposal is planned again, since
+  // what blocked it (for example a link that had to be undone first) may be resolved now.
   const pending = findReversalProposal(db, postingId);
-  if (pending) return postingView(pending);
+  if (pending && pending.status !== "proposed") return postingView(pending);
+  if (pending) supersedePosting(db, pending.id, now);
   const built = buildPlanningContext(db, original.subjectId, {
     from: input.today, to: input.today, today: input.today, accountDirectory: input.accountDirectory, transferPayees: input.transferPayees,
     capabilities: { canRestructure: true, canVerifyTransferLinks: true },

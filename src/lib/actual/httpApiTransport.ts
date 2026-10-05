@@ -71,6 +71,10 @@ import {
   readsReportTransferIds,
   restructureAsSplit,
   verifySplit,
+  convertToTransfer,
+  restoreSplit,
+  revertTransferConversion,
+  unlinkTransfer,
 } from "./transactionStructure";
 import type { HttpApiConnection } from "@/store/connection";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
@@ -226,6 +230,10 @@ export function createHttpApiTransport(
     completeTransferLink: (input) => completeTransferLink(httpStructurePrimitives(connection), input),
     inspectTransferLink: (input) => inspectTransferLink(httpStructurePrimitives(connection), input),
     verifyRestructure: (input) => verifySplit(httpStructurePrimitives(connection), input),
+    restoreSplit: (input) => restoreSplit(httpStructurePrimitives(connection), input),
+    unlinkTransfer: (input) => unlinkTransfer(httpStructurePrimitives(connection), input),
+    convertToTransfer: (input) => convertToTransfer(httpStructurePrimitives(connection), input),
+    revertTransferConversion: (input) => revertTransferConversion(httpStructurePrimitives(connection), input),
     canVerifyTransferLinks: (input) => readsReportTransferIds(httpStructurePrimitives(connection), input.accountId, input.sinceDate),
 
     getNotesIndex: () => getNotesIndex(connection),

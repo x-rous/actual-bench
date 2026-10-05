@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalJson } from "@/lib/app-db/canonicalJson";
@@ -12,8 +12,8 @@ import { actualRowsToPreviewRows, renderPreviewRows, type PreviewDirectory } fro
 import type { BrowserApiConnection, HttpApiConnection } from "@/store/connection";
 import { readAccountDirectory, readMatchingHistory } from "./actual/ledgerPort";
 import { executeApprovedPosting } from "./services/applyService";
-import { createDebtConfiguration } from "./services/debtConfigService";
-import { approveAndBeginApply, recordApplyOutcome } from "./services/postingWorkflowService";
+import { archiveDebtConfiguration, createDebtConfiguration } from "./services/debtConfigService";
+import { approveAndBeginApply, proposeReversal, recordApplyOutcome, rowsToCheck } from "./services/postingWorkflowService";
 import { previewDebtPostings, type PostingView } from "./services/proposalService";
 import { indexReadRows, type RowSnapshot } from "./services/snapshot";
 import { debtConfig, saveInput } from "./testing/debtFixtures";
@@ -55,6 +55,10 @@ type Budget = { budgetSyncId: string; accounts: { checking: string; mortgage: st
 type Mode = { name: "direct" | "http"; budget: Budget; transport: ActualBenchTransport };
 
 const run = Date.now().toString(36);
+/** RD084_SPIKE_TRACE=yes: progress on stderr (console is mocked), to see where a slow live run is. */
+const trace = (message: string) => {
+  if (env.RD084_SPIKE_TRACE === "yes") process.stderr.write(`[p16-live] ${message}\n`);
+};
 const linkAction = canonicalJson({ format: "rd084.debt-match-actions", version: 1, items: [{ kind: "link-repayment" }] });
 const conditions = (items: unknown[]) => canonicalJson({ format: "rd084.debt-match-conditions", version: 1, operator: "all", items: [...items, { kind: "bench-marker", value: "exclude" }, { kind: "posting-link", value: "exclude" }] });
 
@@ -84,6 +88,8 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
   });
 
   afterAll(async () => {
+    // RD084_SPIKE_EVIDENCE: the rows each mode showed and read back (parity evidence, no ids or secrets).
+    if (env.RD084_SPIKE_EVIDENCE) writeFileSync(env.RD084_SPIKE_EVIDENCE, JSON.stringify({ observedAt: new Date().toISOString(), observed }, null, 2));
     await closeNodeRuntime();
     __resetNodeHostForTests();
     resetAppDbForTests();
@@ -95,8 +101,46 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
     }
   });
 
-  async function setup(mode: Mode, pattern: "embedded-interest" | "separate-interest") {
+  /** One live debt per liability account: the previous scenario's debt is archived first. */
+  const created: Record<string, string[]> = { direct: [], http: [] };
+
+  /**
+   * Each scenario starts from an empty preview window in the disposable budget, so rows left by an
+   * earlier run can never be a second candidate. Only ever runs on an "RD084 Spike" budget.
+   */
+  async function clearWindow(mode: Mode) {
+    const accounts = [mode.budget.accounts.checking, mode.budget.accounts.mortgage];
+    const read = async () => JSON.stringify(await Promise.all(accounts.map((accountId) => mode.transport.listTransactionsForSync({ accountId, startDate: "2024-01-15", endDate: "2024-03-15" }))));
+    // A Direct delete resolves before it lands, and a write started inside that window deadlocks the
+    // runtime (P1.0 R-18): wait until two reads agree after each delete.
+    const settle = async () => {
+      if (mode.name !== "direct") return;
+      let last = await read();
+      for (let i = 0; i < 50; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        const next = await read();
+        if (next === last) return;
+        last = next;
+      }
+    };
+    // Never write while the budget just opened is still settling (R-18).
+    await settle();
+    for (const accountId of accounts) {
+      for (;;) {
+        const rows = await mode.transport.listTransactionsForSync({ accountId, startDate: "2024-01-15", endDate: "2024-03-15" });
+        if (rows.length === 0) break;
+        trace(`${mode.name}: clearing ${rows[0].id} (${rows.length} left in ${accountId === accounts[0] ? "checking" : "mortgage"})`);
+        await mode.transport.deleteTransactionForSync({ transactionId: rows[0].id });
+        trace(`${mode.name}: deleted ${rows[0].id}`);
+        await settle();
+      }
+    }
+  }
+
+  async function setup(mode: Mode, pattern: "embedded-interest" | "separate-interest", options: { lenderFeed?: boolean; anyPayee?: boolean } = {}) {
     const { transport, budget } = mode;
+    for (const id of created[mode.name].splice(0)) archiveDebtConfiguration(db, id);
+    await clearWindow(mode);
     const directory = await readAccountDirectory(transport, budget.budgetSyncId);
     const lenderName = `RD084 Live Lender ${mode.name} ${pattern} ${run}`;
     await transport.createOrResolvePayee({ name: lenderName });
@@ -117,9 +161,10 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
       liabilityAccountId: budget.accounts.mortgage, paymentAccountId: budget.accounts.checking, loanPaymentCategoryId: budget.categories.loanPayment, config,
     }), directory);
     const debtId = detail.debt.id;
+    created[mode.name].push(debtId);
     insertDebtMatchRule(db, debtId, { purpose: "repayment", ruleFormatVersion: 1, enabled: true, actionsJson: linkAction,
-      conditionsJson: conditions([{ kind: "source-account", accountId: budget.accounts.checking }, { kind: "payee", operator: "exact", payeeId: lender }, { kind: "expected-date", daysBefore: 3, daysAfter: 3 }]) });
-    if (pattern === "embedded-interest") {
+      conditionsJson: conditions([{ kind: "source-account", accountId: budget.accounts.checking }, ...(options.anyPayee ? [] : [{ kind: "payee", operator: "exact", payeeId: lender }]), { kind: "expected-date", daysBefore: 3, daysAfter: 3 }]) });
+    if (pattern === "embedded-interest" && options.lenderFeed !== false) {
       insertDebtMatchRule(db, debtId, { purpose: "lender-repayment-row", ruleFormatVersion: 1, enabled: true, actionsJson: linkAction,
         conditionsJson: conditions([{ kind: "source-account", accountId: budget.accounts.mortgage }, { kind: "payee", operator: "exact", payeeId: lender }, { kind: "expected-date", daysBefore: 5, daysAfter: 5 }]) });
     }
@@ -134,8 +179,7 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
       return result.postings;
     }
     async function apply(posting: PostingView) {
-      const output = posting.output;
-      const targets: RowSnapshot[] = output.kind === "restructure" ? [output.before] : output.kind === "link" ? [output.sourceBefore, output.counterpartBefore] : [];
+      const targets: RowSnapshot[] = rowsToCheck(posting.output);
       const fresh: RowSnapshot[] = [];
       for (const t of targets) {
         const row = indexReadRows(await transport.listTransactionsForSync({ accountId: t.accountId, startDate: t.date })).get(t.id);
@@ -157,12 +201,25 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
         if (output.kind === "create") return read.find((r) => r.importedId === output.operations[index].importedId)?.id ?? null;
         if (output.kind === "link") return index === 0 ? output.sourceBefore.id : output.counterpartBefore.id;
         if (output.kind === "restructure") return ids[index] ?? null;
+        // Undo and conversion rows are existing rows by id; Actual's new loan-side row is the second id.
+        if (row.key.endsWith("counterpart")) return ids[1] ?? null;
         return row.key;
       });
       expect(back).toEqual(shown);
       return shown;
     }
-    return { lender, preview, apply, parity };
+    /** The user's Undo: a reversal proposal, applied through the same path as any posting. */
+    function undo(posting: PostingView) {
+      return proposeReversal(db, posting.id, { accountDirectory: directory, transferPayees, today: "2024-03-15" });
+    }
+    /** Every field an exact restoration compares, read back through Bench's transport. */
+    async function snap(accountId: string, id: string): Promise<RowSnapshot | null> {
+      return indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: "2024-01-01" })).get(id) ?? null;
+    }
+    async function ids(accountId: string): Promise<string[]> {
+      return [...indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: "2024-01-15", endDate: "2024-03-15" })).keys()].sort();
+    }
+    return { lender, preview, apply, parity, undo, snap, ids, transferPayees };
   }
 
   it("Pattern A with a lender feed: restructure then link; one liability-side row; live preview parity", async () => {
@@ -195,5 +252,124 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
       observed[mode.name].patternB = (await s.parity(charge, applied)).map((r) => [r.categoryName, r.amountMinor]);
     }
     expect(observed.http.patternB).toEqual(observed.direct.patternB);
+  });
+
+  const without = (row: RowSnapshot | null, ...keys: (keyof RowSnapshot)[]) => (row ? Object.fromEntries(Object.entries(row).filter(([k]) => !keys.includes(k as keyof RowSnapshot))) : null);
+
+  it("T276: Undo of a split (no lender feed) restores the payment exactly and removes the loan-side row; live parity", async () => {
+    for (const mode of modes) {
+      const s = await setup(mode, "embedded-interest", { lenderFeed: false });
+      const created = await mode.transport.createTransactionsForSync([{ accountId: mode.budget.accounts.checking, date: "2024-02-01", amount: -242915, payeeId: s.lender, categoryId: mode.budget.categories.loanPayment, notes: "bank note", importedId: `p16:t276a:${mode.name}:${run}`, importedPayee: "HOME LENDER", cleared: true }]);
+      const id = created.created[0].transactionId!;
+      const before = await s.snap(mode.budget.accounts.checking, id);
+      const liabilityBefore = await s.ids(mode.budget.accounts.mortgage);
+      const [split] = (await s.preview()).filter((p) => p.postingKind === "repayment-split");
+      const applied = await s.apply(split);
+      expect(applied.status).toBe("applied");
+      const reversal = s.undo(applied);
+      expect(reversal).toMatchObject({ classification: "review", output: expect.objectContaining({ kind: "restore-split" }) });
+      const undone = await s.apply(reversal);
+      expect(undone.status).toBe("applied");
+      expect(await s.snap(mode.budget.accounts.checking, id)).toEqual(before);
+      expect(await s.ids(mode.budget.accounts.mortgage)).toEqual(liabilityBefore);
+      observed[mode.name].t276a = (await s.parity(reversal, undone)).map((r) => [r.categoryName, r.amountMinor, r.cleared]);
+    }
+    expect(observed.http.t276a).toEqual(observed.direct.t276a);
+  });
+
+  it("T276: with a lender feed, Undo of the link then of the split restores both rows exactly; live parity", async () => {
+    for (const mode of modes) {
+      const s = await setup(mode, "embedded-interest");
+      const bank = (await mode.transport.createTransactionsForSync([{ accountId: mode.budget.accounts.checking, date: "2024-02-01", amount: -242915, payeeId: s.lender, categoryId: mode.budget.categories.loanPayment, importedId: `p16:t276b:bank:${mode.name}:${run}`, cleared: true }])).created[0].transactionId!;
+      const [split] = (await s.preview()).filter((p) => p.postingKind === "repayment-split");
+      if (split.output.kind !== "restructure") throw new Error("restructure");
+      const principal = -split.output.expectedPostState.children[0].amountMinor;
+      const lenderRow = (await mode.transport.createTransactionsForSync([{ accountId: mode.budget.accounts.mortgage, date: "2024-02-01", amount: principal, payeeId: s.lender, importedId: `p16:t276b:lender:${mode.name}:${run}`, notes: "lender import", importedPayee: "LENDER FEED", cleared: true }])).created[0].transactionId!;
+      trace(`${mode.name} t276b: const bankBefore = await s.snap(mode.budget.accounts.checkin`);
+      const bankBefore = await s.snap(mode.budget.accounts.checking, bank);
+      trace(`${mode.name} t276b: const lenderBefore = await s.snap(mode.budget.accounts.mortg`);
+      const lenderBefore = await s.snap(mode.budget.accounts.mortgage, lenderRow);
+      trace(`${mode.name} t276b: const appliedSplit = await s.apply(split);`);
+      const appliedSplit = await s.apply(split);
+      const [link] = (await s.preview()).filter((p) => p.postingKind === "repayment-link");
+      trace(`${mode.name} t276b: const appliedLink = await s.apply(link);`);
+      const appliedLink = await s.apply(link);
+      expect(appliedLink.status).toBe("applied");
+      expect(s.undo(appliedSplit)).toMatchObject({ classification: "blocked" });
+      trace(`${mode.name} t276b: const unlink = s.undo(appliedLink);`);
+      const unlink = s.undo(appliedLink);
+      trace(`${mode.name} t276b: const unlinked = await s.apply(unlink);`);
+      const unlinked = await s.apply(unlink);
+      expect(unlinked.status).toBe("applied");
+      expect(await s.snap(mode.budget.accounts.mortgage, lenderRow)).toEqual(lenderBefore);
+      trace(`${mode.name} t276b: const unlinkRows = await s.parity(unlink, unlinked);`);
+      const unlinkRows = await s.parity(unlink, unlinked);
+      trace(`${mode.name} t276b: const restore = s.undo(appliedSplit);`);
+      const restore = s.undo(appliedSplit);
+      trace(`${mode.name} t276b: const restored = await s.apply(restore);`);
+      const restored = await s.apply(restore);
+      expect(restored.status).toBe("applied");
+      expect(await s.snap(mode.budget.accounts.checking, bank)).toEqual(bankBefore);
+      expect(await s.snap(mode.budget.accounts.mortgage, lenderRow)).toEqual(lenderBefore);
+      observed[mode.name].t276b = { unlink: unlinkRows.map((r) => [r.categoryName, r.amountMinor]), restore: (await s.parity(restore, restored)).map((r) => [r.categoryName, r.amountMinor]) };
+    }
+    expect(observed.http.t276b).toEqual(observed.direct.t276b);
+  });
+
+  it("T277: without a lender feed an existing repayment becomes the loan transfer, and Undo reverts it exactly; live parity", async () => {
+    for (const mode of modes) {
+      const s = await setup(mode, "separate-interest");
+      const id = (await mode.transport.createTransactionsForSync([{ accountId: mode.budget.accounts.checking, date: "2024-02-01", amount: -242915, payeeId: s.lender, categoryId: mode.budget.categories.loanPayment, notes: "bank note", importedId: `p16:t277:${mode.name}:${run}`, importedPayee: "HOME LENDER", cleared: true }])).created[0].transactionId!;
+      const before = await s.snap(mode.budget.accounts.checking, id);
+      const liabilityBefore = await s.ids(mode.budget.accounts.mortgage);
+      const [convert] = (await s.preview()).filter((p) => p.postingKind === "repayment-link" && p.output.kind === "convert");
+      expect(convert.classification).toBe("review");
+      const applied = await s.apply(convert);
+      expect(applied.status).toBe("applied");
+      const shown = await s.parity(convert, applied);
+      const revert = s.undo(applied);
+      const reverted = await s.apply(revert);
+      expect(reverted.status).toBe("applied");
+      expect(await s.snap(mode.budget.accounts.checking, id)).toEqual(before);
+      expect(await s.ids(mode.budget.accounts.mortgage)).toEqual(liabilityBefore);
+      observed[mode.name].t277 = { convert: shown.map((r) => [r.payeeName.replace(/Live Lender \w+/, ""), r.categoryName, r.amountMinor, r.cleared]), revert: (await s.parity(revert, reverted)).map((r) => [r.categoryName, r.amountMinor]) };
+    }
+    expect(JSON.stringify(observed.http.t277).replace(/RD084 Live Lender [^"]+/g, "")).toEqual(JSON.stringify(observed.direct.t277).replace(/RD084 Live Lender [^"]+/g, ""));
+  });
+
+  it("T279: a payment already a transfer to an untouched Actual-made row is split; Undo re-creates that row with a new id; live parity", async () => {
+    for (const mode of modes) {
+      const s = await setup(mode, "embedded-interest", { lenderFeed: false, anyPayee: true });
+      const id = (await mode.transport.createTransactionsForSync([{ accountId: mode.budget.accounts.checking, date: "2024-02-01", amount: -242915, payeeId: s.transferPayees[mode.budget.accounts.mortgage], categoryId: mode.budget.categories.loanPayment, notes: "bank note", importedId: `p16:t279:${mode.name}:${run}`, cleared: true }])).created[0].transactionId!;
+      trace(`${mode.name} t279: const paymentBefore = await s.snap(mode.budget.accounts.chec`);
+      const paymentBefore = await s.snap(mode.budget.accounts.checking, id);
+      const originalId = paymentBefore!.transferId!;
+      trace(`${mode.name} t279: const originalBefore = await s.snap(mode.budget.accounts.mor`);
+      const originalBefore = await s.snap(mode.budget.accounts.mortgage, originalId);
+      expect(originalBefore).toMatchObject({ cleared: false, importedId: null, categoryId: null });
+      const [split] = (await s.preview()).filter((p) => p.postingKind === "repayment-split");
+      expect(split.reasons.map((r) => r.code)).toContain("replaces-transfer-counterpart");
+      trace(`${mode.name} t279: const applied = await s.apply(split);`);
+      const applied = await s.apply(split);
+      expect(applied.status).toBe("applied");
+      expect(await s.snap(mode.budget.accounts.mortgage, originalId)).toBeNull();
+      trace(`${mode.name} t279: const splitRows = await s.parity(split, applied);`);
+      const splitRows = await s.parity(split, applied);
+      trace(`${mode.name} t279: const reversal = s.undo(applied);`);
+      const reversal = s.undo(applied);
+      trace(`${mode.name} t279: const undone = await s.apply(reversal);`);
+      const undone = await s.apply(reversal);
+      if (undone.status !== "applied") trace(`${mode.name} t279 undo outcome: ${JSON.stringify(undone.error)}`);
+      expect(undone.status).toBe("applied");
+      const recreatedId = undone.actualIds![1];
+      expect(recreatedId).not.toBe(originalId);
+      trace(`${mode.name} t279: const paymentAfter = await s.snap(mode.budget.accounts.check`);
+      const paymentAfter = await s.snap(mode.budget.accounts.checking, id);
+      expect(paymentAfter!.transferId).toBe(recreatedId);
+      expect(without(paymentAfter, "transferId")).toEqual(without(paymentBefore, "transferId"));
+      expect(without(await s.snap(mode.budget.accounts.mortgage, recreatedId), "id")).toEqual(without(originalBefore, "id"));
+      observed[mode.name].t279 = { split: splitRows.map((r) => [r.categoryName, r.amountMinor]), undo: (await s.parity(reversal, undone)).map((r) => [r.categoryName, r.amountMinor, r.cleared]) };
+    }
+    expect(observed.http.t279).toEqual(observed.direct.t279);
   });
 });

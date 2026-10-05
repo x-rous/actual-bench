@@ -1,5 +1,5 @@
 import type { ActualBenchTransport } from "@/lib/actual/transport";
-import { toTransactionPreflight, type PostingOutputSnapshot } from "../snapshot";
+import { compareRowToSnapshot, indexReadRows, toTransactionPreflight, type PostingOutputSnapshot, type RowSnapshot } from "../snapshot";
 
 /**
  * Recovery of an interrupted apply (RD-084 P1.6 T129–T131).
@@ -77,5 +77,65 @@ export async function recoverPosting(output: PostingOutputSnapshot, transport: A
     case "restructure": return recoverSplit(output, transport, transferPayeeByAccount);
     case "link": return recoverLink(output, transport);
     case "claim": return { status: "applied", actualIds: output.rows.map((r) => r.id) };
+    case "restore-split": return recoverRestoreSplit(output, transport);
+    case "unlink": return recoverUnlink(output, transport);
+    case "convert": return recoverConvert(output, transport);
+    case "revert-convert": return recoverRevert(output, transport);
   }
+}
+
+async function readRows(transport: ActualBenchTransport, rows: RowSnapshot[]): Promise<Map<string, RowSnapshot>> {
+  const out = new Map<string, RowSnapshot>();
+  for (const accountId of [...new Set(rows.map((r) => r.accountId))]) {
+    const from = rows.filter((r) => r.accountId === accountId).reduce((min, r) => (r.date < min ? r.date : min), "9999-12-31");
+    for (const [id, row] of indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: from }))) out.set(id, row);
+  }
+  return out;
+}
+
+const same = (want: RowSnapshot, now: RowSnapshot | undefined, ignore: string[] = []) =>
+  now !== undefined && compareRowToSnapshot(want, now).every((d) => ignore.includes(d.field));
+
+const HALFWAY = { code: "undo-halfway", text: "The undo stopped partway. Check the rows in Actual against the original shown here; Bench will not repeat it." };
+
+/** T276: an undone split is the original row again; an untouched split means nothing landed. */
+export async function recoverRestoreSplit(output: Extract<PostingOutputSnapshot, { kind: "restore-split" }>, transport: ActualBenchTransport): Promise<RecoveryResult> {
+  const now = await readRows(transport, [output.parent]);
+  const parent = now.get(output.parent.id);
+  if (!parent) return { status: "review", reason: { code: "row-missing", text: "The transaction is no longer in Actual. Check it in Actual." } };
+  if (parent.isParent && output.children.every((c) => now.has(c.id)) && parent.childCount === output.children.length) {
+    return { status: "not-found", reason: { code: "undo-not-applied", text: "The undo did not reach Actual. Review it again before applying." } };
+  }
+  if (!parent.isParent && same(output.restoreTo, parent, output.recreatedCounterpart ? ["transferId"] : [])) {
+    return { status: "applied", actualIds: [parent.id, ...(output.recreatedCounterpart && parent.transferId ? [parent.transferId] : [])] };
+  }
+  return { status: "review", reason: HALFWAY };
+}
+
+/** T276: an undone link is both original rows; an intact link means nothing landed. */
+export async function recoverUnlink(output: Extract<PostingOutputSnapshot, { kind: "unlink" }>, transport: ActualBenchTransport): Promise<RecoveryResult> {
+  const now = await readRows(transport, [output.source, output.counterpart]);
+  const source = now.get(output.source.id);
+  const counterpart = now.get(output.counterpart.id);
+  if (same(output.sourceRestore, source) && same(output.counterpartRestore, counterpart)) return { status: "applied", actualIds: [output.source.id, output.counterpart.id] };
+  if (same(output.source, source) && same(output.counterpart, counterpart)) return { status: "not-found", reason: { code: "undo-not-applied", text: "The undo did not reach Actual. Review it again before applying." } };
+  return { status: "review", reason: HALFWAY };
+}
+
+/** T277: a converted payment is a transfer to the loan; an unchanged one means nothing landed. */
+export async function recoverConvert(output: Extract<PostingOutputSnapshot, { kind: "convert" }>, transport: ActualBenchTransport): Promise<RecoveryResult> {
+  const now = await readRows(transport, [output.before]);
+  const payment = now.get(output.before.id);
+  if (payment && payment.payeeId === output.transferPayeeId && payment.transferId) return { status: "applied", actualIds: [payment.id, payment.transferId] };
+  if (same(output.before, payment)) return { status: "not-found", reason: { code: "convert-not-applied", text: "The conversion did not reach Actual. Review it again before applying." } };
+  return { status: "review", reason: { code: "convert-changed", text: "The payment changed in Actual. Check it there; Bench will not convert it again." } };
+}
+
+/** T277 undo: the payment is the original again and its loan-side row is gone. */
+export async function recoverRevert(output: Extract<PostingOutputSnapshot, { kind: "revert-convert" }>, transport: ActualBenchTransport): Promise<RecoveryResult> {
+  const now = await readRows(transport, [output.converted, output.counterpart]);
+  const payment = now.get(output.converted.id);
+  if (same(output.restoreTo, payment) && !now.has(output.counterpart.id)) return { status: "applied", actualIds: [output.converted.id] };
+  if (same(output.converted, payment) && now.has(output.counterpart.id)) return { status: "not-found", reason: { code: "undo-not-applied", text: "The undo did not reach Actual. Review it again before applying." } };
+  return { status: "review", reason: HALFWAY };
 }

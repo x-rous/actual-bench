@@ -1,8 +1,8 @@
 import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import type { LinkTransferInput } from "@/lib/actual/transactionStructure";
 import { PostingNotApproved } from "./postingErrors";
-import { toTransactionPreflight, type PostingOutputSnapshot } from "./snapshot";
-import { verifyCreatedRows, verifyLinkOutcome, verifySplitOutcome } from "./verify";
+import { toRowState, toTransactionPreflight, type PostingOutputSnapshot } from "./snapshot";
+import { verifyConvertOutcome, verifyCreatedRows, verifyLinkOutcome, verifyRestoreOutcome, verifyRevertOutcome, verifySplitOutcome, verifyUnlinkOutcome } from "./verify";
 
 /**
  * The browser half of applying a posting (RD-084 P1.6 T125–T127; SC-018).
@@ -79,7 +79,91 @@ export async function executeApprovedPosting(ticket: ApplyTicketView, ctx: Execu
     case "restructure": return applyRestructure(output, ctx, now);
     case "link": return ticket.mode === "complete-link" ? completeLink(output, ctx, now) : applyLink(output, ctx, now);
     case "claim": return applyClaim(output, ctx, now);
+    case "restore-split": return applyRestoreSplit(output, ctx, now);
+    case "unlink": return applyUnlink(output, ctx, now);
+    case "convert": return applyConvert(output, ctx, now);
+    case "revert-convert": return applyRevert(output, ctx, now);
   }
+}
+
+/** A write the transport refused before touching Actual, or one that may have landed. */
+function writeError(stage: string, error: unknown): ExecutorOutcome {
+  return beforeWrite(error)
+    ? { status: "failed", error: { stage: "preflight", message: message(error), written: false } }
+    : { status: "indeterminate", error: { stage, message: message(error) } };
+}
+
+/** T276: delete the split lines one at a time, restore the parent, verify it is exactly the original. */
+async function applyRestoreSplit(output: Extract<PostingOutputSnapshot, { kind: "restore-split" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (!ctx.transport.restoreSplit) return { status: "failed", error: { stage: "capability", message: "This connection cannot undo a split.", written: false } };
+  let result;
+  try {
+    result = await ctx.transport.restoreSplit({
+      parent: toTransactionPreflight(output.parent),
+      children: output.children.map(toTransactionPreflight),
+      restoreTo: toRowState(output.restoreTo),
+      counterpartAccountIds: output.counterpartAccountIds,
+      recreatedCounterpart: output.recreatedCounterpart ? { accountId: output.recreatedCounterpart.accountId, expected: toRowState(output.recreatedCounterpart) } : null,
+    });
+  } catch (error) {
+    return writeError("restore-split", error);
+  }
+  const issues = verifyRestoreOutcome(result);
+  if (issues.length) return { status: "failed", error: { stage: "verify", issues, written: true } };
+  return { status: "applied", actualIds: [result.parentId, ...(result.recreated?.id ? [result.recreated.id] : [])], appliedAt: now() };
+}
+
+/** T276: detach the lender's row, restore the source, verify both are exactly as before. */
+async function applyUnlink(output: Extract<PostingOutputSnapshot, { kind: "unlink" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (!ctx.transport.unlinkTransfer) return { status: "failed", error: { stage: "capability", message: "This connection cannot undo a transfer link.", written: false } };
+  let result;
+  try {
+    result = await ctx.transport.unlinkTransfer({
+      source: toTransactionPreflight(output.source),
+      counterpart: toTransactionPreflight(output.counterpart),
+      sourceRestore: toRowState(output.sourceRestore),
+      counterpartRestore: toRowState(output.counterpartRestore),
+    });
+  } catch (error) {
+    return writeError("unlink", error);
+  }
+  const issues = verifyUnlinkOutcome(result);
+  if (issues.length) return { status: "failed", error: { stage: "verify", issues, written: true } };
+  return { status: "applied", actualIds: [output.source.id, output.counterpart.id], appliedAt: now() };
+}
+
+/** T277: the payment takes the loan's transfer payee; verify exactly one loan-side row. */
+async function applyConvert(output: Extract<PostingOutputSnapshot, { kind: "convert" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (!ctx.transport.convertToTransfer) return { status: "failed", error: { stage: "capability", message: "This connection cannot convert a payment into a transfer.", written: false } };
+  let result;
+  try {
+    result = await ctx.transport.convertToTransfer({ expected: toTransactionPreflight(output.before), transferPayeeId: output.transferPayeeId, counterpartAccountId: output.transferAccountId });
+  } catch (error) {
+    return writeError("convert", error);
+  }
+  let rows: SyncSourceTransaction[];
+  try {
+    rows = await read(ctx.transport, output.transferAccountId, output.before.date);
+  } catch (error) {
+    return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
+  }
+  const issues = verifyConvertOutcome({ result, expected: output.expectedCounterpart, paymentId: output.before.id, counterpartAccountRows: rows });
+  if (issues.length) return { status: "failed", error: { stage: "verify", issues, written: true } };
+  return { status: "applied", actualIds: [output.before.id, result.transferId!], appliedAt: now() };
+}
+
+/** T277 undo: the payment's own payee back; verify it is exactly the original and the loan-side row is gone. */
+async function applyRevert(output: Extract<PostingOutputSnapshot, { kind: "revert-convert" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (!ctx.transport.revertTransferConversion) return { status: "failed", error: { stage: "capability", message: "This connection cannot undo a transfer conversion.", written: false } };
+  let result;
+  try {
+    result = await ctx.transport.revertTransferConversion({ converted: toTransactionPreflight(output.converted), counterpart: toTransactionPreflight(output.counterpart), restoreTo: toRowState(output.restoreTo) });
+  } catch (error) {
+    return writeError("revert-convert", error);
+  }
+  const issues = verifyRevertOutcome(result);
+  if (issues.length) return { status: "failed", error: { stage: "verify", issues, written: true } };
+  return { status: "applied", actualIds: [output.converted.id], appliedAt: now() };
 }
 
 /** T125: re-read, marker check, create, re-read, recover by marker, verify. */
@@ -129,11 +213,12 @@ async function applyRestructure(output: Extract<PostingOutputSnapshot, { kind: "
         payeeId: c.transferAccountId ? ctx.transferPayeeByAccount[c.transferAccountId] ?? null : c.payeeId,
         notes: c.notes,
       })),
+      replaceCounterpart: output.replacesCounterpart
+        ? { expected: toRowState(output.replacesCounterpart), sourceAccountTransferPayeeId: ctx.transferPayeeByAccount[output.before.accountId] ?? "" }
+        : null,
     });
   } catch (error) {
-    return beforeWrite(error)
-      ? { status: "failed", error: { stage: "preflight", message: message(error), written: false } }
-      : { status: "indeterminate", error: { stage: "restructure", message: message(error) } };
+    return writeError("restructure", error);
   }
   let liabilityRows: SyncSourceTransaction[] = [];
   try {
@@ -141,7 +226,7 @@ async function applyRestructure(output: Extract<PostingOutputSnapshot, { kind: "
   } catch (error) {
     return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
   }
-  const issues = verifySplitOutcome({ expected: output.expectedPostState, result, transferPayeeByAccount: ctx.transferPayeeByAccount, liabilityRows, before: output.before });
+  const issues = verifySplitOutcome({ expected: output.expectedPostState, result, transferPayeeByAccount: ctx.transferPayeeByAccount, liabilityRows, before: output.before, replacedCounterpartId: output.replacesCounterpart?.id ?? null });
   if (issues.length) return { status: "failed", error: { stage: "verify", issues, written: true } };
   const counterparts = result.children.filter((c) => c.transferId).map((c) => c.transferId as string);
   return { status: "applied", actualIds: [result.parentId, ...result.children.map((c) => c.id), ...counterparts], appliedAt: now() };

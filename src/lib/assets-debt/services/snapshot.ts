@@ -114,6 +114,64 @@ export type PostingOutputSnapshot =
       accountBudgetStatus: Record<string, "on-budget" | "off-budget">;
       components: ComponentLine[];
       closing: ClosingState | null;
+      /**
+       * Restructuring an existing transfer (T279): its untouched Actual-made
+       * counterpart, which Actual deletes when the payment becomes a split and
+       * re-creates (with a new id) when the split is undone.
+       */
+      replacesCounterpart?: RowSnapshot | null;
+    }
+  | {
+      format: typeof POSTING_OUTPUT_FORMAT;
+      version: typeof POSTING_OUTPUT_FORMAT_VERSION;
+      /**
+       * Undo of a restructure (T276): delete the split lines one at a time, so
+       * the parent becomes the original row again and Actual removes the
+       * counterparts it made; then restore the parent's own fields.
+       */
+      kind: "restore-split";
+      /** The applied split as it must still be. */
+      parent: RowSnapshot;
+      children: RowSnapshot[];
+      counterpartAccountIds: string[];
+      restoreTo: RowSnapshot;
+      /** A transfer restructure: the counterpart Actual re-creates, by its original contents. */
+      recreatedCounterpart: RowSnapshot | null;
+      closing: null;
+    }
+  | {
+      format: typeof POSTING_OUTPUT_FORMAT;
+      version: typeof POSTING_OUTPUT_FORMAT_VERSION;
+      /** Undo of a counterpart link (T276): detach the counterpart, then restore the source. */
+      kind: "unlink";
+      /** The pair as Bench linked it, as it must still be. */
+      source: RowSnapshot;
+      counterpart: RowSnapshot;
+      sourceRestore: RowSnapshot;
+      counterpartRestore: RowSnapshot;
+      closing: null;
+    }
+  | {
+      format: typeof POSTING_OUTPUT_FORMAT;
+      version: typeof POSTING_OUTPUT_FORMAT_VERSION;
+      /** An existing payment becomes the loan transfer by its payee; Actual creates the one counterpart (T277). */
+      kind: "convert";
+      before: RowSnapshot;
+      transferPayeeId: string;
+      transferAccountId: string;
+      expectedCounterpart: { accountId: string; amountMinor: number; notes: string | null };
+      accountBudgetStatus: Record<string, "on-budget" | "off-budget">;
+      closing: ClosingState | null;
+    }
+  | {
+      format: typeof POSTING_OUTPUT_FORMAT;
+      version: typeof POSTING_OUTPUT_FORMAT_VERSION;
+      /** Undo of a conversion (T277): the payment's own payee back; Actual deletes the counterpart it made. */
+      kind: "revert-convert";
+      converted: RowSnapshot;
+      counterpart: RowSnapshot;
+      restoreTo: RowSnapshot;
+      closing: null;
     }
   | {
       format: typeof POSTING_OUTPUT_FORMAT;
@@ -354,6 +412,11 @@ export function indexReadRows(transactions: readonly import("@/lib/actual/transp
     }
   }
   return out;
+}
+
+/** A stored row snapshot as the full state an exact restoration compares. */
+export function toRowState(row: RowSnapshot): import("@/lib/actual/transactionStructure").RowState {
+  return { ...toTransactionPreflight(row), cleared: row.cleared, importedId: row.importedId, importedPayee: row.importedPayee };
 }
 
 /** The preflight fields in transport terms, from a stored row snapshot. */

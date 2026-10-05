@@ -22,13 +22,13 @@ describe("classification policy (T116; FR-170a–FR-172, D1, SC-011)", () => {
   });
 
   it("safety net (replaces G3): safe is never produced for restructures, counterpart links, splits, opening or reconciliation adjustments, unreviewed principal changes, or material drift", () => {
-    const shapes: PostingShape[] = ["create", "restructure", "link", "claim"];
+    const shapes: PostingShape[] = ["create", "restructure", "link", "claim", "convert"];
     for (const postingKind of POSTING_KINDS) {
       for (const shape of shapes) {
         for (const driftMaterial of [false, true]) {
           for (const unreviewedPrincipalChange of [false, true]) {
             const result = classifyPosting({ postingKind, shape, driftMaterial, unreviewedPrincipalChange });
-            const forbidden = shape === "restructure" || shape === "link" || postingKind === "repayment-split" || postingKind === "receivable-split"
+            const forbidden = shape === "restructure" || shape === "link" || shape === "convert" || postingKind === "repayment-split" || postingKind === "receivable-split"
               || postingKind === "opening-adjustment" || postingKind === "reconciliation-adjustment" || driftMaterial || unreviewedPrincipalChange;
             if (forbidden) expect({ postingKind, shape, driftMaterial, unreviewedPrincipalChange, classification: result.classification }).not.toMatchObject({ classification: "safe" });
           }

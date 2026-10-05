@@ -1,5 +1,5 @@
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
-import type { RestructureSplitResult, LinkTransferResult } from "@/lib/actual/transactionStructure";
+import type { ConvertToTransferResult, LinkTransferResult, RestoreSplitResult, RestructureSplitResult, RevertTransferResult, UnlinkTransferResult } from "@/lib/actual/transactionStructure";
 import { verifyApply } from "@/lib/reconciliation/apply/verification";
 import type { CreateOperation as ReconciliationCreate } from "@/lib/reconciliation/apply/operations";
 import { toActualSnapshot } from "@/lib/reconciliation/transportAdapter";
@@ -11,7 +11,8 @@ import type { CreateOperation, ExpectedPostState, RowSnapshot } from "./snapshot
  * The create path reuses Bank Statement Reconciliation's verifier
  * (`verifyApply`): missing create and duplicate marker are exactly its
  * `missing-create` and `duplicate-create`. Only the two shapes it has no notion
- * of get their own checks here: a restructured split and a counterpart link.
+ * of get their own checks here: a restructured split, a counterpart link, a
+ * payment converted to a transfer, and the exact-restoration checks of Undo.
  * Pure: the caller performs the read, this decides what it means.
  */
 
@@ -24,7 +25,11 @@ export type PostingIssueKind =
   | "liability-rows"
   | "category-rule"
   | "link-incomplete"
-  | "imported-id-lost";
+  | "imported-id-lost"
+  | "replaced-counterpart-remains"
+  | "restore-mismatch"
+  | "leftover-rows"
+  | "convert-mismatch";
 
 export type PostingIssue = { kind: PostingIssueKind; detail: string };
 
@@ -68,9 +73,14 @@ export function verifySplitOutcome(input: {
   transferPayeeByAccount: Record<string, string>;
   liabilityRows: SyncSourceTransaction[];
   before: RowSnapshot;
+  /** T279: the counterpart Actual must have deleted. */
+  replacedCounterpartId?: string | null;
 }): PostingIssue[] {
   const issues: PostingIssue[] = [];
   const { result, expected } = input;
+  if (input.replacedCounterpartId && input.liabilityRows.some((row) => row.id === input.replacedCounterpartId)) {
+    issues.push({ kind: "replaced-counterpart-remains", detail: "The original loan-side row of the transfer is still there next to the new one." });
+  }
   if (input.before.reconciled) issues.push({ kind: "reconciled-changed", detail: "A reconciled transaction was restructured." });
   if (result.children.reduce((sum, c) => sum + c.amount, 0) !== result.parentAmount || result.parentAmount !== expected.parentAmountMinor) {
     issues.push({ kind: "split-sum", detail: "The split children do not add up to the transaction." });
@@ -116,5 +126,51 @@ export function verifyLinkOutcome(input: {
   const strays = input.sourceAccountRows.flatMap((row) => [row, ...row.splitLines.map((line) => ({ ...line, id: line.id ?? "" }))])
     .filter((row) => row.transferId === input.counterpartBefore.id && row.id !== input.expected.counterpartTransferId);
   if (strays.length) issues.push({ kind: "liability-rows", detail: "Actual created an extra counterpart for the lender row." });
+  return issues;
+}
+
+/** Undo of a split: the original row exactly, no line or counterpart left, and any re-created counterpart as it was. */
+export function verifyRestoreOutcome(result: RestoreSplitResult): PostingIssue[] {
+  const issues: PostingIssue[] = [];
+  if (result.differences.length) issues.push({ kind: "restore-mismatch", detail: `The transaction is not exactly as it was: ${result.differences.join(", ")}.` });
+  if (result.leftovers.length) issues.push({ kind: "leftover-rows", detail: `${result.leftovers.length} split line or loan-side row is still in Actual.` });
+  if (result.recreated && result.recreated.differences.length) {
+    issues.push({ kind: "restore-mismatch", detail: `The loan-side row Actual re-created differs from the original: ${result.recreated.differences.join(", ")}.` });
+  }
+  return issues;
+}
+
+/** Undo of a link: both rows exactly as they were, and the lender's row still there. */
+export function verifyUnlinkOutcome(result: UnlinkTransferResult): PostingIssue[] {
+  const issues: PostingIssue[] = [];
+  if (!result.counterpartExists) issues.push({ kind: "restore-mismatch", detail: "The lender's row is no longer in Actual." });
+  if (result.sourceDifferences.length) issues.push({ kind: "restore-mismatch", detail: `The payment is not exactly as it was: ${result.sourceDifferences.join(", ")}.` });
+  if (result.counterpartDifferences.length) issues.push({ kind: "restore-mismatch", detail: `The lender's row is not exactly as it was: ${result.counterpartDifferences.join(", ")}.` });
+  return issues;
+}
+
+/** A conversion: the payment is a transfer with exactly one loan-side row holding the mirrored amount. */
+export function verifyConvertOutcome(input: {
+  result: ConvertToTransferResult;
+  expected: { accountId: string; amountMinor: number; notes: string | null };
+  paymentId: string;
+  counterpartAccountRows: SyncSourceTransaction[];
+}): PostingIssue[] {
+  const issues: PostingIssue[] = [];
+  const { result, expected } = input;
+  if (!result.transferId || !result.counterpart) return [{ kind: "convert-mismatch", detail: "The payment did not become a transfer." }];
+  if (result.counterpart.accountId !== expected.accountId || result.counterpart.amount !== expected.amountMinor || (result.counterpart.notes ?? null) !== (expected.notes ?? null)) {
+    issues.push({ kind: "convert-mismatch", detail: "The loan-side row does not hold the previewed account, amount or notes." });
+  }
+  const sides = input.counterpartAccountRows.filter((row) => row.transferId === input.paymentId);
+  if (sides.length !== 1) issues.push({ kind: "liability-rows", detail: `Expected exactly one loan-account row for the payment; found ${sides.length}.` });
+  return issues;
+}
+
+/** Undo of a conversion: the payment exactly as it was and the loan-side row Actual made gone. */
+export function verifyRevertOutcome(result: RevertTransferResult): PostingIssue[] {
+  const issues: PostingIssue[] = [];
+  if (result.differences.length) issues.push({ kind: "restore-mismatch", detail: `The payment is not exactly as it was: ${result.differences.join(", ")}.` });
+  if (result.counterpartRemains) issues.push({ kind: "leftover-rows", detail: "The loan-side row of the transfer is still in Actual." });
   return issues;
 }

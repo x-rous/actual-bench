@@ -71,6 +71,10 @@ import {
   verifySplit,
   type RawTxn,
   type StructurePrimitives,
+  convertToTransfer,
+  restoreSplit,
+  revertTransferConversion,
+  unlinkTransfer,
 } from "./transactionStructure";
 import { runBankSyncForAccounts } from "./runBankSync";
 import { BANK_SYNC_COUNT_WINDOW_DAYS } from "./bankSync";
@@ -1166,27 +1170,48 @@ function directStructurePrimitives(host: ActualRuntimeHost, connection: BrowserA
     readAccount,
     async update(id, fields, watch) {
       const api = await host.getRuntime(connection);
-      const before = await snapshotOf(watch.accountIds, watch.sinceDate);
-      await api.updateTransaction(id, fields as Partial<ApiImportTransaction>);
-      const started = Date.now();
-      const overdue = () => Date.now() - started > directSettle.deadlineMs;
-      // Settled: the budget changed, then read the same twice across a quiet interval,
-      // so the transfer handling for the other leg has finished too.
-      let current = await snapshotOf(watch.accountIds, watch.sinceDate);
-      while (current === before) {
-        if (overdue()) throw new Error(`Direct update of ${id} did not land within ${directSettle.deadlineMs} ms`);
-        await sleep(directSettle.pollMs);
-        current = await snapshotOf(watch.accountIds, watch.sinceDate);
-      }
-      for (;;) {
-        await sleep(directSettle.quietMs);
-        const next = await snapshotOf(watch.accountIds, watch.sinceDate);
-        if (next === current) break;
-        current = next;
-        if (overdue()) throw new Error(`Direct update of ${id} did not settle within ${directSettle.deadlineMs} ms`);
-      }
+      await settledWrite(`update of ${id}`, watch, () => api.updateTransaction(id, fields as Partial<ApiImportTransaction>));
+    },
+    async remove(id, watch) {
+      const api = await host.getRuntime(connection);
+      await settledWrite(`delete of ${id}`, watch, () => api.deleteTransaction(id));
     },
   };
+
+  /**
+   * Run one write and return only when it has landed and the budget is quiet:
+   * the watched accounts changed, then read the same twice across a quiet
+   * interval, so the transfer handling for the other leg has finished too.
+   */
+  async function settledWrite(label: string, watch: { accountIds: string[]; sinceDate: string }, write: () => Promise<unknown>): Promise<void> {
+    // Never start a write while the budget is still changing (just opened and syncing, or a previous
+    // write's transfer handling still running): that window deadlocked the Direct runtime (R-18).
+    let before = await snapshotOf(watch.accountIds, watch.sinceDate);
+    const quietBy = Date.now() + directSettle.deadlineMs;
+    for (;;) {
+      await sleep(directSettle.pollMs);
+      const again = await snapshotOf(watch.accountIds, watch.sinceDate);
+      if (again === before) break;
+      before = again;
+      if (Date.now() > quietBy) throw new Error(`Direct ${label}: the budget did not become quiet within ${directSettle.deadlineMs} ms; nothing was written`);
+    }
+    await write();
+    const started = Date.now();
+    const overdue = () => Date.now() - started > directSettle.deadlineMs;
+    let current = await snapshotOf(watch.accountIds, watch.sinceDate);
+    while (current === before) {
+      if (overdue()) throw new Error(`Direct ${label} did not land within ${directSettle.deadlineMs} ms`);
+      await sleep(directSettle.pollMs);
+      current = await snapshotOf(watch.accountIds, watch.sinceDate);
+    }
+    for (;;) {
+      await sleep(directSettle.quietMs);
+      const next = await snapshotOf(watch.accountIds, watch.sinceDate);
+      if (next === current) break;
+      current = next;
+      if (overdue()) throw new Error(`Direct ${label} did not settle within ${directSettle.deadlineMs} ms`);
+    }
+  }
 }
 
 export function createActualRuntimeTransport(
@@ -1445,6 +1470,10 @@ export function createActualRuntimeTransport(
     completeTransferLink: (input) => completeTransferLink(directStructurePrimitives(host, connection), input),
     inspectTransferLink: (input) => inspectTransferLink(directStructurePrimitives(host, connection), input),
     verifyRestructure: (input) => verifySplit(directStructurePrimitives(host, connection), input),
+    restoreSplit: (input) => restoreSplit(directStructurePrimitives(host, connection), input),
+    unlinkTransfer: (input) => unlinkTransfer(directStructurePrimitives(host, connection), input),
+    convertToTransfer: (input) => convertToTransfer(directStructurePrimitives(host, connection), input),
+    revertTransferConversion: (input) => revertTransferConversion(directStructurePrimitives(host, connection), input),
     canVerifyTransferLinks: (input) => readsReportTransferIds(directStructurePrimitives(host, connection), input.accountId, input.sinceDate),
     getTargetLookupForSync: (input) =>
       getBrowserTargetLookupForSync(host, connection, input),

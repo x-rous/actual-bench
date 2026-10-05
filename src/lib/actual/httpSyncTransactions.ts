@@ -359,5 +359,8 @@ export function httpStructurePrimitives(connection: ConnectionInstance): Structu
     async update(id, fields) {
       await apiRequest(connection, `/transactions/${id}`, { method: "PATCH", body: { transaction: fields } });
     },
+    async remove(id) {
+      await apiRequest(connection, `/transactions/${id}`, { method: "DELETE" });
+    },
   };
 }

@@ -96,10 +96,38 @@ export type PostingPreviewProps = {
   onCompleteLink?: () => void;
   completionDetail?: string | null;
   actualRowHref?: (rowId: string) => string | null;
+  /** T278: a split and the lender link that continues it are two steps of one flow, each applied on its own. */
+  step?: PostingStep | null;
 };
 
-export function PostingPreview({ posting, directory, currencyMinorDigits, busy, onApply, onDecline, onUndo, onCheck, onCompleteLink, completionDetail, actualRowHref }: PostingPreviewProps) {
-  const existing = posting.output.kind === "restructure" || posting.output.kind === "link";
+export type PostingStep = { index: 1 | 2; total: 2; title: string; note: string };
+
+/** The heading: the posting kind, or what an Undo or conversion actually does. */
+function titleOf(kind: string, output: PostingView["output"]): string {
+  switch (output.kind) {
+    case "convert": return "Make the repayment a loan transfer";
+    case "restore-split": return "Undo the repayment split";
+    case "unlink": return "Undo the lender link";
+    case "revert-convert": return "Undo the loan transfer";
+    default: return KIND_LABELS[kind] ?? kind;
+  }
+}
+
+function blockedRowOf(output: PostingView["output"]): string | null {
+  switch (output.kind) {
+    case "restructure": return output.before.id;
+    case "link": return output.counterpartBefore.id;
+    case "convert": return output.before.id;
+    case "restore-split": return output.parent.id;
+    case "unlink": return output.source.id;
+    case "revert-convert": return output.converted.id;
+    default: return null;
+  }
+}
+
+export function PostingPreview({ posting, directory, currencyMinorDigits, busy, onApply, onDecline, onUndo, onCheck, onCompleteLink, completionDetail, actualRowHref, step }: PostingPreviewProps) {
+  // Every shape that changes rows already in Actual shows both sides; only a create starts from nothing.
+  const existing = posting.output.kind !== "create" && posting.output.kind !== "claim";
   const [side, setSide] = useState<PreviewSide>("after");
   const classification = typeof posting.classification === "string" ? posting.classification : "blocked";
   const status = typeof posting.status === "string" ? posting.status : "unknown";
@@ -107,7 +135,7 @@ export function PostingPreview({ posting, directory, currencyMinorDigits, busy, 
   const BannerIcon = banner.icon;
   const rows = renderPreviewRows(posting.output, directory, currencyMinorDigits, existing ? side : "after");
   const kind = typeof posting.postingKind === "string" ? posting.postingKind : "unknown";
-  const blockedRow = posting.output.kind === "restructure" ? posting.output.before.id : posting.output.kind === "link" ? posting.output.counterpartBefore.id : null;
+  const blockedRow = blockedRowOf(posting.output);
   const href = classification === "blocked" && blockedRow && actualRowHref ? actualRowHref(blockedRow) : null;
   const canDecide = status === "proposed" && classification !== "blocked";
   const components = "components" in posting.output ? posting.output.components : [];
@@ -115,8 +143,14 @@ export function PostingPreview({ posting, directory, currencyMinorDigits, busy, 
 
   return (
     <article aria-labelledby={headingId} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+      {step ? (
+        <div aria-label={`Step ${step.index} of ${step.total}`} className="flex flex-col gap-0.5 rounded bg-muted/60 px-2 py-1 text-xs">
+          <p className="font-semibold">Step {step.index} of {step.total}: {step.title}</p>
+          <p className="text-muted-foreground">{step.note}</p>
+        </div>
+      ) : null}
       <header className="flex flex-wrap items-baseline gap-2">
-        <h3 id={headingId} className="text-sm font-semibold">{KIND_LABELS[kind] ?? kind} · {posting.periodKey.length === 10 ? posting.periodKey : "reversal"}</h3>
+        <h3 id={headingId} className="text-sm font-semibold">{titleOf(kind, posting.output)} · {posting.periodKey.length === 10 ? posting.periodKey : "reversal"}</h3>
         <span className="text-[11px] text-muted-foreground">Status: {status}</span>
       </header>
 
@@ -144,7 +178,7 @@ export function PostingPreview({ posting, directory, currencyMinorDigits, busy, 
               ))}
             </div>
           ) : null}
-          <PreviewTable rows={rows} label={`${KIND_LABELS[kind] ?? kind} rows, ${existing ? side : "after"}`} />
+          <PreviewTable rows={rows} label={`${titleOf(kind, posting.output)} rows, ${existing ? side : "after"}`} />
         </section>
         <section aria-label="Calculation basis" className="flex flex-col gap-1 rounded border border-border p-2 text-xs">
           <p className="font-medium">Calculation basis</p>
@@ -152,7 +186,7 @@ export function PostingPreview({ posting, directory, currencyMinorDigits, busy, 
             <dl className="grid grid-cols-2 gap-x-2">
               {components.map((c) => <div key={c.kind} className="contents"><dt className="text-muted-foreground capitalize">{c.kind}</dt><dd className="text-right tabular-nums">{formatAmount(c.amountMinor, currencyMinorDigits)}</dd></div>)}
             </dl>
-          ) : <p className="text-muted-foreground">Links existing rows; no amounts are calculated.</p>}
+          ) : <p className="text-muted-foreground">{posting.reversalOf ? "Restores the rows to how they were before the change; no amounts are calculated." : "Links existing rows; no amounts are calculated."}</p>}
           <p className="text-muted-foreground">Configuration revision {posting.configRevision}{Object.keys(posting.engineVersions).length ? ` · ${Object.entries(posting.engineVersions).filter(([name]) => name.startsWith("loan-") || name === "projection").map(([, v]) => v).join(", ")}` : ""}</p>
         </section>
       </div>

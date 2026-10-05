@@ -5,7 +5,7 @@ import type { ActualBenchTransport } from "@/lib/actual/transport";
 import { readAccountDirectory, readMatchingHistory, type AccountDirectory } from "../actual/ledgerPort";
 import { executeApprovedPosting, type ExecutorOutcome } from "../services/applyService";
 import { createDebtConfiguration } from "../services/debtConfigService";
-import { approveAndBeginApply, recordApplyOutcome } from "../services/postingWorkflowService";
+import { rowsToCheck, approveAndBeginApply, proposeReversal, recordApplyOutcome } from "../services/postingWorkflowService";
 import { previewDebtPostings, type PostingView, type PreviewRequest } from "../services/proposalService";
 import { recoverPosting } from "../services/recovery";
 import { indexReadRows, type PostingOutputSnapshot, type RowSnapshot } from "../services/snapshot";
@@ -38,6 +38,8 @@ export type ScenarioOptions = {
   interestCategoryId?: string | null;
   /** Config v3 additions (business days, lender statement allocation). */
   configV3?: { businessDays?: unknown; lenderStatement?: unknown };
+  /** The repayment rule matches any payee (a payment that is already a transfer has the transfer payee). */
+  repaymentAnyPayee?: boolean;
 };
 
 export type Scenario = Awaited<ReturnType<typeof createScenario>>;
@@ -105,7 +107,12 @@ export function createScenario(options: ScenarioOptions) {
   // The repayment rule finds the bank payment; the lender feed finds the lender's own rows.
   insertDebtMatchRule(db, debtId, {
     purpose: "repayment", ruleFormatVersion: 1, enabled: true, actionsJson: linkAction,
-    conditionsJson: conditions([{ kind: "source-account", accountId: ACCOUNTS.checking }, { kind: "payee", operator: "exact", payeeId: LENDER }, { kind: "expected-date", daysBefore: 3, daysAfter: 3 }, { kind: "amount", operator: "approximate", amountMinor: 242915, direction: "outflow", tolerance: { kind: "absolute", amountMinor: 1000 } }]),
+    conditionsJson: conditions([
+      { kind: "source-account", accountId: ACCOUNTS.checking },
+      ...(options.repaymentAnyPayee ? [] : [{ kind: "payee", operator: "exact", payeeId: LENDER }]),
+      { kind: "expected-date", daysBefore: 3, daysAfter: 3 },
+      { kind: "amount", operator: "approximate", amountMinor: 242915, direction: "outflow", tolerance: { kind: "absolute", amountMinor: 1000 } },
+    ]),
   });
   if (options.lenderFeed) {
     insertDebtMatchRule(db, debtId, {
@@ -131,8 +138,7 @@ export function createScenario(options: ScenarioOptions) {
   }
 
   async function fresh(posting: PostingView): Promise<RowSnapshot[]> {
-    const output = posting.output;
-    const targets = output.kind === "restructure" ? [output.before] : output.kind === "link" ? [output.sourceBefore, output.counterpartBefore] : output.kind === "claim" ? output.rows : [];
+    const targets = rowsToCheck(posting.output);
     const rows: RowSnapshot[] = [];
     for (const target of targets) {
       const found = indexReadRows(await transport.listTransactionsForSync({ accountId: target.accountId, startDate: target.date })).get(target.id);
@@ -167,7 +173,12 @@ export function createScenario(options: ScenarioOptions) {
     return fake.seed({ account: ACCOUNTS.mortgage, date, amount, payee: LENDER, notes: "lender import", imported_id: `lender:${date}:${amount}`, imported_payee: "LENDER", cleared: true, ...extra });
   }
 
-  return { db, fake, transport, directory, debtId, transferPayees, preview, apply, recover, fresh, seedPayment, seedLenderRow, offBudgetIds };
+  /** The user's Undo: a reversal proposal (nothing is written until it is applied). */
+  function undo(posting: PostingView): PostingView {
+    return proposeReversal(db, posting.id, { accountDirectory: directory, transferPayees, today: "2024-06-03" });
+  }
+
+  return { db, fake, transport, directory, debtId, transferPayees, preview, apply, recover, fresh, seedPayment, seedLenderRow, offBudgetIds, undo };
 }
 
 export function byKind(postings: PostingView[], kind: string): PostingView[] {

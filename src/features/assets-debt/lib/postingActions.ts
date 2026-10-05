@@ -28,10 +28,14 @@ export type PostingActionContext = {
 
 function rowsToRecheck(output: PostingOutputSnapshot): RowSnapshot[] {
   switch (output.kind) {
-    case "restructure": return [output.before];
+    case "restructure": return output.replacesCounterpart ? [output.before, output.replacesCounterpart] : [output.before];
     case "link": return [output.sourceBefore, output.counterpartBefore];
     case "claim": return output.release ? [] : output.rows;
     case "create": return [];
+    case "restore-split": return [output.parent, ...output.children];
+    case "unlink": return [output.source, output.counterpart];
+    case "convert": return [output.before];
+    case "revert-convert": return [output.converted, output.counterpart];
   }
 }
 

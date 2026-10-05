@@ -15,7 +15,7 @@ import { DateField, SelectField } from "../fields";
 import { listDebtObservations } from "../../lib/debtsApi";
 import { applyPosting, checkInterruptedPosting, completeInterruptedLink, type PostingActionContext } from "../../lib/postingActions";
 import { declinePosting, listPostings, previewPostings, proposeReversal, type PreviewResponse } from "../../lib/postingsApi";
-import { PostingPreview, WAITING_COPY } from "./PostingPreview";
+import { PostingPreview, WAITING_COPY, type PostingStep } from "./PostingPreview";
 import type { PreviewDirectory } from "./renderPreviewRows";
 
 /**
@@ -60,6 +60,50 @@ export function describeTimings(laps: readonly Lap[]): string {
 async function transferPayees(transport: ActualBenchTransport): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const payee of await transport.getPayees()) if (payee.transferAccountId) out[payee.transferAccountId] = payee.id;
+  return out;
+}
+
+/**
+ * T278: with a lender feed, Pattern A is two explicit steps for one period:
+ * split the payment, then link the split's principal line and the lender's
+ * row. Each keeps its own Apply; this only names and orders them.
+ */
+export function stepsOf(postings: readonly PostingView[]): Map<string, PostingStep> {
+  const out = new Map<string, PostingStep>();
+  const live = postings.filter((p) => !["superseded", "declined", "reversed"].includes(String(p.status)));
+  for (const split of live.filter((p) => p.postingKind === "repayment-split" && p.output.kind === "restructure")) {
+    if (split.output.kind !== "restructure") continue;
+    const principal = split.output.operations.find((c) => c.economicKind === "principal");
+    if (!principal || principal.transferAccountId) continue; // No lender feed: one step only.
+    const link = live.find((p) => p.postingKind === "repayment-link" && p.periodKey === split.periodKey && p.output.kind === "link");
+    out.set(split.id, {
+      index: 1, total: 2, title: "Split the payment",
+      note: split.status === "applied"
+        ? link ? "Done. Step 2 links the principal line and the lender's row." : "Done. Step 2 appears when the lender's row arrives in Actual."
+        : "Apply this first. Step 2 then links the principal line and the lender's row.",
+    });
+    if (link) out.set(link.id, { index: 2, total: 2, title: "Link the lender's row", note: "Makes the split's principal line and the lender's row the two sides of one transfer. Apply it on its own." });
+  }
+  return out;
+}
+
+/** Step 2 directly after step 1 of the same period; everything else keeps its order. */
+function orderSteps(postings: PostingView[]): PostingView[] {
+  const links = postings.filter((p) => p.postingKind === "repayment-link" && p.output.kind === "link");
+  const placed = new Set<string>();
+  const out: PostingView[] = [];
+  for (const p of postings) {
+    if (placed.has(p.id)) continue;
+    if (p.postingKind === "repayment-link" && p.output.kind === "link" && postings.some((q) => q.postingKind === "repayment-split" && q.periodKey === p.periodKey)) continue;
+    out.push(p);
+    placed.add(p.id);
+    if (p.postingKind === "repayment-split") {
+      for (const link of links.filter((l) => l.periodKey === p.periodKey)) {
+        out.push(link);
+        placed.add(link.id);
+      }
+    }
+  }
   return out;
 }
 
@@ -161,7 +205,8 @@ export function PostingsPanel({ debt, directory, offsetHistories }: { debt: Debt
     onError: (error) => setProblem(error instanceof Error ? error.message : String(error)),
   });
 
-  const visible = (postings.data ?? []).filter((p) => ["proposed", "applying", "indeterminate", "failed"].includes(String(p.status)) || (p.status === "applied" && p.appliedAt && p.appliedAt.slice(0, 10) >= shift(today(), -7)));
+  const visible = orderSteps((postings.data ?? []).filter((p) => ["proposed", "applying", "indeterminate", "failed"].includes(String(p.status)) || (p.status === "applied" && p.appliedAt && p.appliedAt.slice(0, 10) >= shift(today(), -7))));
+  const steps = stepsOf(postings.data ?? []);
   const categoryOptions = (directory?.categories ?? []).filter((c) => !c.hidden && !c.isIncome).map((c) => ({ value: c.id, label: `${c.groupName}: ${c.name}` }));
   const onBudgetLiability = liability !== null && !liability.offBudget;
   const waiting = preview?.notices.some((n) => n.code === "waiting-for-lender");
@@ -209,6 +254,7 @@ export function PostingsPanel({ debt, directory, offsetHistories }: { debt: Debt
             onCheck={() => act.mutate({ posting, action: "check" })}
             onCompleteLink={() => act.mutate({ posting, action: "complete" })}
             completionDetail={completion[posting.id] ?? null}
+            step={steps.get(posting.id) ?? null}
           />
         )) : <p className="text-xs text-muted-foreground">No proposals yet. Choose a period and preview changes.</p>
       ) : <p className="text-xs text-muted-foreground">Connect to the budget to preview changes.</p>}

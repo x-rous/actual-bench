@@ -138,7 +138,7 @@ export function renderPreviewRows(output: PostingOutputSnapshot, directory: Prev
       return output.rows.map((row) => existingRow(directory, digits, row, { rowKind: side === "after" ? "linked" : "existing", linkedChip: side === "after" && !output.release }));
     case "restructure": {
       const before = output.before;
-      if (side === "before") return [existingRow(directory, digits, before)];
+      if (side === "before") return output.replacesCounterpart ? [existingRow(directory, digits, before), existingRow(directory, digits, output.replacesCounterpart)] : [existingRow(directory, digits, before)];
       const parent = existingRow(directory, digits, before, { splitParent: true, categoryName: "Split" });
       const rows: PreviewRow[] = [parent];
       const counterparts: PreviewRow[] = [];
@@ -199,6 +199,49 @@ export function renderPreviewRows(output: PostingOutputSnapshot, directory: Prev
           linkedChip: true,
         }),
       ];
+    }
+    case "restore-split": {
+      if (side === "before") return [existingRow(directory, digits, output.parent, { categoryName: "Split" }), ...output.children.map((c) => existingRow(directory, digits, c))];
+      const rows = [existingRow(directory, digits, output.restoreTo)];
+      const recreated = output.recreatedCounterpart;
+      if (recreated) {
+        // Actual re-creates the transfer's other leg from the restored row, with a new id.
+        rows.push(existingRow(directory, digits, recreated, { rowKind: "create", key: `${output.parent.id}:recreated-counterpart` }));
+      }
+      return rows;
+    }
+    case "unlink": {
+      if (side === "before") return [existingRow(directory, digits, output.source), existingRow(directory, digits, output.counterpart, { rowKind: "linked", linkedChip: true })];
+      return [existingRow(directory, digits, output.sourceRestore), existingRow(directory, digits, output.counterpartRestore)];
+    }
+    case "convert": {
+      const payment = output.before;
+      if (side === "before") return [existingRow(directory, digits, payment)];
+      return [
+        existingRow(directory, digits, payment, {
+          ...payeeLabel(directory, null, null, output.transferAccountId),
+          categoryName: categoryName(directory, heldCategory(directory, payment.accountId, output.transferAccountId, payment.categoryId)),
+        }),
+        {
+          rowKind: "create",
+          key: `${payment.id}:counterpart`,
+          ...base(directory, digits, output.expectedCounterpart.accountId),
+          date: payment.date,
+          ...payeeLabel(directory, null, null, payment.accountId),
+          categoryName: null,
+          notes: output.expectedCounterpart.notes,
+          amountMinor: output.expectedCounterpart.amountMinor,
+          cleared: "uncleared",
+          reconciled: false,
+          splitParent: false,
+          splitChildOf: null,
+          linkedChip: false,
+        },
+      ];
+    }
+    case "revert-convert": {
+      if (side === "before") return [existingRow(directory, digits, output.converted), existingRow(directory, digits, output.counterpart)];
+      return [existingRow(directory, digits, output.restoreTo)];
     }
   }
 }

@@ -139,4 +139,71 @@ describe.each(HARNESS_MODES)("transaction structure operations (%s)", (mode) => 
     fake.seed({ account: "checking", date: "2026-03-01", amount: -1 });
     expect(await t.canVerifyTransferLinks!({ accountId: "checking", sinceDate: "2026-01-01" })).toBe(true);
   });
+
+  // P1.6 T276, T277, T279: the refusals that keep Undo and conversion from destroying anything.
+  const state = (p: TransactionPreflight, extra: Partial<{ cleared: boolean; importedId: string | null; importedPayee: string | null }> = {}) => ({ cleared: false, importedId: null, importedPayee: null, ...p, ...extra });
+
+  it("T279: a transfer is restructured only with its untouched Actual-made counterpart named", async () => {
+    const { fake, t } = setup();
+    const id = fake.seed({ account: "checking", date: "2026-03-01", amount: -830000, payee: "p-lender" });
+    fake.editInActual(id, { payee: fake.transferPayeeId("mortgage") });
+    const cp = fake.row(id)!.transfer_id as string;
+    const expected = pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: fake.transferPayeeId("mortgage"), transferId: cp });
+    const counterpart = state(pre({ id: cp, accountId: "mortgage", date: "2026-03-01", amount: 830000, payeeId: fake.transferPayeeId("checking"), transferId: id }));
+    const writes = fake.writes().length;
+    await expect(t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake) })).rejects.toBeInstanceOf(TransactionStructureRefusedError);
+    fake.editInActual(cp, { cleared: true });
+    await expect(t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake), replaceCounterpart: { expected: { ...counterpart, cleared: true }, sourceAccountTransferPayeeId: fake.transferPayeeId("checking") } }))
+      .rejects.toThrow(/it is cleared/);
+    expect(fake.writes().length).toBe(writes + 1); // only the edit above
+    fake.editInActual(cp, { cleared: false });
+    const result = await t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake), replaceCounterpart: { expected: counterpart, sourceAccountTransferPayeeId: fake.transferPayeeId("checking") } });
+    expect(result.children).toHaveLength(2);
+    expect(fake.row(cp)).toBeUndefined();
+  });
+
+  it("T276: restoreSplit and unlinkTransfer refuse, writing nothing, a changed or reconciled row", async () => {
+    const { fake, t } = setup();
+    const id = fake.seed({ account: "checking", date: "2026-03-01", amount: -830000, payee: "p-lender" });
+    await t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected: pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: "p-lender" }), children: children(fake) });
+    const kids = fake.rows().filter((r) => r.parent_id === id);
+    const parent = pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: "p-lender", isParent: true, childCount: 2 });
+    const childPre = kids.map((k) => pre({ id: k.id, accountId: "checking", date: "2026-03-01", amount: k.amount, payeeId: (k.payee as string) ?? null, categoryId: (k.category as string) ?? null, notes: (k.notes as string) ?? null, transferId: (k.transfer_id as string) ?? null, isChild: true, parentId: id }));
+    const restoreTo = state(pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: "p-lender" }));
+    fake.editInActual(kids[1].id, { amount: -130000, category: "cat-int", payee: null, notes: "edited" });
+    const writes = fake.writes().length;
+    await expect(t.restoreSplit!({ parent, children: childPre, restoreTo, counterpartAccountIds: ["mortgage"] })).rejects.toBeInstanceOf(TransactionChangedError);
+    expect(fake.writes().length).toBe(writes);
+
+    const source = fake.seed({ account: "checking", date: "2026-04-01", amount: -500, payee: "p-lender" });
+    const lender = fake.seed({ account: "mortgage", date: "2026-04-01", amount: 500, payee: "p-lender", reconciled: true });
+    const before = fake.writes().length;
+    await expect(t.unlinkTransfer!({
+      source: pre({ id: source, accountId: "checking", date: "2026-04-01", amount: -500, payeeId: "p-lender" }),
+      counterpart: pre({ id: lender, accountId: "mortgage", date: "2026-04-01", amount: 500, payeeId: "p-lender", reconciled: true }),
+      sourceRestore: state(pre({ id: source, accountId: "checking", date: "2026-04-01", amount: -500 })),
+      counterpartRestore: state(pre({ id: lender, accountId: "mortgage", date: "2026-04-01", amount: 500 })),
+    })).rejects.toBeInstanceOf(TransactionStructureRefusedError);
+    expect(fake.writes().length).toBe(before);
+  });
+
+  it("T277: convertToTransfer refuses a reconciled, split or already-transfer row; revert refuses a reconciled counterpart", async () => {
+    const { fake, t } = setup();
+    const reconciled = fake.seed({ account: "checking", date: "2026-03-01", amount: -500, payee: "p-lender", reconciled: true });
+    const writes = fake.writes().length;
+    await expect(t.convertToTransfer!({ expected: pre({ id: reconciled, accountId: "checking", date: "2026-03-01", amount: -500, payeeId: "p-lender", reconciled: true }), transferPayeeId: fake.transferPayeeId("mortgage"), counterpartAccountId: "mortgage" }))
+      .rejects.toBeInstanceOf(TransactionStructureRefusedError);
+    expect(fake.writes().length).toBe(writes);
+    const id = fake.seed({ account: "checking", date: "2026-03-02", amount: -500, payee: "p-lender", notes: "n" });
+    const converted = await t.convertToTransfer!({ expected: pre({ id, accountId: "checking", date: "2026-03-02", amount: -500, payeeId: "p-lender", notes: "n" }), transferPayeeId: fake.transferPayeeId("mortgage"), counterpartAccountId: "mortgage" });
+    expect(converted.counterpart).toMatchObject({ accountId: "mortgage", amount: 500, notes: "n", cleared: false, transferId: id });
+    fake.editInActual(converted.transferId!, { reconciled: true });
+    const after = fake.writes().length;
+    await expect(t.revertTransferConversion!({
+      converted: pre({ id, accountId: "checking", date: "2026-03-02", amount: -500, payeeId: fake.transferPayeeId("mortgage"), notes: "n", transferId: converted.transferId }),
+      counterpart: pre({ id: converted.transferId!, accountId: "mortgage", date: "2026-03-02", amount: 500, payeeId: fake.transferPayeeId("checking"), notes: "n", reconciled: true, transferId: id }),
+      restoreTo: state(pre({ id, accountId: "checking", date: "2026-03-02", amount: -500, payeeId: "p-lender", notes: "n" })),
+    })).rejects.toBeInstanceOf(TransactionStructureRefusedError);
+    expect(fake.writes().length).toBe(after);
+  });
 });

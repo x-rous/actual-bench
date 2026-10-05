@@ -184,12 +184,52 @@ function planPatternBRepayments(ctx: PlanningContext, out: PlanResult, repayment
       ? matchPeriod(ctx, "lender-repayment-row", { periodKey: date, date, paymentMinor: payment })
       : null;
     const lender = lenderMatch?.status === "unique" ? ctx.rows.get(lenderMatch.candidates[0].candidate.id) : undefined;
+    if (!lender && !ctx.rules["lender-repayment-row"]) {
+      // No lender feed: the payment itself becomes the loan transfer (T277); Actual creates the loan-side row.
+      if (!livePosting(ctx, "repayment-link", date)) out.postings.push(planConvert(ctx, { periodKey: date, generation, payment: row, closing: calc.closing, versions: calc.versions, period }));
+      continue;
+    }
     if (!lender) {
-      out.notices.push({ code: "payment-not-transfer", periodKey: date, text: "The repayment is not a transfer to the loan account and no lender row was found. Make it a transfer in Actual, or add a lender-row matching rule." });
+      out.notices.push({ code: "waiting-for-lender-row", periodKey: date, text: "The repayment is not a transfer yet and the lender's row has not arrived. Bench links the two once it does." });
       continue;
     }
     out.postings.push(planLink(ctx, { postingKind: "repayment-link", periodKey: date, generation, source: row, counterpart: lender, closing: calc.closing, versions: calc.versions, period }));
   }
+}
+
+/** T277: make an existing payment the loan transfer by its payee. Always a Review proposal. */
+export function planConvert(
+  ctx: PlanningContext,
+  input: { periodKey: string; generation: number; payment: RowSnapshot; closing: ClosingState; versions: Record<string, string>; period: { key: string; from: string; to: string; chargeDates: string[] } }
+) {
+  const blockers = [...baseBlockers(ctx)];
+  const liabilityId = ctx.debt.liabilityAccountId ?? "";
+  const transferPayeeId = ctx.transferPayeeByAccount[liabilityId];
+  const { payment } = input;
+  if (!ctx.canRestructure) blockers.push({ code: "convert-unavailable", text: "This connection cannot change existing transactions. Use a supported Actual Bench connection." });
+  if (!transferPayeeId) blockers.push(REASONS.missingAccount);
+  if (payment.reconciled) blockers.push(REASONS.reconciledRow);
+  if (payment.isParent || payment.isChild) blockers.push(REASONS.splitParent);
+  if (payment.transferId) blockers.push(REASONS.alreadyLinked);
+  const reviews = [];
+  const liability = usableAccount(ctx, liabilityId);
+  const paymentAccount = usableAccount(ctx, payment.accountId);
+  if (liability?.offBudget && paymentAccount && !paymentAccount.offBudget && !payment.categoryId) {
+    reviews.push({ code: "uncategorized-transfer", text: "The payment has no category, so the money leaving the budget stays uncategorized. Set a category in Actual if you want it budgeted." });
+  }
+  return finalize(ctx, {
+    postingKind: "repayment-link", periodKey: input.periodKey, shape: "convert", generation: input.generation, marker: null,
+    inputSnapshot: inputSnapshot(ctx, input.period, [payment]),
+    outputSnapshot: {
+      format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "convert",
+      before: payment, transferPayeeId: transferPayeeId ?? "", transferAccountId: liabilityId,
+      expectedCounterpart: { accountId: liabilityId, amountMinor: -payment.amountMinor, notes: payment.notes },
+      accountBudgetStatus: budgetStatusOf(ctx, [payment.accountId, liabilityId]),
+      closing: input.closing,
+    },
+    engineVersions: input.versions,
+    policy: { blockers, reviews },
+  });
 }
 
 export function planLink(
