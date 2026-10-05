@@ -1,20 +1,8 @@
-import type { Metadata } from "next";
-import { Suspense } from "react";
-import { AssetsDebtShell } from "@/features/assets-debt/components/AssetsDebtViews";
-import { LoanView } from "@/features/assets-debt/components/LoanPages";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Loan - Actual Bench",
-};
-
-export default async function LoanPage({ params }: { params: Promise<{ id: string }> }) {
+/** Moved to /loans/[id]; the tab and filter in the old link are kept. */
+export default async function OldLoanPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { id } = await params;
-  return (
-    <AssetsDebtShell title="Assets & Debt">
-      {/* `useSearchParams` (the ?view= switch) needs a Suspense boundary to prerender. */}
-      <Suspense fallback={null}>
-        <LoanView id={id} />
-      </Suspense>
-    </AssetsDebtShell>
-  );
+  const query = new URLSearchParams(Object.entries(await searchParams).flatMap(([key, value]) => (value === undefined ? [] : Array.isArray(value) ? value.map((v) => [key, v]) : [[key, value]]))).toString();
+  redirect(`/loans/${encodeURIComponent(id)}${query ? `?${query}` : ""}`);
 }

@@ -54,7 +54,21 @@ export function assertApproved(ticket: ApplyTicketView): void {
   if (ticket.mode === "complete-link" && posting.status !== "indeterminate") throw new PostingNotApproved();
 }
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** A readable message even when a transport throws a plain object (an HTTP error body). */
+const message = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const e = error as { message?: unknown; error?: unknown; status?: unknown };
+    const text = typeof e.message === "string" ? e.message : typeof e.error === "string" ? e.error : null;
+    if (text) return typeof e.status === "number" ? `${text} (HTTP ${e.status})` : text;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Unknown error";
+    }
+  }
+  return String(error);
+};
 /**
  * The transport refused before writing anything (expected-state difference or a
  * structural refusal). Recognised by name so this module keeps only type-only
@@ -66,8 +80,8 @@ function linkInput(output: Extract<PostingOutputSnapshot, { kind: "link" }>): Li
   return { source: toTransactionPreflight(output.sourceBefore), counterpart: toTransactionPreflight(output.counterpartBefore), transferPayeeId: output.transferPayeeId };
 }
 
-async function read(transport: ActualBenchTransport, accountId: string, from: string): Promise<SyncSourceTransaction[]> {
-  return transport.listTransactionsForSync({ accountId, startDate: from });
+async function read(transport: ActualBenchTransport, accountId: string, from: string, to?: string): Promise<SyncSourceTransaction[]> {
+  return transport.listTransactionsForSync({ accountId, startDate: from, ...(to ? { endDate: to } : {}) });
 }
 
 export async function executeApprovedPosting(ticket: ApplyTicketView, ctx: ExecutorContext): Promise<ExecutorOutcome> {
@@ -143,7 +157,7 @@ async function applyConvert(output: Extract<PostingOutputSnapshot, { kind: "conv
   }
   let rows: SyncSourceTransaction[];
   try {
-    rows = await read(ctx.transport, output.transferAccountId, output.before.date);
+    rows = await read(ctx.transport, output.transferAccountId, output.before.date, output.before.date);
   } catch (error) {
     return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
   }
@@ -169,10 +183,11 @@ async function applyRevert(output: Extract<PostingOutputSnapshot, { kind: "rever
 /** T125: re-read, marker check, create, re-read, recover by marker, verify. */
 async function applyCreate(output: Extract<PostingOutputSnapshot, { kind: "create" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
   const from = output.operations.reduce((min, op) => (op.date < min ? op.date : min), output.operations[0]?.date ?? "0001-01-01");
+  const to = output.operations.reduce((max, op) => (op.date > max ? op.date : max), from);
   const accounts = [...new Set(output.operations.map((op) => op.accountId))];
   let existing: SyncSourceTransaction[];
   try {
-    existing = (await Promise.all(accounts.map((a) => read(ctx.transport, a, from)))).flat();
+    existing = (await Promise.all(accounts.map((a) => read(ctx.transport, a, from, to)))).flat();
   } catch (error) {
     return { status: "failed", error: { stage: "preflight-read", message: message(error), written: false } };
   }
@@ -189,7 +204,7 @@ async function applyCreate(output: Extract<PostingOutputSnapshot, { kind: "creat
   }
   let latest: SyncSourceTransaction[];
   try {
-    latest = (await Promise.all(accounts.map((a) => read(ctx.transport, a, from)))).flat();
+    latest = (await Promise.all(accounts.map((a) => read(ctx.transport, a, from, to)))).flat();
   } catch (error) {
     return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
   }
@@ -222,7 +237,7 @@ async function applyRestructure(output: Extract<PostingOutputSnapshot, { kind: "
   }
   let liabilityRows: SyncSourceTransaction[] = [];
   try {
-    liabilityRows = await read(ctx.transport, ctx.liabilityAccountId, output.before.date);
+    liabilityRows = await read(ctx.transport, ctx.liabilityAccountId, output.before.date, output.before.date);
   } catch (error) {
     return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
   }
@@ -236,8 +251,10 @@ async function verifyLink(output: Extract<PostingOutputSnapshot, { kind: "link" 
   let counterpartRows: SyncSourceTransaction[] = [];
   let sourceRows: SyncSourceTransaction[] = [];
   try {
-    counterpartRows = await read(ctx.transport, output.counterpartBefore.accountId, output.counterpartBefore.date);
-    sourceRows = await read(ctx.transport, output.sourceBefore.accountId, output.sourceBefore.date);
+    // Linking can move the lender's row to the payment's date; read up to the later of the two.
+    const to = output.sourceBefore.date > output.counterpartBefore.date ? output.sourceBefore.date : output.counterpartBefore.date;
+    counterpartRows = await read(ctx.transport, output.counterpartBefore.accountId, output.counterpartBefore.date < output.sourceBefore.date ? output.counterpartBefore.date : output.sourceBefore.date, to);
+    sourceRows = await read(ctx.transport, output.sourceBefore.accountId, output.sourceBefore.date, to);
   } catch (error) {
     return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
   }
@@ -280,7 +297,7 @@ async function applyClaim(output: Extract<PostingOutputSnapshot, { kind: "claim"
   if (output.release) return { status: "applied", actualIds: output.rows.map((r) => r.id), appliedAt: now() };
   try {
     for (const row of output.rows) {
-      const rows = await read(ctx.transport, row.accountId, row.date);
+      const rows = await read(ctx.transport, row.accountId, row.date, row.date);
       const found = rows.flatMap((r) => [r, ...r.splitLines.map((l) => ({ ...r, ...l, id: l.id ?? "", amount: l.amount }))]).find((r) => r.id === row.id);
       if (!found || found.amount !== row.amountMinor) return { status: "failed", error: { stage: "preflight", message: "A claimed row changed in Actual. Preview again.", written: false } };
     }

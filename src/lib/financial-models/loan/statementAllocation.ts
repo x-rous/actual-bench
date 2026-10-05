@@ -45,6 +45,11 @@ export type ObservedRepayment = {
   amountMinor: number;
   /** A fee the lender took from this repayment, kept as its own line. */
   feesMinor?: number;
+  /**
+   * The interest actually applied for this repayment when it differs from the calculation (a
+   * user's edit, T291). Later repayments then build on the principal actually applied.
+   */
+  appliedInterestMinor?: number;
 };
 
 export type AllocatedRepayment = ObservedRepayment & {
@@ -156,7 +161,13 @@ export function createObservedRepaymentAllocator(input: {
       nextReportedToDue = toDue;
     }
 
-    const interestMinor = Math.max(0, toMinor(interestExact, digits, profile.rounding.interestPostingRounding));
+    const calculatedMinor = Math.max(0, toMinor(interestExact, digits, profile.rounding.interestPostingRounding));
+    const applied = r.appliedInterestMinor;
+    if (applied !== undefined && (!Number.isSafeInteger(applied) || applied < 0)) return fail(`Repayment ${i + 1} has an invalid applied interest.`);
+    const interestMinor = applied ?? calculatedMinor;
+    // What was reported so far moves by the edit only, so the next due-date difference absorbs it
+    // and unedited repayments allocate exactly as before (the accrual itself is unchanged).
+    if (applied !== undefined && allocation === "accrued-to-due-date") nextReportedToDue = add(nextReportedToDue, fromMinor(applied - calculatedMinor, digits));
     const principalMinor = r.amountMinor - fees - interestMinor;
     if (principalMinor < 0) return fail(`Repayment ${i + 1} does not cover the interest it owes.`);
     const row: AllocatedRepayment = {

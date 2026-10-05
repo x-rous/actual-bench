@@ -26,7 +26,7 @@ export type PreviewBody = {
   parameters?: { openingAdjustmentCategoryId?: string | null; adjustmentCategoryId?: string | null; actualBalanceAtOnboardingMinor?: number | null };
 };
 
-export type PreviewResponse = { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean };
+export type PreviewResponse = { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; driftExplained?: boolean };
 
 const debtUrl = (id: string) => `/api/assets-debt/debts/${encodeURIComponent(id)}`;
 const postingUrl = (id: string) => `/api/assets-debt/postings/${encodeURIComponent(id)}`;
@@ -49,6 +49,10 @@ export const recordOutcome = (postingId: string, outcome: OutcomeBody) =>
 
 export const declinePosting = (postingId: string) =>
   request<{ posting: PostingView }>(`${postingUrl(postingId)}/decline`, { method: "POST", body: "{}" }).then((r) => r.posting);
+
+/** The user's edit of a proposed split's interest (T291); returns the new Review proposal. */
+export const overrideSplit = (postingId: string, body: { interestMinor: number; reason: string | null }) =>
+  request<{ posting: PostingView }>(`${postingUrl(postingId)}/override`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.posting);
 
 export const proposeReversal = (postingId: string, body: { accountDirectory: AccountDirectory; transferPayees: Record<string, string> }) =>
   request<{ posting: PostingView }>(`${postingUrl(postingId)}/reverse`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.posting);

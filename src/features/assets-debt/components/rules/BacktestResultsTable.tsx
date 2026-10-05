@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertTriangle, CheckCircle2, CircleHelp, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleCheckBig, CircleHelp, XCircle } from "lucide-react";
 import type { DebtBacktestResult, PeriodMatchStatus } from "@/lib/financial-models/matching";
 import { formatAmount } from "../../lib/money";
 
@@ -14,6 +14,10 @@ const STATUS = {
   multiple: { label: "Multiple - Review", icon: CircleHelp, tone: "text-amber-600 dark:text-amber-400" },
   unsafe: { label: "Unsafe - Review", icon: AlertTriangle, tone: "text-amber-600 dark:text-amber-400" },
 } satisfies Record<PeriodMatchStatus, { label: string; icon: typeof CheckCircle2; tone: string }>;
+
+/** A missing period whose row Bench already used in an applied change (T287). */
+const HANDLED = { label: "Already handled (applied)", icon: CircleCheckBig, tone: "text-muted-foreground" };
+export const isHandled = (period: { status: string; flags: string[] }) => period.flags.includes("already-handled");
 
 export function BacktestResultsTable({ result, minorDigits }: { result: DebtBacktestResult; minorDigits: number }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -37,7 +41,7 @@ export function BacktestResultsTable({ result, minorDigits }: { result: DebtBack
         <div role="rowgroup" style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((item) => {
             const period = result.periods[item.index];
-            const status = STATUS[period.status];
+            const status = isHandled(period) ? HANDLED : STATUS[period.status];
             const Icon = status.icon;
             const first = period.candidates[0];
             return (
@@ -51,7 +55,7 @@ export function BacktestResultsTable({ result, minorDigits }: { result: DebtBack
                 <span role="cell" className="tabular-nums">{period.expected.date}</span>
                 <span role="cell" className={`flex items-center gap-1.5 font-medium ${status.tone}`}><Icon className="h-3.5 w-3.5" aria-hidden />{status.label}</span>
                 <span role="cell" className="truncate text-muted-foreground">
-                  {first ? `${first.candidate.date} - ${formatAmount(Math.abs(first.candidate.amountMinor), minorDigits)}${period.flags.length ? ` - ${period.flags.join(", ")}` : ""}` : period.reviewReasons[0] ?? "No candidate"}
+                  {first ? `${first.candidate.date} - ${formatAmount(Math.abs(first.candidate.amountMinor), minorDigits)}${period.flags.length ? ` - ${period.flags.join(", ")}` : ""}` : isHandled(period) ? "Bench already applied a change for this period" : period.reviewReasons[0] ?? "No candidate"}
                 </span>
                 <span role="cell" className="truncate text-muted-foreground tabular-nums">
                   P {formatAmount(period.expected.principalMinor ?? 0, minorDigits)} - I {formatAmount(period.expected.interestMinor ?? 0, minorDigits)} - F {formatAmount(period.expected.feesMinor ?? 0, minorDigits)}

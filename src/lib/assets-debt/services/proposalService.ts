@@ -1,5 +1,5 @@
 import { canonicalHash } from "@/lib/app-db/canonicalJson";
-import { getEffectiveDebtAnchor } from "@/lib/app-db/debtAnchorRepository";
+import { openingFor } from "./opening";
 import { listDebtMatchRules } from "@/lib/app-db/debtMatchRuleRepository";
 import { listDebtTransactionLinks } from "@/lib/app-db/debtTransactionLinkRepository";
 import { AppDbValidationError } from "@/lib/app-db/errors";
@@ -16,8 +16,9 @@ import { planAdjustments } from "./planner/adjustments";
 import type { ExistingPostingSummary, PlanningContext, PlanningNotice, ComponentConfig } from "./planner/common";
 import { planPatternA } from "./planner/patternA";
 import { planPatternB } from "./planner/patternB";
+import { liabilityEffectMinor } from "./pendingEffect";
 import { reconcileDebt } from "./reconciliationService";
-import { indexReadRows, POSTING_INPUT_FORMAT_VERSION, type PostingOpening, type PostingOutputSnapshot } from "./snapshot";
+import { indexReadRows, POSTING_INPUT_FORMAT_VERSION, type PostingInputSnapshot, type PostingOutputSnapshot } from "./snapshot";
 
 /**
  * Proposals (RD-084 P1.6; FR-170a–FR-179, A-3).
@@ -48,20 +49,42 @@ export type PreviewRequest = {
   };
 };
 
+/** What the user needs to know about how a posting was worked out, from its input snapshot. */
+export type PostingBasis = {
+  /** Actual-dated repayment splits: the lender statement allocation and the dates used. */
+  allocation: "as-calculated" | "accrued-to-due-date" | null;
+  dueDate: string | null;
+  paidDate: string | null;
+  /** Earlier repayments taken as on schedule because they were not found in Actual. */
+  assumedEarlier: number;
+};
+
 export type PostingView = Omit<FinancialPostingRecord, "inputSnapshotJson" | "outputSnapshotJson"> & {
   output: PostingOutputSnapshot;
+  basis: PostingBasis;
   reused?: boolean;
 };
 
+function basisOf(inputJson: string): PostingBasis {
+  const input = JSON.parse(inputJson) as PostingInputSnapshot;
+  const observed = input.observedRepayments;
+  const last = observed?.repayments.at(-1) ?? null;
+  return {
+    allocation: observed?.allocation ?? null,
+    dueDate: last?.dueDate ?? null,
+    paidDate: last?.paidDate ?? null,
+    assumedEarlier: observed ? observed.repayments.slice(0, -1).filter((r) => r.assumed).length : 0,
+  };
+}
+
 export type PreviewResult =
-  | { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean }
+  | { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; /** The pending changes close the gap (FR-170c). */ driftExplained: boolean }
   | { ok: false; notFound: true }
   | { ok: false; blocked: { code: string; message: string } };
 
 export function postingView(record: FinancialPostingRecord, reused?: boolean): PostingView {
-  const { inputSnapshotJson: _input, outputSnapshotJson, ...rest } = record;
-  void _input;
-  return { ...rest, output: JSON.parse(outputSnapshotJson) as PostingOutputSnapshot, ...(reused === undefined ? {} : { reused }) };
+  const { inputSnapshotJson, outputSnapshotJson, ...rest } = record;
+  return { ...rest, output: JSON.parse(outputSnapshotJson) as PostingOutputSnapshot, basis: basisOf(inputSnapshotJson), ...(reused === undefined ? {} : { reused }) };
 }
 
 const known = (value: unknown): value is string => typeof value === "string";
@@ -78,12 +101,7 @@ export function summarize(record: FinancialPostingRecord): ExistingPostingSummar
   };
 }
 
-export function openingFor(db: SqliteDatabase, debtId: string, model: { terms: { openingDate: string; openingPrincipalMinor: number } }): PostingOpening {
-  const anchor = getEffectiveDebtAnchor(db, debtId);
-  return anchor
-    ? { date: anchor.anchorDate, principalMinor: anchor.principalMinor, accruedInterestMinor: anchor.accruedInterestMinor ?? 0, carriedRemainder: anchor.carriedRemainderDecimal, source: { kind: "anchor", anchorId: anchor.id } }
-    : { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, carriedRemainder: null, source: { kind: "contract-opening" } };
-}
+export { openingFor } from "./opening";
 
 /** The offset steps the projection consumes: the last point at or before the opening, then every later point to the window end. */
 export function offsetSteps(histories: readonly OffsetHistorySnapshot[] | undefined, openingDate: string, to: string): PlanningContext["offsets"] {
@@ -202,8 +220,26 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
   }
   const built = buildPlanningContext(db, debtId, request);
   if (!built.ok) return built;
-  const { ctx } = built;
-  const plans = [ctx.debt.lenderPattern === "separate-interest" ? planPatternB(ctx) : ctx.debt.lenderPattern === "embedded-interest" ? planPatternA(ctx) : { postings: [], notices: [{ code: "no-lender-pattern", periodKey: ctx.window.from, text: "Choose the lender pattern in Tracking setup so Bench knows how this loan is recorded." }] }, planAdjustments(ctx)];
+  let { ctx } = built;
+  const planAll = (c: PlanningContext) => [c.debt.lenderPattern === "separate-interest" ? planPatternB(c) : c.debt.lenderPattern === "embedded-interest" ? planPatternA(c) : { postings: [], notices: [{ code: "no-lender-pattern", periodKey: c.window.from, text: "Choose the lender pattern in Tracking setup so Bench knows how this loan is recorded." }] }, planAdjustments(c)];
+  let plans = planAll(ctx);
+  // FR-170c: a gap that the pending changes themselves close is not unexplained drift. Compare
+  // again as if every non-blocked change were applied; only if that is within tolerance is the
+  // drift treated as explained, and the changes are classified without it.
+  let driftExplained = false;
+  if (ctx.driftMaterial && request.comparison && ctx.debt.liabilityAccountId) {
+    const liability = ctx.debt.liabilityAccountId;
+    const effect = plans.flatMap((p) => p.postings).filter((p) => p.classification !== "blocked" && !p.reversalOf && p.postingKind !== "reversal").reduce((sum, p) => sum + liabilityEffectMinor(p.outputSnapshot, liability), 0);
+    if (effect !== 0) {
+      const adjusted = request.comparison.actualBalanceMinor + (ctx.debt.signConvention === "negative-is-debt" ? -effect : effect);
+      const again = reconcileDebt(db, { debtId, comparisonDate: request.comparison.comparisonDate, actualBalanceMinor: adjusted, offsetHistories: request.offsetHistories });
+      if (again.ok && again.drift !== "material") {
+        driftExplained = true;
+        ctx = { ...ctx, driftMaterial: false };
+        plans = planAll(ctx);
+      }
+    }
+  }
   pruneSupersededProposals(db, new Date(now));
   const postings: PostingView[] = [];
   for (const plan of plans) {
@@ -229,7 +265,7 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
     }
   }
   supersedeStaleProposals(db, { subjectKind: "debt", subjectId: ctx.debt.id, keepIds: postings.map((p) => p.id), configRevision: ctx.debt.currentRevision, window: ctx.window }, now);
-  return { ok: true, postings, notices: plans.flatMap((p) => p.notices), driftMaterial: ctx.driftMaterial };
+  return { ok: true, postings, notices: plans.flatMap((p) => p.notices), driftMaterial: built.ctx.driftMaterial, driftExplained };
 }
 
 export function listDebtPostings(db: SqliteDatabase, debtId: string): PostingView[] {

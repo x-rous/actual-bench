@@ -11,10 +11,10 @@ describe("existing-transaction safety matrix", () => {
   const embedded = () => createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
   const window = { from: "2024-02-01", to: "2024-02-29" };
 
-  it("uncategorized imported payment: Review restructure", async () => {
+  it("uncategorized imported payment: a routine restructure, Recommended (FR-170c)", async () => {
     const s = embedded();
     s.seedPayment("2024-02-01");
-    expect(byKind((await s.preview(window)).postings, "repayment-split")[0]).toMatchObject({ classification: "review" });
+    expect(byKind((await s.preview(window)).postings, "repayment-split")[0]).toMatchObject({ classification: "safe", reasons: expect.arrayContaining([expect.objectContaining({ code: "routine-repayment-split" })]) });
   });
 
   it("categorized payment: Review, and the reason says the category is replaced", async () => {
@@ -25,7 +25,7 @@ describe("existing-transaction safety matrix", () => {
     expect(split.reasons.map((r) => r.code)).toContain("user-category-would-be-replaced");
   });
 
-  it("full transfer already (embedded interest): Review when the loan-side row is Actual's own and untouched (T279); Blocked when it was imported", async () => {
+  it("full transfer already (embedded interest): Recommended (routine, FR-170c) when the loan-side row is Actual's own and untouched (T279); Blocked when it was imported", async () => {
     for (const imported of [false, true]) {
       const s = embedded();
       const counterpart = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-01", amount: 242915, payee: s.fake.transferPayeeId(ACCOUNTS.checking), ...(imported ? { imported_id: "lender:feed", imported_payee: "LENDER", cleared: true } : {}) });
@@ -36,7 +36,7 @@ describe("existing-transaction safety matrix", () => {
       if (imported) {
         expect(split).toMatchObject({ classification: "blocked", reasons: expect.arrayContaining([expect.objectContaining({ code: "imported-counterpart-protected" })]) });
       } else {
-        expect(split).toMatchObject({ classification: "review", reasons: expect.arrayContaining([expect.objectContaining({ code: "replaces-transfer-counterpart" })]) });
+        expect(split).toMatchObject({ classification: "safe", reasons: expect.arrayContaining([expect.objectContaining({ code: "replaces-transfer-counterpart" })]) });
       }
       resetAppDbForTests();
     }

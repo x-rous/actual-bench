@@ -186,13 +186,17 @@ export function upsertProposal(db: SqliteDatabase, input: ProposalInput, now = n
          WHERE subject_kind = ? AND subject_id = ? AND posting_kind = ? AND period_key = ? AND input_hash = ? AND status = 'proposed'`
       )
       .get<PostingRow>(subjectKind, input.subjectId, postingKind, periodKey, inputHash);
-    if (existing) return { posting: rowToRecord(existing), reused: true };
+    // The same inputs can be classified differently when something outside them changed (material
+    // drift came or went): then the stored classification is stale and a new version replaces it.
+    if (existing && existing.classification === classification && existing.classification_reasons_json === canonicalJson(input.reasons)) {
+      return { posting: rowToRecord(existing), reused: true };
+    }
 
     db.prepare(
-      `UPDATE financial_postings SET status = 'superseded', updated_at = ?
+      `UPDATE financial_postings SET status = 'superseded', updated_at = ?, error_json = ?
        WHERE subject_kind = ? AND subject_id = ? AND posting_kind = ? AND period_key = ? AND status = 'proposed'
          AND reversal_of IS ?`
-    ).run(now, subjectKind, input.subjectId, postingKind, periodKey, input.reversalOf ?? null);
+    ).run(now, supersededJson(input.reversalOf ? "newer-undo" : "newer-preview"), subjectKind, input.subjectId, postingKind, periodKey, input.reversalOf ?? null);
 
     const id = generateId();
     try {
@@ -322,8 +326,13 @@ export function reproposeIndeterminatePosting(db: SqliteDatabase, id: string, re
 }
 
 /** Preflight found Actual changed since preview; the proposal is replaced by a fresh preview. */
-export function supersedePosting(db: SqliteDatabase, id: string, now = new Date().toISOString()): FinancialPostingRecord {
-  return transition(db, id, ["proposed"], "superseded", {}, now);
+/** Why a proposal stopped being current, shown to the user instead of a bare "superseded". */
+export type SupersededCause = "newer-preview" | "newer-undo" | "actual-changed";
+
+const supersededJson = (cause: SupersededCause) => JSON.stringify({ superseded: cause });
+
+export function supersedePosting(db: SqliteDatabase, id: string, now = new Date().toISOString(), cause: SupersededCause = "newer-preview"): FinancialPostingRecord {
+  return transition(db, id, ["proposed"], "superseded", { error_json: supersededJson(cause) }, now);
 }
 
 /** Only when the compensating reversal posting itself has been applied. */
@@ -354,7 +363,7 @@ export function supersedeStaleProposals(
   const keep = JSON.stringify([...input.keepIds]);
   return db
     .prepare(
-      `UPDATE financial_postings SET status = 'superseded', updated_at = ?
+      `UPDATE financial_postings SET status = 'superseded', updated_at = ?, error_json = '{"superseded":"newer-preview"}'
        WHERE subject_kind = ? AND subject_id = ? AND status = 'proposed' AND reversal_of IS NULL
          AND id NOT IN (SELECT value FROM json_each(?))
          AND (config_revision < ? OR period_key BETWEEN ? AND ?)`

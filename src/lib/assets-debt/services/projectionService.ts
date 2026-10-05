@@ -22,7 +22,11 @@ export { modelFromDetail };
  * contract's opening principal. Later phases supply an anchor instead.
  */
 
-export type ProjectionRequest = Pick<DebtProjectionInput, "from" | "to" | "overrides" | "resolution"> & { offsetHistories?: OffsetHistorySnapshot[] };
+export type ProjectionRequest = Pick<DebtProjectionInput, "from" | "to" | "overrides" | "resolution"> & {
+  offsetHistories?: OffsetHistorySnapshot[];
+  /** Start from this state instead of the saved anchor (the "as paid" reconciliation, T309). */
+  startFrom?: { date: string; principalMinor: number; accruedInterestMinor: number; carriedRemainder: string | null };
+};
 
 export type StoredProjection = { ok: true; projection: DebtProjection; model: LoanModelSnapshot } | { ok: false; blocked: DebtBlock } | { ok: false; notFound: true };
 
@@ -39,7 +43,9 @@ export function projectStoredDebt(db: SqliteDatabase, debtId: string, request: P
   }
   const merged = request.offsetHistories ? mergeOffsetHistories(model, request.offsetHistories) : { model, events: [] };
   const savedAnchor = getEffectiveDebtAnchor(db, debtId);
-  const anchor = savedAnchor
+  const anchor = request.startFrom
+    ? { date: request.startFrom.date, principalMinor: request.startFrom.principalMinor, accruedInterestMinor: request.startFrom.accruedInterestMinor, carriedRemainder: request.startFrom.carriedRemainder, source: "posting" }
+    : savedAnchor
     ? { date: savedAnchor.anchorDate, principalMinor: savedAnchor.principalMinor, accruedInterestMinor: savedAnchor.accruedInterestMinor, carriedRemainder: savedAnchor.carriedRemainderDecimal, source: savedAnchor.source }
     : { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" };
   const projection = projectDebt({

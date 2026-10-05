@@ -16,9 +16,10 @@ import { fractionToPercent, minorToMajorText, parseMajorToMinor, percentToFracti
  * integer minor units and decimal strings, never floats.
  */
 
-type Common = { label: string; hint?: string; issue?: string; className?: string };
+type Common = { label: string; hint?: string; issue?: string; className?: string; /** Visually hidden label (a table column header says it); still read by assistive tech. */ hideLabel?: boolean };
 
 const FIELD_LABEL = "text-xs font-medium text-muted-foreground";
+const labelClass = (hide?: boolean) => (hide ? "sr-only" : FIELD_LABEL);
 
 function Described({ id, hint, issue }: { id: string; hint?: string; issue?: string }) {
   return (
@@ -39,11 +40,11 @@ function Described({ id, hint, issue }: { id: string; hint?: string; issue?: str
 
 const describedBy = (id: string, hint?: string, issue?: string) => [hint ? `${id}-hint` : "", issue ? `${id}-issue` : ""].filter(Boolean).join(" ") || undefined;
 
-export function TextField({ label, hint, issue, value, onChange, inputMode, placeholder, className }: Common & { value: string; onChange: (value: string) => void; inputMode?: "decimal" | "numeric" | "text"; placeholder?: string }) {
+export function TextField({ label, hint, issue, value, onChange, inputMode, placeholder, className, hideLabel }: Common & { value: string; onChange: (value: string) => void; inputMode?: "decimal" | "numeric" | "text"; placeholder?: string }) {
   const id = useId();
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
-      <Label className={FIELD_LABEL} htmlFor={id}>{label}</Label>
+      <Label className={labelClass(hideLabel)} htmlFor={id}>{label}</Label>
       <Input id={id} className="text-[13px]" value={value} inputMode={inputMode} placeholder={placeholder} aria-invalid={issue ? true : undefined} aria-describedby={describedBy(id, hint, issue)} onChange={(e) => onChange(e.target.value)} />
       <Described id={id} hint={hint} issue={issue} />
     </div>
@@ -62,15 +63,15 @@ function useSyncedText(external: string) {
   return { text, setText, onFocus: () => (focused.current = true), onBlur: () => (focused.current = false) };
 }
 
-export function MoneyField({ label, hint, issue, valueMinor, minorDigits, onChange, className, suffix }: Common & { valueMinor: number | null; minorDigits: number; onChange: (minor: number | null) => void; suffix?: string }) {
+export function MoneyField({ label, hint, issue, valueMinor, minorDigits, onChange, className, suffix, hideLabel, fixedDecimals }: Common & { valueMinor: number | null; minorDigits: number; onChange: (minor: number | null) => void; suffix?: string; /** Always show every decimal (an amount of money, not an input like a loan size). */ fixedDecimals?: boolean }) {
   const id = useId();
-  const external = editableAmount(valueMinor, minorDigits);
+  const external = fixedDecimals && valueMinor !== null ? groupTypedAmount(minorToMajorText(valueMinor, minorDigits)) : editableAmount(valueMinor, minorDigits);
   const { text, setText, onFocus, onBlur } = useSyncedText(external);
   const parsed = parseMajorToMinor(text, minorDigits);
   const problem = issue ?? (parsed.ok ? undefined : parsed.message);
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
-      <Label className={FIELD_LABEL} htmlFor={id}>{label}</Label>
+      <Label className={labelClass(hideLabel)} htmlFor={id}>{label}</Label>
       <div className="relative flex items-center">
         <Input
           id={id}
@@ -85,7 +86,7 @@ export function MoneyField({ label, hint, issue, valueMinor, minorDigits, onChan
           }}
           onBlur={() => {
             onBlur();
-            if (parsed.ok) setText(groupTypedAmount(text));
+            if (parsed.ok) setText(fixedDecimals ? groupTypedAmount(minorToMajorText(parsed.value, minorDigits)) : groupTypedAmount(text));
           }}
           onChange={(e) => {
             setText(e.target.value);
@@ -133,14 +134,14 @@ export function PercentField({ label, hint, issue, valueFraction, onChange, clas
   );
 }
 
-export function IntegerField({ label, hint, issue, value, onChange, min = 0, className, suffix }: Common & { value: number | null; onChange: (value: number | null) => void; min?: number; suffix?: string }) {
+export function IntegerField({ label, hint, issue, value, onChange, min = 0, className, suffix, hideLabel }: Common & { value: number | null; onChange: (value: number | null) => void; min?: number; suffix?: string }) {
   const id = useId();
   const { text, setText, onFocus, onBlur } = useSyncedText(value === null ? "" : String(value));
   const valid = text.trim() === "" || (/^\d+$/.test(text.trim()) && Number(text) >= min);
   const problem = issue ?? (valid ? undefined : `Enter a whole number of at least ${min}`);
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
-      <Label className={FIELD_LABEL} htmlFor={id}>{label}</Label>
+      <Label className={labelClass(hideLabel)} htmlFor={id}>{label}</Label>
       <div className="flex items-center gap-1">
         <Input
           id={id}
@@ -164,12 +165,12 @@ export function IntegerField({ label, hint, issue, value, onChange, min = 0, cla
   );
 }
 
-export function SelectField({ label, labelAccessory, hint, issue, value, onChange, options, placeholder, className }: Common & { labelAccessory?: ReactNode; value: string; onChange: (value: string) => void; options: SelectOption[]; placeholder?: string }) {
+export function SelectField({ label, labelAccessory, hint, issue, value, onChange, options, placeholder, className, hideLabel }: Common & { labelAccessory?: ReactNode; value: string; onChange: (value: string) => void; options: SelectOption[]; placeholder?: string }) {
   const id = useId();
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
       <div className="flex min-w-0 items-baseline justify-between gap-3">
-        <Label className={FIELD_LABEL} id={`${id}-label`}>{label}</Label>
+        <Label className={labelClass(hideLabel)} id={`${id}-label`}>{label}</Label>
         {labelAccessory ? <span className="text-right text-[11px] text-muted-foreground">{labelAccessory}</span> : null}
       </div>
       <Select className="text-[13px]" value={value} onValueChange={onChange} options={options} placeholder={placeholder ?? "Choose…"} aria-labelledby={`${id}-label`} id={id} />

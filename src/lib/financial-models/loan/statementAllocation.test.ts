@@ -54,3 +54,14 @@ describe("observed repayment allocation", () => {
     expect(compareLenderStatement(result.rows, [{ paidDate: "2024-01-21", principalMinor: 80_001, interestMinor: 19_999 }], 1)[0].status).toBe("matches");
   });
 });
+
+describe("applied interest (T291)", () => {
+  it("uses the applied interest and builds the next repayment on the principal actually applied", () => {
+    const calculated = allocateObservedRepayments({ model: MODEL, opening, repayments: [{ dueDate: "2024-02-01", paidDate: "2024-01-21", amountMinor: 100_000 }, { dueDate: "2024-03-01", paidDate: "2024-02-20", amountMinor: 100_000 }] });
+    const edited = allocateObservedRepayments({ model: MODEL, opening, repayments: [{ dueDate: "2024-02-01", paidDate: "2024-01-21", amountMinor: 100_000, appliedInterestMinor: 20_001 }, { dueDate: "2024-03-01", paidDate: "2024-02-20", amountMinor: 100_000 }] });
+    if (!calculated.ok || !edited.ok) throw new Error("allocation failed");
+    expect(edited.rows[0]).toMatchObject({ interestMinor: 20_001, principalMinor: 79_999, balanceAfterMinor: calculated.rows[0].balanceAfterMinor + 1 });
+    expect(edited.rows[1].balanceBeforeMinor).toBe(calculated.rows[1].balanceBeforeMinor + 1);
+    expect(allocateObservedRepayments({ model: MODEL, opening, repayments: [{ dueDate: "2024-02-01", paidDate: "2024-01-21", amountMinor: 100_000, appliedInterestMinor: -1 }] }).ok).toBe(false);
+  });
+});

@@ -1,7 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import type { PostingView } from "@/lib/assets-debt/services/proposalService";
+import { render, screen, within } from "@testing-library/react";
 import type { PostingOutputSnapshot, RowSnapshot } from "@/lib/assets-debt/services/snapshot";
-import { PREVIEW_HEADER, PostingPreview } from "./PostingPreview";
+import { PREVIEW_HEADER, PreviewTable } from "./PreviewTable";
 import { renderPreviewRows, type PreviewDirectory } from "./renderPreviewRows";
 
 /** T137: the preview of resulting Actual transactions (copy, rendering, accessibility, apply rules). */
@@ -38,14 +37,6 @@ const link: PostingOutputSnapshot = {
   transferPayeeId: "tp-loan", expectedPairState: { sourceTransferId: "lender-1", counterpartTransferId: "child-1", counterpartAmountMinor: 41710 }, closing: null,
 };
 
-function posting(output: PostingOutputSnapshot, overrides: Partial<PostingView> = {}): PostingView {
-  return {
-    id: "p1", budgetSyncId: "b", subjectKind: "debt", subjectId: "d", postingKind: output.kind === "create" ? "interest-charge" : output.kind === "link" ? "repayment-link" : "repayment-split",
-    periodKey: "2024-02-28", generation: 1, configRevision: 1, inputFormatVersion: 1, inputHash: "h", engineVersions: { projection: "projection@2", "loan-daily": "loan-daily@7" },
-    classification: output.kind === "create" ? "safe" : "review", reasons: [{ code: "x", text: output.kind === "create" ? "Deterministic charge with unchanged inputs." : "Restructures an existing payment; confirm the split." }],
-    idempotencyMarker: null, status: "proposed", decidedAt: null, appliedAt: null, actualIds: null, reversalOf: null, error: null, createdAt: "t", updatedAt: "t", output, ...overrides,
-  };
-}
 
 describe("renderPreviewRows (pure)", () => {
   it("off-budget rows always show no category", () => {
@@ -73,69 +64,22 @@ describe("renderPreviewRows (pure)", () => {
   });
 });
 
-describe("PostingPreview", () => {
-  it("shows the exact header, the three-state label as text, and the exact button labels", () => {
-    render(<PostingPreview posting={posting(create)} directory={directory} currencyMinorDigits={2} onApply={jest.fn()} onDecline={jest.fn()} />);
-    expect(screen.getByText(PREVIEW_HEADER)).toBeInTheDocument();
-    expect(PREVIEW_HEADER).toBe("This is what Actual Bench will write to Actual.");
-    expect(within(screen.getByRole("status")).getByText("Recommended - apply with one click")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply this change" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Not now" })).toBeEnabled();
-  });
-
-  it("a Review proposal says what to check; a Blocked one has no apply action and names the next step", () => {
-    const { unmount } = render(<PostingPreview posting={posting(restructure)} directory={directory} currencyMinorDigits={2} />);
-    expect(screen.getByText("Review before applying")).toBeInTheDocument();
-    expect(screen.getByText("Check the split and the resulting rows before applying.")).toBeInTheDocument();
-    unmount();
-    render(<PostingPreview posting={posting(restructure, { classification: "blocked", reasons: [{ code: "reconciled-row", text: "The matched row is reconciled in Actual. Resolve in Actual, then re-run." }] })} directory={directory} currencyMinorDigits={2} actualRowHref={(id) => `https://actual.example/${id}`} />);
-    expect(screen.getByText("Cannot apply - resolve in Actual first")).toBeInTheDocument();
-    expect(screen.getByText("The matched row is reconciled in Actual. Resolve in Actual, then re-run.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Apply this change" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Open the row in Actual" })).toHaveAttribute("href", "https://actual.example/bank-1");
-  });
-
-  it("Apply runs only on the user's click, exactly once; rendering calls nothing", () => {
-    const onApply = jest.fn();
-    render(<PostingPreview posting={posting(create)} directory={directory} currencyMinorDigits={2} onApply={onApply} onDecline={jest.fn()} />);
-    expect(onApply).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Apply this change" }));
-    expect(onApply).toHaveBeenCalledTimes(1);
-  });
-
-  it("after apply: Applied on <date>, and Undo only opens a reversal proposal", () => {
-    const onUndo = jest.fn();
-    render(<PostingPreview posting={posting(create, { status: "applied", appliedAt: "2024-06-02T10:00:00.000Z", decidedAt: "2024-06-02T09:59:00.000Z" })} directory={directory} currencyMinorDigits={2} onUndo={onUndo} />);
-    expect(screen.getByText(/Applied on 2024-06-02\./)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Apply this change" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Undo - opens a reversal proposal." }));
-    expect(onUndo).toHaveBeenCalledTimes(1);
-  });
-
-  it("accessibility: row and column counts, labelled cells, keyboard-operable Before/After, no colour-only state, no em dash", () => {
-    const { container } = render(<PostingPreview posting={posting(restructure)} directory={directory} currencyMinorDigits={2} />);
-    const table = screen.getByRole("table");
-    expect(table).toHaveAttribute("aria-rowcount", "5");
+describe("PreviewTable", () => {
+  it("accessibility: row and column counts, labelled cells, the Split parent, no colour-only state, no em dash", () => {
+    const rows = renderPreviewRows(restructure, directory, 2);
+    const { container } = render(<PreviewTable rows={rows} label="Repayment split rows, after" />);
+    const table = screen.getByRole("table", { name: "Repayment split rows, after" });
+    expect(table).toHaveAttribute("aria-rowcount", String(rows.length + 1));
     expect(table).toHaveAttribute("aria-colcount", "7");
-    for (const cell of within(table).getAllByRole("cell")) expect(cell).toHaveAttribute("aria-label");
-    const before = screen.getByRole("button", { name: "Before" });
-    expect(before).toHaveAttribute("aria-pressed", "false");
-    before.focus();
-    fireEvent.click(before);
-    expect(before).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("table")).toHaveAttribute("aria-rowcount", "2");
-    expect(container.textContent).not.toMatch(/—/);
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Date", "Account", "Payee", "Category", "Notes", "Amount", "Status"]);
+    expect(within(table).getAllByLabelText(/^Category: Split$/)).toHaveLength(1);
+    expect(within(table).getAllByLabelText(/^Status: /).length).toBe(rows.length);
+    expect(container.textContent).not.toContain("\u2014");
+    expect(PREVIEW_HEADER).toBe("This is what Actual Bench will write to Actual.");
   });
 
-  it("an interrupted link offers Check Actual, and completion only after the read-only check asks for it", () => {
-    const onCheck = jest.fn();
-    const onCompleteLink = jest.fn();
-    const { rerender } = render(<PostingPreview posting={posting(link, { status: "indeterminate", decidedAt: "t" })} directory={directory} currencyMinorDigits={2} onCheck={onCheck} onCompleteLink={onCompleteLink} />);
-    expect(screen.queryByRole("button", { name: "Complete the transfer link" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Check Actual" }));
-    expect(onCheck).toHaveBeenCalledTimes(1);
-    rerender(<PostingPreview posting={posting(link, { status: "indeterminate", decidedAt: "t" })} directory={directory} currencyMinorDigits={2} onCheck={onCheck} onCompleteLink={onCompleteLink} completionDetail="The transfer link was interrupted halfway." />);
-    fireEvent.click(screen.getByRole("button", { name: "Complete the transfer link" }));
-    expect(onCompleteLink).toHaveBeenCalledTimes(1);
+  it("says when there are no existing rows", () => {
+    render(<PreviewTable rows={[]} label="none" />);
+    expect(screen.getByText(/No existing rows/)).toBeInTheDocument();
   });
 });

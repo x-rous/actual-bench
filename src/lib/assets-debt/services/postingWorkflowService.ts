@@ -19,7 +19,7 @@ import type { AccountDirectory } from "../actual/ledgerPort";
 import { planReversal } from "./planner/adjustments";
 import { PostingNotApproved } from "./postingErrors";
 import { buildPlanningContext, postingView, summarize, type PostingView } from "./proposalService";
-import { compareRowToSnapshot, POSTING_INPUT_FORMAT_VERSION, type PostingOutputSnapshot, type RowSnapshot } from "./snapshot";
+import { compareRowToSnapshot, OVERRIDE_NO_REASON_MINOR, POSTING_INPUT_FORMAT_VERSION, type PostingInputSnapshot, type PostingOutputSnapshot, type RowSnapshot, type SplitOverride } from "./snapshot";
 
 /**
  * The server half of applying a posting (RD-084 P1.6 T125–T136; SC-018).
@@ -106,7 +106,7 @@ export function approveAndBeginApply(db: SqliteDatabase, postingId: string, inpu
   if (posting.status !== "proposed") throw new AppDbValidationError(`A ${known(posting.status) ? posting.status : "unrecognised"} posting cannot be applied`);
   const differences = preflightPosting(db, posting, input.fresh);
   if (differences.length) {
-    supersedePosting(db, postingId, input.decidedAt);
+    supersedePosting(db, postingId, input.decidedAt, "actual-changed");
     throw new PreflightRefused(differences);
   }
   const ticket = db.transaction(() => {
@@ -207,7 +207,7 @@ export function proposeReversal(
   // what blocked it (for example a link that had to be undone first) may be resolved now.
   const pending = findReversalProposal(db, postingId);
   if (pending && pending.status !== "proposed") return postingView(pending);
-  if (pending) supersedePosting(db, pending.id, now);
+  if (pending) supersedePosting(db, pending.id, now, "newer-undo");
   const built = buildPlanningContext(db, original.subjectId, {
     from: input.today, to: input.today, today: input.today, accountDirectory: input.accountDirectory, transferPayees: input.transferPayees,
     capabilities: { canRestructure: true, canVerifyTransferLinks: true },
@@ -223,3 +223,85 @@ export function proposeReversal(
   }, now);
   return postingView(result.posting);
 }
+
+/**
+ * The user's edit of a proposed repayment split's interest (T291; FR-069d). Principal stays the
+ * residual, so the lines still sum to the payment. Up to ±1 minor unit from the calculation needs
+ * no reason; more needs one. The edit becomes a new Review proposal that records the calculated
+ * value, the edited value and the reason; entering the calculated value again removes the edit.
+ * Later months build on the edited principal. Nothing is written to Actual here.
+ */
+export function overrideRepaymentSplit(
+  db: SqliteDatabase,
+  postingId: string,
+  input: { interestMinor: number; reason?: string | null },
+  now = new Date().toISOString()
+): PostingView {
+  const posting = getFinancialPosting(db, postingId);
+  if (!posting) throw new AppDbValidationError("Posting not found");
+  if (posting.status !== "proposed") throw new AppDbValidationError("Only an undecided proposal can be edited");
+  if (posting.postingKind !== "repayment-split") throw new AppDbValidationError("Only a repayment split's amounts can be edited");
+  if (posting.classification === "blocked") throw new AppDbValidationError("A blocked proposal cannot be edited; resolve it first");
+  const output = outputOf(posting);
+  if (output.kind !== "restructure") throw new AppDbValidationError("Only a repayment split's amounts can be edited");
+  const interestMinor = input.interestMinor;
+  if (!Number.isSafeInteger(interestMinor) || interestMinor < 0) throw new AppDbValidationError("The interest must be zero or more, in whole minor units");
+  const interestIndex = output.operations.findIndex((c) => c.economicKind === "interest");
+  const principalIndex = output.operations.findIndex((c) => c.economicKind === "principal");
+  if (interestIndex < 0 || principalIndex < 0) throw new AppDbValidationError("This split has no interest line to edit");
+  const sign = output.before.amountMinor < 0 ? -1 : 1;
+  const calculated = output.override?.calculatedInterestMinor ?? Math.abs(output.operations[interestIndex].amountMinor);
+  const reason = input.reason?.trim() || null;
+  if (Math.abs(interestMinor - calculated) > OVERRIDE_NO_REASON_MINOR && !reason) {
+    throw new AppDbValidationError("Give a short reason for a change of more than one minor unit");
+  }
+  if (reason && reason.length > 200) throw new AppDbValidationError("Keep the reason under 200 characters");
+  const others = output.operations.reduce((sum, c, i) => (i === interestIndex || i === principalIndex ? sum : sum + Math.abs(c.amountMinor)), 0);
+  const principal = Math.abs(output.before.amountMinor) - others - interestMinor;
+  if (principal <= 0) throw new AppDbValidationError("The interest is larger than the payment allows; principal would not be positive");
+
+  const operations = output.operations.map((c, i) => (i === interestIndex ? { ...c, amountMinor: sign * interestMinor } : i === principalIndex ? { ...c, amountMinor: sign * principal } : c));
+  const override: SplitOverride | null = interestMinor === calculated ? null : { calculatedInterestMinor: calculated, interestMinor, reason };
+  const oldPrincipal = Math.abs(output.operations[principalIndex].amountMinor);
+  const { override: _previous, ...rest } = output;
+  void _previous;
+  const nextOutput: PostingOutputSnapshot = {
+    ...rest,
+    operations,
+    expectedPostState: { ...output.expectedPostState, children: operations },
+    components: operations.map((c) => ({ kind: c.economicKind, amountMinor: Math.abs(c.amountMinor) })),
+    closing: output.closing ? { ...output.closing, principalMinor: output.closing.principalMinor + oldPrincipal - principal } : null,
+    ...(override ? { override } : {}),
+  };
+  const inputSnapshot = JSON.parse(posting.inputSnapshotJson) as PostingInputSnapshot;
+  const { overrideInterestMinor: _a, calculatedInterestMinor: _b, overrideReason: _c, ...parameters } = inputSnapshot.parameters;
+  void _a; void _b; void _c;
+  const observed = inputSnapshot.observedRepayments;
+  const nextInput: PostingInputSnapshot = {
+    ...inputSnapshot,
+    parameters: { ...parameters, ...(override ? { overrideInterestMinor: override.interestMinor, calculatedInterestMinor: override.calculatedInterestMinor, overrideReason: override.reason } : {}) },
+    ...(observed
+      ? { observedRepayments: { ...observed, repayments: observed.repayments.map((r, i) => (i === observed.repayments.length - 1 ? withApplied(r, override?.interestMinor) : r)) } }
+      : {}),
+  };
+  const fmt = (minor: number, digits = 2) => (minor / 10 ** digits).toFixed(digits);
+  const digits = getDebt(db, posting.subjectId)?.currencyMinorDigits ?? 2;
+  const reasons = posting.reasons.filter((r) => r.code !== "edited-split");
+  if (override) reasons.push({ code: "edited-split", text: `Edited: calculated interest ${fmt(calculated, digits)}, your value ${fmt(interestMinor, digits)}${reason ? ` (${reason})` : ""}.` });
+  const result = upsertProposal(db, {
+    budgetSyncId: posting.budgetSyncId, subjectKind: "debt", subjectId: posting.subjectId,
+    postingKind: "repayment-split", periodKey: posting.periodKey, generation: posting.generation,
+    configRevision: posting.configRevision, inputFormatVersion: POSTING_INPUT_FORMAT_VERSION,
+    inputSnapshot: nextInput, engineVersions: posting.engineVersions, outputSnapshot: nextOutput,
+    // An edited proposal is always Review (owner refinement 2).
+    classification: "review", reasons, idempotencyMarker: posting.idempotencyMarker, reversalOf: null,
+  }, now);
+  return postingView(result.posting, result.reused);
+}
+
+function withApplied<T extends { appliedInterestMinor?: number }>(entry: T, applied: number | undefined): T {
+  const { appliedInterestMinor: _old, ...rest } = entry;
+  void _old;
+  return (applied === undefined ? rest : { ...rest, appliedInterestMinor: applied }) as T;
+}
+

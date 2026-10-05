@@ -87,6 +87,10 @@ export type ExpectedPostState = {
 
 export type ComponentLine = { kind: EconomicKind; amountMinor: number };
 
+export type SplitOverride = { calculatedInterestMinor: number; interestMinor: number; reason: string | null };
+
+export { OVERRIDE_NO_REASON_MINOR } from "../overrides";
+
 export type ClosingState = {
   date: string;
   principalMinor: number;
@@ -120,6 +124,8 @@ export type PostingOutputSnapshot =
        * re-creates (with a new id) when the split is undone.
        */
       replacesCounterpart?: RowSnapshot | null;
+      /** The user's edit of the interest line (T291): what Bench calculated, what was entered, and why. */
+      override?: SplitOverride | null;
     }
   | {
       format: typeof POSTING_OUTPUT_FORMAT;
@@ -387,7 +393,7 @@ export function allocateRepaymentSplit(input: {
   const result = allocateObservedRepayments({
     model: input.model,
     opening: { date: input.opening.date, principalMinor: input.opening.principalMinor, accruedInterestMinor: input.opening.accruedInterestMinor },
-    repayments: input.observed.repayments.map(({ dueDate, paidDate, amountMinor, feesMinor }) => ({ dueDate, paidDate, amountMinor, feesMinor })),
+    repayments: input.observed.repayments.map(({ dueDate, paidDate, amountMinor, feesMinor, appliedInterestMinor }) => ({ dueDate, paidDate, amountMinor, feesMinor, appliedInterestMinor })),
     allocation: input.observed.allocation,
   });
   if (!result.ok) return result;

@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
-import { AssetsDebtOverview } from "@/features/assets-debt/components/AssetsDebtViews";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Assets & Debt - Actual Bench",
-};
-
+/** Loans & Debt and Assets are separate pages now; the old combined page opens Loans & Debt. */
 export default function AssetsDebtPage() {
-  return <AssetsDebtOverview />;
+  redirect("/loans");
 }

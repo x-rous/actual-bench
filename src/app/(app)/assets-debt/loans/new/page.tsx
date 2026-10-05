@@ -1,15 +1,6 @@
-import type { Metadata } from "next";
-import { AssetsDebtShell } from "@/features/assets-debt/components/AssetsDebtViews";
-import { NewLoanView } from "@/features/assets-debt/components/LoanPages";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "New loan - Actual Bench",
-};
-
-export default function NewLoanPage() {
-  return (
-    <AssetsDebtShell title="Assets & Debt">
-      <NewLoanView />
-    </AssetsDebtShell>
-  );
+/** Moved to /loans/new. */
+export default function OldNewLoanPage() {
+  redirect("/loans/new");
 }

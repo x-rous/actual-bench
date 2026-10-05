@@ -3,6 +3,7 @@ import { executeApprovedPosting, type ExecutorOutcome } from "@/lib/assets-debt/
 import type { PostingView } from "@/lib/assets-debt/services/proposalService";
 import { recoverPosting } from "@/lib/assets-debt/services/recovery";
 import { indexReadRows, type PostingOutputSnapshot, type RowSnapshot } from "@/lib/assets-debt/services/snapshot";
+import { startTiming } from "./debugTiming";
 import { approveAndApply, beginCompleteLink, recordOutcome } from "./postingsApi";
 
 /**
@@ -44,8 +45,10 @@ export async function rereadTargets(posting: PostingView, transport: ActualBench
   const targets = rowsToRecheck(posting.output);
   const fresh: RowSnapshot[] = [];
   for (const accountId of [...new Set(targets.map((t) => t.accountId))]) {
-    const from = targets.filter((t) => t.accountId === accountId).reduce((min, t) => (t.date < min ? t.date : min), "9999-12-31");
-    const index = indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: from }));
+    const dates = targets.filter((t) => t.accountId === accountId).map((t) => t.date);
+    const from = dates.reduce((min, d) => (d < min ? d : min), "9999-12-31");
+    const to = dates.reduce((max, d) => (d > max ? d : max), "0000-01-01");
+    const index = indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: from, endDate: to }));
     for (const target of targets.filter((t) => t.accountId === accountId)) {
       const row = index.get(target.id);
       if (row) fresh.push(row);
@@ -55,15 +58,22 @@ export async function rereadTargets(posting: PostingView, transport: ActualBench
 }
 
 export async function applyPosting(posting: PostingView, ctx: PostingActionContext): Promise<PostingView> {
+  const timing = startTiming(`apply ${String(posting.postingKind)}`);
   const fresh = await rereadTargets(posting, ctx.transport);
+  timing.step("re-read");
   const ticket = await approveAndApply(posting.id, fresh);
+  timing.step("server check");
   let outcome: ExecutorOutcome;
   try {
     outcome = await executeApprovedPosting(ticket, ctx);
   } catch (error) {
     outcome = { status: "indeterminate", error: { stage: "executor", message: error instanceof Error ? error.message : String(error) } };
   }
-  return recordOutcome(posting.id, outcome);
+  timing.step("write and verify");
+  const recorded = await recordOutcome(posting.id, outcome);
+  timing.step("record");
+  timing.end();
+  return recorded;
 }
 
 export type CheckResult = { posting: PostingView } | { needsCompletion: string };

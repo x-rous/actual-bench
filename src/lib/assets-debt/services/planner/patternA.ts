@@ -4,6 +4,7 @@ import { existingStructureReason, REASONS } from "../../classification/policy";
 import { classifyExistingStructure } from "../../classification/existingStructure";
 import { createObservedRepaymentAllocator, interestAllocationOf, type InterestAllocation, type ObservedRepaymentAllocator } from "@/lib/financial-models/loan/statementAllocation";
 import {
+  allocateRepaymentSplit,
   calculatePeriod,
   POSTING_OUTPUT_FORMAT,
   POSTING_OUTPUT_FORMAT_VERSION,
@@ -13,6 +14,7 @@ import {
   type PostingInputSnapshot,
   type PostingOutputSnapshot,
   type RowSnapshot,
+  type SplitOverride,
 } from "../snapshot";
 import {
   addIsoDays,
@@ -105,7 +107,8 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     }
     // The matched payment happened on its own date, whatever Bench does with it below.
     const parts = nonPrincipalParts(ctx, { interest: 0, fees: Math.abs(repayment.feesMinor) });
-    const observedEntry: ChainEntry = { dueDate: date, paidDate: row.date, amountMinor: Math.abs(row.amountMinor), feesMinor: parts.parts.reduce((sum, p) => sum + p.amount, 0) };
+    const edit = overrideFor(ctx, date, row);
+    const observedEntry: ChainEntry = { dueDate: date, paidDate: row.date, amountMinor: Math.abs(row.amountMinor), feesMinor: parts.parts.reduce((sum, p) => sum + p.amount, 0), ...(edit ? { appliedInterestMinor: edit.interestMinor } : {}) };
     const earlier = chain.entries.slice();
     const allocated = chain.add(observedEntry);
     const decision = classifyExistingStructure({ candidate: evaluation.candidate, lenderPattern: "embedded-interest", rowRole: "payment" });
@@ -141,10 +144,17 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     let closing = calc.closing;
     let versions = calc.versions;
     let observedRepayments: PostingInputSnapshot["observedRepayments"];
+    let override: SplitOverride | null = null;
     if (actualDated) {
       const observed = { allocation, repayments: [...earlier, observedEntry] };
       if (allocated.ok) {
         interestMinor = allocated.row.interestMinor;
+        if (edit) {
+          // Keep the user's value; record it against the current calculation.
+          const calculated = allocateRepaymentSplitCalculated(ctx, allocation, earlier, observedEntry);
+          override = { ...edit, calculatedInterestMinor: calculated ?? edit.calculatedInterestMinor };
+          reviews.push(editedReason(override, ctx.model.currency.minorDigits));
+        }
         closing = { date: row.date, principalMinor: allocated.row.balanceAfterMinor, accruedInterestMinor: 0, carriedRemainder: null };
         versions = { ...calc.versions, ...chain.engineVersions };
         observedRepayments = observed;
@@ -165,7 +175,10 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
 
     out.postings.push(finalize(ctx, {
       postingKind: "repayment-split", periodKey: date, shape: "restructure", generation: generationFor(ctx, "repayment-split", date), marker: null,
-      inputSnapshot: { ...inputSnapshot(ctx, period, replacesCounterpart ? [row, replacesCounterpart] : [row], { lenderFeed }), ...(observedRepayments ? { observedRepayments } : {}) },
+      inputSnapshot: {
+        ...inputSnapshot(ctx, period, replacesCounterpart ? [row, replacesCounterpart] : [row], { lenderFeed, ...(override ? { overrideInterestMinor: override.interestMinor, calculatedInterestMinor: override.calculatedInterestMinor, overrideReason: override.reason } : {}) }),
+        ...(observedRepayments ? { observedRepayments } : {}),
+      },
       outputSnapshot: {
         format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "restructure",
         before: row,
@@ -175,9 +188,11 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
         components,
         closing,
         ...(replacesCounterpart ? { replacesCounterpart } : {}),
+        ...(override ? { override } : {}),
       },
       engineVersions: versions,
-      policy: { blockers, reviews },
+      // FR-170c: one payment matched under the enabled rule; the policy decides from the notes.
+      policy: { blockers, reviews, routineSplit: match.status === "unique" },
     }));
   }
   return out;
@@ -276,7 +291,31 @@ type ChainEntry = NonNullable<PostingInputSnapshot["observedRepayments"]>["repay
 /** An applied split: its actual date, amount and non-interest, non-principal children. */
 function entryFromSplit(output: Extract<PostingOutputSnapshot, { kind: "restructure" }>, dueDate: string): ChainEntry {
   const feesMinor = output.operations.filter((c) => c.economicKind !== "principal" && c.economicKind !== "interest").reduce((sum, c) => sum + Math.abs(c.amountMinor), 0);
-  return { dueDate, paidDate: output.before.date, amountMinor: Math.abs(output.before.amountMinor), feesMinor };
+  // An edited split carries what was applied, so later months build on that principal (T291).
+  return { dueDate, paidDate: output.before.date, amountMinor: Math.abs(output.before.amountMinor), feesMinor, ...(output.override ? { appliedInterestMinor: output.override.interestMinor } : {}) };
+}
+
+/** The interest Bench calculates for this repayment, ignoring the user's edit (for the "calculated" figure). */
+function allocateRepaymentSplitCalculated(ctx: PlanningContext, allocation: InterestAllocation, earlier: ChainEntry[], entry: ChainEntry): number | null {
+  const { appliedInterestMinor: _edit, ...plain } = entry;
+  void _edit;
+  const result = allocateRepaymentSplit({ model: ctx.model, opening: ctx.opening, observed: { allocation, repayments: [...earlier, plain] } });
+  return result.ok ? result.row.interestMinor : null;
+}
+
+/** The user's edit of this period's split, if an undecided proposal for it carries one (T291). */
+function overrideFor(ctx: PlanningContext, date: string, row: RowSnapshot): SplitOverride | null {
+  for (const p of ctx.postings) {
+    if (p.postingKind !== "repayment-split" || p.periodKey !== date || p.status !== "proposed") continue;
+    const output = p.outputSnapshot;
+    if (output.kind === "restructure" && output.override && output.before.id === row.id && output.before.amountMinor === row.amountMinor) return output.override;
+  }
+  return null;
+}
+
+function editedReason(override: SplitOverride, digits: number): PostingReason {
+  const fmt = (minor: number) => (minor / 10 ** digits).toFixed(digits);
+  return { code: "edited-split", text: `Edited: calculated interest ${fmt(override.calculatedInterestMinor)}, your value ${fmt(override.interestMinor)}${override.reason ? ` (${override.reason})` : ""}.` };
 }
 
 /**

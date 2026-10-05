@@ -7,33 +7,38 @@ import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { getTransport } from "@/lib/actual";
 import { readOffsetHistories, type OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
-import { archiveDebt, createDebt, DebtApiError, getDebt, listDebts, updateDebt } from "../lib/debtsApi";
+import { archiveDebt, createDebt, DebtApiError, deleteDebtPermanently, getDebt, listDebts, listMatchRules, updateDebt } from "../lib/debtsApi";
 import { detailToStates, newSimulation, newTracking, statesToSaveInput, summarizeProfile, type SaveIssue, type SimulationState, type TrackingState } from "../lib/simulatorModel";
+import { LOANS_PATH, loanPath } from "../lib/routes";
 import { useAccountDirectory } from "../lib/useAccountDirectory";
 import { SAVE_BOUNDARY } from "./saveBoundary";
 import { SimulatorView } from "./simulator/SimulatorView";
-import { strategyAdvice, TrackingSetup } from "./tracking/TrackingSetup";
-import { LenderReconciliation } from "./reconciliation/LenderReconciliation";
-import { PostingsPanel } from "./preview/PostingsPanel";
-import { ActivityTimeline } from "./activity/ActivityTimeline";
-import { RulesView } from "./rules/RulesView";
+import { strategyAdvice } from "../lib/strategyAdvice";
+import { LoanActivity } from "./workspace/LoanActivity";
+import { MatchingEditor } from "./rules/MatchingEditor";
+import { LoanSetup, loanSettingsComplete, setupChecklist } from "./workspace/LoanSetup";
+import { WorkspaceFrame, workspaceTabFor, workspaceTabSlug, type WorkspaceTab } from "./workspace/WorkspaceFrame";
 
 /**
- * The loan pages (RD-084 P1.3b T204, T214, T216).
+ * The loan workspace pages (RD-084 P1.3b T204, T214, T216; P1.6b T288).
  *
- * New loan: simulate (unsaved, in memory) → Set up tracking in Actual →
- * review → Add loan to Assets & Debt or Save as draft. Nothing is saved, and
- * nothing reads Actual, until the tracking step; nothing ever writes to Actual.
+ * Both open in the focused workspace (Activity · Calculation · Setup) without
+ * the Assets & Debt section chrome.
  *
- * Existing loan: the same simulator from the saved configuration, with
- * unsaved changes marked and comparable with the saved loan; Save changes
- * goes through the existing revision rules.
+ * New loan: opens on Schedule (unsaved, in memory) → Next: Settings → Save
+ * loan (or Save as draft from the ⋯ menu). Nothing is saved, and nothing reads
+ * Actual, until Setup; nothing here writes to Actual.
+ *
+ * Existing loan: opens on Activity. Calculation is the same simulator from the
+ * saved configuration, with unsaved changes marked; Save changes goes through
+ * the existing revision rules.
  */
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -74,29 +79,6 @@ function IssueList({ issues }: { issues: SaveIssue[] }) {
   );
 }
 
-function Review({ sim, tracking, children }: { sim: SimulationState; tracking: TrackingState; children: React.ReactNode }) {
-  return (
-    <section aria-labelledby="review-heading" className="flex flex-col gap-3 px-4 py-4">
-      <h2 id="review-heading" className="text-base font-semibold">
-        Review
-      </h2>
-      <dl className="grid grid-cols-[12rem_1fr] gap-x-3 gap-y-1 text-sm">
-        <dt className="text-muted-foreground">Name</dt>
-        <dd>{tracking.name || "Not named"}</dd>
-        <dt className="text-muted-foreground">Calculation</dt>
-        <dd>{summarizeProfile(sim.profile)}</dd>
-        <dt className="text-muted-foreground">Lender records interest</dt>
-        <dd>{tracking.lenderPattern === "embedded-interest" ? "As part of each repayment" : tracking.lenderPattern === "separate-interest" ? "As a separate transaction" : "Not answered"}</dd>
-        <dt className="text-muted-foreground">Accounts</dt>
-        <dd>{tracking.liabilityAccountId ? "Chosen" : "Not chosen yet"}</dd>
-      </dl>
-      <p className="text-sm font-medium" data-testid="save-boundary-notice">
-        {SAVE_BOUNDARY}
-      </p>
-      {children}
-    </section>
-  );
-}
 
 export function NewLoanView() {
   const connection = useConnectionStore(selectActiveInstance);
@@ -105,7 +87,8 @@ export function NewLoanView() {
   const existing = useQuery({ queryKey: ["assets-debt", "debts", budget], queryFn: () => listDebts(budget!), enabled: !!budget });
   const [sim, setSim] = useState<SimulationState | null>(null);
   const [tracking, setTracking] = useState<TrackingState | null>(null);
-  const [step, setStep] = useState<"simulate" | "track" | "review">("simulate");
+  // New loans open on Calculation (owner decision); Activity exists once the loan is saved.
+  const [tab, setTab] = useState<WorkspaceTab>("calculation");
   const [issues, setIssues] = useState<SaveIssue[]>([]);
   const directory = useAccountDirectory();
   const router = useRouter();
@@ -156,7 +139,7 @@ export function NewLoanView() {
       }
       void queryClient.invalidateQueries({ queryKey: ["assets-debt"] });
       toast.success(detail.debt.status === "active" ? "Loan added to Assets & Debt" : "Draft saved");
-      router.push(`/assets-debt/loans/${encodeURIComponent(detail.debt.id)}`);
+      router.push(loanPath(detail.debt.id));
     },
     onError: (error) => setIssues(error instanceof DebtApiError && error.issues.length ? error.issues : [{ field: "(save)", message: error instanceof Error ? error.message : "The loan could not be saved" }]),
   });
@@ -165,64 +148,42 @@ export function NewLoanView() {
   if (!sim || !tracking) return <p className="px-4 py-6 text-sm text-muted-foreground">Loading…</p>;
   const complete = statesToSaveInput(sim, { ...tracking, name: "x", status: "draft", offsetAccountMap: Object.fromEntries(sim.offsets.map((o) => [o.placeholderAccountId, "x"])) }, budget, "bench-daily").ok;
 
-  if (step === "simulate") {
-    return (
-      <SimulatorView
-        sim={sim}
-        onChange={setSim}
-        title="New loan"
-        badge="Not saved: simulation only"
-        stepLabel="Step 1 of 3 · Model loan"
-        revision={null}
-        actions={
-          <Button type="button" size="sm" disabled={!complete} onClick={() => setStep("track")}>
-            Set up tracking in Actual
-            <ArrowRight data-icon="inline-end" aria-hidden="true" />
-          </Button>
-        }
-      />
-    );
-  }
+  const toSetup = () => setTab("setup");
+  const newComplete = loanSettingsComplete(setupChecklist({ sim, tracking, directory: directory.data, matchingEnabled: null }));
+  const actions = tab === "calculation" ? (
+    <Button type="button" size="sm" disabled={!complete} title={complete ? undefined : "Complete the loan amount, term, rate and start date first"} onClick={toSetup}>
+      Next: Settings
+      <ArrowRight data-icon="inline-end" aria-hidden="true" />
+    </Button>
+  ) : (
+    // Active when the loan settings are complete; otherwise kept as a draft to finish later.
+    <Button type="button" size="sm" disabled={save.isPending} onClick={() => save.mutate(newComplete ? "active" : "draft")}>
+      {newComplete ? "Save loan" : "Save as draft"}
+    </Button>
+  );
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
-        <h1 className="text-base font-semibold">{step === "track" ? "Set up tracking in Actual" : "Review"}</h1>
-        <span className="text-xs text-muted-foreground">Step {step === "track" ? "2 of 3 · Set up tracking" : "3 of 3 · Review"}</span>
-        <div className="ml-auto flex gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setStep(step === "review" ? "track" : "simulate")}>
-            Back
-          </Button>
-          {step === "track" ? (
-            <Button type="button" size="sm" onClick={() => setStep("review")}>
-              Review
-            </Button>
-          ) : null}
-        </div>
-      </header>
+    <WorkspaceFrame
+      title={tracking.name || "New loan"}
+      state="Not saved yet"
+      tab={tab}
+      onTab={setTab}
+      disabledTabs={{ activity: "Available after the loan is saved", ...(complete ? {} : { setup: "Complete the calculation first" }) }}
+      actions={actions}
+      menu={tab === "setup" && newComplete ? [{ label: "Save as draft", onSelect: () => save.mutate("draft") }] : []}
+      dirty={dirty}
+    >
       <IssueList issues={issues} />
-      {step === "track" ? <TrackingSetup sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} /> : null}
-      {step === "review" ? (
-        <Review sim={sim} tracking={tracking}>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={() => save.mutate("active")} disabled={save.isPending}>
-              Add loan to Assets & Debt
-            </Button>
-            <Button type="button" variant="outline" onClick={() => save.mutate("draft")} disabled={save.isPending}>
-              Save as draft
-            </Button>
-          </div>
-        </Review>
-      ) : null}
-    </div>
+      {tab === "calculation" ? (
+        <SimulatorView embedded sim={sim} onChange={setSim} title="Schedule" badge="Not saved yet" revision={null} actions={null} />
+      ) : (
+        <>
+          <p className="px-4 pt-3 text-xs text-muted-foreground">{SAVE_BOUNDARY} {summarizeProfile(sim.profile)}.</p>
+          <LoanSetup debtId={null} sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} />
+        </>
+      )}
+    </WorkspaceFrame>
   );
 }
-
-const VIEWS = [
-  { id: "simulator", label: "Simulator" },
-  { id: "tracking", label: "Tracking setup" },
-  { id: "matching", label: "Repayment matching" },
-  { id: "activity", label: "Activity" },
-] as const;
 
 export function LoanView({ id }: { id: string }) {
   const connection = useConnectionStore(selectActiveInstance);
@@ -232,7 +193,6 @@ export function LoanView({ id }: { id: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const view = (VIEWS.find((v) => v.id === params?.get("view"))?.id ?? "simulator") as (typeof VIEWS)[number]["id"];
   const saved = useMemo(() => (debt.data ? detailToStates(debt.data) : null), [debt.data]);
   const [sim, setSim] = useState<SimulationState | null>(null);
   const [tracking, setTracking] = useState<TrackingState | null>(null);
@@ -269,29 +229,48 @@ export function LoanView({ id }: { id: string }) {
   useLeaveGuard(dirty);
   const detail = debt.data;
   const readOnly = detail?.debt.status === "archived";
+  const rules = useQuery({ queryKey: ["assets-debt", "match-rules", id], queryFn: () => listMatchRules(id), enabled: !!id });
+  const checklist = sim && tracking ? setupChecklist({ sim, tracking, directory: directory.data, matchingEnabled: rules.data ? rules.data.some((r) => r.record.enabled && r.record.purpose === "repayment") : null }) : [];
+  const activatable = checklist.length > 0 && loanSettingsComplete(checklist);
 
   const save = useMutation({
     mutationFn: async () => {
       if (!sim || !tracking || !detail) throw new Error("Not ready");
-      const built = statesToSaveInput(sim, tracking, detail.debt.budgetSyncId, strategyAdvice(sim).recommended);
+      // A draft becomes active on the first save with its loan settings complete (owner decision 2026-10-05).
+      const status = tracking.status === "draft" && activatable ? "active" : tracking.status;
+      const built = statesToSaveInput(sim, { ...tracking, status }, detail.debt.budgetSyncId, strategyAdvice(sim).recommended);
       if (!built.ok) throw new DebtApiError("invalid", 400, built.issues);
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
       return updateDebt(id, built.input, directory.data);
     },
     onSuccess: (next) => {
       setIssues([]);
-      toast.success(next.debt.currentRevision === detail?.debt.currentRevision ? "Saved: no change to the calculation" : `Saved as revision ${next.debt.currentRevision}`);
+      toast.success(detail?.debt.status === "draft" && next.debt.status === "active"
+        ? "Saved. The loan is now active."
+        : next.debt.currentRevision === detail?.debt.currentRevision ? "Saved: no change to the calculation" : `Saved as revision ${next.debt.currentRevision}`);
       queryClient.setQueryData(["assets-debt", "debt", id], next);
       void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
     },
     onError: (error) => setIssues(error instanceof DebtApiError && error.issues.length ? error.issues : [{ field: "(save)", message: error instanceof Error ? error.message : "The loan could not be saved" }]),
+  });
+  const [deleting, setDeleting] = useState(false);
+  const [typed, setTyped] = useState("");
+  const removeForever = useMutation({
+    mutationFn: () => deleteDebtPermanently(id),
+    onSuccess: () => {
+      setDeleting(false);
+      queryClient.removeQueries({ queryKey: ["assets-debt", "debt", id] });
+      void queryClient.invalidateQueries({ queryKey: ["assets-debt"] });
+      toast.success("Loan deleted permanently");
+      router.push(LOANS_PATH);
+    },
   });
   const archive = useMutation({
     mutationFn: () => archiveDebt(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["assets-debt"] });
       toast.success(detail?.debt.status === "draft" ? "Draft discarded" : "Loan archived");
-      router.push("/assets-debt/loans");
+      router.push(LOANS_PATH);
     },
   });
 
@@ -299,9 +278,11 @@ export function LoanView({ id }: { id: string }) {
   if (debt.isError || !detail) return <p role="alert" className="px-4 py-6 text-sm text-destructive">{(debt.error as Error)?.message ?? "Loan not found"}</p>;
   if (detail.blocked || !saved || !sim || !tracking) {
     return (
-      <p role="status" className="m-4 rounded border border-destructive/40 px-3 py-2 text-sm">
-        <span className="font-semibold">Blocked:</span> {detail.blocked?.message ?? "This loan's settings cannot be used."} Other loans are not affected.
-      </p>
+      <WorkspaceFrame title={detail.debt.name} state="Blocked" tab="activity" onTab={() => {}} disabledTabs={{ activity: "Blocked", calculation: "Blocked", setup: "Blocked" }} dirty={false}>
+        <p role="status" className="m-4 rounded border border-destructive/40 px-3 py-2 text-sm">
+          <span className="font-semibold">Blocked:</span> {detail.blocked?.message ?? "This loan's settings cannot be used."} Other loans are not affected.
+        </p>
+      </WorkspaceFrame>
     );
   }
 
@@ -311,6 +292,15 @@ export function LoanView({ id }: { id: string }) {
     return line && !line.available ? `The saved engine (${line.label}) no longer fits these settings; saving will use ${advice.lines.find((l) => l.strategy === advice.recommended)?.label ?? "no engine"}.` : null;
   })();
 
+  const tab = workspaceTabFor(params?.get("view"), "activity");
+  const setTab = (next: WorkspaceTab) => router.replace(`${pathname}?view=${workspaceTabSlug(next)}`);
+  const done = checklist.filter((c) => c.done).length;
+  const draft = detail.debt.status === "draft";
+  const state = readOnly
+    ? "Archived: read-only"
+    : dirty ? "Unsaved changes"
+      : draft ? (activatable ? "Setup complete · not active yet" : `Setup incomplete · ${done} of ${checklist.length}`)
+        : done < checklist.length ? `Active · setup ${done} of ${checklist.length}` : `Active · revision ${detail.debt.currentRevision}`;
   const actions = (
     <>
       {dirty && !readOnly ? (
@@ -321,84 +311,90 @@ export function LoanView({ id }: { id: string }) {
           Discard changes
         </Button>
       ) : null}
-      <Button type="button" size="sm" disabled={!dirty || readOnly || save.isPending} onClick={() => save.mutate()}>
-        Save changes
-      </Button>
-      {!readOnly ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() =>
-            setConfirm({
-              title: detail.debt.status === "draft" ? "Discard this draft?" : "Archive this loan?",
-              message: detail.debt.status === "draft" ? "The draft and its settings are removed." : "The loan keeps its history and revisions. Nothing changes in Actual.",
-              destructiveLabel: detail.debt.status === "draft" ? "Discard" : "Archive",
-              onConfirm: () => archive.mutate(),
-            })
-          }
-        >
-          {detail.debt.status === "draft" ? "Discard draft" : "Archive"}
+      {!readOnly && (dirty || tab !== "activity" || (draft && activatable)) ? (
+        <Button type="button" size="sm" disabled={(!dirty && !(draft && activatable)) || save.isPending} onClick={() => save.mutate()}>
+          {draft && activatable ? "Save and activate" : "Save changes"}
         </Button>
       ) : null}
     </>
   );
-  const badge = readOnly ? "Archived: read-only" : dirty ? "Unsaved changes" : `Saved, revision ${detail.debt.currentRevision}`;
+  const menu = readOnly ? [{ label: "Delete permanently", destructive: true, onSelect: () => { setTyped(""); setDeleting(true); } }] : [{
+    label: detail.debt.status === "draft" ? "Delete draft loan" : "Archive loan",
+    destructive: true,
+    onSelect: () =>
+      setConfirm({
+        title: detail.debt.status === "draft" ? "Delete this draft loan?" : "Archive this loan?",
+        message: detail.debt.status === "draft" ? "The draft loan and all its saved settings are removed. Nothing changes in Actual." : "The loan keeps its history and revisions. Nothing changes in Actual.",
+        destructiveLabel: detail.debt.status === "draft" ? "Delete draft loan" : "Archive",
+        onConfirm: () => archive.mutate(),
+      }),
+  }];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <nav aria-label="Loan views" className="flex gap-1 border-b border-border px-4">
-        {VIEWS.map((v) => (
-          <button
-            key={v.id}
-            type="button"
-            aria-current={view === v.id ? "page" : undefined}
-            onClick={() => router.replace(`${pathname}?view=${v.id}`)}
-            className={cn("border-b-2 border-transparent px-3 py-2 text-xs font-medium text-muted-foreground", view === v.id && "border-primary text-foreground")}
-          >
-            {v.label}
-          </button>
-        ))}
-      </nav>
+    <WorkspaceFrame
+      title={tracking.name || detail.debt.name}
+      state={state}
+      stateEmphasis={dirty}
+      tab={tab}
+      onTab={setTab}
+      actions={actions}
+      menu={menu}
+      dirty={dirty}
+      onSaveAndLeave={async () => {
+        try {
+          await save.mutateAsync();
+          return true;
+        } catch {
+          return false;
+        }
+      }}
+    >
       <IssueList issues={issues} />
       {staleStrategy && !readOnly ? <p className="mx-4 mt-2 text-xs text-muted-foreground">{staleStrategy}</p> : null}
-      {view === "simulator" ? <SimulatorView sim={sim} onChange={setSim} saved={saved.simulation} title={tracking.name || detail.debt.name} badge={badge} readOnly={readOnly} revision={detail.debt.currentRevision} actions={actions} offsetTracking={trackedOffsetAccounts.length ? {
-        asOfDate: offsetAsOfDate,
-        onAsOfDateChange: setOffsetAsOfDate,
-        snapshots: offsetSnapshots,
-        loading: offsetHistory.isLoading || offsetHistory.isFetching,
-        problems: offsetHistory.isError
-          ? [offsetHistory.error instanceof Error ? offsetHistory.error.message : "Actual offset history could not be read."]
-          : offsetHistory.data && !offsetHistory.data.ok
-            ? offsetHistory.data.failures.map((failure) => `${failure.accountId}: ${failure.message}`)
-            : [],
-      } : undefined} /> : null}
-      {view === "tracking" ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
-            <h1 className="text-base font-semibold">{detail.debt.name}: tracking setup</h1>
-            <span role="status" className="rounded-full border border-border px-2 py-0.5 text-[11px]">
-              {badge}
-            </span>
-            <div className="ml-auto flex gap-2">{actions}</div>
-          </div>
-          <p className="px-4 pt-3 text-xs text-muted-foreground">{SAVE_BOUNDARY}</p>
-          <TrackingSetup sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} />
-        </div>
+      {tab === "activity" ? (
+        <LoanActivity debt={detail} directory={directory.data} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} initialFilter={(["action", "waiting", "applied", "undone", "all"] as const).find((f) => f === params?.get("filter")) ?? "action"} />
       ) : null}
-      {view === "matching" ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-          <RulesView debtId={detail.debt.id} />
-        </div>
+      {tab === "calculation" ? (
+        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} title="Schedule" badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null} offsetTracking={trackedOffsetAccounts.length ? {
+          asOfDate: offsetAsOfDate,
+          onAsOfDateChange: setOffsetAsOfDate,
+          snapshots: offsetSnapshots,
+          loading: offsetHistory.isLoading || offsetHistory.isFetching,
+          problems: offsetHistory.isError
+            ? [offsetHistory.error instanceof Error ? offsetHistory.error.message : "Actual offset history could not be read."]
+            : offsetHistory.data && !offsetHistory.data.ok
+              ? offsetHistory.data.failures.map((failure) => `${failure.accountId}: ${failure.message}`)
+              : [],
+        } : undefined} />
       ) : null}
-      {view === "activity" ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-          <PostingsPanel debt={detail} directory={directory.data} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} />
-          <ActivityTimeline debtId={detail.debt.id} currencyMinorDigits={detail.debt.currencyMinorDigits} />
-          <LenderReconciliation debt={detail} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} />
-        </div>
+      {tab === "setup" && params?.get("rule") ? (
+        <MatchingEditor debtId={detail.debt.id} ruleId={params.get("rule")!} onClose={() => router.replace(`${pathname}?view=${workspaceTabSlug("setup")}`)} />
+      ) : null}
+      {tab === "setup" && !params?.get("rule") ? (
+        <LoanSetup debtId={detail.debt.id} sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} active={!draft}
+          onEditRule={(ruleId) => router.replace(`${pathname}?view=${workspaceTabSlug("setup")}&rule=${encodeURIComponent(ruleId)}`)} />
       ) : null}
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)} state={confirm} />
-    </div>
+      <Dialog open={deleting} onOpenChange={(open) => !open && setDeleting(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete {detail.debt.name} permanently?</DialogTitle>
+            <DialogDescription>
+              Everything Bench stored for this loan is deleted: its settings and revisions, matching rules, proposed and applied changes with their history, lender statements and restarts. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs dark:bg-amber-950/30">Nothing changes in Actual. Transactions Bench changed stay as they are, and Bench can no longer undo them.</p>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="confirm-loan-name" className="text-xs">Type the loan&apos;s name to confirm: <span className="font-semibold">{detail.debt.name}</span></Label>
+            <Input id="confirm-loan-name" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+          </div>
+          {removeForever.isError ? <p role="alert" className="text-xs text-destructive">{String((removeForever.error as Error)?.message ?? removeForever.error)}</p> : null}
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setDeleting(false)}>Cancel</Button>
+            <Button type="button" variant="destructive" disabled={typed.trim() !== detail.debt.name || removeForever.isPending} onClick={() => removeForever.mutate()}>Delete permanently</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </WorkspaceFrame>
   );
 }

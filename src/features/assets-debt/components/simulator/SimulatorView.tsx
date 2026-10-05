@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { BookOpen, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { chartSeries, deltas, headline } from "../../lib/results";
@@ -50,6 +50,8 @@ export type SimulatorViewProps = {
   readOnly?: boolean;
   revision: number | null;
   actions: React.ReactNode;
+  /** Inside the loan workspace (Calculation tab): the workspace header carries the name, state and Save. */
+  embedded?: boolean;
   offsetTracking?: {
     asOfDate: string;
     onAsOfDateChange: (date: string) => void;
@@ -59,7 +61,7 @@ export type SimulatorViewProps = {
   };
 };
 
-export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking }: SimulatorViewProps) {
+export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false }: SimulatorViewProps) {
   const [comparing, setComparing] = useState(false);
   const [prompt, setPrompt] = useState<{ reason: string; candidate: SimulationState } | null>(null);
   const [dialog, setDialog] = useState<"method" | "how" | null>(null);
@@ -100,10 +102,16 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
       <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
-        <h1 className="mr-2 text-base font-semibold">{title}</h1>
-        <span className={cn("rounded-full border px-2 py-0.5 text-[11px]", unsaved ? "border-primary font-medium" : "border-border text-muted-foreground")} role="status">
-          {badge}
-        </span>
+        {embedded ? (
+          <h2 className="mr-2 text-sm font-semibold">{title}</h2>
+        ) : (
+          <>
+            <h1 className="mr-2 text-base font-semibold">{title}</h1>
+            <span className={cn("rounded-full border px-2 py-0.5 text-[11px]", unsaved ? "border-primary font-medium" : "border-border text-muted-foreground")} role="status">
+              {badge}
+            </span>
+          </>
+        )}
         {stepLabel ? <span className="text-xs font-medium text-muted-foreground">{stepLabel}</span> : null}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {saved ? (
@@ -138,7 +146,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
           {offsetTracking ? (
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
               <label htmlFor="offset-observation-cutoff" className="font-medium">Actual offset history through</label>
-              <Input id="offset-observation-cutoff" type="date" value={offsetTracking.asOfDate} onChange={(event) => offsetTracking.onAsOfDateChange(event.target.value)} className="h-7 w-40 text-xs" />
+              <DateInput id="offset-observation-cutoff" value={offsetTracking.asOfDate} onValueChange={offsetTracking.onAsOfDateChange} className="h-7 w-40 text-xs" />
               <span className="text-muted-foreground">Observed balances are authoritative through this inclusive date; simulated events resume afterward.</span>
             </div>
           ) : null}

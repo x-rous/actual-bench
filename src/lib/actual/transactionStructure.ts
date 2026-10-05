@@ -52,15 +52,32 @@ export type RawTxn = Record<string, unknown> & {
 
 export type StructurePrimitives = {
   /** Top-level rows of one account from `sinceDate`, split children inline as `subtransactions`. */
-  readAccount(accountId: string, sinceDate: string): Promise<RawTxn[]>;
+  readAccount(accountId: string, sinceDate: string, untilDate?: string): Promise<RawTxn[]>;
   /**
    * Actual `updateTransaction(id, fields)`. The Direct implementation must not
    * return until the write has landed and the budget is quiet (R-18).
    */
-  update(id: string, fields: Record<string, unknown>, watch: { accountIds: string[]; sinceDate: string }): Promise<void>;
+  update(id: string, fields: Record<string, unknown>, watch: WriteWatch): Promise<void>;
   /** Actual `deleteTransaction(id)`, settled like `update` in Direct mode. */
-  remove(id: string, watch: { accountIds: string[]; sinceDate: string }): Promise<void>;
+  remove(id: string, watch: WriteWatch): Promise<void>;
 };
+
+/** The accounts and dates a write can change; `untilDate` bounds the reads that watch it land. */
+export type WriteWatch = { accountIds: string[]; sinceDate: string; untilDate?: string };
+
+/**
+ * Every read and settle watch of one operation, bounded to the dates of the rows it touches.
+ * Transfer legs share their row's date and no operation moves a date outside these, so nothing
+ * relevant is missed; a long account history is no longer re-read on every settle poll.
+ */
+export function withinDates(primitives: StructurePrimitives, dates: readonly string[]): StructurePrimitives {
+  const untilDate = dates.reduce((max, d) => (d > max ? d : max), "0000-01-01");
+  return {
+    readAccount: (accountId, sinceDate, until) => primitives.readAccount(accountId, sinceDate, until ?? (sinceDate <= untilDate ? untilDate : undefined)),
+    update: (id, fields, watch) => primitives.update(id, fields, { untilDate, ...watch }),
+    remove: (id, watch) => primitives.remove(id, { untilDate, ...watch }),
+  };
+}
 
 /** The fields preflight compares, in transport terms. Amounts are integer minor units. */
 export type TransactionPreflight = {
@@ -285,6 +302,7 @@ function childOf(raw: RawTxn): StructureChild {
  * row, on an existing split, or when the children do not sum to the parent.
  */
 export async function restructureAsSplit(primitives: StructurePrimitives, input: RestructureSplitInput): Promise<RestructureSplitResult> {
+  primitives = withinDates(primitives, [input.expected.date, ...(input.replaceCounterpart ? [input.replaceCounterpart.expected.date] : [])]);
   if (input.expected.id !== input.transactionId || input.expected.accountId !== input.accountId) {
     throw new TransactionStructureRefusedError("The expected state does not describe this transaction.");
   }
@@ -352,6 +370,7 @@ function counterpartPreconditions(source: TransactionPreflight, counterpart: Tra
  * when the user asks.
  */
 export async function linkCounterpart(primitives: StructurePrimitives, input: LinkTransferInput): Promise<LinkTransferResult> {
+  primitives = withinDates(primitives, [input.source.date, input.counterpart.date]);
   const source = await requireUnchanged(primitives, input.source);
   const counterpart = await requireUnchanged(primitives, input.counterpart);
   counterpartPreconditions(input.source, input.counterpart);
@@ -390,6 +409,7 @@ async function readPair(primitives: StructurePrimitives, input: LinkTransferInpu
  * edited while half-linked, which recovery routes to Review.
  */
 export async function inspectTransferLink(primitives: StructurePrimitives, input: LinkTransferInput): Promise<HalfLinkState> {
+  primitives = withinDates(primitives, [input.source.date, input.counterpart.date]);
   const source = await findRaw(primitives, input.source.accountId, input.source.id, input.source.date);
   const counterpart = await findRaw(primitives, input.counterpart.accountId, input.counterpart.id, input.counterpart.date);
   if (!source || !counterpart) return { state: "changed", detail: "One of the rows no longer exists." };
@@ -418,6 +438,7 @@ export async function inspectTransferLink(primitives: StructurePrimitives, input
  * a clean half-link with no stray counterpart. Never inserts.
  */
 export async function completeTransferLink(primitives: StructurePrimitives, input: LinkTransferInput): Promise<LinkTransferResult> {
+  primitives = withinDates(primitives, [input.source.date, input.counterpart.date]);
   const state = await inspectTransferLink(primitives, input);
   if (state.state === "linked") return readPair(primitives, input);
   if (state.state !== "half-linked") throw new TransactionStructureRefusedError(state.state === "changed" ? state.detail : "The pair is not half-linked; nothing to complete.");
@@ -438,6 +459,7 @@ export async function completeTransferLink(primitives: StructurePrimitives, inpu
  * reconciled. Returns what differs afterwards; the caller verifies.
  */
 export async function restoreSplit(primitives: StructurePrimitives, input: RestoreSplitInput): Promise<RestoreSplitResult> {
+  primitives = withinDates(primitives, [input.parent.date, ...input.children.map((c) => c.date)]);
   const { row } = await requireUnchanged(primitives, input.parent);
   if (row.reconciled === true) throw new TransactionStructureRefusedError("A reconciled transaction is never changed.");
   const current = (row.subtransactions ?? []).map((c) => c.id);
@@ -490,6 +512,7 @@ export async function restoreSplit(primitives: StructurePrimitives, input: Resto
  * the pair is still linked exactly as Bench left it and neither is reconciled.
  */
 export async function unlinkTransfer(primitives: StructurePrimitives, input: UnlinkTransferInput): Promise<UnlinkTransferResult> {
+  primitives = withinDates(primitives, [input.source.date, input.counterpart.date]);
   const source = await requireUnchanged(primitives, input.source);
   const counterpart = await requireUnchanged(primitives, input.counterpart);
   if (input.source.transferId !== input.counterpart.id || input.counterpart.transferId !== input.source.id) throw new TransactionStructureRefusedError("The rows are no longer linked to each other.");
@@ -511,6 +534,7 @@ export async function unlinkTransfer(primitives: StructurePrimitives, input: Unl
  * writing nothing, a changed, reconciled, split or already-transfer row.
  */
 export async function convertToTransfer(primitives: StructurePrimitives, input: ConvertToTransferInput): Promise<ConvertToTransferResult> {
+  primitives = withinDates(primitives, [input.expected.date]);
   const { row } = await requireUnchanged(primitives, input.expected);
   if (row.reconciled === true) throw new TransactionStructureRefusedError("A reconciled transaction is never changed.");
   if (row.is_parent === true || row.is_child === true) throw new TransactionStructureRefusedError("A split or split line is not converted into a transfer.");
@@ -529,6 +553,7 @@ export async function convertToTransfer(primitives: StructurePrimitives, input: 
  * nothing, if either row changed or the counterpart is reconciled.
  */
 export async function revertTransferConversion(primitives: StructurePrimitives, input: RevertTransferInput): Promise<RevertTransferResult> {
+  primitives = withinDates(primitives, [input.converted.date, input.counterpart.date]);
   const { row } = await requireUnchanged(primitives, input.converted);
   const counterpart = await requireUnchanged(primitives, input.counterpart);
   if (row.reconciled === true || counterpart.row.reconciled === true) throw new TransactionStructureRefusedError("A reconciled row is never changed or deleted.");

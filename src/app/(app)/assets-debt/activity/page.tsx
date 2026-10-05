@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
-import { LaterPhaseView } from "@/features/assets-debt/components/AssetsDebtViews";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Assets & Debt activity - Actual Bench",
-};
-
-export default function ActivityPage() {
-  return <LaterPhaseView title="Activity" description="Proposals, postings and reconciliation history arrive in a later phase." />;
+/** What needs attention is now a filter on the Loans & Debt list. */
+export default function OldActivityPage() {
+  redirect("/loans?filter=attention");
 }

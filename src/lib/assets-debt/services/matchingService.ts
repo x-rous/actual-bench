@@ -97,6 +97,15 @@ export function editMatchingRule(db: SqliteDatabase, debtId: string, ruleId: str
   })();
 }
 
+/**
+ * Check a rule that is not saved yet against history (the matching editor's live check). Same
+ * engine and result as a saved rule's backtest; nothing is stored and Actual is only read by the
+ * browser that supplied the snapshots.
+ */
+export function backtestDraftMatchingRule(db: SqliteDatabase, debtId: string, input: Omit<MatchRuleSave, "enabled">, request: DebtBacktestRequest) {
+  return runDebtBacktest(db, debtId, definition({ ...input, enabled: false }), request);
+}
+
 export function removeMatchingRule(db: SqliteDatabase, debtId: string, ruleId: string): void {
   requireOwnedRule(db, debtId, ruleId);
   deleteDebtMatchRule(db, ruleId);

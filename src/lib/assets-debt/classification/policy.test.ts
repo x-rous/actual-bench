@@ -27,6 +27,7 @@ describe("classification policy (T116; FR-170a–FR-172, D1, SC-011)", () => {
       for (const shape of shapes) {
         for (const driftMaterial of [false, true]) {
           for (const unreviewedPrincipalChange of [false, true]) {
+            // Without the planner's routine flag (FR-170c), a split is never safe.
             const result = classifyPosting({ postingKind, shape, driftMaterial, unreviewedPrincipalChange });
             const forbidden = shape === "restructure" || shape === "link" || shape === "convert" || postingKind === "repayment-split" || postingKind === "receivable-split"
               || postingKind === "opening-adjustment" || postingKind === "reconciliation-adjustment" || driftMaterial || unreviewedPrincipalChange;
@@ -56,5 +57,17 @@ describe("classification policy (T116; FR-170a–FR-172, D1, SC-011)", () => {
     }
     expect(REASONS.reconciledRow.text).toBe("The matched row is reconciled in Actual. Resolve in Actual, then re-run.");
     expect(REASONS.missingLoanPaymentCategory.text).toBe("Choose a loan payment category for this debt.");
+  });
+
+  it("FR-170c: a routine repayment split is safe only with the planner's flag, routine notes, no material drift and no unreviewed principal change", () => {
+    const routine = { postingKind: "repayment-split" as const, shape: "restructure" as const, driftMaterial: false, routineSplit: true, reviews: [REASONS.embeddedTransfer, REASONS.replacesCounterpart] };
+    expect(classifyPosting(routine)).toEqual({ classification: "safe", reasons: [REASONS.routineSplit, REASONS.embeddedTransfer, REASONS.replacesCounterpart] });
+    expect(classifyPosting({ ...routine, routineSplit: false }).classification).toBe("review");
+    expect(classifyPosting({ ...routine, driftMaterial: true }).classification).toBe("review");
+    expect(classifyPosting({ ...routine, unreviewedPrincipalChange: true }).classification).toBe("review");
+    expect(classifyPosting({ ...routine, reviews: [REASONS.categorizedPayment] }).classification).toBe("review");
+    expect(classifyPosting({ ...routine, reviews: [{ code: "edited-split", text: "Edited: calculated interest 1.00, your value 1.01." }] }).classification).toBe("review");
+    expect(classifyPosting({ ...routine, postingKind: "receivable-split" }).classification).toBe("review");
+    expect(classifyPosting({ ...routine, blockers: [REASONS.reconciledRow] }).classification).toBe("blocked");
   });
 });

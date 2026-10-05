@@ -130,7 +130,7 @@ describe.each(HARNESS_MODES)("Undo and transfer conversion (%s)", (mode) => {
     const originalState = state(s, original.id);
     const paymentBefore = state(s, payment);
     const [split] = byKind((await s.preview(window)).postings, "repayment-split");
-    expect(split.classification).toBe("review");
+    expect(split.classification).toBe("safe");
     expect(split.reasons.map((r) => r.code)).toContain("replaces-transfer-counterpart");
     const applied = (await s.apply(split)).posting;
     expect(applied.status).toBe("applied");

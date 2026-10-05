@@ -13,7 +13,7 @@ import type { BrowserApiConnection, HttpApiConnection } from "@/store/connection
 import { readAccountDirectory, readMatchingHistory } from "./actual/ledgerPort";
 import { executeApprovedPosting } from "./services/applyService";
 import { archiveDebtConfiguration, createDebtConfiguration } from "./services/debtConfigService";
-import { approveAndBeginApply, proposeReversal, recordApplyOutcome, rowsToCheck } from "./services/postingWorkflowService";
+import { approveAndBeginApply, overrideRepaymentSplit, proposeReversal, recordApplyOutcome, rowsToCheck } from "./services/postingWorkflowService";
 import { previewDebtPostings, type PostingView } from "./services/proposalService";
 import { indexReadRows, type RowSnapshot } from "./services/snapshot";
 import { debtConfig, saveInput } from "./testing/debtFixtures";
@@ -59,6 +59,27 @@ const run = Date.now().toString(36);
 const trace = (message: string) => {
   if (env.RD084_SPIKE_TRACE === "yes") process.stderr.write(`[p16-live] ${message}\n`);
 };
+/** RD084_SPIKE_TIMING=yes: per-apply time, Actual reads and rows read, on stderr (no ids or secrets). */
+const timing = { reads: 0, readMs: 0, rows: 0, writes: 0 };
+function timed(transport: ActualBenchTransport): ActualBenchTransport {
+  if (env.RD084_SPIKE_TIMING !== "yes") return transport;
+  return new Proxy(transport, {
+    get(target, key, receiver) {
+      const value = Reflect.get(target, key, receiver);
+      if (typeof value !== "function") return value;
+      if (key === "listTransactionsForSync") {
+        return async (...args: unknown[]) => {
+          const started = Date.now();
+          const rows = await (value as (...a: unknown[]) => Promise<unknown[]>).apply(target, args);
+          timing.reads++; timing.readMs += Date.now() - started; timing.rows += rows.length;
+          return rows;
+        };
+      }
+      return (...args: unknown[]) => { timing.writes++; return (value as (...a: unknown[]) => unknown).apply(target, args); };
+    },
+  });
+}
+
 const linkAction = canonicalJson({ format: "rd084.debt-match-actions", version: 1, items: [{ kind: "link-repayment" }] });
 const conditions = (items: unknown[]) => canonicalJson({ format: "rd084.debt-match-conditions", version: 1, operator: "all", items: [...items, { kind: "bench-marker", value: "exclude" }, { kind: "posting-link", value: "exclude" }] });
 
@@ -82,8 +103,8 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
     const direct: BrowserApiConnection = { id: "p16-direct", label: "Direct", mode: "browser-api", baseUrl: env.RD084_SPIKE_SERVER_URL!, serverPassword: env.RD084_SPIKE_SERVER_PASSWORD!, budgetSyncId: all["RD084 Spike Direct"].budgetSyncId };
     const http: HttpApiConnection = { id: "p16-http", label: "HTTP", mode: "http-api", baseUrl: env.RD084_SPIKE_HTTP_URL!, apiKey: env.RD084_SPIKE_HTTP_KEY!, budgetSyncId: all["RD084 Spike HTTP"].budgetSyncId };
     modes = [
-      { name: "direct", budget: all["RD084 Spike Direct"], transport: openServerTransport(direct) },
-      { name: "http", budget: all["RD084 Spike HTTP"], transport: openServerTransport(http) },
+      { name: "direct", budget: all["RD084 Spike Direct"], transport: timed(openServerTransport(direct)) },
+      { name: "http", budget: all["RD084 Spike HTTP"], transport: timed(openServerTransport(http)) },
     ];
   });
 
@@ -179,6 +200,15 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
       return result.postings;
     }
     async function apply(posting: PostingView) {
+      Object.assign(timing, { reads: 0, readMs: 0, rows: 0, writes: 0 });
+      const started = Date.now();
+      try {
+        return await applyOnce(posting);
+      } finally {
+        if (env.RD084_SPIKE_TIMING === "yes") process.stderr.write(`[p16-timing] ${mode.name} ${posting.postingKind} ${posting.output.kind}: ${Date.now() - started} ms; ${timing.reads} reads (${timing.readMs} ms, ${timing.rows} rows); ${timing.writes} other calls\n`);
+      }
+    }
+    async function applyOnce(posting: PostingView) {
       const targets: RowSnapshot[] = rowsToCheck(posting.output);
       const fresh: RowSnapshot[] = [];
       for (const t of targets) {
@@ -371,5 +401,27 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
       observed[mode.name].t279 = { split: splitRows.map((r) => [r.categoryName, r.amountMinor]), undo: (await s.parity(reversal, undone)).map((r) => [r.categoryName, r.amountMinor, r.cleared]) };
     }
     expect(observed.http.t279).toEqual(observed.direct.t279);
+  });
+
+  it("T291: an edited split (interest +0.01, no reason needed) applies exactly as edited; live parity; Undo restores the payment", async () => {
+    for (const mode of modes) {
+      const s = await setup(mode, "embedded-interest", { lenderFeed: false });
+      const id = (await mode.transport.createTransactionsForSync([{ accountId: mode.budget.accounts.checking, date: "2024-02-01", amount: -242915, payeeId: s.lender, categoryId: mode.budget.categories.loanPayment, importedId: `p16:t291:${mode.name}:${run}`, cleared: true }])).created[0].transactionId!;
+      const before = await s.snap(mode.budget.accounts.checking, id);
+      const [split] = (await s.preview()).filter((p) => p.postingKind === "repayment-split");
+      if (split.output.kind !== "restructure") throw new Error("restructure");
+      const interest = -split.output.operations.find((c) => c.economicKind === "interest")!.amountMinor;
+      const edited = overrideRepaymentSplit(db, split.id, { interestMinor: interest + 1 });
+      expect(edited.classification).toBe("review");
+      const applied = await s.apply(edited);
+      expect(applied.status).toBe("applied");
+      const rows = await s.parity(edited, applied);
+      expect(rows.find((r) => r.notes === "Interest")?.amountMinor).toBe(-(interest + 1));
+      const undone = await s.apply(s.undo(applied));
+      expect(undone.status).toBe("applied");
+      expect(await s.snap(mode.budget.accounts.checking, id)).toEqual(before);
+      observed[mode.name].t291 = rows.map((r) => [r.categoryName, r.amountMinor]);
+    }
+    expect(observed.http.t291).toEqual(observed.direct.t291);
   });
 });

@@ -212,3 +212,20 @@ export function describeSettings(settings: MatchingSettings, accounts: readonly 
   if (settings.preserved.length) parts.push(`${settings.preserved.length} more condition${settings.preserved.length === 1 ? "" : "s"} kept from the existing rule`);
   return `Matches ${parts.join("; ")}. Rows Bench created or already posted are always excluded.`;
 }
+
+/** The rule in one short line for the Settings card: "A payment out of X of about Y (± Z), up to 3 days either side of each due date". */
+export function ruleSentence(settings: MatchingSettings, accounts: readonly DirectoryAccount[], minorDigits: number): string {
+  const account = accounts.find((a) => a.id === settings.sourceAccountId)?.name ?? "the chosen account";
+  const where = settings.direction === "outflow" ? `out of ${account}` : settings.direction === "inflow" ? `into ${account}` : `in ${account}`;
+  const a = settings.amount;
+  const money = (minor: number) => formatAmount(minor, minorDigits);
+  const amount = a.mode === "exact" ? ` of exactly ${money(a.amountMinor)}`
+    : a.mode === "approximate" ? ` of about ${money(a.amountMinor)} (± ${a.tolerance.kind === "absolute" ? money(a.tolerance.amountMinor) : `${formatAmount(a.tolerance.bps, 2)}%`})`
+      : a.mode === "between" ? ` between ${money(a.minMinor)} and ${money(a.maxMinor)}`
+        : "";
+  const days = settings.daysEarly === settings.daysLate
+    ? `up to ${settings.daysEarly} day${settings.daysEarly === 1 ? "" : "s"} either side of each due date`
+    : `from ${settings.daysEarly} day${settings.daysEarly === 1 ? "" : "s"} before to ${settings.daysLate} after each due date`;
+  const more = settings.dayOfMonth !== null || settings.category.mode !== "any" || settings.transfer !== "any" || settings.split !== "any" || settings.reconciled !== "any" || settings.cleared !== "any" || settings.importedPayeeContains.trim() || settings.notesContains.trim() || settings.preserved.length;
+  return `A payment ${where}${amount}, ${days}${more ? ", with more conditions" : ""}`;
+}

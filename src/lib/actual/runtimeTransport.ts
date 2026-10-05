@@ -71,6 +71,7 @@ import {
   verifySplit,
   type RawTxn,
   type StructurePrimitives,
+  type WriteWatch,
   convertToTransfer,
   restoreSplit,
   revertTransferConversion,
@@ -1147,7 +1148,10 @@ function accountGroupMethods(
  * before the write exists; starting another write inside that window
  * deadlocked the Direct runtime in the P1.0 spike. Tests shorten the waits.
  */
-const directSettle = { pollMs: 100, quietMs: 400, deadlineMs: 15_000 };
+const directSettle = { pollMs: 100, quietMs: 400, deadlineMs: 15_000, recentMs: 2_000 };
+
+/** When Bench's last write on each Direct connection was seen landed and quiet. */
+const lastSettledAt = new Map<string, number>();
 
 export function __setDirectSettleTimingForTests(timing: Partial<typeof directSettle>): void {
   Object.assign(directSettle, timing);
@@ -1156,14 +1160,14 @@ export function __setDirectSettleTimingForTests(timing: Partial<typeof directSet
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function directStructurePrimitives(host: ActualRuntimeHost, connection: BrowserApiConnection): StructurePrimitives {
-  async function readAccount(accountId: string, sinceDate: string): Promise<RawTxn[]> {
+  async function readAccount(accountId: string, sinceDate: string, untilDate?: string): Promise<RawTxn[]> {
     const api = await host.getRuntime(connection);
-    const rows = await api.getTransactions(accountId, sinceDate, "");
+    const rows = await api.getTransactions(accountId, sinceDate, untilDate ?? "");
     return rows.filter((row) => isRecord(row) && typeof row.id === "string" && row.is_child !== true) as unknown as RawTxn[];
   }
-  async function snapshotOf(accountIds: string[], sinceDate: string): Promise<string> {
+  async function snapshotOf(watch: WriteWatch): Promise<string> {
     const parts: RawTxn[][] = [];
-    for (const accountId of accountIds) parts.push(await readAccount(accountId, sinceDate));
+    for (const accountId of watch.accountIds) parts.push(await readAccount(accountId, watch.sinceDate, watch.untilDate));
     return JSON.stringify(parts);
   }
   return {
@@ -1183,14 +1187,16 @@ function directStructurePrimitives(host: ActualRuntimeHost, connection: BrowserA
    * the watched accounts changed, then read the same twice across a quiet
    * interval, so the transfer handling for the other leg has finished too.
    */
-  async function settledWrite(label: string, watch: { accountIds: string[]; sinceDate: string }, write: () => Promise<unknown>): Promise<void> {
+  async function settledWrite(label: string, watch: WriteWatch, write: () => Promise<unknown>): Promise<void> {
     // Never start a write while the budget is still changing (just opened and syncing, or a previous
     // write's transfer handling still running): that window deadlocked the Direct runtime (R-18).
-    let before = await snapshotOf(watch.accountIds, watch.sinceDate);
+    // Right after Bench's own write on this connection settled, the budget is known to be quiet.
+    let before = await snapshotOf(watch);
     const quietBy = Date.now() + directSettle.deadlineMs;
-    for (;;) {
+    const justSettled = Date.now() - (lastSettledAt.get(connection.id) ?? 0) < directSettle.recentMs;
+    while (!justSettled) {
       await sleep(directSettle.pollMs);
-      const again = await snapshotOf(watch.accountIds, watch.sinceDate);
+      const again = await snapshotOf(watch);
       if (again === before) break;
       before = again;
       if (Date.now() > quietBy) throw new Error(`Direct ${label}: the budget did not become quiet within ${directSettle.deadlineMs} ms; nothing was written`);
@@ -1198,19 +1204,20 @@ function directStructurePrimitives(host: ActualRuntimeHost, connection: BrowserA
     await write();
     const started = Date.now();
     const overdue = () => Date.now() - started > directSettle.deadlineMs;
-    let current = await snapshotOf(watch.accountIds, watch.sinceDate);
+    let current = await snapshotOf(watch);
     while (current === before) {
       if (overdue()) throw new Error(`Direct ${label} did not land within ${directSettle.deadlineMs} ms`);
       await sleep(directSettle.pollMs);
-      current = await snapshotOf(watch.accountIds, watch.sinceDate);
+      current = await snapshotOf(watch);
     }
     for (;;) {
       await sleep(directSettle.quietMs);
-      const next = await snapshotOf(watch.accountIds, watch.sinceDate);
+      const next = await snapshotOf(watch);
       if (next === current) break;
       current = next;
       if (overdue()) throw new Error(`Direct ${label} did not settle within ${directSettle.deadlineMs} ms`);
     }
+    lastSettledAt.set(connection.id, Date.now());
   }
 }
 

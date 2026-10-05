@@ -1,3 +1,4 @@
+import { deleteObservationRows } from "./observationService";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import { listDebtAssumptions, replaceDebtAssumptions, type AssumptionInput } from "@/lib/app-db/debtAssumptionRepository";
 import { listDebtOffsetLinks, replaceDebtOffsetLinks, type OffsetLinkInput } from "@/lib/app-db/debtOffsetLinkRepository";
@@ -398,6 +399,10 @@ export type DebtSummary = {
   liabilityAccountId: string | null;
   executionStrategy: DebtRecord["executionStrategy"];
   openingPrincipalMinor: number | null;
+  /** The opening date and first annual rate, for the loan cards. */
+  openingDate: string | null;
+  annualRateDecimal: string | null;
+  signConvention: DebtRecord["signConvention"];
   currentRevision: number;
   blocked: DebtBlock | null;
 };
@@ -417,6 +422,9 @@ export function listDebtSummaries(db: SqliteDatabase, budgetSyncId: string, incl
       liabilityAccountId: debt.liabilityAccountId,
       executionStrategy: debt.executionStrategy,
       openingPrincipalMinor: detail.config.ok ? detail.config.config.terms.openingPrincipalMinor : null,
+      openingDate: detail.config.ok ? detail.config.config.terms.openingDate : null,
+      annualRateDecimal: detail.rates[0]?.annualRateDecimal ?? null,
+      signConvention: debt.signConvention,
       currentRevision: debt.currentRevision,
       blocked: detail.blocked,
     };
@@ -513,6 +521,28 @@ export function archiveDebtConfiguration(db: SqliteDatabase, id: string, now = n
     })();
   }
   return getDebtDetail(db, id)!;
+}
+
+/**
+ * Delete an archived loan permanently (owner decision 2026-10-05): everything Bench stored for it
+ * (settings, revisions, matching rules, proposed and applied changes with their history, lender
+ * statements and restarts). Actual is not touched: transactions Bench changed stay as they are, and
+ * Bench can no longer undo them. Only an archived loan can be deleted, so it is never one click away.
+ */
+export function deleteArchivedDebtPermanently(db: SqliteDatabase, id: string): void {
+  const existing = getDebt(db, id);
+  if (!existing) throw new AppDbValidationError("Debt not found");
+  if (existing.status !== "archived") throw new AppDbValidationError("Archive the loan before deleting it permanently");
+  db.transaction(() => {
+    // Links name the changes that made them, and undos name the change they reverse, so they go first.
+    db.prepare("DELETE FROM debt_transaction_links WHERE debt_id = ? OR posting_id IN (SELECT id FROM financial_postings WHERE subject_kind = 'debt' AND subject_id = ?)").run(id, id);
+    db.prepare("DELETE FROM financial_postings WHERE subject_kind = 'debt' AND subject_id = ? AND reversal_of IS NOT NULL").run(id);
+    db.prepare("DELETE FROM financial_postings WHERE subject_kind = 'debt' AND subject_id = ?").run(id);
+    db.prepare("DELETE FROM debt_anchors WHERE debt_id = ?").run(id);
+    deleteObservationRows(db, new Set(db.prepare("SELECT id FROM debt_observations WHERE debt_id = ?").all<{ id: string }>(id).map((r) => r.id)));
+    // Rates, offsets, assumptions and matching rules cascade; the delete trigger removes the revisions.
+    db.prepare("DELETE FROM debts WHERE id = ?").run(id);
+  })();
 }
 
 /** Discard a draft entirely (children cascade; the delete trigger removes its revisions). */

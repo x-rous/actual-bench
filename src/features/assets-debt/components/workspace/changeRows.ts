@@ -1,0 +1,116 @@
+import type { PlanningNotice } from "@/lib/assets-debt/services/planner/common";
+import type { PostingView } from "@/lib/assets-debt/services/proposalService";
+
+/**
+ * The Activity list model (RD-084 P1.6b T289/T290; `ux-loan-workspace.md`
+ * §3.4–§3.5, §3.8). Pure: one row per change, never one per stored record.
+ * An Undo belongs to the row it reverses; superseded and declined versions are
+ * that row's "earlier versions"; notices from the last refresh are Waiting
+ * rows unless a change for the same period already has a row.
+ */
+
+export type ChangeFilter = "action" | "waiting" | "applied" | "undone" | "all";
+export type RowState = "recommended" | "review" | "blocked" | "waiting" | "applying" | "applied" | "undo-pending" | "undone" | "failed" | "interrupted";
+
+export type ChangeRowModel = {
+  key: string;
+  dueDate: string;
+  paidDate: string | null;
+  paymentMinor: number | null;
+  posting: PostingView | null;
+  /** A pending or applied Undo of `posting`. */
+  undo: PostingView | null;
+  notice: PlanningNotice | null;
+  earlier: PostingView[];
+  /** The expanded-row key: stable across recalculations of the same proposal. */
+  openKey: string;
+  state: RowState;
+  group: Exclude<ChangeFilter, "all">;
+  /** What a checkbox on this row would do; null when the row cannot be selected. */
+  selectable: "apply" | "undo" | null;
+};
+
+const LIVE_UNDO = new Set(["proposed", "approved", "applying", "indeterminate", "failed"]);
+
+function paidAndPayment(posting: PostingView): { paidDate: string | null; paymentMinor: number | null } {
+  const o = posting.output;
+  switch (o.kind) {
+    case "restructure": return { paidDate: posting.basis.paidDate ?? o.before.date, paymentMinor: o.before.amountMinor };
+    case "convert": return { paidDate: o.before.date, paymentMinor: o.before.amountMinor };
+    case "link": return { paidDate: o.sourceBefore.date, paymentMinor: o.sourceBefore.amountMinor };
+    case "claim": return { paidDate: o.rows[0]?.date ?? null, paymentMinor: o.rows[0]?.amountMinor ?? null };
+    case "create": return { paidDate: o.operations[0]?.date ?? null, paymentMinor: o.operations.reduce((sum, op) => sum + op.amountMinor, 0) };
+    default: return { paidDate: null, paymentMinor: null };
+  }
+}
+
+function stateOf(posting: PostingView, undo: PostingView | null): RowState {
+  const status = String(posting.status);
+  if (status === "proposed") return posting.classification === "blocked" ? "blocked" : posting.classification === "safe" ? "recommended" : "review";
+  if (status === "applying" || status === "approved") return "applying";
+  if (status === "indeterminate") return "interrupted";
+  if (status === "failed") return "failed";
+  if (status === "reversed") return "undone";
+  if (status === "applied") return undo && LIVE_UNDO.has(String(undo.status)) ? "undo-pending" : "applied";
+  return "review";
+}
+
+const GROUP: Record<RowState, ChangeRowModel["group"]> = {
+  recommended: "action", review: "action", blocked: "action", applying: "action", interrupted: "action", failed: "action", "undo-pending": "action",
+  applied: "applied", undone: "undone", waiting: "waiting",
+};
+
+export function buildChangeRows(postings: readonly PostingView[], notices: readonly PlanningNotice[] = []): ChangeRowModel[] {
+  const changes = postings.filter((p) => !p.reversalOf && !["superseded", "declined"].includes(String(p.status)));
+  const undoOf = new Map<string, PostingView>();
+  for (const p of postings) {
+    if (!p.reversalOf || ["superseded", "declined"].includes(String(p.status))) continue;
+    const current = undoOf.get(p.reversalOf);
+    if (!current || p.createdAt > current.createdAt) undoOf.set(p.reversalOf, p);
+  }
+  const rows: ChangeRowModel[] = changes.map((posting) => {
+    const undo = undoOf.get(posting.id) ?? null;
+    const state = stateOf(posting, undo);
+    const earlier = postings
+      .filter((p) => p.id !== posting.id && !p.reversalOf && p.postingKind === posting.postingKind && p.periodKey === posting.periodKey && ["superseded", "declined"].includes(String(p.status)))
+      // A recalculation that produced the same change (for example after an earlier month was
+      // applied) is not a different version for the user.
+      .filter((p) => JSON.stringify(p.output) !== JSON.stringify(posting.output) || p.classification !== posting.classification || String(p.status) === "declined")
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const selectable = state === "recommended" || state === "review"
+      ? "apply"
+      : state === "undo-pending" && undo && String(undo.status) === "proposed" && undo.classification !== "blocked" ? "undo" : null;
+    // Stays the same while a proposal is recalculated, so an open row stays open after a refresh.
+    const openKey = String(posting.status) === "proposed" ? `proposed:${posting.postingKind}:${posting.periodKey}` : posting.id;
+    return { key: posting.id, openKey, dueDate: posting.periodKey, ...paidAndPayment(posting), posting, undo, notice: null, earlier, state, group: GROUP[state], selectable };
+  });
+  for (const notice of notices) {
+    const row = rows.find((r) => r.dueDate === notice.periodKey && r.posting && r.group !== "undone");
+    if (row) {
+      row.notice = row.notice ?? notice;
+      continue;
+    }
+    rows.push({ key: `notice:${notice.code}:${notice.periodKey}`, openKey: `notice:${notice.code}:${notice.periodKey}`, dueDate: notice.periodKey, paidDate: null, paymentMinor: null, posting: null, undo: null, notice, earlier: [], state: "waiting", group: "waiting", selectable: null });
+  }
+  // Newest due date first.
+  return rows.sort((a, b) => b.dueDate.localeCompare(a.dueDate) || a.key.localeCompare(b.key));
+}
+
+export function rowsFor(rows: readonly ChangeRowModel[], filter: ChangeFilter): ChangeRowModel[] {
+  return filter === "all" ? [...rows] : rows.filter((r) => r.group === filter);
+}
+
+export function countByFilter(rows: readonly ChangeRowModel[]): Record<ChangeFilter, number> {
+  const count = (group: ChangeRowModel["group"]) => rows.filter((r) => r.group === group).length;
+  return { action: count("action"), waiting: count("waiting"), applied: count("applied"), undone: count("undone"), all: rows.length };
+}
+
+/**
+ * Bulk order (owner refinement 1): changes oldest first, since each month builds on the one
+ * before; undos newest first, the reverse of how the changes were built.
+ */
+export function bulkOrder(rows: readonly ChangeRowModel[]): ChangeRowModel[] {
+  const applies = rows.filter((r) => r.selectable === "apply").sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const undos = rows.filter((r) => r.selectable === "undo").sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+  return [...undos, ...applies];
+}

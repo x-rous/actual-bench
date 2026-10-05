@@ -52,7 +52,7 @@ describe("planners (T118–T120)", () => {
     const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
     s.seedPayment("2024-02-01");
     const [split] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
-    expect(split.classification).toBe("review");
+    expect(split.classification).toBe("safe");
     if (split.output.kind !== "restructure") throw new Error("expected restructure");
     const children = split.output.expectedPostState.children;
     expect(children.reduce((sum, c) => sum + c.amountMinor, 0)).toBe(-242915);

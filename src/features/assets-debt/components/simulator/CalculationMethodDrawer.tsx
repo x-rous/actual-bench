@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { InfoHint } from "@/components/ui/info-hint";
 import { validateProfile, type CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { activeBusinessDays, activeLenderStatement, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
+import { engineLine } from "../../lib/strategyAdvice";
 import {
   ACCRUAL_OPTIONS,
   AMORTIZATION_OPTIONS,
@@ -73,6 +74,7 @@ export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState
           {profile.accrual === "per-period" ? labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote) : labelOf(DAY_COUNT_OPTIONS, profile.dayCount)} · {labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency)}
         </span>
         <span className="block truncate text-[11px] text-muted-foreground">{[accrual, labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation, businessDays, statement].filter(Boolean).join(" · ")}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{engineLine(sim)}</span>
       </div>
     </button>
   );

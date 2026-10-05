@@ -1,3 +1,9 @@
+import { listSubjectPostings } from "@/lib/app-db/financialPostingRepository";
+import { createObservedRepaymentAllocator, interestAllocationOf } from "@/lib/financial-models/loan/statementAllocation";
+import { modelFromDetail } from "../model/buildModel";
+import { getDebtDetail } from "./debtConfigService";
+import { openingFor } from "./opening";
+import type { PostingOutputSnapshot } from "./snapshot";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import { getDebt } from "@/lib/app-db/debtRepository";
 import { listDebtTransactionLinks } from "@/lib/app-db/debtTransactionLinkRepository";
@@ -146,7 +152,7 @@ export function runDebtBacktest(
       .filter((link) => (typeof link.linkSource === "string" ? link.linkSource : link.linkSource.unknown) === "posting")
       .map((link) => link.actualTransactionId)
   );
-  return backtestMatchingRule({
+  const result = backtestMatchingRule({
     ...parsed,
     expectedPeriods: expectedPeriods(db, debtId, rule.purpose ?? "repayment", request.from, request.to),
     candidates: matchingCandidates(request.snapshots, existingLinks),
@@ -155,6 +161,81 @@ export function runDebtBacktest(
     to: request.to,
     generatedAt,
   });
+  const marked = markHandledPeriods(db, debtId, rule.purpose ?? "repayment", result);
+  return (rule.purpose ?? "repayment") === "repayment" ? withActualDatedAllocation(db, debtId, marked) : marked;
+}
+
+/**
+ * The backtest's expected split, the same way Activity splits a repayment (T292; FR-069a): on
+ * actual payment dates from the loan's opening, applied splits as applied. Only when the history
+ * starts at the opening (the default); a later start keeps the scheduled figures rather than
+ * guessing the months before it.
+ */
+function withActualDatedAllocation(db: SqliteDatabase, debtId: string, result: DebtBacktestResult): DebtBacktestResult {
+  const detail = getDebtDetail(db, debtId);
+  const built = detail ? modelFromDetail(detail) : null;
+  if (!built || !built.ok || built.model.profile.accrual === "per-period") return result;
+  const opening = openingFor(db, debtId, built.model);
+  const firstDue = [...result.periods].map((p) => p.expected.date).sort()[0];
+  if (!firstDue || result.periods.length === 0 || result.from > opening.date || firstDue <= opening.date) return result;
+  const created = createObservedRepaymentAllocator({ model: built.model, opening, allocation: interestAllocationOf(built.model) });
+  if (!created.ok) return result;
+  const applied = new Map<string, Extract<PostingOutputSnapshot, { kind: "restructure" }>>();
+  for (const p of listSubjectPostings(db, "debt", debtId)) {
+    if (p.postingKind !== "repayment-split" || !["applying", "applied", "indeterminate"].includes(String(p.status))) continue;
+    const output = JSON.parse(p.outputSnapshotJson) as PostingOutputSnapshot;
+    if (output.kind === "restructure") applied.set(p.periodKey, output);
+  }
+  const allocated = new Map<string, { principalMinor: number; interestMinor: number; feesMinor: number }>();
+  for (const period of [...result.periods].sort((a, b) => a.expected.date.localeCompare(b.expected.date))) {
+    const split = applied.get(period.expected.date);
+    const unique = period.status === "unique" ? period.candidates[0]?.candidate : null;
+    const entry = split
+      ? {
+          dueDate: period.expected.date, paidDate: split.before.date, amountMinor: Math.abs(split.before.amountMinor),
+          feesMinor: split.operations.filter((c) => c.economicKind !== "principal" && c.economicKind !== "interest").reduce((sum, c) => sum + Math.abs(c.amountMinor), 0),
+          ...(split.override ? { appliedInterestMinor: split.override.interestMinor } : {}),
+        }
+      : unique
+        ? { dueDate: period.expected.date, paidDate: unique.date, amountMinor: Math.abs(unique.amountMinor), feesMinor: period.expected.feesMinor ?? 0 }
+        : { dueDate: period.expected.date, paidDate: period.expected.date, amountMinor: period.expected.paymentMinor, feesMinor: period.expected.feesMinor ?? 0 };
+    const row = created.allocator.push(entry);
+    if (!row.ok) return result;
+    if (split || unique) allocated.set(period.expected.date, { principalMinor: row.row.principalMinor, interestMinor: row.row.interestMinor, feesMinor: row.row.feesMinor });
+  }
+  return {
+    ...result,
+    periods: result.periods.map((period) => {
+      const split = allocated.get(period.expected.date);
+      return split ? { ...period, expected: { ...period.expected, ...split } } : period;
+    }),
+  };
+}
+
+/** The posting kinds that, once applied, handle a period for each rule purpose. */
+const HANDLING_KINDS: Record<string, readonly string[]> = {
+  repayment: ["repayment-split", "repayment-link"],
+  "interest-charge": ["interest-charge", "interest-link"],
+  "lender-repayment-row": ["repayment-link"],
+};
+
+/**
+ * A period Bench already handled in an applied change no longer has a claimable row: it reads as
+ * missing, or as unsafe when the applied split's parent is still visible. Flag it "already handled"
+ * and leave it out of the missing, multiple and unsafe counts, so the backtest says so and the
+ * enable gate does not refuse a rule because its own periods were applied (T287).
+ */
+function markHandledPeriods(db: SqliteDatabase, debtId: string, purpose: string, result: DebtBacktestResult): DebtBacktestResult {
+  const kinds = HANDLING_KINDS[purpose] ?? [];
+  const handled = new Set(
+    listSubjectPostings(db, "debt", debtId)
+      .filter((p) => ["applying", "applied", "indeterminate"].includes(String(p.status)) && kinds.includes(String(p.postingKind)))
+      .map((p) => p.periodKey)
+  );
+  const periods = result.periods.map((period) => (period.status !== "unique" && handled.has(period.expected.date) ? { ...period, flags: [...period.flags, "already-handled"] } : period));
+  const counted = periods.filter((period) => !period.flags.includes("already-handled"));
+  const count = (status: string) => counted.filter((period) => period.status === status).length;
+  return { ...result, periods, summary: { ...result.summary, missing: count("missing"), multiple: count("multiple"), unsafe: count("unsafe") } };
 }
 
 /** Automation/server-side parity hook; reads through only the read-only transport slice. */

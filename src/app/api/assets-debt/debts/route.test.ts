@@ -198,8 +198,8 @@ describe("/api/assets-debt/debts", () => {
       }
     };
     walk(__dirname);
-    // 11 configuration/read handlers plus the P1.6 preview and postings-list handlers.
-    expect(files.length).toBe(13);
+    // 11 configuration/read handlers, the P1.6 preview and postings-list handlers, and removing a statement.
+    expect(files.length).toBe(14);
     for (const file of files) {
       const source = readFileSync(file, "utf8");
       expect({ file, sql: /prepare\(|SELECT |INSERT |UPDATE |DELETE FROM/.test(source) }).toEqual({ file, sql: false });

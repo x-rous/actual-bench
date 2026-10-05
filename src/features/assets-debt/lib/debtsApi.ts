@@ -1,3 +1,4 @@
+import type { AttentionItem } from "@/lib/assets-debt/services/attentionService";
 import type { AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import type { DebtDetail, DebtSaveInput, DebtSummary, ValidationIssue } from "@/lib/assets-debt/services/debtConfigService";
 import type { AssumptionInput } from "@/lib/app-db/debtAssumptionRepository";
@@ -38,6 +39,10 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+/** What needs the user across the budget's loans (T293); read-only. */
+export const listNeedsAttention = (budgetSyncId: string) =>
+  request<{ items: AttentionItem[] }>(`/api/assets-debt/attention?budgetSyncId=${encodeURIComponent(budgetSyncId)}`).then((r) => r.items);
+
 export const listDebts = (budgetSyncId: string, includeArchived = false) =>
   request<{ debts: DebtSummary[] }>(`/api/assets-debt/debts?budgetSyncId=${encodeURIComponent(budgetSyncId)}${includeArchived ? "&includeArchived=1" : ""}`).then((r) => r.debts);
 
@@ -50,6 +55,13 @@ export const updateDebt = (id: string, debt: DebtSaveInput, accountDirectory: Ac
   request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ debt, accountDirectory }) }).then((r) => r.debt);
 
 /** Archives an active debt; discards a draft. */
+/** Delete an archived loan permanently, with everything Bench stored for it; Actual is not touched. */
+export const deleteDebtPermanently = (id: string) => request<undefined>(`/api/assets-debt/debts/${encodeURIComponent(id)}?permanent=yes`, { method: "DELETE" });
+
+/** Remove a lender statement with its corrections and any restart made from it. */
+export const removeDebtObservation = (id: string, observationId: string) =>
+  request<{ removed: { statements: number; restarts: number } }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/observations/${encodeURIComponent(observationId)}`, { method: "DELETE" }).then((r) => r.removed);
+
 export const archiveDebt = (id: string) => request<{ debt?: DebtDetail } | undefined>(`/api/assets-debt/debts/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 export const getEligibility = (id: string) => request<{ eligibility: Eligibility }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/eligibility`).then((r) => r.eligibility);
@@ -78,12 +90,22 @@ export const deleteMatchRule = (id: string, ruleId: string) =>
 export const runMatchBacktest = (id: string, body: { ruleId: string; from: string; to: string; snapshots: MatchingHistorySnapshot[] }) =>
   request<{ backtest: DebtBacktestResult }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/backtest`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.backtest);
 
+/** The matching editor's live check of an unsaved rule; nothing is stored. */
+export const checkDraftMatchRule = (id: string, body: { rule: { purpose: string; conditions: unknown; actions: unknown }; from: string; to: string; snapshots: MatchingHistorySnapshot[] }) =>
+  request<{ backtest: DebtBacktestResult }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/backtest`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.backtest);
+
 export const listDebtObservations = (id: string) => request<{ observations: DebtObservationRecord[]; history: DebtObservationRecord[] }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/observations`);
 export const recordDebtObservation = (id: string, body: { observedOn: string; recordedAt: string; principalMinor: number; accruedInterestMinor: number | null; supersedesObservationId?: string | null; note: string | null }) =>
   request<{ observation: DebtObservationRecord }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/observations`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.observation);
 export const listDebtAnchors = (id: string) => request<{ effective: DebtAnchorRecord | null; anchors: DebtAnchorRecord[] }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/anchors`);
 export const createDebtAnchor = (id: string, observationId: string) => request<{ anchor: DebtAnchorRecord }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/anchors`, { method: "POST", body: JSON.stringify({ observationId, carriedRemainderDecimal: null }) }).then((r) => r.anchor);
-export type DebtReconciliationView = { comparison: DriftComparison; drift: DriftState; health: { overdue: boolean; dueDate: string | null }; lenderObservation: DebtObservationRecord | null; projectedBalanceVariance: null };
+export type DebtReconciliationView = {
+  comparison: DriftComparison; drift: DriftState; health: { overdue: boolean; dueDate: string | null }; lenderObservation: DebtObservationRecord | null; projectedBalanceVariance: null;
+  /** The calculation on schedule (repayments on their due dates), next to the "as paid" figure in `comparison` (T309). */
+  scheduledMinor?: number;
+  /** When the calculation follows the repayments as paid: the date of the latest applied repayment it starts from. */
+  asPaidFrom?: string | null;
+};
 export const getDebtReconciliation = (id: string, body: { comparisonDate: string; actualBalanceMinor: number; offsetHistories?: OffsetHistorySnapshot[] }) =>
   request<{ reconciliation: DebtReconciliationView }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/reconciliation`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.reconciliation);
 export const acceptDebtDrift = (id: string, body: { comparisonDate: string; actualBalanceMinor: number; offsetHistories?: OffsetHistorySnapshot[] }) => request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/reconciliation`, { method: "PATCH", body: JSON.stringify({ accept: true, ...body }) }).then((r) => r.debt);

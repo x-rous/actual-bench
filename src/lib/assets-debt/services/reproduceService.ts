@@ -99,7 +99,11 @@ export function reproducePosting(db: SqliteDatabase, postingId: string, transpor
   }
   const recomputed = componentsFor(kind, result, stored, actualDated);
   const exact = recomputed.length === stored.length && recomputed.every((c, i) => c.kind === stored[i].kind && c.amountMinor === stored[i].amountMinor);
-  return { ...base, status: exact ? "exact-match" : "mismatch", recomputed, detail: exact ? "Recomputed from stored inputs at the recorded engine versions." : "The recomputed result differs from the stored one. Treat this as a defect unless a documented migration explains it." };
+  const edited = typeof input.parameters.overrideInterestMinor === "number";
+  const matched = edited
+    ? `Recomputed from stored inputs; matches your edit (Bench calculated ${String(input.parameters.calculatedInterestMinor)} minor units of interest).`
+    : "Recomputed from stored inputs at the recorded engine versions.";
+  return { ...base, status: exact ? "exact-match" : "mismatch", recomputed, detail: exact ? matched : "The recomputed result differs from the stored one. Treat this as a defect unless a documented migration explains it." };
 }
 
 /** Continuity: consecutive engine postings share their opening unless a newer anchor explains the change. */

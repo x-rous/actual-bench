@@ -57,9 +57,9 @@ describe("no auto-apply (SC-018)", () => {
 
   it("the user's actions run only from click handlers: no effect, timer or job reaches them", () => {
     expect(importers(/\b(applyPosting|completeInterruptedLink)\b/).filter((p) => !p.endsWith("postingActions.ts"))).toEqual([
-      "src/features/assets-debt/components/preview/PostingsPanel.tsx",
+      "src/features/assets-debt/components/workspace/LoanActivity.tsx",
     ]);
-    for (const path of ["src/features/assets-debt/components/preview/PostingsPanel.tsx", "src/features/assets-debt/lib/postingActions.ts", "src/lib/assets-debt/services/applyService.ts"]) {
+    for (const path of ["src/features/assets-debt/components/workspace/LoanActivity.tsx", "src/features/assets-debt/lib/postingActions.ts", "src/lib/assets-debt/services/applyService.ts"]) {
       const text = files.find((f) => f.path === path)!.text;
       expect({ path, effect: /useEffect|setInterval|setTimeout|automation/.test(text) }).toEqual({ path, effect: false });
     }
@@ -98,7 +98,7 @@ describe("no auto-apply (SC-018)", () => {
     expect(s.fake.writes()).toEqual([]);
   });
 
-  it("classification never produces safe for a restructure, counterpart link, split, opening or reconciliation adjustment, or unreviewed principal change", () => {
+  it("classification never produces safe for a restructure, counterpart link, split, opening or reconciliation adjustment, or unreviewed principal change (without the planner's FR-170c routine-split flag)", () => {
     const cases = [
       { postingKind: "repayment-split" as const, shape: "restructure" as const },
       { postingKind: "repayment-link" as const, shape: "link" as const },

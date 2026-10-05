@@ -15,3 +15,45 @@ export function recordManualDebtObservation(db: SqliteDatabase, input: Omit<Debt
 
 export const currentDebtObservations = listCurrentDebtObservations;
 export const debtObservationHistory = listDebtObservationHistory;
+
+/** Delete statement rows in a safe order: a row is removed only once nothing still names it as corrected. */
+export function deleteObservationRows(db: SqliteDatabase, ids: ReadonlySet<string>): void {
+  const remaining = new Set(ids);
+  const pointsAt = db.prepare("SELECT COUNT(*) AS n FROM debt_observations WHERE supersedes_observation_id = ?");
+  const remove = db.prepare("DELETE FROM debt_observations WHERE id = ?");
+  while (remaining.size) {
+    const free = [...remaining].filter((id) => (pointsAt.get<{ n: number }>(id)?.n ?? 0) === 0);
+    if (!free.length) throw new AppDbValidationError("The statement history could not be removed in order");
+    for (const id of free) {
+      remove.run(id);
+      remaining.delete(id);
+    }
+  }
+}
+
+/**
+ * Remove a lender statement (owner decision 2026-10-05): the statement with every correction of it
+ * (the whole chain), and any restart of the calculation made from one of them. Actual is not
+ * touched. Returns what was removed so the screen can say so.
+ */
+export function removeDebtObservation(db: SqliteDatabase, debtId: string, observationId: string): { statements: number; restarts: number } {
+  const all = listDebtObservationHistory(db, debtId);
+  if (!all.some((o) => o.id === observationId)) throw new AppDbValidationError("That statement does not belong to this loan");
+  // The connected chain: the statement, what it corrected, and what corrected it, in both directions.
+  const chain = new Set([observationId]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const o of all) {
+      const linked = chain.has(o.id) || (o.supersedesObservationId !== null && chain.has(o.supersedesObservationId));
+      if (linked && !chain.has(o.id)) { chain.add(o.id); grew = true; }
+      if (chain.has(o.id) && o.supersedesObservationId && !chain.has(o.supersedesObservationId)) { chain.add(o.supersedesObservationId); grew = true; }
+    }
+  }
+  return db.transaction(() => {
+    const ids = [...chain];
+    const marks = ids.map(() => "?").join(", ");
+    const restarts = db.prepare(`DELETE FROM debt_anchors WHERE debt_id = ? AND observation_id IN (${marks})`).run(debtId, ...ids).changes;
+    deleteObservationRows(db, chain);
+    return { statements: chain.size, restarts };
+  })();
+}

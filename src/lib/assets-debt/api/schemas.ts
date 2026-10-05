@@ -178,6 +178,14 @@ export const debtBacktestRequestSchema = z.strictObject({
   snapshots: z.array(matchingSnapshotSchema).max(50),
 });
 
+/** The matching editor's live check of an unsaved rule (nothing is stored). */
+export const draftBacktestRequestSchema = z.strictObject({
+  rule: z.strictObject({ purpose: z.enum(["repayment", "interest-charge", "lender-repayment-row"]), conditions: z.unknown(), actions: z.unknown() }),
+  from: isoDate,
+  to: isoDate,
+  snapshots: z.array(matchingSnapshotSchema).max(50),
+});
+
 export const matchRuleSaveSchema = z.strictObject({
   purpose: z.enum(["repayment", "interest-charge", "lender-repayment-row"]),
   conditions: z.unknown(),

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** Repayment matching moved to each loan's own tab; the old link opens the loans list. */
+/** Repayment matching lives in each loan's Settings; the old link opens the loans list. */
 export default function RulesPage() {
-  redirect("/assets-debt/loans");
+  redirect("/loans");
 }

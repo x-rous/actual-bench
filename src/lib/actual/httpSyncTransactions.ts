@@ -63,12 +63,15 @@ const SINCE_DATE_FLOOR = "0001-01-01";
 async function fetchTransactions(
   connection: ConnectionInstance,
   accountId: string,
-  startDate?: string
+  startDate?: string,
+  endDate?: string
 ): Promise<RawHttpTransaction[]> {
   const since = startDate || SINCE_DATE_FLOOR;
+  // actual-http-api honours until_date (verified live); rows past it are also filtered by the callers.
+  const until = endDate ? `&until_date=${encodeURIComponent(endDate)}` : "";
   const res = await apiRequest<{ data?: RawHttpTransaction[] } | RawHttpTransaction[]>(
     connection,
-    `/accounts/${accountId}/transactions?since_date=${encodeURIComponent(since)}`
+    `/accounts/${accountId}/transactions?since_date=${encodeURIComponent(since)}${until}`
   );
   return Array.isArray(res) ? res : res.data ?? [];
 }
@@ -136,7 +139,7 @@ export async function listHttpTransactionsForSync(
   input: ListTransactionsForSyncInput
 ): Promise<SyncSourceTransaction[]> {
   const names = await loadNameMaps(connection);
-  const rows = await fetchTransactions(connection, input.accountId, input.startDate);
+  const rows = await fetchTransactions(connection, input.accountId, input.startDate, input.endDate);
   return rows
     // Split children arrive inline under their parent; skip top-level leaks.
     .filter((r) => r.is_child !== true)
@@ -352,8 +355,8 @@ export async function createHttpTransactionsForSync(
  */
 export function httpStructurePrimitives(connection: ConnectionInstance): StructurePrimitives {
   return {
-    async readAccount(accountId, sinceDate) {
-      const rows = await fetchTransactions(connection, accountId, sinceDate);
+    async readAccount(accountId, sinceDate, untilDate) {
+      const rows = await fetchTransactions(connection, accountId, sinceDate, untilDate);
       return rows.filter((row) => row.is_child !== true) as unknown as RawTxn[];
     },
     async update(id, fields) {
