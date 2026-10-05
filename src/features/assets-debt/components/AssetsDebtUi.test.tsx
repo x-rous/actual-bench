@@ -132,7 +132,7 @@ describe("the Loans & Debt page (rev 4)", () => {
     expect(screen.queryByRole("navigation", { name: "Assets & Debt sections" })).toBeNull();
     const hsbc = await screen.findByRole("link", { name: /HSBC/ });
     expect(hsbc).toHaveTextContent("3 changes to review");
-    expect(hsbc).toHaveAttribute("href", "/loans/d1?view=transactions&filter=action");
+    expect(hsbc).toHaveAttribute("href", "/loans/d1?view=repayments&filter=action");
     expect(screen.getByRole("link", { name: /Car/ })).toHaveAttribute("href", "/loans/d2");
   });
 });
@@ -195,9 +195,9 @@ describe("the simulator workspace", () => {
 
     const results = screen.getByTestId("results-region");
     await waitFor(() => expect(within(results).getByText("Total interest").nextSibling).not.toHaveTextContent("–"), WAIT);
-    for (const tile of ["Repayment", "Total repayments", "Total interest", "Payoff date"]) expect(within(results).getByText(tile)).toBeInTheDocument();
-    const repaymentLabel = within(results).getByText("Repayment");
-    expect(repaymentLabel).toHaveTextContent("Repayment (monthly)");
+    for (const tile of ["Monthly repayment", "Total repayments", "Total interest", "Payoff date"]) expect(within(results).getByText(tile)).toBeInTheDocument();
+    const repaymentLabel = within(results).getByText("Monthly repayment");
+    expect(repaymentLabel).not.toHaveClass("uppercase");
     expect(repaymentLabel.nextSibling).toHaveClass("text-2xl", "tabular-nums");
     expect(repaymentLabel.nextElementSibling?.querySelector(".text-base")).toHaveTextContent(/^\.\d{2}$/);
     for (const label of ["Total repayments", "Total interest"]) {
@@ -217,8 +217,11 @@ describe("the simulator workspace", () => {
   it("keeps events and the schedule beneath the chart in the right results column", async () => {
     wrap(<Harness initial={shortLoan()} />);
     const rail = screen.getByTestId("control-rail");
-    expect(rail.className).toContain("lg:w-[380px]");
-    expect(rail.className).toContain("lg:border-r");
+    expect(rail.className).toContain("lg:w-[396px]");
+    expect(rail.className).not.toContain("rounded");
+    // No divider between inputs and results (rev 4): the inputs are a tinted column of white cards.
+    expect(rail.className).not.toContain("lg:border-r");
+    expect(rail.className).toContain("bg-muted/40");
     expect(rail).toHaveAttribute("aria-label", "Loan inputs");
     const results = screen.getByTestId("results-region");
     expect(results.className).toContain("flex-1");
@@ -400,12 +403,20 @@ describe("the simulator workspace", () => {
     expect(screen.getByRole("group", { name: /Loan balance chart/ })).toBeInTheDocument();
   });
 
+  it("Events: the add buttons sit on the heading line, and an empty loan says it has no events yet", async () => {
+    wrap(<Harness initial={shortLoan()} />);
+    const heading = await screen.findByRole("heading", { name: "Events" }, WAIT);
+    expect(heading.parentElement).toContainElement(screen.getByRole("group", { name: "Add an event" }));
+    expect(await screen.findByText("No extra payments, redraws or rate changes yet.", undefined, WAIT)).toBeInTheDocument();
+  });
+
   it("uses accessible switches, hides disabled feature controls, and exposes the calculation drawer", async () => {
     wrap(<Harness initial={shortLoan()} />);
     const permanent = ["Loan", "Interest Rate", "Repayments"].map((name) => screen.getByRole("group", { name }));
     for (const section of permanent) expect(section).toHaveClass("rounded-lg", "border");
     const optional = ["Interest-only periods", "Balloon payment", "Offset account", "Fees and other costs"].map((name) => screen.getByRole("group", { name }));
-    for (const section of optional) expect(section).not.toHaveClass("border");
+    // Switched off, each option is a light card row (not a full group) that stays visible.
+    for (const section of optional) expect({ tag: section.tagName, light: section.classList.contains("bg-background") }).toEqual({ tag: "DIV", light: true });
     for (const name of ["Loan", "Interest Rate", "Repayments", "Interest-only periods", "Balloon payment", "Offset account", "Fees and other costs"]) {
       expect(screen.getByRole("button", { name: `About ${name} help` })).toBeInTheDocument();
     }
@@ -499,7 +510,8 @@ describe("the simulator workspace", () => {
     await screen.findByTestId("schedule-region", undefined, WAIT);
     expect(document.body).not.toHaveTextContent(/\bAUD\b|\bAED\b|\bUSD\b|\$/);
     type("Loan amount", "12345");
-    fireEvent.click(screen.getByRole("button", { name: "Reset loan" }));
+    fireEvent.click(screen.getByRole("button", { name: "More schedule actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Reset loan" }));
     const confirm = await screen.findByRole("dialog", { name: "Reset this loan?" });
     expect(confirm).toHaveTextContent(/discards the current simulation inputs/i);
     fireEvent.click(within(confirm).getByRole("button", { name: "Reset loan" }));
@@ -804,14 +816,14 @@ describe("the new-loan flow", () => {
     wrap(<NewLoanView />);
     await screen.findByLabelText("Loan amount");
     const sections = screen.getByRole("navigation", { name: "Loan sections" });
-    expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Schedule", "Settings", "Transactions"]);
-    expect(within(sections).getByRole("button", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
-    expect(within(sections).getByRole("button", { name: "Transactions" })).toBeDisabled();
+    expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Terms & Schedule", "Link to Actual", "Sync Repayments"]);
+    expect(within(sections).getByRole("button", { name: "Terms & Schedule" })).toHaveAttribute("aria-current", "page");
+    expect(within(sections).getByRole("button", { name: "Sync Repayments" })).toBeDisabled();
     expect(screen.getByText("Not saved yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Loans & Debt/ })).toBeInTheDocument();
     const how = screen.getByRole("button", { name: "How this loan is calculated" });
     const method = screen.getByRole("button", { name: "Set calculation method" });
-    const reset = screen.getByRole("button", { name: "Reset loan" });
+    const reset = screen.getByRole("button", { name: "More loan actions" });
     expect(how.compareDocumentPosition(method) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(method.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     for (const button of [how, method, reset]) expect(button.querySelector("svg")).not.toBeNull();
@@ -822,7 +834,7 @@ describe("the new-loan flow", () => {
     expect(Object.keys(sessionStorage)).toEqual(["assets-debt:new-loan:c1:b1"]);
     expect(mocked.createDebt).not.toHaveBeenCalled();
 
-    const next = screen.getByRole("button", { name: "Next: Settings" });
+    const next = screen.getByRole("button", { name: "Next: Link to Actual" });
     expect(next.querySelector(".lucide-arrow-right")).not.toBeNull();
     await waitFor(() => expect(next).toBeEnabled(), WAIT);
     fireEvent.click(next);
@@ -906,12 +918,24 @@ describe("an existing loan page", () => {
     });
   });
 
+  it("Terms & Schedule uses the loan's top bar: Compare, How and Set calculation method there, one ⋯ menu with Reset loan", async () => {
+    await withView("schedule", async () => {
+      wrap(<LoanView id={detail.debt.id} />);
+      expect(await screen.findByRole("button", { name: "Set calculation method" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "How this loan is calculated" })).toBeInTheDocument();
+      expect(screen.getByText("Compare with saved")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "More schedule actions" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "More loan actions" }));
+      expect(await screen.findByRole("menuitem", { name: "Reset loan" })).toBeInTheDocument();
+    });
+  });
+
   it("the workspace has exactly Schedule, Settings and Transactions; old links open the tab that now holds their content", async () => {
     await withView("matching", async () => {
       wrap(<LoanView id={detail.debt.id} />);
       const sections = await screen.findByRole("navigation", { name: "Loan sections" });
-      expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Schedule", "Settings", "Transactions"]);
-      expect(within(sections).getByRole("button", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+      expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Terms & Schedule", "Link to Actual", "Sync Repayments"]);
+      expect(within(sections).getByRole("button", { name: "Link to Actual" })).toHaveAttribute("aria-current", "page");
       expect(await screen.findByRole("heading", { name: /Repayment matching/ })).toBeInTheDocument();
       expect(screen.getByText("Saved separately")).toBeInTheDocument();
       expect(screen.getByLabelText("Setup checklist")).toBeInTheDocument();
@@ -923,7 +947,7 @@ describe("an existing loan page", () => {
     await withView(null, async () => {
       wrap(<LoanView id={detail.debt.id} />);
       const sections = await screen.findByRole("navigation", { name: "Loan sections" });
-      expect(within(sections).getByRole("button", { name: "Transactions" })).toHaveAttribute("aria-current", "page");
+      expect(within(sections).getByRole("button", { name: "Sync Repayments" })).toHaveAttribute("aria-current", "page");
       expect(await screen.findByRole("region", { name: "Loan status" })).toBeInTheDocument();
       expect(screen.getByRole("group", { name: "Filter changes" })).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Check against lender statement" }));

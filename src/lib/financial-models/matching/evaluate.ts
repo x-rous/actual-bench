@@ -20,6 +20,11 @@ export type MatchCandidate = {
   isChild?: boolean;
   benchMarked: boolean;
   postingLinked: boolean;
+  /**
+   * An existing split of exactly one transfer part plus other parts: a repayment already split in
+   * Actual, which can be recorded as it is (owner decision 2026-10-06), so it is not unsafe.
+   */
+  loanSplit?: boolean;
 };
 
 export type ExpectedMatchPeriod = {
@@ -100,7 +105,7 @@ function conditionMatches(condition: MatchConditionV1, candidate: MatchCandidate
 function unsafeReasons(candidate: MatchCandidate, conditions: MatchConditionsV1, expected: ExpectedMatchPeriod): string[] {
   const reasons: string[] = [];
   if (candidate.stableId === false) reasons.push("missing-stable-child-id");
-  if (candidate.isParent) reasons.push("split-parent-unclaimable");
+  if (candidate.isParent && !candidate.loanSplit) reasons.push("split-parent-unclaimable");
   if (candidate.parentId !== null && candidate.isChild !== true) reasons.push("missing-child-structure");
   if (conditions.items.some((item) => item.kind === "transfer-state") && candidate.transferId === undefined) reasons.push("transfer-state-unavailable");
   if (conditions.items.some((item) => item.kind === "cleared-state" && item.value !== "any") && candidate.cleared === undefined) reasons.push("cleared-state-unavailable");

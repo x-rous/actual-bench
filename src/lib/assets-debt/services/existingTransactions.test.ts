@@ -42,6 +42,21 @@ describe("existing-transaction safety matrix", () => {
     }
   });
 
+  it("a rule that looks in the loan account matches the loan-side row; Bench changes the payment it came from, not that row", async () => {
+    const s = embedded();
+    const counterpart = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-01", amount: 242915, payee: s.fake.transferPayeeId(ACCOUNTS.checking) });
+    s.seedPayment("2024-02-01", -242915, { payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), transfer_id: counterpart });
+    const payment = s.fake.rows().find((r) => r.imported_id === "bank:2024-02-01")!.id;
+    s.fake.row(counterpart)!.transfer_id = payment;
+    // "A payment into the loan account": the rule only ever sees the loan-side row.
+    for (const [from, to] of [[`"accountId":"${ACCOUNTS.checking}"`, `"accountId":"${ACCOUNTS.mortgage}"`], [`"payeeId":"${LENDER}"`, `"payeeId":"${s.fake.transferPayeeId(ACCOUNTS.checking)}"`], [`"direction":"outflow"`, `"direction":"inflow"`]]) {
+      s.db.prepare("UPDATE debt_match_rules SET conditions_json = replace(conditions_json, ?, ?) WHERE purpose = 'repayment'").run(from, to);
+    }
+    const [split] = byKind((await s.preview(window)).postings, "repayment-split");
+    expect(split).toMatchObject({ classification: "safe", reasons: expect.arrayContaining([expect.objectContaining({ code: "replaces-transfer-counterpart" })]) });
+    expect(split.output).toMatchObject({ kind: "restructure", before: expect.objectContaining({ id: payment, accountId: ACCOUNTS.checking }) });
+  });
+
   it("manual split already: never claimed as a parent and never restructured", async () => {
     const s = embedded();
     s.seedPayment("2024-02-01", -242915, { subtransactions: [{ amount: -200000, category: "cat-loan" }, { amount: -42915, category: "cat-interest" }] });

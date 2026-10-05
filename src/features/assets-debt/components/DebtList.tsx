@@ -177,7 +177,7 @@ function DebtCard({ debt, status, type, strategy, attention, href }: { debt: Deb
           ) : schedule.isError || (schedule.data && !schedule.data.ok) ? <span className="text-xs text-muted-foreground">The schedule could not be calculated for this card. Open the loan for details.</span> : null}
         </>
       ) : (
-        <span className="text-xs text-muted-foreground">{debt.blocked ? "This loan's settings cannot be used by this version." : "Finish the loan's Schedule and Settings to see its progress."}</span>
+        <span className="text-xs text-muted-foreground">{debt.blocked ? "This loan's settings cannot be used by this version." : "Finish the loan's Terms & Schedule and Link to Actual to see its progress."}</span>
       )}
     </Link>
   );

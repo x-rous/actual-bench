@@ -62,6 +62,14 @@ export const deleteDebtPermanently = (id: string) => request<undefined>(`/api/as
 export const removeDebtObservation = (id: string, observationId: string) =>
   request<{ removed: { statements: number; restarts: number } }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/observations/${encodeURIComponent(observationId)}`, { method: "DELETE" }).then((r) => r.removed);
 
+/** Record a payment found in Actual as the loan's extra payment; returns the loan with its new revision. */
+export const recordExtraPayment = (id: string, body: { actualTransactionId: string; date: string; amountMinor: number }) =>
+  request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/extra-payments`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.debt);
+
+/** Undo a recorded extra payment (unlink and remove its Terms & Schedule event). */
+export const removeExtraPayment = (id: string, transactionId: string) =>
+  request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/extra-payments/${encodeURIComponent(transactionId)}`, { method: "DELETE" }).then((r) => r.debt);
+
 export const archiveDebt = (id: string) => request<{ debt?: DebtDetail } | undefined>(`/api/assets-debt/debts/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 export const getEligibility = (id: string) => request<{ eligibility: Eligibility }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/eligibility`).then((r) => r.eligibility);

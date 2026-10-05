@@ -135,8 +135,8 @@ describe("Workspace frame (T288)", () => {
     push.mockClear();
     render(<WorkspaceFrame title="HSBC" state="Saved · revision 3" tab="activity" onTab={onTab} dirty={false}><p>body</p></WorkspaceFrame>);
     const nav = screen.getByRole("navigation", { name: "Loan sections" });
-    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Schedule", "Settings", "Transactions"]);
-    fireEvent.click(within(nav).getByRole("button", { name: "Settings" }));
+    expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual(["Terms & Schedule", "Link to Actual", "Sync Repayments"]);
+    fireEvent.click(within(nav).getByRole("button", { name: "Link to Actual" }));
     expect(onTab).toHaveBeenCalledWith("setup");
     fireEvent.click(screen.getByRole("button", { name: /Loans & Debt/ }));
     expect(push).toHaveBeenCalledWith("/loans");
@@ -170,12 +170,12 @@ describe("the Transactions status strip (T305)", () => {
     const cells = [{ date: "2026-09-01", state: "applied" as const }, { date: "2026-10-01", state: "edited" as const }, { date: "2026-11-02", state: "next" as const }];
     render(
       <LoanStatusStrip
-        refresh={{ phase: "done", error: null, status, statusFromCache: false, notices: [], driftMaterial: true, driftExplained: false }}
+        refresh={{ phase: "done", error: null, status, statusFromCache: false, notices: [], driftMaterial: true, driftExplained: false, unscheduled: [] }}
         counts={{ review: 0, notApplied: 0 }}
         digits={2}
         onRefresh={onRefresh}
         onStatements={jest.fn()}
-        matching={{ cells, facts: { due: 2, done: 2, upcoming: 1, edited: 1, missing: 0, notApplied: 0, next: { date: "2026-11-02", amountMinor: 837_957 }, lastMatched: { paidDate: "2026-09-25", dueDate: "2026-10-01" }, averageEarlyDays: 6 }, accountName: "HSBC Main Account", window: { before: 12, after: 3 }, ruleOn: true, lastCheck: "Last check: 0 found, 35 already handled, 0 missing" }}
+        matching={{ cells, facts: { due: 2, done: 2, upcoming: 1, edited: 1, missing: 0, notApplied: 0, next: { date: "2026-11-02", amountMinor: 837_957 }, lastMatched: { paidDate: "2026-09-25", dueDate: "2026-10-01" }, averageEarlyDays: 6 }, accountName: "HSBC Main Account", window: { before: 12, after: 3 }, ruleOn: true, lastCheck: "Last check: 0 found, 35 already handled, 0 missing", unrecordedExtra: 0 }}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Refresh from Actual" }));

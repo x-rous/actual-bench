@@ -193,6 +193,13 @@ export const matchRuleSaveSchema = z.strictObject({
   enabled: z.boolean().default(false),
 });
 
+/** Record a payment found in Actual as the loan's extra payment (the browser read its date and amount). */
+export const extraPaymentRequestSchema = z.strictObject({
+  actualTransactionId: id,
+  date: isoDate,
+  amountMinor: minor.positive(),
+});
+
 export const observationRequestSchema = z.strictObject({
   observedOn: isoDate,
   recordedAt: z.string().min(1).max(100),
@@ -240,6 +247,8 @@ export const previewRequestSchema = z.strictObject({
   transferPayees: z.record(id, id),
   capabilities: z.strictObject({ canRestructure: z.boolean(), canVerifyTransferLinks: z.boolean() }),
   offsetHistories: offsetHistorySchema,
+  /** Every row of the loan account (its whole history): linked extra payments follow these. */
+  loanAccountRows: z.array(z.strictObject({ id, date: isoDate, amountMinor: minor })).max(5_000).optional(),
   comparison: z.strictObject({ comparisonDate: isoDate, actualBalanceMinor: minor.nonnegative() }).nullable().optional(),
   parameters: z.strictObject({
     openingAdjustmentCategoryId: id.nullable().optional(),
@@ -250,7 +259,7 @@ export const previewRequestSchema = z.strictObject({
 
 /** The user's explicit Apply: the rows re-read just before, so the server can re-run preflight. */
 export const applyRequestSchema = z.strictObject({
-  action: z.enum(["apply", "complete-link"]).default("apply"),
+  action: z.enum(["apply", "complete-link", "record-claim"]).default("apply"),
   fresh: z.array(rowSnapshotSchema).max(50).default([]),
 });
 

@@ -71,7 +71,7 @@ describe("Repayment matching on Settings (rev 2)", () => {
     const onEdit = jest.fn();
     wrap(<MatchingCard debtId="debt-1" onEdit={onEdit} />);
     expect(await screen.findByText("Required step")).toBeInTheDocument();
-    expect(screen.getByText(/Until a rule is on, the Transactions tab cannot propose any change/)).toBeInTheDocument();
+    expect(screen.getByText(/Until a rule is on, the Sync Repayments tab cannot propose any change/)).toBeInTheDocument();
     const setUp = screen.getByRole("button", { name: "Set up repayment matching" });
     await waitFor(() => expect(setUp).toBeEnabled());
     fireEvent.click(setUp);

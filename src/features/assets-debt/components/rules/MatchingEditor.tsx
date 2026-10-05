@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { DebtMatchPurpose } from "@/lib/app-db/types";
 import { getTransport } from "@/lib/actual";
-import { readMatchingHistory } from "@/lib/assets-debt/actual/ledgerPort";
+import { readFreshMatchingHistory } from "../../lib/freshHistory";
 import type { MatchRuleView } from "@/lib/assets-debt/services/matchingService";
 import type { DebtBacktestResult } from "@/lib/financial-models/matching";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,7 @@ export function MatchingEditor({ debtId, ruleId, onClose }: { debtId: string; /*
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-4">
       <div>
-        <Button type="button" variant="link" size="sm" className="h-auto gap-1 p-0 text-xs" onClick={onClose}><ArrowLeft aria-hidden="true" className="size-3.5" /> Back to Settings</Button>
+        <Button type="button" variant="link" size="sm" className="h-auto gap-1 p-0 text-xs" onClick={onClose}><ArrowLeft aria-hidden="true" className="size-3.5" /> Back to Link to Actual</Button>
         <h2 className="mt-2 text-lg font-semibold">{rule ? "Edit repayment matching" : "Set up repayment matching"}</h2>
         <p className="text-xs text-muted-foreground">Bench uses this to find each repayment of {ctx.detail.data?.debt.name ?? "this loan"} among your Actual transactions. It only reads Actual; it never creates an Actual rule or changes a transaction.</p>
       </div>
@@ -94,7 +94,7 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
   const readIds = accountIds.length ? accountIds : [ctx.defaultSource].filter(Boolean);
   const history = useQuery({
     queryKey: ["assets-debt", "match-history", ctx.connection?.id, readIds.join("|"), from, to],
-    queryFn: () => readMatchingHistory(getTransport(ctx.connection!), { accountIds: readIds, from, to }),
+    queryFn: () => readFreshMatchingHistory(getTransport(ctx.connection!), { accountIds: readIds, from, to }),
     enabled: !!ctx.connection && readIds.length > 0 && !!from && !!to && from <= to,
     staleTime: 5 * 60_000,
   });
@@ -128,6 +128,8 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
   };
 
   const purposes: DebtMatchPurpose[] = ["repayment", "lender-repayment-row", ...(ctx.lenderPattern === "separate-interest" ? ["interest-charge" as const] : [])];
+  // Off-budget rows carry no category in Actual: a category condition there can never match.
+  const offBudgetCategory = settings?.category.mode === "exact" && !!accounts.find((a) => a.id === settings?.sourceAccountId)?.offBudget;
   const accountOptions = accounts.filter((a) => !a.closed).map((a) => ({ value: a.id, label: `${a.name}${a.offBudget ? " (off budget)" : ""}` }));
   const categoryOptions = [{ value: "", label: "Any category" }, { value: "__empty", label: "Uncategorized only" }, ...categories.filter((c) => !c.hidden).map((c) => ({ value: c.id, label: `${c.groupName}: ${c.name}` }))];
   const amount = settings?.amount;
@@ -204,7 +206,7 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
               </Button>
               {moreOpen ? (
                 <div role="region" aria-label="More conditions" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <SelectField label="Category is" value={settings.category.mode === "exact" ? settings.category.categoryId : settings.category.mode === "empty" ? "__empty" : ""} options={categoryOptions} onChange={(v) => update({ category: v === "" ? { mode: "any" } : v === "__empty" ? { mode: "empty" } : { mode: "exact", categoryId: v } })} />
+                  <SelectField label="Category is" issue={offBudgetCategory ? "This account is off budget, and Actual keeps no category on its rows, so this condition never matches. Set it to any category, or look in the account the payment comes from." : undefined} value={settings.category.mode === "exact" ? settings.category.categoryId : settings.category.mode === "empty" ? "__empty" : ""} options={categoryOptions} onChange={(v) => update({ category: v === "" ? { mode: "any" } : v === "__empty" ? { mode: "empty" } : { mode: "exact", categoryId: v } })} />
                   <TextField label="Bank text contains" value={settings.importedPayeeContains} onChange={(v) => update({ importedPayeeContains: v })} placeholder="For example LOAN REPAYMENT" />
                   <TextField label="Notes contain" value={settings.notesContains} onChange={(v) => update({ notesContains: v })} />
                   <IntegerField label="Only on day of month" hint="Empty uses the due dates alone." value={settings.dayOfMonth} min={1} onChange={(v) => update({ dayOfMonth: v === null ? null : Math.min(31, Math.max(1, v)) })} />

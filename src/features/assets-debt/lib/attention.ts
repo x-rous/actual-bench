@@ -23,6 +23,6 @@ export function attentionText(reason: AttentionReason): string {
 
 /** Where a loan that needs attention opens: its filtered Transactions, or Settings for setup. */
 export function hrefOf(item: AttentionItem): string {
-  const view = item.reasons[0]?.code === "matching-not-enabled" || item.reasons[0]?.code === "configuration-blocked" ? "settings" : "transactions";
-  return loanPath(item.id, `view=${view}${view === "transactions" ? `&filter=${item.filter}` : ""}`);
+  const view = item.reasons[0]?.code === "matching-not-enabled" || item.reasons[0]?.code === "configuration-blocked" ? "link" : "repayments";
+  return loanPath(item.id, `view=${view}${view === "repayments" ? `&filter=${item.filter}` : ""}`);
 }

@@ -1,6 +1,7 @@
 import type { AccountDirectory, MatchingHistorySnapshot } from "@/lib/assets-debt/actual/ledgerPort";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import type { PlanningNotice } from "@/lib/assets-debt/services/planner/common";
+import type { FollowedExtraPayment, UnscheduledPayment } from "@/lib/assets-debt/services/extraPaymentService";
 import type { PostingView } from "@/lib/assets-debt/services/proposalService";
 import type { ReproductionResult } from "@/lib/assets-debt/services/reproduceService";
 import type { RowSnapshot } from "@/lib/assets-debt/services/snapshot";
@@ -22,11 +23,12 @@ export type PreviewBody = {
   transferPayees: Record<string, string>;
   capabilities: { canRestructure: boolean; canVerifyTransferLinks: boolean };
   offsetHistories?: OffsetHistorySnapshot[];
+  loanAccountRows?: Array<{ id: string; date: string; amountMinor: number }>;
   comparison?: { comparisonDate: string; actualBalanceMinor: number } | null;
   parameters?: { openingAdjustmentCategoryId?: string | null; adjustmentCategoryId?: string | null; actualBalanceAtOnboardingMinor?: number | null };
 };
 
-export type PreviewResponse = { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; driftExplained?: boolean };
+export type PreviewResponse = { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; driftExplained?: boolean; unscheduled?: UnscheduledPayment[]; followedExtraPayments?: FollowedExtraPayment[] };
 
 const debtUrl = (id: string) => `/api/assets-debt/debts/${encodeURIComponent(id)}`;
 const postingUrl = (id: string) => `/api/assets-debt/postings/${encodeURIComponent(id)}`;
@@ -38,6 +40,10 @@ export const listPostings = (debtId: string) => request<{ postings: PostingView[
 
 export const approveAndApply = (postingId: string, fresh: RowSnapshot[]) =>
   request<{ ticket: ApplyTicketView }>(`${postingUrl(postingId)}/apply`, { method: "POST", body: JSON.stringify({ action: "apply", fresh }) }).then((r) => r.ticket);
+
+/** Apply a claim (writes nothing to Actual) in one call: approval, preflight and the recorded outcome. */
+export const approveAndRecordClaim = (postingId: string, fresh: RowSnapshot[]) =>
+  request<{ posting: PostingView }>(`${postingUrl(postingId)}/apply`, { method: "POST", body: JSON.stringify({ action: "record-claim", fresh }) }).then((r) => r.posting);
 
 export const beginCompleteLink = (postingId: string) =>
   request<{ ticket: ApplyTicketView }>(`${postingUrl(postingId)}/apply`, { method: "POST", body: JSON.stringify({ action: "complete-link" }) }).then((r) => r.ticket);

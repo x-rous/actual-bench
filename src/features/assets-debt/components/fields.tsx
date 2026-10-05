@@ -179,11 +179,11 @@ export function SelectField({ label, labelAccessory, hint, issue, value, onChang
   );
 }
 
-export function DateField({ label, hint, issue, value, onChange, className }: Common & { value: string; onChange: (value: string) => void }) {
+export function DateField({ label, hint, issue, value, onChange, className, hideLabel }: Common & { value: string; onChange: (value: string) => void }) {
   const id = useId();
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
-      <Label className={FIELD_LABEL} htmlFor={id}>{label}</Label>
+      <Label className={labelClass(hideLabel)} htmlFor={id}>{label}</Label>
       <DateInput id={id} inputClassName="text-[13px]" value={value} onValueChange={onChange} aria-label={label} aria-invalid={issue ? true : undefined} aria-describedby={describedBy(id, hint, issue)} />
       <Described id={id} hint={hint} issue={issue} />
     </div>

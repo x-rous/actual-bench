@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BookOpen, RotateCcw, SlidersHorizontal } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { BookOpen, MoreHorizontal, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -52,6 +53,17 @@ export type SimulatorViewProps = {
   actions: React.ReactNode;
   /** Inside the loan workspace (Calculation tab): the workspace header carries the name, state and Save. */
   embedded?: boolean;
+  /**
+   * The loan workspace shows these controls in its own top bar (rev 4): no toolbar row here, and
+   * Compare, the two drawers and Reset are driven from outside.
+   */
+  external?: {
+    comparing: boolean;
+    dialog: "method" | "how" | null;
+    onDialogChange: (dialog: "method" | "how" | null) => void;
+    resetOpen: boolean;
+    onResetOpenChange: (open: boolean) => void;
+  };
   offsetTracking?: {
     asOfDate: string;
     onAsOfDateChange: (date: string) => void;
@@ -61,13 +73,18 @@ export type SimulatorViewProps = {
   };
 };
 
-export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false }: SimulatorViewProps) {
-  const [comparing, setComparing] = useState(false);
+export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external }: SimulatorViewProps) {
+  const [comparingLocal, setComparing] = useState(false);
+  const comparing = external ? external.comparing : comparingLocal;
   const [prompt, setPrompt] = useState<{ reason: string; candidate: SimulationState } | null>(null);
-  const [dialog, setDialog] = useState<"method" | "how" | null>(null);
+  const [dialogLocal, setDialogLocal] = useState<"method" | "how" | null>(null);
+  const dialog = external ? external.dialog : dialogLocal;
+  const setDialog = external ? external.onDialogChange : setDialogLocal;
   const [rateEditor, setRateEditor] = useState<RateChangesEditor | null>(null);
   const [extraEditor, setExtraEditor] = useState<ExtraEditor | null>(null);
-  const [resetOpen, setResetOpen] = useState(false);
+  const [resetOpenLocal, setResetOpenLocal] = useState(false);
+  const resetOpen = external ? external.resetOpen : resetOpenLocal;
+  const setResetOpen = external ? external.onResetOpenChange : setResetOpenLocal;
   const [chartView, setChartView] = useState<"month" | "year">("year");
   const unsaved = saved !== null && JSON.stringify(saved) !== JSON.stringify(sim);
   const noExtras = useMemo(() => withoutExtraTransactions(sim), [sim]);
@@ -101,7 +118,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+      {external ? null : <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         {embedded ? (
           <h2 className="mr-2 text-sm font-semibold">{title}</h2>
         ) : (
@@ -113,36 +130,42 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
           </>
         )}
         {stepLabel ? <span className="text-xs font-medium text-muted-foreground">{stepLabel}</span> : null}
+        {saved ? (
+          <label className="flex items-center gap-1 text-xs">
+            <Checkbox checked={comparing} onCheckedChange={setComparing} />
+            Compare with saved
+          </label>
+        ) : null}
+        <Button type="button" variant="link" size="sm" className="h-auto gap-1 px-1 text-xs" onClick={() => setDialog("how")}>
+          <BookOpen aria-hidden="true" />
+          How this loan is calculated
+        </Button>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {saved ? (
-            <label className="flex items-center gap-1 text-xs">
-              <Checkbox checked={comparing} onCheckedChange={setComparing} />
-              Compare with saved
-            </label>
-          ) : null}
-          <Button type="button" variant="outline" size="sm" onClick={() => setDialog("how")}>
-            <BookOpen aria-hidden="true" />
-            How this loan is calculated
-          </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => setDialog("method")}>
             <SlidersHorizontal aria-hidden="true" />
             Set calculation method
           </Button>
-          <Button type="button" variant="outline" size="sm" disabled={readOnly} onClick={() => resetMeaningful ? setResetOpen(true) : change(resetValue)}>
-            <RotateCcw aria-hidden="true" />
-            Reset loan
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger aria-label="More schedule actions" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "px-2")}><MoreHorizontal aria-hidden="true" /></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem variant="destructive" disabled={readOnly} onClick={() => (resetMeaningful ? setResetOpen(true) : change(resetValue))}>
+                <RotateCcw aria-hidden="true" />
+                Reset loan
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {actions}
         </div>
-      </header>
+      </header>}
 
-      <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start">
-        <aside aria-label="Loan inputs" className="flex w-full shrink-0 flex-col gap-3 lg:w-[380px] lg:border-r lg:border-border lg:pr-4" data-testid="control-rail">
+      <div className="flex flex-1 flex-col lg:flex-row lg:items-stretch">
+        {/* The inputs fill their column edge to edge (no rounding), with the same padding on every side. */}
+        <aside aria-label="Loan inputs" className="flex w-full shrink-0 flex-col gap-3 bg-muted/40 p-4 lg:w-[396px]" data-testid="control-rail">
           <PrimaryInputs sim={sim} change={change} onCalculationMethod={() => setDialog("method")} onRateChanges={() => setRateEditor("list")} />
           <FeatureControls sim={sim} change={change} propose={propose} />
         </aside>
 
-        <main aria-label="Results" className="flex min-w-0 flex-1 flex-col gap-4" data-testid="results-region">
+        <main aria-label="Results" className="flex min-w-0 flex-1 flex-col gap-4 p-4" data-testid="results-region">
           {offsetTracking ? (
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
               <label htmlFor="offset-observation-cutoff" className="font-medium">Actual offset history through</label>
@@ -205,3 +228,26 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
     </div>
   );
 }
+
+/** The Schedule controls as the loan workspace shows them in its top bar (rev 4). */
+export function ScheduleControls({ comparing, onComparingChange, onDialog }: { comparing?: boolean; /** Absent for a loan with nothing saved to compare with. */ onComparingChange?: (on: boolean) => void; onDialog: (dialog: "method" | "how") => void }) {
+  return (
+    <>
+      {onComparingChange ? (
+        <label className="flex items-center gap-1 text-xs">
+          <Checkbox checked={!!comparing} onCheckedChange={(on) => onComparingChange(on === true)} />
+          Compare with saved
+        </label>
+      ) : null}
+      <Button type="button" variant="link" size="sm" className="h-auto gap-1 px-1 text-xs" onClick={() => onDialog("how")}>
+        <BookOpen aria-hidden="true" />
+        How this loan is calculated
+      </Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => onDialog("method")}>
+        <SlidersHorizontal aria-hidden="true" />
+        Set calculation method
+      </Button>
+    </>
+  );
+}
+

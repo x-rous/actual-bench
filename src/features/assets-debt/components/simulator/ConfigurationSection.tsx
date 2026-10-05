@@ -90,7 +90,7 @@ export function ConfigurationSection({ title, helpDescription, help, children, c
 
   if (toggleable && !enabled) {
     return (
-      <div role="group" aria-label={title} className={cn("flex min-h-11 items-center justify-between gap-3 px-1 py-1.5", className)}>
+      <div role="group" aria-label={title} className={cn("flex min-h-11 items-center justify-between gap-3 rounded-lg border border-border bg-background px-4 py-2", className)}>
         <div className="min-w-0">
           <div className="flex items-center text-sm font-semibold">{heading}</div>
           {collapsedSummary ? <p className="pl-0 text-[11px] text-muted-foreground">{collapsedSummary}</p> : null}
@@ -101,7 +101,7 @@ export function ConfigurationSection({ title, helpDescription, help, children, c
   }
 
   return (
-    <fieldset aria-label={title} className={cn("flex min-w-0 flex-col gap-3 rounded-lg border border-border p-4", className)}>
+    <fieldset aria-label={title} className={cn("flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-background p-4", className)}>
       <legend className="w-full max-w-full px-1">
         <span className="flex w-full items-center justify-between gap-3 text-sm font-semibold">
           {heading}

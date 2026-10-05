@@ -156,6 +156,22 @@ function linkRoles(posting: FinancialPostingRecord, output: PostingOutputSnapsho
   return [];
 }
 
+/**
+ * Apply a claim in one step (rev 4 speed): a claim writes nothing to Actual, so after the same
+ * approval and preflight as any apply, the server records it as applied with its links at once.
+ * Still only from the user's explicit Apply (SC-018).
+ */
+export function approveAndRecordClaim(db: SqliteDatabase, postingId: string, input: { fresh: RowSnapshot[]; now: string }): PostingView {
+  const posting = getFinancialPosting(db, postingId);
+  if (!posting) throw new AppDbValidationError("Posting not found");
+  const output = outputOf(posting);
+  if (output.kind !== "claim" || output.release) throw new AppDbValidationError("Only a claim that writes nothing to Actual can be recorded in one step");
+  return db.transaction(() => {
+    approveAndBeginApply(db, postingId, { fresh: input.fresh, decidedAt: input.now });
+    return recordApplyOutcome(db, postingId, { status: "applied", actualIds: output.rows.map((r) => r.id), appliedAt: input.now }, input.now);
+  })();
+}
+
 /** The browser reports what happened in Actual; the server records it and its links. */
 export function recordApplyOutcome(db: SqliteDatabase, postingId: string, outcome: ApplyOutcome, now = new Date().toISOString()): PostingView {
   const posting = getFinancialPosting(db, postingId);

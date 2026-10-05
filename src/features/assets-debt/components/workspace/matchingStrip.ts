@@ -26,7 +26,11 @@ const SCHEDULED = new Set(["repayment", "final-payment"]);
 const MISSING = new Set(["repayment-missing", "repayment-ambiguous"]);
 
 const repaymentRow = (r: ChangeRowModel) => !!r.posting && REPAYMENT_KINDS.has(String(r.posting.postingKind)) && r.group !== "undone";
-const edited = (r: ChangeRowModel) => r.posting?.output.kind === "restructure" && !!r.posting.output.override;
+const edited = (r: ChangeRowModel) => {
+  const o = r.posting?.output;
+  if (o?.kind === "restructure") return !!o.override;
+  return o?.kind === "claim" && !!o.recordedSplit && Math.abs(o.recordedSplit.interestMinor - o.recordedSplit.calculatedInterestMinor) > 1;
+};
 const days = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 
 /** One cell per scheduled repayment, oldest first. */

@@ -34,8 +34,8 @@ function AmountValue({ value }: { value: string }) {
 function Tile({ label, labelDetail, value, delta, amount = false }: { label: string; labelDetail?: string; value: string; delta?: string | null; amount?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-card px-3 py-2">
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-        {label}{labelDetail ? <span className="normal-case"> ({labelDetail})</span> : null}
+      <span className="text-xs text-muted-foreground">
+        {label}{labelDetail ? ` (${labelDetail})` : null}
       </span>
       <span className="truncate text-2xl font-semibold leading-tight tabular-nums">{amount ? <AmountValue value={value} /> : value}</span>
       {delta ? <span className="text-[11px] text-muted-foreground">{delta}</span> : null}
@@ -67,8 +67,8 @@ export function HeadlineMetrics({
       </h2>
       <div className="grid grid-cols-2 gap-2 xl:grid-cols-4" aria-busy={calculating || undefined}>
         <Tile
-          label="Repayment"
-          labelDetail={frequencyLabel}
+          label={/^[a-z]+ly$/.test(frequencyLabel) ? `${frequencyLabel.charAt(0).toUpperCase()}${frequencyLabel.slice(1)} repayment` : "Repayment"}
+          labelDetail={/^[a-z]+ly$/.test(frequencyLabel) ? undefined : frequencyLabel}
           value={headline ? `${money(headline.regularRepaymentMinor)}` : "–"}
           delta={headline ? [headline.repaymentChanges ? "Changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
           amount

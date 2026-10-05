@@ -134,8 +134,13 @@ export function renderPreviewRows(output: PostingOutputSnapshot, directory: Prev
         linkedChip: false,
       }));
     }
-    case "claim":
-      return output.rows.map((row) => existingRow(directory, digits, row, { rowKind: side === "after" ? "linked" : "existing", linkedChip: side === "after" && !output.release }));
+    case "claim": {
+      // A recorded split shows the whole split as it is in Actual; only the claimed part is linked.
+      const claimed = new Set(output.rows.map((r) => r.id));
+      const shown = output.recordedSplit ? [output.recordedSplit.parent, ...output.recordedSplit.children] : output.rows;
+      return shown.map((row) => existingRow(directory, digits, row, output.recordedSplit && row.id === output.recordedSplit.parent.id ? { categoryName: "Split" } : {}))
+        .map((row) => (claimed.has(row.key) ? { ...row, rowKind: side === "after" ? "linked" as const : "existing" as const, linkedChip: side === "after" && !output.release } : row));
+    }
     case "restructure": {
       const before = output.before;
       if (side === "before") return output.replacesCounterpart ? [existingRow(directory, digits, before), existingRow(directory, digits, output.replacesCounterpart)] : [existingRow(directory, digits, before)];

@@ -4,7 +4,7 @@ import type { PostingView } from "@/lib/assets-debt/services/proposalService";
 import { recoverPosting } from "@/lib/assets-debt/services/recovery";
 import { indexReadRows, type PostingOutputSnapshot, type RowSnapshot } from "@/lib/assets-debt/services/snapshot";
 import { startTiming } from "./debugTiming";
-import { approveAndApply, beginCompleteLink, recordOutcome } from "./postingsApi";
+import { approveAndApply, approveAndRecordClaim, beginCompleteLink, recordOutcome } from "./postingsApi";
 
 /**
  * The user's posting actions in the browser (RD-084 P1.6 T125–T137; SC-018).
@@ -40,9 +40,13 @@ function rowsToRecheck(output: PostingOutputSnapshot): RowSnapshot[] {
   }
 }
 
+/** Rows read once for a whole batch of claims (they write nothing, so the rows cannot change in between). */
+export type ReadCache = Map<string, RowSnapshot>;
+
 /** Re-read the rows a posting targets, just before Apply, for the server's preflight (FR-162). */
-export async function rereadTargets(posting: PostingView, transport: ActualBenchTransport): Promise<RowSnapshot[]> {
+export async function rereadTargets(posting: PostingView, transport: ActualBenchTransport, cache?: ReadCache): Promise<RowSnapshot[]> {
   const targets = rowsToRecheck(posting.output);
+  if (cache && targets.every((t) => cache.has(t.id))) return targets.map((t) => cache.get(t.id)!);
   const fresh: RowSnapshot[] = [];
   for (const accountId of [...new Set(targets.map((t) => t.accountId))]) {
     const dates = targets.filter((t) => t.accountId === accountId).map((t) => t.date);
@@ -57,10 +61,31 @@ export async function rereadTargets(posting: PostingView, transport: ActualBench
   return fresh;
 }
 
-export async function applyPosting(posting: PostingView, ctx: PostingActionContext): Promise<PostingView> {
+/**
+ * One read per account covering every claim in a batch (rev 4 speed). Only claims use it: a write
+ * changes rows, so every other change still re-reads Actual just before it applies.
+ */
+export async function readForClaims(postings: readonly PostingView[], transport: ActualBenchTransport): Promise<ReadCache> {
+  const targets = postings.filter((p) => p.output.kind === "claim" && !p.output.release).flatMap((p) => rowsToRecheck(p.output));
+  const cache: ReadCache = new Map();
+  for (const accountId of [...new Set(targets.map((t) => t.accountId))]) {
+    const dates = targets.filter((t) => t.accountId === accountId).map((t) => t.date).sort();
+    for (const row of indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: dates[0], endDate: dates[dates.length - 1] })).values()) cache.set(row.id, row);
+  }
+  return cache;
+}
+
+export async function applyPosting(posting: PostingView, ctx: PostingActionContext, cache?: ReadCache): Promise<PostingView> {
   const timing = startTiming(`apply ${String(posting.postingKind)}`);
-  const fresh = await rereadTargets(posting, ctx.transport);
+  const fresh = await rereadTargets(posting, ctx.transport, cache);
   timing.step("re-read");
+  // A claim writes nothing to Actual: the server approves and records it in one call.
+  if (posting.output.kind === "claim" && !posting.output.release) {
+    const recorded = await approveAndRecordClaim(posting.id, fresh);
+    timing.step("server record");
+    timing.end();
+    return recorded;
+  }
   const ticket = await approveAndApply(posting.id, fresh);
   timing.step("server check");
   let outcome: ExecutorOutcome;

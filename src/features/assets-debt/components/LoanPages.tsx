@@ -19,7 +19,7 @@ import { detailToStates, newSimulation, newTracking, statesToSaveInput, summariz
 import { LOANS_PATH, loanPath } from "../lib/routes";
 import { useAccountDirectory } from "../lib/useAccountDirectory";
 import { SAVE_BOUNDARY } from "./saveBoundary";
-import { SimulatorView } from "./simulator/SimulatorView";
+import { ScheduleControls, SimulatorView } from "./simulator/SimulatorView";
 import { strategyAdvice } from "../lib/strategyAdvice";
 import { LoanActivity } from "./workspace/LoanActivity";
 import { MatchingEditor } from "./rules/MatchingEditor";
@@ -90,6 +90,8 @@ export function NewLoanView() {
   // New loans open on Calculation (owner decision); Activity exists once the loan is saved.
   const [tab, setTab] = useState<WorkspaceTab>("calculation");
   const [issues, setIssues] = useState<SaveIssue[]>([]);
+  const [scheduleDialog, setScheduleDialog] = useState<"method" | "how" | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
   const directory = useAccountDirectory();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -151,10 +153,13 @@ export function NewLoanView() {
   const toSetup = () => setTab("setup");
   const newComplete = loanSettingsComplete(setupChecklist({ sim, tracking, directory: directory.data, matchingEnabled: null }));
   const actions = tab === "calculation" ? (
-    <Button type="button" size="sm" disabled={!complete} title={complete ? undefined : "Complete the loan amount, term, rate and start date first"} onClick={toSetup}>
-      Next: Settings
-      <ArrowRight data-icon="inline-end" aria-hidden="true" />
-    </Button>
+    <>
+      <ScheduleControls onDialog={setScheduleDialog} />
+      <Button type="button" size="sm" disabled={!complete} title={complete ? undefined : "Complete the loan amount, term, rate and start date first"} onClick={toSetup}>
+        Next: Link to Actual
+        <ArrowRight data-icon="inline-end" aria-hidden="true" />
+      </Button>
+    </>
   ) : (
     // Active when the loan settings are complete; otherwise kept as a draft to finish later.
     <Button type="button" size="sm" disabled={save.isPending} onClick={() => save.mutate(newComplete ? "active" : "draft")}>
@@ -169,12 +174,13 @@ export function NewLoanView() {
       onTab={setTab}
       disabledTabs={{ activity: "Available after the loan is saved", ...(complete ? {} : { setup: "Complete the calculation first" }) }}
       actions={actions}
-      menu={tab === "setup" && newComplete ? [{ label: "Save as draft", onSelect: () => save.mutate("draft") }] : []}
+      menu={tab === "setup" && newComplete ? [{ label: "Save as draft", onSelect: () => save.mutate("draft") }] : tab === "calculation" ? [{ label: "Reset loan", destructive: true, onSelect: () => setResetOpen(true) }] : []}
       dirty={dirty}
     >
       <IssueList issues={issues} />
       {tab === "calculation" ? (
-        <SimulatorView embedded sim={sim} onChange={setSim} title="Schedule" badge="Not saved yet" revision={null} actions={null} />
+        <SimulatorView embedded sim={sim} onChange={setSim} title="Schedule" badge="Not saved yet" revision={null} actions={null}
+          external={{ comparing: false, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen }} />
       ) : (
         <>
           <p className="px-4 pt-3 text-xs text-muted-foreground">{SAVE_BOUNDARY} {summarizeProfile(sim.profile)}.</p>
@@ -199,6 +205,9 @@ export function LoanView({ id }: { id: string }) {
   const [issues, setIssues] = useState<SaveIssue[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [offsetAsOfDate, setOffsetAsOfDate] = useState(today());
+  const [comparing, setComparing] = useState(false);
+  const [scheduleDialog, setScheduleDialog] = useState<"method" | "how" | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
   const trackedOffsetAccounts = useMemo(
     () => debt.data?.offsets.filter((offset) => offset.useActualBalance === true).map((offset) => offset.actualAccountId) ?? [],
     [debt.data]
@@ -303,6 +312,7 @@ export function LoanView({ id }: { id: string }) {
         : done < checklist.length ? `Active · setup ${done} of ${checklist.length}` : `Active · revision ${detail.debt.currentRevision}`;
   const actions = (
     <>
+      {tab === "calculation" ? <ScheduleControls comparing={comparing} onComparingChange={setComparing} onDialog={setScheduleDialog} /> : null}
       {dirty && !readOnly ? (
         <Input aria-label="What changed (optional)" placeholder="What changed (optional)" value={tracking.changeSummary} onChange={(e) => setTracking({ ...tracking, changeSummary: e.target.value })} className="h-7 w-52 text-xs" />
       ) : null}
@@ -318,7 +328,8 @@ export function LoanView({ id }: { id: string }) {
       ) : null}
     </>
   );
-  const menu = readOnly ? [{ label: "Delete permanently", destructive: true, onSelect: () => { setTyped(""); setDeleting(true); } }] : [{
+  const resetItem = tab === "calculation" && !readOnly ? [{ label: "Reset loan", destructive: true, onSelect: () => setResetOpen(true) }] : [];
+  const menu = readOnly ? [{ label: "Delete permanently", destructive: true, onSelect: () => { setTyped(""); setDeleting(true); } }] : [...resetItem, {
     label: detail.debt.status === "draft" ? "Delete draft loan" : "Archive loan",
     destructive: true,
     onSelect: () =>
@@ -352,10 +363,11 @@ export function LoanView({ id }: { id: string }) {
       <IssueList issues={issues} />
       {staleStrategy && !readOnly ? <p className="mx-4 mt-2 text-xs text-muted-foreground">{staleStrategy}</p> : null}
       {tab === "activity" ? (
-        <LoanActivity debt={detail} directory={directory.data} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} initialFilter={(["action", "waiting", "applied", "undone", "all"] as const).find((f) => f === params?.get("filter")) ?? "action"} />
+        <LoanActivity debt={detail} directory={directory.data} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} initialFilter={(["action", "waiting", "applied", "undone", "all"] as const).find((f) => f === params?.get("filter")) ?? "action"} scheduleDirty={dirty} />
       ) : null}
       {tab === "calculation" ? (
-        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} title="Schedule" badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null} offsetTracking={trackedOffsetAccounts.length ? {
+        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} title="Schedule" badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null}
+          external={{ comparing, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen }} offsetTracking={trackedOffsetAccounts.length ? {
           asOfDate: offsetAsOfDate,
           onAsOfDateChange: setOffsetAsOfDate,
           snapshots: offsetSnapshots,

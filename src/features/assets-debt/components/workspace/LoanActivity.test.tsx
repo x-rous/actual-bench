@@ -11,7 +11,7 @@ jest.mock("./useBackgroundRefresh", () => ({
   useBackgroundRefresh: () => ({ phase: "done", error: null, status: { at: new Date().toISOString(), comparisonDate: "2024-06-01", actualMinor: 100, modelMinor: 100, lenderMinor: null, lenderDate: null, modelVsActualMinor: 0, actualVsLenderMinor: null, drift: "within", reconciliationOverdue: false }, statusFromCache: false, notices: [], driftMaterial: false, refresh, invalidate: jest.fn(), transferPayees: { loan: "tp-loan" } }),
 }));
 jest.mock("../../lib/postingsApi", () => ({ listPostings: jest.fn(), declinePosting: jest.fn(), proposeReversal: jest.fn(), overrideSplit: jest.fn(), reproducePosting: jest.fn() }));
-jest.mock("../../lib/postingActions", () => ({ applyPosting: jest.fn(), checkInterruptedPosting: jest.fn(), completeInterruptedLink: jest.fn() }));
+jest.mock("../../lib/postingActions", () => ({ applyPosting: jest.fn(), checkInterruptedPosting: jest.fn(), completeInterruptedLink: jest.fn(), readForClaims: jest.fn(async () => new Map()) }));
 jest.mock("../../lib/debtsApi", () => ({ listDebtObservations: jest.fn(async () => ({ observations: [], history: [] })), getDebtReconciliation: jest.fn() }));
 jest.mock("@/store/connection", () => ({ useConnectionStore: (select: (s: unknown) => unknown) => select({}), selectActiveInstance: () => ({ id: "c1", budgetSyncId: "b1", baseUrl: "https://a" }) }));
 jest.mock("@/lib/actual", () => ({ getTransport: () => ({ getPayees: async () => [] }) }));

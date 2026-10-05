@@ -193,6 +193,11 @@ export type PostingOutputSnapshot =
       role: "repayment" | "lender-interest-charge" | "lender-repayment-row";
       release?: { postingId: string };
       closing: ClosingState | null;
+      /**
+       * A repayment already split in Actual, recorded as it is (owner decision 2026-10-06): the
+       * split, the parts Actual holds, and Bench's calculated interest for comparison.
+       */
+      recordedSplit?: { parent: RowSnapshot; children: RowSnapshot[]; principalMinor: number; interestMinor: number; calculatedInterestMinor: number };
     }
   | {
       format: typeof POSTING_OUTPUT_FORMAT;

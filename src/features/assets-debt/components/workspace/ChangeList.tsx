@@ -56,7 +56,7 @@ export function nowSummary(posting: PostingView | null, directory: PreviewDirect
     case "restructure": return o.before.transferId ? "Transfer to loan" : categoryName(directory, o.before.categoryId) ?? "Uncategorized";
     case "convert": return categoryName(directory, o.before.categoryId) ?? "Uncategorized";
     case "link": return "Not linked";
-    case "claim": return "Transfer to loan";
+    case "claim": return o.recordedSplit ? "Split in Actual" : "Transfer to loan";
     case "create": return "Not in Actual";
     default: return "";
   }
@@ -70,7 +70,9 @@ export function afterSummary(posting: PostingView | null, digits: number): strin
     case "restructure": return o.components.map((c) => `${c.kind.charAt(0).toUpperCase()}${c.kind.slice(1)} ${formatAmount(c.amountMinor, digits)}`).join(" · ") + (o.override ? " (edited)" : "");
     case "convert": return "Transfer to loan";
     case "link": return "Linked to the lender's row";
-    case "claim": return o.release ? "Link released" : "Recorded as the loan transfer";
+    case "claim":
+      if (o.recordedSplit) return `Principal ${formatAmount(o.recordedSplit.principalMinor, digits)} · Interest ${formatAmount(o.recordedSplit.interestMinor, digits)}${Math.abs(o.recordedSplit.interestMinor - o.recordedSplit.calculatedInterestMinor) > 1 ? " (edited)" : ""}`;
+      return o.release ? "Link released" : "Recorded as the loan transfer";
     case "create": return `${postingTitle(posting)} ${formatAmount(Math.abs(o.operations.reduce((sum, op) => sum + op.amountMinor, 0)), digits)}`;
     default: return "";
   }
@@ -89,7 +91,7 @@ function statusText(row: ChangeRowModel): string {
 }
 
 export function ChangeList({
-  rows, filter, onFilter, counts, selected, onToggle, onToggleAll, expanded, onExpand, directory, digits, busy, actions, completion, stepNote,
+  rows, filter, onFilter, counts, selected, onToggle, onToggleAll, expanded, onExpand, directory, digits, busy, actions, completion, stepNote, toolbar,
 }: {
   rows: ChangeRowModel[];
   filter: ChangeFilter;
@@ -107,17 +109,22 @@ export function ChangeList({
   completion: Record<string, string>;
   /** T278: "Step 1 of 2" / "Step 2 of 2" notes for the two-step lender flow. */
   stepNote: (row: ChangeRowModel) => string | null;
+  /** Controls shown on the same row as the filter chips, before them (the period). */
+  toolbar?: React.ReactNode;
 }) {
   const selectable = rows.filter((r) => r.selectable).map((r) => r.key);
   const allOn = selectable.length > 0 && selectable.every((key) => selected.has(key));
   return (
     <section aria-label="Changes" className="flex flex-col gap-2">
-      <div role="group" aria-label="Filter changes" className="flex flex-wrap gap-1">
-        {FILTERS.map((f) => (
-          <Button key={f.id} type="button" size="sm" variant={filter === f.id ? "default" : "outline"} aria-pressed={filter === f.id} className="h-7" onClick={() => onFilter(f.id)}>
-            {f.label} {counts[f.id]}
-          </Button>
-        ))}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {toolbar}
+        <div role="group" aria-label="Filter changes" className="flex flex-wrap gap-1">
+          {FILTERS.map((f) => (
+            <Button key={f.id} type="button" size="sm" variant={filter === f.id ? "default" : "outline"} aria-pressed={filter === f.id} className="h-7" onClick={() => onFilter(f.id)}>
+              {f.label} {counts[f.id]}
+            </Button>
+          ))}
+        </div>
       </div>
       {rows.length === 0 ? (
         <p className="rounded border border-dashed border-border p-6 text-center text-xs text-muted-foreground">

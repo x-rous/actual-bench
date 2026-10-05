@@ -43,6 +43,7 @@ export function changeHeadline(posting: PostingView, directory: PreviewDirectory
       return posting.postingKind === "reconciliation-adjustment" ? `Add ${noun} of ${money(total)} so Actual matches the lender statement` : `Add ${noun} of ${money(total)}${where}`;
     }
     case "claim": {
+      if (o.recordedSplit) return `Record the split already in Actual: Principal ${money(o.recordedSplit.principalMinor)} + Interest ${money(o.recordedSplit.interestMinor)}`;
       if (o.release) return "Release the recorded link for the lender's row";
       const row = o.rows[0];
       return posting.postingKind === "interest-link" && row ? `Count the lender's ${money(row.amountMinor)} on ${day(row.date)} as this period's interest` : "Count this transfer as the loan repayment";
@@ -71,6 +72,7 @@ export function changeContext(posting: PostingView): ChangeContext | null {
   if (status !== "proposed") return null;
   if (posting.classification === "blocked") return { text: posting.reasons[0]?.text ?? "This change cannot be applied yet.", tone: "bad" };
   if (has(posting, "edited-split")) return { text: text(posting, "edited-split"), tone: "warn" };
+  if (has(posting, "recorded-split-differs")) return { text: text(posting, "recorded-split-differs"), tone: "warn" };
   if (has(posting, "earlier-repayment-assumed")) return { text: text(posting, "earlier-repayment-assumed"), tone: "warn" };
   if (has(posting, "actual-date-split-unavailable")) return { text: text(posting, "actual-date-split-unavailable"), tone: "warn" };
   if (has(posting, "user-category-would-be-replaced")) return { text: "This payment has your own category; the split replaces it with principal and interest. You can undo this later.", tone: "warn" };
@@ -87,7 +89,9 @@ export function changeContext(posting: PostingView): ChangeContext | null {
     case "restore-split": return { text: "Restores the payment exactly as it was before Bench split it.", tone: "neutral" };
     case "unlink": return { text: "Restores both rows exactly as they were before Bench linked them.", tone: "neutral" };
     case "revert-convert": return { text: "Restores the payment exactly as it was before Bench made it a transfer.", tone: "neutral" };
-    case "claim": return o.release ? null : { text: "Nothing changes in Actual. Bench counts this row so it is not added twice.", tone: "quiet" };
+    case "claim":
+      if (o.recordedSplit) return { text: "Already split in Actual the way this loan is recorded. Nothing changes in Actual; Bench records it and uses these figures from now on.", tone: "neutral" };
+      return o.release ? null : { text: "Nothing changes in Actual. Bench counts this row so it is not added twice.", tone: "quiet" };
     default: return null;
   }
 }

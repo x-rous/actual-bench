@@ -1,15 +1,14 @@
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { getDebt } from "@/lib/app-db/debtRepository";
+import { listDebtAssumptions } from "@/lib/app-db/debtAssumptionRepository";
 import { getEffectiveDebtAnchor } from "@/lib/app-db/debtAnchorRepository";
 import { listCurrentDebtObservations } from "@/lib/app-db/debtObservationRepository";
-import { canonicalJson } from "@/lib/app-db/canonicalJson";
 import { listSubjectPostings } from "@/lib/app-db/financialPostingRepository";
-import { getModelRevision } from "@/lib/app-db/modelRevisionRepository";
 import { compareDebtBalances, debtDriftState, driftFingerprint } from "../classification/drift";
 import { reconciliationHealth } from "./health";
 import { projectStoredDebt } from "./projectionService";
 import type { OffsetHistorySnapshot } from "./offsetHistoryService";
-import type { ClosingState, PostingOutputSnapshot } from "./snapshot";
+import type { PostingOutputSnapshot } from "./snapshot";
 
 export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; comparisonDate: string; actualBalanceMinor: number; offsetHistories?: OffsetHistorySnapshot[] }) {
   const debt = getDebt(db, input.debtId);
@@ -20,27 +19,24 @@ export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; compa
   if (!projection.ok) return { ok: false as const, blocked: { code: "invalid-config" as const, message: projection.blocked.map((item) => item.message).join(" ") } };
   const latestEvent = projection.events.at(-1);
   const scheduledMinor = latestEvent?.balanceAfterMinor ?? projected.model.terms.openingPrincipalMinor;
-  // T309 "as paid": from the latest applied repayment split (its closing already uses the actual
-  // payment dates and the lender's statement convention), projected on schedule only after it.
-  const start = asPaidStart(db, input.debtId, debt.currentRevision, input.comparisonDate);
+  // T309 "as paid", from the facts: the starting balance (or the latest lender restart), less the
+  // principal of every repayment applied or recorded in Actual and every recorded extra payment, plus
+  // draws; the schedule continues only after the last of those repayments' due date.
+  const paid = asPaidFacts(db, input.debtId, input.comparisonDate, projected.model.terms);
   let modelMinor = scheduledMinor;
   let asPaidFrom: string | null = null;
-  if (start) {
-    if (input.comparisonDate < start.dueDate) {
-      // Paid early and the due date it covers has not come yet: the balance is the split's closing.
-      modelMinor = start.closing.principalMinor;
-      asPaidFrom = start.closing.date;
+  if (paid) {
+    if (input.comparisonDate < paid.dueDate) {
+      modelMinor = paid.balanceAt(input.comparisonDate);
     } else {
-      // Continue on schedule after the due date that repayment covered, so it is not scheduled twice.
+      const opening = paid.balanceAt(paid.dueDate);
       const fromPaid = projectStoredDebt(db, input.debtId, {
         from: "0001-01-01", to: input.comparisonDate, resolution: "events", offsetHistories: input.offsetHistories,
-        startFrom: { date: start.dueDate, principalMinor: start.closing.principalMinor, accruedInterestMinor: 0, carriedRemainder: start.closing.carriedRemainder },
+        startFrom: { date: paid.dueDate, principalMinor: opening, accruedInterestMinor: 0, carriedRemainder: null },
       });
-      if (fromPaid.ok && fromPaid.projection.ok) {
-        modelMinor = fromPaid.projection.events.filter((e) => e.date > start.dueDate).at(-1)?.balanceAfterMinor ?? start.closing.principalMinor;
-        asPaidFrom = start.closing.date;
-      }
+      if (fromPaid.ok && fromPaid.projection.ok) modelMinor = fromPaid.projection.events.filter((e) => e.date > paid.dueDate).at(-1)?.balanceAfterMinor ?? opening;
     }
+    asPaidFrom = paid.paidDate;
   }
   const observations = listCurrentDebtObservations(db, input.debtId);
   const lenderObservation = observations.find((row) => row.observedOn <= input.comparisonDate) ?? null;
@@ -65,30 +61,27 @@ export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; compa
  * than a lender anchor (an anchor after it already restarts the calculation).
  */
 /**
- * Whether two revisions calculate the same way: a save that changed only the name, accounts,
- * status or other bookkeeping (activation, for one) keeps applied splits usable as "as paid".
+ * The loan as actually paid up to `through`: repayments applied or recorded by Bench (their principal
+ * as written in Actual) and one-off extra payments and draws from Terms & Schedule, counted from the
+ * latest lender restart or the opening. Null when no repayment has been applied or recorded yet.
  */
-function sameCalculation(db: SqliteDatabase, debtId: string, a: number, b: number): boolean {
-  if (a === b) return true;
-  const calculationOf = (revision: number) => {
-    const record = getModelRevision(db, "debt", debtId, revision);
-    if (!record) return null;
-    const snapshot = JSON.parse(record.configJson) as { debt?: { currencyMinorDigits?: unknown }; config?: unknown; rates?: unknown; offsets?: unknown; assumptions?: unknown };
-    return canonicalJson({ digits: snapshot.debt?.currencyMinorDigits ?? null, config: snapshot.config ?? null, rates: snapshot.rates ?? null, offsets: snapshot.offsets ?? null, assumptions: snapshot.assumptions ?? null });
-  };
-  const first = calculationOf(a);
-  return first !== null && first === calculationOf(b);
-}
-
-function asPaidStart(db: SqliteDatabase, debtId: string, revision: number, comparisonDate: string): { closing: ClosingState; dueDate: string } | null {
+function asPaidFacts(db: SqliteDatabase, debtId: string, through: string, terms: { openingDate: string; openingPrincipalMinor: number }) {
   const anchor = getEffectiveDebtAnchor(db, debtId);
-  let best: { closing: ClosingState; dueDate: string } | null = null;
+  const base = anchor ? { date: anchor.anchorDate, principalMinor: anchor.principalMinor } : { date: terms.openingDate, principalMinor: terms.openingPrincipalMinor };
+  const repayments: { paidDate: string; dueDate: string; principalMinor: number }[] = [];
   for (const posting of listSubjectPostings(db, "debt", debtId)) {
-    if (posting.status !== "applied" || posting.postingKind !== "repayment-split" || !sameCalculation(db, debtId, posting.configRevision, revision)) continue;
+    if (posting.status !== "applied" || posting.postingKind !== "repayment-split") continue;
     const output = JSON.parse(posting.outputSnapshotJson) as PostingOutputSnapshot;
-    if (output.kind !== "restructure" || !output.closing || output.closing.date > comparisonDate) continue;
-    if (anchor && output.closing.date < anchor.anchorDate) continue;
-    if (!best || output.closing.date > best.closing.date) best = { closing: output.closing, dueDate: posting.periodKey };
+    const fact = output.kind === "restructure"
+      ? { paidDate: output.before.date, principalMinor: output.components.find((c) => c.kind === "principal")?.amountMinor ?? 0 }
+      : output.kind === "claim" && output.recordedSplit ? { paidDate: output.recordedSplit.parent.date, principalMinor: output.recordedSplit.principalMinor } : null;
+    if (fact && fact.paidDate > base.date && fact.paidDate <= through) repayments.push({ ...fact, dueDate: posting.periodKey });
   }
-  return best;
+  if (!repayments.length) return null;
+  const last = repayments.reduce((a, b) => (b.paidDate > a.paidDate ? b : a));
+  const principalPaid = repayments.reduce((sum, r) => sum + r.principalMinor, 0);
+  const oneOffs = listDebtAssumptions(db, debtId).filter((a) => a.recurrence === null && a.effectiveFrom > base.date);
+  const balanceAt = (date: string) => base.principalMinor - principalPaid
+    + oneOffs.filter((a) => a.effectiveFrom <= date).reduce((sum, a) => sum + (a.assumptionKind === "extra-repayment" ? -(a.amountMinor ?? 0) : a.assumptionKind === "draw" ? (a.amountMinor ?? 0) : 0), 0);
+  return { paidDate: last.paidDate, dueDate: last.dueDate, balanceAt };
 }

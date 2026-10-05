@@ -13,7 +13,7 @@ import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHis
 import type { PostingView } from "@/lib/assets-debt/services/proposalService";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { formatAmount } from "../../lib/money";
-import { applyPosting, checkInterruptedPosting, completeInterruptedLink, type PostingActionContext } from "../../lib/postingActions";
+import { applyPosting, checkInterruptedPosting, completeInterruptedLink, readForClaims, type PostingActionContext } from "../../lib/postingActions";
 import { getSchedule, listMatchRules } from "../../lib/debtsApi";
 import { declinePosting, listPostings, overrideSplit, proposeReversal } from "../../lib/postingsApi";
 import { backtestSummary } from "../rules/MatchingCard";
@@ -25,6 +25,7 @@ import { bulkSteps, bulkSummary, runBulk, type BulkResult } from "./bulkApply";
 import { changeContext, changeHeadline } from "./changeText";
 import { ChangeList, type ChangeActions } from "./ChangeList";
 import { buildChangeRows, countByFilter, rowsFor, type ChangeFilter, type ChangeRowModel } from "./changeRows";
+import { ExtraPayments } from "./ExtraPayments";
 import { LoanStatusStrip, type StripMatching } from "./LoanStatusStrip";
 import { matchingFacts, repaymentTimeline } from "./matchingStrip";
 import { useBackgroundRefresh } from "./useBackgroundRefresh";
@@ -51,7 +52,7 @@ function periodRange(period: Period, opening: string, custom: { from: string; to
   return { from: opening, to };
 }
 
-export function LoanActivity({ debt, directory, offsetHistories, initialFilter = "action" }: { debt: DebtDetail; directory: AccountDirectory | undefined; offsetHistories?: OffsetHistorySnapshot[]; initialFilter?: ChangeFilter }) {
+export function LoanActivity({ debt, directory, offsetHistories, initialFilter = "action", scheduleDirty = false }: { debt: DebtDetail; directory: AccountDirectory | undefined; offsetHistories?: OffsetHistorySnapshot[]; initialFilter?: ChangeFilter; /** Unsaved changes on Terms & Schedule (recording an extra payment waits for them). */ scheduleDirty?: boolean }) {
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
   const debtId = debt.debt.id;
@@ -100,8 +101,10 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
       window: dates && "daysBefore" in dates ? { before: dates.daysBefore, after: dates.daysAfter } : null,
       ruleOn: rules.data ? !!rule : null,
       lastCheck,
+      unrecordedExtra: (refresh.unscheduled ?? []).filter((p) => !p.recorded).length,
+      changedExtra: (refresh.unscheduled ?? []).filter((p) => p.changed).length,
     };
-  }, [schedule.data, allRows, rules.data, directory, debt.debt.paymentAccountId]);
+  }, [schedule.data, allRows, rules.data, directory, debt.debt.paymentAccountId, refresh.unscheduled]);
   const counts = countByFilter(allRows);
   const rows = rowsFor(allRows, filter);
   const steps = useMemo(() => stepsOf(postings.data ?? []), [postings.data]);
@@ -189,7 +192,9 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
       const ctx = await context();
       const steps = bulkSteps(chosen);
       setProgress({ done: 0, total: steps.length });
-      return runBulk(steps, (step) => applyPosting(step.target, ctx), (done) => setProgress({ done, total: steps.length }));
+      // Claims write nothing, so their rows are read once for the whole batch.
+      const cache = await readForClaims(steps.map((step) => step.target), ctx.transport);
+      return runBulk(steps, (step) => applyPosting(step.target, ctx, cache), (done) => setProgress({ done, total: steps.length }));
     },
     onSuccess: async (outcome) => {
       setResult(outcome);
@@ -200,6 +205,28 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     },
     onError: (error) => { setProgress(null); setProblem(error instanceof Error ? error.message : String(error)); },
   });
+
+  // The period sits on the same row as the filter chips.
+  const periodControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground">Period</span>
+      <SelectField
+        hideLabel
+        label="Period"
+        value={period}
+        options={[{ value: "whole", label: "Whole loan" }, { value: "year", label: "This year" }, { value: "last12", label: "Last 12 months" }, { value: "custom", label: "Custom" }]}
+        onChange={(v) => setPeriod(v as Period)}
+        className="w-40"
+      />
+      {period === "custom" ? (
+        <>
+          <DateField hideLabel label="From" value={custom.from} onChange={(from) => setCustom((c) => ({ ...c, from }))} />
+          <span className="text-xs text-muted-foreground">to</span>
+          <DateField hideLabel label="To" value={custom.to} onChange={(to) => setCustom((c) => ({ ...c, to }))} />
+        </>
+      ) : null}
+    </div>
+  );
 
   const totals = selectedRows.reduce((sum, r) => {
     const output = r.selectable === "apply" ? r.posting?.output : null;
@@ -236,21 +263,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
       <div className="flex flex-col gap-3 px-4 py-4 text-sm">
         <LoanStatusStrip refresh={refresh} counts={{ review: reviewCount, notApplied: reviewCount }} digits={digits} onRefresh={() => void refresh.refresh()} onStatements={() => setStatements(true)} matching={matching} />
-        <div className="flex flex-wrap items-end gap-3">
-          <SelectField
-            label="Period"
-            value={period}
-            options={[{ value: "whole", label: "Whole loan" }, { value: "year", label: "This year" }, { value: "last12", label: "Last 12 months" }, { value: "custom", label: "Custom" }]}
-            onChange={(v) => setPeriod(v as Period)}
-            className="w-44"
-          />
-          {period === "custom" ? (
-            <>
-              <DateField label="From" value={custom.from} onChange={(from) => setCustom((c) => ({ ...c, from }))} />
-              <DateField label="To" value={custom.to} onChange={(to) => setCustom((c) => ({ ...c, to }))} />
-            </>
-          ) : null}
-        </div>
+        <ExtraPayments debtId={debtId} payments={refresh.unscheduled ?? []} digits={digits} scheduleDirty={scheduleDirty} onChanged={() => void afterWrite()} />
         {problem ? <p role="alert" className="text-xs text-destructive">{problem}</p> : null}
         {result ? (
           <div role="status" className={result.stopped ? "flex items-start gap-2 rounded border border-amber-500/50 bg-amber-50 px-3 py-2 text-xs dark:bg-amber-950/30" : "flex items-start gap-2 rounded border border-border px-3 py-2 text-xs"}>
@@ -260,6 +273,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
         ) : null}
         {previewDirectory ? (
           <ChangeList
+            toolbar={periodControls}
             rows={rows}
             filter={filter}
             onFilter={setFilter}

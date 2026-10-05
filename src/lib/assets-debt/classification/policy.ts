@@ -80,6 +80,7 @@ export const REASONS = {
   convertToTransfer: { code: "converts-payment-to-transfer", text: "Makes the existing payment a transfer to the loan; Actual creates the loan-side row. Check both rows." },
   replacesCounterpart: { code: "replaces-transfer-counterpart", text: "The payment is already a transfer. Splitting it replaces the loan-side row Actual made with one for the principal only; Undo re-creates the original row with a new id in Actual." },
   lenderCounterpartProtected: { code: "imported-counterpart-protected", text: "The payment is already a transfer whose loan-side row was imported (for example from the lender). Splitting would delete that row and Undo could not bring it back. Remove the transfer link in Actual (keep the imported row), then re-run." },
+  recordedSplit: { code: "recorded-split", text: "Already split in Actual the way this loan is recorded; Bench only records it." },
   routineSplit: { code: "routine-repayment-split", text: "Routine split of a repayment Bench matched under your enabled rule." },
   undoLinkFirst: { code: "undo-link-first", text: "The split's principal is linked to the lender's row. Undo that link first, then undo the split." },
 } as const satisfies Record<string, PostingReason>;
@@ -97,6 +98,8 @@ export type PolicyInput = {
   reviews?: PostingReason[];
   /** Set only by the planner for a uniquely matched repayment split (FR-170c). */
   routineSplit?: boolean;
+  /** Set only by the planner for a repayment already split in Actual and recorded as it is. */
+  recordedSplit?: boolean;
 };
 
 /** The notes a routine repayment split carries; any other note keeps it Review (FR-170c). */
@@ -122,6 +125,10 @@ export function classifyPosting(input: PolicyInput): PolicyResult {
   const blockers = input.blockers ?? [];
   if (blockers.length) return { classification: "blocked", reasons: unique(blockers) };
   // The routine notes stay with it, so the screen can still say what the change does (FR-170c).
+  // A split already in Actual writes nothing; it is recommended when its figures match the calculation.
+  if (input.recordedSplit && input.postingKind === "repayment-split" && input.shape === "claim" && !input.driftMaterial && !input.unreviewedPrincipalChange && (input.reviews ?? []).length === 0) {
+    return { classification: "safe", reasons: [REASONS.recordedSplit] };
+  }
   if (isRoutineSplit(input)) return { classification: "safe", reasons: unique([REASONS.routineSplit, ...(input.reviews ?? [])]) };
 
   const reviews: PostingReason[] = [...(input.reviews ?? [])];

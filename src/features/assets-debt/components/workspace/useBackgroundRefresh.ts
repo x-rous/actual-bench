@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { getTransport } from "@/lib/actual";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import { datedBalanceFromTransactions, readAccountLedger, readMatchingHistory, toDebtMagnitude, type AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
+import type { UnscheduledPayment } from "@/lib/assets-debt/services/extraPaymentService";
 import type { PlanningNotice } from "@/lib/assets-debt/services/planner/common";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { getDebtReconciliation, type DebtReconciliationView } from "../../lib/debtsApi";
@@ -56,6 +58,8 @@ export type RefreshState = {
   driftMaterial: boolean;
   /** The pending changes close the gap with Actual (FR-170c). */
   driftExplained: boolean;
+  /** Payments into the loan account no repayment accounts for (extra payments). */
+  unscheduled: UnscheduledPayment[];
 };
 
 const shift = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -111,7 +115,7 @@ export function useBackgroundRefresh(input: { debt: DebtDetail; directory: Accou
   const cacheKey = connection && connection.budgetSyncId ? loanStatusKey({ baseUrl: connection.baseUrl, budgetSyncId: connection.budgetSyncId, debtId, revision: debt.debt.currentRevision }) : null;
   const [state, setState] = useState<RefreshState>(() => {
     const cached = readCachedStatus(cacheKey);
-    return { phase: "idle", error: null, status: cached, statusFromCache: cached !== null, notices: [], driftMaterial: false, driftExplained: false };
+    return { phase: "idle", error: null, status: cached, statusFromCache: cached !== null, notices: [], driftMaterial: false, driftExplained: false, unscheduled: [] };
   });
   const [payees, setPayees] = useState<Record<string, string>>({});
   const running = useRef(false);
@@ -124,6 +128,15 @@ export function useBackgroundRefresh(input: { debt: DebtDetail; directory: Accou
     const timing = startTiming("loan refresh");
     try {
       const transport = getTransport(connection);
+      // Pull changes made elsewhere (a transfer added in Actual) before reading: in Direct mode the
+      // browser reads its own copy of the budget, which otherwise only syncs when it first opens.
+      let syncProblem: string | null = null;
+      try {
+        await transport.sync();
+      } catch (error) {
+        syncProblem = error instanceof Error ? error.message : String(error);
+      }
+      timing.step("sync");
       const payeeMap = await transferPayees(transport);
       setPayees(payeeMap);
       timing.step("payees");
@@ -148,10 +161,18 @@ export function useBackgroundRefresh(input: { debt: DebtDetail; directory: Accou
         from, to, snapshots, accountDirectory: directory, transferPayees: payeeMap,
         capabilities: { canRestructure: typeof transport.restructureTransactionAsSplit === "function" && typeof transport.linkTransferCounterpart === "function", canVerifyTransferLinks },
         offsetHistories,
+        loanAccountRows: ledger.transactions.filter((t) => (t as { isChild?: boolean }).isChild !== true).map((t) => ({ id: t.id, date: t.date, amountMinor: t.amount })),
         comparison: actualMagnitude >= 0 ? { comparisonDate, actualBalanceMinor: actualMagnitude } : null,
         parameters: { openingAdjustmentCategoryId: null, adjustmentCategoryId: null, actualBalanceAtOnboardingMinor: onboarding },
       });
       timing.step("plan changes (server)");
+      const followed = result.followedExtraPayments ?? [];
+      if (followed.length) {
+        // Terms & Schedule was saved as a new revision on the server: show it everywhere.
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debt", debtId] });
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
+        toast.success(followed.length === 1 ? (followed[0].change === "removed" ? "An extra payment was deleted in Actual; it was removed from Terms & Schedule" : "An extra payment changed in Actual; Terms & Schedule was updated to match") : `${followed.length} extra payments changed in Actual; Terms & Schedule was updated to match`);
+      }
       let status: LoanStatus | null = null;
       if (actualMagnitude >= 0) {
         const view: DebtReconciliationView = await getDebtReconciliation(debtId, { comparisonDate, actualBalanceMinor: actualMagnitude, offsetHistories });
@@ -173,7 +194,7 @@ export function useBackgroundRefresh(input: { debt: DebtDetail; directory: Accou
         timing.step("reconciliation (server)");
       }
       timing.end();
-      setState((s) => ({ phase: "done", error: null, status: status ?? s.status, statusFromCache: status === null && s.statusFromCache, notices: result.notices, driftMaterial: result.driftMaterial, driftExplained: result.driftExplained === true }));
+      setState((s) => ({ phase: syncProblem ? "failed" : "done", error: syncProblem ? `could not get the latest changes from Actual (${syncProblem}); showing what this browser last downloaded` : null, status: status ?? s.status, statusFromCache: status === null && s.statusFromCache, notices: result.notices, driftMaterial: result.driftMaterial, driftExplained: result.driftExplained === true, unscheduled: result.unscheduled ?? [] }));
       void queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
     } catch (error) {
       // Keep everything already shown; say it may be out of date.

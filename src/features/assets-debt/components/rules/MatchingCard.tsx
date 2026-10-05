@@ -5,7 +5,7 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getTransport } from "@/lib/actual";
-import { readMatchingHistory } from "@/lib/assets-debt/actual/ledgerPort";
+import { readFreshMatchingHistory } from "../../lib/freshHistory";
 import type { MatchRuleSave, MatchRuleView } from "@/lib/assets-debt/services/matchingService";
 import type { DebtBacktestResult, MatchConditionsV1 } from "@/lib/financial-models/matching";
 import { cn } from "@/lib/utils";
@@ -60,7 +60,7 @@ export function MatchingCard({ debtId, onEdit }: { debtId: string; /** Open the 
         // Turning on always re-checks the rule over the loan's history; the server refuses a weak rule and says why.
         const named = (rule.conditions as MatchConditionsV1).items.filter((c) => c.kind === "source-account").map((c) => c.accountId);
         const accountIds = named.length ? named : [ctx.defaultSource].filter(Boolean);
-        backtest = { from: ctx.historyFrom, to: ctx.today, snapshots: await readMatchingHistory(getTransport(ctx.connection), { accountIds, from: ctx.historyFrom, to: ctx.today }) };
+        backtest = { from: ctx.historyFrom, to: ctx.today, snapshots: await readFreshMatchingHistory(getTransport(ctx.connection), { accountIds, from: ctx.historyFrom, to: ctx.today }) };
       }
       await updateMatchRule(debtId, rule.record.id, value, backtest);
       await ctx.refreshRules();
@@ -94,7 +94,7 @@ export function MatchingCard({ debtId, onEdit }: { debtId: string; /** Open the 
           <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-1">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Required step</p>
             <p className="text-base font-semibold">Tell Bench how to find your repayments in Actual</p>
-            <p className="text-sm text-foreground/80">Bench looks for each scheduled repayment among your Actual transactions using a matching rule. Until a rule is on, the Transactions tab cannot propose any change for this loan.</p>
+            <p className="text-sm text-foreground/80">Bench looks for each scheduled repayment among your Actual transactions using a matching rule. Until a rule is on, the Sync Repayments tab cannot propose any change for this loan.</p>
             <p className="text-xs text-muted-foreground">Bench suggests one from the accounts and repayment above, then checks it against your history before you turn it on.</p>
           </div>
           <Button type="button" disabled={!ctx.defaultSource} onClick={() => onEdit("new")}>Set up repayment matching</Button>

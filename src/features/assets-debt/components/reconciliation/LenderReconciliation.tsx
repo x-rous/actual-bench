@@ -37,7 +37,7 @@ function useComparison({ debt, offsetHistories }: Ctx, date: string | null) {
   const actual = useQuery({
     queryKey: ["assets-debt", "dated-liability-balance", connection?.id, debt.debt.liabilityAccountId, date],
     queryFn: async () => {
-      if (!connection || !debt.debt.liabilityAccountId) throw new Error("Choose the loan account in Settings first.");
+      if (!connection || !debt.debt.liabilityAccountId) throw new Error("Choose the loan account in Link to Actual first.");
       return readDatedBalance(getTransport(connection), { accountId: debt.debt.liabilityAccountId, date: date! });
     },
     enabled: !!connection && !!debt.debt.liabilityAccountId && !!date,

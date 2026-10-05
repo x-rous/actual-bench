@@ -14,19 +14,19 @@ import { LOANS_PATH } from "../../lib/routes";
  * `ux-loan-workspace.md` §1–§2). Inside a loan, the Assets & Debt title and
  * section tabs are replaced by this header: a back link that names where it
  * goes, the loan's name and state, one primary action, a ⋯ menu, and exactly
- * three tabs in build order: Schedule, Settings, Transactions. Leaving with
+ * three tabs in build order: Terms & Schedule, Link to Actual, Sync Repayments. Leaving with
  * unsaved changes asks first.
  */
 
 export const WORKSPACE_TABS = [
-  { id: "calculation", label: "Schedule", slug: "schedule" },
-  { id: "setup", label: "Settings", slug: "settings" },
-  { id: "activity", label: "Transactions", slug: "transactions" },
+  { id: "calculation", label: "Terms & Schedule", slug: "schedule" },
+  { id: "setup", label: "Link to Actual", slug: "link" },
+  { id: "activity", label: "Sync Repayments", slug: "repayments" },
 ] as const;
 
 export type WorkspaceTab = (typeof WORKSPACE_TABS)[number]["id"];
 
-/** The `?view=` value of a tab, in the words the tab shows (rev 2: Schedule · Settings · Transactions). */
+/** The `?view=` value of a tab, in the words the tab shows (rev 4: Terms & Schedule · Link to Actual · Sync Repayments). */
 export function workspaceTabSlug(tab: WorkspaceTab): string {
   return WORKSPACE_TABS.find((t) => t.id === tab)!.slug;
 }
@@ -34,11 +34,13 @@ export function workspaceTabSlug(tab: WorkspaceTab): string {
 /** `?view=` values, current and old, open the tab that now holds that content. */
 export function workspaceTabFor(view: string | null | undefined, fallback: WorkspaceTab): WorkspaceTab {
   switch (view) {
+    case "repayments":
     case "transactions":
     case "activity": return "activity";
     case "schedule":
     case "calculation":
     case "simulator": return "calculation";
+    case "link":
     case "settings":
     case "setup":
     case "tracking":

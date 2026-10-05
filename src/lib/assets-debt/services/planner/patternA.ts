@@ -1,4 +1,5 @@
 import type { PostingReason } from "@/lib/app-db/types";
+import type { MatchCandidate } from "@/lib/financial-models/matching";
 import { paymentChildCategory, transferLegCategory } from "../../actual/representation";
 import { existingStructureReason, REASONS } from "../../classification/policy";
 import { classifyExistingStructure } from "../../classification/existingStructure";
@@ -32,6 +33,7 @@ import {
   type PlanResult,
   type PlanningContext,
 } from "./common";
+import { OVERRIDE_NO_REASON_MINOR } from "../../overrides";
 import { eventsInWindow, planLink } from "./patternB";
 
 /**
@@ -77,7 +79,7 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
 
     const split = livePosting(ctx, "repayment-split", date);
     if (split) {
-      chain.add(split.outputSnapshot.kind === "restructure" ? entryFromSplit(split.outputSnapshot, date) : assumedEntry());
+      chain.add(split.outputSnapshot.kind === "restructure" ? entryFromSplit(split.outputSnapshot, date) : split.outputSnapshot.kind === "claim" && split.outputSnapshot.recordedSplit ? entryFromRecorded(split.outputSnapshot.recordedSplit, date) : assumedEntry());
       // Second step with a lender feed: link the applied principal child and the lender row.
       if (lenderFeed && split.status === "applied" && !livePosting(ctx, "repayment-link", date)) planLenderLink(ctx, out, split, date, calc);
       continue;
@@ -100,9 +102,22 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
       continue;
     }
     const evaluation = match.candidates[0];
-    const row = ctx.rows.get(evaluation.candidate.id);
+    const side = paymentSide(ctx, evaluation.candidate);
+    if (!side.ok) {
+      chain.add(assumedEntry());
+      out.notices.push({ code: "payment-side-not-visible", periodKey: date, text: side.text });
+      continue;
+    }
+    const candidate = side.candidate;
+    const row = ctx.rows.get(candidate.id);
     if (!row) {
       chain.add(assumedEntry());
+      continue;
+    }
+    // A repayment already split in Actual (principal transfer + the rest): recorded as it is, like a
+    // Bench split the user edited (owner decision 2026-10-06). Nothing is written to Actual.
+    if (row.isParent && candidate.loanSplit) {
+      planRecordedSplit(ctx, out, { date, row, repayment, chain, actualDated, allocation, period });
       continue;
     }
     // The matched payment happened on its own date, whatever Bench does with it below.
@@ -111,7 +126,7 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     const observedEntry: ChainEntry = { dueDate: date, paidDate: row.date, amountMinor: Math.abs(row.amountMinor), feesMinor: parts.parts.reduce((sum, p) => sum + p.amount, 0), ...(edit ? { appliedInterestMinor: edit.interestMinor } : {}) };
     const earlier = chain.entries.slice();
     const allocated = chain.add(observedEntry);
-    const decision = classifyExistingStructure({ candidate: evaluation.candidate, lenderPattern: "embedded-interest", rowRole: "payment" });
+    const decision = classifyExistingStructure({ candidate, lenderPattern: "embedded-interest", rowRole: "payment" });
     if (decision.disposition !== "restructure" && decision.classification !== "blocked") {
       out.notices.push({ code: decision.reasons[0] ?? "manual-review", periodKey: date, text: existingStructureReason(decision.reasons[0] ?? "").text });
       continue;
@@ -196,6 +211,20 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     }));
   }
   return out;
+}
+
+/**
+ * The repayment itself, for a matched row. A rule that looks in the loan account matches the
+ * loan-side row of a transfer; the repayment is the other side, in the account it was paid from
+ * (or, when it is already split there, that split), and that is the row Bench records or changes.
+ * Any other row is the repayment as matched.
+ */
+function paymentSide(ctx: PlanningContext, matched: MatchCandidate): { ok: true; candidate: MatchCandidate } | { ok: false; text: string } {
+  if (matched.accountId !== ctx.debt.liabilityAccountId || !matched.transferId) return { ok: true, candidate: matched };
+  const other = ctx.candidates.find((c) => c.id === matched.transferId);
+  const payment = other?.isChild && other.parentId ? ctx.candidates.find((c) => c.id === other.parentId) : other;
+  if (!payment) return { ok: false, text: "The repayment was found in the loan account, but Bench cannot see the payment it came from. Set the account repayments are paid from in Link to Actual, then refresh." };
+  return { ok: true, candidate: payment };
 }
 
 /**
@@ -287,6 +316,59 @@ function nonPrincipalParts(ctx: PlanningContext, amounts: { interest: number; fe
 }
 
 type ChainEntry = NonNullable<PostingInputSnapshot["observedRepayments"]>["repayments"][number];
+
+type RecordedSplit = NonNullable<Extract<PostingOutputSnapshot, { kind: "claim" }>["recordedSplit"]>;
+
+/** A recorded split: its actual date and amount, and the interest Actual holds (it counts, like an edit). */
+function entryFromRecorded(recorded: RecordedSplit, dueDate: string): ChainEntry {
+  return { dueDate, paidDate: recorded.parent.date, amountMinor: Math.abs(recorded.parent.amountMinor), feesMinor: 0, appliedInterestMinor: recorded.interestMinor };
+}
+
+/**
+ * Plan the record of a repayment already split in Actual: the principal part must be the transfer
+ * to this loan's account; the other parts are interest (and any fees). Actual's figures are used;
+ * a difference from Bench's calculation beyond one minor unit asks for review.
+ */
+function planRecordedSplit(
+  ctx: PlanningContext,
+  out: PlanResult,
+  input: { date: string; row: RowSnapshot; repayment: { interestMinor: number; principalMovementMinor: number }; chain: ReturnType<typeof repaymentChain>; actualDated: boolean; allocation: InterestAllocation; period: { key: string; from: string; to: string; chargeDates: string[] } },
+): void {
+  const { date, row, chain } = input;
+  const children = [...ctx.rows.values()].filter((r) => r.isChild && r.parentId === row.id).sort((a, b) => a.id.localeCompare(b.id));
+  const transfers = children.filter((c) => c.transferId);
+  const principalChild = transfers.length === 1 ? transfers[0] : null;
+  const liabilityPayee = ctx.debt.liabilityAccountId ? ctx.transferPayeeByAccount[ctx.debt.liabilityAccountId] : undefined;
+  const blockers: PostingReason[] = [...baseBlockers(ctx)];
+  if (!principalChild || (liabilityPayee && principalChild.payeeId !== liabilityPayee)) blockers.push({ code: "recorded-split-elsewhere", text: "The split's transfer part does not go to this loan's account. Fix the split in Actual, then refresh." });
+  const principalMinor = principalChild ? Math.abs(principalChild.amountMinor) : 0;
+  const interestMinor = Math.abs(row.amountMinor) - principalMinor;
+  const entry: ChainEntry = { dueDate: date, paidDate: row.date, amountMinor: Math.abs(row.amountMinor), feesMinor: 0, appliedInterestMinor: interestMinor };
+  const earlier = chain.entries.slice();
+  const allocated = chain.add(entry);
+  const calculatedInterestMinor = input.actualDated && allocated.ok
+    ? allocateRepaymentSplitCalculated(ctx, input.allocation, earlier, entry) ?? Math.abs(input.repayment.interestMinor)
+    : Math.abs(input.repayment.interestMinor);
+  const reviews: PostingReason[] = [];
+  const fmt = (minor: number) => (minor / 10 ** ctx.model.currency.minorDigits).toFixed(ctx.model.currency.minorDigits);
+  if (Math.abs(interestMinor - calculatedInterestMinor) > OVERRIDE_NO_REASON_MINOR) {
+    reviews.push({ code: "recorded-split-differs", text: `Edited in Actual: calculated interest ${fmt(calculatedInterestMinor)}, Actual has ${fmt(interestMinor)}.` });
+  }
+  const closing = { date: row.date, principalMinor: allocated.ok ? allocated.row.balanceAfterMinor : 0, accruedInterestMinor: 0, carriedRemainder: null };
+  out.postings.push(finalize(ctx, {
+    postingKind: "repayment-split", periodKey: date, shape: "claim", generation: generationFor(ctx, "repayment-split", date), marker: null,
+    inputSnapshot: { ...inputSnapshot(ctx, input.period, [row, ...children], { recordedSplit: true }), observedRepayments: { allocation: input.allocation, repayments: [...earlier, entry] } },
+    outputSnapshot: {
+      format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "claim",
+      rows: principalChild ? [principalChild] : [],
+      role: "repayment",
+      closing,
+      recordedSplit: { parent: row, children, principalMinor, interestMinor, calculatedInterestMinor },
+    },
+    engineVersions: { ...chain.engineVersions },
+    policy: { blockers, reviews, recordedSplit: true },
+  }));
+}
 
 /** An applied split: its actual date, amount and non-interest, non-principal children. */
 function entryFromSplit(output: Extract<PostingOutputSnapshot, { kind: "restructure" }>, dueDate: string): ChainEntry {

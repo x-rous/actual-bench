@@ -84,10 +84,16 @@ export function matchingCandidates(
   snapshots: readonly MatchingHistorySnapshot[],
   linkedTransactionIds: ReadonlySet<string> = new Set()
 ): MatchCandidate[] {
-  const candidates = snapshots.flatMap(({ transactions }) => transactions.flatMap((row) => [
-    parentCandidate(row, linkedTransactionIds.has(row.id)),
-    ...row.splitLines.map((child, index) => childCandidate(row, child, index, child.id !== null && linkedTransactionIds.has(child.id))),
-  ]));
+  const candidates = snapshots.flatMap(({ transactions }) => transactions.flatMap((row) => {
+    // A repayment already split in Actual is matched as one payment; its parts are not candidates.
+    const loanSplit = row.isParent && row.splitLines.length >= 2 && row.splitLines.every((l) => l.id !== null)
+      && row.splitLines.filter((l) => l.transferId).length === 1;
+    if (loanSplit) return [{ ...parentCandidate(row, linkedTransactionIds.has(row.id)), loanSplit: true }];
+    return [
+      parentCandidate(row, linkedTransactionIds.has(row.id)),
+      ...row.splitLines.map((child, index) => childCandidate(row, child, index, child.id !== null && linkedTransactionIds.has(child.id))),
+    ];
+  }));
   return candidates.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id) || (a.parentId ?? "").localeCompare(b.parentId ?? ""));
 }
 
@@ -232,10 +238,12 @@ function markHandledPeriods(db: SqliteDatabase, debtId: string, purpose: string,
       .filter((p) => ["applying", "applied", "indeterminate"].includes(String(p.status)) && kinds.includes(String(p.postingKind)))
       .map((p) => p.periodKey)
   );
-  const periods = result.periods.map((period) => (period.status !== "unique" && handled.has(period.expected.date) ? { ...period, flags: [...period.flags, "already-handled"] } : period));
+  // Any period a live change already handles is "already handled", whatever the rule found there now
+  // (the split Bench made is itself matchable as a split already in Actual).
+  const periods = result.periods.map((period) => (handled.has(period.expected.date) ? { ...period, flags: [...period.flags, "already-handled"] } : period));
   const counted = periods.filter((period) => !period.flags.includes("already-handled"));
   const count = (status: string) => counted.filter((period) => period.status === status).length;
-  return { ...result, periods, summary: { ...result.summary, missing: count("missing"), multiple: count("multiple"), unsafe: count("unsafe") } };
+  return { ...result, periods, summary: { ...result.summary, unique: count("unique"), missing: count("missing"), multiple: count("multiple"), unsafe: count("unsafe") } };
 }
 
 /** Automation/server-side parity hook; reads through only the read-only transport slice. */

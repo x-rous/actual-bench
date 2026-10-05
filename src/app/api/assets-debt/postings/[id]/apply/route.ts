@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { readJsonBody } from "@/lib/app-db/routeResponses";
 import { applyRequestSchema, assetsDebtErrorResponse, parseBody } from "@/lib/assets-debt/api/schemas";
-import { approveAndBeginApply, beginCompleteLink, PostingNotApproved, PreflightRefused } from "@/lib/assets-debt/services/postingWorkflowService";
+import { approveAndBeginApply, approveAndRecordClaim, beginCompleteLink, PostingNotApproved, PreflightRefused } from "@/lib/assets-debt/services/postingWorkflowService";
 
 type Context = { params: Promise<{ id: string }> };
 export const dynamic = "force-dynamic";
@@ -21,6 +21,8 @@ export async function POST(request: Request, context: Context) {
     const { id } = await context.params;
     const body = parseBody(applyRequestSchema, await readJsonBody(request));
     const db = getAppDb();
+    // A claim writes nothing to Actual: approve and record it in one call.
+    if (body.action === "record-claim") return NextResponse.json({ posting: approveAndRecordClaim(db, id, { fresh: body.fresh, now: new Date().toISOString() }) });
     const ticket = body.action === "complete-link"
       ? beginCompleteLink(db, id)
       : approveAndBeginApply(db, id, { fresh: body.fresh, decidedAt: new Date().toISOString() });

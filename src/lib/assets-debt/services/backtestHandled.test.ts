@@ -18,7 +18,8 @@ describe("backtest: periods already handled by an applied change (T287)", () => 
     const snapshots = await readMatchingHistory(s.transport, { accountIds: [ACCOUNTS.checking], from: "2024-01-15", to: "2024-03-15" });
     const result = runDebtBacktest(s.db, s.debtId, { ...rule, purpose: "repayment" } as never, { from: "2024-01-15", to: "2024-03-15", snapshots });
     const period = result.periods.find((p) => p.expected.date === "2024-02-01")!;
-    expect(["missing", "unsafe"]).toContain(period.status);
+    // The payment Bench split is matchable again (as a split already in Actual), but the period is handled.
+    expect(["missing", "unsafe", "unique"]).toContain(period.status);
     expect(period.flags).toContain("already-handled");
     // Not counted as unsafe or missing, so re-enabling the rule is not refused by its own applied period.
     expect(result.summary.unsafe).toBe(0);

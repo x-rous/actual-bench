@@ -49,6 +49,14 @@ function impactMetrics(current: Headline | null, baseline: Headline | null, digi
   return [interest, time];
 }
 
+/** Saved is good (green), added is bad (red), no change or still calculating is neutral; the words always say it too. */
+const toneOf = (label: string): "good" | "bad" | "neutral" => (/saved|Reached/.test(label) ? "good" : /added|Not reached/.test(label) ? "bad" : "neutral");
+const IMPACT_TONE = {
+  good: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
+  bad: "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300",
+  neutral: "bg-muted text-muted-foreground",
+} as const;
+
 type EventRow =
   | { key: string; date: string; kind: "assumption"; assumption: SimAssumption }
   | { key: string; date: string; kind: "rate-change"; rate: SimRate; previousRate: string | null };
@@ -93,42 +101,39 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
             { term: "Payoff time", description: "The change in projected payoff date. No change is stated explicitly rather than shown as a negative saving." },
           ] }]}
         />
-      </div>
-      <div className="rounded-lg border border-border bg-card/40">
-        <div className={cn("flex flex-col gap-3 p-4 xl:flex-row xl:items-start", hasImpactEvents ? "xl:justify-between" : "xl:justify-end", rows.length && "border-b border-border")}>
-          {hasImpactEvents ? (
-            <div className="grid max-w-xl grid-cols-2 gap-2" role="status" data-testid="events-impact">
-              <div className="rounded-md border border-border bg-background px-3 py-2">
-                <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{interestImpact.label}</span>
-                <span className="block text-sm font-semibold tabular-nums">{interestImpact.value}</span>
-              </div>
-              <div className="rounded-md border border-border bg-background px-3 py-2">
-                <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{payoffImpact.label}</span>
-                <span className="block text-sm font-semibold tabular-nums">{payoffImpact.value}</span>
-              </div>
-            </div>
-          ) : null}
-          <div className="flex shrink-0 items-center gap-2" aria-label="Add an event">
-            <div className="hidden items-center gap-2 md:flex">
-              <Button type="button" variant="outline" size="sm" onClick={() => onEdit("extra-repayment")}><Plus aria-hidden="true" />Extra payment</Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => onEdit("draw")}>Redraw / Withdraw</Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => onEditRate("new")}>Rate change</Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1")}>More <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {MORE_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+        <div role="group" className="ml-auto flex shrink-0 items-center gap-2" aria-label="Add an event">
+          <div className="hidden items-center gap-2 md:flex">
+            <Button type="button" variant="outline" size="sm" onClick={() => onEdit("extra-repayment")}><Plus aria-hidden="true" />Extra payment</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onEdit("draw")}>Redraw / Withdraw</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => onEditRate("new")}>Rate change</Button>
             <DropdownMenu>
-              <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1 md:hidden")}><Plus aria-hidden="true" />Add event <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
+              <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1")}>More <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {ALL_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
-                <DropdownMenuItem onClick={() => onEditRate("new")}>Rate change</DropdownMenuItem>
+                {MORE_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1 md:hidden")}><Plus aria-hidden="true" />Add event <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {ALL_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
+              <DropdownMenuItem onClick={() => onEditRate("new")}>Rate change</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+      </div>
+      <div className="rounded-lg border border-border bg-card/40">
+        {hasImpactEvents ? (
+          <div role="status" data-testid="events-impact" className={cn("flex flex-wrap items-center gap-2 px-4 py-3", rows.length && "border-b border-border")}>
+            {[interestImpact, payoffImpact].map((m) => (
+              <span key={m.label} className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs", IMPACT_TONE[toneOf(m.label)])}>
+                <span>{m.label}</span>
+                <span className="font-semibold tabular-nums">{m.value}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {!rows.length && !hasImpactEvents ? <p className="px-4 py-3 text-xs text-muted-foreground">No extra payments, redraws or rate changes yet.</p> : null}
 
         {rows.length ? (
           <div className="overflow-x-auto">
