@@ -39,6 +39,7 @@ function paidAndPayment(posting: PostingView): { paidDate: string | null; paymen
     case "convert": return { paidDate: o.before.date, paymentMinor: o.before.amountMinor };
     case "link": return { paidDate: o.sourceBefore.date, paymentMinor: o.sourceBefore.amountMinor };
     case "claim": return o.recordedSplit ? { paidDate: o.recordedSplit.parent.date, paymentMinor: o.recordedSplit.parent.amountMinor } : { paidDate: o.rows[0]?.date ?? null, paymentMinor: o.rows[0]?.amountMinor ?? null };
+    case "adjust-split": return { paidDate: o.parent.date, paymentMinor: o.parent.amountMinor };
     case "create": return { paidDate: o.operations[0]?.date ?? null, paymentMinor: o.operations.reduce((sum, op) => sum + op.amountMinor, 0) };
     default: return { paidDate: null, paymentMinor: null };
   }

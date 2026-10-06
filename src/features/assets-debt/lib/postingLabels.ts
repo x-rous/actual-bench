@@ -22,11 +22,15 @@ const KIND_LABELS: Record<string, string> = {
 export function postingTitle(posting: Pick<PostingView, "postingKind" | "output">): string {
   switch (posting.output.kind) {
     case "convert": return "Make the repayment a loan transfer";
+    case "restructure": if (posting.output.payoff) return "Loan payoff";
+      break;
     case "restore-split": return "Undo of repayment split";
     case "unlink": return "Undo of lender link";
     case "revert-convert": return "Undo of loan transfer";
     case "claim": return posting.output.release ? "Undo of recorded link" : KIND_LABELS[String(posting.postingKind)] ?? "Recorded link";
     case "create": if (posting.postingKind === "reversal") return "Undo of charge";
+      break;
+    case "adjust-split": return posting.output.edit ? "Change a split already in Actual" : "Undo of split change";
   }
   const kind = typeof posting.postingKind === "string" ? posting.postingKind : posting.postingKind.unknown;
   return KIND_LABELS[kind] ?? "Change";

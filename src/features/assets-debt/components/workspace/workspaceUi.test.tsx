@@ -129,6 +129,32 @@ describe("Activity list (T289)", () => {
   });
 });
 
+describe("a split already in Actual, edited in place (T314)", () => {
+  const parent = row({ isParent: true, childCount: 2 });
+  const principal = row({ id: "c-p", amountMinor: -40000, payeeId: "tp-loan", transferId: "loan-row", isChild: true, parentId: "bank", notes: "Principal" });
+  const interestLine = row({ id: "c-i", amountMinor: -202915, categoryId: "cat-int", isChild: true, parentId: "bank", notes: "Interest" });
+  const recordedSplit = { parent, children: [principal, interestLine], principalMinor: 40000, interestMinor: 202915, calculatedInterestMinor: 201205, counterpart: row({ id: "loan-row", accountId: "loan", amountMinor: 40000, transferId: "c-p" }) };
+  const claim = { format: "rd084.posting-output", version: 1, kind: "claim", rows: [principal], role: "repayment", closing: null, recordedSplit };
+
+  it("starts from Actual's figures; Reset to calculated says the split in Actual changes; Keep Actual's amounts goes back", () => {
+    const act = actions();
+    render(<List postings={[posting("r1", { output: claim as never })]} act={act} expanded={new Set(["proposed:repayment-split:2024-02-01"])} />);
+    expect(screen.getByLabelText("Interest")).toHaveValue("2,029.15");
+    expect(screen.getByLabelText("Principal")).toHaveValue("400.00");
+    // Actual's own figure needs no reason, though it is far from Bench's.
+    expect(screen.queryByLabelText(/^Reason/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Apply this change" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Reset to calculated" }));
+    expect(screen.getByLabelText("Interest")).toHaveValue("2,012.05");
+    expect(screen.getByText(/Actual has 2,029.15; applying changes the split in Actual/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply with edit" }));
+    expect(act.editApply).toHaveBeenLastCalledWith(expect.objectContaining({ id: "r1" }), 201205, null);
+    fireEvent.click(screen.getByRole("button", { name: "Keep Actual's amounts" }));
+    expect(screen.getByLabelText("Interest")).toHaveValue("2,029.15");
+    expect(screen.getByRole("button", { name: "Apply this change" })).toBeEnabled();
+  });
+});
+
 describe("Workspace frame (T288)", () => {
   it("has exactly three tabs and a back link that names where it goes", () => {
     const onTab = jest.fn();

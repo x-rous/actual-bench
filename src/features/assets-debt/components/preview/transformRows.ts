@@ -73,6 +73,7 @@ function technicalNote(output: PostingOutputSnapshot): string | null {
     case "link": return "The lender's row becomes the other side of the transfer; its imported id is kept.";
     case "unlink": return "The lender's row is detached first, then the payment is restored.";
     case "claim": return "Nothing is written to Actual; Bench records the link in its own database.";
+    case "adjust-split": return "One update changes the split lines' amounts in place; every transaction id stays, and Actual moves the loan-side row with the principal.";
     case "create": return "Bench creates the rows with its own marker, so an interrupted write can be found again.";
     default: return null;
   }

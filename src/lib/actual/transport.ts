@@ -16,6 +16,9 @@ import type {
   ConvertToTransferResult,
   RestoreSplitInput,
   RestoreSplitResult,
+  AdjustSplitInput,
+  AdjustSplitResult,
+  AdjustVerification,
   RevertTransferInput,
   RevertTransferResult,
   UnlinkTransferInput,
@@ -497,6 +500,10 @@ export interface ActualBenchTransport {
   }): Promise<{ result: RestructureVerification; children: StructureChild[] }>;
   /** Undo a restructure: delete the children one at a time, then restore the parent (T276). */
   restoreSplit?(input: RestoreSplitInput): Promise<RestoreSplitResult>;
+  /** Change an existing split's amounts in place, keeping every id (T314); its undo is the same call with the old amounts. */
+  adjustSplitAmounts?(input: AdjustSplitInput): Promise<AdjustSplitResult>;
+  /** Read-only: does the split hold the new amounts, still the old ones, or neither? (T314) */
+  inspectSplitAmounts?(input: { accountId: string; parentId: string; date: string; before: Array<{ id: string; amount: number }>; after: Array<{ id: string; amount: number }>; counterpart: { accountId: string; id: string; childId: string } | null }): Promise<AdjustVerification>;
   /** Undo a counterpart link: detach the counterpart, then restore the source (T276). */
   unlinkTransfer?(input: UnlinkTransferInput): Promise<UnlinkTransferResult>;
   /** Make an existing payment the loan transfer by its payee (T277). */

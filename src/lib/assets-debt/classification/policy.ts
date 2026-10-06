@@ -29,7 +29,7 @@ import type { PostingClassification, PostingKind, PostingReason } from "@/lib/ap
  * only a Bench link; `convert` makes an existing payment a transfer by its
  * payee (T277). Undo proposals use the shape of what they reverse.
  */
-export type PostingShape = "create" | "restructure" | "link" | "claim" | "convert";
+export type PostingShape = "create" | "restructure" | "link" | "claim" | "convert" | "adjust";
 
 /** The exact `safe` set (FR-170a). A test fails if this changes without a specification change. */
 export const SAFE_ELIGIBLE: ReadonlyArray<{ postingKind: PostingKind; shape: PostingShape }> = [
@@ -81,6 +81,9 @@ export const REASONS = {
   replacesCounterpart: { code: "replaces-transfer-counterpart", text: "The payment is already a transfer. Splitting it replaces the loan-side row Actual made with one for the principal only; Undo re-creates the original row with a new id in Actual." },
   lenderCounterpartProtected: { code: "imported-counterpart-protected", text: "The payment is already a transfer whose loan-side row was imported (for example from the lender). Splitting would delete that row and Undo could not bring it back. Remove the transfer link in Actual (keep the imported row), then re-run." },
   recordedSplit: { code: "recorded-split", text: "Already split in Actual the way this loan is recorded; Bench only records it." },
+  payoff: { code: "payoff", text: "Pays off the loan; check the figures before applying. Once applied, the loan shows as paid off and Bench stops expecting repayments." },
+  unusualAmount: { code: "unusual-amount", text: "The payment is quite different from the scheduled repayment; check it is this loan's repayment before applying." },
+  adjustSplit: { code: "adjust-split", text: "Changes the amounts of a split already in Actual, so it needs your review." },
   routineSplit: { code: "routine-repayment-split", text: "Routine split of a repayment Bench matched under your enabled rule." },
   undoLinkFirst: { code: "undo-link-first", text: "The split's principal is linked to the lender's row. Undo that link first, then undo the split." },
 } as const satisfies Record<string, PostingReason>;
@@ -140,6 +143,7 @@ export function classifyPosting(input: PolicyInput): PolicyResult {
   if (input.shape === "restructure") reviews.push(REASONS.restructure);
   if (input.shape === "link") reviews.push(REASONS.counterpartLink);
   if (input.shape === "convert") reviews.push(REASONS.convertToTransfer);
+  if (input.shape === "adjust") reviews.push(REASONS.adjustSplit);
 
   const safe = isSafeEligible(input.postingKind, input.shape) && !ALWAYS_REVIEW_KINDS.has(input.postingKind) && reviews.length === 0;
   if (safe) {

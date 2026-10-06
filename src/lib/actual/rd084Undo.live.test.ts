@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { __configureNodeHostForTests, __resetNodeHostForTests, closeNodeRuntime, getNodeRuntime } from "./runtime/nodeHost";
 import { openServerTransport } from "./serverTransport";
+import { preflightOf } from "./transactionStructure";
 import { apiRequest } from "@/lib/api/client";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
 import type { ActualBenchTransport, SyncTargetTransactionInput } from "./transport";
@@ -511,6 +512,50 @@ live("RD-084 P1.6 undo and transfer write shapes (disposable budgets)", () => {
       }
       evidence[mode.name].t279 = out;
       trace(`${mode.name} t279 ${JSON.stringify(out)}`);
+    }
+  });
+
+  it("T314: an existing split's amounts change in place through Bench's transport, and change back exactly", async () => {
+    for (const mode of modes) {
+      const { accounts, categories } = mode.budget;
+      const lenderId = await lender(mode);
+      const tp = await mode.transferPayee(accounts.mortgage);
+      const id = await create(mode, { accountId: accounts.checking, date: day(), amount: -8300, payeeId: lenderId, categoryId: categories.loanPayment, notes: "bank note", importedId: `undo:adjust:${mode.name}:${run}` });
+      await mode.update(id, { subtransactions: [
+        { amount: -5000, category: null, payee: tp, notes: "Principal" },
+        { amount: -3300, category: categories.interest, payee: lenderId, notes: "Interest" },
+      ] });
+      await settleDirect(mode);
+      const split = await find(mode, accounts.checking, id);
+      const kids = (split?.subtransactions ?? []).map((c) => ({ ...c }));
+      const principal = kids.find((c) => c.transfer_id)!;
+      const interest = kids.find((c) => !c.transfer_id)!;
+      const counterpart = (await find(mode, accounts.mortgage, String(principal.transfer_id)))!;
+      const pre = (r: RawRow, parent: RawRow | null, accountId: string) => preflightOf(r as never, parent as never, accountId);
+      const input = {
+        parent: pre(split!, null, accounts.checking),
+        children: kids.map((c) => pre(c, split!, accounts.checking)),
+        counterpart: pre(counterpart, null, accounts.mortgage),
+        amounts: [{ id: principal.id, amount: -5200 }, { id: interest.id, amount: -3100 }],
+      };
+      const adjusted = await mode.transport.adjustSplitAmounts!(input);
+      const inspection = { accountId: accounts.checking, parentId: id, date: String(split!.date), before: kids.map((c) => ({ id: c.id, amount: c.amount })), after: input.amounts, counterpart: { accountId: accounts.mortgage, id: counterpart.id, childId: principal.id } };
+      const state = await mode.transport.inspectSplitAmounts!(inspection);
+      const now = await find(mode, accounts.checking, id);
+      const back = await mode.transport.adjustSplitAmounts!({
+        parent: pre(now!, null, accounts.checking),
+        children: (now?.subtransactions ?? []).map((c) => pre(c, now!, accounts.checking)),
+        counterpart: pre((await find(mode, accounts.mortgage, counterpart.id))!, null, accounts.mortgage),
+        amounts: kids.map((c) => ({ id: c.id, amount: c.amount })),
+      });
+      const restored = await mode.transport.inspectSplitAmounts!({ ...inspection, before: input.amounts, after: kids.map((c) => ({ id: c.id, amount: c.amount })) });
+      evidence[mode.name].t314 = { adjusted, state, back, restored };
+      trace(`${mode.name} t314 ${JSON.stringify(evidence[mode.name].t314)}`);
+      expect(state).toBe("applied-exact");
+      expect(restored).toBe("applied-exact");
+      expect(adjusted.counterpart).toEqual({ id: counterpart.id, amount: 5200 });
+      expect(back.counterpart).toEqual({ id: counterpart.id, amount: 5000 });
+      expect(adjusted.children.map((c) => c.id).sort()).toEqual(kids.map((c) => c.id).sort());
     }
   });
 

@@ -1,5 +1,6 @@
 import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import type { LinkTransferInput } from "@/lib/actual/transactionStructure";
+import { adjustInspection, adjustWrite } from "./adjustSplit";
 import { PostingNotApproved } from "./postingErrors";
 import { toRowState, toTransactionPreflight, type PostingOutputSnapshot } from "./snapshot";
 import { verifyConvertOutcome, verifyCreatedRows, verifyLinkOutcome, verifyRestoreOutcome, verifyRevertOutcome, verifySplitOutcome, verifyUnlinkOutcome } from "./verify";
@@ -97,6 +98,7 @@ export async function executeApprovedPosting(ticket: ApplyTicketView, ctx: Execu
     case "unlink": return applyUnlink(output, ctx, now);
     case "convert": return applyConvert(output, ctx, now);
     case "revert-convert": return applyRevert(output, ctx, now);
+    case "adjust-split": return applyAdjustSplit(output, ctx, now);
   }
 }
 
@@ -178,6 +180,24 @@ async function applyRevert(output: Extract<PostingOutputSnapshot, { kind: "rever
   const issues = verifyRevertOutcome(result);
   if (issues.length) return { status: "failed", error: { stage: "verify", issues, written: true } };
   return { status: "applied", actualIds: [output.converted.id], appliedAt: now() };
+}
+
+/** T314: change the split's amounts in one update (ids kept), then verify the split and its loan-side row. */
+async function applyAdjustSplit(output: Extract<PostingOutputSnapshot, { kind: "adjust-split" }>, ctx: ExecutorContext, now: () => string): Promise<ExecutorOutcome> {
+  if (!ctx.transport.adjustSplitAmounts || !ctx.transport.inspectSplitAmounts) return { status: "failed", error: { stage: "capability", message: "This connection cannot change a split's amounts.", written: false } };
+  try {
+    await ctx.transport.adjustSplitAmounts(adjustWrite(output));
+  } catch (error) {
+    return writeError("adjust-split", error);
+  }
+  let state;
+  try {
+    state = await ctx.transport.inspectSplitAmounts(adjustInspection(output));
+  } catch (error) {
+    return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
+  }
+  if (state !== "applied-exact") return { status: "failed", error: { stage: "verify", issues: [{ detail: state === "not-applied" ? "the split still has its old amounts" : "the split or its loan-side row does not hold the new amounts" }], written: true } };
+  return { status: "applied", actualIds: [output.parent.id, ...output.children.map((c) => c.id)], appliedAt: now() };
 }
 
 /** T125: re-read, marker check, create, re-read, recover by marker, verify. */

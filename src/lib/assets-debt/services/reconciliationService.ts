@@ -1,3 +1,4 @@
+import { paidOffState } from "./payoffState";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { getDebt } from "@/lib/app-db/debtRepository";
 import { listDebtAssumptions } from "@/lib/app-db/debtAssumptionRepository";
@@ -25,7 +26,12 @@ export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; compa
   const paid = asPaidFacts(db, input.debtId, input.comparisonDate, projected.model.terms);
   let modelMinor = scheduledMinor;
   let asPaidFrom: string | null = null;
-  if (paid) {
+  const paidOff = paidOffState(db, input.debtId);
+  if (paidOff && paidOff.paidDate <= input.comparisonDate) {
+    // Paid off: nothing is owed from that day on, whatever the schedule says.
+    modelMinor = 0;
+    asPaidFrom = paidOff.paidDate;
+  } else if (paid) {
     if (input.comparisonDate < paid.dueDate) {
       modelMinor = paid.balanceAt(input.comparisonDate);
     } else {
@@ -34,7 +40,7 @@ export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; compa
         from: "0001-01-01", to: input.comparisonDate, resolution: "events", offsetHistories: input.offsetHistories,
         startFrom: { date: paid.dueDate, principalMinor: opening, accruedInterestMinor: 0, carriedRemainder: null },
       });
-      if (fromPaid.ok && fromPaid.projection.ok) modelMinor = fromPaid.projection.events.filter((e) => e.date > paid.dueDate).at(-1)?.balanceAfterMinor ?? opening;
+      if (fromPaid.ok && fromPaid.projection.ok) modelMinor = withoutUnseenRepayments(fromPaid.projection.events, paid.dueDate, opening);
     }
     asPaidFrom = paid.paidDate;
   }
@@ -52,7 +58,7 @@ export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; compa
     currentFingerprint: fingerprint,
   });
   const health = reconciliationHealth({ expectedIntervalDays: debt.expectedObservationIntervalDays, graceDays: debt.lenderChargeGraceDays, latestObservationDate: observations[0]?.observedOn ?? null, asOfDate: input.comparisonDate });
-  return { ok: true as const, comparison, drift, health, lenderObservation, projectedBalanceVariance: null, fingerprint, scheduledMinor, asPaidFrom };
+  return { ok: true as const, comparison, drift, health, lenderObservation, projectedBalanceVariance: null, fingerprint, scheduledMinor, asPaidFrom, paidOffOn: paidOff?.paidDate ?? null };
 }
 
 /**
@@ -65,6 +71,24 @@ export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; compa
  * as written in Actual) and one-off extra payments and draws from Terms & Schedule, counted from the
  * latest lender restart or the opening. Null when no repayment has been applied or recorded yet.
  */
+/**
+ * The balance after the last repayment Actual holds: the schedule's own movements since its due date
+ * (rate changes, fees, draws, extra payments), but never a scheduled repayment, because a
+ * repayment that has fallen due and is not applied or recorded from Actual was not paid as far as
+ * Bench knows. Without this, a loan whose later repayments are missing in Actual would be shown as
+ * paid down by the schedule (to zero once its term has passed).
+ */
+function withoutUnseenRepayments(events: ReadonlyArray<{ date: string; eventType: string; balanceAfterMinor: number }>, dueDate: string, opening: number): number {
+  let balance = opening;
+  let previous = opening;
+  for (const event of events) {
+    if (event.date <= dueDate) continue;
+    if (event.eventType !== "repayment" && event.eventType !== "final-payment") balance += event.balanceAfterMinor - previous;
+    previous = event.balanceAfterMinor;
+  }
+  return balance;
+}
+
 function asPaidFacts(db: SqliteDatabase, debtId: string, through: string, terms: { openingDate: string; openingPrincipalMinor: number }) {
   const anchor = getEffectiveDebtAnchor(db, debtId);
   const base = anchor ? { date: anchor.anchorDate, principalMinor: anchor.principalMinor } : { date: terms.openingDate, principalMinor: terms.openingPrincipalMinor };
@@ -74,7 +98,7 @@ function asPaidFacts(db: SqliteDatabase, debtId: string, through: string, terms:
     const output = JSON.parse(posting.outputSnapshotJson) as PostingOutputSnapshot;
     const fact = output.kind === "restructure"
       ? { paidDate: output.before.date, principalMinor: output.components.find((c) => c.kind === "principal")?.amountMinor ?? 0 }
-      : output.kind === "claim" && output.recordedSplit ? { paidDate: output.recordedSplit.parent.date, principalMinor: output.recordedSplit.principalMinor } : null;
+      : (output.kind === "claim" && output.recordedSplit) || output.kind === "adjust-split" ? { paidDate: output.recordedSplit!.parent.date, principalMinor: output.recordedSplit!.principalMinor } : null;
     if (fact && fact.paidDate > base.date && fact.paidDate <= through) repayments.push({ ...fact, dueDate: posting.periodKey });
   }
   if (!repayments.length) return null;

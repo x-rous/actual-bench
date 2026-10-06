@@ -248,6 +248,17 @@ export function renderPreviewRows(output: PostingOutputSnapshot, directory: Prev
       if (side === "before") return [existingRow(directory, digits, output.converted), existingRow(directory, digits, output.counterpart)];
       return [existingRow(directory, digits, output.restoreTo)];
     }
+    case "adjust-split": {
+      // The same rows before and after; only the split lines' amounts (and the loan-side row's) change.
+      const amount = new Map(output.amounts.map((a) => [a.id, a.amountMinor]));
+      const transferChild = output.counterpart ? output.children.find((c) => c.transferId === output.counterpart!.id) : undefined;
+      const after = side === "after";
+      return [
+        existingRow(directory, digits, output.parent, { categoryName: "Split" }),
+        ...output.children.map((c) => existingRow(directory, digits, c, after ? { amountMinor: amount.get(c.id) ?? c.amountMinor } : {})),
+        ...(output.counterpart ? [existingRow(directory, digits, output.counterpart, after && transferChild ? { amountMinor: -(amount.get(transferChild.id) ?? transferChild.amountMinor) } : {})] : []),
+      ];
+    }
   }
 }
 

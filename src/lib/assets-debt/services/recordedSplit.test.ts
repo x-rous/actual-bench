@@ -4,7 +4,7 @@ import { listDebtTransactionLinks } from "@/lib/app-db/debtTransactionLinkReposi
 import { ACCOUNTS, CATEGORIES, byKind, createScenario } from "../testing/postingScenario";
 import { readMatchingHistory } from "../actual/ledgerPort";
 import { runDebtBacktest } from "./backtestService";
-import { approveAndRecordClaim } from "./postingWorkflowService";
+import { approveAndRecordClaim, overrideRepaymentSplit } from "./postingWorkflowService";
 import { reconcileDebt } from "./reconciliationService";
 
 jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
@@ -20,14 +20,14 @@ describe("a repayment already split in Actual", () => {
   const window = { from: "2024-02-01", to: "2024-02-29" };
 
   /** The calculated split for the period, then the same payment split by hand in Actual. */
-  async function splitByHand(extraInterestMinor: number) {
-    const probe = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+  async function splitByHand(extraInterestMinor: number, mode: "http" | "direct" = "http") {
+    const probe = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
     probe.seedPayment("2024-01-29");
     const [proposed] = byKind((await probe.preview(window)).postings, "repayment-split");
     if (proposed.output.kind !== "restructure") throw new Error("restructure");
     const calculatedInterest = proposed.output.components.find((c) => c.kind === "interest")!.amountMinor;
     resetAppDbForTests();
-    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    const s = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
     const payment = s.seedPayment("2024-01-29");
     const interest = calculatedInterest + extraInterestMinor;
     s.fake.editInActual(payment, { subtransactions: [
@@ -75,6 +75,91 @@ describe("a repayment already split in Actual", () => {
     const feb = result.periods.find((p) => p.expected.date === "2024-02-01");
     expect(feb?.status).toBe("unique");
     expect(result.summary.unsafe).toBe(0);
+  });
+});
+
+/**
+ * Step 2 (T314): changing the amounts of a split already in Actual. The edit becomes a Review
+ * change that rewrites the split's amounts in place (every id kept, the loan-side row following the
+ * principal); its undo puts Actual's amounts back exactly.
+ */
+describe.each(["http", "direct"] as const)("changing the amounts of a split already in Actual (%s)", (mode) => {
+  const window = { from: "2024-02-01", to: "2024-02-29" };
+
+  async function splitByHand(extraInterestMinor: number) {
+    const probe = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    probe.seedPayment("2024-01-29");
+    const [proposed] = byKind((await probe.preview(window)).postings, "repayment-split");
+    if (proposed.output.kind !== "restructure") throw new Error("restructure");
+    const calculatedInterest = proposed.output.components.find((c) => c.kind === "interest")!.amountMinor;
+    resetAppDbForTests();
+    const s = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    const payment = s.seedPayment("2024-01-29");
+    const interest = calculatedInterest + extraInterestMinor;
+    s.fake.editInActual(payment, { subtransactions: [
+      { amount: -(242915 - interest), payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), notes: "Principal" },
+      { amount: -interest, category: CATEGORIES.interest, notes: "Interest" },
+    ] });
+    return { s, payment, calculatedInterest, interest };
+  }
+
+  const splitInActual = (s: Awaited<ReturnType<typeof splitByHand>>["s"], payment: string) => {
+    const children = s.fake.rows().filter((r) => r.parent_id === payment).sort((a, b) => a.id.localeCompare(b.id));
+    const principal = children.find((c) => c.transfer_id)!;
+    return { ids: children.map((c) => c.id), amounts: children.map((c) => c.amount), principal, counterpart: s.fake.row(principal.transfer_id as string)! };
+  };
+
+  it("Reset to calculated becomes a Review change; applying rewrites the amounts in place and Undo puts Actual's back", async () => {
+    const { s, payment, calculatedInterest, interest } = await splitByHand(500);
+    const [recorded] = byKind((await s.preview(window)).postings, "repayment-split");
+    const before = splitInActual(s, payment);
+    const counterpartId = before.counterpart.id;
+
+    const edited = overrideRepaymentSplit(s.db, recorded.id, { interestMinor: calculatedInterest, reason: null }, "2024-06-01T00:00:01Z");
+    expect(edited).toMatchObject({ classification: "review", output: { kind: "adjust-split", edit: { actualInterestMinor: interest, calculatedInterestMinor: calculatedInterest, interestMinor: calculatedInterest } } });
+    expect(edited.reasons.map((r) => r.code)).toEqual(expect.arrayContaining(["edited-split", "adjust-split"]));
+    // A fresh preview keeps the edit (the split in Actual has not changed).
+    const [kept] = byKind((await s.preview(window)).postings, "repayment-split");
+    expect(kept.output).toMatchObject({ kind: "adjust-split", edit: { interestMinor: calculatedInterest } });
+
+    expect((await s.apply(kept)).posting.status).toBe("applied");
+    const after = splitInActual(s, payment);
+    expect(after.ids).toEqual(before.ids);
+    expect(after.counterpart.id).toBe(counterpartId);
+    expect(after.principal.amount).toBe(-(242915 - calculatedInterest));
+    expect(after.counterpart.amount).toBe(242915 - calculatedInterest);
+    expect(s.fake.row(payment)!.amount).toBe(-242915);
+    expect(listDebtTransactionLinks(s.db, s.debtId).map((l) => l.actualTransactionId)).toEqual([after.principal.id]);
+    // Applied: nothing more is proposed for the period, and the calculation uses the new principal.
+    expect(byKind((await s.preview(window)).postings, "repayment-split").filter((p) => p.status === "proposed")).toEqual([]);
+
+    const applied = byKind((await s.preview(window)).postings, "repayment-split")[0] ?? (await import("./proposalService")).listDebtPostings(s.db, s.debtId).find((p) => p.id === kept.id)!;
+    const reversal = s.undo(applied);
+    expect(reversal).toMatchObject({ classification: "review", output: { kind: "adjust-split", edit: null } });
+    expect((await s.apply(reversal)).posting.status).toBe("applied");
+    const restored = splitInActual(s, payment);
+    expect(restored.ids).toEqual(before.ids);
+    expect(restored.amounts).toEqual(before.amounts);
+    expect(restored.counterpart.id).toBe(counterpartId);
+    expect(restored.counterpart.amount).toBe(242915 - interest);
+    // Back to Actual's own split: recorded as it is again.
+    const [again] = byKind((await s.preview(window)).postings, "repayment-split").filter((p) => p.status === "proposed");
+    expect(again.output).toMatchObject({ kind: "claim", recordedSplit: expect.objectContaining({ interestMinor: interest }) });
+  });
+
+  it("Actual's own value goes back to recording it as it is; a far value needs a reason; recovery reads what landed", async () => {
+    const { s, interest, calculatedInterest } = await splitByHand(500);
+    const [recorded] = byKind((await s.preview(window)).postings, "repayment-split");
+    expect(() => overrideRepaymentSplit(s.db, recorded.id, { interestMinor: calculatedInterest + 900, reason: null })).toThrow(/reason/);
+    const edited = overrideRepaymentSplit(s.db, recorded.id, { interestMinor: calculatedInterest + 900, reason: "Lender statement" }, "2024-06-01T00:00:01Z");
+    expect(edited.output.kind).toBe("adjust-split");
+    const back = overrideRepaymentSplit(s.db, edited.id, { interestMinor: interest, reason: null }, "2024-06-01T00:00:02Z");
+    expect(back.output).toMatchObject({ kind: "claim", recordedSplit: expect.objectContaining({ interestMinor: interest }) });
+    // Recovery of an interrupted change: nothing landed yet, so it is reported as not applied.
+    const again = overrideRepaymentSplit(s.db, back.id, { interestMinor: calculatedInterest, reason: null }, "2024-06-01T00:00:03Z");
+    const { recoverAdjustSplit } = await import("./recovery");
+    if (again.output.kind !== "adjust-split") throw new Error("adjust");
+    expect((await recoverAdjustSplit(again.output, s.transport)).status).toBe("not-found");
   });
 });
 

@@ -253,6 +253,27 @@ export function planReversal(ctx: PlanningContext, original: ExistingPostingSumm
       policy: { blockers, reviews: extraReasons },
     });
   }
+  if (output.kind === "adjust-split") {
+    // T314: the same change back. The split as Bench left it, then every line's earlier amount.
+    const amount = new Map(output.amounts.map((a) => [a.id, a.amountMinor]));
+    const children = output.children.map((c) => ({ ...c, amountMinor: amount.get(c.id) ?? c.amountMinor }));
+    const transferChild = output.counterpart ? children.find((c) => c.transferId === output.counterpart!.id) : undefined;
+    const counterpart = output.counterpart && transferChild ? { ...output.counterpart, amountMinor: -transferChild.amountMinor } : output.counterpart;
+    const before = output.children;
+    const principalMinor = transferChild ? Math.abs(before.find((c) => c.id === transferChild.id)!.amountMinor) : 0;
+    return finalize(ctx, {
+      ...common, shape: "adjust", marker: null,
+      inputSnapshot: inputSnapshot(ctx, period, [output.parent, ...children, ...(counterpart ? [counterpart] : [])], { reversalOf: original.id }),
+      outputSnapshot: {
+        ...head, kind: "adjust-split", parent: output.parent, children, counterpart,
+        amounts: before.map((c) => ({ id: c.id, amountMinor: c.amountMinor })),
+        recordedSplit: { ...output.recordedSplit, children: before, principalMinor, interestMinor: Math.abs(output.parent.amountMinor) - principalMinor },
+        edit: null,
+        closing: null,
+      },
+      policy: { blockers, reviews: extraReasons },
+    });
+  }
   // An Undo is never reversed again; a new correction is planned instead.
   return finalize(ctx, {
     ...common, shape: "restructure", marker: null,

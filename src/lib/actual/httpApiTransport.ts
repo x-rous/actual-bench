@@ -73,6 +73,8 @@ import {
   verifySplit,
   convertToTransfer,
   restoreSplit,
+  adjustSplitAmounts,
+  inspectSplitAmounts,
   revertTransferConversion,
   unlinkTransfer,
 } from "./transactionStructure";
@@ -231,6 +233,8 @@ export function createHttpApiTransport(
     inspectTransferLink: (input) => inspectTransferLink(httpStructurePrimitives(connection), input),
     verifyRestructure: (input) => verifySplit(httpStructurePrimitives(connection), input),
     restoreSplit: (input) => restoreSplit(httpStructurePrimitives(connection), input),
+    adjustSplitAmounts: (input) => adjustSplitAmounts(httpStructurePrimitives(connection), input),
+    inspectSplitAmounts: (input) => inspectSplitAmounts(httpStructurePrimitives(connection), input),
     unlinkTransfer: (input) => unlinkTransfer(httpStructurePrimitives(connection), input),
     convertToTransfer: (input) => convertToTransfer(httpStructurePrimitives(connection), input),
     revertTransferConversion: (input) => revertTransferConversion(httpStructurePrimitives(connection), input),

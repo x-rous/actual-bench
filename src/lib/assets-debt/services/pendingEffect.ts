@@ -19,6 +19,12 @@ export function liabilityEffectMinor(output: PostingOutputSnapshot, liabilityAcc
       return output.expectedCounterpart.accountId === liabilityAccountId ? output.expectedCounterpart.amountMinor : 0;
     case "link":
       return output.counterpartBefore.accountId === liabilityAccountId ? output.expectedPairState.counterpartAmountMinor - output.counterpartBefore.amountMinor : 0;
+    case "adjust-split": {
+      // The loan-side row follows the transfer part's new amount.
+      const counterpart = output.counterpart;
+      const child = counterpart ? output.amounts.find((a) => output.children.some((c) => c.id === a.id && c.transferId === counterpart.id)) : undefined;
+      return counterpart && child && counterpart.accountId === liabilityAccountId ? -child.amountMinor - counterpart.amountMinor : 0;
+    }
     default:
       return 0;
   }

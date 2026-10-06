@@ -29,6 +29,7 @@ const repaymentRow = (r: ChangeRowModel) => !!r.posting && REPAYMENT_KINDS.has(S
 const edited = (r: ChangeRowModel) => {
   const o = r.posting?.output;
   if (o?.kind === "restructure") return !!o.override;
+  if (o?.kind === "adjust-split") return !!o.edit;
   return o?.kind === "claim" && !!o.recordedSplit && Math.abs(o.recordedSplit.interestMinor - o.recordedSplit.calculatedInterestMinor) > 1;
 };
 const days = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);

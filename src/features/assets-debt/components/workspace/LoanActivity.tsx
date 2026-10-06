@@ -74,6 +74,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   const [problem, setProblem] = useState<string | null>(null);
 
   const allRows = useMemo(() => buildChangeRows(postings.data ?? [], refresh.notices), [postings.data, refresh.notices]);
+  const paidOff = debt.paidOff ?? null;
   // Repayment matching at a glance (rev 4): every scheduled due date, joined with the rows above.
   const schedule = useQuery({
     queryKey: ["assets-debt", "card-schedule", debtId, debt.debt.currentRevision, today()],
@@ -83,7 +84,9 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   const rules = useQuery({ queryKey: ["assets-debt", "match-rules", debtId], queryFn: () => listMatchRules(debtId) });
   const matching = useMemo((): StripMatching | null => {
     if (!schedule.data?.ok) return null;
-    const cells = repaymentTimeline(schedule.data.events, allRows, today());
+    // Paid off: no repayment is expected after the one the payoff settled.
+    const events = paidOff ? schedule.data.events.filter((e) => e.date <= paidOff.dueDate) : schedule.data.events;
+    const cells = repaymentTimeline(events, allRows, today());
     const rule = (rules.data ?? []).find((r) => r.record.purpose === "repayment" && r.record.enabled) ?? null;
     const dates = rule?.conditions?.items.find((c) => c.kind === "expected-date");
     const source = rule?.conditions?.items.find((c) => c.kind === "source-account");
@@ -96,7 +99,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     }
     return {
       cells,
-      facts: matchingFacts(schedule.data.events, allRows, cells, today()),
+      facts: matchingFacts(events, allRows, cells, today()),
       accountName: directory?.accounts.find((a) => a.id === accountId)?.name ?? null,
       window: dates && "daysBefore" in dates ? { before: dates.daysBefore, after: dates.daysAfter } : null,
       ruleOn: rules.data ? !!rule : null,
@@ -104,7 +107,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
       unrecordedExtra: (refresh.unscheduled ?? []).filter((p) => !p.recorded).length,
       changedExtra: (refresh.unscheduled ?? []).filter((p) => p.changed).length,
     };
-  }, [schedule.data, allRows, rules.data, directory, debt.debt.paymentAccountId, refresh.unscheduled]);
+  }, [schedule.data, allRows, rules.data, directory, debt.debt.paymentAccountId, refresh.unscheduled, paidOff]);
   const counts = countByFilter(allRows);
   const rows = rowsFor(allRows, filter);
   const steps = useMemo(() => stepsOf(postings.data ?? []), [postings.data]);
@@ -137,6 +140,9 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     refresh.invalidate();
     await queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
     void queryClient.invalidateQueries({ queryKey: ["assets-debt", "attention"] });
+    // A payoff applied or undone changes whether the loan shows as paid off.
+    void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debt", debtId] });
+    void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
     await refresh.refresh();
   };
 
@@ -262,7 +268,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
       <div className="flex flex-col gap-3 px-4 py-4 text-sm">
-        <LoanStatusStrip refresh={refresh} counts={{ review: reviewCount, notApplied: reviewCount }} digits={digits} onRefresh={() => void refresh.refresh()} onStatements={() => setStatements(true)} matching={matching} />
+        <LoanStatusStrip refresh={refresh} paidOffOn={paidOff?.paidDate ?? null} counts={{ review: reviewCount, notApplied: reviewCount }} digits={digits} onRefresh={() => void refresh.refresh()} onStatements={() => setStatements(true)} matching={matching} />
         <ExtraPayments debtId={debtId} payments={refresh.unscheduled ?? []} digits={digits} scheduleDirty={scheduleDirty} onChanged={() => void afterWrite()} />
         {problem ? <p role="alert" className="text-xs text-destructive">{problem}</p> : null}
         {result ? (
@@ -306,7 +312,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
       ) : null}
 
       <Dialog open={confirming} onOpenChange={(open) => !open && setConfirming(false)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Apply {selectedRows.length} change{selectedRows.length === 1 ? "" : "s"} to Actual?</DialogTitle>
             <DialogDescription>
@@ -318,12 +324,12 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
               {sharedNotes.map((note) => <li key={note.text} className={note.tone === "warn" || note.tone === "bad" ? "text-amber-800 dark:text-amber-300" : ""}>{note.count === selectedRows.length ? (selectedRows.length > 1 ? `All ${note.count}: ` : "") : `${note.count} of ${selectedRows.length}: `}{note.text}</li>)}
             </ul>
           ) : null}
-          <div className="max-h-48 overflow-y-auto rounded border border-border">
+          <div className="max-h-[50vh] overflow-y-auto rounded border border-border">
             <table className="w-full text-xs">
-              <thead className="text-left text-muted-foreground"><tr><th scope="col" className="px-2 py-1 font-normal">Due</th><th scope="col" className="px-2 py-1 font-normal">Change</th></tr></thead>
+              <thead className="sticky top-0 bg-background text-left text-muted-foreground"><tr><th scope="col" className="px-3 py-1.5 font-normal">Due</th><th scope="col" className="px-3 py-1.5 font-normal">Change</th></tr></thead>
               <tbody>
                 {bulkSteps(selectedRows).map((step) => (
-                  <tr key={step.row.key} className="border-t border-border/60"><td className="px-2 py-1 tabular-nums">{step.row.dueDate}</td><td className="px-2 py-1">{previewDirectory ? changeHeadline(step.target, previewDirectory, digits) : ""}</td></tr>
+                  <tr key={step.row.key} className="border-t border-border/60"><td className="whitespace-nowrap px-3 py-1.5 tabular-nums">{step.row.dueDate}</td><td className="px-3 py-1.5">{previewDirectory ? changeHeadline(step.target, previewDirectory, digits) : ""}</td></tr>
                 ))}
               </tbody>
             </table>

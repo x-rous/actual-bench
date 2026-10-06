@@ -124,7 +124,7 @@ function Timeline({ cells }: { cells: DueCell[] }) {
   );
 }
 
-export function LoanStatusStrip({ refresh, counts, digits, onRefresh, onStatements, matching }: { refresh: RefreshState; counts: { review: number; notApplied: number }; digits: number; onRefresh: () => void; onStatements: () => void; /** Repayment matching at a glance (rev 4); absent until the schedule is known. */ matching?: StripMatching | null }) {
+export function LoanStatusStrip({ refresh, counts, digits, onRefresh, onStatements, matching, paidOffOn }: { refresh: RefreshState; counts: { review: number; notApplied: number }; digits: number; onRefresh: () => void; onStatements: () => void; /** Repayment matching at a glance (rev 4); absent until the schedule is known. */ matching?: StripMatching | null; /** The day an applied payoff cleared the loan (owner decision 2026-10-07). */ paidOffOn?: string | null }) {
   const { status } = refresh;
   const state = stripState(status, counts, digits, refresh.driftExplained);
   const Icon = state.tone === "ok" ? CheckCircle2 : AlertTriangle;
@@ -132,6 +132,7 @@ export function LoanStatusStrip({ refresh, counts, digits, onRefresh, onStatemen
   return (
     <section aria-label="Loan status" className={cn("flex flex-col gap-2 rounded-lg border p-3 text-sm", state.tone === "problem" ? "border-destructive/50" : state.tone === "attention" ? "border-amber-500/50" : "border-border")}>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {paidOffOn ? <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"><CheckCircle2 aria-hidden="true" className="size-3.5" />Paid off on {shortDay(paidOffOn)}</span> : null}
         <dl className="flex flex-wrap gap-x-6 gap-y-1">
           <div className="flex gap-1.5"><dt className="text-muted-foreground">Actual</dt><dd className="font-semibold tabular-nums">{show(status?.actualMinor ?? null)}</dd></div>
           <div className="flex gap-1.5">
@@ -174,7 +175,7 @@ export function LoanStatusStrip({ refresh, counts, digits, onRefresh, onStatemen
           <Timeline cells={matching.cells} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Fact label="Next expected" sub={matching.accountName ? `from ${matching.accountName}${matching.window ? `, ${matching.window.before} days early to ${matching.window.after} late` : ""}` : undefined}>
-              {matching.facts.next ? <><span className="font-semibold tabular-nums">{formatAmount(matching.facts.next.amountMinor, digits)}</span> on {shortDay(matching.facts.next.date)}</> : "No more repayments"}
+              {matching.facts.next ? <><span className="font-semibold tabular-nums">{formatAmount(matching.facts.next.amountMinor, digits)}</span> on {shortDay(matching.facts.next.date)}</> : paidOffOn ? "None: the loan is paid off" : "No more repayments"}
             </Fact>
             <Fact label="Last matched" sub={matching.facts.averageEarlyDays !== null ? (matching.facts.averageEarlyDays >= 0 ? `paid ${matching.facts.averageEarlyDays} day${matching.facts.averageEarlyDays === 1 ? "" : "s"} early on average` : `paid ${-matching.facts.averageEarlyDays} days late on average`) : undefined}>
               {matching.facts.lastMatched ? <>{shortDay(matching.facts.lastMatched.paidDate)} <span className="text-muted-foreground">for {shortDay(matching.facts.lastMatched.dueDate)}</span></> : "Nothing matched yet"}

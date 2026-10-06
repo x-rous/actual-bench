@@ -17,6 +17,7 @@ import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import { archiveDebt, createDebt, DebtApiError, deleteDebtPermanently, getDebt, listDebts, listMatchRules, updateDebt } from "../lib/debtsApi";
 import { detailToStates, newSimulation, newTracking, statesToSaveInput, summarizeProfile, type SaveIssue, type SimulationState, type TrackingState } from "../lib/simulatorModel";
 import { LOANS_PATH, loanPath } from "../lib/routes";
+import { afterMatchingSetup, setUpRepaymentMatching, type AutoMatchingResult } from "../lib/autoMatching";
 import { useAccountDirectory } from "../lib/useAccountDirectory";
 import { SAVE_BOUNDARY } from "./saveBoundary";
 import { ScheduleControls, SimulatorView } from "./simulator/SimulatorView";
@@ -44,6 +45,15 @@ import { WorkspaceFrame, workspaceTabFor, workspaceTabSlug, type WorkspaceTab } 
 const today = () => new Date().toISOString().slice(0, 10);
 const storageKey = (connectionId: string, budget: string) => `assets-debt:new-loan:${connectionId}:${budget}`;
 const currencyKey = (budget: string) => `assets-debt:currency:${budget}`;
+
+/** The automatic matching setup never stops a save: a failure leaves the usual required step. */
+async function autoMatch(detail: DebtDetail, transport: ReturnType<typeof getTransport>): Promise<AutoMatchingResult | null> {
+  try {
+    return await setUpRepaymentMatching(detail, transport);
+  } catch {
+    return null;
+  }
+}
 
 function readSession<T>(key: string): T | null {
   try {
@@ -130,9 +140,10 @@ export function NewLoanView() {
       const built = statesToSaveInput(sim, { ...tracking, status }, budget, strategyAdvice(sim).recommended);
       if (!built.ok) throw new DebtApiError("invalid", 400, built.issues);
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
-      return createDebt(built.input, directory.data);
+      const detail = await createDebt(built.input, directory.data);
+      return { detail, matching: connection ? await autoMatch(detail, getTransport(connection)) : null };
     },
-    onSuccess: (detail: DebtDetail) => {
+    onSuccess: ({ detail, matching }: { detail: DebtDetail; matching: AutoMatchingResult | null }) => {
       try {
         if (key) sessionStorage.removeItem(key);
         if (budget && sim) localStorage.setItem(currencyKey(budget), sim.currency);
@@ -141,7 +152,9 @@ export function NewLoanView() {
       }
       void queryClient.invalidateQueries({ queryKey: ["assets-debt"] });
       toast.success(detail.debt.status === "active" ? "Loan added to Assets & Debt" : "Draft saved");
-      router.push(loanPath(detail.debt.id));
+      const landing = matching ? afterMatchingSetup(matching, detail.debt.id, loanPath) : null;
+      if (landing?.message) (landing.tone === "success" ? toast.success : toast.warning)(landing.message);
+      router.push(landing?.href ?? loanPath(detail.debt.id));
     },
     onError: (error) => setIssues(error instanceof DebtApiError && error.issues.length ? error.issues : [{ field: "(save)", message: error instanceof Error ? error.message : "The loan could not be saved" }]),
   });
@@ -243,22 +256,34 @@ export function LoanView({ id }: { id: string }) {
   const activatable = checklist.length > 0 && loanSettingsComplete(checklist);
 
   const save = useMutation({
-    mutationFn: async () => {
+    // `leaving`: saved on the way out of the page; read in onSuccess.
+    mutationFn: async (options?: { leaving?: boolean }) => {
+      void options;
       if (!sim || !tracking || !detail) throw new Error("Not ready");
       // A draft becomes active on the first save with its loan settings complete (owner decision 2026-10-05).
       const status = tracking.status === "draft" && activatable ? "active" : tracking.status;
       const built = statesToSaveInput(sim, { ...tracking, status }, detail.debt.budgetSyncId, strategyAdvice(sim).recommended);
       if (!built.ok) throw new DebtApiError("invalid", 400, built.issues);
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
-      return updateDebt(id, built.input, directory.data);
+      const next = await updateDebt(id, built.input, directory.data);
+      // A loan saved active with its accounts and no matching rule yet gets the suggested one (owner decision 2026-10-06).
+      const matching = connection && next.debt.status === "active" && rules.data?.length === 0 ? await autoMatch(next, getTransport(connection)) : null;
+      return { next, matching };
     },
-    onSuccess: (next) => {
+    onSuccess: ({ next, matching }, options) => {
       setIssues([]);
       toast.success(detail?.debt.status === "draft" && next.debt.status === "active"
         ? "Saved. The loan is now active."
         : next.debt.currentRevision === detail?.debt.currentRevision ? "Saved: no change to the calculation" : `Saved as revision ${next.debt.currentRevision}`);
       queryClient.setQueryData(["assets-debt", "debt", id], next);
       void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
+      const landing = matching ? afterMatchingSetup(matching, id, loanPath) : null;
+      if (landing?.href) {
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "match-rules", id] });
+        if (landing.message) (landing.tone === "success" ? toast.success : toast.warning)(landing.message);
+        // Saving on the way out of the page: the rule is set up, but the user's navigation wins.
+        if (!options?.leaving) router.replace(landing.href);
+      }
     },
     onError: (error) => setIssues(error instanceof DebtApiError && error.issues.length ? error.issues : [{ field: "(save)", message: error instanceof Error ? error.message : "The loan could not be saved" }]),
   });
@@ -309,7 +334,8 @@ export function LoanView({ id }: { id: string }) {
     ? "Archived: read-only"
     : dirty ? "Unsaved changes"
       : draft ? (activatable ? "Setup complete · not active yet" : `Setup incomplete · ${done} of ${checklist.length}`)
-        : done < checklist.length ? `Active · setup ${done} of ${checklist.length}` : `Active · revision ${detail.debt.currentRevision}`;
+        : detail.paidOff ? `Paid off ${detail.paidOff.paidDate} · revision ${detail.debt.currentRevision}`
+          : done < checklist.length ? `Active · setup ${done} of ${checklist.length}` : `Active · revision ${detail.debt.currentRevision}`;
   const actions = (
     <>
       {tab === "calculation" ? <ScheduleControls comparing={comparing} onComparingChange={setComparing} onDialog={setScheduleDialog} /> : null}
@@ -322,7 +348,7 @@ export function LoanView({ id }: { id: string }) {
         </Button>
       ) : null}
       {!readOnly && (dirty || tab !== "activity" || (draft && activatable)) ? (
-        <Button type="button" size="sm" disabled={(!dirty && !(draft && activatable)) || save.isPending} onClick={() => save.mutate()}>
+        <Button type="button" size="sm" disabled={(!dirty && !(draft && activatable)) || save.isPending} onClick={() => save.mutate(undefined)}>
           {draft && activatable ? "Save and activate" : "Save changes"}
         </Button>
       ) : null}
@@ -353,7 +379,7 @@ export function LoanView({ id }: { id: string }) {
       dirty={dirty}
       onSaveAndLeave={async () => {
         try {
-          await save.mutateAsync();
+          await save.mutateAsync({ leaving: true });
           return true;
         } catch {
           return false;

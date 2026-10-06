@@ -1,3 +1,4 @@
+import { adjustInspection } from "../adjustSplit";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import { compareRowToSnapshot, indexReadRows, toTransactionPreflight, type PostingOutputSnapshot, type RowSnapshot } from "../snapshot";
 
@@ -81,6 +82,7 @@ export async function recoverPosting(output: PostingOutputSnapshot, transport: A
     case "unlink": return recoverUnlink(output, transport);
     case "convert": return recoverConvert(output, transport);
     case "revert-convert": return recoverRevert(output, transport);
+    case "adjust-split": return recoverAdjustSplit(output, transport);
   }
 }
 
@@ -138,4 +140,13 @@ export async function recoverRevert(output: Extract<PostingOutputSnapshot, { kin
   if (same(output.restoreTo, payment) && !now.has(output.counterpart.id)) return { status: "applied", actualIds: [output.converted.id] };
   if (same(output.converted, payment) && now.has(output.counterpart.id)) return { status: "not-found", reason: { code: "undo-not-applied", text: "The undo did not reach Actual. Review it again before applying." } };
   return { status: "review", reason: HALFWAY };
+}
+
+/** T314: the split holds the new amounts (applied), still the old ones (nothing landed), or neither. */
+export async function recoverAdjustSplit(output: Extract<PostingOutputSnapshot, { kind: "adjust-split" }>, transport: ActualBenchTransport): Promise<RecoveryResult> {
+  if (!transport.inspectSplitAmounts) return { status: "review", reason: { code: "verify-unavailable", text: "This connection cannot check a split's amounts. Check the split in Actual." } };
+  const state = await transport.inspectSplitAmounts(adjustInspection(output));
+  if (state === "applied-exact") return { status: "applied", actualIds: [output.parent.id, ...output.children.map((c) => c.id)] };
+  if (state === "not-applied") return { status: "not-found", reason: { code: "adjust-not-applied", text: "The new amounts did not reach Actual. Review the change again before applying it." } };
+  return { status: "review", reason: { code: "adjust-changed", text: "The split in Actual holds neither the old nor the new amounts. Check it in Actual; Bench will not change it again." } };
 }

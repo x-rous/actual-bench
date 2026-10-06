@@ -52,9 +52,27 @@ export type RecommendationInput = {
   expectedPaymentMinor: number | null;
   /** The debt's configured tolerance (drift tolerance), used as the amount tolerance. */
   toleranceMinor: number;
+  /** How often repayments fall due; sets how many days either side of a due date to look. */
+  repaymentFrequency?: string | null;
 };
 
 export const DEFAULT_DAYS = { repayment: { early: 3, late: 3 }, lender: { early: 5, late: 5 } } as const;
+
+/**
+ * Days either side of a due date the suggested repayment rule looks (owner decision 2026-10-06):
+ * wide enough for a payment made early or late, never wide enough to reach the next repayment.
+ */
+export function repaymentDays(frequency: string | null | undefined): { early: number; late: number } {
+  switch (frequency) {
+    case "weekly": return { early: 2, late: 2 };
+    case "fortnightly":
+    case "semi-monthly": return { early: 4, late: 4 };
+    case "monthly":
+    case "quarterly":
+    case "annual": return { early: 10, late: 10 };
+    default: return DEFAULT_DAYS.repayment;
+  }
+}
 
 function base(sourceAccountId: string): MatchingSettings {
   return {
@@ -75,8 +93,8 @@ export function recommendedSettings(input: RecommendationInput): MatchingSetting
       amount: input.expectedPaymentMinor !== null && input.expectedPaymentMinor > 0
         ? { mode: "approximate", amountMinor: input.expectedPaymentMinor, tolerance: { kind: "absolute", amountMinor: Math.max(0, input.toleranceMinor) } }
         : { mode: "any" },
-      daysEarly: DEFAULT_DAYS.repayment.early,
-      daysLate: DEFAULT_DAYS.repayment.late,
+      daysEarly: repaymentDays(input.repaymentFrequency).early,
+      daysLate: repaymentDays(input.repaymentFrequency).late,
     };
   }
   return {

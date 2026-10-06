@@ -41,6 +41,7 @@ export function useMatchingContext(debtId: string) {
     signConvention: detail.data?.debt.signConvention === "positive-is-debt" ? "positive-is-debt" : "negative-is-debt",
     expectedPaymentMinor: contractualPaymentMinor ?? projectedPaymentMinor,
     toleranceMinor: detail.data?.debt.driftToleranceMinor ?? 100,
+    repaymentFrequency: detail.data?.config.ok ? detail.data.config.config.profile?.repaymentFrequency ?? null : null,
   }), [detail.data, contractualPaymentMinor, projectedPaymentMinor]);
   const defaultSource = detail.data?.debt.paymentAccountId ?? directory.data?.accounts.find((account) => !account.closed)?.id ?? "";
   return {

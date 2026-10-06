@@ -28,13 +28,24 @@ describe("calculated as paid", () => {
     expect(after.comparison.modelMinor).toBe(split.output.closing.principalMinor);
     expect(after.scheduledMinor).toBe(before.scheduledMinor);
 
-    // A month on, exactly one more scheduled repayment counts (the early one is not scheduled again).
+    // A month on, the March repayment has fallen due but is not in Actual: it is not counted as paid
+    // (the schedule moves on, the calculation as paid does not).
     const later = reconcileDebt(s.db, { debtId: s.debtId, comparisonDate: "2024-03-15", actualBalanceMinor: 0 });
     if (!later.ok) throw new Error("reconcile");
-    const oneScheduledPrincipal = before.scheduledMinor - later.scheduledMinor;
-    const asPaidStep = split.output.closing.principalMinor - (later.comparison.modelMinor ?? 0);
-    expect(asPaidStep).toBeGreaterThan(oneScheduledPrincipal * 0.5);
-    expect(asPaidStep).toBeLessThan(oneScheduledPrincipal * 1.5);
+    expect(later.scheduledMinor).toBeLessThan(before.scheduledMinor);
+    expect(later.comparison.modelMinor).toBe(split.output.closing.principalMinor);
+  });
+
+  it("long after the term, missing repayments are not paid down by the schedule (it never shows zero for unpaid months)", async () => {
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    s.seedPayment("2024-01-29");
+    const [split] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
+    if (split.output.kind !== "restructure" || !split.output.closing) throw new Error("closing");
+    expect((await s.apply(split)).posting.status).toBe("applied");
+    const farLater = reconcileDebt(s.db, { debtId: s.debtId, comparisonDate: "2060-01-01", actualBalanceMinor: 0 });
+    if (!farLater.ok) throw new Error("reconcile");
+    expect(farLater.scheduledMinor).toBe(0);
+    expect(farLater.comparison.modelMinor).toBe(split.output.closing.principalMinor);
   });
 
   it("a new revision (bookkeeping or a calculation change) keeps the repayments applied in Actual as paid: they are facts", async () => {

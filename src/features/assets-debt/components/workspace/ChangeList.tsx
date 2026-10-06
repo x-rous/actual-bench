@@ -57,6 +57,7 @@ export function nowSummary(posting: PostingView | null, directory: PreviewDirect
     case "convert": return categoryName(directory, o.before.categoryId) ?? "Uncategorized";
     case "link": return "Not linked";
     case "claim": return o.recordedSplit ? "Split in Actual" : "Transfer to loan";
+    case "adjust-split": return "Split in Actual";
     case "create": return "Not in Actual";
     default: return "";
   }
@@ -67,12 +68,13 @@ export function afterSummary(posting: PostingView | null, digits: number): strin
   if (!posting) return "";
   const o = posting.output;
   switch (o.kind) {
-    case "restructure": return o.components.map((c) => `${c.kind.charAt(0).toUpperCase()}${c.kind.slice(1)} ${formatAmount(c.amountMinor, digits)}`).join(" · ") + (o.override ? " (edited)" : "");
+    case "restructure": return (o.payoff ? "Payoff: " : "") + o.components.map((c) => `${c.kind.charAt(0).toUpperCase()}${c.kind.slice(1)} ${formatAmount(c.amountMinor, digits)}`).join(" · ") + (o.override ? " (edited)" : "");
     case "convert": return "Transfer to loan";
     case "link": return "Linked to the lender's row";
     case "claim":
       if (o.recordedSplit) return `Principal ${formatAmount(o.recordedSplit.principalMinor, digits)} · Interest ${formatAmount(o.recordedSplit.interestMinor, digits)}${Math.abs(o.recordedSplit.interestMinor - o.recordedSplit.calculatedInterestMinor) > 1 ? " (edited)" : ""}`;
       return o.release ? "Link released" : "Recorded as the loan transfer";
+    case "adjust-split": return `Principal ${formatAmount(o.recordedSplit.principalMinor, digits)} · Interest ${formatAmount(o.recordedSplit.interestMinor, digits)}${o.edit ? " (edited)" : ""}`;
     case "create": return `${postingTitle(posting)} ${formatAmount(Math.abs(o.operations.reduce((sum, op) => sum + op.amountMinor, 0)), digits)}`;
     default: return "";
   }

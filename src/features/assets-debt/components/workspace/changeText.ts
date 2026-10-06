@@ -30,7 +30,7 @@ export function changeHeadline(posting: PostingView, directory: PreviewDirectory
   const money = (minor: number) => formatAmount(Math.abs(minor), digits);
   switch (o.kind) {
     case "restructure":
-      return `Split into ${o.components.map((c) => `${cap(c.kind)} ${money(c.amountMinor)}`).join(" + ")}`;
+      return `${o.payoff ? "Pay off the loan: split into" : "Split into"} ${o.components.map((c) => `${cap(c.kind)} ${money(c.amountMinor)}`).join(" + ")}`;
     case "link":
       return `Link the lender's ${money(o.counterpartBefore.amountMinor)} on ${accountName(directory, o.counterpartBefore.accountId)} (${day(o.counterpartBefore.date)}) to this payment`;
     case "convert":
@@ -54,6 +54,12 @@ export function changeHeadline(posting: PostingView, directory: PreviewDirectory
       return "Detach the lender's row from this payment";
     case "revert-convert":
       return "Put the payment back as it was, not a transfer";
+    case "adjust-split": {
+      const r = o.recordedSplit;
+      return o.edit
+        ? `Change the split in Actual to Principal ${money(r.principalMinor)} + Interest ${money(r.interestMinor)}`
+        : `Put the split back to Principal ${money(r.principalMinor)} + Interest ${money(r.interestMinor)}`;
+    }
   }
 }
 
@@ -71,6 +77,7 @@ export function changeContext(posting: PostingView): ChangeContext | null {
   if (status === "indeterminate") return { text: "Bench can't tell whether the change reached Actual. Check Actual first; Bench then finishes the change or confirms it never landed.", tone: "warn" };
   if (status !== "proposed") return null;
   if (posting.classification === "blocked") return { text: posting.reasons[0]?.text ?? "This change cannot be applied yet.", tone: "bad" };
+  if (o.kind === "restructure" && o.payoff) return { text: `${text(posting, "payoff-figures")} Applying records the payoff; the loan then shows as paid off and Bench stops expecting repayments. You can undo this later.`, tone: "warn" };
   if (has(posting, "edited-split")) return { text: text(posting, "edited-split"), tone: "warn" };
   if (has(posting, "recorded-split-differs")) return { text: text(posting, "recorded-split-differs"), tone: "warn" };
   if (has(posting, "earlier-repayment-assumed")) return { text: text(posting, "earlier-repayment-assumed"), tone: "warn" };
@@ -89,6 +96,10 @@ export function changeContext(posting: PostingView): ChangeContext | null {
     case "restore-split": return { text: "Restores the payment exactly as it was before Bench split it.", tone: "neutral" };
     case "unlink": return { text: "Restores both rows exactly as they were before Bench linked them.", tone: "neutral" };
     case "revert-convert": return { text: "Restores the payment exactly as it was before Bench made it a transfer.", tone: "neutral" };
+    case "adjust-split":
+      return o.edit
+        ? { text: "Changes the amounts of the split already in Actual; the loan-side row follows the principal. Nothing else changes, and you can undo this later.", tone: "neutral" }
+        : { text: "Puts the split's amounts back exactly as they were before Bench changed them.", tone: "neutral" };
     case "claim":
       if (o.recordedSplit) return { text: "Already split in Actual the way this loan is recorded. Nothing changes in Actual; Bench records it and uses these figures from now on.", tone: "neutral" };
       return o.release ? null : { text: "Nothing changes in Actual. Bench counts this row so it is not added twice.", tone: "quiet" };

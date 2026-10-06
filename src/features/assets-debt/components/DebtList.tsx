@@ -38,6 +38,7 @@ export function statusOf(debt: DebtSummary): DebtStatusView {
     const label = debt.blocked.code === "invalid-config" ? "Blocked: the saved configuration cannot be used" : "Blocked: configured by a newer version of Actual Bench";
     return { label, icon: Ban, tone: "text-destructive" };
   }
+  if (debt.status === "active" && debt.paidOffOn) return { label: "Paid off", icon: CircleCheck, tone: "text-emerald-700 dark:text-emerald-300" };
   if (debt.status === "active") return { label: "Active", icon: CircleCheck, tone: "text-foreground" };
   if (debt.status === "archived") return { label: "Archived", icon: Archive, tone: "text-muted-foreground" };
   if (debt.status === "draft") return { label: "Draft", icon: CircleDashed, tone: "text-muted-foreground" };
@@ -169,10 +170,10 @@ function DebtCard({ debt, status, type, strategy, attention, href }: { debt: Deb
           </span>
           {progress ? (
             <span className="grid grid-cols-2 gap-3 border-t border-border/60 pt-2 sm:grid-cols-4">
-              <Fact label="Next payment" value={progress.next ? `${money(progress.next.amountMinor)} on ${shortDay(progress.next.date)}` : "None scheduled"} />
-              <Fact label="Payments left" value={String(progress.totalPayments - progress.paymentsMade)} />
+              <Fact label="Next payment" value={debt.paidOffOn ? "None: paid off" : progress.next ? `${money(progress.next.amountMinor)} on ${shortDay(progress.next.date)}` : "None scheduled"} />
+              <Fact label="Payments left" value={debt.paidOffOn ? "0" : String(progress.totalPayments - progress.paymentsMade)} />
               <Fact label="Interest paid so far" value={money(progress.interestToDateMinor)} />
-              <Fact label="Paid off" value={progress.payoffDate ? monthYear(progress.payoffDate) : "Not within the projection"} />
+              <Fact label="Paid off" value={debt.paidOffOn ? shortDay(debt.paidOffOn) : progress.payoffDate ? monthYear(progress.payoffDate) : "Not within the projection"} />
             </span>
           ) : schedule.isError || (schedule.data && !schedule.data.ok) ? <span className="text-xs text-muted-foreground">The schedule could not be calculated for this card. Open the loan for details.</span> : null}
         </>

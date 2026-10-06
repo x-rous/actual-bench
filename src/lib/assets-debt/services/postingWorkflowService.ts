@@ -73,6 +73,7 @@ export function rowsToCheck(output: PostingOutputSnapshot): RowSnapshot[] {
     case "unlink": return [output.source, output.counterpart];
     case "convert": return [output.before];
     case "revert-convert": return [output.converted, output.counterpart];
+    case "adjust-split": return [output.parent, ...output.children, ...(output.counterpart ? [output.counterpart] : [])];
   }
 }
 
@@ -153,6 +154,11 @@ function linkRoles(posting: FinancialPostingRecord, output: PostingOutputSnapsho
     ];
   }
   if (output.kind === "convert") return [{ id: output.before.id, parentId: null, role: "repayment" }];
+  // T314: the split keeps its ids, so its transfer part is the repayment as before. Its undo links nothing new.
+  if (output.kind === "adjust-split" && output.edit) {
+    const principal = output.children.find((c) => c.transferId);
+    return principal ? [{ id: principal.id, parentId: output.parent.id, role: "repayment" }] : [];
+  }
   return [];
 }
 
@@ -259,6 +265,7 @@ export function overrideRepaymentSplit(
   if (posting.postingKind !== "repayment-split") throw new AppDbValidationError("Only a repayment split's amounts can be edited");
   if (posting.classification === "blocked") throw new AppDbValidationError("A blocked proposal cannot be edited; resolve it first");
   const output = outputOf(posting);
+  if ((output.kind === "claim" && output.recordedSplit) || output.kind === "adjust-split") return overrideRecordedSplit(db, posting, output, input, now);
   if (output.kind !== "restructure") throw new AppDbValidationError("Only a repayment split's amounts can be edited");
   const interestMinor = input.interestMinor;
   if (!Number.isSafeInteger(interestMinor) || interestMinor < 0) throw new AppDbValidationError("The interest must be zero or more, in whole minor units");
@@ -311,6 +318,79 @@ export function overrideRepaymentSplit(
     inputSnapshot: nextInput, engineVersions: posting.engineVersions, outputSnapshot: nextOutput,
     // An edited proposal is always Review (owner refinement 2).
     classification: "review", reasons, idempotencyMarker: posting.idempotencyMarker, reversalOf: null,
+  }, now);
+  return postingView(result.posting, result.reused);
+}
+
+/**
+ * The user's edit of a split already in Actual (T314). Actual's figures are the starting point; a
+ * value other than Actual's interest becomes an adjust-split proposal that rewrites the split's
+ * amounts in Actual (always Review), and Actual's own value again goes back to recording the split
+ * as it is. More than one minor unit from Bench's calculation needs a reason, as for Bench's splits.
+ */
+function overrideRecordedSplit(
+  db: SqliteDatabase,
+  posting: FinancialPostingRecord,
+  output: Extract<PostingOutputSnapshot, { kind: "claim" | "adjust-split" }>,
+  input: { interestMinor: number; reason?: string | null },
+  now: string
+): PostingView {
+  const recorded = output.kind === "claim" ? output.recordedSplit! : output.recordedSplit;
+  const children = output.kind === "claim" ? recorded.children : output.children;
+  const counterpart = output.kind === "claim" ? recorded.counterpart ?? null : output.counterpart;
+  const parent = recorded.parent;
+  const principalChild = children.find((c) => c.transferId);
+  const interestChild = children.find((c) => c !== principalChild);
+  if (children.length !== 2 || !principalChild || !interestChild) throw new AppDbValidationError("Only a split of one principal transfer and one interest line can be edited here; change it in Actual instead");
+  const payment = Math.abs(parent.amountMinor);
+  const actualInterest = payment - Math.abs(principalChild.amountMinor);
+  const calculated = recorded.calculatedInterestMinor;
+  const interestMinor = input.interestMinor;
+  if (!Number.isSafeInteger(interestMinor) || interestMinor < 0) throw new AppDbValidationError("The interest must be zero or more, in whole minor units");
+  const principalMinor = payment - interestMinor;
+  if (principalMinor <= 0) throw new AppDbValidationError("The interest is larger than the payment allows; principal would not be positive");
+  if (interestMinor === 0) throw new AppDbValidationError("A split line cannot be zero; remove the split in Actual instead");
+  const reason = input.reason?.trim() || null;
+  if (Math.abs(interestMinor - calculated) > OVERRIDE_NO_REASON_MINOR && interestMinor !== actualInterest && !reason) {
+    throw new AppDbValidationError("Give a short reason for a change of more than one minor unit");
+  }
+  if (reason && reason.length > 200) throw new AppDbValidationError("Keep the reason under 200 characters");
+  const digits = getDebt(db, posting.subjectId)?.currencyMinorDigits ?? 2;
+  const fmt = (minor: number) => (minor / 10 ** digits).toFixed(digits);
+  const previousPrincipal = recorded.principalMinor;
+  const closing = output.closing ? { ...output.closing, principalMinor: output.closing.principalMinor + previousPrincipal - principalMinor } : null;
+  const nextRecorded = { ...recorded, children, counterpart, principalMinor, interestMinor };
+  const head = { format: output.format, version: output.version };
+  const reasons = posting.reasons.filter((r) => !["edited-split", "recorded-split-differs", "recorded-split", "adjust-split"].includes(r.code));
+  let nextOutput: PostingOutputSnapshot;
+  if (interestMinor === actualInterest) {
+    nextOutput = { ...head, kind: "claim", rows: [principalChild], role: "repayment", closing, recordedSplit: nextRecorded };
+    if (Math.abs(interestMinor - calculated) > OVERRIDE_NO_REASON_MINOR) reasons.push({ code: "recorded-split-differs", text: `Edited in Actual: calculated interest ${fmt(calculated)}, Actual has ${fmt(interestMinor)}.` });
+  } else {
+    if (!counterpart) throw new AppDbValidationError("Bench cannot see the loan-side row of this split's transfer part; widen the period shown and refresh first");
+    const sign = parent.amountMinor < 0 ? -1 : 1;
+    nextOutput = {
+      ...head, kind: "adjust-split", parent, children, counterpart,
+      amounts: [{ id: principalChild.id, amountMinor: sign * principalMinor }, { id: interestChild.id, amountMinor: sign * interestMinor }],
+      recordedSplit: nextRecorded,
+      edit: { actualInterestMinor: actualInterest, calculatedInterestMinor: calculated, interestMinor, reason },
+      closing,
+    };
+    reasons.push({ code: "edited-split", text: `Edited: Actual has interest ${fmt(actualInterest)}, calculated ${fmt(calculated)}, your value ${fmt(interestMinor)}${reason ? ` (${reason})` : ""}.` });
+    reasons.push({ code: "adjust-split", text: "Changes the amounts of a split already in Actual, so it needs your review." });
+  }
+  const inputSnapshot = JSON.parse(posting.inputSnapshotJson) as PostingInputSnapshot;
+  const observed = inputSnapshot.observedRepayments;
+  const nextInput: PostingInputSnapshot = {
+    ...inputSnapshot,
+    ...(observed ? { observedRepayments: { ...observed, repayments: observed.repayments.map((r, i) => (i === observed.repayments.length - 1 ? withApplied(r, interestMinor) : r)) } } : {}),
+  };
+  const result = upsertProposal(db, {
+    budgetSyncId: posting.budgetSyncId, subjectKind: "debt", subjectId: posting.subjectId,
+    postingKind: "repayment-split", periodKey: posting.periodKey, generation: posting.generation,
+    configRevision: posting.configRevision, inputFormatVersion: POSTING_INPUT_FORMAT_VERSION,
+    inputSnapshot: nextInput, engineVersions: posting.engineVersions, outputSnapshot: nextOutput,
+    classification: "review", reasons, idempotencyMarker: null, reversalOf: null,
   }, now);
   return postingView(result.posting, result.reused);
 }

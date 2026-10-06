@@ -50,6 +50,8 @@ export type PlanningDebt = {
   executionStrategy: string;
   loanPaymentCategoryId: string | null;
   lenderChargeGraceDays: number;
+  /** The allowed difference before flagging (also how close a payment must be to pay the loan off). */
+  driftToleranceMinor?: number;
   currentRevision: number;
   onboardingDate: string | null;
 };

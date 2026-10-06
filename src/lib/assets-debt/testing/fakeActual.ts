@@ -218,7 +218,18 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
     if (!row) throw new Error(`fake actual: no transaction ${id}`);
     writes.push({ op: "update", id, fields });
     const { subtransactions, ...rest } = fields as { subtransactions?: Record<string, unknown>[] };
-    if (subtransactions) {
+    const existing = rows.filter((r) => r.parent_id === row.id);
+    const inPlace = !!subtransactions && subtransactions.length > 0 && existing.length === subtransactions.length && subtransactions.every((sub) => existing.some((c) => c.id === sub.id));
+    if (subtransactions && inPlace) {
+      // Live-calibrated (2026-10-06, both transports): subtransactions naming every existing child
+      // update those children in place; ids stay, a transfer child's counterpart follows its amount.
+      for (const sub of subtransactions) {
+        const child = existing.find((c) => c.id === sub.id)!;
+        for (const [key, value] of Object.entries(sub)) if (key !== "id") child[key] = value;
+        if (child.transfer_id) updateTransfer(child);
+        else clearCategory(child);
+      }
+    } else if (subtransactions) {
       // Test facility: split grouping. Replace any children with exactly these.
       for (const old of rows.filter((r) => r.parent_id === row.id)) rows.splice(rows.indexOf(old), 1);
       if (subtransactions.length > 0 && !row.is_parent) parentCategory.set(row.id, row.category ?? null);

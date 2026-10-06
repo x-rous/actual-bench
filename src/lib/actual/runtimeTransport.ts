@@ -74,6 +74,8 @@ import {
   type WriteWatch,
   convertToTransfer,
   restoreSplit,
+  adjustSplitAmounts,
+  inspectSplitAmounts,
   revertTransferConversion,
   unlinkTransfer,
 } from "./transactionStructure";
@@ -1478,6 +1480,8 @@ export function createActualRuntimeTransport(
     inspectTransferLink: (input) => inspectTransferLink(directStructurePrimitives(host, connection), input),
     verifyRestructure: (input) => verifySplit(directStructurePrimitives(host, connection), input),
     restoreSplit: (input) => restoreSplit(directStructurePrimitives(host, connection), input),
+    adjustSplitAmounts: (input) => adjustSplitAmounts(directStructurePrimitives(host, connection), input),
+    inspectSplitAmounts: (input) => inspectSplitAmounts(directStructurePrimitives(host, connection), input),
     unlinkTransfer: (input) => unlinkTransfer(directStructurePrimitives(host, connection), input),
     convertToTransfer: (input) => convertToTransfer(directStructurePrimitives(host, connection), input),
     revertTransferConversion: (input) => revertTransferConversion(directStructurePrimitives(host, connection), input),

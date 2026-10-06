@@ -38,6 +38,14 @@
  *   transfer is restructured only when that counterpart is exactly as Actual
  *   made it; undoing the split re-creates it with a new id.
  *
+ * Binding facts from the T314 live probe (Actual 26.10.0, Direct and HTTP identical):
+ *
+ * - one `updateTransaction(parent, { subtransactions })` whose entries carry the existing child ids
+ *   updates those children in place: every id stays (children and the transfer counterpart), the
+ *   counterpart's amount follows its child, the parent keeps its amount, nothing is inserted;
+ * - updating children one at a time also works but leaves the split out of balance between the
+ *   calls, so amounts are only ever changed in the single parent call.
+ *
  * Every operation re-reads the target first and refuses, writing nothing, if
  * any preflight field differs from what the caller previewed (FR-162).
  */
@@ -162,6 +170,20 @@ export type ConvertToTransferResult = { transactionId: string; transferId: strin
 
 export type RevertTransferInput = { converted: TransactionPreflight; counterpart: TransactionPreflight; restoreTo: RowState };
 export type RevertTransferResult = { differences: string[]; counterpartRemains: boolean };
+
+export type AdjustSplitInput = {
+  /** The split as it must still be: the parent and every child. */
+  parent: TransactionPreflight;
+  children: TransactionPreflight[];
+  /** The loan-side row Actual made for the transfer child, as it must still be (its amount follows). */
+  counterpart: TransactionPreflight | null;
+  /** The new amount of each child, by id, in Actual's signs; every child is listed. */
+  amounts: Array<{ id: string; amount: number }>;
+};
+
+export type AdjustSplitResult = { parentAmount: number; children: StructureChild[]; counterpart: { id: string; amount: number } | null };
+
+export type AdjustVerification = "applied-exact" | "not-applied" | "mismatch";
 
 export type ExpectedSplitState = {
   parentAmount: number;
@@ -564,6 +586,65 @@ export async function revertTransferConversion(primitives: StructurePrimitives, 
   const now = await readState(primitives, input.converted.accountId, input.converted.id, input.converted.date);
   const remains = (await findRaw(primitives, input.counterpart.accountId, input.counterpart.id, input.counterpart.date)) !== null;
   return { differences: stateDifferences(r, now), counterpartRemains: remains };
+}
+
+/**
+ * Change the amounts of an existing split in place (T314): one parent update naming every child by
+ * id, so ids stay and Actual moves the transfer counterpart with its child. Refuses, writing
+ * nothing, unless the parent, every child and the counterpart are exactly as previewed, nothing is
+ * reconciled, every child is named once, and the new amounts keep the parent's total and sign.
+ */
+export async function adjustSplitAmounts(primitives: StructurePrimitives, input: AdjustSplitInput): Promise<AdjustSplitResult> {
+  primitives = withinDates(primitives, [input.parent.date, ...(input.counterpart ? [input.counterpart.date] : [])]);
+  const { row } = await requireUnchanged(primitives, input.parent);
+  if (row.reconciled === true) throw new TransactionStructureRefusedError("A reconciled transaction is never changed.");
+  const raw = row.subtransactions ?? [];
+  const expectedIds = input.children.map((c) => c.id).sort();
+  if (row.is_parent !== true || JSON.stringify(raw.map((c) => c.id).sort()) !== JSON.stringify(expectedIds)) throw new TransactionChangedError([`the split lines of ${input.parent.id}`]);
+  for (const child of input.children) {
+    const found = raw.find((c) => c.id === child.id)!;
+    const differences = preflightDifferences(child, preflightOf(found, row, input.parent.accountId));
+    if (differences.length) throw new TransactionChangedError(differences);
+    if (found.reconciled === true) throw new TransactionStructureRefusedError("A reconciled split line is never changed.");
+  }
+  if (input.counterpart) {
+    const found = await requireUnchanged(primitives, input.counterpart);
+    if (found.row.reconciled === true) throw new TransactionStructureRefusedError("The loan-side row of this split is reconciled; Bench will not change it.");
+  }
+  const amounts = new Map(input.amounts.map((a) => [a.id, a.amount]));
+  if (amounts.size !== input.amounts.length || JSON.stringify([...amounts.keys()].sort()) !== JSON.stringify(expectedIds)) throw new TransactionStructureRefusedError("Every split line must be given exactly one new amount.");
+  const total = minor(row.amount);
+  const sum = [...amounts.values()].reduce((t, a) => t + a, 0);
+  if (!Number.isSafeInteger(sum) || sum !== total) throw new TransactionStructureRefusedError("The new amounts do not add up to the transaction amount.");
+  if ([...amounts.values()].some((a) => a === 0 || Math.sign(a) !== Math.sign(total))) throw new TransactionStructureRefusedError("Every split line must keep an amount with the transaction's sign.");
+
+  await primitives.update(
+    input.parent.id,
+    { subtransactions: raw.map((c) => ({ id: c.id, amount: amounts.get(c.id)!, category: str(c.category), payee: str(c.payee), notes: str(c.notes) })) },
+    { accountIds: [...new Set([input.parent.accountId, ...(input.counterpart ? [input.counterpart.accountId] : [])])], sinceDate: input.parent.date }
+  );
+
+  const after = await findRaw(primitives, input.parent.accountId, input.parent.id, input.parent.date);
+  if (!after) throw new TransactionStructureRefusedError("The split could not be read back.");
+  const counterpart = input.counterpart ? await findRaw(primitives, input.counterpart.accountId, input.counterpart.id, input.counterpart.date) : null;
+  return { parentAmount: minor(after.row.amount), children: (after.row.subtransactions ?? []).map(childOf), counterpart: counterpart ? { id: counterpart.row.id, amount: minor(counterpart.row.amount) } : null };
+}
+
+/** Read-only (T314): does the split hold `after` amounts, still `before`, or neither? Never writes. */
+export async function inspectSplitAmounts(
+  primitives: StructurePrimitives,
+  input: { accountId: string; parentId: string; date: string; before: Array<{ id: string; amount: number }>; after: Array<{ id: string; amount: number }>; counterpart: { accountId: string; id: string; childId: string } | null }
+): Promise<AdjustVerification> {
+  primitives = withinDates(primitives, [input.date]);
+  const found = await findRaw(primitives, input.accountId, input.parentId, input.date);
+  if (!found) return "mismatch";
+  const children = new Map((found.row.subtransactions ?? []).map((c) => [c.id, minor(c.amount)]));
+  const holds = (want: Array<{ id: string; amount: number }>) => children.size === want.length && want.every((w) => children.get(w.id) === w.amount);
+  const state = holds(input.after) ? "applied-exact" : holds(input.before) ? "not-applied" : "mismatch";
+  if (state !== "applied-exact" || !input.counterpart) return state;
+  const counterpart = await findRaw(primitives, input.counterpart.accountId, input.counterpart.id, input.date);
+  const childAmount = input.after.find((a) => a.id === input.counterpart!.childId)?.amount;
+  return counterpart && childAmount !== undefined && minor(counterpart.row.amount) === -childAmount ? "applied-exact" : "mismatch";
 }
 
 /** True when this connection's reads report `transfer_id`, so a link can be verified (R-07). */

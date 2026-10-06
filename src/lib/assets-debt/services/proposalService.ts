@@ -146,6 +146,7 @@ function planningDebt(debt: DebtRecord): PlanningContext["debt"] {
     executionStrategy: known(debt.executionStrategy) ? debt.executionStrategy : "unknown",
     loanPaymentCategoryId: debt.loanPaymentCategoryId,
     lenderChargeGraceDays: debt.lenderChargeGraceDays,
+    driftToleranceMinor: debt.driftToleranceMinor,
     currentRevision: debt.currentRevision,
     onboardingDate: debt.onboardingDate,
   };

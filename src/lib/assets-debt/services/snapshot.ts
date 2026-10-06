@@ -87,6 +87,26 @@ export type ExpectedPostState = {
 
 export type ComponentLine = { kind: EconomicKind; amountMinor: number };
 
+/** A repayment split in Actual: the split, its principal (the transfer part) and interest, and Bench's interest for comparison. */
+export type RecordedSplit = {
+  parent: RowSnapshot;
+  children: RowSnapshot[];
+  principalMinor: number;
+  interestMinor: number;
+  calculatedInterestMinor: number;
+  /** The loan-side row Actual made for the transfer part, when visible (an edit changes it too, T314). */
+  counterpart?: RowSnapshot | null;
+};
+
+/** The user's change to a split already in Actual (T314): what Actual had, what Bench calculated, what was entered, and why. */
+export type RecordedSplitEdit = { actualInterestMinor: number; calculatedInterestMinor: number; interestMinor: number; reason: string | null };
+
+/**
+ * A payment that clears the loan: the principal still owed and the interest accrued up to the day it
+ * was paid, and anything paid beyond that (a payoff fee, or a difference within the tolerance).
+ */
+export type PayoffFigures = { paidDate: string; owedPrincipalMinor: number; interestMinor: number; excessMinor: number };
+
 export type SplitOverride = { calculatedInterestMinor: number; interestMinor: number; reason: string | null };
 
 export { OVERRIDE_NO_REASON_MINOR } from "../overrides";
@@ -126,6 +146,8 @@ export type PostingOutputSnapshot =
       replacesCounterpart?: RowSnapshot | null;
       /** The user's edit of the interest line (T291): what Bench calculated, what was entered, and why. */
       override?: SplitOverride | null;
+      /** This payment pays the loan off (owner decision 2026-10-07): applied, the loan shows as paid off. */
+      payoff?: PayoffFigures | null;
     }
   | {
       format: typeof POSTING_OUTPUT_FORMAT;
@@ -197,7 +219,27 @@ export type PostingOutputSnapshot =
        * A repayment already split in Actual, recorded as it is (owner decision 2026-10-06): the
        * split, the parts Actual holds, and Bench's calculated interest for comparison.
        */
-      recordedSplit?: { parent: RowSnapshot; children: RowSnapshot[]; principalMinor: number; interestMinor: number; calculatedInterestMinor: number };
+      recordedSplit?: RecordedSplit;
+    }
+  | {
+      format: typeof POSTING_OUTPUT_FORMAT;
+      version: typeof POSTING_OUTPUT_FORMAT_VERSION;
+      /**
+       * A repayment already split in Actual whose amounts the user changed (T314): Bench rewrites
+       * the split's amounts in place, in one update that keeps every id; Actual moves the
+       * loan-side row with the principal. Its undo is the same change back (`edit` null).
+       */
+      kind: "adjust-split";
+      /** The split as it must still be, and the loan-side row Actual made for its transfer part. */
+      parent: RowSnapshot;
+      children: RowSnapshot[];
+      counterpart: RowSnapshot | null;
+      /** Every child's new amount, by id, in Actual's signs. */
+      amounts: Array<{ id: string; amountMinor: number }>;
+      /** The split as it will be once applied. */
+      recordedSplit: RecordedSplit;
+      edit: RecordedSplitEdit | null;
+      closing: ClosingState | null;
     }
   | {
       format: typeof POSTING_OUTPUT_FORMAT;

@@ -1,4 +1,5 @@
 import { deleteObservationRows } from "./observationService";
+import { paidOffState, type PaidOff } from "./payoffState";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import { listDebtAssumptions, replaceDebtAssumptions, type AssumptionInput } from "@/lib/app-db/debtAssumptionRepository";
 import { listDebtOffsetLinks, replaceDebtOffsetLinks, type OffsetLinkInput } from "@/lib/app-db/debtOffsetLinkRepository";
@@ -90,6 +91,8 @@ export type DebtDetail = {
   revision: { number: number; hash: string | null; createdAt: string | null };
   /** Non-null: this debt is Blocked; other debts are unaffected (schema-review A-2). */
   blocked: DebtBlock | null;
+  /** Non-null: an applied payoff cleared the loan (worked out from its changes, never stored). */
+  paidOff?: PaidOff | null;
 };
 
 const NEWER_VERSION = "Configured by a newer version of Actual Bench. Update Actual Bench to use this debt.";
@@ -385,6 +388,7 @@ export function getDebtDetail(db: SqliteDatabase, id: string): DebtDetail | null
     assumptions,
     revision: { number: debt.currentRevision, hash: latest?.configHash ?? null, createdAt: latest?.createdAt ?? null },
     blocked: blockFor(debt, config, rates, offsets, assumptions),
+    paidOff: paidOffState(db, id),
   };
 }
 
@@ -405,6 +409,8 @@ export type DebtSummary = {
   signConvention: DebtRecord["signConvention"];
   currentRevision: number;
   blocked: DebtBlock | null;
+  /** The day an applied payoff cleared the loan, or null. */
+  paidOffOn?: string | null;
 };
 
 /** Every debt in a budget. One debt Blocked for an unsupported config never hides the others. */
@@ -427,6 +433,7 @@ export function listDebtSummaries(db: SqliteDatabase, budgetSyncId: string, incl
       signConvention: debt.signConvention,
       currentRevision: debt.currentRevision,
       blocked: detail.blocked,
+      paidOffOn: detail.paidOff?.paidDate ?? null,
     };
   });
 }

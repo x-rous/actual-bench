@@ -37,6 +37,7 @@ function rowsToRecheck(output: PostingOutputSnapshot): RowSnapshot[] {
     case "unlink": return [output.source, output.counterpart];
     case "convert": return [output.before];
     case "revert-convert": return [output.converted, output.counterpart];
+    case "adjust-split": return [output.parent, ...output.children, ...(output.counterpart ? [output.counterpart] : [])];
   }
 }
 
