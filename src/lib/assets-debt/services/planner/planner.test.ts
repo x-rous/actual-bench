@@ -187,14 +187,19 @@ describe("planners (T118–T120)", () => {
       expect(listDebtPostings(s.db, s.debtId).find((p) => p.id === old.id)?.status).toBe("superseded");
     });
 
-    it("asks for review when an earlier repayment was not found and had to be assumed on schedule", async () => {
+    it("an earlier repayment not found counts as not paid (owner decision 2026-10-07): the next payment carries its interest", async () => {
       const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
       s.seedPayment("2024-03-01");
-      const splits = byKind((await s.preview({ from: "2024-02-01", to: "2024-03-31" })).postings, "repayment-split");
+      const splits = byKind((await s.preview({ from: "2024-02-01", to: "2024-03-31", today: "2024-03-31" })).postings, "repayment-split");
       expect(splits).toHaveLength(1);
-      expect(splits[0].reasons.map((r) => r.code)).toContain("earlier-repayment-assumed");
-      expect(inputOf(s, splits[0].id).observedRepayments?.repayments.map((r) => r.assumed ?? false)).toEqual([true, false]);
-      expect(reproducePosting(s.db, splits[0].id)).toMatchObject({ status: "exact-match" });
+      const [march] = splits;
+      expect(inputOf(s, march.id).observedRepayments?.repayments.map((r) => r.assumed ?? false)).toEqual([false]);
+      expect(march.output).toMatchObject({ kind: "restructure", missedDueDates: ["2024-02-01"] });
+      // On this interest-heavy loan two months of interest exceed one repayment: all of it is interest,
+      // so there is nothing to split, and the row says what to do instead.
+      expect(march.classification).toBe("blocked");
+      expect(march.reasons.map((r) => r.code)).toEqual(["interest-only-payment"]);
+      expect(march.reasons[0].text).toMatch(/does not cover the interest owed .* after the missed repayment/);
     });
   });
 });

@@ -1,3 +1,4 @@
+import { repaymentAlignment } from "./planner/common";
 import { canonicalHash } from "@/lib/app-db/canonicalJson";
 import { openingFor } from "./opening";
 import { listDebtMatchRules } from "@/lib/app-db/debtMatchRuleRepository";
@@ -9,7 +10,7 @@ import type { DebtRecord, FinancialPostingRecord, SqliteDatabase } from "@/lib/a
 import { parseStoredMatchRule, type MatchConditionsV1 } from "@/lib/financial-models/matching";
 import type { AccountDirectory, MatchingHistorySnapshot } from "../actual/ledgerPort";
 import { modelFromDetail } from "../model/buildModel";
-import { matchingCandidates } from "./backtestService";
+import { matchingCandidates, repaymentChoices } from "./backtestService";
 import { getDebtDetail } from "./debtConfigService";
 import type { OffsetHistorySnapshot } from "./offsetHistoryService";
 import { planAdjustments } from "./planner/adjustments";
@@ -46,6 +47,12 @@ export type PreviewRequest = {
    * transaction no longer exists. Without it, only rows in `snapshots` are followed and none removed.
    */
   loanAccountRows?: Array<{ id: string; date: string; amountMinor: number }>;
+  /**
+   * False while Terms & Schedule has unsaved edits in the browser: a linked extra payment is then
+   * not moved or removed (that would save a revision under the edits and reload over them); the
+   * panel shows the change and the next refresh after saving follows it.
+   */
+  followExtraPayments?: boolean;
   /** As in P1.5 lender reconciliation: the Actual liability balance as a debt magnitude at the comparison date. */
   comparison?: { comparisonDate: string; actualBalanceMinor: number } | null;
   parameters?: {
@@ -85,7 +92,7 @@ function basisOf(inputJson: string): PostingBasis {
 }
 
 export type PreviewResult =
-  | { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; /** The pending changes close the gap (FR-170c). */ driftExplained: boolean; /** Payments into the loan account no repayment accounts for (extra payments). */ unscheduled: UnscheduledPayment[]; /** Recorded extra payments moved to match their changed Actual transaction on this refresh. */ followedExtraPayments: FollowedExtraPayment[] }
+  | { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; /** The pending changes close the gap (FR-170c). */ driftExplained: boolean; /** Payments into the loan account no repayment accounts for (extra payments). */ unscheduled: UnscheduledPayment[]; /** The loan's payments a due date can be given ("this is the payment"). */ paymentOptions: PaymentOption[]; /** Due dates the user chose a payment for. */ repaymentChoices: Array<{ key: string; paymentId: string }>; /** Recorded extra payments moved to match their changed Actual transaction on this refresh. */ followedExtraPayments: FollowedExtraPayment[] }
   | { ok: false; notFound: true }
   | { ok: false; blocked: { code: string; message: string } };
 
@@ -213,6 +220,7 @@ export function buildPlanningContext(
       candidates: matchingCandidates(snapshots, postingLinked),
       rows: indexReadRows(snapshots.flatMap((s) => s.transactions)),
       rules: enabledRules(db, debtId),
+      repaymentChoices: repaymentChoices(db, debtId),
       postings: listSubjectPostings(db, "debt", debtId).map(summarize),
       canVerifyTransferLinks: request.capabilities.canVerifyTransferLinks,
       canRestructure: request.capabilities.canRestructure,
@@ -228,11 +236,11 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
     if (snapshot.transactions.length > 5_000) throw new AppDbValidationError("A preview read exceeds the 5,000 transaction per-account limit");
   }
   // Linked extra payments follow their Actual transaction first, so planning sees the loan as it now is.
-  const followedExtraPayments = followRecordedExtraPayments(db, debtId, indexReadRows(request.snapshots.flatMap((s) => s.transactions)), request.loanAccountRows ?? null);
+  const followedExtraPayments = request.followExtraPayments === false ? [] : followRecordedExtraPayments(db, debtId, indexReadRows(request.snapshots.flatMap((s) => s.transactions)), request.loanAccountRows ?? null);
   const built = buildPlanningContext(db, debtId, request);
   if (!built.ok) return built;
   let { ctx } = built;
-  const planAll = (c: PlanningContext) => [c.debt.lenderPattern === "separate-interest" ? planPatternB(c) : c.debt.lenderPattern === "embedded-interest" ? planPatternA(c) : { postings: [], notices: [{ code: "no-lender-pattern", periodKey: c.window.from, text: "Choose the lender pattern in Tracking setup so Bench knows how this loan is recorded." }] }, planAdjustments(c)];
+  const planAll = (c: PlanningContext) => [c.debt.lenderPattern === "separate-interest" ? planPatternB(c) : c.debt.lenderPattern === "embedded-interest" ? planPatternA(c) : { postings: [], notices: [{ code: "no-lender-pattern", periodKey: c.window.from, text: "Choose how your lender shows interest in Link to Actual so Bench knows how this loan is recorded." }] }, planAdjustments(c)];
   let plans = planAll(ctx);
   // FR-170c: a gap that the pending changes themselves close is not unexplained drift. Compare
   // again as if every non-blocked change were applied; only if that is within tolerance is the
@@ -278,8 +286,16 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
   supersedeStaleProposals(db, { subjectKind: "debt", subjectId: ctx.debt.id, keepIds: postings.map((p) => p.id), configRevision: ctx.debt.currentRevision, window: ctx.window }, now);
   const detail = getDebtDetail(db, debtId);
   const unscheduled = detail ? unscheduledPayments(db, detail, ctx.rows, ctx.window, { lenderFeed: !!ctx.rules["lender-repayment-row"] }) : [];
-  return { ok: true, postings, notices: plans.flatMap((p) => p.notices), driftMaterial: built.ctx.driftMaterial, driftExplained, unscheduled, followedExtraPayments };
+  const alignment = repaymentAlignment(ctx);
+  const paymentOptions: PaymentOption[] = alignment.payments.map((p) => {
+    const row = ctx.rows.get(p.id);
+    return { id: p.id, date: p.date, amountMinor: p.amountMinor, payeeName: row?.payeeName ?? null, notes: row?.notes ?? null, pairedTo: alignment.pairedTo(p.id) };
+  });
+  return { ok: true, postings, notices: plans.flatMap((p) => p.notices), driftMaterial: built.ctx.driftMaterial, driftExplained, unscheduled, followedExtraPayments, paymentOptions, repaymentChoices: ctx.repaymentChoices ?? [] };
 }
+
+/** A payment the user can name as a due date's repayment, and the due date it is paired with now. */
+export type PaymentOption = { id: string; date: string; amountMinor: number; payeeName: string | null; notes: string | null; pairedTo: string | null };
 
 export function listDebtPostings(db: SqliteDatabase, debtId: string): PostingView[] {
   return listSubjectPostings(db, "debt", debtId).map((record) => postingView(record));

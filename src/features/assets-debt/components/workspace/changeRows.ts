@@ -28,6 +28,8 @@ export type ChangeRowModel = {
   group: Exclude<ChangeFilter, "all">;
   /** What a checkbox on this row would do; null when the row cannot be selected. */
   selectable: "apply" | "undo" | null;
+  /** Shown as one row: consecutive due dates with no payment found, oldest first. */
+  missedDates?: string[];
 };
 
 const LIVE_UNDO = new Set(["proposed", "approved", "applying", "indeterminate", "failed"]);
@@ -95,6 +97,28 @@ export function buildChangeRows(postings: readonly PostingView[], notices: reado
   }
   // Newest due date first.
   return rows.sort((a, b) => b.dueDate.localeCompare(a.dueDate) || a.key.localeCompare(b.key));
+}
+
+const MISSED = new Set(["repayment-missing", "no-repayment-rule"]);
+export const isMissedRow = (row: ChangeRowModel) => !row.posting && !!row.notice && MISSED.has(row.notice.code);
+
+/**
+ * For display only: consecutive due dates with no payment found read as one row ("24 repayments
+ * not found, Jan 2023 to Dec 2024"), not 24 identical ones. The model keeps one row per due date
+ * (the timeline needs them).
+ */
+export function groupMissedRows(rows: readonly ChangeRowModel[]): ChangeRowModel[] {
+  const out: ChangeRowModel[] = [];
+  for (const row of rows) {
+    const last = out.at(-1);
+    if (last && isMissedRow(last) && isMissedRow(row) && last.notice!.code === row.notice!.code) {
+      const dates = [row.dueDate, ...(last.missedDates ?? [last.dueDate])];
+      out[out.length - 1] = { ...last, key: `${last.key}+${row.dueDate}`, missedDates: dates };
+      continue;
+    }
+    out.push(row);
+  }
+  return out;
 }
 
 export function rowsFor(rows: readonly ChangeRowModel[], filter: ChangeFilter): ChangeRowModel[] {

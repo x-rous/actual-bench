@@ -16,7 +16,9 @@ const candidate = (date: string, amountMinor: number, extra: Partial<MatchCandid
 
 describe("matching rule builder", () => {
   it("HSBC: AED 8,379.57 around the 1st, up to 10 days early, is representable without JSON and matches through the existing evaluator", () => {
-    const settings = { ...recommendedSettings(hsbc), daysEarly: 10, daysLate: 2 };
+    // The suggestion is loose (10%): matching scores the amount itself (owner decision 2026-10-07).
+    expect(recommendedSettings(hsbc).amount).toEqual({ mode: "approximate", amountMinor: 837_957, tolerance: { kind: "absolute", amountMinor: 83_796 } });
+    const settings = { ...recommendedSettings(hsbc), daysEarly: 10, daysLate: 2, amount: { mode: "approximate" as const, amountMinor: 837_957, tolerance: { kind: "absolute" as const, amountMinor: 100 } } };
     const conditions = settingsToConditions(settings);
     expect(conditions.items).toEqual([
       { kind: "source-account", accountId: "hsbc-current" },

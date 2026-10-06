@@ -1,7 +1,8 @@
 import type { PostingKind, PostingReason } from "@/lib/app-db/types";
 import type { LoanModelSnapshot } from "@/lib/financial-models/loan/model";
 import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
-import { evaluateExpectedPeriod, type ExpectedMatchPeriod, type MatchCandidate, type MatchConditionsV1, type PeriodMatchEvaluation } from "@/lib/financial-models/matching";
+import { evaluateExpectedPeriod, type AlignPin, type ExpectedMatchPeriod, type MatchCandidate, type MatchConditionsV1, type PeriodMatchEvaluation } from "@/lib/financial-models/matching";
+import { alignRepayments, settledPaymentOf, type RepaymentAlignment } from "../repaymentAlignment";
 import { CURRENT_COMPONENT_VERSIONS } from "@/lib/financial-models/loan/versions";
 import type { DirectoryAccount } from "../../actual/ledgerPort";
 import { classifyPosting, REASONS, type PolicyInput, type PostingShape } from "../../classification/policy";
@@ -84,6 +85,8 @@ export type PlanningContext = {
   /** Every row and split child from the bounded read, by id. */
   rows: Map<string, RowSnapshot>;
   rules: Partial<Record<"repayment" | "interest-charge" | "lender-repayment-row", MatchConditionsV1>>;
+  /** The user's "this is the payment" choices, by due date (owner decision 2026-10-07). */
+  repaymentChoices?: AlignPin[];
   postings: ExistingPostingSummary[];
   /** Whether this connection's reads report transfer ids (a link needs them, R-07). */
   canVerifyTransferLinks: boolean;
@@ -231,7 +234,43 @@ export function finalize(
   return { ...rest, classification: result.classification, reasons: result.reasons };
 }
 
+const alignments = new WeakMap<PlanningContext, RepaymentAlignment>();
+
+/**
+ * The loan's payments lined up against its due dates, once per planning context (owner decision
+ * 2026-10-07): every due date in the window and the next one (a payment can come before it is due),
+ * applied changes and the user's choices as fixed pairs.
+ */
+export function repaymentAlignment(ctx: PlanningContext): RepaymentAlignment {
+  let found = alignments.get(ctx);
+  if (found) return found;
+  const isRepayment = (e: { eventType: string }) => e.eventType === "repayment" || e.eventType === "final-payment";
+  const run = windowRun(ctx);
+  const inWindow = run.ok ? run.events.filter(isRepayment) : [];
+  const ahead = calculatePeriod({ model: ctx.model, opening: ctx.opening, offsets: ctx.offsets, from: addIsoDays(ctx.window.to, 1), to: addIsoDays(ctx.window.to, 400) });
+  const next = ahead.ok ? ahead.events.find(isRepayment) : undefined;
+  const dues = [...inWindow, ...(next ? [next] : [])].map((e) => {
+    const live = livePosting(ctx, "repayment-split", e.date) ?? livePosting(ctx, "repayment-link", e.date);
+    return { key: e.date, date: e.date, expectedMinor: Math.abs(e.cashMovementMinor), settled: live ? settledPaymentOf(live.outputSnapshot) : null, upcoming: e.date > ctx.today };
+  });
+  found = alignRepayments({
+    candidates: ctx.candidates, liabilityAccountId: ctx.debt.liabilityAccountId, signConvention: ctx.debt.signConvention,
+    rule: ctx.rules.repayment, dues, pins: ctx.repaymentChoices ?? [], toleranceMinor: ctx.debt.driftToleranceMinor ?? 100, minorDigits: ctx.model.currency.minorDigits,
+  });
+  alignments.set(ctx, found);
+  return found;
+}
+
+/** Why a matched repayment needs a person to look (late, early, amount, a rival payment), as reasons. */
+export function alignmentReviews(ctx: PlanningContext, dueDate: string): PostingReason[] {
+  const aligned = repaymentAlignment(ctx).aligned(dueDate);
+  if (!aligned || aligned.clean) return [];
+  return aligned.reasons.filter((r) => r.code !== "missed").map((r) => ({ code: `alignment-${r.code}`, text: r.text }));
+}
+
 export function matchPeriod(ctx: PlanningContext, purpose: keyof PlanningContext["rules"], expected: ExpectedMatchPeriod): PeriodMatchEvaluation | null {
+  // Repayments are lined up across the whole loan (no day window); the lender's rows still use the rule.
+  if (purpose === "repayment") return repaymentAlignment(ctx).evaluation(expected.periodKey);
   const conditions = ctx.rules[purpose];
   if (!conditions) return null;
   const claimable = ctx.candidates.filter((c) => !c.benchMarked && !c.postingLinked);

@@ -80,6 +80,12 @@ export const getSchedule = (id: string, body: { from: string; to: string; overri
 export const saveAssumptions = (id: string, assumptions: AssumptionInput[], changeSummary: string) =>
   request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/assumptions`, { method: "PUT", body: JSON.stringify({ assumptions, changeSummary }) }).then((r) => r.debt);
 
+/** "This is the payment" for a due date; stored in Bench only. */
+export const setRepaymentChoice = (id: string, body: { dueDate: string; transactionId: string }) =>
+  request<{ ok: true }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/repayment-choices`, { method: "POST", body: JSON.stringify(body) });
+export const clearRepaymentChoice = (id: string, dueDate: string) =>
+  request<{ ok: true }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/repayment-choices?dueDate=${encodeURIComponent(dueDate)}`, { method: "DELETE" });
+
 export const listMatchRules = (id: string) =>
   request<{ rules: MatchRuleView[] }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/match-rules`).then((r) => r.rules);
 

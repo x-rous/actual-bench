@@ -99,13 +99,30 @@ describe("paying a loan off", () => {
     expect(getDebtDetail(s.db, s.debtId)!.paidOff).toBeNull();
   });
 
-  it("a large payment that does not clear the loan is no payoff, and is never Recommended as a routine split", async () => {
-    const { s } = await paidOffBy("2024-02-26", -20_000_000, { anyAmount: true });
-    const [split] = byKind((await s.preview(window)).postings, "repayment-split");
-    expect(split.output).toMatchObject({ kind: "restructure" });
-    if (split.output.kind !== "restructure") throw new Error("restructure");
-    expect(split.output.payoff).toBeUndefined();
-    expect(split.classification).toBe("review");
-    expect(split.reasons.map((r) => r.code)).toContain("unusual-amount");
+  it("a large payment that does not clear the loan is no payoff and no repayment: it is an extra payment to record", async () => {
+    const { s, amount } = await paidOffBy("2024-02-26", -20_000_000, { anyAmount: true });
+    const result = await s.preview(window);
+    expect(byKind(result.postings, "repayment-split").filter((p) => p.status === "proposed" && p.output.kind === "restructure" && p.output.payoff)).toEqual([]);
+    expect(result.unscheduled).toEqual([expect.objectContaining({ date: "2024-02-26", amountMinor: amount })]);
+  });
+
+
+  it("a loan that records interest as its own transaction: the transfer that leaves the loan account at zero is the payoff", async () => {
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "separate-interest" });
+    // The loan's money, then one transfer that repays it all (the lender's interest is its own row).
+    s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-01-01", amount: -40_000_000, payee: null, notes: "Loan" });
+    s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-10", amount: -150_000, payee: null, notes: "Interest", imported_id: "lender:int" });
+    const loanSide = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-10", amount: 40_150_000, payee: s.fake.transferPayeeId(ACCOUNTS.checking), notes: "Payoff" });
+    const paid = s.seedPayment("2024-02-10", -40_150_000, { payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), transfer_id: loanSide });
+    s.fake.row(loanSide)!.transfer_id = paid;
+    const result = await s.preview({ from: "2024-01-01", to: "2024-06-30", today: "2024-06-30" });
+    const links = byKind(result.postings, "repayment-link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ periodKey: "2024-03-01", classification: "review", output: { kind: "claim", payoff: expect.objectContaining({ paidDate: "2024-02-10" }) } });
+    // Nothing is charged or expected after it.
+    expect(byKind(result.postings, "interest-charge").filter((p) => p.periodKey > "2024-02-10")).toEqual([]);
+    expect(result.notices.filter((n) => n.periodKey > "2024-03-01")).toEqual([]);
+    expect((await s.apply(links[0])).posting.status).toBe("applied");
+    expect(paidOffState(s.db, s.debtId)).toMatchObject({ paidDate: "2024-02-10" });
   });
 });

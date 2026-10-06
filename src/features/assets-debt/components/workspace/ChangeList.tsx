@@ -32,11 +32,15 @@ export type ChangeActions = {
   edit: (posting: PostingView, interestMinor: number, reason: string | null) => void;
   /** Record the edit and apply it, in one click. */
   editApply: (posting: PostingView, interestMinor: number, reason: string | null) => void;
+  /** "This is the payment": choose which payment is a due date's repayment. */
+  choose?: (dueDate: string) => void;
 };
+
+const CHOOSABLE_NOTICES = new Set(["repayment-missing", "no-repayment-rule", "repayment-ambiguous"]);
 
 const FILTERS: { id: ChangeFilter; label: string }[] = [
   { id: "action", label: "Needs action" },
-  { id: "waiting", label: "Waiting" },
+  { id: "waiting", label: "Not found" },
   { id: "applied", label: "Applied" },
   { id: "undone", label: "Undone" },
   { id: "all", label: "All" },
@@ -86,7 +90,7 @@ const STATE_LABEL: Record<ChangeRowModel["state"], string> = {
 };
 
 function statusText(row: ChangeRowModel): string {
-  if (row.state === "waiting") return "Waiting";
+  if (row.state === "waiting") return row.notice && CHOOSABLE_NOTICES.has(row.notice.code) ? "Not found" : "Waiting";
   if (row.state === "applied" && row.posting?.appliedAt) return `Applied ${row.posting.appliedAt.slice(0, 10)}`;
   if (row.state === "blocked") return `Blocked: ${row.posting?.reasons[0]?.text ?? ""}`;
   return STATE_LABEL[row.state];
@@ -130,7 +134,7 @@ export function ChangeList({
       </div>
       {rows.length === 0 ? (
         <p className="rounded border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-          {filter === "action" ? "Nothing needs your action. Applied and waiting changes are under their filters." : "Nothing here."}
+          {filter === "action" ? "Nothing needs your action. Applied changes and due dates with no payment found are under their filters." : "Nothing here."}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
@@ -159,10 +163,21 @@ export function ChangeList({
                       <td className="px-2 py-2">
                         {row.selectable ? <Checkbox aria-label={`Select ${title} due ${row.dueDate}`} checked={selected.has(row.key)} onCheckedChange={() => onToggle(row.key)} /> : null}
                       </td>
-                      <th scope="row" className="px-2 py-2 text-left font-medium tabular-nums">{day(row.dueDate)}</th>
+                      <th scope="row" className="px-2 py-2 text-left font-medium tabular-nums">{row.missedDates && row.missedDates.length > 1 ? `${day(row.missedDates[0])} to ${day(row.missedDates.at(-1)!)}` : day(row.dueDate)}</th>
                       <td className="px-2 py-2 tabular-nums">{day(row.paidDate)}</td>
                       <td className="px-2 py-2 text-right tabular-nums">{row.paymentMinor === null ? "" : formatAmount(row.paymentMinor, digits)}</td>
-                      <td className="px-2 py-2">{row.posting ? nowSummary(row.posting, directory) : <span className="text-muted-foreground">{row.notice?.text}</span>}</td>
+                      <td className="px-2 py-2">
+                        {row.posting ? nowSummary(row.posting, directory) : (
+                          <span className="text-muted-foreground">
+                            {row.missedDates && row.missedDates.length > 1
+                              ? `No payment to this loan was found for these ${row.missedDates.length} due dates in a row. If they were paid, choose the payment for each, starting with the oldest.`
+                              : row.notice?.text}
+                          </span>
+                        )}
+                        {!row.posting && row.notice && CHOOSABLE_NOTICES.has(row.notice.code) && actions.choose ? (
+                          <Button type="button" variant="link" size="sm" className="ml-2 h-auto p-0 text-xs" disabled={busy} onClick={() => actions.choose!(row.missedDates?.[0] ?? row.dueDate)}>Choose the payment{row.missedDates && row.missedDates.length > 1 ? ` for ${day(row.missedDates[0])}` : ""}</Button>
+                        ) : null}
+                      </td>
                       <td className="px-2 py-2">
                         {row.posting ? <span><span className="text-muted-foreground">{title}: </span>{afterSummary(row.posting, digits)}</span> : null}
                         {stepNote(row) ? <span className="block text-[11px] text-muted-foreground">{stepNote(row)}</span> : null}
@@ -292,6 +307,9 @@ export function ChangeDetail({ row, directory, digits, busy, actions, completion
             <Button type="button" size="sm" disabled={busy} onClick={() => actions.apply(posting)}>Apply this change</Button>
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => actions.decline(posting)}>Not now</Button>
           </>
+        ) : null}
+        {proposed && posting.postingKind === "repayment-split" && actions.choose && !(posting.output.kind === "restructure" && posting.output.payoff) ? (
+          <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => actions.choose!(row.dueDate)}>Choose a different payment</Button>
         ) : null}
         {undoPending && String(row.undo!.status) === "proposed" ? (
           <>

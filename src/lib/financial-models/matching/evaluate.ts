@@ -102,11 +102,17 @@ function conditionMatches(condition: MatchConditionV1, candidate: MatchCandidate
   }
 }
 
-function unsafeReasons(candidate: MatchCandidate, conditions: MatchConditionsV1, expected: ExpectedMatchPeriod): string[] {
+/** Why a row's own structure makes it unsafe to change, whatever it is matched against. */
+export function structuralUnsafeReasons(candidate: MatchCandidate): string[] {
   const reasons: string[] = [];
   if (candidate.stableId === false) reasons.push("missing-stable-child-id");
   if (candidate.isParent && !candidate.loanSplit) reasons.push("split-parent-unclaimable");
   if (candidate.parentId !== null && candidate.isChild !== true) reasons.push("missing-child-structure");
+  return reasons;
+}
+
+function unsafeReasons(candidate: MatchCandidate, conditions: MatchConditionsV1, expected: ExpectedMatchPeriod): string[] {
+  const reasons: string[] = structuralUnsafeReasons(candidate);
   if (conditions.items.some((item) => item.kind === "transfer-state") && candidate.transferId === undefined) reasons.push("transfer-state-unavailable");
   if (conditions.items.some((item) => item.kind === "cleared-state" && item.value !== "any") && candidate.cleared === undefined) reasons.push("cleared-state-unavailable");
   if (conditions.items.some((item) => item.kind === "reconciled-state" && item.value !== "any") && candidate.reconciled === undefined) reasons.push("reconciled-state-unavailable");

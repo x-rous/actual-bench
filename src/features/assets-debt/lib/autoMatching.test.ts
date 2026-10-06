@@ -30,17 +30,25 @@ describe("automatic repayment matching for a new loan", () => {
     expect(backtest).toMatchObject({ from: "2026-07-03", to: "2026-10-05" });
     // Monthly: ten days either side; the contractual repayment as the amount.
     expect(JSON.stringify(rule.conditions)).toContain('"daysBefore":10');
+    expect(JSON.stringify(rule.conditions)).toContain('"tolerance":{"kind":"absolute","amountMinor":83789}');
     expect(JSON.stringify(rule.conditions)).toContain('"amountMinor":837891');
     expect(afterMatchingSetup(result, "d1", (id, q) => `/loans/${id}?${q}`)).toMatchObject({ href: "/loans/d1?view=repayments", message: "Repayment matching is on: 3 repayments found in Actual.", tone: "success" });
   });
 
-  it("a due date not found saves the rule off and opens it in the matching editor", async () => {
+  it("a missed due date still turns it on (the due date shows on Sync Repayments), saying so", async () => {
     mocked.checkDraftMatchRule.mockResolvedValue(check({ unique: 2, missing: 1 }));
     const result = await setUpRepaymentMatching(detail(), transport, "2026-10-05");
+    expect(result.status).toBe("on");
+    expect(mocked.createMatchRule.mock.calls[0][1].enabled).toBe(true);
+    expect(afterMatchingSetup(result, "d1", (id, q) => `/loans/${id}?${q}`)).toMatchObject({ href: "/loans/d1?view=repayments", tone: "success", message: expect.stringContaining("1 due date has no payment yet") });
+  });
+
+  it("a payment Bench could never change saves the rule off and opens it in the matching editor", async () => {
+    mocked.checkDraftMatchRule.mockResolvedValue(check({ unique: 2, unsafe: 1 }));
+    const result = await setUpRepaymentMatching(detail(), transport, "2026-10-05");
     expect(result.status).toBe("needs-review");
-    expect(mocked.createMatchRule).toHaveBeenCalledTimes(1);
     expect(mocked.createMatchRule.mock.calls[0][1].enabled).toBe(false);
-    expect(afterMatchingSetup(result, "d1", (id, q) => `/loans/${id}?${q}`)).toMatchObject({ href: "/loans/d1?view=link&rule=rule-1", tone: "warning", message: expect.stringContaining("1 due date needs attention") });
+    expect(afterMatchingSetup(result, "d1", (id, q) => `/loans/${id}?${q}`)).toMatchObject({ href: "/loans/d1?view=link&rule=rule-1", tone: "warning" });
   });
 
   it("the server refusing to turn it on still saves it, off", async () => {

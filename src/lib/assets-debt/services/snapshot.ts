@@ -148,6 +148,8 @@ export type PostingOutputSnapshot =
       override?: SplitOverride | null;
       /** This payment pays the loan off (owner decision 2026-10-07): applied, the loan shows as paid off. */
       payoff?: PayoffFigures | null;
+      /** Earlier due dates counted as not paid when this split was worked out (none found in Actual then). */
+      missedDueDates?: string[];
     }
   | {
       format: typeof POSTING_OUTPUT_FORMAT;
@@ -220,6 +222,8 @@ export type PostingOutputSnapshot =
        * split, the parts Actual holds, and Bench's calculated interest for comparison.
        */
       recordedSplit?: RecordedSplit;
+      /** This transfer pays the loan off (a loan that records interest as its own transaction). */
+      payoff?: PayoffFigures | null;
     }
   | {
       format: typeof POSTING_OUTPUT_FORMAT;

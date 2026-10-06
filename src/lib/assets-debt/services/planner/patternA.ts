@@ -29,6 +29,8 @@ import {
   inputSnapshot,
   livePosting,
   matchPeriod,
+  alignmentReviews,
+  repaymentAlignment,
   usableAccount,
   type ComponentConfig,
   type PlanResult,
@@ -72,6 +74,8 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
   // Payments into the loan account (their paying side) that could pay the loan off, oldest first.
   const payoffs = payoffCandidates(ctx);
   let settled = false;
+  // Due dates passed without a payment since the last one in the chain (counted as not paid).
+  let missed: string[] = [];
 
   for (const date of window.repaymentDates) {
     const calc = eventsOn(ctx, date);
@@ -84,6 +88,13 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     const split = livePosting(ctx, "repayment-split", date);
     if (split) {
       chain.add(split.outputSnapshot.kind === "restructure" ? entryFromSplit(split.outputSnapshot, date) : split.outputSnapshot.kind === "claim" && split.outputSnapshot.recordedSplit ? entryFromRecorded(split.outputSnapshot.recordedSplit, date) : split.outputSnapshot.kind === "adjust-split" ? entryFromRecorded(split.outputSnapshot.recordedSplit, date) : assumedEntry());
+      missed = [];
+      // Worked out when an earlier repayment was counted as not paid; that repayment has turned up since.
+      const counted = split.outputSnapshot.kind === "restructure" ? split.outputSnapshot.missedDueDates ?? [] : [];
+      const found = counted.filter((d) => { const a = repaymentAlignment(ctx).aligned(d); return !!a?.payment && !a.settled; });
+      if (split.status === "applied" && found.length) {
+        out.notices.push({ code: "redo-after-found", periodKey: date, text: `This split counted the repayment due ${found.join(", ")} as not paid, but ${found.length === 1 ? "it has" : "they have"} been found since, so its interest is too high. Undo this change, apply ${found.length === 1 ? "that repayment" : "those repayments"}, then apply this one again.` });
+      }
       // Second step with a lender feed: link the applied principal child and the lender row.
       if (lenderFeed && split.status === "applied" && !livePosting(ctx, "repayment-link", date)) planLenderLink(ctx, out, split, date, calc);
       // Paid off: nothing after it is expected.
@@ -100,28 +111,31 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     const early = payoffs.find((r) => r.date > lastPaid(chain) && r.date <= date);
     const earlyPlan = early ? payoffPlan(ctx, chain, early) : null;
     if (early && earlyPlan) {
-      planSplit(ctx, out, { ...base, row: early, candidate: ctx.candidates.find((c) => c.id === early.id)!, matchStatus: "payoff", unsafeReasons: [], payoff: earlyPlan });
+      planSplit(ctx, out, { ...base, row: early, candidate: ctx.candidates.find((c) => c.id === early.id)!, matchStatus: "payoff", unsafeReasons: [], payoff: earlyPlan, missed });
       settled = true;
       break;
     }
-    if (!ctx.rules.repayment) {
-      chain.add(assumedEntry());
-      out.notices.push({ code: "no-repayment-rule", periodKey: date, text: "Set up and enable repayment matching in this loan's Repayment matching tab (the recommended setup comes from Tracking setup) so Bench can find this payment." });
-      continue;
-    }
     const expectedPayment = Math.abs(repayment.cashMovementMinor);
+    // Lined up across the whole loan (owner decision 2026-10-07): transfers into the loan account
+    // count without any rule; the rule adds payments it identifies. No day window, no amount filter.
     const match = matchPeriod(ctx, "repayment", { periodKey: date, date, paymentMinor: expectedPayment, interestMinor: Math.abs(repayment.interestMinor), principalMinor: Math.abs(repayment.principalMovementMinor), feesMinor: Math.abs(repayment.feesMinor) });
     // Not found as this month's repayment, but the loan was paid off before the next one falls due.
     const late = !match || match.status === "missing" || match.status === "multiple" ? payoffs.find((r) => r.date > lastPaid(chain) && r.date > date && (next === null || r.date < next)) : undefined;
     const latePlan = late ? payoffPlan(ctx, chain, late) : null;
     if (late && latePlan) {
-      planSplit(ctx, out, { ...base, row: late, candidate: ctx.candidates.find((c) => c.id === late.id)!, matchStatus: "payoff", unsafeReasons: [], payoff: latePlan });
+      planSplit(ctx, out, { ...base, row: late, candidate: ctx.candidates.find((c) => c.id === late.id)!, matchStatus: "payoff", unsafeReasons: [], payoff: latePlan, missed });
       settled = true;
       break;
     }
     if (!match || match.status === "missing") {
-      chain.add(assumedEntry());
-      out.notices.push({ code: "repayment-missing", periodKey: date, text: "The repayment has not been found in Actual yet. If it was paid earlier or later than the matching rule allows, adjust the days in the Repayment matching tab." });
+      // Missed (owner decision 2026-10-07): a repayment that has fallen due and is not in Actual
+      // counts as not paid, so the next one carries the interest that built up meanwhile.
+      if (date <= ctx.today) missed.push(date);
+      else chain.add(assumedEntry());
+      const missedText = repaymentAlignment(ctx).aligned(date)?.reasons.find((r) => r.code === "missed")?.text ?? "No payment to this loan was found for this due date.";
+      out.notices.push(ctx.rules.repayment
+        ? { code: "repayment-missing", periodKey: date, text: `${missedText} If it was paid, choose the payment for this due date.` }
+        : { code: "no-repayment-rule", periodKey: date, text: `${missedText} If repayments are not transfers into the loan account, set up repayment matching in Link to Actual so Bench can find them.` });
       continue;
     }
     if (match.status === "multiple") {
@@ -146,16 +160,18 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     // Bench split the user edited (owner decision 2026-10-06). Nothing is written to Actual.
     if (row.isParent && candidate.loanSplit) {
       planRecordedSplit(ctx, out, { date, row, repayment, chain, actualDated, allocation, period });
+      missed = [];
       continue;
     }
     // The matched payment clears the loan (a payoff, or the last repayment): planned as the payoff.
     const matchedPayoff = payoffPlan(ctx, chain, row);
     if (matchedPayoff) {
-      planSplit(ctx, out, { ...base, row, candidate, matchStatus: "payoff", unsafeReasons: match.status === "unsafe" ? evaluation.unsafeReasons : [], payoff: matchedPayoff });
+      planSplit(ctx, out, { ...base, row, candidate, matchStatus: "payoff", unsafeReasons: match.status === "unsafe" ? evaluation.unsafeReasons : [], payoff: matchedPayoff, missed });
       settled = true;
       break;
     }
-    planSplit(ctx, out, { ...base, row, candidate, matchStatus: match.status, unsafeReasons: evaluation.unsafeReasons, payoff: null, expectedPaymentMinor: expectedPayment });
+    planSplit(ctx, out, { ...base, row, candidate, matchStatus: match.status, unsafeReasons: evaluation.unsafeReasons, payoff: null, missed });
+    missed = [];
   }
   // Paid off after the last due date so far (the next repayment is not due yet): the payoff takes
   // the place of the next repayment due, or stands on its own date after the loan's last one.
@@ -170,7 +186,7 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
         planSplit(ctx, out, {
           date: due, row: trailing, candidate: ctx.candidates.find((c) => c.id === trailing.id)!, repayment, calc,
           period: { key: due, from: due, to: due, chargeDates: [due] }, chain, actualDated, allocation, lenderFeed,
-          matchStatus: "payoff", unsafeReasons: [], payoff: plan,
+          matchStatus: "payoff", unsafeReasons: [], payoff: plan, missed,
         });
       }
     }
@@ -257,7 +273,8 @@ function planSplit(
     matchStatus: string;
     unsafeReasons: string[];
     payoff: PayoffPlan | null;
-    expectedPaymentMinor?: number;
+    /** Earlier due dates passed without a payment since the last one: counted as not paid. */
+    missed?: string[];
   },
 ): void {
   const { date, row, candidate, repayment, calc, period, chain, actualDated, allocation, lenderFeed, payoff } = input;
@@ -283,14 +300,11 @@ function planSplit(
   const blockers: PostingReason[] = [...baseBlockers(ctx)];
   const reviews: PostingReason[] = decision.reasons.filter((code) => code !== "reconciled-row-read-only").map(existingStructureReason);
   if (row.reconciled) blockers.push(REASONS.reconciledRow);
+  reviews.push(...alignmentReviews(ctx, date));
   if (payoff) {
     reviews.push(REASONS.payoff);
     const f = payoff.figures;
     reviews.push({ code: "payoff-figures", text: `Paid ${fmt(Math.abs(row.amountMinor))} on ${f.paidDate}: principal owed ${fmt(f.owedPrincipalMinor)} and interest to that day ${fmt(f.interestMinor)}${f.excessMinor > 0 ? `, ${fmt(f.excessMinor)} more than that (${payoff.fees ? "shown as a payoff fee" : "added to the interest line"}; change it if it is something else)` : f.excessMinor < 0 ? `, ${fmt(-f.excessMinor)} less (within your tolerance; taken off the interest)` : ""}.` });
-  } else if (input.expectedPaymentMinor !== undefined) {
-    // A payment far from the scheduled repayment is never a routine split (owner decision 2026-10-07).
-    const difference = Math.abs(Math.abs(row.amountMinor) - input.expectedPaymentMinor);
-    if (difference > Math.max(ctx.debt.driftToleranceMinor ?? 100, Math.round(input.expectedPaymentMinor / 10))) reviews.push(REASONS.unusualAmount);
   }
   // T279: a payment that is already a transfer is split only when its loan-side row is exactly as
   // Actual made it; Actual deletes that row on the split and Undo re-creates it (with a new id).
@@ -328,6 +342,10 @@ function planSplit(
       observedRepayments = observed;
       const assumed = earlier.filter((e) => e.assumed).map((e) => e.dueDate);
       if (assumed.length) reviews.push(assumedRepaymentsReason(assumed));
+      if (input.missed?.length) reviews.push(missedRepaymentsReason(input.missed));
+      if (allocated.row.unpaidInterestMinor) {
+        blockers.push({ code: "interest-only-payment", text: `This payment does not cover the interest owed (${fmt(allocated.row.interestMinor + allocated.row.unpaidInterestMinor)})${input.missed?.length ? " after the missed repayment" : ""}, so none of it is principal and Bench cannot split it. In Actual, give it the interest category; the ${fmt(allocated.row.unpaidInterestMinor)} still owed goes into the next repayment.` });
+      }
     } else {
       reviews.push({ code: "actual-date-split-unavailable", text: `Bench could not split this payment by its actual date (${allocated.message}). The split uses the scheduled calculation; review it before applying.` });
     }
@@ -337,7 +355,8 @@ function planSplit(
   const liability = usableAccount(ctx, ctx.debt.liabilityAccountId);
   if (!payment || !liability) blockers.push(REASONS.missingAccount);
   const plan = payment && liability ? splitChildren(ctx, row, { interest: interestMinor, fees: feesMinor }, lenderFeed) : null;
-  if (plan && !plan.ok) blockers.push(...plan.blockers);
+  // An interest-only payment already says why there is no principal.
+  if (plan && !plan.ok) blockers.push(...plan.blockers.filter((b) => !(b.code === REASONS.invalidPrincipal.code && blockers.some((x) => x.code === "interest-only-payment"))));
   const children = plan?.ok ? plan.children : [];
   const components: ComponentLine[] = children.map((c) => ({ kind: c.economicKind, amountMinor: Math.abs(c.amountMinor) }));
 
@@ -358,6 +377,7 @@ function planSplit(
       ...(replacesCounterpart ? { replacesCounterpart } : {}),
       ...(override ? { override } : {}),
       ...(payoff ? { payoff: payoff.figures } : {}),
+      ...(input.missed?.length ? { missedDueDates: input.missed } : {}),
     },
     engineVersions: versions,
     // FR-170c: one payment matched under the enabled rule; the policy decides from the notes. A payoff is never routine.
@@ -388,7 +408,7 @@ function paymentSide(ctx: PlanningContext, matched: MatchCandidate): { ok: true;
  */
 function transferCounterpartVerdict(ctx: PlanningContext, payment: RowSnapshot): { ok: true; counterpart: RowSnapshot } | { ok: false; reason: PostingReason } {
   const counterpart = payment.transferId ? ctx.rows.get(payment.transferId) : undefined;
-  if (!counterpart) return { ok: false, reason: { code: "counterpart-not-visible", text: "The payment is already a transfer, but Bench cannot see its loan-side row. Widen the preview window, or check the transfer in Actual." } };
+  if (!counterpart) return { ok: false, reason: { code: "counterpart-not-visible", text: "The payment is already a transfer, but Bench cannot see its loan-side row. Choose Whole loan as the period, or check the transfer in Actual." } };
   if (counterpart.accountId !== ctx.debt.liabilityAccountId) return { ok: false, reason: { code: "transfer-elsewhere", text: "The payment is a transfer to a different account than this loan. Fix it in Actual, then re-run." } };
   if (counterpart.importedId || counterpart.importedPayee) return { ok: false, reason: REASONS.lenderCounterpartProtected };
   if (ctx.candidates.some((c) => c.id === counterpart.id && c.postingLinked)) return { ok: false, reason: REASONS.alreadyLinked };
@@ -458,7 +478,7 @@ function nonPrincipalParts(ctx: PlanningContext, amounts: { interest: number; fe
     if (["principal", "interest", "fee", "draw"].includes(c.economicKind)) continue;
     if (c.destination === "tracking-only") continue;
     if (c.destination === "transfer") {
-      blockers.push({ code: "unsupported-component-destination", text: `The "${c.label}" component is a transfer; Bench only splits principal as a transfer. Change it in Tracking setup.` });
+      blockers.push({ code: "unsupported-component-destination", text: `The "${c.label}" component is a transfer; Bench only splits principal as a transfer. Change it in Link to Actual.` });
       continue;
     }
     if (c.amountRule === "fixed" && (c.fixedAmountMinor ?? 0) > 0) parts.push({ component: c, kind: c.economicKind as EconomicKind, amount: c.fixedAmountMinor ?? 0 });
@@ -505,7 +525,7 @@ function planRecordedSplit(
   const calculatedInterestMinor = input.actualDated && allocated.ok
     ? allocateRepaymentSplitCalculated(ctx, input.allocation, earlier, entry) ?? Math.abs(input.repayment.interestMinor)
     : Math.abs(input.repayment.interestMinor);
-  const reviews: PostingReason[] = [];
+  const reviews: PostingReason[] = [...alignmentReviews(ctx, date)];
   const fmt = (minor: number) => (minor / 10 ** ctx.model.currency.minorDigits).toFixed(ctx.model.currency.minorDigits);
   const closing = { date: row.date, principalMinor: allocated.ok ? allocated.row.balanceAfterMinor : 0, accruedInterestMinor: 0, carriedRemainder: null };
   const counterpart = principalChild?.transferId ? ctx.rows.get(principalChild.transferId) ?? null : null;
@@ -633,10 +653,18 @@ function repaymentsBeforeWindow(ctx: PlanningContext): ChainEntry[] {
   if (!run.ok) return [];
   return run.events.filter((e) => e.eventType === "repayment" || e.eventType === "final-payment").map((e) => {
     const split = livePosting(ctx, "repayment-split", e.date);
-    return split?.outputSnapshot.kind === "restructure"
-      ? entryFromSplit(split.outputSnapshot, e.date)
-      : { dueDate: e.date, paidDate: e.date, amountMinor: Math.abs(e.cashMovementMinor), feesMinor: Math.abs(e.feesMinor), assumed: true };
+    const output = split?.outputSnapshot;
+    if (output?.kind === "restructure") return entryFromSplit(output, e.date);
+    // Splits already in Actual (recorded as they are, or with their amounts changed) count as paid too.
+    if (output?.kind === "claim" && output.recordedSplit) return entryFromRecorded(output.recordedSplit, e.date);
+    if (output?.kind === "adjust-split") return entryFromRecorded(output.recordedSplit, e.date);
+    return { dueDate: e.date, paidDate: e.date, amountMinor: Math.abs(e.cashMovementMinor), feesMinor: Math.abs(e.feesMinor), assumed: true };
   });
+}
+
+function missedRepaymentsReason(dates: string[]): PostingReason {
+  const shown = dates.length > 3 ? `${dates.slice(0, 3).join(", ")} and ${dates.length - 3} more` : dates.join(", ");
+  return { code: "earlier-repayment-missed", text: `The repayment${dates.length === 1 ? "" : "s"} due ${shown} ${dates.length === 1 ? "was" : "were"} not found in Actual, so this split counts ${dates.length === 1 ? "it" : "them"} as not paid: the interest that built up since the last payment is in this one. If ${dates.length === 1 ? "it was" : "they were"} paid, choose the payment first.` };
 }
 
 function assumedRepaymentsReason(dates: string[]): PostingReason {
@@ -655,7 +683,7 @@ function planLenderLink(ctx: PlanningContext, out: PlanResult, split: NonNullabl
   const childId = split.actualIds?.[childIndex + 1] ?? null;
   const child = childId ? ctx.rows.get(childId) : undefined;
   if (!parent || !child) {
-    out.notices.push({ code: "split-not-visible", periodKey: date, text: "The applied split is not in the read window; widen the preview window to link the lender row." });
+    out.notices.push({ code: "split-not-visible", periodKey: date, text: "The applied split is outside the period shown; choose Whole loan as the period to link the lender row." });
     return;
   }
   const lenderMatch = matchPeriod(ctx, "lender-repayment-row", { periodKey: date, date, paymentMinor: Math.abs(child.amountMinor) });

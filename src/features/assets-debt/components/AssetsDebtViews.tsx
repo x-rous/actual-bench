@@ -1,5 +1,6 @@
 "use client";
 
+import { useBackgroundLoanChecks } from "../lib/loanChecks";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -60,6 +61,7 @@ export function DebtListView() {
   const attentionById = Object.fromEntries(needing.map((item) => [item.id, attentionText(item.reasons[0])]));
   const hrefById = Object.fromEntries(needing.map((item) => [item.id, hrefOf(item)]));
   const shown = (debts.data ?? []).filter((d) => !onlyAttention || attentionById[d.id]);
+  const checks = useBackgroundLoanChecks(debts.data);
   const setFilter = (on: boolean) => router.replace(on ? `${LOANS_PATH}?filter=attention` : LOANS_PATH);
   return (
     <AssetsDebtShell
@@ -80,6 +82,7 @@ export function DebtListView() {
               <button type="button" aria-pressed={!onlyAttention} onClick={() => setFilter(false)} className={cn("rounded-md px-3 py-1 text-xs", !onlyAttention ? "bg-foreground text-background" : "hover:bg-muted")}>All loans</button>
               <button type="button" aria-pressed={onlyAttention} onClick={() => setFilter(true)} className={cn("rounded-md px-3 py-1 text-xs", onlyAttention ? "bg-foreground text-background" : "hover:bg-muted")}>Needs attention {needing.length}</button>
             </div>
+            {checks.checking ? <span role="status" className="text-xs text-muted-foreground">Checking {checks.checking} in Actual…</span> : null}
             <div className="ml-auto flex items-center gap-2">
               <Checkbox id="include-archived" checked={includeArchived} onCheckedChange={(v) => setIncludeArchived(v === true)} />
               <Label htmlFor="include-archived" className="text-xs">Show archived loans</Label>

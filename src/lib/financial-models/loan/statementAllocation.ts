@@ -60,6 +60,11 @@ export type AllocatedRepayment = ObservedRepayment & {
   balanceAfterMinor: number;
   /** Interest accrued over the repayment's own period on actual dates, exactly (the economics). */
   economicInterest: string;
+  /**
+   * Interest owed that this repayment did not cover (it all went to interest, none to principal);
+   * carried to the next repayment. Happens after a missed repayment on an interest-heavy loan.
+   */
+  unpaidInterestMinor?: number;
 };
 
 export type StatementAllocationResult =
@@ -168,20 +173,34 @@ export function createObservedRepaymentAllocator(input: {
     // What was reported so far moves by the edit only, so the next due-date difference absorbs it
     // and unedited repayments allocate exactly as before (the accrual itself is unchanged).
     if (applied !== undefined && allocation === "accrued-to-due-date") nextReportedToDue = add(nextReportedToDue, fromMinor(applied - calculatedMinor, digits));
-    const principalMinor = r.amountMinor - fees - interestMinor;
-    if (principalMinor < 0) return fail(`Repayment ${i + 1} does not cover the interest it owes.`);
+    let principalMinor = r.amountMinor - fees - interestMinor;
+    let unpaid = DEC_ZERO;
+    let interestReported = interestMinor;
+    if (principalMinor < 0) {
+      // A user's own interest figure must fit the payment; a calculated one that does not (after a
+      // missed repayment) takes the whole payment, and the rest stays owed for the next repayment.
+      if (applied !== undefined) return fail(`Repayment ${i + 1} does not cover the interest it owes.`);
+      interestReported = r.amountMinor - fees;
+      unpaid = sub(interestExact, fromMinor(interestReported, digits));
+      principalMinor = 0;
+    }
+    const unpaidMinor = principalMinor === 0 && interestReported !== interestMinor ? interestMinor - interestReported : 0;
     const row: AllocatedRepayment = {
       dueDate: r.dueDate,
       paidDate: r.paidDate,
       amountMinor: r.amountMinor,
-      interestMinor,
+      interestMinor: interestReported,
       feesMinor: fees,
       principalMinor,
       balanceBeforeMinor: balanceMinor,
       balanceAfterMinor: balanceMinor - principalMinor,
       economicInterest: toDecString(economic),
+      ...(unpaidMinor > 0 ? { unpaidInterestMinor: unpaidMinor } : {}),
     };
-    if (allocation === "as-calculated") carriedIn = DEC_ZERO;
+    // Interest not covered is carried: as calculated, into the next repayment; to the due date, by
+    // reporting less so far, so the next due-date difference includes it.
+    if (allocation === "as-calculated") carriedIn = unpaid;
+    else nextReportedToDue = sub(nextReportedToDue, unpaid);
     reportedToDue = nextReportedToDue;
     actualToPrevious = add(actualToPrevious, economic);
     balanceMinor -= principalMinor;

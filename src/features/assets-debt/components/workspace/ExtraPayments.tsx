@@ -65,15 +65,17 @@ export function ExtraPayments({ debtId, payments, digits, scheduleDirty, onChang
     <section aria-labelledby="extra-payments" className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
       <div className="flex flex-wrap items-baseline gap-x-2">
         <h2 id="extra-payments" className="text-sm font-semibold">Payments not in the schedule</h2>
-        <p className="text-xs text-muted-foreground">Money paid into the loan account that is not a scheduled repayment, such as an extra payment.</p>
+        <p className="text-xs text-muted-foreground">Money paid into, or taken out of, the loan account that the schedule does not explain, such as an extra payment.</p>
       </div>
       <ul className="flex flex-col divide-y divide-border/60">
         {payments.map((p) => (
           <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-xs">
             <span className="w-20 tabular-nums">{shortDay(p.date)}</span>
-            <span className="w-28 text-right font-semibold tabular-nums">{money(p.amountMinor)}</span>
+            <span className="w-28 text-right font-semibold tabular-nums">{p.direction === "out" ? `-${money(p.amountMinor)}` : money(p.amountMinor)}</span>
             <span className="min-w-40 flex-1 truncate text-muted-foreground">{[p.payeeName, p.notes].filter(Boolean).join(" · ")}</span>
-            {!p.recorded ? (
+            {p.direction === "out" ? (
+              <span className="text-amber-700 dark:text-amber-300">Taken out of the loan account: this adds to what you owe. If it is a transfer entered the wrong way round, fix it in Actual.</span>
+            ) : !p.recorded ? (
               <Button type="button" size="sm" className="h-7" disabled={busy || scheduleDirty} title={scheduleDirty ? "Save or discard your changes on Terms & Schedule first" : undefined} onClick={() => askRecord(p)}>Record as extra payment</Button>
             ) : p.changed ? (
               <>

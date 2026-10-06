@@ -723,6 +723,8 @@ export const DEBT_MATCH_PURPOSES = ["repayment", "interest-charge", "lender-repa
 export type DebtMatchPurpose = (typeof DEBT_MATCH_PURPOSES)[number];
 export const DEBT_TRANSACTION_LINK_ROLES = [
   "repayment",
+  /** The user's choice of the payment for a due date (owner decision 2026-10-07); not a claim. */
+  "repayment-choice",
   "lender-repayment-row",
   "lender-interest-charge",
   "extra-repayment",

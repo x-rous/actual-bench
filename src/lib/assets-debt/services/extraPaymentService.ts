@@ -17,8 +17,14 @@ import type { RowSnapshot } from "./snapshot";
 export type UnscheduledPayment = {
   id: string;
   date: string;
-  /** Debt reduced, as a positive amount. */
+  /** Debt reduced (or, for money taken out, added), as a positive amount. */
   amountMinor: number;
+  /**
+   * "in": money paid into the loan (an extra payment to record). "out": money taken out of the loan
+   * account, which adds to what is owed and nothing in the schedule explains (owner decision
+   * 2026-10-07): often a transfer entered the wrong way round.
+   */
+  direction?: "in" | "out";
   payeeName: string | null;
   notes: string | null;
   /** Linked to this loan as an extra payment. */
@@ -80,7 +86,18 @@ export function unscheduledPayments(
     const outside = row.date < window.from || row.date > window.to;
     if (row.accountId !== liability || row.isChild || row.date < opening || (outside && !recorded.has(row.id))) continue;
     const reduces = negativeIsDebt ? row.amountMinor > 0 : row.amountMinor < 0;
-    if (!reduces || row.importedId?.startsWith("abdebt:")) continue;
+    if (row.importedId?.startsWith("abdebt:")) continue;
+    if (!reduces) {
+      // Money taken out of the loan account: listed when nothing explains it. The loan's own opening
+      // money, a draw in Terms & Schedule, and the lender's own charges on a loan that records
+      // interest as its own transaction are expected.
+      const amountOut = Math.abs(row.amountMinor);
+      const drawn = detail.assumptions.some((a) => a.assumptionKind === "draw" && a.effectiveFrom === row.date && a.amountMinor === amountOut);
+      const lenderCharge = detail.debt.lenderPattern === "separate-interest" && !row.transferId;
+      if (row.date <= opening || drawn || lenderCharge || claimed.has(row.id) || outside) continue;
+      out.push({ id: row.id, date: row.date, amountMinor: amountOut, payeeName: row.payeeName, notes: row.notes, recorded: false, inSchedule: false, recordedAs: null, changed: false, direction: "out" });
+      continue;
+    }
     // With a lender feed, the lender's own imported repayment rows are handled by lender links.
     if (options.lenderFeed && row.importedId && !recorded.has(row.id)) continue;
     if (claimed.has(row.id) && !recorded.has(row.id)) continue;
@@ -89,7 +106,7 @@ export function unscheduledPayments(
     const event = link ? recordedEvent(detail.assumptions, link.periodKey) : null;
     const recordedAs = event ? { date: event.effectiveFrom, amountMinor: event.amountMinor ?? 0 } : null;
     const inSchedule = extraInSchedule(detail.assumptions, row.date, amountMinor) !== null;
-    out.push({ id: row.id, date: row.date, amountMinor, payeeName: row.payeeName, notes: row.notes, recorded: !!link, inSchedule, recordedAs, changed: !!recordedAs && !inSchedule && (recordedAs.date !== row.date || recordedAs.amountMinor !== amountMinor) });
+    out.push({ id: row.id, date: row.date, amountMinor, payeeName: row.payeeName, notes: row.notes, recorded: !!link, inSchedule, recordedAs, changed: !!recordedAs && !inSchedule && (recordedAs.date !== row.date || recordedAs.amountMinor !== amountMinor), direction: "in" });
   }
   return out.sort((a, b) => b.date.localeCompare(a.date));
 }

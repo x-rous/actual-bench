@@ -14,9 +14,8 @@ import type { PostingView } from "@/lib/assets-debt/services/proposalService";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { formatAmount } from "../../lib/money";
 import { applyPosting, checkInterruptedPosting, completeInterruptedLink, readForClaims, type PostingActionContext } from "../../lib/postingActions";
-import { getSchedule, listMatchRules } from "../../lib/debtsApi";
+import { clearRepaymentChoice, getSchedule, listMatchRules, setRepaymentChoice } from "../../lib/debtsApi";
 import { declinePosting, listPostings, overrideSplit, proposeReversal } from "../../lib/postingsApi";
-import { backtestSummary } from "../rules/MatchingCard";
 import { DateField, SelectField } from "../fields";
 import { stepsOf } from "./steps";
 import type { PreviewDirectory } from "../preview/renderPreviewRows";
@@ -24,8 +23,9 @@ import { LenderReconciliation } from "../reconciliation/LenderReconciliation";
 import { bulkSteps, bulkSummary, runBulk, type BulkResult } from "./bulkApply";
 import { changeContext, changeHeadline } from "./changeText";
 import { ChangeList, type ChangeActions } from "./ChangeList";
-import { buildChangeRows, countByFilter, rowsFor, type ChangeFilter, type ChangeRowModel } from "./changeRows";
+import { buildChangeRows, countByFilter, groupMissedRows, rowsFor, type ChangeFilter, type ChangeRowModel } from "./changeRows";
 import { ExtraPayments } from "./ExtraPayments";
+import { ChoosePayment } from "./ChoosePayment";
 import { LoanStatusStrip, type StripMatching } from "./LoanStatusStrip";
 import { matchingFacts, repaymentTimeline } from "./matchingStrip";
 import { useBackgroundRefresh } from "./useBackgroundRefresh";
@@ -61,7 +61,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   const [period, setPeriod] = useState<Period>("whole");
   const [custom, setCustom] = useState({ from: opening, to: today() });
   const range = periodRange(period, opening, custom);
-  const refresh = useBackgroundRefresh({ debt, directory, offsetHistories, from: range.from, to: range.to });
+  const refresh = useBackgroundRefresh({ debt, directory, offsetHistories, from: range.from, to: range.to, scheduleDirty });
   const postings = useQuery({ queryKey: ["assets-debt", "postings", debtId], queryFn: () => listPostings(debtId) });
   const [filter, setFilter] = useState<ChangeFilter>(initialFilter);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -91,12 +91,10 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     const dates = rule?.conditions?.items.find((c) => c.kind === "expected-date");
     const source = rule?.conditions?.items.find((c) => c.kind === "source-account");
     const accountId = source && "accountId" in source ? source.accountId : debt.debt.paymentAccountId;
-    let lastCheck: string | null = null;
-    try {
-      lastCheck = rule?.record.lastBacktestJson ? `Last check: ${backtestSummary(JSON.parse(rule.record.lastBacktestJson))}` : null;
-    } catch {
-      lastCheck = null;
-    }
+    // Live, from this refresh (the rule's stored check goes stale as payments arrive).
+    const found = cells.filter((c) => c.state === "applied" || c.state === "edited" || c.state === "found" || c.state === "blocked").length;
+    const missed = cells.filter((c) => c.state === "missing").length;
+    const lastCheck = cells.length ? `${found} found, ${missed} not found` : null;
     return {
       cells,
       facts: matchingFacts(events, allRows, cells, today()),
@@ -104,12 +102,13 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
       window: dates && "daysBefore" in dates ? { before: dates.daysBefore, after: dates.daysAfter } : null,
       ruleOn: rules.data ? !!rule : null,
       lastCheck,
-      unrecordedExtra: (refresh.unscheduled ?? []).filter((p) => !p.recorded).length,
+      unrecordedExtra: (refresh.unscheduled ?? []).filter((p) => !p.recorded && p.direction !== "out").length,
+      takenOut: (refresh.unscheduled ?? []).filter((p) => p.direction === "out").length,
       changedExtra: (refresh.unscheduled ?? []).filter((p) => p.changed).length,
     };
   }, [schedule.data, allRows, rules.data, directory, debt.debt.paymentAccountId, refresh.unscheduled, paidOff]);
   const counts = countByFilter(allRows);
-  const rows = rowsFor(allRows, filter);
+  const rows = groupMissedRows(rowsFor(allRows, filter));
   const steps = useMemo(() => stepsOf(postings.data ?? []), [postings.data]);
   const previewDirectory: PreviewDirectory | null = directory ? {
     accounts: directory.accounts,
@@ -122,6 +121,14 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   const context = async (): Promise<PostingActionContext> => {
     if (!connection || !directory) throw new Error("Connect to the budget first.");
     const transport = getTransport(connection);
+    // Every apply and undo re-checks Actual just before writing; in Direct mode that check reads this
+    // browser's copy, so pull changes made elsewhere first. A failed sync is not fatal: the check
+    // still refuses if what it reads differs from the preview.
+    try {
+      await transport.sync();
+    } catch {
+      // keep going on what this browser has
+    }
     let payees = refresh.transferPayees;
     if (!Object.keys(payees).length) {
       payees = {};
@@ -183,7 +190,20 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     onError: (error) => setProblem(error instanceof Error ? error.message : String(error)),
   });
 
+  // "This is the payment" (owner decision 2026-10-07): the due date being chosen for, if any.
+  const [choosing, setChoosing] = useState<string | null>(null);
+  const choice = useMutation({
+    mutationFn: async ({ dueDate, paymentId }: { dueDate: string; paymentId: string | null }) => (paymentId ? setRepaymentChoice(debtId, { dueDate, transactionId: paymentId }) : clearRepaymentChoice(debtId, dueDate)),
+    onSuccess: async (_r, { paymentId }) => {
+      setChoosing(null);
+      toast.success(paymentId ? "Payment chosen. Bench lined the others up around it." : "Choice forgotten. Bench matches this due date again.");
+      await afterWrite();
+    },
+    onError: (error) => setProblem(error instanceof Error ? error.message : String(error)),
+  });
+
   const actions: ChangeActions = {
+    choose: (dueDate) => setChoosing(dueDate),
     apply: (posting) => act.mutate({ posting, action: "apply" }),
     decline: (posting) => act.mutate({ posting, action: "decline" }),
     undo: (posting) => act.mutate({ posting, action: "undo" }),
@@ -311,6 +331,16 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
         </div>
       ) : null}
 
+      <ChoosePayment
+        dueDate={choosing}
+        options={refresh.paymentOptions ?? []}
+        chosenId={refresh.repaymentChoices?.find((c) => c.key === choosing)?.paymentId ?? null}
+        digits={digits}
+        busy={choice.isPending}
+        onChoose={(paymentId) => choosing && choice.mutate({ dueDate: choosing, paymentId })}
+        onClear={() => choosing && choice.mutate({ dueDate: choosing, paymentId: null })}
+        onClose={() => setChoosing(null)}
+      />
       <Dialog open={confirming} onOpenChange={(open) => !open && setConfirming(false)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>

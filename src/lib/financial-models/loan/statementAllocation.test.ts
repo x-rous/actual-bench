@@ -43,8 +43,27 @@ describe("observed repayment allocation", () => {
     expect(bad([{ dueDate: "2024-02-01", paidDate: "2024-02-01", amountMinor: 0 }]).ok).toBe(false);
     expect(bad([{ dueDate: "2024-02-01", paidDate: "2024-02-01", amountMinor: 100, feesMinor: 200 }]).ok).toBe(false);
     expect(bad([{ dueDate: "2024-02-01", paidDate: "2023-12-01", amountMinor: 100_000 }]).ok).toBe(false);
-    expect(bad([{ dueDate: "2024-02-01", paidDate: "2024-02-01", amountMinor: 1_000 }])).toMatchObject({ ok: false, message: expect.stringMatching(/does not cover the interest/) });
+    // A user's own interest figure that the payment cannot hold is refused.
+    expect(bad([{ dueDate: "2024-02-01", paidDate: "2024-02-01", amountMinor: 1_000, appliedInterestMinor: 2_000 }])).toMatchObject({ ok: false, message: expect.stringMatching(/does not cover the interest/) });
     expect(allocateObservedRepayments({ model: { ...MODEL, profile: { ...MODEL.profile, accrual: "per-period" } }, opening, repayments: [] }).ok).toBe(false);
+  });
+
+  it("a payment smaller than the interest owed (after a missed repayment) is all interest; the rest is carried to the next one", () => {
+    const run = (allocation: "as-calculated" | "accrued-to-due-date") => allocateObservedRepayments({ model: MODEL, opening, allocation, repayments: [
+      { dueDate: "2024-02-01", paidDate: "2024-02-01", amountMinor: 1_000 },
+      { dueDate: "2024-03-01", paidDate: "2024-03-01", amountMinor: 500_000 },
+    ] });
+    for (const allocation of ["as-calculated", "accrued-to-due-date"] as const) {
+      const result = run(allocation);
+      if (!result.ok) throw new Error(result.message);
+      const [first, second] = result.rows;
+      expect(first).toMatchObject({ interestMinor: 1_000, principalMinor: 0, balanceAfterMinor: first.balanceBeforeMinor });
+      expect(first.unpaidInterestMinor).toBeGreaterThan(0);
+      // The carried interest is in the next repayment, on top of its own month.
+      const alone = allocateObservedRepayments({ model: MODEL, opening, allocation, repayments: [{ dueDate: "2024-03-01", paidDate: "2024-03-01", amountMinor: 500_000 }] });
+      if (!alone.ok) throw new Error(alone.message);
+      expect(second.interestMinor + first.interestMinor).toBeCloseTo(alone.rows[0].interestMinor, -1);
+    }
   });
 
   it("flags a lender difference beyond the tolerance instead of absorbing it", () => {

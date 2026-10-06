@@ -84,6 +84,27 @@ describe("payments into the loan that are not scheduled repayments", () => {
     expect(result.unscheduled).toEqual([]);
   });
 
+  it("money taken out of the loan account that nothing explains is listed too, as 'out', with nothing to record", async () => {
+    const { s, extra } = await withExtra();
+    const out = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-15", amount: -604_356, payee: s.fake.transferPayeeId(ACCOUNTS.checking), notes: "Wrong way round" });
+    const { unscheduled } = await s.preview(window);
+    expect(unscheduled).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: out, date: "2024-02-15", amountMinor: 604_356, direction: "out", recorded: false }),
+      expect.objectContaining({ id: extra, direction: "in" }),
+    ]));
+  });
+
+  it("while Terms & Schedule has unsaved edits, a changed extra payment is shown as changed, not moved", async () => {
+    const { s, extra } = await withExtra();
+    recordExtraPayment(s.db, s.debtId, { actualTransactionId: extra, date: "2024-02-10", amountMinor: 2_000_000 });
+    const revision = getDebtDetail(s.db, s.debtId)!.debt.currentRevision;
+    s.fake.editInActual(extra, { date: "2024-02-12" });
+    const result = await s.preview(window, { followExtraPayments: false });
+    expect(result.followedExtraPayments).toEqual([]);
+    expect(getDebtDetail(s.db, s.debtId)!.debt.currentRevision).toBe(revision);
+    expect(result.unscheduled).toEqual([expect.objectContaining({ id: extra, changed: true, recordedAs: { date: "2024-02-10", amountMinor: 2_000_000 } })]);
+  });
+
   it("refuses a non-positive amount", async () => {
     const { s, extra } = await withExtra();
     expect(() => recordExtraPayment(s.db, s.debtId, { actualTransactionId: extra, date: "2024-02-10", amountMinor: 0 })).toThrow(/positive/);

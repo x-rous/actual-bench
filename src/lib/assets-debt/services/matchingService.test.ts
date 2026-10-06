@@ -101,9 +101,9 @@ describe("P1.4 matching service", () => {
     }, { from: "2024-02-01", to: "2024-02-01", snapshots: [{ accountId: "acc-checking", transactions: [transaction({ notes: "PAYMENT" })] }] })).toThrow(/cannot be enabled/);
   });
 
-  it("refuses to enable a strong rule while a fresh backtest is ambiguous", () => {
+  it("two possible payments for one due date: the rule can be turned on; the check pairs one and asks for a look (owner decision 2026-10-07)", () => {
     const id = debtId();
-    expect(() => createMatchingRule(db, id, {
+    const created = createMatchingRule(db, id, {
       purpose: "repayment",
       enabled: true,
       conditions: safeConditions,
@@ -112,7 +112,11 @@ describe("P1.4 matching service", () => {
       from: "2024-02-01",
       to: "2024-02-01",
       snapshots: [{ accountId: "acc-checking", transactions: [transaction({ id: "a" }), transaction({ id: "b" })] }],
-    })).toThrow(/multiple candidates/);
+    });
+    expect(created.record.enabled).toBe(true);
+    const check = JSON.parse(created.record.lastBacktestJson!) as { summary: { unique: number; multiple: number }; periods: Array<{ reviewReasons: string[] }> };
+    expect(check.summary).toMatchObject({ unique: 1, multiple: 0 });
+    expect(check.periods[0].reviewReasons.join(" ")).toMatch(/could also be this repayment/);
   });
 
   it("blocks an unknown format version only for that rule", () => {

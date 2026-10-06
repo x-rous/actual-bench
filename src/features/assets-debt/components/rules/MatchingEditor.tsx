@@ -29,7 +29,7 @@ import { useMatchingContext, type RecommendationContext } from "./useMatchingCon
  */
 
 const PURPOSE_HINT: Record<DebtMatchPurpose, string> = {
-  repayment: "The payment you make from your bank account for each due date. Every loan needs this rule.",
+  repayment: "How to recognise your repayments when they are not transfers into the loan account. Bench lines them up with the due dates itself: no day window, and amounts only need to be roughly right.",
   "lender-repayment-row": "Only if your lender's own transactions are imported into the loan account. Bench links them to your payments so the money counts once.",
   "interest-charge": "Only if your lender charges interest as its own transaction in the loan account. Bench links each charge to the period it belongs to.",
 };
@@ -91,7 +91,9 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
 
   // The history is read once per account and range; the check re-runs on the server as the rule changes.
   const accountIds = generated.ok ? generated.conditions.items.filter((c) => c.kind === "source-account").map((c) => c.accountId) : [];
-  const readIds = accountIds.length ? accountIds : [ctx.defaultSource].filter(Boolean);
+  // The loan account too: every transfer into it is one of the loan's payments (owner decision 2026-10-07).
+  const liabilityId = ctx.detail.data?.debt.liabilityAccountId ?? null;
+  const readIds = [...new Set([...(accountIds.length ? accountIds : [ctx.defaultSource]), ...(liabilityId ? [liabilityId] : [])])].filter(Boolean);
   const history = useQuery({
     queryKey: ["assets-debt", "match-history", ctx.connection?.id, readIds.join("|"), from, to],
     queryFn: () => readFreshMatchingHistory(getTransport(ctx.connection!), { accountIds: readIds, from, to }),
@@ -106,7 +108,9 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
     placeholderData: keepPreviousData,
   });
   const result = check.data;
-  const clean = !!result && !check.isFetching && result.summary.missing === 0 && result.summary.multiple === 0 && result.summary.unsafe === 0;
+  // A missed due date does not stop matching (it shows on Sync Repayments, where the payment can be
+  // chosen); only a payment Bench could never change does (owner decision 2026-10-07).
+  const clean = !!result && !check.isFetching && result.summary.unsafe === 0;
 
   const save = async (enabled: boolean) => {
     if (!ruleBody) return;
@@ -133,6 +137,7 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
   const accountOptions = accounts.filter((a) => !a.closed).map((a) => ({ value: a.id, label: `${a.name}${a.offBudget ? " (off budget)" : ""}` }));
   const categoryOptions = [{ value: "", label: "Any category" }, { value: "__empty", label: "Uncategorized only" }, ...categories.filter((c) => !c.hidden).map((c) => ({ value: c.id, label: `${c.groupName}: ${c.name}` }))];
   const amount = settings?.amount;
+  const loanAccountName = accounts.find((a) => a.id === ctx.detail.data?.debt.liabilityAccountId)?.name ?? null;
   const inline = "inline-flex w-auto align-middle";
 
   return (
@@ -166,6 +171,9 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
                 {!rule ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">Suggested from your loan settings</span> : null}
                 <Button type="button" variant="ghost" size="sm" className="ml-auto h-auto px-2 py-1 text-xs" onClick={() => setSettings(suggest(purpose))}>Reset to suggestion</Button>
               </div>
+              {purpose === "repayment" && loanAccountName ? (
+                <p className="rounded-md bg-muted/60 px-3 py-2 text-xs">Transfers into <span className="font-medium">{loanAccountName}</span> are found on their own, on any date and for any amount. This rule adds repayments that are not transfers.</p>
+              ) : null}
               <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm leading-8">
                 <span>a payment</span>
                 <SelectField hideLabel label="Direction" className={inline} value={settings.direction} options={[{ value: "outflow", label: "out of" }, { value: "inflow", label: "into" }, { value: "either", label: "in or out of" }]} onChange={(v) => update({ direction: v as MatchingSettings["direction"] })} />
@@ -187,12 +195,6 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
                 {amount?.mode === "between" ? (
                   <><MoneyField fixedDecimals hideLabel label="From amount" className="w-32" valueMinor={amount.minMinor} minorDigits={digits} onChange={(v) => setAmount({ ...amount, minMinor: v ?? 0 })} /><span>and</span><MoneyField fixedDecimals hideLabel label="To amount" className="w-32" valueMinor={amount.maxMinor} minorDigits={digits} onChange={(v) => setAmount({ ...amount, maxMinor: v ?? 0 })} /></>
                 ) : null}
-                <span className="basis-full" aria-hidden="true" />
-                <span>paid from</span>
-                <IntegerField hideLabel label="Days early" className="w-16" value={settings.daysEarly} onChange={(v) => update({ daysEarly: v ?? 0 })} />
-                <span>days before to</span>
-                <IntegerField hideLabel label="Days late" className="w-16" value={settings.daysLate} onChange={(v) => update({ daysLate: v ?? 0 })} />
-                <span>days after each due date.</span>
               </div>
               <p className="text-[11px] text-muted-foreground">Payments Bench already changed, or linked to another loan, are never matched again.</p>
             </section>
@@ -210,6 +212,8 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
                   <TextField label="Bank text contains" value={settings.importedPayeeContains} onChange={(v) => update({ importedPayeeContains: v })} placeholder="For example LOAN REPAYMENT" />
                   <TextField label="Notes contain" value={settings.notesContains} onChange={(v) => update({ notesContains: v })} />
                   <IntegerField label="Only on day of month" hint="Empty uses the due dates alone." value={settings.dayOfMonth} min={1} onChange={(v) => update({ dayOfMonth: v === null ? null : Math.min(31, Math.max(1, v)) })} />
+                  <IntegerField label="Days before a due date" hint="Only used when nothing above says what the payment looks like (any amount, no payee or text)." value={settings.daysEarly} min={0} onChange={(v) => update({ daysEarly: v ?? 0 })} />
+                  <IntegerField label="Days after a due date" value={settings.daysLate} min={0} onChange={(v) => update({ daysLate: v ?? 0 })} />
                   <SelectField label="Already a transfer" value={settings.transfer} options={[{ value: "any", label: "Either" }, { value: "present", label: "Yes" }, { value: "none", label: "No" }]} onChange={(v) => update({ transfer: v as MatchingSettings["transfer"] })} />
                   <SelectField label="Split" value={settings.split} options={[{ value: "any", label: "Either" }, { value: "single", label: "Not split" }, { value: "child", label: "A split line" }]} onChange={(v) => update({ split: v as MatchingSettings["split"] })} />
                   <SelectField label="Cleared" value={settings.cleared} options={[{ value: "any", label: "Either" }, { value: "cleared", label: "Cleared" }, { value: "uncleared", label: "Not cleared" }]} onChange={(v) => update({ cleared: v as MatchingSettings["cleared"] })} />
@@ -245,7 +249,7 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
       <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
         <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
         <Button type="button" variant="outline" disabled={saving || !generated.ok} onClick={() => void save(false)}>Save without turning on</Button>
-        <Button type="button" disabled={saving || !generated.ok || !clean} title={clean ? undefined : "Turn on once every due date found exactly one payment or is already handled"} onClick={() => void save(true)}>Save and turn on</Button>
+        <Button type="button" disabled={saving || !generated.ok || !clean} title={clean ? undefined : "A matched payment cannot be changed by Bench; see the check"} onClick={() => void save(true)}>Save and turn on</Button>
       </div>
     </div>
   );
@@ -262,20 +266,24 @@ function Stat({ value, label, tone }: { value: number; label: string; tone?: str
 
 function CheckResult({ result, digits, refreshing }: { result: DebtBacktestResult; digits: number; refreshing: boolean }) {
   const handled = result.periods.filter(isHandled).length;
-  const problems = result.summary.missing + result.summary.multiple + result.summary.unsafe;
+  const review = result.periods.filter((p) => !isHandled(p) && p.status === "unique" && p.reviewReasons.length).length;
+  const problems = result.summary.unsafe + result.summary.multiple;
   return (
     <div className={cn("flex flex-col gap-3", refreshing && "opacity-60")} aria-busy={refreshing}>
       <div className="flex flex-wrap gap-2">
         <Stat value={result.summary.unique} label="found one payment" tone="text-emerald-700 dark:text-emerald-300" />
         <Stat value={handled} label="already handled" />
-        <Stat value={result.summary.missing} label="no payment found" tone={result.summary.missing ? "text-amber-700 dark:text-amber-300" : undefined} />
-        <Stat value={result.summary.multiple} label="more than one" tone={result.summary.multiple ? "text-amber-700 dark:text-amber-300" : undefined} />
+        <Stat value={result.summary.missing} label="missed" tone={result.summary.missing ? "text-amber-700 dark:text-amber-300" : undefined} />
+        {result.summary.multiple ? <Stat value={result.summary.multiple} label="more than one" tone="text-amber-700 dark:text-amber-300" /> : null}
+        {review ? <Stat value={review} label="to look at" tone="text-amber-700 dark:text-amber-300" /> : null}
         {result.summary.unsafe ? <Stat value={result.summary.unsafe} label="cannot be changed" tone="text-destructive" /> : null}
       </div>
       <p role="status" className={cn("rounded-lg border px-3 py-2 text-sm", problems ? "border-amber-500/50 bg-amber-50/60 dark:bg-amber-950/20" : "border-emerald-500/40 bg-emerald-50/60 dark:bg-emerald-950/20")}>
         {problems
-          ? `${problems} due date${problems === 1 ? " needs" : "s need"} attention below. Allow more days or adjust the amount, or check Actual. You can save the rule without turning it on meanwhile.`
-          : "Ready to turn on: every due date found exactly one payment or is already handled."}
+          ? `${problems} matched payment${problems === 1 ? "" : "s"} cannot be changed by Bench (see below). Fix ${problems === 1 ? "it" : "them"} in Actual, or save the rule without turning it on meanwhile.`
+          : result.summary.missing
+            ? `Ready to turn on. ${result.summary.missing} due date${result.summary.missing === 1 ? " has" : "s have"} no payment: ${result.summary.missing === 1 ? "it shows" : "they show"} on Sync Repayments, where you can choose the payment.`
+            : "Ready to turn on: every due date has its payment or is already handled."}
       </p>
       {result.warnings.length ? <p className="text-xs text-amber-800 dark:text-amber-300">{result.warnings.join(" ")}</p> : null}
       <CheckTable result={result} digits={digits} />
@@ -285,7 +293,7 @@ function CheckResult({ result, digits, refreshing }: { result: DebtBacktestResul
 
 const RESULT: Record<string, { label: string; tone: string }> = {
   unique: { label: "Found", tone: "text-emerald-700 dark:text-emerald-300" },
-  missing: { label: "No payment found", tone: "text-amber-700 dark:text-amber-300" },
+  missing: { label: "Missed", tone: "text-amber-700 dark:text-amber-300" },
   multiple: { label: "More than one", tone: "text-amber-700 dark:text-amber-300" },
   unsafe: { label: "Cannot be changed", tone: "text-destructive" },
 };
@@ -302,18 +310,19 @@ function CheckTable({ result, digits }: { result: DebtBacktestResult; digits: nu
         <tbody>
           {result.periods.map((period) => {
             const handled = isHandled(period);
-            const look = handled ? { label: "Already handled", tone: "text-muted-foreground" } : RESULT[period.status] ?? { label: period.status, tone: "" };
+            const toLook = !handled && period.status === "unique" && period.reviewReasons.length > 0;
+            const look = handled ? { label: "Already handled", tone: "text-muted-foreground" } : toLook ? { label: "Found, to look at", tone: "text-amber-700 dark:text-amber-300" } : RESULT[period.status] ?? { label: period.status, tone: "" };
             const found = period.candidates[0];
             const detail = handled
               ? "Bench already applied a change for this date"
-              : period.status === "missing" ? "Nothing within the days allowed"
+              : period.status === "missing" ? period.reviewReasons[0] ?? "No payment to this loan was found for this due date."
                 : period.status === "multiple" ? `${period.candidates.length} payments match`
                   : found ? `${found.candidate.date} · ${formatAmount(Math.abs(found.candidate.amountMinor), digits)} · ${timing(found.deviation.days)}` : "";
             return (
               <tr key={period.expected.periodKey} className="border-t border-border/60">
                 <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">{period.expected.date}</td>
                 <td className={cn("whitespace-nowrap px-2 py-1.5 font-medium", look.tone)}>{look.label}</td>
-                <td className="px-2 py-1.5 text-muted-foreground">{detail}</td>
+                <td className="px-2 py-1.5 text-muted-foreground">{detail}{toLook ? <span className="block text-amber-800 dark:text-amber-300">{period.reviewReasons.join(" ")}</span> : null}</td>
               </tr>
             );
           })}

@@ -8,9 +8,10 @@ import { defaultActions, recommendedSettings, settingsToConditions } from "./mat
 /**
  * Repayment matching set up with a new loan (owner decision 2026-10-06). When the loan is first
  * saved with its loan account and the account repayments are paid from, Bench saves the suggested
- * repayment rule and checks it against the history since the loan started. A clean check (every due
- * date so far found exactly once, or none due yet) turns the rule on; otherwise the rule is saved
- * off so the user can see the check in the matching editor. Actual is only read.
+ * repayment rule and checks it against the history since the loan started. A clean check (no
+ * matched payment Bench could never change) turns the rule on, even with missed due dates, which
+ * show on Sync Repayments; otherwise the rule is saved off and opens in the matching editor.
+ * Actual is only read.
  */
 
 export type AutoMatchingResult =
@@ -21,8 +22,8 @@ export type AutoMatchingResult =
 const isoToday = () => new Date().toISOString().slice(0, 10);
 const inDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
-/** Clean as the matching editor counts it: nothing missing, ambiguous or unsafe. */
-export const checkIsClean = (check: DebtBacktestResult) => check.summary.missing === 0 && check.summary.multiple === 0 && check.summary.unsafe === 0;
+/** Clean as the matching editor counts it: nothing Bench could never change (missed due dates show on Sync Repayments). */
+export const checkIsClean = (check: DebtBacktestResult) => check.summary.multiple === 0 && check.summary.unsafe === 0;
 
 export async function setUpRepaymentMatching(detail: DebtDetail, transport: ActualBenchTransport, today = isoToday()): Promise<AutoMatchingResult> {
   const { debt } = detail;
@@ -50,7 +51,7 @@ export async function setUpRepaymentMatching(detail: DebtDetail, transport: Actu
   let check: DebtBacktestResult | null = null;
   let message: string | null = null;
   try {
-    const snapshots = await readFreshMatchingHistory(transport, { accountIds: [debt.paymentAccountId], from, to: today });
+    const snapshots = await readFreshMatchingHistory(transport, { accountIds: [debt.paymentAccountId, debt.liabilityAccountId], from, to: today });
     check = await checkDraftMatchRule(debt.id, { rule, from, to: today, snapshots });
     if (checkIsClean(check)) {
       try {
@@ -73,7 +74,9 @@ export function afterMatchingSetup(result: AutoMatchingResult, debtId: string, p
   if (result.status === "skipped") return { href: null, message: null, tone: "success" };
   if (result.status === "on") {
     const found = result.check.summary.unique;
-    return { href: path(debtId, "view=repayments"), message: found ? `Repayment matching is on: ${found} repayment${found === 1 ? "" : "s"} found in Actual.` : "Repayment matching is on. Bench looks for each repayment as it falls due.", tone: "success" };
+    const missed = result.check.summary.missing;
+    const base = found ? `Repayment matching is on: ${found} repayment${found === 1 ? "" : "s"} found in Actual.` : "Repayment matching is on. Bench looks for each repayment as it falls due.";
+    return { href: path(debtId, "view=repayments"), message: missed ? `${base} ${missed} due date${missed === 1 ? " has" : "s have"} no payment yet; choose ${missed === 1 ? "it" : "them"} on Sync Repayments if paid.` : base, tone: "success" };
   }
   const attention = result.check ? result.check.summary.missing + result.check.summary.multiple + result.check.summary.unsafe : 0;
   return {

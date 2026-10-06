@@ -16,6 +16,8 @@ import {
   livePosting,
   markerFor,
   matchPeriod,
+  alignmentReviews,
+  repaymentAlignment,
   usableAccount,
   windowRun,
   type PlanResult,
@@ -55,7 +57,10 @@ export function planPatternB(ctx: PlanningContext): PlanResult {
     return out;
   }
 
+  // Paid off (owner decision 2026-10-07): nothing is charged or expected after the payoff.
+  const payoff = patternBPayoff(ctx);
   for (const date of window.chargeDates) {
+    if (payoff && date > payoff.date) continue;
     const calc = eventsOn(ctx, date);
     if ("error" in calc) continue;
     const charge = calc.events.find((e) => e.eventType === "interest-charge");
@@ -120,8 +125,34 @@ export function planPatternB(ctx: PlanningContext): PlanResult {
     }));
   }
 
-  planPatternBRepayments(ctx, out, window.repaymentDates);
+  planPatternBRepayments(ctx, out, window.repaymentDates, payoff);
   return out;
+}
+
+/**
+ * When the loan was paid off, on a loan that records interest as its own transaction: an applied
+ * payoff, or the transfer into the loan account after which Actual's loan balance is zero, within
+ * the tolerance. Read from the loan account's rows, so only when they were read from the opening.
+ */
+export function patternBPayoff(ctx: PlanningContext): { date: string; rowId: string | null } | null {
+  for (const p of ctx.postings) {
+    if (p.postingKind === "repayment-link" && ["applying", "applied", "indeterminate"].includes(p.status) && p.outputSnapshot.kind === "claim" && p.outputSnapshot.payoff) return { date: p.outputSnapshot.payoff.paidDate, rowId: null };
+  }
+  const liability = ctx.debt.liabilityAccountId;
+  if (!liability || ctx.window.from > ctx.opening.date) return null;
+  const tolerance = ctx.debt.driftToleranceMinor ?? 100;
+  const owed = (balance: number) => (ctx.debt.signConvention === "positive-is-debt" ? balance : -balance);
+  const rows = [...ctx.rows.values()].filter((r) => r.accountId === liability && !r.isChild).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  let balance = 0;
+  let owedSoFar = false;
+  for (let i = 0; i < rows.length; i++) {
+    balance += rows[i].amountMinor;
+    if (owed(balance) > tolerance) owedSoFar = true;
+    const lastOfDay = i === rows.length - 1 || rows[i + 1].date !== rows[i].date;
+    const paysIn = rows[i].transferId && owed(rows[i].amountMinor) < 0;
+    if (owedSoFar && lastOfDay && paysIn && Math.abs(owed(balance)) <= tolerance) return { date: rows[i].date, rowId: rows[i].transferId };
+  }
+  return null;
 }
 
 /** One projection across the preview window gives the event dates; each posting then recomputes its own day. */
@@ -132,10 +163,32 @@ export function eventsInWindow(ctx: PlanningContext): { chargeDates: string[]; r
   return { chargeDates: pick(["interest-charge"]), repaymentDates: pick(["repayment", "final-payment"]), feeDates: pick(["fee"]) };
 }
 
-function planPatternBRepayments(ctx: PlanningContext, out: PlanResult, repaymentDates: string[]): void {
+function planPatternBRepayments(ctx: PlanningContext, out: PlanResult, repaymentDates: string[], payoff: { date: string; rowId: string | null } | null): void {
   const blockers = baseBlockers(ctx);
+  // The payoff settles the first due date on or after it (or stands on its own date after the last);
+  // nothing after that is expected.
+  const payoffDue = payoff ? repaymentDates.find((d) => d >= payoff.date) ?? payoff.date : null;
+  if (payoff?.rowId && payoffDue && !livePosting(ctx, "repayment-link", payoffDue)) {
+    const row = ctx.rows.get(payoff.rowId);
+    const counterpart = row?.transferId ? ctx.rows.get(row.transferId) : undefined;
+    const calc = eventsOn(ctx, payoffDue);
+    if (row && counterpart && !("error" in calc)) {
+      out.postings.push(finalize(ctx, {
+        postingKind: "repayment-link", periodKey: payoffDue, shape: "claim", generation: generationFor(ctx, "repayment-link", payoffDue), marker: null,
+        inputSnapshot: inputSnapshot(ctx, { key: payoffDue, from: payoffDue, to: payoffDue, chargeDates: [] }, [row, counterpart]),
+        outputSnapshot: {
+          format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "claim", rows: [row, counterpart], role: "repayment",
+          closing: { ...calc.closing, date: row.date, principalMinor: 0 },
+          payoff: { paidDate: row.date, owedPrincipalMinor: Math.abs(row.amountMinor), interestMinor: 0, excessMinor: 0 },
+        },
+        engineVersions: calc.versions,
+        policy: { blockers, reviews: [REASONS.payoff] },
+      }));
+    }
+  }
   for (const date of repaymentDates) {
     if (!ctx.rules.repayment) break;
+    if (payoffDue && date >= payoffDue) break;
     const calc = eventsOn(ctx, date);
     if ("error" in calc) continue;
     const repayment = calc.events.find((e) => e.eventType === "repayment" || e.eventType === "final-payment");
@@ -144,7 +197,8 @@ function planPatternBRepayments(ctx: PlanningContext, out: PlanResult, repayment
     const payment = Math.abs(repayment.cashMovementMinor);
     const match = matchPeriod(ctx, "repayment", { periodKey: date, date, paymentMinor: payment, principalMinor: Math.abs(repayment.principalMovementMinor) });
     if (!match || match.status === "missing") {
-      out.notices.push({ code: "repayment-missing", periodKey: date, text: "The repayment has not been found in Actual yet. If it was paid earlier or later than the matching rule allows, adjust the days in the Repayment matching tab." });
+      const missed = repaymentAlignment(ctx).aligned(date)?.reasons.find((r) => r.code === "missed")?.text ?? "No payment to this loan was found for this due date.";
+      out.notices.push({ code: "repayment-missing", periodKey: date, text: `${missed} If it was paid, choose the payment for this due date.` });
       continue;
     }
     if (match.status !== "unique") {
@@ -169,7 +223,7 @@ function planPatternBRepayments(ctx: PlanningContext, out: PlanResult, repayment
         inputSnapshot: inputSnapshot(ctx, period, [row, counterpart]),
         outputSnapshot: { format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "claim", rows: [row, counterpart], role: "repayment", closing: calc.closing },
         engineVersions: calc.versions,
-        policy: { blockers },
+        policy: { blockers, reviews: alignmentReviews(ctx, date) },
       }));
       continue;
     }

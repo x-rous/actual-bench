@@ -67,6 +67,8 @@ export type StripMatching = {
   unrecordedExtra: number;
   /** Recorded extra payments whose date or amount was changed in Actual afterwards. */
   changedExtra?: number;
+  /** Amounts taken out of the loan account that nothing explains (they add to what is owed). */
+  takenOut?: number;
 };
 
 const CELL: Record<DueState, string> = {
@@ -94,7 +96,8 @@ function Fact({ label, children, sub }: { label: string; children: React.ReactNo
   );
 }
 
-function gapCause(facts: MatchingFacts, drift: string | undefined, unrecordedExtra = 0, changedExtra = 0): { text: string; sub: string } {
+function gapCause(facts: MatchingFacts, drift: string | undefined, unrecordedExtra = 0, changedExtra = 0, takenOut = 0): { text: string; sub: string } {
+  if (takenOut) return { text: `${takenOut} amount${takenOut === 1 ? " was" : "s were"} taken out of the loan account`, sub: "They add to what you owe; check them below (often a transfer entered the wrong way round)." };
   if (changedExtra) return { text: `${changedExtra} extra payment${changedExtra === 1 ? " was" : "s were"} changed in Actual`, sub: "Update Terms & Schedule below, so the calculation uses the new date and amount." };
   if (drift !== "material") return { text: "Nothing to explain", sub: "Actual and the calculation agree within your allowed difference." };
   if (unrecordedExtra) return { text: `${unrecordedExtra} payment${unrecordedExtra === 1 ? "" : "s"} into the loan ${unrecordedExtra === 1 ? "is" : "are"} not in the schedule`, sub: "Record it as an extra payment below, so the calculation includes it." };
@@ -180,7 +183,7 @@ export function LoanStatusStrip({ refresh, counts, digits, onRefresh, onStatemen
             <Fact label="Last matched" sub={matching.facts.averageEarlyDays !== null ? (matching.facts.averageEarlyDays >= 0 ? `paid ${matching.facts.averageEarlyDays} day${matching.facts.averageEarlyDays === 1 ? "" : "s"} early on average` : `paid ${-matching.facts.averageEarlyDays} days late on average`) : undefined}>
               {matching.facts.lastMatched ? <>{shortDay(matching.facts.lastMatched.paidDate)} <span className="text-muted-foreground">for {shortDay(matching.facts.lastMatched.dueDate)}</span></> : "Nothing matched yet"}
             </Fact>
-            <Fact label="Where the gap comes from" sub={gapCause(matching.facts, status?.drift, matching.unrecordedExtra, matching.changedExtra).sub}>{gapCause(matching.facts, status?.drift, matching.unrecordedExtra, matching.changedExtra).text}</Fact>
+            <Fact label="Where the gap comes from" sub={gapCause(matching.facts, status?.drift, matching.unrecordedExtra, matching.changedExtra, matching.takenOut).sub}>{gapCause(matching.facts, status?.drift, matching.unrecordedExtra, matching.changedExtra, matching.takenOut).text}</Fact>
             <Fact label="Matching" sub={matching.lastCheck ?? undefined}>{matching.ruleOn === null ? "Loading…" : matching.ruleOn ? "Repayment rule on" : <span className="text-amber-700 dark:text-amber-300">No repayment rule on: set it up in Link to Actual</span>}</Fact>
           </div>
         </div>

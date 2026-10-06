@@ -239,6 +239,9 @@ export const rowSnapshotSchema = z.strictObject({
   isParent: z.boolean(), isChild: z.boolean(), parentId: z.string().nullable(), childCount: z.number().int().nonnegative(),
 });
 
+/** "This is the payment": an Actual transaction named as a due date's repayment. */
+export const repaymentChoiceRequestSchema = z.strictObject({ dueDate: isoDate, transactionId: id });
+
 export const previewRequestSchema = z.strictObject({
   from: isoDate,
   to: isoDate,
@@ -249,6 +252,8 @@ export const previewRequestSchema = z.strictObject({
   offsetHistories: offsetHistorySchema,
   /** Every row of the loan account (its whole history): linked extra payments follow these. */
   loanAccountRows: z.array(z.strictObject({ id, date: isoDate, amountMinor: minor })).max(5_000).optional(),
+  /** False while Terms & Schedule has unsaved edits: linked extra payments are not moved meanwhile. */
+  followExtraPayments: z.boolean().optional(),
   comparison: z.strictObject({ comparisonDate: isoDate, actualBalanceMinor: minor.nonnegative() }).nullable().optional(),
   parameters: z.strictObject({
     openingAdjustmentCategoryId: id.nullable().optional(),

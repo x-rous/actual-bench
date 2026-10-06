@@ -11,7 +11,7 @@ jest.mock("../../lib/debtsApi", () => ({
   updateMatchRule: jest.fn(), deleteMatchRule: jest.fn(), runMatchBacktest: jest.fn(), getSchedule: jest.fn(), checkDraftMatchRule: jest.fn(),
 }));
 jest.mock("../../lib/useAccountDirectory", () => ({
-  useAccountDirectory: () => ({ data: { budgetSyncId: "budget-1", accounts: [{ id: "acc-checking", name: "Everyday", closed: false, offBudget: false }], categories: [] } }),
+  useAccountDirectory: () => ({ data: { budgetSyncId: "budget-1", accounts: [{ id: "acc-checking", name: "Everyday", closed: false, offBudget: false }, { id: "acc-loan", name: "Home Loan", closed: false, offBudget: true }], categories: [] } }),
 }));
 jest.mock("@/store/connection", () => ({
   useConnectionStore: (selector: (state: unknown) => unknown) => selector({}),
@@ -90,7 +90,7 @@ describe("Repayment matching on Settings (rev 2)", () => {
     const [, ruleId, value, backtest] = mocked.updateMatchRule.mock.calls[0];
     expect(ruleId).toBe("rule-1");
     expect(value).toMatchObject({ purpose: "repayment", enabled: true });
-    expect(backtest).toMatchObject({ from: "2023-10-25", snapshots: [{ accountId: "acc-checking" }] });
+    expect(backtest).toMatchObject({ from: "2023-10-25", snapshots: [{ accountId: "acc-checking" }, { accountId: "acc-loan" }] });
   }, 15_000);
 });
 
@@ -113,9 +113,11 @@ describe("The matching editor (rev 2)", () => {
     wrap(<MatchingEditor debtId="debt-1" ruleId="new" onClose={onClose} />);
     expect(await screen.findByRole("heading", { name: "Set up repayment matching" })).toBeInTheDocument();
     expect(await screen.findByLabelText("Expected amount")).toHaveValue("8,379.57");
-    expect(screen.getByLabelText("Amount tolerance")).toHaveValue("1.00");
+    expect(screen.getByLabelText("Amount tolerance")).toHaveValue("837.96");
     expect(screen.getByText("Suggested from your loan settings")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Days early"), { target: { value: "10" } });
+    expect(screen.getByText((_, el) => el?.tagName === "P" && /Transfers into Home Loan are found on their own, on any date and for any amount/.test(el.textContent ?? ""))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More conditions (optional)" }));
+    fireEvent.change(screen.getByLabelText("Days before a due date"), { target: { value: "10" } });
     expect(await screen.findByText(/Ready to turn on/)).toBeInTheDocument();
     await waitFor(() => expect(mocked.checkDraftMatchRule).toHaveBeenCalled());
     const [, draft] = mocked.checkDraftMatchRule.mock.calls.at(-1)!;
@@ -127,10 +129,10 @@ describe("The matching editor (rev 2)", () => {
     await waitFor(() => expect(mocked.createMatchRule).toHaveBeenCalledTimes(1));
     const [, saved, enableBacktest] = mocked.createMatchRule.mock.calls[0];
     expect(saved).toMatchObject({ purpose: "repayment", enabled: true });
-    expect(enableBacktest).toMatchObject({ snapshots: [{ accountId: "acc-checking", transactions: [] }] });
+    expect(enableBacktest).toMatchObject({ snapshots: [{ accountId: "acc-checking", transactions: [] }, { accountId: "acc-loan", transactions: [] }] });
     expect((saved.conditions as { items: unknown[] }).items).toEqual([
       { kind: "source-account", accountId: "acc-checking" },
-      { kind: "amount", operator: "approximate", amountMinor: 837_957, direction: "outflow", tolerance: { kind: "absolute", amountMinor: 100 } },
+      { kind: "amount", operator: "approximate", amountMinor: 837_957, direction: "outflow", tolerance: { kind: "absolute", amountMinor: 83_796 } },
       { kind: "expected-date", daysBefore: 10, daysAfter: 3 },
       { kind: "bench-marker", value: "exclude" },
       { kind: "posting-link", value: "exclude" },
@@ -138,12 +140,12 @@ describe("The matching editor (rev 2)", () => {
     expect(onClose).toHaveBeenCalled();
   }, 15_000);
 
-  it("a due date with no payment keeps Save and turn on disabled; saving without turning on still works", async () => {
+  it("a missed due date does not stop turning matching on: it shows on Sync Repayments to choose the payment", async () => {
     mocked.checkDraftMatchRule.mockResolvedValue(checked(["unique", "missing"]));
     mocked.createMatchRule.mockResolvedValue({} as never);
     wrap(<MatchingEditor debtId="debt-1" ruleId="new" onClose={jest.fn()} />);
-    expect(await screen.findByText(/1 due date needs attention/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save and turn on" })).toBeDisabled();
+    expect(await screen.findByText(/Ready to turn on\. 1 due date has no payment/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save and turn on" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Save without turning on" }));
     await waitFor(() => expect(mocked.createMatchRule).toHaveBeenCalledTimes(1));
     expect(mocked.createMatchRule.mock.calls[0][1]).toMatchObject({ enabled: false });

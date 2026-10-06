@@ -85,13 +85,15 @@ describe("existing-transaction safety matrix", () => {
     expect(link.reasons.map((r) => r.code)).toContain("reconciled-lender-row");
   });
 
-  it("ambiguous match (two candidates): no posting, a notice asks the user to resolve it", async () => {
+  it("two possible payments for one due date: one is proposed for Review, naming the other (owner decision 2026-10-07)", async () => {
     const s = embedded();
     s.seedPayment("2024-02-01");
     s.fake.seed({ account: ACCOUNTS.checking, date: "2024-02-02", amount: -242915, payee: LENDER, imported_id: "bank:dup" });
     const result = await s.preview(window);
-    expect(byKind(result.postings, "repayment-split")).toHaveLength(0);
-    expect(result.notices.map((n) => n.code)).toContain("repayment-ambiguous");
+    const splits = byKind(result.postings, "repayment-split");
+    expect(splits).toHaveLength(1);
+    expect(splits[0].classification).toBe("review");
+    expect(splits[0].reasons.map((r) => r.code)).toContain("alignment-another-candidate");
   });
 
   it("evidence-only / Pattern B existing full transfer: a safe claim that writes nothing to Actual", async () => {

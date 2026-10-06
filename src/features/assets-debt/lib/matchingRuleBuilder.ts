@@ -90,8 +90,10 @@ export function recommendedSettings(input: RecommendationInput): MatchingSetting
     return {
       ...base(input.paymentAccountId ?? ""),
       direction: "outflow",
+      // Loose on purpose: the amount only says which payments are the loan's; matching scores how
+      // close each is to its own due date's repayment (owner decision 2026-10-07).
       amount: input.expectedPaymentMinor !== null && input.expectedPaymentMinor > 0
-        ? { mode: "approximate", amountMinor: input.expectedPaymentMinor, tolerance: { kind: "absolute", amountMinor: Math.max(0, input.toleranceMinor) } }
+        ? { mode: "approximate", amountMinor: input.expectedPaymentMinor, tolerance: { kind: "absolute", amountMinor: Math.max(0, input.toleranceMinor, Math.round(input.expectedPaymentMinor / 10)) } }
         : { mode: "any" },
       daysEarly: repaymentDays(input.repaymentFrequency).early,
       daysLate: repaymentDays(input.repaymentFrequency).late,

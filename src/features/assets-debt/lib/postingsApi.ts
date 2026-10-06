@@ -2,7 +2,7 @@ import type { AccountDirectory, MatchingHistorySnapshot } from "@/lib/assets-deb
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import type { PlanningNotice } from "@/lib/assets-debt/services/planner/common";
 import type { FollowedExtraPayment, UnscheduledPayment } from "@/lib/assets-debt/services/extraPaymentService";
-import type { PostingView } from "@/lib/assets-debt/services/proposalService";
+import type { PaymentOption, PostingView } from "@/lib/assets-debt/services/proposalService";
 import type { ReproductionResult } from "@/lib/assets-debt/services/reproduceService";
 import type { RowSnapshot } from "@/lib/assets-debt/services/snapshot";
 import type { ApplyTicketView, ExecutorOutcome } from "@/lib/assets-debt/services/applyService";
@@ -24,11 +24,12 @@ export type PreviewBody = {
   capabilities: { canRestructure: boolean; canVerifyTransferLinks: boolean };
   offsetHistories?: OffsetHistorySnapshot[];
   loanAccountRows?: Array<{ id: string; date: string; amountMinor: number }>;
+  followExtraPayments?: boolean;
   comparison?: { comparisonDate: string; actualBalanceMinor: number } | null;
   parameters?: { openingAdjustmentCategoryId?: string | null; adjustmentCategoryId?: string | null; actualBalanceAtOnboardingMinor?: number | null };
 };
 
-export type PreviewResponse = { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; driftExplained?: boolean; unscheduled?: UnscheduledPayment[]; followedExtraPayments?: FollowedExtraPayment[] };
+export type PreviewResponse = { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; driftExplained?: boolean; unscheduled?: UnscheduledPayment[]; followedExtraPayments?: FollowedExtraPayment[]; paymentOptions?: PaymentOption[]; repaymentChoices?: Array<{ key: string; paymentId: string }> };
 
 const debtUrl = (id: string) => `/api/assets-debt/debts/${encodeURIComponent(id)}`;
 const postingUrl = (id: string) => `/api/assets-debt/postings/${encodeURIComponent(id)}`;

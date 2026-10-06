@@ -136,3 +136,13 @@ describe("the status strip's gap wording (FR-170c)", () => {
     expect(stripState(status, { review: 31, notApplied: 31 }, 2, false).hint).toMatch(/do not close the whole gap/);
   });
 });
+
+describe("missed months shown as one row", () => {
+  it("consecutive due dates with no payment read as one row, oldest first; anything between breaks the run", async () => {
+    const { buildChangeRows, groupMissedRows } = await import("./changeRows");
+    const notice = (periodKey: string) => ({ code: "repayment-missing", periodKey, text: `No payment for ${periodKey}.` });
+    const rows = buildChangeRows([], [notice("2024-01-01"), notice("2024-02-01"), notice("2024-03-01"), { code: "payment-side-not-visible", periodKey: "2024-04-01", text: "x" }, notice("2024-05-01")]);
+    const shown = groupMissedRows(rows);
+    expect(shown.map((r) => r.missedDates ?? [r.dueDate])).toEqual([["2024-05-01"], ["2024-04-01"], ["2024-01-01", "2024-02-01", "2024-03-01"]]);
+  });
+});

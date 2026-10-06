@@ -196,7 +196,7 @@ describe("the Transactions status strip (T305)", () => {
     const cells = [{ date: "2026-09-01", state: "applied" as const }, { date: "2026-10-01", state: "edited" as const }, { date: "2026-11-02", state: "next" as const }];
     render(
       <LoanStatusStrip
-        refresh={{ phase: "done", error: null, status, statusFromCache: false, notices: [], driftMaterial: true, driftExplained: false, unscheduled: [] }}
+        refresh={{ phase: "done", error: null, status, statusFromCache: false, notices: [], driftMaterial: true, driftExplained: false, unscheduled: [], paymentOptions: [], repaymentChoices: [] }}
         counts={{ review: 0, notApplied: 0 }}
         digits={2}
         onRefresh={onRefresh}

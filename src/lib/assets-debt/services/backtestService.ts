@@ -12,9 +12,13 @@ import type { DebtMatchPurpose } from "@/lib/app-db/types";
 import type { SyncSourceSplitLine, SyncSourceTransaction } from "@/lib/actual/transport";
 import { readMatchingHistory, type MatchingHistorySnapshot, type MatchingReadTransport } from "../actual/ledgerPort";
 import { projectStoredDebt } from "./projectionService";
+import { alignRepayments, settledPaymentOf } from "./repaymentAlignment";
 import {
   backtestMatchingRule,
+  DEBT_BACKTEST_FORMAT,
+  DEBT_BACKTEST_VERSION,
   enabledRuleSafetyIssues,
+  matchRuleStrength,
   parseStoredMatchRule,
   type DebtBacktestResult,
   type ExpectedMatchPeriod,
@@ -158,17 +162,76 @@ export function runDebtBacktest(
       .filter((link) => (typeof link.linkSource === "string" ? link.linkSource : link.linkSource.unknown) === "posting")
       .map((link) => link.actualTransactionId)
   );
-  const result = backtestMatchingRule({
-    ...parsed,
-    expectedPeriods: expectedPeriods(db, debtId, rule.purpose ?? "repayment", request.from, request.to),
-    candidates: matchingCandidates(request.snapshots, existingLinks),
-    accountsRead: request.snapshots.length,
-    from: request.from,
-    to: request.to,
-    generatedAt,
-  });
+  const periods = expectedPeriods(db, debtId, rule.purpose ?? "repayment", request.from, request.to);
+  const candidates = matchingCandidates(request.snapshots, existingLinks);
+  const result = (rule.purpose ?? "repayment") === "repayment"
+    ? alignedBacktest(db, debtId, parsed.conditions, periods, candidates, request, generatedAt)
+    : backtestMatchingRule({ ...parsed, expectedPeriods: periods, candidates, accountsRead: request.snapshots.length, from: request.from, to: request.to, generatedAt });
   const marked = markHandledPeriods(db, debtId, rule.purpose ?? "repayment", result);
   return (rule.purpose ?? "repayment") === "repayment" ? withActualDatedAllocation(db, debtId, marked) : marked;
+}
+
+/**
+ * The matching check for repayments, the same way Sync Repayments matches them (owner decision
+ * 2026-10-07): the loan's payments lined up against every due date in the range in one pass, with
+ * no day window. A period reads as found, missing or unsafe; why a pairing needs a look (late,
+ * early, amount, another candidate) is in its review reasons.
+ */
+function alignedBacktest(
+  db: SqliteDatabase,
+  debtId: string,
+  conditions: ReturnType<typeof parseStoredMatchRule>["conditions"],
+  periods: ExpectedMatchPeriod[],
+  candidates: MatchCandidate[],
+  request: DebtBacktestRequest,
+  generatedAt?: string,
+): DebtBacktestResult {
+  const debt = getDebt(db, debtId)!;
+  const settled = new Map<string, { paymentId: string; date: string }>();
+  for (const p of listSubjectPostings(db, "debt", debtId)) {
+    if (!["applying", "applied", "indeterminate"].includes(String(p.status)) || !["repayment-split", "repayment-link"].includes(String(p.postingKind))) continue;
+    const paid = settledPaymentOf(JSON.parse(p.outputSnapshotJson) as PostingOutputSnapshot);
+    if (paid) settled.set(p.periodKey, paid);
+  }
+  const alignment = alignRepayments({
+    candidates,
+    liabilityAccountId: debt.liabilityAccountId,
+    signConvention: debt.signConvention === "positive-is-debt" ? "positive-is-debt" : "negative-is-debt",
+    rule: conditions,
+    dues: periods.map((p) => ({ key: p.periodKey, date: p.date, expectedMinor: p.paymentMinor, settled: settled.get(p.periodKey) ?? null })),
+    pins: repaymentChoices(db, debtId),
+    toleranceMinor: debt.driftToleranceMinor,
+    minorDigits: debt.currencyMinorDigits,
+  });
+  const rows = periods.map((expected) => {
+    const evaluation = alignment.evaluation(expected.periodKey) ?? { expected, status: "missing" as const, candidates: [], strength: "strong" as const, reviewReasons: [] };
+    const flags = [...new Set(evaluation.candidates.flatMap(({ candidate }) => [
+      ...(candidate.reconciled ? ["reconciled"] : []),
+      ...(candidate.isParent || candidate.isChild ? ["split"] : []),
+      ...(candidate.transferId ? ["transferred"] : []),
+      ...(candidate.categoryId ? ["categorized"] : []),
+    ]))];
+    return { ...evaluation, expected, projectedBalanceVarianceMinor: null, flags };
+  });
+  const count = (status: string) => rows.filter((period) => period.status === status).length;
+  const strength = matchRuleStrength(conditions);
+  return {
+    format: DEBT_BACKTEST_FORMAT,
+    version: DEBT_BACKTEST_VERSION,
+    from: request.from,
+    to: request.to,
+    generatedAt: generatedAt ?? new Date().toISOString(),
+    read: { accounts: request.snapshots.length, transactions: candidates.filter((c) => !c.isChild).length },
+    strength,
+    warnings: strength.reasons,
+    summary: { expectedPeriods: rows.length, unique: count("unique"), missing: count("missing"), multiple: 0, unsafe: count("unsafe") },
+    periods: rows,
+  };
+}
+
+/** The user's "this is the payment" choices for a loan, by due date (owner decision 2026-10-07). */
+export function repaymentChoices(db: SqliteDatabase, debtId: string): Array<{ key: string; paymentId: string }> {
+  return listDebtTransactionLinks(db, debtId).filter((l) => l.role === "repayment-choice").map((l) => ({ key: l.periodKey, paymentId: l.actualTransactionId }));
 }
 
 /**

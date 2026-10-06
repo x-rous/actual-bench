@@ -9,6 +9,7 @@ import { datedBalanceFromTransactions, readAccountLedger, readMatchingHistory, t
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import type { UnscheduledPayment } from "@/lib/assets-debt/services/extraPaymentService";
+import type { PaymentOption } from "@/lib/assets-debt/services/proposalService";
 import type { PlanningNotice } from "@/lib/assets-debt/services/planner/common";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { getDebtReconciliation, type DebtReconciliationView } from "../../lib/debtsApi";
@@ -60,6 +61,9 @@ export type RefreshState = {
   driftExplained: boolean;
   /** Payments into the loan account no repayment accounts for (extra payments). */
   unscheduled: UnscheduledPayment[];
+  /** The loan's payments a due date can be given ("this is the payment"), and the choices made. */
+  paymentOptions: PaymentOption[];
+  repaymentChoices: Array<{ key: string; paymentId: string }>;
 };
 
 const shift = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -107,65 +111,120 @@ async function transferPayees(transport: ActualBenchTransport): Promise<Record<s
   return out;
 }
 
-export function useBackgroundRefresh(input: { debt: DebtDetail; directory: AccountDirectory | undefined; offsetHistories?: OffsetHistorySnapshot[]; from: string; to: string }) {
+/**
+ * One read of Actual for a loan and the server's re-plan (the refresh behind Sync Repayments, also
+ * run quietly for each active loan from the loans list): sync, read the loan account in full and the
+ * repayment account over the period, re-plan the changes, and work out the status figures.
+ */
+export async function runLoanRefresh(input: {
+  connection: Parameters<typeof getTransport>[0];
+  directory: AccountDirectory;
+  debt: DebtDetail;
+  from: string;
+  to: string;
+  offsetHistories?: OffsetHistorySnapshot[];
+  cacheKey?: string | null;
+  /** Terms & Schedule has unsaved edits: do not move linked extra payments meanwhile. */
+  scheduleDirty?: boolean;
+}): Promise<{ payeeMap: Record<string, string>; result: Awaited<ReturnType<typeof previewPostings>>; status: LoanStatus | null; syncProblem: string | null }> {
+  const { connection, directory, debt, from, to, offsetHistories } = input;
+  const debtId = debt.debt.id;
+  const liabilityId = debt.debt.liabilityAccountId;
+  if (!liabilityId) throw new Error("The loan has no loan account in Actual yet.");
+  const timing = startTiming("loan refresh");
+  const transport = getTransport(connection);
+  // Pull changes made elsewhere (a transfer added in Actual) before reading: in Direct mode the
+  // browser reads its own copy of the budget, which otherwise only syncs when it first opens.
+  let syncProblem: string | null = null;
+  try {
+    await transport.sync();
+  } catch (error) {
+    syncProblem = error instanceof Error ? error.message : String(error);
+  }
+  timing.step("sync");
+  const payeeMap = await transferPayees(transport);
+  timing.step("payees");
+  // The loan account is read once, in full: dated balances and its matching history.
+  const readFrom = shift(from, -PAD_DAYS);
+  const readTo = shift(to, PAD_DAYS);
+  const ledger = await readAccountLedger(transport, { accountId: liabilityId });
+  if (!ledger.ok) throw new Error(ledger.message);
+  timing.step("loan account");
+  const paymentAccountId = debt.debt.paymentAccountId && debt.debt.paymentAccountId !== liabilityId ? debt.debt.paymentAccountId : null;
+  const snapshots = [
+    { accountId: liabilityId, transactions: ledger.transactions.filter((t) => t.date >= readFrom && t.date <= readTo) },
+    ...(paymentAccountId ? await readMatchingHistory(transport, { accountIds: [paymentAccountId], from: readFrom, to: readTo }) : []),
+  ];
+  timing.step("repayment account");
+  const sign = typeof debt.debt.signConvention === "string" ? debt.debt.signConvention : "negative-is-debt";
+  const comparisonDate = to;
+  const actualMagnitude = toDebtMagnitude(datedBalanceFromTransactions(liabilityId, ledger.transactions, comparisonDate).balanceMinor, sign);
+  const onboarding = debt.debt.onboardingDate ? toDebtMagnitude(datedBalanceFromTransactions(liabilityId, ledger.transactions, debt.debt.onboardingDate).balanceMinor, sign) : null;
+  const canVerifyTransferLinks = transport.canVerifyTransferLinks ? await transport.canVerifyTransferLinks({ accountId: liabilityId, sinceDate: readFrom }) : false;
+  const result = await previewPostings(debtId, {
+    from, to, snapshots, accountDirectory: directory, transferPayees: payeeMap,
+    capabilities: { canRestructure: typeof transport.restructureTransactionAsSplit === "function" && typeof transport.linkTransferCounterpart === "function", canVerifyTransferLinks },
+    offsetHistories,
+    followExtraPayments: !input.scheduleDirty,
+    loanAccountRows: ledger.transactions.filter((t) => (t as { isChild?: boolean }).isChild !== true).map((t) => ({ id: t.id, date: t.date, amountMinor: t.amount })),
+    comparison: actualMagnitude >= 0 ? { comparisonDate, actualBalanceMinor: actualMagnitude } : null,
+    parameters: { openingAdjustmentCategoryId: null, adjustmentCategoryId: null, actualBalanceAtOnboardingMinor: onboarding },
+  });
+  timing.step("plan changes (server)");
+  let status: LoanStatus | null = null;
+  if (actualMagnitude >= 0) {
+    const view: DebtReconciliationView = await getDebtReconciliation(debtId, { comparisonDate, actualBalanceMinor: actualMagnitude, offsetHistories });
+    status = {
+      at: new Date().toISOString(),
+      comparisonDate,
+      actualMinor: view.comparison.actualMinor,
+      modelMinor: view.comparison.modelMinor,
+      lenderMinor: view.comparison.lenderMinor,
+      lenderDate: view.lenderObservation?.observedOn ?? null,
+      modelVsActualMinor: view.comparison.modelVsActualMinor,
+      actualVsLenderMinor: view.comparison.actualVsLenderMinor,
+      drift: String(view.drift),
+      reconciliationOverdue: view.health.overdue,
+      scheduledMinor: view.scheduledMinor ?? null,
+      asPaidFrom: view.asPaidFrom ?? null,
+    };
+    writeCachedStatus(input.cacheKey ?? null, status);
+    timing.step("reconciliation (server)");
+  }
+  timing.end();
+  return { payeeMap, result, status, syncProblem };
+}
+
+export function useBackgroundRefresh(input: { debt: DebtDetail; directory: AccountDirectory | undefined; offsetHistories?: OffsetHistorySnapshot[]; from: string; to: string; scheduleDirty?: boolean }) {
   const { debt, directory, offsetHistories, from, to } = input;
+  const scheduleDirty = input.scheduleDirty === true;
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
   const debtId = debt.debt.id;
   const cacheKey = connection && connection.budgetSyncId ? loanStatusKey({ baseUrl: connection.baseUrl, budgetSyncId: connection.budgetSyncId, debtId, revision: debt.debt.currentRevision }) : null;
   const [state, setState] = useState<RefreshState>(() => {
     const cached = readCachedStatus(cacheKey);
-    return { phase: "idle", error: null, status: cached, statusFromCache: cached !== null, notices: [], driftMaterial: false, driftExplained: false, unscheduled: [] };
+    return { phase: "idle", error: null, status: cached, statusFromCache: cached !== null, notices: [], driftMaterial: false, driftExplained: false, unscheduled: [], paymentOptions: [], repaymentChoices: [] };
   });
   const [payees, setPayees] = useState<Record<string, string>>({});
   const running = useRef(false);
+  const pending = useRef(false);
+  const lastDone = useRef(0);
+  const rerun = useRef<(() => Promise<void>) | null>(null);
 
   const refresh = useCallback(async () => {
     const liabilityId = debt.debt.liabilityAccountId;
-    if (!connection || !directory || !liabilityId || running.current) return;
+    if (!connection || !directory || !liabilityId) return;
+    // One at a time; a request while one runs is kept and runs right after, never dropped.
+    if (running.current) {
+      pending.current = true;
+      return;
+    }
     running.current = true;
     setState((s) => ({ ...s, phase: "refreshing", error: null }));
-    const timing = startTiming("loan refresh");
     try {
-      const transport = getTransport(connection);
-      // Pull changes made elsewhere (a transfer added in Actual) before reading: in Direct mode the
-      // browser reads its own copy of the budget, which otherwise only syncs when it first opens.
-      let syncProblem: string | null = null;
-      try {
-        await transport.sync();
-      } catch (error) {
-        syncProblem = error instanceof Error ? error.message : String(error);
-      }
-      timing.step("sync");
-      const payeeMap = await transferPayees(transport);
+      const { payeeMap, result, status, syncProblem } = await runLoanRefresh({ connection, directory, debt, from, to, offsetHistories, cacheKey, scheduleDirty });
       setPayees(payeeMap);
-      timing.step("payees");
-      // The loan account is read once, in full: dated balances and its matching history.
-      const readFrom = shift(from, -PAD_DAYS);
-      const readTo = shift(to, PAD_DAYS);
-      const ledger = await readAccountLedger(transport, { accountId: liabilityId });
-      if (!ledger.ok) throw new Error(ledger.message);
-      timing.step("loan account");
-      const paymentAccountId = debt.debt.paymentAccountId && debt.debt.paymentAccountId !== liabilityId ? debt.debt.paymentAccountId : null;
-      const snapshots = [
-        { accountId: liabilityId, transactions: ledger.transactions.filter((t) => t.date >= readFrom && t.date <= readTo) },
-        ...(paymentAccountId ? await readMatchingHistory(transport, { accountIds: [paymentAccountId], from: readFrom, to: readTo }) : []),
-      ];
-      timing.step("repayment account");
-      const sign = typeof debt.debt.signConvention === "string" ? debt.debt.signConvention : "negative-is-debt";
-      const comparisonDate = to;
-      const actualMagnitude = toDebtMagnitude(datedBalanceFromTransactions(liabilityId, ledger.transactions, comparisonDate).balanceMinor, sign);
-      const onboarding = debt.debt.onboardingDate ? toDebtMagnitude(datedBalanceFromTransactions(liabilityId, ledger.transactions, debt.debt.onboardingDate).balanceMinor, sign) : null;
-      const canVerifyTransferLinks = transport.canVerifyTransferLinks ? await transport.canVerifyTransferLinks({ accountId: liabilityId, sinceDate: readFrom }) : false;
-      const result = await previewPostings(debtId, {
-        from, to, snapshots, accountDirectory: directory, transferPayees: payeeMap,
-        capabilities: { canRestructure: typeof transport.restructureTransactionAsSplit === "function" && typeof transport.linkTransferCounterpart === "function", canVerifyTransferLinks },
-        offsetHistories,
-        loanAccountRows: ledger.transactions.filter((t) => (t as { isChild?: boolean }).isChild !== true).map((t) => ({ id: t.id, date: t.date, amountMinor: t.amount })),
-        comparison: actualMagnitude >= 0 ? { comparisonDate, actualBalanceMinor: actualMagnitude } : null,
-        parameters: { openingAdjustmentCategoryId: null, adjustmentCategoryId: null, actualBalanceAtOnboardingMinor: onboarding },
-      });
-      timing.step("plan changes (server)");
       const followed = result.followedExtraPayments ?? [];
       if (followed.length) {
         // Terms & Schedule was saved as a new revision on the server: show it everywhere.
@@ -173,36 +232,36 @@ export function useBackgroundRefresh(input: { debt: DebtDetail; directory: Accou
         void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
         toast.success(followed.length === 1 ? (followed[0].change === "removed" ? "An extra payment was deleted in Actual; it was removed from Terms & Schedule" : "An extra payment changed in Actual; Terms & Schedule was updated to match") : `${followed.length} extra payments changed in Actual; Terms & Schedule was updated to match`);
       }
-      let status: LoanStatus | null = null;
-      if (actualMagnitude >= 0) {
-        const view: DebtReconciliationView = await getDebtReconciliation(debtId, { comparisonDate, actualBalanceMinor: actualMagnitude, offsetHistories });
-        status = {
-          at: new Date().toISOString(),
-          comparisonDate,
-          actualMinor: view.comparison.actualMinor,
-          modelMinor: view.comparison.modelMinor,
-          lenderMinor: view.comparison.lenderMinor,
-          lenderDate: view.lenderObservation?.observedOn ?? null,
-          modelVsActualMinor: view.comparison.modelVsActualMinor,
-          actualVsLenderMinor: view.comparison.actualVsLenderMinor,
-          drift: String(view.drift),
-          reconciliationOverdue: view.health.overdue,
-          scheduledMinor: view.scheduledMinor ?? null,
-          asPaidFrom: view.asPaidFrom ?? null,
-        };
-        writeCachedStatus(cacheKey, status);
-        timing.step("reconciliation (server)");
-      }
-      timing.end();
-      setState((s) => ({ phase: syncProblem ? "failed" : "done", error: syncProblem ? `could not get the latest changes from Actual (${syncProblem}); showing what this browser last downloaded` : null, status: status ?? s.status, statusFromCache: status === null && s.statusFromCache, notices: result.notices, driftMaterial: result.driftMaterial, driftExplained: result.driftExplained === true, unscheduled: result.unscheduled ?? [] }));
+      setState((s) => ({ phase: syncProblem ? "failed" : "done", error: syncProblem ? `could not get the latest changes from Actual (${syncProblem}); showing what this browser last downloaded` : null, status: status ?? s.status, statusFromCache: status === null && s.statusFromCache, notices: result.notices, driftMaterial: result.driftMaterial, driftExplained: result.driftExplained === true, unscheduled: result.unscheduled ?? [], paymentOptions: result.paymentOptions ?? [], repaymentChoices: result.repaymentChoices ?? [] }));
       void queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
     } catch (error) {
       // Keep everything already shown; say it may be out of date.
       setState((s) => ({ ...s, phase: "failed", error: error instanceof Error ? error.message : String(error) }));
     } finally {
       running.current = false;
+      lastDone.current = Date.now();
+      if (pending.current) {
+        pending.current = false;
+        void rerun.current?.();
+      }
     }
-  }, [connection, directory, debt, debtId, from, to, offsetHistories, cacheKey, queryClient]);
+  }, [connection, directory, debt, debtId, from, to, offsetHistories, cacheKey, queryClient, scheduleDirty]);
+  useEffect(() => { rerun.current = refresh; }, [refresh]);
+
+  // Coming back to this tab (for example after changing something in Actual) refreshes on its own,
+  // at most every 30 seconds (owner decision 2026-10-07).
+  useEffect(() => {
+    const onReturn = () => {
+      if (document.visibilityState !== "visible" || running.current || Date.now() - lastDone.current < 30_000) return;
+      void rerun.current?.();
+    };
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, []);
 
   // Refresh once when the page opens (and when the period or revision changes).
   const started = useRef<string | null>(null);

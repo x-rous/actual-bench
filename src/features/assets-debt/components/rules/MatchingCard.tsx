@@ -59,7 +59,8 @@ export function MatchingCard({ debtId, onEdit }: { debtId: string; /** Open the 
       if (enabled) {
         // Turning on always re-checks the rule over the loan's history; the server refuses a weak rule and says why.
         const named = (rule.conditions as MatchConditionsV1).items.filter((c) => c.kind === "source-account").map((c) => c.accountId);
-        const accountIds = named.length ? named : [ctx.defaultSource].filter(Boolean);
+        const liabilityId = ctx.detail.data?.debt.liabilityAccountId ?? null;
+        const accountIds = [...new Set([...(named.length ? named : [ctx.defaultSource]), ...(liabilityId ? [liabilityId] : [])])].filter(Boolean);
         backtest = { from: ctx.historyFrom, to: ctx.today, snapshots: await readFreshMatchingHistory(getTransport(ctx.connection), { accountIds, from: ctx.historyFrom, to: ctx.today }) };
       }
       await updateMatchRule(debtId, rule.record.id, value, backtest);
