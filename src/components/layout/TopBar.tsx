@@ -504,7 +504,7 @@ export function TopBar() {
               </kbd>
             </Button>
           )}
-          <TopBarSeparator />
+          {activeInstance && <TopBarSeparator />}
           <Button
             variant="ghost"
             size="icon"
