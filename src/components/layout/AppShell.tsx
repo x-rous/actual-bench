@@ -8,6 +8,7 @@ import { Sidebar } from "./Sidebar";
 import { DraftPanel } from "./DraftPanel";
 import { BudgetDraftPanel } from "@/features/budget-management/components/BudgetDraftPanel";
 import { ConnectionOfflineBanner } from "./ConnectionOfflineBanner";
+import { BudgetCopyBanner } from "./BudgetCopyBanner";
 import { NewVersionBanner } from "./NewVersionBanner";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { usePreloadEntities } from "@/hooks/useAllEntities";
@@ -176,6 +177,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex h-full flex-col">
         <TopBar />
         <ConnectionOfflineBanner />
+        <BudgetCopyBanner />
         <NewVersionBanner />
         <GlobalSearchModal />
         <QuickCreateDialog />

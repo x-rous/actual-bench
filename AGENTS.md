@@ -71,6 +71,7 @@ Rules:
 | Notes | Intentional immediate-save exception through transport note methods |
 | Budget File Sync | Preview first; write only through explicit **Apply** or an opted-in safe-only automation policy |
 | Bank Statement Reconciliation | Stage decisions in the session; write only through explicit **Apply**, and only after a pre-flight re-read confirms the targeted rows have not changed in Actual. Never writes a category |
+| RD-084 Assets & Debt | Preview first; write only through explicit user-approved Apply. No auto-apply. Every write carries a deterministic marker and an immutable audit snapshot. |
 | Sync flows, run history, FX registry, app health metadata | Persist to the Actual Bench app database according to the action |
 | Diagnostics and ActualQL | Read-only unless a separately named workflow explicitly applies changes |
 
@@ -152,6 +153,8 @@ Rules:
 - Keep migrations additive, ordered, transactional, and backward compatible.
 - Never rewrite a migration that may have shipped. Add a new migration.
 - A new value for a persisted enum (a schedule kind, a run status, a trigger) ships with a schema-version bump, even when no column changes. `runMigrations` refuses a database newer than the app, so this is what stops an older version from misreading the value after a downgrade. Readers still handle unknown values explicitly rather than by fall-through.
+  - Versioned config JSON is different. A document that carries its own `format` and `version` (Assets & Debt's `rd084.debt-config`) versions its identifiers per record: a new identifier inside it is a new config `version`, not a schema bump, and a build that meets a version it does not know blocks only that record. Relational enum columns keep the schema-version rule.
+- Enum columns are `text` with no `CHECK` listing their values. A `CHECK` may name a discriminator value only to state a cross-column invariant (for example "kind `absolute` has an amount and no factor", or "status `archived` has `archived_at`"). Structural checks (integer storage, ranges, JSON validity, text syntax) are fine. Semantic validation stays in the repository or service.
 - Every request to an `actual-http-api` server goes through `src/lib/http/serverQueue.ts` (in-process FIFO plus a per-server lease row). Two concurrent requests can wedge a budget, so do not add a path that bypasses it; browser-safe code reaches it through `serverRequestGate.ts`.
 - Use foreign keys and explicit indexes where the access pattern requires them.
 - Multi-row state transitions should be transactional.
