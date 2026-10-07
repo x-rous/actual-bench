@@ -65,6 +65,9 @@ module.exports = async () => {
   const [browserConfig, nodeConfig] = await Promise.all([browser(), node()])
   return {
     projects: [browserConfig, nodeConfig],
+    // Test databases go in a folder for this run, removed at the end.
+    globalSetup: '<rootDir>/jest.global-setup.cjs',
+    globalTeardown: '<rootDir>/jest.global-teardown.cjs',
     // Coverage is configured at the root: with `projects`, per-project coverage
     // options are ignored.
     coverageReporters: ['text-summary', 'json-summary', 'lcov'],
