@@ -1,0 +1,171 @@
+import { SHORT_MONTH_POLICIES } from "../calendar/dates";
+import { SCHEDULE_FREQUENCIES } from "../calendar/schedule";
+import { ROUNDING_MODES } from "../money/rounding";
+import {
+  COMPONENT_AMOUNT_RULES,
+  COMPONENT_DESTINATIONS,
+  ECONOMIC_KINDS,
+  PHASE_KINDS,
+  REVOLVING_PAYMENT_MODELS,
+} from "./configSchema";
+import { DAY_COUNT_IDS } from "./daycount/types";
+import { EVENT_ORDER_PLACEMENT_KEYS, PLACEMENTS, SAME_DAY_TIMINGS } from "./events";
+import {
+  ACCRUAL_METHODS,
+  AMORTIZATION_METHODS,
+  BALANCE_PRECISIONS,
+  CAPITALIZATIONS,
+  CHARGE_FREQUENCIES,
+  INTEREST_ONLY_REPAYMENTS,
+  FINAL_PAYMENT_POLICIES,
+  RATE_EFFECTIVE_TIMINGS,
+  RECAST_POLICIES,
+  REPAYMENT_EFFECTIVE_TIMINGS,
+} from "./profile";
+import { PAYMENT_LIMIT_KINDS, RATE_QUOTES } from "./rates";
+import { REPAYMENT_DERIVATIONS, REPAYMENT_DERIVATIONS_V1 } from "./repayment";
+import { CALENDAR_VERSION } from "../calendar/dates";
+import { SCHEDULE_VERSION } from "../calendar/schedule";
+import { MONEY_KERNEL_VERSION } from "../money/kernel";
+import { ACT360_VERSION } from "./daycount/act360";
+import { ACT365F_VERSION } from "./daycount/act365f";
+import { ACTACT_VERSION } from "./daycount/actact";
+import { MONTHLY_ALLOC_VERSION } from "./daycount/monthly-30-360-alloc";
+import { EVENT_ORDER_VERSION, EVENT_ORDER_VERSION_V1, EVENT_ORDER_VERSION_V2 } from "./events";
+import { PROFILE_VERSION } from "./profile";
+import { RATE_QUOTE_VERSION, RATES_VERSION } from "./rates";
+import { REPAYMENT_VERSION, REPAYMENT_VERSION_V1 } from "./repayment";
+import { ACCRUAL_VERSION } from "./accrual";
+import { CHARGE_VERSION } from "./charge";
+import { DAILY_PRECISION_VERSION } from "./dailyPrecision";
+import { OFFSETS_VERSION, OFFSETS_VERSION_V1, OFFSETS_VERSION_V2, OFFSETS_VERSION_V3 } from "./offsets";
+import { RECAST_VERSION, RECAST_VERSION_V1 } from "./recast";
+import { PHASES_VERSION } from "./phases";
+import { FEE_TREATMENTS, FEES_VERSION } from "./fees";
+import { ALLOCATION_VERSION } from "./allocation";
+import { FINAL_PAYMENT_VERSION } from "./finalPayment";
+import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
+import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3, DAILY_ENGINE_VERSION_V4, DAILY_ENGINE_VERSION_V5, DAILY_ENGINE_VERSION_V6 } from "./daily-engine";
+import { REVOLVING_VERSION } from "./revolving";
+import { RECEIVABLE_VERSION } from "./receivable";
+import { ELIGIBILITY_VERSION } from "./eligibility";
+import { DIAGNOSTICS_VERSION } from "./diagnostics";
+import { PROJECTION_VERSION, PROJECTION_VERSION_V1 } from "./projection";
+import { BUSINESS_DAY_ADJUSTMENTS, BUSINESS_DAYS_VERSION } from "../calendar/businessDays";
+import { INTEREST_ALLOCATIONS, STATEMENT_ALLOCATION_VERSION } from "./statementAllocation";
+import { CURRENT_COMPONENT_VERSIONS, DEBT_CONFIG_V1_IDENTIFIERS as FROZEN, DEBT_CONFIG_V2_IDENTIFIERS, DEBT_CONFIG_V3_IDENTIFIERS } from "./versions";
+
+/*
+ * The freeze. If this fails, an identifier accepted by config version 1
+ * changed. Do not edit the frozen list to make it pass: add a new config
+ * version (research R-12) and keep version 1 as it was.
+ */
+describe("rd084.debt-config v1 identifiers are frozen", () => {
+  it.each([
+    ["amortization", AMORTIZATION_METHODS],
+    ["rateQuote", RATE_QUOTES],
+    ["dayCount", DAY_COUNT_IDS],
+    ["accrual", ACCRUAL_METHODS],
+    ["chargeFrequency", CHARGE_FREQUENCIES],
+    ["capitalization", CAPITALIZATIONS],
+    ["repaymentFrequency", SCHEDULE_FREQUENCIES],
+    ["repaymentDerivation", REPAYMENT_DERIVATIONS_V1],
+    ["recast", RECAST_POLICIES],
+    ["rateEffectiveTiming", RATE_EFFECTIVE_TIMINGS],
+    ["repaymentEffectiveTiming", REPAYMENT_EFFECTIVE_TIMINGS],
+    ["roundingMode", ROUNDING_MODES],
+    ["balancePrecision", BALANCE_PRECISIONS],
+    ["sameDayTiming", SAME_DAY_TIMINGS],
+    ["finalPayment", FINAL_PAYMENT_POLICIES],
+    ["shortMonth", SHORT_MONTH_POLICIES],
+    ["economicKind", ECONOMIC_KINDS],
+    ["componentDestination", COMPONENT_DESTINATIONS],
+    ["componentAmountRule", COMPONENT_AMOUNT_RULES],
+    ["revolvingPaymentModel", REVOLVING_PAYMENT_MODELS],
+    ["phaseKind", PHASE_KINDS],
+    ["paymentLimitKind", PAYMENT_LIMIT_KINDS],
+    ["feeTreatment", FEE_TREATMENTS],
+    ["interestOnlyRepayment", INTEREST_ONLY_REPAYMENTS],
+  ] as const)("%s", (axis, values) => {
+    expect([...values]).toEqual([...FROZEN[axis]]);
+  });
+
+  it("eventOrder placement keys and values", () => {
+    expect([...EVENT_ORDER_PLACEMENT_KEYS]).toEqual([...FROZEN.eventOrderPlacementKeys]);
+    expect([...PLACEMENTS]).toEqual([...FROZEN.placement]);
+  });
+
+  it("keeps unaffected P1.1 component versions unchanged and retains old affected ids", () => {
+    expect(CURRENT_COMPONENT_VERSIONS).toMatchObject({
+      "money-kernel": "money-kernel@1",
+      calendar: "calendar@1",
+      schedule: "schedule@1",
+      "daycount-act365f": "daycount-act365f@1",
+      "daycount-actact-calendar": "daycount-actact-calendar@1",
+      "daycount-act360": "daycount-act360@1",
+      "daycount-monthly-alloc": "daycount-monthly-alloc@1",
+      rates: "rates@1",
+      "rate-quote": "rate-quote@1",
+      profile: "profile@1",
+      "event-order": "event-order@3",
+      repayment: REPAYMENT_VERSION,
+    });
+    expect(REPAYMENT_VERSION_V1).toBe("repayment@1");
+    expect(RECAST_VERSION_V1).toBe("recast@1");
+    expect(DAILY_ENGINE_VERSION_V2).toBe("loan-daily@2");
+    expect(DAILY_ENGINE_VERSION_V3).toBe("loan-daily@3");
+    expect(DAILY_ENGINE_VERSION_V4).toBe("loan-daily@4");
+    expect(DAILY_ENGINE_VERSION_V5).toBe("loan-daily@5");
+    expect(DAILY_ENGINE_VERSION_V6).toBe("loan-daily@6");
+    expect(EVENT_ORDER_VERSION_V1).toBe("event-order@1");
+    expect(EVENT_ORDER_VERSION_V2).toBe("event-order@2");
+    expect(OFFSETS_VERSION_V1).toBe("offsets@1");
+    expect(OFFSETS_VERSION_V2).toBe("offsets@2");
+    expect(OFFSETS_VERSION_V3).toBe("offsets@3");
+    expect(PROJECTION_VERSION_V1).toBe("projection@1");
+  });
+
+  it("adds only the dated repayment identifier in config v2", () => {
+    expect(REPAYMENT_DERIVATIONS).toEqual(DEBT_CONFIG_V2_IDENTIFIERS.repaymentDerivation);
+    expect(DEBT_CONFIG_V2_IDENTIFIERS).toEqual({ ...FROZEN, repaymentDerivation: [...FROZEN.repaymentDerivation, "dated-cashflow-annuity"] });
+  });
+
+  it("adds only the business-day and lender statement fields in config v3", () => {
+    expect(DEBT_CONFIG_V3_IDENTIFIERS).toEqual({ ...DEBT_CONFIG_V2_IDENTIFIERS, businessDayAdjustment: [...BUSINESS_DAY_ADJUSTMENTS], interestAllocation: [...INTEREST_ALLOCATIONS] });
+  });
+
+  it("matches each module's own version constant", () => {
+    expect(CURRENT_COMPONENT_VERSIONS).toEqual({
+      "money-kernel": MONEY_KERNEL_VERSION,
+      calendar: CALENDAR_VERSION,
+      schedule: SCHEDULE_VERSION,
+      "daycount-act365f": ACT365F_VERSION,
+      "daycount-actact-calendar": ACTACT_VERSION,
+      "daycount-act360": ACT360_VERSION,
+      "daycount-monthly-alloc": MONTHLY_ALLOC_VERSION,
+      rates: RATES_VERSION,
+      "rate-quote": RATE_QUOTE_VERSION,
+      profile: PROFILE_VERSION,
+      "event-order": EVENT_ORDER_VERSION,
+      repayment: REPAYMENT_VERSION,
+      accrual: ACCRUAL_VERSION,
+      charge: CHARGE_VERSION,
+      "daily-precision": DAILY_PRECISION_VERSION,
+      offsets: OFFSETS_VERSION,
+      recast: RECAST_VERSION,
+      phases: PHASES_VERSION,
+      fees: FEES_VERSION,
+      allocation: ALLOCATION_VERSION,
+      "final-payment": FINAL_PAYMENT_VERSION,
+      "loan-periodic": PERIODIC_ENGINE_VERSION,
+      "loan-daily": DAILY_ENGINE_VERSION,
+      revolving: REVOLVING_VERSION,
+      receivable: RECEIVABLE_VERSION,
+      eligibility: ELIGIBILITY_VERSION,
+      diagnostics: DIAGNOSTICS_VERSION,
+      projection: PROJECTION_VERSION,
+      "business-days": BUSINESS_DAYS_VERSION,
+      "statement-allocation": STATEMENT_ALLOCATION_VERSION,
+    });
+  });
+});
