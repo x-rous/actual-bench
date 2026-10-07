@@ -98,10 +98,19 @@ export function insertDebtTransactionLink(
       postingId
     );
   } catch (error) {
+    const message = String((error as { message?: unknown })?.message ?? error);
+    const claimConflict = message.includes("idx_debt_transaction_links_claim")
+      || message.includes("debt_transaction_links.budget_sync_id, debt_transaction_links.actual_transaction_id, debt_transaction_links.role");
+    const owner = claimConflict ? db.prepare(
+      `SELECT d.name, d.status FROM debt_transaction_links l JOIN debts d ON d.id = l.debt_id
+       WHERE l.budget_sync_id = ? AND l.actual_transaction_id = ? AND l.role = ?`
+    ).get<{ name: string; status: string }>(input.budgetSyncId, input.actualTransactionId, role) : null;
+    const claimMessage = "That Actual transaction is already claimed in this role in this budget."
+      + (owner ? ` The claim belongs to the loan ${JSON.stringify(owner.name)} (${owner.status}).` : "");
     rethrowConstraint(error, {
-      idx_debt_transaction_links_claim: "That Actual transaction is already claimed in this role in this budget.",
+      idx_debt_transaction_links_claim: claimMessage,
       "debt_transaction_links.budget_sync_id, debt_transaction_links.actual_transaction_id, debt_transaction_links.role":
-        "That Actual transaction is already claimed in this role in this budget.",
+        claimMessage,
       FOREIGN: "The debt does not exist in that Actual budget, or the posting does not exist.",
     });
   }

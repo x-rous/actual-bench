@@ -92,7 +92,11 @@ export function matchingCandidates(
     // A repayment already split in Actual is matched as one payment; its parts are not candidates.
     const loanSplit = row.isParent && row.splitLines.length >= 2 && row.splitLines.every((l) => l.id !== null)
       && row.splitLines.filter((l) => l.transferId).length === 1;
-    if (loanSplit) return [{ ...parentCandidate(row, linkedTransactionIds.has(row.id)), loanSplit: true }];
+    if (loanSplit) {
+      const principal = row.splitLines.find((l) => l.transferId)!;
+      return [{ ...parentCandidate(row, linkedTransactionIds.has(row.id) || linkedTransactionIds.has(principal.id!)),
+        loanSplit: true, loanSplitTransfer: { childId: principal.id!, counterpartId: principal.transferId! } }];
+    }
     return [
       parentCandidate(row, linkedTransactionIds.has(row.id)),
       ...row.splitLines.map((child, index) => childCandidate(row, child, index, child.id !== null && linkedTransactionIds.has(child.id))),

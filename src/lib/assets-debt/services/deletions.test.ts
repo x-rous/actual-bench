@@ -1,9 +1,15 @@
 import { apiRequest } from "@/lib/api/client";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
 import { listModelRevisions } from "@/lib/app-db/modelRevisionRepository";
-import { byKind, createScenario } from "../testing/postingScenario";
+import { insertDebtMatchRule, listDebtMatchRules } from "@/lib/app-db/debtMatchRuleRepository";
+import { listDebtTransactionLinks } from "@/lib/app-db/debtTransactionLinkRepository";
+import { ACCOUNTS, byKind, createScenario } from "../testing/postingScenario";
+import { saveInput } from "../testing/debtFixtures";
+import { readMatchingHistory } from "../actual/ledgerPort";
 import { anchorDebtAtObservation } from "./anchorService";
-import { archiveDebtConfiguration, deleteArchivedDebtPermanently, getDebtDetail } from "./debtConfigService";
+import { archiveDebtConfiguration, createDebtConfiguration, deleteArchivedDebtPermanently, getDebtDetail } from "./debtConfigService";
+import { listDebtPostings, previewDebtPostings } from "./proposalService";
+import { approveAndRecordClaim } from "./postingWorkflowService";
 import { currentDebtObservations, debtObservationHistory, recordManualDebtObservation, removeDebtObservation } from "./observationService";
 
 jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
@@ -33,6 +39,79 @@ describe("removing a lender statement (owner decision 2026-10-05)", () => {
 });
 
 describe("deleting a loan permanently (owner decision 2026-10-05)", () => {
+  it.each(["direct", "http"] as const)("releases applied repayment claims for a recreated loan, but retains an archived loan's claims (%s)", async (mode) => {
+    const s = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    const window = { from: "2024-02-01", to: "2024-04-30" };
+    s.seedPayment("2024-02-01");
+    s.seedPayment("2024-03-01");
+    const [first] = byKind((await s.preview(window)).postings, "repayment-split");
+    expect((await s.apply(first)).posting.status).toBe("applied");
+    const old = getDebtDetail(s.db, s.debtId)!;
+    if (!old.config.ok) throw new Error("Expected supported config");
+    const config = old.config.config;
+    const rules = listDebtMatchRules(s.db, s.debtId);
+    const oldClaim = listDebtTransactionLinks(s.db, s.debtId).find((l) => l.role === "repayment")!;
+    const recreate = () => {
+      const detail = createDebtConfiguration(s.db, saveInput({
+        lenderPattern: "embedded-interest", executionStrategy: "bench-daily",
+        liabilityAccountId: ACCOUNTS.mortgage, paymentAccountId: ACCOUNTS.checking,
+        loanPaymentCategoryId: old.debt.loanPaymentCategoryId, config,
+      }), s.directory);
+      for (const rule of rules) insertDebtMatchRule(s.db, detail.debt.id, {
+        purpose: rule.purpose as "repayment", enabled: true, ruleFormatVersion: rule.ruleFormatVersion,
+        conditionsJson: rule.conditionsJson, actionsJson: rule.actionsJson,
+      });
+      return detail;
+    };
+    const preview = async (id: string) => {
+      const snapshots = await readMatchingHistory(s.transport, { accountIds: [ACCOUNTS.checking, ACCOUNTS.mortgage], from: "2024-01-01", to: window.to });
+      const result = previewDebtPostings(s.db, id, { ...window, today: window.to, snapshots,
+        accountDirectory: s.directory, transferPayees: s.transferPayees,
+        capabilities: { canRestructure: true, canVerifyTransferLinks: true } });
+      if (!result.ok) throw new Error("Expected preview");
+      return result;
+    };
+    archiveDebtConfiguration(s.db, s.debtId);
+    const competing = recreate();
+    const [blockedClaim] = byKind((await preview(competing.debt.id)).postings, "repayment-split");
+    expect(blockedClaim.output.kind).toBe("claim");
+    const fresh = await s.fresh(blockedClaim);
+    expect(() => approveAndRecordClaim(s.db, blockedClaim.id, { fresh, now: "2024-06-01T00:00:00Z" })).toThrow(/already claimed in this role/);
+    expect(() => approveAndRecordClaim(s.db, blockedClaim.id, { fresh, now: "2024-06-01T00:00:00Z" })).toThrow(`The claim belongs to the loan ${JSON.stringify(old.debt.name)} (archived).`);
+    expect(listDebtTransactionLinks(s.db, s.debtId)).toContainEqual(oldClaim);
+    archiveDebtConfiguration(s.db, competing.debt.id);
+    deleteArchivedDebtPermanently(s.db, competing.debt.id);
+    const before = structuredClone(s.fake.rows());
+    deleteArchivedDebtPermanently(s.db, s.debtId);
+    expect(listDebtTransactionLinks(s.db, s.debtId)).toEqual([]);
+    const replacement = recreate();
+    const result = await preview(replacement.debt.id);
+    expect(result.unscheduled).toEqual([]);
+    const claims = listDebtTransactionLinks(s.db, replacement.debt.id).filter((l) => l.role === "repayment");
+    expect(claims.map((l) => l.actualTransactionId)).toEqual([oldClaim.actualTransactionId]);
+    expect(byKind(listDebtPostings(s.db, replacement.debt.id), "repayment-split").some((p) => p.status === "applied" && p.output.kind === "claim")).toBe(true);
+    const next = await preview(replacement.debt.id);
+    expect(next.paymentOptions.map((p) => p.id)).not.toContain(oldClaim.actualParentId);
+    expect(listDebtTransactionLinks(s.db, replacement.debt.id).filter((l) => l.role === "repayment")).toEqual(claims);
+    expect(s.fake.rows()).toEqual(before);
+    // Recreate again with changed interest: this time recognition needs Review and explicit Apply,
+    // which is where the owner saw the claim error (not the automatic no-write claim path).
+    archiveDebtConfiguration(s.db, replacement.debt.id);
+    deleteArchivedDebtPermanently(s.db, replacement.debt.id);
+    const reviewed = recreate();
+    const principal = s.fake.row(oldClaim.actualTransactionId)!;
+    const interest = s.fake.rows().find((r) => r.parent_id === oldClaim.actualParentId && !r.transfer_id)!;
+    s.fake.editInActual(principal.id as string, { amount: (principal.amount as number) + 500 });
+    s.fake.editInActual(interest.id as string, { amount: (interest.amount as number) - 500 });
+    const reviewRows = structuredClone(s.fake.rows());
+    const [proposal] = byKind((await preview(reviewed.debt.id)).postings, "repayment-split");
+    expect(proposal).toMatchObject({ classification: "review", output: { kind: "claim" } });
+    const applied = approveAndRecordClaim(s.db, proposal.id, { fresh: await s.fresh(proposal), now: "2024-06-01T00:00:00Z" });
+    expect(applied.status).toBe("applied");
+    expect(listDebtTransactionLinks(s.db, reviewed.debt.id).filter((l) => l.role === "repayment").map((l) => l.actualTransactionId)).toEqual([oldClaim.actualTransactionId]);
+    expect(s.fake.rows()).toEqual(reviewRows);
+  });
+
   it("only an archived loan; then everything Bench stored for it is gone", async () => {
     const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
     s.seedPayment("2024-02-01");

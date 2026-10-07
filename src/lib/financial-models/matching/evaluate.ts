@@ -25,6 +25,8 @@ export type MatchCandidate = {
    * Actual, which can be recorded as it is (owner decision 2026-10-06), so it is not unsafe.
    */
   loanSplit?: boolean;
+  /** Structural lookup only: the principal child is part of this payment, not another candidate. */
+  loanSplitTransfer?: { childId: string; counterpartId: string };
 };
 
 export type ExpectedMatchPeriod = {

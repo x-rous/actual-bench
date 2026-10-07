@@ -19,7 +19,7 @@ import { planAdjustments } from "./planner/adjustments";
 import type { ExistingPostingSummary, PlanningContext, PlanningNotice, ComponentConfig } from "./planner/common";
 import { planPatternA } from "./planner/patternA";
 import { planPatternB } from "./planner/patternB";
-import { followRecordedExtraPayments, recordNewExtraPayments, unscheduledPayments, type FollowedExtraPayment, type UnscheduledPayment } from "./extraPaymentService";
+import { followRecordedExtraPayments, recordNewExtraPayments, splitRepaymentCounterparts, unscheduledPayments, type FollowedExtraPayment, type UnscheduledPayment } from "./extraPaymentService";
 import { liabilityEffectMinor } from "./pendingEffect";
 import { reconcileDebt } from "./reconciliationService";
 import { indexReadRows, POSTING_INPUT_FORMAT_VERSION, type PostingInputSnapshot, type PostingOutputSnapshot, type RowSnapshot } from "./snapshot";
@@ -298,6 +298,13 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
   supersedeStaleProposals(db, { subjectKind: "debt", subjectId: ctx.debt.id, keepIds: postings.map((p) => p.id), configRevision: ctx.debt.currentRevision, window: ctx.window }, now);
   const detail = getDebtDetail(db, debtId);
   const unscheduled = detail ? unscheduledPayments(db, detail, ctx.rows, ctx.window, { lenderFeed: !!ctx.rules["lender-repayment-row"], offsetParts: new Set(repaymentAlignment(ctx).offsetParts.map((p) => p.id)) }) : [];
+  const splitCounterparts = detail ? splitRepaymentCounterparts(detail, ctx.rows) : new Set<string>();
+  const pendingExtraCorrections: PlanningNotice[] = listDebtTransactionLinks(db, debtId)
+    .filter((link) => link.role === "extra-repayment" && splitCounterparts.has(link.actualTransactionId))
+    .map((link) => ({ code: "split-extra-correction-pending", periodKey: link.periodKey ?? ctx.window.from,
+      text: request.followExtraPayments === false
+        ? "A principal transfer is part of a repayment split but still has an extra-payment entry. Save or discard your Terms & Schedule edits, then refresh to correct it."
+        : "A principal transfer is part of a repayment split but its extra-payment entry could not be corrected safely. Review the recorded extra-payment events in Terms & Schedule before refreshing." }));
   // What Actual already shows is recorded on its own (owner decision 2026-10-07): a split already in
   // Actual that matches the calculation, or a repayment already a full transfer to the loan, is a
   // claim that writes nothing to Actual; recording it is bookkeeping, so it shows as done at once.
@@ -338,7 +345,7 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
   const observed = plans.map((p) => p.observed).find((o) => !!o) ?? null;
   const reconciled = request.comparison ? reconcileDebt(db, { debtId, comparisonDate: request.comparison.comparisonDate, actualBalanceMinor: request.comparison.actualBalanceMinor, offsetHistories: request.offsetHistories, observed, loanAccountRows: request.loanAccountRows }) : null;
   return {
-    ok: true, postings, notices: plans.flatMap((p) => p.notices), driftMaterial: built.ctx.driftMaterial, driftExplained, unscheduled, followedExtraPayments, paymentOptions,
+    ok: true, postings, notices: [...plans.flatMap((p) => p.notices), ...pendingExtraCorrections], driftMaterial: built.ctx.driftMaterial, driftExplained, unscheduled, followedExtraPayments, paymentOptions,
     repaymentChoices: ctx.repaymentChoices ?? [], changedInActual, reconciliation: reconciled && reconciled.ok ? reconciled : null,
   };
 }

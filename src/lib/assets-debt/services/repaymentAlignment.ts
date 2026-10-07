@@ -54,6 +54,11 @@ export function settledPaymentOf(output: PostingOutputSnapshot): { paymentId: st
 export function payingSide(candidates: readonly MatchCandidate[], matched: MatchCandidate, liabilityAccountId: string | null): MatchCandidate | null {
   if (matched.accountId !== liabilityAccountId || !matched.transferId) return matched;
   const other = candidates.find((c) => c.id === matched.transferId);
+  // Existing loan splits are represented by their parent only. Retain the child relationship so
+  // the loan-side principal is routed to that same payment, even when no rule matches the parent.
+  const split = candidates.find((c) => c.loanSplitTransfer?.childId === matched.transferId
+    && c.loanSplitTransfer?.counterpartId === matched.id && c.accountId !== liabilityAccountId);
+  if (split) return split;
   return other?.isChild && other.parentId ? candidates.find((c) => c.id === other.parentId) ?? null : other ?? null;
 }
 

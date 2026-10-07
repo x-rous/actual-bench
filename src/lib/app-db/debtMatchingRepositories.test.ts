@@ -82,7 +82,7 @@ describe("debt matching repositories (schema v42)", () => {
     };
 
     insertDebtTransactionLink(db, { id: "link-a", debtId: a1.id, budgetSyncId: "budget-a", ...input });
-    expect(() => insertDebtTransactionLink(db, { debtId: a2.id, budgetSyncId: "budget-a", ...input })).toThrow(/already claimed/);
+    expect(() => insertDebtTransactionLink(db, { debtId: a2.id, budgetSyncId: "budget-a", ...input })).toThrow(`The claim belongs to the loan ${JSON.stringify(a1.name)} (active).`);
     expect(() => insertDebtTransactionLink(db, { debtId: a1.id, budgetSyncId: "budget-b", ...input })).toThrow(/does not exist in that Actual budget/);
     expect(() => insertDebtTransactionLink(db, { debtId: a2.id, budgetSyncId: "budget-a", ...input, actualTransactionId: "parent", isSplitParent: true })).toThrow(/specific child/);
 

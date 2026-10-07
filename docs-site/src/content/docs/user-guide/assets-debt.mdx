@@ -1,0 +1,42 @@
+---
+title: Assets & Debt repayment tracking
+description: Recognize existing loan repayment splits and keep principal transfers out of extra payments.
+---
+
+Open your loan in **Assets & Debt**, then use **Sync Repayments** to review payments held in Actual.
+
+## Repayments already split in Actual
+
+For a loan whose payments include interest, a repayment can already have a parent payment with
+one principal child transferred to the configured loan account and an interest child assigned to
+the configured interest category. Bench recognizes the parent as one repayment and uses Actual's
+principal and interest amounts. Figures that need review remain available for your approval.
+
+The principal transfer's counterpart in the loan account belongs to that same repayment. It does
+not appear under **Payments not in the schedule** and is not counted as an extra payment. This
+works for splits entered before tracking was set up and for splits created by Bench. You do not
+need to change your matching rule to exclude the principal child.
+
+Independent transfers into the loan account that do not belong to scheduled repayments or the
+payoff remain extra payments.
+
+## Correcting an older extra-payment entry
+
+On refresh, Bench checks the split and its linked loan-side row before calculating again. If that
+row was previously recorded as an extra payment, Bench removes its link and identifiable generated
+event from **Terms & Schedule**, saving a new revision. It does not change any Actual transaction
+or matching setting. Manually entered events remain yours to review.
+
+Save or discard pending **Terms & Schedule** edits before refreshing to allow this correction.
+When older links share a date and Bench cannot identify their generated events safely, it leaves
+them in place and shows a notice to review **Terms & Schedule**. Incomplete or inconsistent
+transfer evidence is not enough to remove an event automatically.
+
+## Deleting and recreating a loan
+
+Archiving a loan retains its repayment claims and history. To remove those claims, use
+**Delete permanently** on the archived loan and confirm its name. This deletes the loan's Bench
+records while leaving its Actual transactions as they are. A recreated loan can recognize the
+existing splits and claim those repayments again. A claim held by another existing loan still
+prevents the same transaction from being claimed twice in that role.
+If Apply reports a claim conflict, the warning names the loan holding that claim and its status.

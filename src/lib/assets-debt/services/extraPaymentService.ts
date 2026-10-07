@@ -72,6 +72,41 @@ function claimedByPostings(db: SqliteDatabase, debtId: string): Set<string> {
   return ids;
 }
 
+/**
+ * Prove the principal transfer belongs to an embedded-interest repayment from Actual's structure,
+ * independently of matching rules, markers or whether Bench has a posting for it. Require the
+ * whole split and a reciprocal, equal-and-opposite loan-side row before repairing stored events.
+ */
+export function splitRepaymentCounterparts(detail: DebtDetail, rows: ReadonlyMap<string, RowSnapshot>): Set<string> {
+  const ids = new Set<string>();
+  const liability = detail.debt.liabilityAccountId;
+  if (!liability || detail.debt.lenderPattern !== "embedded-interest" || !detail.config.ok) return ids;
+  const interestCategories = new Set(detail.config.config.components.filter((c) => c.economicKind === "interest" && c.destination === "category").map((c) => c.categoryId));
+  const childrenByParent = new Map<string, RowSnapshot[]>();
+  for (const row of rows.values()) {
+    if (!row.isChild || !row.parentId) continue;
+    const children = childrenByParent.get(row.parentId) ?? [];
+    children.push(row);
+    childrenByParent.set(row.parentId, children);
+  }
+  for (const parent of rows.values()) {
+    if (!parent.isParent || parent.accountId === liability) continue;
+    const children = childrenByParent.get(parent.id) ?? [];
+    if (children.length < 2 || children.length !== parent.childCount
+      || children.some((c) => c.accountId !== parent.accountId || c.date !== parent.date || (c.amountMinor !== 0 && Math.sign(c.amountMinor) !== Math.sign(parent.amountMinor)))
+      || children.reduce((sum, c) => sum + c.amountMinor, 0) !== parent.amountMinor) continue;
+    const transfers = children.filter((c) => c.transferId);
+    if (transfers.length !== 1 || !children.some((c) => !c.transferId && c.categoryId && interestCategories.has(c.categoryId))) continue;
+    const principal = transfers[0];
+    const counterpart = rows.get(principal.transferId!);
+    if (!counterpart || counterpart.accountId !== liability || counterpart.isChild || counterpart.isParent
+      || counterpart.transferId !== principal.id || counterpart.amountMinor !== -principal.amountMinor || counterpart.date !== principal.date) continue;
+    const reduces = detail.debt.signConvention === "positive-is-debt" ? counterpart.amountMinor < 0 : counterpart.amountMinor > 0;
+    if (reduces) ids.add(counterpart.id);
+  }
+  return ids;
+}
+
 export function unscheduledPayments(
   db: SqliteDatabase,
   detail: DebtDetail,
@@ -83,6 +118,7 @@ export function unscheduledPayments(
   if (!liability) return [];
   const negativeIsDebt = detail.debt.signConvention !== "positive-is-debt";
   const claimed = claimedByPostings(db, detail.debt.id);
+  const splitCounterparts = splitRepaymentCounterparts(detail, rows);
   const allLinks = listDebtTransactionLinks(db, detail.debt.id);
   const links = new Map(allLinks.filter((l) => l.role === ROLE).map((l) => [l.actualTransactionId, l]));
   const dismissed = new Set(allLinks.filter((l) => l.role === NOT_EXTRA).map((l) => l.actualTransactionId));
@@ -93,6 +129,7 @@ export function unscheduledPayments(
     // A recorded payment is listed wherever it is now, so a date moved in Actual is still seen.
     const outside = row.date < window.from || row.date > window.to;
     if (row.accountId !== liability || row.isChild || row.date < opening || (outside && !recorded.has(row.id))) continue;
+    if (splitCounterparts.has(row.id)) continue;
     const reduces = negativeIsDebt ? row.amountMinor > 0 : row.amountMinor < 0;
     if (row.importedId?.startsWith("abdebt:")) continue;
     if (!reduces) {
@@ -189,6 +226,8 @@ export function recordExtraPayment(db: SqliteDatabase, debtId: string, input: { 
 export type FollowedExtraPayment =
   | { transactionId: string; change: "moved"; from: { date: string; amountMinor: number }; to: { date: string; amountMinor: number } }
   | { transactionId: string; change: "removed"; from: { date: string; amountMinor: number } }
+  /** Structurally part of an existing repayment split; corrected in Bench, never changed in Actual. */
+  | { transactionId: string; change: "repayment"; from: { date: string; amountMinor: number } }
   /** Changed in Actual to an amount that pays the loan off: taken out of Terms & Schedule, now the payoff. */
   | { transactionId: string; change: "payoff"; from: { date: string; amountMinor: number }; to: { date: string; amountMinor: number } };
 
@@ -210,13 +249,26 @@ export function followRecordedExtraPayments(
   const liability = detail?.debt.liabilityAccountId;
   if (!detail || detail.blocked || !liability) return [];
   const complete = loanAccountRows ? new Map(loanAccountRows.map((r) => [r.id, r])) : null;
+  const splitCounterparts = splitRepaymentCounterparts(detail, rows);
   const followed: FollowedExtraPayment[] = [];
   for (const link of listDebtTransactionLinks(db, debtId).filter((l) => l.role === ROLE)) {
-    const event = recordedEvent(getDebtDetail(db, debtId)!.assumptions, link.periodKey);
+    const current = getDebtDetail(db, debtId)!;
+    // Legacy links identify their generated event by date and note. Never guess which event
+    // belongs to which of several links on one day, including when following a changed row.
+    const events = current.assumptions.filter((a) => a.assumptionKind === ROLE && a.effectiveFrom === link.periodKey && a.note === NOTE && a.recurrence === null);
+    const sameDayLinks = listDebtTransactionLinks(db, debtId).filter((l) => l.role === ROLE && l.periodKey === link.periodKey);
+    if (events.length > 1 || (events.length && sameDayLinks.length > 1)) continue;
+    const event = recordedEvent(current.assumptions, link.periodKey);
     const from = event ? { date: event.effectiveFrom, amountMinor: event.amountMinor ?? 0 } : null;
     const read = rows.get(link.actualTransactionId);
     const now = complete ? complete.get(link.actualTransactionId) ?? null : read && read.accountId === liability && !read.isChild ? read : null;
     try {
+      if (splitCounterparts.has(link.actualTransactionId)) {
+        // removeExtraPayment deletes only the generated event; manual events stay untouched.
+        removeExtraPayment(db, debtId, link.actualTransactionId, "Principal transfer reclassified as scheduled repayment");
+        if (from) followed.push({ transactionId: link.actualTransactionId, change: "repayment", from });
+        continue;
+      }
       if (!now) {
         if (!complete) continue;
         removeExtraPayment(db, debtId, link.actualTransactionId);
@@ -293,7 +345,7 @@ export function undismissExtraPayment(db: SqliteDatabase, debtId: string, actual
 }
 
 /** Undo: unlink the transaction and take the matching extra payment out of Terms & Schedule. */
-export function removeExtraPayment(db: SqliteDatabase, debtId: string, actualTransactionId: string): DebtDetail {
+export function removeExtraPayment(db: SqliteDatabase, debtId: string, actualTransactionId: string, revisionLabel = "Extra payment from Actual removed"): DebtDetail {
   const detail = getDebtDetail(db, debtId);
   if (!detail) throw new AppDbValidationError("Debt not found");
   const link = listDebtTransactionLinks(db, debtId).find((l) => l.role === ROLE && l.actualTransactionId === actualTransactionId);
@@ -301,7 +353,7 @@ export function removeExtraPayment(db: SqliteDatabase, debtId: string, actualTra
   db.transaction(() => {
     db.prepare("DELETE FROM debt_transaction_links WHERE id = ?").run(link.id);
     const event = recordedEvent(detail.assumptions, link.periodKey);
-    if (event) saveBaselineAssumptions(db, debtId, detail.assumptions.filter((a) => a.id !== event.id).map(toInput), "Extra payment from Actual removed");
+    if (event) saveBaselineAssumptions(db, debtId, detail.assumptions.filter((a) => a.id !== event.id).map(toInput), revisionLabel);
   })();
   return getDebtDetail(db, debtId)!;
 }
