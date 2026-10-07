@@ -207,10 +207,12 @@ describe("the Transactions status strip (T305)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh from Actual" }));
     expect(onRefresh).toHaveBeenCalled();
     expect(screen.getByRole("img", { name: /3 repayments: 1 applied, 1 applied with your edit, 1 upcoming/ })).toBeInTheDocument();
-    expect(screen.getByText("2 of 2 due so far applied · 1 upcoming")).toBeInTheDocument();
-    expect(screen.getByText(/from HSBC Main Account, 12 days early to 3 late/)).toBeInTheDocument();
-    expect(screen.getByText("paid 6 days early on average")).toBeInTheDocument();
+    expect(screen.getByText("2 of 2 applied")).toBeInTheDocument();
+    expect(screen.getByText("1 upcoming")).toBeInTheDocument();
+    expect(screen.getByText("from HSBC Main Account")).toBeInTheDocument();
+    expect(screen.getByTitle("Payments from HSBC Main Account, 12 days early to 3 late")).toBeInTheDocument();
+    expect(screen.getByText("6 days early on average")).toBeInTheDocument();
     expect(screen.getByText("1 split applied with your edit")).toBeInTheDocument();
-    expect(screen.getByText("Repayment rule on")).toBeInTheDocument();
+    expect(screen.getByText("Rule on")).toBeInTheDocument();
   });
 });

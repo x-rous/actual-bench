@@ -581,7 +581,7 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
       case "repayment":
       case "extra-repayment": {
         const capAssumed = behavior.capAssumedExtras && e.kind === "extra-repayment" && e.certainty === "assumed" && !revolving;
-        if (!capAssumed && e.amountMinor > before) return { code: "credit-balance", classification: "review", date: e.date, message: `A repayment of ${e.amountMinor} exceeds the ${before} owed; the excess needs review.` };
+        if (!capAssumed && e.amountMinor > before) return { code: "credit-balance", classification: "review", date: e.date, message: `A repayment of ${e.amountMinor} exceeds the ${before} owed; the excess needs review.`, diagnostics: { requestedAmountMinor: e.amountMinor, owedMinor: before } };
         const applied = capAssumed ? Math.min(e.amountMinor, before) : e.amountMinor;
         if (applied === 0) return null;
         debt = sub(debt, fromMinor(applied, digits));

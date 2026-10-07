@@ -152,14 +152,30 @@ describe.each(HARNESS_MODES)("transaction structure operations (%s)", (mode) => 
     const counterpart = state(pre({ id: cp, accountId: "mortgage", date: "2026-03-01", amount: 830000, payeeId: fake.transferPayeeId("checking"), transferId: id }));
     const writes = fake.writes().length;
     await expect(t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake) })).rejects.toBeInstanceOf(TransactionStructureRefusedError);
-    fake.editInActual(cp, { cleared: true });
-    await expect(t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake), replaceCounterpart: { expected: { ...counterpart, cleared: true }, sourceAccountTransferPayeeId: fake.transferPayeeId("checking") } }))
-      .rejects.toThrow(/it is cleared/);
+    fake.editInActual(cp, { imported_payee: "LENDER" });
+    await expect(t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake), replaceCounterpart: { expected: { ...counterpart, importedPayee: "LENDER" }, sourceAccountTransferPayeeId: fake.transferPayeeId("checking") } }))
+      .rejects.toThrow(/it was imported/);
     expect(fake.writes().length).toBe(writes + 1); // only the edit above
-    fake.editInActual(cp, { cleared: false });
+    fake.editInActual(cp, { imported_payee: null });
     const result = await t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake), replaceCounterpart: { expected: counterpart, sourceAccountTransferPayeeId: fake.transferPayeeId("checking") } });
     expect(result.children).toHaveLength(2);
     expect(fake.row(cp)).toBeUndefined();
+  });
+
+  it("a cleared loan-side row is marked cleared again after the split, or left to the caller to mark in a batch", async () => {
+    for (const defer of [false, true]) {
+      const { fake, t } = setup();
+      const id = fake.seed({ account: "checking", date: "2026-03-01", amount: -830000, payee: "p-lender" });
+      fake.editInActual(id, { payee: fake.transferPayeeId("mortgage") });
+      const cp = fake.row(id)!.transfer_id as string;
+      fake.editInActual(cp, { cleared: true });
+      const expected = pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: fake.transferPayeeId("mortgage"), transferId: cp });
+      const counterpart = state(pre({ id: cp, accountId: "mortgage", date: "2026-03-01", amount: 830000, payeeId: fake.transferPayeeId("checking"), transferId: id }));
+      const result = await t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake), deferClearing: defer, replaceCounterpart: { expected: { ...counterpart, cleared: true }, sourceAccountTransferPayeeId: fake.transferPayeeId("checking") } });
+      const made = result.children.find((c) => c.transferId)!.transferId!;
+      expect(fake.row(made)?.cleared === true).toBe(!defer);
+      expect(result.clearLater ?? null).toBe(defer ? made : null);
+    }
   });
 
   it("T276: restoreSplit and unlinkTransfer refuse, writing nothing, a changed or reconciled row", async () => {

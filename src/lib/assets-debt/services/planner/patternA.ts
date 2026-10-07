@@ -1,6 +1,7 @@
 import type { PostingReason } from "@/lib/app-db/types";
 import type { MatchCandidate } from "@/lib/financial-models/matching";
 import type { PayoffFigures, RecordedSplit } from "../snapshot";
+import { settledPaymentOf } from "../repaymentAlignment";
 import { paymentChildCategory, transferLegCategory } from "../../actual/representation";
 import { existingStructureReason, REASONS } from "../../classification/policy";
 import { classifyExistingStructure } from "../../classification/existingStructure";
@@ -76,6 +77,8 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
   let settled = false;
   // Due dates passed without a payment since the last one in the chain (counted as not paid).
   let missed: string[] = [];
+  // Applied splits that no longer match the calculation because something before them changed.
+  const drifted: string[] = [];
 
   for (const date of window.repaymentDates) {
     const calc = eventsOn(ctx, date);
@@ -87,13 +90,20 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
 
     const split = livePosting(ctx, "repayment-split", date);
     if (split) {
-      chain.add(split.outputSnapshot.kind === "restructure" ? entryFromSplit(split.outputSnapshot, date) : split.outputSnapshot.kind === "claim" && split.outputSnapshot.recordedSplit ? entryFromRecorded(split.outputSnapshot.recordedSplit, date) : split.outputSnapshot.kind === "adjust-split" ? entryFromRecorded(split.outputSnapshot.recordedSplit, date) : assumedEntry());
+      const settledEntry = split.outputSnapshot.kind === "restructure" ? entryFromSplit(split.outputSnapshot, date) : split.outputSnapshot.kind === "claim" && split.outputSnapshot.recordedSplit ? entryFromRecorded(split.outputSnapshot.recordedSplit, date) : split.outputSnapshot.kind === "adjust-split" ? entryFromRecorded(split.outputSnapshot.recordedSplit, date) : assumedEntry();
+      // Its date follows Actual: a payment moved there after it was applied counts on its new date.
+      const paid = settledPaymentOf(split.outputSnapshot);
+      const movedTo = paid ? ctx.rows.get(paid.paymentId)?.date : undefined;
+      const entry = movedTo && !settledEntry.assumed ? { ...settledEntry, paidDate: movedTo } : settledEntry;
       missed = [];
-      // Worked out when an earlier repayment was counted as not paid; that repayment has turned up since.
-      const counted = split.outputSnapshot.kind === "restructure" ? split.outputSnapshot.missedDueDates ?? [] : [];
-      const found = counted.filter((d) => { const a = repaymentAlignment(ctx).aligned(d); return !!a?.payment && !a.settled; });
-      if (split.status === "applied" && found.length) {
-        out.notices.push({ code: "redo-after-found", periodKey: date, text: `This split counted the repayment due ${found.join(", ")} as not paid, but ${found.length === 1 ? "it has" : "they have"} been found since, so its interest is too high. Undo this change, apply ${found.length === 1 ? "that repayment" : "those repayments"}, then apply this one again.` });
+      if (split.outputSnapshot.kind === "restructure" && !split.outputSnapshot.payoff && split.status === "applied") {
+        // Done while within the tolerance of what the calculation gives now; beyond it (something
+        // earlier changed), it is listed for one "split again" action (owner decision 2026-10-07).
+        const { calculatedInterestMinor } = chain.addSettled(entry);
+        const applied = entry.appliedInterestMinor ?? 0;
+        if (calculatedInterestMinor !== null && Math.abs(calculatedInterestMinor - applied) > (ctx.debt.driftToleranceMinor ?? 100)) drifted.push(date);
+      } else {
+        chain.add(entry);
       }
       // Second step with a lender feed: link the applied principal child and the lender row.
       if (lenderFeed && split.status === "applied" && !livePosting(ctx, "repayment-link", date)) planLenderLink(ctx, out, split, date, calc);
@@ -138,11 +148,8 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
         : { code: "no-repayment-rule", periodKey: date, text: `${missedText} If repayments are not transfers into the loan account, set up repayment matching in Link to Actual so Bench can find them.` });
       continue;
     }
-    if (match.status === "multiple") {
-      chain.add(assumedEntry());
-      out.notices.push({ code: "repayment-ambiguous", periodKey: date, text: REASONS.multipleCandidates.text });
-      continue;
-    }
+    // One pass pairs at most one payment with each due date (a rival is a Review reason), so there is
+    // no "several payments" case for repayments.
     const evaluation = match.candidates[0];
     const side = paymentSide(ctx, evaluation.candidate);
     if (!side.ok) {
@@ -172,6 +179,13 @@ export function planPatternA(ctx: PlanningContext): PlanResult {
     }
     planSplit(ctx, out, { ...base, row, candidate, matchStatus: match.status, unsafeReasons: evaluation.unsafeReasons, payoff: null, missed });
     missed = [];
+  }
+  out.observed = chain.observed();
+  if (drifted.length) {
+    out.notices.push({
+      code: "split-again", periodKey: drifted[0], dueDates: drifted,
+      text: `Payments before this one changed since it was split (one was found, edited or removed), so ${drifted.length === 1 ? "this split no longer matches" : `this split and ${drifted.length - 1} later one${drifted.length === 2 ? "" : "s"} no longer match`} the calculation by more than your tolerance. Undo ${drifted.length === 1 ? "it" : "them"} to split again.`,
+    });
   }
   // Paid off after the last due date so far (the next repayment is not due yet): the payoff takes
   // the place of the next repayment due, or stands on its own date after the loan's last one.
@@ -205,7 +219,7 @@ type PayoffPlan = { entry: ChainEntry; fees: number; figures: PayoffFigures };
 
 /** The date of the last repayment in the chain (or the opening): a payoff can only come after it. */
 function lastPaid(chain: ReturnType<typeof repaymentChain>): string {
-  return chain.entries.reduce((latest, e) => (e.paidDate > latest ? e.paidDate : latest), "0000-01-01");
+  return chain.entries.reduce((latest, e) => (!e.extra && e.paidDate > latest ? e.paidDate : latest), "0000-01-01");
 }
 
 /**
@@ -233,13 +247,16 @@ function payoffCandidates(ctx: PlanningContext): RowSnapshot[] {
  * owed plus the interest accrued up to the day it was paid, give or take the loan's tolerance.
  * Interest runs to the payment date (the payment is its own due date), never to a later due date.
  * More than that goes to a payoff fee line when the loan has a cash fee component, else into the
- * interest line with a reason; a shortfall within the tolerance comes off the interest.
+ * interest line with a reason. Less than that is still the payoff (owner decision 2026-10-07: the
+ * lender works out the final payment, and Actual is the truth): the interest line is what the
+ * lender actually took (the payment less the principal), and the reason says how far that is from
+ * Bench's figure.
  */
 function payoffPlan(ctx: PlanningContext, chain: ReturnType<typeof repaymentChain>, row: RowSnapshot): PayoffPlan | null {
   const amountMinor = Math.abs(row.amountMinor);
   const tolerance = ctx.debt.driftToleranceMinor ?? 100;
   // Cheap first: a payoff covers at least the principal owed (interest only adds to it).
-  const owed = chain.owed();
+  const owed = chain.owed(row.date);
   if (owed === null || owed <= 0 || amountMinor + tolerance < owed) return null;
   const probe = chain.peek({ dueDate: row.date, paidDate: row.date, amountMinor, feesMinor: 0 });
   if (!probe.ok) return null;
@@ -247,7 +264,6 @@ function payoffPlan(ctx: PlanningContext, chain: ReturnType<typeof repaymentChai
   const interestMinor = probe.row.interestMinor;
   if (owedPrincipalMinor <= 0) return null;
   const excessMinor = amountMinor - owedPrincipalMinor - interestMinor;
-  if (excessMinor < -tolerance) return null;
   const feeLine = ctx.components.some((c) => c.economicKind === "fee" && c.treatment !== "capitalized");
   const fees = excessMinor > tolerance && feeLine ? excessMinor : 0;
   const applied = fees ? interestMinor : Math.max(0, interestMinor + excessMinor);
@@ -304,7 +320,7 @@ function planSplit(
   if (payoff) {
     reviews.push(REASONS.payoff);
     const f = payoff.figures;
-    reviews.push({ code: "payoff-figures", text: `Paid ${fmt(Math.abs(row.amountMinor))} on ${f.paidDate}: principal owed ${fmt(f.owedPrincipalMinor)} and interest to that day ${fmt(f.interestMinor)}${f.excessMinor > 0 ? `, ${fmt(f.excessMinor)} more than that (${payoff.fees ? "shown as a payoff fee" : "added to the interest line"}; change it if it is something else)` : f.excessMinor < 0 ? `, ${fmt(-f.excessMinor)} less (within your tolerance; taken off the interest)` : ""}.` });
+    reviews.push({ code: "payoff-figures", text: `Paid ${fmt(Math.abs(row.amountMinor))} on ${f.paidDate}: principal owed ${fmt(f.owedPrincipalMinor)} and interest to that day ${fmt(f.interestMinor)}${f.excessMinor > 0 ? `, ${fmt(f.excessMinor)} more than that (${payoff.fees ? "shown as a payoff fee" : "added to the interest line"}; change it if it is something else)` : f.excessMinor < 0 ? `, ${fmt(-f.excessMinor)} less (${-f.excessMinor <= (ctx.debt.driftToleranceMinor ?? 100) ? "within your tolerance; " : "the lender's own figure, so "}taken off the interest${-f.excessMinor > (ctx.debt.driftToleranceMinor ?? 100) ? `: interest ${fmt(Math.max(0, f.interestMinor + f.excessMinor))}. Check it against the lender's payoff statement if it matters` : ""})` : ""}.` });
   }
   // T279: a payment that is already a transfer is split only when its loan-side row is exactly as
   // Actual made it; Actual deletes that row on the split and Undo re-creates it (with a new id).
@@ -360,6 +376,25 @@ function planSplit(
   const children = plan?.ok ? plan.children : [];
   const components: ComponentLine[] = children.map((c) => ({ kind: c.economicKind, amountMinor: Math.abs(c.amountMinor) }));
 
+  // A payoff of exactly the principal (no interest or fee line) has nothing to split, and Actual
+  // refuses a split with one part. Already a transfer into the loan, it is recorded as it is;
+  // otherwise it needs to become that transfer in Actual first.
+  if (payoff && children.length === 1) {
+    const toLoan = !!row.transferId && (replacesCounterpart !== null || ctx.rows.get(row.transferId)?.accountId === ctx.debt.liabilityAccountId || ctx.candidates.some((c) => c.id === row.transferId && c.accountId === ctx.debt.liabilityAccountId));
+    if (!toLoan) {
+      blockers.push({ code: "payoff-principal-only", text: "This payment is exactly the principal owed, with no interest to split off. In Actual, make it a transfer to the loan account; Bench then records it as the payoff." });
+    } else {
+      out.postings.push(finalize(ctx, {
+        postingKind: "repayment-split", periodKey: date, shape: "claim", generation: generationFor(ctx, "repayment-split", date), marker: null,
+        inputSnapshot: inputSnapshot(ctx, period, [row], { payoff: true }),
+        outputSnapshot: { format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "claim", rows: [row], role: "repayment", closing, payoff: payoff.figures },
+        engineVersions: versions,
+        policy: { blockers: blockers.filter((b) => b.code !== "restructure-unavailable"), reviews: reviews.filter((r) => r.code !== REASONS.replacesCounterpart.code) },
+      }));
+      return;
+    }
+  }
+
   out.postings.push(finalize(ctx, {
     postingKind: "repayment-split", periodKey: date, shape: "restructure", generation: generationFor(ctx, "repayment-split", date), marker: null,
     inputSnapshot: {
@@ -414,7 +449,7 @@ function transferCounterpartVerdict(ctx: PlanningContext, payment: RowSnapshot):
   if (ctx.candidates.some((c) => c.id === counterpart.id && c.postingLinked)) return { ok: false, reason: REASONS.alreadyLinked };
   const problems: string[] = [];
   if (counterpart.reconciled) problems.push("it is reconciled");
-  if (counterpart.cleared) problems.push("it is cleared");
+  // Cleared is fine: the row Actual makes in its place is marked cleared again (owner decision 2026-10-07).
   if (counterpart.categoryId) problems.push("it has a category");
   if (counterpart.isParent || counterpart.isChild) problems.push("it is split");
   if (counterpart.amountMinor !== -payment.amountMinor || counterpart.date !== payment.date) problems.push("its amount or date differs");
@@ -552,7 +587,8 @@ function planRecordedSplit(
     }));
     return;
   }
-  if (Math.abs(interestMinor - calculatedInterestMinor) > OVERRIDE_NO_REASON_MINOR) {
+  // Within the loan's tolerance it counts as matching (owner decision 2026-10-07).
+  if (Math.abs(interestMinor - calculatedInterestMinor) > Math.max(OVERRIDE_NO_REASON_MINOR, ctx.debt.driftToleranceMinor ?? 100)) {
     reviews.push({ code: "recorded-split-differs", text: `Edited in Actual: calculated interest ${fmt(calculatedInterestMinor)}, Actual has ${fmt(interestMinor)}.` });
   }
   out.postings.push(finalize(ctx, {
@@ -588,8 +624,10 @@ function recordedEditFor(ctx: PlanningContext, date: string, row: RowSnapshot, c
 /** An applied split: its actual date, amount and non-interest, non-principal children. */
 function entryFromSplit(output: Extract<PostingOutputSnapshot, { kind: "restructure" }>, dueDate: string): ChainEntry {
   const feesMinor = output.operations.filter((c) => c.economicKind !== "principal" && c.economicKind !== "interest").reduce((sum, c) => sum + Math.abs(c.amountMinor), 0);
-  // An edited split carries what was applied, so later months build on that principal (T291).
-  return { dueDate, paidDate: output.before.date, amountMinor: Math.abs(output.before.amountMinor), feesMinor, ...(output.override ? { appliedInterestMinor: output.override.interestMinor } : {}) };
+  // What is in Actual counts (owner decision 2026-10-07): later months build on the interest this
+  // split actually applied, whatever the calculation says now (T291 edits included).
+  const applied = output.operations.find((c) => c.economicKind === "interest");
+  return { dueDate, paidDate: output.before.date, amountMinor: Math.abs(output.before.amountMinor), feesMinor, appliedInterestMinor: output.override ? output.override.interestMinor : applied ? Math.abs(applied.amountMinor) : 0 };
 }
 
 /** The interest Bench calculates for this repayment, ignoring the user's edit (for the "calculated" figure). */
@@ -627,18 +665,50 @@ function repaymentChain(ctx: PlanningContext, actualDated: boolean, allocation: 
   const unavailable = created && !created.ok ? created.message : "the loan does not accrue daily";
   const allocator = created?.ok ? created.allocator : null;
   let balance: number | null = ctx.opening.principalMinor;
-  const add = (entry: ChainEntry): ReturnType<ObservedRepaymentAllocator["push"]> => {
+  let lastObserved: { paidDate: string; dueDate: string; principalAfterMinor: number } | null = null;
+  const push = (entry: ChainEntry): ReturnType<ObservedRepaymentAllocator["push"]> => {
     entries.push(entry);
     const result = allocator ? allocator.push(entry) : { ok: false as const, message: unavailable };
     balance = result.ok ? result.row.balanceAfterMinor : null;
+    if (result.ok && !entry.assumed && !entry.extra) lastObserved = { paidDate: entry.paidDate, dueDate: entry.dueDate, principalAfterMinor: result.row.balanceAfterMinor };
     return result;
+  };
+  // Extra payments made so far (one-off, in Terms & Schedule; recorded from Actual or typed in):
+  // all principal, between the repayments they fall among, so later interest runs on the lower
+  // balance (owner decision 2026-10-07).
+  const extras = ctx.model.assumptions
+    .flatMap((a) => (a.kind === "extra-repayment" && !a.recurrence && a.date > ctx.opening.date && a.date <= ctx.today ? [a] : []))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  let nextExtra = 0;
+  const extrasBefore = (date: string): ChainEntry[] => {
+    const out: ChainEntry[] = [];
+    for (let k = nextExtra; k < extras.length && extras[k].date < date; k++) out.push({ dueDate: extras[k].date, paidDate: extras[k].date, amountMinor: extras[k].amountMinor, feesMinor: 0, extra: true });
+    return out;
+  };
+  const flushExtras = (date: string) => {
+    for (const extra of extrasBefore(date)) {
+      push(extra);
+      nextExtra++;
+    }
+  };
+  const add = (entry: ChainEntry): ReturnType<ObservedRepaymentAllocator["push"]> => {
+    flushExtras(entry.paidDate);
+    return push(entry);
+  };
+  /** Add a settled repayment, returning also the interest the calculation would give it now. */
+  const addSettled = (entry: ChainEntry): { result: ReturnType<ObservedRepaymentAllocator["push"]>; calculatedInterestMinor: number | null } => {
+    flushExtras(entry.paidDate);
+    const { appliedInterestMinor: _applied, ...plain } = entry;
+    void _applied;
+    const now = allocator ? allocator.preview(plain) : null;
+    return { result: push(entry), calculatedInterestMinor: now?.ok ? now.row.interestMinor : null };
   };
   if (actualDated) for (const entry of repaymentsBeforeWindow(ctx)) add(entry);
   /** What the next repayment would allocate, without recording it (the payoff check). */
-  const peek = (entry: ChainEntry) => (allocator ? allocateRepaymentSplit({ model: ctx.model, opening: ctx.opening, observed: { allocation, repayments: [...entries, entry] } }) : { ok: false as const, message: unavailable });
-  /** The principal owed after the last repayment, or null when the chain could not be allocated. */
-  const owed = () => balance;
-  return { entries, add, peek, owed, engineVersions: allocator?.engineVersions ?? {} };
+  const peek = (entry: ChainEntry) => (allocator ? allocateRepaymentSplit({ model: ctx.model, opening: ctx.opening, observed: { allocation, repayments: [...entries, ...extrasBefore(entry.paidDate), entry] } }) : { ok: false as const, message: unavailable });
+  /** The principal owed after the last repayment (less extra payments made before `date`), or null when the chain could not be allocated. */
+  const owed = (date?: string) => (balance === null ? null : balance - (date ? extrasBefore(date).reduce((sum, e) => sum + e.amountMinor, 0) : 0));
+  return { entries, add, addSettled, peek, owed, observed: () => lastObserved, engineVersions: allocator?.engineVersions ?? {} };
 }
 
 /**

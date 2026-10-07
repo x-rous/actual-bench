@@ -8,7 +8,8 @@ import { bulkOrder, type ChangeRowModel } from "./changeRows";
  * single Apply (server approval and preflight, the browser write, server
  * verification and outcome). Changes run oldest first and undos newest first.
  * The batch stops at the first failure, refused preflight or interrupted
- * write (owner refinement 1): the months depend on each other, so nothing
+ * write (owner refinement 1), or after the current change when the user asks it
+ * to stop: the months depend on each other, so nothing
  * later runs on a broken basis. The caller then refreshes and recalculates the
  * remaining proposals before the user can continue.
  */
@@ -21,6 +22,8 @@ export type BulkResult = {
   stopped: { row: ChangeRowModel; reason: string } | null;
   /** Steps never attempted because the batch stopped. */
   notAttempted: ChangeRowModel[];
+  /** The user stopped the batch after a change (nothing failed). */
+  userStopped?: boolean;
 };
 
 export function bulkSteps(selected: readonly ChangeRowModel[]): BulkStep[] {
@@ -40,9 +43,13 @@ function stopReason(posting: PostingView): string {
 }
 
 /** Run the steps in order; stop at the first one that is not applied. Never throws. */
-export async function runBulk(steps: readonly BulkStep[], apply: (step: BulkStep) => Promise<PostingView>, onProgress?: (done: number, step: BulkStep | null) => void): Promise<BulkResult> {
+export async function runBulk(steps: readonly BulkStep[], apply: (step: BulkStep) => Promise<PostingView>, onProgress?: (done: number, step: BulkStep | null) => void, shouldStop?: () => boolean): Promise<BulkResult> {
   const applied: ChangeRowModel[] = [];
   for (const [index, step] of steps.entries()) {
+    if (index > 0 && shouldStop?.()) {
+      onProgress?.(index, null);
+      return { applied, stopped: null, notAttempted: steps.slice(index).map((s) => s.row), userStopped: true };
+    }
     onProgress?.(index, step);
     let outcome: PostingView;
     try {
@@ -63,6 +70,10 @@ export async function runBulk(steps: readonly BulkStep[], apply: (step: BulkStep
 /** The summary line the user sees after a batch. */
 export function bulkSummary(result: BulkResult): string {
   const applied = `${result.applied.length} applied`;
+  if (result.userStopped) {
+    const left = result.notAttempted.length;
+    return `${applied} · stopped by you. ${left === 1 ? "The remaining change was" : `The remaining ${left} changes were`} not applied and ${left === 1 ? "has" : "have"} been recalculated.`;
+  }
   if (!result.stopped) return applied;
   const left = result.notAttempted.length;
   const reason = result.stopped.reason.replace(/[.\s]+$/, "");

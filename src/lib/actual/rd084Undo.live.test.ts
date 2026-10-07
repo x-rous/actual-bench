@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { __configureNodeHostForTests, __resetNodeHostForTests, closeNodeRuntime, getNodeRuntime } from "./runtime/nodeHost";
 import { openServerTransport } from "./serverTransport";
-import { preflightOf } from "./transactionStructure";
+import { preflightOf, stateOf } from "./transactionStructure";
 import { apiRequest } from "@/lib/api/client";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
 import type { ActualBenchTransport, SyncTargetTransactionInput } from "./transport";
@@ -557,6 +557,161 @@ live("RD-084 P1.6 undo and transfer write shapes (disposable budgets)", () => {
       expect(back.counterpart).toEqual({ id: counterpart.id, amount: 5000 });
       expect(adjusted.children.map((c) => c.id).sort()).toEqual(kids.map((c) => c.id).sort());
     }
+  });
+
+  it("Unsplit: a split made by hand becomes one transfer to the loan for the whole amount (both transports)", async () => {
+    for (const mode of modes) {
+      const { accounts, categories } = mode.budget;
+      const lenderId = await lender(mode);
+      const tp = await mode.transferPayee(accounts.mortgage);
+      const back = await mode.transferPayee(accounts.checking);
+      const id = await create(mode, { accountId: accounts.checking, date: day(), amount: -8300, payeeId: lenderId, categoryId: categories.loanPayment, notes: "bank note", importedId: `undo:unsplit:${mode.name}:${run}` });
+      await mode.update(id, { subtransactions: [
+        { amount: -5000, category: null, payee: tp, notes: "Principal" },
+        { amount: -3300, category: categories.interest, payee: lenderId, notes: "Interest" },
+      ] });
+      await settleDirect(mode);
+      const split = (await find(mode, accounts.checking, id))!;
+      const kids = split.subtransactions ?? [];
+      const pre = (r: RawRow, parent: RawRow | null, accountId: string) => preflightOf(r as never, parent as never, accountId);
+      const parentPre = pre(split, null, accounts.checking);
+      const restoreTo = { ...stateOf(split as never, null, accounts.checking), isParent: false, childCount: 0, payeeId: tp, categoryId: categories.loanPayment, transferId: null };
+      const recreated = { ...restoreTo, id: "", accountId: accounts.mortgage, amount: 8300, payeeId: back, categoryId: null, cleared: false, reconciled: false, importedId: null, importedPayee: null, transferId: id };
+      const result = await mode.transport.restoreSplit!({
+        parent: parentPre, children: kids.map((c) => pre(c, split, accounts.checking)), restoreTo, counterpartAccountIds: [accounts.mortgage],
+        recreatedCounterpart: { accountId: accounts.mortgage, expected: recreated },
+      });
+      await settleDirect(mode);
+      evidence[mode.name].unsplit = result;
+      trace(`${mode.name} unsplit ${JSON.stringify(result)}`);
+      expect(result.leftovers).toEqual([]);
+      expect(result.differences).toEqual([]);
+      expect(result.recreated?.id).toBeTruthy();
+      expect(result.recreated?.differences).toEqual([]);
+    }
+  });
+
+  it("a cleared loan-side row stays cleared through the split and the undo (both transports)", async () => {
+    for (const mode of modes) {
+      const { accounts, categories } = mode.budget;
+      const lenderId = await lender(mode);
+      const tp = await mode.transferPayee(accounts.mortgage);
+      const back = await mode.transferPayee(accounts.checking);
+      const id = await create(mode, { accountId: accounts.checking, date: day(), amount: -8300, payeeId: lenderId, categoryId: categories.loanPayment, notes: null, importedId: `undo:cleared:${mode.name}:${run}` });
+      await mode.update(id, { payee: tp });
+      await settleDirect(mode);
+      const cp = String((await find(mode, accounts.checking, id))!.transfer_id);
+      await mode.update(cp, { cleared: true });
+      await settleDirect(mode);
+      const row = (await find(mode, accounts.checking, id))!;
+      const counterpartRow = (await find(mode, accounts.mortgage, cp))!;
+      const counterpart = stateOf(counterpartRow as never, null, accounts.mortgage);
+      const split = await mode.transport.restructureTransactionAsSplit!({
+        accountId: accounts.checking, transactionId: id, expected: preflightOf(row as never, null, accounts.checking),
+        children: [{ amount: -5000, categoryId: null, payeeId: tp, notes: null }, { amount: -3300, categoryId: categories.interest, payeeId: lenderId, notes: "Interest" }],
+        replaceCounterpart: { expected: counterpart, sourceAccountTransferPayeeId: back },
+      });
+      await settleDirect(mode);
+      const principal = split.children.find((c) => c.transferId)!;
+      const made = (await find(mode, accounts.mortgage, String(principal.transferId)))!;
+      const parent = (await find(mode, accounts.checking, id))!;
+      const restoreTo = stateOf(row as never, null, accounts.checking);
+      const undo = await mode.transport.restoreSplit!({
+        parent: preflightOf(parent as never, null, accounts.checking), children: (parent.subtransactions ?? []).map((c) => preflightOf(c as never, parent as never, accounts.checking)),
+        restoreTo, counterpartAccountIds: [accounts.mortgage], recreatedCounterpart: { accountId: accounts.mortgage, expected: counterpart },
+      });
+      await settleDirect(mode);
+      evidence[mode.name].clearedKept = { madeCleared: made.cleared, undo };
+      trace(`${mode.name} cleared ${JSON.stringify(evidence[mode.name].clearedKept)}`);
+      expect(made.cleared).toBe(true);
+      expect(undo.differences).toEqual([]);
+      expect(undo.recreated?.differences).toEqual([]);
+    }
+  });
+
+  it("Direct: cleared marks deferred during a bulk apply are written in one batch and hold", async () => {
+    const mode = modes.find((m) => m.name === "direct")!;
+    const { accounts, categories } = mode.budget;
+    const lenderId = await lender(mode);
+    const tp = await mode.transferPayee(accounts.mortgage);
+    const back = await mode.transferPayee(accounts.checking);
+    const made: string[] = [];
+    for (let k = 0; k < 2; k++) {
+      const id = await create(mode, { accountId: accounts.checking, date: day(), amount: -8300, payeeId: lenderId, categoryId: categories.loanPayment, notes: null, importedId: `undo:batch:${k}:${run}` });
+      await mode.update(id, { payee: tp });
+      await settleDirect(mode);
+      const cp = String((await find(mode, accounts.checking, id))!.transfer_id);
+      await mode.update(cp, { cleared: true });
+      await settleDirect(mode);
+      const row = (await find(mode, accounts.checking, id))!;
+      const counterpart = stateOf((await find(mode, accounts.mortgage, cp))! as never, null, accounts.mortgage);
+      const split = await mode.transport.restructureTransactionAsSplit!({
+        accountId: accounts.checking, transactionId: id, expected: preflightOf(row as never, null, accounts.checking), deferClearing: true,
+        children: [{ amount: -5000, categoryId: null, payeeId: tp, notes: null }, { amount: -3300, categoryId: categories.interest, payeeId: lenderId, notes: "Interest" }],
+        replaceCounterpart: { expected: counterpart, sourceAccountTransferPayeeId: back },
+      });
+      expect(split.clearLater).toBeTruthy();
+      made.push(split.clearLater!);
+    }
+    await mode.transport.batchWriteTransactionsForSync!({ updated: made.map((id) => ({ id, cleared: true })), deleted: [] });
+    await settleDirect(mode);
+    const rows = flatten(await mode.rows(accounts.mortgage));
+    const after = made.map((id) => rows.find((r) => r.id === id));
+    evidence.direct.batchCleared = after.map((r) => ({ cleared: r?.cleared, amount: r?.amount, transfer: !!r?.transfer_id }));
+    trace(`direct batch cleared ${JSON.stringify(evidence.direct.batchCleared)}`);
+    for (const r of after) expect(r).toMatchObject({ cleared: true, amount: 5000 });
+    for (const r of after) expect(r?.transfer_id).toBeTruthy();
+  });
+
+  it("experiment: the Direct quiet interval (split and undo of a cleared transfer, timed)", async () => {
+    if (env.RD084_SPIKE_QUIET_EXPERIMENT !== "yes") return;
+    const { __setDirectQuietMsForExperiments } = await import("./runtimeTransport");
+    const mode = modes.find((m) => m.name === "direct")!;
+    const { accounts, categories } = mode.budget;
+    const lenderId = await lender(mode);
+    const tp = await mode.transferPayee(accounts.mortgage);
+    const back = await mode.transferPayee(accounts.checking);
+    const results: Record<string, unknown>[] = [];
+    for (const quiet of (env.RD084_SPIKE_QUIET_VALUES ?? "400,250,150,100").split(",").map(Number)) {
+      __setDirectQuietMsForExperiments(quiet);
+      for (let round = 0; round < 3; round++) {
+        const id = await create(mode, { accountId: accounts.checking, date: day(), amount: -8300, payeeId: lenderId, categoryId: categories.loanPayment, notes: null, importedId: `undo:quiet:${quiet}:${round}:${run}` });
+        await mode.update(id, { payee: tp });
+        await settleDirect(mode);
+        const cp = String((await find(mode, accounts.checking, id))!.transfer_id);
+        await mode.update(cp, { cleared: true });
+        await settleDirect(mode);
+        const row = (await find(mode, accounts.checking, id))!;
+        const counterpart = stateOf((await find(mode, accounts.mortgage, cp))! as never, null, accounts.mortgage);
+        const t0 = Date.now();
+        let ok = true;
+        let error: string | null = null;
+        try {
+          const split = await mode.transport.restructureTransactionAsSplit!({
+            accountId: accounts.checking, transactionId: id, expected: preflightOf(row as never, null, accounts.checking),
+            children: [{ amount: -5000, categoryId: null, payeeId: tp, notes: null }, { amount: -3300, categoryId: categories.interest, payeeId: lenderId, notes: "Interest" }],
+            replaceCounterpart: { expected: counterpart, sourceAccountTransferPayeeId: back },
+          });
+          const splitMs = Date.now() - t0;
+          const made = (await find(mode, accounts.mortgage, String(split.children.find((c) => c.transferId)!.transferId)))!;
+          ok = ok && made.amount === 5000 && made.cleared === true;
+          const parent = (await find(mode, accounts.checking, id))!;
+          const t1 = Date.now();
+          const undo = await mode.transport.restoreSplit!({
+            parent: preflightOf(parent as never, null, accounts.checking), children: (parent.subtransactions ?? []).map((c) => preflightOf(c as never, parent as never, accounts.checking)),
+            restoreTo: stateOf(row as never, null, accounts.checking), counterpartAccountIds: [accounts.mortgage], recreatedCounterpart: { accountId: accounts.mortgage, expected: counterpart },
+          });
+          ok = ok && undo.differences.length === 0 && undo.leftovers.length === 0 && (undo.recreated?.differences.length ?? 1) === 0;
+          results.push({ quiet, round, ok, splitMs, undoMs: Date.now() - t1 });
+        } catch (caught) {
+          error = caught instanceof Error ? caught.message : String(caught);
+          results.push({ quiet, round, ok: false, error, ms: Date.now() - t0 });
+        }
+        trace(`quiet ${quiet} round ${round}: ${JSON.stringify(results.at(-1))}`);
+      }
+    }
+    __setDirectQuietMsForExperiments(400);
+    evidence.direct.quietExperiment = results;
   });
 
   it("R-18 for deletes: is a delete visible to the very next read once the call returns?", async () => {

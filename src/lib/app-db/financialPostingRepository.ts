@@ -327,7 +327,7 @@ export function reproposeIndeterminatePosting(db: SqliteDatabase, id: string, re
 
 /** Preflight found Actual changed since preview; the proposal is replaced by a fresh preview. */
 /** Why a proposal stopped being current, shown to the user instead of a bare "superseded". */
-export type SupersededCause = "newer-preview" | "newer-undo" | "actual-changed";
+export type SupersededCause = "newer-preview" | "newer-undo" | "actual-changed" | "replaced-by-applied";
 
 const supersededJson = (cause: SupersededCause) => JSON.stringify({ superseded: cause });
 
@@ -335,9 +335,27 @@ export function supersedePosting(db: SqliteDatabase, id: string, now = new Date(
   return transition(db, id, ["proposed"], "superseded", { error_json: supersededJson(cause) }, now);
 }
 
+/**
+ * A failed change whose period a later change has since settled (applied): closed, so it no longer
+ * asks for action. Nothing in Actual is touched; what Actual holds now is what the later change
+ * verified.
+ */
+export function closeReplacedFailure(db: SqliteDatabase, id: string, now = new Date().toISOString()): FinancialPostingRecord {
+  return transition(db, id, ["failed"], "superseded", { error_json: supersededJson("replaced-by-applied") }, now);
+}
+
 /** Only when the compensating reversal posting itself has been applied. */
 export function markPostingReversed(db: SqliteDatabase, id: string, now = new Date().toISOString()): FinancialPostingRecord {
   return transition(db, id, ["applied"], "reversed", {}, now);
+}
+
+/**
+ * An applied posting whose rows no longer hold in Actual (edited, unsplit or deleted there after it
+ * was applied): it stops counting, like an undone one, and the reason says what changed. Bench then
+ * plans the period again from what Actual has now (owner decision 2026-10-07).
+ */
+export function markPostingChangedInActual(db: SqliteDatabase, id: string, detail: string, now = new Date().toISOString()): FinancialPostingRecord {
+  return transition(db, id, ["applied"], "reversed", { error_json: JSON.stringify({ cause: "changed-in-actual", detail }) }, now);
 }
 
 export function findReversalProposal(db: SqliteDatabase, originalId: string): FinancialPostingRecord | null {

@@ -11,43 +11,78 @@ import { projectStoredDebt } from "./projectionService";
 import type { OffsetHistorySnapshot } from "./offsetHistoryService";
 import type { PostingOutputSnapshot } from "./snapshot";
 
-export function reconcileDebt(db: SqliteDatabase, input: { debtId: string; comparisonDate: string; actualBalanceMinor: number; offsetHistories?: OffsetHistorySnapshot[] }) {
-  const debt = getDebt(db, input.debtId);
-  if (!debt) return { ok: false as const, notFound: true as const };
-  const projected = projectStoredDebt(db, input.debtId, { from: "0001-01-01", to: input.comparisonDate, resolution: "events", offsetHistories: input.offsetHistories });
-  if (!projected.ok) return projected;
+type ReconcileInput = Parameters<typeof reconcileDebt>[1];
+
+/** The calculated balance on a date: as paid from the facts, or the schedule, or 0 once paid off. */
+function modelOn(db: SqliteDatabase, input: ReconcileInput, comparisonDate: string) {
+  const projected = projectStoredDebt(db, input.debtId, { from: "0001-01-01", to: comparisonDate, resolution: "events", offsetHistories: input.offsetHistories });
+  if (!projected.ok) return { ok: false as const, result: projected };
   const projection = projected.projection;
-  if (!projection.ok) return { ok: false as const, blocked: { code: "invalid-config" as const, message: projection.blocked.map((item) => item.message).join(" ") } };
+  if (!projection.ok) return { ok: false as const, result: { ok: false as const, blocked: { code: "invalid-config" as const, message: projection.blocked.map((item) => item.message).join(" ") } } };
   const latestEvent = projection.events.at(-1);
   const scheduledMinor = latestEvent?.balanceAfterMinor ?? projected.model.terms.openingPrincipalMinor;
   // T309 "as paid", from the facts: the starting balance (or the latest lender restart), less the
   // principal of every repayment applied or recorded in Actual and every recorded extra payment, plus
   // draws; the schedule continues only after the last of those repayments' due date.
-  const paid = asPaidFacts(db, input.debtId, input.comparisonDate, projected.model.terms);
+  const applied = asPaidFacts(db, input.debtId, comparisonDate, projected.model.terms);
+  // Every payment found in Actual counts, applied or not (owner decision 2026-10-07): when the
+  // re-plan found a later one, the calculation follows from the balance after it.
+  const observed = input.observed && input.observed.paidDate <= comparisonDate && (!applied || input.observed.paidDate >= applied.paidDate) ? input.observed : null;
+  const paid = observed ? observedFacts(db, input.debtId, observed) : applied;
   let modelMinor = scheduledMinor;
   let asPaidFrom: string | null = null;
   const paidOff = paidOffState(db, input.debtId);
-  if (paidOff && paidOff.paidDate <= input.comparisonDate) {
+  if (paidOff && paidOff.paidDate <= comparisonDate) {
     // Paid off: nothing is owed from that day on, whatever the schedule says.
     modelMinor = 0;
     asPaidFrom = paidOff.paidDate;
   } else if (paid) {
-    if (input.comparisonDate < paid.dueDate) {
-      modelMinor = paid.balanceAt(input.comparisonDate);
+    if (comparisonDate < paid.dueDate) {
+      modelMinor = paid.balanceAt(comparisonDate);
     } else {
       const opening = paid.balanceAt(paid.dueDate);
       const fromPaid = projectStoredDebt(db, input.debtId, {
-        from: "0001-01-01", to: input.comparisonDate, resolution: "events", offsetHistories: input.offsetHistories,
+        from: "0001-01-01", to: comparisonDate, resolution: "events", offsetHistories: input.offsetHistories,
         startFrom: { date: paid.dueDate, principalMinor: opening, accruedInterestMinor: 0, carriedRemainder: null },
       });
       if (fromPaid.ok && fromPaid.projection.ok) modelMinor = withoutUnseenRepayments(fromPaid.projection.events, paid.dueDate, opening);
     }
     asPaidFrom = paid.paidDate;
   }
+  return { ok: true as const, modelMinor, asPaidFrom, scheduledMinor, paidOff };
+}
+
+export function reconcileDebt(db: SqliteDatabase, input: {
+  debtId: string; comparisonDate: string; actualBalanceMinor: number; offsetHistories?: OffsetHistorySnapshot[];
+  /** The balance after the latest payment the re-plan found in Actual. */
+  observed?: { paidDate: string; dueDate: string; principalAfterMinor: number } | null;
+  /** The loan account's rows (signed as in Actual), to know Actual's balance on a lender statement's date. */
+  loanAccountRows?: ReadonlyArray<{ date: string; amountMinor: number }> | null;
+}) {
+  const debt = getDebt(db, input.debtId);
+  if (!debt) return { ok: false as const, notFound: true as const };
+  const today = modelOn(db, input, input.comparisonDate);
+  if (!today.ok) return today.result;
+  const { modelMinor, asPaidFrom, scheduledMinor, paidOff } = today;
   const observations = listCurrentDebtObservations(db, input.debtId);
   const lenderObservation = observations.find((row) => row.observedOn <= input.comparisonDate) ?? null;
   const lenderMinor = lenderObservation ? lenderObservation.principalMinor + (lenderObservation.accruedInterestMinor ?? 0) : null;
-  const comparison = compareDebtBalances({ comparisonDate: input.comparisonDate, modelMinor, actualMinor: input.actualBalanceMinor, lenderMinor });
+  // A statement older than the comparison date is compared on its own date (owner decision
+  // 2026-10-07): a repayment or extra payment made after it is not a difference from the lender.
+  let lenderAsOf: { date: string; modelMinor: number; actualMinor: number } | null = null;
+  if (lenderObservation && lenderObservation.observedOn < input.comparisonDate) {
+    const then = modelOn(db, { ...input, observed: input.observed && input.observed.paidDate <= lenderObservation.observedOn ? input.observed : null }, lenderObservation.observedOn);
+    if (then.ok) {
+      const negativeIsDebt = debt.signConvention !== "positive-is-debt";
+      const actualThen = input.loanAccountRows
+        ? (negativeIsDebt ? -1 : 1) * input.loanAccountRows.filter((r) => r.date <= lenderObservation.observedOn).reduce((sum, r) => sum + r.amountMinor, 0)
+        // Without the rows: Actual moved since the statement as the calculation did (any gap between
+        // them shows as Actual vs calculated anyway).
+        : input.actualBalanceMinor + (then.modelMinor - modelMinor);
+      lenderAsOf = { date: lenderObservation.observedOn, modelMinor: then.modelMinor, actualMinor: actualThen };
+    }
+  }
+  const comparison = compareDebtBalances({ comparisonDate: input.comparisonDate, modelMinor, actualMinor: input.actualBalanceMinor, lenderMinor, lenderAsOf });
   const fingerprint = driftFingerprint(comparison);
   // Acceptance predating changed evidence is not carried forward. Observation
   // rows are immutable, so createdAt is a reliable boundary.
@@ -87,6 +122,14 @@ function withoutUnseenRepayments(events: ReadonlyArray<{ date: string; eventType
     previous = event.balanceAfterMinor;
   }
   return balance;
+}
+
+/** As `asPaidFacts`, from the balance after the latest payment found in Actual (extra payments and draws after it still count). */
+function observedFacts(db: SqliteDatabase, debtId: string, observed: { paidDate: string; dueDate: string; principalAfterMinor: number }) {
+  const oneOffs = listDebtAssumptions(db, debtId).filter((a) => a.recurrence === null && a.effectiveFrom > observed.paidDate);
+  const balanceAt = (date: string) => observed.principalAfterMinor
+    + oneOffs.filter((a) => a.effectiveFrom <= date).reduce((sum, a) => sum + (a.assumptionKind === "extra-repayment" ? -(a.amountMinor ?? 0) : a.assumptionKind === "draw" ? (a.amountMinor ?? 0) : 0), 0);
+  return { paidDate: observed.paidDate, dueDate: observed.dueDate, balanceAt };
 }
 
 function asPaidFacts(db: SqliteDatabase, debtId: string, through: string, terms: { openingDate: string; openingPrincipalMinor: number }) {

@@ -94,3 +94,32 @@ describe("due dates not reached yet", () => {
     expect(dup.dues[1].reasons.map((r) => r.code)).toContain("another-candidate");
   });
 });
+
+describe("offset-funded repayments (FR-078a)", () => {
+  const funded = (offsetFundedMinor: number) => monthly("2024-01-01", 2).map((d, i) => (i === 1 ? { ...d, offsetFundedMinor } : d));
+
+  it("a payment of only the other-funds part pairs, always for Review, and says so", () => {
+    const result = run(funded(30_000), [pay("a", "2024-01-01"), pay("b", "2024-02-01", 70_000)]);
+    expect(paired(result)).toEqual({ "2024-01-01": "a", "2024-02-01": "b" });
+    expect(result.dues[1].clean).toBe(false);
+    expect(result.dues[1].reasons.map((r) => r.code)).toEqual(["offset-part"]);
+    expect(result.dues[1].reasons[0].text).toMatch(/no payment of that amount into the loan was found/);
+  });
+
+  it("the offset part paid as its own transfer is named, not extra, and nothing is grouped", () => {
+    const result = run(funded(30_000), [pay("a", "2024-01-01"), pay("b", "2024-02-01", 70_000), pay("o", "2024-02-01", 30_000)]);
+    expect(paired(result)).toEqual({ "2024-01-01": "a", "2024-02-01": "b" });
+    expect(result.extras).toEqual([]);
+    expect(result.dues[1].reasons[0]).toMatchObject({ code: "offset-part", text: expect.stringContaining("300.00 on 2024-02-01") });
+  });
+
+  it("the whole repayment paid in one payment is routine", () => {
+    const result = run(funded(30_000), [pay("a", "2024-01-01"), pay("b", "2024-02-01")]);
+    expect(result.dues[1]).toMatchObject({ clean: true, reasons: [] });
+  });
+
+  it("fully offset-funded with no transfer found: missed, and the reason says where the model took it from", () => {
+    const result = run(funded(100_000), [pay("a", "2024-01-01")]);
+    expect(result.dues[1].reasons[0]).toMatchObject({ code: "missed", text: expect.stringContaining("from the offset account") });
+  });
+});

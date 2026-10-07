@@ -50,6 +50,11 @@ export type ObservedRepayment = {
    * user's edit, T291). Later repayments then build on the principal actually applied.
    */
   appliedInterestMinor?: number;
+  /**
+   * An extra payment (owner decision 2026-10-07): all of it is principal; the interest built up
+   * until it was paid is carried to the next repayment, so later interest runs on the lower balance.
+   */
+  extra?: boolean;
 };
 
 export type AllocatedRepayment = ObservedRepayment & {
@@ -91,6 +96,8 @@ export type ObservedRepaymentAllocator = {
   engineVersions: Record<string, string>;
   /** Allocate the next repayment in date order; after a failure every later push fails too. */
   push(repayment: ObservedRepayment): { ok: true; row: AllocatedRepayment } | { ok: false; message: string };
+  /** What `push` would allocate for the next repayment, without recording it. */
+  preview(repayment: ObservedRepayment): { ok: true; row: AllocatedRepayment } | { ok: false; message: string };
 };
 
 /**
@@ -152,6 +159,18 @@ export function createObservedRepaymentAllocator(input: {
     const balance = fromMinor(balanceMinor, digits);
     const economic = accrue(balance, effectivePrevious, effective);
     if (typeof economic === "string") return fail(economic);
+    if (r.extra) {
+      if (r.amountMinor - fees > balanceMinor) return fail(`Extra payment ${i + 1} is more than the balance owed.`);
+      // Nothing reported now: as calculated, the accrual is carried; to the due date, the next
+      // repayment's difference already includes it (reported so far is unchanged).
+      if (allocation === "as-calculated") carriedIn = add(carriedIn, economic);
+      actualToPrevious = add(actualToPrevious, economic);
+      const principalOnly = r.amountMinor - fees;
+      const extraRow: AllocatedRepayment = { dueDate: r.dueDate, paidDate: r.paidDate, amountMinor: r.amountMinor, interestMinor: 0, feesMinor: fees, principalMinor: principalOnly, balanceBeforeMinor: balanceMinor, balanceAfterMinor: balanceMinor - principalOnly, economicInterest: toDecString(economic) };
+      balanceMinor -= principalOnly;
+      effectivePrevious = effective;
+      return { ok: true, row: extraRow };
+    }
 
     let interestExact: Dec;
     let nextReportedToDue = reportedToDue;
@@ -208,7 +227,15 @@ export function createObservedRepaymentAllocator(input: {
     return { ok: true, row };
   };
 
-  return { ok: true, allocator: { allocation, engineVersions: statementAllocationVersions(model), push } };
+  // What the next repayment would allocate, leaving the allocator as it was.
+  const preview: ObservedRepaymentAllocator["preview"] = (r) => {
+    const saved = { count, failure, balanceMinor, effectivePrevious, actualToPrevious, reportedToDue, carriedIn };
+    const result = push(r);
+    ({ count, failure, balanceMinor, effectivePrevious, actualToPrevious, reportedToDue, carriedIn } = saved);
+    return result;
+  };
+
+  return { ok: true, allocator: { allocation, engineVersions: statementAllocationVersions(model), push, preview } };
 }
 
 /**

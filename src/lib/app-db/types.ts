@@ -725,6 +725,8 @@ export const DEBT_TRANSACTION_LINK_ROLES = [
   "repayment",
   /** The user's choice of the payment for a due date (owner decision 2026-10-07); not a claim. */
   "repayment-choice",
+  /** The user said a payment into the loan is not an extra payment (it is not counted automatically). */
+  "not-extra",
   "lender-repayment-row",
   "lender-interest-charge",
   "extra-repayment",

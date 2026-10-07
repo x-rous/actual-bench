@@ -20,6 +20,8 @@ export type RepaymentAlignment = {
   evaluation(key: string): PeriodMatchEvaluation | null;
   aligned(key: string): AlignedDue | null;
   extras: AlignPayment[];
+  /** Payments taken for the offset-funded part of a repayment: never extra payments. */
+  offsetParts: AlignPayment[];
   /** Every payment counted as the loan's, oldest first. */
   payments: AlignPayment[];
   /** The due date a payment is paired with, or null (extra). */
@@ -30,19 +32,20 @@ const DATE_KINDS = new Set(["expected-date", "day-of-month"]);
 const IDENTITY_KINDS = new Set(["payee", "imported-payee", "notes", "category"]);
 
 /** Whether a rule says what the payment looks like; "any amount" (only a direction) does not. */
-function identifies(rule: MatchConditionsV1): boolean {
+export function identifies(rule: MatchConditionsV1): boolean {
   return rule.items.some((item) => IDENTITY_KINDS.has(item.kind)
     || (item.kind === "amount" && (item.operator !== "between" || item.maxMinor < Number.MAX_SAFE_INTEGER)));
 }
 
 /** The payment an applied change settled for its due date, and when it was paid. */
-export function settledPaymentOf(output: PostingOutputSnapshot): { paymentId: string; date: string } | null {
+export function settledPaymentOf(output: PostingOutputSnapshot): { paymentId: string; date: string; accountId: string } | null {
+  const of = (row: { id: string; date: string; accountId: string }) => ({ paymentId: row.id, date: row.date, accountId: row.accountId });
   switch (output.kind) {
-    case "restructure": return { paymentId: output.before.id, date: output.before.date };
-    case "claim": return output.recordedSplit ? { paymentId: output.recordedSplit.parent.id, date: output.recordedSplit.parent.date } : output.rows[0] ? { paymentId: output.rows[0].id, date: output.rows[0].date } : null;
-    case "adjust-split": return { paymentId: output.parent.id, date: output.parent.date };
-    case "link": return { paymentId: output.sourceBefore.id, date: output.sourceBefore.date };
-    case "convert": return { paymentId: output.before.id, date: output.before.date };
+    case "restructure": return of(output.before);
+    case "claim": return output.recordedSplit ? of(output.recordedSplit.parent) : output.rows[0] ? of(output.rows[0]) : null;
+    case "adjust-split": return of(output.parent);
+    case "link": return of(output.sourceBefore);
+    case "convert": return of(output.before);
     default: return null;
   }
 }
@@ -102,6 +105,7 @@ export function alignRepayments(input: {
   const strength = "strong" as const;
   return {
     extras: result.extras,
+    offsetParts: result.offsetParts,
     payments: listed,
     pairedTo: (id) => pairs.get(id) ?? null,
     aligned: (key) => byKey.get(key) ?? null,

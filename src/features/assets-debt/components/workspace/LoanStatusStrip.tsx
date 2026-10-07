@@ -88,9 +88,9 @@ const monthYear = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateStri
 
 function Fact({ label, children, sub }: { label: string; children: React.ReactNode; sub?: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 border-t border-border/60 pt-2">
-      <span className="text-[11px] text-muted-foreground">{label}</span>
-      <span className="text-xs">{children}</span>
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-[13px]">{children}</span>
       {sub ? <span className="text-[11px] text-muted-foreground">{sub}</span> : null}
     </div>
   );
@@ -98,9 +98,9 @@ function Fact({ label, children, sub }: { label: string; children: React.ReactNo
 
 function gapCause(facts: MatchingFacts, drift: string | undefined, unrecordedExtra = 0, changedExtra = 0, takenOut = 0): { text: string; sub: string } {
   if (takenOut) return { text: `${takenOut} amount${takenOut === 1 ? " was" : "s were"} taken out of the loan account`, sub: "They add to what you owe; check them below (often a transfer entered the wrong way round)." };
-  if (changedExtra) return { text: `${changedExtra} extra payment${changedExtra === 1 ? " was" : "s were"} changed in Actual`, sub: "Update Terms & Schedule below, so the calculation uses the new date and amount." };
+  if (changedExtra) return { text: `${changedExtra} extra payment${changedExtra === 1 ? " was" : "s were"} changed in Actual`, sub: "Terms & Schedule follows on the next refresh, or once you save your changes there." };
   if (drift !== "material") return { text: "Nothing to explain", sub: "Actual and the calculation agree within your allowed difference." };
-  if (unrecordedExtra) return { text: `${unrecordedExtra} payment${unrecordedExtra === 1 ? "" : "s"} into the loan ${unrecordedExtra === 1 ? "is" : "are"} not in the schedule`, sub: "Record it as an extra payment below, so the calculation includes it." };
+  if (unrecordedExtra) return { text: `${unrecordedExtra} payment${unrecordedExtra === 1 ? "" : "s"} into the loan ${unrecordedExtra === 1 ? "is" : "are"} not in the schedule`, sub: "They count as extra payments on the next refresh, unless you mark them otherwise below." };
   if (facts.notApplied) return { text: `${facts.notApplied} found repayment${facts.notApplied === 1 ? " is" : "s are"} not applied yet`, sub: "Applying them usually closes the gap." };
   if (facts.missing) return { text: `${facts.missing} repayment${facts.missing === 1 ? " was" : "s were"} not found in Actual`, sub: "Check those months in Actual, or the matching rule." };
   if (facts.edited) return { text: `${facts.edited} split${facts.edited === 1 ? "" : "s"} applied with your edit`, sub: "Check against a lender statement to confirm which side is right." };
@@ -127,67 +127,89 @@ function Timeline({ cells }: { cells: DueCell[] }) {
   );
 }
 
+/** One of the three balances, in its own box with a short caption. */
+function Balance({ label, value, caption, info, muted }: { label: string; value: string; caption?: string | null; info?: string | null; muted?: boolean }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border px-3 py-2">
+      <dt className="flex items-center gap-1 text-xs text-muted-foreground">
+        {label}
+        {info ? <span title={info} aria-label={info} className="inline-grid size-3.5 cursor-help place-items-center rounded-full border border-border text-[9px] font-bold">i</span> : null}
+      </dt>
+      <dd className={cn("text-lg font-semibold tabular-nums", muted && "text-muted-foreground")}>{value}</dd>
+      {caption ? <span className="truncate text-[11px] text-muted-foreground">{caption}</span> : null}
+    </div>
+  );
+}
+
 export function LoanStatusStrip({ refresh, counts, digits, onRefresh, onStatements, matching, paidOffOn }: { refresh: RefreshState; counts: { review: number; notApplied: number }; digits: number; onRefresh: () => void; onStatements: () => void; /** Repayment matching at a glance (rev 4); absent until the schedule is known. */ matching?: StripMatching | null; /** The day an applied payoff cleared the loan (owner decision 2026-10-07). */ paidOffOn?: string | null }) {
   const { status } = refresh;
   const state = stripState(status, counts, digits, refresh.driftExplained);
   const Icon = state.tone === "ok" ? CheckCircle2 : AlertTriangle;
   const show = (minor: number | null) => (minor === null ? "Not available" : formatAmount(minor, digits));
+  const chip = state.tone === "problem" ? "bg-red-50 text-destructive dark:bg-red-950/40" : state.tone === "attention" ? "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300";
+  const lender = status?.lenderMinor !== null && status?.lenderMinor !== undefined;
+  const gap = matching ? gapCause(matching.facts, status?.drift, matching.unrecordedExtra, matching.changedExtra, matching.takenOut) : null;
+  const quiet = gap?.text === "Nothing to explain";
   return (
-    <section aria-label="Loan status" className={cn("flex flex-col gap-2 rounded-lg border p-3 text-sm", state.tone === "problem" ? "border-destructive/50" : state.tone === "attention" ? "border-amber-500/50" : "border-border")}>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        {paidOffOn ? <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"><CheckCircle2 aria-hidden="true" className="size-3.5" />Paid off on {shortDay(paidOffOn)}</span> : null}
-        <dl className="flex flex-wrap gap-x-6 gap-y-1">
-          <div className="flex gap-1.5"><dt className="text-muted-foreground">Actual</dt><dd className="font-semibold tabular-nums">{show(status?.actualMinor ?? null)}</dd></div>
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground">Calculated</dt>
-            <dd className="font-semibold tabular-nums" title={status?.asPaidFrom ? `As paid: from the repayment applied on ${status.asPaidFrom}, then on schedule` : "On schedule: repayments on their due dates"}>{show(status?.modelMinor ?? null)}</dd>
+    <>
+      <section aria-label="Loan status" className="flex flex-col gap-3 rounded-lg border border-border p-3 text-sm">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h2 className="text-sm font-semibold">Balances</h2>
+          <p role="status" className={cn("flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold", chip)}>
+            <Icon aria-hidden="true" className="size-3.5" />
+            {state.text}
+          </p>
+          {paidOffOn ? <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"><CheckCircle2 aria-hidden="true" className="size-3.5" />Paid off on {shortDay(paidOffOn)}</span> : null}
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {status && refresh.phase !== "refreshing" ? <span className="text-[11px] text-muted-foreground">Updated {age(status.at)}{refresh.statusFromCache ? " (saved in this browser)" : ""}</span> : null}
+            <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5" disabled={refresh.phase === "refreshing"} onClick={onRefresh}>
+              {refresh.phase === "refreshing" ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : <RefreshCw aria-hidden="true" className="size-3.5" />}
+              {refresh.phase === "refreshing" ? "Refreshing…" : refresh.phase === "failed" ? "Try again" : "Refresh from Actual"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-7" onClick={onStatements}>Check against lender statement</Button>
           </div>
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground">Lender</dt>
-            <dd className="font-semibold tabular-nums">{status?.lenderMinor !== null && status?.lenderMinor !== undefined ? `${show(status.lenderMinor)}${status.lenderDate ? ` (${status.lenderDate})` : ""}` : "No statement yet"}</dd>
-          </div>
-        </dl>
-        <p role="status" className={cn("flex items-center gap-1.5 font-medium", state.tone === "problem" ? "text-destructive" : state.tone === "attention" ? "text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300")}>
-          <Icon aria-hidden="true" className="size-4" />
-          {state.text}
-        </p>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5" disabled={refresh.phase === "refreshing"} onClick={onRefresh}>
-            {refresh.phase === "refreshing" ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" /> : <RefreshCw aria-hidden="true" className="size-3.5" />}
-            {refresh.phase === "refreshing" ? "Refreshing…" : refresh.phase === "failed" ? "Try again" : "Refresh from Actual"}
-          </Button>
-          <Button type="button" variant="outline" size="sm" className="h-7" onClick={onStatements}>Check against lender statement</Button>
         </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        {asPaidNote(status, digits) ? <span>{asPaidNote(status, digits)}</span> : null}
-        {state.hint ? <span>{state.hint}</span> : null}
-        {status && refresh.phase !== "refreshing" ? <span className="ml-auto">Updated {age(status.at)}{refresh.statusFromCache ? " (saved in this browser)" : ""}</span> : null}
-      </div>
-      {refresh.phase === "failed" ? (
-        <p role="alert" className="text-xs text-destructive">Could not refresh: {refresh.error}. {status ? `Showing data from ${age(status.at)}.` : ""} Rows may be out of date; Apply still re-checks Actual.</p>
-      ) : null}
+        <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <Balance label="Actual" value={show(status?.actualMinor ?? null)} caption="loan account today" />
+          <Balance label="Calculated" value={show(status?.modelMinor ?? null)} caption={status?.asPaidFrom ? "as paid" : "on schedule"} info={asPaidNote(status, digits)} />
+          <Balance
+            label="Lender"
+            value={lender ? show(status!.lenderMinor) : "No statement yet"}
+            muted={!lender}
+            caption={lender && status?.lenderDate ? `statement of ${shortDay(status.lenderDate)}` : null}
+          />
+        </dl>
+        {state.hint ? <p className="text-xs">{state.hint}</p> : null}
+        {refresh.phase === "failed" ? (
+          <p role="alert" className="text-xs text-destructive">Could not refresh: {refresh.error}. {status ? `Showing data from ${age(status.at)}.` : ""} Rows may be out of date; Apply still re-checks Actual.</p>
+        ) : null}
+      </section>
       {matching && matching.cells.length ? (
-        <div className="flex flex-col gap-3 border-t border-border/60 pt-3">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-            <span className="font-semibold">Repayments in Actual</span>
-            <span className="text-muted-foreground">
-              {matching.facts.done} of {matching.facts.due} due so far applied{matching.facts.notApplied ? ` · ${matching.facts.notApplied} found, not applied` : ""}{matching.facts.missing ? ` · ${matching.facts.missing} not found` : ""} · {matching.facts.upcoming} upcoming
-            </span>
+        <section aria-label="Repayments in Actual" className="flex flex-col gap-3 rounded-lg border border-border p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold">Repayments in Actual</h2>
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{matching.facts.done} of {matching.facts.due} applied</span>
+            {matching.facts.notApplied ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{matching.facts.notApplied} found, not applied</span> : null}
+            {matching.facts.missing ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{matching.facts.missing} not found</span> : null}
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{matching.facts.upcoming} upcoming</span>
           </div>
           <Timeline cells={matching.cells} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Fact label="Next expected" sub={matching.accountName ? `from ${matching.accountName}${matching.window ? `, ${matching.window.before} days early to ${matching.window.after} late` : ""}` : undefined}>
-              {matching.facts.next ? <><span className="font-semibold tabular-nums">{formatAmount(matching.facts.next.amountMinor, digits)}</span> on {shortDay(matching.facts.next.date)}</> : paidOffOn ? "None: the loan is paid off" : "No more repayments"}
+            <Fact label="Next expected" sub={matching.facts.next && matching.accountName ? `from ${matching.accountName}` : undefined}>
+              {matching.facts.next ? <><span className="font-semibold tabular-nums">{formatAmount(matching.facts.next.amountMinor, digits)}</span> · {shortDay(matching.facts.next.date)}</> : paidOffOn ? "None: paid off" : "No more repayments"}
             </Fact>
-            <Fact label="Last matched" sub={matching.facts.averageEarlyDays !== null ? (matching.facts.averageEarlyDays >= 0 ? `paid ${matching.facts.averageEarlyDays} day${matching.facts.averageEarlyDays === 1 ? "" : "s"} early on average` : `paid ${-matching.facts.averageEarlyDays} days late on average`) : undefined}>
-              {matching.facts.lastMatched ? <>{shortDay(matching.facts.lastMatched.paidDate)} <span className="text-muted-foreground">for {shortDay(matching.facts.lastMatched.dueDate)}</span></> : "Nothing matched yet"}
+            <Fact label="Last paid" sub={matching.facts.averageEarlyDays !== null ? (matching.facts.averageEarlyDays >= 0 ? `${matching.facts.averageEarlyDays} day${matching.facts.averageEarlyDays === 1 ? "" : "s"} early on average` : `${-matching.facts.averageEarlyDays} days late on average`) : undefined}>
+              {matching.facts.lastMatched ? <><span className="font-semibold">{shortDay(matching.facts.lastMatched.paidDate)}</span> <span className="text-muted-foreground">for {shortDay(matching.facts.lastMatched.dueDate)}</span></> : "Nothing matched yet"}
             </Fact>
-            <Fact label="Where the gap comes from" sub={gapCause(matching.facts, status?.drift, matching.unrecordedExtra, matching.changedExtra, matching.takenOut).sub}>{gapCause(matching.facts, status?.drift, matching.unrecordedExtra, matching.changedExtra, matching.takenOut).text}</Fact>
-            <Fact label="Matching" sub={matching.lastCheck ?? undefined}>{matching.ruleOn === null ? "Loading…" : matching.ruleOn ? "Repayment rule on" : <span className="text-amber-700 dark:text-amber-300">No repayment rule on: set it up in Link to Actual</span>}</Fact>
+            <Fact label="Gap" sub={quiet ? undefined : gap?.sub}>{quiet ? <span className="font-semibold">None</span> : <span className="font-semibold">{gap?.text}</span>}</Fact>
+            <Fact label="Matching" sub={matching.ruleOn ? `${matching.facts.done + matching.facts.notApplied} found · ${matching.facts.missing} not found` : undefined}>
+              {matching.ruleOn === null ? "Loading…" : matching.ruleOn ? (
+                <span className="font-semibold">Rule on{matching.window ? <span title={`Payments${matching.accountName ? ` from ${matching.accountName}` : ""}, ${matching.window.before} days early to ${matching.window.after} late`} className="ml-1 inline-grid size-3.5 cursor-help place-items-center rounded-full border border-border text-[9px] font-bold text-muted-foreground">i</span> : null}</span>
+              ) : <span className="text-amber-700 dark:text-amber-300">No repayment rule on: set it up in Link to Actual</span>}
+            </Fact>
           </div>
-        </div>
+        </section>
       ) : null}
-    </section>
+    </>
   );
 }

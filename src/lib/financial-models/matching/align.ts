@@ -24,6 +24,11 @@ import type { IsoDate } from "../calendar/dates";
  *
  * Settled due dates (a change already applied) and the user's pins ("this is the payment") are
  * fixed pairs: they split the problem into independent stretches, aligned one by one.
+ *
+ * Offset-funded repayments (FR-078a): when the model takes part of a repayment from an offset
+ * account, a payment of only the rest (other funds) also pairs at no amount cost, but always for
+ * Review. A payment of the offset part close by is named as such and is not extra, so it is never
+ * counted as an extra payment. Nothing is grouped or split across the two.
  */
 
 export type AlignDue = {
@@ -34,6 +39,8 @@ export type AlignDue = {
   settled?: { paymentId: string; date: IsoDate } | null;
   /** Not due yet: leaving it without a payment costs nothing (a payment made early may still pair). */
   upcoming?: boolean;
+  /** The part of the repayment the model takes from an offset account (0 or absent when none). */
+  offsetFundedMinor?: number;
 };
 
 export type AlignPayment = { id: string; date: IsoDate; amountMinor: number };
@@ -41,7 +48,7 @@ export type AlignPayment = { id: string; date: IsoDate; amountMinor: number };
 /** The user's choice: this payment is this due date's repayment. */
 export type AlignPin = { key: string; paymentId: string };
 
-export type AlignReasonCode = "late" | "early" | "amount-differs" | "another-candidate" | "covers-missed" | "missed";
+export type AlignReasonCode = "late" | "early" | "amount-differs" | "another-candidate" | "covers-missed" | "offset-part" | "missed";
 export type AlignReason = { code: AlignReasonCode; text: string };
 
 export type AlignedDue = {
@@ -60,7 +67,8 @@ export type AlignedDue = {
   reasons: AlignReason[];
 };
 
-export type AlignmentResult = { dues: AlignedDue[]; extras: AlignPayment[] };
+/** offsetParts: payments taken for the offset-funded part of a repayment (neither paired nor extra). */
+export type AlignmentResult = { dues: AlignedDue[]; extras: AlignPayment[]; offsetParts: AlignPayment[] };
 
 export type AlignOptions = {
   toleranceMinor: number;
@@ -91,12 +99,25 @@ function amountCost(paid: number, expected: number, tolerance: number): number {
   return 2 * Math.abs(Math.log(paid / expected));
 }
 
+/** The bank-paid part of an offset-funded repayment, when there is one to look for. */
+function otherFundsOf(due: AlignDue): number | null {
+  const offset = due.offsetFundedMinor ?? 0;
+  return offset > 0 && offset < due.expectedMinor ? due.expectedMinor - offset : null;
+}
+
+/** The amount this payment is nearest to: the whole repayment, or only its other-funds part. */
+function targetOf(due: AlignDue, paid: number, tolerance: number): { minor: number; part: boolean } {
+  const other = otherFundsOf(due);
+  if (other === null) return { minor: due.expectedMinor, part: false };
+  return amountCost(paid, other, tolerance) < amountCost(paid, due.expectedMinor, tolerance) ? { minor: other, part: true } : { minor: due.expectedMinor, part: false };
+}
+
 function pairCost(due: AlignDue, period: number, payment: AlignPayment, tolerance: number): number {
   const offset = days(due.date, payment.date);
   const early = -offset / period;
   // Early is common up to about half a period; beyond that it gets dear quickly.
   const dateCost = offset >= 0 ? offset / period : early <= 0.5 ? early * 0.75 : 0.375 + (early - 0.5) * 2.5;
-  return dateCost + amountCost(payment.amountMinor, due.expectedMinor, tolerance);
+  return dateCost + amountCost(payment.amountMinor, targetOf(due, payment.amountMinor, tolerance).minor, tolerance);
 }
 
 /** Lowest-cost order-preserving alignment of one stretch; returns, per due, the payment index or -1. */
@@ -172,6 +193,16 @@ export function alignPayments(input: { dues: readonly AlignDue[]; payments: read
   flush(dues.length, null);
 
   const used = new Set([...assigned.values()].flatMap((p) => (p ? [p.id] : [])));
+  // The offset part of a repayment paid as its own payment near the other-funds part: named, not extra.
+  const offsetParts = new Map<string, AlignPayment>();
+  dues.forEach((d, i) => {
+    const payment = assigned.get(d.key);
+    if (!payment || d.settled || !targetOf(d, payment.amountMinor, tolerance).part) return;
+    const part = free
+      .filter((p) => !used.has(p.id) && Math.abs(p.amountMinor - (d.offsetFundedMinor ?? 0)) <= tolerance && Math.abs(days(payment.date, p.date)) <= periods[i] / 2)
+      .sort((a, b) => Math.abs(days(payment.date, a.date)) - Math.abs(days(payment.date, b.date)))[0];
+    if (part) { offsetParts.set(d.key, part); used.add(part.id); }
+  });
   const extras = free.filter((p) => !used.has(p.id));
 
   const aligned: AlignedDue[] = dues.map((d, i) => {
@@ -184,7 +215,8 @@ export function alignPayments(input: { dues: readonly AlignDue[]; payments: read
       const before = [...dues.slice(0, i)].reverse().map((x) => assigned.get(x.key)).find(Boolean)?.date ?? null;
       const after = dues.slice(i + 1).map((x) => assigned.get(x.key)).find(Boolean)?.date ?? null;
       const between = before && after ? ` between the payments on ${before} and ${after}` : before ? ` after the payment on ${before}` : after ? ` before the payment on ${after}` : "";
-      reasons.push({ code: "missed", text: `No payment to this loan was found for this due date${between}.` });
+      const fromOffset = (d.offsetFundedMinor ?? 0) >= d.expectedMinor ? " The model pays this repayment from the offset account; no transfer from it into the loan was found." : "";
+      reasons.push({ code: "missed", text: `No payment to this loan was found for this due date${between}.${fromOffset}` });
       return { key: d.key, date: d.date, expectedMinor: d.expectedMinor, payment: null, settled, pinned, daysFromDue: null, clean: false, reasons };
     }
     const offset = days(d.date, payment.date);
@@ -192,15 +224,22 @@ export function alignPayments(input: { dues: readonly AlignDue[]; payments: read
       const period = periods[i];
       if (offset > 5) reasons.push({ code: "late", text: `Paid ${plural(offset, "day")} after the due date.` });
       if (offset < -Math.round(period * 0.6)) reasons.push({ code: "early", text: `Paid ${plural(-offset, "day")} before the due date.` });
-      const diff = payment.amountMinor - d.expectedMinor;
-      if (Math.abs(diff) > Math.max(tolerance, Math.round(d.expectedMinor / 100))) {
+      const target = targetOf(d, payment.amountMinor, tolerance);
+      if (target.part) {
+        const part = offsetParts.get(d.key);
+        reasons.push({ code: "offset-part", text: part
+          ? `${money(payment.amountMinor)} paid here and ${money(part.amountMinor)} on ${part.date}, which looks like the part the model takes from the offset account. Bench splits only this payment; check both in Actual before applying.`
+          : `${money(payment.amountMinor)} paid: the model takes the other ${money(d.offsetFundedMinor ?? 0)} of the ${money(d.expectedMinor)} repayment from the offset account, and no payment of that amount into the loan was found. Check the offset account in Actual before applying.` });
+      }
+      const diff = payment.amountMinor - target.minor;
+      if (Math.abs(diff) > Math.max(tolerance, Math.round(target.minor / 100))) {
         const ratio = payment.amountMinor / Math.max(1, d.expectedMinor);
         const multiple = Math.round(ratio);
         const previousMissed = i > 0 && !assigned.get(dues[i - 1].key);
         if (multiple >= 2 && Math.abs(ratio - multiple) <= 0.05 && previousMissed) {
           reasons.push({ code: "covers-missed", text: `About ${multiple} repayments in one payment (${money(payment.amountMinor)}); the repayment due ${dues[i - 1].date} was not found and may be included. Check before applying.` });
         } else {
-          reasons.push({ code: "amount-differs", text: `${money(payment.amountMinor)} paid, ${money(Math.abs(diff))} ${diff > 0 ? "more" : "less"} than the scheduled ${money(d.expectedMinor)}.` });
+          reasons.push({ code: "amount-differs", text: `${money(payment.amountMinor)} paid, ${money(Math.abs(diff))} ${diff > 0 ? "more" : "less"} than the scheduled ${money(target.minor)}${target.part ? " from other funds" : ""}.` });
         }
       }
       if (!pinned) {
@@ -215,5 +254,5 @@ export function alignPayments(input: { dues: readonly AlignDue[]; payments: read
     }
     return { key: d.key, date: d.date, expectedMinor: d.expectedMinor, payment, settled, pinned, daysFromDue: offset, clean: settled || pinned || reasons.length === 0, reasons };
   });
-  return { dues: aligned, extras };
+  return { dues: aligned, extras, offsetParts: [...offsetParts.values()] };
 }

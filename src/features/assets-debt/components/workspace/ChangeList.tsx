@@ -34,9 +34,13 @@ export type ChangeActions = {
   editApply: (posting: PostingView, interestMinor: number, reason: string | null) => void;
   /** "This is the payment": choose which payment is a due date's repayment. */
   choose?: (dueDate: string) => void;
+  /** Undo the applied splits that no longer match the calculation, so they can be split again. */
+  splitAgain?: (dueDates: string[]) => void;
+  /** Put a recorded split already in Actual back as one transfer to the loan. */
+  unsplit?: (posting: PostingView) => void;
 };
 
-const CHOOSABLE_NOTICES = new Set(["repayment-missing", "no-repayment-rule", "repayment-ambiguous"]);
+const CHOOSABLE_NOTICES = new Set(["repayment-missing", "no-repayment-rule", "repayment-unusable"]);
 
 const FILTERS: { id: ChangeFilter; label: string }[] = [
   { id: "action", label: "Needs action" },
@@ -90,6 +94,8 @@ const STATE_LABEL: Record<ChangeRowModel["state"], string> = {
 };
 
 function statusText(row: ChangeRowModel): string {
+  const error = row.posting?.error as { cause?: unknown; detail?: unknown } | null | undefined;
+  if (row.state === "undone" && error?.cause === "changed-in-actual") return `Changed in Actual: ${String(error.detail ?? "")}`;
   if (row.state === "waiting") return row.notice && CHOOSABLE_NOTICES.has(row.notice.code) ? "Not found" : "Waiting";
   if (row.state === "applied" && row.posting?.appliedAt) return `Applied ${row.posting.appliedAt.slice(0, 10)}`;
   if (row.state === "blocked") return `Blocked: ${row.posting?.reasons[0]?.text ?? ""}`;
@@ -183,9 +189,22 @@ export function ChangeList({
                         {stepNote(row) ? <span className="block text-[11px] text-muted-foreground">{stepNote(row)}</span> : null}
                       </td>
                       <td className="px-2 py-2">
-                        <span className={cn("font-medium", row.state === "blocked" || row.state === "failed" ? "text-destructive" : row.state === "review" || row.state === "undo-pending" || row.state === "interrupted" ? "text-amber-700 dark:text-amber-300" : "")}>{statusText(row)}</span>
+                        <span className={cn("inline-block max-w-full rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                          row.state === "blocked" || row.state === "failed" ? "bg-red-50 text-destructive dark:bg-red-950/40"
+                            : row.state === "review" || row.state === "undo-pending" || row.state === "interrupted" || (row.state === "waiting" && statusText(row) === "Not found") ? "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                              : row.state === "applied" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                : row.state === "recommended" ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                  : "bg-muted text-muted-foreground")}>{statusText(row)}</span>
+                        {row.notice?.code === "split-again" && row.notice.dueDates?.length && actions.splitAgain ? (
+                          <Button type="button" size="sm" variant="outline" className="ml-2 h-6 px-2 text-xs" disabled={busy} title={row.notice.text} onClick={() => actions.splitAgain!(row.notice!.dueDates!)}>
+                            {row.notice.dueDates.length === 1 ? "Split again" : `Split ${row.notice.dueDates.length} again`}
+                          </Button>
+                        ) : null}
                         {row.state === "applied" && row.posting && !row.posting.reversalOf ? (
                           <Button type="button" variant="link" size="sm" className="ml-2 h-auto p-0 text-xs" disabled={busy} onClick={() => actions.undo(row.posting!)}>Undo</Button>
+                        ) : null}
+                        {row.state === "applied" && row.posting?.output.kind === "claim" && row.posting.output.recordedSplit && actions.unsplit ? (
+                          <Button type="button" variant="link" size="sm" className="ml-2 h-auto p-0 text-xs" disabled={busy} title="Put the payment back as one transfer to the loan; Bench then proposes the split again" onClick={() => actions.unsplit!(row.posting!)}>Unsplit</Button>
                         ) : null}
                         {row.state === "undo-pending" && row.undo ? (
                           <span className="ml-2 inline-flex gap-1">

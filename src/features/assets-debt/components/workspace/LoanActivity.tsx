@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -15,12 +15,13 @@ import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { formatAmount } from "../../lib/money";
 import { applyPosting, checkInterruptedPosting, completeInterruptedLink, readForClaims, type PostingActionContext } from "../../lib/postingActions";
 import { clearRepaymentChoice, getSchedule, listMatchRules, setRepaymentChoice } from "../../lib/debtsApi";
-import { declinePosting, listPostings, overrideSplit, proposeReversal } from "../../lib/postingsApi";
+import { declinePosting, listPostings, overrideSplit, proposeReversal, proposeUnsplit } from "../../lib/postingsApi";
 import { DateField, SelectField } from "../fields";
 import { stepsOf } from "./steps";
 import type { PreviewDirectory } from "../preview/renderPreviewRows";
 import { LenderReconciliation } from "../reconciliation/LenderReconciliation";
 import { bulkSteps, bulkSummary, runBulk, type BulkResult } from "./bulkApply";
+import { BulkApplyDialog, type BulkRun } from "./BulkApplyDialog";
 import { changeContext, changeHeadline } from "./changeText";
 import { ChangeList, type ChangeActions } from "./ChangeList";
 import { buildChangeRows, countByFilter, groupMissedRows, rowsFor, type ChangeFilter, type ChangeRowModel } from "./changeRows";
@@ -29,6 +30,7 @@ import { ChoosePayment } from "./ChoosePayment";
 import { LoanStatusStrip, type StripMatching } from "./LoanStatusStrip";
 import { matchingFacts, repaymentTimeline } from "./matchingStrip";
 import { useBackgroundRefresh } from "./useBackgroundRefresh";
+import { syncIfNeeded } from "../../lib/syncFreshness";
 
 /**
  * The loan workspace's Activity tab (RD-084 P1.6b T289–T291;
@@ -69,7 +71,9 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   const [completion, setCompletion] = useState<Record<string, string>>({});
   const [statements, setStatements] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [run, setRun] = useState<BulkRun | null>(null);
+  // Read by the running batch between changes ("Stop after this change").
+  const stopAfterCurrent = useRef(false);
   const [result, setResult] = useState<BulkResult | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -102,7 +106,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
       window: dates && "daysBefore" in dates ? { before: dates.daysBefore, after: dates.daysAfter } : null,
       ruleOn: rules.data ? !!rule : null,
       lastCheck,
-      unrecordedExtra: (refresh.unscheduled ?? []).filter((p) => !p.recorded && p.direction !== "out").length,
+      unrecordedExtra: (refresh.unscheduled ?? []).filter((p) => !p.recorded && !p.dismissed && p.direction !== "out").length,
       takenOut: (refresh.unscheduled ?? []).filter((p) => p.direction === "out").length,
       changedExtra: (refresh.unscheduled ?? []).filter((p) => p.changed).length,
     };
@@ -118,17 +122,14 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   const selectedRows = allRows.filter((r) => selected.has(r.key) && r.selectable);
   const reviewCount = allRows.filter((r) => r.state === "review" || r.state === "recommended").length;
 
-  const context = async (): Promise<PostingActionContext> => {
+  const context = async (sync: "always" | "if-stale" = "if-stale"): Promise<PostingActionContext> => {
     if (!connection || !directory) throw new Error("Connect to the budget first.");
     const transport = getTransport(connection);
     // Every apply and undo re-checks Actual just before writing; in Direct mode that check reads this
-    // browser's copy, so pull changes made elsewhere first. A failed sync is not fatal: the check
-    // still refuses if what it reads differs from the preview.
-    try {
-      await transport.sync();
-    } catch {
-      // keep going on what this browser has
-    }
+    // browser's copy, so pull changes made elsewhere first: always for a bulk apply, and for a single
+    // one when the last sync is older than 30 seconds. A failed sync is not fatal: the check still
+    // refuses if what it reads differs from the preview.
+    await syncIfNeeded(connection.id, transport, sync);
     let payees = refresh.transferPayees;
     if (!Object.keys(payees).length) {
       payees = {};
@@ -154,8 +155,12 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   };
 
   const act = useMutation({
-    mutationFn: async ({ posting, action, interestMinor, reason }: { posting: PostingView; action: "apply" | "decline" | "undo" | "check" | "complete" | "edit" | "edit-apply"; interestMinor?: number; reason?: string | null }) => {
+    mutationFn: async ({ posting, action, interestMinor, reason }: { posting: PostingView; action: "apply" | "decline" | "undo" | "unsplit" | "check" | "complete" | "edit" | "edit-apply"; interestMinor?: number; reason?: string | null }) => {
       if (action === "decline") return declinePosting(posting.id);
+      if (action === "unsplit") {
+        if (!directory) throw new Error("Connect to the budget first.");
+        return proposeUnsplit(posting.id, { accountDirectory: directory, transferPayees: (await context()).transferPayeeByAccount });
+      }
       if (action === "edit") return overrideSplit(posting.id, { interestMinor: interestMinor!, reason: reason ?? null });
       if (action === "undo") {
         if (!directory) throw new Error("Connect to the budget first.");
@@ -176,13 +181,18 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     onSuccess: async (posting, { action }) => {
       setProblem(null);
       if (action === "undo") toast.success("Undo ready to review on that row.");
+      if (action === "unsplit") toast.success("Unsplit ready to review on that row.");
       if (action === "edit") toast.success("Edit saved as a new proposal to review.");
       if (action === "apply" || action === "edit-apply" || action === "complete" || action === "check") {
         if (String(posting.status) !== "applied") toast.error("The change did not apply. See the row for why.");
-        // The row shows its result now; the recalculation of later months runs in the background,
-        // and Apply waits for it (see `busy`), since those months build on this one.
+        // The row shows its result now. No full refresh after a single apply (owner decision
+        // 2026-10-07): later months already count this payment from Actual; the list, the loan
+        // (paid off) and the loans list are reloaded, and a bulk apply or Refresh re-reads Actual.
+        refresh.invalidate();
         await queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
-        void afterWrite();
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "attention"] });
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debt", debtId] });
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
       } else {
         await queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
       }
@@ -202,11 +212,30 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     onError: (error) => setProblem(error instanceof Error ? error.message : String(error)),
   });
 
+  // "Split again" (owner decision 2026-10-07): undo the applied splits that drifted, newest first;
+  // once the undos are applied the months come back as new splits to apply.
+  const splitAgain = useMutation({
+    mutationFn: async (dueDates: string[]) => {
+      if (!directory) throw new Error("Connect to the budget first.");
+      const payees = (await context()).transferPayeeByAccount;
+      const applied = (postings.data ?? []).filter((p) => String(p.status) === "applied" && p.postingKind === "repayment-split" && dueDates.includes(p.periodKey)).sort((a, b) => b.periodKey.localeCompare(a.periodKey));
+      for (const posting of applied) await proposeReversal(posting.id, { accountDirectory: directory, transferPayees: payees });
+      return applied.length;
+    },
+    onSuccess: async (count) => {
+      toast.success(count === 1 ? "Undo ready on that row. Apply it, then apply the new split." : `${count} undos ready. Apply them, then apply the new splits.`);
+      await queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
+    },
+    onError: (error) => setProblem(error instanceof Error ? error.message : String(error)),
+  });
+
   const actions: ChangeActions = {
     choose: (dueDate) => setChoosing(dueDate),
+    splitAgain: (dueDates) => splitAgain.mutate(dueDates),
     apply: (posting) => act.mutate({ posting, action: "apply" }),
     decline: (posting) => act.mutate({ posting, action: "decline" }),
     undo: (posting) => act.mutate({ posting, action: "undo" }),
+    unsplit: (posting) => act.mutate({ posting, action: "unsplit" }),
     check: (posting) => act.mutate({ posting, action: "check" }),
     complete: (posting) => act.mutate({ posting, action: "complete" }),
     edit: (posting, interestMinor, reason) => act.mutate({ posting, action: "edit", interestMinor, reason }),
@@ -215,22 +244,65 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
 
   const bulk = useMutation({
     mutationFn: async (chosen: ChangeRowModel[]) => {
-      const ctx = await context();
+      const ctx = await context("always");
+      // Cleared loan-side rows are marked together at the end in one batch write, where the
+      // connection has one (Direct), instead of one settled write per split.
+      if (ctx.transport.batchWriteTransactionsForSync) ctx.clearLater = [];
       const steps = bulkSteps(chosen);
-      setProgress({ done: 0, total: steps.length });
       // Claims write nothing, so their rows are read once for the whole batch.
       const cache = await readForClaims(steps.map((step) => step.target), ctx.transport);
-      return runBulk(steps, (step) => applyPosting(step.target, ctx, cache), (done) => setProgress({ done, total: steps.length }));
+      const outcome = await runBulk(
+        steps,
+        (step) => applyPosting(step.target, ctx, cache),
+        (done) => setRun((current) => (current ? { ...current, done } : current)),
+        () => stopAfterCurrent.current,
+      );
+      if (ctx.clearLater?.length) {
+        const ids = ctx.clearLater;
+        setRun((current) => (current ? { ...current, phase: "clearing", clearing: ids.length } : current));
+        let failure: string | null = null;
+        try {
+          await ctx.transport.batchWriteTransactionsForSync!({ updated: ids.map((id) => ({ id, cleared: true })), deleted: [] });
+          // Verified like every write: read the loan account back and check each row is cleared.
+          const rows = await ctx.transport.listTransactionsForSync({ accountId: ctx.liabilityAccountId });
+          const notCleared = ids.filter((id) => !rows.some((r) => r.id === id && r.cleared));
+          if (notCleared.length) failure = `${notCleared.length} of them did not take`;
+        } catch (error) {
+          failure = error instanceof Error ? error.message : String(error);
+        }
+        if (failure) {
+          const message = `The splits were applied, but marking ${ids.length} loan-side row${ids.length === 1 ? "" : "s"} cleared again did not complete (${failure}). Mark ${ids.length === 1 ? "it" : "them"} cleared in Actual.`;
+          setProblem(message);
+          setRun((current) => (current ? { ...current, clearProblem: message } : current));
+        }
+      }
+      return outcome;
     },
     onSuccess: async (outcome) => {
       setResult(outcome);
       setSelected(new Set());
-      setProgress(null);
       // Stopped or finished: refresh and recalculate the rest before the user continues.
-      await afterWrite();
+      setRun((current) => (current ? { ...current, phase: "refreshing", result: outcome } : current));
+      try {
+        await afterWrite();
+      } finally {
+        setRun((current) => (current ? { ...current, phase: "done" } : current));
+      }
     },
-    onError: (error) => { setProgress(null); setProblem(error instanceof Error ? error.message : String(error)); },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setProblem(message);
+      setRun((current) => (current ? { ...current, phase: "done", result: current.result ?? { applied: [], stopped: current.steps[current.done] ? { row: current.steps[current.done].row, reason: message } : null, notAttempted: current.steps.slice(current.done + 1).map((s) => s.row) } } : current));
+    },
   });
+
+  const startBulk = (chosen: ChangeRowModel[]) => {
+    stopAfterCurrent.current = false;
+    setConfirming(false);
+    setResult(null);
+    setRun({ steps: bulkSteps(chosen), done: 0, phase: "applying", stopRequested: false, clearing: 0, result: null, clearProblem: null });
+    bulk.mutate(chosen);
+  };
 
   // The period sits on the same row as the filter chips.
   const periodControls = (
@@ -259,7 +331,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     if (output && "components" in output) for (const c of output.components) sum[c.kind === "principal" ? "principal" : c.kind === "interest" ? "interest" : "fees"] += c.amountMinor;
     return sum;
   }, { principal: 0, interest: 0, fees: 0 });
-  const busy = act.isPending || bulk.isPending || refresh.phase === "refreshing";
+  const busy = act.isPending || bulk.isPending || splitAgain.isPending || choice.isPending || refresh.phase === "refreshing";
   const edited = selectedRows.filter((r) => r.posting?.output.kind === "restructure" && r.posting.output.override);
   // The context lines the selected changes share, each said once (§3.8 rev 2).
   const sharedNotes = (() => {
@@ -319,10 +391,10 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
         ) : <p className="text-xs text-muted-foreground">Connect to the budget to see this loan&apos;s changes.</p>}
       </div>
 
-      {selectedRows.length || progress ? (
+      {selectedRows.length ? (
         <div role="region" aria-label="Selected changes" className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-border bg-background px-4 py-2 text-xs">
           <p aria-live="polite" className="flex-1">
-            {progress ? `Applying ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…` : `${selectedRows.length} selected · Principal ${formatAmount(totals.principal, digits)} · Interest ${formatAmount(totals.interest, digits)}${totals.fees ? ` · Fees ${formatAmount(totals.fees, digits)}` : ""}`}
+            {`${selectedRows.length} selected · Principal ${formatAmount(totals.principal, digits)} · Interest ${formatAmount(totals.interest, digits)}${totals.fees ? ` · Fees ${formatAmount(totals.fees, digits)}` : ""}`}
           </p>
           <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setSelected(new Set())}>Clear</Button>
           <Button type="button" size="sm" disabled={busy || !selectedRows.length} onClick={() => setConfirming(true)}>
@@ -373,10 +445,23 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
           ) : null}
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={() => setConfirming(false)}>Cancel</Button>
-            <Button type="button" onClick={() => { setConfirming(false); setResult(null); bulk.mutate(selectedRows); }}>Apply {selectedRows.length} change{selectedRows.length === 1 ? "" : "s"}</Button>
+            <Button type="button" onClick={() => startBulk(selectedRows)}>Apply {selectedRows.length} change{selectedRows.length === 1 ? "" : "s"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BulkApplyDialog
+        run={run}
+        headline={(step) => (previewDirectory ? changeHeadline(step.target, previewDirectory, digits) : "")}
+        onStop={() => { stopAfterCurrent.current = true; setRun((current) => (current ? { ...current, stopRequested: true } : current)); }}
+        onDone={() => setRun(null)}
+        onContinue={() => {
+          // The rest was recalculated by the refresh: select what is still there to apply, to review first.
+          const keys = new Set((run?.result?.notAttempted ?? []).map((r) => r.key));
+          setSelected(new Set(rows.filter((r) => keys.has(r.key) && r.selectable).map((r) => r.key)));
+          setRun(null);
+        }}
+      />
 
       <Sheet open={statements} onOpenChange={setStatements}>
         <SheetContent side="right" className="max-w-full overflow-y-auto" style={{ width: "min(640px, 96vw)", maxWidth: "none" }}>

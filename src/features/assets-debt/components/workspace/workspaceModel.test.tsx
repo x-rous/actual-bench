@@ -1,5 +1,7 @@
 import type { PostingView } from "@/lib/assets-debt/services/proposalService";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { bulkSteps, bulkSummary, runBulk } from "./bulkApply";
+import { BulkApplyDialog, type BulkRun } from "./BulkApplyDialog";
 import { buildChangeRows, bulkOrder, countByFilter, rowsFor } from "./changeRows";
 import { setupChecklist } from "./LoanSetup";
 import { stepsOf } from "./steps";
@@ -59,6 +61,18 @@ describe("the Activity list model (T289)", () => {
   });
 });
 
+describe("changes Actual no longer holds", () => {
+  it("go into the history of that due date's row, not under Undone; alone, they still show", () => {
+    const released = posting("old", { status: "reversed", error: { cause: "changed-in-actual", detail: "the payment is no longer in Actual" } } as never);
+    const rows = buildChangeRows([posting("new", { status: "applied" } as never), released]);
+    expect(rows.map((r) => r.key)).toEqual(["new"]);
+    expect(rows[0].earlier.map((p) => p.id)).toEqual(["old"]);
+    expect(countByFilter(rows).undone).toBe(0);
+    const alone = buildChangeRows([released]);
+    expect(alone).toEqual([expect.objectContaining({ key: "old", state: "undone" })]);
+  });
+});
+
 describe("bulk apply runner (T290)", () => {
   const rows = buildChangeRows([posting("jan", { periodKey: "2024-01-01" }), posting("feb"), posting("mar", { periodKey: "2024-03-01" })]);
   const steps = bulkSteps(rows);
@@ -87,6 +101,67 @@ describe("bulk apply runner (T290)", () => {
     expect(result.applied).toEqual([]);
     expect(result.stopped?.reason).toMatch(/^Actual changed before apply/);
     expect(result.notAttempted).toHaveLength(2);
+  });
+
+  it("\"Stop after this change\": finishes the change running, starts no other", async () => {
+    let stop = false;
+    const apply = jest.fn(async (step: (typeof steps)[number]) => {
+      if (step.target.id === "jan") stop = true;
+      return { ...step.target, status: "applied" } as PostingView;
+    });
+    const result = await runBulk(steps, apply, undefined, () => stop);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ stopped: null, userStopped: true });
+    expect(result.notAttempted.map((r) => r.key)).toHaveLength(2);
+    expect(bulkSummary(result)).toBe("1 applied · stopped by you. The remaining 2 changes were not applied and have been recalculated.");
+  });
+});
+
+describe("bulk apply dialog", () => {
+  const rows = buildChangeRows([posting("jan", { periodKey: "2024-01-01" }), posting("feb"), posting("mar", { periodKey: "2024-03-01" })]);
+  const steps = bulkSteps(rows);
+  const base: BulkRun = { steps, done: 1, phase: "applying", stopRequested: false, clearing: 0, result: null, clearProblem: null };
+  const show = (run: BulkRun, handlers: Partial<{ onStop: () => void; onDone: () => void; onContinue: () => void }> = {}) =>
+    render(<BulkApplyDialog run={run} headline={(step) => `Split ${step.target.id}`} onStop={handlers.onStop ?? jest.fn()} onDone={handlers.onDone ?? jest.fn()} onContinue={handlers.onContinue ?? jest.fn()} />);
+  const states = () => screen.getAllByRole("row").slice(1).map((r) => r.getAttribute("data-state"));
+
+  it("while running: progress, each row's state, the due date running, Stop, and no way to close", async () => {
+    const onStop = jest.fn();
+    show(base, { onStop });
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "1");
+    expect(screen.getByText("Applying 2 of 3 - due 2024-02-01")).toBeInTheDocument();
+    expect(states()).toEqual(["applied", "running", "waiting"]);
+    expect(screen.queryByRole("button", { name: "Done" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Stop after this change" }));
+    expect(onStop).toHaveBeenCalled();
+  });
+
+  it("shows the cleared-marking and refresh steps", () => {
+    const { rerender } = show({ ...base, done: 3, phase: "clearing", clearing: 2 });
+    expect(screen.getByText("Marking 2 loan-side rows cleared again")).toBeInTheDocument();
+    rerender(<BulkApplyDialog run={{ ...base, done: 3, phase: "refreshing" }} headline={() => ""} onStop={jest.fn()} onDone={jest.fn()} onContinue={jest.fn()} />);
+    expect(screen.getByText("Reading Actual again and recalculating the rest")).toBeInTheDocument();
+  });
+
+  it("stopped by a failure: the reason on its row, the rest not run, Refresh and continue", () => {
+    const onContinue = jest.fn();
+    show({ ...base, phase: "done", result: { applied: [steps[0].row], stopped: { row: steps[1].row, reason: "Actual changed before apply" }, notAttempted: [steps[2].row] } }, { onContinue });
+    expect(states()).toEqual(["applied", "failed", "not-run"]);
+    expect(screen.getAllByText(/Actual changed before apply/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh and continue" }));
+    expect(onContinue).toHaveBeenCalled();
+  });
+
+  it("finished: Done closes, and nothing is left to continue", () => {
+    const onDone = jest.fn();
+    show({ ...base, done: 3, phase: "done", result: { applied: steps.map((step) => step.row), stopped: null, notAttempted: [] } }, { onDone });
+    expect(screen.getByText("3 applied")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh and continue" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(onDone).toHaveBeenCalled();
   });
 });
 

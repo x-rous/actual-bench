@@ -201,8 +201,10 @@ function planPatternBRepayments(ctx: PlanningContext, out: PlanResult, repayment
       out.notices.push({ code: "repayment-missing", periodKey: date, text: `${missed} If it was paid, choose the payment for this due date.` });
       continue;
     }
-    if (match.status !== "unique") {
-      out.notices.push({ code: "repayment-ambiguous", periodKey: date, text: REASONS.multipleCandidates.text });
+    if (match.status === "unsafe") {
+      // The payment found cannot be taken as it is (a split Bench did not make, no stable id).
+      const code = match.candidates[0]?.unsafeReasons[0] ?? "ambiguous-existing-structure";
+      out.notices.push({ code: "repayment-unusable", periodKey: date, text: existingStructureReason(code).text });
       continue;
     }
     const candidate = match.candidates[0].candidate;

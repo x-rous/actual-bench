@@ -1152,6 +1152,11 @@ function accountGroupMethods(
  */
 const directSettle = { pollMs: 100, quietMs: 400, deadlineMs: 15_000, recentMs: 2_000 };
 
+/** Live experiments only: try a different quiet interval (the production value is 400 ms). */
+export function __setDirectQuietMsForExperiments(ms: number): void {
+  directSettle.quietMs = ms;
+}
+
 /** When Bench's last write on each Direct connection was seen landed and quiet. */
 const lastSettledAt = new Map<string, number>();
 

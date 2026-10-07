@@ -47,9 +47,14 @@ describe("Activity bulk apply (T290)", () => {
     expect(dialog).toHaveTextContent(/oldest first/);
     expect(actions.applyPosting).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply 2 changes" }));
-    await waitFor(() => expect(screen.getByText(/0 applied · stopped at 2024-02-01: verification found a problem\. The remaining change was not applied/)).toBeInTheDocument());
+    // The confirmation turns into progress; once Actual has been read again it says where it stopped.
+    const progress = await screen.findByRole("dialog", { name: "Bulk apply stopped" });
+    expect(progress).toHaveTextContent(/0 applied · stopped at 2024-02-01: verification found a problem\. The remaining change was not applied/);
     expect(order).toEqual(["feb"]);
     expect(refresh).toHaveBeenCalled();
+    fireEvent.click(within(progress).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText(/0 applied · stopped at 2024-02-01/)).toBeInTheDocument();
   });
 
   it("Blocked rows cannot be selected; Recommended and Review can (owner refinement 3)", async () => {

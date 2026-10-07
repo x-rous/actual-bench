@@ -198,7 +198,7 @@ function alignedBacktest(
     liabilityAccountId: debt.liabilityAccountId,
     signConvention: debt.signConvention === "positive-is-debt" ? "positive-is-debt" : "negative-is-debt",
     rule: conditions,
-    dues: periods.map((p) => ({ key: p.periodKey, date: p.date, expectedMinor: p.paymentMinor, settled: settled.get(p.periodKey) ?? null })),
+    dues: periods.map((p) => ({ key: p.periodKey, date: p.date, expectedMinor: p.paymentMinor, settled: settled.get(p.periodKey) ?? null, ...(p.fromOffsetMinor ? { offsetFundedMinor: p.fromOffsetMinor } : {}) })),
     pins: repaymentChoices(db, debtId),
     toleranceMinor: debt.driftToleranceMinor,
     minorDigits: debt.currencyMinorDigits,

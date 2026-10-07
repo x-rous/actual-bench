@@ -63,8 +63,12 @@ const GROUP: Record<RowState, ChangeRowModel["group"]> = {
   applied: "applied", undone: "undone", waiting: "waiting",
 };
 
+/** Released because Actual no longer holds it (owner decision 2026-10-07): history, not something the user undid. */
+const changedInActual = (p: PostingView) => String(p.status) === "reversed" && (p.error as { cause?: unknown } | null)?.cause === "changed-in-actual";
+
 export function buildChangeRows(postings: readonly PostingView[], notices: readonly PlanningNotice[] = []): ChangeRowModel[] {
-  const changes = postings.filter((p) => !p.reversalOf && !["superseded", "declined"].includes(String(p.status)));
+  const released = postings.filter((p) => !p.reversalOf && changedInActual(p));
+  const changes = postings.filter((p) => !p.reversalOf && !["superseded", "declined"].includes(String(p.status)) && !changedInActual(p));
   const undoOf = new Map<string, PostingView>();
   for (const p of postings) {
     if (!p.reversalOf || ["superseded", "declined"].includes(String(p.status))) continue;
@@ -94,6 +98,16 @@ export function buildChangeRows(postings: readonly PostingView[], notices: reado
       continue;
     }
     rows.push({ key: `notice:${notice.code}:${notice.periodKey}`, openKey: `notice:${notice.code}:${notice.periodKey}`, dueDate: notice.periodKey, paidDate: null, paymentMinor: null, posting: null, undo: null, notice, earlier: [], state: "waiting", group: "waiting", selectable: null });
+  }
+  // A change Actual no longer holds goes into the history of that due date's row; only when the due
+  // date has no other row does it stand on its own (so the reason is still seen).
+  for (const posting of released) {
+    const row = rows.find((r) => r.dueDate === posting.periodKey && r.posting);
+    if (row) {
+      row.earlier = [...row.earlier, posting].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      continue;
+    }
+    rows.push({ key: posting.id, openKey: posting.id, dueDate: posting.periodKey, ...paidAndPayment(posting), posting, undo: null, notice: null, earlier: [], state: "undone", group: "undone", selectable: null });
   }
   // Newest due date first.
   return rows.sort((a, b) => b.dueDate.localeCompare(a.dueDate) || a.key.localeCompare(b.key));

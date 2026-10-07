@@ -444,7 +444,7 @@ export function allocateRepaymentSplit(input: {
   const result = allocateObservedRepayments({
     model: input.model,
     opening: { date: input.opening.date, principalMinor: input.opening.principalMinor, accruedInterestMinor: input.opening.accruedInterestMinor },
-    repayments: input.observed.repayments.map(({ dueDate, paidDate, amountMinor, feesMinor, appliedInterestMinor }) => ({ dueDate, paidDate, amountMinor, feesMinor, appliedInterestMinor })),
+    repayments: input.observed.repayments.map(({ dueDate, paidDate, amountMinor, feesMinor, appliedInterestMinor, extra }) => ({ dueDate, paidDate, amountMinor, feesMinor, appliedInterestMinor, ...(extra ? { extra } : {}) })),
     allocation: input.observed.allocation,
   });
   if (!result.ok) return result;

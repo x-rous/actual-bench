@@ -1,6 +1,7 @@
 import { apiRequest } from "@/lib/api/client";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
 import { ACCOUNTS, LENDER, byKind, createScenario } from "../testing/postingScenario";
+import { listDebtPostings } from "./proposalService";
 
 jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
 const mockApiRequest = apiRequest as unknown as jest.Mock;
@@ -101,10 +102,45 @@ describe("existing-transaction safety matrix", () => {
     const counterpart = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-01", amount: 242915, payee: s.fake.transferPayeeId(ACCOUNTS.checking) });
     const bank = s.seedPayment("2024-02-01", -242915, { transfer_id: counterpart });
     s.fake.row(counterpart)!.transfer_id = bank;
-    const [claim] = byKind((await s.preview(window)).postings, "repayment-link");
-    expect(claim).toMatchObject({ classification: "safe", output: expect.objectContaining({ kind: "claim" }) });
+    // Already what it should be: recorded on the refresh itself, nothing written to Actual (owner decision 2026-10-07).
     const writes = s.fake.writes().length;
-    expect((await s.apply(claim)).posting.status).toBe("applied");
+    await s.preview(window);
+    const [claim] = byKind(listDebtPostings(s.db, s.debtId), "repayment-link");
+    expect(claim).toMatchObject({ classification: "safe", status: "applied", output: expect.objectContaining({ kind: "claim" }) });
     expect(s.fake.writes().length).toBe(writes);
+  });
+
+  describe("offset-funded repayments (FR-078a)", () => {
+    // 200.00 put in the offset account in February: the model takes it towards the March repayment.
+    const march = { from: "2024-03-01", to: "2024-03-31" };
+    const funded = () => createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest", offsetFunding: { date: "2024-02-15", balanceMinor: 20_000 } });
+    const transfer = (s: ReturnType<typeof funded>, from: string, date: string, amount: number) => {
+      const loanSide = s.fake.seed({ account: ACCOUNTS.mortgage, date, amount, payee: s.fake.transferPayeeId(from) });
+      const paying = s.fake.seed({ account: from, date, amount: -amount, payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), transfer_id: loanSide });
+      s.fake.row(loanSide)!.transfer_id = paying;
+      return { paying, loanSide };
+    };
+
+    it("the bank pays only the other-funds part: found, for Review, and the offset transfer is named, never an extra payment", async () => {
+      const s = funded();
+      transfer(s, ACCOUNTS.checking, "2024-02-01", 242915);
+      const bank = transfer(s, ACCOUNTS.checking, "2024-03-01", 242915 - 20_000);
+      const offset = transfer(s, ACCOUNTS.offset, "2024-03-01", 20_000);
+      const result = await s.preview(march);
+      const [split] = byKind(result.postings, "repayment-split");
+      expect(split.output).toMatchObject({ kind: "restructure", before: expect.objectContaining({ id: bank.paying }) });
+      expect(split.classification).toBe("review");
+      expect(split.reasons).toEqual(expect.arrayContaining([expect.objectContaining({ code: "alignment-offset-part", text: expect.stringContaining("part the model takes from the offset account") })]));
+      expect(result.unscheduled.map((p) => p.id)).not.toContain(offset.loanSide);
+      expect(result.recordedExtraPayments ?? []).toEqual([]);
+    });
+
+    it("the whole repayment from the bank in one payment is routine", async () => {
+      const s = funded();
+      transfer(s, ACCOUNTS.checking, "2024-02-01", 242915);
+      transfer(s, ACCOUNTS.checking, "2024-03-01", 242915);
+      const [split] = byKind((await s.preview(march)).postings, "repayment-split");
+      expect(split.reasons.map((r) => r.code)).not.toContain("alignment-offset-part");
+    });
   });
 });

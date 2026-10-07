@@ -65,6 +65,8 @@ export type ExistingPostingSummary = {
   generation: number;
   outputSnapshot: PostingOutputSnapshot;
   actualIds: string[] | null;
+  /** Released because Actual no longer holds it (what changed there). */
+  changedInActual?: string;
 };
 
 export type PlanningContext = {
@@ -117,9 +119,14 @@ export type PlannedPosting = {
 };
 
 /** Something the user should know that is not a posting: waiting for a row, ambiguous matches. */
-export type PlanningNotice = { code: string; periodKey: string; text: string };
+export type PlanningNotice = { code: string; periodKey: string; text: string; /** Due dates the notice is about (for an action across several months). */ dueDates?: string[] };
 
-export type PlanResult = { postings: PlannedPosting[]; notices: PlanningNotice[] };
+export type PlanResult = {
+  postings: PlannedPosting[];
+  notices: PlanningNotice[];
+  /** The balance after the latest payment found in Actual, applied or not (for "Calculated"). */
+  observed?: { paidDate: string; dueDate: string; principalAfterMinor: number } | null;
+};
 
 export const LIVE_STATUSES = new Set(["applying", "applied", "indeterminate"]);
 
@@ -230,7 +237,13 @@ export function finalize(
   const { policy, ...rest } = input;
   assertExactMoney(rest.inputSnapshot, "inputSnapshot");
   assertExactMoney(rest.outputSnapshot, "outputSnapshot");
-  const result = classifyPosting({ ...policy, postingKind: rest.postingKind, shape: rest.shape, driftMaterial: ctx.driftMaterial });
+  // Adding or linking again something removed in Actual after Bench applied it waits for a person:
+  // the removal may have been on purpose (Actual is the truth).
+  const removed = rest.shape === "create" || rest.shape === "link"
+    ? ctx.postings.find((p) => p.postingKind === rest.postingKind && p.periodKey === rest.periodKey && p.status === "reversed" && p.changedInActual)
+    : undefined;
+  const reviews = removed ? [...(policy.reviews ?? []), { code: "removed-in-actual", text: `Bench applied this before and then ${removed.changedInActual}. Apply it again only if that was a mistake.` }] : policy.reviews;
+  const result = classifyPosting({ ...policy, ...(reviews ? { reviews } : {}), postingKind: rest.postingKind, shape: rest.shape, driftMaterial: ctx.driftMaterial });
   return { ...rest, classification: result.classification, reasons: result.reasons };
 }
 
@@ -251,7 +264,8 @@ export function repaymentAlignment(ctx: PlanningContext): RepaymentAlignment {
   const next = ahead.ok ? ahead.events.find(isRepayment) : undefined;
   const dues = [...inWindow, ...(next ? [next] : [])].map((e) => {
     const live = livePosting(ctx, "repayment-split", e.date) ?? livePosting(ctx, "repayment-link", e.date);
-    return { key: e.date, date: e.date, expectedMinor: Math.abs(e.cashMovementMinor), settled: live ? settledPaymentOf(live.outputSnapshot) : null, upcoming: e.date > ctx.today };
+    const offsetFundedMinor = typeof e.diagnostics?.offsetFundedMinor === "number" ? e.diagnostics.offsetFundedMinor : 0;
+    return { key: e.date, date: e.date, expectedMinor: Math.abs(e.cashMovementMinor), settled: live ? settledPaymentOf(live.outputSnapshot) : null, upcoming: e.date > ctx.today, ...(offsetFundedMinor > 0 ? { offsetFundedMinor } : {}) };
   });
   found = alignRepayments({
     candidates: ctx.candidates, liabilityAccountId: ctx.debt.liabilityAccountId, signConvention: ctx.debt.signConvention,

@@ -40,6 +40,7 @@ const SUPERSEDED: Record<string, string> = {
   "newer-preview": "Replaced by a newer preview",
   "newer-undo": "Replaced by a newer undo request",
   "actual-changed": "Not applied: Actual changed before apply",
+  "replaced-by-applied": "Closed: a later change for this due date was applied",
 };
 
 /** The posting's state in words; a superseded posting says why. */
@@ -47,7 +48,10 @@ export function postingStatusLabel(posting: Pick<PostingView, "status" | "applie
   const status = String(posting.status);
   if (status === "applied") return `Applied ${posting.appliedAt?.slice(0, 10) ?? ""}`.trim();
   if (status === "declined") return `Declined ${posting.decidedAt?.slice(0, 10) ?? ""}`.trim();
-  if (status === "reversed") return "Undone";
+  if (status === "reversed") {
+    const error = posting.error as { cause?: unknown; detail?: unknown } | null;
+    return error?.cause === "changed-in-actual" ? `Stopped counting: ${String(error.detail ?? "it was changed in Actual")}` : "Undone";
+  }
   if (status === "superseded") {
     const cause = (posting.error as { superseded?: unknown } | null)?.superseded;
     return SUPERSEDED[typeof cause === "string" ? cause : ""] ?? "Replaced by a newer proposal";

@@ -254,6 +254,8 @@ export const previewRequestSchema = z.strictObject({
   loanAccountRows: z.array(z.strictObject({ id, date: isoDate, amountMinor: minor })).max(5_000).optional(),
   /** False while Terms & Schedule has unsaved edits: linked extra payments are not moved meanwhile. */
   followExtraPayments: z.boolean().optional(),
+  /** Exactly which account dates the snapshots cover (a row outside them is not judged missing). */
+  readRanges: z.array(z.strictObject({ accountId: id, from: isoDate, to: isoDate })).max(2_000).optional(),
   comparison: z.strictObject({ comparisonDate: isoDate, actualBalanceMinor: minor.nonnegative() }).nullable().optional(),
   parameters: z.strictObject({
     openingAdjustmentCategoryId: id.nullable().optional(),

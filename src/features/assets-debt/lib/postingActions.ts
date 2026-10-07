@@ -25,6 +25,8 @@ export type PostingActionContext = {
   liabilityAccountId: string;
   transferPayeeByAccount: Record<string, string>;
   offBudgetAccountIds: ReadonlySet<string>;
+  /** Bulk apply: new loan-side rows to mark cleared together at the end. */
+  clearLater?: string[];
 };
 
 function rowsToRecheck(output: PostingOutputSnapshot): RowSnapshot[] {

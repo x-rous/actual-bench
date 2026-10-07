@@ -129,21 +129,26 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
    * Each scenario starts from an empty preview window in the disposable budget, so rows left by an
    * earlier run can never be a second candidate. Only ever runs on an "RD084 Spike" budget.
    */
-  async function clearWindow(mode: Mode) {
+  /**
+   * A Direct delete resolves before it lands, and a write started inside that window deadlocks the
+   * runtime (P1.0 R-18): wait until two reads of the window agree.
+   */
+  async function settled(mode: Mode) {
+    if (mode.name !== "direct") return;
     const accounts = [mode.budget.accounts.checking, mode.budget.accounts.mortgage];
     const read = async () => JSON.stringify(await Promise.all(accounts.map((accountId) => mode.transport.listTransactionsForSync({ accountId, startDate: "2024-01-15", endDate: "2024-03-15" }))));
-    // A Direct delete resolves before it lands, and a write started inside that window deadlocks the
-    // runtime (P1.0 R-18): wait until two reads agree after each delete.
-    const settle = async () => {
-      if (mode.name !== "direct") return;
-      let last = await read();
-      for (let i = 0; i < 50; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        const next = await read();
-        if (next === last) return;
-        last = next;
-      }
-    };
+    let last = await read();
+    for (let i = 0; i < 50; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const next = await read();
+      if (next === last) return;
+      last = next;
+    }
+  }
+
+  async function clearWindow(mode: Mode) {
+    const accounts = [mode.budget.accounts.checking, mode.budget.accounts.mortgage];
+    const settle = () => settled(mode);
     // Never write while the budget just opened is still settling (R-18).
     await settle();
     for (const accountId of accounts) {
@@ -193,11 +198,14 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
     const offBudget = new Set(directory.accounts.filter((a) => a.offBudget).map((a) => a.id));
 
     async function preview() {
+      return (await previewResult()).postings;
+    }
+    async function previewResult() {
       const snapshots = await readMatchingHistory(transport, { accountIds: [budget.accounts.checking, budget.accounts.mortgage], from: "2023-12-01", to: "2024-03-31" });
       const canVerifyTransferLinks = await transport.canVerifyTransferLinks!({ accountId: budget.accounts.mortgage, sinceDate: "2023-12-01" });
       const result = previewDebtPostings(db, debtId, { from: "2024-02-01", to: "2024-02-29", today: "2024-03-15", snapshots, accountDirectory: directory, transferPayees, capabilities: { canRestructure: true, canVerifyTransferLinks } });
       if (!result.ok) throw new Error(JSON.stringify(result));
-      return result.postings;
+      return result;
     }
     async function apply(posting: PostingView) {
       Object.assign(timing, { reads: 0, readMs: 0, rows: 0, writes: 0 });
@@ -249,7 +257,7 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
     async function ids(accountId: string): Promise<string[]> {
       return [...indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: "2024-01-15", endDate: "2024-03-15" })).keys()].sort();
     }
-    return { lender, preview, apply, parity, undo, snap, ids, transferPayees };
+    return { lender, preview, previewResult, apply, parity, undo, snap, ids, transferPayees };
   }
 
   it("Pattern A with a lender feed: restructure then link; one liability-side row; live preview parity", async () => {
@@ -282,6 +290,44 @@ live("RD-084 P1.6 manual apply on disposable budgets", () => {
       observed[mode.name].patternB = (await s.parity(charge, applied)).map((r) => [r.categoryName, r.amountMinor]);
     }
     expect(observed.http.patternB).toEqual(observed.direct.patternB);
+  });
+
+  it("binding: a Bench interest charge deleted in Actual stops counting, and adding it again is Review", async () => {
+    for (const mode of modes) {
+      const s = await setup(mode, "separate-interest");
+      const [charge] = (await s.preview()).filter((p) => p.postingKind === "interest-charge");
+      const applied = await s.apply(charge);
+      expect(applied.status).toBe("applied");
+      await mode.transport.deleteTransactionForSync({ transactionId: applied.actualIds![0] });
+      await settled(mode);
+      const result = await s.previewResult();
+      expect(result.changedInActual).toEqual([expect.objectContaining({ postingId: charge.id, detail: "the charge Bench added is no longer in Actual" })]);
+      const [again] = result.postings.filter((p) => p.postingKind === "interest-charge" && p.status === "proposed");
+      expect(again).toMatchObject({ classification: "review", reasons: expect.arrayContaining([expect.objectContaining({ code: "removed-in-actual" })]) });
+      observed[mode.name].bindingCharge = result.changedInActual.map((c) => c.detail);
+    }
+    expect(observed.http.bindingCharge).toEqual(observed.direct.bindingCharge);
+  });
+
+  it("binding: the lender's row deleted in Actual after Bench linked it stops counting", async () => {
+    for (const mode of modes) {
+      const s = await setup(mode, "embedded-interest");
+      await mode.transport.createTransactionsForSync([{ accountId: mode.budget.accounts.checking, date: "2024-02-01", amount: -242915, payeeId: s.lender, importedId: `p16:bind:bank:${mode.name}:${run}`, cleared: true }]);
+      const [split] = (await s.preview()).filter((p) => p.postingKind === "repayment-split");
+      if (split.output.kind !== "restructure") throw new Error("restructure");
+      const principal = -split.output.expectedPostState.children[0].amountMinor;
+      await mode.transport.createTransactionsForSync([{ accountId: mode.budget.accounts.mortgage, date: "2024-02-01", amount: principal, payeeId: s.lender, importedId: `p16:bind:lender:${mode.name}:${run}`, notes: "lender import", cleared: true }]);
+      expect((await s.apply(split)).status).toBe("applied");
+      const [link] = (await s.preview()).filter((p) => p.postingKind === "repayment-link");
+      expect((await s.apply(link)).status).toBe("applied");
+      if (link.output.kind !== "link") throw new Error("link");
+      await mode.transport.deleteTransactionForSync({ transactionId: link.output.counterpartBefore.id });
+      await settled(mode);
+      const result = await s.previewResult();
+      expect(result.changedInActual.map((c) => c.postingId)).toContain(link.id);
+      observed[mode.name].bindingLink = result.changedInActual.filter((c) => c.postingId === link.id).map((c) => c.detail);
+    }
+    expect(observed.http.bindingLink).toEqual(observed.direct.bindingLink);
   });
 
   const without = (row: RowSnapshot | null, ...keys: (keyof RowSnapshot)[]) => (row ? Object.fromEntries(Object.entries(row).filter(([k]) => !keys.includes(k as keyof RowSnapshot))) : null);

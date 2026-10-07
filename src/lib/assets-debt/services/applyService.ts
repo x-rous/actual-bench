@@ -40,6 +40,11 @@ export type ExecutorContext = {
   offBudgetAccountIds: ReadonlySet<string>;
   liabilityAccountId: string;
   now?: () => string;
+  /**
+   * In a bulk apply on a connection with a batch write: new loan-side rows to mark cleared are
+   * collected here and marked together at the end, instead of one settled write per split.
+   */
+  clearLater?: string[];
 };
 
 export type ExecutorOutcome =
@@ -251,10 +256,12 @@ async function applyRestructure(output: Extract<PostingOutputSnapshot, { kind: "
       replaceCounterpart: output.replacesCounterpart
         ? { expected: toRowState(output.replacesCounterpart), sourceAccountTransferPayeeId: ctx.transferPayeeByAccount[output.before.accountId] ?? "" }
         : null,
+      deferClearing: !!ctx.clearLater,
     });
   } catch (error) {
     return writeError("restructure", error);
   }
+  if (result.clearLater) ctx.clearLater?.push(result.clearLater);
   let liabilityRows: SyncSourceTransaction[] = [];
   try {
     liabilityRows = await read(ctx.transport, ctx.liabilityAccountId, output.before.date, output.before.date);

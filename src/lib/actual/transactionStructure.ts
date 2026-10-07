@@ -113,11 +113,16 @@ export type RestructureSplitInput = {
   children: SplitChildInput[];
   /** Restructuring an existing transfer: its untouched Actual-made counterpart, which Actual deletes. */
   replaceCounterpart?: ReplacedCounterpart | null;
+  /**
+   * Leave marking the new loan-side row cleared to the caller (`clearLater`), so a run of splits
+   * marks them all in one batch write instead of one settled write each.
+   */
+  deferClearing?: boolean;
 };
 
 export type StructureChild = { id: string; amount: number; categoryId: string | null; payeeId: string | null; notes: string | null; transferId: string | null };
 
-export type RestructureSplitResult = { parentId: string; parentAmount: number; children: StructureChild[] };
+export type RestructureSplitResult = { parentId: string; parentAmount: number; children: StructureChild[]; /** The new loan-side row to mark cleared, when that was deferred. */ clearLater?: string | null };
 
 export type LinkTransferInput = {
   source: TransactionPreflight;
@@ -278,9 +283,10 @@ export function stateDifferences(expected: RowState, now: RowState | null, ignor
 /**
  * Why a transfer's counterpart is not exactly as Actual made it. Restructuring
  * the transfer deletes the counterpart and undoing re-creates it from the
- * source, so only an untouched one can come back the same: not cleared or
- * reconciled, no imported fields, no category, the mirrored amount, date and
- * notes, and the source account's transfer payee.
+ * source, so only an untouched one can come back the same: not reconciled, no
+ * imported fields, no category, the mirrored amount, date and notes, and the
+ * source account's transfer payee. A cleared one is fine: Bench marks the row
+ * Actual makes in its place cleared again, on the split and on the undo.
  */
 export function untouchedCounterpartProblems(
   source: Pick<RowState, "id" | "amount" | "date" | "notes">,
@@ -290,7 +296,7 @@ export function untouchedCounterpartProblems(
   const problems: string[] = [];
   if (counterpart.transferId !== source.id) problems.push("it is not linked to this transaction");
   if (counterpart.reconciled) problems.push("it is reconciled");
-  if (counterpart.cleared) problems.push("it is cleared");
+  // Cleared is kept (owner decision 2026-10-07): the row Actual makes next is marked cleared again.
   if (counterpart.importedId || counterpart.importedPayee) problems.push("it was imported (for example from the lender)");
   if (counterpart.categoryId) problems.push("it has a category");
   if (counterpart.isParent || counterpart.isChild) problems.push("it is split");
@@ -353,8 +359,20 @@ export async function restructureAsSplit(primitives: StructurePrimitives, input:
     { accountIds: [...new Set([input.accountId, ...(replaced ? [replaced.expected.accountId] : [])])], sinceDate: input.expected.date }
   );
 
-  const after = await findRaw(primitives, input.accountId, input.transactionId, input.expected.date);
+  let after = await findRaw(primitives, input.accountId, input.transactionId, input.expected.date);
   if (!after) throw new TransactionStructureRefusedError("The restructured transaction could not be read back.");
+  // A cleared loan-side row stays cleared: the one Actual made for the principal is marked cleared too.
+  if (replaced?.expected.cleared) {
+    const principal = (after.row.subtransactions ?? []).find((c) => str(c.transfer_id));
+    const made = principal ? str(principal.transfer_id) : null;
+    if (made && input.deferClearing) {
+      return { parentId: after.row.id, parentAmount: minor(after.row.amount), children: (after.row.subtransactions ?? []).map(childOf), clearLater: made };
+    }
+    if (made) {
+      await primitives.update(made, { cleared: true }, { accountIds: [replaced.expected.accountId], sinceDate: input.expected.date });
+      after = (await findRaw(primitives, input.accountId, input.transactionId, input.expected.date)) ?? after;
+    }
+  }
   return { parentId: after.row.id, parentAmount: minor(after.row.amount), children: (after.row.subtransactions ?? []).map(childOf) };
 }
 
@@ -518,7 +536,12 @@ export async function restoreSplit(primitives: StructurePrimitives, input: Resto
   const result: RestoreSplitResult = { parentId: input.parent.id, differences, leftovers: [...new Set(leftovers)] };
   if (recreatedSpec) {
     const newId = now?.transferId ?? null;
-    const recreated = newId ? await readState(primitives, recreatedSpec.accountId, newId, input.parent.date) : null;
+    let recreated = newId ? await readState(primitives, recreatedSpec.accountId, newId, input.parent.date) : null;
+    // It was cleared before the split: Actual re-creates it uncleared, so mark it cleared again.
+    if (newId && recreated && recreatedSpec.expected.cleared && !recreated.cleared) {
+      await primitives.update(newId, { cleared: true }, { accountIds: [recreatedSpec.accountId], sinceDate: input.parent.date });
+      recreated = await readState(primitives, recreatedSpec.accountId, newId, input.parent.date);
+    }
     result.recreated = {
       id: newId,
       differences: recreated ? stateDifferences({ ...recreatedSpec.expected, transferId: input.parent.id }, recreated, ["id"]) : ["the counterpart was not re-created"],

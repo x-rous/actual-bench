@@ -10,7 +10,7 @@ import { newSimulation, newTracking, statesToSaveInput, type SimulationState, ty
 import { DAILY_MONTHLY_CHARGE, offsetOf, project, sim } from "../lib/simulatorTestKit";
 import { ProjectionRunnerContext } from "../lib/useLiveProjection";
 import { DebtListView } from "./AssetsDebtViews";
-import { DebtList } from "./DebtList";
+import { DebtList, LoansSummary } from "./DebtList";
 import { LoanView, NewLoanView } from "./LoanPages";
 import { SAVE_BOUNDARY } from "./saveBoundary";
 import { ScheduleTable } from "./simulator/ScheduleTable";
@@ -152,7 +152,8 @@ describe("Loans & Debt list", () => {
     wrap(<DebtList debts={[summary(1, { blocked: { code: "unsupported-config", message: "newer" } }), summary(2), summary(3, { status: "draft" })]} />);
     const [blocked, fine, draft] = screen.getAllByRole("link");
     expect(blocked).toHaveTextContent("Blocked: configured by a newer version of Actual Bench");
-    expect(fine).toHaveTextContent("Active");
+    // A plain active loan needs no status chip.
+    expect(fine).not.toHaveTextContent("Blocked");
     expect(fine).toHaveAttribute("href", "/loans/d2");
     expect(draft).toHaveTextContent("Draft");
   });
@@ -163,14 +164,26 @@ describe("Loans & Debt list", () => {
     wrap(<DebtList debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null })]} />);
     const card = screen.getByRole("link");
     await waitFor(() => expect(card).toHaveTextContent("2 of 3 payments"));
-    expect(card).toHaveTextContent("remaining (calculated)");
+    expect(card).toHaveTextContent("owed of");
+    expect(card).toHaveTextContent("(calculated)");
     expect(card).toHaveTextContent("200.00");
     expect(card).not.toHaveTextContent("AUD");
     expect(card).toHaveTextContent("80% paid");
     expect(card).toHaveTextContent("2 of 3 payments");
-    expect(card).toHaveTextContent("Payments left1");
-    expect(card).toHaveTextContent("Interest paid so far180.00");
+    expect(card).toHaveTextContent("Left1 payment");
+    expect(card).toHaveTextContent("Interest paid180.00");
     expect(within(card).getByRole("img", { name: "80% of the principal paid" })).toBeInTheDocument();
+  });
+
+  it("the summary above the cards totals what the active loans owe and what falls due in the next 30 days", async () => {
+    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    const event = (date: string, balanceAfterMinor: number) => ({ date, eventType: "repayment", cashMovementMinor: -50_000, principalMovementMinor: 0, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: balanceAfterMinor + 50_000, balanceAfterMinor });
+    mocked.getSchedule.mockResolvedValue({ ok: true, events: [event("2020-02-01", 60_000), event(soon, 10_000), event("2999-04-01", 0)] } as never);
+    wrap(<LoansSummary debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(2, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(3, { paidOffOn: "2021-01-01" })]} />);
+    const totals = screen.getByLabelText("All loans");
+    expect(totals).toHaveTextContent("Active loans2");
+    await waitFor(() => expect(totals).toHaveTextContent("Owed1,200.00"));
+    expect(totals).toHaveTextContent("Due in the next 30 days1,000.00(2 repayments)");
   });
 
   it("says what each loan needs, in words, next to its status", () => {

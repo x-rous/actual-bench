@@ -109,6 +109,12 @@ export function planReconciliationAdjustment(ctx: PlanningContext): PlannedPosti
   const actualMagnitude = rec.actualMagnitudeMinor;
   const lenderMagnitude = rec.observation.principalMinor + (rec.observation.accruedInterestMinor ?? 0);
   const categoryId = ctx.parameters.adjustmentCategoryId ?? null;
+  // "Not now" sticks (owner decision 2026-10-07): the same difference against the same statement is
+  // not proposed again; a new statement or a different amount is.
+  const difference = lenderMagnitude - actualMagnitude;
+  const declined = ctx.postings.some((p) => p.postingKind === "reconciliation-adjustment" && p.periodKey === rec.comparisonDate && p.status === "declined"
+    && p.outputSnapshot.kind === "create" && p.outputSnapshot.components[0]?.amountMinor === difference);
+  if (declined) return null;
   return adjustmentPosting(ctx, {
     postingKind: "reconciliation-adjustment",
     date: rec.comparisonDate,
@@ -154,6 +160,40 @@ export function planFeeCharges(ctx: PlanningContext): PlannedPosting[] {
     }));
   }
   return out;
+}
+
+/**
+ * "Unsplit" a repayment already split in Actual that Bench recorded (owner decision 2026-10-07): the
+ * split lines are deleted and the payment becomes one transfer to the loan, so Actual makes the
+ * loan-side row for the whole amount; Bench then proposes the split again. Works from the split as
+ * Actual holds it now; a Review proposal the user applies.
+ */
+export function planUnsplit(ctx: PlanningContext, original: ExistingPostingSummary): PlannedPosting {
+  const output = original.outputSnapshot;
+  if (output.kind !== "claim" || !output.recordedSplit) throw new Error("Only a split already in Actual can be unsplit here");
+  const head = { format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION } as const;
+  const liabilityId = ctx.debt.liabilityAccountId ?? "";
+  const { parent: before, children } = output.recordedSplit;
+  const parent: RowSnapshot = { ...before, isParent: true, childCount: children.length };
+  const toLoan = ctx.transferPayeeByAccount[liabilityId] ?? null;
+  const back = ctx.transferPayeeByAccount[before.accountId] ?? null;
+  const blockers: PostingReason[] = [];
+  if (!ctx.canRestructure) blockers.push({ code: "restore-unavailable", text: "This connection cannot change existing transactions. Use a supported Actual Bench connection." });
+  if (!toLoan || !back) blockers.push(REASONS.missingAccount);
+  if (before.reconciled) blockers.push(REASONS.reconciledRow);
+  const sameStatus = budgetStatus(ctx, before.accountId) === budgetStatus(ctx, liabilityId);
+  const restoreTo: RowSnapshot = { ...before, isParent: false, childCount: 0, payeeId: toLoan, categoryId: sameStatus ? null : ctx.debt.loanPaymentCategoryId, transferId: null };
+  const recreated: RowSnapshot = {
+    id: "", accountId: liabilityId, date: before.date, amountMinor: -before.amountMinor, payeeId: back, payeeName: null, categoryId: null, notes: before.notes,
+    cleared: false, reconciled: false, importedId: null, importedPayee: null, transferId: before.id, isParent: false, isChild: false, parentId: null, childCount: 0,
+  };
+  const period = { key: original.id, from: ctx.today, to: ctx.today, chargeDates: [] as string[] };
+  return finalize(ctx, {
+    postingKind: "reversal", periodKey: original.id, generation: 1, reversalOf: original.id, engineVersions: {}, shape: "restructure", marker: null,
+    inputSnapshot: inputSnapshot(ctx, period, [parent, ...children], { reversalOf: original.id }),
+    outputSnapshot: { ...head, kind: "restore-split", parent, children, counterpartAccountIds: [liabilityId], restoreTo, recreatedCounterpart: recreated, closing: null },
+    policy: { blockers, reviews: [{ code: "unsplit", text: "Puts the payment back as one transfer to the loan for the whole amount; Bench then proposes the split again." }] },
+  });
 }
 
 /**

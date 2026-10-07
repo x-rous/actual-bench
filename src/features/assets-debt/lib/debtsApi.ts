@@ -67,8 +67,11 @@ export const recordExtraPayment = (id: string, body: { actualTransactionId: stri
   request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/extra-payments`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.debt);
 
 /** Undo a recorded extra payment (unlink and remove its Terms & Schedule event). */
-export const removeExtraPayment = (id: string, transactionId: string) =>
-  request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/extra-payments/${encodeURIComponent(transactionId)}`, { method: "DELETE" }).then((r) => r.debt);
+export const removeExtraPayment = (id: string, transactionId: string, date: string) =>
+  request<{ debt: DebtDetail }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/extra-payments/${encodeURIComponent(transactionId)}?date=${encodeURIComponent(date)}`, { method: "DELETE" }).then((r) => r.debt);
+/** Count a payment the user marked "not an extra payment" after all. */
+export const countExtraPayment = (id: string, transactionId: string) =>
+  request<{ ok: true }>(`/api/assets-debt/debts/${encodeURIComponent(id)}/extra-payments/${encodeURIComponent(transactionId)}`, { method: "PATCH" });
 
 export const archiveDebt = (id: string) => request<{ debt?: DebtDetail } | undefined>(`/api/assets-debt/debts/${encodeURIComponent(id)}`, { method: "DELETE" });
 

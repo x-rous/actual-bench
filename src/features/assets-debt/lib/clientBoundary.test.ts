@@ -23,6 +23,7 @@ const CLIENT_SAFE_SERVICES = [
   "@/lib/assets-debt/services/postingErrors",
   "@/lib/assets-debt/services/recovery",
   "@/lib/assets-debt/services/adjustSplit",
+  "@/lib/assets-debt/services/repaymentAlignment",
 ];
 
 function files(dir: string): string[] {

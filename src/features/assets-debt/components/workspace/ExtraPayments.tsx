@@ -6,16 +6,15 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import type { UnscheduledPayment } from "@/lib/assets-debt/services/extraPaymentService";
-import { recordExtraPayment, removeExtraPayment } from "../../lib/debtsApi";
+import { countExtraPayment, recordExtraPayment, removeExtraPayment } from "../../lib/debtsApi";
 import { formatAmount } from "../../lib/money";
 
 /**
- * Payments into the loan account that are not scheduled repayments (owner decision 2026-10-05).
- * Each can be recorded as an extra payment: the Actual transaction is linked to the loan and the
- * extra payment is added to Terms & Schedule with its own date and amount (a new revision), after a
- * confirmation. Recorded ones say whether Terms & Schedule still has them, and when the transaction
- * was changed in Actual after it was recorded, offer to move the extra payment to match. Nothing is
- * written to Actual.
+ * Payments into the loan account that are not scheduled repayments (owner decisions 2026-10-05,
+ * 2026-10-07). They count as extra payments on their own: each refresh records new ones in Terms &
+ * Schedule and follows a date or amount changed in Actual. Three states only: counted, not counted
+ * ("Not an extra payment", or taken out of Terms & Schedule by hand; "Count it" undoes either),
+ * and money taken out of the loan account. Nothing is written to Actual.
  */
 
 const shortDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" });
@@ -30,74 +29,78 @@ export function ExtraPayments({ debtId, payments, digits, scheduleDirty, onChang
   };
   const record = useMutation({
     mutationFn: (p: UnscheduledPayment) => recordExtraPayment(debtId, { actualTransactionId: p.id, date: p.date, amountMinor: p.amountMinor }),
-    onSuccess: (_detail, p) => { toast.success(p.changed ? "Terms & Schedule now has the extra payment as it is in Actual" : "Recorded as an extra payment in Terms & Schedule"); done(); },
+    onSuccess: () => { toast.success("Counted as an extra payment in Terms & Schedule"); done(); },
     onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
   });
   const remove = useMutation({
-    mutationFn: (p: UnscheduledPayment) => removeExtraPayment(debtId, p.id),
-    onSuccess: () => { toast.success("Extra payment removed from Terms & Schedule"); done(); },
+    mutationFn: (p: UnscheduledPayment) => removeExtraPayment(debtId, p.id, p.date),
+    onSuccess: () => { toast.success("Not counted as an extra payment"); done(); },
+    onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
+  });
+  const count = useMutation({
+    mutationFn: (p: UnscheduledPayment) => countExtraPayment(debtId, p.id),
+    onSuccess: () => { toast.success("It will count as an extra payment"); done(); },
     onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
   });
   if (!payments.length) return null;
   const money = (minor: number) => formatAmount(minor, digits);
-  const askRecord = (p: UnscheduledPayment) => setConfirm({
-    title: "Record as an extra payment?",
-    message: `Terms & Schedule gets a one-off extra payment of ${money(p.amountMinor)} on ${shortDay(p.date)}, and this transaction is linked to the loan so it is never taken for a scheduled repayment. The loan is saved as a new revision. Nothing in Actual changes.`,
-    destructiveLabel: "Record extra payment",
-    destructive: false,
-    onConfirm: () => record.mutate(p),
-  });
   const askRemove = (p: UnscheduledPayment) => setConfirm({
-    title: "Remove this extra payment?",
-    message: `The link to this transaction is removed, and the extra payment of ${money(p.amountMinor)} on ${shortDay(p.date)} is taken out of Terms & Schedule (a new revision). Nothing in Actual changes.`,
-    destructiveLabel: "Remove",
+    title: "Not an extra payment?",
+    message: `${money(p.amountMinor)} on ${shortDay(p.date)} stops counting as an extra payment${p.recorded ? " and is taken out of Terms & Schedule (a new revision)" : ""}, and Bench will not count it again on its own. Nothing in Actual changes.`,
+    destructiveLabel: "Not an extra payment",
     onConfirm: () => remove.mutate(p),
   });
-  const askUpdate = (p: UnscheduledPayment) => setConfirm({
-    title: "Update the extra payment?",
-    message: `Terms & Schedule has this extra payment as ${money(p.recordedAs!.amountMinor)} on ${shortDay(p.recordedAs!.date)}. It is changed to ${money(p.amountMinor)} on ${shortDay(p.date)}, as the transaction is now in Actual. The loan is saved as a new revision. Nothing in Actual changes.`,
-    destructiveLabel: "Update Terms & Schedule",
-    destructive: false,
-    onConfirm: () => record.mutate(p),
-  });
-  const busy = record.isPending || remove.isPending;
+  const busy = record.isPending || remove.isPending || count.isPending;
+  const saveFirst = scheduleDirty ? "Save or discard your changes on Terms & Schedule first" : undefined;
+  // Waiting for Terms & Schedule: a new one not recorded yet, or one changed in Actual not followed yet.
+  const pendingNote = scheduleDirty ? "Terms & Schedule gets it once you save your changes there." : "Terms & Schedule gets it on the next refresh.";
+  const chip = (tone: "ok" | "muted" | "warn", text: string, title?: string) => (
+    <span title={title} className={tone === "ok" ? "rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : tone === "warn" ? "rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300" : "rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"}>{text}</span>
+  );
   return (
     <section aria-labelledby="extra-payments" className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <h2 id="extra-payments" className="text-sm font-semibold">Payments not in the schedule</h2>
-        <p className="text-xs text-muted-foreground">Money paid into, or taken out of, the loan account that the schedule does not explain, such as an extra payment.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="extra-payments" className="text-sm font-semibold" title="Money paid into, or taken out of, the loan account that the schedule does not explain, such as an extra payment.">Payments not in the schedule</h2>
+        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{payments.length}</span>
       </div>
-      <ul className="flex flex-col divide-y divide-border/60">
-        {payments.map((p) => (
-          <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-xs">
-            <span className="w-20 tabular-nums">{shortDay(p.date)}</span>
-            <span className="w-28 text-right font-semibold tabular-nums">{p.direction === "out" ? `-${money(p.amountMinor)}` : money(p.amountMinor)}</span>
-            <span className="min-w-40 flex-1 truncate text-muted-foreground">{[p.payeeName, p.notes].filter(Boolean).join(" · ")}</span>
-            {p.direction === "out" ? (
-              <span className="text-amber-700 dark:text-amber-300">Taken out of the loan account: this adds to what you owe. If it is a transfer entered the wrong way round, fix it in Actual.</span>
-            ) : !p.recorded ? (
-              <Button type="button" size="sm" className="h-7" disabled={busy || scheduleDirty} title={scheduleDirty ? "Save or discard your changes on Terms & Schedule first" : undefined} onClick={() => askRecord(p)}>Record as extra payment</Button>
-            ) : p.changed ? (
-              <>
-                <span className="text-amber-700 dark:text-amber-300">Changed in Actual. Terms & Schedule still has {money(p.recordedAs!.amountMinor)} on {shortDay(p.recordedAs!.date)}</span>
-                <Button type="button" size="sm" className="h-7" disabled={busy || scheduleDirty} title={scheduleDirty ? "Save or discard your changes on Terms & Schedule first" : undefined} onClick={() => askUpdate(p)}>Update Terms & Schedule</Button>
-                <Button type="button" size="sm" variant="ghost" className="h-7" disabled={busy || scheduleDirty} onClick={() => askRemove(p)}>Remove</Button>
-              </>
-            ) : p.inSchedule ? (
-              <>
-                <span className="text-emerald-700 dark:text-emerald-300">✓ Extra payment in Terms & Schedule</span>
-                <Button type="button" size="sm" variant="ghost" className="h-7" disabled={busy || scheduleDirty} onClick={() => askRemove(p)}>Remove</Button>
-              </>
-            ) : (
-              <>
-                <span className="text-amber-700 dark:text-amber-300">Recorded, but Terms & Schedule has no extra payment with this date and amount</span>
-                <Button type="button" size="sm" variant="outline" className="h-7" disabled={busy || scheduleDirty} onClick={() => record.mutate(p)}>Add it again</Button>
-                <Button type="button" size="sm" variant="ghost" className="h-7" disabled={busy || scheduleDirty} onClick={() => askRemove(p)}>Remove</Button>
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-left text-muted-foreground">
+            <tr className="border-b border-border"><th scope="col" className="py-1.5 pr-3 font-normal">Date</th><th scope="col" className="py-1.5 pr-3 font-normal">From</th><th scope="col" className="py-1.5 pr-3 text-right font-normal">Amount</th><th scope="col" className="py-1.5 pr-3 font-normal">Status</th><th scope="col" className="py-1.5 font-normal"><span className="sr-only">Actions</span></th></tr>
+          </thead>
+          <tbody>
+            {payments.map((p) => {
+              const notCounted = p.dismissed || (p.recorded && !p.inSchedule && !p.changed);
+              return (
+                <tr key={p.id} className="border-b border-border/60 last:border-0">
+                  <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{shortDay(p.date)}</td>
+                  <td className="max-w-80 truncate py-2 pr-3 text-muted-foreground">{[p.payeeName, p.notes].filter(Boolean).join(" · ")}</td>
+                  <td className="whitespace-nowrap py-2 pr-3 text-right font-semibold tabular-nums">{p.direction === "out" ? `-${money(p.amountMinor)}` : money(p.amountMinor)}</td>
+                  <td className="py-2 pr-3">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      {p.direction === "out"
+                        ? chip("warn", "Taken out", "Taken out of the loan account: this adds to what you owe. If it is a transfer entered the wrong way round, fix it in Actual.")
+                        : p.paysOff
+                          ? chip("warn", "Pays the loan off", "At least what the loan owed that day, so it pays the loan off rather than being an extra payment. It is not the full payoff (the principal plus the interest to that day); check the amount in Actual.")
+                          : notCounted
+                            ? chip("muted", p.dismissed ? "Not counted" : "Not counted: taken out of Terms & Schedule")
+                            : chip("ok", "Extra payment")}
+                      {!notCounted && p.direction !== "out" && !p.paysOff && (!p.recorded || p.changed) ? <span className="text-[11px] text-muted-foreground">{p.changed ? `Changed in Actual. ${pendingNote}` : pendingNote}</span> : null}
+                    </span>
+                  </td>
+                  <td className="py-2 text-right">
+                    {p.direction === "out" || p.paysOff ? null : notCounted ? (
+                      <Button type="button" size="sm" variant="outline" className="h-7" disabled={busy || (!p.dismissed && scheduleDirty)} title={p.dismissed ? undefined : saveFirst} onClick={() => (p.dismissed ? count.mutate(p) : record.mutate(p))}>Count it</Button>
+                    ) : (
+                      <Button type="button" size="sm" variant="ghost" className="h-7" disabled={busy || (p.recorded && scheduleDirty)} title={p.recorded ? saveFirst : undefined} onClick={() => askRemove(p)}>Not an extra payment</Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)} state={confirm} />
     </section>
   );

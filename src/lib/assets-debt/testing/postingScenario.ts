@@ -23,6 +23,7 @@ import { transportFor, type HarnessMode } from "./transportHarness";
 export const ACCOUNTS = {
   checking: "acc-checking",
   mortgage: "acc-mortgage",
+  offset: "acc-offset",
 };
 export const CATEGORIES = { loan: "cat-loan", interest: "cat-interest", fees: "cat-fees", adjust: "cat-adjust" };
 export const LENDER = "p-lender";
@@ -40,6 +41,8 @@ export type ScenarioOptions = {
   configV3?: { businessDays?: unknown; lenderStatement?: unknown };
   /** The repayment rule matches any payee (a payment that is already a transfer has the transfer payee). */
   repaymentAnyPayee?: boolean;
+  /** An offset account that funds scheduled repayments, from a balance entered in Bench. */
+  offsetFunding?: { date: string; balanceMinor: number };
 };
 
 export type Scenario = Awaited<ReturnType<typeof createScenario>>;
@@ -56,6 +59,7 @@ export function createScenario(options: ScenarioOptions) {
     accounts: [
       { id: ACCOUNTS.checking, name: "Everyday" },
       { id: ACCOUNTS.mortgage, name: "Home loan", offbudget: offBudget },
+      ...(options.offsetFunding ? [{ id: ACCOUNTS.offset, name: "Offset" }] : []),
     ],
     payees: [{ id: LENDER, name: "Home Lender" }],
     categories: [
@@ -72,6 +76,7 @@ export function createScenario(options: ScenarioOptions) {
     accounts: [
       { id: ACCOUNTS.checking, name: "Everyday", offBudget: false, closed: false },
       { id: ACCOUNTS.mortgage, name: "Home loan", offBudget, closed: false },
+      ...(options.offsetFunding ? [{ id: ACCOUNTS.offset, name: "Offset", offBudget: false, closed: false }] : []),
     ],
     categories: Object.entries(CATEGORIES).map(([key, id]) => ({ id, name: key, groupName: "Bills", isIncome: false, hidden: false })),
   };
@@ -97,6 +102,7 @@ export function createScenario(options: ScenarioOptions) {
     loanPaymentCategoryId: options.loanPaymentCategoryId === undefined ? CATEGORIES.loan : options.loanPaymentCategoryId,
     lenderChargeGraceDays: 3,
     config,
+    ...(options.offsetFunding ? { offsets: [{ actualAccountId: ACCOUNTS.offset, effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10_000, balanceBasis: "total" as const, capMinor: null, useActualBalance: false, fundScheduledRepayments: true }], assumptions: [{ kind: "offset-balance" as const, effectiveFrom: options.offsetFunding.date, recurrence: null, amountMinor: options.offsetFunding.balanceMinor, feeTreatment: null, offsetAccountId: ACCOUNTS.offset, note: null }] } : {}),
   }), {
     budgetSyncId: "budget-1",
     accounts: directory.accounts,
@@ -131,7 +137,8 @@ export function createScenario(options: ScenarioOptions) {
     const result = previewDebtPostings(db, debtId, {
       from: window.from, to: window.to, today: window.today ?? window.to, snapshots,
       accountDirectory: { ...read, accounts: read.accounts.length ? read.accounts : directory.accounts },
-      transferPayees, capabilities: { canRestructure: true, canVerifyTransferLinks }, ...extra,
+      transferPayees, capabilities: { canRestructure: true, canVerifyTransferLinks },
+      ...extra,
     }, "2024-06-01T00:00:00.000Z");
     if (!result.ok) throw new Error(`preview failed: ${JSON.stringify(result)}`);
     return result;

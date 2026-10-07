@@ -117,5 +117,15 @@ describe("an extra payment dated before a repayment that was applied later", () 
     expect(after.asPaidFrom).toBe("2024-01-29");
     expect(after.comparison.modelMinor).toBe((before.comparison.modelMinor ?? 0) - 2_000_000);
   });
-});
 
+  it("payments found in Actual count before they are applied: long after the term, Calculated is the balance after the last one, not the schedule's zero", async () => {
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    s.seedPayment("2024-01-29");
+    const result = await s.preview({ from: "2024-01-01", to: "2060-01-01", today: "2060-01-01" }, { comparison: { comparisonDate: "2060-01-01", actualBalanceMinor: 0 } });
+    const [split] = byKind(result.postings, "repayment-split");
+    if (split.output.kind !== "restructure" || !split.output.closing) throw new Error("closing");
+    expect(split.status).toBe("proposed");
+    expect(result.reconciliation?.scheduledMinor).toBe(0);
+    expect(result.reconciliation?.comparison.modelMinor).toBe(split.output.closing.principalMinor);
+  });
+});

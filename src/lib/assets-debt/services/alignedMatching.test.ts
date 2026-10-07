@@ -47,7 +47,7 @@ describe("repayments lined up across the loan", () => {
     expect(byKind((await s.preview(window)).postings, "repayment-split").map((p) => p.periodKey)).toEqual(["2024-02-01"]);
   });
 
-  it("a split worked out while an earlier repayment was missing is flagged to redo once that repayment turns up", async () => {
+  it("a split worked out while an earlier repayment was missing is listed to split again once that repayment turns up", async () => {
     const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
     // February is missed; March pays enough to cover two months of interest.
     const loanSide = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-03-01", amount: 500_000, payee: s.fake.transferPayeeId(ACCOUNTS.checking) });
@@ -60,7 +60,7 @@ describe("repayments lined up across the loan", () => {
     // February's payment is entered in Actual afterwards.
     s.seedPayment("2024-01-30");
     const after = await s.preview(window);
-    expect(after.notices.find((n) => n.code === "redo-after-found")).toMatchObject({ periodKey: "2024-03-01", text: expect.stringMatching(/counted the repayment due 2024-02-01 as not paid, but it has been found since/) });
+    expect(after.notices.find((n) => n.code === "split-again")).toMatchObject({ periodKey: "2024-03-01", dueDates: ["2024-03-01"], text: expect.stringMatching(/Payments before this one changed since it was split .* Undo it to split again\./) });
     expect(byKind(after.postings, "repayment-split").some((p) => p.periodKey === "2024-02-01" && p.status === "proposed")).toBe(true);
   });
 

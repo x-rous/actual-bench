@@ -84,3 +84,21 @@ describe("applied interest (T291)", () => {
     expect(allocateObservedRepayments({ model: MODEL, opening, repayments: [{ dueDate: "2024-02-01", paidDate: "2024-01-21", amountMinor: 100_000, appliedInterestMinor: -1 }] }).ok).toBe(false);
   });
 });
+
+describe("extra payments in the allocation (owner decision 2026-10-07)", () => {
+  it("are all principal; the interest built up until then goes to the next repayment, on the lower balance", () => {
+    for (const allocation of ["as-calculated", "accrued-to-due-date"] as const) {
+      const withExtra = allocateObservedRepayments({ model: MODEL, opening, allocation, repayments: [
+        { dueDate: "2024-01-15", paidDate: "2024-01-15", amountMinor: 1_000_000, extra: true },
+        { dueDate: "2024-02-01", paidDate: "2024-02-01", amountMinor: 500_000 },
+      ] });
+      const without = allocateObservedRepayments({ model: MODEL, opening, allocation, repayments: [{ dueDate: "2024-02-01", paidDate: "2024-02-01", amountMinor: 500_000 }] });
+      if (!withExtra.ok || !without.ok) throw new Error("allocation");
+      const [extra, repayment] = withExtra.rows;
+      expect(extra).toMatchObject({ interestMinor: 0, principalMinor: 1_000_000 });
+      // Less interest than without the extra (half the month on a lower balance), but not zero.
+      expect(repayment.interestMinor).toBeLessThan(without.rows[0].interestMinor);
+      expect(repayment.interestMinor).toBeGreaterThan(0);
+    }
+  });
+});

@@ -4,6 +4,7 @@ import { insertDebtTransactionLink, listDebtTransactionLinks } from "@/lib/app-d
 import { listSubjectPostings } from "@/lib/app-db/financialPostingRepository";
 import type { DebtAssumptionRecord, SqliteDatabase } from "@/lib/app-db/types";
 import { getDebtDetail, saveBaselineAssumptions, type DebtDetail } from "./debtConfigService";
+import { projectStoredDebt } from "./projectionService";
 import type { RowSnapshot } from "./snapshot";
 
 /**
@@ -38,9 +39,14 @@ export type UnscheduledPayment = {
   recordedAs: { date: string; amountMinor: number } | null;
   /** Recorded, and the transaction has since been changed in Actual. */
   changed: boolean;
+  /** The user said it is not an extra payment: not counted, and not recorded automatically. */
+  dismissed?: boolean;
+  /** At least what the loan owed that day: it pays the loan off, so it is never an extra payment. */
+  paysOff?: boolean;
 };
 
 const ROLE = "extra-repayment";
+const NOT_EXTRA = "not-extra";
 const NOTE = "Extra payment recorded from Actual";
 const LIVE = new Set(["proposed", "approved", "applying", "applied", "indeterminate", "failed"]);
 
@@ -71,13 +77,15 @@ export function unscheduledPayments(
   detail: DebtDetail,
   rows: ReadonlyMap<string, RowSnapshot>,
   window: { from: string; to: string },
-  options: { lenderFeed: boolean },
+  options: { lenderFeed: boolean; /** Rows the matching took for the offset-funded part of a repayment. */ offsetParts?: ReadonlySet<string> },
 ): UnscheduledPayment[] {
   const liability = detail.debt.liabilityAccountId;
   if (!liability) return [];
   const negativeIsDebt = detail.debt.signConvention !== "positive-is-debt";
   const claimed = claimedByPostings(db, detail.debt.id);
-  const links = new Map(listDebtTransactionLinks(db, detail.debt.id).filter((l) => l.role === ROLE).map((l) => [l.actualTransactionId, l]));
+  const allLinks = listDebtTransactionLinks(db, detail.debt.id);
+  const links = new Map(allLinks.filter((l) => l.role === ROLE).map((l) => [l.actualTransactionId, l]));
+  const dismissed = new Set(allLinks.filter((l) => l.role === NOT_EXTRA).map((l) => l.actualTransactionId));
   const recorded = new Set(links.keys());
   const opening = detail.config.ok ? detail.config.config.terms.openingDate : "0000-01-01";
   const out: UnscheduledPayment[] = [];
@@ -101,12 +109,13 @@ export function unscheduledPayments(
     // With a lender feed, the lender's own imported repayment rows are handled by lender links.
     if (options.lenderFeed && row.importedId && !recorded.has(row.id)) continue;
     if (claimed.has(row.id) && !recorded.has(row.id)) continue;
+    if (options.offsetParts && (options.offsetParts.has(row.id) || (row.transferId && options.offsetParts.has(row.transferId))) && !recorded.has(row.id)) continue;
     const amountMinor = Math.abs(row.amountMinor);
     const link = links.get(row.id);
     const event = link ? recordedEvent(detail.assumptions, link.periodKey) : null;
     const recordedAs = event ? { date: event.effectiveFrom, amountMinor: event.amountMinor ?? 0 } : null;
     const inSchedule = extraInSchedule(detail.assumptions, row.date, amountMinor) !== null;
-    out.push({ id: row.id, date: row.date, amountMinor, payeeName: row.payeeName, notes: row.notes, recorded: !!link, inSchedule, recordedAs, changed: !!recordedAs && !inSchedule && (recordedAs.date !== row.date || recordedAs.amountMinor !== amountMinor), direction: "in" });
+    out.push({ id: row.id, date: row.date, amountMinor, payeeName: row.payeeName, notes: row.notes, recorded: !!link, inSchedule, recordedAs, changed: !!recordedAs && !inSchedule && (recordedAs.date !== row.date || recordedAs.amountMinor !== amountMinor), direction: "in", ...(dismissed.has(row.id) ? { dismissed: true } : {}) });
   }
   return out.sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -128,6 +137,32 @@ const toInput = (a: DebtAssumptionRecord): AssumptionInput => ({
  * extra payment recorded with it is moved to the transaction's current date and amount instead of
  * being added a second time.
  */
+/**
+ * A payment at least the principal still owed is not an extra payment: it pays the loan off, with
+ * the interest for the period on top (owner decision 2026-10-07). It is never put in Terms &
+ * Schedule (where the calculation would refuse a payment above the balance); the Sync Repayments
+ * tab takes it as the payoff instead, with interest to the day it was paid.
+ */
+export class PaysOffLoanError extends AppDbValidationError {
+  constructor(date: string) {
+    super(`The payment on ${date} is at least what the loan owed that day, so it pays the loan off: Sync Repayments takes it as the payoff (with the interest to that day), not as an extra payment.`);
+    this.name = "PaysOffLoanError";
+  }
+}
+
+/**
+ * Whether the saved schedule now has a payment of at least the balance on this date. Older engine
+ * versions refuse it (a credit balance, which leaves the loan with no calculation); newer ones cap
+ * it at the balance. Either way it is the payoff, not an extra payment.
+ */
+function overpaysOn(db: SqliteDatabase, debtId: string, date: string): boolean {
+  const projected = projectStoredDebt(db, debtId, { from: date, to: date, resolution: "events" });
+  // A loan whose calculation needs Actual's offset history cannot be checked here: left as it was.
+  if (!projected.ok) return false;
+  if (!projected.projection.ok) return projected.projection.blocked.some((b) => b.code === "credit-balance" && b.date === date);
+  return projected.projection.events.some((e) => e.date === date && e.eventType === "extra-repayment" && (e.diagnostics.cappedAtOutstanding === true || e.balanceAfterMinor <= 0));
+}
+
 export function recordExtraPayment(db: SqliteDatabase, debtId: string, input: { actualTransactionId: string; date: string; amountMinor: number }): DebtDetail {
   const detail = getDebtDetail(db, debtId);
   if (!detail) throw new AppDbValidationError("Debt not found");
@@ -145,13 +180,17 @@ export function recordExtraPayment(db: SqliteDatabase, debtId: string, input: { 
     const kept = detail.assumptions.filter((a) => a.id !== previous?.id).map(toInput);
     const label = previous ? "Extra payment changed in Actual" : NOTE;
     saveBaselineAssumptions(db, debtId, [...kept, { kind: "extra-repayment", effectiveFrom: input.date, recurrence: null, amountMinor: input.amountMinor, feeTreatment: null, offsetAccountId: null, note: NOTE }], label);
+    // Rolled back whole (revision and link) when it pays the loan off.
+    if (overpaysOn(db, debtId, input.date)) throw new PaysOffLoanError(input.date);
   })();
   return getDebtDetail(db, debtId)!;
 }
 
 export type FollowedExtraPayment =
   | { transactionId: string; change: "moved"; from: { date: string; amountMinor: number }; to: { date: string; amountMinor: number } }
-  | { transactionId: string; change: "removed"; from: { date: string; amountMinor: number } };
+  | { transactionId: string; change: "removed"; from: { date: string; amountMinor: number } }
+  /** Changed in Actual to an amount that pays the loan off: taken out of Terms & Schedule, now the payoff. */
+  | { transactionId: string; change: "payoff"; from: { date: string; amountMinor: number }; to: { date: string; amountMinor: number } };
 
 /**
  * Keep recorded extra payments in step with their Actual transactions (owner decisions
@@ -185,9 +224,23 @@ export function followRecordedExtraPayments(
         continue;
       }
       const amountMinor = Math.abs(now.amountMinor);
-      if (!from || amountMinor === 0 || (from.date === now.date && from.amountMinor === amountMinor)) continue;
-      recordExtraPayment(db, debtId, { actualTransactionId: link.actualTransactionId, date: now.date, amountMinor });
-      followed.push({ transactionId: link.actualTransactionId, change: "moved", from, to: { date: now.date, amountMinor } });
+      if (!from || amountMinor === 0) continue;
+      if (from.date === now.date && from.amountMinor === amountMinor) {
+        // Saved before Bench knew better (or by an older version): one that pays the loan off goes.
+        if (overpaysOn(db, debtId, from.date)) {
+          removeExtraPayment(db, debtId, link.actualTransactionId);
+          followed.push({ transactionId: link.actualTransactionId, change: "payoff", from, to: from });
+        }
+        continue;
+      }
+      try {
+        recordExtraPayment(db, debtId, { actualTransactionId: link.actualTransactionId, date: now.date, amountMinor });
+        followed.push({ transactionId: link.actualTransactionId, change: "moved", from, to: { date: now.date, amountMinor } });
+      } catch (error) {
+        if (!(error instanceof PaysOffLoanError)) throw error;
+        removeExtraPayment(db, debtId, link.actualTransactionId);
+        followed.push({ transactionId: link.actualTransactionId, change: "payoff", from, to: { date: now.date, amountMinor } });
+      }
     } catch (error) {
       // A loan Bench cannot save (for example an event from a newer version) keeps the old extra
       // payment; the Sync Repayments tab still shows it as changed in Actual.
@@ -195,6 +248,48 @@ export function followRecordedExtraPayments(
     }
   }
   return followed;
+}
+
+/**
+ * Count payments into the loan automatically (owner decision 2026-10-07): each one listed as not in
+ * the schedule, not recorded and not marked "not an extra payment", is recorded as an extra payment
+ * (as if the user clicked Record). Returns the ids recorded.
+ */
+export function recordNewExtraPayments(db: SqliteDatabase, debtId: string, payments: readonly UnscheduledPayment[]): string[] {
+  const recorded: string[] = [];
+  for (const p of payments) {
+    if (p.direction === "out" || p.recorded || p.dismissed || p.amountMinor <= 0) continue;
+    try {
+      recordExtraPayment(db, debtId, { actualTransactionId: p.id, date: p.date, amountMinor: p.amountMinor });
+      recorded.push(p.id);
+    } catch (error) {
+      if (error instanceof PaysOffLoanError) {
+        (p as UnscheduledPayment).paysOff = true;
+        continue;
+      }
+      // A loan Bench cannot save keeps the payment listed for the user to record by hand.
+      if (!(error instanceof AppDbValidationError)) throw error;
+    }
+  }
+  return recorded;
+}
+
+/** "Not an extra payment": stop counting it (taken out of Terms & Schedule if recorded) and never record it automatically. */
+export function dismissExtraPayment(db: SqliteDatabase, debtId: string, actualTransactionId: string, date: string): DebtDetail {
+  const detail = getDebtDetail(db, debtId);
+  if (!detail) throw new AppDbValidationError("Debt not found");
+  if (listDebtTransactionLinks(db, debtId).some((l) => l.role === ROLE && l.actualTransactionId === actualTransactionId)) removeExtraPayment(db, debtId, actualTransactionId);
+  if (!listDebtTransactionLinks(db, debtId).some((l) => l.role === NOT_EXTRA && l.actualTransactionId === actualTransactionId)) {
+    insertDebtTransactionLink(db, { debtId, budgetSyncId: detail.debt.budgetSyncId, actualTransactionId, role: NOT_EXTRA, periodKey: date, linkSource: "user" });
+  }
+  return getDebtDetail(db, debtId)!;
+}
+
+/** Count it after all: forget "not an extra payment" (the next refresh records it). */
+export function undismissExtraPayment(db: SqliteDatabase, debtId: string, actualTransactionId: string): void {
+  for (const link of listDebtTransactionLinks(db, debtId)) {
+    if (link.role === NOT_EXTRA && link.actualTransactionId === actualTransactionId) db.prepare("DELETE FROM debt_transaction_links WHERE id = ?").run(link.id);
+  }
 }
 
 /** Undo: unlink the transaction and take the matching extra payment out of Terms & Schedule. */

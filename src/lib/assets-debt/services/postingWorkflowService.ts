@@ -16,7 +16,7 @@ import {
 } from "@/lib/app-db/financialPostingRepository";
 import type { DebtTransactionLinkRole, FinancialPostingRecord, SqliteDatabase } from "@/lib/app-db/types";
 import type { AccountDirectory } from "../actual/ledgerPort";
-import { planReversal } from "./planner/adjustments";
+import { planReversal, planUnsplit } from "./planner/adjustments";
 import { PostingNotApproved } from "./postingErrors";
 import { buildPlanningContext, postingView, summarize, type PostingView } from "./proposalService";
 import { compareRowToSnapshot, OVERRIDE_NO_REASON_MINOR, POSTING_INPUT_FORMAT_VERSION, type PostingInputSnapshot, type PostingOutputSnapshot, type RowSnapshot, type SplitOverride } from "./snapshot";
@@ -215,6 +215,37 @@ export function declinePosting(db: SqliteDatabase, postingId: string, decidedAt:
  * Undo: create a compensating reversal **proposal** (FR-184, T132). It writes
  * nothing to Actual and needs the user's own approval before it is applied.
  */
+/** "Unsplit" a split already in Actual that Bench recorded: a Review proposal on that row (owner decision 2026-10-07). */
+export function proposeUnsplit(
+  db: SqliteDatabase,
+  postingId: string,
+  input: { accountDirectory: AccountDirectory; transferPayees: Record<string, string>; today: string },
+  now = new Date().toISOString()
+): PostingView {
+  const original = getFinancialPosting(db, postingId);
+  if (!original) throw new AppDbValidationError("Posting not found");
+  if (original.status !== "applied") throw new AppDbValidationError("Record the split first; then it can be unsplit");
+  const output = outputOf(original);
+  if (output.kind !== "claim" || !output.recordedSplit) throw new AppDbValidationError("Only a split already in Actual can be unsplit; use Undo for a split Bench made");
+  const pending = findReversalProposal(db, postingId);
+  if (pending && pending.status !== "proposed") return postingView(pending);
+  if (pending) supersedePosting(db, pending.id, now, "newer-undo");
+  const built = buildPlanningContext(db, original.subjectId, {
+    from: input.today, to: input.today, today: input.today, accountDirectory: input.accountDirectory, transferPayees: input.transferPayees,
+    capabilities: { canRestructure: true, canVerifyTransferLinks: true },
+  });
+  if (!built.ok) throw new AppDbValidationError("notFound" in built ? "Debt not found" : built.blocked.message);
+  const planned = planUnsplit(built.ctx, summarize(original));
+  const result = upsertProposal(db, {
+    budgetSyncId: original.budgetSyncId, subjectKind: "debt", subjectId: original.subjectId,
+    postingKind: "reversal", periodKey: planned.periodKey, generation: planned.generation,
+    configRevision: built.ctx.debt.currentRevision, inputFormatVersion: POSTING_INPUT_FORMAT_VERSION,
+    inputSnapshot: planned.inputSnapshot, engineVersions: planned.engineVersions, outputSnapshot: planned.outputSnapshot,
+    classification: planned.classification, reasons: planned.reasons, idempotencyMarker: null, reversalOf: original.id,
+  }, now);
+  return postingView(result.posting);
+}
+
 export function proposeReversal(
   db: SqliteDatabase,
   postingId: string,

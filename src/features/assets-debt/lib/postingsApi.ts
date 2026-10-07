@@ -25,11 +25,12 @@ export type PreviewBody = {
   offsetHistories?: OffsetHistorySnapshot[];
   loanAccountRows?: Array<{ id: string; date: string; amountMinor: number }>;
   followExtraPayments?: boolean;
+  readRanges?: Array<{ accountId: string; from: string; to: string }>;
   comparison?: { comparisonDate: string; actualBalanceMinor: number } | null;
   parameters?: { openingAdjustmentCategoryId?: string | null; adjustmentCategoryId?: string | null; actualBalanceAtOnboardingMinor?: number | null };
 };
 
-export type PreviewResponse = { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; driftExplained?: boolean; unscheduled?: UnscheduledPayment[]; followedExtraPayments?: FollowedExtraPayment[]; paymentOptions?: PaymentOption[]; repaymentChoices?: Array<{ key: string; paymentId: string }> };
+export type PreviewResponse = { ok: true; postings: PostingView[]; notices: PlanningNotice[]; driftMaterial: boolean; driftExplained?: boolean; unscheduled?: UnscheduledPayment[]; followedExtraPayments?: FollowedExtraPayment[]; paymentOptions?: PaymentOption[]; repaymentChoices?: Array<{ key: string; paymentId: string }>; changedInActual?: Array<{ postingId: string; periodKey: string; detail: string }>; reconciliation?: unknown };
 
 const debtUrl = (id: string) => `/api/assets-debt/debts/${encodeURIComponent(id)}`;
 const postingUrl = (id: string) => `/api/assets-debt/postings/${encodeURIComponent(id)}`;
@@ -63,6 +64,10 @@ export const overrideSplit = (postingId: string, body: { interestMinor: number; 
 
 export const proposeReversal = (postingId: string, body: { accountDirectory: AccountDirectory; transferPayees: Record<string, string> }) =>
   request<{ posting: PostingView }>(`${postingUrl(postingId)}/reverse`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.posting);
+
+/** "Unsplit" a recorded split already in Actual (a Review proposal on its row). */
+export const proposeUnsplit = (postingId: string, body: { accountDirectory: AccountDirectory; transferPayees: Record<string, string> }) =>
+  request<{ posting: PostingView }>(`${postingUrl(postingId)}/unsplit`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.posting);
 
 export const reproducePosting = (postingId: string) =>
   request<{ reproduction: ReproductionResult }>(`${postingUrl(postingId)}/reproduce`, { method: "POST", body: "{}" }).then((r) => r.reproduction);

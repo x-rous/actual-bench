@@ -13,8 +13,8 @@ jest.mock("@/lib/assets-debt/actual/ledgerPort", () => ({
   datedBalanceFromTransactions: () => ({ balanceMinor: 0 }),
   toDebtMagnitude: () => -1,
 }));
-jest.mock("../../lib/postingsApi", () => ({ previewPostings: jest.fn() }));
-jest.mock("../../lib/debtsApi", () => ({ getDebtReconciliation: jest.fn() }));
+jest.mock("../../lib/postingsApi", () => ({ previewPostings: jest.fn(), listPostings: jest.fn(async () => []) }));
+jest.mock("../../lib/debtsApi", () => ({ getDebtReconciliation: jest.fn(), listMatchRules: jest.fn(async () => []) }));
 const preview = postingsApi.previewPostings as jest.Mock;
 
 const debt = { debt: { id: "d1", liabilityAccountId: "loan", paymentAccountId: null, signConvention: "negative-is-debt", currentRevision: 1, onboardingDate: null } } as never;
@@ -37,18 +37,4 @@ describe("background refresh", () => {
     await waitFor(() => expect(preview).toHaveBeenCalledTimes(2));
   });
 
-  it("coming back to the tab refreshes on its own, at most every 30 seconds", async () => {
-    preview.mockResolvedValue(ok);
-    const now = jest.spyOn(Date, "now");
-    let clock = 1_000_000;
-    now.mockImplementation(() => clock);
-    renderHook(() => useBackgroundRefresh({ debt, directory, from: "2024-01-01", to: "2024-02-01" }), { wrapper });
-    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1));
-    await act(async () => { window.dispatchEvent(new Event("focus")); });
-    expect(preview).toHaveBeenCalledTimes(1);
-    clock += 31_000;
-    await act(async () => { window.dispatchEvent(new Event("focus")); });
-    await waitFor(() => expect(preview).toHaveBeenCalledTimes(2));
-    now.mockRestore();
-  });
 });

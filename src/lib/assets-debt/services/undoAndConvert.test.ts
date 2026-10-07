@@ -168,9 +168,26 @@ describe.each(HARNESS_MODES)("Undo and transfer conversion (%s)", (mode) => {
     const t = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest", repaymentAnyPayee: true });
     const other = t.seedPayment("2024-02-01", -242915);
     t.fake.editInActual(other, { payee: t.transferPayees[ACCOUNTS.mortgage] });
-    t.fake.editInActual(t.fake.row(other)!.transfer_id as string, { cleared: true });
+    // Reconciled on the loan side: Bench never touches it.
+    t.fake.editInActual(t.fake.row(other)!.transfer_id as string, { reconciled: true });
     const [edited] = byKind((await t.preview(window)).postings, "repayment-split");
-    expect(edited).toMatchObject({ classification: "blocked", reasons: expect.arrayContaining([expect.objectContaining({ code: "counterpart-edited", text: expect.stringContaining("it is cleared") })]) });
+    expect(edited).toMatchObject({ classification: "blocked", reasons: expect.arrayContaining([expect.objectContaining({ code: "counterpart-edited", text: expect.stringContaining("it is reconciled") })]) });
+  });
+
+  it("a cleared loan-side row is no reason to refuse: it stays cleared after the split and after Undo (owner decision 2026-10-07)", async () => {
+    const t = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest", repaymentAnyPayee: true });
+    const payment = t.seedPayment("2024-02-01", -242915);
+    t.fake.editInActual(payment, { payee: t.transferPayees[ACCOUNTS.mortgage] });
+    t.fake.editInActual(t.fake.row(payment)!.transfer_id as string, { cleared: true });
+    const [split] = byKind((await t.preview(window)).postings, "repayment-split");
+    expect(split.classification).not.toBe("blocked");
+    expect((await t.apply(split)).posting.status).toBe("applied");
+    const principal = t.fake.rows().find((r) => r.parent_id === payment && r.transfer_id)!;
+    expect(t.fake.row(principal.transfer_id as string)).toMatchObject({ account: ACCOUNTS.mortgage, cleared: true });
+    const { listDebtPostings } = await import("./proposalService");
+    const undo = t.undo(listDebtPostings(t.db, t.debtId).find((p) => p.id === split.id)!);
+    expect((await t.apply(undo)).posting.status).toBe("applied");
+    expect(t.fake.row(t.fake.row(payment)!.transfer_id as string)).toMatchObject({ account: ACCOUNTS.mortgage, amount: 242915, cleared: true });
   });
 
   it("an Undo refuses, writing nothing, when the rows changed in Actual after the change was applied", async () => {

@@ -23,7 +23,7 @@ export const DUE_LABEL: Record<DueState, string> = {
 
 const REPAYMENT_KINDS = new Set(["repayment-split", "repayment-link"]);
 const SCHEDULED = new Set(["repayment", "final-payment"]);
-const MISSING = new Set(["repayment-missing", "repayment-ambiguous"]);
+const MISSING = new Set(["repayment-missing"]);
 
 const repaymentRow = (r: ChangeRowModel) => !!r.posting && REPAYMENT_KINDS.has(String(r.posting.postingKind)) && r.group !== "undone";
 const edited = (r: ChangeRowModel) => {

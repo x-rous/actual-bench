@@ -4,8 +4,9 @@ import { listDebtTransactionLinks } from "@/lib/app-db/debtTransactionLinkReposi
 import { ACCOUNTS, CATEGORIES, byKind, createScenario } from "../testing/postingScenario";
 import { readMatchingHistory } from "../actual/ledgerPort";
 import { runDebtBacktest } from "./backtestService";
-import { approveAndRecordClaim, overrideRepaymentSplit } from "./postingWorkflowService";
+import { approveAndRecordClaim, overrideRepaymentSplit, proposeUnsplit } from "./postingWorkflowService";
 import { reconcileDebt } from "./reconciliationService";
+import { listDebtPostings } from "./proposalService";
 
 jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
 const mockApiRequest = apiRequest as unknown as jest.Mock;
@@ -39,14 +40,14 @@ describe("a repayment already split in Actual", () => {
 
   it("is recorded as it is and Recommended when it matches the calculation; applying writes nothing and records the link", async () => {
     const { s, payment, calculatedInterest } = await splitByHand(0);
+    const writesBefore = s.fake.writes().length;
     const first = await s.preview(window);
     expect(first.unscheduled).toEqual([]);
-    const [recorded] = byKind(first.postings, "repayment-split");
-    expect(recorded).toMatchObject({ classification: "safe", output: { kind: "claim", recordedSplit: expect.objectContaining({ interestMinor: calculatedInterest, calculatedInterestMinor: calculatedInterest }) } });
+    const [recorded] = byKind(listDebtPostings(s.db, s.debtId), "repayment-split");
+    // Matching the calculation, it is recorded on the refresh itself (owner decision 2026-10-07).
+    expect(recorded).toMatchObject({ classification: "safe", status: "applied", output: { kind: "claim", recordedSplit: expect.objectContaining({ interestMinor: calculatedInterest, calculatedInterestMinor: calculatedInterest }) } });
     if (recorded.output.kind !== "claim" || !recorded.output.recordedSplit) throw new Error("recorded split");
     expect(recorded.output.recordedSplit.parent.id).toBe(payment);
-    const writesBefore = s.fake.writes().length;
-    expect((await s.apply(recorded)).posting.status).toBe("applied");
     expect(s.fake.writes().length).toBe(writesBefore);
     expect(listDebtTransactionLinks(s.db, s.debtId).map((l) => l.actualTransactionId)).toEqual([recorded.output.rows[0].id]);
     // The principal part's loan-side row belongs to this repayment: never listed as a payment not in the schedule.
@@ -163,8 +164,41 @@ describe.each(["http", "direct"] as const)("changing the amounts of a split alre
   });
 });
 
+describe.each(["http", "direct"] as const)("unsplitting a split already in Actual (%s)", (mode) => {
+  const window = { from: "2024-02-01", to: "2024-02-29" };
+
+  it("puts the payment back as one transfer to the loan for the whole amount; Bench then proposes the split again", async () => {
+    const probe = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    probe.seedPayment("2024-01-29");
+    const [proposed] = byKind((await probe.preview(window)).postings, "repayment-split");
+    if (proposed.output.kind !== "restructure") throw new Error("restructure");
+    const interest = proposed.output.components.find((c) => c.kind === "interest")!.amountMinor;
+    resetAppDbForTests();
+    const s = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    const payment = s.seedPayment("2024-01-29");
+    s.fake.editInActual(payment, { subtransactions: [
+      { amount: -(242915 - interest), payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), notes: "Principal" },
+      { amount: -interest, category: CATEGORIES.interest, notes: "Interest" },
+    ] });
+    await s.preview(window);
+    const [claim] = byKind(listDebtPostings(s.db, s.debtId), "repayment-split");
+    expect(claim.status).toBe("applied");
+    const applied = listDebtPostings(s.db, s.debtId).find((p) => p.id === claim.id)!;
+    const unsplit = proposeUnsplit(s.db, applied.id, { accountDirectory: s.directory, transferPayees: s.transferPayees, today: "2024-06-03" });
+    expect(unsplit).toMatchObject({ classification: "review", reversalOf: claim.id, output: { kind: "restore-split" } });
+    expect((await s.apply(unsplit)).posting.status).toBe("applied");
+    const row = s.fake.row(payment)!;
+    expect(row.is_parent).toBeFalsy();
+    expect(s.fake.rows().filter((r) => r.parent_id === payment)).toEqual([]);
+    expect(row.payee).toBe(s.fake.transferPayeeId(ACCOUNTS.mortgage));
+    expect(s.fake.row(row.transfer_id as string)).toMatchObject({ account: ACCOUNTS.mortgage, amount: 242915 });
+    const [again] = byKind((await s.preview(window)).postings, "repayment-split").filter((p) => p.status === "proposed");
+    expect(again.output.kind).toBe("restructure");
+  });
+});
+
 describe("recording a claim in one step (speed)", () => {
-  it("approves and records a split already in Actual in one call, and refuses a change that writes to Actual", async () => {
+  it("refuses a change that writes to Actual; a split already in Actual that matches is recorded on the refresh, in one step", async () => {
     const probe = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
     probe.seedPayment("2024-01-29");
     const [write] = byKind((await probe.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
@@ -179,9 +213,9 @@ describe("recording a claim in one step (speed)", () => {
       { amount: -(242915 - interest), payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), notes: "Principal" },
       { amount: -interest, category: CATEGORIES.interest, notes: "Interest" },
     ] });
-    const [claim] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
-    const recorded = approveAndRecordClaim(s.db, claim.id, { fresh: await s.fresh(claim), now: "2024-06-02T00:00:00Z" });
-    expect(recorded.status).toBe("applied");
+    await s.preview({ from: "2024-02-01", to: "2024-02-29" });
+    const [claim] = byKind(listDebtPostings(s.db, s.debtId), "repayment-split");
+    expect(claim.status).toBe("applied");
     expect(listDebtTransactionLinks(s.db, s.debtId)).toHaveLength(1);
   });
 });
