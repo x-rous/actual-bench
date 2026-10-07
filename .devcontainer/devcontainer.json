@@ -1,0 +1,46 @@
+{
+  "name": "Actual Bench",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "node",
+
+  // node_modules lives in a named volume so installs are fast and the host's
+  // platform-specific native modules (better-sqlite3) never leak into the container.
+  "mounts": [
+    "source=actual-bench-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+  ],
+
+  "containerEnv": {
+    "NEXT_TELEMETRY_DISABLED": "1",
+    // Local metadata DB; .actual-bench-data/ is gitignored.
+    "ACTUAL_BENCH_DB_PATH": "${containerWorkspaceFolder}/.actual-bench-data/actual-bench.sqlite"
+  },
+
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Actual Bench (next dev)", "onAutoForward": "notify" }
+  },
+
+  // Lets the app reach an Actual server running on the host (Docker Engine in WSL doesn't define this name).
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+
+  // Fresh volumes are root-owned; fix that. node_modules is a mount point, so npm ci
+  // can't remove the folder itself: empty its contents first, then install
+  // (postinstall copies the sqlite wasm and pdfjs assets).
+  "postCreateCommand": "sudo chown node:node node_modules && find node_modules -mindepth 1 -delete && npm ci",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "orta.vscode-jest"
+      ],
+      "settings": {
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" }
+      }
+    }
+  }
+}

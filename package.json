@@ -65,5 +65,9 @@
     "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "unrs-resolver@1.11.1": true
   }
 }

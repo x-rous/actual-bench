@@ -28,6 +28,7 @@ import { connectFailureMessage } from "@/features/connect/savedBudgets";
 import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionSwitcher } from "./ConnectionSwitcher";
+import { useAuthStatus } from "@/hooks/useAuthStatus";
 import type { SavedBudget } from "@/features/connect/savedBudgets";
 import { useSavedBudgetSwitcher } from "@/features/connect/useSavedBudgetSwitcher";
 import { useSavedServersStore } from "@/store/savedServers";
@@ -64,6 +65,11 @@ type PendingAction =
   | { kind: "disconnect" }
   | { kind: "disconnectAll" }
   | { kind: "signOut" };
+
+/** A thin divider between groups of top-bar controls. */
+function TopBarSeparator() {
+  return <div role="separator" aria-orientation="vertical" className="mx-1.5 h-5 w-px shrink-0 bg-border" />;
+}
 
 function TopBarVersionChip({
   label,
@@ -108,6 +114,7 @@ export function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
+  const { data: authStatus } = useAuthStatus();
   const [isRefreshing, setIsRefreshing] = useState(false);
   // A connected Direct budget being opened before it becomes active.
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
@@ -480,23 +487,24 @@ export function TopBar() {
 
         </div>
 
-        {/* Right: search + undo/redo + unsaved indicator + save/discard */}
+        {/* Right: search | undo/redo, refresh, discard, save | account */}
         <div className="flex items-center gap-1">
           {activeInstance && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 gap-1.5 text-xs text-muted-foreground"
+              className="h-7 justify-start gap-1.5 sm:w-36 text-xs text-muted-foreground"
               onClick={openSearch}
               title={`Search (${searchShortcutLabel})`}
             >
               <Search className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Search</span>
-              <kbd className="hidden sm:inline pointer-events-none rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <kbd className="ml-auto hidden sm:inline pointer-events-none rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
                 {searchShortcutLabel}
               </kbd>
             </Button>
           )}
+          {activeInstance && <TopBarSeparator />}
           <Button
             variant="ghost"
             size="icon"
@@ -568,6 +576,8 @@ export function TopBar() {
             <Save className="mr-1 h-3.5 w-3.5" />
             {takingRecoveryPoint ? "Backing up…" : isSaving ? "Saving…" : "Save"}
           </Button>
+          {/* AccountMenu renders nothing unless Bench asks for a password. */}
+          {authStatus?.authMode === "password" && <TopBarSeparator />}
           <AccountMenu onSignOut={() => requestAction({ kind: "signOut" })} />
         </div>
       </header>

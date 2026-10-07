@@ -20,10 +20,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
-  HelpCircle,
-  ExternalLink,
-  AlertCircle,
-  BookOpen,
   LayoutDashboard,
   Wallet,
   Monitor,
@@ -32,7 +28,6 @@ import {
   ArrowUpCircle,
   ArrowLeftRight,
   Banknote,
-  Keyboard,
   Settings,
   ClipboardCheck,
   Sparkles,
@@ -44,16 +39,9 @@ import { useConnectionStore } from "@/store/connection";
 import { useSavedServersStore } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
 import { useVersionCheckContext } from "@/hooks/useVersionCheck";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { GlobalShortcutsHelp } from "./GlobalShortcutsHelp";
 
-const GITHUB_URL = "https://github.com/x-rous/actual-bench";
+import { HelpMenu } from "./HelpMenu";
+
 const LS_KEY = "sidebar-collapsed";
 
 type NavItem = {
@@ -178,7 +166,7 @@ function SidebarNavLink({ item, collapsed, pathname, allHrefs }: SidebarNavLinkP
         // the rows keep enough vertical room to be distinguishable at a glance.
         // 5px rather than 6px trims 2px a row - enough to matter down a long
         // list, not enough to crowd the 20px line box.
-        "flex items-center rounded-md px-2 py-[5px] text-sm font-medium transition-colors",
+        "flex items-center rounded-md px-2 py-[5px] text-[13.3px] font-medium transition-colors",
         collapsed ? "justify-center py-[5px]" : "gap-2.5 px-3",
         active
           ? "bg-accent text-accent-foreground"
@@ -216,7 +204,6 @@ export function Sidebar() {
   const version = process.env.NEXT_PUBLIC_APP_VERSION;
   const { updateAvailable, latestVersion } = useVersionCheckContext();
 
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(LS_KEY) === "1";
@@ -297,20 +284,17 @@ export function Sidebar() {
           );
         })}
 
-        {!collapsed && version && (
+        {!collapsed && updateAvailable && latestVersion && (
           <div className="mt-auto flex flex-col gap-0.5 px-3 pt-3">
-            <span className="text-xs text-muted-foreground/55">v{version}</span>
-            {updateAvailable && latestVersion && (
-              <a
-                href="https://github.com/x-rous/actual-bench/releases"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                <ArrowUpCircle className="h-3 w-3 shrink-0" />
-                v{latestVersion} available
-              </a>
-            )}
+            <a
+              href="https://github.com/x-rous/actual-bench/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              <ArrowUpCircle className="h-3 w-3 shrink-0" />
+              v{latestVersion} available
+            </a>
           </div>
         )}
       </nav>
@@ -330,47 +314,11 @@ export function Sidebar() {
         >
           <APP_HEALTH_ITEM.icon className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{APP_HEALTH_ITEM.label}</span>}
-        </Link>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            title="Help & feedback"
-            className={cn(
-              "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
-              collapsed ? "justify-center" : "gap-2"
-            )}
-          >
-            <HelpCircle className="h-4 w-4 shrink-0 text-xs text-muted-foreground" />
-            {!collapsed && <span>Help & feedback</span>}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="end" className="w-52 text-xs text-muted-foreground">
-            <DropdownMenuItem onClick={() => window.open(GITHUB_URL, "_blank", "noopener,noreferrer")}>
-              <ExternalLink className="h-4 w-4 text-xs text-muted-foreground" />
-              GitHub Repository
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => window.open(`${GITHUB_URL}/issues/new`, "_blank", "noopener,noreferrer")}>
-              <AlertCircle className="h-4 w-4 text-xs text-muted-foreground" />
-              Report an Issue
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => window.open(`${GITHUB_URL}/blob/main/CHANGELOG.md`, "_blank", "noopener,noreferrer")}>
-              <BookOpen className="h-4 w-4 text-xs text-muted-foreground" />
-              Changelog
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <button
-          type="button"
-          onClick={() => setShortcutsOpen(true)}
-          title="Keyboard shortcuts"
-          className={cn(
-            "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
-            collapsed ? "justify-center" : "gap-2"
+          {!collapsed && version && (
+            <span className="ml-auto text-xs text-muted-foreground/55">v{version}</span>
           )}
-        >
-          <Keyboard className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Keyboard shortcuts</span>}
-        </button>
+        </Link>
+        <HelpMenu collapsed={collapsed} />
 
         <button
           type="button"
@@ -415,8 +363,6 @@ export function Sidebar() {
           )}
         </button>
       </div>
-
-      <GlobalShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </aside>
   );
 }
