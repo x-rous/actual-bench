@@ -25,6 +25,8 @@ async function setup() {
   const dir = mkdtempSync(join(base, PREFIX))
   process.env.ACTUAL_BENCH_JEST_TMPDIR = dir
   process.env.TMPDIR = dir
+  process.env.TEMP = dir
+  process.env.TMP = dir
 }
 
 async function teardown() {

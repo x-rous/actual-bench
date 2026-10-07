@@ -57,7 +57,7 @@ const node = createJestConfig({
   // No jest.setup.ts: every shim in it is a DOM shim, and Node 22 already has
   // structuredClone. Loading @testing-library/jest-dom into 244 pure-logic
   // suites is the cost this split exists to remove.
-  testMatch: ['**/*.test.ts'],
+  testMatch: ['**/*.test.ts', '<rootDir>/jest.tmpdir.test.cjs'],
   testPathIgnorePatterns: [...ignore, ...TS_TESTS_NEEDING_DOM],
 })
 
