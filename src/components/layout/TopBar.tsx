@@ -28,6 +28,9 @@ import { connectFailureMessage } from "@/features/connect/savedBudgets";
 import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionSwitcher } from "./ConnectionSwitcher";
+import { useAuthStatus } from "@/hooks/useAuthStatus";
+import { HelpMenu } from "./HelpMenu";
+import { ThemeToggle } from "./ThemeToggle";
 import type { SavedBudget } from "@/features/connect/savedBudgets";
 import { useSavedBudgetSwitcher } from "@/features/connect/useSavedBudgetSwitcher";
 import { useSavedServersStore } from "@/store/savedServers";
@@ -64,6 +67,11 @@ type PendingAction =
   | { kind: "disconnect" }
   | { kind: "disconnectAll" }
   | { kind: "signOut" };
+
+/** A thin divider between groups of top-bar controls. */
+function TopBarSeparator() {
+  return <div role="separator" aria-orientation="vertical" className="mx-1.5 h-5 w-px shrink-0 bg-border" />;
+}
 
 function TopBarVersionChip({
   label,
@@ -108,6 +116,7 @@ export function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
+  const { data: authStatus } = useAuthStatus();
   const [isRefreshing, setIsRefreshing] = useState(false);
   // A connected Direct budget being opened before it becomes active.
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
@@ -480,13 +489,17 @@ export function TopBar() {
 
         </div>
 
-        {/* Right: search + undo/redo + unsaved indicator + save/discard */}
+        {/* Right: help + theme | search | undo/redo | refresh | discard + save | account */}
         <div className="flex items-center gap-1">
+          <HelpMenu />
+          <ThemeToggle />
+          <TopBarSeparator />
           {activeInstance && (
+            <>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="h-7 gap-1.5 text-xs text-muted-foreground"
+              className="h-7 gap-1.5 border-border text-xs text-muted-foreground"
               onClick={openSearch}
               title={`Search (${searchShortcutLabel})`}
             >
@@ -496,6 +509,8 @@ export function TopBar() {
                 {searchShortcutLabel}
               </kbd>
             </Button>
+            <TopBarSeparator />
+            </>
           )}
           <Button
             variant="ghost"
@@ -518,6 +533,8 @@ export function TopBar() {
             <Redo2 className="h-3.5 w-3.5" />
           </Button>
 
+          <TopBarSeparator />
+
           <Button
             variant="ghost"
             size="icon"
@@ -528,6 +545,8 @@ export function TopBar() {
           >
             <RefreshCw className={`h-3.5 w-3.5${isRefreshing ? " animate-spin" : ""}`} />
           </Button>
+
+          <TopBarSeparator />
 
           <Button
             variant="ghost"
@@ -568,6 +587,8 @@ export function TopBar() {
             <Save className="mr-1 h-3.5 w-3.5" />
             {takingRecoveryPoint ? "Backing up…" : isSaving ? "Saving…" : "Save"}
           </Button>
+          {/* AccountMenu renders nothing unless Bench asks for a password. */}
+          {authStatus?.authMode === "password" && <TopBarSeparator />}
           <AccountMenu onSignOut={() => requestAction({ kind: "signOut" })} />
         </div>
       </header>
