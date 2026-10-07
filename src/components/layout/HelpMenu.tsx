@@ -45,24 +45,24 @@ export function HelpMenu({ collapsed }: { collapsed: boolean }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent side="right" align="end" className="w-52 text-xs text-muted-foreground">
           <DropdownMenuItem onClick={() => openExternal(DOCS_URL)}>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <FileText className="h-4 w-4 text-xs text-muted-foreground" />
             Documentation
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setShortcutsOpen(true)}>
-            <Keyboard className="h-4 w-4 text-muted-foreground" />
+            <Keyboard className="h-4 w-4 text-xs text-muted-foreground" />
             Keyboard shortcuts
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => openExternal(GITHUB_URL)}>
-            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+            <ExternalLink className="h-4 w-4 text-xs text-muted-foreground" />
             GitHub Repository
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => openExternal(`${GITHUB_URL}/issues/new`)}>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            <AlertCircle className="h-4 w-4 text-xs text-muted-foreground" />
             Report an Issue
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => openExternal(`${GITHUB_URL}/blob/main/CHANGELOG.md`)}>
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <BookOpen className="h-4 w-4 text-xs text-muted-foreground" />
             Changelog
           </DropdownMenuItem>
         </DropdownMenuContent>

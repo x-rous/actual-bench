@@ -491,9 +491,9 @@ export function TopBar() {
         <div className="flex items-center gap-1">
           {activeInstance && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-7 justify-start gap-1.5 sm:w-72 border-border text-xs text-muted-foreground"
+              className="h-7 justify-start gap-1.5 sm:w-36 text-xs text-muted-foreground"
               onClick={openSearch}
               title={`Search (${searchShortcutLabel})`}
             >
