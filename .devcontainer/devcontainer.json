@@ -22,8 +22,13 @@
     "3000": { "label": "Actual Bench (next dev)", "onAutoForward": "notify" }
   },
 
-  // Fresh volumes are root-owned; fix that, then install (postinstall copies the sqlite wasm and pdfjs assets).
-  "postCreateCommand": "sudo chown node:node node_modules && npm ci",
+  // Lets the app reach an Actual server running on the host (Docker Engine in WSL doesn't define this name).
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+
+  // Fresh volumes are root-owned; fix that. node_modules is a mount point, so npm ci
+  // can't remove the folder itself: empty its contents first, then install
+  // (postinstall copies the sqlite wasm and pdfjs assets).
+  "postCreateCommand": "sudo chown node:node node_modules && find node_modules -mindepth 1 -delete && npm ci",
 
   "customizations": {
     "vscode": {
