@@ -12,7 +12,7 @@ posts, and it never reads Actual during a run.
 `projection.ts#simulate` picks the engine from the profile:
 
 - `accrual: per-period` → **bench-periodic** (`periodic-engine.ts`, `loan-periodic@2`);
-- `daily-simple` or `daily-compounded` → **bench-daily** (`daily-engine.ts`, `loan-daily@4`).
+- `daily-simple` or `daily-compounded` → **bench-daily** (`daily-engine.ts`, `loan-daily@8`).
 
 `eligibility.ts#evaluateStrategyEligibility` gives the recommended strategy (FR-026). It walks the
 ladder Actual formula rule → bench-periodic → bench-daily, and gives a reason for every strategy
@@ -57,10 +57,10 @@ An event placed after the day's interest therefore also follows a same-day charg
 are before or after is the profile's `eventOrder` (a timing preset, or per-group placements for
 scheduled repayments, other payments and offsets). No lender's order is built in: a
 Figura-compatible profile places other payments and offsets before and the scheduled repayment
-after. Every event records `sameDayStep` and `eventOrder: "event-order@1"` in its diagnostics.
+after. Every event records `sameDayStep` and `eventOrder: "event-order@3"` in its diagnostics.
 Within one group, same-day ledger events keep the ledger's deterministic order.
 
-In detail, every day follows `events.ts#dayStepOrder` (`event-order@1`):
+In detail, every day follows `events.ts#dayStepOrder` (`event-order@3`):
 
 1. contract and rate changes, and recasts;
 2. external cash (fees);
@@ -131,9 +131,9 @@ Each `ModelEvent` explains one balance change. The invariants below are tested i
   no final payment. Receivables use the same engines and are viewed from the lender's side
   (`receivable.ts`).
 
-## Projection (contract v1, frozen)
+## Projection (current contract v2; v1 remains readable)
 
-`projection.ts#projectDebt` returns `DebtProjectionEvent[]` (schema version 1). Each event has:
+`projection.ts#projectDebt` returns `DebtProjectionEvent[]` in schema version 2. Each event has:
 
 - the date and event type;
 - the signed cash and principal movements;
@@ -142,7 +142,7 @@ Each `ModelEvent` explains one balance change. The invariants below are tested i
 - the certainty;
 - the model revision and engine versions;
 - empty category allocations (categories are applied later, from account budget status);
-- diagnostics.
+- diagnostics. The projection also carries `offsetStates`, state-only snapshots of linked offset balances by date; these do not represent repayments or amortization.
 
 It also returns monthly summaries, yearly ones on request, and a `stale` flag when the baseline came
 from an older anchor. Overrides (`assumptions`, `rates`) apply to a copy of the model and are never
@@ -161,7 +161,7 @@ Every event carries deterministic diagnostics for preview and audit, for example
 - negative amortization.
 
 Two diagnostic groups feed the simulator's schedule, so the UI never recomputes them
-(`loan-daily@4`, `loan-periodic@2`):
+(`loan-daily@8`, `loan-periodic@2`):
 
 - **Rate:** `effectiveAnnualRateDecimal` is the exact annual rate the engine accrued with on that
   event's day (so `from-next-charge-period` timing shows the old rate until the rate takes effect).

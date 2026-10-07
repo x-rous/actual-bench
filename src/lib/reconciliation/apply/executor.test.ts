@@ -1,6 +1,14 @@
+import { apiRequest } from "@/lib/api/client";
+import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
+import { createFakeActualBudget } from "@/lib/actual/testing/fakeActualBudget";
+import type { HttpApiConnection } from "@/store/connection";
+import { createReconciliationTransport } from "../transportAdapter";
 import type { ReconciliationTransport } from "../ports";
 import { executeApplyPlan } from "./executor";
 import type { ApplyOperation, ApplyPlan, OperationResult } from "./operations";
+
+jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
+const mockApiRequest = apiRequest as jest.MockedFunction<typeof apiRequest>;
 
 function fakeTransport(overrides: Partial<ReconciliationTransport> = {}): ReconciliationTransport {
   return {
@@ -509,5 +517,69 @@ describe("bank provenance through the executor (RD-072)", () => {
 
     const [payload] = (transport.updateTransaction as jest.Mock).mock.calls[0];
     expect(payload.importedPayee).toBeUndefined();
+  });
+});
+
+/**
+ * Transfers over the HTTP transport (P1.0a regression).
+ *
+ * Reconciliation creates rows through the shared transport. When a created
+ * row's payee resolves to a transfer payee, Actual must write the other leg,
+ * over HTTP as in Direct mode. The counterpart then shows up in the other
+ * account's candidate window as an existing transfer leg, which is what the
+ * next reconciliation of that account matches against instead of creating it
+ * again.
+ */
+describe("executeApplyPlan - transfers over HTTP (P1.0a)", () => {
+  const accounts = [
+    { id: "acct-1", name: "Checking" },
+    { id: "acct-sav", name: "Savings" },
+  ];
+  const httpConnection: HttpApiConnection = {
+    id: "http", label: "Http", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "budget-1",
+  };
+
+  function httpTransport() {
+    const budget = createFakeActualBudget({ accounts });
+    mockApiRequest.mockImplementation(budget.httpApiRequest as never);
+    return { budget, transport: createReconciliationTransport(createHttpApiTransport(httpConnection)) };
+  }
+
+  beforeEach(() => mockApiRequest.mockReset());
+
+  it("writes exactly one counterpart for a statement row whose payee is a transfer payee", async () => {
+    const { budget, transport } = httpTransport();
+
+    const result = await executeApplyPlan({
+      plan: planOf([{ ...CREATE, payeeName: "Savings", amount: -50000 }]),
+      transport,
+    });
+
+    expect(result.applied).toBe(1);
+    const [created] = budget.accountRows("acct-1");
+    const counterparts = budget.accountRows("acct-sav");
+    expect(counterparts).toHaveLength(1);
+    expect(counterparts[0]).toMatchObject({ amount: 50000, transfer_id: created.id });
+    expect(budget.insertOptions()).toEqual([{ runTransfers: true, learnCategories: undefined }]);
+  });
+
+  it("writes no counterpart for an ordinary payee", async () => {
+    const { budget, transport } = httpTransport();
+
+    await executeApplyPlan({ plan: planOf([CREATE]), transport });
+
+    expect(budget.rows()).toHaveLength(1);
+    expect(budget.accountRows("acct-sav")).toHaveLength(0);
+  });
+
+  it("shows the counterpart as an existing transfer leg in the other account's window", async () => {
+    const { transport } = httpTransport();
+    await executeApplyPlan({ plan: planOf([{ ...CREATE, payeeName: "Savings", amount: -50000 }]), transport });
+
+    const window = await transport.loadTransactions({ accountId: "acct-sav", startDate: "2026-07-01", endDate: "2026-07-31" });
+
+    expect(window.transactions).toHaveLength(1);
+    expect(window.transactions[0]).toMatchObject({ amount: 50000 });
+    expect(window.transactions[0].transferId).not.toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { CURRENT_COMPONENT_VERSIONS, createVersionRegistry, parseComponentVersion } from "./versions";
 
 describe("component version strings", () => {
@@ -14,6 +15,19 @@ describe("component version strings", () => {
     for (const [name, version] of Object.entries(CURRENT_COMPONENT_VERSIONS)) {
       expect(parseComponentVersion(version)?.name).toBe(name);
     }
+  });
+
+  it("keeps the engine reference docs aligned with the current contracts", () => {
+    const architecture = readFileSync("docs/assets-debt/engine-architecture.md", "utf8");
+    const kernel = readFileSync("docs/assets-debt/engine-kernel.md", "utf8");
+    expect(architecture).toContain("loan-daily@8");
+    expect(architecture).toContain("event-order@3");
+    expect(architecture).toContain("schema version 2");
+    expect(architecture).toContain("offsetStates");
+    expect(kernel).toContain("versions 1, 2 and 3");
+    expect(kernel).toContain("businessDays");
+    expect(kernel).toContain("lenderStatement");
+    expect(kernel).toContain("event-order@3");
   });
 });
 

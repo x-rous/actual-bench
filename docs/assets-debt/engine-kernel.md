@@ -151,7 +151,7 @@ from rate caps and floors, derivation and recast. Payment floors are not modelle
 **Repayment value date:** `repaymentEffectiveTiming` is `transaction-date` or `next-calendar-day`.
 It shifts the date of the event. Where the event falls within that day is `eventOrder`'s job.
 
-`parseDebtConfig` reads `rd084.debt-config` versions 1 and 2 and never throws. It returns one
+`parseDebtConfig` reads `rd084.debt-config` versions 1, 2 and 3 and never throws. It returns one
 of:
 
 - `ok`;
@@ -164,9 +164,9 @@ Every identifier version 1 accepts is frozen in
 `loan/versions.ts#DEBT_CONFIG_V1_IDENTIFIERS`, and `identifiers.test.ts` holds that
 freeze. Version 2 adds only `dated-cashflow-annuity`; documents using the older identifiers keep
 version 1. This per-record JSON version requires no relational schema migration.
-The irregular-term correction adds no config field or identifier, so it does not create config v3.
+Version 3 adds nullable `businessDays` settings (business-day adjustment, non-business weekdays and holidays) and nullable `lenderStatement` settings (interest allocation). Both default to `null`; configurations using neither remain at the lowest compatible version.
 
-## Same-day order (`loan/events.ts`, `event-order@1`)
+## Same-day order (`loan/events.ts`, `event-order@3`)
 
 The default order within a day follows FR-047:
 
@@ -192,7 +192,7 @@ Two boundaries follow from this order:
 
 | Behavior | Status |
 |---|---|
-| Steps 1–8 above, and the two boundaries | **RD-084 product default** (FR-047, `event-order@1`) |
+| Steps 1–8 above, and the two boundaries | **RD-084 product default** (FR-047, `event-order@3`) |
 | Repayments before the accrual (`start-of-day`) | **RD-084 product default**; configurable |
 | Charge including its own day; accrual from the day after drawdown | Default, **also shown by the Figura calculator** |
 | Redraws, extra repayments and offset deposits before the accrual; scheduled repayments after it and after the charge | **Figura calculator behavior** (verified from its shipped code); expressible as a placement, not the default |

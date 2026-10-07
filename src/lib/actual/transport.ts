@@ -4,6 +4,27 @@ import type { SyncCapabilityReport } from "@/lib/app-db/types";
 import type { BankSyncOutcome } from "./bankSync";
 import type { ConnectionMode } from "@/store/connection";
 import type {
+  ExpectedSplitState,
+  HalfLinkState,
+  LinkTransferInput,
+  LinkTransferResult,
+  RestructureSplitInput,
+  RestructureSplitResult,
+  RestructureVerification,
+  StructureChild,
+  ConvertToTransferInput,
+  ConvertToTransferResult,
+  RestoreSplitInput,
+  RestoreSplitResult,
+  AdjustSplitInput,
+  AdjustSplitResult,
+  AdjustVerification,
+  RevertTransferInput,
+  RevertTransferResult,
+  UnlinkTransferInput,
+  UnlinkTransferResult,
+} from "./transactionStructure";
+import type {
   Account,
   AccountGroup,
   Category,
@@ -97,6 +118,26 @@ export type SyncSourceSplitLine = {
   categoryId: string | null;
   categoryName: string | null;
   notes: string | null;
+  /**
+   * Transaction-level state resolved from the child when present, otherwise
+   * inherited from its split parent. Optional keeps older/custom transports
+   * distinguishable from a transport that positively reports `false`.
+   */
+  cleared?: boolean;
+  reconciled?: boolean;
+  /** Imported provenance resolved from the child, then its parent. */
+  importedId?: string | null;
+  importedPayee?: string | null;
+  /**
+   * The child's own transfer counterpart. Never inherited from the parent:
+   * one child may be a transfer while its siblings are not.
+   */
+  transferId?: string | null;
+  /** Schedule identity resolved from the child, then its parent. */
+  scheduleId?: string | null;
+  /** Explicit structural identity for per-child matching and claims. */
+  isChild?: boolean;
+  parentId?: string | null;
 };
 
 /** A source transaction with the fields Budget File Sync needs. */
@@ -435,6 +476,42 @@ export interface ActualBenchTransport {
     updated: BatchTransactionUpdate[];
     deleted: string[];
   }): Promise<void>;
+  // --- Assets & Debt restructure and transfer linking (RD-084 P1.6) --------
+  //
+  // Optional, like `runBankSync`: a transport without them cannot restructure
+  // or link, and RD-084 classifies those proposals Blocked. Both shipped
+  // transports implement them through the shared `transactionStructure`
+  // module, so Direct and HTTP behave identically.
+  /** Re-read, refuse on any preflight difference, then `updateTransaction(id, { subtransactions })` (T121/T122). */
+  restructureTransactionAsSplit?(input: RestructureSplitInput): Promise<RestructureSplitResult>;
+  /** The two-call counterpart link; inserts nothing (T123). */
+  linkTransferCounterpart?(input: LinkTransferInput): Promise<LinkTransferResult>;
+  /** Finish a half-linked pair with the second call only (T123/T131). */
+  completeTransferLink?(input: LinkTransferInput): Promise<LinkTransferResult>;
+  /** Read-only half-link detection, including stray counterparts (T131). */
+  inspectTransferLink?(input: LinkTransferInput): Promise<HalfLinkState>;
+  /** Read-only: does the row hold exactly the expected split? (T124) */
+  verifyRestructure?(input: {
+    accountId: string;
+    transactionId: string;
+    date: string;
+    expected: ExpectedSplitState;
+    transferPayeeByAccount: Record<string, string>;
+  }): Promise<{ result: RestructureVerification; children: StructureChild[] }>;
+  /** Undo a restructure: delete the children one at a time, then restore the parent (T276). */
+  restoreSplit?(input: RestoreSplitInput): Promise<RestoreSplitResult>;
+  /** Change an existing split's amounts in place, keeping every id (T314); its undo is the same call with the old amounts. */
+  adjustSplitAmounts?(input: AdjustSplitInput): Promise<AdjustSplitResult>;
+  /** Read-only: does the split hold the new amounts, still the old ones, or neither? (T314) */
+  inspectSplitAmounts?(input: { accountId: string; parentId: string; date: string; before: Array<{ id: string; amount: number }>; after: Array<{ id: string; amount: number }>; counterpart: { accountId: string; id: string; childId: string } | null }): Promise<AdjustVerification>;
+  /** Undo a counterpart link: detach the counterpart, then restore the source (T276). */
+  unlinkTransfer?(input: UnlinkTransferInput): Promise<UnlinkTransferResult>;
+  /** Make an existing payment the loan transfer by its payee (T277). */
+  convertToTransfer?(input: ConvertToTransferInput): Promise<ConvertToTransferResult>;
+  /** Undo a conversion: the payment's own payee back; Actual deletes its counterpart (T277). */
+  revertTransferConversion?(input: RevertTransferInput): Promise<RevertTransferResult>;
+  /** Whether reads report `transfer_id`; without it a link cannot be verified and is Blocked (R-07). */
+  canVerifyTransferLinks?(input: { accountId: string; sinceDate: string }): Promise<boolean>;
   /** Load target payees + existing sync markers for dedupe/apply checks. */
   getTargetLookupForSync(
     input: ListTransactionsForSyncInput

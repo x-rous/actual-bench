@@ -103,6 +103,13 @@ describe("matching DSL evaluation", () => {
     expect(evaluateExpectedPeriod(broad, [candidate({ id: "a", amountMinor: -60_000 }), candidate({ id: "b", amountMinor: -40_000 })], expected).status).toBe("unsafe");
   });
 
+  it("does not mark an underpayment within the matched amount tolerance unsafe", () => {
+    const rule = conditions([
+      { kind: "amount", operator: "approximate", amountMinor: 100_000, direction: "outflow", tolerance: { kind: "absolute", amountMinor: 1_000 } },
+    ]);
+    expect(evaluateExpectedPeriod(rule, [candidate({ amountMinor: -99_999 })], expected)).toMatchObject({ status: "unique", reviewReasons: [] });
+  });
+
   it("reports bounded backtest summaries, deviations, flags and projected variance", () => {
     const rule = conditions([
       { kind: "source-account", accountId: "cash" },

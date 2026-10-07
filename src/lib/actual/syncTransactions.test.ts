@@ -3,11 +3,16 @@ import { createBrowserApiTransport } from "./browserApiTransport";
 import { createHttpApiTransport } from "./httpApiTransport";
 import type { BrowserApiConnection, HttpApiConnection } from "@/store/connection";
 import type { ApiImportTransaction, ApiTransaction } from "./browser/runtime";
+import { apiRequest } from "../api/client";
+import { createFakeActualBudget } from "./testing/fakeActualBudget";
 
 jest.mock("./browser/runtime", () => ({
   getBrowserApiRuntime: jest.fn(),
   syncBrowserApiRuntime: jest.fn(),
 }));
+
+jest.mock("../api/client", () => ({ apiRequest: jest.fn() }));
+const mockApiRequest = apiRequest as jest.MockedFunction<typeof apiRequest>;
 
 const mockGetBrowserApiRuntime = getBrowserApiRuntime as jest.MockedFunction<
   typeof getBrowserApiRuntime
@@ -190,10 +195,15 @@ describe("listTransactionsForSync (Direct)", () => {
           date: "2026-07-02",
           amount: -3000,
           payee: "p1",
+          cleared: true,
+          reconciled: true,
+          imported_id: "bank-parent",
+          imported_payee: "MARKET CARD 42",
+          schedule: "schedule-1",
           is_parent: true,
           subtransactions: [
-            { id: "s1", account: "acct-src", date: "2026-07-02", amount: -1000, category: "cat-a" },
-            { id: "s2", account: "acct-src", date: "2026-07-02", amount: -2000, category: "cat-b", notes: "soap" },
+            { id: "s1", account: "acct-src", date: "2026-07-02", amount: -1000, category: "cat-a", transfer_id: "counterpart-1", is_child: true, parent_id: "parent" },
+            { id: "s2", account: "acct-src", date: "2026-07-02", amount: -2000, category: "cat-b", notes: "soap", transfer_id: null },
           ],
         },
         // A stray top-level child should be ignored (already inline in parent).
@@ -207,8 +217,20 @@ describe("listTransactionsForSync (Direct)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].isParent).toBe(true);
     expect(rows[0].splitLines).toEqual([
-      { id: "s1", amount: -1000, payeeId: null, payeeName: null, categoryId: "cat-a", categoryName: "Groceries", notes: null },
-      { id: "s2", amount: -2000, payeeId: null, payeeName: null, categoryId: "cat-b", categoryName: "Household", notes: "soap" },
+      {
+        id: "s1", amount: -1000, payeeId: null, payeeName: null,
+        categoryId: "cat-a", categoryName: "Groceries", notes: null,
+        cleared: true, reconciled: true, importedId: "bank-parent",
+        importedPayee: "MARKET CARD 42", transferId: "counterpart-1",
+        scheduleId: "schedule-1", isChild: true, parentId: "parent",
+      },
+      {
+        id: "s2", amount: -2000, payeeId: null, payeeName: null,
+        categoryId: "cat-b", categoryName: "Household", notes: "soap",
+        cleared: true, reconciled: true, importedId: "bank-parent",
+        importedPayee: "MARKET CARD 42", transferId: null,
+        scheduleId: "schedule-1", isChild: true, parentId: "parent",
+      },
     ]);
   });
 });
@@ -472,5 +494,60 @@ describe("imported_payee (Direct)", () => {
 
     const [, payload] = send.mock.calls[0];
     expect(payload.updated).toEqual([{ id: "t1", imported_payee: "AMZN Mktp AE*23981" }]);
+  });
+});
+
+/**
+ * Direct/HTTP parity for transfers (P1.0a).
+ *
+ * The same create, sent through each transport to identical budgets that apply
+ * Actual's transfer rule, must leave the same ledger behind: the same rows in
+ * the same accounts, with the same transfer pairing. Ids differ between the two
+ * budgets, so rows are compared by what they mean, not by id.
+ */
+describe("createTransactionsForSync - Direct/HTTP transfer parity", () => {
+  const accounts = [
+    { id: "acct-chk", name: "Checking" },
+    { id: "acct-sav", name: "Savings" },
+  ];
+
+  function ledger(budget: ReturnType<typeof createFakeActualBudget>) {
+    const rows = budget.rows();
+    const accountOf = (id: unknown) => rows.find((r) => r.id === id)?.account ?? null;
+    return rows
+      .map((r) => ({
+        account: r.account,
+        date: r.date,
+        amount: r.amount,
+        payee: r.payee ?? null,
+        importedId: r.imported_id ?? null,
+        pairedWith: r.transfer_id ? accountOf(r.transfer_id) : null,
+      }))
+      .sort((a, b) => `${a.account}${a.amount}`.localeCompare(`${b.account}${b.amount}`));
+  }
+
+  const inputs = [
+    // A transfer by payee id, a transfer resolved by name, and an ordinary row.
+    { accountId: "acct-chk", date: "2026-07-01", amount: -2500, payeeId: "tp-acct-sav", importedId: "m1" },
+    { accountId: "acct-chk", date: "2026-07-02", amount: -700, payeeName: "Savings", importedId: "m2" },
+    { accountId: "acct-chk", date: "2026-07-03", amount: -1250, payeeName: "Coffee Bar", importedId: "m3" },
+  ];
+
+  it("produces identical transfer pairs in Direct and HTTP mode", async () => {
+    const direct = createFakeActualBudget({ accounts, payees: [{ id: "p-coffee", name: "Coffee Bar" }] });
+    mockGetBrowserApiRuntime.mockResolvedValue(direct.directRuntime() as never);
+    await createBrowserApiTransport(browserConnection).createTransactionsForSync(inputs);
+
+    const http = createFakeActualBudget({ accounts, payees: [{ id: "p-coffee", name: "Coffee Bar" }] });
+    mockApiRequest.mockImplementation(http.httpApiRequest as never);
+    await createHttpApiTransport(httpConnection).createTransactionsForSync(inputs);
+
+    expect(ledger(http)).toEqual(ledger(direct));
+    // Two transfers, each with exactly one counterpart; the ordinary row has none.
+    expect(direct.accountRows("acct-sav")).toHaveLength(2);
+    expect(ledger(direct).filter((r) => r.pairedWith !== null)).toHaveLength(4);
+    // Both transports ran Actual's transfer handling; neither sent learnCategories differently than before.
+    expect(direct.insertOptions()).toEqual([{ runTransfers: true, learnCategories: true }]);
+    expect(http.insertOptions()).toEqual([{ runTransfers: true, learnCategories: undefined }]);
   });
 });

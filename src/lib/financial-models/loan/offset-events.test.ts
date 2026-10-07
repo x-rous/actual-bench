@@ -33,7 +33,7 @@ function request(m: LoanModelSnapshot, to = "2024-04-30", events: LedgerEvent[] 
   return { model: m, anchor: { date: anchorDate, principalMinor: m.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "test" }, events, to, options: { generateScheduledRepayments: false } };
 }
 
-describe("offset deposits and withdrawals (loan-daily@7)", () => {
+describe("offset deposits and withdrawals (loan-daily@8)", () => {
   it("applies one-off and recurring deltas without emitting amortization events", () => {
     const m = model([
       { kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor: 1_000 },
@@ -194,7 +194,7 @@ describe("offset deposits and withdrawals (loan-daily@7)", () => {
   });
 });
 
-describe("offset-funded scheduled repayments (loan-daily@7)", () => {
+describe("offset-funded scheduled repayments (loan-daily@8)", () => {
   const fundedModel = (balanceMinor: number, patch: Partial<LoanModelSnapshot> = {}) => {
     const base = model([{ kind: "offset-balance", date: OPEN, accountId: "offset-1", balanceMinor }]);
     return {

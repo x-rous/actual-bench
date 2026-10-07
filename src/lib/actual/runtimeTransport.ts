@@ -62,6 +62,23 @@ import {
   type TransportBudgetMonth,
 } from "./transport";
 import { listAccountsForBankSync } from "./bankSyncAccounts";
+import {
+  completeTransferLink,
+  inspectTransferLink,
+  linkCounterpart,
+  readsReportTransferIds,
+  restructureAsSplit,
+  verifySplit,
+  type RawTxn,
+  type StructurePrimitives,
+  type WriteWatch,
+  convertToTransfer,
+  restoreSplit,
+  adjustSplitAmounts,
+  inspectSplitAmounts,
+  revertTransferConversion,
+  unlinkTransfer,
+} from "./transactionStructure";
 import { runBankSyncForAccounts } from "./runBankSync";
 import { BANK_SYNC_COUNT_WINDOW_DAYS } from "./bankSync";
 import type { BankSyncOutcome } from "./bankSync";
@@ -688,6 +705,7 @@ async function loadSyncNameLookup(
 
 function toSyncSplitLine(
   raw: ApiTransaction,
+  parent: ApiTransaction,
   lookup: NameLookup
 ): SyncSourceSplitLine {
   const payeeId = asString(raw.payee) ?? null;
@@ -700,6 +718,16 @@ function toSyncSplitLine(
     categoryId,
     categoryName: categoryId ? lookup.categoryNames.get(categoryId) ?? null : null,
     notes: asString(raw.notes) ?? null,
+    cleared: parent.cleared === true || raw.cleared === true,
+    reconciled: parent.reconciled === true || raw.reconciled === true,
+    importedId: asString(raw.imported_id) ?? asString(parent.imported_id) ?? null,
+    importedPayee: asString(raw.imported_payee) ?? asString(parent.imported_payee) ?? null,
+    transferId: Object.prototype.hasOwnProperty.call(raw, "transfer_id")
+      ? asString(raw.transfer_id) ?? null
+      : undefined,
+    scheduleId: asString(raw.schedule) ?? asString(parent.schedule) ?? null,
+    isChild: true,
+    parentId: asString(raw.parent_id) ?? parent.id,
   };
 }
 
@@ -711,7 +739,7 @@ function toSyncSourceTransaction(
   const categoryId = asString(raw.category) ?? null;
   const isParent = raw.is_parent === true;
   const splitLines = isParent && Array.isArray(raw.subtransactions)
-    ? raw.subtransactions.map((child) => toSyncSplitLine(child, lookup))
+    ? raw.subtransactions.map((child) => toSyncSplitLine(child, raw, lookup))
     : [];
 
   return {
@@ -1116,6 +1144,90 @@ function accountGroupMethods(
   };
 }
 
+/**
+ * Direct `updateTransaction` settle timing (R-18). Actual's
+ * `api/transaction-update` does not await its batch, so the call resolves
+ * before the write exists; starting another write inside that window
+ * deadlocked the Direct runtime in the P1.0 spike. Tests shorten the waits.
+ */
+const directSettle = { pollMs: 100, quietMs: 400, deadlineMs: 15_000, recentMs: 2_000 };
+
+/** Live experiments only: try a different quiet interval (the production value is 400 ms). */
+export function __setDirectQuietMsForExperiments(ms: number): void {
+  directSettle.quietMs = ms;
+}
+
+/** When Bench's last write on each Direct connection was seen landed and quiet. */
+const lastSettledAt = new Map<string, number>();
+
+export function __setDirectSettleTimingForTests(timing: Partial<typeof directSettle>): void {
+  Object.assign(directSettle, timing);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function directStructurePrimitives(host: ActualRuntimeHost, connection: BrowserApiConnection): StructurePrimitives {
+  async function readAccount(accountId: string, sinceDate: string, untilDate?: string): Promise<RawTxn[]> {
+    const api = await host.getRuntime(connection);
+    const rows = await api.getTransactions(accountId, sinceDate, untilDate ?? "");
+    return rows.filter((row) => isRecord(row) && typeof row.id === "string" && row.is_child !== true) as unknown as RawTxn[];
+  }
+  async function snapshotOf(watch: WriteWatch): Promise<string> {
+    const parts: RawTxn[][] = [];
+    for (const accountId of watch.accountIds) parts.push(await readAccount(accountId, watch.sinceDate, watch.untilDate));
+    return JSON.stringify(parts);
+  }
+  return {
+    readAccount,
+    async update(id, fields, watch) {
+      const api = await host.getRuntime(connection);
+      await settledWrite(`update of ${id}`, watch, () => api.updateTransaction(id, fields as Partial<ApiImportTransaction>));
+    },
+    async remove(id, watch) {
+      const api = await host.getRuntime(connection);
+      await settledWrite(`delete of ${id}`, watch, () => api.deleteTransaction(id));
+    },
+  };
+
+  /**
+   * Run one write and return only when it has landed and the budget is quiet:
+   * the watched accounts changed, then read the same twice across a quiet
+   * interval, so the transfer handling for the other leg has finished too.
+   */
+  async function settledWrite(label: string, watch: WriteWatch, write: () => Promise<unknown>): Promise<void> {
+    // Never start a write while the budget is still changing (just opened and syncing, or a previous
+    // write's transfer handling still running): that window deadlocked the Direct runtime (R-18).
+    // Right after Bench's own write on this connection settled, the budget is known to be quiet.
+    let before = await snapshotOf(watch);
+    const quietBy = Date.now() + directSettle.deadlineMs;
+    const justSettled = Date.now() - (lastSettledAt.get(connection.id) ?? 0) < directSettle.recentMs;
+    while (!justSettled) {
+      await sleep(directSettle.pollMs);
+      const again = await snapshotOf(watch);
+      if (again === before) break;
+      before = again;
+      if (Date.now() > quietBy) throw new Error(`Direct ${label}: the budget did not become quiet within ${directSettle.deadlineMs} ms; nothing was written`);
+    }
+    await write();
+    const started = Date.now();
+    const overdue = () => Date.now() - started > directSettle.deadlineMs;
+    let current = await snapshotOf(watch);
+    while (current === before) {
+      if (overdue()) throw new Error(`Direct ${label} did not land within ${directSettle.deadlineMs} ms`);
+      await sleep(directSettle.pollMs);
+      current = await snapshotOf(watch);
+    }
+    for (;;) {
+      await sleep(directSettle.quietMs);
+      const next = await snapshotOf(watch);
+      if (next === current) break;
+      current = next;
+      if (overdue()) throw new Error(`Direct ${label} did not settle within ${directSettle.deadlineMs} ms`);
+    }
+    lastSettledAt.set(connection.id, Date.now());
+  }
+}
+
 export function createActualRuntimeTransport(
   connection: BrowserApiConnection,
   host: ActualRuntimeHost
@@ -1367,6 +1479,18 @@ export function createActualRuntimeTransport(
       deleteBrowserTransactionForSync(host, connection, input),
     batchWriteTransactionsForSync: (input) =>
       batchWriteBrowserTransactionsForSync(host, connection, input),
+    restructureTransactionAsSplit: (input) => restructureAsSplit(directStructurePrimitives(host, connection), input),
+    linkTransferCounterpart: (input) => linkCounterpart(directStructurePrimitives(host, connection), input),
+    completeTransferLink: (input) => completeTransferLink(directStructurePrimitives(host, connection), input),
+    inspectTransferLink: (input) => inspectTransferLink(directStructurePrimitives(host, connection), input),
+    verifyRestructure: (input) => verifySplit(directStructurePrimitives(host, connection), input),
+    restoreSplit: (input) => restoreSplit(directStructurePrimitives(host, connection), input),
+    adjustSplitAmounts: (input) => adjustSplitAmounts(directStructurePrimitives(host, connection), input),
+    inspectSplitAmounts: (input) => inspectSplitAmounts(directStructurePrimitives(host, connection), input),
+    unlinkTransfer: (input) => unlinkTransfer(directStructurePrimitives(host, connection), input),
+    convertToTransfer: (input) => convertToTransfer(directStructurePrimitives(host, connection), input),
+    revertTransferConversion: (input) => revertTransferConversion(directStructurePrimitives(host, connection), input),
+    canVerifyTransferLinks: (input) => readsReportTransferIds(directStructurePrimitives(host, connection), input.accountId, input.sinceDate),
     getTargetLookupForSync: (input) =>
       getBrowserTargetLookupForSync(host, connection, input),
 

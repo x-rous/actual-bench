@@ -64,6 +64,20 @@ import {
 import { listAccountsForBankSync } from "./bankSyncAccounts";
 import { exportHttpApiBudget } from "./httpBudgetExport";
 import { runBankSyncForAccounts } from "./runBankSync";
+import {
+  completeTransferLink,
+  inspectTransferLink,
+  linkCounterpart,
+  readsReportTransferIds,
+  restructureAsSplit,
+  verifySplit,
+  convertToTransfer,
+  restoreSplit,
+  adjustSplitAmounts,
+  inspectSplitAmounts,
+  revertTransferConversion,
+  unlinkTransfer,
+} from "./transactionStructure";
 import type { HttpApiConnection } from "@/store/connection";
 import { prepareRuleForTransport, prepareRulePatchForTransport } from "./ruleMutation";
 import {
@@ -79,6 +93,7 @@ import {
   listHttpTransactionsForSync,
   readHttpTargetTransactionForSync,
   updateHttpTransactionForSync,
+  httpStructurePrimitives,
 } from "./httpSyncTransactions";
 
 export function createHttpApiTransport(
@@ -212,6 +227,18 @@ export function createHttpApiTransport(
     readTargetTransactionForSync: (input) => readHttpTargetTransactionForSync(connection, input),
     deleteTransactionForSync: (input) => deleteHttpTransactionForSync(connection, input),
     getTargetLookupForSync: (input) => getHttpTargetLookupForSync(connection, input),
+    restructureTransactionAsSplit: (input) => restructureAsSplit(httpStructurePrimitives(connection), input),
+    linkTransferCounterpart: (input) => linkCounterpart(httpStructurePrimitives(connection), input),
+    completeTransferLink: (input) => completeTransferLink(httpStructurePrimitives(connection), input),
+    inspectTransferLink: (input) => inspectTransferLink(httpStructurePrimitives(connection), input),
+    verifyRestructure: (input) => verifySplit(httpStructurePrimitives(connection), input),
+    restoreSplit: (input) => restoreSplit(httpStructurePrimitives(connection), input),
+    adjustSplitAmounts: (input) => adjustSplitAmounts(httpStructurePrimitives(connection), input),
+    inspectSplitAmounts: (input) => inspectSplitAmounts(httpStructurePrimitives(connection), input),
+    unlinkTransfer: (input) => unlinkTransfer(httpStructurePrimitives(connection), input),
+    convertToTransfer: (input) => convertToTransfer(httpStructurePrimitives(connection), input),
+    revertTransferConversion: (input) => revertTransferConversion(httpStructurePrimitives(connection), input),
+    canVerifyTransferLinks: (input) => readsReportTransferIds(httpStructurePrimitives(connection), input.accountId, input.sinceDate),
 
     getNotesIndex: () => getNotesIndex(connection),
     getAccountNote: (accountId) => getAccountNote(connection, accountId),

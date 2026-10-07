@@ -2,6 +2,7 @@ import { apiRequest } from "../api/client";
 import { getCategoryGroups } from "../api/categoryGroups";
 import { createPayee, getPayees } from "../api/payees";
 import { normalizeName } from "@/lib/sync/normalize";
+import type { RawTxn, StructurePrimitives } from "./transactionStructure";
 import type { ConnectionInstance } from "@/store/connection";
 import type {
   CreateTransactionsForSyncResult,
@@ -62,12 +63,15 @@ const SINCE_DATE_FLOOR = "0001-01-01";
 async function fetchTransactions(
   connection: ConnectionInstance,
   accountId: string,
-  startDate?: string
+  startDate?: string,
+  endDate?: string
 ): Promise<RawHttpTransaction[]> {
   const since = startDate || SINCE_DATE_FLOOR;
+  // actual-http-api honours until_date (verified live); rows past it are also filtered by the callers.
+  const until = endDate ? `&until_date=${encodeURIComponent(endDate)}` : "";
   const res = await apiRequest<{ data?: RawHttpTransaction[] } | RawHttpTransaction[]>(
     connection,
-    `/accounts/${accountId}/transactions?since_date=${encodeURIComponent(since)}`
+    `/accounts/${accountId}/transactions?since_date=${encodeURIComponent(since)}${until}`
   );
   return Array.isArray(res) ? res : res.data ?? [];
 }
@@ -83,7 +87,7 @@ async function loadNameMaps(connection: ConnectionInstance): Promise<NameMaps> {
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-function toSplitLine(raw: RawHttpTransaction, names: NameMaps): SyncSourceSplitLine {
+function toSplitLine(raw: RawHttpTransaction, parent: RawHttpTransaction, names: NameMaps): SyncSourceSplitLine {
   return {
     id: raw.id ?? null,
     amount: num(raw.amount),
@@ -92,6 +96,16 @@ function toSplitLine(raw: RawHttpTransaction, names: NameMaps): SyncSourceSplitL
     categoryId: raw.category ?? null,
     categoryName: raw.category ? names.category.get(raw.category) ?? null : null,
     notes: raw.notes ?? null,
+    cleared: parent.cleared === true || raw.cleared === true,
+    reconciled: parent.reconciled === true || raw.reconciled === true,
+    importedId: raw.imported_id ?? parent.imported_id ?? null,
+    importedPayee: raw.imported_payee ?? parent.imported_payee ?? null,
+    transferId: Object.prototype.hasOwnProperty.call(raw, "transfer_id")
+      ? raw.transfer_id ?? null
+      : undefined,
+    scheduleId: raw.schedule ?? parent.schedule ?? null,
+    isChild: true,
+    parentId: raw.parent_id ?? parent.id,
   };
 }
 
@@ -116,7 +130,7 @@ function toSourceTransaction(raw: RawHttpTransaction, names: NameMaps): SyncSour
     isParent,
     isChild: raw.is_child === true,
     parentId: raw.parent_id ?? null,
-    splitLines: isParent && Array.isArray(raw.subtransactions) ? raw.subtransactions.map((s) => toSplitLine(s, names)) : [],
+    splitLines: isParent && Array.isArray(raw.subtransactions) ? raw.subtransactions.map((s) => toSplitLine(s, raw, names)) : [],
   };
 }
 
@@ -125,7 +139,7 @@ export async function listHttpTransactionsForSync(
   input: ListTransactionsForSyncInput
 ): Promise<SyncSourceTransaction[]> {
   const names = await loadNameMaps(connection);
-  const rows = await fetchTransactions(connection, input.accountId, input.startDate);
+  const rows = await fetchTransactions(connection, input.accountId, input.startDate, input.endDate);
   return rows
     // Split children arrive inline under their parent; skip top-level leaks.
     .filter((r) => r.is_child !== true)
@@ -303,9 +317,14 @@ export async function createHttpTransactionsForSync(
   const created: SyncCreatedTransaction[] = new Array(inputs.length);
   for (const [accountId, group] of byAccount) {
     // Plain insert (batch), then one range read to recover ids + fields by marker.
+    //
+    // `runTransfers` matches the Direct path: without it a row whose payee is a
+    // transfer payee (set by the caller or by a target rule) is written with no
+    // counterpart, a one-legged transfer. actual-http-api defaults it to false.
+    // `learnCategories` is deliberately left at the server default here.
     await apiRequest(connection, `/accounts/${accountId}/transactions/batch`, {
       method: "POST",
-      body: { transactions: group.entries.map((e) => e.payload) },
+      body: { transactions: group.entries.map((e) => e.payload), runTransfers: true },
     });
     const rowByMarker = new Map<string, RawHttpTransaction>();
     for (const r of await fetchTransactions(connection, accountId, group.minDate)) {
@@ -326,4 +345,25 @@ export async function createHttpTransactionsForSync(
     }
   }
   return { created };
+}
+
+/**
+ * The two primitives the shared restructure/link logic needs, over
+ * actual-http-api (RD-084 P1.6 T122/T123). `PATCH /transactions/{id}` forwards
+ * the body to `actualApi.updateTransaction` verbatim and returns after the
+ * handler, so no settle loop is needed here (R-18).
+ */
+export function httpStructurePrimitives(connection: ConnectionInstance): StructurePrimitives {
+  return {
+    async readAccount(accountId, sinceDate, untilDate) {
+      const rows = await fetchTransactions(connection, accountId, sinceDate, untilDate);
+      return rows.filter((row) => row.is_child !== true) as unknown as RawTxn[];
+    },
+    async update(id, fields) {
+      await apiRequest(connection, `/transactions/${id}`, { method: "PATCH", body: { transaction: fields } });
+    },
+    async remove(id) {
+      await apiRequest(connection, `/transactions/${id}`, { method: "DELETE" });
+    },
+  };
 }

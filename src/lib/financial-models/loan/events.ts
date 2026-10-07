@@ -227,8 +227,11 @@ export function normalizeEvents(
       return { ok: false, date: a.date, message: `A ${a.kind} assumption must be a positive number of minor units.` };
     }
     const recurrence = "recurrence" in a ? a.recurrence : undefined;
+    const until = recurrence && compareDates(recurrence.until, window.to) < 0 ? recurrence.until : window.to;
     const dates = recurrence
-      ? generateSchedule({ frequency: recurrence.frequency, firstDate: a.date }, { from: a.date, to: compareDates(recurrence.until, window.to) < 0 ? recurrence.until : window.to })
+      ? compareDates(a.date, until) > 0
+        ? []
+        : generateSchedule({ frequency: recurrence.frequency, firstDate: a.date }, { from: a.date, to: until })
       : [a.date];
     for (const date of dates) {
       if (!inWindow(date) && !(isOffsetStateEventKind(a.kind) && compareDates(date, window.after) <= 0)) continue;

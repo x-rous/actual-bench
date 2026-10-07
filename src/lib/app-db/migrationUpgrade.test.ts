@@ -15,6 +15,7 @@ import { sealSecret, sealWithKey } from "@/lib/sync/vault";
 import { connectionFingerprint, serverFingerprint } from "@/lib/sync/connectionRef";
 import { randomBytes } from "node:crypto";
 import { LATEST_SCHEMA_VERSION, runMigrations } from "./migrations";
+import type { SqliteDatabase } from "./types";
 import { getLastSnapshotAt, recordSnapshotUploaded } from "./budgetRuntimeStateRepository";
 import {
   getReconciliationSession,
@@ -51,6 +52,10 @@ import { createPdfLayoutProfile, parsePdfStatementPages } from "@/lib/reconcilia
 import { getSyncFlow } from "./syncFlowRepository";
 import { getAllSyncMappingsForFlow } from "./syncMappingRepository";
 import { listSyncFlowRuns } from "./syncRunRepository";
+import { insertDebt } from "./debtRepository";
+import { listDebtOffsetLinks } from "./debtOffsetLinkRepository";
+import { listDebtAssumptions, replaceDebtAssumptions } from "./debtAssumptionRepository";
+import { ASSETS_DEBT_V38_INDEX_SQL, ASSETS_DEBT_V42_INDEX_SQL, ASSETS_DEBT_V43_INDEX_SQL, ASSETS_DEBT_V44_INDEX_SQL, DEBT_FUTURE_ASSUMPTION_TABLE_SQL } from "./schema";
 
 /**
  * Upgrading a database that already holds real work.
@@ -1043,7 +1048,7 @@ describe("upgrading an existing database", () => {
 
     try {
       const db = getAppDb(path);
-      expect(runMigrations(db).schemaVersion).toBe(37);
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const key = { serverFingerprint: "srv", budgetSyncId: "budget-1" };
       expect(getLastSnapshotAt(db, key)).toBeNull();
       recordSnapshotUploaded(db, key, now);
@@ -1298,6 +1303,480 @@ describe("upgrading an existing database", () => {
           )
           .run(now)
       ).not.toThrow();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/*
+ * v38: Assets & Debt configuration (RD-084 P1.3, gate G1). A v37 database is
+ * built by running every migration and removing only what v38 adds, which v38
+ * can do because it is purely additive.
+ */
+const V38_TABLES = ["debt_future_assumptions", "debt_offset_links", "debt_rate_periods", "debts", "model_revisions"];
+const V38_INDEXES = [
+  "idx_debt_future_assumptions_debt",
+  "idx_debt_offset_links_account",
+  "idx_debt_offset_links_debt",
+  "idx_debt_rate_periods_debt_accrual",
+  "idx_debts_budget_status",
+  "idx_debts_live_liability_account",
+];
+const V38_TRIGGERS = ["debts_delete_revisions", "model_revisions_immutable"];
+const V43_TABLES = [
+  "debt_anchors",
+  "debt_future_assumptions",
+  "debt_match_rules",
+  "debt_observations",
+  "debt_offset_links",
+  "debt_rate_periods",
+  "debt_transaction_links",
+  "debts",
+  "model_revisions",
+];
+const V43_INDEXES = [...V38_INDEXES, ...ASSETS_DEBT_V42_INDEX_SQL, ...ASSETS_DEBT_V43_INDEX_SQL].map((sql) => sql.match(/INDEX IF NOT EXISTS (\S+)/)?.[1] ?? sql).sort();
+
+function v37Database(): { root: string; path: string } {
+  const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v38-"));
+  const path = join(root, "metadata.sqlite");
+  getAppDb(path);
+  resetAppDbForTests();
+  const db = new Database(path);
+  for (const trigger of V38_TRIGGERS) db.exec(`DROP TRIGGER ${trigger}`);
+  for (const table of ["debt_anchors", "debt_observations", "debt_transaction_links", "financial_postings", "debt_match_rules", "model_revisions", "debt_future_assumptions", "debt_offset_links", "debt_rate_periods", "debts"]) db.exec(`DROP TABLE ${table}`);
+  db.prepare("UPDATE app_meta SET value = '37' WHERE key = 'schema_version'").run();
+  // Real work already in the database.
+  db.prepare("INSERT INTO saved_queries (id, name, query, is_favorite, created_at, updated_at) VALUES ('q1', 'Uncategorized', '{}', 1, 't', 't')").run();
+  db.prepare("INSERT INTO budget_runtime_state (server_fingerprint, budget_sync_id, last_snapshot_at) VALUES ('srv', 'b1', 't')").run();
+  db.close();
+  return { root, path };
+}
+
+function objectNames(db: SqliteDatabase, type: "table" | "index" | "trigger"): string[] {
+  return db
+    .prepare("SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .all<{ name: string }>(type)
+    .map((r) => r.name);
+}
+
+function dumpTables(db: SqliteDatabase, tables: string[]): Record<string, unknown[]> {
+  return Object.fromEntries(tables.map((t) => [t, db.prepare(`SELECT * FROM "${t}" ORDER BY rowid`).all()]));
+}
+
+describe("v38 Assets & Debt configuration through v43 observations", () => {
+  afterEach(() => {
+    resetAppDbForTests();
+  });
+
+  it("a fresh database reaches the latest schema with exactly the five Assets & Debt tables, indexes, triggers and foreign keys", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
+    try {
+      const db = getAppDb(join(root, "metadata.sqlite"));
+      expect(LATEST_SCHEMA_VERSION).toBe(44);
+      expect(runMigrations(db).schemaVersion).toBe(44);
+      const tables = objectNames(db, "table");
+      for (const t of V43_TABLES) expect(tables).toContain(t);
+      expect(tables.filter((t) => t.startsWith("debt") || t === "model_revisions")).toEqual(V43_TABLES);
+      expect(objectNames(db, "index").filter((i) => V43_INDEXES.includes(i))).toEqual(V43_INDEXES);
+      expect(objectNames(db, "trigger")).toEqual(expect.arrayContaining(V38_TRIGGERS));
+      for (const child of ["debt_rate_periods", "debt_offset_links", "debt_future_assumptions"]) {
+        expect(db.prepare(`PRAGMA foreign_key_list(${child})`).all()).toEqual([
+          expect.objectContaining({ table: "debts", from: "debt_id", to: "id", on_delete: "CASCADE" }),
+        ]);
+      }
+      expect(db.prepare("PRAGMA foreign_key_list(model_revisions)").all()).toEqual([]);
+      const assumptionColumns = db.prepare("PRAGMA table_info(debt_future_assumptions)").all<{ name: string }>().map((c) => c.name);
+      expect(assumptionColumns).toEqual(["id", "debt_id", "assumption_kind", "effective_from", "recurrence_json", "amount_minor", "fee_treatment", "offset_account_id", "note", "created_at", "updated_at"]);
+      expect(assumptionColumns).not.toContain("rate_decimal");
+      expect(db.prepare("PRAGMA table_info(debt_offset_links)").all<{ name: string }>().map((c) => c.name)).toEqual(expect.arrayContaining(["fund_scheduled_repayments", "fund_scheduled_repayments_from", "use_actual_balance"]));
+      const partial = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'idx_debts_live_liability_account'").get<{ sql: string }>();
+      expect(partial?.sql).toMatch(/UNIQUE INDEX .* WHERE status <> 'archived'/);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades a v37 database: existing rows are unchanged, the new tables are empty, and a second run changes nothing", () => {
+    const { root, path } = v37Database();
+    try {
+      const before = new Database(path);
+      const existing = before.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'app_meta'").all() as { name: string }[];
+      const snapshot = dumpTables(before as unknown as SqliteDatabase, existing.map((t) => t.name));
+      before.close();
+
+      const db = getAppDb(path);
+      const meta = runMigrations(db);
+      expect(meta.schemaVersion).toBe(44);
+      expect(dumpTables(db, existing.map((t) => t.name))).toEqual(snapshot);
+      for (const t of V38_TABLES) expect(db.prepare(`SELECT count(*) AS n FROM ${t}`).get<{ n: number }>()?.n).toBe(0);
+
+      const again = runMigrations(db);
+      expect(again).toEqual(meta);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades v38 to v39 without changing existing assumptions and accepts the two new stored kinds", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v39-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v39",
+        budgetSyncId: "budget-v39",
+        name: "Existing debt",
+        debtType: "mortgage",
+        behaviorClass: "term-loan",
+        currency: "AED",
+        currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v39",
+        paymentAccountId: "payment-v39",
+        signConvention: "negative-is-debt",
+        lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily",
+        lenderChargeGraceDays: 0,
+        onboardingDate: null,
+        loanPaymentCategoryId: null,
+        drawCategoryId: null,
+        expectedObservationIntervalDays: null,
+        currentConfigJson: "{}",
+        status: "active",
+        currentRevision: 1,
+      }, "2026-10-01T00:00:00.000Z");
+      replaceDebtAssumptions(latest, "debt-v39", [{
+        id: "snapshot-v38",
+        kind: "offset-balance",
+        effectiveFrom: "2026-01-01",
+        recurrence: null,
+        amountMinor: 125_000,
+        feeTreatment: null,
+        offsetAccountId: "offset-v39",
+        note: "Existing v38 row",
+      }], "2026-10-01T00:00:00.000Z");
+      const existingAssumptions = listDebtAssumptions(latest, "debt-v39");
+      resetAppDbForTests();
+
+      const seed = new Database(path);
+      seed.exec("DROP INDEX idx_debt_future_assumptions_debt");
+      seed.exec("ALTER TABLE debt_future_assumptions RENAME TO debt_future_assumptions_latest");
+      seed.exec(DEBT_FUTURE_ASSUMPTION_TABLE_SQL
+        .replace("CREATE TABLE IF NOT EXISTS debt_future_assumptions", "CREATE TABLE debt_future_assumptions")
+        .replace(
+          "assumption_kind IN ('offset-balance', 'offset-deposit', 'offset-withdrawal')",
+          "assumption_kind IS 'offset-balance'"
+        ));
+      seed.exec(`INSERT INTO debt_future_assumptions SELECT * FROM debt_future_assumptions_latest`);
+      seed.exec("DROP TABLE debt_future_assumptions_latest");
+      seed.exec(ASSETS_DEBT_V38_INDEX_SQL.find((sql) => sql.includes("idx_debt_future_assumptions_debt"))!);
+      seed.prepare("UPDATE app_meta SET value = '38' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
+      expect(listDebtAssumptions(upgraded, "debt-v39")).toEqual(existingAssumptions);
+      replaceDebtAssumptions(upgraded, "debt-v39", [
+        { kind: "offset-deposit", effectiveFrom: "2026-02-01", recurrence: null, amountMinor: 10_000, feeTreatment: null, offsetAccountId: "offset-v39", note: null },
+        { kind: "offset-withdrawal", effectiveFrom: "2026-03-01", recurrence: null, amountMinor: 2_500, feeTreatment: null, offsetAccountId: "offset-v39", note: null },
+      ]);
+      expect(listDebtAssumptions(upgraded, "debt-v39").map((row) => row.assumptionKind)).toEqual([
+        "offset-deposit",
+        "offset-withdrawal",
+      ]);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades v39 to v40 with existing offset links disabled by default", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v40-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v40", budgetSyncId: "budget-v40", name: "Existing debt", debtType: "mortgage",
+        behaviorClass: "term-loan", currency: "AED", currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v40", paymentAccountId: "payment-v40",
+        signConvention: "negative-is-debt", lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+        loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null,
+        currentConfigJson: "{}", status: "active", currentRevision: 1,
+      }, "2026-10-02T00:00:00.000Z");
+      latest.prepare(`INSERT INTO debt_offset_links
+        (id, debt_id, actual_account_id, effective_from, effective_to, offset_percentage_bps,
+         balance_basis, cap_minor, fund_scheduled_repayments, created_at, updated_at)
+        VALUES ('offset-v40', 'debt-v40', 'cash-v40', '2026-01-01', NULL, 10000,
+                'total', NULL, 0, '2026-10-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z')`).run();
+      resetAppDbForTests();
+
+      const seed = new Database(path);
+      seed.exec("ALTER TABLE debt_offset_links DROP COLUMN fund_scheduled_repayments_from");
+      seed.exec("ALTER TABLE debt_offset_links DROP COLUMN fund_scheduled_repayments");
+      seed.prepare("UPDATE app_meta SET value = '39' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
+      expect(listDebtOffsetLinks(upgraded, "debt-v40")).toEqual([
+        expect.objectContaining({ id: "offset-v40", fundScheduledRepayments: false, fundScheduledRepaymentsFrom: null }),
+      ]);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades an applied v40 database to v41 with immediate funding preserved", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v41-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v41", budgetSyncId: "budget-v41", name: "Existing debt", debtType: "mortgage",
+        behaviorClass: "term-loan", currency: "AED", currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v41", paymentAccountId: "payment-v41",
+        signConvention: "negative-is-debt", lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+        loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null,
+        currentConfigJson: "{}", status: "active", currentRevision: 1,
+      }, "2026-10-02T00:00:00.000Z");
+      latest.prepare(`INSERT INTO debt_offset_links
+        (id, debt_id, actual_account_id, effective_from, effective_to, offset_percentage_bps,
+         balance_basis, cap_minor, fund_scheduled_repayments, created_at, updated_at)
+        VALUES ('offset-v41', 'debt-v41', 'cash-v41', '2026-01-01', NULL, 10000,
+                'total', NULL, 1, '2026-10-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z')`).run();
+      resetAppDbForTests();
+
+      const seed = new Database(path);
+      seed.exec("ALTER TABLE debt_offset_links DROP COLUMN fund_scheduled_repayments_from");
+      seed.prepare("UPDATE app_meta SET value = '40' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
+      expect(listDebtOffsetLinks(upgraded, "debt-v41")).toEqual([
+        expect.objectContaining({ id: "offset-v41", fundScheduledRepayments: true, fundScheduledRepaymentsFrom: null }),
+      ]);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades an applied v41 database to v42 without changing existing debt configuration", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v42-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v42", budgetSyncId: "budget-v42", name: "Existing debt", debtType: "mortgage",
+        behaviorClass: "term-loan", currency: "AED", currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v42", paymentAccountId: "payment-v42",
+        signConvention: "negative-is-debt", lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+        loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null,
+        currentConfigJson: "{}", status: "active", currentRevision: 1,
+      }, "2026-10-03T00:00:00.000Z");
+      const before = latest.prepare("SELECT * FROM debts WHERE id = 'debt-v42'").get();
+      resetAppDbForTests();
+
+      const seed = new Database(path);
+      seed.exec("DROP TABLE debt_transaction_links");
+      seed.exec("DROP TABLE debt_match_rules");
+      seed.exec("DROP INDEX idx_debts_id_budget");
+      seed.prepare("UPDATE app_meta SET value = '41' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
+      expect(upgraded.prepare("SELECT * FROM debts WHERE id = 'debt-v42'").get()).toEqual(before);
+      expect(upgraded.prepare("SELECT count(*) AS n FROM debt_match_rules").get()).toEqual({ n: 0 });
+      expect(upgraded.prepare("SELECT count(*) AS n FROM debt_transaction_links").get()).toEqual({ n: 0 });
+      expect(upgraded.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades an applied v42 database to v43 with Actual-linked offsets disabled", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v43-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v43", budgetSyncId: "budget-v43", name: "Existing debt", debtType: "mortgage",
+        behaviorClass: "term-loan", currency: "AED", currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v43", paymentAccountId: "payment-v43",
+        signConvention: "negative-is-debt", lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+        loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null,
+        currentConfigJson: "{}", status: "active", currentRevision: 1,
+      }, "2026-10-03T00:00:00.000Z");
+      latest.prepare(`INSERT INTO debt_offset_links
+        (id, debt_id, actual_account_id, effective_from, effective_to, offset_percentage_bps,
+         balance_basis, cap_minor, fund_scheduled_repayments, fund_scheduled_repayments_from,
+         use_actual_balance, created_at, updated_at)
+        VALUES ('offset-v43', 'debt-v43', 'cash-v43', '2026-01-01', NULL, 10000,
+                'total', NULL, 0, NULL, 0, '2026-10-03T00:00:00.000Z', '2026-10-03T00:00:00.000Z')`).run();
+      resetAppDbForTests();
+      const seed = new Database(path);
+      seed.exec("DROP TABLE debt_anchors");
+      seed.exec("DROP TABLE debt_observations");
+      seed.exec("ALTER TABLE debt_offset_links DROP COLUMN use_actual_balance");
+      seed.exec("ALTER TABLE debts DROP COLUMN drift_accepted_fingerprint");
+      seed.prepare("UPDATE app_meta SET value = '42' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
+      expect(listDebtOffsetLinks(upgraded, "debt-v43")[0]).toMatchObject({ useActualBalance: false });
+      expect(upgraded.prepare("SELECT drift_accepted_fingerprint FROM debts WHERE id = 'debt-v43'").get()).toEqual({ drift_accepted_fingerprint: null });
+      expect(upgraded.prepare("SELECT count(*) AS n FROM debt_observations").get()).toEqual({ n: 0 });
+      expect(upgraded.prepare("SELECT count(*) AS n FROM debt_anchors").get()).toEqual({ n: 0 });
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("v44: a fresh database has exactly the trimmed financial_postings design and the posting-backed link column", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v44-"));
+    try {
+      const db = getAppDb(join(root, "metadata.sqlite"));
+      expect(runMigrations(db).schemaVersion).toBe(44);
+      const columns = db.prepare("PRAGMA table_info(financial_postings)").all<{ name: string }>().map((c) => c.name);
+      expect(columns).toEqual([
+        "id", "budget_sync_id", "subject_kind", "subject_id", "posting_kind", "period_key", "generation", "config_revision",
+        "input_format_version", "input_snapshot_json", "input_hash", "engine_versions_json", "output_snapshot_json",
+        "classification", "classification_reasons_json", "idempotency_marker", "status", "decided_at", "applied_at",
+        "actual_ids_json", "reversal_of", "error_json", "created_at", "updated_at",
+      ]);
+      for (const removed of ["automation_run_id", "decided_by", "previewed_at", "before_snapshot_json", "after_snapshot_json", "observation_kind", "observation_id"]) {
+        expect(columns).not.toContain(removed);
+      }
+      const indexes = ASSETS_DEBT_V44_INDEX_SQL.map((sql) => sql.match(/INDEX IF NOT EXISTS (\S+)/)?.[1]);
+      expect(objectNames(db, "index")).toEqual(expect.arrayContaining(indexes));
+      expect(objectNames(db, "trigger")).toContain("financial_postings_identity_immutable");
+      expect(db.prepare("PRAGMA table_info(debt_transaction_links)").all<{ name: string }>().map((c) => c.name)).toContain("posting_id");
+      expect(db.prepare("PRAGMA foreign_key_list(debt_transaction_links)").all()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ table: "financial_postings", from: "posting_id", to: "id", on_delete: "RESTRICT" }),
+      ]));
+      // v38-v43 shapes are untouched: auto_apply_enabled is still there, still inert.
+      expect(db.prepare("PRAGMA table_info(debts)").all<{ name: string }>().map((c) => c.name)).toContain("auto_apply_enabled");
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades an applied v43 database to v44 with existing links and debts unchanged", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v44-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      const latest = getAppDb(path);
+      insertDebt(latest, {
+        id: "debt-v44", budgetSyncId: "budget-v44", name: "Existing debt", debtType: "mortgage",
+        behaviorClass: "term-loan", currency: "AED", currencyMinorDigits: 2,
+        liabilityAccountId: "liability-v44", paymentAccountId: "payment-v44",
+        signConvention: "negative-is-debt", lenderPattern: "embedded-interest",
+        executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+        loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null,
+        currentConfigJson: "{}", status: "active", currentRevision: 1,
+      }, "2026-10-04T00:00:00.000Z");
+      resetAppDbForTests();
+      const seed = new Database(path);
+      seed.exec("DROP TRIGGER financial_postings_identity_immutable");
+      seed.exec("ALTER TABLE debt_transaction_links DROP COLUMN posting_id");
+      seed.exec("DROP TABLE financial_postings");
+      seed.prepare(`INSERT INTO debt_transaction_links (id, debt_id, budget_sync_id, actual_transaction_id, actual_parent_id, role, period_key, link_source, linked_at)
+        VALUES ('link-v44', 'debt-v44', 'budget-v44', 'txn-1', NULL, 'repayment', '2026-09-01', 'match-rule', 't')`).run();
+      seed.prepare("UPDATE app_meta SET value = '43' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      expect(runMigrations(upgraded).schemaVersion).toBe(44);
+      expect(upgraded.prepare("SELECT link_source, posting_id FROM debt_transaction_links WHERE id = 'link-v44'").get()).toEqual({ link_source: "match-rule", posting_id: null });
+      expect(upgraded.prepare("SELECT count(*) AS n FROM financial_postings").get()).toEqual({ n: 0 });
+      expect(upgraded.prepare("SELECT auto_apply_enabled FROM debts WHERE id = 'debt-v44'").get()).toEqual({ auto_apply_enabled: 0 });
+      expect(upgraded.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("repairs a database that recorded v43 or v44 without debts.drift_accepted_fingerprint (column added to v43 after it ran)", () => {
+    for (const recorded of ["43", "44"]) {
+      const root = mkdtempSync(join(tmpdir(), `actual-bench-drift-repair-${recorded}-`));
+      const path = join(root, "metadata.sqlite");
+      try {
+        getAppDb(path);
+        resetAppDbForTests();
+        const seed = new Database(path);
+        seed.exec("ALTER TABLE debts DROP COLUMN drift_accepted_fingerprint");
+        if (recorded === "43") {
+          seed.exec("DROP TRIGGER financial_postings_identity_immutable");
+          seed.exec("ALTER TABLE debt_transaction_links DROP COLUMN posting_id");
+          seed.exec("DROP TABLE financial_postings");
+        }
+        seed.prepare("UPDATE app_meta SET value = ? WHERE key = 'schema_version'").run(recorded);
+        seed.close();
+
+        const repaired = getAppDb(path);
+        expect(runMigrations(repaired).schemaVersion).toBe(44);
+        expect(repaired.prepare("PRAGMA table_info(debts)").all<{ name: string }>().map((c) => c.name)).toContain("drift_accepted_fingerprint");
+        insertDebt(repaired, {
+          id: `debt-repair-${recorded}`, budgetSyncId: "budget-repair", name: "Repaired", debtType: "mortgage", behaviorClass: "term-loan",
+          currency: "AED", currencyMinorDigits: 2, liabilityAccountId: `loan-${recorded}`, paymentAccountId: "cash", signConvention: "negative-is-debt",
+          lenderPattern: "embedded-interest", executionStrategy: "bench-daily", lenderChargeGraceDays: 0, onboardingDate: null,
+          loanPaymentCategoryId: null, drawCategoryId: null, expectedObservationIntervalDays: null, currentConfigJson: "{}", status: "active", currentRevision: 1,
+        }, "2026-10-04T00:00:00.000Z");
+        expect(runMigrations(repaired).schemaVersion).toBe(44);
+      } finally {
+        resetAppDbForTests();
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("rolls back entirely when v38 fails: the database stays at v37 with no Assets & Debt objects", () => {
+    const { root, path } = v37Database();
+    try {
+      const seed = new Database(path);
+      // A view in the way of the third table makes that CREATE TABLE fail mid-migration.
+      seed.exec("CREATE VIEW debt_offset_links AS SELECT 1 AS x");
+      seed.close();
+      expect(() => getAppDb(path)).toThrow();
+      resetAppDbForTests();
+      const db = new Database(path);
+      expect(db.prepare("SELECT value FROM app_meta WHERE key = 'schema_version'").get()).toEqual({ value: "37" });
+      const names = (db.prepare("SELECT name, type FROM sqlite_master WHERE name LIKE 'debt%' OR name LIKE 'model_revisions%' OR name LIKE 'idx_debt%'").all() as { name: string; type: string }[]);
+      expect(names).toEqual([{ name: "debt_offset_links", type: "view" }]);
+      db.close();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("an older build refuses a database newer than it supports", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-newer-v38-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      getAppDb(path);
+      resetAppDbForTests();
+      const seed = new Database(path);
+      seed.prepare("UPDATE app_meta SET value = ? WHERE key = 'schema_version'").run(String(LATEST_SCHEMA_VERSION + 1));
+      seed.close();
+      const raw = new Database(path);
+      expect(() => runMigrations(raw as unknown as SqliteDatabase)).toThrow(/newer than this app supports/);
+      raw.close();
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

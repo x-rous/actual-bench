@@ -566,3 +566,271 @@ export type AutomationRun = {
   /** What the run was started for (an event id, say); `null` for ordinary runs. */
   input: JsonEnvelope | null;
 };
+
+// ── Assets & Debt configuration (RD-084 P1.3, v38) ───────────────────────────
+//
+// Relational enum columns are text with no CHECK (AGENTS.md). A value this build
+// does not know is read as `{ unknown: raw }`, never cast: the record it sits on
+// is Blocked ("configured by a newer version of Actual Bench") rather than
+// misread. Decimal quantities are exact strings; amounts are integer minor units.
+
+/** A stored enum value: known to this build, or kept raw so the record can be Blocked. */
+export type StoredEnum<T extends string> = T | { unknown: string };
+
+export function readStoredEnum<T extends string>(values: readonly T[], raw: string): StoredEnum<T> {
+  return (values as readonly string[]).includes(raw) ? (raw as T) : { unknown: raw };
+}
+
+export function isKnownEnum<T extends string>(value: StoredEnum<T>): value is T {
+  return typeof value === "string";
+}
+
+/** FR-020 user-facing type. `heloc` is shown as "HELOC / revolving credit". */
+export const DEBT_TYPES = ["mortgage", "personal-loan", "car-loan", "student-loan", "heloc", "loan-receivable", "other"] as const;
+export type DebtType = (typeof DEBT_TYPES)[number];
+export const BEHAVIOR_CLASSES = ["term-loan", "revolving-credit", "receivable-loan"] as const;
+export type BehaviorClass = (typeof BEHAVIOR_CLASSES)[number];
+export const LENDER_PATTERNS = ["embedded-interest", "separate-interest"] as const;
+export type LenderPattern = (typeof LENDER_PATTERNS)[number];
+export const EXECUTION_STRATEGIES = ["actual-formula-rule", "bench-periodic", "bench-daily"] as const;
+export type ExecutionStrategyId = (typeof EXECUTION_STRATEGIES)[number];
+export const SIGN_CONVENTIONS = ["negative-is-debt", "positive-is-debt"] as const;
+export type SignConvention = (typeof SIGN_CONVENTIONS)[number];
+export const DEBT_STATUSES = ["draft", "active", "archived"] as const;
+export type DebtStatus = (typeof DEBT_STATUSES)[number];
+export const MODEL_REVISION_SUBJECT_KINDS = ["debt", "asset", "balance-link"] as const;
+export type ModelRevisionSubjectKind = (typeof MODEL_REVISION_SUBJECT_KINDS)[number];
+export const DEBT_ASSUMPTION_KINDS = ["extra-repayment", "draw", "fee", "payment-change", "offset-balance", "offset-deposit", "offset-withdrawal"] as const;
+export type DebtAssumptionKind = (typeof DEBT_ASSUMPTION_KINDS)[number];
+export const OFFSET_ASSUMPTION_KINDS: readonly DebtAssumptionKind[] = ["offset-balance", "offset-deposit", "offset-withdrawal"];
+export const OFFSET_BALANCE_BASES = ["cleared", "total"] as const;
+export type OffsetBalanceBasis = (typeof OFFSET_BALANCE_BASES)[number];
+export const PAYMENT_CAP_KINDS = ["absolute", "previous-payment-factor"] as const;
+export type PaymentCapKind = (typeof PAYMENT_CAP_KINDS)[number];
+/** Per-rate payment recalculation overrides (G1): contract-level policies are not per-rate. */
+export const PER_RATE_RECAST_POLICIES = ["never", "on-rate-change", "lender-provided"] as const;
+export type PerRateRecastPolicy = (typeof PER_RATE_RECAST_POLICIES)[number];
+export const FEE_TREATMENT_VALUES = ["cash-paid", "capitalized"] as const;
+export type FeeTreatmentValue = (typeof FEE_TREATMENT_VALUES)[number];
+
+export type DebtRecord = {
+  id: string;
+  budgetSyncId: string;
+  name: string;
+  debtType: StoredEnum<DebtType>;
+  behaviorClass: StoredEnum<BehaviorClass>;
+  currency: string;
+  currencyMinorDigits: number;
+  liabilityAccountId: string | null;
+  paymentAccountId: string | null;
+  signConvention: StoredEnum<SignConvention>;
+  lenderPattern: StoredEnum<LenderPattern> | null;
+  executionStrategy: StoredEnum<ExecutionStrategyId>;
+  driftToleranceMinor: number;
+  lenderChargeGraceDays: number;
+  onboardingDate: string | null;
+  loanPaymentCategoryId: string | null;
+  drawCategoryId: string | null;
+  expectedObservationIntervalDays: number | null;
+  autoApplyEnabled: boolean;
+  driftAcceptedRevision: number | null;
+  driftAcceptedFingerprint: string | null;
+  currentRevision: number;
+  /** Raw `rd084.debt-config` JSON; the service parses it (an unsupported version Blocks only this debt). */
+  currentConfigJson: string;
+  status: StoredEnum<DebtStatus>;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  /** Relational enum columns holding a value this build does not know. Non-empty means Blocked. */
+  unknownValues: string[];
+};
+
+export type DebtPaymentCap =
+  | { kind: "absolute"; amountMinor: number }
+  | { kind: "previous-payment-factor"; factor: string }
+  | { kind: { unknown: string } };
+
+export type DebtRatePeriodRecord = {
+  id: string;
+  debtId: string;
+  announcedAt: string | null;
+  accrualEffectiveFrom: string;
+  annualRateDecimal: string;
+  paymentRecalcPolicy: StoredEnum<PerRateRecastPolicy> | null;
+  paymentEffectiveFrom: string | null;
+  rateCapDecimal: string | null;
+  rateFloorDecimal: string | null;
+  paymentCap: DebtPaymentCap | null;
+  source: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DebtOffsetLinkRecord = {
+  id: string;
+  debtId: string;
+  actualAccountId: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  offsetPercentageBps: number;
+  balanceBasis: StoredEnum<OffsetBalanceBasis>;
+  capMinor: number | null;
+  /** Added in schema v40; absent in historical revision JSON means false. */
+  fundScheduledRepayments?: boolean;
+  /** Added in schema v41; absent in historical revision JSON means immediate funding. */
+  fundScheduledRepaymentsFrom?: string | null;
+  /** Added in schema v43; absent in historical revision JSON means false. */
+  useActualBalance?: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DebtAssumptionRecurrence = { frequency: string; until: string };
+
+export type DebtAssumptionRecord = {
+  id: string;
+  debtId: string;
+  assumptionKind: StoredEnum<DebtAssumptionKind>;
+  effectiveFrom: string;
+  /** Null when absent; `{ unknown }` when the stored envelope has a version this build cannot read. */
+  recurrence: DebtAssumptionRecurrence | { unknown: string } | null;
+  amountMinor: number | null;
+  feeTreatment: StoredEnum<FeeTreatmentValue> | null;
+  offsetAccountId: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ModelRevisionRecord = {
+  subjectKind: StoredEnum<ModelRevisionSubjectKind>;
+  subjectId: string;
+  revision: number;
+  configFormat: string;
+  configVersion: number;
+  /** The canonical snapshot exactly as stored and hashed. Parsed by its owner, never assumed to be v1. */
+  configJson: string;
+  configHash: string;
+  changeSummary: string;
+  createdAt: string;
+};
+
+// ── Assets & Debt matching (RD-084 P1.4, v42) ───────────────────────────────
+
+export const DEBT_MATCH_PURPOSES = ["repayment", "interest-charge", "lender-repayment-row"] as const;
+export type DebtMatchPurpose = (typeof DEBT_MATCH_PURPOSES)[number];
+export const DEBT_TRANSACTION_LINK_ROLES = [
+  "repayment",
+  /** The user's choice of the payment for a due date (owner decision 2026-10-07); not a claim. */
+  "repayment-choice",
+  /** The user said a payment into the loan is not an extra payment (it is not counted automatically). */
+  "not-extra",
+  "lender-repayment-row",
+  "lender-interest-charge",
+  "extra-repayment",
+  "draw",
+  "fee",
+  "evidence-only",
+] as const;
+export type DebtTransactionLinkRole = (typeof DEBT_TRANSACTION_LINK_ROLES)[number];
+export const DEBT_TRANSACTION_LINK_SOURCES = ["match-rule", "user", "posting"] as const;
+export type DebtTransactionLinkSource = (typeof DEBT_TRANSACTION_LINK_SOURCES)[number];
+
+export type DebtMatchRuleRecord = {
+  id: string;
+  debtId: string;
+  purpose: StoredEnum<DebtMatchPurpose>;
+  ruleFormatVersion: number;
+  conditionsJson: string;
+  actionsJson: string;
+  enabled: boolean;
+  lastBacktestJson: string | null;
+  lastBacktestAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DebtTransactionLinkRecord = {
+  id: string;
+  debtId: string;
+  budgetSyncId: string;
+  actualTransactionId: string;
+  actualParentId: string | null;
+  role: StoredEnum<DebtTransactionLinkRole>;
+  periodKey: string;
+  linkSource: StoredEnum<DebtTransactionLinkSource>;
+  linkedAt: string;
+  /** v44: the posting that created this link, when `linkSource` is `posting`. */
+  postingId: string | null;
+};
+
+// ── Assets & Debt postings (RD-084 P1.6, v44) ───────────────────────────────
+
+/** v44 registers `debt`; v45 (Phase 3) registers `asset`. `balance-link` is deferred. */
+export const POSTING_SUBJECT_KINDS = ["debt"] as const;
+export type PostingSubjectKind = (typeof POSTING_SUBJECT_KINDS)[number];
+
+/** Phase 1 posting kinds, including P1.9's (owner decision D8: P1.9 has no migration). */
+export const POSTING_KINDS = [
+  "repayment-split",
+  "repayment-link",
+  "interest-charge",
+  "interest-link",
+  "opening-adjustment",
+  "reconciliation-adjustment",
+  "fee-charge",
+  "reversal",
+  "receivable-split",
+  "revolving-interest",
+  "anchor-only",
+] as const;
+export type PostingKind = (typeof POSTING_KINDS)[number];
+
+/** Persisted vocabulary, unchanged by the scope revision (owner clarification 3). */
+export const POSTING_CLASSIFICATIONS = ["safe", "review", "blocked"] as const;
+export type PostingClassification = (typeof POSTING_CLASSIFICATIONS)[number];
+
+export const POSTING_STATUSES = [
+  "proposed",
+  "approved",
+  "applying",
+  "applied",
+  "failed",
+  "indeterminate",
+  "declined",
+  "superseded",
+  "reversed",
+] as const;
+export type PostingStatus = (typeof POSTING_STATUSES)[number];
+
+export type PostingReason = { code: string; text: string };
+
+export type FinancialPostingRecord = {
+  id: string;
+  budgetSyncId: string;
+  subjectKind: StoredEnum<PostingSubjectKind>;
+  subjectId: string;
+  postingKind: StoredEnum<PostingKind>;
+  periodKey: string;
+  generation: number;
+  configRevision: number;
+  inputFormatVersion: number;
+  /** Canonical JSON exactly as hashed; parsed by the snapshot module. */
+  inputSnapshotJson: string;
+  inputHash: string;
+  engineVersions: Record<string, string>;
+  outputSnapshotJson: string;
+  classification: StoredEnum<PostingClassification>;
+  reasons: PostingReason[];
+  idempotencyMarker: string | null;
+  status: StoredEnum<PostingStatus>;
+  decidedAt: string | null;
+  appliedAt: string | null;
+  actualIds: string[] | null;
+  reversalOf: string | null;
+  error: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+};

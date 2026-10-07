@@ -83,6 +83,16 @@ function textMatches(actual: string | null, operator: "exact" | "contains" | "on
   return operator === "contains" ? normalized.includes(values[0] ?? "") : values.includes(normalized);
 }
 
+function partialPaymentThresholdMinor(conditions: MatchConditionsV1, candidate: MatchCandidate, expected: ExpectedMatchPeriod): bigint {
+  const amount = conditions.items.find((item) => item.kind === "amount" && item.operator === "approximate" && conditionMatches(item, candidate, expected));
+  if (amount?.kind === "amount" && amount.operator === "approximate") {
+    return amount.tolerance.kind === "absolute"
+      ? BigInt(amount.tolerance.amountMinor)
+      : BigInt(amount.amountMinor) * BigInt(amount.tolerance.bps) / BigInt(10_000);
+  }
+  return BigInt(Math.max(1, Math.floor(expected.paymentMinor / 100)));
+}
+
 function conditionMatches(condition: MatchConditionV1, candidate: MatchCandidate, expected: ExpectedMatchPeriod): boolean {
   switch (condition.kind) {
     case "source-account": return candidate.accountId === condition.accountId;
@@ -118,7 +128,7 @@ function unsafeReasons(candidate: MatchCandidate, conditions: MatchConditionsV1,
   if (conditions.items.some((item) => item.kind === "reconciled-state" && item.value !== "any") && candidate.reconciled === undefined) reasons.push("reconciled-state-unavailable");
   const actual = magnitude(candidate.amountMinor);
   if (actual !== expected.paymentMinor && expected.fromOffsetMinor && actual === expected.otherFundsMinor) reasons.push("partial-offset-funding");
-  else if (actual < expected.paymentMinor) reasons.push("partial-payment-representation");
+  else if (BigInt(actual) < BigInt(expected.paymentMinor) - partialPaymentThresholdMinor(conditions, candidate, expected)) reasons.push("partial-payment-representation");
   return reasons;
 }
 

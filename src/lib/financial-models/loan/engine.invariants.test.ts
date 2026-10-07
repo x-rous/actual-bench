@@ -2,7 +2,7 @@ import { addDays } from "../calendar/dates";
 import { dec, toDecString, toPlainString } from "../money/kernel";
 import { dayInterest, interestBase } from "./accrual";
 import { chargeDates } from "./charge";
-import { simulateDaily } from "./daily-engine";
+import { simulateDaily, simulateDailyAtVersion } from "./daily-engine";
 import { actual365Fixed } from "./daycount/act365f";
 import { normalizeEvents } from "./events";
 import { finalDecision } from "./finalPayment";
@@ -219,6 +219,19 @@ describe("same-day order (event-order@3): before-accrual → accrue → charge �
   it("a split placement (Figura-compatible): other payments and offsets before, the scheduled repayment after the charge", () => {
     const figura = ok(simulateDaily(req(withOffset({ eventOrder: { scheduledRepayments: "after-accrual", otherPayments: "before-accrual", offsets: "before-accrual" } }), sameDay, "2024-02-15")));
     expect(dayOf(figura)).toEqual([["draw", "payment"], ["extra-repayment", "payment"], ["interest-charge", "charge"], ["repayment", "scheduled-repayment"]]);
+  });
+
+  it("applies observed repayments at the scheduled-repayment step in split placements", () => {
+    const observed: LedgerEvent[] = [{ kind: "repayment", date: "2024-02-15", amountMinor: 120000, ref: ref("observed") }];
+    const request = {
+      ...req(withOffset({ eventOrder: { scheduledRepayments: "after-accrual", otherPayments: "before-accrual", offsets: "before-accrual" } }), observed, "2024-02-15"),
+      options: { generateScheduledRepayments: false },
+    };
+    const result = ok(simulateDaily(request));
+    expect(dayOf(result)).toEqual([["interest-charge", "charge"], ["repayment", "scheduled-repayment"]]);
+    expect(result.versions.engine).toBe("loan-daily@8");
+    const historical = simulateDailyAtVersion("loan-daily@7", request);
+    expect(historical.ok && historical.events.find((event) => event.type === "repayment")?.diagnostics.sameDayStep).toBe("payment");
   });
 
   it("placement changes that day's interest: events before the accrual count, events after it do not", () => {

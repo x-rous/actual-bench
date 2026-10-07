@@ -39,12 +39,13 @@ export const DAILY_ENGINE_VERSION_V3 = "loan-daily@3";
 export const DAILY_ENGINE_VERSION_V4 = "loan-daily@4";
 export const DAILY_ENGINE_VERSION_V5 = "loan-daily@5";
 export const DAILY_ENGINE_VERSION_V6 = "loan-daily@6";
-export const DAILY_ENGINE_VERSION = "loan-daily@7";
+export const DAILY_ENGINE_VERSION_V7 = "loan-daily@7";
+export const DAILY_ENGINE_VERSION = "loan-daily@8";
 
 type Day = { date: IsoDate; events: EngineEvent[] };
 
 type DailyEngineBehavior = {
-  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5" | "loan-daily@6" | "loan-daily@7";
+  engineVersion: "loan-daily@2" | "loan-daily@3" | "loan-daily@4" | "loan-daily@5" | "loan-daily@6" | "loan-daily@7" | "loan-daily@8";
   repaymentVersion: "repayment@1" | "repayment@2";
   recastVersion: "recast@1" | "recast@2";
   eventOrderVersion: "event-order@1" | "event-order@2" | "event-order@3";
@@ -56,6 +57,7 @@ type DailyEngineBehavior = {
   offsetDeltas: boolean;
   offsetFunding: boolean;
   offsetFundingStart: boolean;
+  observedRepaymentsAtScheduledStep: boolean;
 };
 
 const DAILY_V2: DailyEngineBehavior = {
@@ -71,6 +73,7 @@ const DAILY_V2: DailyEngineBehavior = {
   offsetDeltas: false,
   offsetFunding: false,
   offsetFundingStart: false,
+  observedRepaymentsAtScheduledStep: false,
 };
 
 const DAILY_V3: DailyEngineBehavior = {
@@ -108,13 +111,19 @@ const DAILY_V6: DailyEngineBehavior = {
 
 const DAILY_V7: DailyEngineBehavior = {
   ...DAILY_V6,
-  engineVersion: DAILY_ENGINE_VERSION,
+  engineVersion: DAILY_ENGINE_VERSION_V7,
   offsetsVersion: OFFSETS_VERSION,
   offsetFundingStart: true,
 };
 
+const DAILY_V8: DailyEngineBehavior = {
+  ...DAILY_V7,
+  engineVersion: DAILY_ENGINE_VERSION,
+  observedRepaymentsAtScheduledStep: true,
+};
+
 export function simulateDaily(req: SimulationRequest): SimulationResult {
-  return simulateDailyImpl(req, DAILY_V7);
+  return simulateDailyImpl(req, DAILY_V8);
 }
 
 /** Historical loan-daily@2, kept callable for stored-result reproduction. */
@@ -142,6 +151,11 @@ export function simulateDailyV6(req: SimulationRequest): SimulationResult {
   return simulateDailyImpl(req, DAILY_V6);
 }
 
+/** Historical loan-daily@7, before observed repayments followed their scheduled-repayment step. */
+export function simulateDailyV7(req: SimulationRequest): SimulationResult {
+  return simulateDailyImpl(req, DAILY_V7);
+}
+
 /** Resolve an exact daily-engine version; unknown versions never fall forward. */
 export function simulateDailyAtVersion(version: string, req: SimulationRequest): SimulationResult {
   if (version === DAILY_ENGINE_VERSION_V2) return simulateDailyV2(req);
@@ -149,6 +163,7 @@ export function simulateDailyAtVersion(version: string, req: SimulationRequest):
   if (version === DAILY_ENGINE_VERSION_V4) return simulateDailyV4(req);
   if (version === DAILY_ENGINE_VERSION_V5) return simulateDailyV5(req);
   if (version === DAILY_ENGINE_VERSION_V6) return simulateDailyV6(req);
+  if (version === DAILY_ENGINE_VERSION_V7) return simulateDailyV7(req);
   if (version === DAILY_ENGINE_VERSION) return simulateDaily(req);
   throw new RangeError(`Unsupported daily engine version: ${version}`);
 }
@@ -684,10 +699,13 @@ function simulateDailyImpl(req: SimulationRequest, behavior: DailyEngineBehavior
           }
           break;
         case "payment":
-          for (const e of day.events.filter((x) => x.kind === "extra-repayment" || x.kind === "draw" || x.kind === "repayment")) problem ??= applyEvent(e);
+          for (const e of day.events.filter((x) => x.kind === "extra-repayment" || x.kind === "draw" || (!behavior.observedRepaymentsAtScheduledStep && x.kind === "repayment"))) problem ??= applyEvent(e);
           break;
         case "scheduled-repayment":
-          if (scheduledSet.has(date)) problem = scheduledRepayment(date);
+          if (behavior.observedRepaymentsAtScheduledStep) {
+            for (const e of day.events.filter((x) => x.kind === "repayment")) problem ??= applyEvent(e);
+          }
+          if (!problem && scheduledSet.has(date)) problem = scheduledRepayment(date);
           break;
         case "offset-change":
           if (behavior.offsetDeltas) {

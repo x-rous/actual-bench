@@ -45,7 +45,7 @@ import { FEE_TREATMENTS, FEES_VERSION } from "./fees";
 import { ALLOCATION_VERSION } from "./allocation";
 import { FINAL_PAYMENT_VERSION } from "./finalPayment";
 import { PERIODIC_ENGINE_VERSION } from "./periodic-engine";
-import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3, DAILY_ENGINE_VERSION_V4, DAILY_ENGINE_VERSION_V5, DAILY_ENGINE_VERSION_V6 } from "./daily-engine";
+import { DAILY_ENGINE_VERSION, DAILY_ENGINE_VERSION_V2, DAILY_ENGINE_VERSION_V3, DAILY_ENGINE_VERSION_V4, DAILY_ENGINE_VERSION_V5, DAILY_ENGINE_VERSION_V6, DAILY_ENGINE_VERSION_V7 } from "./daily-engine";
 import { REVOLVING_VERSION } from "./revolving";
 import { RECEIVABLE_VERSION } from "./receivable";
 import { ELIGIBILITY_VERSION } from "./eligibility";
@@ -117,6 +117,8 @@ describe("rd084.debt-config v1 identifiers are frozen", () => {
     expect(DAILY_ENGINE_VERSION_V4).toBe("loan-daily@4");
     expect(DAILY_ENGINE_VERSION_V5).toBe("loan-daily@5");
     expect(DAILY_ENGINE_VERSION_V6).toBe("loan-daily@6");
+    expect(DAILY_ENGINE_VERSION_V7).toBe("loan-daily@7");
+    expect(DAILY_ENGINE_VERSION).toBe("loan-daily@8");
     expect(EVENT_ORDER_VERSION_V1).toBe("event-order@1");
     expect(EVENT_ORDER_VERSION_V2).toBe("event-order@2");
     expect(OFFSETS_VERSION_V1).toBe("offsets@1");

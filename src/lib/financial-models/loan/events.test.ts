@@ -1,7 +1,7 @@
 import { dec, sub, toDecString, type Dec } from "../money/kernel";
 import { actual365Fixed } from "./daycount/act365f";
 import { periodInterest } from "./daycount/types";
-import { dayStepOrder, orderEvents, stepForEvent, type EventOrderProfile } from "./events";
+import { dayStepOrder, normalizeEvents, orderEvents, stepForEvent, type EventOrderProfile } from "./events";
 
 describe("day step order", () => {
   it("follows FR-047 by default (start-of-day)", () => {
@@ -64,6 +64,23 @@ describe("orderEvents", () => {
     expect(stepForEvent("draw")).toBe("payment");
     expect(stepForEvent("extra-repayment")).toBe("payment");
     expect(stepForEvent("repayment")).toBe("scheduled-repayment");
+  });
+});
+
+describe("normalizeEvents recurrence windows", () => {
+  const profile = { timing: "start-of-day" as const };
+
+  it.each([
+    ["projection ends before the assumption starts", "2026-06-01", "2026-03-31"],
+    ["recurrence ends before the assumption starts", "2026-06-01", "2026-06-10"],
+  ])("returns no occurrences when %s", (_label, date, until) => {
+    const result = normalizeEvents([], [{ kind: "extra-repayment", date, amountMinor: 100, recurrence: { frequency: "monthly", until } }], { after: "2026-01-01", to: "2026-03-31" }, profile);
+    expect(result).toEqual({ ok: true, events: [] });
+  });
+
+  it("preserves a non-recurring assumption date outside the projection window", () => {
+    const result = normalizeEvents([], [{ kind: "extra-repayment", date: "2026-06-01", amountMinor: 100 }], { after: "2026-01-01", to: "2026-03-31" }, profile);
+    expect(result).toEqual({ ok: true, events: [] });
   });
 });
 
