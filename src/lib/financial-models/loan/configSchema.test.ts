@@ -76,6 +76,18 @@ describe("parseDebtConfig", () => {
     expect(parseDebtConfig(withProfile({ rateQuote: "nominal-compounded-daily" }))).toMatchObject({ ok: false, code: "unsupported-config" });
   });
 
+  it("returns unsupported-config for unknown identifiers inside nested unions", () => {
+    expect(parseDebtConfig(withProfile({ eventOrder: { timing: "after-everything" } }))).toMatchObject({ ok: false, code: "unsupported-config" });
+
+    const profile = validConfig().profile as Record<string, unknown>;
+    const rounding = profile.rounding as Record<string, unknown>;
+    const intermediateScale = rounding.intermediateScale as Record<string, unknown>;
+    const unknownScale = withProfile({
+      rounding: { ...rounding, intermediateScale: { ...intermediateScale, mode: "fractional" } },
+    });
+    expect(parseDebtConfig(unknownScale)).toMatchObject({ ok: false, code: "unsupported-config" });
+  });
+
   it("returns unsupported-config for a known but unselectable convention", () => {
     // Researched but not a loan convention: not even in the vocabulary.
     expect(parseDebtConfig(withProfile({ dayCount: "msrb-g33-30-360", accrual: "per-period" }))).toMatchObject({ ok: false, code: "unsupported-config" });

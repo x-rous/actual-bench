@@ -217,6 +217,27 @@ export type DebtConfigParse =
 
 const where = (path: PropertyKey[]) => (path.length ? path.map(String).join(".") : "(root)");
 
+function isUnknownIdentifier(issue: z.ZodIssue): boolean {
+  if (issue.code === "invalid_value") return true;
+  if (issue.code !== "invalid_union") return false;
+  if ("note" in issue && issue.note === "No matching discriminator") return true;
+  return issue.errors.some((branch) => branch.length > 0 && branch.every(isUnknownIdentifier));
+}
+
+function unknownIdentifierIssues(issue: z.ZodIssue, parentPath: PropertyKey[] = []): z.ZodIssue[] {
+  if (
+    issue.code === "invalid_value" ||
+    (issue.code === "invalid_union" && "note" in issue && issue.note === "No matching discriminator")
+  ) {
+    return [{ ...issue, path: [...parentPath, ...issue.path] }];
+  }
+  if (issue.code !== "invalid_union") return [];
+  const branch = issue.errors.find((errors) => errors.length > 0 && errors.every(isUnknownIdentifier));
+  if (!branch) return [];
+  const path = [...parentPath, ...issue.path];
+  return branch.flatMap((nested) => unknownIdentifierIssues(nested, path));
+}
+
 /** Parse stored config JSON (a string or an already-parsed value). Never throws. */
 export function parseDebtConfig(raw: unknown): DebtConfigParse {
   let value: unknown = raw;
@@ -242,7 +263,7 @@ export function parseDebtConfig(raw: unknown): DebtConfigParse {
   if (!parsed.success) {
     // An enum value this build does not know is an identifier from a newer
     // build, not a typo in structure: that is unsupported, not invalid.
-    const unknownIds = parsed.error.issues.filter((i) => i.code === "invalid_value");
+    const unknownIds = parsed.error.issues.flatMap((issue) => unknownIdentifierIssues(issue));
     if (unknownIds.length > 0) {
       return { ok: false, code: "unsupported-config", issues: unknownIds.map((i) => `${where(i.path)}: ${i.message}`) };
     }
