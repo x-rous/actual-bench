@@ -191,6 +191,9 @@ export function isRateQuote(value: string): value is RateQuote {
  * the rate at `scale` places.
  */
 export function periodInterestAt(quote: RateQuote, annualRate: Dec, paymentsPerYear: number, balance: Dec, scale: number, mode: Parameters<typeof round>[2]): Dec {
+  if (!Number.isInteger(paymentsPerYear) || paymentsPerYear < 1) {
+    throw new RangeError(`Payments per year must be a positive integer, got ${paymentsPerYear}`);
+  }
   const m = quote === "nominal-compounded-monthly" ? 12 : quote === "nominal-compounded-semiannual" ? 2 : quote === "annual-effective" ? 1 : 0;
   if (quote === "nominal-simple-periodic" || m === paymentsPerYear) {
     return div(mul(balance, annualRate), { int: BigInt(paymentsPerYear), scale: 0 }, scale, mode);

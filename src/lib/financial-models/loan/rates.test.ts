@@ -1,6 +1,6 @@
 import { loadFamily } from "./__fixtures__/harness";
 import { dec, mul, round, toDecString, toPlainString } from "../money/kernel";
-import { effectiveAnnualRate, periodicRate, rateOn, rateSegments, type RatePeriod } from "./rates";
+import { effectiveAnnualRate, periodInterestAt, periodicRate, rateOn, rateSegments, type RatePeriod } from "./rates";
 
 /*
  * Periodic rates are checked against Python's `decimal` at 100 digits,
@@ -94,5 +94,13 @@ describe("quoted-rate conventions", () => {
     expect(new Set(runs).size).toBe(1);
     expect(() => periodicRate("nominal-simple-periodic", r, 0)).toThrow(RangeError);
     expect(() => periodicRate("nominal-daily" as never, r, 12)).toThrow(RangeError);
+  });
+
+  it("refuses invalid payment frequencies when calculating period interest", () => {
+    for (const paymentsPerYear of [0, -1, 1.5]) {
+      expect(() => periodInterestAt("nominal-simple-periodic", r, paymentsPerYear, dec("100"), 2, "half-even")).toThrow(
+        new RangeError(`Payments per year must be a positive integer, got ${paymentsPerYear}`)
+      );
+    }
   });
 });
