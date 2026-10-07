@@ -1,0 +1,9 @@
+date,kind,amount_minor
+2024-02-01,repayment,-150000
+2024-02-15,repayment,-150000
+2024-02-29,repayment,-150000
+2024-03-10,extra-repayment,-500000
+2024-03-14,repayment,-150000
+2024-03-28,repayment,-150000
+2024-04-11,repayment,-150000
+2024-04-25,repayment,-150000

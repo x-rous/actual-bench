@@ -1,0 +1,11 @@
+{
+  "kind": "period-interest",
+  "convention": "actual-360",
+  "currency": {
+    "code": "USD",
+    "minorDigits": 2
+  },
+  "principal": "1000000",
+  "annualRate": "0.05",
+  "rounding": "half-up"
+}

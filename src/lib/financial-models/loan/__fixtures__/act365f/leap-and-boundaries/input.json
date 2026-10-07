@@ -1,0 +1,11 @@
+{
+  "kind": "period-interest",
+  "convention": "actual-365-fixed",
+  "currency": {
+    "code": "AUD",
+    "minorDigits": 2
+  },
+  "principal": "400000",
+  "annualRate": "0.0612",
+  "rounding": "half-up"
+}

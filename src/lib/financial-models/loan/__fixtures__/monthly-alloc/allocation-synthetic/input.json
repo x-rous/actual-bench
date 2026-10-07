@@ -1,0 +1,11 @@
+{
+  "kind": "period-interest",
+  "convention": "monthly-30-360-actual-day-allocation",
+  "currency": {
+    "code": "AUD",
+    "minorDigits": 2
+  },
+  "principal": "100000",
+  "annualRate": "0.06",
+  "rounding": "half-up"
+}

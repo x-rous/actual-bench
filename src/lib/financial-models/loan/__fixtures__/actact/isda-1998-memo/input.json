@@ -1,0 +1,11 @@
+{
+  "kind": "period-interest",
+  "convention": "actual-actual-calendar",
+  "currency": {
+    "code": "GBP",
+    "minorDigits": 2
+  },
+  "principal": "10000",
+  "annualRate": "0.10",
+  "rounding": "half-up"
+}

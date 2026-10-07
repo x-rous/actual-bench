@@ -1,0 +1,13 @@
+{
+  "kind": "level-payment",
+  "rateQuote": "nominal-compounded-semiannual",
+  "annualRate": "0.06",
+  "paymentsPerYear": 12,
+  "principal": "100000",
+  "payments": 300,
+  "paymentRounding": "half-up",
+  "currency": {
+    "code": "CAD",
+    "minorDigits": 2
+  }
+}

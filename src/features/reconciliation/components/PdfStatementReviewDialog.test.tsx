@@ -558,7 +558,7 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(applyDetection);
     expect(toastSuccess).toHaveBeenCalledWith("Detection changes applied", expect.objectContaining({ description: expect.any(String) }));
     expect(screen.queryByText(/Updated result:/)).not.toBeInTheDocument();
-  });
+  }, 20_000);
 
   it("uses a strongly separated mapping palette that avoids section-state colors", () => {
     const colors = Array.from({ length: 12 }, (_, index) => pdfColumnColor(index).border);

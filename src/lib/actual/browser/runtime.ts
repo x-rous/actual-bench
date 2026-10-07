@@ -76,6 +76,39 @@ export function clearBrowserApiRuntimeCache(): void {
   if (runtime) void shutdownRuntime(runtime);
 }
 
+/** The browser event Bench raises when Actual reports its local copy of the budget damaged. */
+export const DAMAGED_COPY_EVENT = "actual-bench:damaged-copy";
+
+/**
+ * Every runtime call reports "database disk image is malformed" (this browser's copy of the budget
+ * is damaged, usually after two tabs wrote to it) as a browser event, so the app can offer to
+ * reload the budget from the server; the error itself still reaches the caller.
+ */
+function reportIfDamaged(error: unknown): void {
+  if (typeof window !== "undefined" && /database disk image is malformed/i.test(error instanceof Error ? error.message : String(error))) {
+    window.dispatchEvent(new CustomEvent(DAMAGED_COPY_EVENT));
+  }
+}
+
+function reportingDamagedCopy<T extends object>(runtime: T): T {
+  const out: Record<string, unknown> = { ...(runtime as Record<string, unknown>) };
+  for (const [name, value] of Object.entries(runtime)) {
+    if (typeof value !== "function") continue;
+    // Same shape as the original call (some, like the query builder, return at once): only errors are watched.
+    out[name] = (...args: unknown[]) => {
+      try {
+        const result = (value as (...a: unknown[]) => unknown).apply(runtime, args);
+        if (result instanceof Promise) return result.catch((error: unknown) => { reportIfDamaged(error); throw error; });
+        return result;
+      } catch (error) {
+        reportIfDamaged(error);
+        throw error;
+      }
+    };
+  }
+  return out as T;
+}
+
 export async function syncBrowserApiRuntime(
   connection: BrowserApiConnection
 ): Promise<void> {
@@ -160,7 +193,7 @@ export async function getBrowserApiRuntime(
       verbose: false,
     });
     stillWanted();
-    const runtime: ActualApiRuntime = { ...actual, send: initResult.send };
+    const runtime: ActualApiRuntime = reportingDamagedCopy({ ...actual, send: initResult.send });
     await withTimeout(
       runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
       "Opening budget"
