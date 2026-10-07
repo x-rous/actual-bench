@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ComponentType } from "react";
+import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,6 +22,9 @@ import {
   Trash2,
   LayoutDashboard,
   Wallet,
+  Monitor,
+  Sun,
+  Moon,
   ArrowUpCircle,
   ArrowLeftRight,
   Banknote,
@@ -35,6 +39,8 @@ import { useConnectionStore } from "@/store/connection";
 import { useSavedServersStore } from "@/store/savedServers";
 import { useStagedStore } from "@/store/staged";
 import { useVersionCheckContext } from "@/hooks/useVersionCheck";
+
+import { HelpMenu } from "./HelpMenu";
 
 const LS_KEY = "sidebar-collapsed";
 
@@ -203,6 +209,16 @@ export function Sidebar() {
     return localStorage.getItem(LS_KEY) === "1";
   });
 
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const themeOrder = ["system", "light", "dark"] as const;
+  const themeLabels: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
+  // Icon reflects the resolved appearance (so system+dark OS shows Moon); label reflects the stored mode.
+  const ThemeIcon = resolvedTheme === "light" ? Sun : resolvedTheme === "dark" ? Moon : Monitor;
+  const cycleTheme = () => {
+    const idx = themeOrder.indexOf((theme ?? "system") as typeof themeOrder[number]);
+    setTheme(themeOrder[(idx + 1) % themeOrder.length]);
+  };
+
   function handleClearAll() {
     if (!window.confirm("Clear all connections and cached data? This cannot be undone.")) return;
     discardAll();
@@ -224,7 +240,7 @@ export function Sidebar() {
     <aside
       className={cn(
         "flex shrink-0 flex-col border-r border-border bg-background transition-[width] duration-200",
-        collapsed ? "w-12" : "w-[13.65rem]"
+        collapsed ? "w-12" : "w-52"
       )}
     >
       <nav className="flex flex-1 flex-col overflow-y-auto p-2 pt-3">
@@ -302,6 +318,8 @@ export function Sidebar() {
             <span className="ml-auto text-xs text-muted-foreground/55">v{version}</span>
           )}
         </Link>
+        <HelpMenu collapsed={collapsed} />
+
         <button
           type="button"
           onClick={handleClearAll}
@@ -313,6 +331,18 @@ export function Sidebar() {
         >
           <Trash2 className="h-4 w-4 shrink-0" />
           {!collapsed && <span>Clear all data</span>}
+        </button>
+        <button
+          type="button"
+          onClick={cycleTheme}
+          title={`Theme: ${themeLabels[theme ?? "system"]} - click to cycle`}
+          className={cn(
+            "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
+            collapsed ? "justify-center" : "gap-2"
+          )}
+        >
+          <ThemeIcon className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>{themeLabels[theme ?? "system"]}</span>}
         </button>
         <button
           type="button"

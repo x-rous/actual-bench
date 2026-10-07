@@ -29,8 +29,6 @@ import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionSwitcher } from "./ConnectionSwitcher";
 import { useAuthStatus } from "@/hooks/useAuthStatus";
-import { HelpMenu } from "./HelpMenu";
-import { ThemeToggle } from "./ThemeToggle";
 import type { SavedBudget } from "@/features/connect/savedBudgets";
 import { useSavedBudgetSwitcher } from "@/features/connect/useSavedBudgetSwitcher";
 import { useSavedServersStore } from "@/store/savedServers";
@@ -489,29 +487,24 @@ export function TopBar() {
 
         </div>
 
-        {/* Right: help + theme | search | undo/redo | refresh | discard + save | account */}
+        {/* Right: search | undo/redo, refresh, discard, save | account */}
         <div className="flex items-center gap-1">
-          <HelpMenu />
-          <ThemeToggle />
-          <TopBarSeparator />
           {activeInstance && (
-            <>
             <Button
               variant="outline"
               size="sm"
-              className="h-7 gap-1.5 border-border text-xs text-muted-foreground"
+              className="h-7 justify-start gap-1.5 sm:w-72 border-border text-xs text-muted-foreground"
               onClick={openSearch}
               title={`Search (${searchShortcutLabel})`}
             >
               <Search className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Search</span>
-              <kbd className="hidden sm:inline pointer-events-none rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <kbd className="ml-auto hidden sm:inline pointer-events-none rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
                 {searchShortcutLabel}
               </kbd>
             </Button>
-            <TopBarSeparator />
-            </>
           )}
+          <TopBarSeparator />
           <Button
             variant="ghost"
             size="icon"
@@ -533,8 +526,6 @@ export function TopBar() {
             <Redo2 className="h-3.5 w-3.5" />
           </Button>
 
-          <TopBarSeparator />
-
           <Button
             variant="ghost"
             size="icon"
@@ -545,8 +536,6 @@ export function TopBar() {
           >
             <RefreshCw className={`h-3.5 w-3.5${isRefreshing ? " animate-spin" : ""}`} />
           </Button>
-
-          <TopBarSeparator />
 
           <Button
             variant="ghost"
