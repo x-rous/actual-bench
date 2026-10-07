@@ -285,7 +285,13 @@ export function deleteDraftDebt(db: SqliteDatabase, id: string): boolean {
   const existing = getDebt(db, id);
   if (!existing) return false;
   if (existing.status !== "draft") throw new AppDbValidationError("Only a draft debt can be deleted; archive an active debt instead");
-  return db.prepare("DELETE FROM debts WHERE id = ? AND status = 'draft'").run(id).changes > 0;
+  try {
+    return db.prepare("DELETE FROM debts WHERE id = ? AND status = 'draft'").run(id).changes > 0;
+  } catch (error) {
+    rethrowConstraint(error, {
+      FOREIGN: "This draft already has linked transactions, lender observations or anchors; archive it instead.",
+    });
+  }
 }
 
 /** Point a debt at a revision just written in the same transaction. Revisions only move forward. */

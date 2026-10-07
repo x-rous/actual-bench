@@ -1,0 +1,73 @@
+import type { SqliteDatabase } from "@/lib/app-db/types";
+import { evaluateStrategyEligibility, type ActualCapabilities, type Eligibility } from "@/lib/financial-models/loan/eligibility";
+import type { LoanModelSnapshot } from "@/lib/financial-models/loan/model";
+import { projectDebt, type DebtProjection, type DebtProjectionInput } from "@/lib/financial-models/loan/projection";
+import { modelFromDetail } from "../model/buildModel";
+import { getDebtDetail, type DebtBlock } from "./debtConfigService";
+import { getEffectiveDebtAnchor } from "@/lib/app-db/debtAnchorRepository";
+import { mergeOffsetHistories, type OffsetHistorySnapshot } from "./offsetHistoryService";
+
+export { modelFromDetail };
+
+/**
+ * Calculator and forecast (RD-084 P1.3; FR-105–FR-113).
+ *
+ * Builds the engine's `LoanModelSnapshot` from the stored configuration and
+ * runs the pure `projectDebt`. Overrides apply to a copy and are never
+ * written back (FR-113); only "apply as baseline" persists, through
+ * `saveBaselineAssumptions`. A projection creates no ledger transactions
+ * (FR-019): it returns data and writes nothing, here or in Actual.
+ *
+ * P1.3 has no lender observations yet, so the baseline starts from the
+ * contract's opening principal. Later phases supply an anchor instead.
+ */
+
+export type ProjectionRequest = Pick<DebtProjectionInput, "from" | "to" | "overrides" | "resolution"> & {
+  offsetHistories?: OffsetHistorySnapshot[];
+  /** Start from this state instead of the saved anchor (the "as paid" reconciliation, T309). */
+  startFrom?: { date: string; principalMinor: number; accruedInterestMinor: number; carriedRemainder: string | null };
+};
+
+export type StoredProjection = { ok: true; projection: DebtProjection; model: LoanModelSnapshot } | { ok: false; blocked: DebtBlock } | { ok: false; notFound: true };
+
+/** Project a stored debt. Reads the configuration; writes nothing. */
+export function projectStoredDebt(db: SqliteDatabase, debtId: string, request: ProjectionRequest): StoredProjection {
+  const detail = getDebtDetail(db, debtId);
+  if (!detail) return { ok: false, notFound: true };
+  const built = modelFromDetail(detail);
+  if (!built.ok) return built;
+  const { model } = built;
+  const tracked = model.offsets.some((offset) => offset.useActualBalance === true);
+  if (tracked && request.offsetHistories === undefined) {
+    return { ok: false, blocked: { code: "invalid-config", message: "Actual-linked offset history is required for this projection; the manual starting balance was not used as a fallback." } };
+  }
+  const merged = request.offsetHistories ? mergeOffsetHistories(model, request.offsetHistories) : { model, events: [] };
+  const savedAnchor = getEffectiveDebtAnchor(db, debtId);
+  const anchor = request.startFrom
+    ? { date: request.startFrom.date, principalMinor: request.startFrom.principalMinor, accruedInterestMinor: request.startFrom.accruedInterestMinor, carriedRemainder: request.startFrom.carriedRemainder, source: "posting" }
+    : savedAnchor
+    ? { date: savedAnchor.anchorDate, principalMinor: savedAnchor.principalMinor, accruedInterestMinor: savedAnchor.accruedInterestMinor, carriedRemainder: savedAnchor.carriedRemainderDecimal, source: savedAnchor.source }
+    : { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" };
+  const projection = projectDebt({
+    model: merged.model,
+    anchor,
+    events: merged.events,
+    from: request.from,
+    to: request.to,
+    overrides: request.overrides,
+    resolution: request.resolution,
+    baselineAnchorDate: model.terms.openingDate,
+  });
+  return { ok: true, projection, model: merged.model };
+}
+
+export type StoredEligibility = { ok: true; eligibility: Eligibility } | { ok: false; blocked: DebtBlock } | { ok: false; notFound: true };
+
+/** FR-026/FR-030: the strategy ladder with a reason for each rejected strategy. */
+export function storedDebtEligibility(db: SqliteDatabase, debtId: string, capabilities: ActualCapabilities): StoredEligibility {
+  const detail = getDebtDetail(db, debtId);
+  if (!detail) return { ok: false, notFound: true };
+  const built = modelFromDetail(detail);
+  if (!built.ok) return built;
+  return { ok: true, eligibility: evaluateStrategyEligibility(built.model, capabilities) };
+}

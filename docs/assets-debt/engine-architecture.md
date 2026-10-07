@@ -58,7 +58,7 @@ are before or after is the profile's `eventOrder` (a timing preset, or per-group
 scheduled repayments, other payments and offsets). No lender's order is built in: a
 Figura-compatible profile places other payments and offsets before and the scheduled repayment
 after. Every event records `sameDayStep` and `eventOrder: "event-order@3"` in its diagnostics.
-Within one group, same-day ledger events keep the ledger's deterministic order.
+Within one group, same-day events run in `event.key` order after sorting by date and step.
 
 In detail, every day follows `events.ts#dayStepOrder` (`event-order@3`):
 

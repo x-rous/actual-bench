@@ -22,6 +22,7 @@ describe("component version strings", () => {
     const kernel = readFileSync("docs/assets-debt/engine-kernel.md", "utf8");
     expect(architecture).toContain("loan-daily@8");
     expect(architecture).toContain("event-order@3");
+    expect(architecture).toContain("same-day events run in `event.key` order");
     expect(architecture).toContain("schema version 2");
     expect(architecture).toContain("offsetStates");
     expect(kernel).toContain("versions 1, 2 and 3");
