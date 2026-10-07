@@ -3,6 +3,7 @@ import {
   createOrResolveHttpPayee,
   getHttpTargetLookupForSync,
   listHttpTransactionsForSync,
+  withHttpTransactionReadSession,
   updateHttpTransactionForSync,
 } from "./httpSyncTransactions";
 import { apiRequest } from "../api/client";
@@ -407,5 +408,42 @@ describe("createHttpTransactionsForSync - transfers", () => {
     expect(budget.accountRows("acct-sav")).toHaveLength(0);
     expect(budget.rows()[0]).not.toHaveProperty("transfer_id");
     expect(result.created[0].applied).toMatchObject({ amount: -100, payeeId: "p1", categoryId: "c1", notes: "n" });
+  });
+});
+
+
+describe("operation-scoped HTTP transaction reads", () => {
+  const input = { accountId: "bank", startDate: "2026-01-01", endDate: "2026-01-31" };
+  const raw = { id: "parent", account: "bank", date: "2026-01-05", amount: -500, payee: "p1", category: "c1",
+    imported_id: "bank-parent", cleared: true, is_parent: true,
+    subtransactions: [{ id: "child", amount: -500, payee: "p1", category: "c1", transfer_id: "counterpart", is_child: true }] };
+
+  it("shares directory requests and reloads renamed payees in a new operation", async () => {
+    mockApi({ payees: [{ id: "p1", name: "Before" }], categories: [{ id: "c1", name: "Dining" }], transactions: [raw] });
+    await withHttpTransactionReadSession(connection, async (reader) => {
+      await reader.getPayees();
+      const first = await reader.listTransactionsForSync(input);
+      expect(await reader.listTransactionsForSync(input)).toEqual(first);
+      expect(first[0].splitLines[0]).toMatchObject({ importedId: "bank-parent", transferId: "counterpart", payeeName: "Before", categoryName: "Dining" });
+    });
+    expect(mockApiRequest.mock.calls.filter(([, path]) => path === "/payees")).toHaveLength(1);
+    expect(mockApiRequest.mock.calls.filter(([, path]) => path === "/categorygroups")).toHaveLength(1);
+    expect(mockApiRequest.mock.calls.filter(([, path]) => path.includes("/transactions?"))).toHaveLength(2);
+    mockApi({ payees: [{ id: "p1", name: "After" }], transactions: [raw] });
+    await withHttpTransactionReadSession(connection, async (reader) => {
+      expect((await reader.listTransactionsForSync(input))[0].payeeName).toBe("After");
+    });
+  });
+
+  it("omits only names from structural reads and refuses an escaped reader", async () => {
+    mockApi({ payees: [{ id: "p1", name: "Payee" }], categories: [{ id: "c1", name: "Category" }], transactions: [raw] });
+    const structural = await listHttpTransactionsForSync(connection, { ...input, resolveNames: false });
+    expect(mockApiRequest.mock.calls.map(([, path]) => path)).toEqual(["/accounts/bank/transactions?since_date=2026-01-01&until_date=2026-01-31"]);
+    const named = await listHttpTransactionsForSync(connection, input);
+    expect(structural).toEqual(named.map((row) => ({ ...row, payeeName: null, categoryName: null,
+      splitLines: row.splitLines.map((line) => ({ ...line, payeeName: null, categoryName: null })) })));
+    const reader = await withHttpTransactionReadSession(connection, async (reader) => reader);
+    await expect(reader.getPayees()).rejects.toThrow("session has ended");
+    await expect(reader.listTransactionsForSync(input)).rejects.toThrow("session has ended");
   });
 });

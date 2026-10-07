@@ -15,6 +15,20 @@ import type { MatchingHistorySnapshot } from "@/lib/assets-debt/actual/ledgerPor
 
 export type ReadRange = { accountId: string; from: string; to: string };
 
+/** Merge only overlaps/containment after planning. Do not widen the selected date union. */
+export function consolidateReadRanges(ranges: readonly ReadRange[]): ReadRange[] {
+  const sorted = ranges.map((range) => ({ ...range })).sort((a, b) =>
+    a.accountId.localeCompare(b.accountId) || a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+  const merged: ReadRange[] = [];
+  for (const range of sorted) {
+    const previous = merged.at(-1);
+    if (previous && previous.accountId === range.accountId && range.from <= previous.to) {
+      if (range.to > previous.to) previous.to = range.to;
+    } else merged.push(range);
+  }
+  return merged;
+}
+
 const shift = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 const gap = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
@@ -60,7 +74,7 @@ export function planBankReads(input: {
     const from = input.lastSplitDate ? shift(input.lastSplitDate, -60) : lo;
     ranges.push({ accountId: input.paymentAccountId, from: from < lo ? lo : from, to: hi });
   }
-  return ranges.sort((a, b) => a.accountId.localeCompare(b.accountId) || a.from.localeCompare(b.from));
+  return consolidateReadRanges(ranges);
 }
 
 /** Read the ranges (one call each) into one snapshot per account, each row once. */

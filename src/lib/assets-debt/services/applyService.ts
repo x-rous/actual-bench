@@ -87,7 +87,7 @@ function linkInput(output: Extract<PostingOutputSnapshot, { kind: "link" }>): Li
 }
 
 async function read(transport: ActualBenchTransport, accountId: string, from: string, to?: string): Promise<SyncSourceTransaction[]> {
-  return transport.listTransactionsForSync({ accountId, startDate: from, ...(to ? { endDate: to } : {}) });
+  return transport.listTransactionsForSync({ resolveNames: false, accountId, startDate: from, ...(to ? { endDate: to } : {}) });
 }
 
 export async function executeApprovedPosting(ticket: ApplyTicketView, ctx: ExecutorContext): Promise<ExecutorOutcome> {

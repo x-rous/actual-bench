@@ -48,6 +48,7 @@ import {
   type ActualBenchTransport,
   type CreateTransactionsForSyncResult,
   type ListTransactionsForSyncInput,
+  type TransactionReadSession,
   type ResolvedSyncPayee,
   type ScheduleWriteInput,
   type SyncAppliedSnapshot,
@@ -768,10 +769,13 @@ function toSyncSourceTransaction(
 async function listBrowserTransactionsForSync(
   host: ActualRuntimeHost,
   connection: BrowserApiConnection,
-  input: ListTransactionsForSyncInput
+  input: ListTransactionsForSyncInput,
+  names: (api: ActualApi) => Promise<NameLookup> = loadSyncNameLookup
 ): Promise<SyncSourceTransaction[]> {
   const api = await host.getRuntime(connection);
-  const lookup = await loadSyncNameLookup(api);
+  const lookup = input.resolveNames === false
+    ? { payeeNames: new Map<string, string>(), categoryNames: new Map<string, string>() }
+    : await names(api);
   // Empty date bounds are treated as open-ended by the runtime's grouped query.
   const rows = await api.getTransactions(
     input.accountId,
@@ -784,6 +788,51 @@ async function listBrowserTransactionsForSync(
     // in at the top level so we never double-count a split line.
     .filter((row) => row.is_child !== true)
     .map((row) => toSyncSourceTransaction(row, lookup));
+}
+
+async function withRuntimeTransactionReadSession<T>(
+  host: ActualRuntimeHost,
+  connection: BrowserApiConnection,
+  operation: (reader: TransactionReadSession) => Promise<T>
+): Promise<T> {
+  let runtime: ActualApi | undefined;
+  let payees: Promise<Payee[]> | undefined;
+  let lookup: Promise<NameLookup> | undefined;
+  let closed = false;
+  const sessionHost: ActualRuntimeHost = {
+    ...host,
+    async getRuntime(request) {
+      if (closed) throw new Error("Transaction read session has ended");
+      const api = await host.getRuntime(request);
+      if (runtime !== api) {
+        runtime = api;
+        payees = undefined;
+        lookup = undefined;
+      }
+      return api;
+    },
+  };
+  const readPayees = (api: ActualApi) => payees ??= api.getPayees().then((rows) =>
+    rows.map(normalizeDirectPayee).filter((payee): payee is Payee => payee !== null));
+  const readNames = (api: ActualApi) => lookup ??= (async () => {
+    const payeeNames = new Map((await readPayees(api)).map((p) => [p.id, p.name]));
+    const categoryNames = new Map<string, string>();
+    for (const raw of await api.getCategories().catch(() => [])) {
+      const category = toDirectCategory(raw);
+      if (category?.id) categoryNames.set(category.id, category.name);
+    }
+    return { payeeNames, categoryNames };
+  })();
+  try {
+    return await operation({
+      getPayees: async () => readPayees(await sessionHost.getRuntime(connection)),
+      listTransactionsForSync: (input) => listBrowserTransactionsForSync(sessionHost, connection, input, readNames),
+    });
+  } finally {
+    closed = true;
+    payees = undefined;
+    lookup = undefined;
+  }
 }
 
 async function createOrResolveBrowserPayee(
@@ -1467,6 +1516,7 @@ export function createActualRuntimeTransport(
     },
     listTransactionsForSync: (input) =>
       listBrowserTransactionsForSync(host, connection, input),
+    withTransactionReadSession: (operation) => withRuntimeTransactionReadSession(host, connection, operation),
     createOrResolvePayee: (input) =>
       createOrResolveBrowserPayee(host, connection, input.name),
     createTransactionsForSync: (inputs) =>

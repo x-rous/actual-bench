@@ -23,7 +23,7 @@ export type RecoveryResult =
 export async function recoverCreate(output: Extract<PostingOutputSnapshot, { kind: "create" }>, transport: ActualBenchTransport): Promise<RecoveryResult> {
   const ids: string[] = [];
   for (const op of output.operations) {
-    const rows = await transport.listTransactionsForSync({ accountId: op.accountId, startDate: op.date });
+    const rows = await transport.listTransactionsForSync({ resolveNames: false, accountId: op.accountId, startDate: op.date });
     const found = rows.filter((row) => row.importedId === op.importedId);
     if (found.length > 1) return { status: "review", reason: { code: "duplicate-marker", text: "The posting's marker appears more than once in Actual. Remove the duplicate in Actual, then re-run." } };
     if (found.length === 0) return { status: "not-found", reason: { code: "write-not-found", text: "The interrupted write is not in Actual. Review the proposal again before applying it." } };
@@ -90,7 +90,7 @@ async function readRows(transport: ActualBenchTransport, rows: RowSnapshot[]): P
   const out = new Map<string, RowSnapshot>();
   for (const accountId of [...new Set(rows.map((r) => r.accountId))]) {
     const from = rows.filter((r) => r.accountId === accountId).reduce((min, r) => (r.date < min ? r.date : min), "9999-12-31");
-    for (const [id, row] of indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: from }))) out.set(id, row);
+    for (const [id, row] of indexReadRows(await transport.listTransactionsForSync({ resolveNames: false, accountId, startDate: from }))) out.set(id, row);
   }
   return out;
 }

@@ -16,6 +16,7 @@ import type {
   SyncTargetLookupTransaction,
   SyncTargetTransactionInput,
   UpdateTransactionForSyncInput,
+  TransactionReadSession,
 } from "./transport";
 
 /**
@@ -136,15 +137,53 @@ function toSourceTransaction(raw: RawHttpTransaction, names: NameMaps): SyncSour
 
 export async function listHttpTransactionsForSync(
   connection: ConnectionInstance,
-  input: ListTransactionsForSyncInput
+  input: ListTransactionsForSyncInput,
+  loadNames: () => Promise<NameMaps> = () => loadNameMaps(connection)
 ): Promise<SyncSourceTransaction[]> {
-  const names = await loadNameMaps(connection);
+  const names = input.resolveNames === false
+    ? { payee: new Map<string, string>(), category: new Map<string, string>() }
+    : await loadNames();
   const rows = await fetchTransactions(connection, input.accountId, input.startDate, input.endDate);
   return rows
     // Split children arrive inline under their parent; skip top-level leaks.
     .filter((r) => r.is_child !== true)
     .filter((r) => !input.endDate || r.date <= input.endDate)
     .map((r) => toSourceTransaction(r, names));
+}
+
+/** All requests still use apiRequest and the HTTP server queue; only directory results are reused. */
+export async function withHttpTransactionReadSession<T>(
+  connection: ConnectionInstance,
+  operation: (reader: TransactionReadSession) => Promise<T>
+): Promise<T> {
+  let closed = false;
+  let payees: ReturnType<typeof getPayees> | undefined;
+  let names: Promise<NameMaps> | undefined;
+  const ensureOpen = () => {
+    if (closed) throw new Error("Transaction read session has ended");
+  };
+  const readPayees = () => {
+    ensureOpen();
+    return payees ??= getPayees(connection);
+  };
+  const readNames = () => names ??= (async () => {
+    const payee = new Map((await readPayees()).map((p) => [p.id, p.name]));
+    const { categories } = await getCategoryGroups(connection);
+    return { payee, category: new Map(categories.map((c) => [c.id, c.name])) };
+  })();
+  try {
+    return await operation({
+      getPayees: async () => readPayees(),
+      listTransactionsForSync: async (input) => {
+        ensureOpen();
+        return listHttpTransactionsForSync(connection, input, readNames);
+      },
+    });
+  } finally {
+    closed = true;
+    payees = undefined;
+    names = undefined;
+  }
 }
 
 export async function getHttpTargetLookupForSync(

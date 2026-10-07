@@ -189,7 +189,12 @@ export type ListTransactionsForSyncInput = {
   /** Inclusive ISO `YYYY-MM-DD`; omit for open-ended. */
   startDate?: string;
   endDate?: string;
+  /** False for structural guards: IDs and split fields remain intact, display names are null. */
+  resolveNames?: boolean;
 };
+
+/** Read-only directory reuse for one operation; never retain this reader for later work. */
+export type TransactionReadSession = Pick<ActualBenchTransport, "getPayees" | "listTransactionsForSync">;
 
 /** A target transaction the sync engine wants created (create-only, no splits). */
 export type SyncTargetTransactionInput = {
@@ -440,6 +445,8 @@ export interface ActualBenchTransport {
   listTransactionsForSync(
     input: ListTransactionsForSyncInput
   ): Promise<SyncSourceTransaction[]>;
+  /** Share directory loads until the callback completes. The callback must not mutate directories. */
+  withTransactionReadSession?<T>(operation: (reader: TransactionReadSession) => Promise<T>): Promise<T>;
   /** Match an existing payee by normalized name, or create it if missing. */
   createOrResolvePayee(input: { name: string }): Promise<ResolvedSyncPayee>;
   /** Create target transactions (create-only; splits are pre-exploded). */

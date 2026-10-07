@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getTransport } from "@/lib/actual";
-import type { ActualBenchTransport } from "@/lib/actual/transport";
+import type { ActualBenchTransport, TransactionReadSession } from "@/lib/actual/transport";
 import { datedBalanceFromTransactions, readAccountLedger, toDebtMagnitude, type AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
@@ -132,22 +132,36 @@ export async function runLoanRefresh(input: {
   /** Terms & Schedule has unsaved edits: do not move linked extra payments meanwhile. */
   scheduleDirty?: boolean;
 }): Promise<{ payeeMap: Record<string, string>; result: Awaited<ReturnType<typeof previewPostings>>; status: LoanStatus | null; syncProblem: string | null }> {
-  const { connection, directory, debt, from, to, offsetHistories } = input;
-  const debtId = debt.debt.id;
+  const { connection, debt } = input;
   const liabilityId = debt.debt.liabilityAccountId;
   if (!liabilityId) throw new Error("The loan has no loan account in Actual yet.");
   const timing = startTiming("loan refresh");
-  const transport = getTransport(connection);
+  const baseTransport = getTransport(connection);
   // Pull changes made elsewhere (a transfer added in Actual) before reading: in Direct mode the
   // browser reads its own copy of the budget, which otherwise only syncs when it first opens.
   let syncProblem: string | null = null;
   try {
-    await transport.sync();
+    await baseTransport.sync();
     noteSynced(connection.id);
   } catch (error) {
     syncProblem = error instanceof Error ? error.message : String(error);
   }
   timing.step("sync");
+  const read = (reader: TransactionReadSession) => readLoanRefresh(input, { ...baseTransport, ...reader }, syncProblem, timing);
+  return baseTransport.withTransactionReadSession
+    ? baseTransport.withTransactionReadSession(read)
+    : read(baseTransport);
+}
+
+async function readLoanRefresh(
+  input: Parameters<typeof runLoanRefresh>[0],
+  transport: ActualBenchTransport,
+  syncProblem: string | null,
+  timing: ReturnType<typeof startTiming>
+) {
+  const { directory, debt, from, to, offsetHistories } = input;
+  const debtId = debt.debt.id;
+  const liabilityId = debt.debt.liabilityAccountId!;
   const payeeMap = await transferPayees(transport);
   timing.step("payees");
   // The loan account is read once, in full: dated balances and its matching history.

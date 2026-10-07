@@ -264,7 +264,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
         try {
           await ctx.transport.batchWriteTransactionsForSync!({ updated: ids.map((id) => ({ id, cleared: true })), deleted: [] });
           // Verified like every write: read the loan account back and check each row is cleared.
-          const rows = await ctx.transport.listTransactionsForSync({ accountId: ctx.liabilityAccountId });
+          const rows = await ctx.transport.listTransactionsForSync({ accountId: ctx.liabilityAccountId, resolveNames: false });
           const notCleared = ids.filter((id) => !rows.some((r) => r.id === id && r.cleared));
           if (notCleared.length) failure = `${notCleared.length} of them did not take`;
         } catch (error) {

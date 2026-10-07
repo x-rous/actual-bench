@@ -1,3 +1,4 @@
+import type { TransactionReadSession } from "./transport";
 import { getBrowserApiRuntime } from "./browser/runtime";
 import { createBrowserApiTransport } from "./browserApiTransport";
 import { createHttpApiTransport } from "./httpApiTransport";
@@ -549,5 +550,59 @@ describe("createTransactionsForSync - Direct/HTTP transfer parity", () => {
     // Both transports ran Actual's transfer handling; neither sent learnCategories differently than before.
     expect(direct.insertOptions()).toEqual([{ runTransfers: true, learnCategories: true }]);
     expect(http.insertOptions()).toEqual([{ runTransfers: true, learnCategories: undefined }]);
+  });
+});
+
+
+describe("operation-scoped transaction reads (Direct)", () => {
+  const input = { accountId: "acct-src", startDate: "2026-01-01", endDate: "2026-01-31" };
+  const raw: ApiTransaction = { id: "parent", account: "acct-src", date: "2026-01-05", amount: -500,
+    payee: "p1", category: "c1", imported_id: "bank-parent", imported_payee: "MERCHANT", cleared: true,
+    is_parent: true, subtransactions: [{ id: "child", account: "acct-src", date: "2026-01-05", amount: -500,
+      payee: "p1", category: "c1", transfer_id: "counterpart", is_child: true }] };
+
+  it("shares directories with transfer-payee reads and reloads them in the next operation", async () => {
+    const { runtime } = buildFakeRuntime({ payees: [{ id: "p1", name: "Before" }], categories: [{ id: "c1", name: "Dining" }], transactions: [raw] });
+    const transport = createBrowserApiTransport(browserConnection);
+    await transport.withTransactionReadSession!(async (reader) => {
+      await reader.getPayees();
+      const first = await reader.listTransactionsForSync(input);
+      const second = await reader.listTransactionsForSync({ ...input, startDate: "2026-01-05" });
+      expect(second).toEqual(first);
+      expect(first[0].splitLines[0]).toMatchObject({ importedId: "bank-parent", transferId: "counterpart", payeeName: "Before", categoryName: "Dining" });
+    });
+    expect(runtime.getPayees).toHaveBeenCalledTimes(1);
+    expect(runtime.getCategories).toHaveBeenCalledTimes(1);
+    expect(runtime.getTransactions).toHaveBeenCalledTimes(2);
+    runtime.getPayees.mockResolvedValue([{ id: "p1", name: "After" }]);
+    await transport.withTransactionReadSession!(async (reader) => {
+      expect((await reader.listTransactionsForSync(input))[0].payeeName).toBe("After");
+    });
+    expect(runtime.getPayees).toHaveBeenCalledTimes(2);
+    expect(runtime.getCategories).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps structural normalization identical without loading directories", async () => {
+    const { runtime } = buildFakeRuntime({ payees: [{ id: "p1", name: "Payee" }], categories: [{ id: "c1", name: "Category" }], transactions: [raw] });
+    const transport = createBrowserApiTransport(browserConnection);
+    const structural = await transport.listTransactionsForSync({ ...input, resolveNames: false });
+    expect(runtime.getPayees).not.toHaveBeenCalled();
+    expect(runtime.getCategories).not.toHaveBeenCalled();
+    const named = await transport.listTransactionsForSync(input);
+    expect(structural).toEqual(named.map((row) => ({ ...row, payeeName: null, categoryName: null,
+      splitLines: row.splitLines.map((line) => ({ ...line, payeeName: null, categoryName: null })) })));
+  });
+
+  it("discards names when the host returns a replacement runtime and closes escaped readers", async () => {
+    buildFakeRuntime({ payees: [{ id: "p1", name: "Old budget" }], transactions: [raw] });
+    const transport = createBrowserApiTransport(browserConnection);
+    let escaped!: TransactionReadSession;
+    await transport.withTransactionReadSession!(async (reader) => {
+      escaped = reader;
+      expect((await reader.listTransactionsForSync(input))[0].payeeName).toBe("Old budget");
+      buildFakeRuntime({ payees: [{ id: "p1", name: "Replacement budget" }], transactions: [raw] });
+      expect((await reader.listTransactionsForSync(input))[0].payeeName).toBe("Replacement budget");
+    });
+    await expect(escaped.listTransactionsForSync(input)).rejects.toThrow("session has ended");
   });
 });

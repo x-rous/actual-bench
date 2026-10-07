@@ -55,7 +55,7 @@ export async function rereadTargets(posting: PostingView, transport: ActualBench
     const dates = targets.filter((t) => t.accountId === accountId).map((t) => t.date);
     const from = dates.reduce((min, d) => (d < min ? d : min), "9999-12-31");
     const to = dates.reduce((max, d) => (d > max ? d : max), "0000-01-01");
-    const index = indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: from, endDate: to }));
+    const index = indexReadRows(await transport.listTransactionsForSync({ resolveNames: false, accountId, startDate: from, endDate: to }));
     for (const target of targets.filter((t) => t.accountId === accountId)) {
       const row = index.get(target.id);
       if (row) fresh.push(row);
@@ -73,7 +73,7 @@ export async function readForClaims(postings: readonly PostingView[], transport:
   const cache: ReadCache = new Map();
   for (const accountId of [...new Set(targets.map((t) => t.accountId))]) {
     const dates = targets.filter((t) => t.accountId === accountId).map((t) => t.date).sort();
-    for (const row of indexReadRows(await transport.listTransactionsForSync({ accountId, startDate: dates[0], endDate: dates[dates.length - 1] })).values()) cache.set(row.id, row);
+    for (const row of indexReadRows(await transport.listTransactionsForSync({ resolveNames: false, accountId, startDate: dates[0], endDate: dates[dates.length - 1] })).values()) cache.set(row.id, row);
   }
   return cache;
 }
