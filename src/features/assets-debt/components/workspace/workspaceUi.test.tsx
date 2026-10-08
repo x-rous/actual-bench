@@ -57,7 +57,7 @@ describe("Activity list (T289)", () => {
   it("a Blocked row has no checkbox and says why in its status", () => {
     render(<List postings={[posting("b1", { classification: "blocked", reasons: [{ code: "reconciled-row", text: "The matched row is reconciled in Actual." }] })]} />);
     expect(screen.queryByRole("checkbox", { name: /^Select Repayment split/ })).toBeNull();
-    expect(screen.getByRole("checkbox", { name: "Select all changes that can be applied" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Select all available changes" })).toBeDisabled();
     expect(screen.getByText(/Blocked: The matched row is reconciled/)).toBeInTheDocument();
   });
 

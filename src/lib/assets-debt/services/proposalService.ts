@@ -9,17 +9,19 @@ import { AppDbValidationError } from "@/lib/app-db/errors";
 import { listSubjectPostings, pruneSupersededProposals, supersedeStaleProposals, upsertProposal } from "@/lib/app-db/financialPostingRepository";
 import { getLatestModelRevision } from "@/lib/app-db/modelRevisionRepository";
 import type { DebtRecord, FinancialPostingRecord, SqliteDatabase } from "@/lib/app-db/types";
+import { hasPostingLease, recoverAbandonedPostings } from "@/lib/app-db/debtPostingLeaseRepository";
 import { parseStoredMatchRule, type MatchConditionsV1 } from "@/lib/financial-models/matching";
 import type { AccountDirectory, MatchingHistorySnapshot } from "../actual/ledgerPort";
 import { modelFromDetail } from "../model/buildModel";
 import { matchingCandidates, repaymentChoices } from "./backtestService";
-import { getDebtDetail } from "./debtConfigService";
+import { getDebt } from "@/lib/app-db/debtRepository";
+import { getDebtDetail, type DebtDetail } from "./debtConfigService";
 import type { OffsetHistorySnapshot } from "./offsetHistoryService";
 import { planAdjustments } from "./planner/adjustments";
 import type { ExistingPostingSummary, PlanningContext, PlanningNotice, ComponentConfig } from "./planner/common";
 import { planPatternA } from "./planner/patternA";
 import { planPatternB } from "./planner/patternB";
-import { followRecordedExtraPayments, recordNewExtraPayments, splitRepaymentCounterparts, unscheduledPayments, type FollowedExtraPayment, type UnscheduledPayment } from "./extraPaymentService";
+import { followRecordedExtraPayments, splitRepaymentCounterparts, unscheduledPayments, type FollowedExtraPayment, type UnscheduledPayment } from "./extraPaymentService";
 import { liabilityEffectMinor } from "./pendingEffect";
 import { reconcileDebt } from "./reconciliationService";
 import { indexReadRows, POSTING_INPUT_FORMAT_VERSION, type PostingInputSnapshot, type PostingOutputSnapshot, type RowSnapshot } from "./snapshot";
@@ -56,6 +58,7 @@ export type PreviewRequest = {
    */
   followExtraPayments?: boolean;
   /** The account dates the snapshots cover; by default each snapshot's account over the window give or take 31 days. */
+  verifiedMissingIds?: string[];
   readRanges?: Array<{ accountId: string; from: string; to: string }>;
   /** As in P1.5 lender reconciliation: the Actual liability balance as a debt magnitude at the comparison date. */
   comparison?: { comparisonDate: string; actualBalanceMinor: number } | null;
@@ -78,6 +81,7 @@ export type PostingBasis = {
 };
 
 export type PostingView = Omit<FinancialPostingRecord, "inputSnapshotJson" | "outputSnapshotJson"> & {
+  executionActive?: boolean;
   output: PostingOutputSnapshot;
   basis: PostingBasis;
   reused?: boolean;
@@ -168,14 +172,16 @@ function planningDebt(debt: DebtRecord): PlanningContext["debt"] {
 export function buildPlanningContext(
   db: SqliteDatabase,
   debtId: string,
-  request: Pick<PreviewRequest, "from" | "to" | "today" | "accountDirectory" | "transferPayees" | "capabilities" | "offsetHistories"> & Partial<PreviewRequest>
+  request: Pick<PreviewRequest, "from" | "to" | "today" | "accountDirectory" | "transferPayees" | "capabilities" | "offsetHistories"> & Partial<PreviewRequest>,
+  loadedDetail?: DebtDetail,
+  reconcile: typeof reconcileDebt = reconcileDebt
 ): { ok: true; ctx: PlanningContext } | { ok: false; notFound: true } | { ok: false; blocked: { code: string; message: string } } {
-  const detail = getDebtDetail(db, debtId);
+  const detail = loadedDetail ?? getDebtDetail(db, debtId);
   if (!detail) return { ok: false, notFound: true };
   const built = modelFromDetail(detail);
   if (!built.ok) return { ok: false, blocked: built.blocked };
   const { debt } = detail;
-  if (built.model.offsets.some((offset) => offset.useActualBalance === true) && request.offsetHistories === undefined) {
+  if (built.model.offsets.filter((offset) => offset.useActualBalance).some((offset) => !request.offsetHistories?.some((history) => history.accountId === offset.accountId))) {
     return { ok: false, blocked: { code: "invalid-config", message: "Actual-linked offset history is required for this preview; the manual starting balance was not used as a fallback." } };
   }
   if (request.accountDirectory.budgetSyncId !== debt.budgetSyncId) {
@@ -192,7 +198,7 @@ export function buildPlanningContext(
   let driftMaterial = false;
   let reconciliation: PlanningContext["parameters"]["reconciliation"] = null;
   if (request.comparison) {
-    const rec = reconcileDebt(db, { debtId, comparisonDate: request.comparison.comparisonDate, actualBalanceMinor: request.comparison.actualBalanceMinor, offsetHistories: request.offsetHistories, loanAccountRows: request.loanAccountRows });
+    const rec = reconcile(db, { debtId, comparisonDate: request.comparison.comparisonDate, actualBalanceMinor: request.comparison.actualBalanceMinor, offsetHistories: request.offsetHistories, loanAccountRows: request.loanAccountRows });
     if (rec.ok) {
       driftMaterial = rec.drift === "material";
       const obs = rec.lenderObservation;
@@ -241,15 +247,42 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
   for (const snapshot of request.snapshots) {
     if (snapshot.transactions.length > 5_000) throw new AppDbValidationError("A preview read exceeds the 5,000 transaction per-account limit");
   }
+  const debt = getDebt(db, debtId);
+  if (!debt) return { ok: false, notFound: true };
+  if (debt.budgetSyncId !== request.accountDirectory.budgetSyncId) throw new AppDbValidationError("Connect to this loan’s budget before refreshing.");
+  if (debt.status === "archived") throw new AppDbValidationError("Archived loans are read-only.");
+  const initialDetail = getDebtDetail(db, debtId)!;
+  if (initialDetail.blocked) return { ok: false, blocked: initialDetail.blocked };
+  if (initialDetail.offsets.filter((offset) => offset.useActualBalance).some((offset) => !request.offsetHistories?.some((history) => history.accountId === offset.actualAccountId))) return { ok: false, blocked: { code: "invalid-config", message: "Read all Actual-linked offset histories before refreshing this loan." } };
+  if (listSubjectPostings(db, "debt", debtId).some((posting) => hasPostingLease(db, posting.id, now))) throw new AppDbValidationError("Wait for the running loan operation to finish before refreshing.");
   // Applied changes follow Actual first (owner decision 2026-10-07): any that Actual no longer holds
   // stop counting, so the periods are planned again from what Actual has now.
   const readRows = indexReadRows(request.snapshots.flatMap((s) => s.transactions));
-  const ranges = request.readRanges ?? request.snapshots.map((s) => ({ accountId: s.accountId, from: shiftIso(request.from, -31), to: shiftIso(request.to, 31) }));
+  const missing = new Set(request.verifiedMissingIds ?? []);
+  const changedInActual = releaseChangedInActual(db, debtId, readRows, (_accountId, _date, id) => !!id && missing.has(id), now, request.transferPayees);
+  // A stale applied repayment must not retire a failure before its Actual binding is checked.
   closeSettledFailures(db, debtId, now);
-  const changedInActual = releaseChangedInActual(db, debtId, readRows, (accountId, date) => ranges.some((r) => r.accountId === accountId && date >= r.from && date <= r.to), now);
   // Linked extra payments follow their Actual transaction first, so planning sees the loan as it now is.
   const followedExtraPayments = request.followExtraPayments === false ? [] : followRecordedExtraPayments(db, debtId, readRows, request.loanAccountRows ?? null);
-  const built = buildPlanningContext(db, debtId, request);
+  const loadedDetail = followedExtraPayments.length || changedInActual.length ? getDebtDetail(db, debtId) ?? undefined : initialDetail;
+  // A refresh-local cache, discarded after this planning pass. Mutations above precede its creation.
+  const comparisons = new Map<string, ReturnType<typeof reconcileDebt>>();
+  const reconcile: typeof reconcileDebt = (database, input) => {
+    // Optional service inputs may be undefined; canonical JSON requires explicit absence. Normalize
+    // only the cache key, preserving the service's distinction between missing and supplied history.
+    const key = canonicalHash({
+      ...input,
+      offsetHistories: input.offsetHistories ?? null,
+      observed: input.observed ?? null,
+      loanAccountRows: input.loanAccountRows ?? null,
+    });
+    const existing = comparisons.get(key);
+    if (existing) return existing;
+    const result = reconcileDebt(database, input, loadedDetail);
+    comparisons.set(key, result);
+    return result;
+  };
+  const built = buildPlanningContext(db, debtId, request, loadedDetail, reconcile);
   if (!built.ok) return built;
   let { ctx } = built;
   const planAll = (c: PlanningContext) => [c.debt.lenderPattern === "separate-interest" ? planPatternB(c) : c.debt.lenderPattern === "embedded-interest" ? planPatternA(c) : { postings: [], notices: [{ code: "no-lender-pattern", periodKey: c.window.from, text: "Choose how your lender shows interest in Link to Actual so Bench knows how this loan is recorded." }] }, planAdjustments(c)];
@@ -263,7 +296,7 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
     const effect = plans.flatMap((p) => p.postings).filter((p) => p.classification !== "blocked" && !p.reversalOf && p.postingKind !== "reversal").reduce((sum, p) => sum + liabilityEffectMinor(p.outputSnapshot, liability), 0);
     if (effect !== 0) {
       const adjusted = request.comparison.actualBalanceMinor + (ctx.debt.signConvention === "negative-is-debt" ? -effect : effect);
-      const again = reconcileDebt(db, { debtId, comparisonDate: request.comparison.comparisonDate, actualBalanceMinor: adjusted, offsetHistories: request.offsetHistories, loanAccountRows: request.loanAccountRows });
+      const again = reconcile(db, { debtId, comparisonDate: request.comparison.comparisonDate, actualBalanceMinor: adjusted, offsetHistories: request.offsetHistories, loanAccountRows: request.loanAccountRows });
       if (again.ok && again.drift !== "material") {
         driftExplained = true;
         ctx = { ...ctx, driftMaterial: false };
@@ -296,7 +329,7 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
     }
   }
   supersedeStaleProposals(db, { subjectKind: "debt", subjectId: ctx.debt.id, keepIds: postings.map((p) => p.id), configRevision: ctx.debt.currentRevision, window: ctx.window }, now);
-  const detail = getDebtDetail(db, debtId);
+  const detail = loadedDetail;
   const unscheduled = detail ? unscheduledPayments(db, detail, ctx.rows, ctx.window, { lenderFeed: !!ctx.rules["lender-repayment-row"], offsetParts: new Set(repaymentAlignment(ctx).offsetParts.map((p) => p.id)) }) : [];
   const splitCounterparts = detail ? splitRepaymentCounterparts(detail, ctx.rows) : new Set<string>();
   const pendingExtraCorrections: PlanningNotice[] = listDebtTransactionLinks(db, debtId)
@@ -305,6 +338,14 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
       text: request.followExtraPayments === false
         ? "A principal transfer is part of a repayment split but still has an extra-payment entry. Save or discard your Terms & Schedule edits, then refresh to correct it."
         : "A principal transfer is part of a repayment split but its extra-payment entry could not be corrected safely. Review the recorded extra-payment events in Terms & Schedule before refreshing." }));
+  const extraLinks = listDebtTransactionLinks(db, debtId).filter((link) => link.role === "extra-repayment");
+  for (const link of extraLinks) {
+    if (splitCounterparts.has(link.actualTransactionId)) continue;
+    const generated = loadedDetail?.assumptions.filter((a) => a.assumptionKind === "extra-repayment" && a.effectiveFrom === link.periodKey && a.note === "Extra payment recorded from Actual" && a.recurrence === null) ?? [];
+    if (generated.length > 1 || (generated.length && extraLinks.filter((other) => other.periodKey === link.periodKey).length > 1)) {
+      pendingExtraCorrections.push({ code: "extra-follow-review", periodKey: link.periodKey ?? ctx.window.from, text: "Several recorded extra payments share this date. Bench retained the saved assumptions because their ownership is ambiguous. Review the events in Terms & Schedule." });
+    }
+  }
   // What Actual already shows is recorded on its own (owner decision 2026-10-07): a split already in
   // Actual that matches the calculation, or a repayment already a full transfer to the loan, is a
   // claim that writes nothing to Actual; recording it is bookkeeping, so it shows as done at once.
@@ -327,15 +368,7 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
       return again.ok ? { ...again, changedInActual: [...changedInActual, ...again.changedInActual], followedExtraPayments: [...followedExtraPayments, ...again.followedExtraPayments] } : again;
     }
   }
-  // Payments into the loan that are not repayments (nor the payoff) count as extra payments on their
-  // own (owner decision 2026-10-07); then plan once more so this read already reflects them.
-  if (pass <= 2 && request.followExtraPayments !== false) {
-    const recorded = recordNewExtraPayments(db, debtId, unscheduled);
-    if (recorded.length) {
-      const again = previewDebtPostings(db, debtId, request, now, 3);
-      return again.ok ? { ...again, changedInActual: [...changedInActual, ...again.changedInActual], followedExtraPayments: [...followedExtraPayments, ...again.followedExtraPayments], recordedExtraPayments: [...recorded, ...(again.recordedExtraPayments ?? [])] } : again;
-    }
-  }
+  // Newly discovered extras remain suggestions until the user confirms them.
   const alignment = repaymentAlignment(ctx);
   const paymentOptions: PaymentOption[] = alignment.payments.map((p) => {
     const row = ctx.rows.get(p.id);
@@ -343,7 +376,7 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
   });
   // The status figures come back with the plan: one call per refresh.
   const observed = plans.map((p) => p.observed).find((o) => !!o) ?? null;
-  const reconciled = request.comparison ? reconcileDebt(db, { debtId, comparisonDate: request.comparison.comparisonDate, actualBalanceMinor: request.comparison.actualBalanceMinor, offsetHistories: request.offsetHistories, observed, loanAccountRows: request.loanAccountRows }) : null;
+  const reconciled = request.comparison ? reconcile(db, { debtId, comparisonDate: request.comparison.comparisonDate, actualBalanceMinor: request.comparison.actualBalanceMinor, offsetHistories: request.offsetHistories, observed, loanAccountRows: request.loanAccountRows }) : null;
   return {
     ok: true, postings, notices: [...plans.flatMap((p) => p.notices), ...pendingExtraCorrections], driftMaterial: built.ctx.driftMaterial, driftExplained, unscheduled, followedExtraPayments, paymentOptions,
     repaymentChoices: ctx.repaymentChoices ?? [], changedInActual, reconciliation: reconciled && reconciled.ok ? reconciled : null,
@@ -353,8 +386,7 @@ export function previewDebtPostings(db: SqliteDatabase, debtId: string, request:
 /** A payment the user can name as a due date's repayment, and the due date it is paired with now. */
 export type PaymentOption = { id: string; date: string; amountMinor: number; payeeName: string | null; notes: string | null; pairedTo: string | null };
 
-const shiftIso = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
-
 export function listDebtPostings(db: SqliteDatabase, debtId: string): PostingView[] {
-  return listSubjectPostings(db, "debt", debtId).map((record) => postingView(record));
+  recoverAbandonedPostings(db, debtId);
+  return listSubjectPostings(db, "debt", debtId).map((record) => ({ ...postingView(record), executionActive: hasPostingLease(db, record.id) }));
 }

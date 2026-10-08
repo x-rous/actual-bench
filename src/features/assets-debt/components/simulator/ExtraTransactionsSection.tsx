@@ -153,11 +153,11 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">{KIND_LABEL[row.assumption.kind]}</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.assumption.amountMinor, sim.minorDigits)}</td>
-                      <td className="px-3 py-2.5 text-muted-foreground">{assumptionDetails(row.assumption)}</td>
+                      <td className="px-3 py-2.5 text-muted-foreground">{assumptionDetails(row.assumption)}{row.assumption.actualLinked ? <span className="block">Recorded from Actual · manage in Sync Repayments</span> : null}</td>
                       <td className="px-4 py-2.5">
                         <div className="flex justify-end gap-1">
-                          <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(row.assumption)} aria-label={`Edit ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Edit</Button>
-                          <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(row.assumption)} aria-label={`Remove ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Remove</Button>
+                          <Button type="button" variant="ghost" size="sm" disabled={row.assumption.actualLinked} onClick={() => onEdit(row.assumption)} aria-label={`Edit ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Edit</Button>
+                          <Button type="button" variant="ghost" size="sm" disabled={row.assumption.actualLinked} onClick={() => onRemove(row.assumption)} aria-label={`Remove ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Remove</Button>
                         </div>
                       </td>
                     </tr>

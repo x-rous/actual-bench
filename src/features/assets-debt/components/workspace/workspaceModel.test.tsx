@@ -195,12 +195,13 @@ describe("display-only status cache (owner refinement 4)", () => {
     localStorage.setItem(key(1), JSON.stringify({ at: "2024-01-01T00:00:00Z" }));
     localStorage.setItem(key(2), JSON.stringify({ at: "2024-01-02T00:00:00Z" }));
     localStorage.setItem(key(1, "d2"), JSON.stringify({ at: "x" }));
-    expect(readCachedStatus(key(2))?.at).toBe("2024-01-02T00:00:00Z");
+    expect(readCachedStatus(key(2))).toBeNull();
+    expect(localStorage.getItem(key(2))).toBeNull();
     expect(readCachedStatus(key(3))).toBeNull();
     invalidateCachedStatus({ baseUrl: "https://a", budgetSyncId: "b", debtId: "d1" });
     expect(readCachedStatus(key(1))).toBeNull();
     expect(readCachedStatus(key(2))).toBeNull();
-    expect(readCachedStatus(key(1, "d2"))).not.toBeNull();
+    expect(readCachedStatus(key(1, "d2"))).toBeNull();
   });
 });
 

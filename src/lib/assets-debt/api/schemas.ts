@@ -216,6 +216,8 @@ const offsetHistorySchema = z.array(z.strictObject({
   points: z.array(z.strictObject({ date: isoDate, totalBalanceMinor: minor, clearedBalanceMinor: minor })).max(5_001),
 })).max(50).optional();
 
+export const loanSummaryRequestSchema = z.strictObject({ today: isoDate, offsetHistories: offsetHistorySchema });
+
 export const reconciliationRequestSchema = z.strictObject({ comparisonDate: isoDate, actualBalanceMinor: minor.nonnegative(), offsetHistories: offsetHistorySchema });
 export const conventionDiagnosticRequestSchema = z.strictObject({ observationId: id });
 export const driftAcceptanceRequestSchema = reconciliationRequestSchema.extend({ accept: z.literal(true) });
@@ -243,6 +245,7 @@ export const rowSnapshotSchema = z.strictObject({
 export const repaymentChoiceRequestSchema = z.strictObject({ dueDate: isoDate, transactionId: id });
 
 export const previewRequestSchema = z.strictObject({
+  today: isoDate.optional(),
   from: isoDate,
   to: isoDate,
   snapshots: z.array(matchingSnapshotSchema).max(50),
@@ -255,6 +258,7 @@ export const previewRequestSchema = z.strictObject({
   /** False while Terms & Schedule has unsaved edits: linked extra payments are not moved meanwhile. */
   followExtraPayments: z.boolean().optional(),
   /** Exactly which account dates the snapshots cover (a row outside them is not judged missing). */
+  verifiedMissingIds: z.array(id).max(5_000).optional(),
   readRanges: z.array(z.strictObject({ accountId: id, from: isoDate, to: isoDate })).max(2_000).optional(),
   comparison: z.strictObject({ comparisonDate: isoDate, actualBalanceMinor: minor.nonnegative() }).nullable().optional(),
   parameters: z.strictObject({
@@ -266,18 +270,20 @@ export const previewRequestSchema = z.strictObject({
 
 /** The user's explicit Apply: the rows re-read just before, so the server can re-run preflight. */
 export const applyRequestSchema = z.strictObject({
-  action: z.enum(["apply", "complete-link", "record-claim"]).default("apply"),
+  action: z.enum(["apply", "complete-link", "record-claim", "heartbeat"]).default("apply"),
+  token: id.optional(),
   fresh: z.array(rowSnapshotSchema).max(50).default([]),
 });
 
 export const applyOutcomeSchema = z.discriminatedUnion("status", [
-  z.strictObject({ status: z.literal("applied"), actualIds: z.array(id).max(50), appliedAt: z.string().min(1).max(100), recovered: z.boolean().optional() }),
-  z.strictObject({ status: z.literal("failed"), error: z.record(z.string(), z.unknown()) }),
-  z.strictObject({ status: z.literal("indeterminate"), error: z.record(z.string(), z.unknown()) }),
-  z.strictObject({ status: z.literal("not-found"), reason: z.strictObject({ code: z.string().min(1).max(100), text: z.string().min(1).max(1_000) }) }),
+  z.strictObject({ executionToken: id.optional(), status: z.literal("applied"), actualIds: z.array(id).max(50), appliedAt: z.string().min(1).max(100), recovered: z.boolean().optional() }),
+  z.strictObject({ executionToken: id.optional(), status: z.literal("failed"), error: z.record(z.string(), z.unknown()) }),
+  z.strictObject({ executionToken: id.optional(), status: z.literal("indeterminate"), error: z.record(z.string(), z.unknown()) }),
+  z.strictObject({ executionToken: id.optional(), status: z.literal("not-found"), reason: z.strictObject({ code: z.string().min(1).max(100), text: z.string().min(1).max(1_000) }) }),
+  z.strictObject({ executionToken: id.optional(), status: z.literal("review"), reason: z.strictObject({ code: z.string().min(1).max(100), text: z.string().min(1).max(1_000) }) }),
 ]);
 
-export const reverseRequestSchema = z.strictObject({ accountDirectory: accountDirectorySchema, transferPayees: z.record(id, id) });
+export const reverseRequestSchema = z.strictObject({ today: isoDate.optional(), accountDirectory: accountDirectorySchema, transferPayees: z.record(id, id) });
 
 /** Parse a body or throw a validation error naming the first problems. */
 export function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {

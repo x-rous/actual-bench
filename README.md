@@ -134,6 +134,10 @@ in: remembering a server seals them behind a passphrase you choose, and credenti
 for automations are sealed with a vault key Bench generates on first start and keeps in
 `/data/secrets/vault.key`. No environment variables are required.
 
+Assets & Debt financial drafts and display caches stay in browser memory and are lost on a full
+page reload. Saving a loan stores its workflow metadata in Bench’s app database. Legacy financial
+entries in browser storage are removed when the loan workspace or status cache is opened.
+
 Running behind a reverse proxy, want the edge build, or need to change a setting? See
 **[Installation](https://x-rous.github.io/actual-bench/getting-started/installation/)** and
 **[Configuration](https://x-rous.github.io/actual-bench/administration/configuration/)**.

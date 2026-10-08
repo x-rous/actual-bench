@@ -27,22 +27,23 @@ import { engineLine } from "../lib/strategyAdvice";
 
 jest.mock("../lib/debtsApi", () => {
   const actual = jest.requireActual("../lib/debtsApi");
-  return { ...actual, listDebts: jest.fn(async () => []), createDebt: jest.fn(), updateDebt: jest.fn(), getDebt: jest.fn(), archiveDebt: jest.fn(), listMatchRules: jest.fn(async () => []), getSchedule: jest.fn(), listNeedsAttention: jest.fn(async () => []), listDebtObservations: jest.fn(async () => ({ observations: [], history: [] })), getDebtReconciliation: jest.fn() };
+  return { ...actual, listDebts: jest.fn(async () => []), createDebt: jest.fn(), updateDebt: jest.fn(), getDebt: jest.fn(), archiveDebt: jest.fn(), listMatchRules: jest.fn(async () => []), getSchedule: jest.fn(), getLoanSummary: jest.fn(), listNeedsAttention: jest.fn(async () => []), listDebtObservations: jest.fn(async () => ({ observations: [], history: [] })), getDebtReconciliation: jest.fn() };
 });
 const mockDirectory: { current: AccountDirectory | undefined } = { current: undefined };
 jest.mock("../lib/useAccountDirectory", () => ({
   useAccountDirectory: () => ({ data: mockDirectory.current, isLoading: false }),
   useActiveBudgetSyncId: () => "b1",
 }));
+let mockActiveBudgetSyncId = "b1";
 jest.mock("@/store/connection", () => ({
-  useConnectionStore: (select: (s: unknown) => unknown) => select({}),
-  selectActiveInstance: () => ({ id: "c1", budgetSyncId: "b1" }),
+  useConnectionStore: Object.assign((select: (s: unknown) => unknown) => select({}), { getState: () => ({}) }),
+  selectActiveInstance: () => ({ id: "c1", budgetSyncId: mockActiveBudgetSyncId }),
 }));
 jest.mock("next/navigation", () => ({ usePathname: () => "/loans", useRouter: () => ({ push: jest.fn(), replace: jest.fn() }), useSearchParams: () => new URLSearchParams() }));
 jest.mock("next/dynamic", () => () => function ChartStub({ visible }: { visible: string[] }) {
   return <div data-testid="chart" data-series={visible.join(",")} />;
 });
-jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn() } }));
+jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() } }));
 jest.mock("../lib/postingsApi", () => ({ listPostings: jest.fn(async () => []), previewPostings: jest.fn(async () => ({ ok: true, postings: [], notices: [], driftMaterial: false })), declinePosting: jest.fn(), proposeReversal: jest.fn(), overrideSplit: jest.fn(), reproducePosting: jest.fn() }));
 
 const mocked = api as jest.Mocked<typeof api>;
@@ -81,11 +82,12 @@ function withViewport() {
 
 function wrap(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={client}>
       <ProjectionRunnerContext.Provider value={createSyncRunner()}>{ui}</ProjectionRunnerContext.Provider>
     </QueryClientProvider>,
   );
+  return { ...rendered, client };
 }
 
 /** A stateful simulator, reporting every state it is given. */
@@ -180,32 +182,29 @@ describe("Loans & Debt list", () => {
     expect(draft).toHaveTextContent("Draft");
   });
 
-  it("a loan row shows what is left, how much is paid, payments made of the total, the next payment, interest so far and the payoff date", async () => {
-    const event = (date: string, eventType: string, interestMinor: number, balanceAfterMinor: number) => ({ date, eventType, cashMovementMinor: eventType === "repayment" ? -50_000 : 0, principalMovementMinor: 0, interestMinor, feesMinor: 0, balanceBeforeMinor: balanceAfterMinor + 40_000, balanceAfterMinor });
-    mocked.getSchedule.mockResolvedValue({ ok: true, events: [event("2020-02-01", "repayment", 10_000, 60_000), event("2020-03-01", "repayment", 8_000, 20_000), event("2999-04-01", "repayment", 2_000, 0)] } as never);
+  it("shows recorded history separately from the remaining forecast", async () => {
+    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 2, totalPayments: 3, next: { date: "2999-04-01", amountMinor: 50_000 }, interestToDateMinor: 18_000, totalInterestMinor: 20_000, calculatedBalanceMinor: 20_000, payoffDate: "2999-04-01", regularRepaymentMinor: 50_000, dueSoonMinor: 0, dueSoonCount: 0 } });
     wrap(<DebtList debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null })]} />);
-    const card = screen.getAllByRole("row")[1];
-    await waitFor(() => expect(card).toHaveTextContent("2 of 3 payments"));
-    expect(card).toHaveTextContent("of 1,000.00");
-    expect(card).toHaveTextContent("(calculated)");
-    expect(card).toHaveTextContent("200.00");
-    expect(card).not.toHaveTextContent("AUD");
-    expect(card).toHaveTextContent("80% paid");
-    expect(card).toHaveTextContent("2 of 3 payments");
-    expect(card).toHaveTextContent("1 payment left");
-    expect(card).toHaveTextContent("180.00 paid");
-    expect(within(card).getByRole("progressbar", { name: "Principal paid for Loan 1" })).toBeInTheDocument();
+    const row = screen.getAllByRole("row")[1];
+    await waitFor(() => expect(row).toHaveTextContent("2 recorded · 1 scheduled left"));
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[3]).toHaveTextContent("500.00");
+    expect(cells[3]).not.toHaveTextContent(/left|recorded|payments/);
+    expect(cells[4]).toHaveTextContent("2 recorded · 1 scheduled left");
+    expect(row).toHaveTextContent("200.00");
+    expect(row).toHaveTextContent("(calculated)");
+    expect(row).toHaveTextContent("180.00 recorded");
+    expect(row).toHaveTextContent("Forecast from");
+    expect(within(row).getByRole("progressbar", { name: "Principal paid for Loan 1" })).toBeInTheDocument();
   });
 
-  it("the summary above the rows totals what the active loans owe and what falls due in the next 30 days", async () => {
-    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
-    const event = (date: string, balanceAfterMinor: number) => ({ date, eventType: "repayment", cashMovementMinor: -50_000, principalMovementMinor: 0, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: balanceAfterMinor + 50_000, balanceAfterMinor });
-    mocked.getSchedule.mockResolvedValue({ ok: true, events: [event("2020-02-01", 60_000), event(soon, 10_000), event("2999-04-01", 0)] } as never);
+  it("keeps unavailable outstanding totals explicit while reporting a known upcoming schedule", async () => {
+    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
     wrap(<LoansSummary debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(2, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(3, { paidOffOn: "2021-01-01" })]} />);
     const totals = screen.getByLabelText("All loans");
     expect(totals).toHaveTextContent("Active loans2");
-    await waitFor(() => expect(totals).toHaveTextContent("Owed1,200.00"));
-    expect(totals).toHaveTextContent("Due in the next 30 days1,000.00(2 repayments)");
+    await waitFor(() => expect(totals).toHaveTextContent("Due in the next 30 days1,000.00(2 repayments)"));
+    expect(totals).toHaveTextContent("OwedUnavailable");
   });
 
   it("says what each loan needs, in words, next to its status", () => {
@@ -865,8 +864,8 @@ describe("the new-loan flow", () => {
     type("Loan amount", "30000");
     type("Years", "3");
     type("Interest rate", "6");
-    await waitFor(() => expect(sessionStorage.getItem("assets-debt:new-loan:c1:b1")).toContain("3000000"));
-    expect(Object.keys(sessionStorage)).toEqual(["assets-debt:new-loan:c1:b1"]);
+    expect(sessionStorage.getItem("assets-debt:new-loan:c1:b1")).toBeNull();
+    expect(Object.keys(sessionStorage)).toEqual([]);
     expect(mocked.createDebt).not.toHaveBeenCalled();
 
     const next = screen.getByRole("button", { name: "Next: Link to Actual" });
@@ -911,11 +910,12 @@ describe("an existing loan page", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockActiveBudgetSyncId = "budget-1";
     mockDirectory.current = fixtureDirectory();
     mocked.getDebt.mockResolvedValue(detail);
     mocked.updateDebt.mockImplementation(async () => ({ ...detail, debt: { ...detail.debt, currentRevision: 2 } }));
   });
-  afterEach(() => (mockDirectory.current = undefined));
+  afterEach(() => { mockDirectory.current = undefined; mockActiveBudgetSyncId = "b1"; });
 
   const withView = async (view: string | null, run: () => Promise<void>) => {
     const nav = jest.requireMock("next/navigation") as { useSearchParams: () => URLSearchParams };
@@ -950,6 +950,51 @@ describe("an existing loan page", () => {
       expect(body.rates).toEqual([expect.objectContaining({ annualRateDecimal: "0.05" })]);
       expect(dir).toBe(mockDirectory.current);
       expect(mocked.createDebt).not.toHaveBeenCalled();
+    });
+  });
+
+  it("preserves unsaved edits when the saved loan changes and allows explicit reload", async () => {
+    await withView("calculation", async () => {
+      const { client } = wrap(<LoanView id={detail.debt.id} />);
+      await screen.findByText(/^Active · setup \d of \d$/);
+      type("Interest rate", "5");
+      await act(async () => {
+        client.setQueryData(["assets-debt", "debt", detail.debt.id], { ...detail, debt: { ...detail.debt, name: "Updated elsewhere", currentRevision: detail.debt.currentRevision + 1 } });
+      });
+      expect(await screen.findByText(/The saved loan changed\. Your edits are preserved/)).toBeInTheDocument();
+      expect(screen.getByLabelText("Interest rate")).toHaveValue("5");
+      expect(mocked.updateDebt).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Discard edits and reload" }));
+      await waitFor(() => expect(screen.getByLabelText("Interest rate")).toHaveValue("6"));
+      expect(screen.queryByText(/The saved loan changed\. Your edits are preserved/)).toBeNull();
+    });
+  });
+
+  it("shows save progress for an existing loan without losing the editor", async () => {
+    await withView("calculation", async () => {
+      let finish!: (next: typeof detail) => void;
+      mocked.updateDebt.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+      wrap(<LoanView id={detail.debt.id} />);
+      await screen.findByText(/^Active · setup \d of \d$/);
+      type("Interest rate", "5");
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      expect(await screen.findByRole("button", { name: "Saving loan revision…" })).toBeDisabled();
+      await act(async () => { finish(detail); });
+      await screen.findByRole("button", { name: "Save changes" });
+    });
+  });
+
+  it("makes a tracked Actual extra read-only in the Events table", async () => {
+    await withView("calculation", async () => {
+      mocked.getDebt.mockResolvedValue({ ...detail, actualExtraPaymentAssumptionIds: ["actual-extra-event"], assumptions: [{
+        id: "actual-extra-event", debtId: detail.debt.id, assumptionKind: "extra-repayment", effectiveFrom: "2024-04-01", recurrence: null,
+        amountMinor: 100000, feeTreatment: null, offsetAccountId: null, note: "Extra payment recorded from Actual", createdAt: "2024-04-01", updatedAt: "2024-04-01",
+      }] });
+      wrap(<LoanView id={detail.debt.id} />);
+      expect(await screen.findByRole("button", { name: "Remove Extra payment on 2024-04-01" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Edit Extra payment on 2024-04-01" })).toBeDisabled();
+      expect(screen.getByText("Recorded from Actual · manage in Sync Repayments")).toBeInTheDocument();
+      expect(mocked.updateDebt).not.toHaveBeenCalled();
     });
   });
 

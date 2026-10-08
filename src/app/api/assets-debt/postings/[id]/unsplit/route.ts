@@ -13,6 +13,6 @@ export async function POST(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const body = parseBody(reverseRequestSchema, await readJsonBody(request));
-    return NextResponse.json({ posting: proposeUnsplit(getAppDb(), id, { ...body, today: new Date().toISOString().slice(0, 10) }) });
+    return NextResponse.json({ posting: proposeUnsplit(getAppDb(), id, { ...body, today: body.today ?? new Date().toISOString().slice(0, 10) }) });
   } catch (error) { return assetsDebtErrorResponse(error); }
 }

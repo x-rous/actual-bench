@@ -8,6 +8,7 @@ export function anchorDebtAtObservation(db: SqliteDatabase, debtId: string, obse
   const debt = getDebt(db, debtId);
   const observation = getDebtObservation(db, observationId);
   if (!debt) throw new AppDbValidationError("Debt not found");
+  if (debt.status === "archived") throw new AppDbValidationError("Archived loans are read-only.");
   if (!observation || observation.debtId !== debtId) throw new AppDbValidationError("Observation not found for this debt");
   if (!listCurrentDebtObservations(db, debtId).some((row) => row.id === observationId)) throw new AppDbValidationError("A superseded observation cannot become an anchor");
   return insertDebtAnchor(db, {

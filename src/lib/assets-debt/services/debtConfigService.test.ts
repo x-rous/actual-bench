@@ -18,6 +18,7 @@ import {
   type DebtSaveInput,
 } from "./debtConfigService";
 import { projectStoredDebt, storedDebtEligibility } from "./projectionService";
+import { recordExtraPayment, removeExtraPayment } from "./extraPaymentService";
 
 let db: SqliteDatabase;
 beforeEach(() => {
@@ -32,6 +33,25 @@ function issuesOf(input: DebtSaveInput, dir = directory()): string[] {
 }
 
 describe("saving a debt configuration", () => {
+  it("protects Actual-recorded extras during ordinary saves while keeping the tracking removal workflow available", () => {
+    const original = createDebtConfiguration(db, saveInput(), directory());
+    const recorded = recordExtraPayment(db, original.debt.id, { actualTransactionId: "actual-extra", date: "2024-02-10", amountMinor: 100000 });
+    const event = recorded.assumptions[0];
+    expect(recorded.actualExtraPaymentAssumptionIds).toEqual([event.id]);
+    const assumption = { id: event.id, kind: "extra-repayment" as const, effectiveFrom: event.effectiveFrom, recurrence: null,
+      amountMinor: event.amountMinor!, feeTreatment: null, offsetAccountId: null, note: event.note };
+    for (const assumptions of [[], [{ ...assumption, amountMinor: assumption.amountMinor + 1 }], [{ ...assumption, effectiveFrom: "2024-02-11" }], [{ ...assumption, note: "manual" }]]) {
+      expect(() => updateDebtConfiguration(db, original.debt.id, saveInput({ name: "Must not save", assumptions }), directory())).toThrow("cannot be edited or removed here");
+      expect(getDebtDetail(db, original.debt.id)!.debt.currentRevision).toBe(recorded.debt.currentRevision);
+      expect(getDebtDetail(db, original.debt.id)!.debt.name).toBe(original.debt.name);
+    }
+    const manual = { ...assumption, id: null, effectiveFrom: "2024-03-01", note: "Manual extra" };
+    updateDebtConfiguration(db, original.debt.id, saveInput({ assumptions: [assumption, manual] }), directory());
+    updateDebtConfiguration(db, original.debt.id, saveInput({ assumptions: [assumption] }), directory());
+    expect(getDebtDetail(db, original.debt.id)!.assumptions).toHaveLength(1);
+    removeExtraPayment(db, original.debt.id, "actual-extra");
+    expect(getDebtDetail(db, original.debt.id)!.assumptions).toEqual([]);
+  });
   it("creates the debt, its rows and revision 1 in one save, with canonical decimals and the default drift tolerance", () => {
     const detail = createDebtConfiguration(db, saveInput({ rates: [{ ...saveInput().rates[0], annualRateDecimal: "0.06120" }] }), directory());
     expect(detail.debt).toMatchObject({ status: "active", currentRevision: 1, driftToleranceMinor: 100 });

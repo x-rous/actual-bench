@@ -24,6 +24,7 @@ import { verifyConvertOutcome, verifyCreatedRows, verifyLinkOutcome, verifyResto
  */
 
 export type ApplyTicketView = {
+  executionToken?: string;
   posting: {
     id: string;
     status: unknown;
@@ -264,7 +265,10 @@ async function applyRestructure(output: Extract<PostingOutputSnapshot, { kind: "
   if (result.clearLater) ctx.clearLater?.push(result.clearLater);
   let liabilityRows: SyncSourceTransaction[] = [];
   try {
-    liabilityRows = await read(ctx.transport, ctx.liabilityAccountId, output.before.date, output.before.date);
+    const settled = result.settledVerification;
+    liabilityRows = settled?.accountId === ctx.liabilityAccountId && settled.date === output.before.date
+      ? settled.rows
+      : await read(ctx.transport, ctx.liabilityAccountId, output.before.date, output.before.date);
   } catch (error) {
     return { status: "indeterminate", error: { stage: "verify-read", message: message(error) } };
   }

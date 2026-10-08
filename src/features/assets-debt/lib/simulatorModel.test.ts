@@ -20,10 +20,21 @@ import {
   summarizeProfile,
   switchToDayByDay,
   withoutExtraTransactions,
+  preserveActualExtraPayments,
   SIMULATOR_DEFAULT_PROFILE,
   type SimulationState,
 } from "./simulatorModel";
 import { DAILY_MONTHLY_CHARGE, offsetOf, project, sim } from "./simulatorTestKit";
+
+it("keeps Actual-owned extras intact when editing or resetting, while allowing removal of manual extras", () => {
+  const recorded = { key: "actual", id: "event", kind: "extra-repayment" as const, effectiveFrom: "2024-02-01", recurrence: null,
+    amountMinor: 100000, feeTreatment: null, offsetAccountId: null, note: "Extra payment recorded from Actual", actualLinked: true };
+  const current = sim({ assumptions: [recorded, { ...recorded, key: "manual", id: null, actualLinked: false }] });
+  const reset = preserveActualExtraPayments(current, { ...current, assumptions: [] });
+  expect(reset.assumptions).toEqual([recorded]);
+  const edited = preserveActualExtraPayments(current, { ...current, assumptions: [{ ...recorded, amountMinor: 1, actualLinked: false }] });
+  expect(edited.assumptions).toEqual([recorded]);
+});
 
 describe("the simulator defaults", () => {
   it("starts with a complete, currency-agnostic sample loan", () => {

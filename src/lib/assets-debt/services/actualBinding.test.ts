@@ -3,6 +3,7 @@ import { resetAppDbForTests } from "@/lib/app-db/connection";
 import { getFinancialPosting } from "@/lib/app-db/financialPostingRepository";
 import { ACCOUNTS, byKind, createScenario } from "../testing/postingScenario";
 import { paidOffState } from "./payoffState";
+import { releaseChangedInActual } from "./actualBinding";
 
 jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
 const mockApiRequest = apiRequest as unknown as jest.Mock;
@@ -21,13 +22,30 @@ describe("applied changes kept in step with Actual", () => {
     return { s, payment, split, lines };
   }
 
-  it("still as applied (only the date moved): keeps counting, and nothing is proposed again", async () => {
+  it("a moved repayment date releases the old interest allocation for review", async () => {
     const { s, payment, split } = await applied();
     s.fake.editInActual(payment, { date: "2024-01-30" });
     const result = await s.preview(window);
-    expect(result.changedInActual).toEqual([]);
+    expect(result.changedInActual).toContainEqual(expect.objectContaining({ postingId: split.id, detail: expect.stringContaining("repayment date changed") }));
+    expect(getFinancialPosting(s.db, split.id)?.status).toBe("reversed");
+  });
+
+  it("does not release a payment absent from a date range without identity evidence", async () => {
+    const { s, split } = await applied();
+    expect(releaseChangedInActual(s.db, s.debtId, new Map(), () => false)).toEqual([]);
     expect(getFinancialPosting(s.db, split.id)?.status).toBe("applied");
-    expect(byKind(result.postings, "repayment-split").filter((p) => p.status === "proposed")).toEqual([]);
+  });
+
+  it.each(["category", "payee", "account"])("releases a split when its %s changes in Actual", async (field) => {
+    const { s, payment, split, lines } = await applied();
+    if (field === "account") s.fake.editInActual(payment, { account: ACCOUNTS.mortgage });
+    else {
+      const line = lines.find((row) => field === "category" ? !row.transfer_id : !!row.transfer_id)!;
+      s.fake.editInActual(line.id, { [field]: "changed-in-actual" });
+    }
+    const result = await s.preview(window);
+    expect(result.changedInActual).toContainEqual(expect.objectContaining({ postingId: split.id }));
+    expect(getFinancialPosting(s.db, split.id)?.status).toBe("reversed");
   });
 
   it("split amounts edited in Actual: stops counting, and the split is recorded with Actual's figures", async () => {
@@ -159,4 +177,3 @@ describe("charges and lender rows kept in step with Actual", () => {
     expect(again?.reasons.map((r) => r.code)).toContain("removed-in-actual");
   });
 });
-

@@ -1,4 +1,5 @@
 import type { ActualBenchTransport } from "@/lib/actual/transport";
+import { localToday } from "./calendarDate";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import type { DebtBacktestResult } from "@/lib/financial-models/matching";
 import { checkDraftMatchRule, createMatchRule, getSchedule, listMatchRules } from "./debtsApi";
@@ -19,7 +20,7 @@ export type AutoMatchingResult =
   | { status: "needs-review"; ruleId: string; check: DebtBacktestResult | null; message: string | null }
   | { status: "skipped"; reason: "accounts-missing" | "has-rules" | "not-active" };
 
-const isoToday = () => new Date().toISOString().slice(0, 10);
+const isoToday = () => localToday();
 const inDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
 /** Clean as the matching editor counts it: nothing Bench could never change (missed due dates show on Sync Repayments). */

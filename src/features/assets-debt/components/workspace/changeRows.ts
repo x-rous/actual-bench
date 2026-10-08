@@ -27,7 +27,7 @@ export type ChangeRowModel = {
   state: RowState;
   group: Exclude<ChangeFilter, "all">;
   /** What a checkbox on this row would do; null when the row cannot be selected. */
-  selectable: "apply" | "undo" | null;
+  selectable: "apply" | "undo" | "reverse" | null;
   /** Shown as one row: consecutive due dates with no payment found, oldest first. */
   missedDates?: string[];
 };
@@ -86,7 +86,8 @@ export function buildChangeRows(postings: readonly PostingView[], notices: reado
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const selectable = state === "recommended" || state === "review"
       ? "apply"
-      : state === "undo-pending" && undo && String(undo.status) === "proposed" && undo.classification !== "blocked" ? "undo" : null;
+      : state === "undo-pending" && undo && String(undo.status) === "proposed" && undo.classification !== "blocked" ? "undo"
+        : state === "applied" || (state === "undo-pending" && undo?.status === "failed" && (undo.error as { written?: unknown } | null)?.written === false) ? "reverse" : null;
     // Stays the same while a proposal is recalculated, so an open row stays open after a refresh.
     const openKey = String(posting.status) === "proposed" ? `proposed:${posting.postingKind}:${posting.periodKey}` : posting.id;
     return { key: posting.id, openKey, dueDate: posting.periodKey, ...paidAndPayment(posting), posting, undo, notice: null, earlier, state, group: GROUP[state], selectable };

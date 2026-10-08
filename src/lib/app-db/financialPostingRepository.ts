@@ -312,6 +312,11 @@ export function markPostingIndeterminate(db: SqliteDatabase, id: string, error: 
   return transition(db, id, ["applying"], "indeterminate", { error_json: canonicalJson(error) }, now);
 }
 
+/** Conflicting recovery evidence keeps the write interrupted; it is not proof of absence. */
+export function recordPostingRecoveryReview(db: SqliteDatabase, id: string, reason: PostingReason, now = new Date().toISOString()): FinancialPostingRecord {
+  return transition(db, id, ["indeterminate"], "indeterminate", { error_json: canonicalJson({ stage: "recovery-review", message: reason.text, code: reason.code }) }, now);
+}
+
 /**
  * Recovery found nothing in Actual: the posting goes back to `proposed`, now
  * Review, and needs a fresh user decision before anything is written again.
@@ -341,7 +346,8 @@ export function supersedePosting(db: SqliteDatabase, id: string, now = new Date(
  * verified.
  */
 export function closeReplacedFailure(db: SqliteDatabase, id: string, now = new Date().toISOString()): FinancialPostingRecord {
-  return transition(db, id, ["failed"], "superseded", { error_json: supersededJson("replaced-by-applied") }, now);
+  const posting = requirePosting(db, id);
+  return transition(db, id, ["failed"], "superseded", { error_json: canonicalJson({ ...posting.error, superseded: "replaced-by-applied" }) }, now);
 }
 
 /** Only when the compensating reversal posting itself has been applied. */

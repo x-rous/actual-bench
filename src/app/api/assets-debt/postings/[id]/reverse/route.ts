@@ -17,7 +17,7 @@ export async function POST(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const body = parseBody(reverseRequestSchema, await readJsonBody(request));
-    const posting = proposeReversal(getAppDb(), id, { ...body, today: new Date().toISOString().slice(0, 10) });
+    const posting = proposeReversal(getAppDb(), id, { ...body, today: body.today ?? new Date().toISOString().slice(0, 10) });
     return NextResponse.json({ posting });
   } catch (error) { return assetsDebtErrorResponse(error); }
 }

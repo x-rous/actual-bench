@@ -1,5 +1,6 @@
 "use client";
 
+import { useLocalToday } from "../../lib/useLocalToday";
 import { useMemo, useState } from "react";
 import { BookOpen, MoreHorizontal, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -9,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { chartSeries, deltas, headline } from "../../lib/results";
-import { dailyEngineReason, newSimulation, switchToDayByDay, withoutExtraTransactions, type SimAssumption, type SimRate, type SimulationState } from "../../lib/simulatorModel";
+import { dailyEngineReason, newSimulation, preserveActualExtraPayments, switchToDayByDay, withoutExtraTransactions, type SimAssumption, type SimRate, type SimulationState } from "../../lib/simulatorModel";
 import { useLiveProjection } from "../../lib/useLiveProjection";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import { labelOf, REPAYMENT_FREQUENCY_OPTIONS } from "../../lib/vocabulary";
@@ -94,14 +95,15 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
   const live = useLiveProjection(sim, { compareWith: comparing && saved ? saved : null, impactBaseline: hasExtras ? noExtras : null, offsetHistories: offsetTracking?.snapshots, suspend: offsetTracking?.loading, externalProblems: offsetProblems });
 
   const change = (next: SimulationState) => {
-    if (!readOnly) onChange(next);
+    if (!readOnly) onChange(preserveActualExtraPayments(sim, next));
   };
   /** O1: features the period-by-period calculation cannot represent ask before switching. */
   const propose = (candidate: SimulationState) => {
     if (readOnly) return;
-    const reason = dailyEngineReason(candidate);
-    if (reason) setPrompt({ reason, candidate });
-    else onChange(candidate);
+    const protectedCandidate = preserveActualExtraPayments(sim, candidate);
+    const reason = dailyEngineReason(protectedCandidate);
+    if (reason) setPrompt({ reason, candidate: protectedCandidate });
+    else onChange(protectedCandidate);
   };
 
   const events = live.projection?.ok ? live.projection.events : null;
@@ -111,7 +113,8 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
   const delta = head && compared ? deltas(head, compared) : null;
   const frequency = labelOf(REPAYMENT_FREQUENCY_OPTIONS, sim.profile.repaymentFrequency).toLowerCase();
   const chart = useMemo(() => (live.projection?.ok ? chartSeries(live.projection, sim, { view: chartView, comparison: live.comparison }) : null), [live.projection, live.comparison, sim, chartView]);
-  const resetValue = useMemo(() => newSimulation({ currency: sim.currency, minorDigits: sim.minorDigits, today: new Date().toISOString().slice(0, 10) }), [sim.currency, sim.minorDigits]);
+  const calendarToday = useLocalToday();
+  const resetValue = useMemo(() => newSimulation({ currency: sim.currency, minorDigits: sim.minorDigits, today: calendarToday }), [sim.currency, sim.minorDigits, calendarToday]);
   const resetMeaningful = comparableSimulation(sim) !== comparableSimulation(resetValue);
   const removeExtra = (assumption: SimAssumption) => propose({ ...sim, assumptions: sim.assumptions.filter((candidate) => candidate.key !== assumption.key) });
   const removeRate = (rate: SimRate) => propose({ ...sim, rates: sim.rates.filter((candidate) => candidate.key !== rate.key) });
@@ -212,7 +215,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
         reason={prompt?.reason ?? null}
         onCancel={() => setPrompt(null)}
         onSwitch={() => {
-          if (prompt) onChange(switchToDayByDay(prompt.candidate));
+          if (prompt) change(switchToDayByDay(prompt.candidate));
           setPrompt(null);
         }}
       />

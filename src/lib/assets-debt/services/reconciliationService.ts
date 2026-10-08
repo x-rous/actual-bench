@@ -1,3 +1,4 @@
+import { getDebtDetail, type DebtDetail } from "./debtConfigService";
 import { paidOffState } from "./payoffState";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { getDebt } from "@/lib/app-db/debtRepository";
@@ -14,8 +15,8 @@ import type { PostingOutputSnapshot } from "./snapshot";
 type ReconcileInput = Parameters<typeof reconcileDebt>[1];
 
 /** The calculated balance on a date: as paid from the facts, or the schedule, or 0 once paid off. */
-function modelOn(db: SqliteDatabase, input: ReconcileInput, comparisonDate: string) {
-  const projected = projectStoredDebt(db, input.debtId, { from: "0001-01-01", to: comparisonDate, resolution: "events", offsetHistories: input.offsetHistories });
+function modelOn(db: SqliteDatabase, input: ReconcileInput, comparisonDate: string, detail?: DebtDetail) {
+  const projected = projectStoredDebt(db, input.debtId, { from: "0001-01-01", to: comparisonDate, resolution: "events", offsetHistories: input.offsetHistories }, detail);
   if (!projected.ok) return { ok: false as const, result: projected };
   const projection = projected.projection;
   if (!projection.ok) return { ok: false as const, result: { ok: false as const, blocked: { code: "invalid-config" as const, message: projection.blocked.map((item) => item.message).join(" ") } } };
@@ -44,7 +45,7 @@ function modelOn(db: SqliteDatabase, input: ReconcileInput, comparisonDate: stri
       const fromPaid = projectStoredDebt(db, input.debtId, {
         from: "0001-01-01", to: comparisonDate, resolution: "events", offsetHistories: input.offsetHistories,
         startFrom: { date: paid.dueDate, principalMinor: opening, accruedInterestMinor: 0, carriedRemainder: null },
-      });
+      }, detail);
       if (fromPaid.ok && fromPaid.projection.ok) modelMinor = withoutUnseenRepayments(fromPaid.projection.events, paid.dueDate, opening);
     }
     asPaidFrom = paid.paidDate;
@@ -58,10 +59,11 @@ export function reconcileDebt(db: SqliteDatabase, input: {
   observed?: { paidDate: string; dueDate: string; principalAfterMinor: number } | null;
   /** The loan account's rows (signed as in Actual), to know Actual's balance on a lender statement's date. */
   loanAccountRows?: ReadonlyArray<{ date: string; amountMinor: number }> | null;
-}) {
-  const debt = getDebt(db, input.debtId);
+}, loadedDetail?: DebtDetail) {
+  const detail = loadedDetail ?? getDebtDetail(db, input.debtId);
+  const debt = detail?.debt ?? getDebt(db, input.debtId);
   if (!debt) return { ok: false as const, notFound: true as const };
-  const today = modelOn(db, input, input.comparisonDate);
+  const today = modelOn(db, input, input.comparisonDate, detail ?? undefined);
   if (!today.ok) return today.result;
   const { modelMinor, asPaidFrom, scheduledMinor, paidOff } = today;
   const observations = listCurrentDebtObservations(db, input.debtId);
@@ -71,7 +73,7 @@ export function reconcileDebt(db: SqliteDatabase, input: {
   // 2026-10-07): a repayment or extra payment made after it is not a difference from the lender.
   let lenderAsOf: { date: string; modelMinor: number; actualMinor: number } | null = null;
   if (lenderObservation && lenderObservation.observedOn < input.comparisonDate) {
-    const then = modelOn(db, { ...input, observed: input.observed && input.observed.paidDate <= lenderObservation.observedOn ? input.observed : null }, lenderObservation.observedOn);
+    const then = modelOn(db, { ...input, observed: input.observed && input.observed.paidDate <= lenderObservation.observedOn ? input.observed : null }, lenderObservation.observedOn, detail ?? undefined);
     if (then.ok) {
       const negativeIsDebt = debt.signConvention !== "positive-is-debt";
       const actualThen = input.loanAccountRows

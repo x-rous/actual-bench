@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueries, useQuery } from "@tanstack/react-query";
@@ -11,8 +11,11 @@ import { readDatedBalance, toDebtMagnitude } from "@/lib/assets-debt/actual/ledg
 import type { DebtSummary } from "@/lib/assets-debt/services/debtConfigService";
 import { cn } from "@/lib/utils";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
-import { getSchedule } from "../lib/debtsApi";
-import { loanProgress, percentPaid } from "../lib/loanProgress";
+import { readOffsetHistories } from "@/lib/assets-debt/services/offsetHistoryService";
+import { useLocalToday } from "../lib/useLocalToday";
+import { withLoanOverviewRead } from "../lib/overviewReads";
+import { getLoanSummary } from "../lib/debtsApi";
+import { percentPaid } from "../lib/loanProgress";
 import { formatAmount } from "../lib/money";
 import { loanPath } from "../lib/routes";
 import { useAccountDirectory } from "../lib/useAccountDirectory";
@@ -71,7 +74,6 @@ export function DebtList({ debts, attention = {}, hrefs = {} }: { debts: DebtSum
 
 const shortDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" });
 const monthYear = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
-const isoToday = () => new Date().toISOString().slice(0, 10);
 
 function Cell({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div role="cell" className={cn("min-w-0 space-y-1 px-3", className)}>{children}</div>;
@@ -84,11 +86,17 @@ function Line({ children, title, className }: { children: React.ReactNode; title
 type Connection = ReturnType<typeof selectActiveInstance>;
 
 /** The stored schedule a row (and the summary) reads; the same key, so it is fetched once. */
-function scheduleQuery(debt: DebtSummary, today: string) {
+function scheduleQuery(debt: DebtSummary, today: string, connection: Connection) {
   const usable = !debt.blocked && debt.openingPrincipalMinor !== null && !!debt.openingDate;
   return {
-    queryKey: ["assets-debt", "card-schedule", debt.id, debt.currentRevision, today],
-    queryFn: () => getSchedule(debt.id, { from: debt.openingDate!, to: `${Number(today.slice(0, 4)) + 60}-12-31`, resolution: "events" }),
+    queryKey: ["assets-debt", "card-schedule", connection?.id, debt.id, debt.currentRevision, today],
+    queryFn: async () => withLoanOverviewRead(connection?.id ?? debt.budgetSyncId ?? "stored-summary", async () => {
+      const accounts = (debt.offsetAccountLinks ?? []).filter((offset) => offset.useActualBalance).map((offset) => offset.actualAccountId);
+      if (accounts.length && (!connection || (debt.budgetSyncId && connection.budgetSyncId !== debt.budgetSyncId))) throw new Error("Connect to this loan’s budget to read offsets.");
+      const offsets = accounts.length ? await readOffsetHistories(getTransport(connection!), { accountIds: accounts, asOfDate: today }) : null;
+      if (offsets && !offsets.ok) throw new Error(offsets.failures.map((failure) => failure.message).join("; "));
+      return getLoanSummary(debt.id, { today, offsetHistories: offsets?.ok ? offsets.snapshots : undefined });
+    }),
     enabled: usable,
     staleTime: 5 * 60_000,
   };
@@ -98,17 +106,16 @@ function scheduleQuery(debt: DebtSummary, today: string) {
 function balanceQuery(debt: DebtSummary, connection: Connection, today: string) {
   const usable = !debt.blocked && debt.openingPrincipalMinor !== null && !!debt.openingDate;
   return {
-    queryKey: ["assets-debt", "card-balance", connection?.id, debt.liabilityAccountId, today],
-    queryFn: async () => {
+    queryKey: ["assets-debt", "card-balance", connection?.id, debt.liabilityAccountId, today, debt.signConvention],
+    queryFn: async () => withLoanOverviewRead(connection?.id ?? debt.budgetSyncId ?? "stored-summary", async () => {
       const read = await readDatedBalance(getTransport(connection!), { accountId: debt.liabilityAccountId!, date: today });
-      return read.ok ? toDebtMagnitude(read.balanceMinor, debt.signConvention === "positive-is-debt" ? "positive-is-debt" : "negative-is-debt") : null;
-    },
-    enabled: usable && !!connection && !!debt.liabilityAccountId && debt.status !== "archived",
+      if (!read.ok) throw new Error(read.message);
+      return toDebtMagnitude(read.balanceMinor, debt.signConvention === "positive-is-debt" ? "positive-is-debt" : "negative-is-debt");
+    }),
+    enabled: usable && !!connection && (!debt.budgetSyncId || connection.budgetSyncId === debt.budgetSyncId) && !!debt.liabilityAccountId && debt.status !== "archived",
     staleTime: 60_000,
   };
 }
-
-const addDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
 /**
  * A short line of totals above the rows (owner request 2026-10-07): what is owed across the active
@@ -116,34 +123,35 @@ const addDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00
  */
 export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
   const connection = useConnectionStore(selectActiveInstance);
-  const today = useMemo(() => isoToday(), []);
+  const today = useLocalToday();
   const active = debts.filter((d) => d.status === "active" && !d.paidOffOn && !d.blocked);
-  const schedules = useQueries({ queries: active.map((d) => scheduleQuery(d, today)) });
+  const schedules = useQueries({ queries: active.map((d) => scheduleQuery(d, today, connection)) });
   const balances = useQueries({ queries: active.map((d) => balanceQuery(d, connection, today)) });
-  const soon = addDays(today, 30);
   const byCurrency = new Map<string, { digits: number; owed: number; due: number; dueCount: number }>();
   active.forEach((debt, i) => {
     const schedule = schedules[i]?.data;
     const balance = balances[i]?.data;
-    const events = schedule?.ok ? schedule.events : [];
-    const progress = schedule?.ok && debt.openingPrincipalMinor !== null ? loanProgress(events, today, debt.openingPrincipalMinor) : null;
-    const owed = typeof balance === "number" ? balance : progress?.calculatedBalanceMinor ?? debt.openingPrincipalMinor ?? 0;
-    const upcoming = events.filter((e) => (e.eventType === "repayment" || e.eventType === "final-payment") && e.date > today && e.date <= soon);
+    const progress = schedule?.ok ? schedule.summary : null;
+    const owed = typeof balance === "number" ? balance : 0;
     const entry = byCurrency.get(debt.currency) ?? { digits: debt.currencyMinorDigits, owed: 0, due: 0, dueCount: 0 };
     entry.owed += owed;
-    entry.due += upcoming.reduce((sum, e) => sum - e.cashMovementMinor, 0);
-    entry.dueCount += upcoming.length;
+    entry.due += progress?.dueSoonMinor ?? 0;
+    entry.dueCount += progress?.dueSoonCount ?? 0;
     byCurrency.set(debt.currency, entry);
   });
   if (!active.length) return null;
+  const incomplete = !connection || active.some((debt) => !debt.liabilityAccountId || !debt.openingDate || debt.openingPrincipalMinor === null || (debt.budgetSyncId && debt.budgetSyncId !== connection.budgetSyncId)) || balances.some((query) => query.isError);
+  const loading = balances.some((query) => query.data === undefined && !query.isError);
+  const unavailable = incomplete ? "Unavailable" : loading ? "Loading…" : null;
+  const dueUnavailable = active.some((debt) => !debt.openingDate || debt.openingPrincipalMinor === null) || schedules.some((query) => query.isError) ? "Unavailable" : schedules.some((query) => query.data === undefined) ? "Loading…" : null;
   const several = byCurrency.size > 1;
   return (
     <dl aria-label="All loans" className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
       <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Active loans</dt><dd className="font-semibold tabular-nums">{active.length}</dd></div>
       {[...byCurrency].map(([currency, t]) => (
         <div key={currency} className="contents">
-          <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Owed{several ? ` (${currency})` : ""}</dt><dd className="font-semibold tabular-nums">{formatAmount(t.owed, t.digits)}</dd></div>
-          <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Due in the next 30 days{several ? ` (${currency})` : ""}</dt><dd className="font-semibold tabular-nums">{formatAmount(t.due, t.digits)}{t.dueCount ? <span className="ml-1 font-normal text-muted-foreground">({t.dueCount} repayment{t.dueCount === 1 ? "" : "s"})</span> : null}</dd></div>
+          <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Owed{several ? ` (${currency})` : ""}</dt><dd className="font-semibold tabular-nums">{unavailable ?? formatAmount(t.owed, t.digits)}</dd></div>
+          <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Due in the next 30 days{several ? ` (${currency})` : ""}</dt><dd className="font-semibold tabular-nums">{dueUnavailable ?? formatAmount(t.due, t.digits)}{!dueUnavailable && t.dueCount ? <span className="ml-1 font-normal text-muted-foreground">({t.dueCount} repayment{t.dueCount === 1 ? "" : "s"})</span> : null}</dd></div>
         </div>
       ))}
     </dl>
@@ -154,7 +162,7 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
 function DebtRow({ debt, attention, href, index, start }: { debt: DebtSummary; attention?: string; href?: string; index: number; start: number }) {
   const connection = useConnectionStore(selectActiveInstance);
   const directory = useAccountDirectory();
-  const today = useMemo(() => isoToday(), []);
+  const today = useLocalToday();
   const router = useRouter();
   const status = statusOf(debt);
   const StatusIcon = status.icon;
@@ -164,11 +172,11 @@ function DebtRow({ debt, attention, href, index, start }: { debt: DebtSummary; a
   const money = (minor: number) => formatAmount(minor, debt.currencyMinorDigits);
   const opening = debt.openingPrincipalMinor;
   const usable = !debt.blocked && opening !== null && !!debt.openingDate;
-  const schedule = useQuery(scheduleQuery(debt, today));
+  const schedule = useQuery(scheduleQuery(debt, today, connection));
   const balance = useQuery(balanceQuery(debt, connection, today));
-  const progress = schedule.data?.ok && opening !== null ? loanProgress(schedule.data.events, today, opening) : null;
+  const progress = schedule.data?.ok ? schedule.data.summary : null;
   const inActual = typeof balance.data === "number";
-  const remaining = inActual ? (balance.data as number) : progress?.calculatedBalanceMinor ?? opening;
+  const remaining = inActual ? (balance.data as number) : debt.liabilityAccountId && debt.status !== "archived" ? null : progress?.calculatedBalanceMinor ?? null;
   const hasBalance = usable && remaining !== null && remaining !== undefined;
   const paid = hasBalance ? percentPaid(opening!, remaining) : 0;
   const accountName = (id: string | null | undefined) => !id ? "Not configured" : directory.data?.accounts.find((a) => a.id === id)?.name ?? (directory.isLoading ? "Loading…" : "Account unavailable");
@@ -181,7 +189,6 @@ function DebtRow({ debt, attention, href, index, start }: { debt: DebtSummary; a
   const months = debt.contractualTermMonths;
   const term = months ? `${Math.floor(months / 12) ? `${Math.floor(months / 12)}y ` : ""}${months % 12 ? `${months % 12}m` : ""}`.trim() : null;
   const frequency = debt.repaymentFrequency ? labelOf(REPAYMENT_FREQUENCY_OPTIONS, debt.repaymentFrequency).split(" (")[0] : "Frequency not set";
-  const left = progress ? Math.max(0, progress.totalPayments - progress.paymentsMade) : null;
   const failed = schedule.isError || (schedule.data && !schedule.data.ok);
   const placeholder = !usable ? "-" : failed ? "Unavailable" : "Loading…";
   const issue = debt.blocked ? null : !usable ? "Complete loan setup" : failed ? "Schedule unavailable" : null;
@@ -207,29 +214,28 @@ function DebtRow({ debt, attention, href, index, start }: { debt: DebtSummary; a
         {nextRate ? <Line title={`Rate changes to ${rateLabel(nextRate.annualRateDecimal)} on ${shortDay(nextRate.accrualEffectiveFrom)}`} className="text-muted-foreground">{rateLabel(nextRate.annualRateDecimal)} · {shortDay(nextRate.accrualEffectiveFrom)}</Line> : null}
       </Cell>
       <Cell>
-        <Line className="text-sm font-semibold tabular-nums">{hasBalance ? money(remaining) : "-"}</Line>
+        <Line className="text-sm font-semibold tabular-nums">{hasBalance ? money(remaining) : balance.isError ? "Unavailable" : placeholder}</Line>
         {hasBalance ? <Line className="text-muted-foreground">of {money(opening!)}</Line> : null}
         {hasBalance && !inActual ? <Line className="text-muted-foreground">(calculated)</Line> : null}
       </Cell>
       <Cell>
         <Line className="font-medium tabular-nums">{debt.paidOffOn ? "None" : progress?.next ? money(progress.next.amountMinor) : progress ? "None" : placeholder}</Line>
         {!debt.paidOffOn && progress?.next ? <Line className="text-muted-foreground">{shortDay(progress.next.date)}</Line> : null}
-        {left !== null ? <Line className="text-muted-foreground">{debt.paidOffOn ? "0" : left} payment{left === 1 && !debt.paidOffOn ? "" : "s"} left</Line> : null}
       </Cell>
       <Cell>
         {hasBalance ? <>
-          <Line className="tabular-nums"><span className="font-medium">{Math.round(paid)}% paid</span><span className="text-muted-foreground"> · {money(Math.max(0, opening! - remaining))}</span></Line>
+          <Line className="tabular-nums"><span className="font-medium">{Math.round(paid)}% recorded</span><span className="text-muted-foreground"> · {money(Math.max(0, opening! - remaining))}</span></Line>
           <div role="progressbar" aria-label={`Principal paid for ${debt.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(paid)} className="my-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-chart-1" style={{ width: `${paid}%` }} />
           </div>
-          {progress ? <Line className="tabular-nums text-muted-foreground">{progress.paymentsMade} of {progress.totalPayments} payments</Line> : null}
         </> : <Line className="text-muted-foreground">-</Line>}
+        {progress ? <Line className="tabular-nums text-muted-foreground">{progress.paymentsMade} recorded · {progress.totalPayments - progress.paymentsMade} scheduled left</Line> : null}
       </Cell>
       <Cell>
-        <Line className="font-medium tabular-nums">{progress ? money(progress.interestToDateMinor) : placeholder}{progress ? <span className="font-normal text-muted-foreground"> paid</span> : null}</Line>
+        <Line className="font-medium tabular-nums">{progress ? money(progress.interestToDateMinor) : placeholder}{progress ? <span className="font-normal text-muted-foreground"> recorded</span> : null}</Line>
         {progress ? <>
           <Line title="Projected interest remaining" className="tabular-nums text-muted-foreground">{money(Math.max(0, progress.totalInterestMinor - progress.interestToDateMinor))} left (projected)</Line>
-          <Line title="Total projected interest over the schedule" className="tabular-nums text-muted-foreground">{money(progress.totalInterestMinor)} total</Line>
+          <Line title={`Forecast restarted from ${progress.forecastFrom}; recorded interest may cover only part of the loan history`} className="tabular-nums text-muted-foreground">Forecast from {shortDay(progress.forecastFrom)}</Line>
         </> : null}
       </Cell>
       <Cell>

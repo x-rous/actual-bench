@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
+import { renewPostingLease } from "@/lib/app-db/debtPostingLeaseRepository";
+import { AppDbValidationError } from "@/lib/app-db/errors";
 import { readJsonBody } from "@/lib/app-db/routeResponses";
 import { applyRequestSchema, assetsDebtErrorResponse, parseBody } from "@/lib/assets-debt/api/schemas";
 import { approveAndBeginApply, approveAndRecordClaim, beginCompleteLink, PostingNotApproved, PreflightRefused } from "@/lib/assets-debt/services/postingWorkflowService";
@@ -21,6 +23,11 @@ export async function POST(request: Request, context: Context) {
     const { id } = await context.params;
     const body = parseBody(applyRequestSchema, await readJsonBody(request));
     const db = getAppDb();
+    if (body.action === "heartbeat") {
+      if (!body.token) throw new AppDbValidationError("An execution token is required.");
+      renewPostingLease(db, id, body.token);
+      return NextResponse.json({ ok: true });
+    }
     // A claim writes nothing to Actual: approve and record it in one call.
     if (body.action === "record-claim") return NextResponse.json({ posting: approveAndRecordClaim(db, id, { fresh: body.fresh, now: new Date().toISOString() }) });
     const ticket = body.action === "complete-link"

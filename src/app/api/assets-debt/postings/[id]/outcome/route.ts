@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { hasPostingLease } from "@/lib/app-db/debtPostingLeaseRepository";
+import { AppDbValidationError } from "@/lib/app-db/errors";
 import { getAppDb } from "@/lib/app-db/connection";
 import { readJsonBody } from "@/lib/app-db/routeResponses";
 import { applyOutcomeSchema, assetsDebtErrorResponse, parseBody } from "@/lib/assets-debt/api/schemas";
@@ -17,6 +19,8 @@ export async function POST(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const body = parseBody(applyOutcomeSchema, await readJsonBody(request));
-    return NextResponse.json({ posting: recordApplyOutcome(getAppDb(), id, body) });
+    const db = getAppDb();
+    if (hasPostingLease(db, id) && !body.executionToken) throw new AppDbValidationError("The running execution’s token is required to record its outcome.");
+    return NextResponse.json({ posting: recordApplyOutcome(db, id, body, new Date().toISOString(), body.executionToken) });
   } catch (error) { return assetsDebtErrorResponse(error); }
 }

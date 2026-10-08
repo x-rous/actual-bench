@@ -4,7 +4,13 @@ import type { PostingView } from "@/lib/assets-debt/services/proposalService";
 import { recoverPosting } from "@/lib/assets-debt/services/recovery";
 import { indexReadRows, type PostingOutputSnapshot, type RowSnapshot } from "@/lib/assets-debt/services/snapshot";
 import { startTiming } from "./debugTiming";
-import { approveAndApply, approveAndRecordClaim, beginCompleteLink, recordOutcome } from "./postingsApi";
+import { approveAndApply, approveAndRecordClaim, beginCompleteLink, recordOutcome, renewExecution } from "./postingsApi";
+
+function executionHeartbeat(id: string, token?: string): () => void {
+  if (!token) return () => {};
+  const timer = setInterval(() => { void renewExecution(id, token).catch(() => { /* Failed renewal leaves recovery to the server lease. */ }); }, 30_000);
+  return () => clearInterval(timer);
+}
 
 /**
  * The user's posting actions in the browser (RD-084 P1.6 T125–T137; SC-018).
@@ -50,6 +56,10 @@ export type ReadCache = Map<string, RowSnapshot>;
 export async function rereadTargets(posting: PostingView, transport: ActualBenchTransport, cache?: ReadCache): Promise<RowSnapshot[]> {
   const targets = rowsToRecheck(posting.output);
   if (cache && targets.every((t) => cache.has(t.id))) return targets.map((t) => cache.get(t.id)!);
+  if (transport.queryTransactionsForSync && targets.length) {
+    const index = indexReadRows(await transport.queryTransactionsForSync({ ids: [...new Set(targets.map((target) => target.parentId ?? target.id))], resolveNames: false }));
+    return targets.flatMap((target) => { const row = index.get(target.id); return row ? [row] : []; });
+  }
   const fresh: RowSnapshot[] = [];
   for (const accountId of [...new Set(targets.map((t) => t.accountId))]) {
     const dates = targets.filter((t) => t.accountId === accountId).map((t) => t.date);
@@ -71,6 +81,7 @@ export async function rereadTargets(posting: PostingView, transport: ActualBench
 export async function readForClaims(postings: readonly PostingView[], transport: ActualBenchTransport): Promise<ReadCache> {
   const targets = postings.filter((p) => p.output.kind === "claim" && !p.output.release).flatMap((p) => rowsToRecheck(p.output));
   const cache: ReadCache = new Map();
+  if (transport.queryTransactionsForSync && targets.length) return indexReadRows(await transport.queryTransactionsForSync({ ids: [...new Set(targets.map((target) => target.parentId ?? target.id))], resolveNames: false }));
   for (const accountId of [...new Set(targets.map((t) => t.accountId))]) {
     const dates = targets.filter((t) => t.accountId === accountId).map((t) => t.date).sort();
     for (const row of indexReadRows(await transport.listTransactionsForSync({ resolveNames: false, accountId, startDate: dates[0], endDate: dates[dates.length - 1] })).values()) cache.set(row.id, row);
@@ -90,6 +101,7 @@ export async function applyPosting(posting: PostingView, ctx: PostingActionConte
     return recorded;
   }
   const ticket = await approveAndApply(posting.id, fresh);
+  const stopHeartbeat = executionHeartbeat(posting.id, ticket.executionToken);
   timing.step("server check");
   let outcome: ExecutorOutcome;
   try {
@@ -98,7 +110,9 @@ export async function applyPosting(posting: PostingView, ctx: PostingActionConte
     outcome = { status: "indeterminate", error: { stage: "executor", message: error instanceof Error ? error.message : String(error) } };
   }
   timing.step("write and verify");
-  const recorded = await recordOutcome(posting.id, outcome);
+  let recorded: PostingView;
+  try { recorded = await recordOutcome(posting.id, outcome, ticket.executionToken); }
+  finally { stopHeartbeat(); }
   timing.step("record");
   timing.end();
   return recorded;
@@ -110,17 +124,20 @@ export async function checkInterruptedPosting(posting: PostingView, ctx: Posting
   const result = await recoverPosting(posting.output, ctx.transport, ctx.transferPayeeByAccount);
   if (result.status === "needs-completion") return { needsCompletion: result.detail };
   if (result.status === "applied") return { posting: await recordOutcome(posting.id, { status: "applied", actualIds: result.actualIds, appliedAt: new Date().toISOString(), recovered: true }) };
-  return { posting: await recordOutcome(posting.id, { status: "not-found", reason: result.reason }) };
+  return { posting: await recordOutcome(posting.id, { status: result.status, reason: result.reason }) };
 }
 
 export async function completeInterruptedLink(posting: PostingView, ctx: PostingActionContext): Promise<PostingView> {
   const ticket = await beginCompleteLink(posting.id);
+  const stopHeartbeat = executionHeartbeat(posting.id, ticket.executionToken);
   let outcome: ExecutorOutcome;
   try {
     outcome = await executeApprovedPosting(ticket, ctx);
   } catch (error) {
     outcome = { status: "indeterminate", error: { stage: "executor", message: error instanceof Error ? error.message : String(error) } };
   }
-  if (outcome.status === "applied") return recordOutcome(posting.id, outcome);
-  return posting;
+  try {
+    if (outcome.status === "applied") return await recordOutcome(posting.id, outcome, ticket.executionToken);
+    return await recordOutcome(posting.id, { status: "review", reason: { code: "completion-unverified", text: "Transfer completion could not be verified. Check Actual before continuing." } }, ticket.executionToken);
+  } finally { stopHeartbeat(); }
 }

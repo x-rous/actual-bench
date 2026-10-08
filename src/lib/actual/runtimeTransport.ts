@@ -1,3 +1,6 @@
+import { syncTransactionFilter, type SyncTransactionQuery } from "./syncTransactionQuery";
+import { runtimeTiming } from "./runtime/diagnostics";
+import { readStructuralAccounts } from "./structuralTransactionReads";
 import { normalizeAccount } from "../api/accounts";
 import { normalizeAccountGroup } from "../api/accountGroups";
 import {
@@ -790,6 +793,16 @@ async function listBrowserTransactionsForSync(
     .map((row) => toSyncSourceTransaction(row, lookup));
 }
 
+async function queryBrowserTransactionsForSync(host: ActualRuntimeHost, connection: BrowserApiConnection, input: SyncTransactionQuery, names: (api: ActualApi) => Promise<NameLookup> = loadSyncNameLookup): Promise<SyncSourceTransaction[]> {
+  const api = await host.getRuntime(connection);
+  const runner = api.aqlQuery?.bind(api) ?? api.runQuery?.bind(api);
+  if (!api.q || !runner) throw unsupportedTransportOperation("browser-api", "Structural transaction queries");
+  const response = await runner(api.q("transactions").filter(syncTransactionFilter(input)).select("*").options({ splits: "grouped" }));
+  if (!isRecord(response) || !Array.isArray(response.data)) throw new Error("Actual returned an incomplete structural transaction query.");
+  const lookup: NameLookup = input.resolveNames === false ? { payeeNames: new Map(), categoryNames: new Map() } : await names(api);
+  return response.data.filter((row): row is ApiTransaction => isRecord(row) && typeof row.id === "string" && row.is_child !== true).map((row) => toSyncSourceTransaction(row, lookup));
+}
+
 async function withRuntimeTransactionReadSession<T>(
   host: ActualRuntimeHost,
   connection: BrowserApiConnection,
@@ -826,6 +839,7 @@ async function withRuntimeTransactionReadSession<T>(
   try {
     return await operation({
       getPayees: async () => readPayees(await sessionHost.getRuntime(connection)),
+      queryTransactionsForSync: (input) => queryBrowserTransactionsForSync(sessionHost, connection, input, readNames),
       listTransactionsForSync: (input) => listBrowserTransactionsForSync(sessionHost, connection, input, readNames),
     });
   } finally {
@@ -1216,25 +1230,47 @@ export function __setDirectSettleTimingForTests(timing: Partial<typeof directSet
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function directStructurePrimitives(host: ActualRuntimeHost, connection: BrowserApiConnection): StructurePrimitives {
-  async function readAccount(accountId: string, sinceDate: string, untilDate?: string): Promise<RawTxn[]> {
-    const api = await host.getRuntime(connection);
-    const rows = await api.getTransactions(accountId, sinceDate, untilDate ?? "");
-    return rows.filter((row) => isRecord(row) && typeof row.id === "string" && row.is_child !== true) as unknown as RawTxn[];
+  // Only the last successful settlement of this structural operation; never a cross-write cache.
+  let settled: { watch: WriteWatch; accounts: Map<string, RawTxn[]> } | null = null;
+  async function readAccount(accountId: string, sinceDate: string, untilDate?: string, phase = "preflight/readback"): Promise<RawTxn[]> {
+    const timing = runtimeTiming(`Direct structural read (${phase})`);
+    try {
+      const api = await host.getRuntime(connection);
+      timing.step("runtime access");
+      const accounts = await readStructuralAccounts(api, [accountId], sinceDate, untilDate);
+      timing.step("Actual structural queries");
+      return accounts.get(accountId)!;
+    } finally { timing.end(); }
   }
-  async function snapshotOf(watch: WriteWatch): Promise<string> {
+  async function snapshotOf(watch: WriteWatch, phase: string): Promise<{ fingerprint: string; accounts: Map<string, RawTxn[]> }> {
+    const timing = runtimeTiming(`Direct snapshot (${phase})`);
     const parts: RawTxn[][] = [];
-    for (const accountId of watch.accountIds) parts.push(await readAccount(accountId, watch.sinceDate, watch.untilDate));
-    return JSON.stringify(parts);
+    try {
+      const api = await host.getRuntime(connection);
+      timing.step("runtime access");
+      const accounts = await readStructuralAccounts(api, watch.accountIds, watch.sinceDate, watch.untilDate);
+      for (const accountId of watch.accountIds) {
+        parts.push(accounts.get(accountId)!);
+      }
+      timing.step(`Actual structural queries (${accounts.size} accounts)`);
+      const fingerprint = JSON.stringify(parts);
+      timing.step("fingerprint");
+      return { fingerprint, accounts };
+    } finally { timing.end(); }
   }
   return {
     readAccount,
+    settledAccountSnapshot(accountId, sinceDate, untilDate) {
+      if (!settled || settled.watch.sinceDate !== sinceDate || settled.watch.untilDate !== untilDate) return undefined;
+      return settled.accounts.get(accountId);
+    },
     async update(id, fields, watch) {
       const api = await host.getRuntime(connection);
-      await settledWrite(`update of ${id}`, watch, () => api.updateTransaction(id, fields as Partial<ApiImportTransaction>));
+      await settledWrite(`update of ${id}`, watch, () => api.updateTransaction(id, fields as Partial<ApiImportTransaction>), "update");
     },
     async remove(id, watch) {
       const api = await host.getRuntime(connection);
-      await settledWrite(`delete of ${id}`, watch, () => api.deleteTransaction(id));
+      await settledWrite(`delete of ${id}`, watch, () => api.deleteTransaction(id), "delete");
     },
   };
 
@@ -1243,37 +1279,56 @@ function directStructurePrimitives(host: ActualRuntimeHost, connection: BrowserA
    * the watched accounts changed, then read the same twice across a quiet
    * interval, so the transfer handling for the other leg has finished too.
    */
-  async function settledWrite(label: string, watch: WriteWatch, write: () => Promise<unknown>): Promise<void> {
-    // Never start a write while the budget is still changing (just opened and syncing, or a previous
-    // write's transfer handling still running): that window deadlocked the Direct runtime (R-18).
-    // Right after Bench's own write on this connection settled, the budget is known to be quiet.
-    let before = await snapshotOf(watch);
-    const quietBy = Date.now() + directSettle.deadlineMs;
-    const justSettled = Date.now() - (lastSettledAt.get(connection.id) ?? 0) < directSettle.recentMs;
-    while (!justSettled) {
-      await sleep(directSettle.pollMs);
-      const again = await snapshotOf(watch);
-      if (again === before) break;
-      before = again;
-      if (Date.now() > quietBy) throw new Error(`Direct ${label}: the budget did not become quiet within ${directSettle.deadlineMs} ms; nothing was written`);
-    }
-    await write();
-    const started = Date.now();
-    const overdue = () => Date.now() - started > directSettle.deadlineMs;
-    let current = await snapshotOf(watch);
-    while (current === before) {
-      if (overdue()) throw new Error(`Direct ${label} did not land within ${directSettle.deadlineMs} ms`);
-      await sleep(directSettle.pollMs);
-      current = await snapshotOf(watch);
-    }
-    for (;;) {
-      await sleep(directSettle.quietMs);
-      const next = await snapshotOf(watch);
-      if (next === current) break;
-      current = next;
-      if (overdue()) throw new Error(`Direct ${label} did not settle within ${directSettle.deadlineMs} ms`);
-    }
-    lastSettledAt.set(connection.id, Date.now());
+  async function settledWrite(label: string, watch: WriteWatch, write: () => Promise<unknown>, kind: "update" | "delete"): Promise<void> {
+    const timing = runtimeTiming(`Direct settlement (${kind})`);
+    try {
+      settled = null;
+      // Never start a write while the budget is still changing (just opened and syncing, or a previous
+      // write's transfer handling still running): that window deadlocked the Direct runtime (R-18).
+      // Right after Bench's own write on this connection settled, the budget is known to be quiet.
+      let before = await snapshotOf(watch, "before-write");
+      timing.step("before-write snapshot");
+      const quietBy = Date.now() + directSettle.deadlineMs;
+      const justSettled = Date.now() - (lastSettledAt.get(connection.id) ?? 0) < directSettle.recentMs;
+      let beforePolls = 0;
+      while (!justSettled) {
+        await sleep(directSettle.pollMs);
+        beforePolls++;
+        const again = await snapshotOf(watch, "before-write quiet check");
+        if (again.fingerprint === before.fingerprint) break;
+        before = again;
+        if (Date.now() > quietBy) throw new Error(`Direct ${label}: the budget did not become quiet within ${directSettle.deadlineMs} ms; nothing was written`);
+      }
+      timing.step(`pre-write quiet check (${beforePolls} polls)`);
+      await write();
+      timing.step("Actual mutation returned");
+      const started = Date.now();
+      const overdue = () => Date.now() - started > directSettle.deadlineMs;
+      let current = await snapshotOf(watch, "first post-write");
+      timing.step("first post-write snapshot");
+      let visibilityPolls = 0;
+      while (current.fingerprint === before.fingerprint) {
+        if (overdue()) throw new Error(`Direct ${label} did not land within ${directSettle.deadlineMs} ms`);
+        await sleep(directSettle.pollMs);
+        visibilityPolls++;
+        current = await snapshotOf(watch, "write visibility poll");
+      }
+      timing.step(`write visibility (${visibilityPolls} additional polls)`);
+      let quietChecks = 0;
+      for (;;) {
+        await sleep(directSettle.quietMs);
+        quietChecks++;
+        const next = await snapshotOf(watch, "post-write quiet check");
+        if (next.fingerprint === current.fingerprint) {
+          settled = { watch, accounts: next.accounts };
+          break;
+        }
+        current = next;
+        if (overdue()) throw new Error(`Direct ${label} did not settle within ${directSettle.deadlineMs} ms`);
+      }
+      timing.step(`post-write quiet check (${quietChecks} intervals)`);
+      lastSettledAt.set(connection.id, Date.now());
+    } finally { timing.end(); }
   }
 }
 
@@ -1516,6 +1571,7 @@ export function createActualRuntimeTransport(
     },
     listTransactionsForSync: (input) =>
       listBrowserTransactionsForSync(host, connection, input),
+    queryTransactionsForSync: (input) => queryBrowserTransactionsForSync(host, connection, input),
     withTransactionReadSession: (operation) => withRuntimeTransactionReadSession(host, connection, operation),
     createOrResolvePayee: (input) =>
       createOrResolveBrowserPayee(host, connection, input.name),
@@ -1529,7 +1585,20 @@ export function createActualRuntimeTransport(
       deleteBrowserTransactionForSync(host, connection, input),
     batchWriteTransactionsForSync: (input) =>
       batchWriteBrowserTransactionsForSync(host, connection, input),
-    restructureTransactionAsSplit: (input) => restructureAsSplit(directStructurePrimitives(host, connection), input),
+    restructureTransactionAsSplit: async (input) => {
+      const primitives = directStructurePrimitives(host, connection);
+      const result = await restructureAsSplit(primitives, input);
+      const accountId = input.replaceCounterpart?.expected.accountId;
+      const date = input.expected.date;
+      const rows = accountId ? primitives.settledAccountSnapshot?.(accountId, date, date) : undefined;
+      if (accountId && rows) {
+        result.settledVerification = {
+          accountId, date,
+          rows: rows.map((row) => toSyncSourceTransaction(row as ApiTransaction, { payeeNames: new Map(), categoryNames: new Map() })),
+        };
+      }
+      return result;
+    },
     linkTransferCounterpart: (input) => linkCounterpart(directStructurePrimitives(host, connection), input),
     completeTransferLink: (input) => completeTransferLink(directStructurePrimitives(host, connection), input),
     inspectTransferLink: (input) => inspectTransferLink(directStructurePrimitives(host, connection), input),

@@ -1,4 +1,6 @@
 import { getDebt } from "@/lib/app-db/debtRepository";
+import { acquirePostingLease, assertPostingLease, releasePostingLease } from "@/lib/app-db/debtPostingLeaseRepository";
+import { canonicalJson } from "@/lib/app-db/canonicalJson";
 import { insertDebtTransactionLink, listDebtTransactionLinks, listPostingTransactionLinks, deleteDebtTransactionLink } from "@/lib/app-db/debtTransactionLinkRepository";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import {
@@ -9,6 +11,7 @@ import {
   markPostingApplied,
   markPostingFailed,
   markPostingIndeterminate,
+  recordPostingRecoveryReview,
   markPostingReversed,
   reproposeIndeterminatePosting,
   supersedePosting,
@@ -54,12 +57,20 @@ export class PreflightRefused extends Error {
 export type ApplyTicket = {
   posting: PostingView;
   mode: "apply" | "complete-link";
+  executionToken?: string;
 };
 
 const known = (value: unknown): value is string => typeof value === "string";
 
 function outputOf(posting: FinancialPostingRecord): PostingOutputSnapshot {
   return JSON.parse(posting.outputSnapshotJson) as PostingOutputSnapshot;
+}
+
+function assertMutablePosting(db: SqliteDatabase, posting: FinancialPostingRecord, budgetSyncId?: string): void {
+  const debt = getDebt(db, posting.subjectId);
+  if (!debt) throw new AppDbValidationError("Debt not found");
+  if (debt.status === "archived") throw new AppDbValidationError("Archived loans are read-only.");
+  if (budgetSyncId && debt.budgetSyncId !== budgetSyncId) throw new AppDbValidationError("Connect to this loan’s budget before making changes.");
 }
 
 /** The rows a posting's preflight compares, as they must still be when it is applied (FR-162). */
@@ -103,6 +114,7 @@ export function preflightPosting(db: SqliteDatabase, posting: FinancialPostingRe
 export function approveAndBeginApply(db: SqliteDatabase, postingId: string, input: { fresh: RowSnapshot[]; decidedAt: string }): ApplyTicket {
   const posting = getFinancialPosting(db, postingId);
   if (!posting) throw new AppDbValidationError("Posting not found");
+  assertMutablePosting(db, posting);
   if (posting.classification === "blocked" || !known(posting.classification)) throw new AppDbValidationError("A blocked proposal cannot be applied; resolve it in Actual first");
   if (posting.status !== "proposed") throw new AppDbValidationError(`A ${known(posting.status) ? posting.status : "unrecognised"} posting cannot be applied`);
   const differences = preflightPosting(db, posting, input.fresh);
@@ -110,11 +122,11 @@ export function approveAndBeginApply(db: SqliteDatabase, postingId: string, inpu
     supersedePosting(db, postingId, input.decidedAt, "actual-changed");
     throw new PreflightRefused(differences);
   }
-  const ticket = db.transaction(() => {
+  return db.transaction(() => {
     decidePosting(db, postingId, "approved", input.decidedAt);
-    return beginApplyingPosting(db, postingId, input.decidedAt);
+    const ticket = beginApplyingPosting(db, postingId, input.decidedAt);
+    return { posting: postingView(ticket), mode: "apply" as const, executionToken: acquirePostingLease(db, postingId, input.decidedAt) };
   })();
-  return { posting: postingView(ticket), mode: "apply" };
 }
 
 /**
@@ -125,9 +137,10 @@ export function approveAndBeginApply(db: SqliteDatabase, postingId: string, inpu
 export function beginCompleteLink(db: SqliteDatabase, postingId: string): ApplyTicket {
   const posting = getFinancialPosting(db, postingId);
   if (!posting) throw new AppDbValidationError("Posting not found");
+  assertMutablePosting(db, posting);
   if (posting.status !== "indeterminate" || posting.decidedAt === null) throw new PostingNotApproved("Only an approved, interrupted transfer link can be completed.");
   if (outputOf(posting).kind !== "link") throw new AppDbValidationError("Only a transfer link can be completed");
-  return { posting: postingView(posting), mode: "complete-link" };
+  return { posting: postingView(posting), mode: "complete-link", executionToken: acquirePostingLease(db, postingId) };
 }
 
 export type ApplyOutcome =
@@ -135,6 +148,7 @@ export type ApplyOutcome =
   | { status: "failed"; error: Record<string, unknown> }
   | { status: "indeterminate"; error: Record<string, unknown> }
   | { status: "not-found"; reason: { code: string; text: string } };
+export type RecoveryReviewOutcome = { status: "review"; reason: { code: string; text: string } };
 
 function linkRoles(posting: FinancialPostingRecord, output: PostingOutputSnapshot, actualIds: string[]): Array<{ id: string; parentId: string | null; role: DebtTransactionLinkRole }> {
   const kind = known(posting.postingKind) ? posting.postingKind : "";
@@ -170,6 +184,7 @@ function linkRoles(posting: FinancialPostingRecord, output: PostingOutputSnapsho
 export function approveAndRecordClaim(db: SqliteDatabase, postingId: string, input: { fresh: RowSnapshot[]; now: string }): PostingView {
   const posting = getFinancialPosting(db, postingId);
   if (!posting) throw new AppDbValidationError("Posting not found");
+  assertMutablePosting(db, posting);
   const output = outputOf(posting);
   if (output.kind !== "claim" || output.release) throw new AppDbValidationError("Only a claim that writes nothing to Actual can be recorded in one step");
   return db.transaction(() => {
@@ -179,11 +194,16 @@ export function approveAndRecordClaim(db: SqliteDatabase, postingId: string, inp
 }
 
 /** The browser reports what happened in Actual; the server records it and its links. */
-export function recordApplyOutcome(db: SqliteDatabase, postingId: string, outcome: ApplyOutcome, now = new Date().toISOString()): PostingView {
+export function recordApplyOutcome(db: SqliteDatabase, postingId: string, outcome: ApplyOutcome | RecoveryReviewOutcome, now = new Date().toISOString(), executionToken?: string): PostingView {
   const posting = getFinancialPosting(db, postingId);
   if (!posting) throw new AppDbValidationError("Posting not found");
+  if (outcome.status === "applied" && posting.status === "applied" && canonicalJson(posting.actualIds) === canonicalJson(outcome.actualIds)) return postingView(posting);
+  if ((outcome.status === "failed" || outcome.status === "indeterminate") && posting.status === outcome.status && canonicalJson(posting.error) === canonicalJson(outcome.error)) return postingView(posting);
+  if (executionToken) assertPostingLease(db, postingId, executionToken);
   const fromIndeterminate = posting.status === "indeterminate";
   return db.transaction(() => {
+    releasePostingLease(db, postingId);
+    if (outcome.status === "review") return postingView(recordPostingRecoveryReview(db, postingId, outcome.reason, now));
     if (outcome.status === "failed") return postingView(markPostingFailed(db, postingId, outcome.error, now));
     if (outcome.status === "indeterminate") return postingView(markPostingIndeterminate(db, postingId, outcome.error, now));
     if (outcome.status === "not-found") return postingView(reproposeIndeterminatePosting(db, postingId, outcome.reason, now));
@@ -208,6 +228,9 @@ export function recordApplyOutcome(db: SqliteDatabase, postingId: string, outcom
 }
 
 export function declinePosting(db: SqliteDatabase, postingId: string, decidedAt: string): PostingView {
+  const posting = getFinancialPosting(db, postingId);
+  if (!posting) throw new AppDbValidationError("Posting not found");
+  assertMutablePosting(db, posting);
   return postingView(decidePosting(db, postingId, "declined", decidedAt));
 }
 
@@ -224,6 +247,7 @@ export function proposeUnsplit(
 ): PostingView {
   const original = getFinancialPosting(db, postingId);
   if (!original) throw new AppDbValidationError("Posting not found");
+  assertMutablePosting(db, original, input.accountDirectory.budgetSyncId);
   if (original.status !== "applied") throw new AppDbValidationError("Record the split first; then it can be unsplit");
   const output = outputOf(original);
   if (output.kind !== "claim" || !output.recordedSplit) throw new AppDbValidationError("Only a split already in Actual can be unsplit; use Undo for a split Bench made");
@@ -254,6 +278,7 @@ export function proposeReversal(
 ): PostingView {
   const original = getFinancialPosting(db, postingId);
   if (!original) throw new AppDbValidationError("Posting not found");
+  assertMutablePosting(db, original, input.accountDirectory.budgetSyncId);
   if (original.status !== "applied") throw new AppDbValidationError("Only an applied posting can be reversed");
   if (original.reversalOf) throw new AppDbValidationError("A reversal is not reversed; apply a new correction instead");
   // An Undo already approved or under way is the one; an undecided proposal is planned again, since
@@ -292,6 +317,7 @@ export function overrideRepaymentSplit(
 ): PostingView {
   const posting = getFinancialPosting(db, postingId);
   if (!posting) throw new AppDbValidationError("Posting not found");
+  assertMutablePosting(db, posting);
   if (posting.status !== "proposed") throw new AppDbValidationError("Only an undecided proposal can be edited");
   if (posting.postingKind !== "repayment-split") throw new AppDbValidationError("Only a repayment split's amounts can be edited");
   if (posting.classification === "blocked") throw new AppDbValidationError("A blocked proposal cannot be edited; resolve it first");
@@ -431,4 +457,3 @@ function withApplied<T extends { appliedInterestMinor?: number }>(entry: T, appl
   void _old;
   return (applied === undefined ? rest : { ...rest, appliedInterestMinor: applied }) as T;
 }
-

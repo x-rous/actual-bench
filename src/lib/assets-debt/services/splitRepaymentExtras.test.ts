@@ -96,8 +96,8 @@ describe.each(["direct", "http"] as const)("split repayment counterpart ownershi
     const bank = s.fake.seed({ account: ACCOUNTS.checking, date: "2024-02-10", amount: -20_000, payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), transfer_id: extra });
     s.fake.row(extra)!.transfer_id = bank;
     const result = await s.preview(window);
-    expect(result.unscheduled).toEqual([expect.objectContaining({ id: extra, recorded: true, inSchedule: true })]);
-    expect(result.recordedExtraPayments).toEqual([extra]);
+    expect(result.unscheduled).toEqual([expect.objectContaining({ id: extra, recorded: false, inSchedule: false })]);
+    expect(result.recordedExtraPayments ?? []).toEqual([]);
     expect(listDebtTransactionLinks(s.db, s.debtId).filter((l) => l.role === "extra-repayment").map((l) => l.actualTransactionId)).toEqual([extra]);
     expect(result.unscheduled.map((p) => p.id)).not.toContain(counterpart);
   });

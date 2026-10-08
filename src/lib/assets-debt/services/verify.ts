@@ -33,6 +33,20 @@ export type PostingIssueKind =
 
 export type PostingIssue = { kind: PostingIssueKind; detail: string };
 
+/** A marker identifies the operation; these fields prove its approved financial result. */
+export function createdRowDifferences(op: CreateOperation, row: SyncSourceTransaction): string[] {
+  const differences: string[] = [];
+  if (row.accountId !== op.accountId) differences.push("account");
+  if (row.date !== op.date) differences.push("date");
+  if (row.amount !== op.amountMinor) differences.push("amount");
+  if (row.payeeId !== op.payeeId) differences.push("payee");
+  if (row.categoryId !== op.categoryId) differences.push("category");
+  if ((row.notes ?? "") !== (op.notes ?? "")) differences.push("notes");
+  if (row.cleared !== op.cleared) differences.push("cleared");
+  if (row.isParent || row.isChild || (!!row.transferId !== !!op.transferAccountId)) differences.push("structure");
+  return differences;
+}
+
 /** Creates: reuse the reconciliation verifier, then check the account-status category rule. */
 export function verifyCreatedRows(input: {
   operations: CreateOperation[];
@@ -58,7 +72,8 @@ export function verifyCreatedRows(input: {
     const row = input.latest.find((r) => r.importedId === op.importedId);
     if (!row) continue;
     createdIds.push(row.id);
-    if (row.amount !== op.amountMinor) issues.push({ kind: "missing-create", detail: "A created transaction does not have the previewed amount." });
+    const differences = createdRowDifferences(op, row);
+    if (differences.length) issues.push({ kind: "missing-create", detail: `A created transaction differs from the approved ${differences.join(", ")}.` });
     if (input.offBudgetAccountIds.has(row.accountId) && row.categoryId !== null) {
       issues.push({ kind: "category-rule", detail: "An off-budget transaction carries a category." });
     }

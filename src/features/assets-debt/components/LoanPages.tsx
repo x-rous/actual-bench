@@ -1,5 +1,6 @@
 "use client";
 
+import { localToday } from "../lib/calendarDate";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,6 +23,7 @@ import { useAccountDirectory } from "../lib/useAccountDirectory";
 import { SAVE_BOUNDARY } from "./saveBoundary";
 import { ScheduleControls, SimulatorView } from "./simulator/SimulatorView";
 import { strategyAdvice } from "../lib/strategyAdvice";
+import { purgeLegacyLoanStorage } from "../lib/loanStorage";
 import { LoanActivity } from "./workspace/LoanActivity";
 import { MatchingEditor } from "./rules/MatchingEditor";
 import { LoanSetup, loanSettingsComplete, setupChecklist } from "./workspace/LoanSetup";
@@ -42,26 +44,24 @@ import { WorkspaceFrame, workspaceTabFor, workspaceTabSlug, type WorkspaceTab } 
  * the existing revision rules.
  */
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localToday();
 const storageKey = (connectionId: string, budget: string) => `assets-debt:new-loan:${connectionId}:${budget}`;
-const currencyKey = (budget: string) => `assets-debt:currency:${budget}`;
+const currencyKey = (_budget: string) => "assets-debt:currency-preference";
+const drafts = new Map<string, { sim: SimulationState; tracking: TrackingState }>();
 
 /** The automatic matching setup never stops a save: a failure leaves the usual required step. */
 async function autoMatch(detail: DebtDetail, transport: ReturnType<typeof getTransport>): Promise<AutoMatchingResult | null> {
   try {
     return await setUpRepaymentMatching(detail, transport);
-  } catch {
+  } catch (error) {
+    toast.warning(`The loan was saved, but repayment matching was not set up: ${error instanceof Error ? error.message : "setup failed"}. Open Link to Actual to retry.`);
     return null;
   }
 }
 
 function readSession<T>(key: string): T | null {
-  try {
-    const raw = sessionStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    return null;
-  }
+  purgeLegacyLoanStorage();
+  return (drafts.get(key) as T | undefined) ?? null;
 }
 
 function useLeaveGuard(dirty: boolean) {
@@ -91,6 +91,12 @@ function IssueList({ issues }: { issues: SaveIssue[] }) {
 
 
 export function NewLoanView() {
+  useEffect(() => { purgeLegacyLoanStorage(); }, []);
+  const connection = useConnectionStore(selectActiveInstance);
+  return <NewLoanEditor key={`${connection?.id}:${connection?.budgetSyncId}`} />;
+}
+
+function NewLoanEditor() {
   const connection = useConnectionStore(selectActiveInstance);
   const budget = connection?.budgetSyncId ?? null;
   const key = connection && budget ? storageKey(connection.id, budget) : null;
@@ -100,14 +106,14 @@ export function NewLoanView() {
   // New loans open on Calculation (owner decision); Activity exists once the loan is saved.
   const [tab, setTab] = useState<WorkspaceTab>("calculation");
   const [issues, setIssues] = useState<SaveIssue[]>([]);
+  const [savePhase, setSavePhase] = useState<string | null>(null);
   const [scheduleDialog, setScheduleDialog] = useState<"method" | "how" | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const directory = useAccountDirectory();
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  // Start from this tab's unsaved simulation for this budget, if any (sessionStorage is a per-tab
-  // convenience, never a debt), else a fresh one using the budget's usual amount precision.
+  // Restore only this tab’s memory draft; browser storage never holds loan financial data.
   useEffect(() => {
     if (!key || !budget || sim || existing.isLoading) return;
     const restored = readSession<{ sim: SimulationState; tracking: TrackingState }>(key);
@@ -124,11 +130,7 @@ export function NewLoanView() {
 
   useEffect(() => {
     if (!key || !sim || !tracking) return;
-    try {
-      sessionStorage.setItem(key, JSON.stringify({ sim, tracking }));
-    } catch {
-      // storage unavailable: the simulation simply is not restored on reload
-    }
+    drafts.set(key, { sim, tracking });
   }, [key, sim, tracking]);
 
   const dirty = !!sim && (sim.principalMinor !== null || sim.termMonths !== null);
@@ -140,12 +142,15 @@ export function NewLoanView() {
       const built = statesToSaveInput(sim, { ...tracking, status }, budget, strategyAdvice(sim).recommended);
       if (!built.ok) throw new DebtApiError("invalid", 400, built.issues);
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
+      setSavePhase("Saving loan…");
       const detail = await createDebt(built.input, directory.data);
+      setSavePhase("Setting up repayment matching…");
       return { detail, matching: connection ? await autoMatch(detail, getTransport(connection)) : null };
     },
     onSuccess: ({ detail, matching }: { detail: DebtDetail; matching: AutoMatchingResult | null }) => {
+      setSavePhase(null);
       try {
-        if (key) sessionStorage.removeItem(key);
+        if (key) drafts.delete(key);
         if (budget && sim) localStorage.setItem(currencyKey(budget), sim.currency);
       } catch {
         // storage unavailable
@@ -176,7 +181,7 @@ export function NewLoanView() {
   ) : (
     // Active when the loan settings are complete; otherwise kept as a draft to finish later.
     <Button type="button" size="sm" disabled={save.isPending} onClick={() => save.mutate(newComplete ? "active" : "draft")}>
-      {newComplete ? "Save loan" : "Save as draft"}
+      {save.isPending ? savePhase ?? "Saving…" : newComplete ? "Save loan" : "Save as draft"}
     </Button>
   );
   return (
@@ -205,6 +210,12 @@ export function NewLoanView() {
 }
 
 export function LoanView({ id }: { id: string }) {
+  useEffect(() => { purgeLegacyLoanStorage(); }, []);
+  const connection = useConnectionStore(selectActiveInstance);
+  return <LoanEditor key={`${connection?.id}:${id}`} id={id} />;
+}
+
+function LoanEditor({ id }: { id: string }) {
   const connection = useConnectionStore(selectActiveInstance);
   const debt = useQuery({ queryKey: ["assets-debt", "debt", id], queryFn: () => getDebt(id) });
   const directory = useAccountDirectory();
@@ -216,6 +227,7 @@ export function LoanView({ id }: { id: string }) {
   const [sim, setSim] = useState<SimulationState | null>(null);
   const [tracking, setTracking] = useState<TrackingState | null>(null);
   const [issues, setIssues] = useState<SaveIssue[]>([]);
+  const [savePhase, setSavePhase] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [offsetAsOfDate, setOffsetAsOfDate] = useState(today());
   const [comparing, setComparing] = useState(false);
@@ -231,7 +243,7 @@ export function LoanView({ id }: { id: string }) {
       if (!connection) throw new Error("No active connection");
       return readOffsetHistories(getTransport(connection), { accountIds: trackedOffsetAccounts, asOfDate: offsetAsOfDate });
     },
-    enabled: !!connection && trackedOffsetAccounts.length > 0,
+    enabled: !!connection && connection.budgetSyncId === debt.data?.debt.budgetSyncId && trackedOffsetAccounts.length > 0,
   });
   const offsetSnapshots = useMemo((): OffsetHistorySnapshot[] | undefined => {
     if (!offsetHistory.data?.ok || !debt.data) return undefined;
@@ -239,15 +251,22 @@ export function LoanView({ id }: { id: string }) {
     return offsetHistory.data.snapshots.map((snapshot) => ({ ...snapshot, accountId: placeholder.get(snapshot.accountId) ?? snapshot.accountId }));
   }, [offsetHistory.data, debt.data]);
 
+  const [editingBase, setEditingBase] = useState<typeof saved>(null);
+  const [remoteChanged, setRemoteChanged] = useState(false);
   useEffect(() => {
+    if (saved === editingBase) return;
+    const edited = editingBase && sim && tracking && (JSON.stringify(sim) !== JSON.stringify(editingBase.simulation) || JSON.stringify({ ...tracking, changeSummary: editingBase.tracking.changeSummary }) !== JSON.stringify(editingBase.tracking));
+    if (edited) { setRemoteChanged(true); return; }
+    setEditingBase(saved);
+    setRemoteChanged(false);
     // Load (or reload after a save) the saved states into the editable copies.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the editable copy starts from each newly loaded revision
     setSim(saved?.simulation ?? null);
     setTracking(saved?.tracking ?? null);
-  }, [saved]);
+  }, [saved, editingBase, sim, tracking]);
 
   // The optional "what changed" note describes a save; on its own it is not a change.
-  const dirty = !!saved && !!sim && !!tracking && (JSON.stringify(saved.simulation) !== JSON.stringify(sim) || JSON.stringify(saved.tracking) !== JSON.stringify({ ...tracking, changeSummary: saved.tracking.changeSummary }));
+  const dirty = !!editingBase && !!sim && !!tracking && (JSON.stringify(editingBase.simulation) !== JSON.stringify(sim) || JSON.stringify(editingBase.tracking) !== JSON.stringify({ ...tracking, changeSummary: editingBase.tracking.changeSummary }));
   useLeaveGuard(dirty);
   const detail = debt.data;
   const readOnly = detail?.debt.status === "archived";
@@ -260,17 +279,24 @@ export function LoanView({ id }: { id: string }) {
     mutationFn: async (options?: { leaving?: boolean }) => {
       void options;
       if (!sim || !tracking || !detail) throw new Error("Not ready");
+      if (remoteChanged) throw new Error("The saved loan changed while you were editing. Reload the saved version before saving.");
+      if (connection?.budgetSyncId !== detail.debt.budgetSyncId) throw new Error("Connect to this loan’s budget before saving.");
       // A draft becomes active on the first save with its loan settings complete (owner decision 2026-10-05).
       const status = tracking.status === "draft" && activatable ? "active" : tracking.status;
       const built = statesToSaveInput(sim, { ...tracking, status }, detail.debt.budgetSyncId, strategyAdvice(sim).recommended);
       if (!built.ok) throw new DebtApiError("invalid", 400, built.issues);
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
+      setSavePhase("Saving loan revision…");
       const next = await updateDebt(id, built.input, directory.data);
       // A loan saved active with its accounts and no matching rule yet gets the suggested one (owner decision 2026-10-06).
+      setSavePhase("Checking repayment matching…");
       const matching = connection && next.debt.status === "active" && rules.data?.length === 0 ? await autoMatch(next, getTransport(connection)) : null;
       return { next, matching };
     },
     onSuccess: ({ next, matching }, options) => {
+      setSavePhase(null);
+      const states = detailToStates(next);
+      setEditingBase(states); setSim(states.simulation); setTracking(states.tracking); setRemoteChanged(false);
       setIssues([]);
       toast.success(detail?.debt.status === "draft" && next.debt.status === "active"
         ? "Saved. The loan is now active."
@@ -286,6 +312,7 @@ export function LoanView({ id }: { id: string }) {
       }
     },
     onError: (error) => setIssues(error instanceof DebtApiError && error.issues.length ? error.issues : [{ field: "(save)", message: error instanceof Error ? error.message : "The loan could not be saved" }]),
+    onSettled: () => setSavePhase(null),
   });
   const [deleting, setDeleting] = useState(false);
   const [typed, setTyped] = useState("");
@@ -343,13 +370,13 @@ export function LoanView({ id }: { id: string }) {
         <Input aria-label="What changed (optional)" placeholder="What changed (optional)" value={tracking.changeSummary} onChange={(e) => setTracking({ ...tracking, changeSummary: e.target.value })} className="h-7 w-52 text-xs" />
       ) : null}
       {dirty ? (
-        <Button type="button" size="sm" variant="outline" onClick={() => { setSim(saved.simulation); setTracking(saved.tracking); setIssues([]); }}>
+        <Button type="button" size="sm" variant="outline" onClick={() => { setEditingBase(saved); setSim(saved.simulation); setTracking(saved.tracking); setRemoteChanged(false); setIssues([]); }}>
           Discard changes
         </Button>
       ) : null}
       {!readOnly && (dirty || tab !== "activity" || (draft && activatable)) ? (
         <Button type="button" size="sm" disabled={(!dirty && !(draft && activatable)) || save.isPending} onClick={() => save.mutate(undefined)}>
-          {draft && activatable ? "Save and activate" : "Save changes"}
+          {save.isPending ? savePhase ?? "Saving…" : draft && activatable ? "Save and activate" : "Save changes"}
         </Button>
       ) : null}
     </>
@@ -387,6 +414,7 @@ export function LoanView({ id }: { id: string }) {
       }}
     >
       <IssueList issues={issues} />
+      {remoteChanged ? <div role="alert" className="mx-4 my-2 text-sm">The saved loan changed. Your edits are preserved. <Button variant="outline" size="sm" onClick={() => { setEditingBase(saved); setSim(saved?.simulation ?? null); setTracking(saved?.tracking ?? null); setRemoteChanged(false); }}>Discard edits and reload</Button></div> : null}
       {staleStrategy && !readOnly ? <p className="mx-4 mt-2 text-xs text-muted-foreground">{staleStrategy}</p> : null}
       {tab === "activity" ? (
         <LoanActivity debt={detail} directory={directory.data} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} initialFilter={(["action", "waiting", "applied", "undone", "all"] as const).find((f) => f === params?.get("filter")) ?? "action"} scheduleDirty={dirty} />

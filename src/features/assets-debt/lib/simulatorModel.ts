@@ -75,6 +75,8 @@ export const isOffsetAssumptionKind = (kind: SimAssumptionKind): boolean =>
 export type SimAssumption = {
   key: string;
   id?: string | null;
+  /** Display-only ownership; never sent as a financial assumption field. */
+  actualLinked?: boolean;
   kind: SimAssumptionKind;
   effectiveFrom: string;
   recurrence: { frequency: "weekly" | "fortnightly" | "monthly" | "quarterly" | "annual"; until: string } | null;
@@ -121,6 +123,16 @@ export type SimulationState = {
 /** Assumptions shown under Events; opening offset state is part of the offset itself. */
 export function extraTransactions(sim: SimulationState): SimAssumption[] {
   return sim.assumptions.filter((assumption) => assumption.kind !== "offset-balance");
+}
+
+/** Actual-owned events survive ordinary editing and resetting the simulation inputs. */
+export function preserveActualExtraPayments(current: SimulationState, candidate: SimulationState): SimulationState {
+  const protectedRows = current.assumptions.filter((a) => a.actualLinked);
+  if (!protectedRows.length) return candidate;
+  const byKey = new Map(protectedRows.map((a) => [a.key, a]));
+  const assumptions = candidate.assumptions.map((a) => byKey.get(a.key) ?? a);
+  for (const row of protectedRows) if (!assumptions.some((a) => a.key === row.key)) assumptions.push(row);
+  return { ...candidate, assumptions };
 }
 
 /** Identical calculation settings with optional Event assumptions removed; rate periods remain. */
@@ -549,6 +561,7 @@ export function detailToStates(detail: DebtDetail): { simulation: SimulationStat
     assumptions: detail.assumptions.map((a) => ({
       key: simKey("assumption"),
       id: a.id,
+      ...(detail.actualExtraPaymentAssumptionIds?.includes(a.id) ? { actualLinked: true } : {}),
       kind: a.assumptionKind as SimAssumptionKind,
       effectiveFrom: a.effectiveFrom,
       recurrence: a.recurrence && !("unknown" in a.recurrence) ? (a.recurrence as SimAssumption["recurrence"]) : null,

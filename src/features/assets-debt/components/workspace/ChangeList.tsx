@@ -148,7 +148,7 @@ export function ChangeList({
             <thead className="bg-muted/40 text-left text-muted-foreground">
               <tr>
                 <th scope="col" className="w-8 px-2 py-2">
-                  <Checkbox aria-label="Select all changes that can be applied" checked={allOn} disabled={selectable.length === 0} onCheckedChange={(on) => onToggleAll(selectable, on)} />
+                  <Checkbox aria-label="Select all available changes" checked={allOn} disabled={busy || selectable.length === 0} onCheckedChange={(on) => onToggleAll(selectable, on)} />
                 </th>
                 <th scope="col" className="px-2 py-2">Due</th>
                 <th scope="col" className="px-2 py-2">Paid</th>
@@ -167,7 +167,7 @@ export function ChangeList({
                   <Fragment key={row.key}>
                     <tr className={cn("border-t border-border align-top", row.state === "undo-pending" && "bg-amber-50/60 dark:bg-amber-950/20")}>
                       <td className="px-2 py-2">
-                        {row.selectable ? <Checkbox aria-label={`Select ${title} due ${row.dueDate}`} checked={selected.has(row.key)} onCheckedChange={() => onToggle(row.key)} /> : null}
+                        {row.selectable ? <Checkbox aria-label={`Select ${title} due ${row.dueDate}`} checked={selected.has(row.key)} disabled={busy} onCheckedChange={() => onToggle(row.key)} /> : null}
                       </td>
                       <th scope="row" className="px-2 py-2 text-left font-medium tabular-nums">{row.missedDates && row.missedDates.length > 1 ? `${day(row.missedDates[0])} to ${day(row.missedDates.at(-1)!)}` : day(row.dueDate)}</th>
                       <td className="px-2 py-2 tabular-nums">{day(row.paidDate)}</td>

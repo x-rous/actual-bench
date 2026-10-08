@@ -22,19 +22,19 @@ describe("payments into the loan that are not scheduled repayments", () => {
     return { s, extra };
   }
 
-  it("counts the extra payment automatically (not the repayment the applied split wrote), and 'not an extra payment' opts out for good", async () => {
+  it("suggests a newly discovered extra without changing the loan until confirmation", async () => {
     const { s, extra } = await withExtra();
+    const revision = getDebtDetail(s.db, s.debtId)!.debt.currentRevision;
     const first = await s.preview(window);
-    expect(first.recordedExtraPayments).toEqual([extra]);
-    expect(first.unscheduled).toEqual([expect.objectContaining({ id: extra, date: "2024-02-10", amountMinor: 2_000_000, recorded: true, inSchedule: true })]);
-    expect(getDebtDetail(s.db, s.debtId)!.assumptions).toEqual([expect.objectContaining({ assumptionKind: "extra-repayment", effectiveFrom: "2024-02-10", amountMinor: 2_000_000 })]);
-    dismissExtraPayment(s.db, s.debtId, extra, "2024-02-10");
-    const after = await s.preview(window);
-    expect(after.recordedExtraPayments).toBeUndefined();
-    expect(after.unscheduled).toEqual([expect.objectContaining({ id: extra, recorded: false, dismissed: true })]);
+    expect(first.unscheduled).toEqual([expect.objectContaining({ id: extra, recorded: false })]);
+    expect(getDebtDetail(s.db, s.debtId)!.debt.currentRevision).toBe(revision);
     expect(getDebtDetail(s.db, s.debtId)!.assumptions).toEqual([]);
+    recordExtraPayment(s.db, s.debtId, { actualTransactionId: extra, date: "2024-02-10", amountMinor: 2_000_000 });
+    expect((await s.preview(window)).unscheduled).toEqual([expect.objectContaining({ id: extra, recorded: true, inSchedule: true })]);
+    dismissExtraPayment(s.db, s.debtId, extra, "2024-02-10");
+    expect((await s.preview(window)).unscheduled).toEqual([expect.objectContaining({ id: extra, dismissed: true })]);
     undismissExtraPayment(s.db, s.debtId, extra);
-    expect((await s.preview(window)).recordedExtraPayments).toEqual([extra]);
+    expect((await s.preview(window)).unscheduled).toEqual([expect.objectContaining({ id: extra, recorded: false })]);
   });
 
   it("recording links it and adds the extra payment to Terms & Schedule; removing undoes both", async () => {
@@ -87,7 +87,8 @@ describe("payments into the loan that are not scheduled repayments", () => {
     const loanSide = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-20", amount: 2_000_000, payee: s.fake.transferPayeeId(ACCOUNTS.checking) });
     const paid = s.seedPayment("2024-02-20", -2_000_000, { payee: s.fake.transferPayeeId(ACCOUNTS.mortgage), transfer_id: loanSide });
     s.fake.row(loanSide)!.transfer_id = paid;
-    expect((await s.preview(wide)).recordedExtraPayments).toEqual([loanSide]);
+    expect((await s.preview(wide)).recordedExtraPayments ?? []).toEqual([]);
+    recordExtraPayment(s.db, s.debtId, { actualTransactionId: loanSide, date: "2024-02-20", amountMinor: 2_000_000 });
     expect(getDebtDetail(s.db, s.debtId)!.assumptions).toEqual([expect.objectContaining({ assumptionKind: "extra-repayment", amountMinor: 2_000_000 })]);
     // Raised in Actual to the principal owed plus the interest for the period (and a little more).
     const payoffAmount = owed + 200_000;

@@ -71,7 +71,7 @@ Rules:
 | Notes | Intentional immediate-save exception through transport note methods |
 | Budget File Sync | Preview first; write only through explicit **Apply** or an opted-in safe-only automation policy |
 | Bank Statement Reconciliation | Stage decisions in the session; write only through explicit **Apply**, and only after a pre-flight re-read confirms the targeted rows have not changed in Actual. Never writes a category |
-| RD-084 Assets & Debt | Preview first; write only through explicit user-approved Apply. No auto-apply. Every write carries a deterministic marker and an immutable audit snapshot. |
+| RD-084 Assets & Debt | Actual writes require explicit user-approved Apply, a successful preceding sync, deterministic markers, and immutable audit snapshots. Refresh may recognize unambiguous existing scheduled repayments, repair stale counterpart classifications, and follow previously confirmed extra payments with notices; newly discovered extra payments require confirmation before changing assumptions. Financial browser caches and drafts are memory-only. |
 | Sync flows, run history, FX registry, app health metadata | Persist to the Actual Bench app database according to the action |
 | Diagnostics and ActualQL | Read-only unless a separately named workflow explicitly applies changes |
 
@@ -354,7 +354,7 @@ A feature may use `components/`, `hooks/`, `lib/`, `schemas/`, `csv/`, `utils/`,
 
 ## 9. Testing and Validation
 
-Add focused regression tests for behavior changes. Co-locate tests near the implementation using the existing `.test.ts` / `.test.tsx` convention.
+Add regression tests for major behavior changes. Co-locate tests near the implementation using the existing `.test.ts` / `.test.tsx` convention.
 
 Prioritize tests for:
 
@@ -401,7 +401,7 @@ a plugin that has changed its mind about a file still returns yesterday's verdic
 for it. This is the one case where a clean run is worth the four minutes, and it is
 why the rule above is "never `--no-cache`" rather than "never clear the cache".
 
-### Before code handoff, push, or PR
+### Before push, or PR
 
 For application code, run the whole thing — this is the gate the narrow runs above
 are allowed to skip:

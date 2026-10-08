@@ -65,6 +65,33 @@ describe.each(HARNESS_MODES)("apply service (%s)", (mode) => {
     expect(s.fake.writes().length).toBe(writes);
   });
 
+  it.each(["exact", "wrong-date", "wrong-account", "duplicate"])("keeps split verification intact with %s settled read-back", async (receipt) => {
+    const s = createScenario({ mode, apiRequestMock: mockApiRequest, pattern: "embedded-interest", repaymentAnyPayee: true });
+    const payment = s.seedPayment("2024-02-01");
+    s.fake.editInActual(payment, { payee: s.fake.transferPayeeId(ACCOUNTS.mortgage) });
+    const [split] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
+    const restructure = s.transport.restructureTransactionAsSplit!.bind(s.transport);
+    const list = s.transport.listTransactionsForSync.bind(s.transport);
+    s.transport.restructureTransactionAsSplit = async (input) => {
+      const result = await restructure(input);
+      const rows = await list({ accountId: ACCOUNTS.mortgage, startDate: "2024-02-01", endDate: "2024-02-01", resolveNames: false });
+      result.settledVerification = {
+        accountId: receipt === "wrong-account" ? ACCOUNTS.checking : ACCOUNTS.mortgage, date: receipt === "wrong-date" ? "2024-02-02" : "2024-02-01",
+        rows: receipt === "duplicate" ? [...rows, { ...rows[0], id: "duplicate" }] : rows,
+      };
+      return result;
+    };
+    const reads = jest.spyOn(s.transport, "listTransactionsForSync");
+    const { outcome } = await s.apply(split);
+    const verificationReads = reads.mock.calls.filter(([input]) => input.accountId === ACCOUNTS.mortgage && input.endDate === "2024-02-01");
+    expect(verificationReads).toHaveLength(receipt === "wrong-date" || receipt === "wrong-account" ? 1 : 0);
+    if (receipt === "duplicate") {
+      expect(outcome).toMatchObject({ status: "failed", error: { stage: "verify", written: true, issues: [expect.objectContaining({ kind: "liability-rows" })] } });
+    } else {
+      expect(outcome.status).toBe("applied");
+    }
+  });
+
   it("T127: the link path keeps the lender row's imported id and leaves exactly one liability-side row", async () => {
     const s = scenario("embedded-interest", true);
     s.seedPayment("2024-02-01");
@@ -118,7 +145,7 @@ describe.each(HARNESS_MODES)("apply service (%s)", (mode) => {
     const interest = (t.fake.accountRows(ACCOUNTS.checking).find((r) => r.id === payment)!.subtransactions as Array<Record<string, unknown>>)[1];
     t.fake.editInActual(interest.id as string, { amount: interest.amount, category: "cat-other", payee: interest.payee, notes: interest.notes });
     const updatesBefore = t.fake.writes().filter((w) => w.op === "update").length;
-    expect(await t.recover(interrupted)).toMatchObject({ status: "proposed", classification: "review" });
+    expect(await t.recover(interrupted)).toMatchObject({ status: "indeterminate", error: { stage: "recovery-review" } });
     expect(t.fake.writes().filter((w) => w.op === "update").length).toBe(updatesBefore);
   });
 

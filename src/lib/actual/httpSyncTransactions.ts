@@ -1,3 +1,4 @@
+import { syncTransactionFilter, type SyncTransactionQuery } from "./syncTransactionQuery";
 import { apiRequest } from "../api/client";
 import { getCategoryGroups } from "../api/categoryGroups";
 import { createPayee, getPayees } from "../api/payees";
@@ -174,6 +175,7 @@ export async function withHttpTransactionReadSession<T>(
   try {
     return await operation({
       getPayees: async () => readPayees(),
+      queryTransactionsForSync: async (input) => { ensureOpen(); return queryHttpTransactionsForSync(connection, input, readNames); },
       listTransactionsForSync: async (input) => {
         ensureOpen();
         return listHttpTransactionsForSync(connection, input, readNames);
@@ -405,4 +407,14 @@ export function httpStructurePrimitives(connection: ConnectionInstance): Structu
       await apiRequest(connection, `/transactions/${id}`, { method: "DELETE" });
     },
   };
+}
+
+/** ActualQL uses the same grouped transaction contract as the account endpoint. */
+export async function queryHttpTransactionsForSync(connection: ConnectionInstance, input: SyncTransactionQuery, loadNames: () => Promise<NameMaps> = () => loadNameMaps(connection)): Promise<SyncSourceTransaction[]> {
+  const response = await apiRequest<{ data: RawHttpTransaction[] }>(connection, "/run-query", {
+    method: "POST", body: { ActualQLquery: { table: "transactions", filter: syncTransactionFilter(input), select: ["*"], options: { splits: "grouped" } } },
+  });
+  if (!Array.isArray(response.data)) throw new Error("Actual returned an incomplete structural transaction query.");
+  const names: NameMaps = input.resolveNames === false ? { payee: new Map(), category: new Map() } : await loadNames();
+  return response.data.filter((row) => !row.is_child).map((row) => toSourceTransaction(row, names));
 }

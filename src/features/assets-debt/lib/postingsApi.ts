@@ -6,6 +6,7 @@ import type { PaymentOption, PostingView } from "@/lib/assets-debt/services/prop
 import type { ReproductionResult } from "@/lib/assets-debt/services/reproduceService";
 import type { RowSnapshot } from "@/lib/assets-debt/services/snapshot";
 import type { ApplyTicketView, ExecutorOutcome } from "@/lib/assets-debt/services/applyService";
+import { localToday } from "./calendarDate";
 import { request } from "./debtsApi";
 
 /**
@@ -18,6 +19,7 @@ import { request } from "./debtsApi";
 export type PreviewBody = {
   from: string;
   to: string;
+  today?: string;
   snapshots: MatchingHistorySnapshot[];
   accountDirectory: AccountDirectory;
   transferPayees: Record<string, string>;
@@ -25,6 +27,7 @@ export type PreviewBody = {
   offsetHistories?: OffsetHistorySnapshot[];
   loanAccountRows?: Array<{ id: string; date: string; amountMinor: number }>;
   followExtraPayments?: boolean;
+  verifiedMissingIds?: string[];
   readRanges?: Array<{ accountId: string; from: string; to: string }>;
   comparison?: { comparisonDate: string; actualBalanceMinor: number } | null;
   parameters?: { openingAdjustmentCategoryId?: string | null; adjustmentCategoryId?: string | null; actualBalanceAtOnboardingMinor?: number | null };
@@ -50,10 +53,12 @@ export const approveAndRecordClaim = (postingId: string, fresh: RowSnapshot[]) =
 export const beginCompleteLink = (postingId: string) =>
   request<{ ticket: ApplyTicketView }>(`${postingUrl(postingId)}/apply`, { method: "POST", body: JSON.stringify({ action: "complete-link" }) }).then((r) => r.ticket);
 
-export type OutcomeBody = ExecutorOutcome | { status: "not-found"; reason: { code: string; text: string } };
+export type OutcomeBody = ExecutorOutcome | { status: "not-found" | "review"; reason: { code: string; text: string } };
 
-export const recordOutcome = (postingId: string, outcome: OutcomeBody) =>
-  request<{ posting: PostingView }>(`${postingUrl(postingId)}/outcome`, { method: "POST", body: JSON.stringify(outcome) }).then((r) => r.posting);
+export const renewExecution = (postingId: string, token: string) => request<{ ok: true }>(`${postingUrl(postingId)}/apply`, { method: "POST", body: JSON.stringify({ action: "heartbeat", token }) });
+
+export const recordOutcome = (postingId: string, outcome: OutcomeBody, executionToken?: string) =>
+  request<{ posting: PostingView }>(`${postingUrl(postingId)}/outcome`, { method: "POST", body: JSON.stringify({ ...outcome, executionToken }) }).then((r) => r.posting);
 
 export const declinePosting = (postingId: string) =>
   request<{ posting: PostingView }>(`${postingUrl(postingId)}/decline`, { method: "POST", body: "{}" }).then((r) => r.posting);
@@ -63,11 +68,11 @@ export const overrideSplit = (postingId: string, body: { interestMinor: number; 
   request<{ posting: PostingView }>(`${postingUrl(postingId)}/override`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.posting);
 
 export const proposeReversal = (postingId: string, body: { accountDirectory: AccountDirectory; transferPayees: Record<string, string> }) =>
-  request<{ posting: PostingView }>(`${postingUrl(postingId)}/reverse`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.posting);
+  request<{ posting: PostingView }>(`${postingUrl(postingId)}/reverse`, { method: "POST", body: JSON.stringify({ ...body, today: localToday() }) }).then((r) => r.posting);
 
 /** "Unsplit" a recorded split already in Actual (a Review proposal on its row). */
 export const proposeUnsplit = (postingId: string, body: { accountDirectory: AccountDirectory; transferPayees: Record<string, string> }) =>
-  request<{ posting: PostingView }>(`${postingUrl(postingId)}/unsplit`, { method: "POST", body: JSON.stringify(body) }).then((r) => r.posting);
+  request<{ posting: PostingView }>(`${postingUrl(postingId)}/unsplit`, { method: "POST", body: JSON.stringify({ ...body, today: localToday() }) }).then((r) => r.posting);
 
 export const reproducePosting = (postingId: string) =>
   request<{ reproduction: ReproductionResult }>(`${postingUrl(postingId)}/reproduce`, { method: "POST", body: "{}" }).then((r) => r.reproduction);

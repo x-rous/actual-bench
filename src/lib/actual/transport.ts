@@ -1,3 +1,4 @@
+import type { SyncTransactionQuery } from "./syncTransactionQuery";
 import type { CategoryGroupsResponse } from "../api/categoryGroups";
 import type { NotesIndex } from "../api/noteIds";
 import type { SyncCapabilityReport } from "@/lib/app-db/types";
@@ -194,7 +195,7 @@ export type ListTransactionsForSyncInput = {
 };
 
 /** Read-only directory reuse for one operation; never retain this reader for later work. */
-export type TransactionReadSession = Pick<ActualBenchTransport, "getPayees" | "listTransactionsForSync">;
+export type TransactionReadSession = Pick<ActualBenchTransport, "getPayees" | "listTransactionsForSync" | "queryTransactionsForSync">;
 
 /** A target transaction the sync engine wants created (create-only, no splits). */
 export type SyncTargetTransactionInput = {
@@ -446,6 +447,7 @@ export interface ActualBenchTransport {
     input: ListTransactionsForSyncInput
   ): Promise<SyncSourceTransaction[]>;
   /** Share directory loads until the callback completes. The callback must not mutate directories. */
+  queryTransactionsForSync?(input: SyncTransactionQuery): Promise<SyncSourceTransaction[]>;
   withTransactionReadSession?<T>(operation: (reader: TransactionReadSession) => Promise<T>): Promise<T>;
   /** Match an existing payee by normalized name, or create it if missing. */
   createOrResolvePayee(input: { name: string }): Promise<ResolvedSyncPayee>;

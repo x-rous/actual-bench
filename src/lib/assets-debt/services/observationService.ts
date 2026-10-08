@@ -4,7 +4,9 @@ import { getDebtObservation, insertDebtObservation, listCurrentDebtObservations,
 import type { SqliteDatabase } from "@/lib/app-db/types";
 
 export function recordManualDebtObservation(db: SqliteDatabase, input: Omit<DebtObservationInput, "source" | "supersedesObservationId"> & { supersedesObservationId?: string | null }, now = new Date().toISOString()) {
-  if (!getDebt(db, input.debtId)) throw new AppDbValidationError("Debt not found");
+  const debt = getDebt(db, input.debtId);
+  if (!debt) throw new AppDbValidationError("Debt not found");
+  if (debt.status === "archived") throw new AppDbValidationError("Archived loans are read-only.");
   if (input.supersedesObservationId) {
     const prior = getDebtObservation(db, input.supersedesObservationId);
     if (!prior || prior.debtId !== input.debtId) throw new AppDbValidationError("The observation being corrected does not belong to this debt");
@@ -37,6 +39,7 @@ export function deleteObservationRows(db: SqliteDatabase, ids: ReadonlySet<strin
  * touched. Returns what was removed so the screen can say so.
  */
 export function removeDebtObservation(db: SqliteDatabase, debtId: string, observationId: string): { statements: number; restarts: number } {
+  if (getDebt(db, debtId)?.status === "archived") throw new AppDbValidationError("Archived loans are read-only.");
   const all = listDebtObservationHistory(db, debtId);
   if (!all.some((o) => o.id === observationId)) throw new AppDbValidationError("That statement does not belong to this loan");
   // The connected chain: the statement, what it corrected, and what corrected it, in both directions.

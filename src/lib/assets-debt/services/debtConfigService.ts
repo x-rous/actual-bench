@@ -1,3 +1,8 @@
+import { hasPostingLease } from "@/lib/app-db/debtPostingLeaseRepository";
+import { canonicalJson } from "@/lib/app-db/canonicalJson";
+import { listDebtTransactionLinks } from "@/lib/app-db/debtTransactionLinkRepository";
+import { actualExtraPaymentAssumptionIds } from "./actualExtraPaymentOwnership";
+import { listSubjectPostings } from "@/lib/app-db/financialPostingRepository";
 import { deleteObservationRows } from "./observationService";
 import { paidOffState, type PaidOff } from "./payoffState";
 import { AppDbValidationError } from "@/lib/app-db/errors";
@@ -88,6 +93,8 @@ export type DebtDetail = {
   rates: DebtRatePeriodRecord[];
   offsets: DebtOffsetLinkRecord[];
   assumptions: DebtAssumptionRecord[];
+  /** Generated extra payments owned by Actual tracking, read-only in the ordinary loan editor. */
+  actualExtraPaymentAssumptionIds?: string[];
   revision: { number: number; hash: string | null; createdAt: string | null };
   /** Non-null: this debt is Blocked; other debts are unaffected (schema-review A-2). */
   blocked: DebtBlock | null;
@@ -386,6 +393,7 @@ export function getDebtDetail(db: SqliteDatabase, id: string): DebtDetail | null
     rates,
     offsets,
     assumptions,
+    actualExtraPaymentAssumptionIds: assumptions.length ? actualExtraPaymentAssumptionIds(assumptions, listDebtTransactionLinks(db, id)) : [],
     revision: { number: debt.currentRevision, hash: latest?.configHash ?? null, createdAt: latest?.createdAt ?? null },
     blocked: blockFor(debt, config, rates, offsets, assumptions),
     paidOff: paidOffState(db, id),
@@ -394,6 +402,8 @@ export function getDebtDetail(db: SqliteDatabase, id: string): DebtDetail | null
 
 export type DebtSummary = {
   id: string;
+  /** Optional for summary payloads from older clients. */
+  budgetSyncId?: string;
   name: string;
   debtType: DebtRecord["debtType"];
   behaviorClass: DebtRecord["behaviorClass"];
@@ -411,7 +421,7 @@ export type DebtSummary = {
   blocked: DebtBlock | null;
   /** Overview metadata; optional for older clients and summary fixtures. */
   paymentAccountId?: string | null;
-  offsetAccountLinks?: { actualAccountId: string; effectiveFrom: string; effectiveTo: string | null }[];
+  offsetAccountLinks?: { actualAccountId: string; effectiveFrom: string; effectiveTo: string | null; useActualBalance?: boolean }[];
   repaymentFrequency?: DebtConfig["profile"]["repaymentFrequency"] | null;
   contractualTermMonths?: number | null;
   ratePeriods?: { accrualEffectiveFrom: string; annualRateDecimal: string }[];
@@ -425,6 +435,7 @@ export function listDebtSummaries(db: SqliteDatabase, budgetSyncId: string, incl
     const detail = getDebtDetail(db, debt.id)!;
     return {
       id: debt.id,
+      budgetSyncId: debt.budgetSyncId,
       name: debt.name,
       debtType: debt.debtType,
       behaviorClass: debt.behaviorClass,
@@ -441,7 +452,7 @@ export function listDebtSummaries(db: SqliteDatabase, budgetSyncId: string, incl
       blocked: detail.blocked,
       paidOffOn: detail.paidOff?.paidDate ?? null,
       paymentAccountId: debt.paymentAccountId,
-      offsetAccountLinks: detail.offsets.map(({ actualAccountId, effectiveFrom, effectiveTo }) => ({ actualAccountId, effectiveFrom, effectiveTo })),
+      offsetAccountLinks: detail.offsets.map(({ actualAccountId, effectiveFrom, effectiveTo, useActualBalance }) => ({ actualAccountId, effectiveFrom, effectiveTo, useActualBalance })),
       repaymentFrequency: detail.config.ok ? detail.config.config.profile.repaymentFrequency : null,
       contractualTermMonths: detail.config.ok ? detail.config.config.terms.contractualTermMonths : null,
       ratePeriods: detail.rates.map(({ accrualEffectiveFrom, annualRateDecimal }) => ({ accrualEffectiveFrom, annualRateDecimal })),
@@ -495,6 +506,17 @@ export function updateDebtConfiguration(db: SqliteDatabase, id: string, input: D
   const result = validateDebtSave(db, input, directory, id);
   if (!result.ok) throw new DebtConfigValidationError(result.issues);
   db.transaction(() => {
+    const assumptions = listDebtAssumptions(db, id);
+    const protectedIds = new Set(assumptions.length ? actualExtraPaymentAssumptionIds(assumptions, listDebtTransactionLinks(db, id)) : []);
+    for (const recorded of assumptions.filter((a) => protectedIds.has(a.id))) {
+      const proposed = result.value.assumptions.filter((a) => a.id === recorded.id);
+      const expected = { kind: recorded.assumptionKind, effectiveFrom: recorded.effectiveFrom, recurrence: recorded.recurrence,
+        amountMinor: recorded.amountMinor, feeTreatment: recorded.feeTreatment, offsetAccountId: recorded.offsetAccountId, note: recorded.note };
+      if (proposed.length !== 1 || canonicalJson({ kind: proposed[0].kind, effectiveFrom: proposed[0].effectiveFrom, recurrence: proposed[0].recurrence,
+        amountMinor: proposed[0].amountMinor, feeTreatment: proposed[0].feeTreatment, offsetAccountId: proposed[0].offsetAccountId, note: proposed[0].note }) !== canonicalJson(expected)) {
+        throw new DebtConfigValidationError([{ field: "assumptions", message: "Extra payments recorded from Actual cannot be edited or removed here. Manage them in Sync Repayments or change the transaction in Actual and refresh." }]);
+      }
+    }
     updateDebt(db, id, { ...result.value.fields, status: input.status, currentRevision: existing.currentRevision }, now);
     saveChildren(db, id, result.value, now);
     writeRevisionIfMaterial(db, id, input.changeSummary, now);
@@ -532,6 +554,7 @@ export function saveBaselineAssumptions(db: SqliteDatabase, id: string, assumpti
 export function archiveDebtConfiguration(db: SqliteDatabase, id: string, now = new Date().toISOString()): DebtDetail {
   const existing = getDebt(db, id);
   if (!existing) throw new AppDbValidationError("Debt not found");
+  if (listSubjectPostings(db, "debt", id).some((posting) => hasPostingLease(db, posting.id, now))) throw new AppDbValidationError("Wait for the running loan operation to finish before archiving.");
   if (existing.status !== "archived") {
     db.transaction(() => {
       archiveDebt(db, id, existing.currentRevision, now);

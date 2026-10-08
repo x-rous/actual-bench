@@ -1,5 +1,6 @@
 "use client";
 
+import { useLocalToday } from "../../lib/useLocalToday";
 import { useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
@@ -9,7 +10,6 @@ import { useAccountDirectory } from "../../lib/useAccountDirectory";
 
 export type RecommendationContext = Omit<RecommendationInput, "purpose">;
 
-const isoToday = () => new Date().toISOString().slice(0, 10);
 const inDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
 /**
@@ -21,7 +21,7 @@ export function useMatchingContext(debtId: string) {
   const connection = useConnectionStore(selectActiveInstance);
   const directory = useAccountDirectory();
   const queryClient = useQueryClient();
-  const today = useMemo(() => isoToday(), []);
+  const today = useLocalToday();
   const detail = useQuery({ queryKey: ["assets-debt", "debt", debtId], queryFn: () => getDebt(debtId), enabled: !!debtId });
   const rules = useQuery({ queryKey: ["assets-debt", "match-rules", debtId], queryFn: () => listMatchRules(debtId), enabled: !!debtId });
   const openingDate = detail.data?.config.ok ? detail.data.config.config.terms.openingDate : null;

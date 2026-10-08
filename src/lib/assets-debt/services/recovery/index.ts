@@ -1,5 +1,6 @@
 import { adjustInspection } from "../adjustSplit";
-import type { ActualBenchTransport } from "@/lib/actual/transport";
+import { createdRowDifferences } from "../verify";
+import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import { compareRowToSnapshot, indexReadRows, toTransactionPreflight, type PostingOutputSnapshot, type RowSnapshot } from "../snapshot";
 
 /**
@@ -22,13 +23,32 @@ export type RecoveryResult =
 /** T129: an interrupted create is found by its marker, or reported missing. Never re-created here. */
 export async function recoverCreate(output: Extract<PostingOutputSnapshot, { kind: "create" }>, transport: ActualBenchTransport): Promise<RecoveryResult> {
   const ids: string[] = [];
+  let missing = false;
+  const allRows = transport.queryTransactionsForSync ? await transport.queryTransactionsForSync({ importedIds: output.operations.map((operation) => operation.importedId), resolveNames: false }) : null;
+  const accounts = allRows ? [] : await transport.getAccounts();
+  const fallbackRows: SyncSourceTransaction[] = [];
+  if (!allRows) for (const account of accounts) {
+    const rows = await transport.listTransactionsForSync({ accountId: account.id, resolveNames: false });
+    if (rows.length > 5_000) return { status: "review", reason: { code: "incomplete-recovery-read", text: "Recovery could not prove whether the write is absent. Review Actual before continuing." } };
+    fallbackRows.push(...rows);
+  }
   for (const op of output.operations) {
-    const rows = await transport.listTransactionsForSync({ resolveNames: false, accountId: op.accountId, startDate: op.date });
+    const rows = allRows ?? fallbackRows;
     const found = rows.filter((row) => row.importedId === op.importedId);
     if (found.length > 1) return { status: "review", reason: { code: "duplicate-marker", text: "The posting's marker appears more than once in Actual. Remove the duplicate in Actual, then re-run." } };
-    if (found.length === 0) return { status: "not-found", reason: { code: "write-not-found", text: "The interrupted write is not in Actual. Review the proposal again before applying it." } };
+    if (found.length === 0) { missing = true; continue; }
+    const differences = createdRowDifferences(op, found[0]);
+    if (differences.length) return { status: "review", reason: { code: "created-row-changed", text: `The marked transaction differs from the approved ${differences.join(", ")}. Review it in Actual.` } };
+    if (op.transferAccountId) {
+      const counterparts = await transport.listTransactionsForSync({ accountId: op.transferAccountId, resolveNames: false });
+      const counterpart = counterparts.find((row) => row.id === found[0].transferId);
+      if (!counterpart || counterpart.transferId !== found[0].id || counterpart.amount !== -op.amountMinor) return { status: "review", reason: { code: "created-transfer-changed", text: "The transfer counterpart does not match the approved write." } };
+    }
     ids.push(found[0].id);
   }
+  if (missing) return ids.length
+    ? { status: "review", reason: { code: "partial-create", text: "Only part of the approved write is present in Actual. Review it before continuing." } }
+    : { status: "not-found", reason: { code: "write-not-found", text: "The interrupted write is not in Actual. Review the proposal again before applying it." } };
   return { status: "applied", actualIds: ids };
 }
 

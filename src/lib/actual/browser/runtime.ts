@@ -4,6 +4,7 @@ import { useConnectionStore, type BrowserApiConnection } from "@/store/connectio
 import type { ActualApi, ActualApiRuntime } from "../runtime/types";
 import { exportRuntimeBudget } from "../runtime/archive";
 import { assertDirectBrowserApiEnvironment } from "./environment";
+import { runtimeTiming } from "../runtime/diagnostics";
 import {
   SHUTDOWN_STEP_TIMEOUT_MS,
   initializeActualApi,
@@ -179,28 +180,36 @@ export async function getBrowserApiRuntime(
   lastStarted = started;
 
   const promise = (async () => {
-    if (previous) await shutdownRuntime(previous);
-    stillWanted();
+    const timing = runtimeTiming("Direct budget open");
+    try {
+      if (previous) await shutdownRuntime(previous);
+      timing.step("previous runtime shutdown");
+      stillWanted();
 
-    const actual = await withTimeout(
-      loadActualApi<ActualApi>(),
-      "Loading @actual-app/api"
-    );
-    const initResult = await initializeActualApi(actual, {
-      dataDir: "/documents",
-      serverURL: serverUrl,
-      password: connection.serverPassword,
-      verbose: false,
-    });
-    stillWanted();
-    const runtime: ActualApiRuntime = reportingDamagedCopy({ ...actual, send: initResult.send });
-    await withTimeout(
-      runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
-      "Opening budget"
-    );
-    stillWanted();
-    await withTimeout(runtime.sync(), "Syncing budget");
-    return runtime;
+      const actual = await withTimeout(
+        loadActualApi<ActualApi>(),
+        "Loading @actual-app/api"
+      );
+      timing.step("load API");
+      const initResult = await initializeActualApi(actual, {
+        dataDir: "/documents",
+        serverURL: serverUrl,
+        password: connection.serverPassword,
+        verbose: false,
+      });
+      timing.step("initialize worker");
+      stillWanted();
+      const runtime: ActualApiRuntime = reportingDamagedCopy({ ...actual, send: initResult.send });
+      await withTimeout(
+        runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
+        "Opening budget"
+      );
+      timing.step("download/open budget");
+      stillWanted();
+      await withTimeout(runtime.sync(), "Syncing budget");
+      timing.step("initial sync");
+      return runtime;
+    } finally { timing.end(); }
   })();
 
   started.promise = promise;

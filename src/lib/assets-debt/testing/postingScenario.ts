@@ -6,6 +6,8 @@ import { readAccountDirectory, readMatchingHistory, type AccountDirectory } from
 import { executeApprovedPosting, type ExecutorOutcome } from "../services/applyService";
 import { createDebtConfiguration } from "../services/debtConfigService";
 import { rowsToCheck, approveAndBeginApply, proposeReversal, recordApplyOutcome } from "../services/postingWorkflowService";
+import { listSubjectPostings } from "@/lib/app-db/financialPostingRepository";
+import { trackedParentIds } from "../services/snapshot";
 import { previewDebtPostings, type PostingView, type PreviewRequest } from "../services/proposalService";
 import { recoverPosting } from "../services/recovery";
 import { indexReadRows, type PostingOutputSnapshot, type RowSnapshot } from "../services/snapshot";
@@ -138,6 +140,7 @@ export function createScenario(options: ScenarioOptions) {
       from: window.from, to: window.to, today: window.today ?? window.to, snapshots,
       accountDirectory: { ...read, accounts: read.accounts.length ? read.accounts : directory.accounts },
       transferPayees, capabilities: { canRestructure: true, canVerifyTransferLinks },
+      verifiedMissingIds: extra.readRanges ? [] : listSubjectPostings(db, "debt", debtId).filter((posting) => posting.status === "applied").flatMap((posting) => trackedParentIds(JSON.parse(posting.outputSnapshotJson), posting.actualIds)).filter((id) => !fake.row(id)),
       ...extra,
     }, "2024-06-01T00:00:00.000Z");
     if (!result.ok) throw new Error(`preview failed: ${JSON.stringify(result)}`);
@@ -169,7 +172,7 @@ export function createScenario(options: ScenarioOptions) {
   async function recover(posting: PostingView) {
     const result = await recoverPosting(posting.output, transport, transferPayees);
     if (result.status === "applied") return recordApplyOutcome(db, posting.id, { status: "applied", actualIds: result.actualIds, appliedAt: "2024-06-03T00:00:00.000Z", recovered: true });
-    if (result.status === "not-found" || result.status === "review") return recordApplyOutcome(db, posting.id, { status: "not-found", reason: result.reason });
+    if (result.status === "not-found" || result.status === "review") return recordApplyOutcome(db, posting.id, { status: result.status, reason: result.reason });
     return result;
   }
 

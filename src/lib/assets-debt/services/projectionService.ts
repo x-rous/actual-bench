@@ -3,7 +3,7 @@ import { evaluateStrategyEligibility, type ActualCapabilities, type Eligibility 
 import type { LoanModelSnapshot } from "@/lib/financial-models/loan/model";
 import { projectDebt, type DebtProjection, type DebtProjectionInput } from "@/lib/financial-models/loan/projection";
 import { modelFromDetail } from "../model/buildModel";
-import { getDebtDetail, type DebtBlock } from "./debtConfigService";
+import { getDebtDetail, type DebtDetail, type DebtBlock } from "./debtConfigService";
 import { getEffectiveDebtAnchor } from "@/lib/app-db/debtAnchorRepository";
 import { mergeOffsetHistories, type OffsetHistorySnapshot } from "./offsetHistoryService";
 
@@ -31,14 +31,14 @@ export type ProjectionRequest = Pick<DebtProjectionInput, "from" | "to" | "overr
 export type StoredProjection = { ok: true; projection: DebtProjection; model: LoanModelSnapshot } | { ok: false; blocked: DebtBlock } | { ok: false; notFound: true };
 
 /** Project a stored debt. Reads the configuration; writes nothing. */
-export function projectStoredDebt(db: SqliteDatabase, debtId: string, request: ProjectionRequest): StoredProjection {
-  const detail = getDebtDetail(db, debtId);
+export function projectStoredDebt(db: SqliteDatabase, debtId: string, request: ProjectionRequest, loadedDetail?: DebtDetail): StoredProjection {
+  const detail = loadedDetail ?? getDebtDetail(db, debtId);
   if (!detail) return { ok: false, notFound: true };
   const built = modelFromDetail(detail);
   if (!built.ok) return built;
   const { model } = built;
   const tracked = model.offsets.some((offset) => offset.useActualBalance === true);
-  if (tracked && request.offsetHistories === undefined) {
+  if (tracked && model.offsets.filter((offset) => offset.useActualBalance).some((offset) => !request.offsetHistories?.some((history) => history.accountId === offset.accountId))) {
     return { ok: false, blocked: { code: "invalid-config", message: "Actual-linked offset history is required for this projection; the manual starting balance was not used as a fallback." } };
   }
   const merged = request.offsetHistories ? mergeOffsetHistories(model, request.offsetHistories) : { model, events: [] };

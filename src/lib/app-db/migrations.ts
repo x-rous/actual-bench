@@ -67,7 +67,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 44;
+export const LATEST_SCHEMA_VERSION = 45;
 
 type Migration = {
   version: number;
@@ -557,6 +557,17 @@ const MIGRATIONS: readonly Migration[] = [
       // already run on some databases, which recorded v43 without it.
       repairSchemaDrift(db);
     },
+  },
+  {
+    version: 45,
+    // Execution ownership is workflow metadata, separate from immutable posting snapshots.
+    statements: [
+      `CREATE TABLE IF NOT EXISTS debt_posting_leases (
+        posting_id text PRIMARY KEY REFERENCES financial_postings(id) ON DELETE CASCADE,
+        token text NOT NULL,
+        expires_at text NOT NULL
+      )`,
+    ],
   },
 ];
 

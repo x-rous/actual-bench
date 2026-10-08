@@ -160,6 +160,15 @@ describe.each(HARNESS_MODES)("transaction structure operations (%s)", (mode) => 
     const result = await t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected, children: children(fake), replaceCounterpart: { expected: counterpart, sourceAccountTransferPayeeId: fake.transferPayeeId("checking") } });
     expect(result.children).toHaveLength(2);
     expect(fake.row(cp)).toBeUndefined();
+    if (mode === "direct") {
+      expect(result.settledVerification).toMatchObject({ accountId: "mortgage", date: "2026-03-01" });
+      expect(result.settledVerification!.rows).toEqual([
+        expect.objectContaining({ transferId: result.children[0].id, amount: 700000 }),
+      ]);
+      expect(result.settledVerification!.rows.some((row) => row.id === cp)).toBe(false);
+    } else {
+      expect(result.settledVerification).toBeUndefined();
+    }
   });
 
   it("a cleared loan-side row is marked cleared again after the split, or left to the caller to mark in a batch", async () => {
@@ -175,6 +184,28 @@ describe.each(HARNESS_MODES)("transaction structure operations (%s)", (mode) => 
       const made = result.children.find((c) => c.transferId)!.transferId!;
       expect(fake.row(made)?.cleared === true).toBe(!defer);
       expect(result.clearLater ?? null).toBe(defer ? made : null);
+    }
+  });
+
+  it.each(["reordered", "replaced"])("restoreSplit handles %s child identities safely", async (scenario) => {
+    const { fake, t } = setup();
+    const id = fake.seed({ account: "checking", date: "2026-03-01", amount: -830000, payee: "p-lender" });
+    await t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected: pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: "p-lender" }), children: children(fake) });
+    const kids = fake.rows().filter((r) => r.parent_id === id);
+    const childPre = kids.map((k) => pre({ id: k.id, accountId: "checking", date: "2026-03-01", amount: k.amount, payeeId: (k.payee as string) ?? null, categoryId: (k.category as string) ?? null, notes: (k.notes as string) ?? null, transferId: (k.transfer_id as string) ?? null, isChild: true, parentId: id })).reverse();
+    if (scenario === "replaced") childPre[0] = { ...childPre[0], id: "different-child" };
+    const parent = pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: "p-lender", isParent: true, childCount: 2 });
+    const restoreTo = state(pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: "p-lender" }));
+    const writes = fake.writes().length;
+    const restore = t.restoreSplit!({ parent, children: childPre, restoreTo, counterpartAccountIds: ["mortgage"] });
+    if (scenario === "replaced") {
+      await expect(restore).rejects.toBeInstanceOf(TransactionChangedError);
+      expect(fake.writes().length).toBe(writes);
+    } else {
+      await expect(restore).resolves.toMatchObject({ parentId: id });
+      expect(fake.rows().filter((r) => r.parent_id === id)).toEqual([]);
+      expect(fake.accountRows("mortgage")).toEqual([]);
+      expect(fake.row(id)).toMatchObject({ amount: -830000, payee: "p-lender" });
     }
   });
 

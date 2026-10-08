@@ -26,6 +26,7 @@ export async function PATCH(request: Request, context: Context) {
     const db = getAppDb();
     const debt = getDebt(db, id);
     if (!debt) return NextResponse.json({ error: "Debt not found" }, { status: 404 });
+    if (debt.status === "archived") return NextResponse.json({ error: "Archived loans are read-only." }, { status: 409 });
     const result = reconcileDebt(db, { debtId: id, comparisonDate: body.comparisonDate, actualBalanceMinor: body.actualBalanceMinor, offsetHistories: body.offsetHistories });
     if (!result.ok) return "notFound" in result ? NextResponse.json({ error: "Debt not found" }, { status: 404 }) : NextResponse.json({ blocked: result.blocked }, { status: 409 });
     return NextResponse.json({ debt: setDebtDriftAcceptedRevision(db, id, debt.currentRevision, result.fingerprint) });

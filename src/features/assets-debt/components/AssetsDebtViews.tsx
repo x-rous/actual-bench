@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -16,6 +16,7 @@ import { listDebts, listNeedsAttention } from "../lib/debtsApi";
 import { LOANS_PATH, NEW_LOAN_PATH } from "../lib/routes";
 import { useActiveBudgetSyncId } from "../lib/useAccountDirectory";
 import { DebtList, LoansSummary } from "./DebtList";
+import { purgeLegacyLoanStorage } from "../lib/loanStorage";
 
 /**
  * The Assets & Debt workspace pages (RD-084 P1.3, P1.3b). The loan pages
@@ -49,6 +50,7 @@ function NoConnection() {
  * it can be acted on.
  */
 export function DebtListView() {
+  useEffect(() => { purgeLegacyLoanStorage(); }, []);
   const budgetSyncId = useActiveBudgetSyncId();
   const params = useSearchParams();
   const router = useRouter();

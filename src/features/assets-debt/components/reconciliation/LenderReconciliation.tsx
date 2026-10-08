@@ -1,5 +1,6 @@
 "use client";
 
+import { localToday } from "../../lib/calendarDate";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal } from "lucide-react";
@@ -26,7 +27,7 @@ import { MoneyField } from "../fields";
  * every statement is listed with the figures at its date. Nothing here writes to Actual.
  */
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localToday();
 const shortDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" });
 
 type Ctx = { debt: DebtDetail; offsetHistories?: OffsetHistorySnapshot[] };
@@ -77,6 +78,8 @@ function Figure({ label, value, note, tone }: { label: string; value: string; no
 }
 
 export function LenderReconciliation({ debt, offsetHistories }: Ctx) {
+  const connection = useConnectionStore(selectActiveInstance);
+  const readOnly = debt.debt.status === "archived" || connection?.budgetSyncId !== debt.debt.budgetSyncId;
   const queryClient = useQueryClient();
   const digits = debt.debt.currencyMinorDigits;
   const money = (minor: number | null) => (minor === null ? "Not available" : formatAmount(minor, digits));
@@ -128,6 +131,7 @@ export function LenderReconciliation({ debt, offsetHistories }: Ctx) {
   });
 
   return (
+    <fieldset disabled={readOnly} className="contents"><legend className="sr-only">Lender statement actions</legend>
     <section aria-label="Lender statements" className="flex flex-col gap-4 px-4 pb-6 text-sm">
       {latest && latestLender !== null ? (
         <section aria-labelledby="latest-statement" className="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -215,7 +219,7 @@ export function LenderReconciliation({ debt, offsetHistories }: Ctx) {
         </section>
       ) : null}
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)} state={confirm} />
-    </section>
+    </section></fieldset>
   );
 }
 

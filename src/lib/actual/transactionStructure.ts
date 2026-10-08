@@ -50,6 +50,8 @@
  * any preflight field differs from what the caller previewed (FR-162).
  */
 
+import type { SyncSourceTransaction } from "./transport";
+
 export type RawTxn = Record<string, unknown> & {
   id: string;
   account?: string;
@@ -61,6 +63,8 @@ export type RawTxn = Record<string, unknown> & {
 export type StructurePrimitives = {
   /** Top-level rows of one account from `sinceDate`, split children inline as `subtransactions`. */
   readAccount(accountId: string, sinceDate: string, untilDate?: string): Promise<RawTxn[]>;
+  /** Optional exact-range snapshot from the latest successfully settled write in this operation. */
+  settledAccountSnapshot?(accountId: string, sinceDate: string, untilDate?: string): RawTxn[] | undefined;
   /**
    * Actual `updateTransaction(id, fields)`. The Direct implementation must not
    * return until the write has landed and the budget is quiet (R-18).
@@ -84,6 +88,41 @@ export function withinDates(primitives: StructurePrimitives, dates: readonly str
     readAccount: (accountId, sinceDate, until) => primitives.readAccount(accountId, sinceDate, until ?? (sinceDate <= untilDate ? untilDate : undefined)),
     update: (id, fields, watch) => primitives.update(id, fields, { untilDate, ...watch }),
     remove: (id, watch) => primitives.remove(id, { untilDate, ...watch }),
+  };
+}
+
+/**
+ * Split-operation reads share one snapshot per exact account/date range within each phase.
+ * Every mutation discards the phase, including when the mutation fails. Preflight starts with
+ * fresh reads; post-write verification may reuse the transport's final settled snapshot.
+ * A new wrapper is created for each operation, never shared across repayments.
+ */
+export function splitOperationReads(primitives: StructurePrimitives): StructurePrimitives {
+  const reads = new Map<string, Promise<RawTxn[]>>();
+  let afterWrite = false;
+  return {
+    readAccount(accountId, sinceDate, untilDate) {
+      const key = JSON.stringify([accountId, sinceDate, untilDate ?? null]);
+      let pending = reads.get(key);
+      if (!pending) {
+        const settled = afterWrite ? primitives.settledAccountSnapshot?.(accountId, sinceDate, untilDate) : undefined;
+        pending = settled ? Promise.resolve(settled) : primitives.readAccount(accountId, sinceDate, untilDate);
+        reads.set(key, pending);
+      }
+      return pending;
+    },
+    async update(id, fields, watch) {
+      reads.clear();
+      afterWrite = false;
+      await primitives.update(id, fields, watch);
+      afterWrite = true;
+    },
+    async remove(id, watch) {
+      reads.clear();
+      afterWrite = false;
+      await primitives.remove(id, watch);
+      afterWrite = true;
+    },
   };
 }
 
@@ -122,7 +161,15 @@ export type RestructureSplitInput = {
 
 export type StructureChild = { id: string; amount: number; categoryId: string | null; payeeId: string | null; notes: string | null; transferId: string | null };
 
-export type RestructureSplitResult = { parentId: string; parentAmount: number; children: StructureChild[]; /** The new loan-side row to mark cleared, when that was deferred. */ clearLater?: string | null };
+export type RestructureSplitResult = {
+  parentId: string;
+  parentAmount: number;
+  children: StructureChild[];
+  /** The new loan-side row to mark cleared, when that was deferred. */
+  clearLater?: string | null;
+  /** Complete account/day read-back from the final settled write, usable only for immediate verification. */
+  settledVerification?: { accountId: string; date: string; rows: SyncSourceTransaction[] };
+};
 
 export type LinkTransferInput = {
   source: TransactionPreflight;
@@ -330,7 +377,7 @@ function childOf(raw: RawTxn): StructureChild {
  * row, on an existing split, or when the children do not sum to the parent.
  */
 export async function restructureAsSplit(primitives: StructurePrimitives, input: RestructureSplitInput): Promise<RestructureSplitResult> {
-  primitives = withinDates(primitives, [input.expected.date, ...(input.replaceCounterpart ? [input.replaceCounterpart.expected.date] : [])]);
+  primitives = withinDates(splitOperationReads(primitives), [input.expected.date, ...(input.replaceCounterpart ? [input.replaceCounterpart.expected.date] : [])]);
   if (input.expected.id !== input.transactionId || input.expected.accountId !== input.accountId) {
     throw new TransactionStructureRefusedError("The expected state does not describe this transaction.");
   }
@@ -499,11 +546,12 @@ export async function completeTransferLink(primitives: StructurePrimitives, inpu
  * reconciled. Returns what differs afterwards; the caller verifies.
  */
 export async function restoreSplit(primitives: StructurePrimitives, input: RestoreSplitInput): Promise<RestoreSplitResult> {
-  primitives = withinDates(primitives, [input.parent.date, ...input.children.map((c) => c.date)]);
+  primitives = withinDates(splitOperationReads(primitives), [input.parent.date, ...input.children.map((c) => c.date)]);
   const { row } = await requireUnchanged(primitives, input.parent);
   if (row.reconciled === true) throw new TransactionStructureRefusedError("A reconciled transaction is never changed.");
-  const current = (row.subtransactions ?? []).map((c) => c.id);
-  if (JSON.stringify(current) !== JSON.stringify(input.children.map((c) => c.id))) throw new TransactionChangedError([`the split lines of ${input.parent.id}`]);
+  // Child order is presentation data; planners and transports can return different orders.
+  const current = (row.subtransactions ?? []).map((c) => c.id).sort();
+  if (JSON.stringify(current) !== JSON.stringify(input.children.map((c) => c.id).sort())) throw new TransactionChangedError([`the split lines of ${input.parent.id}`]);
   for (const child of input.children) {
     const found = await requireUnchanged(primitives, child);
     if (found.row.reconciled === true) throw new TransactionStructureRefusedError("A reconciled split line is never changed.");

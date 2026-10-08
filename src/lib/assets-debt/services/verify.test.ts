@@ -5,7 +5,7 @@ import { verifyCreatedRows, verifyLinkOutcome, verifySplitOutcome } from "./veri
 /** T128: each issue kind has a failing fixture. The create path is the shared reconciliation verifier. */
 
 const tx = (overrides: Partial<SyncSourceTransaction>): SyncSourceTransaction => ({
-  id: "t", accountId: "loan", date: "2024-02-28", amount: -100, payeeId: null, payeeName: null, categoryId: null, categoryName: null, notes: null,
+  id: "t", accountId: "loan", date: "2024-02-28", amount: -100, payeeId: null, payeeName: null, categoryId: null, categoryName: null, notes: "Interest charge",
   cleared: false, reconciled: false, importedId: null, transferId: null, isParent: false, isChild: false, parentId: null, splitLines: [], ...overrides,
 });
 const row = (overrides: Partial<RowSnapshot>): RowSnapshot => ({
@@ -26,7 +26,7 @@ describe("post-apply verification (T128)", () => {
     expect(verifyCreatedRows({ operations: [op], latest, offBudgetAccountIds: new Set() }).issues.map((i) => i.kind)).toContain("duplicate-create");
   });
   it("category-rule: an off-budget row carrying a category", () => {
-    expect(verifyCreatedRows({ operations: [op], latest: [tx({ id: "a", importedId: "abdebt:m:g1", categoryId: "cat" })], offBudgetAccountIds: new Set(["loan"]) }).issues.map((i) => i.kind)).toEqual(["category-rule"]);
+    expect(verifyCreatedRows({ operations: [op], latest: [tx({ id: "a", importedId: "abdebt:m:g1", categoryId: "cat" })], offBudgetAccountIds: new Set(["loan"]) }).issues.map((i) => i.kind)).toEqual(["missing-create", "category-rule"]);
   });
 
   const expected = { parentId: "r", parentAmountMinor: -1000, children: [

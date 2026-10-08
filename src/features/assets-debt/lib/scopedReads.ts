@@ -78,8 +78,15 @@ export function planBankReads(input: {
 }
 
 /** Read the ranges (one call each) into one snapshot per account, each row once. */
-export async function readRanges(transport: Pick<ActualBenchTransport, "listTransactionsForSync">, ranges: readonly ReadRange[]): Promise<MatchingHistorySnapshot[]> {
+export async function readRanges(transport: Pick<ActualBenchTransport, "listTransactionsForSync" | "queryTransactionsForSync">, ranges: readonly ReadRange[]): Promise<MatchingHistorySnapshot[]> {
   const byAccount = new Map<string, Map<string, SyncSourceTransaction>>();
+  if (transport.queryTransactionsForSync && ranges.length) {
+    const rows = await transport.queryTransactionsForSync({ ranges });
+    for (const range of ranges) byAccount.set(range.accountId, new Map());
+    for (const row of rows) byAccount.get(row.accountId)?.set(row.id, row);
+    for (const rows of byAccount.values()) if (rows.size > 5_000) throw new Error("A scoped account read exceeds the 5,000 transaction limit.");
+    return [...byAccount].map(([accountId, rows]) => ({ accountId, transactions: [...rows.values()] }));
+  }
   for (const r of ranges) {
     const rows = await transport.listTransactionsForSync({ accountId: r.accountId, startDate: r.from, endDate: r.to });
     const into = byAccount.get(r.accountId) ?? new Map<string, SyncSourceTransaction>();

@@ -484,3 +484,16 @@ export function toTransactionPreflight(row: RowSnapshot): import("@/lib/actual/t
     parentId: row.parentId, childCount: row.childCount,
   };
 }
+
+/** Parent identities remain valid even when Actual moves a repayment to another date/account. */
+export function trackedParentIds(output: PostingOutputSnapshot, actualIds: readonly string[] | null): string[] {
+  switch (output.kind) {
+    case "create": return [...(actualIds ?? [])];
+    case "restructure": return [actualIds?.[0] ?? output.before.id, ...(actualIds?.slice(1 + output.operations.length) ?? [])];
+    case "claim": return output.release ? [] : [...new Set([...output.rows.map((row) => row.parentId ?? row.id), ...(output.recordedSplit?.counterpart ? [output.recordedSplit.counterpart.id] : [])])];
+    case "link": return [...new Set([output.sourceBefore.parentId ?? output.sourceBefore.id, output.sourceBefore.id, output.counterpartBefore.parentId ?? output.counterpartBefore.id, output.counterpartBefore.id])];
+    case "convert": return [output.before.id, ...(actualIds?.slice(1) ?? [])];
+    case "adjust-split": return [output.parent.id, ...(output.counterpart ? [output.counterpart.id] : [])];
+    default: return [];
+  }
+}

@@ -1,5 +1,7 @@
 "use client";
 
+import { localToday, previousYear } from "../../lib/calendarDate";
+import { useLocalToday } from "../../lib/useLocalToday";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -21,6 +23,7 @@ import { stepsOf } from "./steps";
 import type { PreviewDirectory } from "../preview/renderPreviewRows";
 import { LenderReconciliation } from "../reconciliation/LenderReconciliation";
 import { bulkSteps, bulkSummary, runBulk, type BulkResult } from "./bulkApply";
+import { canPrepareReversal, prepareBulkReversal, type ReversalAction } from "./bulkReversal";
 import { BulkApplyDialog, type BulkRun } from "./BulkApplyDialog";
 import { changeContext, changeHeadline } from "./changeText";
 import { ChangeList, type ChangeActions } from "./ChangeList";
@@ -30,6 +33,7 @@ import { ChoosePayment } from "./ChoosePayment";
 import { LoanStatusStrip, type StripMatching } from "./LoanStatusStrip";
 import { matchingFacts, repaymentTimeline } from "./matchingStrip";
 import { useBackgroundRefresh } from "./useBackgroundRefresh";
+import { withLoanOperation } from "../../lib/operationGate";
 import { syncIfNeeded } from "../../lib/syncFreshness";
 
 /**
@@ -43,13 +47,12 @@ import { syncIfNeeded } from "../../lib/syncFreshness";
  * read-only and lives in `useBackgroundRefresh`.
  */
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = localToday;
 type Period = "whole" | "year" | "last12" | "custom";
 
-function periodRange(period: Period, opening: string, custom: { from: string; to: string }): { from: string; to: string } {
-  const to = today();
+function periodRange(period: Period, opening: string, custom: { from: string; to: string }, to = today()): { from: string; to: string } {
   if (period === "year") return { from: `${to.slice(0, 4)}-01-01`, to };
-  if (period === "last12") return { from: `${Number(to.slice(0, 4)) - 1}${to.slice(4)}`, to };
+  if (period === "last12") return { from: previousYear(to), to };
   if (period === "custom") return custom;
   return { from: opening, to };
 }
@@ -62,7 +65,8 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   const opening = debt.config.ok ? debt.config.config.terms.openingDate : today();
   const [period, setPeriod] = useState<Period>("whole");
   const [custom, setCustom] = useState({ from: opening, to: today() });
-  const range = periodRange(period, opening, custom);
+  const calendarToday = useLocalToday();
+  const range = periodRange(period, opening, custom, calendarToday);
   const refresh = useBackgroundRefresh({ debt, directory, offsetHistories, from: range.from, to: range.to, scheduleDirty });
   const postings = useQuery({ queryKey: ["assets-debt", "postings", debtId], queryFn: () => listPostings(debtId) });
   const [filter, setFilter] = useState<ChangeFilter>(initialFilter);
@@ -79,10 +83,13 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
 
   const allRows = useMemo(() => buildChangeRows(postings.data ?? [], refresh.notices), [postings.data, refresh.notices]);
   const paidOff = debt.paidOff ?? null;
+  const effectiveOffsets = refresh.offsetHistories ?? offsetHistories;
+  const offsetsReady = debt.offsets.filter((offset) => offset.useActualBalance).every((offset) => effectiveOffsets?.some((history) => history.accountId === offset.actualAccountId));
   // Repayment matching at a glance (rev 4): every scheduled due date, joined with the rows above.
   const schedule = useQuery({
-    queryKey: ["assets-debt", "card-schedule", debtId, debt.debt.currentRevision, today()],
-    queryFn: () => getSchedule(debtId, { from: opening, to: `${Number(today().slice(0, 4)) + 60}-12-31`, resolution: "events", offsetHistories }),
+    queryKey: ["assets-debt", "activity-schedule", connection?.id, debtId, debt.debt.currentRevision, calendarToday, refresh.status?.at, effectiveOffsets ?? null],
+    queryFn: () => getSchedule(debtId, { from: opening, to: `${Number(today().slice(0, 4)) + 60}-12-31`, resolution: "events", offsetHistories: effectiveOffsets }),
+    enabled: offsetsReady,
     staleTime: 5 * 60_000,
   });
   const rules = useQuery({ queryKey: ["assets-debt", "match-rules", debtId], queryFn: () => listMatchRules(debtId) });
@@ -90,7 +97,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     if (!schedule.data?.ok) return null;
     // Paid off: no repayment is expected after the one the payoff settled.
     const events = paidOff ? schedule.data.events.filter((e) => e.date <= paidOff.dueDate) : schedule.data.events;
-    const cells = repaymentTimeline(events, allRows, today());
+    const cells = repaymentTimeline(events, allRows, calendarToday);
     const rule = (rules.data ?? []).find((r) => r.record.purpose === "repayment" && r.record.enabled) ?? null;
     const dates = rule?.conditions?.items.find((c) => c.kind === "expected-date");
     const source = rule?.conditions?.items.find((c) => c.kind === "source-account");
@@ -101,7 +108,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     const lastCheck = cells.length ? `${found} found, ${missed} not found` : null;
     return {
       cells,
-      facts: matchingFacts(events, allRows, cells, today()),
+      facts: matchingFacts(events, allRows, cells, calendarToday),
       accountName: directory?.accounts.find((a) => a.id === accountId)?.name ?? null,
       window: dates && "daysBefore" in dates ? { before: dates.daysBefore, after: dates.daysAfter } : null,
       ruleOn: rules.data ? !!rule : null,
@@ -110,7 +117,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
       takenOut: (refresh.unscheduled ?? []).filter((p) => p.direction === "out").length,
       changedExtra: (refresh.unscheduled ?? []).filter((p) => p.changed).length,
     };
-  }, [schedule.data, allRows, rules.data, directory, debt.debt.paymentAccountId, refresh.unscheduled, paidOff]);
+  }, [schedule.data, allRows, rules.data, directory, debt.debt.paymentAccountId, refresh.unscheduled, paidOff, calendarToday]);
   const counts = countByFilter(allRows);
   const rows = groupMissedRows(rowsFor(allRows, filter));
   const steps = useMemo(() => stepsOf(postings.data ?? []), [postings.data]);
@@ -120,15 +127,18 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     transferAccountByPayee: Object.fromEntries(Object.entries(refresh.transferPayees).map(([accountId, payeeId]) => [payeeId, accountId])),
   } : null;
   const selectedRows = allRows.filter((r) => selected.has(r.key) && r.selectable);
+  const selectedApplied = selectedRows.filter((row) => row.selectable === "reverse");
+  const onlyApplied = selectedApplied.length > 0 && selectedApplied.length === selectedRows.length;
+  const onlyProposals = selectedRows.length > 0 && selectedApplied.length === 0;
   const reviewCount = allRows.filter((r) => r.state === "review" || r.state === "recommended").length;
 
-  const context = async (sync: "always" | "if-stale" = "if-stale"): Promise<PostingActionContext> => {
-    if (!connection || !directory) throw new Error("Connect to the budget first.");
+  const context = async (sync: "always" | "if-stale" = "always"): Promise<PostingActionContext> => {
+    if (!connection || !directory || connection.budgetSyncId !== debt.debt.budgetSyncId || directory.budgetSyncId !== debt.debt.budgetSyncId) throw new Error("Connect to this loan’s budget first.");
+    if (debt.debt.status === "archived") throw new Error("Archived loans are read-only.");
+    const active = selectActiveInstance(useConnectionStore.getState());
+    if (active?.id !== connection.id || active.budgetSyncId !== debt.debt.budgetSyncId) throw new Error("The active connection changed. Reopen this loan before applying.");
     const transport = getTransport(connection);
-    // Every apply and undo re-checks Actual just before writing; in Direct mode that check reads this
-    // browser's copy, so pull changes made elsewhere first: always for a bulk apply, and for a single
-    // one when the last sync is older than 30 seconds. A failed sync is not fatal: the check still
-    // refuses if what it reads differs from the preview.
+    // Pull server changes before every explicit operation; a bulk run does this once.
     await syncIfNeeded(connection.id, transport, sync);
     let payees = refresh.transferPayees;
     if (!Object.keys(payees).length) {
@@ -151,11 +161,16 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     // A payoff applied or undone changes whether the loan shows as paid off.
     void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debt", debtId] });
     void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
+    void queryClient.invalidateQueries({ queryKey: ["assets-debt", "card-schedule"] });
+    void queryClient.invalidateQueries({ queryKey: ["assets-debt", "card-balance"] });
+    void queryClient.invalidateQueries({ queryKey: ["assets-debt", "activity-schedule"] });
+    void queryClient.invalidateQueries({ queryKey: ["balances"] });
     await refresh.refresh();
   };
 
   const act = useMutation({
-    mutationFn: async ({ posting, action, interestMinor, reason }: { posting: PostingView; action: "apply" | "decline" | "undo" | "unsplit" | "check" | "complete" | "edit" | "edit-apply"; interestMinor?: number; reason?: string | null }) => {
+    mutationFn: async ({ posting, action, interestMinor, reason }: { posting: PostingView; action: "apply" | "decline" | "undo" | "unsplit" | "check" | "complete" | "edit" | "edit-apply"; interestMinor?: number; reason?: string | null }) => withLoanOperation(connection?.id ?? "disconnected", async () => {
+      if (debt.debt.status === "archived" || connection?.budgetSyncId !== debt.debt.budgetSyncId) throw new Error("Connect to the active loan’s budget before making changes.");
       if (action === "decline") return declinePosting(posting.id);
       if (action === "unsplit") {
         if (!directory) throw new Error("Connect to the budget first.");
@@ -177,7 +192,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
         return posting;
       }
       return checked.posting;
-    },
+    }),
     onSuccess: async (posting, { action }) => {
       setProblem(null);
       if (action === "undo") toast.success("Undo ready to review on that row.");
@@ -193,6 +208,10 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
         void queryClient.invalidateQueries({ queryKey: ["assets-debt", "attention"] });
         void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debt", debtId] });
         void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "card-schedule"] });
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "card-balance"] });
+        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "activity-schedule"] });
+        void queryClient.invalidateQueries({ queryKey: ["balances"] });
       } else {
         await queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
       }
@@ -203,7 +222,10 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   // "This is the payment" (owner decision 2026-10-07): the due date being chosen for, if any.
   const [choosing, setChoosing] = useState<string | null>(null);
   const choice = useMutation({
-    mutationFn: async ({ dueDate, paymentId }: { dueDate: string; paymentId: string | null }) => (paymentId ? setRepaymentChoice(debtId, { dueDate, transactionId: paymentId }) : clearRepaymentChoice(debtId, dueDate)),
+    mutationFn: async ({ dueDate, paymentId }: { dueDate: string; paymentId: string | null }) => {
+      if (debt.debt.status === "archived" || connection?.budgetSyncId !== debt.debt.budgetSyncId) throw new Error("Connect to this active loan’s budget before choosing payments.");
+      return paymentId ? setRepaymentChoice(debtId, { dueDate, transactionId: paymentId }) : clearRepaymentChoice(debtId, dueDate);
+    },
     onSuccess: async (_r, { paymentId }) => {
       setChoosing(null);
       toast.success(paymentId ? "Payment chosen. Bench lined the others up around it." : "Choice forgotten. Bench matches this due date again.");
@@ -215,16 +237,35 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   // "Split again" (owner decision 2026-10-07): undo the applied splits that drifted, newest first;
   // once the undos are applied the months come back as new splits to apply.
   const splitAgain = useMutation({
-    mutationFn: async (dueDates: string[]) => {
+    mutationFn: async (dueDates: string[]) => withLoanOperation(connection?.id ?? "disconnected", async () => {
       if (!directory) throw new Error("Connect to the budget first.");
       const payees = (await context()).transferPayeeByAccount;
       const applied = (postings.data ?? []).filter((p) => String(p.status) === "applied" && p.postingKind === "repayment-split" && dueDates.includes(p.periodKey)).sort((a, b) => b.periodKey.localeCompare(a.periodKey));
       for (const posting of applied) await proposeReversal(posting.id, { accountDirectory: directory, transferPayees: payees });
       return applied.length;
-    },
+    }),
     onSuccess: async (count) => {
       toast.success(count === 1 ? "Undo ready on that row. Apply it, then apply the new split." : `${count} undos ready. Apply them, then apply the new splits.`);
       await queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
+    },
+    onError: (error) => setProblem(error instanceof Error ? error.message : String(error)),
+  });
+
+  const prepareSelected = useMutation({
+    mutationFn: async ({ chosen, action }: { chosen: ChangeRowModel[]; action: ReversalAction }) => withLoanOperation(connection?.id ?? "disconnected", async () => {
+      const ctx = await context();
+      if (!directory) throw new Error("Connect to the budget first.");
+      const propose = action === "unsplit" ? proposeUnsplit : proposeReversal;
+      return prepareBulkReversal(chosen, action, (posting) => propose(posting.id, { accountDirectory: directory, transferPayees: ctx.transferPayeeByAccount }));
+    }),
+    onSuccess: async (outcome, { action }) => {
+      setProblem(outcome.stopped ? `${outcome.prepared.length} proposals prepared · stopped at ${outcome.stopped.row.dueDate}: ${outcome.stopped.reason}. ${outcome.remaining} remaining proposals were not prepared. Nothing was changed in Actual.` : null);
+      await queryClient.invalidateQueries({ queryKey: ["assets-debt", "postings", debtId] });
+      setSelected(new Set(outcome.prepared.map((row) => row.key)));
+      if (outcome.prepared.length) {
+        setFilter("action");
+        toast.success(`${outcome.prepared.length} ${action === "unsplit" ? "unsplit" : "undo"} proposals ready to review. Apply them to proceed.`);
+      }
     },
     onError: (error) => setProblem(error instanceof Error ? error.message : String(error)),
   });
@@ -243,7 +284,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   };
 
   const bulk = useMutation({
-    mutationFn: async (chosen: ChangeRowModel[]) => {
+    mutationFn: async (chosen: ChangeRowModel[]) => withLoanOperation(connection?.id ?? "disconnected", async () => {
       const ctx = await context("always");
       // Cleared loan-side rows are marked together at the end in one batch write, where the
       // connection has one (Direct), instead of one settled write per split.
@@ -277,7 +318,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
         }
       }
       return outcome;
-    },
+    }),
     onSuccess: async (outcome) => {
       setResult(outcome);
       setSelected(new Set());
@@ -331,7 +372,8 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
     if (output && "components" in output) for (const c of output.components) sum[c.kind === "principal" ? "principal" : c.kind === "interest" ? "interest" : "fees"] += c.amountMinor;
     return sum;
   }, { principal: 0, interest: 0, fees: 0 });
-  const busy = act.isPending || bulk.isPending || splitAgain.isPending || choice.isPending || refresh.phase === "refreshing";
+  const readOnly = debt.debt.status === "archived" || connection?.budgetSyncId !== debt.debt.budgetSyncId;
+  const busy = readOnly || act.isPending || bulk.isPending || prepareSelected.isPending || splitAgain.isPending || choice.isPending || refresh.phase === "refreshing";
   const edited = selectedRows.filter((r) => r.posting?.output.kind === "restructure" && r.posting.output.override);
   // The context lines the selected changes share, each said once (§3.8 rev 2).
   const sharedNotes = (() => {
@@ -360,8 +402,8 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
       <div className="flex flex-col gap-3 px-4 py-4 text-sm">
-        <LoanStatusStrip refresh={refresh} paidOffOn={paidOff?.paidDate ?? null} counts={{ review: reviewCount, notApplied: reviewCount }} digits={digits} onRefresh={() => void refresh.refresh()} onStatements={() => setStatements(true)} matching={matching} />
-        <ExtraPayments debtId={debtId} payments={refresh.unscheduled ?? []} digits={digits} scheduleDirty={scheduleDirty} onChanged={() => void afterWrite()} />
+        <LoanStatusStrip refresh={refresh} paidOffOn={paidOff?.paidDate ?? null} counts={{ review: reviewCount, notApplied: reviewCount }} digits={digits} onRefresh={() => { if (!busy) void refresh.refresh(); }} onStatements={() => setStatements(true)} matching={matching} />
+        <ExtraPayments debtId={debtId} payments={refresh.unscheduled ?? []} digits={digits} scheduleDirty={scheduleDirty} readOnly={busy} onChanged={() => void afterWrite()} />
         {problem ? <p role="alert" className="text-xs text-destructive">{problem}</p> : null}
         {result ? (
           <div role="status" className={result.stopped ? "flex items-start gap-2 rounded border border-amber-500/50 bg-amber-50 px-3 py-2 text-xs dark:bg-amber-950/30" : "flex items-start gap-2 rounded border border-border px-3 py-2 text-xs"}>
@@ -374,7 +416,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
             toolbar={periodControls}
             rows={rows}
             filter={filter}
-            onFilter={setFilter}
+            onFilter={(next) => { setFilter(next); setSelected(new Set()); }}
             counts={counts}
             selected={selected}
             onToggle={(key) => setSelected((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
@@ -394,12 +436,22 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
       {selectedRows.length ? (
         <div role="region" aria-label="Selected changes" className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-border bg-background px-4 py-2 text-xs">
           <p aria-live="polite" className="flex-1">
-            {`${selectedRows.length} selected · Principal ${formatAmount(totals.principal, digits)} · Interest ${formatAmount(totals.interest, digits)}${totals.fees ? ` · Fees ${formatAmount(totals.fees, digits)}` : ""}`}
+            {selectedApplied.length ? `${selectedRows.length} changes selected` : `${selectedRows.length} selected · Principal ${formatAmount(totals.principal, digits)} · Interest ${formatAmount(totals.interest, digits)}${totals.fees ? ` · Fees ${formatAmount(totals.fees, digits)}` : ""}`}
           </p>
           <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setSelected(new Set())}>Clear</Button>
-          <Button type="button" size="sm" disabled={busy || !selectedRows.length} onClick={() => setConfirming(true)}>
-            {selectedRows.every((r) => r.selectable === "undo") ? `Apply ${selectedRows.length} undo${selectedRows.length === 1 ? "" : "s"}` : `Apply ${selectedRows.length} change${selectedRows.length === 1 ? "" : "s"}`}
-          </Button>
+          {selectedApplied.length ? (
+            <>
+              <Button type="button" variant="outline" size="sm" disabled={busy || !onlyApplied} onClick={() => prepareSelected.mutate({ chosen: selectedRows, action: "undo" })}>Undo selected</Button>
+              <Button type="button" variant="outline" size="sm" disabled={busy || !onlyApplied || !selectedRows.every((row) => canPrepareReversal(row, "unsplit"))} onClick={() => prepareSelected.mutate({ chosen: selectedRows, action: "unsplit" })}>Unsplit selected</Button>
+              <p className="basis-full text-muted-foreground">Prepares proposals for review before Apply. Undo restores Bench changes or releases a match; Unsplit turns the whole payment into one loan transfer.</p>
+            </>
+          ) : null}
+          {onlyProposals ? (
+            <Button type="button" size="sm" disabled={busy} onClick={() => setConfirming(true)}>
+              {selectedRows.every((r) => r.selectable === "undo") ? `Apply ${selectedRows.length} undo${selectedRows.length === 1 ? "" : "s"}` : `Apply ${selectedRows.length} change${selectedRows.length === 1 ? "" : "s"}`}
+            </Button>
+          ) : null}
+          {selectedApplied.length && !onlyApplied ? <p className="basis-full text-muted-foreground">Select applied changes separately from proposals.</p> : null}
         </div>
       ) : null}
 
@@ -408,7 +460,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
         options={refresh.paymentOptions ?? []}
         chosenId={refresh.repaymentChoices?.find((c) => c.key === choosing)?.paymentId ?? null}
         digits={digits}
-        busy={choice.isPending}
+        busy={busy}
         onChoose={(paymentId) => choosing && choice.mutate({ dueDate: choosing, paymentId })}
         onClear={() => choosing && choice.mutate({ dueDate: choosing, paymentId: null })}
         onClose={() => setChoosing(null)}
@@ -445,7 +497,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
           ) : null}
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={() => setConfirming(false)}>Cancel</Button>
-            <Button type="button" onClick={() => startBulk(selectedRows)}>Apply {selectedRows.length} change{selectedRows.length === 1 ? "" : "s"}</Button>
+            <Button type="button" disabled={busy || !onlyProposals} onClick={() => startBulk(selectedRows)}>Apply {selectedRows.length} change{selectedRows.length === 1 ? "" : "s"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -469,7 +521,7 @@ export function LoanActivity({ debt, directory, offsetHistories, initialFilter =
             <SheetTitle>Lender statements</SheetTitle>
             <SheetDescription>Compare what your lender says with Bench&apos;s calculation and with Actual, to see which side is off. Nothing here changes Actual.</SheetDescription>
           </SheetHeader>
-          <LenderReconciliation debt={debt} offsetHistories={offsetHistories} />
+          <LenderReconciliation debt={debt} offsetHistories={refresh.offsetHistories ?? offsetHistories} />
         </SheetContent>
       </Sheet>
     </div>
