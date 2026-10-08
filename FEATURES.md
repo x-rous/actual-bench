@@ -48,6 +48,8 @@
 
 ## Assets & Debt
 
+- **Loan overview:** edge-to-edge visual table rows with at most three lines per cell, the same search/filter and header styling as reconciliation, and distinct status colors. Only configured loan/repayment accounts and active offsets are shown; attention warnings sit beneath the loan name. A compact Status column and narrower Loan column leave more space for account names, interest and payment figures. The loan summary shares the filter bar on the right. Terms follows the loan name, and Outstanding has a compact fixed width. Compare current and upcoming rates; repayment frequency and term; outstanding balance; next repayment; principal progress and payment counts; paid and projected interest; and the end date. Large lists remain virtualized
+
 - **Loans & Debt simulator:** a compact modelling workspace with bordered, section-level help for the grouped loan, interest, repayment, offset, and fee controls beside four headline results and a balance chart. The chart combines distinct colours and line styles, labels dated rate changes, and marks payoff without hiding exact dates from its accessible summary. A new simulator starts from a 500,000, 20-year, 5.4% monthly sample that can be reset after confirmation
 - Amounts are currency-agnostic throughout the simulator. Editable amounts group digits without moving the cursor while typing, and advanced calculation conventions stay in a responsive Calculation Method drawer
 - Optional loan features use accessible switches and reveal their controls only when enabled. Optional blank fields are labelled explicitly; interest-only periods live with Interest, while rate timelines, recurring costs, and transactions retain their detailed dialog editors

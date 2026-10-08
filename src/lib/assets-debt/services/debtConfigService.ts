@@ -403,12 +403,18 @@ export type DebtSummary = {
   liabilityAccountId: string | null;
   executionStrategy: DebtRecord["executionStrategy"];
   openingPrincipalMinor: number | null;
-  /** The opening date and first annual rate, for the loan cards. */
+  /** The opening date and first annual rate, for the loan overview. */
   openingDate: string | null;
   annualRateDecimal: string | null;
   signConvention: DebtRecord["signConvention"];
   currentRevision: number;
   blocked: DebtBlock | null;
+  /** Overview metadata; optional for older clients and summary fixtures. */
+  paymentAccountId?: string | null;
+  offsetAccountLinks?: { actualAccountId: string; effectiveFrom: string; effectiveTo: string | null }[];
+  repaymentFrequency?: DebtConfig["profile"]["repaymentFrequency"] | null;
+  contractualTermMonths?: number | null;
+  ratePeriods?: { accrualEffectiveFrom: string; annualRateDecimal: string }[];
   /** The day an applied payoff cleared the loan, or null. */
   paidOffOn?: string | null;
 };
@@ -434,6 +440,11 @@ export function listDebtSummaries(db: SqliteDatabase, budgetSyncId: string, incl
       currentRevision: debt.currentRevision,
       blocked: detail.blocked,
       paidOffOn: detail.paidOff?.paidDate ?? null,
+      paymentAccountId: debt.paymentAccountId,
+      offsetAccountLinks: detail.offsets.map(({ actualAccountId, effectiveFrom, effectiveTo }) => ({ actualAccountId, effectiveFrom, effectiveTo })),
+      repaymentFrequency: detail.config.ok ? detail.config.config.profile.repaymentFrequency : null,
+      contractualTermMonths: detail.config.ok ? detail.config.config.terms.contractualTermMonths : null,
+      ratePeriods: detail.rates.map(({ accrualEffectiveFrom, annualRateDecimal }) => ({ accrualEffectiveFrom, annualRateDecimal })),
     };
   });
 }

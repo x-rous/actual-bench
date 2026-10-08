@@ -1,9 +1,38 @@
 ---
-title: Assets & Debt repayment tracking
-description: Recognize existing loan repayment splits and keep principal transfers out of extra payments.
+title: Assets & Debt loan overview and repayment tracking
+description: Compare loans, review their progress, and recognize existing repayment splits.
 ---
 
 Open your loan in **Assets & Debt**, then use **Sync Repayments** to review payments held in Actual.
+
+## Compare your loans
+
+The **Loans & Debt** overview shows one compact table row per loan, with at most three lines
+in each cell. Its search, filters, and table header follow the reconciliation list design.
+
+Compare outstanding balance, next payment and date, payments left, principal paid, payment
+counts, interest paid and projected interest remaining, and the projected end date. The progress
+bar shows the share of the opening principal paid. A calculated balance is labelled when an
+Actual balance is not available.
+
+The **Accounts** column shows only configured loan and repayment accounts and currently active
+offset accounts. Unused account roles are omitted.
+The loan summary sits on the right of the same bar as the filters. Columns read from left to
+right: Loan, Terms, Outstanding, Next payment, Principal paid, Interest, Ends / Paid off, Accounts,
+and Status. Outstanding has a compact fixed width. The narrower Loan column gives accounts,
+interest and payment figures more room; account and interest columns share available space.
+
+The **Terms** column shows the current rate, repayment frequency, contractual term, and the next
+scheduled rate change when one exists. The opening date stays beside the loan identity.
+
+Statuses use both color and words: active and paid-off loans are green, attention warnings are
+amber, blocked loans are red, drafts are blue, and archived loans are muted. A repayment-matching
+warning sits beneath the loan name, separate from the compact loan-status column.
+
+Select a row or focus its loan link and press Enter to open it. A loan that needs attention opens
+at the relevant review step. Search by loan name, use **Needs attention** to focus the list, or
+**Show archived loans** to include archived records. On smaller screens, scroll the table
+horizontally to keep rows compact. Hover truncated text to see its full label.
 
 ## Repayments already split in Actual
 

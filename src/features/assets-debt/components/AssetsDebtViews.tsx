@@ -9,7 +9,8 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { PillGroup } from "@/components/ui/pill-group";
+import { SearchInput } from "@/components/ui/search-input";
 import { attentionText, hrefOf } from "../lib/attention";
 import { listDebts, listNeedsAttention } from "../lib/debtsApi";
 import { LOANS_PATH, NEW_LOAN_PATH } from "../lib/routes";
@@ -43,8 +44,8 @@ function NoConnection() {
 }
 
 /**
- * The Loans & Debt page (rev 4): one card per loan, with a "Needs attention" filter in place of
- * the former global Activity page (`?filter=attention`). A card that needs attention opens where
+ * The Loans & Debt page (rev 4): one visual table row per loan, with a "Needs attention" filter in place of
+ * the former global Activity page (`?filter=attention`). A row that needs attention opens where
  * it can be acted on.
  */
 export function DebtListView() {
@@ -52,6 +53,7 @@ export function DebtListView() {
   const params = useSearchParams();
   const router = useRouter();
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [search, setSearch] = useState("");
   const onlyAttention = params?.get("filter") === "attention";
   const debts = useQuery({ queryKey: ["assets-debt", "debts", budgetSyncId, includeArchived], queryFn: () => listDebts(budgetSyncId!, includeArchived), enabled: !!budgetSyncId });
   // The first thing each loan needs, from stored state only (no Actual read).
@@ -59,7 +61,8 @@ export function DebtListView() {
   const needing = (attention.data ?? []).filter((item) => item.reasons.length);
   const attentionById = Object.fromEntries(needing.map((item) => [item.id, attentionText(item.reasons[0])]));
   const hrefById = Object.fromEntries(needing.map((item) => [item.id, hrefOf(item)]));
-  const shown = (debts.data ?? []).filter((d) => !onlyAttention || attentionById[d.id]);
+  const query = search.trim().toLocaleLowerCase();
+  const shown = (debts.data ?? []).filter((d) => (!onlyAttention || attentionById[d.id]) && (!query || d.name.toLocaleLowerCase().includes(query)));
   const setFilter = (on: boolean) => router.replace(on ? `${LOANS_PATH}?filter=attention` : LOANS_PATH);
   return (
     <AssetsDebtShell
@@ -75,23 +78,25 @@ export function DebtListView() {
         <NoConnection />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-            <div role="group" aria-label="Show" className="inline-flex gap-0.5 rounded-lg border border-border p-0.5">
-              <button type="button" aria-pressed={!onlyAttention} onClick={() => setFilter(false)} className={cn("rounded-md px-3 py-1 text-xs", !onlyAttention ? "bg-foreground text-background" : "hover:bg-muted")}>All loans</button>
-              <button type="button" aria-pressed={onlyAttention} onClick={() => setFilter(true)} className={cn("rounded-md px-3 py-1 text-xs", onlyAttention ? "bg-foreground text-background" : "hover:bg-muted")}>Needs attention {needing.length}</button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
+            <SearchInput value={search} onValueChange={setSearch} aria-label="Search loans" clearLabel="Clear loan search" />
+            <div role="group" aria-label="Show">
+              <PillGroup options={[{ value: "all", label: "All loans" }, { value: "attention", label: "Needs attention", count: needing.length }]} value={onlyAttention ? "attention" : "all"} onChange={(value) => setFilter(value === "attention")} />
             </div>
-            <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-2">
-              {debts.data?.length ? <LoansSummary debts={debts.data} /> : null}
-              <span className="flex items-center gap-2">
+            <span className="flex items-center gap-2 px-1">
               <Checkbox id="include-archived" checked={includeArchived} onCheckedChange={(v) => setIncludeArchived(v === true)} />
               <Label htmlFor="include-archived" className="text-xs">Show archived loans</Label>
-              </span>
+            </span>
+            {query || onlyAttention ? <button type="button" onClick={() => { setSearch(""); setFilter(false); }} className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Clear filters</button> : null}
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
+              {debts.data?.length ? <LoansSummary debts={debts.data} /> : null}
+              <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{shown.length} of {debts.data?.length ?? 0}</span>
             </div>
           </div>
           {debts.isLoading ? <p className="px-4 py-3 text-xs text-muted-foreground">Loading…</p> : null}
           {debts.isError ? <p role="alert" className="px-4 py-3 text-xs text-destructive">{(debts.error as Error).message}</p> : null}
           {debts.data && debts.data.length === 0 ? <p className="px-4 py-3 text-sm text-muted-foreground">No loans yet. Add one to start.</p> : null}
-          {debts.data && debts.data.length > 0 && shown.length === 0 ? <p className="mx-4 rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Nothing needs your attention.</p> : null}
+          {debts.data && debts.data.length > 0 && shown.length === 0 ? <p className="px-3 py-6 text-center text-sm text-muted-foreground">{query ? "No loans match these filters." : "Nothing needs your attention."}</p> : null}
           {shown.length > 0 ? <DebtList debts={shown} attention={attentionById} hrefs={hrefById} /> : null}
         </div>
       )}

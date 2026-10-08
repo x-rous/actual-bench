@@ -124,14 +124,14 @@ it("describes extra-transaction impact without negative saved values", () => {
 
 describe("the Loans & Debt page (rev 4)", () => {
   withViewport();
-  it("has no Assets & Debt tabs; a Needs attention filter counts the loans that need something, and such a card opens where it can be acted on", async () => {
+  it("has no Assets & Debt tabs; a Needs attention filter counts the loans that need something, and such a row opens where it can be acted on", async () => {
     mocked.listDebts.mockResolvedValue([summary(1, { name: "HSBC" }), summary(2, { name: "Car" })]);
     mocked.listNeedsAttention.mockResolvedValue([{ subjectKind: "debt", id: "d1", name: "HSBC", filter: "action", reasons: [{ code: "review", count: 3 }] }]);
     wrap(<DebtListView />);
     expect(await screen.findByRole("button", { name: "Needs attention 1" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByRole("navigation", { name: "Assets & Debt sections" })).toBeNull();
     const hsbc = await screen.findByRole("link", { name: /HSBC/ });
-    expect(hsbc).toHaveTextContent("3 changes to review");
+    expect(hsbc.closest('[role="row"]')).toHaveTextContent("3 changes to review");
     expect(hsbc).toHaveAttribute("href", "/loans/d1?view=repayments&filter=action");
     expect(screen.getByRole("link", { name: /Car/ })).toHaveAttribute("href", "/loans/d2");
   });
@@ -142,40 +142,62 @@ describe("Loans & Debt list", () => {
 
   it("renders 1,000 debts with a bounded DOM", () => {
     wrap(<DebtList debts={Array.from({ length: 1000 }, (_, i) => summary(i))} />);
-    const rows = screen.getAllByRole("listitem");
+    const rows = screen.getAllByRole("row").slice(1);
     expect(rows.length).toBeGreaterThan(5);
     expect(rows.length).toBeLessThan(60);
-    expect(screen.getByRole("list", { name: "1000 debts" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "1000 debts" })).toBeInTheDocument();
+  });
+
+  it("labels the table columns and retains one navigable row per loan", () => {
+    mockDirectory.current = DIRECTORY;
+    wrap(<DebtList debts={[summary(1, { liabilityAccountId: "loan" }), summary(2, { status: "archived" }), summary(3, { paidOffOn: "2021-01-01" })]} />);
+    const table = screen.getByRole("table", { name: "3 debts" });
+    expect(table).toHaveAttribute("aria-rowcount", "4");
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Loan", "Terms", "Outstanding", "Next payment", "Principal paid", "Interest", "Ends / Paid off", "Accounts", "Status"]);
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(3);
+    rows.forEach((row, index) => {
+      expect(row).toHaveAttribute("aria-rowindex", String(index + 2));
+      expect(within(row).getAllByRole("cell")).toHaveLength(9);
+      expect(within(row).getAllByRole("link")).toHaveLength(1);
+    });
+    expect(rows[0]).toHaveTextContent("Home loan");
+    expect(rows[0]).toHaveTextContent("Mortgage");
+    expect(rows[0]).toHaveTextContent("5.00%");
+    expect(rows[1]).toHaveTextContent("Archived");
+    expect(rows[2]).toHaveTextContent("Paid off");
+    mockDirectory.current = undefined;
   });
 
   it("shows a Blocked debt in words on its own row while the others stay usable", () => {
     wrap(<DebtList debts={[summary(1, { blocked: { code: "unsupported-config", message: "newer" } }), summary(2), summary(3, { status: "draft" })]} />);
-    const [blocked, fine, draft] = screen.getAllByRole("link");
-    expect(blocked).toHaveTextContent("Blocked: configured by a newer version of Actual Bench");
-    // A plain active loan needs no status chip.
+    const [blocked, fine, draft] = screen.getAllByRole("row").slice(1);
+    expect(blocked).toHaveTextContent("Blocked");
+    expect(within(blocked).getByLabelText("Blocked: configured by a newer version of Actual Bench")).toBeInTheDocument();
+    // Status is explicit on every row.
     expect(fine).not.toHaveTextContent("Blocked");
-    expect(fine).toHaveAttribute("href", "/loans/d2");
+    expect(within(fine).getByRole("link")).toHaveAttribute("href", "/loans/d2");
     expect(draft).toHaveTextContent("Draft");
   });
 
-  it("a loan card shows what is left, how much is paid, payments made of the total, the next payment, interest so far and the payoff date", async () => {
+  it("a loan row shows what is left, how much is paid, payments made of the total, the next payment, interest so far and the payoff date", async () => {
     const event = (date: string, eventType: string, interestMinor: number, balanceAfterMinor: number) => ({ date, eventType, cashMovementMinor: eventType === "repayment" ? -50_000 : 0, principalMovementMinor: 0, interestMinor, feesMinor: 0, balanceBeforeMinor: balanceAfterMinor + 40_000, balanceAfterMinor });
     mocked.getSchedule.mockResolvedValue({ ok: true, events: [event("2020-02-01", "repayment", 10_000, 60_000), event("2020-03-01", "repayment", 8_000, 20_000), event("2999-04-01", "repayment", 2_000, 0)] } as never);
     wrap(<DebtList debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null })]} />);
-    const card = screen.getByRole("link");
+    const card = screen.getAllByRole("row")[1];
     await waitFor(() => expect(card).toHaveTextContent("2 of 3 payments"));
-    expect(card).toHaveTextContent("owed of");
+    expect(card).toHaveTextContent("of 1,000.00");
     expect(card).toHaveTextContent("(calculated)");
     expect(card).toHaveTextContent("200.00");
     expect(card).not.toHaveTextContent("AUD");
     expect(card).toHaveTextContent("80% paid");
     expect(card).toHaveTextContent("2 of 3 payments");
-    expect(card).toHaveTextContent("Left1 payment");
-    expect(card).toHaveTextContent("Interest paid180.00");
-    expect(within(card).getByRole("img", { name: "80% of the principal paid" })).toBeInTheDocument();
+    expect(card).toHaveTextContent("1 payment left");
+    expect(card).toHaveTextContent("180.00 paid");
+    expect(within(card).getByRole("progressbar", { name: "Principal paid for Loan 1" })).toBeInTheDocument();
   });
 
-  it("the summary above the cards totals what the active loans owe and what falls due in the next 30 days", async () => {
+  it("the summary above the rows totals what the active loans owe and what falls due in the next 30 days", async () => {
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
     const event = (date: string, balanceAfterMinor: number) => ({ date, eventType: "repayment", cashMovementMinor: -50_000, principalMovementMinor: 0, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: balanceAfterMinor + 50_000, balanceAfterMinor });
     mocked.getSchedule.mockResolvedValue({ ok: true, events: [event("2020-02-01", 60_000), event(soon, 10_000), event("2999-04-01", 0)] } as never);
@@ -188,7 +210,7 @@ describe("Loans & Debt list", () => {
 
   it("says what each loan needs, in words, next to its status", () => {
     wrap(<DebtList debts={[summary(1), summary(2)]} attention={{ d1: "31 changes to review" }} />);
-    const [first, second] = screen.getAllByRole("link");
+    const [first, second] = screen.getAllByRole("row").slice(1);
     expect(first).toHaveTextContent("31 changes to review");
     expect(second).not.toHaveTextContent("to review");
   });
