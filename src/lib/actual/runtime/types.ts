@@ -46,6 +46,9 @@ export type ApiTransaction = {
   is_parent?: boolean;
   is_child?: boolean;
   parent_id?: string | null;
+  /** Actual's display ordering; also preserves the order of split children. */
+  starting_balance_flag?: boolean;
+  sort_order?: number | null;
   subtransactions?: ApiTransaction[];
 };
 

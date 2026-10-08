@@ -114,6 +114,7 @@ export default defineConfig({
 						{ label: 'How Matching Works', link: '/user-guide/reconciliation-matching/' },
 						{ label: 'Budget File Sync', link: '/user-guide/budget-sync/' },
 						{ label: 'FX Rates', link: '/user-guide/fx-rates/' },
+						{ label: 'Assets & Debt', link: '/user-guide/assets-debt/' },
 						{ label: 'Backups', link: '/user-guide/backups/' },
 						{ label: 'Automations', link: '/user-guide/automations/' },
 						{ label: 'Bank Sync', link: '/user-guide/bank-sync/' },

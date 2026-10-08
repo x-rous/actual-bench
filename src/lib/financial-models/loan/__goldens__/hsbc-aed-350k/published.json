@@ -1,0 +1,39 @@
+{
+  "source": "Private HSBC amortization schedule supplied by the repository owner",
+  "sourceScope": "bank-published contract facts, five initial rows, and the 02-Sep-2024 installment date",
+  "currency": "AED",
+  "minorDigits": 2,
+  "principalMinor": 35000000,
+  "openingDate": "2023-10-25",
+  "publishedAnnualRateDecimal": "0.0699",
+  "inferredCalculationRateDecimal": "0.06990005",
+  "inferredRateInterval": {
+    "lowerInclusive": "0.06990003667953668",
+    "upperExclusive": "0.06990009764122739"
+  },
+  "contractualPaymentMinor": 837957,
+  "firstPaymentDate": "2023-12-01",
+  "paymentCount": 48,
+  "maturityDate": "2027-11-01",
+  "rows": [
+    { "date": "2023-12-01", "paymentMinor": 837957, "principalMinor": 589955, "interestMinor": 248002, "balanceMinor": 34410045 },
+    { "date": "2024-01-01", "paymentMinor": 837957, "principalMinor": 633674, "interestMinor": 204283, "balanceMinor": 33776371 },
+    { "date": "2024-02-01", "paymentMinor": 837957, "principalMinor": 637436, "interestMinor": 200521, "balanceMinor": 33138935 },
+    { "date": "2024-03-01", "paymentMinor": 837957, "principalMinor": 653913, "interestMinor": 184044, "balanceMinor": 32485022 },
+    { "date": "2024-04-01", "paymentMinor": 837957, "principalMinor": 645103, "interestMinor": 192854, "balanceMinor": 31839919 }
+  ],
+  "observedDateExceptions": [
+    { "nominalDate": "2024-09-01", "publishedDate": "2024-09-02", "classification": "bank-published date; adjustment rule unknown" }
+  ],
+  "derivedUnadjusted": {
+    "finalPaymentMinor": 902257,
+    "totalInterestMinor": 5286236,
+    "totalRepaymentsMinor": 40286236,
+    "checkpoints": [
+      { "installment": 12, "date": "2024-11-01", "paymentMinor": 837957, "principalMinor": 672498, "interestMinor": 165459, "balanceMinor": 27197880 },
+      { "installment": 24, "date": "2025-11-01", "paymentMinor": 837957, "principalMinor": 722202, "interestMinor": 115755, "balanceMinor": 18775908 },
+      { "installment": 36, "date": "2026-11-01", "paymentMinor": 837957, "principalMinor": 775494, "interestMinor": 62463, "balanceMinor": 9746008 },
+      { "installment": 48, "date": "2027-11-01", "paymentMinor": 902257, "principalMinor": 896932, "interestMinor": 5325, "balanceMinor": 0 }
+    ]
+  }
+}

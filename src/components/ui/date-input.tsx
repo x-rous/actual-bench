@@ -33,6 +33,7 @@ function DateInput({
   title,
   "aria-label": ariaLabel,
   "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
   ...dataProps
 }: {
   value: string
@@ -49,6 +50,7 @@ function DateInput({
   title?: string
   "aria-label"?: string
   "aria-invalid"?: boolean
+  "aria-describedby"?: string
   [dataAttribute: `data-${string}`]: string | undefined
 }) {
   const budgetFormat = useBudgetDateFormat()
@@ -106,6 +108,7 @@ function DateInput({
         title={title}
         aria-label={ariaLabel}
         aria-invalid={invalid || ariaInvalid || undefined}
+        aria-describedby={ariaDescribedBy}
         disabled={disabled}
         placeholder={dateFormatHint(dateFormat)}
         value={draft}

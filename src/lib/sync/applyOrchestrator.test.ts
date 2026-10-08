@@ -1,9 +1,16 @@
 import { connectionFingerprint } from "./connectionRef";
 import { generateSyncMarker } from "./marker";
 import { applySyncRun, type ApplyStore, type ApplyTransportProvider } from "./applyOrchestrator";
+import { classifyDuplicate } from "./duplicateClassifier";
+import { apiRequest } from "@/lib/api/client";
+import { createHttpApiTransport } from "@/lib/actual/httpApiTransport";
+import { createFakeActualBudget } from "@/lib/actual/testing/fakeActualBudget";
 import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import type { BrowserApiConnection, HttpApiConnection } from "@/store/connection";
 import type { JsonObject, SyncFlow, SyncFlowRun, SyncFlowRunItem, SyncMapping, SyncMappingInput } from "@/lib/app-db/types";
+
+jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
+const mockApiRequest = apiRequest as jest.MockedFunction<typeof apiRequest>;
 
 // Portable markers the apply engine computes for the makeFlow() route
 // (source budget-src → target budget-tgt / acct-tgt).
@@ -622,3 +629,91 @@ describe("applySyncRun - partial failure & splits", () => {
     });
   });
 });
+
+/**
+ * Transfers over the HTTP transport (P1.0a regression).
+ *
+ * The apply runs through the real HTTP transport against an in-memory budget
+ * that applies Actual's transfer rule. A synced row whose payee resolves to a
+ * target transfer payee now gets its counterpart over HTTP, as it already did
+ * in Direct mode; and when the source's other leg is later synced into that
+ * account, the counterpart already there is what the planner's duplicate check
+ * sees, so the leg is not a "new" create.
+ */
+describe("applySyncRun - transfers over HTTP (P1.0a)", () => {
+  const accounts = [
+    { id: "acct-chk", name: "Checking" },
+    { id: "acct-sav", name: "Savings" },
+  ];
+
+  function flowInto(accountId: string): SyncFlow {
+    const flow = makeFlow();
+    return { ...flow, targetRef: { version: 1, data: { ...flow.targetRef.data, accountId } } };
+  }
+
+  function itemInto(accountId: string, payload: JsonObject): SyncFlowRunItem {
+    const importedId = generateSyncMarker({ sourceBudgetId: "budget-src", targetBudgetId: "budget-tgt", targetAccountId: accountId, sourceItemKey: "txn:t1" })!;
+    return runItem({
+      plannedTargetPayload: {
+        version: 1,
+        data: { accountId, date: "2026-07-10", payeeId: null, categoryId: null, notes: null, cleared: false, importedId, ...payload },
+      },
+    });
+  }
+
+  async function applyInto(accountId: string, payload: JsonObject) {
+    const budget = createFakeActualBudget({ accounts, payees: [{ id: "p-coffee", name: "Coffee Bar" }] });
+    mockApiRequest.mockImplementation(budget.httpApiRequest as never);
+    const { store, createdMappings } = makeStore({ items: [itemInto(accountId, payload)] });
+    store.loadFlow = jest.fn(async () => flowInto(accountId));
+    const transport = createHttpApiTransport(httpTarget);
+    const result = await applySyncRun({ runId: "run-1", targetConnection: httpTarget }, { transport: provider(transport), store });
+    return { budget, transport, result, createdMappings };
+  }
+
+  beforeEach(() => mockApiRequest.mockReset());
+
+  it("creates exactly one counterpart when the synced payee is a target transfer payee", async () => {
+    const { budget, result, createdMappings } = await applyInto("acct-chk", { amount: -2500, payeeName: "Savings" });
+
+    expect(result.status).toBe("applied");
+    expect(budget.insertOptions()).toEqual([{ runTransfers: true, learnCategories: undefined }]);
+    const [synced] = budget.accountRows("acct-chk");
+    const counterparts = budget.accountRows("acct-sav");
+    expect(counterparts).toHaveLength(1);
+    expect(counterparts[0]).toMatchObject({ amount: 2500, transfer_id: synced.id });
+    // The mapping records the synced row, never the counterpart.
+    expect(createdMappings).toHaveLength(1);
+    expect(createdMappings[0]).toMatchObject({ targetTransactionId: synced.id });
+  });
+
+  it("does not create a counterpart for an ordinary payee", async () => {
+    const { budget, result } = await applyInto("acct-chk", { amount: -1250, payeeName: "Coffee Bar" });
+
+    expect(result.status).toBe("applied");
+    expect(budget.rows()).toHaveLength(1);
+    expect(budget.accountRows("acct-sav")).toHaveLength(0);
+  });
+
+  it("flags the source's other leg as a duplicate of the counterpart already in the target", async () => {
+    // Flow A synced the Checking leg; the source also holds the Savings leg,
+    // which a second flow would sync into acct-sav with payee "Checking".
+    const { transport } = await applyInto("acct-chk", { amount: -2500, payeeName: "Savings" });
+
+    const lookup = await transport.getTargetLookupForSync({ accountId: "acct-sav" });
+    const match = classifyDuplicate(
+      { date: "2026-07-10", amount: 2500, categoryId: null },
+      lookup.transactions,
+      "Checking"
+    );
+
+    // Not "none": the planner classifies it as a duplicate, never a "new"
+    // create, so safe-only automation will not write it a second time.
+    expect(match.confidence).toBe("strong");
+    expect(match.targetTransactionId).toBe(counterpartIdIn(lookup.transactions));
+  });
+});
+
+function counterpartIdIn(rows: Array<{ id: string; amount: number }>): string | undefined {
+  return rows.find((r) => r.amount === 2500)?.id;
+}

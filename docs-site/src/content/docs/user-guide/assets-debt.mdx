@@ -1,0 +1,181 @@
+---
+title: Assets & Debt loan overview and repayment tracking
+description: Compare loans, review their progress, and recognize existing repayment splits.
+---
+
+Open your loan in **Assets & Debt**, then use **Sync Repayments** to review payments held in Actual.
+
+## Compare your loans
+
+The **Loans & Debt** overview shows one compact table row per loan, with at most three lines
+in each cell. Its search, filters, and table header follow the reconciliation list design.
+
+Compare outstanding balance, next payment and date, payments left, principal paid, payment
+counts of recorded repayments, recorded interest and projected interest remaining, and the projected end date. The progress
+bar shows the share of the opening principal paid. A calculated balance is labelled when an
+loan has no live Actual balance. Failed balance reads show **Unavailable**. Scheduled payments are not counted as paid; recorded history may cover only part of the loan’s lifetime. Forecasts identify their starting date, including lender restarts. Payment counts appear only under **Principal paid**; **Next payment** shows the amount and date. A confirmed payoff stops future payment and interest forecasts until it is undone or changed in Actual.
+
+The **Accounts** column shows only configured loan and repayment accounts and currently active
+offset accounts. Unused account roles are omitted.
+The loan summary sits on the right of the same bar as the filters. Columns read from left to
+right: Loan, Terms, Outstanding, Next payment, Principal paid, Interest, Ends / Paid off, Accounts,
+and Status. Outstanding has a compact fixed width. The narrower Loan column gives accounts,
+interest and payment figures more room; account and interest columns share available space.
+
+The **Terms** column shows the current rate, repayment frequency, contractual term, and the next
+scheduled rate change when one exists. The opening date stays beside the loan identity.
+
+Statuses use both color and words: active and paid-off loans are green, attention warnings are
+amber, blocked loans are red, drafts are blue, and archived loans are muted. A repayment-matching
+warning sits beneath the loan name, separate from the compact loan-status column.
+After a successful repayment refresh, returning to the list reloads its attention counts so
+resolved failures do not leave an old amber warning. Unresolved changes still need review even
+when the loan balances are in sync.
+Refresh also moves a failed Undo or Unsplit attempt into history once the same action succeeds
+for the same original change. A replacement repayment can resolve an old failed attempt even
+if its scheduled due date changed, provided it identifies the same Actual payment. Bench retains
+the original error details and does not clear failures simply because the balances agree.
+
+Select a row or focus its loan link and press Enter to open it. A loan that needs attention opens
+at the relevant review step. Search by loan name, use **Needs attention** to focus the list, or
+**Show archived loans** to include archived records. On smaller screens, scroll the table
+horizontally to keep rows compact. Hover truncated text to see its full label.
+
+## Repayments already split in Actual
+
+For a loan whose payments include interest, a repayment can already have a parent payment with
+one principal child transferred to the configured loan account and an interest child assigned to
+the configured interest category. Bench recognizes the parent as one repayment and uses Actual's
+principal and interest amounts. Figures that need review remain available for your approval.
+
+The principal transfer's counterpart in the loan account belongs to that same repayment. It does
+not appear under **Payments not in the schedule** and is not counted as an extra payment. This
+works for splits entered before tracking was set up and for splits created by Bench. You do not
+need to change your matching rule to exclude the principal child.
+
+Independent transfers into the loan account that do not belong to scheduled repayments or the
+payoff appear as extra-payment suggestions. Choose **Record extra payment** and confirm before Bench changes **Terms & Schedule** or the forecast. Refunds, credits and mistaken transfers can be marked **Not an extra payment**.
+
+## Correcting an older extra-payment entry
+
+On refresh, Bench checks the split and its linked loan-side row before calculating again. If that
+row was previously recorded as an extra payment, Bench removes its link and identifiable generated
+event from **Terms & Schedule**, saving a new revision. It does not change any Actual transaction
+or matching setting. Manually entered events remain yours to review.
+
+Save or discard pending **Terms & Schedule** edits before refreshing to allow this correction.
+When older links share a date and Bench cannot identify their generated events safely, it leaves
+them in place and shows a notice to review **Terms & Schedule**. Incomplete or inconsistent
+transfer evidence is not enough to remove an event automatically.
+
+## Deleting and recreating a loan
+
+Archiving a loan retains its repayment claims and history. To remove those claims, use
+**Delete permanently** on the archived loan and confirm its name. This deletes the loan's Bench
+records while leaving its Actual transactions as they are. A recreated loan can recognize the
+existing splits and claim those repayments again. A claim held by another existing loan still
+prevents the same transaction from being claimed twice in that role.
+If Apply reports a claim conflict, the warning names the loan holding that claim and its status.
+
+## Refresh, recovery and write safety
+
+Refresh syncs Actual first and reads current offset history before calculating. It can recognize
+unambiguous existing scheduled repayments and repair stale principal-counterpart classifications
+without changing Actual. Confirmed extra payments follow changed amounts or dates with a notice;
+deleted payments or amounts that no longer reduce debt lose their identifiable generated assumption.
+Ambiguous generated events remain for review. Save or discard pending terms edits first.
+
+Select multiple applied repayments and choose **Undo selected** or **Unsplit selected** to prepare
+proposals, newest first. Review those proposals under **Needs action**, then explicitly Apply them.
+Undo restores Bench's changes, or only releases Bench's match when the split already existed in Actual.
+Unsplit is available only for recorded existing splits: it removes the split children and turns the
+whole payment, including interest, into one transfer to the loan. Bench can then propose a new split.
+Select applied changes separately from pending proposals. Preparation stops on the first refusal
+and retains proposals already prepared. A failed reversal explicitly confirmed to have written nothing
+can be selected to prepare a new proposal; interrupted or potentially written changes require review.
+Split-child ordering alone does not indicate a transaction change; changed identities or contents
+still block Apply. Bulk Apply keeps successful changes if a later step fails.
+
+Extra payments recorded from Actual are read-only in **Terms & Schedule**: their Events rows
+identify their source, and Edit and Remove are disabled. Ordinary loan saves also reject changes
+to these tracked events. To change the classification, use **Not an extra payment** in
+**Sync Repayments**. To correct the date or amount, edit the transaction in Actual and refresh.
+Manual extra-payment assumptions remain editable and removable. Resetting the simulation keeps
+tracked Actual extra payments.
+
+Each explicit **Apply**, **Undo** and interrupted-link completion requires a successful sync.
+Bulk Apply syncs once before the batch. A failed sync blocks the operation. Refresh waits for a
+running loan operation in this tab; archived loans retain history and do not allow new changes.
+
+Split and Unsplit reuse complete account/date snapshots only within the current operation, clearing
+them before every mutation. Direct read-back can use the final snapshot that passed settling;
+when that snapshot is unavailable or covers a different range, verification reads Actual again.
+Preflight, sequential writes, verification and the existing settling interval remain in place.
+
+An interrupted write stays under review. If an operation stops reporting progress for five minutes,
+Bench makes it checkable. Recovery verifies the transaction’s contents as well as its marker.
+Changed, duplicated or partially completed writes remain for review; an absent write can be proposed
+again for a new approval. Bench does not automatically repeat an interrupted Actual write.
+
+Changes to a repayment’s account, transfer destination, category or date invalidate the old tracked
+allocation. Stable transaction IDs distinguish a moved date from a deletion. Missing rows in a narrow
+date window alone do not prove deletion.
+
+## Browser drafts and calendar dates
+
+Unsaved financial drafts and status caches exist only in this tab’s memory. They survive navigation
+within the tab, but a full reload closes that memory session. Save a draft loan to retain it in
+Bench’s database. Legacy financial entries in browser storage are removed when opened. A currency
+preference may persist because it contains no loan amounts or account identifiers.
+
+The local calendar defines financial **today**, including after midnight. Audit timestamps remain
+UTC instants. When a saved loan changes while you edit, Bench preserves your edits and asks you to
+reload the saved version before saving over it. A matching-setup failure after Save leaves the loan
+saved and reports how to retry setup.
+
+## Optional Direct-mode performance diagnostics
+
+Direct Split and Unsplit read the watched accounts together using flat ActualQL queries, then
+assemble complete split groups locally in Actual’s split-line order. Children are read by parent identity, including lines moved
+outside the parent’s date or account. This reduces repeated grouped-query work while preserving
+fresh preflight reads, transfer verification, sequential writes and the settling intervals. Older
+Direct API builds without query support use the original grouped reader; HTTP reads are unchanged.
+The resulting speed depends on the budget and Actual’s query implementation.
+
+To investigate slow Split or Unsplit operations, enable these flags in the browser console before
+reloading Bench and reconnecting to the budget:
+
+```js
+localStorage.setItem("ab:debug-timing", "1");
+localStorage.setItem("ab:debug-sqlite-files", "1");
+```
+
+Reload Bench and reconnect to create the traced worker. Confirm the console says
+`Connection and VFS tracing installed`. A read-only Refresh from Actual is enough to investigate
+file opens; apply a small selection only when collecting split timings. The console reports real budget
+opens, structural-query and snapshot durations, mutation-return time, visibility polls and quiet-check
+counts. Beside Actual’s `Opened!` messages, `[actual-bench sqlite file-open]` reports only a file
+category and sequence number. `[actual-bench sqlite connection]` separately reports calls to
+`sqlite3_open` and `sqlite3_close_v2`; filesystem opens alone do not imply new connections.
+No paths, account/transaction identifiers, credentials or amounts are
+logged by these diagnostics. Categories come from the VFS filename. In the supported worker,
+`unnamed file` corresponds to SQLite’s anonymous temporary-file opens; `other named file` remains
+unclassified. Actual’s `Opened!` messages can therefore also appear during reads without a budget
+connection being reopened. The trace does not identify every temporary file’s query purpose.
+
+The optional file trace recognizes the bundled Actual API 26.10.0 worker callbacks.
+It loads a diagnostic copy of the installed vendor worker from a public asset route, then temporarily
+observes URL creation during initialization, including when the API module was already imported.
+The route reads dependency code only and never accesses budget files, credentials or the app database.
+Diagnostic asset preparation failures retain the original worker; startup explicitly reports disabled,
+unavailable or selected tracing. An unsupported
+layout runs the original worker and reports tracing unavailable. Timing remains available. Diagnostics
+keep the existing preflight, verification, serialized writes and settling intervals. Console logging
+adds overhead, so diagnostic runs are investigative rather than baseline benchmarks.
+
+To disable, remove both flags, reload Bench, and reconnect to discard the traced worker:
+
+```js
+localStorage.removeItem("ab:debug-timing");
+localStorage.removeItem("ab:debug-sqlite-files");
+```

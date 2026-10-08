@@ -4,6 +4,7 @@ import { useConnectionStore, type BrowserApiConnection } from "@/store/connectio
 import type { ActualApi, ActualApiRuntime } from "../runtime/types";
 import { exportRuntimeBudget } from "../runtime/archive";
 import { assertDirectBrowserApiEnvironment } from "./environment";
+import { runtimeTiming } from "../runtime/diagnostics";
 import {
   SHUTDOWN_STEP_TIMEOUT_MS,
   initializeActualApi,
@@ -76,6 +77,39 @@ export function clearBrowserApiRuntimeCache(): void {
   if (runtime) void shutdownRuntime(runtime);
 }
 
+/** The browser event Bench raises when Actual reports its local copy of the budget damaged. */
+export const DAMAGED_COPY_EVENT = "actual-bench:damaged-copy";
+
+/**
+ * Every runtime call reports "database disk image is malformed" (this browser's copy of the budget
+ * is damaged, usually after two tabs wrote to it) as a browser event, so the app can offer to
+ * reload the budget from the server; the error itself still reaches the caller.
+ */
+function reportIfDamaged(error: unknown): void {
+  if (typeof window !== "undefined" && /database disk image is malformed/i.test(error instanceof Error ? error.message : String(error))) {
+    window.dispatchEvent(new CustomEvent(DAMAGED_COPY_EVENT));
+  }
+}
+
+function reportingDamagedCopy<T extends object>(runtime: T): T {
+  const out: Record<string, unknown> = { ...(runtime as Record<string, unknown>) };
+  for (const [name, value] of Object.entries(runtime)) {
+    if (typeof value !== "function") continue;
+    // Same shape as the original call (some, like the query builder, return at once): only errors are watched.
+    out[name] = (...args: unknown[]) => {
+      try {
+        const result = (value as (...a: unknown[]) => unknown).apply(runtime, args);
+        if (result instanceof Promise) return result.catch((error: unknown) => { reportIfDamaged(error); throw error; });
+        return result;
+      } catch (error) {
+        reportIfDamaged(error);
+        throw error;
+      }
+    };
+  }
+  return out as T;
+}
+
 export async function syncBrowserApiRuntime(
   connection: BrowserApiConnection
 ): Promise<void> {
@@ -146,28 +180,36 @@ export async function getBrowserApiRuntime(
   lastStarted = started;
 
   const promise = (async () => {
-    if (previous) await shutdownRuntime(previous);
-    stillWanted();
+    const timing = runtimeTiming("Direct budget open");
+    try {
+      if (previous) await shutdownRuntime(previous);
+      timing.step("previous runtime shutdown");
+      stillWanted();
 
-    const actual = await withTimeout(
-      loadActualApi<ActualApi>(),
-      "Loading @actual-app/api"
-    );
-    const initResult = await initializeActualApi(actual, {
-      dataDir: "/documents",
-      serverURL: serverUrl,
-      password: connection.serverPassword,
-      verbose: false,
-    });
-    stillWanted();
-    const runtime: ActualApiRuntime = { ...actual, send: initResult.send };
-    await withTimeout(
-      runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
-      "Opening budget"
-    );
-    stillWanted();
-    await withTimeout(runtime.sync(), "Syncing budget");
-    return runtime;
+      const actual = await withTimeout(
+        loadActualApi<ActualApi>(),
+        "Loading @actual-app/api"
+      );
+      timing.step("load API");
+      const initResult = await initializeActualApi(actual, {
+        dataDir: "/documents",
+        serverURL: serverUrl,
+        password: connection.serverPassword,
+        verbose: false,
+      });
+      timing.step("initialize worker");
+      stillWanted();
+      const runtime: ActualApiRuntime = reportingDamagedCopy({ ...actual, send: initResult.send });
+      await withTimeout(
+        runtime.downloadBudget(connection.budgetSyncId, { password: encryptionPassword }),
+        "Opening budget"
+      );
+      timing.step("download/open budget");
+      stillWanted();
+      await withTimeout(runtime.sync(), "Syncing budget");
+      timing.step("initial sync");
+      return runtime;
+    } finally { timing.end(); }
   })();
 
   started.promise = promise;

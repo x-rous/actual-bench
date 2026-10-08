@@ -77,6 +77,158 @@ const eslintConfig = defineConfig([
     },
   },
 
+  /*
+   * The RD-084 golden suite and reference oracle are test infrastructure.
+   *
+   * No runtime code may import them. The financial-models and oracle blocks
+   * below replace this rule for their own files and restate it there.
+   */
+  {
+    files: ["src/**"],
+    ignores: ["src/test-golden/**", "src/test-oracles/**", "src/**/*.test.*", "src/**/__fixtures__/**", "src/**/__tests__/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/test-golden", "@/test-golden/**", "**/test-golden", "**/test-golden/**", "@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**"],
+              message: "The RD-084 golden suite and reference oracle are test-only; runtime code must not import them.",
+            },
+            {
+              group: ["recharts", "recharts/**"],
+              message: "Recharts is loaded lazily from src/features/assets-debt/components/chart/ only (RD-084 P1.3b chart gate).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  /* The loan chart module is the one place Recharts may be imported; the test-only rule still applies. */
+  {
+    files: ["src/features/assets-debt/components/chart/**"],
+    ignores: ["src/**/*.test.*"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/test-golden", "@/test-golden/**", "**/test-golden", "**/test-golden/**", "@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**"],
+              message: "The RD-084 golden suite and reference oracle are test-only; runtime code must not import them.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  /*
+   * Assets & Debt calculations stay pure (RD-084, Constitution XIII).
+   *
+   * Every applied financial result must be reproducible from its recorded
+   * inputs alone, so nothing under src/lib/financial-models may reach the app
+   * database, the Actual transport, the automation engine, credentials,
+   * providers, routes or UI. Relative paths into those areas are caught too.
+   */
+  {
+    files: ["src/lib/financial-models/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            { name: "react", message: "Financial models are pure: no React." },
+            { name: "react-dom", message: "Financial models are pure: no React." },
+            { name: "next", message: "Financial models are pure: no Next.js." },
+          ],
+          patterns: [
+            {
+              group: [
+                "@/lib/app-db",
+                "@/lib/app-db/**",
+                "@/lib/actual",
+                "@/lib/actual/**",
+                "@/lib/api",
+                "@/lib/api/**",
+                "@/lib/http",
+                "@/lib/http/**",
+                "@/lib/automation",
+                "@/lib/automation/**",
+                "@/lib/workers",
+                "@/lib/workers/**",
+                "@/lib/credentials",
+                "@/lib/credentials/**",
+                "@/lib/assets-debt",
+                "@/lib/assets-debt/**",
+                "@/app/**",
+                "@/components/**",
+                "@/features/**",
+                "@/store/**",
+                "next/**",
+                "**/app-db",
+                "**/app-db/**",
+                "**/lib/actual",
+                "**/lib/actual/**",
+                "**/lib/api",
+                "**/lib/api/**",
+                "**/lib/http",
+                "**/lib/http/**",
+                "**/automation/**",
+                "**/credentials/**",
+                "**/lib/workers",
+                "**/lib/workers/**",
+                "**/assets-debt/**",
+              ],
+              message:
+                "src/lib/financial-models is pure calculation: no app DB, Actual transport, automation, credentials, providers, routes or UI.",
+            },
+            {
+              group: ["@/test-oracles", "@/test-oracles/**", "**/test-oracles", "**/test-oracles/**", "@/test-golden", "@/test-golden/**", "**/test-golden", "**/test-golden/**"],
+              message: "Production calculation must not depend on the test-only reference oracle or golden suite.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  /*
+   * The RD-084 reference oracle stays independent of the engine it checks.
+   *
+   * Fixture expected values come from published sources or from this oracle,
+   * never from the code under test. If the oracle could import the engine, a
+   * shared bug would pass both sides, so any path into src/lib/financial-models
+   * is refused. It reads the fixture files as data, which needs no import.
+   */
+  {
+    files: ["src/test-oracles/rd084/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/lib/financial-models",
+                "@/lib/financial-models/**",
+                "**/financial-models",
+                "**/financial-models/**",
+                "@/test-golden",
+                "@/test-golden/**",
+                "**/test-golden",
+                "**/test-golden/**",
+              ],
+              message:
+                "The RD-084 reference oracle must not import or reuse the production financial models it verifies, or the golden suite that compares them.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Fix: allow require() in config files
   {
     files: ["*.config.*", "*.cjs"],

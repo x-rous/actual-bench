@@ -1,0 +1,514 @@
+{
+ "source": "rd084Undo.live.test.ts on disposable budgets, Actual sync-server 26.10.0 with @actual-app/api 26.10.0 (Direct) and actual-http-api (HTTP), 2026-10-05",
+ "note": "Transaction, payee and category ids are replaced by <id>; only observed shapes and differences are kept.",
+ "direct": {
+  "t276a": {
+   "split": {
+    "isParent": true,
+    "children": 2,
+    "counterpartCreated": true,
+    "counterpartTransferId": "<id>"
+   },
+   "afterEachChildDelete": [
+    {
+     "isParent": true,
+     "children": 1,
+     "amount": -8300
+    },
+    {
+     "isParent": false,
+     "children": 0,
+     "amount": -8300
+    }
+   ],
+   "afterChildrenDeleted": {
+    "isParent": false,
+    "diffFromBefore": {}
+   },
+   "restoredDiff": {},
+   "liabilityRowsUnchanged": true,
+   "checkingRowsUnchanged": true
+  },
+  "t276b": {
+   "plain": {
+    "linked": {
+     "source": {
+      "transfer_id": true,
+      "payeeIsTransfer": true
+     },
+     "lender": {
+      "transfer_id": true,
+      "payee": "changed",
+      "diff": {
+       "payee": [
+        "<id>",
+        "<id>"
+       ],
+       "transfer_id": [
+        null,
+        "<id>"
+       ]
+      }
+     }
+    },
+    "afterDetachCounterpart": {
+     "sourceDiff": {
+      "payee": [
+       "<id>",
+       "<id>"
+      ],
+      "notes": [
+       "bank note",
+       "lender import"
+      ],
+      "transfer_id": [
+       null,
+       "<id>"
+      ]
+     },
+     "lenderDiff": {},
+     "lenderExists": true
+    },
+    "restored": {
+     "sourceDiff": {},
+     "lenderDiff": {}
+    },
+    "liabilityRowsUnchanged": true,
+    "checkingRowsUnchanged": true
+   },
+   "split-child": {
+    "linked": {
+     "source": {
+      "transfer_id": true,
+      "payeeIsTransfer": true
+     },
+     "lender": {
+      "transfer_id": true,
+      "payee": "changed",
+      "diff": {
+       "payee": [
+        "<id>",
+        "<id>"
+       ],
+       "transfer_id": [
+        null,
+        "<id>"
+       ]
+      }
+     }
+    },
+    "afterDetachCounterpart": {
+     "sourceDiff": {
+      "payee": [
+       "<id>",
+       "<id>"
+      ],
+      "notes": [
+       "Principal",
+       "lender import"
+      ],
+      "transfer_id": [
+       null,
+       "<id>"
+      ]
+     },
+     "lenderDiff": {},
+     "lenderExists": true
+    },
+    "restored": {
+     "sourceDiff": {},
+     "lenderDiff": {}
+    },
+    "liabilityRowsUnchanged": true,
+    "checkingRowsUnchanged": true,
+    "bankRestoredDiff": {}
+   }
+  },
+  "t277": {
+   "converted": {
+    "diff": {
+     "payee": [
+      "<id>",
+      "<id>"
+     ],
+     "transfer_id": [
+      null,
+      "<id>"
+     ]
+    },
+    "counterparts": 1,
+    "counterpart": {
+     "amount": 8300,
+     "payeeIsTransfer": true,
+     "notes": "bank note",
+     "cleared": false,
+     "category": null,
+     "transferMatches": true,
+     "importedId": null
+    }
+   },
+   "restoredDiff": {},
+   "liabilityRowsUnchanged": true
+  },
+  "t279": {
+   "actual-counterpart": {
+    "before": {
+     "bankTransfer": true,
+     "counterpart": {
+      "amount": 8300,
+      "cleared": false,
+      "imported_id": null
+     }
+    },
+    "afterRestructure": {
+     "isParent": true,
+     "children": [
+      {
+       "amount": -5000,
+       "transfer": true
+      },
+      {
+       "amount": -3300,
+       "transfer": false
+      }
+     ],
+     "originalCounterpartStillExists": false,
+     "originalCounterpartNow": null,
+     "newLiabilityRows": [
+      {
+       "amount": 5000,
+       "cleared": false,
+       "imported_id": null
+      }
+     ]
+    },
+    "afterUndo": {
+     "bankDiff": {
+      "transfer_id": [
+       "<id>",
+       "<id>"
+      ]
+     },
+     "originalCounterpartBack": false,
+     "recreatedCounterpart": {
+      "diffFromOriginalIgnoringId": {}
+     },
+     "liabilityRowsNow": 1
+    }
+   },
+   "lender-counterpart": {
+    "before": {
+     "bankTransfer": true,
+     "counterpart": {
+      "amount": 8300,
+      "cleared": true,
+      "imported_id": "<imported-id>"
+     }
+    },
+    "afterRestructure": {
+     "isParent": true,
+     "children": [
+      {
+       "amount": -5000,
+       "transfer": true
+      },
+      {
+       "amount": -3300,
+       "transfer": false
+      }
+     ],
+     "originalCounterpartStillExists": false,
+     "originalCounterpartNow": null,
+     "newLiabilityRows": [
+      {
+       "amount": 5000,
+       "cleared": false,
+       "imported_id": null
+      }
+     ]
+    },
+    "afterUndo": {
+     "bankDiff": {
+      "transfer_id": [
+       "<id>",
+       "<id>"
+      ]
+     },
+     "originalCounterpartBack": false,
+     "recreatedCounterpart": {
+      "diffFromOriginalIgnoringId": {
+       "cleared": [
+        true,
+        false
+       ],
+       "imported_id": [
+        "<imported-id>",
+        null
+       ],
+       "imported_payee": [
+        "LENDER FEED",
+        null
+       ]
+      }
+     },
+     "liabilityRowsNow": 1
+    }
+   }
+  }
+ },
+ "http": {
+  "t276a": {
+   "split": {
+    "isParent": true,
+    "children": 2,
+    "counterpartCreated": true,
+    "counterpartTransferId": "<id>"
+   },
+   "afterEachChildDelete": [
+    {
+     "isParent": true,
+     "children": 1,
+     "amount": -8300
+    },
+    {
+     "isParent": false,
+     "children": 0,
+     "amount": -8300
+    }
+   ],
+   "afterChildrenDeleted": {
+    "isParent": false,
+    "diffFromBefore": {}
+   },
+   "restoredDiff": {},
+   "liabilityRowsUnchanged": true,
+   "checkingRowsUnchanged": true
+  },
+  "t276b": {
+   "plain": {
+    "linked": {
+     "source": {
+      "transfer_id": true,
+      "payeeIsTransfer": true
+     },
+     "lender": {
+      "transfer_id": true,
+      "payee": "changed",
+      "diff": {
+       "payee": [
+        "<id>",
+        "<id>"
+       ],
+       "transfer_id": [
+        null,
+        "<id>"
+       ]
+      }
+     }
+    },
+    "afterDetachCounterpart": {
+     "sourceDiff": {
+      "payee": [
+       "<id>",
+       "<id>"
+      ],
+      "notes": [
+       "bank note",
+       "lender import"
+      ],
+      "transfer_id": [
+       null,
+       "<id>"
+      ]
+     },
+     "lenderDiff": {},
+     "lenderExists": true
+    },
+    "restored": {
+     "sourceDiff": {},
+     "lenderDiff": {}
+    },
+    "liabilityRowsUnchanged": true,
+    "checkingRowsUnchanged": true
+   },
+   "split-child": {
+    "linked": {
+     "source": {
+      "transfer_id": true,
+      "payeeIsTransfer": true
+     },
+     "lender": {
+      "transfer_id": true,
+      "payee": "changed",
+      "diff": {
+       "payee": [
+        "<id>",
+        "<id>"
+       ],
+       "transfer_id": [
+        null,
+        "<id>"
+       ]
+      }
+     }
+    },
+    "afterDetachCounterpart": {
+     "sourceDiff": {
+      "payee": [
+       "<id>",
+       "<id>"
+      ],
+      "notes": [
+       "Principal",
+       "lender import"
+      ],
+      "transfer_id": [
+       null,
+       "<id>"
+      ]
+     },
+     "lenderDiff": {},
+     "lenderExists": true
+    },
+    "restored": {
+     "sourceDiff": {},
+     "lenderDiff": {}
+    },
+    "liabilityRowsUnchanged": true,
+    "checkingRowsUnchanged": true,
+    "bankRestoredDiff": {}
+   }
+  },
+  "t277": {
+   "converted": {
+    "diff": {
+     "payee": [
+      "<id>",
+      "<id>"
+     ],
+     "transfer_id": [
+      null,
+      "<id>"
+     ]
+    },
+    "counterparts": 1,
+    "counterpart": {
+     "amount": 8300,
+     "payeeIsTransfer": true,
+     "notes": "bank note",
+     "cleared": false,
+     "category": null,
+     "transferMatches": true,
+     "importedId": null
+    }
+   },
+   "restoredDiff": {},
+   "liabilityRowsUnchanged": true
+  },
+  "t279": {
+   "actual-counterpart": {
+    "before": {
+     "bankTransfer": true,
+     "counterpart": {
+      "amount": 8300,
+      "cleared": false,
+      "imported_id": null
+     }
+    },
+    "afterRestructure": {
+     "isParent": true,
+     "children": [
+      {
+       "amount": -5000,
+       "transfer": true
+      },
+      {
+       "amount": -3300,
+       "transfer": false
+      }
+     ],
+     "originalCounterpartStillExists": false,
+     "originalCounterpartNow": null,
+     "newLiabilityRows": [
+      {
+       "amount": 5000,
+       "cleared": false,
+       "imported_id": null
+      }
+     ]
+    },
+    "afterUndo": {
+     "bankDiff": {
+      "transfer_id": [
+       "<id>",
+       "<id>"
+      ]
+     },
+     "originalCounterpartBack": false,
+     "recreatedCounterpart": {
+      "diffFromOriginalIgnoringId": {}
+     },
+     "liabilityRowsNow": 1
+    }
+   },
+   "lender-counterpart": {
+    "before": {
+     "bankTransfer": true,
+     "counterpart": {
+      "amount": 8300,
+      "cleared": true,
+      "imported_id": "<imported-id>"
+     }
+    },
+    "afterRestructure": {
+     "isParent": true,
+     "children": [
+      {
+       "amount": -5000,
+       "transfer": true
+      },
+      {
+       "amount": -3300,
+       "transfer": false
+      }
+     ],
+     "originalCounterpartStillExists": false,
+     "originalCounterpartNow": null,
+     "newLiabilityRows": [
+      {
+       "amount": 5000,
+       "cleared": false,
+       "imported_id": null
+      }
+     ]
+    },
+    "afterUndo": {
+     "bankDiff": {
+      "transfer_id": [
+       "<id>",
+       "<id>"
+      ]
+     },
+     "originalCounterpartBack": false,
+     "recreatedCounterpart": {
+      "diffFromOriginalIgnoringId": {
+       "cleared": [
+        true,
+        false
+       ],
+       "imported_id": [
+        "<imported-id>",
+        null
+       ],
+       "imported_payee": [
+        "LENDER FEED",
+        null
+       ]
+      }
+     },
+     "liabilityRowsNow": 1
+    }
+   }
+  }
+ }
+}

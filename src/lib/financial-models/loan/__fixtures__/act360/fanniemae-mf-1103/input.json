@@ -1,0 +1,16 @@
+{
+  "kind": "actual360-aggregate-amortization",
+  "convention": "actual-360",
+  "currency": { "code": "USD", "minorDigits": 2 },
+  "principal": "25000000",
+  "annualRate": "0.055",
+  "paymentRateQuote": "nominal-simple-periodic",
+  "paymentsPerYear": 12,
+  "amortizationPayments": 360,
+  "termPayments": 120,
+  "issueDate": "2018-12-01",
+  "firstPaymentDate": "2019-01-01",
+  "accrualPeriod": "calendar-month-before-payment-date",
+  "paymentPrecision": "unrounded",
+  "balancePrecision": "carry-full-precision"
+}

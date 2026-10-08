@@ -1,3 +1,6 @@
+import { syncTransactionFilter, type SyncTransactionQuery } from "./syncTransactionQuery";
+import { runtimeTiming } from "./runtime/diagnostics";
+import { readStructuralAccounts } from "./structuralTransactionReads";
 import { normalizeAccount } from "../api/accounts";
 import { normalizeAccountGroup } from "../api/accountGroups";
 import {
@@ -48,6 +51,7 @@ import {
   type ActualBenchTransport,
   type CreateTransactionsForSyncResult,
   type ListTransactionsForSyncInput,
+  type TransactionReadSession,
   type ResolvedSyncPayee,
   type ScheduleWriteInput,
   type SyncAppliedSnapshot,
@@ -62,6 +66,23 @@ import {
   type TransportBudgetMonth,
 } from "./transport";
 import { listAccountsForBankSync } from "./bankSyncAccounts";
+import {
+  completeTransferLink,
+  inspectTransferLink,
+  linkCounterpart,
+  readsReportTransferIds,
+  restructureAsSplit,
+  verifySplit,
+  type RawTxn,
+  type StructurePrimitives,
+  type WriteWatch,
+  convertToTransfer,
+  restoreSplit,
+  adjustSplitAmounts,
+  inspectSplitAmounts,
+  revertTransferConversion,
+  unlinkTransfer,
+} from "./transactionStructure";
 import { runBankSyncForAccounts } from "./runBankSync";
 import { BANK_SYNC_COUNT_WINDOW_DAYS } from "./bankSync";
 import type { BankSyncOutcome } from "./bankSync";
@@ -688,6 +709,7 @@ async function loadSyncNameLookup(
 
 function toSyncSplitLine(
   raw: ApiTransaction,
+  parent: ApiTransaction,
   lookup: NameLookup
 ): SyncSourceSplitLine {
   const payeeId = asString(raw.payee) ?? null;
@@ -700,6 +722,16 @@ function toSyncSplitLine(
     categoryId,
     categoryName: categoryId ? lookup.categoryNames.get(categoryId) ?? null : null,
     notes: asString(raw.notes) ?? null,
+    cleared: parent.cleared === true || raw.cleared === true,
+    reconciled: parent.reconciled === true || raw.reconciled === true,
+    importedId: asString(raw.imported_id) ?? asString(parent.imported_id) ?? null,
+    importedPayee: asString(raw.imported_payee) ?? asString(parent.imported_payee) ?? null,
+    transferId: Object.prototype.hasOwnProperty.call(raw, "transfer_id")
+      ? asString(raw.transfer_id) ?? null
+      : undefined,
+    scheduleId: asString(raw.schedule) ?? asString(parent.schedule) ?? null,
+    isChild: true,
+    parentId: asString(raw.parent_id) ?? parent.id,
   };
 }
 
@@ -711,7 +743,7 @@ function toSyncSourceTransaction(
   const categoryId = asString(raw.category) ?? null;
   const isParent = raw.is_parent === true;
   const splitLines = isParent && Array.isArray(raw.subtransactions)
-    ? raw.subtransactions.map((child) => toSyncSplitLine(child, lookup))
+    ? raw.subtransactions.map((child) => toSyncSplitLine(child, raw, lookup))
     : [];
 
   return {
@@ -740,10 +772,13 @@ function toSyncSourceTransaction(
 async function listBrowserTransactionsForSync(
   host: ActualRuntimeHost,
   connection: BrowserApiConnection,
-  input: ListTransactionsForSyncInput
+  input: ListTransactionsForSyncInput,
+  names: (api: ActualApi) => Promise<NameLookup> = loadSyncNameLookup
 ): Promise<SyncSourceTransaction[]> {
   const api = await host.getRuntime(connection);
-  const lookup = await loadSyncNameLookup(api);
+  const lookup = input.resolveNames === false
+    ? { payeeNames: new Map<string, string>(), categoryNames: new Map<string, string>() }
+    : await names(api);
   // Empty date bounds are treated as open-ended by the runtime's grouped query.
   const rows = await api.getTransactions(
     input.accountId,
@@ -756,6 +791,62 @@ async function listBrowserTransactionsForSync(
     // in at the top level so we never double-count a split line.
     .filter((row) => row.is_child !== true)
     .map((row) => toSyncSourceTransaction(row, lookup));
+}
+
+async function queryBrowserTransactionsForSync(host: ActualRuntimeHost, connection: BrowserApiConnection, input: SyncTransactionQuery, names: (api: ActualApi) => Promise<NameLookup> = loadSyncNameLookup): Promise<SyncSourceTransaction[]> {
+  const api = await host.getRuntime(connection);
+  const runner = api.aqlQuery?.bind(api) ?? api.runQuery?.bind(api);
+  if (!api.q || !runner) throw unsupportedTransportOperation("browser-api", "Structural transaction queries");
+  const response = await runner(api.q("transactions").filter(syncTransactionFilter(input)).select("*").options({ splits: "grouped" }));
+  if (!isRecord(response) || !Array.isArray(response.data)) throw new Error("Actual returned an incomplete structural transaction query.");
+  const lookup: NameLookup = input.resolveNames === false ? { payeeNames: new Map(), categoryNames: new Map() } : await names(api);
+  return response.data.filter((row): row is ApiTransaction => isRecord(row) && typeof row.id === "string" && row.is_child !== true).map((row) => toSyncSourceTransaction(row, lookup));
+}
+
+async function withRuntimeTransactionReadSession<T>(
+  host: ActualRuntimeHost,
+  connection: BrowserApiConnection,
+  operation: (reader: TransactionReadSession) => Promise<T>
+): Promise<T> {
+  let runtime: ActualApi | undefined;
+  let payees: Promise<Payee[]> | undefined;
+  let lookup: Promise<NameLookup> | undefined;
+  let closed = false;
+  const sessionHost: ActualRuntimeHost = {
+    ...host,
+    async getRuntime(request) {
+      if (closed) throw new Error("Transaction read session has ended");
+      const api = await host.getRuntime(request);
+      if (runtime !== api) {
+        runtime = api;
+        payees = undefined;
+        lookup = undefined;
+      }
+      return api;
+    },
+  };
+  const readPayees = (api: ActualApi) => payees ??= api.getPayees().then((rows) =>
+    rows.map(normalizeDirectPayee).filter((payee): payee is Payee => payee !== null));
+  const readNames = (api: ActualApi) => lookup ??= (async () => {
+    const payeeNames = new Map((await readPayees(api)).map((p) => [p.id, p.name]));
+    const categoryNames = new Map<string, string>();
+    for (const raw of await api.getCategories().catch(() => [])) {
+      const category = toDirectCategory(raw);
+      if (category?.id) categoryNames.set(category.id, category.name);
+    }
+    return { payeeNames, categoryNames };
+  })();
+  try {
+    return await operation({
+      getPayees: async () => readPayees(await sessionHost.getRuntime(connection)),
+      queryTransactionsForSync: (input) => queryBrowserTransactionsForSync(sessionHost, connection, input, readNames),
+      listTransactionsForSync: (input) => listBrowserTransactionsForSync(sessionHost, connection, input, readNames),
+    });
+  } finally {
+    closed = true;
+    payees = undefined;
+    lookup = undefined;
+  }
 }
 
 async function createOrResolveBrowserPayee(
@@ -1116,6 +1207,131 @@ function accountGroupMethods(
   };
 }
 
+/**
+ * Direct `updateTransaction` settle timing (R-18). Actual's
+ * `api/transaction-update` does not await its batch, so the call resolves
+ * before the write exists; starting another write inside that window
+ * deadlocked the Direct runtime in the P1.0 spike. Tests shorten the waits.
+ */
+const directSettle = { pollMs: 100, quietMs: 400, deadlineMs: 15_000, recentMs: 2_000 };
+
+/** Live experiments only: try a different quiet interval (the production value is 400 ms). */
+export function __setDirectQuietMsForExperiments(ms: number): void {
+  directSettle.quietMs = ms;
+}
+
+/** When Bench's last write on each Direct connection was seen landed and quiet. */
+const lastSettledAt = new Map<string, number>();
+
+export function __setDirectSettleTimingForTests(timing: Partial<typeof directSettle>): void {
+  Object.assign(directSettle, timing);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function directStructurePrimitives(host: ActualRuntimeHost, connection: BrowserApiConnection): StructurePrimitives {
+  // Only the last successful settlement of this structural operation; never a cross-write cache.
+  let settled: { watch: WriteWatch; accounts: Map<string, RawTxn[]> } | null = null;
+  async function readAccount(accountId: string, sinceDate: string, untilDate?: string, phase = "preflight/readback"): Promise<RawTxn[]> {
+    const timing = runtimeTiming(`Direct structural read (${phase})`);
+    try {
+      const api = await host.getRuntime(connection);
+      timing.step("runtime access");
+      const accounts = await readStructuralAccounts(api, [accountId], sinceDate, untilDate);
+      timing.step("Actual structural queries");
+      return accounts.get(accountId)!;
+    } finally { timing.end(); }
+  }
+  async function snapshotOf(watch: WriteWatch, phase: string): Promise<{ fingerprint: string; accounts: Map<string, RawTxn[]> }> {
+    const timing = runtimeTiming(`Direct snapshot (${phase})`);
+    const parts: RawTxn[][] = [];
+    try {
+      const api = await host.getRuntime(connection);
+      timing.step("runtime access");
+      const accounts = await readStructuralAccounts(api, watch.accountIds, watch.sinceDate, watch.untilDate);
+      for (const accountId of watch.accountIds) {
+        parts.push(accounts.get(accountId)!);
+      }
+      timing.step(`Actual structural queries (${accounts.size} accounts)`);
+      const fingerprint = JSON.stringify(parts);
+      timing.step("fingerprint");
+      return { fingerprint, accounts };
+    } finally { timing.end(); }
+  }
+  return {
+    readAccount,
+    settledAccountSnapshot(accountId, sinceDate, untilDate) {
+      if (!settled || settled.watch.sinceDate !== sinceDate || settled.watch.untilDate !== untilDate) return undefined;
+      return settled.accounts.get(accountId);
+    },
+    async update(id, fields, watch) {
+      const api = await host.getRuntime(connection);
+      await settledWrite(`update of ${id}`, watch, () => api.updateTransaction(id, fields as Partial<ApiImportTransaction>), "update");
+    },
+    async remove(id, watch) {
+      const api = await host.getRuntime(connection);
+      await settledWrite(`delete of ${id}`, watch, () => api.deleteTransaction(id), "delete");
+    },
+  };
+
+  /**
+   * Run one write and return only when it has landed and the budget is quiet:
+   * the watched accounts changed, then read the same twice across a quiet
+   * interval, so the transfer handling for the other leg has finished too.
+   */
+  async function settledWrite(label: string, watch: WriteWatch, write: () => Promise<unknown>, kind: "update" | "delete"): Promise<void> {
+    const timing = runtimeTiming(`Direct settlement (${kind})`);
+    try {
+      settled = null;
+      // Never start a write while the budget is still changing (just opened and syncing, or a previous
+      // write's transfer handling still running): that window deadlocked the Direct runtime (R-18).
+      // Right after Bench's own write on this connection settled, the budget is known to be quiet.
+      let before = await snapshotOf(watch, "before-write");
+      timing.step("before-write snapshot");
+      const quietBy = Date.now() + directSettle.deadlineMs;
+      const justSettled = Date.now() - (lastSettledAt.get(connection.id) ?? 0) < directSettle.recentMs;
+      let beforePolls = 0;
+      while (!justSettled) {
+        await sleep(directSettle.pollMs);
+        beforePolls++;
+        const again = await snapshotOf(watch, "before-write quiet check");
+        if (again.fingerprint === before.fingerprint) break;
+        before = again;
+        if (Date.now() > quietBy) throw new Error(`Direct ${label}: the budget did not become quiet within ${directSettle.deadlineMs} ms; nothing was written`);
+      }
+      timing.step(`pre-write quiet check (${beforePolls} polls)`);
+      await write();
+      timing.step("Actual mutation returned");
+      const started = Date.now();
+      const overdue = () => Date.now() - started > directSettle.deadlineMs;
+      let current = await snapshotOf(watch, "first post-write");
+      timing.step("first post-write snapshot");
+      let visibilityPolls = 0;
+      while (current.fingerprint === before.fingerprint) {
+        if (overdue()) throw new Error(`Direct ${label} did not land within ${directSettle.deadlineMs} ms`);
+        await sleep(directSettle.pollMs);
+        visibilityPolls++;
+        current = await snapshotOf(watch, "write visibility poll");
+      }
+      timing.step(`write visibility (${visibilityPolls} additional polls)`);
+      let quietChecks = 0;
+      for (;;) {
+        await sleep(directSettle.quietMs);
+        quietChecks++;
+        const next = await snapshotOf(watch, "post-write quiet check");
+        if (next.fingerprint === current.fingerprint) {
+          settled = { watch, accounts: next.accounts };
+          break;
+        }
+        current = next;
+        if (overdue()) throw new Error(`Direct ${label} did not settle within ${directSettle.deadlineMs} ms`);
+      }
+      timing.step(`post-write quiet check (${quietChecks} intervals)`);
+      lastSettledAt.set(connection.id, Date.now());
+    } finally { timing.end(); }
+  }
+}
+
 export function createActualRuntimeTransport(
   connection: BrowserApiConnection,
   host: ActualRuntimeHost
@@ -1355,6 +1571,8 @@ export function createActualRuntimeTransport(
     },
     listTransactionsForSync: (input) =>
       listBrowserTransactionsForSync(host, connection, input),
+    queryTransactionsForSync: (input) => queryBrowserTransactionsForSync(host, connection, input),
+    withTransactionReadSession: (operation) => withRuntimeTransactionReadSession(host, connection, operation),
     createOrResolvePayee: (input) =>
       createOrResolveBrowserPayee(host, connection, input.name),
     createTransactionsForSync: (inputs) =>
@@ -1367,6 +1585,31 @@ export function createActualRuntimeTransport(
       deleteBrowserTransactionForSync(host, connection, input),
     batchWriteTransactionsForSync: (input) =>
       batchWriteBrowserTransactionsForSync(host, connection, input),
+    restructureTransactionAsSplit: async (input) => {
+      const primitives = directStructurePrimitives(host, connection);
+      const result = await restructureAsSplit(primitives, input);
+      const accountId = input.replaceCounterpart?.expected.accountId;
+      const date = input.expected.date;
+      const rows = accountId ? primitives.settledAccountSnapshot?.(accountId, date, date) : undefined;
+      if (accountId && rows) {
+        result.settledVerification = {
+          accountId, date,
+          rows: rows.map((row) => toSyncSourceTransaction(row as ApiTransaction, { payeeNames: new Map(), categoryNames: new Map() })),
+        };
+      }
+      return result;
+    },
+    linkTransferCounterpart: (input) => linkCounterpart(directStructurePrimitives(host, connection), input),
+    completeTransferLink: (input) => completeTransferLink(directStructurePrimitives(host, connection), input),
+    inspectTransferLink: (input) => inspectTransferLink(directStructurePrimitives(host, connection), input),
+    verifyRestructure: (input) => verifySplit(directStructurePrimitives(host, connection), input),
+    restoreSplit: (input) => restoreSplit(directStructurePrimitives(host, connection), input),
+    adjustSplitAmounts: (input) => adjustSplitAmounts(directStructurePrimitives(host, connection), input),
+    inspectSplitAmounts: (input) => inspectSplitAmounts(directStructurePrimitives(host, connection), input),
+    unlinkTransfer: (input) => unlinkTransfer(directStructurePrimitives(host, connection), input),
+    convertToTransfer: (input) => convertToTransfer(directStructurePrimitives(host, connection), input),
+    revertTransferConversion: (input) => revertTransferConversion(directStructurePrimitives(host, connection), input),
+    canVerifyTransferLinks: (input) => readsReportTransferIds(directStructurePrimitives(host, connection), input.accountId, input.sinceDate),
     getTargetLookupForSync: (input) =>
       getBrowserTargetLookupForSync(host, connection, input),
 

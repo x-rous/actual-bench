@@ -43,11 +43,14 @@ export async function createPayee(
   connection: ConnectionInstance,
   input: Pick<Payee, "name">
 ): Promise<Payee> {
-  const response = await apiRequest<ApiSingleResponse<ApiPayee>>(
+  // actual-http-api answers POST /payees with the new id alone (`{ data: "<id>" }`),
+  // as the Direct runtime's `createPayee` does. An object body is still read.
+  const response = await apiRequest<ApiSingleResponse<string | ApiPayee>>(
     connection,
     "/payees",
     { method: "POST", body: { payee: denormalizePayee(input) } }
   );
+  if (typeof response.data === "string") return { id: response.data, name: input.name };
   return normalizePayee(response.data);
 }
 

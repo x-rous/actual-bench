@@ -3,6 +3,19 @@ import type { ConnectionMode } from "@/store/connection";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import {
   APP_META_TABLE_SQL,
+  ASSETS_DEBT_V38_INDEX_SQL,
+  ASSETS_DEBT_V38_TRIGGER_SQL,
+  ASSETS_DEBT_V42_INDEX_SQL,
+  ASSETS_DEBT_V43_INDEX_SQL,
+  DEBT_ANCHOR_TABLE_SQL,
+  DEBT_OBSERVATION_TABLE_SQL,
+  DEBT_MATCH_RULE_TABLE_SQL,
+  DEBT_TRANSACTION_LINK_TABLE_SQL,
+  DEBT_FUTURE_ASSUMPTION_TABLE_SQL,
+  DEBT_OFFSET_LINK_TABLE_SQL,
+  DEBT_RATE_PERIOD_TABLE_SQL,
+  DEBT_TABLE_SQL,
+  MODEL_REVISION_TABLE_SQL,
   BACKUP_ARTIFACT_LOCATION_TABLE_SQL,
   BACKUP_ARTIFACT_TABLE_SQL,
   BACKUP_CREDENTIAL_TABLE_SQL,
@@ -47,11 +60,14 @@ import {
   SYNC_PLATFORM_V2_INDEX_SQL,
   SYNC_PLATFORM_V3_INDEX_SQL,
   TRANSACTION_FX_TABLE_SQL,
+  FINANCIAL_POSTING_TABLE_SQL,
+  ASSETS_DEBT_V44_INDEX_SQL,
+  ASSETS_DEBT_V44_TRIGGER_SQL,
 } from "./schema";
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 37;
+export const LATEST_SCHEMA_VERSION = 45;
 
 type Migration = {
   version: number;
@@ -461,7 +477,148 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 38,
+    // Assets & Debt configuration (RD-084 P1.3, approved at gate G1): debts,
+    // their rate periods, offset links and baseline assumptions, and immutable
+    // model revisions. Configuration and provenance only; no balance of record,
+    // no copy of Actual transactions. Additive: five new tables, their indexes,
+    // and two triggers on the new tables.
+    statements: [
+      DEBT_TABLE_SQL,
+      DEBT_RATE_PERIOD_TABLE_SQL,
+      DEBT_OFFSET_LINK_TABLE_SQL,
+      DEBT_FUTURE_ASSUMPTION_TABLE_SQL,
+      MODEL_REVISION_TABLE_SQL,
+      ...ASSETS_DEBT_V38_INDEX_SQL,
+      ...ASSETS_DEBT_V38_TRIGGER_SQL,
+    ],
+  },
+  {
+    version: 39,
+    // RD-084 P1.3f: offset deposits and withdrawals use the existing account
+    // column. Rebuild only to broaden its cross-column invariant; every value
+    // is copied byte for byte and no financial row is created or transformed.
+    apply: applyOffsetAssumptionKinds,
+  },
+  {
+    version: 40,
+    // RD-084 P1.3g: select an effective-dated offset link as the simulated
+    // source for generated scheduled repayments. Existing links remain off.
+    apply: applyOffsetFundedRepayments,
+  },
+  {
+    version: 41,
+    // RD-084 P1.3h: optionally delay offset cash funding without delaying
+    // the link's interest benefit. Null exactly preserves v40 behavior.
+    apply: applyOffsetFundingStart,
+  },
+  {
+    version: 42,
+    // RD-084 P1.4: Bench-owned matching rules and budget-scoped links to
+    // existing Actual rows. Read-only workflow state; no posting FK exists
+    // until financial_postings is introduced in v44.
+    statements: [
+      DEBT_MATCH_RULE_TABLE_SQL,
+      // SQLite requires the referenced composite parent key to be unique.
+      ASSETS_DEBT_V42_INDEX_SQL[0],
+      DEBT_TRANSACTION_LINK_TABLE_SQL,
+      ...ASSETS_DEBT_V42_INDEX_SQL.slice(1),
+    ],
+  },
+  {
+    version: 43,
+    // RD-084 P1.5: immutable lender evidence, append-only model anchors and
+    // opt-in Actual-linked offset history. Existing offset links remain manual.
+    apply: (db) => {
+      addColumnIfMissing(
+        db,
+        "debt_offset_links",
+        "use_actual_balance",
+        "integer NOT NULL DEFAULT 0 CHECK (typeof(use_actual_balance) = 'integer' AND use_actual_balance IN (0, 1))"
+      );
+      addColumnIfMissing(db, "debts", "drift_accepted_fingerprint", "text");
+      db.exec(DEBT_OBSERVATION_TABLE_SQL);
+      db.exec(DEBT_ANCHOR_TABLE_SQL);
+      for (const statement of ASSETS_DEBT_V43_INDEX_SQL) db.exec(statement);
+    },
+  },
+  {
+    version: 44,
+    // RD-084 P1.6: user-approved postings (the trimmed manual-apply design) and
+    // posting-backed transaction links. v38-v43 tables are untouched apart from
+    // the new nullable link column; `debts.auto_apply_enabled` stays inert.
+    apply: (db) => {
+      db.exec(FINANCIAL_POSTING_TABLE_SQL);
+      for (const statement of ASSETS_DEBT_V44_INDEX_SQL) db.exec(statement);
+      for (const statement of ASSETS_DEBT_V44_TRIGGER_SQL) db.exec(statement);
+      addColumnIfMissing(db, "debt_transaction_links", "posting_id", "text REFERENCES financial_postings(id) ON DELETE RESTRICT");
+      // Repair: `debts.drift_accepted_fingerprint` was added to v43 after v43 had
+      // already run on some databases, which recorded v43 without it.
+      repairSchemaDrift(db);
+    },
+  },
+  {
+    version: 45,
+    // Execution ownership is workflow metadata, separate from immutable posting snapshots.
+    statements: [
+      `CREATE TABLE IF NOT EXISTS debt_posting_leases (
+        posting_id text PRIMARY KEY REFERENCES financial_postings(id) ON DELETE CASCADE,
+        token text NOT NULL,
+        expires_at text NOT NULL
+      )`,
+    ],
+  },
 ];
+
+/**
+ * Columns that were added to a migration after that migration had already run
+ * somewhere (the v18 `running_since` case, again). Such a database records the
+ * version as done and never receives the column, and the first write that
+ * names it fails ("table debts has no column named ...").
+ *
+ * Applied by the next migration and, because that migration may itself have
+ * already run on a development database built from intermediate code, also on
+ * every open. Idempotent and narrow: only the listed columns, only when the
+ * table exists and the column is missing.
+ */
+function repairSchemaDrift(db: SqliteDatabase): void {
+  if (tableExists(db, "debts")) addColumnIfMissing(db, "debts", "drift_accepted_fingerprint", "text");
+}
+
+function applyOffsetFundingStart(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "debt_offset_links", "fund_scheduled_repayments_from", "text");
+}
+
+function applyOffsetFundedRepayments(db: SqliteDatabase): void {
+  addColumnIfMissing(
+    db,
+    "debt_offset_links",
+    "fund_scheduled_repayments",
+    "integer NOT NULL DEFAULT 0 CHECK (typeof(fund_scheduled_repayments) = 'integer' AND fund_scheduled_repayments IN (0, 1))"
+  );
+}
+
+function applyOffsetAssumptionKinds(db: SqliteDatabase): void {
+  if (!tableExists(db, "debt_future_assumptions")) return;
+  const nextSql = DEBT_FUTURE_ASSUMPTION_TABLE_SQL.replace(
+    "CREATE TABLE IF NOT EXISTS debt_future_assumptions",
+    "CREATE TABLE debt_future_assumptions_v39"
+  );
+  db.exec(nextSql);
+  db.exec(`
+    INSERT INTO debt_future_assumptions_v39
+      (id, debt_id, assumption_kind, effective_from, recurrence_json, amount_minor,
+       fee_treatment, offset_account_id, note, created_at, updated_at)
+    SELECT id, debt_id, assumption_kind, effective_from, recurrence_json, amount_minor,
+           fee_treatment, offset_account_id, note, created_at, updated_at
+      FROM debt_future_assumptions
+  `);
+  db.exec("DROP TABLE debt_future_assumptions");
+  db.exec("ALTER TABLE debt_future_assumptions_v39 RENAME TO debt_future_assumptions");
+  const index = ASSETS_DEBT_V38_INDEX_SQL.find((statement) => statement.includes("idx_debt_future_assumptions_debt"));
+  if (index) db.exec(index);
+}
 
 function applyCredentialStore(db: SqliteDatabase): void {
   db.exec(`
@@ -1003,6 +1160,7 @@ export function runMigrations(db: SqliteDatabase): AppDbMigrationMeta {
 
   const pending = MIGRATIONS.filter((migration) => migration.version > currentVersion);
   if (pending.length === 0) {
+    if (currentVersion >= 43) repairSchemaDrift(db);
     return readMigrationMeta(db);
   }
 

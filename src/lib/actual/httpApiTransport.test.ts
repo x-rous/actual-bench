@@ -279,6 +279,23 @@ describe("entity endpoints", () => {
     }
   );
 
+  it("returns the created payee's id, which actual-http-api sends alone", async () => {
+    // POST /payees answers `{ data: "<id>" }`, not a payee object. Reading it as
+    // an object lost the id, so callers treated a created payee as unresolved.
+    respond = () => ({ json: { data: "payee-new" } });
+    const created = await transport().createPayee({ name: "Tea House" });
+    expect(created).toEqual({ id: "payee-new", name: "Tea House" });
+    expect(only()).toMatchObject({ method: "POST", url: `${base}/payees`, body: { payee: { name: "Tea House" } } });
+  });
+
+  it("still reads a payee object from the create response", async () => {
+    respond = () => ({ json: { data: { id: "payee-obj", name: "Tea House", transfer_acct: null } } });
+    await expect(transport().createPayee({ name: "Tea House" })).resolves.toMatchObject({
+      id: "payee-obj",
+      name: "Tea House",
+    });
+  });
+
   it("merges payees through the dedicated endpoint, naming target and sources", async () => {
     await transport().mergePayees("keep-me", ["dupe-1", "dupe-2"]);
     const call = only();

@@ -40,6 +40,9 @@ const nextConfig: NextConfig = {
   // `dist/` reads `migrations/` and `default-db.sqlite` from beside itself, and
   // tracing keeps them in the standalone image. The browser build is unaffected.
   serverExternalPackages: ["@actual-app/api"],
+  outputFileTracingIncludes: {
+    "/api/actual-runtime-diagnostics/worker": ["./node_modules/@actual-app/api/dist/browser.js"],
+  },
   // Use a fresh output directory so Turbopack doesn't try to acquire a
   // lockfile on the root-owned .next/dev/cache from a prior container run.
   // Exception: on Vercel, use the default ".next" - Vercel's Next.js builder

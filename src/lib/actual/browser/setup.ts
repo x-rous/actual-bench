@@ -1,6 +1,7 @@
 "use client";
 
 import { withTimeout } from "../runtime/timeouts";
+import { installSqliteFileDiagnostics } from "./sqliteDiagnostics";
 
 export {
   DEFAULT_STEP_TIMEOUT_MS,
@@ -35,16 +36,22 @@ export function initializeActualApi<TActual extends ActualInitCapable>(
   // connect could start a second init while the first is still running inside
   // the worker — the exact interleave this serialization prevents.
   let initSettled: Promise<unknown> = Promise.resolve();
-  const run = () => {
-    const initPromise = actual.init(config);
+  const begin = (restoreDiagnostics: () => void) => {
+    let initPromise: Promise<unknown>;
+    try { initPromise = actual.init(config); }
+    catch (error) { restoreDiagnostics(); throw error; }
     initSettled = initPromise.then(
-      () => undefined,
-      () => undefined
+      () => { restoreDiagnostics(); },
+      () => { restoreDiagnostics(); }
     );
     return withTimeout(
       initPromise,
       "Initializing browser API worker"
     ) as Promise<Awaited<ReturnType<TActual["init"]>>>;
+  };
+  const run = () => {
+    const diagnostics = installSqliteFileDiagnostics();
+    return diagnostics instanceof Promise ? diagnostics.then(begin) : begin(diagnostics);
   };
   const result = initializeActualApiTail.then(run, run);
   initializeActualApiTail = result

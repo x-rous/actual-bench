@@ -1,0 +1,205 @@
+import { apiRequest } from "@/lib/api/client";
+import { resetAppDbForTests } from "@/lib/app-db/connection";
+import { ACCOUNTS, CATEGORIES, byKind, createScenario, type Scenario } from "../../testing/postingScenario";
+import { reproducePosting } from "../reproduceService";
+import type { PostingInputSnapshot } from "../snapshot";
+
+jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
+const mockApiRequest = apiRequest as unknown as jest.Mock;
+afterEach(() => resetAppDbForTests());
+
+describe("planners (T118–T120)", () => {
+  it("Pattern B without a lender feed proposes the interest charge in the off-budget liability, uncategorized, Safe", async () => {
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "separate-interest" });
+    const result = await s.preview({ from: "2024-02-01", to: "2024-02-29" });
+    const charges = byKind(result.postings, "interest-charge");
+    expect(charges).toHaveLength(1);
+    const [charge] = charges;
+    expect(charge).toMatchObject({ classification: "safe", periodKey: "2024-02-28", idempotencyMarker: expect.stringMatching(/^abdebt:budget-1:.+:interest-charge:2024-02-28:g1$/) });
+    expect(charge.output).toMatchObject({ kind: "create", operations: [{ accountId: ACCOUNTS.mortgage, amountMinor: -387857, categoryId: null, economicKind: "interest" }] });
+  });
+
+  it("Pattern B with a lender feed waits for the lender's charge and never posts its own; then claims it", async () => {
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "separate-interest", lenderFeed: true });
+    const waiting = await s.preview({ from: "2024-02-01", to: "2024-02-29", today: "2024-03-01" });
+    expect(byKind(waiting.postings, "interest-charge")).toHaveLength(0);
+    expect(waiting.notices.map((n) => n.code)).toContain("waiting-for-lender");
+    s.seedLenderRow("2024-02-28", -387857);
+    const linked = await s.preview({ from: "2024-02-01", to: "2024-02-29", today: "2024-03-01" });
+    expect(byKind(linked.postings, "interest-link")).toEqual([expect.objectContaining({ classification: "safe", output: expect.objectContaining({ kind: "claim", role: "lender-interest-charge" }) })]);
+    expect(byKind(linked.postings, "interest-charge")).toHaveLength(0);
+  });
+
+  it("a late lender charge after Bench's applied charge proposes a Review compensating reversal (no double interest)", async () => {
+    const s = createScenario({ mode: "direct", apiRequestMock: mockApiRequest, pattern: "separate-interest" });
+    const [charge] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "interest-charge");
+    await s.apply(charge);
+    // The lender feed starts after the fact: reconfigure by adding the rule directly.
+    const s2 = s; // same DB and fake
+    const { insertDebtMatchRule } = await import("@/lib/app-db/debtMatchRuleRepository");
+    const { canonicalJson } = await import("@/lib/app-db/canonicalJson");
+    insertDebtMatchRule(s2.db, s2.debtId, { purpose: "interest-charge", ruleFormatVersion: 1, enabled: true,
+      actionsJson: canonicalJson({ format: "rd084.debt-match-actions", version: 1, items: [{ kind: "link-repayment" }] }),
+      conditionsJson: canonicalJson({ format: "rd084.debt-match-conditions", version: 1, operator: "all", items: [{ kind: "source-account", accountId: ACCOUNTS.mortgage }, { kind: "payee", operator: "exact", payeeId: "p-lender" }, { kind: "expected-date", daysBefore: 5, daysAfter: 5 }, { kind: "bench-marker", value: "exclude" }, { kind: "posting-link", value: "exclude" }] }) });
+    s.seedLenderRow("2024-02-28", -387857);
+    const after = await s.preview({ from: "2024-02-01", to: "2024-02-29" });
+    const reversal = byKind(after.postings, "reversal");
+    expect(reversal).toEqual([expect.objectContaining({ classification: "review", reversalOf: charge.id })]);
+    expect(reversal[0].reasons.map((r) => r.code)).toContain("late-lender-charge");
+  });
+
+  it("Pattern A without a lender feed splits the matched payment: residual principal is a transfer to the liability", async () => {
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    s.seedPayment("2024-02-01");
+    const [split] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
+    expect(split.classification).toBe("safe");
+    if (split.output.kind !== "restructure") throw new Error("expected restructure");
+    const children = split.output.expectedPostState.children;
+    expect(children.reduce((sum, c) => sum + c.amountMinor, 0)).toBe(-242915);
+    expect(children[0]).toMatchObject({ economicKind: "principal", transferAccountId: ACCOUNTS.mortgage, categoryId: CATEGORIES.loan });
+    expect(children[1]).toMatchObject({ economicKind: "interest", categoryId: CATEGORIES.interest });
+  });
+
+  it("Pattern A with a lender feed: the principal child has no transfer payee; the link is a second, reviewed proposal", async () => {
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest", lenderFeed: true });
+    s.seedPayment("2024-02-01");
+    const [split] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
+    if (split.output.kind !== "restructure") throw new Error("expected restructure");
+    expect(split.output.expectedPostState.children[0]).toMatchObject({ economicKind: "principal", transferAccountId: null });
+    const principal = -split.output.expectedPostState.children[0].amountMinor;
+    s.seedLenderRow("2024-02-01", principal);
+    await s.apply(split);
+    const [link] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-link");
+    expect(link).toMatchObject({ classification: "review", output: expect.objectContaining({ kind: "link" }) });
+  });
+
+  it("Pattern A: a reconciled payment is Blocked; a mismatched or reconciled lender row Blocks the link", async () => {
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    s.seedPayment("2024-02-01", -242915, { reconciled: true });
+    const [split] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
+    expect(split).toMatchObject({ classification: "blocked" });
+    expect(split.reasons.map((r) => r.text)).toContain("The matched row is reconciled in Actual. Resolve in Actual, then re-run.");
+
+    const t = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest", lenderFeed: true });
+    t.seedPayment("2024-02-01");
+    const [tsplit] = byKind((await t.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
+    if (tsplit.output.kind !== "restructure") throw new Error("expected restructure");
+    t.seedLenderRow("2024-02-01", -tsplit.output.expectedPostState.children[0].amountMinor + 1);
+    await t.apply(tsplit);
+    const [link] = byKind((await t.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-link");
+    expect(link).toMatchObject({ classification: "blocked" });
+    expect(link.reasons.map((r) => r.code)).toContain("lender-amount-mismatch");
+  });
+
+  it("missing loan payment category Blocks with the plain-language next action", async () => {
+    // The saved configuration requires the category; it can still go missing afterwards (e.g. the
+    // category is deleted in Actual and the directory refreshes), which the planner must Block.
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+    s.db.prepare("UPDATE debts SET loan_payment_category_id = NULL WHERE id = ?").run(s.debtId);
+    s.seedPayment("2024-02-01");
+    const [split] = byKind((await s.preview({ from: "2024-02-01", to: "2024-02-29" })).postings, "repayment-split");
+    expect(split.classification).toBe("blocked");
+    expect(split.reasons.map((r) => r.text)).toContain("Choose a loan payment category for this debt.");
+  });
+
+  it("T120: opening adjustment is Review off-budget and Blocked on-budget without the user's category; never Safe", async () => {
+    const { setDebtOnboardingDate } = await import("@/lib/app-db/debtRepository");
+    const { insertDebtAnchor } = await import("@/lib/app-db/debtAnchorRepository");
+    for (const offBudget of [true, false]) {
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "separate-interest", liabilityOffBudget: offBudget });
+      setDebtOnboardingDate(s.db, s.debtId, "2024-01-15", "2024-01-15T00:00:00.000Z");
+      insertDebtAnchor(s.db, { debtId: s.debtId, anchorDate: "2024-01-15", principalMinor: 39_900_000, accruedInterestMinor: 0, carriedRemainderDecimal: null, source: "accepted-observation", observationKind: "manual-statement", observationId: null, configRevision: 1 }, "2024-01-15T00:00:00.000Z");
+      const result = await s.preview({ from: "2024-01-15", to: "2024-01-31" }, { parameters: { actualBalanceAtOnboardingMinor: 40_000_000 } });
+      const [opening] = byKind(result.postings, "opening-adjustment");
+      expect(opening.output).toMatchObject({ kind: "create", operations: [{ accountId: ACCOUNTS.mortgage, amountMinor: 100_000, categoryId: null }] });
+      expect(opening.classification).toBe(offBudget ? "review" : "blocked");
+      if (!offBudget) expect(opening.reasons.map((r) => r.code)).toContain("missing-category");
+    }
+  });
+
+  it("D1: a reconciliation adjustment is always Review, never Safe", async () => {
+    const { insertDebtObservation } = await import("@/lib/app-db/debtObservationRepository");
+    const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "separate-interest" });
+    insertDebtObservation(s.db, { debtId: s.debtId, observedOn: "2024-02-15", recordedAt: "2024-02-16T00:00:00Z", principalMinor: 39_950_000, accruedInterestMinor: 0, source: "manual-statement", supersedesObservationId: null, note: null }, "2024-02-16T00:00:00Z");
+    const result = await s.preview({ from: "2024-02-01", to: "2024-02-29" }, { comparison: { comparisonDate: "2024-02-15", actualBalanceMinor: 39_960_000 } });
+    const [adjustment] = byKind(result.postings, "reconciliation-adjustment");
+    expect(adjustment.classification).toBe("review");
+    expect(adjustment.output).toMatchObject({ kind: "create", operations: [{ amountMinor: 10_000 }] });
+  });
+
+  describe("actual-dated repayment splits (T284)", () => {
+    const interestOf = (split: { output: { kind: string } & Record<string, unknown> }) => {
+      if (split.output.kind !== "restructure") throw new Error("expected restructure");
+      return -((split.output as unknown as { expectedPostState: { children: { economicKind: string; amountMinor: number }[] } }).expectedPostState.children.find((c) => c.economicKind === "interest")?.amountMinor ?? 0);
+    };
+    const firstSplit = async (s: Scenario, window = { from: "2024-02-01", to: "2024-02-29" }) => byKind((await s.preview(window)).postings, "repayment-split")[0];
+    const inputOf = (s: Scenario, id: string) => JSON.parse((s.db.prepare("SELECT input_snapshot_json FROM financial_postings WHERE id = ?").get(id) as { input_snapshot_json: string }).input_snapshot_json) as PostingInputSnapshot;
+
+    it("splits a payment made early by its actual date: fewer days of interest, recorded and reproducible", async () => {
+      const onTime = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      onTime.seedPayment("2024-02-01");
+      const scheduled = interestOf(await firstSplit(onTime));
+      resetAppDbForTests();
+
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      s.seedPayment("2024-01-29");
+      const split = await firstSplit(s);
+      const early = interestOf(split);
+      // 28 days instead of 31 on AED 400,000 at the fixture rate.
+      expect(early).toBeLessThan(scheduled);
+      expect(Math.abs(early - Math.round((scheduled * 28) / 31))).toBeLessThanOrEqual(1);
+      const input = inputOf(s, split.id);
+      expect(input.version).toBe(2);
+      expect(input.observedRepayments).toEqual({ allocation: "as-calculated", repayments: [{ dueDate: "2024-02-01", paidDate: "2024-01-29", amountMinor: 242915, feesMinor: 0 }] });
+      expect(split.engineVersions["statement-allocation"]).toBe("statement-allocation@1");
+      expect(reproducePosting(s.db, split.id)).toMatchObject({ status: "exact-match" });
+    });
+
+    it("allocates to the due date when the lender statements do, without changing the default", async () => {
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest", configV3: { lenderStatement: { interestAllocation: "accrued-to-due-date" } } });
+      s.seedPayment("2024-01-29");
+      const split = await firstSplit(s);
+      expect(inputOf(s, split.id).observedRepayments?.allocation).toBe("accrued-to-due-date");
+      resetAppDbForTests();
+      const onTime = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      onTime.seedPayment("2024-02-01");
+      // Accrued to the due date: the first early payment carries the full period, as if paid on time.
+      expect(interestOf(split)).toBe(interestOf(await firstSplit(onTime)));
+    });
+
+    it("supersedes the old proposal when a new configuration moves the period, instead of leaving it listed", async () => {
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      s.seedPayment("2024-01-31");
+      const window = { from: "2024-01-01", to: "2024-02-29" };
+      const [old] = byKind((await s.preview(window)).postings, "repayment-split");
+      expect(old.periodKey).toBe("2024-02-01");
+      // 1 Feb 2024 becomes a holiday: the due date moves to 2 Feb, a new period.
+      const { getDebtDetail, updateDebtConfiguration } = await import("../debtConfigService");
+      const { saveInput } = await import("../../testing/debtFixtures");
+      const detail = getDebtDetail(s.db, s.debtId)!;
+      const config = { ...JSON.parse(detail.debt.currentConfigJson), version: 3, businessDays: { adjustment: "following", nonBusinessWeekdays: [7], holidays: ["2024-02-01"] }, lenderStatement: null };
+      updateDebtConfiguration(s.db, s.debtId, saveInput({ lenderPattern: "embedded-interest", executionStrategy: "bench-daily", liabilityAccountId: ACCOUNTS.mortgage, paymentAccountId: ACCOUNTS.checking, loanPaymentCategoryId: CATEGORIES.loan, lenderChargeGraceDays: 3, config }), { budgetSyncId: "budget-1", accounts: s.directory.accounts, categories: s.directory.categories });
+      const after = await s.preview(window);
+      expect(byKind(after.postings, "repayment-split").map((p) => p.periodKey)).toEqual(["2024-02-02"]);
+      const { listDebtPostings } = await import("../proposalService");
+      const stillProposed = listDebtPostings(s.db, s.debtId).filter((p) => p.status === "proposed");
+      expect(stillProposed.map((p) => p.periodKey)).toEqual(["2024-02-02"]);
+      expect(listDebtPostings(s.db, s.debtId).find((p) => p.id === old.id)?.status).toBe("superseded");
+    });
+
+    it("an earlier repayment not found counts as not paid (owner decision 2026-10-07): the next payment carries its interest", async () => {
+      const s = createScenario({ mode: "http", apiRequestMock: mockApiRequest, pattern: "embedded-interest" });
+      s.seedPayment("2024-03-01");
+      const splits = byKind((await s.preview({ from: "2024-02-01", to: "2024-03-31", today: "2024-03-31" })).postings, "repayment-split");
+      expect(splits).toHaveLength(1);
+      const [march] = splits;
+      expect(inputOf(s, march.id).observedRepayments?.repayments.map((r) => r.assumed ?? false)).toEqual([false]);
+      expect(march.output).toMatchObject({ kind: "restructure", missedDueDates: ["2024-02-01"] });
+      // On this interest-heavy loan two months of interest exceed one repayment: all of it is interest,
+      // so there is nothing to split, and the row says what to do instead.
+      expect(march.classification).toBe("blocked");
+      expect(march.reasons.map((r) => r.code)).toEqual(["interest-only-payment"]);
+      expect(march.reasons[0].text).toMatch(/does not cover the interest owed .* after the missed repayment/);
+    });
+  });
+});
