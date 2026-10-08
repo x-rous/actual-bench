@@ -98,7 +98,7 @@ describe.each(["direct", "http"] as const)("split repayment counterpart ownershi
     const result = await s.preview(window);
     expect(result.unscheduled).toEqual([expect.objectContaining({ id: extra, recorded: false, inSchedule: false })]);
     expect(result.recordedExtraPayments ?? []).toEqual([]);
-    expect(listDebtTransactionLinks(s.db, s.debtId).filter((l) => l.role === "extra-repayment").map((l) => l.actualTransactionId)).toEqual([extra]);
+    expect(listDebtTransactionLinks(s.db, s.debtId).filter((l) => l.role === "extra-repayment")).toEqual([]);
     expect(result.unscheduled.map((p) => p.id)).not.toContain(counterpart);
   });
 

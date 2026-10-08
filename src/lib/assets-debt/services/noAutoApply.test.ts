@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import * as ts from "typescript";
 import { apiRequest } from "@/lib/api/client";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
 import { classifyPosting } from "../classification/policy";
@@ -60,7 +61,22 @@ describe("no auto-apply (SC-018)", () => {
       "src/features/assets-debt/components/workspace/LoanActivity.tsx",
     ]);
     for (const path of ["src/features/assets-debt/components/workspace/LoanActivity.tsx", "src/features/assets-debt/lib/postingActions.ts", "src/lib/assets-debt/services/applyService.ts"]) {
-      const text = files.find((f) => f.path === path)!.text;
+      let text = files.find((f) => f.path === path)!.text;
+      if (path.endsWith("postingActions.ts")) {
+        const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+        const heartbeat = source.statements.find((statement): statement is ts.FunctionDeclaration => ts.isFunctionDeclaration(statement) && statement.name?.text === "executionHeartbeat");
+        expect(heartbeat).toBeDefined();
+        // A lease heartbeat may renew metadata, but it must never reach an Actual writer.
+        const visit = (node: ts.Node) => {
+          if (ts.isCallExpression(node)) {
+            if (ts.isIdentifier(node.expression)) expect(["setInterval", "renewExecution", "clearInterval"]).toContain(node.expression.text);
+            else expect(node.expression.getText(source)).toBe("renewExecution(id, token).catch");
+          }
+          ts.forEachChild(node, visit);
+        };
+        visit(heartbeat!);
+        text = text.slice(0, heartbeat!.getStart(source)) + text.slice(heartbeat!.end);
+      }
       expect({ path, effect: /useEffect|setInterval|setTimeout|automation/.test(text) }).toEqual({ path, effect: false });
     }
     expect(importers(/assets-debt\/services\/(applyService|postingWorkflowService)/).filter((p) => p.includes("/automation/"))).toEqual([]);

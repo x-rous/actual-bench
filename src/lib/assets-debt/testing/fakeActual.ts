@@ -271,7 +271,9 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
     });
     return actual === value;
   });
-  const queryRows = (filter: Record<string, unknown>) => accounts.flatMap((account) => accountRows(account.id)).filter((row) => matchesQuery(row as FakeRow, filter));
+  const queryRows = (filter: Record<string, unknown>, splits?: string) => (splits === "all"
+    ? rows.map((row) => ({ ...row }))
+    : accounts.flatMap((account) => accountRows(account.id))).filter((row) => matchesQuery(row as FakeRow, filter));
   return {
     rows: () => rows,
     row: (id: string) => find(id),
@@ -303,7 +305,10 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
 
     async httpApiRequest(_conn: unknown, path: string, opts?: { method?: string; body?: unknown }): Promise<unknown> {
       const method = opts?.method ?? "GET";
-      if (path === "/run-query") return { data: queryRows((opts?.body as { ActualQLquery: { filter: Record<string, unknown> } }).ActualQLquery.filter) };
+      if (path === "/run-query") {
+        const query = (opts?.body as { ActualQLquery: { filter: Record<string, unknown>; options?: { splits?: string } } }).ActualQLquery;
+        return { data: queryRows(query.filter, query.options?.splits) };
+      }
       if (path === "/payees" && method === "GET") return { data: payees };
       if (path === "/payees" && method === "POST") {
         const name = (opts?.body as { payee: { name: string } }).payee.name;
@@ -340,10 +345,10 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
     directRuntime(): Record<string, unknown> {
       return {
         q: () => {
-          const query = { filterValue: {} as Record<string, unknown>, filter(value: Record<string, unknown>) { this.filterValue = value; return this; }, select() { return this; }, options() { return this; } };
+          const query = { filterValue: {} as Record<string, unknown>, splitMode: undefined as string | undefined, filter(value: Record<string, unknown>) { this.filterValue = value; return this; }, select() { return this; }, options(value: { splits?: string }) { this.splitMode = value.splits; return this; }, orderBy() { return this; } };
           return query;
         },
-        runQuery: async (query: { filterValue: Record<string, unknown> }) => ({ data: queryRows(query.filterValue) }),
+        runQuery: async (query: { filterValue: Record<string, unknown>; splitMode?: string }) => ({ data: queryRows(query.filterValue, query.splitMode) }),
         getAccounts: async () => accounts,
         getPayees: async () => payees,
         getCategories: async () => categories.map((c) => ({ id: c.id, name: c.name, group_id: "grp" })),

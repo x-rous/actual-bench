@@ -159,14 +159,16 @@ export function createScenario(options: ScenarioOptions) {
 
   /** The browser's Apply path: re-read, server approval + preflight, executor, outcome. */
   async function apply(posting: PostingView, decidedAt = "2024-06-02T00:00:00.000Z"): Promise<{ posting: PostingView; outcome: ExecutorOutcome }> {
+    const appliedAt = new Date(Date.parse(decidedAt) + 1_000).toISOString();
+    const recordedAt = new Date(Date.parse(decidedAt) + 2_000).toISOString();
     const ticket = approveAndBeginApply(db, posting.id, { fresh: await fresh(posting), decidedAt });
     let outcome: ExecutorOutcome;
     try {
-      outcome = await executeApprovedPosting(ticket, { transport, transferPayeeByAccount: transferPayees, offBudgetAccountIds: offBudgetIds, liabilityAccountId: ACCOUNTS.mortgage, now: () => "2024-06-02T00:00:01.000Z" });
+      outcome = await executeApprovedPosting(ticket, { transport, transferPayeeByAccount: transferPayees, offBudgetAccountIds: offBudgetIds, liabilityAccountId: ACCOUNTS.mortgage, now: () => appliedAt });
     } catch (error) {
       outcome = { status: "indeterminate", error: { message: String(error) } };
     }
-    return { posting: recordApplyOutcome(db, posting.id, outcome, "2024-06-02T00:00:02.000Z"), outcome };
+    return { posting: recordApplyOutcome(db, posting.id, outcome, recordedAt), outcome };
   }
 
   async function recover(posting: PostingView) {

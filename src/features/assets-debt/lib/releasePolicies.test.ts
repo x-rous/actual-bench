@@ -1,3 +1,4 @@
+/** @jest-environment jsdom */
 import { localToday, previousYear } from "./calendarDate";
 import { withLoanOperation } from "./operationGate";
 import { syncIfNeeded } from "./syncFreshness";

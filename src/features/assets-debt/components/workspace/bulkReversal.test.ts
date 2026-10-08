@@ -5,6 +5,7 @@ import { canPrepareReversal, prepareBulkReversal } from "./bulkReversal";
 
 const posting = (id: string, periodKey: string, recorded = true) => ({
   id, periodKey, status: "applied", reversalOf: null, createdAt: "2026-10-08", postingKind: "repayment-split",
+  basis: { allocation: null, dueDate: periodKey, paidDate: periodKey, assumedEarlier: 0 },
   output: recorded ? { kind: "claim", rows: [], recordedSplit: { parent: { date: periodKey, amountMinor: -10000 }, children: [] } }
     : { kind: "restructure", before: { date: periodKey, amountMinor: -10000 } },
 }) as unknown as PostingView;

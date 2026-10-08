@@ -2,7 +2,8 @@ import { apiRequest } from "@/lib/api/client";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
 import { readMatchingHistory } from "../actual/ledgerPort";
 import { listDebtMatchRules } from "@/lib/app-db/debtMatchRuleRepository";
-import { getFinancialPosting } from "@/lib/app-db/financialPostingRepository";
+import { getFinancialPosting, upsertProposal } from "@/lib/app-db/financialPostingRepository";
+import { postingView } from "./proposalService";
 import { ACCOUNTS, byKind, createScenario } from "../testing/postingScenario";
 import { listNeedsAttention } from "./attentionService";
 import { runDebtBacktest } from "./backtestService";
@@ -65,10 +66,20 @@ describe("needs attention across loans (T293)", () => {
     const s = createScenario({ mode: "http", apiRequestMock: apiRequest as jest.Mock, pattern: "embedded-interest" });
     s.seedPayment("2024-01-29");
     const window = { from: "2024-02-01", to: "2024-02-29" };
-    const [failed] = byKind((await s.preview(window)).postings, "repayment-split");
+    const [current] = byKind((await s.preview(window)).postings, "repayment-split");
+    const stored = getFinancialPosting(s.db, current.id)!;
+    const snapshot = JSON.parse(stored.inputSnapshotJson);
+    // Represent the earlier alignment as its own immutable proposal; never edit an audit identity.
+    const failed = postingView(upsertProposal(s.db, {
+      budgetSyncId: stored.budgetSyncId, subjectKind: "debt", subjectId: s.debtId,
+      postingKind: "repayment-split", periodKey: "2024-03-01", generation: stored.generation,
+      configRevision: stored.configRevision, inputFormatVersion: stored.inputFormatVersion,
+      inputSnapshot: { ...snapshot, period: { ...snapshot.period, key: "2024-03-01" } },
+      engineVersions: stored.engineVersions, outputSnapshot: current.output,
+      classification: "safe", reasons: [], idempotencyMarker: null,
+    }, "2024-06-01T00:00:00.000Z").posting);
     approveAndBeginApply(s.db, failed.id, { fresh: await s.fresh(failed), decidedAt: "2024-06-01T00:00:00.000Z" });
     recordApplyOutcome(s.db, failed.id, { status: "failed", error: { stage: "preflight", written: false } }, "2024-06-01T00:00:01.000Z");
-    s.db.prepare("UPDATE financial_postings SET period_key = ? WHERE id = ?").run("2024-03-01", failed.id);
     const [replacement] = byKind((await s.preview(window)).postings, "repayment-split");
     expect((await s.apply(replacement)).posting.status).toBe("applied");
     await s.preview(window);

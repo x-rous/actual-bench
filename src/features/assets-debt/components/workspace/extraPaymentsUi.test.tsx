@@ -10,6 +10,7 @@ const payment = { id: "tx-extra", date: "2026-10-04", amountMinor: 2_000_000, pa
 const wrap = (ui: React.ReactElement) => render(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
 
 describe("payments not in the schedule (extra payments)", () => {
+  beforeEach(() => jest.clearAllMocks());
   it("counted, not counted and taken out are the only states", () => {
     wrap(<ExtraPayments debtId="d1" digits={2} scheduleDirty={false} onChanged={jest.fn()} payments={[
       { ...payment, id: "a", recorded: true, inSchedule: true },
@@ -23,14 +24,16 @@ describe("payments not in the schedule (extra payments)", () => {
     expect(screen.queryByRole("button", { name: /Record now|Update Terms & Schedule|Add it again/ })).toBeNull();
   });
 
-  it("one not recorded yet counts already, and says when Terms & Schedule gets it", () => {
+  it("a new extra requires confirmation and waits for unsaved Terms & Schedule edits", () => {
     const { rerender } = wrap(<ExtraPayments debtId="d1" payments={[payment]} digits={2} scheduleDirty={false} onChanged={jest.fn()} />);
-    expect(screen.getByText("Extra payment")).toBeInTheDocument();
-    expect(screen.getByText("Terms & Schedule gets it on the next refresh.")).toBeInTheDocument();
+    expect(screen.getByText("Needs confirmation")).toBeInTheDocument();
+    expect(screen.getByText("Confirm this payment to include it in the forecast.")).toBeInTheDocument();
+    expect(api.recordExtraPayment).not.toHaveBeenCalled();
     rerender(<QueryClientProvider client={new QueryClient()}><ExtraPayments debtId="d1" payments={[payment]} digits={2} scheduleDirty onChanged={jest.fn()} /></QueryClientProvider>);
-    expect(screen.getByText("Terms & Schedule gets it once you save your changes there.")).toBeInTheDocument();
+    expect(screen.getByText("Save or discard your edits before recording this payment.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record extra payment" })).toBeDisabled();
     rerender(<QueryClientProvider client={new QueryClient()}><ExtraPayments debtId="d1" payments={[{ ...payment, recorded: true, changed: true, recordedAs: { date: "2026-11-04", amountMinor: 2_000_000 } }]} digits={2} scheduleDirty onChanged={jest.fn()} /></QueryClientProvider>);
-    expect(screen.getByText("Changed in Actual. Terms & Schedule gets it once you save your changes there.")).toBeInTheDocument();
+    expect(screen.getByText("Changed in Actual. Save or discard your edits before recording this payment.")).toBeInTheDocument();
   });
 
   it("a counted payment can be marked not an extra payment, and counted again", async () => {
@@ -41,13 +44,19 @@ describe("payments not in the schedule (extra payments)", () => {
     await waitFor(() => expect(api.removeExtraPayment).toHaveBeenCalledWith("d1", "tx-extra", "2026-10-04"));
     rerender(<QueryClientProvider client={new QueryClient()}><ExtraPayments debtId="d1" payments={[{ ...payment, dismissed: true }]} digits={2} scheduleDirty={false} onChanged={jest.fn()} /></QueryClientProvider>);
     fireEvent.click(screen.getByRole("button", { name: "Count it" }));
-    await waitFor(() => expect(api.countExtraPayment).toHaveBeenCalledWith("d1", "tx-extra"));
+    const recordDialog = await screen.findByRole("dialog", { name: "Record this extra payment?" });
+    expect(api.recordExtraPayment).not.toHaveBeenCalled();
+    fireEvent.click(within(recordDialog).getByRole("button", { name: "Record extra payment" }));
+    await waitFor(() => expect(api.recordExtraPayment).toHaveBeenCalledWith("d1", { actualTransactionId: "tx-extra", date: "2026-10-04", amountMinor: 2_000_000 }));
   });
 
   it("taken out of Terms & Schedule by hand: not counted, and Count it puts it back", async () => {
     wrap(<ExtraPayments debtId="d1" payments={[{ ...payment, recorded: true, inSchedule: false }]} digits={2} scheduleDirty={false} onChanged={jest.fn()} />);
     expect(screen.getByText("Not counted: taken out of Terms & Schedule")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Count it" }));
+    const dialog = await screen.findByRole("dialog", { name: "Record this extra payment?" });
+    expect(api.recordExtraPayment).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Record extra payment" }));
     await waitFor(() => expect(api.recordExtraPayment).toHaveBeenCalledWith("d1", { actualTransactionId: "tx-extra", date: "2026-10-04", amountMinor: 2_000_000 }));
   });
 

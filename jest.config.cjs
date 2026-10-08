@@ -30,11 +30,6 @@ const shared = {
     '(^|/)spawnBenchWorker$': '<rootDir>/src/lib/workers/spawnBenchWorker.stub.ts',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  // Comfortably above Testing Library's 5s async budget (jest.setup.ts). When
-  // the two are equal, Jest's timeout fires first and reports "exceeded
-  // timeout" instead of the query error explaining what was missing or
-  // ambiguous - which is the whole diagnostic.
-  testTimeout: 15000,
   testPathIgnorePatterns: ignore,
   modulePathIgnorePatterns: ignore,
 }
@@ -65,6 +60,9 @@ module.exports = async () => {
   const [browserConfig, nodeConfig] = await Promise.all([browser(), node()])
   return {
     projects: [browserConfig, nodeConfig],
+    // Jest reads the timeout from the root config, not individual project configs.
+    // Keep the intended budget above Testing Library's 5s async assertion deadline.
+    testTimeout: 15000,
     // Test databases go in a folder for this run, removed at the end.
     globalSetup: '<rootDir>/jest.global-setup.cjs',
     globalTeardown: '<rootDir>/jest.global-teardown.cjs',

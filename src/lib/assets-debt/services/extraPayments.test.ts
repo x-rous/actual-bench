@@ -150,7 +150,7 @@ describe("payments into the loan that are not scheduled repayments", () => {
     expect(payoff.output).toMatchObject({ kind: "claim", rows: [expect.objectContaining({ id: paid })], payoff: expect.objectContaining({ paidDate: "2024-02-20" }) });
     expect(payoff.classification).toBe("review");
     const writes = s.fake.writes().length;
-    expect((await s.apply(payoff)).posting.status).toBe("applied");
+    expect((await s.apply(payoff, "2024-06-30T00:00:03.000Z")).posting.status).toBe("applied");
     expect(s.fake.writes().length).toBe(writes);
     await s.preview(wide);
     expect(repo.getFinancialPosting(s.db, first.id)).toMatchObject({ status: "superseded", error: { superseded: "replaced-by-applied" } });

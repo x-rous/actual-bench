@@ -4,6 +4,7 @@ import { insertDebtObservation } from "@/lib/app-db/debtObservationRepository";
 import { ACCOUNTS, byKind, createScenario } from "../testing/postingScenario";
 import { declinePosting } from "./postingWorkflowService";
 import { reconcileDebt } from "./reconciliationService";
+import { recordExtraPayment } from "./extraPaymentService";
 
 jest.mock("@/lib/api/client", () => ({ apiRequest: jest.fn() }));
 const mockApiRequest = apiRequest as unknown as jest.Mock;
@@ -36,7 +37,9 @@ describe("lender statements compared on their own date", () => {
     const { s, rows, actualNow, statement, modelOn } = await loan();
     statement(modelOn("2024-02-05"));
     // 20,000.00 paid on Feb 10, after the statement: counted as an extra payment.
-    s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-10", amount: 2_000_000, payee: s.fake.transferPayeeId(ACCOUNTS.checking), notes: "Extra" });
+    const extra = s.fake.seed({ account: ACCOUNTS.mortgage, date: "2024-02-10", amount: 2_000_000, payee: s.fake.transferPayeeId(ACCOUNTS.checking), notes: "Extra" });
+    // The user explicitly confirms the extra before it changes the loan assumptions.
+    recordExtraPayment(s.db, s.debtId, { actualTransactionId: extra, date: "2024-02-10", amountMinor: 2_000_000 });
     await s.preview(window);
     const comparison = { comparisonDate: "2024-02-29", actualBalanceMinor: await actualNow() };
     const loanAccountRows = await rows();

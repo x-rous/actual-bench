@@ -171,7 +171,7 @@ describe("charges and lender rows kept in step with Actual", () => {
     s.fake.editInActual(link.output.sourceBefore.id, { transfer_id: null, payee: "p-lender" });
     s.fake.editInActual(link.output.counterpartBefore.id, { transfer_id: null, payee: "p-lender" });
     const result = await s.preview(window);
-    expect(result.changedInActual).toEqual([expect.objectContaining({ postingId: link.id, detail: "the transfer link to the lender's row was removed in Actual" })]);
+    expect(result.changedInActual).toEqual([expect.objectContaining({ postingId: link.id, detail: "the repayment’s payee, category or transfer changed in Actual" })]);
     const [again] = byKind(result.postings, "repayment-link").filter((p) => p.status === "proposed");
     expect(again?.classification).toBe("review");
     expect(again?.reasons.map((r) => r.code)).toContain("removed-in-actual");

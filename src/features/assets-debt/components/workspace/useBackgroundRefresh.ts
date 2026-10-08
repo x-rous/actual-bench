@@ -271,12 +271,12 @@ export function useBackgroundRefresh(input: { debt: DebtDetail; directory: Accou
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
-    generation.current++;
+    const scopeGeneration = ++generation.current;
     setFreshOffsets(undefined);
     setPayees({});
     const cached = readCachedStatus(cacheKey);
     setState({ phase: "idle", error: null, status: cached, statusFromCache: !!cached, notices: [], driftMaterial: false, driftExplained: false, unscheduled: [], paymentOptions: [], repaymentChoices: [] });
-    return () => { mounted.current = false; generation.current++; };
+    return () => { mounted.current = false; generation.current = scopeGeneration + 1; };
   }, [cacheKey, from, to]);
   const running = useRef(false);
   const pending = useRef(false);

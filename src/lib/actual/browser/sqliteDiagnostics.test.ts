@@ -1,3 +1,4 @@
+/** @jest-environment jsdom */
 import { installSqliteFileDiagnostics, instrumentSqliteWorker } from "./sqliteDiagnostics";
 
 const callback = "r=w(function(e,t){e=F(e),he.set(t,e)},`vii`)";

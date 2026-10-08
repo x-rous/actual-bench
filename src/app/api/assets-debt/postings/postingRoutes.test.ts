@@ -55,9 +55,12 @@ describe("posting routes", () => {
     expect(charge).toMatchObject({ classification: "safe", status: "proposed" });
     const response = await apply(json({ fresh: [] }), ctx(charge.id));
     expect(response.status).toBe(200);
-    const { ticket } = (await response.json()) as { ticket: { posting: { status: string; decidedAt: string | null }; mode: string } };
+    const { ticket } = (await response.json()) as { ticket: { posting: { status: string; decidedAt: string | null }; mode: string; executionToken: string } };
     expect(ticket).toMatchObject({ mode: "apply", posting: { status: "applying", decidedAt: expect.any(String) } });
-    const recorded = await outcome(json({ status: "applied", actualIds: ["txn-1"], appliedAt: "2024-06-02T00:00:00.000Z" }), ctx(charge.id));
+    const refused = await outcome(json({ status: "applied", actualIds: ["txn-1"], appliedAt: "2024-06-02T00:00:00.000Z" }), ctx(charge.id));
+    expect(refused.status).toBe(400);
+    const recorded = await outcome(json({ status: "applied", actualIds: ["txn-1"], appliedAt: "2024-06-02T00:00:00.000Z", executionToken: ticket.executionToken }), ctx(charge.id));
+    expect(recorded.status).toBe(200);
     expect(((await recorded.json()) as { posting: { status: string } }).posting.status).toBe("applied");
     const listed = (await (await listPostings(new Request("http://bench"), ctx(debtId))).json()) as { postings: Array<{ id: string; status: string }> };
     expect(listed.postings.find((p) => p.id === charge.id)?.status).toBe("applied");
@@ -78,9 +81,11 @@ describe("posting routes", () => {
     const [first, second] = postings.filter((p) => p.postingKind === "interest-charge");
     const declined = await decline(new Request("http://bench", { method: "POST" }), ctx(second.id));
     expect(((await declined.json()) as { posting: { status: string; decidedAt: string } }).posting).toMatchObject({ status: "declined", decidedAt: expect.any(String) });
-    await apply(json({ fresh: [] }), ctx(first.id));
-    await outcome(json({ status: "applied", actualIds: ["txn-1"], appliedAt: "2024-06-02T00:00:00.000Z" }), ctx(first.id));
+    const ticket = (await (await apply(json({ fresh: [] }), ctx(first.id))).json()).ticket;
+    const recorded = await outcome(json({ status: "applied", actualIds: ["txn-1"], appliedAt: "2024-06-02T00:00:00.000Z", executionToken: ticket.executionToken }), ctx(first.id));
+    expect(recorded.status).toBe(200);
     const reversed = await reverse(json({ accountDirectory: directory(), transferPayees: {} }), ctx(first.id));
+    expect(reversed.status).toBe(200);
     const reversal = ((await reversed.json()) as { posting: { status: string; classification: string; reversalOf: string } }).posting;
     expect(reversal).toMatchObject({ status: "proposed", classification: "review", reversalOf: first.id });
     const reproduced = await reproduce(new Request("http://bench", { method: "POST" }), ctx(first.id));

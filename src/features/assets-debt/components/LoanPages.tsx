@@ -46,7 +46,7 @@ import { WorkspaceFrame, workspaceTabFor, workspaceTabSlug, type WorkspaceTab } 
 
 const today = () => localToday();
 const storageKey = (connectionId: string, budget: string) => `assets-debt:new-loan:${connectionId}:${budget}`;
-const currencyKey = (_budget: string) => "assets-debt:currency-preference";
+const currencyKey = "assets-debt:currency-preference";
 const drafts = new Map<string, { sim: SimulationState; tracking: TrackingState }>();
 
 /** The automatic matching setup never stops a save: a failure leaves the usual required step. */
@@ -119,7 +119,7 @@ function NewLoanEditor() {
     const restored = readSession<{ sim: SimulationState; tracking: TrackingState }>(key);
     let currency = existing.data?.[0]?.currency ?? null;
     try {
-      currency ??= localStorage.getItem(currencyKey(budget));
+      currency ??= localStorage.getItem(currencyKey);
     } catch {
       // storage unavailable: fall through to the default
     }
@@ -151,7 +151,7 @@ function NewLoanEditor() {
       setSavePhase(null);
       try {
         if (key) drafts.delete(key);
-        if (budget && sim) localStorage.setItem(currencyKey(budget), sim.currency);
+        if (budget && sim) localStorage.setItem(currencyKey, sim.currency);
       } catch {
         // storage unavailable
       }
@@ -252,21 +252,16 @@ function LoanEditor({ id }: { id: string }) {
   }, [offsetHistory.data, debt.data]);
 
   const [editingBase, setEditingBase] = useState<typeof saved>(null);
-  const [remoteChanged, setRemoteChanged] = useState(false);
-  useEffect(() => {
-    if (saved === editingBase) return;
-    const edited = editingBase && sim && tracking && (JSON.stringify(sim) !== JSON.stringify(editingBase.simulation) || JSON.stringify({ ...tracking, changeSummary: editingBase.tracking.changeSummary }) !== JSON.stringify(editingBase.tracking));
-    if (edited) { setRemoteChanged(true); return; }
-    setEditingBase(saved);
-    setRemoteChanged(false);
-    // Load (or reload after a save) the saved states into the editable copies.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the editable copy starts from each newly loaded revision
-    setSim(saved?.simulation ?? null);
-    setTracking(saved?.tracking ?? null);
-  }, [saved, editingBase, sim, tracking]);
-
   // The optional "what changed" note describes a save; on its own it is not a change.
   const dirty = !!editingBase && !!sim && !!tracking && (JSON.stringify(editingBase.simulation) !== JSON.stringify(sim) || JSON.stringify(editingBase.tracking) !== JSON.stringify({ ...tracking, changeSummary: editingBase.tracking.changeSummary }));
+  const remoteChanged = saved !== editingBase && dirty;
+  // Adjust this component's editable copy before rendering children when a new saved value arrives.
+  // Local edits retain their original base and expose the conflict instead of being overwritten.
+  if (saved !== editingBase && !dirty) {
+    setEditingBase(saved);
+    setSim(saved?.simulation ?? null);
+    setTracking(saved?.tracking ?? null);
+  }
   useLeaveGuard(dirty);
   const detail = debt.data;
   const readOnly = detail?.debt.status === "archived";
@@ -296,7 +291,7 @@ function LoanEditor({ id }: { id: string }) {
     onSuccess: ({ next, matching }, options) => {
       setSavePhase(null);
       const states = detailToStates(next);
-      setEditingBase(states); setSim(states.simulation); setTracking(states.tracking); setRemoteChanged(false);
+      setEditingBase(states); setSim(states.simulation); setTracking(states.tracking);
       setIssues([]);
       toast.success(detail?.debt.status === "draft" && next.debt.status === "active"
         ? "Saved. The loan is now active."
@@ -370,7 +365,7 @@ function LoanEditor({ id }: { id: string }) {
         <Input aria-label="What changed (optional)" placeholder="What changed (optional)" value={tracking.changeSummary} onChange={(e) => setTracking({ ...tracking, changeSummary: e.target.value })} className="h-7 w-52 text-xs" />
       ) : null}
       {dirty ? (
-        <Button type="button" size="sm" variant="outline" onClick={() => { setEditingBase(saved); setSim(saved.simulation); setTracking(saved.tracking); setRemoteChanged(false); setIssues([]); }}>
+        <Button type="button" size="sm" variant="outline" onClick={() => { setEditingBase(saved); setSim(saved.simulation); setTracking(saved.tracking); setIssues([]); }}>
           Discard changes
         </Button>
       ) : null}
@@ -414,7 +409,7 @@ function LoanEditor({ id }: { id: string }) {
       }}
     >
       <IssueList issues={issues} />
-      {remoteChanged ? <div role="alert" className="mx-4 my-2 text-sm">The saved loan changed. Your edits are preserved. <Button variant="outline" size="sm" onClick={() => { setEditingBase(saved); setSim(saved?.simulation ?? null); setTracking(saved?.tracking ?? null); setRemoteChanged(false); }}>Discard edits and reload</Button></div> : null}
+      {remoteChanged ? <div role="alert" className="mx-4 my-2 text-sm">The saved loan changed. Your edits are preserved. <Button variant="outline" size="sm" onClick={() => { setEditingBase(saved); setSim(saved?.simulation ?? null); setTracking(saved?.tracking ?? null); }}>Discard edits and reload</Button></div> : null}
       {staleStrategy && !readOnly ? <p className="mx-4 mt-2 text-xs text-muted-foreground">{staleStrategy}</p> : null}
       {tab === "activity" ? (
         <LoanActivity debt={detail} directory={directory.data} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} initialFilter={(["action", "waiting", "applied", "undone", "all"] as const).find((f) => f === params?.get("filter")) ?? "action"} scheduleDirty={dirty} />
