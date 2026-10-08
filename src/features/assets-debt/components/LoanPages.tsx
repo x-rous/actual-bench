@@ -291,7 +291,7 @@ function LoanEditor({ id }: { id: string }) {
     onSuccess: ({ next, matching }, options) => {
       setSavePhase(null);
       const states = detailToStates(next);
-      setEditingBase(states); setSim(states.simulation); setTracking(states.tracking);
+      setEditingBase(states); setSim(states?.simulation ?? null); setTracking(states?.tracking ?? null);
       setIssues([]);
       toast.success(detail?.debt.status === "draft" && next.debt.status === "active"
         ? "Saved. The loan is now active."

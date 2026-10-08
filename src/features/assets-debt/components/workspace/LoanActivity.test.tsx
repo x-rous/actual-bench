@@ -74,10 +74,10 @@ describe("Activity bulk apply (T290)", () => {
 describe("selected applied repayments", () => {
   it.each(["undo", "unsplit"] as const)("prepares selected %s proposals newest first without writing Actual", async (action) => {
     jest.clearAllMocks();
-    let saved = ["2024-01-01", "2024-02-01"].map((date, index) => ({
+    let saved = ["2024-01-01", "2024-02-01"].map((date, index): PostingView => ({
       ...posting("applied-" + index, date, 4000), status: "applied",
-      output: { kind: "claim", rows: [before], recordedSplit: { parent: before, children: [], principalMinor: 96000, interestMinor: 4000, calculatedInterestMinor: 4000, counterpart: null } },
-    })) as PostingView[];
+      output: { format: "rd084.posting-output", version: 1, kind: "claim", role: "repayment", closing: null, rows: [before], recordedSplit: { parent: before, children: [], principalMinor: 96000, interestMinor: 4000, calculatedInterestMinor: 4000, counterpart: null } },
+    }));
     jest.mocked(postingsApi.listPostings).mockImplementation(async () => saved);
     const propose = action === "undo" ? postingsApi.proposeReversal : postingsApi.proposeUnsplit;
     jest.mocked(propose).mockImplementation(async (id) => {
