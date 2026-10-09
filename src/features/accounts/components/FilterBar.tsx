@@ -92,7 +92,7 @@ export function FilterBar({
   /** The Group by choice is shown when `groupByOptions` is provided. */
   groupBy?: GroupBy;
   onGroupByChange?: (v: GroupBy) => void;
-  groupByOptions?: SelectOption[];
+  groupByOptions?: { value: GroupBy; label: string }[];
   /** Sets (or, with null, clears) the class of the selected accounts. Shown with the class filter. */
   onBulkSetClass?: (accountClass: AccountClass | null) => void;
   /** Open accounts with no class; shown as a shortcut to the Unclassified filter. */
@@ -206,15 +206,7 @@ export function FilterBar({
       )}
 
       {groupByOptions && groupBy !== undefined && onGroupByChange && (
-        <div className="w-40">
-          <Select
-            size="sm"
-            value={groupBy}
-            aria-label="Group the table by"
-            options={groupByOptions}
-            onValueChange={(next) => onGroupByChange(next as GroupBy)}
-          />
-        </div>
+        <PillGroup options={groupByOptions} value={groupBy} onChange={onGroupByChange} />
       )}
 
       {hasFilters && (

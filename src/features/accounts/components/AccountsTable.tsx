@@ -245,9 +245,9 @@ export function AccountsTable({
   const groupByOptions = useMemo(
     () => (groups || classesEnabled
       ? [
-          { value: "none", label: "No grouping" },
-          ...(groups ? [{ value: "group", label: "By account group" }] : []),
-          ...(classesEnabled ? [{ value: "class", label: "By class" }] : []),
+          { value: "none" as const, label: "No grouping" },
+          ...(groups ? [{ value: "group" as const, label: "By group" }] : []),
+          ...(classesEnabled ? [{ value: "class" as const, label: "By class" }] : []),
         ]
       : undefined),
     [groups, classesEnabled]
@@ -750,7 +750,6 @@ export function AccountsTable({
                           by={activeGroupBy as "group" | "class"}
                           collapsed={isCollapsed}
                           onToggle={toggleCluster}
-                          groupClass={cluster.groupId ? accountClasses.maps.groups.get(cluster.groupId) : undefined}
                           leadingColSpan={leadingColSpan}
                           trailingColSpan={4}
                         />

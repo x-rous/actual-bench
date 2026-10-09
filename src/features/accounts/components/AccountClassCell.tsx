@@ -53,7 +53,9 @@ export const AccountClassCell = React.memo(function AccountClassCell({
   if (effective.source === "group" && effective.accountClass) {
     return (
       <span
-        className="flex items-center gap-1.5 text-xs"
+        // Same box as the dropdown's trigger (height, border, padding), so an inherited
+        // class lines up with a class set on the account itself.
+        className="flex h-6 items-center gap-1.5 border border-transparent px-2 text-xs"
         title={groupName ? `Inherited from the group "${groupName}". Change it on the group.` : "Inherited from the account group"}
       >
         <AccountClassLabel accountClass={effective.accountClass} />

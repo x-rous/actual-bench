@@ -188,7 +188,7 @@ describe("accounts table and Groups dialog share account classes", () => {
     async function groupByClass() {
       renderTable();
       await waitFor(() => expect(screen.getByRole("combobox", { name: "Account class of Wallet" })).toBeEnabled());
-      await pickOption(screen.getByRole("combobox", { name: "Group the table by" }), "By class");
+      fireEvent.click(screen.getByRole("button", { name: "By class" }));
     }
 
     it("clusters accounts under class headings with exact subtotals and a total", async () => {
@@ -217,7 +217,7 @@ describe("accounts table and Groups dialog share account classes", () => {
 
     it("goes back to the flat table with No grouping", async () => {
       await groupByClass();
-      await pickOption(screen.getByRole("combobox", { name: "Group the table by" }), "No grouping");
+      fireEvent.click(screen.getByRole("button", { name: "No grouping" }));
       await waitFor(() => expect(screen.queryByText("Total")).not.toBeInTheDocument());
       expect(screen.queryByRole("button", { name: /Collapse Cash/ })).not.toBeInTheDocument();
     });

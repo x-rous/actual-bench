@@ -2,7 +2,6 @@
 
 import { ChevronDown, ChevronRight, FolderTree } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AccountClass } from "@/lib/account-class";
 import { formatCents, type AccountCluster, type GroupBy } from "../lib/accountClusters";
 import { AccountClassLabel } from "./AccountClassCell";
 
@@ -20,7 +19,6 @@ export function AccountClusterHeader({
   by,
   collapsed,
   onToggle,
-  groupClass,
   leadingColSpan,
   trailingColSpan,
 }: {
@@ -28,8 +26,6 @@ export function AccountClusterHeader({
   by: Exclude<GroupBy, "none">;
   collapsed: boolean;
   onToggle: (key: string) => void;
-  /** The class set on the group, shown beside a group's name. */
-  groupClass?: AccountClass;
   /** Columns before and after the Balance column. */
   leadingColSpan: number;
   trailingColSpan: number;
@@ -52,7 +48,6 @@ export function AccountClusterHeader({
             <>
               <FolderTree className="size-3.5 text-muted-foreground" aria-hidden="true" />
               <span>{cluster.label}</span>
-              {groupClass && <AccountClassLabel accountClass={groupClass} />}
             </>
           )}
           <span className="font-normal text-muted-foreground">({count})</span>
