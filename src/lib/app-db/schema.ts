@@ -1115,3 +1115,21 @@ export const ASSETS_DEBT_V44_TRIGGER_SQL = [
    ON financial_postings
    BEGIN SELECT RAISE(ABORT, 'financial_postings snapshots and identity are immutable'); END`,
 ] as const;
+
+// ── Account classes ──────────────────────────────────────────────────────────
+// Bench-owned metadata: what kind of account an Actual account (or account
+// group) is. Separate from the `type`/`subtype` columns Actual keeps on its own
+// accounts. Keyed by Actual ids within one budget (`account_id` holds a group id
+// when scope is "group"); never a copy of budget data. `account_class` is
+// validated by the repository and read tolerantly, so a class added by a later
+// version does not break an older reader.
+export const ACCOUNT_CLASS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS account_classes (
+  budget_sync_id text NOT NULL,
+  scope text NOT NULL CHECK (scope IN ('account', 'group')),
+  account_id text NOT NULL,
+  account_class text NOT NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY (budget_sync_id, scope, account_id)
+);
+`;

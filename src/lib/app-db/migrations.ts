@@ -63,11 +63,12 @@ import {
   FINANCIAL_POSTING_TABLE_SQL,
   ASSETS_DEBT_V44_INDEX_SQL,
   ASSETS_DEBT_V44_TRIGGER_SQL,
+  ACCOUNT_CLASS_TABLE_SQL,
 } from "./schema";
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 45;
+export const LATEST_SCHEMA_VERSION = 46;
 
 type Migration = {
   version: number;
@@ -568,6 +569,12 @@ const MIGRATIONS: readonly Migration[] = [
         expires_at text NOT NULL
       )`,
     ],
+  },
+  {
+    version: 46,
+    // Account classes: Bench-owned account/group classes. Additive; no
+    // existing table is touched.
+    statements: [ACCOUNT_CLASS_TABLE_SQL],
   },
 ];
 

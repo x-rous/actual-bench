@@ -12,8 +12,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { accountClassLabel, planGroupAccountClass, type AccountClass, type GroupAccountClassPlan } from "@/lib/account-class";
 import { useStagedStore } from "@/store/staged";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
+import { useAccountClasses } from "../hooks/useAccountClasses";
+import { UNCLASSIFIED, UNCLASSIFIED_OPTIONS, buildAccountClassGroups } from "./AccountClassCell";
 import { GROUP_NAME_MAX, groupMemberCounts, liveGroups, validateGroupName } from "../lib/accountGroups";
 
 /**
@@ -35,7 +39,7 @@ export function AccountGroupsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* The body owns the form state; it unmounts with the dialog, so every open starts clean. */}
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-xl">
         <GroupsDialogBody onOpenChange={onOpenChange} assignAccountIds={assignAccountIds} />
       </DialogContent>
     </Dialog>
@@ -52,6 +56,30 @@ function GroupsDialogBody({
   const stagedGroups = useStagedStore((s) => s.accountGroups);
   const stagedAccounts = useStagedStore((s) => s.accounts);
   const { createGroup, renameGroup, deleteGroup } = useAccountGroupActions();
+
+  // A group's account class is inherited by its members, so setting one replaces
+  // the members' own classes. Classes are Bench-owned: applied at once, not drafted.
+  const accountClasses = useAccountClasses();
+  const classGroups = useMemo(() => buildAccountClassGroups(), []);
+  const [pendingClass, setPendingClass] = useState<{
+    groupId: string;
+    accountClass: AccountClass;
+    plan: GroupAccountClassPlan;
+  } | null>(null);
+
+  function requestGroupClass(groupId: string, next: string) {
+    const accountClass = next === UNCLASSIFIED ? null : (next as AccountClass);
+    const memberIds = Object.values(stagedAccounts)
+      .filter((entry) => !entry.isDeleted && entry.entity.groupId === groupId)
+      .map((entry) => entry.entity.id);
+    const plan = planGroupAccountClass(groupId, accountClass, memberIds, accountClasses.maps);
+    if (accountClass && plan.cleared.length > 0) {
+      setPendingClass({ groupId, accountClass, plan });
+      return;
+    }
+    setPendingClass(null);
+    accountClasses.apply(plan.changes);
+  }
 
   const groups = useMemo(() => liveGroups(stagedGroups), [stagedGroups]);
   const counts = useMemo(() => groupMemberCounts(stagedAccounts), [stagedAccounts]);
@@ -199,6 +227,20 @@ function GroupsDialogBody({
                           <span className="shrink-0 text-xs text-muted-foreground">
                             {memberCount} account{memberCount === 1 ? "" : "s"}
                           </span>
+                          {accountClasses.enabled && (
+                            <div className="w-36 shrink-0">
+                              <Select
+                                size="sm"
+                                disabled={!accountClasses.available || !!isNew}
+                                title={isNew ? "Save the group before setting its account class" : undefined}
+                                aria-label={`Account class of group ${group.name}`}
+                                value={accountClasses.maps.groups.get(group.id) ?? UNCLASSIFIED}
+                                options={UNCLASSIFIED_OPTIONS}
+                                groups={classGroups}
+                                onValueChange={(next) => requestGroupClass(group.id, next)}
+                              />
+                            </div>
+                          )}
                           <Button
                             size="icon-xs"
                             variant="ghost"
@@ -227,6 +269,32 @@ function GroupsDialogBody({
                       <p className="text-xs text-destructive" role="alert">
                         {saveError}
                       </p>
+                    )}
+                    {pendingClass?.groupId === group.id && (
+                      <div className="flex flex-col gap-1 rounded bg-amber-50 px-2 py-1 text-xs dark:bg-amber-950/20" role="alert">
+                        <span>
+                          Set this group to {accountClassLabel(pendingClass.accountClass)}? These accounts have their own class and will
+                          inherit it instead:{" "}
+                          {pendingClass.plan.cleared
+                            .map((c) => `${stagedAccounts[c.id]?.entity.name || "Unnamed account"} (${accountClassLabel(c.accountClass)})`)
+                            .join(", ")}
+                          .
+                        </span>
+                        <span className="flex gap-2">
+                          <Button
+                            size="xs"
+                            onClick={() => {
+                              accountClasses.apply(pendingClass.plan.changes);
+                              setPendingClass(null);
+                            }}
+                          >
+                            Set group class
+                          </Button>
+                          <Button size="xs" variant="outline" onClick={() => setPendingClass(null)}>
+                            Cancel
+                          </Button>
+                        </span>
+                      </div>
                     )}
                     {confirmDeleteId === group.id && (
                       <div className="flex items-center gap-2 rounded bg-destructive/5 px-2 py-1 text-xs">

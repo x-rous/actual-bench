@@ -55,6 +55,48 @@ shows it as a read-only badge afterwards. Get it right the first time.
 - Deleting or closing always confirms first, with the balance, the transaction count and the rule
   count in front of you. Money still in the account gets a budget-consistency warning.
 
+## Account classes
+
+Each account can be given a class, so Bench features know what kind of account it is.
+
+- **Assets:** Cash, Bank, Investment, Property, Vehicle, Receivable, Other Asset.
+- **Liabilities:** Credit Card, Loan, Payable, Other Liability.
+
+Click an account's **Class** cell and choose a class, or **Unclassified** to clear it. A class is a label
+only. It is separate from the type and subtype Actual keeps on its own accounts, it never changes balances,
+transactions, budget mode or transfers, and it is never written to Actual. Classes are saved in Bench for the
+open budget straight away, so they do not wait for **Save** and are not part of **Undo**.
+
+**Set a class on a group.** In the **Manage Groups** dialog, choose a class for the group. Its accounts then show
+that class as **Inherited** and cannot change it; change the group instead. If some of those accounts already
+have their own class, Bench lists them and asks you to confirm, because the group class replaces theirs.
+Moving an account out of the group does not bring a cleared class back.
+
+Each class has an icon next to its name. New accounts and groups that are not saved yet cannot be given a class
+until you **Save**. Use the **Class** filter, including **Unclassified**, to find accounts that still need one.
+
+**Classify several at once.** Select the accounts and choose **Set class…** in the selection bar. Accounts that
+inherit a group class and accounts that are not saved yet are left unchanged; Bench tells you how many.
+
+Click the **Class** header to sort: assets first, then liabilities, then unclassified accounts.
+
+## Grouped view
+
+Use the **No grouping / By group / By class** toggle in the toolbar to cluster the table by **account group** or by **class**. Each
+cluster has a heading with its name, how many accounts it holds, and the total of their balances under the
+**Balance** column. A **Total** row closes the table.
+
+- Select a heading to collapse or expand it. Collapsed accounts are left out of **select all**, paste, and
+  keyboard navigation, so a bulk action never touches rows you cannot see. A new, unsaved account is always
+  shown.
+- Groups are listed by name. Classes follow the class list: assets first, then liabilities. Accounts with no
+  group or class come last.
+- Filters and sorting still apply inside each cluster, and totals add only the accounts that match.
+- Debts are negative, so a heading that contains loans or cards can show a negative total. The balances come
+  from Actual and are added exactly, in minor units.
+
+Choose **No grouping** to return to the flat table. The choice is a display preference.
+
 ## Account groups
 
 Account groups are named collections that Actual shows together in its sidebar. Bench supports them
@@ -62,7 +104,7 @@ on Actual 26.9 or later; on an older server the Group column and controls do not
 
 - **Assign an account:** click its **Group** cell and choose a group, **No group**, or **New group…**.
 - **Move several at once:** select the accounts, then use **Move to group…** in the selection bar.
-- **Manage groups:** select **Groups** in the page toolbar to create, rename, or delete groups. Names
+- **Manage groups:** select **Manage Groups** in the page toolbar to create, rename, or delete groups. Names
   must be unique, ignoring case.
 - **Deleting a group** keeps its accounts - they become ungrouped. The dialog says how many are
   affected first.
@@ -80,7 +122,7 @@ Actual 26.9 or later does).
 ## Filter and sort
 
 Filter by name, status, budget type, whether any rules reference the account, and group. Sort by name,
-status, budget type or group. Staged rows ignore the sort and stay at the top until you Save.
+status, budget type, group or class. Staged rows ignore the sort and stay at the top until you Save.
 
 ## Notes
 
@@ -95,7 +137,9 @@ Export accounts to CSV or import them (staged before saving). CSV columns:
 - `group` (optional, account groups only) - the group's name. A name that matches no existing group
   stages a new one. On a server without account groups the column is ignored.
 
-Exported files include the `group` column when the server supports groups.
+Exported files include the `group` column when the server supports groups, and a trailing `class` column once
+account classes have loaded (an inherited class is exported too). Import ignores the `class` column: a class
+can only be saved on an account that already exists, so set classes after you **Save**.
 
 ## Common problems
 
