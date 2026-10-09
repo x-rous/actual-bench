@@ -8,6 +8,7 @@ import type { SelectOption } from "@/components/ui/select";
 import { NEW_GROUP, NO_GROUP } from "../lib/accountGroups";
 import { UNCLASSIFIED, UNCLASSIFIED_OPTIONS, buildAccountClassGroups } from "./AccountClassCell";
 import type { AccountClass } from "@/lib/account-class";
+import type { GroupBy } from "../lib/accountClusters";
 
 export type StatusFilter = "all" | "open" | "closed";
 export type BudgetFilter = "all" | "on" | "off";
@@ -59,6 +60,9 @@ export function FilterBar({
   classFilter,
   onClassFilterChange,
   unclassifiedCount,
+  groupBy,
+  onGroupByChange,
+  groupByOptions,
   onBulkSetClass,
   onBulkAssignGroup,
   filteredCount,
@@ -85,6 +89,10 @@ export function FilterBar({
   /** The class filter is shown only when `classFilter` is provided (a budget is open). */
   classFilter?: string;
   onClassFilterChange: (v: string) => void;
+  /** The Group by choice is shown when `groupByOptions` is provided. */
+  groupBy?: GroupBy;
+  onGroupByChange?: (v: GroupBy) => void;
+  groupByOptions?: SelectOption[];
   /** Sets (or, with null, clears) the class of the selected accounts. Shown with the class filter. */
   onBulkSetClass?: (accountClass: AccountClass | null) => void;
   /** Open accounts with no class; shown as a shortcut to the Unclassified filter. */
@@ -195,6 +203,18 @@ export function FilterBar({
         >
           {unclassifiedCount} need{unclassifiedCount === 1 ? "s" : ""} a class
         </button>
+      )}
+
+      {groupByOptions && groupBy !== undefined && onGroupByChange && (
+        <div className="w-40">
+          <Select
+            size="sm"
+            value={groupBy}
+            aria-label="Group the table by"
+            options={groupByOptions}
+            onValueChange={(next) => onGroupByChange(next as GroupBy)}
+          />
+        </div>
       )}
 
       {hasFilters && (

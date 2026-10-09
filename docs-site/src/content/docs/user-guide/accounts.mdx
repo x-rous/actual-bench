@@ -80,6 +80,23 @@ inherit a group class and accounts that are not saved yet are left unchanged; Be
 
 Click the **Class** header to sort: assets first, then liabilities, then unclassified accounts.
 
+## Grouped view
+
+Use **Group the table by** in the toolbar to cluster the table by **account group** or by **class**. Each
+cluster has a heading with its name, how many accounts it holds, and the total of their balances under the
+**Balance** column. A **Total** row closes the table.
+
+- Select a heading to collapse or expand it. Collapsed accounts are left out of **select all**, paste, and
+  keyboard navigation, so a bulk action never touches rows you cannot see. A new, unsaved account is always
+  shown.
+- Groups are listed by name. Classes follow the class list: assets first, then liabilities. Accounts with no
+  group or class come last. A group's heading also shows the group's class.
+- Filters and sorting still apply inside each cluster, and totals add only the accounts that match.
+- Debts are negative, so a heading that contains loans or cards can show a negative total. The balances come
+  from Actual and are added exactly, in minor units.
+
+Choose **No grouping** to return to the flat table. The choice is a display preference.
+
 ## Account groups
 
 Account groups are named collections that Actual shows together in its sidebar. Bench supports them

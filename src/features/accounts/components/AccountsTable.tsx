@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { Fragment, useState, useMemo, useCallback } from "react";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
@@ -23,6 +23,8 @@ import { useAccountClasses } from "../hooks/useAccountClasses";
 import { toast } from "sonner";
 import { ACCOUNT_CLASS_INFO, type AccountClass } from "@/lib/account-class";
 import { effectiveAccountClasses } from "../lib/accountClasses";
+import { buildClusters, type GroupBy } from "../lib/accountClusters";
+import { AccountClusterHeader, AccountTotalRow } from "./AccountClusterRows";
 import { UNCLASSIFIED } from "./AccountClassCell";
 import { NEW_GROUP, NO_GROUP, groupLabel, liveGroups } from "../lib/accountGroups";
 import { AccountsTableRow } from "./AccountsTableRow";
@@ -71,14 +73,16 @@ export function AccountsTable({
     rulesFilter: "all" as RulesFilter,
     groupFilter: ALL_GROUPS as string,
     classFilter: ALL_CLASSES as string,
+    groupBy: "none" as GroupBy,
   });
-  const { search, statusFilter, budgetFilter, rulesFilter, groupFilter, classFilter } = filters;
+  const { search, statusFilter, budgetFilter, rulesFilter, groupFilter, classFilter, groupBy } = filters;
   const setSearch       = (v: string)       => setFilters((f) => ({ ...f, search: v }));
   const setStatusFilter = (v: StatusFilter) => setFilters((f) => ({ ...f, statusFilter: v }));
   const setBudgetFilter = (v: BudgetFilter) => setFilters((f) => ({ ...f, budgetFilter: v }));
   const setRulesFilter  = (v: RulesFilter)  => setFilters((f) => ({ ...f, rulesFilter: v }));
   const setGroupFilter  = (v: string)       => setFilters((f) => ({ ...f, groupFilter: v }));
   const setClassFilter   = (v: string)       => setFilters((f) => ({ ...f, classFilter: v }));
+  const setGroupBy       = (v: GroupBy)      => setFilters((f) => ({ ...f, groupBy: v }));
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -182,7 +186,7 @@ export function AccountsTable({
   );
 
   // ── Derived rows: filter → sort ──────────────────────────────────────────────
-  const rows: AccountRow[] = useMemo(() => {
+  const sortedRows: AccountRow[] = useMemo(() => {
     const q = search.toLowerCase();
     const result: AccountRow[] = [];
     for (const r of Object.values(staged) as AccountRow[]) {
@@ -232,7 +236,56 @@ export function AccountsTable({
     return result;
   }, [staged, search, statusFilter, budgetFilter, rulesFilter, activeGroupFilter, activeClassFilter, effectiveClasses, groups, accountRuleCount, sortCol, sortDir]);
 
-  const rowIds = useMemo(() => rows.map((row) => row.entity.id), [rows]);
+  // ── Grouped view ─────────────────────────────────────────────────────────────
+  // Optional: clusters the filtered, sorted rows by account group or class, with a
+  // balance subtotal each. `rows` is every matching row in display order;
+  // `displayRows` leaves out the rows of collapsed clusters (a new, unsaved row is
+  // always shown), and is what selection, paste and keyboard navigation use.
+  const activeGroupBy: GroupBy = groupBy === "group" && groups ? "group" : groupBy === "class" && classesEnabled ? "class" : "none";
+  const groupByOptions = useMemo(
+    () => (groups || classesEnabled
+      ? [
+          { value: "none", label: "No grouping" },
+          ...(groups ? [{ value: "group", label: "By account group" }] : []),
+          ...(classesEnabled ? [{ value: "class", label: "By class" }] : []),
+        ]
+      : undefined),
+    [groups, classesEnabled]
+  );
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const collapseKey = useCallback((key: string) => `${activeGroupBy}:${key}`, [activeGroupBy]);
+  const toggleCluster = useCallback(
+    (key: string) =>
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        const k = collapseKey(key);
+        if (next.has(k)) next.delete(k);
+        else next.add(k);
+        return next;
+      }),
+    [collapseKey]
+  );
+  const clusters = useMemo(
+    () => (activeGroupBy === "none" ? null : buildClusters(sortedRows, activeGroupBy, { groups, effective: effectiveClasses, balances })),
+    [activeGroupBy, sortedRows, groups, effectiveClasses, balances]
+  );
+  const shownRowsOf = useCallback(
+    <R extends { isNew: boolean }>(key: string, clusterRows: R[]) => (collapsed.has(collapseKey(key)) ? clusterRows.filter((r) => r.isNew) : clusterRows),
+    [collapsed, collapseKey]
+  );
+  const rows = useMemo(() => (clusters ? clusters.flatMap((c) => c.rows) : sortedRows), [clusters, sortedRows]);
+  const displayRows = useMemo(
+    () => (clusters ? clusters.flatMap((c) => shownRowsOf(c.key, c.rows)) : sortedRows),
+    [clusters, sortedRows, shownRowsOf]
+  );
+  const totalCents = useMemo(() => {
+    if (!clusters) return null;
+    const parts = clusters.map((c) => c.subtotalCents).filter((c): c is number => c !== null);
+    return parts.length > 0 ? parts.reduce((a, b) => a + b, 0) : null;
+  }, [clusters]);
+  const leadingColSpan = 4 + (groups ? 1 : 0) + (classesEnabled ? 1 : 0);
+
+  const rowIds = useMemo(() => displayRows.map((row) => row.entity.id), [displayRows]);
 
   const {
     containerRef,
@@ -263,9 +316,9 @@ export function AccountsTable({
   }
 
   // ── Multi-select helpers ─────────────────────────────────────────────────────
-  const visibleIds = useMemo(() => new Set(rows.map((r) => r.entity.id)), [rows]);
-  const allVisibleSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.entity.id));
-  const someVisibleSelected = rows.some((r) => selectedIds.has(r.entity.id));
+  const visibleIds = useMemo(() => new Set(displayRows.map((r) => r.entity.id)), [displayRows]);
+  const allVisibleSelected = displayRows.length > 0 && displayRows.every((r) => selectedIds.has(r.entity.id));
+  const someVisibleSelected = displayRows.some((r) => selectedIds.has(r.entity.id));
 
   function toggleSelectAll() {
     _toggleSelectAll(visibleIds, allVisibleSelected);
@@ -396,7 +449,7 @@ export function AccountsTable({
     if (pastedRows.length === 0) return;
 
     const startIdx = selectedCell
-      ? rows.findIndex((r) => r.entity.id === selectedCell.rowId)
+      ? displayRows.findIndex((r) => r.entity.id === selectedCell.rowId)
       : 0;
     if (startIdx === -1) return;
 
@@ -406,12 +459,12 @@ export function AccountsTable({
     let targetIdx = startIdx;
     for (const cols of pastedRows) {
 
-      while (targetIdx < rows.length && rows[targetIdx]?.isDeleted) {
+      while (targetIdx < displayRows.length && displayRows[targetIdx]?.isDeleted) {
         targetIdx++;
       }
 
-      if (targetIdx < rows.length) {
-        const target = rows[targetIdx];
+      if (targetIdx < displayRows.length) {
+        const target = displayRows[targetIdx];
         const patch: Partial<Account> = {};
         const name = cols[0]?.trim() ?? "";
         if (name) patch.name = name;
@@ -501,6 +554,47 @@ export function AccountsTable({
   const handleClearSaveError = useCallback((id: string) => clearSaveError("accounts", id), [clearSaveError]);
   const handleRevert = useCallback((id: string) => revertEntity("accounts", id), [revertEntity]);
 
+  function renderRow(row: AccountRow) {
+    const { entity, isDeleted } = row;
+    const isNameEditing = editingCell?.rowId === entity.id && editingCell.colId === "name";
+    return (
+      <AccountsTableRow
+        key={entity.id}
+        row={row}
+        highlightedId={highlightedId}
+        isRowSelected={selectedIds.has(entity.id)}
+        isNameSelected={selectedCell?.rowId === entity.id && selectedCell.colId === "name"}
+        isNameEditing={isNameEditing}
+        editStartChar={isNameEditing ? editStartChar : undefined}
+        isDuplicate={!isDeleted && duplicateNames.has(entity.name.trim().toLowerCase())}
+        hasNote={!row.isNew && accountIdsWithNotes.has(entity.id)}
+        balance={balances?.get(entity.id)}
+        ruleCount={accountRuleCount.get(entity.id) ?? 0}
+        groups={groups}
+        onAssignGroup={handleAssignGroup}
+        onRequestNewGroup={handleRequestNewGroup}
+        effective={classesEnabled ? effectiveClasses.get(entity.id) : undefined}
+        classGroupName={entity.groupId ? groupNames.get(entity.groupId) : undefined}
+        canSetClass={accountClasses.available && !row.isNew}
+        onSetClass={handleSetClass}
+        onToggleSelect={toggleSelectRow}
+        onSelectNameCell={handleSelectNameCell}
+        onStartEditingName={handleStartEditingName}
+        onDoneName={handleNameDone}
+        onToggleNewBudgetType={handleToggleNewBudgetType}
+        onSetInitialBalance={handleSetInitialBalance}
+        onOpenRules={handleOpenRules}
+        onClearSaveError={handleClearSaveError}
+        onRevert={handleRevert}
+        onRequestClose={handleRequestClose}
+        onReopen={handleReopen}
+        onRequestDelete={handleRequestDelete}
+        onInspect={onInspectIdChange}
+        isAnotherCellEditing={!!editingCell}
+      />
+    );
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
   const totalCount = Object.keys(staged).length;
   const activeSelectedCount = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted).length;
@@ -518,6 +612,7 @@ export function AccountsTable({
           groupAssignOptions={groupAssignOptions}
           classFilter={classesEnabled ? activeClassFilter : undefined} onClassFilterChange={setClassFilter}
           unclassifiedCount={classesEnabled ? unclassifiedCount : undefined}
+          groupBy={activeGroupBy} onGroupByChange={setGroupBy} groupByOptions={groupByOptions}
           onBulkSetClass={accountClasses.available ? handleBulkSetClass : undefined}
           onBulkAssignGroup={handleBulkAssignGroup}
           filteredCount={rows.length} totalCount={totalCount}
@@ -645,47 +740,33 @@ export function AccountsTable({
               </thead>
 
               <tbody>
-                {rows.map((row) => {
-                  const { entity, isDeleted } = row;
-                  const isNameEditing = editingCell?.rowId === entity.id && editingCell.colId === "name";
-                  return (
-                    <AccountsTableRow
-                      key={entity.id}
-                      row={row}
-                      highlightedId={highlightedId}
-                      isRowSelected={selectedIds.has(entity.id)}
-                      isNameSelected={selectedCell?.rowId === entity.id && selectedCell.colId === "name"}
-                      isNameEditing={isNameEditing}
-                      editStartChar={isNameEditing ? editStartChar : undefined}
-                      isDuplicate={!isDeleted && duplicateNames.has(entity.name.trim().toLowerCase())}
-                      hasNote={!row.isNew && accountIdsWithNotes.has(entity.id)}
-                      balance={balances?.get(entity.id)}
-                      ruleCount={accountRuleCount.get(entity.id) ?? 0}
-                      groups={groups}
-                      onAssignGroup={handleAssignGroup}
-                      onRequestNewGroup={handleRequestNewGroup}
-                      effective={classesEnabled ? effectiveClasses.get(entity.id) : undefined}
-                      classGroupName={entity.groupId ? groupNames.get(entity.groupId) : undefined}
-                      canSetClass={accountClasses.available && !row.isNew}
-                      onSetClass={handleSetClass}
-                      onToggleSelect={toggleSelectRow}
-                      onSelectNameCell={handleSelectNameCell}
-                      onStartEditingName={handleStartEditingName}
-                      onDoneName={handleNameDone}
-                      onToggleNewBudgetType={handleToggleNewBudgetType}
-                      onSetInitialBalance={handleSetInitialBalance}
-                      onOpenRules={handleOpenRules}
-                      onClearSaveError={handleClearSaveError}
-                      onRevert={handleRevert}
-                      onRequestClose={handleRequestClose}
-                      onReopen={handleReopen}
-                      onRequestDelete={handleRequestDelete}
-                      onInspect={onInspectIdChange}
-                      isAnotherCellEditing={!!editingCell}
-                    />
-                  );
-                })}
+                {clusters ? (
+                  clusters.map((cluster) => {
+                    const isCollapsed = collapsed.has(collapseKey(cluster.key));
+                    return (
+                      <Fragment key={cluster.key}>
+                        <AccountClusterHeader
+                          cluster={cluster}
+                          by={activeGroupBy as "group" | "class"}
+                          collapsed={isCollapsed}
+                          onToggle={toggleCluster}
+                          groupClass={cluster.groupId ? accountClasses.maps.groups.get(cluster.groupId) : undefined}
+                          leadingColSpan={leadingColSpan}
+                          trailingColSpan={4}
+                        />
+                        {shownRowsOf(cluster.key, cluster.rows).map(renderRow)}
+                      </Fragment>
+                    );
+                  })
+                ) : (
+                  rows.map(renderRow)
+                )}
               </tbody>
+              {clusters && (
+                <tfoot>
+                  <AccountTotalRow cents={totalCents} leadingColSpan={leadingColSpan} trailingColSpan={4} />
+                </tfoot>
+              )}
           </table>
         )}
         </div>

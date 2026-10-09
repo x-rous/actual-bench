@@ -18,7 +18,8 @@ jest.mock("../../../store/connection", () => ({
   selectActiveInstance: jest.fn(),
 }));
 jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn(), info: jest.fn() } }));
-jest.mock("../hooks/useAccountBalances", () => ({ useAccountBalances: () => ({ data: new Map() }) }));
+const mockBalances = new Map<string, number>();
+jest.mock("../hooks/useAccountBalances", () => ({ useAccountBalances: () => ({ data: mockBalances }) }));
 jest.mock("../hooks/useAccountGroups", () => ({ useAccountGroups: () => ({ supported: true }) }));
 jest.mock("@/hooks/useAllNotes", () => ({ useAllNotes: () => ({ data: undefined }) }));
 
@@ -39,6 +40,7 @@ function fakeServer() {
 
 describe("accounts table and Groups dialog share account classes", () => {
   beforeEach(() => {
+    mockBalances.clear();
     useStagedStore.getState().discardAll();
     useStagedStore.getState().loadAccounts([{ id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" }]);
     useStagedStore.getState().loadAccountGroups([{ id: "g1", name: "Everyday" }]);
@@ -158,5 +160,66 @@ describe("accounts table and Groups dialog share account classes", () => {
     expect(order()).toEqual(["a3", "a1", "a2"]);
     fireEvent.click(screen.getByRole("button", { name: /^Class/ }));
     expect(order()).toEqual(["a2", "a1", "a3"]);
+  });
+
+  describe("grouped view", () => {
+    beforeEach(() => {
+      useStagedStore.getState().loadAccounts([
+        { id: "a1", name: "Mortgage", offBudget: true, closed: false, groupId: null },
+        { id: "a2", name: "Wallet", offBudget: false, closed: false, groupId: null },
+        { id: "a3", name: "Petty", offBudget: false, closed: false, groupId: null },
+        { id: "a4", name: "Unsorted", offBudget: false, closed: false, groupId: null },
+      ]);
+      mockBalances.set("a1", -200000.5);
+      mockBalances.set("a2", 100.1);
+      mockBalances.set("a3", 50.2);
+      (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
+        ok: true,
+        json: async () => ({
+          accountClasses: [
+            { budgetSyncId: "budget-1", scope: "account", accountId: "a1", accountClass: "loan", updatedAt: "now" },
+            { budgetSyncId: "budget-1", scope: "account", accountId: "a2", accountClass: "cash", updatedAt: "now" },
+            { budgetSyncId: "budget-1", scope: "account", accountId: "a3", accountClass: "cash", updatedAt: "now" },
+          ],
+        }),
+      }));
+    });
+
+    async function groupByClass() {
+      renderTable();
+      await waitFor(() => expect(screen.getByRole("combobox", { name: "Account class of Wallet" })).toBeEnabled());
+      await pickOption(screen.getByRole("combobox", { name: "Group the table by" }), "By class");
+    }
+
+    it("clusters accounts under class headings with exact subtotals and a total", async () => {
+      await groupByClass();
+
+      const cash = await screen.findByRole("button", { name: /Collapse Cash, 2 accounts/ });
+      expect(cash.closest("tr")).toHaveTextContent("150.30"); // 100.10 + 50.20, with no float drift
+      expect(screen.getByRole("button", { name: /Collapse Loan, 1 account$/ }).closest("tr")).toHaveTextContent("-200,000.50");
+      expect(screen.getByRole("button", { name: /Collapse Unclassified, 1 account$/ }).closest("tr")).toHaveTextContent("-");
+
+      const order = screen.getAllByRole("row").map((r) => r.getAttribute("data-row-id") ?? r.textContent?.slice(0, 4));
+      expect(order.filter((id) => id?.startsWith("a"))).toEqual(["a2", "a3", "a1", "a4"]); // Cash, Loan, Unclassified
+      expect(screen.getByText("Total").closest("tr")).toHaveTextContent("-199,850.20");
+    });
+
+    it("hides a collapsed cluster's rows, and select-all does not reach them", async () => {
+      await groupByClass();
+      fireEvent.click(await screen.findByRole("button", { name: /Collapse Cash/ }));
+
+      expect(screen.queryByRole("checkbox", { name: "Select account Wallet" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Expand Cash/ })).toHaveAttribute("aria-expanded", "false");
+
+      fireEvent.click(screen.getAllByRole("checkbox")[0]); // select all
+      await waitFor(() => expect(screen.getByText("2 selected")).toBeInTheDocument());
+    });
+
+    it("goes back to the flat table with No grouping", async () => {
+      await groupByClass();
+      await pickOption(screen.getByRole("combobox", { name: "Group the table by" }), "No grouping");
+      await waitFor(() => expect(screen.queryByText("Total")).not.toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: /Collapse Cash/ })).not.toBeInTheDocument();
+    });
   });
 });
