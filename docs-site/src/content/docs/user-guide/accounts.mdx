@@ -55,6 +55,26 @@ shows it as a read-only badge afterwards. Get it right the first time.
 - Deleting or closing always confirms first, with the balance, the transaction count and the rule
   count in front of you. Money still in the account gets a budget-consistency warning.
 
+## Account classes
+
+Each account can be given a class, so Bench features know what kind of account it is.
+
+- **Assets:** Cash, Bank, Investment, Property, Vehicle, Receivable, Other Asset.
+- **Liabilities:** Credit Card, Loan, Payable, Other Liability.
+
+Click an account's **Class** cell and choose a class, or **Unclassified** to clear it. A class is a label
+only. It is separate from the type and subtype Actual keeps on its own accounts, it never changes balances,
+transactions, budget mode or transfers, and it is never written to Actual. Classes are saved in Bench for the
+open budget straight away, so they do not wait for **Save** and are not part of **Undo**.
+
+**Set a class on a group.** In the **Groups** dialog, choose a class for the group. Its accounts then show
+that class as **Inherited** and cannot change it; change the group instead. If some of those accounts already
+have their own class, Bench lists them and asks you to confirm, because the group class replaces theirs.
+Moving an account out of the group does not bring a cleared class back.
+
+New accounts and groups that are not saved yet cannot be given a class until you **Save**. Use the **Class**
+filter, including **Unclassified**, to find accounts that still need one.
+
 ## Account groups
 
 Account groups are named collections that Actual shows together in its sidebar. Bench supports them

@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Account, AccountGroup } from "@/types/entities";
 import { AccountGroupCell } from "./AccountGroupCell";
+import { AccountClassCell } from "./AccountClassCell";
+import type { AccountClass, EffectiveAccountClass } from "@/lib/account-class";
 import type { StagedEntity } from "@/types/staged";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -38,6 +40,13 @@ type AccountsTableRowProps = {
   groups?: AccountGroup[];
   onAssignGroup: (accountId: string, groupId: string | null) => void;
   onRequestNewGroup: (accountId: string) => void;
+  /** Effective account class, or undefined when the Class column is hidden (no budget open). */
+  effective?: EffectiveAccountClass;
+  /** Name of the group a class is inherited from. */
+  classGroupName?: string;
+  /** False until the saved classes have loaded, and for accounts not yet saved to Actual. */
+  canSetClass: boolean;
+  onSetClass: (accountId: string, accountClass: AccountClass | null) => void;
   onToggleSelect: (id: string, checked: boolean) => void;
   onSelectNameCell: (id: string) => void;
   onStartEditingName: (id: string) => void;
@@ -113,6 +122,10 @@ function AccountsTableRowComponent({
   groups,
   onAssignGroup,
   onRequestNewGroup,
+  effective,
+  classGroupName,
+  canSetClass,
+  onSetClass,
   onToggleSelect,
   onSelectNameCell,
   onStartEditingName,
@@ -236,6 +249,19 @@ function AccountsTableRowComponent({
             disabled={isDeleted}
             onAssign={onAssignGroup}
             onRequestNewGroup={onRequestNewGroup}
+          />
+        </td>
+      )}
+
+      {effective && (
+        <td className="w-44 px-2 py-0.5">
+          <AccountClassCell
+            accountId={entity.id}
+            accountName={entity.name}
+            effective={effective}
+            groupName={classGroupName}
+            disabled={isDeleted || !canSetClass}
+            onChange={onSetClass}
           />
         </td>
       )}

@@ -14,11 +14,14 @@ import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
 import { useAccountBalances } from "../hooks/useAccountBalances";
 import { buildRuleReferenceMap } from "@/lib/referenceCheck";
-import { FilterBar, ALL_GROUPS } from "./FilterBar";
+import { FilterBar, ALL_GROUPS, ALL_CLASSES } from "./FilterBar";
 import { AccountGroupsDialog } from "./AccountGroupsDialog";
 import { buildGroupOptions } from "./AccountGroupCell";
 import { useAccountGroups } from "../hooks/useAccountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
+import { useAccountClasses } from "../hooks/useAccountClasses";
+import { resolveAccountClass, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
+import { UNCLASSIFIED } from "./AccountClassCell";
 import { NEW_GROUP, NO_GROUP, groupLabel, liveGroups } from "../lib/accountGroups";
 import { AccountsTableRow } from "./AccountsTableRow";
 import type { AccountDeleteIntent } from "./AccountsTableOverlays";
@@ -65,13 +68,15 @@ export function AccountsTable({
     budgetFilter: "all" as BudgetFilter,
     rulesFilter: "all" as RulesFilter,
     groupFilter: ALL_GROUPS as string,
+    classFilter: ALL_CLASSES as string,
   });
-  const { search, statusFilter, budgetFilter, rulesFilter, groupFilter } = filters;
+  const { search, statusFilter, budgetFilter, rulesFilter, groupFilter, classFilter } = filters;
   const setSearch       = (v: string)       => setFilters((f) => ({ ...f, search: v }));
   const setStatusFilter = (v: StatusFilter) => setFilters((f) => ({ ...f, statusFilter: v }));
   const setBudgetFilter = (v: BudgetFilter) => setFilters((f) => ({ ...f, budgetFilter: v }));
   const setRulesFilter  = (v: RulesFilter)  => setFilters((f) => ({ ...f, rulesFilter: v }));
   const setGroupFilter  = (v: string)       => setFilters((f) => ({ ...f, groupFilter: v }));
+  const setClassFilter   = (v: string)       => setFilters((f) => ({ ...f, classFilter: v }));
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -115,6 +120,35 @@ export function AccountsTable({
   // A filter on a group that no longer exists (deleted in this draft) is ignored.
   const activeGroupFilter =
     groups && (groupFilter === NO_GROUP || groups.some((g) => g.id === groupFilter)) ? groupFilter : ALL_GROUPS;
+
+  // ── Account classes ──────────────────────────────────────────────────────────
+  // Bench-owned, so a change applies at once rather than joining the draft.
+  // A group's class is inherited by its members; group membership is read from
+  // the draft, so a pending move shows its effect immediately.
+  const accountClasses = useAccountClasses();
+  const classesEnabled = accountClasses.enabled;
+  const effectiveClasses = useMemo(() => {
+    const map = new Map<string, EffectiveAccountClass>();
+    for (const r of Object.values(staged) as AccountRow[]) {
+      const groupId = groups && r.entity.groupId && groups.some((g) => g.id === r.entity.groupId) ? r.entity.groupId : null;
+      map.set(r.entity.id, resolveAccountClass(r.entity.id, groupId, accountClasses.maps));
+    }
+    return map;
+  }, [staged, groups, accountClasses.maps]);
+  const groupNames = useMemo(() => new Map((groups ?? []).map((g) => [g.id, g.name])), [groups]);
+  const unclassifiedCount = useMemo(() => {
+    let n = 0;
+    for (const r of Object.values(staged) as AccountRow[]) {
+      if (r.isDeleted || r.entity.closed) continue;
+      if (!effectiveClasses.get(r.entity.id)?.accountClass) n++;
+    }
+    return n;
+  }, [staged, effectiveClasses]);
+  const handleSetClass = useCallback(
+    (accountId: string, accountClass: AccountClass | null) => accountClasses.apply([{ scope: "account", id: accountId, accountClass }]),
+    [accountClasses]
+  );
+  const activeClassFilter = classesEnabled ? classFilter : ALL_CLASSES;
 
   // ── Account balances ─────────────────────────────────────────────────────────
   const { data: balances } = useAccountBalances();
@@ -165,6 +199,10 @@ export function AccountsTable({
       if (rulesFilter === "no_rules"   &&  (accountRuleCount.get(r.entity.id) ?? 0)) continue;
       if (activeGroupFilter === NO_GROUP && r.entity.groupId && groups?.some((g) => g.id === r.entity.groupId)) continue;
       if (activeGroupFilter !== ALL_GROUPS && activeGroupFilter !== NO_GROUP && r.entity.groupId !== activeGroupFilter) continue;
+      if (activeClassFilter !== ALL_CLASSES) {
+        const t = effectiveClasses.get(r.entity.id)?.accountClass ?? UNCLASSIFIED;
+        if (t !== activeClassFilter) continue;
+      }
       result.push(r);
     }
 
@@ -187,7 +225,7 @@ export function AccountsTable({
       return 0;
     });
     return result;
-  }, [staged, search, statusFilter, budgetFilter, rulesFilter, activeGroupFilter, groups, accountRuleCount, sortCol, sortDir]);
+  }, [staged, search, statusFilter, budgetFilter, rulesFilter, activeGroupFilter, activeClassFilter, effectiveClasses, groups, accountRuleCount, sortCol, sortDir]);
 
   const rowIds = useMemo(() => rows.map((row) => row.entity.id), [rows]);
 
@@ -458,6 +496,8 @@ export function AccountsTable({
           groupFilter={activeGroupFilter} onGroupFilterChange={setGroupFilter}
           groupFilterOptions={groupFilterOptions}
           groupAssignOptions={groupAssignOptions}
+          classFilter={classesEnabled ? activeClassFilter : undefined} onClassFilterChange={setClassFilter}
+          unclassifiedCount={classesEnabled ? unclassifiedCount : undefined}
           onBulkAssignGroup={handleBulkAssignGroup}
           filteredCount={rows.length} totalCount={totalCount}
           selectedCount={activeSelectedCount}
@@ -527,6 +567,12 @@ export function AccountsTable({
                     </th>
                   )}
 
+                  {classesEnabled && (
+                    <th className="w-44 px-2 py-1.5 text-left">
+                      <span className="text-xs font-medium text-muted-foreground">Class</span>
+                    </th>
+                  )}
+
                   <th className="w-32 px-4 py-1.5 text-right">
                     <span className="text-xs font-medium text-muted-foreground">Balance</span>
                   </th>
@@ -587,6 +633,10 @@ export function AccountsTable({
                       groups={groups}
                       onAssignGroup={handleAssignGroup}
                       onRequestNewGroup={handleRequestNewGroup}
+                      effective={classesEnabled ? effectiveClasses.get(entity.id) : undefined}
+                      classGroupName={entity.groupId ? groupNames.get(entity.groupId) : undefined}
+                      canSetClass={accountClasses.available && !row.isNew}
+                      onSetClass={handleSetClass}
                       onToggleSelect={toggleSelectRow}
                       onSelectNameCell={handleSelectNameCell}
                       onStartEditingName={handleStartEditingName}

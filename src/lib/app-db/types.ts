@@ -834,3 +834,13 @@ export type FinancialPostingRecord = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** A Bench-owned account class for one Actual account or account group (scoped to one budget). */
+export type AccountClassRecord = {
+  budgetSyncId: string;
+  scope: "account" | "group";
+  /** Actual account id, or the account group id when scope is "group". */
+  accountId: string;
+  accountClass: import("@/lib/account-class").AccountClass;
+  updatedAt: string;
+};

@@ -1,10 +1,24 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useStagedStore } from "../../../store/staged";
+import type { AccountClass } from "@/lib/account-class";
 import { AccountGroupsDialog } from "./AccountGroupsDialog";
+
+// Account classes live in the app database behind a query; the dialog only needs the hook's result.
+const classesState = {
+  enabled: false,
+  available: false,
+  apply: jest.fn(),
+  maps: { accounts: new Map<string, AccountClass>(), groups: new Map<string, AccountClass>() },
+};
+jest.mock("../hooks/useAccountClasses", () => ({ useAccountClasses: () => classesState }));
 
 const store = () => useStagedStore.getState();
 
 beforeEach(() => {
+  classesState.enabled = false;
+  classesState.available = false;
+  classesState.apply.mockClear();
+  classesState.maps = { accounts: new Map(), groups: new Map() };
   store().discardAll();
   store().loadAccounts([
     { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" },
@@ -70,5 +84,65 @@ describe("AccountGroupsDialog", () => {
     const created = Object.values(store().accountGroups).find((g) => g.isNew)!;
     expect(store().accounts["a2"]?.entity.groupId).toBe(created.entity.id);
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  describe("group account class", () => {
+    beforeEach(() => {
+      classesState.enabled = true;
+      classesState.available = true;
+    });
+
+    async function chooseClass(group: string, option: string) {
+      fireEvent.click(screen.getByRole("combobox", { name: `Account class of group ${group}` }));
+      const item = await screen.findByRole("option", { name: option });
+      fireEvent.pointerDown(item, { pointerType: "mouse" });
+      fireEvent.pointerUp(item, { pointerType: "mouse" });
+      fireEvent.mouseUp(item);
+      fireEvent.click(item);
+    }
+
+    it("is hidden when account classs are unavailable", () => {
+      classesState.enabled = false;
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      expect(screen.queryByRole("combobox", { name: /Account class of group/ })).not.toBeInTheDocument();
+    });
+
+    it("sets the group class at once when no member has its own class", async () => {
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      await chooseClass("Everyday", "Bank");
+      await waitFor(() =>
+        expect(classesState.apply).toHaveBeenCalledWith([{ scope: "group", id: "g1", accountClass: "bank" }])
+      );
+    });
+
+    it("previews the members it overrides and applies only after confirming", async () => {
+      classesState.maps.accounts.set("a1", "cash");
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      await chooseClass("Everyday", "Bank");
+
+      expect(await screen.findByText(/will inherit it instead/)).toHaveTextContent("Checking (Cash)");
+      expect(classesState.apply).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Set group class" }));
+      expect(classesState.apply).toHaveBeenCalledWith([
+        { scope: "group", id: "g1", accountClass: "bank" },
+        { scope: "account", id: "a1", accountClass: null },
+      ]);
+    });
+
+    it("applies nothing when the preview is cancelled", async () => {
+      classesState.maps.accounts.set("a1", "cash");
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      await chooseClass("Everyday", "Bank");
+      fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+      expect(classesState.apply).not.toHaveBeenCalled();
+      expect(screen.queryByText(/will inherit it instead/)).not.toBeInTheDocument();
+    });
+
+    it("cannot set a class on a group that is not saved yet", () => {
+      store().stageNew("accountGroups", { id: "tmp", name: "Draft" });
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      expect(screen.getByRole("combobox", { name: "Account class of group Draft" })).toBeDisabled();
+    });
   });
 });
