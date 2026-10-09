@@ -15,8 +15,13 @@ export type OracleFixture = {
   expected: Record<string, string>[];
 };
 
-function csv(text: string): Record<string, string>[] {
-  const [head, ...rows] = text.trim().split("\n");
+/**
+ * Splits on `\r?\n`, not `\n`: a checkout with Windows line endings (Git's
+ * autocrlf, or a Windows folder mounted into a container) would otherwise leave
+ * a `\r` on the last value of every row.
+ */
+export function csv(text: string): Record<string, string>[] {
+  const [head, ...rows] = text.trim().split(/\r?\n/);
   const keys = head.split(",");
   return rows.filter(Boolean).map((r) => Object.fromEntries(r.split(",").map((v, i) => [keys[i], v])));
 }
