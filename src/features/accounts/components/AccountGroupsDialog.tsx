@@ -39,7 +39,7 @@ export function AccountGroupsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* The body owns the form state; it unmounts with the dialog, so every open starts clean. */}
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <GroupsDialogBody onOpenChange={onOpenChange} assignAccountIds={assignAccountIds} />
       </DialogContent>
     </Dialog>

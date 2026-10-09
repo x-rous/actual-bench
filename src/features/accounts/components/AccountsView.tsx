@@ -219,10 +219,10 @@ export function AccountsView() {
               variant="outline"
               size="sm"
               onClick={() => setGroupsDialogOpen(true)}
-              title="Create, rename and delete account groups"
+              title="Create, rename and delete account groups, and set their account class"
             >
               <FolderTree />
-              Groups
+              Manage Groups
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
