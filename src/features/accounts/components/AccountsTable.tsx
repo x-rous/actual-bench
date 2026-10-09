@@ -144,9 +144,10 @@ export function AccountsTable({
     }
     return n;
   }, [staged, effectiveClasses]);
+  const applyAccountClasses = accountClasses.apply;
   const handleSetClass = useCallback(
-    (accountId: string, accountClass: AccountClass | null) => accountClasses.apply([{ scope: "account", id: accountId, accountClass }]),
-    [accountClasses]
+    (accountId: string, accountClass: AccountClass | null) => applyAccountClasses([{ scope: "account", id: accountId, accountClass }]),
+    [applyAccountClasses]
   );
   const activeClassFilter = classesEnabled ? classFilter : ALL_CLASSES;
 

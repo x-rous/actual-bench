@@ -24,7 +24,7 @@ export function useAccountClasses() {
     queryKey,
     queryFn: async (): Promise<AccountClassRecord[]> => {
       const response = await fetch(`/api/account-classes?budgetSyncId=${encodeURIComponent(budgetSyncId ?? "")}`);
-      if (!response.ok) throw new Error("Could not load account classs");
+      if (!response.ok) throw new Error("Could not load account classes");
       return ((await response.json()) as AccountClassesResponse).accountClasses;
     },
     enabled: Boolean(budgetSyncId),
@@ -55,12 +55,14 @@ export function useAccountClasses() {
     return { accounts, groups };
   }, [query.data]);
 
-  const apply = useCallback((changes: AccountClassChange[]) => mutation.mutate(changes), [mutation]);
+  // `mutate` is stable, so callers can depend on `apply` without re-rendering memoized rows.
+  const { mutate } = mutation;
+  const apply = useCallback((changes: AccountClassChange[]) => mutate(changes), [mutate]);
 
   return {
     /** Whether a budget is open, so the Class column is worth showing. */
     enabled: Boolean(budgetSyncId),
-    /** False while loading, on error, or with no budget open: type controls stay disabled. */
+    /** False while loading, on error, or with no budget open: class controls stay disabled. */
     available: Boolean(budgetSyncId) && query.isSuccess,
     maps,
     apply,
