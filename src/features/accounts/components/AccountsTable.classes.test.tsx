@@ -222,4 +222,34 @@ describe("accounts table and Groups dialog share account classes", () => {
       expect(screen.queryByRole("button", { name: /Collapse Cash/ })).not.toBeInTheDocument();
     });
   });
+
+  it("explains an empty result when only the class filter hides every account, and clears it", async () => {
+    (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
+      ok: true,
+      json: async () => ({ accountClasses: [{ budgetSyncId: "budget-1", scope: "group", accountId: "g1", accountClass: "bank", updatedAt: "now" }] }),
+    }));
+    renderTable();
+    await screen.findByText("Inherited");
+
+    await pickOption(screen.getByRole("combobox", { name: "Filter by account class" }), "Unclassified");
+
+    expect(await screen.findByText("No accounts match the current filters.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(await screen.findByText("Checking")).toBeInTheDocument();
+  });
+
+  it("keeps the grouping when filters are cleared", async () => {
+    (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
+      ok: true,
+      json: async () => ({ accountClasses: [{ budgetSyncId: "budget-1", scope: "group", accountId: "g1", accountClass: "bank", updatedAt: "now" }] }),
+    }));
+    renderTable();
+    await screen.findByText("Inherited");
+    fireEvent.click(screen.getByRole("button", { name: "By class" }));
+    await pickOption(screen.getByRole("combobox", { name: "Filter by account class" }), "Unclassified");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
+
+    expect(await screen.findByRole("button", { name: /Collapse Bank/ })).toBeInTheDocument();
+  });
 });

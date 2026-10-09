@@ -31,17 +31,19 @@ export function useAccountClasses() {
   });
 
   const mutation = useMutation({
-    mutationFn: async (changes: AccountClassChange[]): Promise<AccountClassRecord[]> => {
+    // The budget travels with the save: the user may switch budgets before the response arrives,
+    // and the result must land in the cache of the budget it was saved for.
+    mutationFn: async ({ budget, changes }: { budget: string; changes: AccountClassChange[] }): Promise<AccountClassRecord[]> => {
       const response = await fetch("/api/account-classes", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ budgetSyncId, changes }),
+        body: JSON.stringify({ budgetSyncId: budget, changes }),
       });
       if (!response.ok) throw new Error("Could not save the account class");
       return ((await response.json()) as AccountClassesResponse).accountClasses;
     },
-    onSuccess: (accountClasses) => {
-      queryClient.setQueryData<AccountClassRecord[]>(queryKey, accountClasses);
+    onSuccess: (accountClasses, { budget }) => {
+      queryClient.setQueryData<AccountClassRecord[]>(["accountClasses", budget], accountClasses);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -57,7 +59,12 @@ export function useAccountClasses() {
 
   // `mutate` is stable, so callers can depend on `apply` without re-rendering memoized rows.
   const { mutate } = mutation;
-  const apply = useCallback((changes: AccountClassChange[]) => mutate(changes), [mutate]);
+  const apply = useCallback(
+    (changes: AccountClassChange[]) => {
+      if (budgetSyncId) mutate({ budget: budgetSyncId, changes });
+    },
+    [mutate, budgetSyncId]
+  );
 
   return {
     /** Whether a budget is open, so the Class column is worth showing. */

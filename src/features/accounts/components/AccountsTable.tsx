@@ -285,6 +285,15 @@ export function AccountsTable({
   }, [clusters]);
   const leadingColSpan = 4 + (groups ? 1 : 0) + (classesEnabled ? 1 : 0);
 
+  const hasActiveFilters = Boolean(
+    search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || activeGroupFilter !== ALL_GROUPS || activeClassFilter !== ALL_CLASSES
+  );
+  // The grouping is a display choice, not a filter, so clearing filters keeps it.
+  function handleClearFilters() {
+    clearFilters();
+    setGroupBy(groupBy);
+  }
+
   const rowIds = useMemo(() => displayRows.map((row) => row.entity.id), [displayRows]);
 
   const {
@@ -626,11 +635,11 @@ export function AccountsTable({
         <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-            <span>{search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || activeGroupFilter !== ALL_GROUPS ? "No accounts match the current filters." : "No accounts yet."}</span>
-            {(search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || activeGroupFilter !== ALL_GROUPS) && (
+            <span>{hasActiveFilters ? "No accounts match the current filters." : "No accounts yet."}</span>
+            {hasActiveFilters && (
               <button
                 className="text-xs underline hover:text-foreground"
-                onClick={clearFilters}
+                onClick={handleClearFilters}
               >
                 Clear filters
               </button>
