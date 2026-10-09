@@ -6,7 +6,8 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import type { SelectOption } from "@/components/ui/select";
 import { NEW_GROUP, NO_GROUP } from "../lib/accountGroups";
-import { UNCLASSIFIED, buildAccountClassGroups } from "./AccountClassCell";
+import { UNCLASSIFIED, UNCLASSIFIED_OPTIONS, buildAccountClassGroups } from "./AccountClassCell";
+import type { AccountClass } from "@/lib/account-class";
 
 export type StatusFilter = "all" | "open" | "closed";
 export type BudgetFilter = "all" | "on" | "off";
@@ -20,7 +21,7 @@ export const ALL_CLASSES = "all";
 
 const CLASS_FILTER_OPTIONS = [
   { value: ALL_CLASSES, label: "All classes" },
-  { value: UNCLASSIFIED, label: "Unclassified" },
+  ...UNCLASSIFIED_OPTIONS,
 ];
 const CLASS_FILTER_GROUPS = buildAccountClassGroups();
 
@@ -58,6 +59,7 @@ export function FilterBar({
   classFilter,
   onClassFilterChange,
   unclassifiedCount,
+  onBulkSetClass,
   onBulkAssignGroup,
   filteredCount,
   totalCount,
@@ -83,6 +85,8 @@ export function FilterBar({
   /** The class filter is shown only when `classFilter` is provided (a budget is open). */
   classFilter?: string;
   onClassFilterChange: (v: string) => void;
+  /** Sets (or, with null, clears) the class of the selected accounts. Shown with the class filter. */
+  onBulkSetClass?: (accountClass: AccountClass | null) => void;
   /** Open accounts with no class; shown as a shortcut to the Unclassified filter. */
   unclassifiedCount?: number;
   /** `groupId` is a group id, NO_GROUP-resolved `null`, or NEW_GROUP to open the new-group dialog. */
@@ -120,6 +124,19 @@ export function FilterBar({
                 if (next === NEW_GROUP) onBulkAssignGroup(NEW_GROUP);
                 else onBulkAssignGroup(next === "" || next === NO_GROUP ? null : next);
               }}
+            />
+          </div>
+        )}
+        {classFilter !== undefined && onBulkSetClass && (
+          <div className="w-44">
+            <Select
+              size="sm"
+              value=""
+              placeholder="Set class…"
+              aria-label="Set the class of the selected accounts"
+              options={UNCLASSIFIED_OPTIONS}
+              groups={CLASS_FILTER_GROUPS}
+              onValueChange={(next) => onBulkSetClass(next === UNCLASSIFIED ? null : (next as AccountClass))}
             />
           </div>
         )}

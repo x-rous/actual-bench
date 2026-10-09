@@ -20,7 +20,9 @@ import { buildGroupOptions } from "./AccountGroupCell";
 import { useAccountGroups } from "../hooks/useAccountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
-import { resolveAccountClass, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
+import { toast } from "sonner";
+import { ACCOUNT_CLASS_INFO, type AccountClass } from "@/lib/account-class";
+import { effectiveAccountClasses } from "../lib/accountClasses";
 import { UNCLASSIFIED } from "./AccountClassCell";
 import { NEW_GROUP, NO_GROUP, groupLabel, liveGroups } from "../lib/accountGroups";
 import { AccountsTableRow } from "./AccountsTableRow";
@@ -35,7 +37,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 const NAVIGABLE_COLS = ["name"] as const;
 type NavigableCol = (typeof NAVIGABLE_COLS)[number];
 type AccountRow = StagedEntity<Account>;
-type SortCol = "name" | "offBudget" | "closed" | "group";
+type SortCol = "name" | "offBudget" | "closed" | "group" | "class";
 type SortDir = "asc" | "desc";
 
 // ─── Sort helpers ──────────────────────────────────────────────────────────────
@@ -127,14 +129,7 @@ export function AccountsTable({
   // the draft, so a pending move shows its effect immediately.
   const accountClasses = useAccountClasses();
   const classesEnabled = accountClasses.enabled;
-  const effectiveClasses = useMemo(() => {
-    const map = new Map<string, EffectiveAccountClass>();
-    for (const r of Object.values(staged) as AccountRow[]) {
-      const groupId = groups && r.entity.groupId && groups.some((g) => g.id === r.entity.groupId) ? r.entity.groupId : null;
-      map.set(r.entity.id, resolveAccountClass(r.entity.id, groupId, accountClasses.maps));
-    }
-    return map;
-  }, [staged, groups, accountClasses.maps]);
+  const effectiveClasses = useMemo(() => effectiveAccountClasses(staged, groups, accountClasses.maps), [staged, groups, accountClasses.maps]);
   const groupNames = useMemo(() => new Map((groups ?? []).map((g) => [g.id, g.name])), [groups]);
   const unclassifiedCount = useMemo(() => {
     let n = 0;
@@ -218,6 +213,15 @@ export function AccountsTable({
         // Ungrouped accounts sort last in ascending order.
         av = groups && a.entity.groupId ? groupLabel(a.entity.groupId, groups).toLowerCase() : "\uffff";
         bv = groups && b.entity.groupId ? groupLabel(b.entity.groupId, groups).toLowerCase() : "\uffff";
+      }
+      else if (sortCol === "class") {
+        // Assets before liabilities, in the order of the class list; unclassified last.
+        const rank = (id: string) => {
+          const c = effectiveClasses.get(id)?.accountClass;
+          const i = c ? ACCOUNT_CLASS_INFO.findIndex((info) => info.value === c) : -1;
+          return String(i === -1 ? 99 : i).padStart(2, "0");
+        };
+        av = rank(a.entity.id); bv = rank(b.entity.id);
       }
       else if (sortCol === "offBudget") { av = a.entity.offBudget; bv = b.entity.offBudget; }
       else { av = a.entity.closed; bv = b.entity.closed; }
@@ -364,6 +368,21 @@ export function AccountsTable({
     assignAccounts(ids, groupId);
   }
 
+  function handleBulkSetClass(accountClass: AccountClass | null) {
+    // A new account has no saved id yet, and a grouped account follows its group.
+    const saved = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted && !staged[id].isNew);
+    const targets = saved.filter((id) => effectiveClasses.get(id)?.source !== "group");
+    const skipped = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted).length - targets.length;
+    if (targets.length > 0) {
+      applyAccountClasses(targets.map((id) => ({ scope: "account" as const, id, accountClass })));
+    }
+    if (skipped > 0) {
+      toast.info(
+        `${skipped} account${skipped === 1 ? " was" : "s were"} left unchanged: ${skipped === 1 ? "it is" : "they are"} new, or inherit${skipped === 1 ? "s" : ""} the class of ${skipped === 1 ? "its" : "their"} group.`
+      );
+    }
+  }
+
   // ── Paste from Excel / Sheets ─────────────────────────────────────────────────
   function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
     if (editingCell) return; // let the input field handle it
@@ -499,6 +518,7 @@ export function AccountsTable({
           groupAssignOptions={groupAssignOptions}
           classFilter={classesEnabled ? activeClassFilter : undefined} onClassFilterChange={setClassFilter}
           unclassifiedCount={classesEnabled ? unclassifiedCount : undefined}
+          onBulkSetClass={accountClasses.available ? handleBulkSetClass : undefined}
           onBulkAssignGroup={handleBulkAssignGroup}
           filteredCount={rows.length} totalCount={totalCount}
           selectedCount={activeSelectedCount}
@@ -569,8 +589,18 @@ export function AccountsTable({
                   )}
 
                   {classesEnabled && (
-                    <th className="w-44 px-2 py-1.5 text-left">
-                      <span className="text-xs font-medium text-muted-foreground">Class</span>
+                    <th
+                      className="w-44 px-2 py-1.5 text-left"
+                      aria-sort={sortCol === "class" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSort("class")}
+                        className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                      >
+                        Class
+                        <SortIndicator col="class" sortCol={sortCol} sortDir={sortDir} />
+                      </button>
                     </th>
                   )}
 

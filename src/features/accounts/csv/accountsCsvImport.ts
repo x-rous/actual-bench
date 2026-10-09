@@ -7,6 +7,8 @@ export type ImportedAccount = Omit<Account, "id" | "groupId"> & { groupName?: st
 export type AccountsImportResult = {
   accounts: ImportedAccount[];
   skipped: number;
+  /** The file has a "class" column. It is not imported: a class is saved on an existing account. */
+  hasClassColumn: boolean;
 };
 
 export type AccountsImportError = { error: string };
@@ -17,6 +19,8 @@ export type AccountsImportError = { error: string };
  *
  * Required column: name
  * Optional columns: offBudget, closed, group (an account group name)
+ * A "class" column (as exported) is recognised but not imported: new accounts have no saved id
+ * to attach a class to until they are saved.
  */
 export function importAccountsFromCsv(
   text: string
@@ -50,5 +54,5 @@ export function importAccountsFromCsv(
     });
   }
 
-  return { accounts, skipped };
+  return { accounts, skipped, hasClassColumn: headers.includes("class") };
 }

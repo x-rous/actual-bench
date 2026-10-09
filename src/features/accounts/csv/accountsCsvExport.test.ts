@@ -38,4 +38,21 @@ describe("exportAccountsToCsv", () => {
       'a2,"Cash, ""wallet""",true,false,',
     ]);
   });
+
+  it("adds a trailing class column, empty when an account has none, and guards formulas", () => {
+    const csv = exportAccountsToCsv(
+      staged,
+      [{ id: "g1", name: "Everyday" }],
+      new Map([["a1", "Bank"], ["a2", "=Cash"]])
+    );
+    expect(csv.split("\n")).toEqual([
+      "id,name,offBudget,closed,group,class",
+      "a1,Checking,false,false,Everyday,Bank",
+      `a2,"Cash, ""wallet""",true,false,,'=Cash`,
+    ]);
+  });
+
+  it("adds the class column without a group column on a server with no groups", () => {
+    expect(exportAccountsToCsv(staged, undefined, new Map([["a1", "Bank"]])).split("\n")[0]).toBe("id,name,offBudget,closed,class");
+  });
 });

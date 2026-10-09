@@ -148,4 +148,14 @@ describe("group column round trip", () => {
     if ("error" in result) throw new Error(result.error);
     expect(result.accounts[0]).toMatchObject({ groupName: "'Rainy day" });
   });
+
+  it("recognises a class column but does not import it", () => {
+    const result = importAccountsFromCsv("name,class\nChecking,Bank");
+    expect(result).toMatchObject({ hasClassColumn: true, accounts: [{ name: "Checking", offBudget: false, closed: false }] });
+    expect(result).not.toHaveProperty("accounts.0.class");
+  });
+
+  it("reports no class column when the file has none", () => {
+    expect(importAccountsFromCsv("name\nChecking")).toMatchObject({ hasClassColumn: false });
+  });
 });

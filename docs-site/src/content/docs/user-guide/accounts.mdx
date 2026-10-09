@@ -72,8 +72,13 @@ that class as **Inherited** and cannot change it; change the group instead. If s
 have their own class, Bench lists them and asks you to confirm, because the group class replaces theirs.
 Moving an account out of the group does not bring a cleared class back.
 
-New accounts and groups that are not saved yet cannot be given a class until you **Save**. Use the **Class**
-filter, including **Unclassified**, to find accounts that still need one.
+Each class has an icon next to its name. New accounts and groups that are not saved yet cannot be given a class
+until you **Save**. Use the **Class** filter, including **Unclassified**, to find accounts that still need one.
+
+**Classify several at once.** Select the accounts and choose **Set class…** in the selection bar. Accounts that
+inherit a group class and accounts that are not saved yet are left unchanged; Bench tells you how many.
+
+Click the **Class** header to sort: assets first, then liabilities, then unclassified accounts.
 
 ## Account groups
 
@@ -100,7 +105,7 @@ Actual 26.9 or later does).
 ## Filter and sort
 
 Filter by name, status, budget type, whether any rules reference the account, and group. Sort by name,
-status, budget type or group. Staged rows ignore the sort and stay at the top until you Save.
+status, budget type, group or class. Staged rows ignore the sort and stay at the top until you Save.
 
 ## Notes
 
@@ -115,7 +120,9 @@ Export accounts to CSV or import them (staged before saving). CSV columns:
 - `group` (optional, account groups only) - the group's name. A name that matches no existing group
   stages a new one. On a server without account groups the column is ignored.
 
-Exported files include the `group` column when the server supports groups.
+Exported files include the `group` column when the server supports groups, and a trailing `class` column once
+account classes have loaded (an inherited class is exported too). Import ignores the `class` column: a class
+can only be saved on an account that already exists, so set classes after you **Save**.
 
 ## Common problems
 

@@ -23,6 +23,9 @@ import { useAccountGroups } from "../hooks/useAccountGroups";
 import type { AccountDeleteIntent } from "./AccountsTableOverlays";
 import { liveGroups } from "../lib/accountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
+import { useAccountClasses } from "../hooks/useAccountClasses";
+import { effectiveAccountClasses } from "../lib/accountClasses";
+import { accountClassLabel } from "@/lib/account-class";
 import { exportAccountsToCsv } from "../csv/accountsCsvExport";
 import { importAccountsFromCsv } from "../csv/accountsCsvImport";
 
@@ -47,6 +50,7 @@ export function AccountsView() {
   const { supported: bankSyncSupported, syncBanks, isSyncing } = useBankSync();
   const { supported: groupsSupported } = useAccountGroups();
   const { createGroup } = useAccountGroupActions();
+  const accountClasses = useAccountClasses();
 
   const staged = useStagedStore((s) => s.accounts);
   const stageNew = useStagedStore((s) => s.stageNew);
@@ -85,10 +89,16 @@ export function AccountsView() {
   }
 
   function handleExportCsv() {
-    const csv = exportAccountsToCsv(
-      staged,
-      groupsSupported ? liveGroups(useStagedStore.getState().accountGroups) : undefined
-    );
+    const groups = groupsSupported ? liveGroups(useStagedStore.getState().accountGroups) : undefined;
+    // The class column is added only once classes have loaded, so it is never half empty.
+    let classLabels: Map<string, string> | undefined;
+    if (accountClasses.available) {
+      classLabels = new Map();
+      for (const [id, effective] of effectiveAccountClasses(staged, groups, accountClasses.maps)) {
+        if (effective.accountClass) classLabels.set(id, accountClassLabel(effective.accountClass));
+      }
+    }
+    const csv = exportAccountsToCsv(staged, groups, classLabels);
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -151,6 +161,7 @@ export function AccountsView() {
         }
         stageNew("accounts", { id: generateId(), ...account, ...(groupId ? { groupId } : {}) });
       }
+      if (result.hasClassColumn) toast.info("The class column was ignored: set classes on accounts after they are saved.");
       if (ignoredGroups) toast.info("The group column was ignored: this server has no account groups.");
       if (rejectedGroups.length > 0) {
         const shown = rejectedGroups.slice(0, 3).map((name) => `"${name.length > 40 ? `${name.slice(0, 40)}…` : name}"`);
