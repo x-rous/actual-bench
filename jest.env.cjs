@@ -19,3 +19,11 @@ process.env.ACTUAL_BENCH_AUTOMATION_EXECUTOR = 'in-thread'
 // generated key file or the locked states unset it and point
 // ACTUAL_BENCH_DB_PATH at a temp directory.
 process.env.ACTUAL_BENCH_VAULT_KEY = 'jest-operator-vault-key'
+
+// Tests never inherit a developer's database path. The dev container sets
+// ACTUAL_BENCH_DB_PATH so `next dev` has a local metadata database, and a shell or
+// a deployment can set it too. Left in place, every suite that opens the app
+// database without choosing a path shares that one file, and the suites that close
+// or reset it break each other ("The database connection is not open"). Suites
+// that need a path set their own, after this runs, pointing at a temp directory.
+delete process.env.ACTUAL_BENCH_DB_PATH
