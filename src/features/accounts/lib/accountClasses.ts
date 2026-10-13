@@ -14,9 +14,13 @@ export function effectiveAccountClasses(
 ): Map<string, EffectiveAccountClass> {
   const liveGroupIds = groups ? new Set(groups.map((g) => g.id)) : null;
   const result = new Map<string, EffectiveAccountClass>();
-  for (const { entity } of Object.values(staged)) {
+  for (const entry of Object.values(staged)) {
+    const { entity } = entry;
     const groupId = liveGroupIds && entity.groupId && liveGroupIds.has(entity.groupId) ? entity.groupId : null;
-    result.set(entity.id, resolveAccountClass(entity.id, groupId, maps));
+    const effective = resolveAccountClass(entity.id, groupId, maps);
+    result.set(entity.id, effective.source !== "group" && entry.pendingAccountClass !== undefined
+      ? { accountClass: entry.pendingAccountClass, source: entry.pendingAccountClass ? "account" : "none" }
+      : effective);
   }
   return result;
 }

@@ -25,7 +25,7 @@ import { liveGroups } from "../lib/accountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
 import { effectiveAccountClasses } from "../lib/accountClasses";
-import { accountClassLabel } from "@/lib/account-class";
+import { accountClassLabel, isAccountClassAllowed } from "@/lib/account-class";
 import { exportAccountsToCsv } from "../csv/accountsCsvExport";
 import { importAccountsFromCsv } from "../csv/accountsCsvImport";
 
@@ -62,13 +62,15 @@ export function AccountsView() {
 
   function handleCreateAccount(values: AccountFormValues) {
     pushUndo();
+    const id = generateId();
     stageNew("accounts", {
-      id: generateId(),
+      id,
       name: values.name,
       offBudget: values.offBudget,
       closed: false,
       initialBalance: values.initialBalance,
     });
+    if (values.accountClass) useStagedStore.getState().stageAccountClass(id, values.accountClass);
   }
 
   async function handleRefreshBalances() {
@@ -128,6 +130,22 @@ export function AccountsView() {
 
       const result = importAccountsFromCsv(text);
       if ("error" in result) { toast.error(result.error); return; }
+
+      if (groupsSupported && result.accounts.some((account) => account.groupName)) {
+        if (accountClasses.enabled && !accountClasses.available) {
+          toast.error("Account classes must finish loading before importing accounts with groups.");
+          return;
+        }
+        const existingGroups = liveGroups(useStagedStore.getState().accountGroups);
+        const incompatible = result.accounts.some((account) => {
+          const group = existingGroups.find((g) => g.name.trim().toLowerCase() === account.groupName?.trim().toLowerCase());
+          return !isAccountClassAllowed(group ? accountClasses.maps.groups.get(group.id) : null, account.offBudget);
+        });
+        if (incompatible) {
+          toast.error("An on-budget account in the CSV belongs to a group that requires off-budget accounts. Change its budget placement or group before importing.");
+          return;
+        }
+      }
 
       pushUndo();
       // Resolve the "group" column: reuse a live group of that name (ignoring

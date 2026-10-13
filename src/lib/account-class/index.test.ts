@@ -2,6 +2,7 @@ import {
   ACCOUNT_CLASSES,
   ACCOUNT_CLASS_INFO,
   isAccountClass,
+  isAccountClassAllowed,
   isCashLike,
   isLiability,
   planGroupAccountClass,
@@ -17,13 +18,19 @@ function maps(accounts: Record<string, AccountClass> = {}, groups: Record<string
 describe("account classes", () => {
   it("describes every class exactly once", () => {
     expect(ACCOUNT_CLASS_INFO.map((i) => i.value)).toEqual([...ACCOUNT_CLASSES]);
-    expect(ACCOUNT_CLASSES).toHaveLength(11);
+    expect(ACCOUNT_CLASSES).toEqual([
+      "cash", "bank", "vehicle", "property", "investment", "retirement", "other-asset",
+      "credit-card", "loan", "other-liability",
+    ]);
   });
 
   it("validates class strings", () => {
     expect(isAccountClass("bank")).toBe(true);
+    expect(isAccountClass("retirement")).toBe(true);
     expect(isAccountClass("offset")).toBe(false);
     expect(isAccountClass(null)).toBe(false);
+    expect(isAccountClass("receivable")).toBe(false);
+    expect(isAccountClass("payable")).toBe(false);
   });
 
   it("treats only cash and bank as cash-like", () => {
@@ -31,9 +38,16 @@ describe("account classes", () => {
     expect(isCashLike(null)).toBe(false);
   });
 
-  it("treats card, loan, payable and other liability as liabilities", () => {
-    expect(ACCOUNT_CLASSES.filter((t) => isLiability(t))).toEqual(["credit-card", "loan", "payable", "other-liability"]);
+  it("treats card, loan and other liability as liabilities", () => {
+    expect(ACCOUNT_CLASSES.filter((t) => isLiability(t))).toEqual(["credit-card", "loan", "other-liability"]);
     expect(isLiability(undefined)).toBe(false);
+  });
+
+  it("requires off-budget placement only for vehicle, property, investment, retirement and loan", () => {
+    expect(ACCOUNT_CLASSES.filter((t) => !isAccountClassAllowed(t, false)))
+      .toEqual(["vehicle", "property", "investment", "retirement", "loan"]);
+    expect(ACCOUNT_CLASSES.every((t) => isAccountClassAllowed(t, true))).toBe(true);
+    expect(isAccountClassAllowed(null, false)).toBe(true);
   });
 });
 

@@ -2,7 +2,7 @@
 
 import React, { useMemo } from "react";
 import { Select } from "@/components/ui/select";
-import { ACCOUNT_CLASS_INFO, accountClassLabel, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
+import { ACCOUNT_CLASS_INFO, accountClassLabel, isAccountClassAllowed, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
 import { ACCOUNT_CLASS_ICONS, UNCLASSIFIED_ICON } from "../lib/accountClassIcons";
 
 export const UNCLASSIFIED = "__unclassified__";
@@ -18,13 +18,20 @@ export function AccountClassLabel({ accountClass }: { accountClass: AccountClass
   );
 }
 
-/** Options for any "pick an account class" dropdown: unclassified, then assets, then liabilities. */
-export function buildAccountClassGroups() {
-  const toOption = (info: (typeof ACCOUNT_CLASS_INFO)[number]) => ({ value: info.value, label: <AccountClassLabel accountClass={info.value} /> });
+/** Available assets/liabilities first, then one section for off-budget-only choices. */
+export function buildAccountClassGroups(hasOnBudgetAccounts = false) {
+  const toOption = (info: (typeof ACCOUNT_CLASS_INFO)[number]) => ({
+    value: info.value,
+    disabled: !isAccountClassAllowed(info.value, !hasOnBudgetAccounts),
+    label: <AccountClassLabel accountClass={info.value} />,
+  });
+  const available = ACCOUNT_CLASS_INFO.filter((info) => isAccountClassAllowed(info.value, !hasOnBudgetAccounts));
+  const unavailable = ACCOUNT_CLASS_INFO.filter((info) => !isAccountClassAllowed(info.value, !hasOnBudgetAccounts));
   return [
-    { label: "Assets", options: ACCOUNT_CLASS_INFO.filter((i) => i.side === "asset").map(toOption) },
-    { label: "Liabilities", options: ACCOUNT_CLASS_INFO.filter((i) => i.side === "liability").map(toOption) },
-  ];
+    { label: "Assets", options: available.filter((i) => i.side === "asset").map(toOption) },
+    { label: "Liabilities", options: available.filter((i) => i.side === "liability").map(toOption) },
+    { label: "Off-budget accounts only", options: unavailable.map(toOption) },
+  ].filter((group) => group.options.length > 0);
 }
 
 export const UNCLASSIFIED_OPTIONS = [{ value: UNCLASSIFIED, label: <AccountClassLabel accountClass={null} /> }];
@@ -36,6 +43,7 @@ export const UNCLASSIFIED_OPTIONS = [{ value: UNCLASSIFIED, label: <AccountClass
 export const AccountClassCell = React.memo(function AccountClassCell({
   accountId,
   accountName,
+  offBudget,
   effective,
   groupName,
   disabled,
@@ -43,12 +51,13 @@ export const AccountClassCell = React.memo(function AccountClassCell({
 }: {
   accountId: string;
   accountName: string;
+  offBudget: boolean;
   effective: EffectiveAccountClass;
   groupName?: string;
   disabled: boolean;
   onChange: (accountId: string, accountClass: AccountClass | null) => void;
 }) {
-  const groups = useMemo(() => buildAccountClassGroups(), []);
+  const groups = useMemo(() => buildAccountClassGroups(!offBudget), [offBudget]);
 
   if (effective.source === "group" && effective.accountClass) {
     return (
@@ -73,7 +82,10 @@ export const AccountClassCell = React.memo(function AccountClassCell({
       value={effective.accountClass ?? UNCLASSIFIED}
       options={UNCLASSIFIED_OPTIONS}
       groups={groups}
-      onValueChange={(next) => onChange(accountId, next === UNCLASSIFIED ? null : (next as AccountClass))}
+      onValueChange={(next) => {
+        const accountClass = next === UNCLASSIFIED ? null : (next as AccountClass);
+        if (isAccountClassAllowed(accountClass, offBudget)) onChange(accountId, accountClass);
+      }}
     />
   );
 });

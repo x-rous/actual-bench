@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useStagedStore } from "../../../store/staged";
 import type { AccountClass } from "@/lib/account-class";
 import { AccountGroupsDialog } from "./AccountGroupsDialog";
@@ -143,6 +143,44 @@ describe("AccountGroupsDialog", () => {
       store().stageNew("accountGroups", { id: "tmp", name: "Draft" });
       render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
       expect(screen.getByRole("combobox", { name: "Account class of group Draft" })).toBeDisabled();
+    });
+
+    it("disables restricted classes if any live member is on-budget", async () => {
+      store().loadAccounts([
+        { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" },
+        { id: "a2", name: "Asset", offBudget: true, closed: false, groupId: "g1" },
+      ]);
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      fireEvent.click(screen.getByRole("combobox", { name: "Account class of group Everyday" }));
+      for (const name of ["Vehicle", "Property", "Investment", "Retirement", "Loan"]) {
+        const option = await screen.findByRole("option", { name: name });
+        expect(option).toHaveAttribute("aria-disabled", "true");
+        fireEvent.click(option);
+      }
+      expect(classesState.apply).not.toHaveBeenCalled();
+      expect(screen.getByRole("option", { name: "Other Asset" })).not.toHaveAttribute("aria-disabled", "true");
+      expect(screen.getByRole("option", { name: "Other Liability" })).not.toHaveAttribute("aria-disabled", "true");
+    });
+
+    it("allows restricted classes when members are off-budget or the group is empty", async () => {
+      store().loadAccounts([{ id: "a1", name: "Home", offBudget: true, closed: false, groupId: "g1" }]);
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      await chooseClass("Everyday", "Property");
+      await waitFor(() => expect(classesState.apply).toHaveBeenCalledWith([{ scope: "group", id: "g1", accountClass: "property" }]));
+      await chooseClass("Savings", "Retirement");
+      await waitFor(() => expect(classesState.apply).toHaveBeenCalledWith([{ scope: "group", id: "g2", accountClass: "retirement" }]));
+    });
+
+    it("rechecks budget placement before confirming a group class", async () => {
+      store().loadAccounts([{ id: "a1", name: "Home", offBudget: true, closed: false, groupId: "g1" }]);
+      classesState.maps.accounts.set("a1", "bank");
+      render(<AccountGroupsDialog open onOpenChange={() => undefined} />);
+      await chooseClass("Everyday", "Property");
+      await screen.findByRole("button", { name: "Set group class" });
+      // A changed draft must not let an earlier confirmation bypass eligibility.
+      act(() => store().stageUpdate("accounts", "a1", { offBudget: false }));
+      fireEvent.click(screen.getByRole("button", { name: "Set group class" }));
+      expect(classesState.apply).not.toHaveBeenCalled();
     });
   });
 });

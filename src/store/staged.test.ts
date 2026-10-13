@@ -32,6 +32,33 @@ const account = (id: string, name: string, overrides: Partial<Account> = {}): Ac
   ...overrides,
 });
 
+describe("pending account classes", () => {
+  it("keeps class metadata outside Actual fields and includes it in undo and discard", () => {
+    const store = useStagedStore.getState();
+    store.pushUndo();
+    store.stageNew("accounts", account("draft", "Pension", { offBudget: true }));
+    store.stageAccountClass("draft", "retirement");
+    expect(useStagedStore.getState().accounts.draft.pendingAccountClass).toBe("retirement");
+    expect(useStagedStore.getState().accounts.draft.entity).not.toHaveProperty("pendingAccountClass");
+    store.undo();
+    expect(useStagedStore.getState().accounts.draft).toBeUndefined();
+    store.redo();
+    expect(useStagedStore.getState().accounts.draft.pendingAccountClass).toBe("retirement");
+    store.discardAll();
+    expect(useStagedStore.getState().accounts.draft).toBeUndefined();
+  });
+
+  it("preserves a real-id class retry across stale refetches and clears it on revert", () => {
+    const store = useStagedStore.getState();
+    store.loadAccounts([account("real", "Pension", { offBudget: true })]);
+    store.stageAccountClass("real", "retirement");
+    store.loadAccounts([]);
+    expect(useStagedStore.getState().accounts.real).toMatchObject({ isNew: false, isUpdated: true, pendingAccountClass: "retirement" });
+    store.revertEntity("accounts", "real");
+    expect(useStagedStore.getState().accounts.real.pendingAccountClass).toBeUndefined();
+  });
+});
+
 // ─── stageNew ─────────────────────────────────────────────────────────────────
 
 describe("stageNew", () => {

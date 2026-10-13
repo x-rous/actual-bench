@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { accountClassLabel, planGroupAccountClass, type AccountClass, type GroupAccountClassPlan } from "@/lib/account-class";
+import { accountClassLabel, isAccountClassAllowed, planGroupAccountClass, type AccountClass, type GroupAccountClassPlan } from "@/lib/account-class";
 import { useStagedStore } from "@/store/staged";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
@@ -60,20 +60,27 @@ function GroupsDialogBody({
   // A group's account class is inherited by its members, so setting one replaces
   // the members' own classes. Classes are Bench-owned: applied at once, not drafted.
   const accountClasses = useAccountClasses();
-  const classGroups = useMemo(() => buildAccountClassGroups(), []);
   const [pendingClass, setPendingClass] = useState<{
     groupId: string;
     accountClass: AccountClass;
     plan: GroupAccountClassPlan;
   } | null>(null);
 
-  function requestGroupClass(groupId: string, next: string) {
+  function groupHasOnBudgetAccounts(groupId: string) {
+    return Object.values(stagedAccounts).some((entry) => !entry.isDeleted && entry.entity.groupId === groupId && !entry.entity.offBudget);
+  }
+
+  function requestGroupClass(groupId: string, next: string, confirmed = false) {
     const accountClass = next === UNCLASSIFIED ? null : (next as AccountClass);
+    if (!accountClasses.available || !isAccountClassAllowed(accountClass, !groupHasOnBudgetAccounts(groupId))) {
+      setPendingClass(null);
+      return;
+    }
     const memberIds = Object.values(stagedAccounts)
       .filter((entry) => !entry.isDeleted && entry.entity.groupId === groupId)
       .map((entry) => entry.entity.id);
     const plan = planGroupAccountClass(groupId, accountClass, memberIds, accountClasses.maps);
-    if (accountClass && plan.cleared.length > 0) {
+    if (!confirmed && accountClass && plan.cleared.length > 0) {
       setPendingClass({ groupId, accountClass, plan });
       return;
     }
@@ -236,7 +243,7 @@ function GroupsDialogBody({
                                 aria-label={`Account class of group ${group.name}`}
                                 value={accountClasses.maps.groups.get(group.id) ?? UNCLASSIFIED}
                                 options={UNCLASSIFIED_OPTIONS}
-                                groups={classGroups}
+                                groups={buildAccountClassGroups(groupHasOnBudgetAccounts(group.id))}
                                 onValueChange={(next) => requestGroupClass(group.id, next)}
                               />
                             </div>
@@ -284,8 +291,7 @@ function GroupsDialogBody({
                           <Button
                             size="xs"
                             onClick={() => {
-                              accountClasses.apply(pendingClass.plan.changes);
-                              setPendingClass(null);
+                              requestGroupClass(pendingClass.groupId, pendingClass.accountClass, true);
                             }}
                           >
                             Set group class

@@ -37,7 +37,9 @@ uses.
 2. Enter a **Name**.
 3. Optionally set an **Initial Balance** (seeds the account's starting balance on creation).
 4. Choose **on-budget** or **off-budget** with the toggle.
-5. Save to stage the new account.
+5. Choose an **Account Class**, or leave it **Unclassified**. Off-budget-only classes are disabled for on-budget accounts.
+6. Select **Add Account** to stage the account and its class.
+7. Select the page’s **Save** to create it in Actual. Its class is then saved in Bench against the returned account id.
 
 To create several at once, use the bottom **Add Rows** / paste flow - the **Balance** column is
 editable there so you can set each new account's initial balance inline.
@@ -59,24 +61,41 @@ shows it as a read-only badge afterwards. Get it right the first time.
 
 Each account can be given a class, so Bench features know what kind of account it is.
 
-- **Assets:** Cash, Bank, Investment, Property, Vehicle, Receivable, Other Asset.
-- **Liabilities:** Credit Card, Loan, Payable, Other Liability.
+- **Assets:** Cash, Bank, Vehicle, Property, Investment, Retirement, Other Asset.
+- **Liabilities:** Credit Card, Loan, Other Liability.
+
+Vehicle, Property, Investment, Retirement and Loan require an **off-budget** account. For an on-budget account,
+these choices remain visible but gray and unselectable under one **Off-budget accounts only** heading. Cash, Bank, Other Asset, Credit Card and Other Liability allow either placement
+without warnings. Savings uses Bank, and mortgages use Loan; there is one classification level.
+Retirement covers retirement accounts, pension funds and superannuation, separately from general
+investments.
 
 Click an account's **Class** cell and choose a class, or **Unclassified** to clear it. A class is a label
 only. It is separate from the type and subtype Actual keeps on its own accounts, it never changes balances,
-transactions, budget mode or transfers, and it is never written to Actual. Classes are saved in Bench for the
-open budget straight away, so they do not wait for **Save** and are not part of **Undo**.
+transactions, budget mode or transfers, and it is never written to Actual. Classes on existing accounts are saved in Bench for the
+open budget straight away, so they do not wait for **Save** and are not part of **Undo**. A new account’s
+class stays with its draft, participates in undo/discard, and saves only after Actual returns its permanent
+id. If creation fails, the draft and chosen class remain. If only the class save fails, its selection and
+error stay on the real account; **Save** retries the class without creating the account again.
 
 **Set a class on a group.** In the **Manage Groups** dialog, choose a class for the group. Its accounts then show
 that class as **Inherited** and cannot change it; change the group instead. If some of those accounts already
 have their own class, Bench lists them and asks you to confirm, because the group class replaces theirs.
 Moving an account out of the group does not bring a cleared class back.
 
-Each class has an icon next to its name. New accounts and groups that are not saved yet cannot be given a class
-until you **Save**. Use the **Class** filter, including **Unclassified**, to find accounts that still need one.
+A group containing any live on-budget account cannot be given Vehicle, Property, Investment, Retirement or Loan.
+An empty group can take any class. Groups with one of these restricted classes are visible but
+unselectable when moving on-budget accounts, including a mixed bulk selection. A new account
+inheriting a restricted class cannot be switched on-budget. CSV imports that would put an on-budget
+account into a restricted group are rejected before any accounts are staged; adjust the CSV and retry.
+
+Each class has an icon next to its name. New account classes can be edited in the drawer or staged table
+before **Save**; new groups must be saved before they can be given a class. Use the **Class** filter, including **Unclassified**, to find accounts that still need one.
 
 **Classify several at once.** Select the accounts and choose **Set class…** in the selection bar. Accounts that
-inherit a group class and accounts that are not saved yet are left unchanged; Bench tells you how many.
+inherit a group class are left unchanged; Bench tells you how many. New accounts’ choices stay staged
+until creation succeeds; existing-account choices save immediately to Bench. If any
+selected live account is on-budget, the five off-budget-only choices are disabled for the selection.
 
 Click the **Class** header to sort: assets first, then liabilities, then unclassified accounts.
 

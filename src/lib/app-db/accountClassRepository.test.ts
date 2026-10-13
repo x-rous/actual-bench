@@ -21,12 +21,12 @@ describe("account class repository", () => {
     const list = applyAccountClassChanges(db, {
       budgetSyncId: "b1",
       changes: [
-        { scope: "account", id: "a1", accountClass: "bank" },
+        { scope: "account", id: "a1", accountClass: "retirement" },
         { scope: "group", id: "g1", accountClass: "credit-card" },
       ],
     });
     expect(list.map((r) => [r.scope, r.accountId, r.accountClass])).toEqual([
-      ["account", "a1", "bank"],
+      ["account", "a1", "retirement"],
       ["group", "g1", "credit-card"],
     ]);
   });

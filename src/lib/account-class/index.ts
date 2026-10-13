@@ -12,14 +12,13 @@
 export const ACCOUNT_CLASSES = [
   "cash",
   "bank",
-  "investment",
-  "property",
   "vehicle",
-  "receivable",
+  "property",
+  "investment",
+  "retirement",
   "other-asset",
   "credit-card",
   "loan",
-  "payable",
   "other-liability",
 ] as const;
 
@@ -37,14 +36,13 @@ export type AccountClassInfo = {
 export const ACCOUNT_CLASS_INFO: readonly AccountClassInfo[] = [
   { value: "cash", label: "Cash", description: "Notes, coins, cash wallets", side: "asset" },
   { value: "bank", label: "Bank", description: "Checking, savings, deposits, offset accounts", side: "asset" },
-  { value: "investment", label: "Investment", description: "Stocks, ETFs, crypto, retirement, superannuation", side: "asset" },
-  { value: "property", label: "Property", description: "Homes, land, real estate", side: "asset" },
   { value: "vehicle", label: "Vehicle", description: "Cars, motorcycles, boats", side: "asset" },
-  { value: "receivable", label: "Receivable", description: "Money others owe you", side: "asset" },
+  { value: "property", label: "Property", description: "Homes, land, real estate", side: "asset" },
+  { value: "investment", label: "Investment", description: "Stocks, ETFs, crypto, general investment accounts", side: "asset" },
+  { value: "retirement", label: "Retirement", description: "Retirement accounts, pension funds, superannuation", side: "asset" },
   { value: "other-asset", label: "Other Asset", description: "Gold, insurance value, collectibles", side: "asset" },
   { value: "credit-card", label: "Credit Card", description: "Credit cards, revolving credit", side: "liability" },
   { value: "loan", label: "Loan", description: "Mortgages, personal, auto, student loans", side: "liability" },
-  { value: "payable", label: "Payable", description: "Money you owe to others", side: "liability" },
   { value: "other-liability", label: "Other Liability", description: "Taxes, other obligations", side: "liability" },
 ];
 
@@ -52,6 +50,17 @@ const INFO_BY_CLASS = new Map<AccountClass, AccountClassInfo>(ACCOUNT_CLASS_INFO
 
 export function isAccountClass(value: unknown): value is AccountClass {
   return typeof value === "string" && (ACCOUNT_CLASSES as readonly string[]).includes(value);
+}
+
+/** These balances belong outside Actual's spending budget. */
+export function accountClassRequiresOffBudget(accountClass: AccountClass | null | undefined): boolean {
+  return accountClass === "vehicle" || accountClass === "property"
+    || accountClass === "investment" || accountClass === "retirement" || accountClass === "loan";
+}
+
+/** Clearing a class is always allowed; the other five classes support either placement. */
+export function isAccountClassAllowed(accountClass: AccountClass | null | undefined, offBudget: boolean): boolean {
+  return offBudget || !accountClassRequiresOffBudget(accountClass);
 }
 
 export function accountClassLabel(accountClass: AccountClass): string {

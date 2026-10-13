@@ -28,6 +28,19 @@ describe("effectiveAccountClasses", () => {
     const result = effectiveAccountClasses(staged, undefined, maps);
     expect(result.get("a1")).toEqual({ accountClass: null, source: "none" });
   });
+
+  it("shows a pending class before metadata saves, while group inheritance still wins", () => {
+    const pending: StagedMap<Account> = {
+      ...staged,
+      a1: { ...staged.a1, pendingAccountClass: "retirement" },
+      a2: { ...staged.a2, pendingAccountClass: null },
+      a3: { ...staged.a3, pendingAccountClass: "investment" },
+    };
+    const result = effectiveAccountClasses(pending, [{ id: "g1", name: "Everyday" }], maps);
+    expect(result.get("a1")).toEqual({ accountClass: "bank", source: "group" });
+    expect(result.get("a2")).toEqual({ accountClass: null, source: "none" });
+    expect(result.get("a3")).toEqual({ accountClass: "investment", source: "account" });
+  });
 });
 
 describe("account class icons", () => {

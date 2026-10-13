@@ -57,6 +57,8 @@ export function FilterBar({
   onGroupFilterChange,
   groupFilterOptions,
   groupAssignOptions,
+  groupAssignmentDisabled,
+  selectedHasOnBudgetAccounts,
   classFilter,
   onClassFilterChange,
   unclassifiedCount,
@@ -86,6 +88,8 @@ export function FilterBar({
   onGroupFilterChange: (v: string) => void;
   groupFilterOptions?: SelectOption[];
   groupAssignOptions?: SelectOption[];
+  groupAssignmentDisabled?: boolean;
+  selectedHasOnBudgetAccounts?: boolean;
   /** The class filter is shown only when `classFilter` is provided (a budget is open). */
   classFilter?: string;
   onClassFilterChange: (v: string) => void;
@@ -127,6 +131,7 @@ export function FilterBar({
               value=""
               placeholder="Move to group…"
               aria-label="Move selected accounts to a group"
+              disabled={groupAssignmentDisabled}
               options={groupAssignOptions}
               onValueChange={(next) => {
                 if (next === NEW_GROUP) onBulkAssignGroup(NEW_GROUP);
@@ -143,7 +148,7 @@ export function FilterBar({
               placeholder="Set class…"
               aria-label="Set the class of the selected accounts"
               options={UNCLASSIFIED_OPTIONS}
-              groups={CLASS_FILTER_GROUPS}
+              groups={buildAccountClassGroups(selectedHasOnBudgetAccounts)}
               onValueChange={(next) => onBulkSetClass(next === UNCLASSIFIED ? null : (next as AccountClass))}
             />
           </div>

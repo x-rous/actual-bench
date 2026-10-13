@@ -16,6 +16,14 @@ import {
 } from "@/lib/saveUtils";
 import type { SaveResult, SaveSummary } from "@/types/diff";
 import type { Account, AccountGroup } from "@/types/entities";
+import type { StagedEntity } from "@/types/staged";
+import { isAccountClassAllowed } from "@/lib/account-class";
+import { saveAccountClasses } from "../lib/accountClassApi";
+
+function accountFieldsChanged(account: Account, original: Account | null) {
+  return !original || account.name !== original.name || account.offBudget !== original.offBudget
+    || account.closed !== original.closed || (account.groupId ?? null) !== (original.groupId ?? null);
+}
 
 export function useAccountsSave() {
   const [isSaving, setIsSaving] = useState(false);
@@ -100,6 +108,9 @@ export function useAccountsSave() {
         transport,
         toCreate,
         async (a) => {
+          if (!isAccountClassAllowed(staged[a.id].pendingAccountClass, a.offBudget)) {
+            throw new Error("The selected class is for off-budget accounts only.");
+          }
           const created = await transport.createAccount({
             name: a.name,
             offBudget: a.offBudget,
@@ -144,9 +155,12 @@ export function useAccountsSave() {
       }
 
       // ── Updates (parallel) ──────────────────────────────────────────────────
+      // A class-only retry belongs to Bench, so it must not repeat an Actual write.
+      const accountUpdates = toUpdate.filter((a) => staged[a.id].pendingAccountClass === undefined
+        || accountFieldsChanged(a, staged[a.id].original));
       const updateResults = await settleTransportWrites(
         transport,
-        toUpdate,
+        accountUpdates,
         async (a) => {
           const patch: Parameters<typeof transport.updateAccount>[1] = {
             name: a.name,
@@ -165,8 +179,8 @@ export function useAccountsSave() {
           return transport.updateAccount(a.id, patch);
         }
       );
-      for (let i = 0; i < toUpdate.length; i++) {
-        const id = toUpdate[i].id;
+      for (let i = 0; i < accountUpdates.length; i++) {
+        const id = accountUpdates[i].id;
         const r = updateResults[i];
         if (r.status === "fulfilled") {
           succeeded.push({ status: "success", id });
@@ -208,7 +222,73 @@ export function useAccountsSave() {
         }
       });
 
+      const actualChanged = succeeded.length > 0;
+      const classSucceeded = new Set<string>();
+      // Permanent ids only. A failed create has no idMap entry and never writes metadata.
+      for (const [sourceId, entry] of Object.entries(staged)) {
+        if (entry.isDeleted || entry.pendingAccountClass === undefined) continue;
+        const realId = entry.isNew ? idMap[sourceId] : sourceId;
+        if (!realId) continue;
+        try {
+          if (!connection.budgetSyncId) throw new Error("No budget id is available for the account class.");
+          if (!isAccountClassAllowed(entry.pendingAccountClass, entry.entity.offBudget)) {
+            throw new Error("The selected class is for off-budget accounts only.");
+          }
+          const records = await saveAccountClasses(connection.budgetSyncId, [{
+            scope: "account", id: realId, accountClass: entry.pendingAccountClass,
+          }]);
+          queryClient.setQueryData(["accountClasses", connection.budgetSyncId], records);
+          classSucceeded.add(sourceId);
+          if (!entry.isNew && !failed.some((r) => r.id === realId) && !succeeded.some((r) => r.id === realId)) {
+            succeeded.push({ status: "success", id: realId });
+          }
+        } catch (error) {
+          const message = `Account class was not saved: ${extractMessage(error, "Save failed")}. Save again to retry the class.`;
+          const previous = failed.find((r) => r.id === realId);
+          if (previous?.status === "error") previous.message += ` ${message}`;
+          else failed.push({ status: "error", id: realId, message });
+        }
+      }
+
       const store = useStagedStore.getState();
+      const retainedAccounts = new Map<string, StagedEntity<Account>>();
+      for (const account of [...toCreate, ...toUpdate]) {
+        const captured = staged[account.id];
+        const current = store.accounts[account.id];
+        const realId = captured.isNew ? idMap[account.id] : account.id;
+        if (!realId || !current) continue;
+        const classPending = current.pendingAccountClass !== undefined
+          && (!classSucceeded.has(account.id) || current.pendingAccountClass !== captured.pendingAccountClass);
+        const editedDuringSave = accountFieldsChanged(current.entity, captured.entity) || current.isDeleted !== captured.isDeleted;
+        if (!classPending && !editedDuringSave) continue;
+        const groupId = (value: Account) => value.groupId ? (idMap[value.groupId] ?? value.groupId) : null;
+        const entity: Account = { ...current.entity, id: realId, initialBalance: undefined, groupId: groupId(current.entity) };
+        const actualSucceeded = captured.isNew || succeeded.some((r) => r.id === realId);
+        const original = actualSucceeded
+          ? { ...account, id: realId, initialBalance: undefined, groupId: pendingAssignments.some((a) => a.realId === realId) ? null : groupId(account) }
+          : current.original;
+        const error = failed.find((r) => r.id === realId);
+        retainedAccounts.set(realId, {
+          ...current, entity, original, isNew: false, isUpdated: true,
+          pendingAccountClass: classPending ? current.pendingAccountClass : undefined,
+          saveError: error?.status === "error" ? error.message : undefined,
+        });
+      }
+
+      // Class success is independent of a failed Actual update. Clear only the
+      // selection saved by this run, preserving edits made while it was saving.
+      if (classSucceeded.size > 0) {
+        useStagedStore.setState((state) => {
+          const accounts = { ...state.accounts };
+          for (const id of classSucceeded) {
+            const entry = accounts[id];
+            if (entry?.pendingAccountClass === staged[id].pendingAccountClass) {
+              accounts[id] = { ...entry, pendingAccountClass: undefined };
+            }
+          }
+          return { accounts };
+        });
+      }
 
       // Same cleanup as accounts: drop the temp rows of created groups, and
       // clear the dirty flag of renamed/deleted ones.
@@ -250,12 +330,16 @@ export function useAccountsSave() {
         });
       }
 
+      if (retainedAccounts.size > 0) {
+        useStagedStore.setState((state) => ({ accounts: { ...state.accounts, ...Object.fromEntries(retainedAccounts) } }));
+      }
+
       // Remove staged entries for successfully saved updates/deletes. Without this,
       // loadAccounts sees isUpdated:true and preserves the dirty entry, so the
       // "draft changes" list never clears after a successful save.
       const succeededGroupSet = new Set([...succeededGroupCreateIds, ...succeededGroupIds]);
       const succeededNonCreateIds = succeeded
-        .filter((r) => r.status === "success" && !succeededCreateIds.has(r.id) && !succeededGroupSet.has(r.id))
+        .filter((r) => r.status === "success" && !succeededCreateIds.has(r.id) && !succeededGroupSet.has(r.id) && !retainedAccounts.has(r.id))
         .map((r) => r.id);
       if (succeededNonCreateIds.length > 0) {
         store.markSaved("accounts", succeededNonCreateIds);
@@ -283,7 +367,7 @@ export function useAccountsSave() {
         useStagedStore.getState().setSaveErrors("accountGroups", groupErrors);
       }
 
-      await syncTransportAfterChanges(transport, succeeded.length > 0);
+      await syncTransportAfterChanges(transport, actualChanged);
 
       await queryClient.invalidateQueries({ queryKey: ["accounts", connection.id] });
       await queryClient.invalidateQueries({ queryKey: ["accountGroups", connection.id] });

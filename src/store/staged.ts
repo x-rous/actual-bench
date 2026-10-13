@@ -11,6 +11,7 @@ import type {
   Tag,
 } from "@/types/entities";
 import type { StagedEntity, StagedMap } from "@/types/staged";
+import type { AccountClass } from "@/lib/account-class";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,10 +64,12 @@ function applyRestore<T extends BaseEntity>(
 ): StagedMap<T> {
   const existing = map[id];
   if (!existing) return map;
+  const restored = { ...existing };
+  delete restored.pendingAccountClass;
   return {
     ...map,
     [id]: {
-      ...existing,
+      ...restored,
       entity: existing.original ?? existing.entity,
       isUpdated: false,
       isDeleted: false,
@@ -128,6 +131,9 @@ type StagedStoreActions = {
 
   /** Stage a new (not-yet-saved) entity */
   stageNew: <K extends EntityKey>(entityType: K, entity: EntityTypeMap[K]) => void;
+
+  /** Stage Bench-only class metadata for a new account or a failed class save. */
+  stageAccountClass: (id: string, accountClass: AccountClass | null) => void;
 
   /** Stage an update to an existing entity */
   stageUpdate: <K extends EntityKey>(
@@ -253,9 +259,10 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
         newMap[a.id] = entry;
       }
 
-      // Preserve new rows that the server doesn't know about yet (failed creates)
+      // Preserve failed creates and real-id class retries when a fresh server
+      // snapshot has not caught up with the newly created account yet.
       for (const [id, entry] of Object.entries(state.accounts)) {
-        if (!serverIds.has(id) && entry.isNew) {
+        if (!serverIds.has(id) && (entry.isNew || (!entry.isDeleted && entry.pendingAccountClass !== undefined))) {
           newMap[id] = entry;
         }
       }
@@ -434,6 +441,18 @@ export const useStagedStore = create<StagedStoreState & StagedStoreActions>((set
         [(entity as BaseEntity).id]: makeStaged(entity as BaseEntity & typeof entity, true),
       },
     })),
+
+  stageAccountClass: (id, accountClass) =>
+    set((state) => {
+      const entry = state.accounts[id];
+      if (!entry || entry.isDeleted) return state;
+      return {
+        accounts: {
+          ...state.accounts,
+          [id]: { ...entry, pendingAccountClass: accountClass, isUpdated: !entry.isNew },
+        },
+      };
+    }),
 
   stageUpdate: (entityType, id, patch) =>
     set((state) => ({

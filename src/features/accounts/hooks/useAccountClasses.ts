@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import type { AccountClassRecord } from "@/lib/app-db/types";
 import type { AccountClassChange, AccountClassMaps } from "@/lib/account-class";
+import { saveAccountClasses } from "../lib/accountClassApi";
 
 type AccountClassesResponse = { accountClasses: AccountClassRecord[] };
 
@@ -33,15 +34,7 @@ export function useAccountClasses() {
   const mutation = useMutation({
     // The budget travels with the save: the user may switch budgets before the response arrives,
     // and the result must land in the cache of the budget it was saved for.
-    mutationFn: async ({ budget, changes }: { budget: string; changes: AccountClassChange[] }): Promise<AccountClassRecord[]> => {
-      const response = await fetch("/api/account-classes", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ budgetSyncId: budget, changes }),
-      });
-      if (!response.ok) throw new Error("Could not save the account class");
-      return ((await response.json()) as AccountClassesResponse).accountClasses;
-    },
+    mutationFn: ({ budget, changes }: { budget: string; changes: AccountClassChange[] }) => saveAccountClasses(budget, changes),
     onSuccess: (accountClasses, { budget }) => {
       queryClient.setQueryData<AccountClassRecord[]>(["accountClasses", budget], accountClasses);
     },
