@@ -170,6 +170,40 @@ describe("ImportPanel PDF detection profiles", () => {
     expect(screen.queryByText(/looks different from the saved layout/)).toBeNull();
   });
 
+  it("applies corrected headerless columns with a review notice on upload", async () => {
+    const parsed = parsedStatement();
+    parsed.detectionSignature = { ...parsed.detectionSignature, header: [] };
+    const catalog = catalogFor(parsed);
+    const saved = (catalog.layouts[0].layout as PdfLayoutProfileEnvelope).profile;
+    saved.reading.columns = saved.reading.columns.map((column) => column.role === "amount"
+      ? { ...column, xStart: column.xStart - 0.3, xEnd: column.xEnd - 0.3 }
+      : column);
+    mockExtractPdfStatement.mockResolvedValue(parsed);
+    mockParsePdfStatementOffMainThread.mockImplementation(async (_document, options) => ({
+      ...parsed,
+      guidance: options.guidance,
+    }));
+    renderPanel(catalog);
+
+    fireEvent.change(screen.getByLabelText("Upload a statement"), {
+      target: { files: [new File(["pdf"], "statement.pdf", { type: "application/pdf" })] },
+    });
+
+    expect(await screen.findByText("Active profile: record-1")).toBeInTheDocument();
+    expect(screen.getByText(/was applied.*Check the detection settings/)).toBeInTheDocument();
+    expect(screen.queryByText(/was not applied/)).toBeNull();
+    expect(mockParsePdfStatementOffMainThread).toHaveBeenCalledWith(
+      parsed.document,
+      expect.objectContaining({ guidance: expect.objectContaining({
+        columns: expect.arrayContaining([expect.objectContaining({
+          role: "amount",
+          xStart: saved.reading.columns.find((column) => column.role === "amount")!.xStart * 700,
+        })]),
+      }) }),
+      expect.any(AbortSignal)
+    );
+  });
+
   it("refuses a layout saved from a different statement template", async () => {
     const parsed = parsedStatement();
     const catalog = catalogFor(parsed);

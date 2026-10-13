@@ -1588,9 +1588,14 @@ describe("PDF layout profiles", () => {
       { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 200, text: "ANON SHOP" }, { x: 480, text: "-12.50" }] },
     ])], { guidance: guidance() });
     const elsewhere = parsePdfStatementPages([page([
-      { y: 740, cells: [{ x: 30, text: "Buchungstag" }, { x: 210, text: "Verwendungszweck" }, { x: 470, text: "Betrag EUR" }] },
+      { y: 740, cells: [{ x: 120, text: "Value Date" }, { x: 320, text: "Memo" }, { x: 420, text: "Debit" }, { x: 580, text: "Credit" }] },
       { y: 700, cells: [{ x: 30, text: "15/08/2026" }, { x: 210, text: "ANON LADEN" }, { x: 470, text: "-12,50" }] },
     ])], { guidance: guidance({ dateFormat: "dmy", currency: "EUR", numberFormat: "european" }) });
+
+    // Both headers must be detected to exercise template rejection rather
+    // than the intentionally unverified headerless fallback.
+    expect(detected.detectionSignature.header.length).toBeGreaterThan(0);
+    expect(elsewhere.detectionSignature.header.length).toBeGreaterThan(0);
 
     const match = matchPdfLayoutProfile(
       createPdfLayoutProfile({ id: "layout-2", name: "Elsewhere", result: elsewhere }),
@@ -1684,12 +1689,68 @@ describe("PDF layout profiles", () => {
     expect(applied.detectedGuidance.accountType).toBe("auto");
   });
 
+  function headerlessStatement() {
+    return parsePdfStatementPages([page([
+      { y: 700, cells: [{ x: 20, text: "08/15/2026" }, { x: 120, text: "ANON SHOP" }, { x: 480, text: "USD -12.50" }] },
+      { y: 680, cells: [{ x: 20, text: "08/16/2026" }, { x: 120, text: "OTHER SHOP" }, { x: 480, text: "USD -20.00" }] },
+    ])], { guidance: guidance({ columns: parsedWithDescription("ANON SHOP").guidance.columns }) });
+  }
+
+  it("applies corrected headerless columns without comparing them to fresh detection", () => {
+    const detected = headerlessStatement();
+    expect(detected.detectionSignature.header).toEqual([]);
+    expect(detected.guidance.columns.some((column) => column.role === "amount")).toBe(true);
+    const corrected = createPdfLayoutProfile({
+      id: "headerless",
+      name: "Corrected headerless layout",
+      result: {
+        ...detected,
+        guidance: {
+          ...detected.guidance,
+          columns: detected.guidance.columns.map((column) => column.role === "amount"
+            ? { ...column, xStart: column.xStart - 210, xEnd: column.xEnd - 210 }
+            : column),
+        },
+      },
+    });
+
+    expect(matchPdfLayoutProfile(corrected, detected)).toMatchObject({ outcome: "possible", drift: true });
+    expect(matchPdfLayoutProfile(corrected, { ...detected, activeSchema: null }))
+      .toMatchObject({ outcome: "possible", drift: true });
+    const applied = guidanceFromPdfLayoutProfile(corrected, detected);
+    expect(applied.columns.find((column) => column.role === "amount")?.xStart)
+      .toBeCloseTo(detected.guidance.columns.find((column) => column.role === "amount")!.xStart - 210);
+  });
+
+  it.each(["saved", "current"])("applies with a warning when only the %s header is missing", (missing) => {
+    const detected = parsedWithDescription("ANON SHOP");
+    expect(detected.detectionSignature.header.length).toBeGreaterThan(0);
+    const profile = createPdfLayoutProfile({ id: "profile-1", name: "Card layout", result: detected });
+    const saved = missing === "saved" ? { ...profile, signature: { ...profile.signature, header: [] } } : profile;
+    const current = missing === "current" ? { ...detected, detectionSignature: { ...detected.detectionSignature, header: [] } } : detected;
+
+    expect(matchPdfLayoutProfile(saved, current)).toMatchObject({ outcome: "weak", drift: true });
+  });
+
+  it.each([
+    { aspect: 114, rotation: 0 },
+    { aspect: 88, rotation: 90 },
+  ])("refuses incompatible headerless page shape: %j", (signature) => {
+    const detected = headerlessStatement();
+    const profile = createPdfLayoutProfile({ id: "profile-1", name: "Card layout", result: detected });
+
+    expect(matchPdfLayoutProfile(profile, {
+      ...detected,
+      detectionSignature: { ...detected.detectionSignature, ...signature },
+    })).toMatchObject({ outcome: "conflicting", drift: true });
+  });
+
   it("reports moved amount-column geometry as layout drift", () => {
     const original = parsedWithDescription("ANON SHOP");
     const profile = createPdfLayoutProfile({ id: "profile-1", name: "Card layout", result: original });
     const shifted = parsedWithDescription("OTHER SHOP");
-    // Without a header on either side the table's shape is the only evidence,
-    // and a financial column that has moved is drift whatever else aligns.
+    // Without headers, corrected columns cannot verify the template. Keep
+    // the layout marked as unverified even when only one column has moved.
     const headerless = {
       ...shifted,
       detectionSignature: { ...shifted.detectionSignature, header: [] },

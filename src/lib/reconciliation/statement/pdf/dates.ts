@@ -63,7 +63,9 @@ export function parsePdfDateCandidate(
   if (iso) return accepted(raw, date(Number(iso[1]), Number(iso[2]), Number(iso[3])), sourceIds);
 
   const textualDmy = raw.match(/\b(\d{1,2})(?:st|nd|rd|th)?[-\s]([\p{L}]{3,})\.?(?:[-\s](\d{2,4}))?\b/iu);
-  if (textualDmy) {
+  // Header labels and surrounding prose can resemble a named-month date.
+  // Only recognised months may claim it; otherwise try the numeric date below.
+  if (textualDmy && MONTHS[textualDmy[2].toLowerCase()]) {
     const month = MONTHS[textualDmy[2].toLowerCase()];
     const printedYear = textualDmy[3] ? normalizeYear(Number(textualDmy[3])) : null;
     const year = printedYear ?? inferYear(Number(textualDmy[1]), month ?? 0, period);
@@ -72,7 +74,7 @@ export function parsePdfDateCandidate(
       : month ? withoutYear(raw, sourceIds, printedYear, period) : rejected(raw, sourceIds);
   }
   const textualMdy = raw.match(/\b([\p{L}]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{2,4}))?\b/iu);
-  if (textualMdy) {
+  if (textualMdy && MONTHS[textualMdy[1].toLowerCase()]) {
     const month = MONTHS[textualMdy[1].toLowerCase()];
     const printedYear = textualMdy[3] ? normalizeYear(Number(textualMdy[3])) : null;
     const year = printedYear ?? inferYear(Number(textualMdy[2]), month ?? 0, period);
