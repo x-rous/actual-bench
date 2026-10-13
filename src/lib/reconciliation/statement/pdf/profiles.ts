@@ -132,12 +132,9 @@ export function matchPdfLayoutProfile(
   /*
     The table header first, when both sides have one.
 
-    The alternative below compares a saved layout's corrected columns against
-    this statement's detected ones, which measures how much correcting was
-    needed rather than whether this is the same statement - so a layout scored
-    worse the more carefully it had been fixed, and the ones worth keeping were
-    the ones most likely to be refused. A header is the same on both sides
-    whatever anyone has corrected, so it is asked first and trusted.
+    Compare evidence captured before corrections. Corrected column roles and
+    bounds describe how to read the table; comparing them with fresh detection
+    measures the corrections, not whether the statement uses this template.
   */
   const headerScore = headerSimilarity(profile.signature, current.detectionSignature);
   if (headerScore !== null) {
@@ -147,48 +144,28 @@ export function matchPdfLayoutProfile(
     return { outcome: "conflicting", score: headerScore, reasons: ["this statement's table header is not the one the layout was saved from"], drift: true };
   }
 
-  // No header to compare on either side, so fall back to the table's shape.
-  const expectedRoles = new Set(profile.reading.columns.map((column) => column.role));
-  const actualRoles = new Set((current.activeSchema?.columns ?? []).map((column) => column.role));
-  const overlap = [...expectedRoles].filter((role) => actualRoles.has(role)).length / Math.max(1, expectedRoles.size);
-  const geometryDistance = columnGeometryDistance(profile, current.reconstructedPages, current.activeSchema);
-  const geometryScore = Math.max(0, 1 - geometryDistance * 4);
-  const score = overlap * 0.7 + geometryScore * 0.3;
-  const drift = overlap < 0.8 || geometryDistance > 0.06;
-  if (!drift && overlap >= 0.9) {
-    return { outcome: "strong", score, reasons: ["roles and column geometry match"], drift: false };
-  }
-  if (overlap >= 0.9 && geometryDistance <= 0.12) {
+  // Without both headers, page shape is the only independent evidence left.
+  const sameSheet = Math.abs(profile.signature.aspect - current.detectionSignature.aspect) <= 3
+    && profile.signature.rotation === current.detectionSignature.rotation;
+  if (!sameSheet) {
     return {
-      outcome: "possible",
-      score,
-      reasons: [drift ? "roles match but column geometry drifted" : "roles and column geometry match"],
-      drift,
+      outcome: "conflicting",
+      score: 0,
+      reasons: ["page size or rotation differs from the saved layout"],
+      drift: true,
     };
   }
-  if (overlap >= 0.55 && geometryDistance <= 0.25) return { outcome: "weak", score, reasons: ["only part of the saved layout still aligns"], drift: true };
-  return { outcome: "conflicting", score, reasons: ["mapped roles or column geometry conflict with this statement"], drift: true };
-}
 
-/** Both sides as fractions of their own page, so page size cannot matter. */
-function columnGeometryDistance(
-  profile: PdfLayoutProfile,
-  pages: PdfReconstructedPage[],
-  schema: PdfTableSchema | null
-) {
-  const currentWidth = pages[0]?.width ?? 1;
-  const distances = profile.reading.columns.flatMap((saved) => {
-    const current = schema?.columns.find((column) => column.role === saved.role);
-    if (!current) return [];
-    const width = current.referencePageWidth ?? currentWidth;
-    const start = Math.abs(saved.xStart - current.xStart / width);
-    const end = Math.abs(saved.xEnd - current.xEnd / width);
-    return [(start + end) / 2];
-  });
-  // A single moved financial column is material even when every other column
-  // still aligns, so use the worst mapped-column drift rather than averaging
-  // it away across the table.
-  return distances.length ? Math.max(...distances) : 1;
+  // An assignment or explicit selection can still supply corrected columns.
+  // Keep it unverified: page shape alone cannot identify a bank's template.
+  const savedHasHeader = profile.signature.header.length > 0;
+  const currentHasHeader = current.detectionSignature.header.length > 0;
+  return {
+    outcome: savedHasHeader !== currentHasHeader ? "weak" : "possible",
+    score: 0.5,
+    reasons: ["no table header to compare; the saved layout was applied without verification"],
+    drift: true,
+  };
 }
 
 /**

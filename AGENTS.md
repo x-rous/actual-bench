@@ -130,7 +130,7 @@ One engine. Type-specific behavior lives in a registered `SyncKindAdapter`; neve
 
 ## 9. Testing and Validation
 
-Add co-located regression tests (`.test.ts` / `.test.tsx`) for major changes, prioritizing: normalization/units, staged-state preservation and partial saves, transport parity and capability gates, sync planning/idempotency/apply guards, migrations and transactions, secret handling and serialization, easy-to-regress accessibility. Don't hard-code test counts in docs.
+Add co-located regression tests (`.test.ts` / `.test.tsx`) only for major changes with big impacts, prioritizing: normalization/units, staged-state preservation and partial saves, transport parity and capability gates, sync planning/idempotency/apply guards, migrations and transactions, secret handling and serialization, easy-to-regress accessibility. Don't hard-code test counts in docs. Do not create a regression test for every small fix.
 
 **CI is the full gate. Locally, run the smallest check that covers your change.** Full suite, cold lint and production build each cost minutes, and CI (`.github/workflows/ci.yml`) runs them in parallel on every PR.
 

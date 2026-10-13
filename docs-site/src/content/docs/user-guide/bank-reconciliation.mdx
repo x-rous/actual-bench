@@ -160,8 +160,13 @@ select **Use for** the account to save that assignment.
 
 An assigned layout is applied to that account's statements. Where the statement's table has drifted
 from the saved one it is still applied and the difference is stated, because a layout withheld leaves
-you mapping the statement by hand for reasons you cannot see; it is held back only when its columns
-conflict with the table in front of it. A layout carrying amount-direction settings says so when it
+you mapping the statement by hand for reasons you cannot see. When either table header is not
+detected, the layout is applied without template verification if the page aspect ratio and rotation
+are compatible; check its column mapping and detection settings. When both headers are missing,
+the notice says no table header was available to verify the layout and asks you to check the column
+mapping; it does not claim that the table changed. Corrected columns are never
+compared with fresh detection to reject a headerless layout. Conflicting detected headers or
+incompatible headerless page shapes keep the layout unapplied. A layout carrying amount-direction settings says so when it
 is applied, so you can confirm those against the statement.
 
 To save one, apply the detection changes and select **Save layout**, either in the **Statement
@@ -202,6 +207,8 @@ month/day order, and the statement period supplies missing years across December
 period is read from the first two pages, including a label printed on one line with its dates on the
 next. A date printed without a year, on a statement whose period cannot be found, is not guessed:
 those rows ask for the statement period, and set once, it supplies every year.
+A label such as **Date** before a numeric date does not prevent it being read. Named-month dates
+require a recognised month name; ambiguous date order and invalid calendar dates still need review.
 Transaction date is the default import date, marked by the check in its column header. Posting and
 value dates are optional and stay separate; removing one of their mappings stops it being validated.
 
