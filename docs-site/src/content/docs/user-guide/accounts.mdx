@@ -157,8 +157,8 @@ Export accounts to CSV or import them (staged before saving). CSV columns:
   stages a new one. On a server without account groups the column is ignored.
 
 Exported files include the `group` column when the server supports groups, and a trailing `class` column once
-account classes have loaded (an inherited class is exported too). Import ignores the `class` column: a class
-can only be saved on an account that already exists, so set classes after you **Save**.
+account classes have loaded (an inherited class is exported too). Import treats the `class` column as informational and does not stage class changes.
+Set classes on imported drafts in the table before **Save**, or on saved accounts afterward.
 
 ## Common problems
 

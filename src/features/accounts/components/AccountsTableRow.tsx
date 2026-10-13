@@ -430,6 +430,8 @@ function areEqual(prev: AccountsTableRowProps, next: AccountsTableRowProps) {
     prev.balance === next.balance &&
     prev.ruleCount === next.ruleCount &&
     prev.groups === next.groups &&
+    prev.groupClasses === next.groupClasses &&
+    prev.canAssignGroups === next.canAssignGroups &&
     // `effective` is rebuilt whenever classes load or change, so compare what it says.
     prev.effective?.accountClass === next.effective?.accountClass &&
     prev.effective?.source === next.effective?.source &&

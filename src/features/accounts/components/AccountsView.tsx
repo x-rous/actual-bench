@@ -179,7 +179,7 @@ export function AccountsView() {
         }
         stageNew("accounts", { id: generateId(), ...account, ...(groupId ? { groupId } : {}) });
       }
-      if (result.hasClassColumn) toast.info("The class column was ignored: set classes on accounts after they are saved.");
+      if (result.hasClassColumn) toast.info("The class column was ignored: set classes on imported drafts in the table or on saved accounts.");
       if (ignoredGroups) toast.info("The group column was ignored: this server has no account groups.");
       if (rejectedGroups.length > 0) {
         const shown = rejectedGroups.slice(0, 3).map((name) => `"${name.length > 40 ? `${name.slice(0, 40)}…` : name}"`);
