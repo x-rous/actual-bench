@@ -162,7 +162,9 @@ An assigned layout is applied to that account's statements. Where the statement'
 from the saved one it is still applied and the difference is stated, because a layout withheld leaves
 you mapping the statement by hand for reasons you cannot see. When either table header is not
 detected, the layout is applied without template verification if the page aspect ratio and rotation
-are compatible; check its column mapping and detection settings. Corrected columns are never
+are compatible; check its column mapping and detection settings. When both headers are missing,
+the notice says no table header was available to verify the layout and asks you to check the column
+mapping; it does not claim that the table changed. Corrected columns are never
 compared with fresh detection to reject a headerless layout. Conflicting detected headers or
 incompatible headerless page shapes keep the layout unapplied. A layout carrying amount-direction settings says so when it
 is applied, so you can confirm those against the statement.

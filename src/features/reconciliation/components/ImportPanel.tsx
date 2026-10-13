@@ -484,6 +484,8 @@ export function ImportPanel({
         let initialPdfProfileId: string | null = null;
         if (accountPdfProfile) {
           const match = matchPdfLayoutProfile(accountPdfProfile.envelope.profile, draft);
+          const bothHeadersMissing = accountPdfProfile.envelope.profile.signature.header.length === 0
+            && draft.detectionSignature.header.length === 0;
           const layoutName = `${accountPdfProfile.bankName} · ${accountPdfProfile.envelope.profile.name}`;
           // An assignment is an instruction, so it is carried out. Only a
           // layout whose columns cannot sit on this statement's table is
@@ -512,7 +514,9 @@ export function ImportPanel({
               );
             } else if (match.outcome === "possible") {
               setPdfProfileNotice(
-                `${layoutName} was applied, but the layout differs from the saved version. Check the detection settings.`
+                bothHeadersMissing
+                  ? `${layoutName} was applied, but no table header was available to verify it. Check the column mapping.`
+                  : `${layoutName} was applied, but the layout differs from the saved version. Check the detection settings.`
               );
             } else if (carriesSignPolicy) {
               setPdfProfileNotice(

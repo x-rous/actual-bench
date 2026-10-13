@@ -190,7 +190,8 @@ describe("ImportPanel PDF detection profiles", () => {
     });
 
     expect(await screen.findByText("Active profile: record-1")).toBeInTheDocument();
-    expect(screen.getByText(/was applied.*Check the detection settings/)).toBeInTheDocument();
+    expect(screen.getByText(/was applied, but no table header was available to verify it\. Check the column mapping\./)).toBeInTheDocument();
+    expect(screen.queryByText(/differs from the saved version|looks different from the saved layout/)).toBeNull();
     expect(screen.queryByText(/was not applied/)).toBeNull();
     expect(mockParsePdfStatementOffMainThread).toHaveBeenCalledWith(
       parsed.document,
