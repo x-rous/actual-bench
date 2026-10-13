@@ -115,6 +115,7 @@ export default defineConfig({
 						{ label: 'Budget File Sync', link: '/user-guide/budget-sync/' },
 						{ label: 'FX Rates', link: '/user-guide/fx-rates/' },
 						{ label: 'Assets & Debt', link: '/user-guide/assets-debt/' },
+						{ label: 'Credit Cards', link: '/user-guide/credit-cards/' },
 						{ label: 'Backups', link: '/user-guide/backups/' },
 						{ label: 'Automations', link: '/user-guide/automations/' },
 						{ label: 'Bank Sync', link: '/user-guide/bank-sync/' },

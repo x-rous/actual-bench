@@ -31,6 +31,7 @@ budget file health checks, verified backups, and automations that run with Bench
 Actual Bench is a web app that connects to your [Actual Budget](https://github.com/actualbudget/actual)
 server and adds tools Actual Budget does not have:
 
+- **Credit Cards** - link Actual card accounts, prepare recurring statement drafts, review billing cutoffs, track confirmed repayments and explore debt/history using the Loans & Debt engine. Current testing phase uses in-memory records with no new DB layer.
 - **Bank reconciliation** - match a downloaded statement (CSV/TSV, OFX/QFX, QIF, or text-based PDF)
   against your transactions line by line, and fix the differences.
 - **Rule diagnostics** - find rules that duplicate each other, contradict each other, or never run.

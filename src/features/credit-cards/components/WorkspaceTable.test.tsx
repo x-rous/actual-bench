@@ -1,0 +1,22 @@
+import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
+import { WorkspaceTable } from "./WorkspaceTable";
+it("sorts amounts numerically, combines search with filters, and resets filters", async () => {
+  const rows = [{ id: "a", date: "2026-10-02", amount: 900, state: "pending" }, { id: "b", date: "2026-10-01", amount: 10000, state: "cleared" }];
+  render(<WorkspaceTable title="Payments" rows={rows} columns={[{ label: "Date", value: (row) => row.date }, { label: "Amount", value: (row) => row.amount }]} filters={[{ label: "Clearing", options: [{ value: "", label: "Any status" }, { value: "pending", label: "Pending" }], matches: (row, value) => row.state === value }]} renderRow={(row) => <tr key={row.id}><td>{row.date}</td><td>{row.amount}</td></tr>} />);
+  const dataRows = () => within(screen.getByRole("table")).getAllByRole("row").slice(1);
+  fireEvent.click(screen.getByRole("button", { name: "Amount" }));
+  expect(dataRows()[0]).toHaveTextContent("900");
+  fireEvent.click(screen.getByRole("button", { name: "Amount" }));
+  expect(dataRows()[0]).toHaveTextContent("10000");
+  fireEvent.click(screen.getByRole("combobox", { name: "Clearing" }));
+  const option = await screen.findByRole("option", { name: "Pending" });
+  fireEvent.pointerDown(option, { pointerType: "mouse" });
+  fireEvent.pointerUp(option, { pointerType: "mouse" });
+  fireEvent.mouseUp(option);
+  fireEvent.click(option);
+  await waitFor(() => expect(dataRows()).toHaveLength(1));
+  fireEvent.change(screen.getByLabelText("Search Payments"), { target: { value: "2026-10-01" } });
+  expect(screen.getByText("No rows match your filters.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(dataRows()).toHaveLength(2);
+});
