@@ -21,7 +21,7 @@ import { useAccountGroups } from "../hooks/useAccountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
 import { toast } from "sonner";
-import { ACCOUNT_CLASS_INFO, type AccountClass } from "@/lib/account-class";
+import { ACCOUNT_CLASS_INFO, isAccountClassAllowed, type AccountClass } from "@/lib/account-class";
 import { effectiveAccountClasses } from "../lib/accountClasses";
 import { buildClusters, type GroupBy } from "../lib/accountClusters";
 import { AccountClusterHeader, AccountTotalRow } from "./AccountClusterRows";
@@ -111,7 +111,6 @@ export function AccountsTable({
   const allGroups = useMemo(() => liveGroups(stagedGroups), [stagedGroups]);
   const groups = groupsSupported ? allGroups : undefined;
   const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
-  const groupAssignOptions = useMemo(() => (groups ? buildGroupOptions(groups) : undefined), [groups]);
   const groupFilterOptions = useMemo(
     () =>
       groups
@@ -133,6 +132,11 @@ export function AccountsTable({
   // the draft, so a pending move shows its effect immediately.
   const accountClasses = useAccountClasses();
   const classesEnabled = accountClasses.enabled;
+  const selectedHasOnBudgetAccounts = [...selectedIds].some((id) => staged[id] && !staged[id].isDeleted && !staged[id].entity.offBudget);
+  const groupAssignOptions = useMemo(
+    () => groups ? buildGroupOptions(groups, accountClasses.maps.groups, selectedHasOnBudgetAccounts) : undefined,
+    [groups, accountClasses.maps.groups, selectedHasOnBudgetAccounts]
+  );
   const effectiveClasses = useMemo(() => effectiveAccountClasses(staged, groups, accountClasses.maps), [staged, groups, accountClasses.maps]);
   const groupNames = useMemo(() => new Map((groups ?? []).map((g) => [g.id, g.name])), [groups]);
   const unclassifiedCount = useMemo(() => {
@@ -145,8 +149,20 @@ export function AccountsTable({
   }, [staged, effectiveClasses]);
   const applyAccountClasses = accountClasses.apply;
   const handleSetClass = useCallback(
-    (accountId: string, accountClass: AccountClass | null) => applyAccountClasses([{ scope: "account", id: accountId, accountClass }]),
-    [applyAccountClasses]
+    (accountId: string, accountClass: AccountClass | null) => {
+      const entry = staged[accountId];
+      if (!entry || entry.isDeleted
+        || effectiveClasses.get(accountId)?.source === "group"
+        || !isAccountClassAllowed(accountClass, entry.entity.offBudget)) return;
+      if (entry.isNew || entry.pendingAccountClass !== undefined) {
+        pushUndo();
+        useStagedStore.getState().stageAccountClass(accountId, accountClass);
+        return;
+      }
+      if (!accountClasses.available) return;
+      applyAccountClasses([{ scope: "account", id: accountId, accountClass }]);
+    },
+    [applyAccountClasses, staged, accountClasses.available, effectiveClasses, pushUndo]
   );
   const activeClassFilter = classesEnabled ? classFilter : ALL_CLASSES;
 
@@ -418,6 +434,8 @@ export function AccountsTable({
   }
 
   function handleAssignGroup(accountId: string, groupId: string | null) {
+    if (classesEnabled && !accountClasses.available) return;
+    if (!isAccountClassAllowed(groupId ? accountClasses.maps.groups.get(groupId) : null, staged[accountId]?.entity.offBudget ?? false)) return;
     assignAccounts([accountId], groupId);
   }
 
@@ -427,20 +445,29 @@ export function AccountsTable({
       setNewGroupFor(ids);
       return;
     }
+    if (classesEnabled && !accountClasses.available) return;
+    if (ids.some((id) => !isAccountClassAllowed(groupId ? accountClasses.maps.groups.get(groupId) : null, staged[id].entity.offBudget))) return;
     assignAccounts(ids, groupId);
   }
 
   function handleBulkSetClass(accountClass: AccountClass | null) {
-    // A new account has no saved id yet, and a grouped account follows its group.
-    const saved = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted && !staged[id].isNew);
-    const targets = saved.filter((id) => effectiveClasses.get(id)?.source !== "group");
+    if (!accountClasses.available || !isAccountClassAllowed(accountClass, !selectedHasOnBudgetAccounts)) return;
+    // New accounts and class retries stay staged; existing saved classes remain immediate.
+    const live = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted);
+    const targets = live.filter((id) => effectiveClasses.get(id)?.source !== "group");
+    const drafts = targets.filter((id) => staged[id].isNew || staged[id].pendingAccountClass !== undefined);
+    const saved = targets.filter((id) => !drafts.includes(id));
     const skipped = [...selectedIds].filter((id) => staged[id] && !staged[id].isDeleted).length - targets.length;
-    if (targets.length > 0) {
-      applyAccountClasses(targets.map((id) => ({ scope: "account" as const, id, accountClass })));
+    if (drafts.length > 0) {
+      pushUndo();
+      for (const id of drafts) useStagedStore.getState().stageAccountClass(id, accountClass);
+    }
+    if (saved.length > 0) {
+      applyAccountClasses(saved.map((id) => ({ scope: "account" as const, id, accountClass })));
     }
     if (skipped > 0) {
       toast.info(
-        `${skipped} account${skipped === 1 ? " was" : "s were"} left unchanged: ${skipped === 1 ? "it is" : "they are"} new, or inherit${skipped === 1 ? "s" : ""} the class of ${skipped === 1 ? "its" : "their"} group.`
+        `${skipped} account${skipped === 1 ? " was" : "s were"} left unchanged: ${skipped === 1 ? "it inherits" : "they inherit"} the class of ${skipped === 1 ? "its" : "their"} group.`
       );
     }
   }
@@ -479,7 +506,9 @@ export function AccountsTable({
         if (name) patch.name = name;
         if (cols[1] !== undefined) {
           const v = cols[1].trim().toLowerCase();
-          patch.offBudget = v === "true" || v === "1" || v === "yes" || v === "off budget" || v === "off";
+          const offBudget = v === "true" || v === "1" || v === "yes" || v === "off budget" || v === "off";
+          if (isAccountClassAllowed(effectiveClasses.get(target.entity.id)?.accountClass, offBudget)
+            && isAccountClassAllowed(target.pendingAccountClass, offBudget)) patch.offBudget = offBudget;
         }
         if (Object.keys(patch).length > 0) stageUpdate("accounts", target.entity.id, patch);
         targetIdx++;
@@ -512,6 +541,8 @@ export function AccountsTable({
   }
 
   function handleToggleNewBudgetType(accountId: string, nextOffBudget: boolean) {
+    if (!isAccountClassAllowed(effectiveClasses.get(accountId)?.accountClass, nextOffBudget)) return;
+    if (!isAccountClassAllowed(staged[accountId]?.pendingAccountClass, nextOffBudget)) return;
     pushUndo();
     stageUpdate("accounts", accountId, { offBudget: nextOffBudget });
   }
@@ -580,11 +611,13 @@ export function AccountsTable({
         balance={balances?.get(entity.id)}
         ruleCount={accountRuleCount.get(entity.id) ?? 0}
         groups={groups}
+        groupClasses={accountClasses.maps.groups}
+        canAssignGroups={!classesEnabled || accountClasses.available}
         onAssignGroup={handleAssignGroup}
         onRequestNewGroup={handleRequestNewGroup}
         effective={classesEnabled ? effectiveClasses.get(entity.id) : undefined}
         classGroupName={entity.groupId ? groupNames.get(entity.groupId) : undefined}
-        canSetClass={accountClasses.available && !row.isNew}
+        canSetClass={row.isNew || row.pendingAccountClass !== undefined || accountClasses.available}
         onSetClass={handleSetClass}
         onToggleSelect={toggleSelectRow}
         onSelectNameCell={handleSelectNameCell}
@@ -619,6 +652,8 @@ export function AccountsTable({
           groupFilter={activeGroupFilter} onGroupFilterChange={setGroupFilter}
           groupFilterOptions={groupFilterOptions}
           groupAssignOptions={groupAssignOptions}
+          groupAssignmentDisabled={classesEnabled && !accountClasses.available}
+          selectedHasOnBudgetAccounts={selectedHasOnBudgetAccounts}
           classFilter={classesEnabled ? activeClassFilter : undefined} onClassFilterChange={setClassFilter}
           unclassifiedCount={classesEnabled ? unclassifiedCount : undefined}
           groupBy={activeGroupBy} onGroupByChange={setGroupBy} groupByOptions={groupByOptions}

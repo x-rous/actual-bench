@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useStagedStore } from "../../../store/staged";
 import type { AccountClassRecord } from "@/lib/app-db/types";
@@ -40,6 +40,7 @@ function fakeServer() {
 
 describe("accounts table and Groups dialog share account classes", () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockBalances.clear();
     useStagedStore.getState().discardAll();
     useStagedStore.getState().loadAccounts([{ id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" }]);
@@ -160,6 +161,103 @@ describe("accounts table and Groups dialog share account classes", () => {
     expect(order()).toEqual(["a3", "a1", "a2"]);
     fireEvent.click(screen.getByRole("button", { name: /^Class/ }));
     expect(order()).toEqual(["a2", "a1", "a3"]);
+  });
+
+  it("disables restricted bulk classes for a mixed selection without applying a partial change", async () => {
+    useStagedStore.getState().loadAccounts([
+      { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: null },
+      { id: "a2", name: "Home", offBudget: true, closed: false, groupId: null },
+    ]);
+    renderTable();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Account class of Checking" })).toBeEnabled());
+    for (const name of ["Checking", "Home"]) fireEvent.click(screen.getByRole("checkbox", { name: `Select account ${name}` }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Set the class of the selected accounts" }));
+    for (const name of ["Vehicle", "Property", "Investment", "Retirement", "Loan"]) {
+      const option = await screen.findByRole("option", { name: name });
+      expect(option).toHaveAttribute("aria-disabled", "true");
+      fireEvent.click(option);
+    }
+    expect(puts()).toHaveLength(0);
+    const other = screen.getByRole("option", { name: "Other Liability" });
+    expect(other).not.toHaveAttribute("aria-disabled", "true");
+    fireEvent.pointerDown(other, { pointerType: "mouse" });
+    fireEvent.pointerUp(other, { pointerType: "mouse" });
+    fireEvent.click(other);
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0]).toEqual([
+      { scope: "account", id: "a1", accountClass: "other-liability" },
+      { scope: "account", id: "a2", accountClass: "other-liability" },
+    ]);
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("allows a restricted bulk class when every selected account is off-budget", async () => {
+    useStagedStore.getState().loadAccounts([
+      { id: "a1", name: "Home", offBudget: true, closed: false, groupId: null },
+      { id: "a2", name: "Land", offBudget: true, closed: false, groupId: null },
+    ]);
+    renderTable();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Account class of Home" })).toBeEnabled());
+    for (const name of ["Home", "Land"]) fireEvent.click(screen.getByRole("checkbox", { name: `Select account ${name}` }));
+    await pickOption(screen.getByRole("combobox", { name: "Set the class of the selected accounts" }), "Property");
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0]).toEqual([
+      { scope: "account", id: "a1", accountClass: "property" },
+      { scope: "account", id: "a2", accountClass: "property" },
+    ]);
+  });
+
+  it("stages a new account's bulk class without sending a temporary id to Bench", async () => {
+    useStagedStore.getState().loadAccounts([{ id: "a1", name: "Checking", offBudget: false, closed: false, groupId: null }]);
+    useStagedStore.getState().stageNew("accounts", { id: "draft", name: "New wallet", offBudget: false, closed: false });
+    renderTable();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Account class of Checking" })).toBeEnabled());
+    for (const name of ["Checking", "New wallet"]) fireEvent.click(screen.getByRole("checkbox", { name: `Select account ${name}` }));
+    await pickOption(screen.getByRole("combobox", { name: "Set the class of the selected accounts" }), "Cash");
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0]).toEqual([{ scope: "account", id: "a1", accountClass: "cash" }]);
+    expect(useStagedStore.getState().accounts.draft.pendingAccountClass).toBe("cash");
+  });
+
+  function loadPropertyGroup() {
+    (global.fetch as jest.Mock).mockImplementationOnce(async () => ({
+      ok: true,
+      json: async () => ({ accountClasses: [{ budgetSyncId: "budget-1", scope: "group", accountId: "g1", accountClass: "property", updatedAt: "now" }] }),
+    }));
+  }
+
+  it("prevents a mixed bulk selection from entering an off-budget-only group", async () => {
+    useStagedStore.getState().loadAccounts([
+      { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: null },
+      { id: "a2", name: "Home", offBudget: true, closed: false, groupId: null },
+    ]);
+    loadPropertyGroup();
+    renderTable();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Account class of Checking" })).toBeEnabled());
+    for (const name of ["Checking", "Home"]) fireEvent.click(screen.getByRole("checkbox", { name: `Select account ${name}` }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Move selected accounts to a group" }));
+    const option = await screen.findByRole("option", { name: "Everyday Requires off-budget accounts" });
+    expect(option).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(option);
+    expect(useStagedStore.getState().accounts.a1.entity.groupId).toBeNull();
+    expect(useStagedStore.getState().accounts.a2.entity.groupId).toBeNull();
+    expect(useStagedStore.getState().undoStack).toHaveLength(0);
+  });
+
+  it("keeps a draft account off-budget while it inherits a restricted class", async () => {
+    useStagedStore.getState().loadAccounts([]);
+    useStagedStore.getState().stageNew("accounts", { id: "draft", name: "Draft home", offBudget: true, closed: false, groupId: "g1" });
+    loadPropertyGroup();
+    renderTable();
+    await screen.findByText("Inherited");
+    const row = screen.getByRole("checkbox", { name: "Select account Draft home" }).closest("tr")!;
+    const toggle = within(row).getByRole("button", { name: "Off Budget" });
+    expect(toggle).toBeDisabled();
+    fireEvent.click(toggle);
+    expect(useStagedStore.getState().accounts.draft.entity.offBudget).toBe(true);
+    fireEvent.paste(row, { clipboardData: { getData: () => "Draft home\tfalse" } });
+    expect(useStagedStore.getState().accounts.draft.entity.offBudget).toBe(true);
   });
 
   describe("grouped view", () => {

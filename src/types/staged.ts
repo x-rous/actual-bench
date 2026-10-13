@@ -1,4 +1,5 @@
 import type { BaseEntity } from "./entities";
+import type { AccountClass } from "@/lib/account-class";
 
 /**
  * Wraps any entity with staging metadata.
@@ -15,6 +16,8 @@ export type StagedEntity<T extends BaseEntity> = {
   validationErrors: Record<string, string>;
   /** Error returned by the API on the last save attempt */
   saveError?: string;
+  /** Account rows only: Bench metadata staged until creation returns a real id, or awaiting a retry. Never sent to Actual. */
+  pendingAccountClass?: AccountClass | null;
 };
 
 export type StagedMap<T extends BaseEntity> = Record<string, StagedEntity<T>>;

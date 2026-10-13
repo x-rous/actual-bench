@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import type { Account, AccountGroup } from "@/types/entities";
 import { AccountGroupCell } from "./AccountGroupCell";
 import { AccountClassCell } from "./AccountClassCell";
-import type { AccountClass, EffectiveAccountClass } from "@/lib/account-class";
+import { isAccountClassAllowed, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
 import type { StagedEntity } from "@/types/staged";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -38,6 +38,8 @@ type AccountsTableRowProps = {
   ruleCount: number;
   /** Live groups, or undefined when the server has no account groups (the Group column is hidden). */
   groups?: AccountGroup[];
+  groupClasses?: ReadonlyMap<string, AccountClass>;
+  canAssignGroups: boolean;
   onAssignGroup: (accountId: string, groupId: string | null) => void;
   onRequestNewGroup: (accountId: string) => void;
   /** Effective account class, or undefined when the Class column is hidden (no budget open). */
@@ -120,6 +122,8 @@ function AccountsTableRowComponent({
   balance,
   ruleCount,
   groups,
+  groupClasses,
+  canAssignGroups,
   onAssignGroup,
   onRequestNewGroup,
   effective,
@@ -246,7 +250,9 @@ function AccountsTableRowComponent({
             accountName={entity.name}
             groupId={entity.groupId}
             groups={groups}
-            disabled={isDeleted}
+            groupClasses={groupClasses}
+            offBudget={entity.offBudget}
+            disabled={isDeleted || !canAssignGroups}
             onAssign={onAssignGroup}
             onRequestNewGroup={onRequestNewGroup}
           />
@@ -258,6 +264,7 @@ function AccountsTableRowComponent({
           <AccountClassCell
             accountId={entity.id}
             accountName={entity.name}
+            offBudget={entity.offBudget}
             effective={effective}
             groupName={classGroupName}
             disabled={isDeleted || !canSetClass}
@@ -297,7 +304,8 @@ function AccountsTableRowComponent({
           </Badge>
         ) : (
           <button
-            disabled={isDeleted}
+            disabled={isDeleted || !isAccountClassAllowed(effective?.accountClass, !entity.offBudget) || !isAccountClassAllowed(row.pendingAccountClass, !entity.offBudget)}
+            title={!isAccountClassAllowed(effective?.accountClass, !entity.offBudget) || !isAccountClassAllowed(row.pendingAccountClass, !entity.offBudget) ? "The selected class requires an off-budget account" : undefined}
             onClick={() => onToggleNewBudgetType(entity.id, !entity.offBudget)}
             className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground transition-colors hover:text-foreground/80"
           >
@@ -422,6 +430,8 @@ function areEqual(prev: AccountsTableRowProps, next: AccountsTableRowProps) {
     prev.balance === next.balance &&
     prev.ruleCount === next.ruleCount &&
     prev.groups === next.groups &&
+    prev.groupClasses === next.groupClasses &&
+    prev.canAssignGroups === next.canAssignGroups &&
     // `effective` is rebuilt whenever classes load or change, so compare what it says.
     prev.effective?.accountClass === next.effective?.accountClass &&
     prev.effective?.source === next.effective?.source &&

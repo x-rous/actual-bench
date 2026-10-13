@@ -68,7 +68,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 46;
+export const LATEST_SCHEMA_VERSION = 47;
 
 type Migration = {
   version: number;
@@ -575,6 +575,12 @@ const MIGRATIONS: readonly Migration[] = [
     // Account classes: Bench-owned account/group classes. Additive; no
     // existing table is touched.
     statements: [ACCOUNT_CLASS_TABLE_SQL],
+  },
+  {
+    version: 47,
+    // Retirement is a new persisted account-class value. Stamp compatibility
+    // so older builds refuse this database; no columns or existing rows change.
+    statements: [],
   },
 ];
 

@@ -6,6 +6,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { isAccountClassAllowed } from "@/lib/account-class";
+import { buildAccountClassGroups, UNCLASSIFIED, UNCLASSIFIED_OPTIONS } from "./AccountClassCell";
 import {
   Sheet,
   SheetContent,
@@ -38,11 +41,12 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
       name: "",
       offBudget: false,
       initialBalance: undefined,
+      accountClass: null,
     },
   });
 
   useEffect(() => {
-    if (open) reset({ name: "", offBudget: false, initialBalance: undefined });
+    if (open) reset({ name: "", offBudget: false, initialBalance: undefined, accountClass: null });
   }, [open, reset]);
 
   function handleFormSubmit(values: AccountFormValues) {
@@ -51,6 +55,7 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
   }
 
   const offBudget = useWatch({ control, name: "offBudget" });
+  const accountClass = useWatch({ control, name: "accountClass" });
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -109,6 +114,8 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
                 type="button"
                 role="switch"
                 aria-checked={!offBudget}
+                disabled={!isAccountClassAllowed(accountClass, false)}
+                title={!isAccountClassAllowed(accountClass, false) ? "Off-budget accounts only" : undefined}
                 onClick={() => setValue("offBudget", false)}
                 className="flex h-8 flex-1 items-center justify-center rounded-md border text-sm font-medium transition-colors aria-checked:bg-primary aria-checked:text-primary-foreground aria-not-checked:border-border aria-not-checked:bg-background aria-not-checked:text-foreground"
               >
@@ -127,6 +134,18 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
             <p className="text-xs text-muted-foreground">
               Off-budget accounts are excluded from budget calculations.
             </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="account-class">Account Class</Label>
+            <Select
+              id="account-class"
+              value={accountClass ?? UNCLASSIFIED}
+              options={UNCLASSIFIED_OPTIONS}
+              groups={buildAccountClassGroups(!offBudget)}
+              onValueChange={(next) => setValue("accountClass", next === UNCLASSIFIED ? null : next as NonNullable<AccountFormValues["accountClass"]>, { shouldDirty: true, shouldValidate: true })}
+            />
+            {errors.accountClass && <p className="text-xs text-destructive" role="alert">{errors.accountClass.message}</p>}
           </div>
 
         </form>
