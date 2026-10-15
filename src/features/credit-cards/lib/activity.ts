@@ -1,3 +1,4 @@
+import { currentPlanLink } from "./plans";
 import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import { isIsoDate } from "@/lib/financial-models/calendar/dates";
 import { minorAmountSchema, type Card, type Workspace } from "./models";
@@ -13,7 +14,7 @@ export type ActivitySnapshot = {
   futureDeltaMinor?: number;
   issues: string[]; fetchedAt: string; signature: string;
 };
-export type ActivityKind = "cash-advance" | "purchase" | "interest" | "fee" | "refund" | "payment" | "other" | "ambiguous";
+export type ActivityKind = "cash-advance" | "money-transfer" | "balance-transfer" | "unclassified" | "other-charge" | "other-credit" | "purchase" | "interest" | "fee" | "refund" | "cashback" | "payment" | "other" | "ambiguous";
 
 /** Parents count once through their children. Missing/mismatched structures block review. */
 export function normalizeActivity(source: SyncSourceTransaction[]) {
@@ -94,12 +95,15 @@ export function activityKind(row: ActivityRow, card: Card, workspace: Workspace,
   if (row.accountId !== snapshot.accountId) return "other";
   if (row.transferId && row.amountMinor > 0) return "payment";
   const manual = workspace.classifications.find((entry) => entry.cardId === card.id && entry.transactionId === row.id && entry.fingerprint === row.fingerprint);
-  if (manual) return manual.kind;
-  if (row.transferId) return "other";
+  const link = currentPlanLink(workspace, row);
+  if (link) return link.role === "refund" ? "refund" : link.role === "plan-fee" ? "fee" : link.role === "conversion-credit" ? "other-credit" : "other-charge";
+  if (manual) return manual.kind === "other" ? row.amountMinor < 0 ? "other-charge" : "other-credit" : manual.kind;
+  if (row.transferId) return "unclassified";
   if (row.amountMinor < 0 && row.categoryId && row.categoryId === card.interestCategoryId) return "interest";
   if (row.amountMinor < 0 && row.categoryId && row.categoryId === card.feeCategoryId) return "fee";
-  if (!row.transferKnown && row.amountMinor > 0) return "ambiguous";
+  if (row.amountMinor > 0 && row.categoryId && row.categoryId === card.cashbackCategoryId) return "cashback";
+  if (!row.transferKnown && row.amountMinor !== 0) return "ambiguous";
   if (row.amountMinor > 0) return "refund";
-  // Merchant names/notes are never treated as proof of interest or fees.
+  // Ordinary non-transfer charges default to purchases. Mappings and reviewed choices above win.
   return row.amountMinor < 0 ? "purchase" : "other";
 }

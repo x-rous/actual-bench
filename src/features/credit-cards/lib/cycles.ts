@@ -28,7 +28,7 @@ export function recentClosings(card: Card, today: string, count: number) {
   const { year, month } = parseIsoDate(today);
   let latest = dateInMonth(year, month, closingDay);
   if (latest > today) latest = addMonths(latest, -1, closingDay);
-  return Array.from({ length: Math.min(36, Math.max(1, count)) }, (_, index) => addMonths(latest, -index, closingDay));
+  return Array.from({ length: Math.max(1, count) }, (_, index) => addMonths(latest, -index, closingDay));
 }
 
 /** Generic percentage + floor estimate, using the existing revolving model's exact math. */
@@ -42,13 +42,11 @@ export function minimumEstimate(card: Card, balanceMinor: number): number | null
 
 export type StatementDraft = StatementFacts & { bankConfirmed: false; minimumKnown: boolean };
 
-/** Loading range is independent of tracking; only an explicitly opened review widens it. */
-export function cardActivityWindow(card: Card, today: string, months: number, statements: import("./models").Statement[] = [], reviewId?: string | null) {
-  const viewFrom = addMonths(today, -Math.min(36, Math.max(6, months)));
+/** Load the entire tracked history, including the first cycle's posting-cutoff margin. */
+export function cardActivityWindow(card: Card, today: string, statements: import("./models").Statement[] = []) {
   const trackingDate = card.firstTrackedStatementDate ?? statements.find((entry) => entry.cardId === card.id && entry.openingAnchor)?.closingDate;
   const first = statements.find((entry) => entry.cardId === card.id && entry.closingDate === trackingDate);
-  const boundary = trackingDate ? addDays(first?.periodStart ?? cycleDates(card, trackingDate).periodStart, -2) : null;
-  const review = statements.find((entry) => entry.id === reviewId && entry.cardId === card.id);
-  const requested = review && addDays(review.periodStart, -2) < viewFrom ? addDays(review.periodStart, -2) : viewFrom;
-  return { from: boundary && boundary > requested ? boundary : requested, to: today };
+  // Until a tracking start is chosen, bootstrap recent activity without inventing earlier tracked cycles.
+  const from = trackingDate ? addDays(first?.periodStart ?? cycleDates(card, trackingDate).periodStart, -2) : addMonths(today, -6);
+  return { from, to: today };
 }

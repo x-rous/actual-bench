@@ -94,10 +94,11 @@ it("equal totals with unresolved cutoff decisions cannot verify, and manual deci
 it("partial and late transfers settle debt without rewriting missed due-date status; refunds are not minimum payments", () => {
   const { store, card, first } = setup();
   const source = snapshot([row("refund", "2026-10-05", 1000), row("p1", "2026-10-10", 1000, { transferId: "peer1" }), row("p2", "2026-10-25", 8000, { transferId: "peer2" })]);
+  store.getState().classify("budget", card.id, card.revision, source, { cardId: card.id, transactionId: "refund", fingerprint: source.rows[0].fingerprint, kind: "refund", reason: "Confirmed refund" });
   const ledger = repaymentLedger(card, store.getState().workspaces.budget, source);
   expect(ledger.origins[0].remainingMinor).toBe(0);
   expect(ledger.confirmedMinor).toBe(9000);
-  expect(settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0]).toMatchObject({ statementId: first.id, fullRemainingMinor: 1000, minimumRemainingMinor: 0, minimumByDue: false, fullByDue: false, paidMinor: 9000, status: "Minimum paid late · balance carried" });
+  expect(settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0]).toMatchObject({ statementId: first.id, fullRemainingMinor: 0, minimumRemainingMinor: 0, minimumByDue: false, fullByDue: false, paidMinor: 9000, status: "Settled late · includes credits" });
 });
 
 it("pending transfers stay pending, peer absence does not hide incoming repayments, and outgoing transfers are separate", () => {
@@ -188,30 +189,30 @@ it("refunds clearing the full balance do not silently waive an official minimum"
   const { store, card } = setup();
   const source = snapshot([row("refund", "2026-10-10", 10000)]);
   const status = settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0];
-  expect(status).toMatchObject({ fullRemainingMinor: 10000, minimumRemainingMinor: 2000, minimumByDue: false, paidMinor: 0, status: "Minimum overdue" });
+  expect(status).toMatchObject({ fullRemainingMinor: 0, minimumRemainingMinor: 2000, minimumByDue: false, paidMinor: 0, status: "Balance covered by credits · minimum unpaid" });
 });
 
 it("correcting earlier bank facts reopens later statements without changing source data", () => {
   const { store, card, first } = setup();
   const second = store.getState().recordStatement("budget", card.id, card.revision, { periodStart: "2026-10-01", closingDate: "2026-10-31", dueDate: "2026-11-21", officialBalanceMinor: 10000, minimumDueMinor: 2000 }, true);
   store.getState().saveReview("budget", second.id, 1, snapshot([]), [], true);
-  store.getState().correctStatement("budget", first.id, 1, { periodStart: first.periodStart, closingDate: first.closingDate, dueDate: first.dueDate, officialBalanceMinor: 11000, minimumDueMinor: 2000 }, "Correct opening bank total");
+  store.getState().correctStatement("budget", first.id, 1, { periodStart: first.periodStart, closingDate: first.closingDate, dueDate: first.dueDate, officialBalanceMinor: 11000, minimumDueMinor: 2000 });
   const changed = store.getState().workspaces.budget.statements[1];
   expect(changed).toMatchObject({ verification: "needs-review", lifecycle: "recorded", reviewedSnapshot: null });
 });
 
 it("an exceptional bank close carries forward into the next cycle's start", () => {
   const { store, card, first } = setup();
-  store.getState().correctStatement("budget", first.id, 1, { periodStart: first.periodStart, closingDate: "2026-10-01", dueDate: first.dueDate, officialBalanceMinor: 10000, minimumDueMinor: 2000 }, "Bank closed one day later");
+  store.getState().correctStatement("budget", first.id, 1, { periodStart: first.periodStart, closingDate: "2026-10-01", dueDate: first.dueDate, officialBalanceMinor: 10000, minimumDueMinor: 2000 });
   const drafts = statementDrafts(card, "2026-11-10", 2, snapshot([]), -10000, store.getState().workspaces.budget.statements);
   expect(drafts[0].periodStart).toBe("2026-10-02");
 });
 
-it("explicit cash-advance review distinguishes a legitimate draw from an unresolved reversal", () => {
+it("explicit cash-advance classification distinguishes borrowing from unclassified outgoing transfers", () => {
   const { store, card } = setup();
   const transfer = row("advance", "2026-10-10", -5000, { transferId: "peer" });
   const source = snapshot([transfer]);
-  expect(repaymentLedger(card, store.getState().workspaces.budget, source).issues).toContain("Outgoing transfer or reversal needs review: advance");
+  expect(repaymentLedger(card, store.getState().workspaces.budget, source).issues).toContain("Outgoing borrowing transfer needs classification: advance");
   store.getState().classify("budget", card.id, card.revision, source, { cardId: card.id, transactionId: transfer.id, fingerprint: transfer.fingerprint, kind: "cash-advance", reason: "Bank cash advance confirmed" });
   const ledger = repaymentLedger(card, store.getState().workspaces.budget, source);
   expect(ledger.issues).toEqual([]);

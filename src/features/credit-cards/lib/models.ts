@@ -20,7 +20,8 @@ export const cardSchema = z.strictObject({
   creditLimitMinor: nonnegativeMinor.nullable(),
   purchaseAprBps: z.number().int().min(0).max(100_000).nullable(),
   bankTimeZone: timeZone,
-  status: z.enum(["active", "frozen", "closed", "lost-stolen"]),
+  // Normalize legacy session labels while exposing only Active / Inactive.
+  status: z.enum(["active", "inactive", "frozen", "closed", "lost-stolen"]).transform((value) => value === "active" ? "active" as const : "inactive" as const),
   network: z.enum(["unknown", "visa", "mastercard", "amex", "other"]).default("unknown"),
   cashAdvanceAprBps: z.number().int().min(0).max(100_000).nullable().default(null),
   balanceTransferAprBps: z.number().int().min(0).max(100_000).nullable().default(null),
@@ -38,16 +39,20 @@ export const cardSchema = z.strictObject({
   firstTrackedStatementDate: date.nullable().default(null),
   rewards: z.string().trim().max(500).default(""),
   authorizedUsers: z.string().trim().max(500).default(""),
-  appearance: z.enum(["default", "blue", "green", "amber", "purple"]).default("default"),
+  appearance: z.enum(["default", "blue", "green", "amber", "purple", "red", "teal", "navy", "gray"]).default("default"),
+  customColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
   autoPay: z.enum(["unknown", "off", "minimum", "full", "fixed"]).default("unknown"),
   /** New cards default to Actual/365 illustrations; callers may explicitly select off. */
   interestCategoryId: id.nullable().default(null),
   feeCategoryId: id.nullable().default(null),
+  cashbackCategoryId: id.nullable().default(null),
   interestModel: z.enum(["off", "daily-simple-365", "daily-simple-360"]).default("daily-simple-365"),
   revision,
 });
 export type Card = z.infer<typeof cardSchema>;
-export const cardInputSchema = cardSchema.omit({ id: true, revision: true });
+export const cardInputSchema = cardSchema.omit({ id: true, revision: true }).superRefine((value, ctx) => {
+  if (value.feeCategoryId && value.feeCategoryId === value.interestCategoryId) ctx.addIssue({ code: "custom", path: ["feeCategoryId"], message: "Use different fee and interest categories, or leave both unmapped and classify individually" });
+});
 export type CardInput = z.infer<typeof cardInputSchema>;
 
 export const statementFactsSchema = z.strictObject({
@@ -55,6 +60,8 @@ export const statementFactsSchema = z.strictObject({
   /** Positive means owed to issuer; negative means issuer-reported card credit. */
   officialBalanceMinor: minorAmountSchema,
   minimumDueMinor: nonnegativeMinor,
+  /** Signed integer minor units brought forward before the first tracked cycle; absent is unknown. */
+  openingBalanceMinor: minorAmountSchema.nullable().optional(),
 }).superRefine((value, ctx) => {
   if (value.periodStart > value.closingDate) ctx.addIssue({ code: "custom", message: "Period start must be on or before closing", path: ["periodStart"] });
   if (value.dueDate < value.closingDate) ctx.addIssue({ code: "custom", message: "Due date must be on or after closing", path: ["dueDate"] });
@@ -90,16 +97,45 @@ export type PaymentAllocation = z.infer<typeof allocationSchema>;
 
 /** Logical anchor; derived from one official statement, never an Actual transaction. */
 export type OpeningPosition = { cardId: string; statementId: string; date: string; balanceMinor: number };
-export type StatementCorrection = {
-  id: string; statementId: string; before: Statement; after: Statement; reason: string; recordedAt: string;
-};
 export const activityClassificationSchema = z.strictObject({
   cardId: id, transactionId: id, fingerprint: id,
-  kind: z.enum(["purchase", "cash-advance", "interest", "fee", "refund", "other"]),
+  kind: z.enum(["purchase", "cash-advance", "money-transfer", "balance-transfer", "interest", "fee", "refund", "cashback", "other-charge", "other-credit", "other"]),
+  feeSubtype: z.enum(["annual", "late", "over-limit", "cash-advance", "foreign-exchange", "plan-processing", "plan-monthly", "vat", "other"]).nullable().optional(),
   reason: z.string().trim().min(1).max(500),
 });
 export type ActivityClassification = z.infer<typeof activityClassificationSchema>;
 export type Workspace = {
-  cards: Card[]; statements: Statement[]; corrections: StatementCorrection[];
+  cards: Card[]; statements: Statement[];
   memberships: Membership[]; allocations: PaymentAllocation[]; classifications: ActivityClassification[];
+  plans?: RepaymentPlan[]; planLinks?: PlanLink[];
 };
+
+/** Expected arrangement metadata; never an additional Actual balance or scheduled transaction. */
+export const repaymentPlanSchema = z.strictObject({
+  id, cardId: id, transactionId: id, fingerprint: id, revision,
+  arrangement: z.enum(["fixed", "minimum-deadline", "promotional", "deferred", "revolving"]),
+  status: z.enum(["active", "completed", "cancelled"]).default("active"),
+  amountMinor: nonnegativeMinor.positive(), startDate: date, firstDueDate: date,
+  months: z.number().int().min(1).max(360),
+  monthlyMinor: nonnegativeMinor.nullable(),
+  aprBps: z.number().int().min(0).max(100_000),
+  upfrontFeeMinor: nonnegativeMinor, monthlyFeeMinor: nonnegativeMinor,
+  includesCosts: z.boolean(),
+  minimumPercentBps: z.number().int().min(0).max(10_000).nullable(),
+  minimumFloorMinor: nonnegativeMinor.nullable(),
+  expiryDate: date.nullable(), afterAprBps: z.number().int().min(0).max(100_000).nullable(),
+  conditions: z.string().trim().max(2000),
+}).superRefine((value, ctx) => {
+  if (value.firstDueDate <= value.startDate) ctx.addIssue({ code: "custom", message: "First due date must be after plan start", path: ["firstDueDate"] });
+  if (value.arrangement === "fixed" && (value.monthlyMinor === null || value.monthlyMinor <= 0)) ctx.addIssue({ code: "custom", message: "Enter the contractual monthly instalment", path: ["monthlyMinor"] });
+  if (value.arrangement === "minimum-deadline" && value.minimumPercentBps === null) ctx.addIssue({ code: "custom", message: "Enter the monthly minimum percentage", path: ["minimumPercentBps"] });
+  if (value.arrangement === "fixed" && value.includesCosts && value.monthlyMinor !== null && value.monthlyFeeMinor >= value.monthlyMinor) ctx.addIssue({ code: "custom", message: "The included monthly fee must be less than the monthly instalment", path: ["monthlyFeeMinor"] });
+  if (value.expiryDate && value.expiryDate < value.startDate) ctx.addIssue({ code: "custom", message: "Expiry must not precede plan start", path: ["expiryDate"] });
+});
+export type RepaymentPlan = z.infer<typeof repaymentPlanSchema>;
+export const planLinkSchema = z.strictObject({
+  planId: id, transactionId: id, fingerprint: id,
+  role: z.enum(["conversion-credit", "instalment-billed", "plan-fee", "refund"]),
+  instalment: z.number().int().min(1).max(360).nullable(),
+});
+export type PlanLink = z.infer<typeof planLinkSchema>;

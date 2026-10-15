@@ -58,13 +58,24 @@ it("bounds automatic history and saved statements by the independent per-card tr
   expect(store.getState().workspaces.budget.cards[0].firstTrackedStatementDate).toBe("2026-05-31");
 });
 
-it("only loads older tracked periods when an explicit review requires them", () => {
-  const { card, store, first } = setup();
+it("loads every tracked cycle automatically using bank period dates and each card's boundary", () => {
+  const { card, store } = setup();
   const statements = store.getState().workspaces.budget.statements;
-  expect(cardActivityWindow(card, "2027-01-11", 6, statements)).toEqual({ from: "2026-07-11", to: "2027-01-11" });
-  expect(cardActivityWindow(card, "2027-01-11", 36, statements)).toEqual({ from: "2026-04-29", to: "2027-01-11" });
-  expect(cardActivityWindow(card, "2027-01-11", 6, statements, first.id)).toEqual({ from: "2026-04-29", to: "2027-01-11" });
-  expect(cardActivityWindow({ ...card, firstTrackedStatementDate: "2026-11-30" }, "2027-01-11", 36)).toEqual({ from: "2026-10-30", to: "2027-01-11" });
+  expect(cardActivityWindow(card, "2027-01-11", statements)).toEqual({ from: "2026-04-29", to: "2027-01-11" });
+  expect(cardActivityWindow({ ...card, firstTrackedStatementDate: "2026-11-30" }, "2027-01-11")).toEqual({ from: "2026-10-30", to: "2027-01-11" });
+  expect(cardActivityWindow({ ...card, firstTrackedStatementDate: "2022-05-31" }, "2027-01-11")).toEqual({ from: "2022-04-29", to: "2027-01-11" });
+  expect(cardActivityWindow({ ...card, firstTrackedStatementDate: null }, "2027-01-11", statements).from).toBe("2026-04-29");
+});
+
+it("prepares all tracked statements beyond nine months and the former 36-month limit", () => {
+  const { card } = setup();
+  const source: ActivitySnapshot = { accountId: "card", from: "2022-04-29", to: "2027-01-11", rows: [], counterparts: [], issues: [], fetchedAt: "now", signature: "empty" };
+  const nineMonths = statementDrafts({ ...card, firstTrackedStatementDate: "2026-04-30" }, "2027-01-11", undefined, source, -10000);
+  expect(nineMonths).toHaveLength(9);
+  expect(nineMonths.at(-1)?.closingDate).toBe("2026-04-30");
+  const longHistory = statementDrafts({ ...card, firstTrackedStatementDate: "2022-05-31" }, "2027-01-11", undefined, source, -10000);
+  expect(longHistory).toHaveLength(56);
+  expect(longHistory.at(-1)?.closingDate).toBe("2022-05-31");
 });
 
 it("recreates suggestions after reset instead of retaining a manual bank posting override", () => {
@@ -88,6 +99,6 @@ it("reanchors only after an explicit tracking-start change, while guarding open 
 it("cannot bypass the tracking boundary by editing the opening statement past saved history", () => {
   const { store, first } = setup();
   const before = store.getState().workspaces.budget;
-  expect(() => store.getState().correctStatement("budget", first.id, 1, { periodStart: "2026-07-01", closingDate: "2026-07-31", dueDate: "2026-08-20", officialBalanceMinor: 10000, minimumDueMinor: 1000 }, "Closing date correction")).toThrow("Delete earlier");
+  expect(() => store.getState().correctStatement("budget", first.id, 1, { periodStart: "2026-07-01", closingDate: "2026-07-31", dueDate: "2026-08-20", officialBalanceMinor: 10000, minimumDueMinor: 1000 })).toThrow("Delete earlier");
   expect(store.getState().workspaces.budget).toBe(before);
 });

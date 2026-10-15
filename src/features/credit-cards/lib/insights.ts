@@ -2,18 +2,16 @@ import type { ActivitySnapshot } from "./activity";
 import { activityKind } from "./activity";
 import type { Card, Statement, Workspace } from "./models";
 import { effectiveActivityDate, latestStatement, settlements } from "./repayments";
-import { chargeClassificationKnown } from "./history";
 import { sumMinor } from "./statements";
 
 /** All bridge amounts are signed integer minor units: debt additions positive, credits negative. */
 export function netActivitySinceStatement(card: Card, statement: Statement, workspace: Workspace, snapshot: ActivitySnapshot, signedCurrentMinor: number, today: string) {
   const rows = snapshot.rows.filter((row) => { const date = effectiveActivityDate(row, card.id, workspace); return date > statement.closingDate && date <= today; });
   const covered = snapshot.from <= statement.closingDate && snapshot.to >= today && !snapshot.issues.length;
-  const classificationsKnown = chargeClassificationKnown(card, workspace, rows.map((row) => ({ ...row, cleared: true })), "interest") && chargeClassificationKnown(card, workspace, rows.map((row) => ({ ...row, cleared: true })), "fee");
   const groups = new Map<string, number[]>();
   for (const row of rows) {
     const kind = activityKind(row, card, workspace, snapshot);
-    const label = kind === "purchase" || kind === "cash-advance" ? classificationsKnown ? "Purchases / cash advances" : "Unclassified outflows" : kind === "payment" ? "Payments" : kind === "refund" ? "Refunds / credits" : kind === "interest" ? "Interest" : kind === "fee" ? "Fees" : "Other adjustments";
+    const label = ["purchase", "cash-advance", "money-transfer", "balance-transfer"].includes(kind) ? "Purchases / borrowing" : kind === "payment" ? "Payments" : kind === "cashback" ? "Cashback" : kind === "refund" ? "Refunds / credits" : kind === "interest" ? "Interest" : kind === "fee" ? "Fees" : ["unclassified", "ambiguous"].includes(kind) ? row.amountMinor < 0 ? "Charges (unclassified)" : "Credits (unclassified)" : "Other adjustments";
     groups.set(label, [...(groups.get(label) ?? []), -row.amountMinor]);
   }
   const currentOwedMinor = sumMinor([-signedCurrentMinor, snapshot.futureDeltaMinor ?? 0]);
@@ -29,7 +27,7 @@ export function statementPaymentTotals(cards: Card[], workspace: Workspace, sour
     const source = sources[index];
     const payment = statement && source ? settlements(card, workspace, source, todays[index]).find((entry) => entry.statementId === statement.id) : undefined;
     if (!payment || payment.fullRemainingMinor === null) return null;
-    const remaining = Math.max(0, statement!.officialBalanceMinor - payment.confirmedPaidMinor);
+    const remaining = Math.max(0, statement!.officialBalanceMinor - payment.confirmedPaidMinor - (payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0));
     const minimum = Math.max(0, statement!.minimumDueMinor - payment.confirmedPaidMinor);
     return { remaining, minimum, pending: payment.provisionalMinor, overdue: statement!.dueDate < todays[index] && minimum > 0 ? minimum : 0 };
   });
@@ -41,6 +39,6 @@ export function carriedDebtPoints(card: Card, workspace: Workspace, snapshot: Ac
   const statuses = settlements(card, workspace, snapshot, today);
   return workspace.statements.filter((statement) => statement.cardId === card.id).filter((statement) => statement.dueDate < today).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).map((statement) => {
     const payment = statuses.find((entry) => entry.statementId === statement.id)!;
-    return { date: statement.dueDate, value: payment.carriedAtDueMinor ?? null, source: "Confirmed payments at bank due date", breakdown: [{ label: "Billed statement balance", value: statement.officialBalanceMinor }, { label: "Confirmed payments by due date", value: payment.confirmedPaidByDueMinor ?? null }] };
+    return { date: statement.dueDate, value: payment.carriedAtDueMinor ?? null, source: "Confirmed payments at bank due date", breakdown: [{ label: "Billed statement balance", value: statement.officialBalanceMinor }, { label: "Confirmed payments by due date", value: payment.confirmedPaidByDueMinor ?? null }, { label: "Confirmed credits by due date", value: payment.confirmedCreditByDueMinor ?? payment.confirmedCashbackByDueMinor ?? null }] };
   });
 }

@@ -6,7 +6,7 @@ import { settlements } from "./repayments";
 
 const card = { ...cardInputSchema.parse({ budgetSyncId: "budget", accountId: "card", nickname: "Card", issuer: "", last4: "", creditLimitMinor: null, purchaseAprBps: null, status: "active", bankTimeZone: "UTC", closingDay: 31, dueRule: { kind: "day-of-month", day: 1 } }), id: "c", revision: 1 };
 const statement = { id: "s", cardId: card.id, periodStart: "2026-09-01", closingDate: "2026-09-30", dueDate: "2026-10-01", officialBalanceMinor: 82500, minimumDueMinor: 2500, bankConfirmed: true, revision: 1, lifecycle: "recorded" as const, verification: "recorded" as const, coverage: "bounded" as const, openingAnchor: true, reviewedSnapshot: null };
-const workspace: Workspace = { cards: [card], statements: [statement], memberships: [], classifications: [], allocations: [], corrections: [] };
+const workspace: Workspace = { cards: [card], statements: [statement], memberships: [], classifications: [], allocations: [] };
 function source(): ActivitySnapshot {
   const normalized = normalizeActivity([
     { id: "spend", accountId: "card", date: "2026-09-10", amount: -80000, categoryId: "purchases", cleared: true, notes: "#2026-09" },
@@ -33,7 +33,7 @@ it("keeps inferred opening debt but respects an explicit date opened", () => {
 it("does not claim zero interest or purchase totals when charge classification is missing", () => {
   expect(observedInterestTotals(card, workspace, source(), "2026-10-10").classificationKnown).toBe(false);
   const history = statementHistory(card, workspace, source(), "2026-10-10");
-  expect(history[0]).toMatchObject({ covered: true, interestMinor: null, feesMinor: null, spendingMinor: null });
+  expect(history[0]).toMatchObject({ covered: true, interestMinor: null, feesMinor: null, spendingMinor: 82500 });
   const configured = { ...card, interestCategoryId: "interest", feeCategoryId: "fees" };
   expect(observedInterestTotals(configured, workspace, source(), "2026-10-10")).toMatchObject({ classificationKnown: true, totalMinor: 2500, from: "2025-01-01", to: "2026-10-10" });
   expect(observedInterestTotals(configured, workspace, { ...source(), issues: ["Incomplete source"] }, "2026-10-10").classificationKnown).toBe(false);
@@ -58,7 +58,7 @@ it("accumulates observed charges chronologically and refuses unknown coverage", 
   const history = statementHistory(mapped, workspace, source(), "2026-10-10");
   const older = { ...history[0], statement: { ...statement, id: "older", closingDate: "2026-08-31" }, interestMinor: 1000 };
   expect(cumulativeInterestCharges([...history, older])).toEqual([{ date: "2026-08-31", value: 1000 }, { date: "2026-09-30", value: 3500 }]);
-  expect(cumulativeInterestCharges([...history, { ...older, interestMinor: null }])).toEqual([]);
+  expect(cumulativeInterestCharges([...history, { ...older, interestMinor: null }])).toEqual([{ date: "2026-08-31", value: null }, { date: "2026-09-30", value: null }]);
 });
 
 it("keeps post-closing repayments out of the billing-cycle balance bridge", () => {
@@ -77,7 +77,7 @@ it("reconciles the cycle bridge from the preceding bank balance and preserves pe
   const snapshot = { ...source(), rows: source().rows.map((row) => row.id === "pay" ? { ...row, date: "2026-09-15", fingerprint: "cycle-pay" } : row) };
   expect(statementMovement(mapped, statement, continuous, snapshot)).toMatchObject({ openingMinor: 82500, purchasesMinor: 80000, interestMinor: 2500, paymentsMinor: -82500, calculatedMinor: 82500, varianceMinor: 0 });
   const pending = { ...snapshot, rows: snapshot.rows.map((row) => row.amountMinor < 0 ? { ...row, cleared: false } : row) };
-  expect(statementMovement(card, statement, continuous, pending).interestMinor).toBeNull();
+  expect(statementMovement(card, statement, continuous, pending)).toMatchObject({ interestMinor: 0, purchasesMinor: 82500, unclassifiedMinor: 0 });
 });
 
  it("reports only the available posting-date range, including cross-year history", () => {
@@ -87,4 +87,27 @@ it("reconciles the cycle bridge from the preceding bank balance and preserves pe
   const rows = [{ ...original, id: "old", date: "2025-12-20" }, { ...original, date: "2026-01-20" }, { ...original, id: "future", date: "2026-03-20" }];
   expect(observedInterestTotals(configured, workspace, { ...snapshot, rows, from: "2025-12-01", to: "2026-02-01" }, "2026-02-10")).toMatchObject({ totalMinor: 5000, from: "2025-12-01", to: "2026-02-01" });
   expect(observedInterestTotals(configured, workspace, { ...snapshot, rows, from: "2026-01-01", to: "2026-02-01" }, "2026-02-10").totalMinor).toBe(2500);
+});
+
+it("keeps unclassified transfer charges in arithmetic without affecting bank verification", () => {
+  const ambiguous = { ...source(), rows: source().rows.filter((row) => row.id !== "pay").map((row) => ({ ...row, transferId: "unknown-peer", notes: null })) };
+  const starting = { ...statement, openingBalanceMinor: 0 };
+  const state = { ...workspace, statements: [starting] };
+  const movement = statementMovement(card, starting, state, ambiguous);
+  expect(movement).toMatchObject({ purchasesMinor: 0, unclassifiedMinor: 82500, calculatedMinor: 82500, varianceMinor: 0, unavailableReason: null });
+});
+
+it("keeps the explicitly tracked empty opening cycle without inventing earlier history", () => {
+  const tracked = { ...card, firstTrackedStatementDate: "2026-08-31" };
+  const drafts = statementDrafts(tracked, "2026-10-10", undefined, source(), 0);
+  expect(drafts.map((entry) => entry.closingDate)).toEqual(["2026-09-30", "2026-08-31"]);
+  expect(drafts[1].officialBalanceMinor).toBe(0);
+  expect(statementDrafts(tracked, "2026-10-10", undefined, { ...source(), rows: [] }, 0)).toEqual([expect.objectContaining({ closingDate: "2026-08-31", officialBalanceMinor: 0 })]);
+});
+
+it("retains an explicitly tracked bank closing-date exception as the opening cycle", () => {
+  const tracked = { ...card, firstTrackedStatementDate: "2026-08-30" };
+  const drafts = statementDrafts(tracked, "2026-10-10", undefined, source(), 0);
+  expect(drafts.some((entry) => entry.closingDate === "2026-08-30")).toBe(true);
+  expect(drafts.some((entry) => entry.closingDate < "2026-08-30")).toBe(false);
 });

@@ -24,7 +24,18 @@ it("searches notes, sorts columns and saves every decision even when rows are fi
   expect(within(dialog).getAllByText("Travel")).toHaveLength(2);
   expect(within(dialog).getByRole("button", { name: "Classify Zulu" })).toBeVisible();
   expect(dialog.querySelector("details")).toBeNull();
-  expect(within(dialog).getByRole("heading")).toHaveTextContent("30 Sep 2026");
+  expect(within(dialog).getByRole("img", { name: "Reconciliation needs attention" })).toBeVisible();
+  expect(within(dialog).queryByText("Statement evidence and saving")).not.toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "About Statement evidence and saving" })).toBeVisible();
+  expect(within(dialog).getAllByRole("img", { name: "Cleared" })).toHaveLength(2);
+  expect(within(dialog).getByRole("table")).toHaveClass("text-xs");
+  expect(within(dialog).queryByRole("button", { name: "Bank posting dates" })).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole("columnheader", { name: /Bank posted/ })).not.toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Transaction actions Zulu" }));
+  expect(screen.queryByRole("menuitem", { name: "Set bank posting date" })).not.toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Move to another statement" })).toBeInTheDocument();
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  expect(within(dialog).getByRole("heading", { name: /Review statement/ })).toHaveTextContent("30 Sep 2026");
   fireEvent.change(within(dialog).getByLabelText("Search statement transactions"), { target: { value: "30 Sep 2026" } });
   expect(within(dialog).getAllByRole("row")).toHaveLength(3);
   fireEvent.change(within(dialog).getByLabelText("Search statement transactions"), { target: { value: "" } });
@@ -92,8 +103,8 @@ it("colors negative amounts red and incoming transfer payments green without col
   const snapshot: ActivitySnapshot = { accountId: "card", from: "2026-08-01", to: "2026-11-01", rows: [base, { ...base, id: "payment", fingerprint: "payment", amountMinor: 2000, transferId: "funding" }, { ...base, id: "refund", fingerprint: "refund", amountMinor: 500 }], counterparts: [], issues: [], fetchedAt: "now", signature: "rows" };
   render(<StatementReview budget="budget" statement={statement} workspace={creditCardStore.getState().workspaces.budget} snapshot={snapshot} available onClose={jest.fn()} />);
   expect(screen.getByRole("cell", { name: "-10.00" })).toHaveClass("text-destructive");
-  expect(screen.getByRole("cell", { name: "20.00" })).toHaveClass("text-chart-2");
-  expect(screen.getByRole("cell", { name: "5.00" })).not.toHaveClass("text-chart-2");
+  expect(screen.getByRole("cell", { name: "20.00" })).toHaveClass("text-green-700");
+  expect(screen.getByRole("cell", { name: "5.00" })).not.toHaveClass("text-green-700");
 });
 
 
@@ -111,8 +122,8 @@ it("locks three boundary transactions owned by September in October, including b
   const { unmount } = render(<StatementReview budget="budget" statement={october} workspace={creditCardStore.getState().workspaces.budget} snapshot={snapshot} available onClose={close} />);
   fireEvent.click(screen.getByRole("button", { name: /^All \(/ }));
   for (const row of rows.slice(0, 3)) {
-    expect(screen.getByRole("button", { name: `Include ${row.label}` })).toBeDisabled();
-    expect(screen.getByRole("button", { name: `Exclude ${row.label}` })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: `Include ${row.label}` })).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText(`Reason for ${row.label}`).closest("tr")!).getByRole("img", { name: "Excluded and locked: Included in statement 30 Sep 2026" })).toBeVisible();
     expect(screen.getByLabelText(`Reason for ${row.label}`)).toHaveValue("Included in statement 30 Sep 2026");
   }
   fireEvent.click(screen.getByLabelText("Select visible transactions"));
@@ -168,4 +179,34 @@ it("opens on All and stages reassignment without changing either statement until
   expect(saved.memberships.find((entry) => entry.transactionId === "exception" && entry.statementId === first.id)?.decision).toBe("excluded");
   expect(saved.memberships.find((entry) => entry.transactionId === "exception" && entry.statementId === second.id)?.decision).toBe("included");
   expect(saved.statements.find((entry) => entry.id === second.id)).toMatchObject({ verification: "needs-review", revision: 2 });
+});
+
+it("verifies the first statement using an explicit balance brought forward", async () => {
+  creditCardStore.setState({ workspaces: {}, undoHistory: {}, notices: {} });
+  const card = creditCardStore.getState().register({ budgetSyncId: "budget", accountId: "card", nickname: "Card", issuer: "", last4: "", creditLimitMinor: null, purchaseAprBps: null, bankTimeZone: "UTC", status: "active" });
+  const statement = creditCardStore.getState().recordOpeningStatement("budget", card.id, 1, { periodStart: "2026-09-01", closingDate: "2026-09-30", dueDate: "2026-10-20", officialBalanceMinor: 10000, minimumDueMinor: 1000, openingBalanceMinor: 10000 });
+  const snapshot: ActivitySnapshot = { accountId: "card", from: "2026-08-30", to: "2026-10-02", rows: [], counterparts: [], issues: [], fetchedAt: "now", signature: "empty" };
+  render(<StatementReview budget="budget" statement={statement} workspace={creditCardStore.getState().workspaces.budget} snapshot={snapshot} available onClose={jest.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "About Statement evidence and saving" }));
+  await waitFor(() => expect(screen.getByText(/Balance brought forward: 100.00/)).toBeVisible());
+  fireEvent.click(screen.getByRole("button", { name: "About Statement evidence and saving" }));
+  expect(screen.getByRole("button", { name: "Save & verify" })).toBeVisible();
+  expect(screen.getByRole("img", { name: "Bank balance matches" })).toBeVisible();
+  expect(screen.queryByRole("img", { name: "Reconciliation needs attention" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Confirm transactions" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save & verify" }));
+  expect(creditCardStore.getState().workspaces.budget.statements[0].verification).toBe("verified");
+});
+
+
+it("shows attention rather than a success icon when Actual evidence is unavailable", () => {
+  creditCardStore.setState({ workspaces: {}, undoHistory: {}, notices: {} });
+  const store = creditCardStore.getState();
+  const card = store.register({ budgetSyncId: "budget", accountId: "card", nickname: "Card", issuer: "", last4: "", creditLimitMinor: null, purchaseAprBps: null, bankTimeZone: "UTC", status: "active" });
+  const statement = store.recordOpeningStatement("budget", card.id, 1, { periodStart: "2026-09-01", closingDate: "2026-09-30", dueDate: "2026-10-20", officialBalanceMinor: 10000, minimumDueMinor: 1000, openingBalanceMinor: 10000 });
+  const snapshot: ActivitySnapshot = { accountId: "card", from: "2026-08-30", to: "2026-10-02", rows: [], counterparts: [], issues: [], fetchedAt: "now", signature: "empty" };
+  render(<StatementReview budget="budget" statement={statement} workspace={creditCardStore.getState().workspaces.budget} snapshot={snapshot} available={false} onClose={jest.fn()} />);
+  expect(screen.getByRole("img", { name: "Reconciliation needs attention" })).toBeVisible();
+  expect(screen.getByText("Evidence unavailable")).toBeVisible();
+  expect(screen.queryByRole("img", { name: "Bank balance matches" })).not.toBeInTheDocument();
 });

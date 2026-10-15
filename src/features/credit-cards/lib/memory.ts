@@ -1,10 +1,10 @@
 import { createStore } from "zustand/vanilla";
 import { parseIsoDate, daysBetween } from "@/lib/financial-models/calendar/dates";
 import { generateId } from "@/lib/uuid";
-import { membershipSchema, allocationSchema, activityClassificationSchema, cardInputSchema, cardSchema, statementFactsSchema, statementSchema, type Card, type Statement, type OpeningPosition, type Membership, type Workspace } from "./models";
+import { repaymentPlanSchema, planLinkSchema, membershipSchema, allocationSchema, activityClassificationSchema, cardInputSchema, cardSchema, statementFactsSchema, statementSchema, type Card, type Statement, type OpeningPosition, type Membership, type Workspace } from "./models";
 
 import type { ActivitySnapshot } from "./activity";
-import { paymentEvidence } from "./activity";
+import { activityKind, paymentEvidence } from "./activity";
 import { statementReview, sumMinor, membershipOwner, movedMemberships, type StatementMove } from "./statements";
 import { repaymentLedger } from "./repayments";
 
@@ -18,13 +18,16 @@ export type CreditCardState = {
   recordStatement: (budget: string, cardId: string, expectedRevision: number, input: unknown, bankConfirmed: boolean) => Statement;
   saveReview: (budget: string, statementId: string, expectedRevision: number, snapshot: ActivitySnapshot, input: Membership[], verify: boolean, moves?: StatementMove[]) => void;
   allocate: (budget: string, cardId: string, expectedRevision: number, snapshot: ActivitySnapshot, transactionId: string, input: unknown[]) => void;
+  savePlan: (budget: string, cardId: string, expectedRevision: number, snapshot: ActivitySnapshot, input: unknown, links: unknown[]) => void;
+  classifyMany: (budget: string, cardId: string, expectedRevision: number, snapshot: ActivitySnapshot, inputs: unknown[]) => void;
+  deletePlan: (budget: string, planId: string, expectedPlanRevision: number, expectedCardRevision: number) => void;
   classify: (budget: string, cardId: string, expectedRevision: number, snapshot: ActivitySnapshot, input: unknown) => void;
   register: (input: unknown) => Card;
   updateCard: (budget: string, cardId: string, expectedRevision: number, input: unknown) => void;
   recordOpeningStatement: (budget: string, cardId: string, expectedRevision: number, input: unknown) => Statement;
-  correctStatement: (budget: string, statementId: string, expectedRevision: number, input: unknown, reason: string) => void;
+  correctStatement: (budget: string, statementId: string, expectedRevision: number, input: unknown) => void;
 };
-export const EMPTY_WORKSPACE: Workspace = { cards: [], statements: [], corrections: [], memberships: [], allocations: [], classifications: [] };
+export const EMPTY_WORKSPACE: Workspace = { cards: [], statements: [], memberships: [], allocations: [], classifications: [] };
 
 export function openingPosition(workspace: Workspace, cardId: string): OpeningPosition | null {
   const anchor = workspace.statements.find((s) => s.cardId === cardId && s.openingAnchor);
@@ -35,6 +38,17 @@ function requireRevision(record: { revision: number } | undefined, expected: num
   if (!record) throw new Error("This record is no longer available in the active budget");
   if (record.revision !== expected) throw new Error("This record changed. Reopen the editor to review the latest values; your draft has not been saved.");
   if (!Number.isSafeInteger(expected + 1)) throw new Error("Record revision exceeds the supported range");
+}
+
+function checkedClassification(card: Card, cardId: string, workspace: Workspace, snapshot: ActivitySnapshot, raw: unknown) {
+        const input = activityClassificationSchema.parse(raw);
+        const row = snapshot.rows.find((entry) => entry.id === input.transactionId);
+        if (input.cardId !== cardId || snapshot.accountId !== card.accountId || !row || row.fingerprint !== input.fingerprint || (row.transferId && (row.amountMinor >= 0 || !["cash-advance", "money-transfer", "balance-transfer", "other-charge", "other"].includes(input.kind)))) throw new Error("This activity changed or is a transfer; refresh and review it");
+        if ((["refund", "cashback", "other-credit"].includes(input.kind) && row.amountMinor <= 0) || (["purchase", "cash-advance", "money-transfer", "balance-transfer", "interest", "fee", "other-charge"].includes(input.kind) && row.amountMinor >= 0)) throw new Error("Classification must match the transaction amount direction");
+        if (input.kind !== "fee" && input.feeSubtype != null) throw new Error("Fee subtype is only valid for a fee");
+        if (workspace.planLinks?.some((link) => link.transactionId === row.id)) throw new Error("Edit this posting’s plan link to change its role");
+        if (workspace.plans?.some((plan) => plan.transactionId === row.id && plan.status === "active") && !["purchase", "cash-advance", "money-transfer", "balance-transfer"].includes(input.kind)) throw new Error("Close or review the attached plan before changing its original charge type");
+        return input;
 }
 
 /** One immutable working set per budget. No persistence middleware or storage adapter. */
@@ -56,6 +70,7 @@ export function createCreditCardStore() {
         // Undo must not make an old editor revision valid again (ABA prevention).
         const restored: Workspace = { ...previous,
           cards: previous.cards.map((card) => ({ ...card, revision: Math.max(card.revision, current.cards.find((entry) => entry.id === card.id)?.revision ?? 0) + 1 })),
+          plans: (previous.plans ?? []).map((plan) => ({ ...plan, revision: Math.max(plan.revision, current.plans?.find((entry) => entry.id === plan.id)?.revision ?? 0) + 1 })),
           statements: previous.statements.map((statement) => ({ ...statement, revision: Math.max(statement.revision, current.statements.find((entry) => entry.id === statement.id)?.revision ?? 0) + 1 })),
         };
         set((state) => ({ workspaces: { ...state.workspaces, [budget]: restored }, undoHistory: { ...state.undoHistory, [budget]: history.slice(0, -1) }, notices: { ...state.notices, [budget]: "Last change undone" } }));
@@ -124,18 +139,54 @@ export function createCreditCardStore() {
         if (input.length && sumMinor(input.map((entry) => entry.amountMinor)) > row.amountMinor) throw new Error("Allocation exceeds this payment");
         write(budget, { ...candidate, cards: workspace.cards.map((entry) => entry.id === cardId ? { ...entry, revision: expected + 1 } : entry) }, input.length ? "Payment allocation saved" : "Oldest-first allocation restored");
       },
-      classify(budget, cardId, expected, snapshot, raw) {
+      savePlan(budget, cardId, expected, snapshot, raw, rawLinks) {
         const workspace = read(budget);
         const card = workspace.cards.find((entry) => entry.id === cardId);
         requireRevision(card, expected);
-        const input = activityClassificationSchema.parse(raw);
+        const input = repaymentPlanSchema.parse(raw);
+        const existing = workspace.plans?.find((entry) => entry.id === input.id);
+        if (existing) requireRevision(existing, input.revision);
+        else if (input.revision !== 1) throw new Error("New plans must start at revision one");
         const row = snapshot.rows.find((entry) => entry.id === input.transactionId);
-        if (input.cardId !== cardId || snapshot.accountId !== card!.accountId || !row || row.fingerprint !== input.fingerprint || (row.transferId && (row.amountMinor >= 0 || !["cash-advance", "other"].includes(input.kind)))) throw new Error("This activity changed or is a transfer; refresh and review it");
-        if ((input.kind === "refund" && row.amountMinor <= 0) || (["purchase", "cash-advance", "interest", "fee"].includes(input.kind) && row.amountMinor >= 0)) throw new Error("Classification must match the transaction amount direction");
-        write(budget, { ...workspace,
-          classifications: [...workspace.classifications.filter((entry) => !(entry.cardId === cardId && entry.transactionId === row.id)), input],
-          cards: workspace.cards.map((entry) => entry.id === cardId ? { ...entry, revision: expected + 1 } : entry),
-        }, "Activity classification saved");
+        if (snapshot.issues.length || snapshot.accountId !== card!.accountId || input.cardId !== cardId || !row || row.fingerprint !== input.fingerprint || row.amountMinor >= 0) throw new Error("The original Actual charge changed; refresh and review it");
+        if (!["purchase", "cash-advance", "money-transfer", "balance-transfer"].includes(activityKind(row, card!, workspace, snapshot))) throw new Error("Classify the original charge before adding a plan");
+        if (input.startDate < row.date || input.amountMinor > -row.amountMinor) throw new Error("Plan amount/date must fit the original charge");
+        if (workspace.plans?.some((entry) => entry.id !== input.id && entry.transactionId === row.id)) throw new Error("This transaction already has a plan; edit that plan instead");
+        if (workspace.planLinks?.some((entry) => entry.transactionId === row.id)) throw new Error("A plan posting cannot also be another plan’s original charge");
+        if (existing && (existing.transactionId !== input.transactionId || existing.cardId !== cardId)) throw new Error("A plan cannot move to another source transaction");
+        const links = rawLinks.map((entry) => planLinkSchema.parse(entry));
+        if (new Set(links.map((entry) => entry.transactionId)).size !== links.length) throw new Error("Each Actual posting may be linked once");
+        for (const link of links) {
+          const posting = snapshot.rows.find((entry) => entry.id === link.transactionId);
+          if (link.planId !== input.id || !posting || posting.fingerprint !== link.fingerprint || posting.id === row.id || posting.transferId || posting.date < input.startDate) throw new Error("Review the linked posting: source, date or transfer role is invalid");
+          if ((["conversion-credit", "refund"].includes(link.role) && posting.amountMinor <= 0) || (["instalment-billed", "plan-fee"].includes(link.role) && posting.amountMinor >= 0)) throw new Error("Posting role must match its amount direction");
+          if (link.role === "instalment-billed" && (link.instalment === null || link.instalment > input.months)) throw new Error("Choose a valid instalment number");
+          if (link.role !== "instalment-billed" && link.instalment !== null) throw new Error("Only billed instalments have an instalment number");
+          if (workspace.planLinks?.some((entry) => entry.planId !== input.id && entry.transactionId === posting.id) || workspace.plans?.some((entry) => entry.transactionId === posting.id)) throw new Error("This Actual entry belongs to another plan");
+        }
+        const billed = links.filter((link) => link.role === "instalment-billed");
+        if (new Set(billed.map((link) => link.instalment)).size !== billed.length) throw new Error("An instalment may have one billed posting; link separate fees as plan fees");
+        const saved = { ...input, revision: existing ? existing.revision + 1 : 1 };
+        write(budget, { ...workspace, plans: [...(workspace.plans ?? []).filter((entry) => entry.id !== saved.id), saved], planLinks: [...(workspace.planLinks ?? []).filter((entry) => entry.planId !== saved.id), ...links], cards: workspace.cards.map((entry) => entry.id === cardId ? { ...entry, revision: expected + 1 } : entry) }, "Repayment plan saved");
+      },
+      classify(budget, cardId, expected, snapshot, raw) { get().classifyMany(budget, cardId, expected, snapshot, [raw]); },
+      classifyMany(budget, cardId, expected, snapshot, raw) {
+        const workspace = read(budget);
+        const card = workspace.cards.find((entry) => entry.id === cardId);
+        requireRevision(card, expected);
+        if (!raw.length) throw new Error("Select transactions to classify");
+        const inputs = raw.map((entry) => checkedClassification(card!, cardId, workspace, snapshot, entry));
+        const ids = new Set(inputs.map((entry) => entry.transactionId));
+        if (ids.size !== inputs.length) throw new Error("Each transaction may be classified once");
+        write(budget, { ...workspace, classifications: [...workspace.classifications.filter((entry) => entry.cardId !== cardId || !ids.has(entry.transactionId)), ...inputs], cards: workspace.cards.map((entry) => entry.id === cardId ? { ...entry, revision: expected + 1 } : entry) }, inputs.length === 1 ? "Activity classification saved" : `${inputs.length} transactions classified`);
+      },
+      deletePlan(budget, planId, expectedPlan, expectedCard) {
+        const workspace = read(budget);
+        const plan = workspace.plans?.find((entry) => entry.id === planId);
+        requireRevision(plan, expectedPlan);
+        const card = workspace.cards.find((entry) => entry.id === plan!.cardId);
+        requireRevision(card, expectedCard);
+        write(budget, { ...workspace, plans: workspace.plans?.filter((entry) => entry.id !== planId), planLinks: workspace.planLinks?.filter((entry) => entry.planId !== planId), cards: workspace.cards.map((entry) => entry.id === card!.id ? { ...entry, revision: expectedCard + 1 } : entry) }, "Plan metadata removed; Actual transactions unchanged");
       },
       register(raw) {
         const input = cardInputSchema.parse(raw);
@@ -191,16 +242,14 @@ export function createCreditCardStore() {
         write(budget, { ...workspace,
           statements: workspace.statements.filter((entry) => entry.id !== statementId).map((entry) => entry.cardId === statement!.cardId && (entry.closingDate > statement!.closingDate || workspace.memberships.some((decision) => decision.statementId === entry.id && released.has(decision.transactionId))) ? { ...entry, revision: entry.revision + 1, verification: "needs-review" as const, lifecycle: "recorded" as const, reviewedSnapshot: null } : entry),
           memberships: workspace.memberships.filter((entry) => entry.statementId !== statementId),
-          corrections: workspace.corrections.filter((entry) => entry.statementId !== statementId),
           allocations: workspace.allocations.filter((entry) => entry.originId !== statementId),
           cards: workspace.cards.map((entry) => entry.id === statement!.cardId ? { ...entry, revision: entry.revision + 1 } : entry),
         }, "Saved statement deleted; Actual transactions unchanged");
       },
-      correctStatement(budget, statementId, expected, raw, reason) {
+      correctStatement(budget, statementId, expected, raw) {
         const workspace = read(budget);
         const current = workspace.statements.find((entry) => entry.id === statementId);
         requireRevision(current, expected);
-        if (!reason.trim() || reason.trim().length > 500) throw new Error("Give a correction reason of 1–500 characters");
         const facts = statementFactsSchema.parse(raw);
         if (workspace.statements.some((entry) => entry.cardId === current!.cardId && entry.id !== statementId && entry.closingDate === facts.closingDate)) throw new Error("Another statement already uses this closing date");
         if (workspace.statements.some((entry) => entry.cardId === current!.cardId && entry.id !== statementId && !(entry.closingDate < facts.periodStart || entry.periodStart > facts.closingDate))) throw new Error("Statement periods must not overlap");
@@ -208,7 +257,7 @@ export function createCreditCardStore() {
         if (current!.openingAnchor && workspace.statements.some((entry) => entry.cardId === current!.cardId && entry.id !== statementId && entry.closingDate < facts.closingDate)) throw new Error("Delete earlier saved statements before moving the opening date forward.");
         if (!current!.openingAnchor && card.firstTrackedStatementDate && facts.closingDate < card.firstTrackedStatementDate) throw new Error("This statement is before the first tracked statement");
         const updated = statementSchema.parse({ ...current, ...facts, revision: expected + 1, verification: "needs-review", lifecycle: "recorded", bankConfirmed: true, reviewedSnapshot: null, openingAnchor: current!.openingAnchor || facts.closingDate === card.firstTrackedStatementDate });
-        write(budget, { ...workspace, cards: workspace.cards.map((entry) => entry.id === card.id ? { ...entry, revision: entry.revision + 1, firstTrackedStatementDate: current!.openingAnchor ? facts.closingDate : entry.firstTrackedStatementDate } : entry), statements: workspace.statements.map((entry) => entry.id === statementId ? updated : entry.cardId === current!.cardId && entry.closingDate > current!.closingDate ? { ...entry, revision: entry.revision + 1, verification: "needs-review" as const, lifecycle: "recorded" as const, reviewedSnapshot: null } : entry), corrections: [...workspace.corrections, { id: generateId(), statementId, before: current!, after: updated, reason: reason.trim(), recordedAt: new Date().toISOString() }] });
+        write(budget, { ...workspace, cards: workspace.cards.map((entry) => entry.id === card.id ? { ...entry, revision: entry.revision + 1, firstTrackedStatementDate: current!.openingAnchor ? facts.closingDate : entry.firstTrackedStatementDate } : entry), statements: workspace.statements.map((entry) => entry.id === statementId ? updated : entry.cardId === current!.cardId && entry.closingDate > current!.closingDate ? { ...entry, revision: entry.revision + 1, verification: "needs-review" as const, lifecycle: "recorded" as const, reviewedSnapshot: null } : entry) });
       },
     };
   });

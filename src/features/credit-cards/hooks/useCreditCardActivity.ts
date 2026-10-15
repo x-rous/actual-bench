@@ -14,10 +14,10 @@ export function useCreditCardActivity(connection: ConnectionInstance, accountId:
   });
 }
 
-export function useCreditCardActivities(connection: ConnectionInstance, cards: import("../lib/models").Card[], months: number, statements: import("../lib/models").Statement[] = [], reviewId?: string | null) {
+export function useCreditCardActivities(connection: ConnectionInstance, cards: import("../lib/models").Card[], statements: import("../lib/models").Statement[] = []) {
   return useQueries({ queries: cards.map((card) => {
     const today = bankToday(card.bankTimeZone);
-    const { from, to } = cardActivityWindow(card, today, months, statements, reviewId);
+    const { from, to } = cardActivityWindow(card, today, statements);
     return {
       queryKey: ["creditCardActivity", connection.id, connection.budgetSyncId, card.accountId, from, to],
       queryFn: () => readCardActivity(getTransport(connection), card.accountId, from, to),

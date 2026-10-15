@@ -1,4 +1,4 @@
-import { addDays, addMonths } from "@/lib/financial-models/calendar/dates";
+import { addDays, parseIsoDate } from "@/lib/financial-models/calendar/dates";
 import type { ActivityRow, ActivitySnapshot } from "./activity";
 import type { Card, Membership, Statement, Workspace } from "./models";
 import { minorAmountSchema } from "./models";
@@ -10,10 +10,16 @@ export function sumMinor(values: readonly number[]) {
   return minorAmountSchema.parse(result);
 }
 
-export function statementDrafts(card: Card, today: string, count: number, snapshot: ActivitySnapshot, signedCurrentMinor: number, bankStatements: Statement[] = []): StatementDraft[] {
+export function statementDrafts(card: Card, today: string, count: number | undefined, snapshot: ActivitySnapshot, signedCurrentMinor: number, bankStatements: Statement[] = []): StatementDraft[] {
   const firstEvidence = [...snapshot.rows.map((row) => row.date), ...bankStatements.filter((entry) => entry.cardId === card.id).map((entry) => entry.periodStart)].sort()[0];
   const firstTracked = card.firstTrackedStatementDate ?? bankStatements.find((entry) => entry.cardId === card.id && entry.openingAnchor)?.closingDate;
-  return recentClosings(card, today, count).flatMap((closingDate) => {
+  const start = firstTracked ? parseIsoDate(firstTracked) : null;
+  const end = parseIsoDate(today);
+  const cycleCount = count ?? (start ? Math.max(1, (end.year - start.year) * 12 + end.month - start.month + 1) : 6);
+  const closings = recentClosings(card, today, cycleCount);
+  // An explicitly selected opening cycle must stay actionable, including bank closing-date exceptions.
+  if (firstTracked && firstTracked <= today && !closings.includes(firstTracked)) closings.push(firstTracked);
+  return closings.sort().reverse().flatMap((closingDate) => {
     if (firstTracked && closingDate < firstTracked) return [];
     const dates = cycleDates(card, closingDate);
     const priorException = bankStatements.filter((entry) => entry.cardId === card.id && entry.bankConfirmed && entry.closingDate < closingDate && entry.closingDate >= addDays(dates.periodStart, -7) && entry.closingDate <= addDays(dates.periodStart, 7)).sort((a, b) => b.closingDate.localeCompare(a.closingDate))[0];
@@ -30,7 +36,7 @@ export function statementDrafts(card: Card, today: string, count: number, snapsh
     // Keep inferred opening debt, and genuine zero cycles inside known history,
     // without inventing empty statements before the account has any evidence.
     if (card.openedDate && closingDate < card.openedDate) return [];
-    if (owed === 0 && (!firstEvidence || closingDate < firstEvidence)) return [];
+    if (closingDate !== firstTracked && owed === 0 && (!firstEvidence || closingDate < firstEvidence)) return [];
     const minimum = minimumEstimate(card, owed);
     return [{ ...dates, officialBalanceMinor: owed, minimumDueMinor: minimum ?? 0, bankConfirmed: false as const, minimumKnown: minimum !== null }];
   });
@@ -59,11 +65,33 @@ export function effectiveMembership(statement: Statement, row: ActivityRow, save
   };
 }
 
+/** Immutable arrays scope this index to exactly the reviewed workspace/decision draft. */
+const ownershipIndexes = new WeakMap<Membership[], WeakMap<Statement[], Map<string, Map<string, Statement[]>>>>();
+function ownershipIndex(workspace: Workspace, decisions: Membership[]) {
+  let byStatements = ownershipIndexes.get(decisions);
+  if (!byStatements) { byStatements = new WeakMap(); ownershipIndexes.set(decisions, byStatements); }
+  let index = byStatements.get(workspace.statements);
+  if (!index) {
+    index = new Map();
+    const statements = new Map(workspace.statements.map((entry) => [entry.id, entry]));
+    for (const decision of decisions) {
+      if (decision.decision !== "included") continue;
+      const owner = statements.get(decision.statementId);
+      if (!owner || owner.cardId !== decision.cardId) continue;
+      let transactions = index.get(owner.cardId);
+      if (!transactions) { transactions = new Map(); index.set(owner.cardId, transactions); }
+      const owners = transactions.get(decision.transactionId) ?? [];
+      if (!owners.some((entry) => entry.id === owner.id)) owners.push(owner);
+      transactions.set(decision.transactionId, owners);
+    }
+    for (const transactions of index.values()) for (const owners of transactions.values()) owners.sort((a, b) => a.closingDate.localeCompare(b.closingDate) || a.id.localeCompare(b.id));
+    byStatements.set(workspace.statements, index);
+  }
+  return index;
+}
 /** Saved inclusion reserves a transaction until it is excluded from its owning statement. */
 export function membershipOwner(statement: Statement, transactionId: string, workspace: Workspace, decisions = workspace.memberships) {
-  return workspace.statements.filter((entry) => entry.cardId === statement.cardId && entry.id !== statement.id)
-    .sort((a, b) => a.closingDate.localeCompare(b.closingDate) || a.id.localeCompare(b.id))
-    .find((owner) => decisions.some((entry) => entry.cardId === statement.cardId && entry.statementId === owner.id && entry.transactionId === transactionId && entry.decision === "included"));
+  return ownershipIndex(workspace, decisions).get(statement.cardId)?.get(transactionId)?.find((owner) => owner.id !== statement.id);
 }
 
 export function statementReview(statement: Statement, workspace: Workspace, snapshot: ActivitySnapshot, decisions = workspace.memberships) {
@@ -85,22 +113,20 @@ export function statementReview(statement: Statement, workspace: Workspace, snap
   const included = rows.filter((_, index) => memberships[index].decision === "included");
   const coverage = snapshot.from <= statement.periodStart && snapshot.to >= addDays(statement.closingDate, 2) && !snapshot.issues.length;
   const unresolved = memberships.filter((entry) => entry.decision === "review").length;
-  const calculatedMinor = continuity ? sumMinor([prior.officialBalanceMinor, -sumMinor(included.map((row) => row.amountMinor))]) : null;
+  const startingBalanceMinor = continuity ? prior.officialBalanceMinor : statement.openingAnchor ? statement.openingBalanceMinor ?? null : null;
+  const calculatedMinor = startingBalanceMinor === null ? null : sumMinor([startingBalanceMinor, -sumMinor(included.map((row) => row.amountMinor))]);
   const varianceMinor = calculatedMinor === null ? null : sumMinor([statement.officialBalanceMinor, -calculatedMinor]);
   // Adjacent overrides cannot claim the same activity twice.
   const duplicate = rows.some((row) => scopedDecisions.some((entry) => entry.transactionId === row.id && entry.decision === "included" && entry.fingerprint === row.fingerprint) && Boolean(membershipOwner(statement, row.id, workspace, decisions)));
   // Ownership changes on already-excluded candidates cannot change this statement.
   // Keep owners for included/undecided candidates so genuine conflicts still invalidate evidence.
-  const signature = JSON.stringify([rows.map((row) => [row.fingerprint, effectiveMembership(statement, row, scopedDecisions).decision === "excluded" ? null : membershipOwner(statement, row.id, workspace, decisions)?.id ?? null]), prior ? [prior.id, prior.officialBalanceMinor, prior.closingDate] : null, coverage, snapshot.issues]);
-  return { signature, rows, memberships, calculatedMinor, varianceMinor, unresolved, coverage, continuity, duplicate,
-    canVerify: statement.bankConfirmed && continuity && coverage && unresolved === 0 && !duplicate && varianceMinor === 0,
+  const signature = JSON.stringify([rows.map((row) => [row.fingerprint, effectiveMembership(statement, row, scopedDecisions).decision === "excluded" ? null : membershipOwner(statement, row.id, workspace, decisions)?.id ?? null]), prior ? [prior.id, prior.officialBalanceMinor, prior.closingDate] : null, coverage, snapshot.issues, ...(statement.openingAnchor && statement.openingBalanceMinor != null ? [statement.openingBalanceMinor] : [])]);
+  return { signature, rows, memberships, startingBalanceMinor, calculatedMinor, varianceMinor, unresolved, coverage, continuity, duplicate,
+    canVerify: statement.bankConfirmed && startingBalanceMinor !== null && coverage && unresolved === 0 && !duplicate && varianceMinor === 0,
     stale: statement.reviewedSnapshot !== null && statement.reviewedSnapshot !== signature,
   };
 }
 
-export function activityWindow(today: string, months: number) {
-  return { from: addMonths(today, -Math.min(36, Math.max(6, months))), to: today };
-}
 
 /** Read-only previews let history work before bank confirmation, without silently saving facts. */
 export function previewStatements(cardId: string, drafts: StatementDraft[]): Statement[] {

@@ -11,10 +11,16 @@ export type Settlement = {
   paymentWindowEnd: string; paidDate: string | null; minimumPaidDate: string | null; delayDays: number | null; provisionalMinor: number;
   /** Integer minor units from cleared card-side transfers, within paidMinor. */
   confirmedPaidMinor: number;
+  /** Integer minor units of cashback credits; never included in paidMinor. */
+  cashbackMinor?: number; confirmedCashbackMinor?: number; provisionalCashbackMinor?: number;
+  /** All classified statement credits, including cashback; integer minor units, never payments. */
+  creditMinor?: number; confirmedCreditMinor?: number; provisionalCreditMinor?: number;
   /** Confirmed carry frozen at the due-date cutoff; null before due or with incomplete/pending evidence. */
   carriedAtDueMinor?: number | null;
   confirmedPaidByDueMinor?: number;
-  /** Dates when cleared evidence first covered each threshold; recorded dates above include pending transfers. */
+  /** Cleared cashback posted by the due date, in integer minor units. */
+  confirmedCashbackByDueMinor?: number; confirmedCreditByDueMinor?: number;
+  /** Full-settlement dates include cashback; minimum-threshold dates use payments only. Recorded dates include pending evidence. */
   confirmedPaidDate: string | null; confirmedMinimumPaidDate: string | null;
 };
 export type RepaymentLedger = {
@@ -59,7 +65,7 @@ export function repaymentLedger(card: Card, workspace: Workspace, snapshot: Acti
       continue;
     }
     if (row.amountMinor < 0) {
-      if (row.transferId && kind !== "cash-advance") result.issues.push(`Outgoing transfer or reversal needs review: ${row.id}`);
+      if (row.transferId && !["cash-advance", "money-transfer", "balance-transfer"].includes(kind)) result.issues.push(`Outgoing borrowing transfer needs classification: ${row.id}`);
       const originalMinor = -row.amountMinor;
       const credit = Math.min(result.creditMinor, originalMinor);
       result.creditMinor -= credit;
@@ -89,7 +95,7 @@ export function repaymentLedger(card: Card, workspace: Workspace, snapshot: Acti
         result.creditMinor = sumMinor([result.creditMinor, left]);
       }
       result.confirmedMinor = sumMinor([result.confirmedMinor, row.amountMinor]);
-    } else if (kind === "refund") reduce(row.amountMinor);
+    } else if ((kind === "refund" || kind === "cashback" || kind === "other-credit")) reduce(row.amountMinor);
     else if (row.amountMinor > 0) result.issues.push(`Positive activity needs classification: ${row.id}`);
   }
   return result;
@@ -106,7 +112,7 @@ export function matchedPaymentStatement(date: string, statements: Statement[], w
  */
 export function settlements(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, today: string): Settlement[] {
   const statements = workspace.statements.filter((entry) => entry.cardId === card.id).sort((a, b) => a.closingDate.localeCompare(b.closingDate));
-  const payments = snapshot.rows.filter((row) => row.date <= today && paymentEvidence(row, snapshot) !== "not-payment").sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  const payments = snapshot.rows.filter((row) => row.date <= today && (paymentEvidence(row, snapshot) !== "not-payment" || ["cashback", "refund", "other-credit"].includes(activityKind(row, card, workspace, snapshot)))).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const windows = statements.map((statement) => {
     const closing = parseIsoDate(statement.closingDate);
     const day = card.closingDay ?? closing.day;
@@ -123,42 +129,57 @@ export function settlements(card: Card, workspace: Workspace, snapshot: Activity
   const assignments = new Map(payments.map((row) => [row.id, matchedPaymentStatement(row.date, statements, windows)?.id]));
   return statements.map((statement) => {
     const paymentWindowEnd = windows.find((window) => window.statementId === statement.id)!.paymentWindowEnd;
-    const windowPayments = payments.filter((row) => assignments.get(row.id) === statement.id);
+    const windowActivity = payments.filter((row) => assignments.get(row.id) === statement.id);
+    const credits = windowActivity.filter((row) => ["cashback", "refund", "other-credit"].includes(activityKind(row, card, workspace, snapshot)));
+    const creditMinor = sumMinor(credits.map((row) => row.amountMinor));
+    const confirmedCreditMinor = sumMinor(credits.filter((row) => row.cleared === true).map((row) => row.amountMinor));
+    const provisionalCreditMinor = creditMinor - confirmedCreditMinor;
+    const cashback = windowActivity.filter((row) => activityKind(row, card, workspace, snapshot) === "cashback");
+    const cashbackMinor = sumMinor(cashback.map((row) => row.amountMinor));
+    const confirmedCashbackMinor = sumMinor(cashback.filter((row) => row.cleared === true).map((row) => row.amountMinor));
+    const provisionalCashbackMinor = cashbackMinor - confirmedCashbackMinor;
+    const windowPayments = windowActivity.filter((row) => activityKind(row, card, workspace, snapshot) === "payment");
     const confirmed = windowPayments.filter((row) => paymentEvidence(row, snapshot) === "confirmed");
     const confirmedPaidMinor = sumMinor(confirmed.map((row) => row.amountMinor));
     const paidMinor = sumMinor(windowPayments.map((row) => row.amountMinor));
     const provisionalMinor = sumMinor(windowPayments.filter((row) => paymentEvidence(row, snapshot) === "provisional").map((row) => row.amountMinor));
     const balance = Math.max(0, statement.officialBalanceMinor);
     let running = 0, paidDate: string | null = null, minimumPaidDate: string | null = null;
-    for (const payment of windowPayments) {
+    let runningPaid = 0;
+    for (const payment of windowActivity) {
+      if (activityKind(payment, card, workspace, snapshot) === "payment") runningPaid = sumMinor([runningPaid, payment.amountMinor]);
       running = sumMinor([running, payment.amountMinor]);
       if (balance > 0 && running >= balance && paidDate === null) paidDate = payment.date;
-      if (statement.minimumDueMinor > 0 && running >= statement.minimumDueMinor && minimumPaidDate === null) minimumPaidDate = payment.date;
+      if (statement.minimumDueMinor > 0 && runningPaid >= statement.minimumDueMinor && minimumPaidDate === null) minimumPaidDate = payment.date;
     }
     let confirmedRunning = 0, confirmedPaidDate: string | null = null, confirmedMinimumPaidDate: string | null = null;
-    for (const payment of confirmed) {
+    let confirmedRunningPaid = 0;
+    for (const payment of windowActivity.filter((row) => row.cleared === true)) {
+      if (activityKind(payment, card, workspace, snapshot) === "payment") confirmedRunningPaid = sumMinor([confirmedRunningPaid, payment.amountMinor]);
       confirmedRunning = sumMinor([confirmedRunning, payment.amountMinor]);
       if (balance > 0 && confirmedRunning >= balance && confirmedPaidDate === null) confirmedPaidDate = payment.date;
-      if (statement.minimumDueMinor > 0 && confirmedRunning >= statement.minimumDueMinor && confirmedMinimumPaidDate === null) confirmedMinimumPaidDate = payment.date;
+      if (statement.minimumDueMinor > 0 && confirmedRunningPaid >= statement.minimumDueMinor && confirmedMinimumPaidDate === null) confirmedMinimumPaidDate = payment.date;
     }
     const covered = snapshot.from <= statement.closingDate && snapshot.to >= (today < paymentWindowEnd ? today : paymentWindowEnd) && !snapshot.issues.length;
     const known = statement.bankConfirmed && covered;
-    const fullRemainingMinor = known ? Math.max(0, balance - paidMinor) : null;
+    const fullRemainingMinor = known ? Math.max(0, balance - paidMinor - creditMinor) : null;
     const minimumRemainingMinor = known ? Math.max(0, statement.minimumDueMinor - paidMinor) : null;
     const paidByDue = sumMinor(windowPayments.filter((row) => row.date <= statement.dueDate).map((row) => row.amountMinor));
     const confirmedPaidByDueMinor = sumMinor(confirmed.filter((row) => row.date <= statement.dueDate).map((row) => row.amountMinor));
     const dueCovered = statement.bankConfirmed && statement.dueDate < today && snapshot.from <= statement.closingDate && snapshot.to >= statement.dueDate && !snapshot.issues.length;
-    const pendingByDue = paidByDue - confirmedPaidByDueMinor;
-    const carriedAtDueMinor = dueCovered && pendingByDue === 0 ? Math.max(0, balance - confirmedPaidByDueMinor) : null;
-    const fullByDue = dueCovered && (pendingByDue === 0 || confirmedPaidByDueMinor >= balance) ? confirmedPaidByDueMinor >= balance : null;
-    const minimumByDue = dueCovered && (pendingByDue === 0 || confirmedPaidByDueMinor >= statement.minimumDueMinor) ? confirmedPaidByDueMinor >= statement.minimumDueMinor : null;
+    const creditsByDue = sumMinor(credits.filter((row) => row.date <= statement.dueDate).map((row) => row.amountMinor));
+    const confirmedCreditsByDue = sumMinor(credits.filter((row) => row.date <= statement.dueDate && row.cleared === true).map((row) => row.amountMinor));
+    const pendingByDue = paidByDue - confirmedPaidByDueMinor + creditsByDue - confirmedCreditsByDue;
+    const carriedAtDueMinor = dueCovered && pendingByDue === 0 ? Math.max(0, balance - confirmedPaidByDueMinor - confirmedCreditsByDue) : null;
+    const fullByDue = dueCovered && (pendingByDue === 0 || confirmedPaidByDueMinor + confirmedCreditsByDue >= balance) ? confirmedPaidByDueMinor + confirmedCreditsByDue >= balance : null;
+    const minimumByDue = dueCovered && (paidByDue === confirmedPaidByDueMinor || confirmedPaidByDueMinor >= statement.minimumDueMinor) ? confirmedPaidByDueMinor >= statement.minimumDueMinor : null;
     const delayDays = known && paidDate ? Math.max(0, daysBetween(statement.dueDate, paidDate)) : null;
-    return { statementId: statement.id, dueDate: statement.dueDate, paymentWindowEnd, paidMinor, provisionalMinor, confirmedPaidMinor,
-      carriedAtDueMinor, confirmedPaidByDueMinor,
+    return { statementId: statement.id, dueDate: statement.dueDate, paymentWindowEnd, paidMinor, provisionalMinor, confirmedPaidMinor, cashbackMinor, confirmedCashbackMinor, provisionalCashbackMinor, creditMinor, confirmedCreditMinor, provisionalCreditMinor,
+      carriedAtDueMinor, confirmedPaidByDueMinor, confirmedCashbackByDueMinor: sumMinor(cashback.filter((row) => row.date <= statement.dueDate && row.cleared === true).map((row) => row.amountMinor)), confirmedCreditByDueMinor: confirmedCreditsByDue,
       confirmedPaidDate: known ? confirmedPaidDate : null, confirmedMinimumPaidDate: known ? confirmedMinimumPaidDate : null,
       paidDate: known ? paidDate : null, minimumPaidDate: known ? minimumPaidDate : null, delayDays,
       fullRemainingMinor, minimumRemainingMinor, fullByDue, minimumByDue,
-      status: !statement.bankConfirmed ? "Estimate · confirm bank facts" : !covered ? "Coverage unknown" : balance === 0 ? "No payment required" : fullRemainingMinor === 0 ? confirmedPaidMinor >= balance ? confirmedPaidDate && confirmedPaidDate > statement.dueDate ? "Paid late" : "Settled" : "Payment recorded · clearing pending" : minimumRemainingMinor === 0 ? confirmedPaidMinor >= statement.minimumDueMinor ? confirmedMinimumPaidDate && confirmedMinimumPaidDate > statement.dueDate ? "Minimum paid late · balance carried" : "Minimum met · full balance remains" : "Minimum recorded · clearing pending" : statement.dueDate < today ? "Minimum overdue" : paymentDeadline(statement.dueDate, today),
+      status: !statement.bankConfirmed ? "Estimate · confirm bank facts" : !covered ? "Coverage unknown" : balance === 0 ? "No payment required" : fullRemainingMinor === 0 ? confirmedPaidMinor + confirmedCreditMinor >= balance ? minimumRemainingMinor! > 0 ? "Balance covered by credits · minimum unpaid" : confirmedPaidDate && confirmedPaidDate > statement.dueDate ? confirmedCreditMinor ? "Settled late · includes credits" : "Paid late" : confirmedCreditMinor ? "Settled · includes credits" : "Settled" : creditMinor ? "Credits recorded · clearing pending" : "Payment recorded · clearing pending" : minimumRemainingMinor === 0 ? confirmedPaidMinor >= statement.minimumDueMinor ? confirmedMinimumPaidDate && confirmedMinimumPaidDate > statement.dueDate ? "Minimum paid late · balance carried" : "Minimum met · full balance remains" : "Minimum recorded · clearing pending" : statement.dueDate < today ? "Minimum overdue" : paymentDeadline(statement.dueDate, today),
     };
   });
 }

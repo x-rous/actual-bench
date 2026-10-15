@@ -30,19 +30,21 @@ it("invalid or conflicting edits are atomic and cannot move a card across budget
   expect(store.getState().workspaces["budget-a"].cards[0].nickname).toBe("New name");
 });
 
-it("corrections retain prior bank facts and one anchor, with a required reason and revision", () => {
+it("statement edits update current facts without correction history and retain revision guards", () => {
   const store = createCreditCardStore();
   const registered = store.getState().register(card);
   const statement = store.getState().recordOpeningStatement("budget-a", registered.id, 1, facts);
   const current = { ...facts, officialBalanceMinor: 290000 };
-  expect(() => store.getState().correctStatement("budget-a", statement.id, 1, current, "")).toThrow("reason");
-  store.getState().correctStatement("budget-a", statement.id, 1, current, "Bank correction");
+  store.getState().correctStatement("budget-a", statement.id, 1, current);
   const workspace = store.getState().workspaces["budget-a"];
   expect(workspace.statements).toHaveLength(1);
   expect(workspace.statements[0]).toMatchObject({ officialBalanceMinor: 290000, revision: 2, verification: "needs-review", openingAnchor: true });
-  expect(workspace.corrections[0]).toMatchObject({ before: { officialBalanceMinor: 285000 }, after: { officialBalanceMinor: 290000 }, reason: "Bank correction" });
+  expect(workspace).not.toHaveProperty("corrections");
   expect(openingPosition(workspace, registered.id)?.balanceMinor).toBe(290000);
-  expect(() => store.getState().correctStatement("budget-a", statement.id, 1, facts, "stale")).toThrow("changed");
+  expect(() => store.getState().correctStatement("budget-a", statement.id, 1, facts)).toThrow("changed");
+  store.getState().undo("budget-a");
+  expect(store.getState().workspaces["budget-a"].statements[0].officialBalanceMinor).toBe(285000);
+  expect(() => store.getState().correctStatement("budget-a", statement.id, 2, current)).toThrow("changed");
   expect(createCreditCardStore().getState().workspaces).toEqual({});
 });
 
@@ -54,4 +56,12 @@ it("validates calendar boundaries, safe money, timezone and card credit", () => 
   expect(cardInputSchema.safeParse({ ...card, creditLimitMinor: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false);
   expect(cardInputSchema.safeParse({ ...card, bankTimeZone: "invalid" }).success).toBe(false);
   expect(allocationSchema.safeParse({ cardId: "c", transactionId: "t", originId: "o", amountMinor: -1, provenance: "manual", fingerprint: "f", reason: "" }).success).toBe(false);
+});
+
+it.each(["inactive", "frozen", "closed", "lost-stolen"])("normalizes non-active card status %s without losing saved history", (status) => {
+  const store = createCreditCardStore();
+  const entry = store.getState().register({ ...card, status });
+  store.getState().recordOpeningStatement("budget-a", entry.id, 1, facts);
+  expect(store.getState().workspaces["budget-a"].cards[0].status).toBe("inactive");
+  expect(store.getState().workspaces["budget-a"].statements).toHaveLength(1);
 });

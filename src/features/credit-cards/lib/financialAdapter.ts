@@ -17,7 +17,8 @@ export function cardBalance(balanceWhole: number) {
 export function cardFacility(model: LoanModelSnapshot, signedBalanceMinor: number) {
   minorAmountSchema.parse(signedBalanceMinor);
   if (model.terms.creditLimitMinor !== null) minorAmountSchema.nonnegative().parse(model.terms.creditLimitMinor);
-  return revolvingState(model, Math.max(0, -signedBalanceMinor));
+  const facility = revolvingState(model, Math.max(0, -signedBalanceMinor));
+  return { ...facility, availableMinor: facility.availableMinor === null ? null : sumMinor([facility.availableMinor, Math.max(0, signedBalanceMinor)]) };
 }
 
 /**
@@ -103,4 +104,10 @@ export function projectCardMinimums(card: import("./models").Card, date: string,
     anchor = { ...result.closing, source: "projection-continuation" };
   }
   return { ok: true as const, payoffDate, interestMinor: interestPoints.at(-1)!.value, postedInterestMinor, accruedInterestMinor: anchor.accruedInterestMinor ?? 0, insufficientInterestPayments, balancePoints, interestPoints };
+}
+
+/** Actual snapshot at today: signed integer minor units, excluding scheduled future entries. */
+export function asOfCardBalance(balance: ReturnType<typeof cardBalance>, futureDeltaMinor = 0) {
+  const signedBalanceMinor = sumMinor([balance.signedBalanceMinor, -futureDeltaMinor]);
+  return { rawSignedBalanceMinor: balance.signedBalanceMinor, signedBalanceMinor, debtMinor: Math.max(0, -signedBalanceMinor), creditMinor: Math.max(0, signedBalanceMinor) };
 }
