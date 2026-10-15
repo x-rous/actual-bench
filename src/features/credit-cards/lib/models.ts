@@ -22,7 +22,7 @@ export const cardSchema = z.strictObject({
   bankTimeZone: timeZone,
   // Normalize legacy session labels while exposing only Active / Inactive.
   status: z.enum(["active", "inactive", "frozen", "closed", "lost-stolen"]).transform((value) => value === "active" ? "active" as const : "inactive" as const),
-  network: z.enum(["unknown", "visa", "mastercard", "amex", "other"]).default("unknown"),
+  network: z.enum(["unknown", "visa", "mastercard", "amex", "discover", "jcb", "unionpay", "diners-club", "other"]).default("unknown"),
   cashAdvanceAprBps: z.number().int().min(0).max(100_000).nullable().default(null),
   balanceTransferAprBps: z.number().int().min(0).max(100_000).nullable().default(null),
   closingDay: z.number().int().min(1).max(31).nullable().default(null),

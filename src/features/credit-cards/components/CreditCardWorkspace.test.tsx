@@ -44,6 +44,42 @@ function register() {
   return creditCardStore.getState().register({ budgetSyncId: "budget", accountId: "account", nickname: "Actual Visa", issuer: "", last4: "4482", creditLimitMinor: null, purchaseAprBps: null, bankTimeZone: "Asia/Dubai", status: "active" });
 }
 
+it("confirms deletion in settings, preserves cancellation and restores the card with Undo without Actual writes", async () => {
+  const card = register();
+  const statement = creditCardStore.getState().recordOpeningStatement("budget", card.id, 1, { periodStart: "2026-09-01", closingDate: "2026-09-30", dueDate: "2026-10-20", officialBalanceMinor: 10000, minimumDueMinor: 1000 });
+  render(<TestWorkspace />);
+  fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  const settings = screen.getByRole("dialog", { name: "Card settings" });
+  fireEvent.change(within(settings).getByLabelText("Minimum payment floor"), { target: { value: "123.45" } });
+  const before = creditCardStore.getState().workspaces;
+  const transportCalls = jest.mocked(getTransport).mock.calls.length;
+  fireEvent.click(within(settings).getByRole("button", { name: "Delete card" }));
+  let confirmation = screen.getByRole("dialog", { name: "Delete credit card?" });
+  expect(confirmation).toHaveTextContent("Actual Visa");
+  expect(confirmation).toHaveTextContent("Your Actual account and transactions stay unchanged");
+  const cancel = within(confirmation).getByRole("button", { name: "Cancel" });
+  await waitFor(() => expect(cancel).toHaveFocus());
+  fireEvent.click(cancel);
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Delete credit card?" })).not.toBeInTheDocument());
+  expect(creditCardStore.getState().workspaces).toBe(before);
+  expect(within(settings).getByLabelText("Minimum payment floor")).toHaveValue("123.45");
+  await waitFor(() => expect(within(settings).getByRole("button", { name: "Delete card" })).toHaveFocus());
+  fireEvent.click(within(settings).getByRole("button", { name: "Delete card" }));
+  confirmation = screen.getByRole("dialog", { name: "Delete credit card?" });
+  fireEvent.click(within(confirmation).getByRole("button", { name: "Delete card" }));
+  expect(creditCardStore.getState().workspaces.budget.cards).toEqual([]);
+  expect(creditCardStore.getState().workspaces.budget.statements).toEqual([]);
+  expect(screen.queryByRole("dialog", { name: "Card settings" })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "Credit Cards" })).toHaveFocus());
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  expect(creditCardStore.getState().workspaces.budget.cards[0]).toMatchObject({ id: card.id, minimumFloorMinor: null });
+  expect(creditCardStore.getState().workspaces.budget.statements[0].id).toBe(statement.id);
+  expect(screen.getByRole("button", { name: "Actual Visa" })).toBeVisible();
+  expect(jest.mocked(getTransport).mock.calls.length).toBe(transportCalls);
+  expect(mockSync).not.toHaveBeenCalled();
+});
+
 it("registers a labelled card without touching Actual or browser storage", () => {
   render(<TestWorkspace />);
   expect(screen.getByRole("heading", { name: "No credit cards yet" })).toBeInTheDocument();
@@ -51,7 +87,6 @@ it("registers a labelled card without touching Actual or browser storage", () =>
   fireEvent.click(screen.getByRole("button", { name: "Add card" }));
   const dialog = screen.getByRole("dialog", { name: "Add credit card" });
   if (within(dialog).queryByLabelText(/Statement closing day/, { selector: "input" })) fireEvent.change(within(dialog).getByLabelText(/Statement closing day/, { selector: "input" }), { target: { value: "31" } });
-  if (within(dialog).queryByRole("button", { name: "Continue" })) fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
   fireEvent.click(within(dialog).getByRole("button", { name: "Save card" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Actual Visa" })).toBeInTheDocument();
@@ -200,8 +235,6 @@ it("offers all Actual categories without card activity and defaults new cards to
   fireEvent.click(screen.getByRole("button", { name: "Add card" }));
   const dialog = screen.getByRole("dialog", { name: "Add credit card" });
   if (within(dialog).queryByLabelText(/Statement closing day/, { selector: "input" })) fireEvent.change(within(dialog).getByLabelText(/Statement closing day/, { selector: "input" }), { target: { value: "31" } });
-  if (within(dialog).queryByRole("button", { name: "Continue" })) fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
-  if (within(dialog).queryByRole("button", { name: "More details" })) fireEvent.click(within(dialog).getByRole("button", { name: "More details" }));
   expect(within(dialog).getByLabelText("Interest illustration")).toHaveTextContent("Daily simple Actual/365");
   for (const label of ["Card network", "Card colour", "Rewards notes", "Joint / authorized users notes"]) expect(within(dialog).queryByLabelText(label)).not.toBeInTheDocument();
   expect(within(dialog).getByLabelText("Interest category in Actual")).toBeVisible();
@@ -219,7 +252,6 @@ it("offers all Actual categories without card activity and defaults new cards to
   fireEvent.mouseUp(feesOption);
   fireEvent.click(feesOption);
   if (within(dialog).queryByLabelText(/Statement closing day/, { selector: "input" })) fireEvent.change(within(dialog).getByLabelText(/Statement closing day/, { selector: "input" }), { target: { value: "31" } });
-  if (within(dialog).queryByRole("button", { name: "Continue" })) fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
   fireEvent.click(within(dialog).getByRole("button", { name: "Save card" }));
   expect(creditCardStore.getState().workspaces.budget.cards[0]).toMatchObject({ interestModel: "daily-simple-365", interestCategoryId: "interest", feeCategoryId: "fees" });
 });

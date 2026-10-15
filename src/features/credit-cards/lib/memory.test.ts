@@ -1,8 +1,43 @@
 import { createCreditCardStore, openingPosition } from "./memory";
-import { allocationSchema, cardInputSchema, statementFactsSchema } from "./models";
+import { allocationSchema, cardInputSchema, repaymentPlanSchema, statementFactsSchema } from "./models";
 
 const card = { budgetSyncId: "budget-a", accountId: "account", nickname: "Visa", issuer: "", last4: "", creditLimitMinor: null, purchaseAprBps: null, bankTimeZone: "Asia/Dubai", status: "active" };
 const facts = { periodStart: "2026-09-05", closingDate: "2026-10-04", dueDate: "2026-10-29", officialBalanceMinor: 285000, minimumDueMinor: 15000 };
+
+it("deletes one card and all its tracking data atomically, preserves other cards/budgets, and supports Undo", () => {
+  const store = createCreditCardStore();
+  const first = store.getState().register(card);
+  const second = store.getState().register({ ...card, accountId: "second" });
+  store.getState().register({ ...card, budgetSyncId: "budget-b" });
+  const statements = [first, second].map((entry) => store.getState().recordOpeningStatement("budget-a", entry.id, entry.revision, facts));
+  const workspace = store.getState().workspaces["budget-a"];
+  const plans = [first, second].map((entry) => repaymentPlanSchema.parse({ id: `plan-${entry.id}`, cardId: entry.id, transactionId: `purchase-${entry.id}`, fingerprint: "source", revision: 1, arrangement: "fixed", amountMinor: 10000, startDate: "2026-09-01", firstDueDate: "2026-10-01", months: 2, monthlyMinor: 5000, aprBps: 0, upfrontFeeMinor: 0, monthlyFeeMinor: 0, includesCosts: true, minimumPercentBps: null, minimumFloorMinor: null, expiryDate: null, afterAprBps: null, conditions: "" }));
+  store.setState({ workspaces: { ...store.getState().workspaces, "budget-a": {
+    ...workspace, plans,
+    memberships: statements.map((entry) => ({ statementId: entry.id, cardId: entry.cardId, transactionId: `purchase-${entry.cardId}`, decision: "included", provenance: "manual", bankPostingDate: null, fingerprint: "source", reason: "Bank statement" })),
+    allocations: statements.map((entry) => ({ cardId: entry.cardId, transactionId: `payment-${entry.cardId}`, originId: entry.id, amountMinor: 10000, provenance: "manual", fingerprint: "source", reason: "Confirmed" })),
+    classifications: [first, second].map((entry) => ({ cardId: entry.id, transactionId: `purchase-${entry.id}`, fingerprint: "source", kind: "purchase", reason: "Confirmed" })),
+    planLinks: plans.map((entry) => ({ planId: entry.id, transactionId: `fee-${entry.cardId}`, fingerprint: "source", role: "plan-fee", instalment: null })),
+  } } });
+  const before = store.getState().workspaces;
+  const revision = before["budget-a"].cards[0].revision;
+  expect(() => store.getState().deleteCard("budget-b", first.id, revision)).toThrow("no longer available");
+  expect(() => store.getState().deleteCard("budget-a", first.id, revision + 1)).toThrow("changed");
+  expect(store.getState().workspaces).toBe(before);
+  store.getState().deleteCard("budget-a", first.id, revision);
+  const deleted = store.getState().workspaces["budget-a"];
+  expect(deleted.cards).toEqual([before["budget-a"].cards[1]]);
+  for (const key of ["statements", "memberships", "allocations", "classifications", "plans"] as const) {
+    expect(deleted[key]).toEqual(before["budget-a"][key]!.filter((entry) => entry.cardId === second.id));
+  }
+  expect(deleted.planLinks).toEqual([before["budget-a"].planLinks![1]]);
+  expect(store.getState().workspaces["budget-b"]).toBe(before["budget-b"]);
+  store.getState().undo("budget-a");
+  const restored = store.getState().workspaces["budget-a"];
+  for (const key of ["memberships", "allocations", "classifications", "planLinks"] as const) expect(restored[key]).toEqual(before["budget-a"][key]);
+  for (const key of ["cards", "statements", "plans"] as const) expect(restored[key]).toEqual(before["budget-a"][key]!.map((entry) => ({ ...entry, revision: entry.revision + 1 })));
+  expect(() => store.getState().deleteCard("budget-a", first.id, revision)).toThrow("changed");
+});
 
 it("scopes identical account IDs by budget, rejects duplicates and rolls no bank snapshots into debt", () => {
   const store = createCreditCardStore();

@@ -24,6 +24,7 @@ export type CreditCardState = {
   classify: (budget: string, cardId: string, expectedRevision: number, snapshot: ActivitySnapshot, input: unknown) => void;
   register: (input: unknown) => Card;
   updateCard: (budget: string, cardId: string, expectedRevision: number, input: unknown) => void;
+  deleteCard: (budget: string, cardId: string, expectedRevision: number) => void;
   recordOpeningStatement: (budget: string, cardId: string, expectedRevision: number, input: unknown) => Statement;
   correctStatement: (budget: string, statementId: string, expectedRevision: number, input: unknown) => void;
 };
@@ -195,6 +196,21 @@ export function createCreditCardStore() {
         const card = cardSchema.parse({ ...input, id: generateId(), revision: 1 });
         write(input.budgetSyncId, { ...workspace, cards: [...workspace.cards, card] });
         return card;
+      },
+      deleteCard(budget, cardId, expected) {
+        const workspace = read(budget);
+        requireRevision(workspace.cards.find((card) => card.id === cardId), expected);
+        const planIds = new Set((workspace.plans ?? []).filter((plan) => plan.cardId === cardId).map((plan) => plan.id));
+        write(budget, {
+          ...workspace,
+          cards: workspace.cards.filter((entry) => entry.id !== cardId),
+          statements: workspace.statements.filter((entry) => entry.cardId !== cardId),
+          memberships: workspace.memberships.filter((entry) => entry.cardId !== cardId),
+          allocations: workspace.allocations.filter((entry) => entry.cardId !== cardId),
+          classifications: workspace.classifications.filter((entry) => entry.cardId !== cardId),
+          plans: workspace.plans?.filter((entry) => entry.cardId !== cardId),
+          planLinks: workspace.planLinks?.filter((entry) => !planIds.has(entry.planId)),
+        }, "Card deleted; Actual account and transactions unchanged");
       },
       updateCard(budget, cardId, expected, raw) {
         const workspace = read(budget);
