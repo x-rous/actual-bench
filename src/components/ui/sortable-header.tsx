@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+import { Tooltip } from "@base-ui/react/tooltip";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +45,7 @@ export function SortableHeader<K extends string>({
   align = "left",
   leading,
   note,
+  description,
 }: {
   label: string;
   sortKey: K;
@@ -54,8 +57,46 @@ export function SortableHeader<K extends string>({
   leading?: React.ReactNode;
   /** What `leading` means, for anyone who cannot see it. */
   note?: string;
+  /** Optional column explanation, available on hover and keyboard focus. */
+  description?: string;
 }) {
   const direction = directionFor(sort, sortKey);
+  const descriptionId = useId();
+
+  const sortButton = (
+    <button
+      type="button"
+      className={cn(
+        "flex max-w-full select-none items-center gap-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        align === "right" && "ml-auto",
+        align === "center" && "mx-auto",
+        direction && "text-foreground"
+      )}
+      onClick={() => onSort(sortKey, nextSortDirection(direction))}
+      title={description ? undefined :
+        direction
+          ? "Sort the other way, then back to the table's own order"
+          : `Sort by ${label.toLowerCase()}`
+      }
+      aria-describedby={description ? descriptionId : undefined}
+      aria-label={`Sort by ${label}${note ? ` (${note})` : ""}${
+        direction === "asc" ? ", ascending" : direction === "desc" ? ", descending" : ""
+      }`}
+    >
+      {leading}
+      <span className={cn("truncate", description && "underline decoration-dotted underline-offset-4")}>{label}</span>
+      {/* In the cell's own text, so the column announces what it is even
+          when the reader lands on the header rather than the button. */}
+      {note && <span className="sr-only">({note})</span>}
+      {direction === null ? (
+        <ArrowUpDown className="size-3 shrink-0 opacity-30" aria-hidden />
+      ) : direction === "asc" ? (
+        <ArrowUp className="size-3 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="size-3 shrink-0" aria-hidden />
+      )}
+    </button>
+  );
 
   return (
     <th
@@ -70,37 +111,7 @@ export function SortableHeader<K extends string>({
         direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"
       }
     >
-      <button
-        type="button"
-        className={cn(
-          "flex max-w-full select-none items-center gap-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          align === "right" && "ml-auto",
-          align === "center" && "mx-auto",
-          direction && "text-foreground"
-        )}
-        onClick={() => onSort(sortKey, nextSortDirection(direction))}
-        title={
-          direction
-            ? "Sort the other way, then back to the table's own order"
-            : `Sort by ${label.toLowerCase()}`
-        }
-        aria-label={`Sort by ${label}${note ? ` (${note})` : ""}${
-          direction === "asc" ? ", ascending" : direction === "desc" ? ", descending" : ""
-        }`}
-      >
-        {leading}
-        <span className="truncate">{label}</span>
-        {/* In the cell's own text, so the column announces what it is even
-            when the reader lands on the header rather than the button. */}
-        {note && <span className="sr-only">({note})</span>}
-        {direction === null ? (
-          <ArrowUpDown className="size-3 shrink-0 opacity-30" aria-hidden />
-        ) : direction === "asc" ? (
-          <ArrowUp className="size-3 shrink-0" aria-hidden />
-        ) : (
-          <ArrowDown className="size-3 shrink-0" aria-hidden />
-        )}
-      </button>
+      {description ? <Tooltip.Root><Tooltip.Trigger render={sortButton} /><Tooltip.Portal><Tooltip.Positioner side="bottom" align="start" sideOffset={6} className="z-[80]"><Tooltip.Popup id={descriptionId} role="tooltip" className="max-w-72 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs leading-relaxed text-popover-foreground shadow-md">{description}</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal></Tooltip.Root> : sortButton}
     </th>
   );
 }

@@ -1,5 +1,5 @@
 import { createCreditCardStore } from "./memory";
-import { cardInputSchema, type Workspace } from "./models";
+import { cardInputSchema, type Membership, type Statement, type Workspace } from "./models";
 import type { ActivityRow, ActivitySnapshot } from "./activity";
 import { carriedDebtPoints, netActivitySinceStatement, statementPaymentTotals } from "./insights";
 import { paymentDeadline, settlements } from "./repayments";
@@ -74,4 +74,54 @@ it("moves membership atomically and reopens destination verification; stale targ
   expect(workspace.memberships.find((entry) => entry.statementId === first.id)?.decision).toBe("excluded");
   expect(workspace.statements.find((entry) => entry.id === second.id)).toMatchObject({ revision: 2, verification: "needs-review", reviewedSnapshot: null });
   expect(statementReview(second, workspace, source).calculatedMinor).toBe(11000);
+});
+
+
+function membership(statement: Statement, entry: ActivityRow, decision: "included" | "excluded", overrides: Partial<Membership> = {}): Membership {
+  return { statementId: statement.id, cardId: statement.cardId, transactionId: entry.id, fingerprint: entry.fingerprint, decision, provenance: "manual", bankPostingDate: null, reason: "Reviewed statement cutoff", ...overrides };
+}
+
+it("includes reviewed closing-day exclusions in unbilled charges and pending counts", () => {
+  const { store, card, first } = setup();
+  const boundary = [500, 300, 200].map((amount, index) => row(`boundary-${index}`, first.closingDate, -amount, { cleared: false }));
+  const after = Array.from({ length: 11 }, (_, index) => row(`after-${index}`, "2026-09-02", -100, { cleared: false }));
+  const source = snapshot([...boundary, ...after]);
+  const workspace = { ...store.getState().workspaces.budget, memberships: boundary.map((entry) => membership(first, entry, "excluded")) };
+  expect(netActivitySinceStatement(card, first, workspace, source, -12100, "2026-09-30")).toMatchObject({ rows: source.rows, netMinor: 2100, unexplainedMinor: 0, pendingCount: 14 });
+});
+
+it("never counts reviewed current or earlier statement inclusions twice across the cutoff", () => {
+  const { store, card, first } = setup();
+  const prior = { ...first, id: "prior", periodStart: "2026-07-01", closingDate: "2026-07-31", dueDate: "2026-08-20", officialBalanceMinor: 0 };
+  const earlier = row("earlier-owned", first.closingDate, -700);
+  const includedAfter = row("included-after", "2026-09-01", -200);
+  const unbilled = row("unbilled", "2026-09-02", -400);
+  const workspace = { ...store.getState().workspaces.budget, statements: [prior, first], memberships: [membership(first, earlier, "excluded"), membership(prior, earlier, "included"), membership(first, includedAfter, "included")] };
+  expect(netActivitySinceStatement(card, first, workspace, snapshot([earlier, includedAfter, unbilled]), -10400, "2026-09-30")).toMatchObject({ rows: [unbilled], netMinor: 400, unexplainedMinor: 0 });
+});
+
+it("does not explain differences with stale, other-card, outside-cycle or future cutoff decisions", () => {
+  const { store, card, first } = setup();
+  const stale = row("stale", first.closingDate, -100);
+  const otherCard = row("other-card-decision", first.closingDate, -200);
+  const old = row("outside-cycle", "2026-07-31", -500);
+  const future = row("future", "2026-10-01", -600);
+  const foreign = row("foreign-account", "2026-09-01", -700, { accountId: "another-account" });
+  const workspace = { ...store.getState().workspaces.budget, memberships: [membership(first, stale, "excluded", { fingerprint: "old source" }), membership(first, otherCard, "excluded", { cardId: "another-card" }), membership(first, old, "excluded"), membership(first, future, "excluded", { bankPostingDate: first.closingDate })] };
+  expect(netActivitySinceStatement(card, first, workspace, snapshot([stale, otherCard, old, future, foreign]), -10300, "2026-09-30")).toMatchObject({ rows: [], unexplainedMinor: 300 });
+});
+
+it("preserves credit signs for refunds excluded at the closing cutoff", () => {
+  const { store, card, first } = setup();
+  const credit = row("refund", first.closingDate, 700, { transferId: null });
+  const workspace = { ...store.getState().workspaces.budget, memberships: [membership(first, credit, "excluded")] };
+  expect(netActivitySinceStatement(card, first, workspace, snapshot([credit]), -9300, "2026-09-30")).toMatchObject({ rows: [credit], netMinor: -700, unexplainedMinor: 0, groups: [{ label: "Refunds / credits", value: -700 }] });
+});
+
+it("does not suppress activity owned by a statement later than the balance anchor", () => {
+  const { store, card, first } = setup();
+  const later = { ...first, id: "later", periodStart: "2026-09-01", closingDate: "2026-09-30", dueDate: "2026-10-20" };
+  const charge = row("later-owned", "2026-09-02", -500);
+  const workspace = { ...store.getState().workspaces.budget, statements: [first, later], memberships: [membership(later, charge, "included")] };
+  expect(netActivitySinceStatement(card, first, workspace, snapshot([charge]), -10500, "2026-09-15")).toMatchObject({ rows: [charge], netMinor: 500, unexplainedMinor: 0 });
 });

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   SortableHeader,
   compareValues,
@@ -16,7 +16,7 @@ import {
  * part with an actual rule in it — was never tested at all.
  */
 
-function Table({ initial = null }: { initial?: { key: "name"; direction: SortDirection } | null }) {
+function Table({ initial = null, description }: { initial?: { key: "name"; direction: SortDirection } | null; description?: string }) {
   const [sort, setSort] = useState(initial);
   return (
     <table>
@@ -24,6 +24,7 @@ function Table({ initial = null }: { initial?: { key: "name"; direction: SortDir
         <tr>
           <SortableHeader
             label="Name"
+            description={description}
             sortKey="name"
             sort={sort}
             onSort={(key, direction) => setSort({ key, direction })}
@@ -112,4 +113,19 @@ describe("SortableHeader", () => {
     fireEvent.click(screen.getByRole("button", { name: /sort by name/i }));
     expect(screen.getByRole("columnheader")).toHaveAttribute("aria-sort", "none");
   });
+});
+
+
+it("exposes column help on keyboard focus without changing the sort action", async () => {
+  render(<Table description="A historical balance that later payments do not change." />);
+  const trigger = screen.getByRole("button", { name: "Sort by Name" });
+  fireEvent.keyDown(document, { key: "Tab" });
+  act(() => trigger.focus());
+  const help = await screen.findByRole("tooltip");
+  expect(help).toHaveTextContent("A historical balance that later payments do not change.");
+  expect(trigger).toHaveAccessibleDescription("A historical balance that later payments do not change.");
+  fireEvent.keyDown(trigger, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+  fireEvent.click(trigger);
+  expect(screen.getByRole("columnheader")).toHaveAttribute("aria-sort", "ascending");
 });

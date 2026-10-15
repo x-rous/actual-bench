@@ -56,3 +56,39 @@ it("does not call a later transfer a minimum payment when earlier payments alrea
   const { effects } = scenario([{ date: "2026-09-01", amount: 500 }, { date: "2026-09-02", amount: 1000 }]);
   expect(effects.get("r1")).toMatchObject({ label: "Partial payment", minimum: "Minimum covered" });
 });
+
+it("reports historical confirmed remaining without counting later or pending transfers", () => {
+  const { effects } = scenario([
+    { date: "2026-09-01", amount: 1000 },
+    { date: "2026-09-02", amount: 9000, cleared: false },
+    { date: "2026-09-03", amount: 9000, cleared: null },
+    { date: "2026-09-04", amount: 9000 },
+    { date: "2026-09-05", amount: 1000 },
+  ]);
+  expect(effects.get("r0")?.remainingMinor).toBe(9000);
+  expect(effects.get("r1")).toMatchObject({ label: "Pending", remainingMinor: 9000 });
+  expect(effects.get("r2")).toMatchObject({ label: "Clearing unknown", remainingMinor: 9000 });
+  expect(effects.get("r1")?.detail).toContain("excluding this transfer");
+  expect(effects.get("r3")?.remainingMinor).toBe(0);
+  expect(effects.get("r4")).toMatchObject({ label: "Excess payment", remainingMinor: 0 });
+});
+
+it("groups the same day's confirmed payments and credits without assigning an intraday order", () => {
+  const { effects } = scenario([
+    { date: "2026-09-01", amount: 2000 },
+    { date: "2026-09-01", amount: 3000, credit: true },
+    { date: "2026-09-01", amount: 1000 },
+  ]);
+  expect(effects.get("r0")?.remainingMinor).toBe(4000);
+  expect(effects.get("r2")?.remainingMinor).toBe(4000);
+});
+
+it("never manufactures zero remaining from missing or unconfirmed evidence", () => {
+  const data = scenario([{ date: "2026-08-31", amount: 1000 }, { date: "2026-10-01", amount: 1000 }]);
+  expect([...data.effects.values()].every((effect) => effect.remainingMinor === undefined)).toBe(true);
+  expect(scenario([{ date: "2026-09-10", amount: 1000 }], "2026-09-01").effects.get("r0")?.remainingMinor).toBeUndefined();
+  const estimated = { ...data.workspace, statements: data.workspace.statements.map((entry) => ({ ...entry, bankConfirmed: false })) };
+  const rows = { ...data.snapshot, rows: [{ ...data.snapshot.rows[0], date: "2026-09-10" }] };
+  expect(paymentEffects(data.card, estimated, rows, data.windows, "2026-09-30").get("r0")?.remainingMinor).toBeUndefined();
+  expect(paymentEffects(data.card, data.workspace, { ...rows, issues: ["Incomplete source"] }, data.windows, "2026-09-30").get("r0")?.remainingMinor).toBeUndefined();
+});

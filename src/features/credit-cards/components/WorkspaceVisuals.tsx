@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { CircleDollarSign, Wallet, CalendarClock, AlertTriangle, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { Settlement } from "../lib/repayments";
 
 export type Tone = "info" | "success" | "attention" | "danger" | "neutral";
 const tones = {
@@ -19,17 +18,9 @@ export function Metric({ label, children, detail, tone = "info", icon }: { label
   return <div className={cn("rounded-2xl border bg-background p-4", style.surface)}><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className={cn("rounded-md p-1.5", style.accent)}><Icon className="size-3.5" aria-hidden="true" /></span></div><div className="text-2xl font-semibold tabular-nums">{children}</div>{detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}</div>;
 }
 
-export function Status({ children, tone = "neutral" }: { children: ReactNode; tone?: Tone }) {
+export function Status({ children, tone = "neutral", className }: { children: ReactNode; tone?: Tone; className?: string }) {
   const variant = tone === "success" ? "status-active" : tone === "attention" ? "status-warning" : tone === "danger" ? "status-error" : "status-inactive";
-  return <Badge className={tone === "info" ? "border-chart-1/20 bg-chart-1/5 text-chart-1" : undefined} variant={tone === "info" ? "outline" : variant}>{children}</Badge>;
-}
-
-export function settlementTone(payment?: Settlement): Tone {
-  if (!payment || payment.fullRemainingMinor === null) return "neutral";
-  if (payment.status === "Settled" || payment.status === "Settled · includes cashback" || payment.status === "Settled · includes credits" || payment.status === "No payment required") return "success";
-  if (["Upcoming", "Due today"].includes(payment.status)) return "info";
-  if (payment.status === "Minimum overdue") return "danger";
-  return "attention";
+  return <Badge className={cn(tone === "info" && "border-chart-1/20 bg-chart-1/5 text-chart-1", className)} variant={tone === "info" ? "outline" : variant}>{children}</Badge>;
 }
 
 /** Display bars clamp visually; their text retains overpayment/over-limit percentages. */

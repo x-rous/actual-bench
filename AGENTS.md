@@ -124,9 +124,11 @@ One engine. Type-specific behavior lives in a registered `SyncKindAdapter`; neve
 
 ## 8. UI, Styling, Accessibility
 
+- Actual Bench is a desktop/laptop workbench. Mobile support is out of scope: do not add mobile-specific layouts, let mobile constraints drive desktop design, or treat mobile checks as release requirements. Keep dense desktop workflows usable across desktop window sizes.
+
 - Reuse `src/components/ui/` (primitives), `src/components/layout/`, `src/features/<feature>/`, `src/app/(app)/...`. Don't create empty template folders.
 - Tailwind 4 syntax, `cn()` for conditionals, semantic tokens from `globals.css` over raw palette/dark pairs. No unrelated mass token refactors.
-- New/changed UI: icon-only controls get `aria-label`; keyboard behavior matches the ARIA role; status never by color alone; form controls labelled; preserve focus management in dialogs/popovers/drawers/menus; check narrow screens; reuse Base UI/shadcn patterns.
+- New/changed UI: icon-only controls get `aria-label`; keyboard behavior matches the ARIA role; status never by color alone; form controls labelled; preserve focus management in dialogs/popovers/drawers/menus; validate desktop window sizes; reuse Base UI/shadcn patterns.
 
 ## 9. Testing and Validation
 

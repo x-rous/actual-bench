@@ -4,15 +4,17 @@ import { daysBetween } from "@/lib/financial-models/calendar/dates";
 import { formatCardDate } from "../lib/displayDates";
 import { formatAmount } from "@/features/assets-debt/lib/money";
 import type { ActivityRow } from "../lib/activity";
+import type { TimingState } from "../lib/paymentSummary";
 import type { Statement } from "../lib/models";
 
 /** A visual observation only; this component never determines payment satisfaction. */
-export function PaymentTiming({ dueDate, date, closingDate, label, pending = false }: { dueDate: string; date?: string | null; closingDate?: string; label: string; pending?: boolean }) {
+export function PaymentTiming({ dueDate, date, closingDate, label, pending = false, state }: { dueDate: string; date?: string | null; closingDate?: string; label: string; pending?: boolean; state?: TimingState }) {
   const earlySpan = closingDate ? Math.max(1, daysBetween(closingDate, dueDate)) : 20;
   const delay = date ? daysBetween(dueDate, date) : null;
+  const status = state ?? (pending ? "pending" : delay !== null && delay > 0 ? "late" : "on-time");
   const position = delay === null ? null : Math.max(2, Math.min(98, 75 + delay / earlySpan * 75));
-  const description = `${label}. Due ${formatCardDate(dueDate)}${date ? `; observed ${formatCardDate(date)}` : ""}${pending ? "; clearing pending" : ""}`;
-  return <span className="flex min-w-0 items-center gap-3" title={description}><span className="relative hidden h-4 w-28 shrink-0 sm:block" aria-hidden><span className="absolute inset-x-0 top-1.5 h-1 rounded-full bg-muted" /><span className="absolute left-3/4 top-0 h-4 w-0.5 bg-chart-1" />{position !== null && <span className={`absolute top-0.5 size-3 -translate-x-1/2 rounded-full border-2 border-background ring-1 ${pending ? "bg-background ring-amber-600" : delay! > 0 ? "bg-amber-600 ring-amber-600" : "bg-green-600 ring-green-600"}`} style={{ left: `${position}%` }} />}</span><span className="min-w-0 text-xs">{label}</span></span>;
+  const description = `${label}. ${state ? `${state}. ` : ""} Due ${formatCardDate(dueDate)}${date ? `; ${status === "overdue" ? "as of" : "observed"} ${formatCardDate(date)}` : ""}${pending ? "; clearing pending" : ""}`;
+  return <span className="block min-w-0" title={description}><span className="flex min-w-0 items-center gap-3"><span className="relative block h-4 w-28 shrink-0" aria-hidden><span className="absolute inset-x-0 top-1.5 h-1 rounded-full bg-muted" /><span className="absolute left-3/4 top-0 h-4 w-0.5 bg-chart-1" />{position !== null && <span className={`absolute top-0.5 size-3 -translate-x-1/2 rounded-full border-2 border-background ring-1 ${status === "overdue" ? "bg-destructive ring-destructive" : ["partial", "pending"].includes(status) ? "bg-background ring-amber-600" : status === "late" ? "bg-amber-600 ring-amber-600" : "bg-green-600 ring-green-600"}`} style={{ left: `${position}%` }} />}</span><span className={`min-w-0 break-normal text-xs ${status === "overdue" ? "font-medium text-destructive" : status === "late" ? "text-amber-700 dark:text-amber-400" : ""}`}>{label}</span></span></span>;
 }
 
 export function PaymentDistribution({ payments, onDetails }: { payments: { row: ActivityRow; matchedStatement?: Statement }[]; onDetails: (id: string) => void }) {

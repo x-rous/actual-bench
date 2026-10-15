@@ -1,3 +1,4 @@
+import { statementScenario } from "../lib/statementScenarios.fixture";
 import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { StatementReview } from "./StatementReview";
 import { creditCardStore } from "../lib/memory";
@@ -209,4 +210,19 @@ it("shows attention rather than a success icon when Actual evidence is unavailab
   expect(screen.getByRole("img", { name: "Reconciliation needs attention" })).toBeVisible();
   expect(screen.getByText("Evidence unavailable")).toBeVisible();
   expect(screen.queryByRole("img", { name: "Bank balance matches" })).not.toBeInTheDocument();
+});
+
+
+it("opens and closes an unchanged statement without treating ownership-lock reasons as user edits", () => {
+  const scenario = statementScenario("full");
+  const statement = scenario.rows.find((row) => row.closingDate === "2026-08-31")!;
+  const onClose = jest.fn();
+  render(<StatementReview budget="scenarios" statement={statement} workspace={scenario.workspace} snapshot={scenario.snapshot} available onClose={onClose} />);
+  fireEvent.click(screen.getByRole("button", { name: "Close review" }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("dialog", { name: "Discard unsaved changes?" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole("button", { name: "Exclude Test merchant" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Close review" }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("dialog", { name: "Discard unsaved changes?" })).toBeVisible();
 });

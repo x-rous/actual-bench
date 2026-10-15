@@ -25,14 +25,21 @@ it("plots only matched Actual transfers and opens existing details without shift
   expect(entries[1].row.cleared).toBe(false);
 });
 
-it("keeps an upcoming obligation separate from recorded payment rows and totals", () => {
+it("keeps the empty payments summary neutral and statement obligations in Statements", () => {
   const card = cardSchema.parse({ id: "card", revision: 1, budgetSyncId: "budget", accountId: "account", nickname: "Card", issuer: "", last4: "", creditLimitMinor: null, purchaseAprBps: null, status: "active", bankTimeZone: "UTC" });
   const onStatements = jest.fn();
-  const settlement = { statementId: statement.id, fullRemainingMinor: 10000, confirmedPaidMinor: 0, confirmedCreditMinor: 0, minimumRemainingMinor: 1000, status: "Upcoming" } as Parameters<typeof PaymentsList>[0]["settlement"];
-  render(<PaymentsList card={card} payments={[]} available bank={statement} settlement={settlement} today="2026-10-01" onStatements={onStatements} onDetails={jest.fn()} />);
-  expect(screen.getByText(/Statement payment/)).toBeVisible();
+  render(<PaymentsList card={card} payments={[]} available today="2026-10-01" onStatements={onStatements} onDetails={jest.fn()} />);
+  expect(screen.queryByText(/Statement payment/)).not.toBeInTheDocument();
   expect(screen.getByRole("table", { name: "Card repayments" }).querySelectorAll("tbody tr")).toHaveLength(0);
-  expect(screen.getByText("0 · all cleared")).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "View statement" }));
-  expect(onStatements).toHaveBeenCalledWith(statement.id);
+  expect(screen.getByText("Cleared paid").nextElementSibling).toHaveTextContent("0.00");
+  expect(screen.getByText("Pending").nextElementSibling).toHaveTextContent("0.00 · 0 payments");
+  expect(screen.getByText("Payments").nextElementSibling).toHaveTextContent("0");
+  fireEvent.click(screen.getByRole("button", { name: "View statement payment status" }));
+  expect(onStatements).toHaveBeenCalledWith();
+});
+
+it("marks an overdue obligation as an as-of observation, without inventing a payment", () => {
+  render(<PaymentTiming dueDate="2026-10-01" date="2026-10-15" label="14 days overdue · unpaid" state="overdue" />);
+  expect(screen.getByTitle(/overdue.*Due 01 Oct 2026; as of 15 Oct 2026/)).toHaveTextContent("14 days overdue · unpaid");
+  expect(screen.getByText("14 days overdue · unpaid")).toHaveClass("text-destructive");
 });

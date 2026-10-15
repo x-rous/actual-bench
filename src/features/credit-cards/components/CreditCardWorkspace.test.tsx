@@ -14,7 +14,7 @@ const mockDirectory = {
   isFetching: false, isError: false, refetch: jest.fn(),
 };
 jest.mock("../hooks/useCreditCardDirectory", () => ({ useCreditCardDirectory: () => mockDirectory, useCreditCardCategories: () => ({ data: { categories: [{ id: "interest", name: "Card interest" }, { id: "fees", name: "Bank fees" }] }, isFetching: false, isError: false, refetch: jest.fn() }) }));
-const mockActivity = { data: { accountId: "account", from: "2026-01-01", to: "2026-12-31", rows: [] as ActivityRow[], counterparts: [] as ActivityRow[], issues: [], fetchedAt: "2026-10-10T12:00:00Z", signature: "empty" }, isFetching: false, isError: false, refetch: jest.fn() };
+const mockActivity = { data: { accountId: "account", from: "2026-01-01", to: "2026-12-31", rows: [] as ActivityRow[], counterparts: [] as ActivityRow[], issues: [] as string[], fetchedAt: "2026-10-10T12:00:00Z", signature: "empty" }, isFetching: false, isError: false, refetch: jest.fn() };
 jest.mock("../hooks/useCreditCardActivity", () => ({ useCreditCardActivities: (_connection: unknown, cards: unknown[]) => cards.map(() => mockActivity) }));
 jest.mock("@/features/accounts/hooks/useAccountClasses", () => ({ useAccountClasses: () => ({ available: true, maps: { accounts: new Map([["account", "credit-card"]]), groups: new Map() } }) }));
 const connection: ConnectionInstance = { id: "connection", budgetSyncId: "budget", label: "Budget", mode: "http-api", baseUrl: "http://localhost", apiKey: "test" };
@@ -37,6 +37,7 @@ beforeEach(() => {
   useConnectionStore.setState({ instances: [connection], activeInstanceId: connection.id });
   mockDirectory.isFetching = false;
   mockDirectory.isError = false;
+  mockDirectory.data.balances = new Map([["account", { signedBalanceMinor: -315000, debtMinor: 315000, creditMinor: 0 }]]);
 });
 
 function register() {
@@ -122,7 +123,7 @@ it("prepares cycle drafts from Actual and allows undoing a saved card", () => {
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
   fireEvent.click(screen.getByRole("tab", { name: "Statements" }));
   expect(screen.getAllByText("Estimated").length).toBeGreaterThan(0);
-  fireEvent.click(screen.getAllByRole("button", { name: "Confirm bank values" })[0]);
+  fireEvent.click(screen.getAllByRole("button", { name: "Confirm Statement" })[0]);
   expect(screen.getByLabelText("Statement balance")).toHaveValue("3,150.00");
   expect(screen.getByLabelText("Minimum due")).toHaveValue("63.00");
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -240,10 +241,10 @@ it("shows pending and unmatched payments clearly and navigates to statement outc
   expect(screen.getByText(/Funding transaction details are unavailable/)).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "View statements" }));
   const statements = screen.getByRole("table", { name: "Statements for Actual Visa" });
-  expect(within(statements).getAllByRole("row")[1]).toHaveTextContent("pending 100.00");
-  expect(within(statements).getAllByRole("row")[1]).toHaveTextContent("Remaining: 100.00");
+  expect(within(statements).getAllByRole("row")[1]).toHaveTextContent("clearance pending");
+  expect(within(statements).getByRole("button", { name: /Read full payment outcome/ })).toHaveAttribute("title", expect.stringContaining("pending 100.00"));
   fireEvent.click(screen.getByRole("combobox", { name: "Statement payment" }));
-  const paidOption = screen.getByRole("option", { name: "Fully paid" });
+  const paidOption = screen.getByRole("option", { name: "Paid in full" });
   fireEvent.pointerDown(paidOption, { pointerType: "mouse", button: 0 });
   fireEvent.click(paidOption, { detail: 1 });
   expect(within(statements).getAllByRole("row")).toHaveLength(1);
@@ -259,7 +260,10 @@ it("does not present cached payment matches as current after source failure", ()
   render(<TestWorkspace />);
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
   fireEvent.click(screen.getByRole("tab", { name: "Payments" }));
-  expect(screen.getAllByText("Refresh needed").length).toBeGreaterThanOrEqual(2);
+  const payments = screen.getByRole("table", { name: "Card repayments" });
+  expect(within(payments).getByText("Refresh needed")).toBeVisible();
+  expect(within(payments).getByRole("img", { name: "Clearing status unavailable" })).toBeVisible();
+  expect(within(payments).getByText("Effect unavailable")).toBeVisible();
   expect(screen.queryByText("No payments found")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /View payment details/ }));
   expect(screen.getByText(/Refresh Actual data to confirm this payment/)).toBeVisible();
@@ -318,8 +322,8 @@ it("labels a carried balance separately from overdue minimums", () => {
   render(<TestWorkspace />);
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
   fireEvent.click(screen.getByRole("tab", { name: "Statements" }));
-  expect(screen.getAllByText("Balance carried").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("Minimum met").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Minimum paid · carried").length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/01 Sep 2026 · on time/).length).toBeGreaterThan(0);
   expect(screen.queryByText(/days overdue/)).not.toBeInTheDocument();
 });
 
@@ -343,12 +347,12 @@ it("consolidates missing statement values into actionable explanations and compa
   const table = screen.getByRole("table", { name: "Statements for Actual Visa" });
   expect(within(table).queryByText("Unavailable")).not.toBeInTheDocument();
   for (const label of ["Balance", "Minimum", "Payment against due date", "Outcome", "Bank match"]) expect(within(table).getByRole("columnheader", { name: label })).toBeInTheDocument();
-  expect(within(table).queryByRole("button", { name: /Expand statement|Open statement/ })).not.toBeInTheDocument();
+  expect(within(table).queryByRole("button", { name: /Expand statement/ })).not.toBeInTheDocument();
   expect(within(table).queryByText("Balance movement")).not.toBeInTheDocument();
-  expect(within(table).queryByRole("button", { name: "Confirm bank values" })).not.toBeInTheDocument();
-  expect(within(table).getByRole("button", { name: "Review transactions" })).toBeVisible();
+  expect(within(table).queryByRole("button", { name: "Confirm Statement" })).not.toBeInTheDocument();
+  expect(within(table).getByRole("button", { name: "Review" })).toBeVisible();
   expect(within(table).queryByText(/^Difference /)).not.toBeInTheDocument();
-  fireEvent.click(within(table).getByRole("button", { name: "Review transactions" }));
+  fireEvent.click(within(table).getByRole("button", { name: "Review" }));
   expect(screen.getByRole("region", { name: "Review statement · 04 Sep 2026" })).toBeVisible();
 });
 
@@ -461,7 +465,7 @@ it("groups overview facts without duplicate repayment actions or an empty attent
   const source = screen.getByRole("button", { name: "View contributing transactions" });
   fireEvent.click(source);
   expect(screen.getByRole("button", { name: "Hide contributing transactions" })).toHaveAttribute("aria-expanded", "true");
-  expect(screen.getByRole("table", { name: "Transactions since statement closing" })).toBeVisible();
+  expect(screen.getByRole("table", { name: "Transactions outside the latest statement" })).toBeVisible();
 });
 
 it("keeps a distinct transaction total when it does not explain the balance change", () => {
@@ -513,7 +517,7 @@ it("filters current verification state and opens the review-count list without i
   expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 11)).toHaveLength(1);
   expect(within(table).getByText("Verified")).toBeVisible();
   expect(within(table).queryByText("Source changed")).not.toBeInTheDocument();
-  expect(within(table).getByRole("button", { name: "Open" })).toBeVisible();
+  expect(within(table).getByRole("button", { name: /Open statement/ })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "1 statement needs review" }));
   expect(screen.getByRole("table", { name: "Statements for Actual Visa" })).toHaveTextContent("Source changed");
 });
@@ -551,7 +555,7 @@ it("lets the user confirm an empty configured opening cycle with explicit zero b
   fireEvent.click(screen.getByRole("tab", { name: "Statements" }));
   const table = screen.getByRole("table", { name: "Statements for Actual Visa" });
   const openingRow = within(table).getByText("30 Sep 2025").closest("tr")!;
-  fireEvent.click(within(openingRow).getByRole("button", { name: "Confirm bank values" }));
+  fireEvent.click(within(openingRow).getByRole("button", { name: "Confirm Statement" }));
   const opening = screen.getByLabelText("Balance brought forward (optional)");
   expect(opening).toHaveValue("");
   fireEvent.change(opening, { target: { value: "0" } });
@@ -561,4 +565,59 @@ it("lets the user confirm an empty configured opening cycle with explicit zero b
   fireEvent.click(screen.getByRole("button", { name: "Save & verify" }));
   expect(creditCardStore.getState().workspaces.budget.statements.find((entry) => entry.closingDate === "2025-09-30")).toMatchObject({ openingAnchor: true, openingBalanceMinor: 0, verification: "verified" });
   expect(mockSync).not.toHaveBeenCalled();
+});
+
+
+it.each(["loading", "failed", "incomplete"])("withholds current debt consistently when activity is %s, then restores the adjusted balance", (state) => {
+  register();
+  const originalBalances = mockDirectory.data.balances;
+  const originalIssues = mockActivity.data.issues;
+  mockDirectory.data.balances = new Map([["account", { signedBalanceMinor: -15000, debtMinor: 15000, creditMinor: 0 }]]);
+  const source = mockActivity.data as typeof mockActivity.data & { futureDeltaMinor?: number };
+  source.futureDeltaMinor = -5000;
+  mockActivity.isFetching = state === "loading";
+  mockActivity.isError = state === "failed";
+  source.issues = state === "incomplete" ? ["Incomplete split"] : [];
+  const view = render(<TestWorkspace />);
+  try {
+    expect(screen.getByText(/0 of 1 balances available/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
+    const debt = () => within(screen.getByRole("region", { name: "Current balance and activity" })).getByText("Current debt").closest("div")!;
+    expect(debt()).toHaveTextContent("Current debt-");
+    mockActivity.isFetching = false;
+    mockActivity.isError = false;
+    source.issues = [];
+    view.rerender(<TestWorkspace />);
+    expect(debt()).toHaveTextContent("Current debt100.00");
+    fireEvent.click(screen.getByRole("button", { name: "All cards" }));
+    expect(screen.getByText(/1 of 1 balances available/)).toBeVisible();
+    expect(screen.getAllByText("100.00").length).toBeGreaterThan(0);
+    expect(screen.queryByText("150.00")).not.toBeInTheDocument();
+  } finally {
+    view.unmount();
+    mockDirectory.data.balances = originalBalances;
+    source.issues = originalIssues;
+    delete source.futureDeltaMinor;
+  }
+});
+
+
+it.each([0, 2500])("keeps cutoff charges and uncleared activity separate from a %i minor-unit unexplained difference", (difference) => {
+  const card = register();
+  const bankMinor = 300000 - difference;
+  const statement = creditCardStore.getState().recordOpeningStatement("budget", card.id, card.revision, { periodStart: "2026-09-01", closingDate: "2026-09-30", dueDate: "2026-10-25", officialBalanceMinor: bankMinor, minimumDueMinor: 10000, openingBalanceMinor: bankMinor });
+  const amounts = [4000, 3000, 2500, ...Array<number>(11).fill(500)];
+  mockActivity.data.rows = amounts.map((amount, index): ActivityRow => ({ id: `cutoff-${index}`, fingerprint: `cutoff-${index}`, accountId: "account", date: index < 3 ? "2026-09-30" : `2026-10-${String(index - 2).padStart(2, "0")}`, amountMinor: -amount, label: "Synthetic charge", notes: null, categoryId: null, categoryName: null, cleared: false, transferId: null, transferKnown: true, parentId: null }));
+  creditCardStore.getState().saveReview("budget", statement.id, statement.revision, mockActivity.data, mockActivity.data.rows.map((entry) => ({ statementId: statement.id, cardId: card.id, transactionId: entry.id, fingerprint: entry.fingerprint, decision: "excluded", provenance: "manual", bankPostingDate: null, reason: "Outside the confirmed bank statement" })), true);
+  render(<TestWorkspace />);
+  fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
+  const activity = screen.getByRole("region", { name: "Current balance and activity" });
+  expect(within(activity).getByText("Charges").nextElementSibling?.textContent).toBe("150.00");
+  expect(within(activity).getByText("Unexplained difference").nextElementSibling?.textContent).toBe(difference ? "25.00" : "0.00");
+  expect(within(activity).getByText("14 uncleared transactions are included in activity; figures are provisional.")).toBeVisible();
+  expect(within(activity).queryByText("0.00 is unexplained.")).not.toBeInTheDocument();
+  if (difference) expect(within(activity).getByText("25.00 is unexplained.")).toBeVisible();
+  expect(creditCardStore.getState().workspaces.budget.statements[0].verification).toBe("verified");
+  fireEvent.click(within(activity).getByRole("button", { name: "View contributing transactions" }));
+  expect(within(screen.getByRole("table", { name: "Transactions outside the latest statement" })).getAllByRole("row")).toHaveLength(15);
 });

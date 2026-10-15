@@ -7,7 +7,9 @@ import { sumMinor } from "./statements";
 export type DebtOrigin = { id: string; date: string; label: string; originalMinor: number; remainingMinor: number };
 export type Settlement = {
   statementId: string; dueDate: string; fullRemainingMinor: number | null; minimumRemainingMinor: number | null;
-  fullByDue: boolean | null; minimumByDue: boolean | null; paidMinor: number; status: string;
+  fullByDue: boolean | null; minimumByDue: boolean | null; paidMinor: number;
+  /** Internal settlement diagnostic; UI labels and tones come from statementOutcome. */
+  status: string;
   paymentWindowEnd: string; paidDate: string | null; minimumPaidDate: string | null; delayDays: number | null; provisionalMinor: number;
   /** Integer minor units from cleared card-side transfers, within paidMinor. */
   confirmedPaidMinor: number;

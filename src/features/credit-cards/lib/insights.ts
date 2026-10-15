@@ -6,7 +6,27 @@ import { sumMinor } from "./statements";
 
 /** All bridge amounts are signed integer minor units: debt additions positive, credits negative. */
 export function netActivitySinceStatement(card: Card, statement: Statement, workspace: Workspace, snapshot: ActivitySnapshot, signedCurrentMinor: number, today: string) {
-  const rows = snapshot.rows.filter((row) => { const date = effectiveActivityDate(row, card.id, workspace); return date > statement.closingDate && date <= today; });
+  // The bank balance already contains reviewed inclusions, even when their Actual date
+  // crosses the cutoff. Reviewed exclusions within this cycle remain unbilled activity.
+  const billedStatements = new Set(workspace.statements.filter((entry) => entry.cardId === card.id && entry.bankConfirmed && entry.closingDate <= statement.closingDate).map((entry) => entry.id));
+  if (statement.bankConfirmed) billedStatements.add(statement.id);
+  const included = new Map<string, Set<string>>();
+  const excluded = new Map<string, string>();
+  for (const decision of workspace.memberships) {
+    if (decision.cardId !== card.id) continue;
+    if (decision.decision === "included" && billedStatements.has(decision.statementId)) {
+      const fingerprints = included.get(decision.transactionId) ?? new Set<string>();
+      fingerprints.add(decision.fingerprint);
+      included.set(decision.transactionId, fingerprints);
+    }
+    if (decision.statementId === statement.id && decision.decision === "excluded") excluded.set(decision.transactionId, decision.fingerprint);
+  }
+  const rows = snapshot.rows.filter((row) => {
+    if (row.accountId !== card.accountId || row.date > today) return false;
+    const date = effectiveActivityDate(row, card.id, workspace);
+    if (date > today || included.get(row.id)?.has(row.fingerprint)) return false;
+    return date > statement.closingDate || date >= statement.periodStart && excluded.get(row.id) === row.fingerprint;
+  });
   const covered = snapshot.from <= statement.closingDate && snapshot.to >= today && !snapshot.issues.length;
   const groups = new Map<string, number[]>();
   for (const row of rows) {

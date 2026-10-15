@@ -5,7 +5,13 @@ import { matchedPaymentStatement, type Settlement } from "./repayments";
 import { sumMinor } from "./statements";
 import { formatAmount } from "@/features/assets-debt/lib/money";
 
-export type PaymentEffect = { label: string; detail: string; minimum?: string };
+export type PaymentEffect = {
+  label: string;
+  detail: string;
+  minimum?: string;
+  /** Confirmed balance left through this date, in integer minor units; same-day entries are grouped. */
+  remainingMinor?: number;
+};
 
 /** Read-only effects within the existing statement windows; amounts remain integer minor units. */
 export function paymentEffects(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, windows: Settlement[], today: string) {
@@ -18,7 +24,6 @@ export function paymentEffects(card: Card, workspace: Workspace, snapshot: Activ
     const statement = assigned.get(row.id);
     let effect: PaymentEffect;
     if (row.date > today) effect = { label: "Future dated", detail: "Future-dated transfers do not establish a confirmed payment effect today." };
-    else if (row.cleared !== true) effect = { label: row.cleared === false ? "Pending" : "Clearing unknown", detail: "This transfer does not establish confirmed minimum or full settlement until cleared." };
     else if (!statement) effect = { label: "Unmatched", detail: "No tracked statement obligation is matched to this transfer." };
     else if (!statement.bankConfirmed) effect = { label: "Not confirmed", detail: "Confirm the matched statement’s bank values before assessing the transfer." };
     else if (snapshot.from > statement.closingDate || snapshot.to < row.date || snapshot.issues.length) effect = { label: "Effect unavailable", detail: "Complete transaction evidence from the statement close through this payment is required." };
@@ -37,7 +42,14 @@ export function paymentEffects(card: Card, workspace: Workspace, snapshot: Activ
       const minimum = statement.minimumDueMinor === 0 ? "No minimum required" : minimumAfter === 0 ? "Minimum covered" : `Minimum still short ${formatAmount(minimumAfter, 2)}`;
       const detail = `After confirmed activity through this date: full remaining ${formatAmount(remainingAfter, 2)}; minimum remaining ${formatAmount(minimumAfter, 2)}. Credits reduce full remaining, never the minimum. This describes recorded effect, not payment intent. Excess over a statement obligation is not necessarily unused card credit.`;
       const label = dayPayments.length > 1 ? "Same-day payments" : dayCredits > 0 ? "Payment + credits" : row.amountMinor > Math.max(remainingBefore, minimumBefore) ? "Excess payment" : remainingAfter === 0 && minimumAfter === 0 ? "Completes statement" : row.amountMinor === statement.minimumDueMinor && row.amountMinor === minimumBefore && minimumBefore > 0 ? "Minimum payment" : "Partial payment";
-      effect = { label, minimum, detail: `${dayPayments.length > 1 || dayCredits > 0 ? "Same-day entries are assessed together because their within-day sequence is unknown. " : ""}${detail}` };
+      effect = { label, minimum, remainingMinor: remainingAfter, detail: `${dayPayments.length > 1 || dayCredits > 0 ? "Same-day entries are assessed together because their within-day sequence is unknown. " : ""}${detail}` };
+    }
+    if (row.date <= today && row.cleared !== true) {
+      effect = {
+        ...effect,
+        label: row.cleared === false ? "Pending" : "Clearing unknown",
+        detail: `This transfer does not establish confirmed minimum or full settlement until cleared.${effect.remainingMinor !== undefined ? ` Confirmed remaining through this date is ${formatAmount(effect.remainingMinor, 2)}, excluding this transfer and all other pending or unknown-clearing activity. Same-day cleared activity is assessed together.` : " Complete evidence for a confirmed bank statement is required to show the remaining balance."}`,
+      };
     }
     effects.set(row.id, effect);
   }
