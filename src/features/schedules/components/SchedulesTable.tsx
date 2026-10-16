@@ -141,11 +141,13 @@ export function SchedulesTable({
     useTableSelection();
 
   // ── Payee / account filter options (those used by a non-deleted schedule) ──
+  // The active filter stays listed even once no schedule uses it, so the picker
+  // keeps showing what is filtered rather than reading "All".
   const { accounts: allAccounts, groups: accountGroups } = useStagedAccounts();
   const allPayees = useStagedPayees();
   const { filterPayees, filterAccounts } = useMemo(() => {
-    const payeeIds = new Set<string>();
-    const accountIds = new Set<string>();
+    const payeeIds = new Set<string>(payeeFilter ? [payeeFilter] : []);
+    const accountIds = new Set<string>(accountFilter ? [accountFilter] : []);
     for (const s of Object.values(staged)) {
       if (s.isDeleted) continue;
       if (s.entity.payeeId) payeeIds.add(s.entity.payeeId);
@@ -155,7 +157,7 @@ export function SchedulesTable({
       filterPayees: allPayees.filter((p) => payeeIds.has(p.id)),
       filterAccounts: allAccounts.filter((a) => accountIds.has(a.id)),
     };
-  }, [staged, allPayees, allAccounts]);
+  }, [staged, allPayees, allAccounts, payeeFilter, accountFilter]);
 
   // ── Derived rows ─────────────────────────────────────────────────────────────
   const rows = useMemo<StagedEntity<Schedule>[]>(() => {
