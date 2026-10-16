@@ -47,6 +47,17 @@ updates:
         versions: [">30.3.0"]
       - dependency-name: "jest-environment-jsdom"
         versions: [">30.3.0"]
+      # Held back by a reproducible failure, not by policy. eslint-config-next
+      # 16.4.0 turns on stricter React Compiler rules and reports 39 errors in
+      # code that lints clean on 16.3.8 (react-hooks/set-state-in-effect,
+      # preserve-manual-memoization, refs, purity, ...). ESLint 10 is held with
+      # it: its bundled eslint-plugin-react crashes on 10 under 16.3.8, and
+      # only loads once 16.4.0 is in. Revisit when the new rules are fixed
+      # in code, then move eslint-config-next and eslint together.
+      - dependency-name: "eslint-config-next"
+        versions: [">16.3.8"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
       # Must describe the Node actually in use, or the type checker starts
       # accepting code the runtime cannot run. Moves when Node does.
       - dependency-name: "@types/node"
