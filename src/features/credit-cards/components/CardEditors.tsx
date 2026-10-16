@@ -194,10 +194,11 @@ export function StatementEditor({ budgetSyncId, card, statement, suggested, canR
   const [dueDate, setDueDate] = useState(statement?.dueDate ?? suggested?.dueDate ?? "");
   const [balance, setBalance] = useState((statement?.officialBalanceMinor ?? suggested?.officialBalanceMinor) == null ? "" : formatAmount((statement?.officialBalanceMinor ?? suggested?.officialBalanceMinor)!, 2));
   const [minimum, setMinimum] = useState((statement?.minimumDueMinor ?? (suggested?.minimumKnown ? suggested.minimumDueMinor : null)) == null ? "" : formatAmount((statement?.minimumDueMinor ?? suggested?.minimumDueMinor)!, 2));
+  const [totalPaymentDue, setTotalPaymentDue] = useState(minorToMajorText(statement?.totalPaymentDueMinor ?? null, 2));
   const [openingBalance, setOpeningBalance] = useState(minorToMajorText(statement?.openingBalanceMinor ?? null, 2));
   const isFirstStatement = Boolean(statement?.openingAnchor || (!statement && !initial.card.firstTrackedStatementDate) || closingDate === initial.card.firstTrackedStatementDate);
   const [error, setError] = useState("");
-  const signature = JSON.stringify({ periodStart, closingDate, dueDate, balance, minimum, openingBalance });
+  const signature = JSON.stringify({ periodStart, closingDate, dueDate, balance, minimum, totalPaymentDue, openingBalance });
   const [initialSignature] = useState(signature);
   const { requestClose, discardDialog } = useDiscardChanges(signature !== initialSignature, onClose);
   function formatInput(value: string, set: (value: string) => void) { try { const amount = readAmount(value, false, true); if (amount !== null) set(formatAmount(amount, 2)); } catch { /* Preserve invalid input for correction. */ } }
@@ -206,7 +207,7 @@ export function StatementEditor({ budgetSyncId, card, statement, suggested, canR
     try {
       if (event.currentTarget.querySelector('[aria-invalid="true"]')) throw new Error("Correct the invalid date before saving");
       if (!initial.statement && !canRecord) throw new Error("Refresh the card account and its classification before recording a statement");
-      const facts = { periodStart, closingDate, dueDate, officialBalanceMinor: readAmount(balance, true, true), minimumDueMinor: readAmount(minimum, true), openingBalanceMinor: isFirstStatement ? readAmount(openingBalance, false, true) : initial.statement?.openingBalanceMinor ?? null };
+      const facts = { periodStart, closingDate, dueDate, officialBalanceMinor: readAmount(balance, true, true), minimumDueMinor: readAmount(minimum, true), ...(totalPaymentDue.trim() ? { totalPaymentDueMinor: readAmount(totalPaymentDue, true) } : {}), openingBalanceMinor: isFirstStatement ? readAmount(openingBalance, false, true) : initial.statement?.openingBalanceMinor ?? null };
       let savedId = initial.statement?.id;
       if (initial.statement) creditCardStore.getState().correctStatement(budgetSyncId, initial.statement.id, initial.statement.revision, facts);
       else savedId = creditCardStore.getState().recordStatement(budgetSyncId, initial.card.id, initial.card.revision, facts, true).id;
@@ -225,6 +226,7 @@ export function StatementEditor({ budgetSyncId, card, statement, suggested, canR
         </div></fieldset>
         <fieldset className="rounded-xl border p-4"><legend className="px-1 text-sm font-semibold">Bank figures</legend><div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Statement balance" htmlFor={`${prefix}-balance`}><Input size="default" id={`${prefix}-balance`} value={balance} onBlur={() => formatInput(balance, setBalance)} onChange={(event) => setBalance(event.target.value)} inputMode="decimal" required /></Field>
+          <Field label="Total Payment Due (optional)" htmlFor={`${prefix}-total-due`}><Input id={`${prefix}-total-due`} value={totalPaymentDue} placeholder="Defaults to statement balance" onBlur={() => formatInput(totalPaymentDue, setTotalPaymentDue)} onChange={(event) => setTotalPaymentDue(event.target.value)} inputMode="decimal" /></Field>
           <Field label="Minimum due" htmlFor={`${prefix}-minimum`}><Input size="default" id={`${prefix}-minimum`} value={minimum} onBlur={() => formatInput(minimum, setMinimum)} onChange={(event) => setMinimum(event.target.value)} inputMode="decimal" required /></Field>
           {isFirstStatement && <Field label="Balance brought forward (optional)" htmlFor={`${prefix}-opening-balance`}><Input size="default" id={`${prefix}-opening-balance`} value={openingBalance} onChange={(event) => setOpeningBalance(event.target.value)} inputMode="decimal" /></Field>}
         </div></fieldset>

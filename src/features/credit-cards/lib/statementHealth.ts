@@ -12,7 +12,7 @@ export function statementHealth(statement: Statement, workspace: Workspace, snap
   if (review.stale) return state("changed", "Source changed", 2, "Review");
   if (review.duplicate || review.unresolved) return state("review", "Needs review", 3, "Review");
   if (review.startingBalanceMinor === null) return state("opening", statement.openingAnchor ? "Opening balance missing" : "Previous balance missing", 4, "Review");
-  if (review.varianceMinor !== 0) return state("mismatch", "Balance mismatch", 5, "Review");
+  if (review.varianceMinor !== 0) return state("mismatch", "Balance difference", 5, "Review");
   if (statement.verification === "verified") return state("verified", "Verified", 7, "View", false);
   return state("ready", "Ready to verify", 6, "Verify");
 }

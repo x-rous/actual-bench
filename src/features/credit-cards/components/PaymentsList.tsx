@@ -13,6 +13,7 @@ import { WorkspaceTable } from "./WorkspaceTable";
 import type { Settlement } from "../lib/repayments";
 import { ReviewText } from "./ReviewText";
 import { ClearingStatus } from "./ClearingStatus";
+import { FieldInfo } from "./FieldInfo";
 export function PaymentsList({ card, payments, snapshot, accounts = [], available, onStatements, onDetails, today, workspace, statuses }: { card: Card; payments: { row: ActivityRow; matchedStatement?: Statement }[]; snapshot?: ActivitySnapshot; accounts?: Pick<Account, "id" | "name">[]; available: boolean; onStatements: (statementId?: string) => void; onDetails: (id: string) => void; today?: string; workspace?: Workspace; statuses?: Settlement[] }) {
   const fundingAccounts = new Map((snapshot?.counterparts ?? []).map((peer) => [peer.id, accounts.find((account) => account.id === peer.accountId)?.name]));
   const paidFrom = (row: ActivityRow) => row.transferId ? fundingAccounts.get(row.transferId) ?? row.label : row.label;
@@ -23,8 +24,8 @@ export function PaymentsList({ card, payments, snapshot, accounts = [], availabl
   const unknown = payments.filter((entry) => entry.row.cleared === null);
   const amount = (entries: typeof payments) => formatAmount(entries.reduce((sum, entry) => sum + entry.row.amountMinor, 0), 2);
   return <div className="flex min-h-0 flex-1 flex-col">
-    <section className="grid shrink-0 gap-4 border-b px-4 py-4 lg:grid-cols-[18rem_1fr]" aria-label="When you pay">
-      <div>
+    <section className="grid shrink-0 gap-6 border-b bg-muted/15 px-5 py-5 lg:grid-cols-[18rem_1fr]" aria-label="When you pay">
+      <div className="rounded-xl border bg-background p-4">
         <h2 className="text-sm font-semibold">When you pay</h2>
         <dl className="mt-3 space-y-2 text-xs">
           <div className="flex justify-between gap-4"><dt className="text-muted-foreground" title="Cleared repayments since tracking began">Cleared paid</dt><dd className="text-right font-medium tabular-nums">{available ? amount(confirmed) : "-"}</dd></div>
@@ -46,14 +47,14 @@ export function PaymentsList({ card, payments, snapshot, accounts = [], availabl
   ]} filters={[
     { label: "Payment match", options: [{ value: "", label: `All (${payments.length})` }, { value: "matched", label: `Matched (${payments.filter((entry) => entry.matchedStatement).length})` }, { value: "unmatched", label: `Unmatched (${payments.filter((entry) => !entry.matchedStatement).length})` }], matches: ({ matchedStatement }, value) => value === "matched" ? Boolean(matchedStatement) : !matchedStatement },
     { label: "Payment clearing", options: [{ value: "", label: "Any clearing status" }, { value: "cleared", label: "Cleared" }, { value: "pending", label: "Pending" }, { value: "unknown", label: "Unknown" }], matches: ({ row }, value) => value === "cleared" ? row.cleared === true : value === "pending" ? row.cleared === false : row.cleared === null },
-  ]} actions={<Button size="sm" variant="outline" onClick={() => onStatements()}>View statement payment status</Button>} description="Payments are matched to a statement by date. Uncleared amounts remain pending. Cashback and other statement credits are not payments." renderRow={({ row, matchedStatement }) => {
+  ]} actions={<><FieldInfo label="Payment matching">Payments are matched to a statement by date. Several payments may contribute to one statement. Payment Effect describes each payment’s contribution in sequence; uncleared amounts remain pending. Cashback and other statement credits are not payments.</FieldInfo><Button size="sm" variant="outline" onClick={() => onStatements()}>View statements</Button></>} renderRow={({ row, matchedStatement }) => {
     const delay = matchedStatement ? daysBetween(matchedStatement.dueDate, row.date) : 0;
     const paymentEffect = effect(row.id);
     const noStatement = !available ? "Refresh needed" : card.firstTrackedStatementDate && row.date <= card.firstTrackedStatementDate ? "Before tracking began" : "No matching statement";
     return <tr key={row.id} className="border-b hover:bg-muted/20">
       <td><Button variant="link" size="xs" className="h-auto whitespace-nowrap p-0 text-xs" aria-label={`View payment details for ${formatCardDate(row.date)} ${row.label}`} onClick={() => onDetails(row.id)} disabled={!snapshot}>{formatCardDate(row.date)}<ChevronRight className="size-3" aria-hidden /></Button></td>
       <td><ReviewText className="text-xs" text={paidFrom(row)} detail={row.transferId && fundingAccounts.get(row.transferId) ? paidFrom(row) : `${row.label}. Card-side transfer label; linked funding account details are unavailable.`} label="payment funding account" /></td>
-      <td className="text-muted-foreground"><ReviewText className="text-xs" text={row.notes ?? "-"} label="payment notes" /></td>
+      <td className="text-muted-foreground"><ReviewText className="max-w-[28rem] text-xs" text={row.notes ?? "-"} label="payment notes" /></td>
       <td className="text-right font-medium text-emerald-800 dark:text-emerald-300 tabular-nums">{formatAmount(row.amountMinor, 2)}</td>
       <td><ClearingStatus cleared={row.cleared} available={available} /></td>
       <td>{matchedStatement ? <Button variant="link" size="xs" className="h-auto whitespace-nowrap p-0 text-xs" aria-label={`View statement ${formatCardDate(matchedStatement.closingDate)}`} onClick={() => onStatements(matchedStatement.id)}>{formatCardDate(matchedStatement.closingDate)}</Button> : <ReviewText text={noStatement} label="payment statement match" />}</td>

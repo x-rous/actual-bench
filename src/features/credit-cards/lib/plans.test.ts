@@ -42,7 +42,7 @@ it("enforces unique posting ownership, sign rules, source fingerprints, partial 
   const saved = store.getState().workspaces.budget;
   expect(saved.plans).toHaveLength(1);
   expect(saved.plans![0].amountMinor).toBe(50000);
-  expect(activityKind(snapshot.rows[1], saved.cards[0], saved, snapshot)).toBe("other-credit");
+  expect(activityKind(snapshot.rows[1], saved.cards[0], saved, snapshot)).toBe("plan-conversion");
   expect(saved.allocations).toEqual([]);
   expect(() => store.getState().savePlan("budget", card.id, card.revision, snapshot, plan, [])).toThrow("changed");
   store.getState().undo("budget");
@@ -52,9 +52,9 @@ it("surfaces missing instalments/refund/stale postings without silently completi
   const { store, card, plan, snapshot } = setup();
   store.getState().savePlan("budget", card.id, card.revision, snapshot, plan, [{ planId: plan.id, transactionId: "refund", fingerprint: "refund", role: "refund", instalment: null }]);
   const workspace = store.getState().workspaces.budget;
-  expect(planHealth(plan, workspace, snapshot, "2026-11-01")).toMatchObject({ status: "Needs review", reasons: expect.arrayContaining([expect.stringContaining("refund"), expect.stringContaining("past expected")]) });
+  expect(planHealth(plan, workspace, snapshot, "2026-11-01")).toMatchObject({ status: "Needs review", reasons: expect.arrayContaining([expect.stringContaining("Check expected posting")]) });
   expect(workspace.plans![0].status).toBe("active");
-  expect(planHealth({ ...plan, status: "completed" }, workspace, snapshot, "2026-11-01").status).toBe("Needs review");
+  expect(planHealth({ ...plan, status: "completed" }, workspace, snapshot, "2026-11-01").status).toBe("Completed");
 });
 it("reconciles nonzero-rate expected totals, including interest and separate fees", () => {
   const { card, plan } = setup();
@@ -129,4 +129,35 @@ it("keeps tiny inclusive instalments level while conserving principal and financ
   expect(result.rows.map((row) => row.amountMinor)).toEqual([1, 1, 1, 1, 1, 1]);
   expect(result.rows.reduce((total, row) => total + row.principalMinor, 0)).toBe(1);
   expect(result.rows.reduce((total, row) => total + row.interestMinor, 0)).toBe(5);
+});
+
+it("requires current refund confirmation and rejects revisions to billed history atomically", () => {
+  const { store, card, plan, snapshot } = setup();
+  const links = [{ planId: plan.id, transactionId: "refund", fingerprint: "refund", role: "refund" as const, instalment: null }, { planId: plan.id, transactionId: "instalment", fingerprint: "instalment", role: "instalment-billed" as const, instalment: 1 }];
+  const signature = JSON.stringify([["refund", "refund"]]);
+  const unchanged = { ...plan, refundReview: { treatment: "unchanged" as const, signature, remaining: [] } };
+  store.getState().savePlan("budget", card.id, card.revision, snapshot, unchanged, links);
+  const workspace = store.getState().workspaces.budget;
+  expect(planHealth(workspace.plans![0], workspace, snapshot, "2026-10-14").reasons).toEqual([]);
+  const saved = workspace.plans![0];
+  expect(() => store.getState().savePlan("budget", card.id, workspace.cards[0].revision, snapshot, { ...saved, refundReview: { treatment: "unchanged", signature: "stale", remaining: [] } }, links)).toThrow("current refund evidence");
+  expect(() => store.getState().savePlan("budget", card.id, workspace.cards[0].revision, snapshot, { ...saved, refundReview: { treatment: "revised", signature, remaining: [{ index: 1, date: "2026-10-02", amountMinor: 100 }] } }, links)).toThrow("billed history cannot be revised");
+  expect(() => store.getState().savePlan("budget", card.id, workspace.cards[0].revision, snapshot, { ...saved, refundReview: { treatment: "cancelled", signature, remaining: [] } }, links)).toThrow("cancelled plan status");
+  expect(store.getState().workspaces.budget).toBe(workspace);
+  const changed = { ...snapshot, rows: snapshot.rows.map((row) => row.id === "refund" ? { ...row, fingerprint: "new-refund" } : row) };
+  expect(planHealth(saved, workspace, changed, "2026-10-14").status).toBe("Needs review");
+});
+
+it("saves issuer-confirmed remaining totals without rewriting billed entries or Actual postings", () => {
+  const { store, card, plan, snapshot } = setup();
+  const links = [{ planId: plan.id, transactionId: "refund", fingerprint: "refund", role: "refund" as const, instalment: null }, { planId: plan.id, transactionId: "instalment", fingerprint: "instalment", role: "instalment-billed" as const, instalment: 1 }];
+  const remaining = planProjection(plan, card).rows.slice(1).map((entry) => ({ index: entry.index, date: entry.date, amountMinor: entry.amountMinor - (entry.final ? 1000 : 0) }));
+  const review = { treatment: "revised" as const, signature: JSON.stringify([["refund", "refund"]]), remaining };
+  const originalRows = JSON.stringify(snapshot.rows);
+  store.getState().savePlan("budget", card.id, card.revision, snapshot, { ...plan, refundReview: review }, links);
+  const workspace = store.getState().workspaces.budget;
+  expect(workspace.plans![0].refundReview).toEqual(review);
+  expect(planHealth(workspace.plans![0], workspace, snapshot, "2026-10-14").reasons).toEqual([]);
+  expect(JSON.stringify(snapshot.rows)).toBe(originalRows);
+  expect(() => store.getState().savePlan("budget", card.id, workspace.cards[0].revision, snapshot, { ...workspace.plans![0], refundReview: { ...review, remaining: remaining.map((entry, index) => index ? entry : { ...entry, date: "2026-09-02" }) } }, links)).toThrow("Revised dates must follow the billed schedule");
 });

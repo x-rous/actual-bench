@@ -15,7 +15,7 @@ it("separates estimates, missing starting balances, mismatches, ready and verifi
   const { statement, snapshot, workspace } = setup();
   expect(statementHealth({ ...statement, bankConfirmed: false }, workspace, snapshot, true)).toMatchObject({ key: "estimate", action: "Confirm", issue: false });
   expect(statementHealth({ ...statement, openingBalanceMinor: null }, workspace, snapshot, true).key).toBe("opening");
-  expect(statementHealth({ ...statement, openingBalanceMinor: 9000, verification: "membership-reviewed" }, workspace, snapshot, true).label).toBe("Balance mismatch");
+  expect(statementHealth({ ...statement, openingBalanceMinor: 9000, verification: "membership-reviewed" }, workspace, snapshot, true).label).toBe("Balance difference");
   expect(statementHealth(statement, workspace, snapshot, true)).toMatchObject({ key: "ready", action: "Verify" });
   expect(statementHealth({ ...statement, verification: "verified" }, workspace, snapshot, true)).toMatchObject({ key: "verified", action: "View", issue: false });
 });

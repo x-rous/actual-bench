@@ -63,15 +63,15 @@ it("distinguishes a passed full-payment deadline from a missed minimum and prese
   expect(portfolioPaymentTiming(statement, { ...payment, fullRemainingMinor: 0, confirmedPaidDate: "2026-09-23" }, "2026-10-11")).toBe("Paid 3 days late");
 });
 
-it("shows explicitly classified interest without claiming other unclassified charges are known", () => {
+it("combines explicit and description-based interest classifications with coverage detail", () => {
   const { cards, workspace, sources } = fixture(1);
   const card = { ...cards[0], interestCategoryId: null };
   const charge = sources[0].rows[0];
   const source = { ...sources[0], rows: [...sources[0].rows, { ...charge, id: "unknown", fingerprint: "unknown", categoryId: null }] };
   const classified = { ...workspace, classifications: [{ cardId: card.id, transactionId: charge.id, fingerprint: charge.fingerprint, kind: "interest" as const, reason: "Confirmed interest charge" }] };
   const points = portfolioInterestTrend([card], classified, [source], ["2026-09-01"]);
-  expect(points[0].value).toBe(250);
-  expect(points[0].source).toContain("partial coverage");
-  expect(points[0].breakdown[0].label).toContain("classification incomplete");
-  expect(points[1].value).toBeNull();
+  expect(points[0].value).toBe(500);
+  expect(points[0].source).toContain("1 of 1 cards classified");
+  expect(points[0].breakdown[0].label).not.toContain("classification incomplete");
+  expect(points[1].value).toBe(250);
 });

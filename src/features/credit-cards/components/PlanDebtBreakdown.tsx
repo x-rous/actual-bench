@@ -1,0 +1,12 @@
+import { formatAmount } from "@/features/assets-debt/lib/money";
+import type { planDebtBreakdown } from "../lib/planReporting";
+import { FieldInfo } from "./FieldInfo";
+
+export function PlanDebtBreakdown({ breakdown, compact = false }: { breakdown: ReturnType<typeof planDebtBreakdown>; compact?: boolean }) {
+  const money = (amount: number) => formatAmount(amount, 2);
+  const tracker = breakdown.tracking;
+  if (tracker) return <div className={compact ? "mt-2 text-xs text-muted-foreground" : "mt-4 border-t pt-3 text-xs"}><div className="flex items-center justify-between gap-2"><span>Remaining in plan account</span><span className="tabular-nums">{tracker.known ? money(tracker.trackingMinor) : "Check plan entries"}</span></div>{!compact && <p className="mt-2 flex items-center text-muted-foreground">Included in total debt<FieldInfo label="Plan balance">Billing moves principal onto the card; it does not repay the debt. External payments reduce total debt. Interest and fees stay separate. Any transfer in transit is counted once.</FieldInfo></p>}{tracker.problems.length > 0 && <p className="mt-2 flex items-center">Check plan entries<FieldInfo label="Plan entries to review">{tracker.problems.join(". ")}</FieldInfo></p>}</div>;
+  if (!breakdown.known) return <p className="mt-2 text-xs text-muted-foreground">Plan-related split needs opening history; the card balance is shown above.</p>;
+  const hasAdjustments = breakdown.unallocatedMinor || breakdown.unknownMinor || breakdown.differenceMinor;
+  return <div className={compact ? "mt-2 text-xs text-muted-foreground" : "mt-4 border-t pt-3 text-xs"}><div className="flex items-center justify-between gap-2"><span>Plan-related amount</span><span className="tabular-nums">{money(breakdown.planMinor)}</span></div>{!compact && <div className="mt-2 flex justify-between gap-2 text-muted-foreground"><span>Other charges</span><span className="tabular-nums">{money(breakdown.otherMinor)}</span></div>}<p className="mt-2 flex items-center text-muted-foreground">{hasAdjustments ? "Before shared payments / credits" : "Included in card balance"}<FieldInfo label="Plan-related amount">Based on linked recorded charges, including combined instalments. This is not an exact principal allocation. Payments shared between ordinary purchases and plans are not assigned to a plan automatically. Expected future instalments never add to recorded debt.</FieldInfo></p></div>;
+}

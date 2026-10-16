@@ -107,7 +107,9 @@ export function projectCardMinimums(card: import("./models").Card, date: string,
 }
 
 /** Actual snapshot at today: signed integer minor units, excluding scheduled future entries. */
-export function asOfCardBalance(balance: ReturnType<typeof cardBalance>, futureDeltaMinor = 0) {
-  const signedBalanceMinor = sumMinor([balance.signedBalanceMinor, -futureDeltaMinor]);
-  return { rawSignedBalanceMinor: balance.signedBalanceMinor, signedBalanceMinor, debtMinor: Math.max(0, -signedBalanceMinor), creditMinor: Math.max(0, signedBalanceMinor) };
+export function asOfCardBalance(balance: ReturnType<typeof cardBalance>, futureDeltaMinor = 0, alreadyCurrent = false, directBalanceAdjustmentMinor = 0) {
+  // Direct excludes future entries already. Keep a normalized all-date input for history.
+  const rawSignedBalanceMinor = sumMinor([balance.signedBalanceMinor, alreadyCurrent ? sumMinor([futureDeltaMinor, directBalanceAdjustmentMinor]) : 0]);
+  const signedBalanceMinor = sumMinor([rawSignedBalanceMinor, -futureDeltaMinor]);
+  return { rawSignedBalanceMinor, signedBalanceMinor, debtMinor: Math.max(0, -signedBalanceMinor), creditMinor: Math.max(0, signedBalanceMinor) };
 }

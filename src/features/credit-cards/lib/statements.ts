@@ -59,7 +59,7 @@ export function effectiveMembership(statement: Statement, row: ActivityRow, save
   const inside = date >= statement.periodStart && date <= statement.closingDate;
   return {
     statementId: statement.id, cardId: statement.cardId, transactionId: row.id,
-    decision: override || tags.length > 1 ? "review" as const : tagged ? matches ? "included" as const : "excluded" as const : nearClose ? "review" as const : inside ? "included" as const : "excluded" as const,
+    decision: override || tags.length > 1 ? "review" as const : statement.verification === "verified" && nearClose && !found ? "excluded" as const : tagged ? matches ? "included" as const : "excluded" as const : nearClose ? "review" as const : inside ? "included" as const : "excluded" as const,
     provenance: "suggested" as const, bankPostingDate: null, fingerprint: row.fingerprint,
     reason: override ? "Actual transaction changed; review your previous decision" : tags.length > 1 ? "Conflicting statement tags need a decision" : tagged ? `Statement tag #${tags[0]}` : nearClose ? "Bank posting cutoff needs a decision" : "Actual date suggestion",
   };
@@ -108,10 +108,12 @@ export function statementReview(statement: Statement, workspace: Workspace, snap
   const memberships = rows.map((row) => {
     const membership = effectiveMembership(statement, row, scopedDecisions);
     const owner = membershipOwner(statement, row.id, workspace, decisions);
-    return owner ? { ...membership, decision: "excluded" as const, reason: `Included in statement ${formatCardDate(owner.closingDate)}` } : membership;
+    if (owner) return { ...membership, decision: "excluded" as const, reason: `Included in statement ${formatCardDate(owner.closingDate)}` };
+    const carriedCandidate = prior && row.date >= addDays(statement.periodStart, -2) && row.date < statement.periodStart && decisions.some((entry) => entry.statementId === prior.id && entry.transactionId === row.id && entry.fingerprint === row.fingerprint && entry.decision === "excluded");
+    return carriedCandidate && !decisionsByTransaction.has(row.id) ? { ...membership, decision: "included" as const, reason: "Not billed on the previous statement" } : membership;
   });
   const included = rows.filter((_, index) => memberships[index].decision === "included");
-  const coverage = snapshot.from <= statement.periodStart && snapshot.to >= addDays(statement.closingDate, 2) && !snapshot.issues.length;
+  const coverage = snapshot.from <= statement.periodStart && snapshot.to >= statement.closingDate && !snapshot.issues.length;
   const unresolved = memberships.filter((entry) => entry.decision === "review").length;
   const startingBalanceMinor = continuity ? prior.officialBalanceMinor : statement.openingAnchor ? statement.openingBalanceMinor ?? null : null;
   const calculatedMinor = startingBalanceMinor === null ? null : sumMinor([startingBalanceMinor, -sumMinor(included.map((row) => row.amountMinor))]);
@@ -120,7 +122,7 @@ export function statementReview(statement: Statement, workspace: Workspace, snap
   const duplicate = rows.some((row) => scopedDecisions.some((entry) => entry.transactionId === row.id && entry.decision === "included" && entry.fingerprint === row.fingerprint) && Boolean(membershipOwner(statement, row.id, workspace, decisions)));
   // Ownership changes on already-excluded candidates cannot change this statement.
   // Keep owners for included/undecided candidates so genuine conflicts still invalidate evidence.
-  const signature = JSON.stringify([rows.map((row) => [row.fingerprint, effectiveMembership(statement, row, scopedDecisions).decision === "excluded" ? null : membershipOwner(statement, row.id, workspace, decisions)?.id ?? null]), prior ? [prior.id, prior.officialBalanceMinor, prior.closingDate] : null, coverage, snapshot.issues, ...(statement.openingAnchor && statement.openingBalanceMinor != null ? [statement.openingBalanceMinor] : [])]);
+  const signature = JSON.stringify([rows.flatMap((row, index) => memberships[index].decision === "excluded" ? [] : [[row.fingerprint, membershipOwner(statement, row.id, workspace, decisions)?.id ?? null]]), prior ? [prior.id, prior.officialBalanceMinor, prior.closingDate] : null, coverage, snapshot.issues, ...(statement.openingAnchor && statement.openingBalanceMinor != null ? [statement.openingBalanceMinor] : [])]);
   return { signature, rows, memberships, startingBalanceMinor, calculatedMinor, varianceMinor, unresolved, coverage, continuity, duplicate,
     canVerify: statement.bankConfirmed && startingBalanceMinor !== null && coverage && unresolved === 0 && !duplicate && varianceMinor === 0,
     stale: statement.reviewedSnapshot !== null && statement.reviewedSnapshot !== signature,

@@ -34,7 +34,7 @@ it("keeps the empty payments summary neutral and statement obligations in Statem
   expect(screen.getByText("Cleared paid").nextElementSibling).toHaveTextContent("0.00");
   expect(screen.getByText("Pending").nextElementSibling).toHaveTextContent("0.00 · 0 payments");
   expect(screen.getByText("Payments").nextElementSibling).toHaveTextContent("0");
-  fireEvent.click(screen.getByRole("button", { name: "View statement payment status" }));
+  fireEvent.click(screen.getByRole("button", { name: "View statements" }));
   expect(onStatements).toHaveBeenCalledWith();
 });
 

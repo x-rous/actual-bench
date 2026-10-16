@@ -1,7 +1,7 @@
 import { cardInputSchema, type Workspace } from "./models";
 import { normalizeActivity, type ActivitySnapshot } from "./activity";
 import { statementDrafts } from "./statements";
-import { observedInterestTotals, statementHistory, statementMovement, cumulativeInterestCharges } from "./history";
+import { observedChargeTotals, observedInterestTotals, statementHistory, statementMovement, cumulativeInterestCharges } from "./history";
 import { settlements } from "./repayments";
 
 const card = { ...cardInputSchema.parse({ budgetSyncId: "budget", accountId: "card", nickname: "Card", issuer: "", last4: "", creditLimitMinor: null, purchaseAprBps: null, status: "active", bankTimeZone: "UTC", closingDay: 31, dueRule: { kind: "day-of-month", day: 1 } }), id: "c", revision: 1 };
@@ -30,10 +30,10 @@ it("keeps inferred opening debt but respects an explicit date opened", () => {
   expect(statementDrafts({ ...card, openedDate: "2026-09-01" }, "2026-10-10", 3, source(), -10000)).toHaveLength(1);
 });
 
-it("does not claim zero interest or purchase totals when charge classification is missing", () => {
-  expect(observedInterestTotals(card, workspace, source(), "2026-10-10").classificationKnown).toBe(false);
+it("uses directional defaults until an interest category or correction identifies a cost", () => {
+  expect(observedInterestTotals(card, workspace, source(), "2026-10-10").classificationKnown).toBe(true);
   const history = statementHistory(card, workspace, source(), "2026-10-10");
-  expect(history[0]).toMatchObject({ covered: true, interestMinor: null, feesMinor: null, spendingMinor: 82500 });
+  expect(history[0]).toMatchObject({ covered: true, interestMinor: 0, feesMinor: 0, spendingMinor: 82500 });
   const configured = { ...card, interestCategoryId: "interest", feeCategoryId: "fees" };
   expect(observedInterestTotals(configured, workspace, source(), "2026-10-10")).toMatchObject({ classificationKnown: true, totalMinor: 2500, from: "2025-01-01", to: "2026-10-10" });
   expect(observedInterestTotals(configured, workspace, { ...source(), issues: ["Incomplete source"] }, "2026-10-10").classificationKnown).toBe(false);
@@ -45,7 +45,7 @@ it("recognizes complete individual classification without category mappings", ()
   const classified = { ...workspace, classifications: snapshot.rows.filter((row) => row.amountMinor < 0).map((row) => ({ cardId: card.id, transactionId: row.id, fingerprint: row.fingerprint, kind: row.id === "interest" ? "interest" as const : "purchase" as const, reason: "Reviewed" })) };
   expect(observedInterestTotals(card, classified, snapshot, "2026-10-10")).toMatchObject({ classificationKnown: true, totalMinor: 2500 });
   const changed = { ...snapshot, rows: snapshot.rows.map((row) => ({ ...row, fingerprint: "changed" })) };
-  expect(observedInterestTotals(card, classified, changed, "2026-10-10").classificationKnown).toBe(false);
+  expect(observedInterestTotals(card, classified, changed, "2026-10-10").classificationKnown).toBe(true);
 });
 
 it("preserves lateness after full settlement, including in debt history", () => {
@@ -94,7 +94,7 @@ it("keeps unclassified transfer charges in arithmetic without affecting bank ver
   const starting = { ...statement, openingBalanceMinor: 0 };
   const state = { ...workspace, statements: [starting] };
   const movement = statementMovement(card, starting, state, ambiguous);
-  expect(movement).toMatchObject({ purchasesMinor: 0, unclassifiedMinor: 82500, calculatedMinor: 82500, varianceMinor: 0, unavailableReason: null });
+  expect(movement).toMatchObject({ purchasesMinor: 0, unclassifiedMinor: 0, otherMinor: 82500, calculatedMinor: 82500, varianceMinor: 0, unavailableReason: null });
 });
 
 it("keeps the explicitly tracked empty opening cycle without inventing earlier history", () => {
@@ -110,4 +110,24 @@ it("retains an explicitly tracked bank closing-date exception as the opening cyc
   const drafts = statementDrafts(tracked, "2026-10-10", undefined, source(), 0);
   expect(drafts.some((entry) => entry.closingDate === "2026-08-30")).toBe(true);
   expect(drafts.some((entry) => entry.closingDate < "2026-08-30")).toBe(false);
+});
+
+
+it("includes plan instalments and other charges in new charges without counting fees twice", () => {
+  const snapshot = source();
+  const spending = snapshot.rows.find((row) => row.id === "spend")!;
+  const configured = { ...card, interestCategoryId: "interest", feeCategoryId: "fees" };
+  const planWorkspace: Workspace = { ...workspace, cards: [configured], planLinks: [{ planId: "plan", transactionId: spending.id, fingerprint: spending.fingerprint, role: "instalment-billed", instalment: 1 }] };
+  expect(statementHistory(configured, planWorkspace, snapshot, "2026-10-10")[0]).toMatchObject({ spendingMinor: 0, interestMinor: 2500, feesMinor: 0 });
+});
+
+
+it("uses the same reporting window and cleared evidence for interest and fees", () => {
+  const base = source();
+  const configured = { ...card, interestCategoryId: "interest", feeCategoryId: "fees" };
+  const fee = { ...base.rows[0], id: "fee", fingerprint: "fee", amountMinor: -500, categoryId: "fees", date: "2026-09-15" };
+  const snapshot = { ...base, from: "2026-09-01", to: "2026-09-30", rows: [...base.rows, fee, { ...fee, id: "earlier", date: "2026-08-31" }, { ...fee, id: "later", date: "2026-10-01" }, { ...fee, id: "pending", cleared: false }] };
+  expect(observedChargeTotals(configured, workspace, snapshot, "2026-10-10", "fee")).toMatchObject({ totalMinor: 500, classificationKnown: true, from: "2026-09-01", to: "2026-09-30" });
+  expect(observedInterestTotals(configured, workspace, snapshot, "2026-10-10").totalMinor).toBe(2500);
+  expect(observedChargeTotals(configured, workspace, { ...snapshot, issues: ["Incomplete source"] }, "2026-10-10", "fee").classificationKnown).toBe(false);
 });

@@ -43,7 +43,7 @@ it("does not infer success from pending transfers or credits that leave the mini
   const credits = { ...pending, provisionalMinor: 0, confirmedCreditMinor: statement.officialBalanceMinor, confirmedPaidDate: statement.dueDate };
   expect(statementOutcome(statement, credits, "2025-11-02", true).label).toBe("Minimum overdue");
   const paidMinimum = { ...credits, confirmedPaidMinor: statement.minimumDueMinor, confirmedMinimumPaidDate: statement.dueDate, fullByDue: true, carriedAtDueMinor: 0 };
-  expect(statementOutcome(statement, paidMinimum, "2025-11-02", true)).toMatchObject({ label: "Covered by credits", marker: "on-time" });
+  expect(statementOutcome(statement, paidMinimum, "2025-11-02", true)).toMatchObject({ label: "Settled with credits", marker: "on-time" });
 });
 
 it("preserves late minimums, zero minimums, missing payment dates and future partial payments", () => {

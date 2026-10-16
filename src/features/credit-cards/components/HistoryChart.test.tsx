@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { HistoryChart } from "./HistoryChart";
 
 it("uses the loan line chart with a value axis, keeps gaps and distinguishes estimates", async () => {
@@ -8,8 +8,7 @@ it("uses the loan line chart with a value axis, keeps gaps and distinguishes est
   expect(container.querySelector(".recharts-bar")).toBeNull();
   expect(container.querySelector(".recharts-line-curve")?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
   expect(container.querySelector('circle[fill="var(--background)"]')).not.toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "View trend values" }));
-  expect(screen.getByRole("dialog")).toHaveTextContent("1,200.00");
+  expect(screen.queryByRole("button", { name: "View trend values" })).not.toBeInTheDocument();
 });
 
 it.each([12345, -12345])("renders a single signed statement (%i) as a labelled point instead of an empty state", async (value) => {

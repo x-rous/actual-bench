@@ -1,4 +1,7 @@
+import { bankToday } from "./cycles";
+import { financingCostKind, isTrackingTransfer } from "./planTracking";
 import { currentPlanLink } from "./plans";
+import { recognizeActivity, type ClassificationKind } from "./recognition";
 import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import { isIsoDate } from "@/lib/financial-models/calendar/dates";
 import { minorAmountSchema, type Card, type Workspace } from "./models";
@@ -11,10 +14,15 @@ export type ActivityRow = {
 };
 export type ActivitySnapshot = {
   accountId: string; from: string; to: string; rows: ActivityRow[]; counterparts: ActivityRow[];
+  /** Directory metadata and independent account histories, never copied into workspace storage. */
+  accounts?: { id: string; name: string; offBudget?: boolean; closed?: boolean }[];
+  trackingAccounts?: { accountId: string; rows: ActivityRow[]; counterparts?: ActivityRow[]; issues: string[]; signedBalanceMinor?: number; to: string }[];
   futureDeltaMinor?: number;
+  /** Integer minor units aligning Direct’s runtime-local date cutoff with the requested card date. */
+  directBalanceAdjustmentMinor?: number;
   issues: string[]; fetchedAt: string; signature: string;
 };
-export type ActivityKind = "cash-advance" | "money-transfer" | "balance-transfer" | "unclassified" | "other-charge" | "other-credit" | "purchase" | "interest" | "fee" | "refund" | "cashback" | "payment" | "other" | "ambiguous";
+export type ActivityKind = ClassificationKind | "unclassified" | "ambiguous";
 
 /** Parents count once through their children. Missing/mismatched structures block review. */
 export function normalizeActivity(source: SyncSourceTransaction[]) {
@@ -65,6 +73,8 @@ export async function readCardActivity(transport: ActivityTransport, accountId: 
   if (!isIsoDate(from) || !isIsoDate(to) || from > to) throw new Error("Invalid activity window");
   const normalized = normalizeActivity(await transport.listTransactionsForSync({ accountId, startDate: from }));
   const futureDeltaMinor = minorAmountSchema.parse(Number(normalized.rows.filter((row) => row.accountId === accountId && row.date > to).reduce((sum, row) => sum + BigInt(row.amountMinor), BigInt(0))));
+  const nativeDate = bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const directBalanceAdjustmentMinor = transport.getSyncCapabilities().mode === "browser-api" ? minorAmountSchema.parse(Number(normalized.rows.filter((row) => row.accountId === accountId && row.date > (to < nativeDate ? to : nativeDate) && row.date <= (to > nativeDate ? to : nativeDate)).reduce((total, row) => total + BigInt(row.amountMinor) * BigInt(to < nativeDate ? -1 : 1), BigInt(0)))) : 0;
   const linksKnown = transport.canVerifyTransferLinks ? await transport.canVerifyTransferLinks({ accountId, sinceDate: from }) : transport.getSyncCapabilities().mode === "browser-api";
   const rows = normalized.rows.filter((row) => row.accountId === accountId && row.date >= from && row.date <= to).map((row) => linksKnown ? row : { ...row, transferKnown: false, fingerprint: JSON.stringify([row.fingerprint, "transfer-field-unknown"]) });
   const ids = [...new Set(rows.flatMap((row) => row.transferId ? [row.transferId] : []))];
@@ -82,28 +92,44 @@ export async function readCardActivity(transport: ActivityTransport, accountId: 
       }
     }
   }
-  return { accountId, from, to, rows, counterparts, futureDeltaMinor, issues, fetchedAt: new Date().toISOString(), signature: JSON.stringify([rows.map((r) => r.fingerprint), counterparts.map((r) => r.fingerprint), futureDeltaMinor, issues]) };
+  return { accountId, from, to, rows, counterparts, futureDeltaMinor, directBalanceAdjustmentMinor, issues, fetchedAt: new Date().toISOString(), signature: JSON.stringify([rows.map((r) => r.fingerprint), counterparts.map((r) => r.fingerprint), futureDeltaMinor, issues]) };
 }
 
 /** An incoming card-side transfer is a repayment; peer reads only enrich its details. */
-export function paymentEvidence(row: ActivityRow, snapshot: ActivitySnapshot) {
+export function paymentEvidence(row: ActivityRow, snapshot: ActivitySnapshot, workspace?: Workspace) {
+  if (isTrackingTransfer(row, snapshot, workspace) || workspace?.planLinks?.some((link) => link.transactionId === row.id && link.role === "conversion-credit")) return "not-payment" as const;
+  const configuredCard = workspace?.cards.find((card) => card.accountId === row.accountId);
+  const manual = workspace?.classifications.find((entry) => entry.transactionId === row.id && entry.fingerprint === row.fingerprint);
+  if (manual && manual.kind !== "payment") return "not-payment" as const;
+  if (!manual && configuredCard && recognizeActivity(row, configuredCard).kind === "plan-conversion") return "not-payment" as const;
   if (row.accountId !== snapshot.accountId || row.amountMinor <= 0 || !row.transferId) return "not-payment" as const;
   return row.cleared === true ? "confirmed" as const : "provisional" as const;
 }
 
 export function activityKind(row: ActivityRow, card: Card, workspace: Workspace, snapshot: ActivitySnapshot): ActivityKind {
-  if (row.accountId !== snapshot.accountId) return "other";
-  if (row.transferId && row.amountMinor > 0) return "payment";
   const manual = workspace.classifications.find((entry) => entry.cardId === card.id && entry.transactionId === row.id && entry.fingerprint === row.fingerprint);
+  if (manual) return manual.kind;
   const link = currentPlanLink(workspace, row);
-  if (link) return link.role === "refund" ? "refund" : link.role === "plan-fee" ? "fee" : link.role === "conversion-credit" ? "other-credit" : "other-charge";
-  if (manual) return manual.kind === "other" ? row.amountMinor < 0 ? "other-charge" : "other-credit" : manual.kind;
-  if (row.transferId) return "unclassified";
-  if (row.amountMinor < 0 && row.categoryId && row.categoryId === card.interestCategoryId) return "interest";
-  if (row.amountMinor < 0 && row.categoryId && row.categoryId === card.feeCategoryId) return "fee";
-  if (row.amountMinor > 0 && row.categoryId && row.categoryId === card.cashbackCategoryId) return "cashback";
-  if (!row.transferKnown && row.amountMinor !== 0) return "ambiguous";
-  if (row.amountMinor > 0) return "refund";
-  // Ordinary non-transfer charges default to purchases. Mappings and reviewed choices above win.
-  return row.amountMinor < 0 ? "purchase" : "other";
+  const cost = financingCostKind(row, card, workspace);
+  if (cost) return row.amountMinor > 0 ? cost === "interest" ? "interest-refund" : "fee-refund" : cost;
+  if (link) return link.role === "refund" ? "refund" : link.role === "conversion-credit" ? "plan-conversion" : link.role === "adjustment" || link.role === "principal-release" ? "plan-adjustment" : "plan-instalment";
+  // A changed saved conversion must not silently become a cash payment.
+  if (workspace.planLinks?.some((entry) => entry.transactionId === row.id && entry.role === "conversion-credit")) return "plan-conversion";
+  if (isTrackingTransfer(row, snapshot, workspace)) return row.amountMinor > 0 ? "plan-conversion" : "plan-instalment";
+  const suggestion = recognizeActivity(row, card);
+  if (row.transferId && row.amountMinor > 0) return suggestion.kind === "plan-conversion" ? "plan-conversion" : "payment";
+  return suggestion.kind;
+}
+
+export function classificationReason(row: ActivityRow, card: Card, workspace: Workspace, snapshot: ActivitySnapshot) {
+  const manual = workspace.classifications.find((entry) => entry.cardId === card.id && entry.transactionId === row.id && entry.fingerprint === row.fingerprint);
+  if (manual) return `Your choice · ${manual.reason}`;
+  if (currentPlanLink(workspace, row) || isTrackingTransfer(row, snapshot, workspace)) return "From linked plan activity";
+  const suggestion = recognizeActivity(row, card);
+  return `${suggestion.basis} · ${suggestion.reason}`;
+}
+
+/** Conversion offsets belong to their originating purchase, never an earlier statement's settlement. */
+export function isSettlementCredit(row: ActivityRow, card: Card, workspace: Workspace, snapshot: ActivitySnapshot) {
+  return row.amountMinor > 0 && !isTrackingTransfer(row, snapshot, workspace) && !workspace.planLinks?.some((link) => link.transactionId === row.id && link.role === "conversion-credit") && ["cashback", "refund", "other-credit", "interest-refund", "fee-refund", "dispute-credit", "adjustment"].includes(activityKind(row, card, workspace, snapshot));
 }

@@ -1,4 +1,5 @@
 "use client";
+import { HowToUse } from "./HowToUse";
 import { statementHealth } from "../lib/statementHealth";
 
 import { formatCardDate } from "../lib/displayDates";
@@ -19,7 +20,7 @@ import { getTransport } from "@/lib/actual";
 import { creditCardStore, EMPTY_WORKSPACE } from "../lib/memory";
 import { eligibleCardAccount } from "../lib/ledger";
 import { useCreditCardDirectory, useCreditCardCategories } from "../hooks/useCreditCardDirectory";
-import { useCreditCardActivities } from "../hooks/useCreditCardActivity";
+import { useCreditCardActivities, useCreditCardTracking } from "../hooks/useCreditCardActivity";
 import { CardEditor, StatementEditor } from "./CardEditors";
 import { ReviewText } from "./ReviewText";
 import { CardOverview } from "./CardOverview";
@@ -57,6 +58,13 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [reviewId, setReviewId] = useState<string | null>(null);
   const activityQueries = useCreditCardActivities(connection, workspace.cards, workspace.statements);
+  const trackingQueries = useCreditCardTracking(connection, workspace.plans, workspace.cards.map((entry) => bankToday(entry.bankTimeZone)).sort().at(-1) ?? bankToday("UTC"));
+  const sources = activityQueries.map((entry) => entry.data ? { ...entry.data, accounts: directory.data?.accounts,
+    trackingAccounts: trackingQueries.flatMap((query) => {
+      const data = query.data, balance = data && directory.data?.balances.get(data.accountId);
+      return data && !query.isFetching && !query.isError ? [{ accountId: data.accountId, rows: data.rows, counterparts: data.counterparts, issues: data.issues, to: data.to, signedBalanceMinor: balance ? asOfCardBalance(balance, data.futureDeltaMinor, connection.mode === "browser-api", data.directBalanceAdjustmentMinor).signedBalanceMinor : undefined }] : [];
+    }),
+  } : undefined);
   const [statementAction, setStatementAction] = useState<{ kind: "reset" | "delete"; statement: Statement } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -74,25 +82,25 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const card = workspace.cards.find((entry) => entry.id === selectedId);
   const bank = card ? latestStatement(workspace.statements.filter((entry) => entry.bankConfirmed), card.id) : undefined;
   const query = activityQueries[workspace.cards.findIndex((entry) => entry.id === selectedId)];
-  const snapshot = query?.data;
+  const snapshot = sources[workspace.cards.findIndex((entry) => entry.id === selectedId)];
   const accounts = directory.data?.accounts ?? [];
   const available = !refreshing && !refreshError && !directory.isFetching && !directory.isError && Boolean(directory.data) && classes.available && !classesRefreshing;
   const activityAvailable = available && Boolean(snapshot) && !query?.isFetching && !query?.isError;
   const eligible = available ? accounts.filter((account) => eligibleCardAccount(account, classes.maps)) : [];
   const unregistered = eligible.filter((account) => !workspace.cards.some((entry) => entry.accountId === account.id));
   const cardEligible = Boolean(card && eligible.some((account) => account.id === card.accountId));
-  const rawBalance = card && !refreshing && !refreshError && !directory.isError && !directory.isFetching ? directory.data?.balances.get(card.accountId) : undefined;
   // Current debt needs both the ledger balance and its future-entry adjustment.
   // Hide unavailable pairs consistently in the portfolio, card and projection anchors.
   const balances = new Map(workspace.cards.flatMap((entry, index) => {
     const source = activityQueries[index];
     const live = directory.data?.balances.get(entry.accountId);
-    return available && live && source?.data && !source.isFetching && !source.isError && !source.data.issues.length
-      ? [[entry.accountId, asOfCardBalance(live, source.data.futureDeltaMinor)] as const] : [];
+    const cutoffSafe = connection.mode === "browser-api" && bankToday(entry.bankTimeZone) === bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    return available && live && (cutoffSafe || source?.data && !source.isFetching && !source.isError && !source.data.issues.length)
+      ? [[entry.accountId, asOfCardBalance(live, source?.data?.futureDeltaMinor, connection.mode === "browser-api", source?.data?.directBalanceAdjustmentMinor)] as const] : [];
   }));
   const balance = card ? balances.get(card.accountId) : undefined;
   const today = card ? bankToday(card.bankTimeZone) : bankToday("UTC");
-  const drafts = card && snapshot && balance && activityAvailable ? statementDrafts(card, today, undefined, snapshot, rawBalance!.signedBalanceMinor, workspace.statements).filter((draft) => !workspace.statements.some((entry) => entry.cardId === card.id && !(entry.closingDate < draft.periodStart || entry.periodStart > draft.closingDate))) : [];
+  const drafts = card && snapshot && balance && activityAvailable ? statementDrafts(card, today, undefined, snapshot, balance.rawSignedBalanceMinor, workspace.statements).filter((draft) => !workspace.statements.some((entry) => entry.cardId === card.id && !(entry.closingDate < draft.periodStart || entry.periodStart > draft.closingDate))) : [];
   const statementWorkspace = { ...workspace, statements: [...workspace.statements, ...previewStatements(card?.id ?? "", drafts)] };
   const statuses = card && snapshot && activityAvailable ? settlements(card, statementWorkspace, snapshot, today) : [];
   const nextPayment = bank ? statuses.find((entry) => entry.statementId === bank.id) : undefined;
@@ -112,7 +120,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
     const source = activityQueries[index]?.data;
     const live = directory.data?.balances.get(entry.accountId);
     const confirmed = workspace.statements.filter((statement) => statement.cardId === entry.id);
-    const estimates = available && source && live && !activityQueries[index]?.isFetching && !activityQueries[index]?.isError ? statementDrafts(entry, bankToday(entry.bankTimeZone), undefined, source, live.signedBalanceMinor, workspace.statements).filter((draft) => !confirmed.some((statement) => !(statement.closingDate < draft.periodStart || statement.periodStart > draft.closingDate))) : [];
+    const estimates = available && source && live && !activityQueries[index]?.isFetching && !activityQueries[index]?.isError ? statementDrafts(entry, bankToday(entry.bankTimeZone), undefined, source, asOfCardBalance(live, source.futureDeltaMinor, connection.mode === "browser-api").rawSignedBalanceMinor, workspace.statements).filter((draft) => !confirmed.some((statement) => !(statement.closingDate < draft.periodStart || statement.periodStart > draft.closingDate))) : [];
     return [...confirmed, ...previewStatements(entry.id, estimates)];
   });
   const openStatement = (statement?: Statement, draft?: StatementDraft) => { setEditingStatement(statement); setSuggested(draft); setEditor("statement"); };
@@ -122,12 +130,13 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
     refreshingLock.current = true; setRefreshing(true); setRefreshError(null);
     try {
       await getTransport(connection).sync();
-      const results = await Promise.allSettled([directory.refetch(), queryClient.refetchQueries({ queryKey: classKey, exact: true }, { throwOnError: true }), ...activityQueries.map((entry) => entry.refetch()), ...(categories.data ? [categories.refetch()] : [])]);
+      const results = await Promise.allSettled([directory.refetch(), queryClient.refetchQueries({ queryKey: classKey, exact: true }, { throwOnError: true }), ...activityQueries.map((entry) => entry.refetch()), ...trackingQueries.map((entry) => entry.refetch()), ...(categories.data ? [categories.refetch()] : [])]);
       if (results.some((result) => result.status === "rejected" || (result.value && "isError" in result.value && result.value.isError))) setRefreshError("Actual data could not be refreshed completely. Retry Refresh; your bank facts and drafts are retained.");
     } catch { setRefreshError("Actual sync failed. Retry Refresh; your bank facts and drafts are retained."); }
     finally { refreshingLock.current = false; setRefreshing(false); }
   }
   const actions = <>
+    <HowToUse onSetup={() => setEditor(card ? "settings" : "add")} onStatements={card ? () => { setReviewId(null); setTab("statements"); } : undefined} onClassifications={card ? () => { setReviewId(null); setShowActivity(true); setTab("debt"); } : undefined} onPlans={card ? () => { setReviewId(null); setTab("overview"); requestAnimationFrame(() => document.getElementById("card-plans")?.scrollIntoView({ block: "center" })); } : undefined} />
     {!card && workspace.cards.length > 0 && <PortfolioSort value={portfolioSort} onChange={setPortfolioSort} />}
     <span role="status" title={sourceText} className="max-w-64 truncate self-center text-xs text-muted-foreground">{sourceText}</span>
     <Tooltip.Root><Tooltip.Trigger render={<Button variant="outline" size="icon-sm" aria-label="Undo" focusableWhenDisabled disabled={!canUndo || editor !== null || reviewId !== null || paymentId !== null} onClick={() => creditCardStore.getState().undo(budget)} />}><Undo2 className="size-3.5" /></Tooltip.Trigger><Tooltip.Portal><Tooltip.Positioner side="bottom" sideOffset={6} className="z-[80]"><Tooltip.Popup role="tooltip" className="rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md">Undo last workspace change</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal></Tooltip.Root>
@@ -149,7 +158,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setDismissedFeedback({ notice, workspace }), 6000); return () => clearTimeout(timer); }, [notice, workspace]);
   const statusDisplay = <div className="flex min-w-0 items-center gap-3 whitespace-nowrap text-xs">
     {notice && (notice !== dismissedFeedback?.notice || workspace !== dismissedFeedback.workspace) && <p role="status" title={`Latest workspace action: ${notice}`} className="flex max-w-64 items-center gap-1.5 truncate"><CheckCircle2 className="size-3.5 shrink-0 text-green-700 dark:text-green-400" aria-hidden /><span className="truncate">{notice}</span></p>}
-    {(tab !== "statements" || healthIssues > 0 || verificationHealth.unavailable > 0) && workspace.statements.some((entry) => entry.bankConfirmed && (!card || entry.cardId === card.id)) && <div className="flex items-center gap-1">{card && healthIssues > 0 ? <Button size="xs" variant="link" className="h-auto p-0 text-xs" onClick={() => { setAttentionOnly((request) => request + 1); setTab("statements"); }}> {healthIssues} {healthIssues === 1 ? "statement needs" : "statements need"} review</Button> : null}<ReviewText className="w-auto text-muted-foreground" text={card && healthIssues > 0 ? "Details" : healthIssues ? `${healthIssues} ${healthIssues === 1 ? "statement needs" : "statements need"} review` : verificationHealth.unavailable ? "Evidence unavailable" : "Bank evidence verified"} label="saved statement health" detail={healthDetail} /></div>}
+    {(tab !== "statements" || healthIssues > 0 || verificationHealth.unavailable > 0) && workspace.statements.some((entry) => entry.bankConfirmed && (!card || entry.cardId === card.id)) && <div className="flex items-center gap-1">{card && healthIssues > 0 ? <Button size="xs" variant="link" className="h-auto p-0 text-xs" onClick={() => { setAttentionOnly((request) => request + 1); setTab("statements"); }}> {healthIssues} {healthIssues === 1 ? "statement needs" : "statements need"} review</Button> : null}<ReviewText className="w-auto text-muted-foreground" text={card && healthIssues > 0 ? "Details" : healthIssues ? `${healthIssues} ${healthIssues === 1 ? "statement needs" : "statements need"} review` : verificationHealth.unavailable ? "Evidence unavailable" : "Statements verified"} label="saved statement health" detail={healthDetail} /></div>}
     {confirmationCount > 0 && <span className="text-muted-foreground">{confirmationCount} awaiting confirmation</span>}
   </div>;
   function applyStatementAction() {
@@ -175,8 +184,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
         {snapshot?.issues.length ? <p className="rounded-xl border border-border p-4 text-xs">Some Actual transaction structures are incomplete. Review is required before confirming settlement.</p> : null}
           <TabsContent value="overview" className="space-y-0">
             <CardOverview key={card.id} budget={budget} card={card} bank={bank} payment={nextPayment} statuses={statuses} balance={balance} workspace={workspace} snapshot={snapshot} today={today} available={activityAvailable} awaitingStatement={tableStatements.find((entry) => !entry.bankConfirmed && (!bank || entry.closingDate > bank.closingDate))} onConfirmDraft={() => openStatement(undefined, drafts[0])} onStatement={() => openStatement(bank, bank ? undefined : drafts[0])} onSettings={() => setEditor("settings")} onPayments={() => setTab("payments")} onReview={() => bank && setReviewId(bank.id)} onStatements={showStatement} statements={tableStatements} />
-            {(drafts.length > 0 || workspace.statements.some((entry) => entry.cardId === card.id && (entry.verification === "needs-review" || (entry.reviewedSnapshot && snapshot && statementReview(entry, workspace, snapshot).stale))) || (bank && snapshot && !bank.openingAnchor && !statementReview(bank, workspace, snapshot).canVerify)) && <section className="rounded-xl border border-border bg-muted/20 p-3 space-y-2"><h2 className="flex items-center gap-2 font-semibold"><AlertCircle className="size-4 text-muted-foreground" aria-hidden="true" />Needs attention</h2>
-              {drafts.length > 0 && <div className="flex items-center justify-between"><p className="text-xs">{drafts.length} automatically prepared statements await bank confirmation.</p><Button size="sm" variant="outline" onClick={() => setTab("statements")}>Review drafts</Button></div>}
+            {(workspace.statements.some((entry) => entry.cardId === card.id && (entry.verification === "needs-review" || (entry.reviewedSnapshot && snapshot && statementReview(entry, workspace, snapshot).stale))) || (bank && snapshot && !bank.openingAnchor && !statementReview(bank, workspace, snapshot).canVerify)) && <section className="mx-5 mb-5 space-y-2 rounded-xl border bg-background p-4"><h2 className="flex items-center gap-2 font-semibold"><AlertCircle className="size-4 text-muted-foreground" aria-hidden="true" />Needs attention</h2>
               {bank && snapshot && !bank.openingAnchor && bank.verification !== "needs-review" && !statementReview(bank, workspace, snapshot).stale && !statementReview(bank, workspace, snapshot).canVerify && <div className="flex items-center justify-between"><p className="text-xs">Latest statement membership or balance needs review.</p><Button size="sm" variant="outline" onClick={() => { setReviewId(bank.id); setTab("statements"); }}>Review latest statement</Button></div>}
               {workspace.statements.filter((entry) => entry.cardId === card.id && (entry.verification === "needs-review" || (entry.reviewedSnapshot && snapshot && statementReview(entry, workspace, snapshot).stale))).map((entry) => <div className="flex items-center justify-between" key={entry.id}><p className="text-xs">Statement {formatCardDate(entry.closingDate)} needs review.</p><Button size="sm" variant="outline" onClick={() => { setReviewId(entry.id); setTab("statements"); }}>Review statement</Button></div>)}
             </section>}
@@ -187,12 +195,12 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
           <TabsContent value="payments" className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <PaymentsList accounts={accounts} workspace={statementWorkspace} statuses={statuses} today={today} card={card} payments={tablePayments} snapshot={snapshot} available={activityAvailable} onStatements={showStatement} onDetails={setPaymentId} />
           </TabsContent>
-          <TabsContent value="debt" className="space-y-3 p-4">
-            <DebtHistory key={card.id} card={card} workspace={statementWorkspace} snapshot={snapshot} today={today} debtMinor={balance?.debtMinor} available={activityAvailable} onSettings={() => setEditor("settings")} />
-            <section className="overflow-hidden rounded-lg border border-border"><div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2"><h2 className="text-sm font-semibold">Activity classification</h2><Button variant="outline" size="sm" aria-expanded={showActivity} aria-controls={activityPanelId} onClick={() => setShowActivity(!showActivity)}>{showActivity ? "Hide activity classification" : "Review spending, refunds and interest classification"}</Button></div>{showActivity && snapshot && <div id={activityPanelId} className="p-3"><ActivityTable key={card.id} budget={budget} card={card} workspace={workspace} snapshot={snapshot} available={activityAvailable} onMappings={() => setEditor("settings")} /></div>}</section>
+          <TabsContent value="debt" className="space-y-4 bg-muted/15 p-5">
+            <DebtHistory key={card.id} card={card} workspace={statementWorkspace} snapshot={snapshot} today={today} debtMinor={balance?.debtMinor} signedBalanceMinor={balance?.signedBalanceMinor} available={activityAvailable} onStatement={showStatement} onSettings={() => setEditor("settings")} />
+            <section className="overflow-hidden rounded-xl border bg-background"><div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2"><h2 className="text-sm font-semibold">Activity classification</h2><Button variant="outline" size="sm" aria-expanded={showActivity} aria-controls={activityPanelId} onClick={() => setShowActivity(!showActivity)}>{showActivity ? "Hide activity classification" : "Review classifications"}</Button></div>{showActivity && snapshot && <div id={activityPanelId} className="p-3"><ActivityTable key={card.id} budget={budget} card={card} workspace={workspace} snapshot={snapshot} available={activityAvailable} onMappings={() => setEditor("settings")} /></div>}</section>
           </TabsContent>
       </> : workspace.cards.length === 0 ? <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"><div className="flex size-11 items-center justify-center rounded-full border border-border bg-muted/50"><CardIcon className="size-5 text-muted-foreground" aria-hidden="true" /></div><div><h2 className="text-base font-semibold">No credit cards yet</h2><p className="mt-1 max-w-sm text-sm text-muted-foreground">Add your first card to track statements and repayments from your Actual account.</p></div><Button size="sm" onClick={() => setEditor("add")} disabled={!available || unregistered.length === 0}><Plus className="size-4" aria-hidden="true" />Add card</Button>{available && unregistered.length === 0 && <p className="max-w-sm text-xs text-muted-foreground">Classify an on-budget account as Credit Card in <Link className="underline underline-offset-2" href="/accounts">Accounts</Link> to add it here.</p>}</div> : <>
-        <PortfolioOverview sort={portfolioSort} workspace={workspace} balances={balances} sources={activityQueries.map((query) => available && !query.isFetching && !query.isError ? query.data : undefined)} trendStatements={trendStatements} onOpen={selectCard} onReview={(id) => { selectCard(id); setAttentionOnly(1); setTab("statements"); }} />
+        <PortfolioOverview sort={portfolioSort} workspace={workspace} balances={balances} sources={sources.map((source, index) => available && !activityQueries[index]?.isFetching && !activityQueries[index]?.isError ? source : undefined)} trendStatements={trendStatements} onOpen={selectCard} onReview={(id) => { selectCard(id); setAttentionOnly(1); setTab("statements"); }} />
       </>}
     </div>}
     {statementAction && <Dialog open onOpenChange={(open) => { if (!open) setStatementAction(null); }}><DialogContent><DialogTitle>{statementAction.kind === "reset" ? "Reset transaction review" : "Delete saved statement"}</DialogTitle><DialogDescription>{formatCardDate(statementAction.statement.closingDate)} · {statementAction.kind === "reset" ? "Clear saved matching decisions and posting-date overrides. Bank values and activity classifications stay saved. Released transactions become available to other statements; dependent statements need review." : "Remove saved bank values and review decisions, release transactions and reopen dependent statements. An automatic estimate may reappear. If this is the opening statement, its tracking date stays fixed until you restore it or change Settings."} Actual transactions are unchanged. You can Undo this action.</DialogDescription>{actionError && <p role="alert" className="text-xs text-destructive">{actionError}</p>}<div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setStatementAction(null)}>Cancel</Button><Button onClick={applyStatementAction}>{statementAction.kind === "reset" ? "Reset review" : "Delete statement"}</Button></div></DialogContent></Dialog>}

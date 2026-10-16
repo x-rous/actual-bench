@@ -1,42 +1,49 @@
 "use client";
-import { useId, useMemo, useRef, useState } from "react";
-import { Link2, ShieldCheck, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { DateInput } from "@/components/ui/date-input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { z } from "zod";
-import { useDiscardChanges } from "../hooks/useDiscardChanges";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { generateId } from "@/lib/uuid";
 import { formatAmount, minorToMajorText, parseMajorToMinor } from "@/features/assets-debt/lib/money";
-import { addMonths, parseIsoDate } from "@/lib/financial-models/calendar/dates";
+import { addMonths } from "@/lib/financial-models/calendar/dates";
 import { CARD_DATE_FORMAT, formatCardDate } from "../lib/displayDates";
-import { cycleDates } from "../lib/cycles";
+import { bankToday } from "../lib/cycles";
 import { creditCardStore } from "../lib/memory";
 import { repaymentPlanSchema, type Card, type PlanLink, type RepaymentPlan, type Workspace } from "../lib/models";
+import { financingCostKind } from "../lib/planTracking";
 import type { ActivityRow, ActivitySnapshot } from "../lib/activity";
 import { sumMinor } from "../lib/statements";
-import { arrangementLabels, planProjection, roleLabels } from "../lib/plans";
-import { Status } from "./WorkspaceVisuals";
+import { planForTransaction, planProjection, planSchedule, planSources } from "../lib/plans";
+import { useDiscardChanges } from "../hooks/useDiscardChanges";
+import { PlanTransactions } from "./PlanTransactions";
+import { PlanRefundReview } from "./PlanRefundReview";
 
-function minor(value: string, optional = false) { const result = parseMajorToMinor(value, 2); if (!result.ok || (!optional && result.value === null)) throw new Error(result.ok ? "Enter required amounts" : result.message); return result.value; }
-function suggestedFirstDue(card: Card, date: string) { const day = card.closingDay ?? parseIsoDate(date).day; const close = addMonths(date, 0, day); return cycleDates(card, close >= date ? close : addMonths(close, 1, day)).dueDate; }
-export function PlanEditor({ budget, card, row, plan, workspace, snapshot, available, onClose }: { budget: string; card: Card; row: ActivityRow; plan?: RepaymentPlan; workspace: Workspace; snapshot: ActivitySnapshot; available: boolean; onClose: () => void }) {
+function minor(value: string, optional = false) { const parsed = parseMajorToMinor(value, 2); if (!parsed.ok || !optional && parsed.value === null) throw new Error(parsed.ok ? "Enter the required amounts" : parsed.message); return parsed.value; }
+export function PlanEditor({ budget, card, row, plan, workspace, snapshot, available, onClose, focusTransactionId, initialTab = "terms" }: { budget: string; card: Card; row?: ActivityRow; plan?: RepaymentPlan; workspace: Workspace; snapshot: ActivitySnapshot; available: boolean; onClose: () => void; focusTransactionId?: string; initialTab?: "terms" | "transactions" }) {
   const prefix = useId();
-  const root = useRef<HTMLDivElement>(null);
-  const [acceptFinal, setAcceptFinal] = useState(false);
-  const [initial] = useState(() => ({ cardRevision: creditCardStore.getState().workspaces[budget]?.cards.find((entry) => entry.id === card.id)?.revision ?? card.revision, planId: plan?.id ?? generateId(), planRevision: plan?.revision ?? 1, fingerprint: plan?.fingerprint ?? row.fingerprint }));
-  const [sourceAccepted, setSourceAccepted] = useState(!plan || plan.fingerprint === row.fingerprint);
+  const [initial] = useState(() => ({ id: plan?.id ?? generateId(), revision: plan?.revision ?? 1, cardRevision: card.revision }));
+  const [expectedCardRevision, setExpectedCardRevision] = useState(initial.cardRevision);
+  const [tab, setTab] = useState(initialTab);
+  const [mode, setMode] = useState<"new" | "existing">(plan?.sourceMode ?? (plan?.tracking?.opening || !plan && !row ? "existing" : "new"));
+  const [sources, setSources] = useState(plan ? planSources(plan) : row ? [{ transactionId: row.id, fingerprint: row.fingerprint }] : []);
+  const [reference, setReference] = useState(plan?.reference ?? "");
+  const [amount, setAmount] = useState(minorToMajorText(plan?.amountMinor ?? (row ? -row.amountMinor : null), 2));
+  const [start, setStart] = useState(plan?.startDate ?? row?.date ?? bankToday(card.bankTimeZone));
+  const [recording, setRecording] = useState<"tracking" | "instalments" | "retained">(plan?.recording ?? (plan?.tracking ? "tracking" : "instalments"));
+  const [balanceOnly, setBalanceOnly] = useState(plan?.balanceOnly ?? (!row && !plan));
+  const [trackingId, setTrackingId] = useState(plan?.tracking?.accountId ?? "");
+  const [tag, setTag] = useState(plan?.tracking?.tag ?? "");
+  const [openingDate, setOpeningDate] = useState(plan?.tracking?.opening?.date ?? plan?.opening?.date ?? "");
+  const [openingPrincipal, setOpeningPrincipal] = useState(minorToMajorText(plan?.tracking?.opening?.principalMinor ?? plan?.opening?.principalMinor ?? null, 2));
   const [arrangement, setArrangement] = useState<RepaymentPlan["arrangement"]>(plan?.arrangement ?? "fixed");
-  const [status, setStatus] = useState<RepaymentPlan["status"]>(plan?.status ?? "active");
-  const [amount, setAmount] = useState(minorToMajorText(plan?.amountMinor ?? -row.amountMinor, 2));
-  const [start, setStart] = useState(plan?.startDate ?? row.date);
-  const [firstDue, setFirstDue] = useState(plan?.firstDueDate ?? suggestedFirstDue(card, row.date));
   const [months, setMonths] = useState(String(plan?.months ?? 6));
-  const [monthly, setMonthly] = useState(minorToMajorText(plan?.monthlyMinor ?? Math.floor(-row.amountMinor / 6), 2));
+  const [monthly, setMonthly] = useState(minorToMajorText(plan?.monthlyMinor ?? (row ? Math.floor(-row.amountMinor / 6) : null), 2));
+  const [firstDue, setFirstDue] = useState(plan?.firstDueDate ?? addMonths(start, 1, card.dueRule?.kind === "day-of-month" ? card.dueRule.day : 2));
   const [apr, setApr] = useState(minorToMajorText(plan?.aprBps ?? 0, 2));
   const [upfront, setUpfront] = useState(minorToMajorText(plan?.upfrontFeeMinor ?? 0, 2));
   const [fee, setFee] = useState(minorToMajorText(plan?.monthlyFeeMinor ?? 0, 2));
@@ -44,59 +51,67 @@ export function PlanEditor({ budget, card, row, plan, workspace, snapshot, avail
   const [minimumPercent, setMinimumPercent] = useState(minorToMajorText(plan?.minimumPercentBps ?? card.minimumPercentBps ?? 500, 2));
   const [minimumFloor, setMinimumFloor] = useState(minorToMajorText(plan?.minimumFloorMinor ?? card.minimumFloorMinor ?? 10000, 2));
   const [expiry, setExpiry] = useState(plan?.expiryDate ?? "");
-  const [afterApr, setAfterApr] = useState(minorToMajorText(plan?.afterAprBps ?? null, 2));
   const [conditions, setConditions] = useState(plan?.conditions ?? "");
-  const [links, setLinks] = useState<PlanLink[]>(workspace.planLinks?.filter((entry) => entry.planId === plan?.id) ?? []);
-  const [linking, setLinking] = useState(false);
-  const [postingId, setPostingId] = useState("");
-  const [role, setRole] = useState<PlanLink["role"]>("instalment-billed");
-  const [instalment, setInstalment] = useState("1");
+  const [status, setStatus] = useState<RepaymentPlan["status"]>(plan?.status ?? "active");
+  const [refundReview, setRefundReview] = useState(plan?.refundReview);
+  const [refundDirty, setRefundDirty] = useState(false);
+  const [links, setLinks] = useState<PlanLink[]>(workspace.planLinks?.filter((link) => link.planId === plan?.id) ?? []);
   const [error, setError] = useState("");
-  const parsed = useMemo(() => { try { return { error: "", value: repaymentPlanSchema.parse({ id: initial.planId, cardId: card.id, transactionId: row.id, fingerprint: sourceAccepted ? row.fingerprint : initial.fingerprint, revision: initial.planRevision, arrangement, status, amountMinor: minor(amount), startDate: start, firstDueDate: firstDue, months: Number(months), monthlyMinor: minor(monthly, true), aprBps: minor(apr), upfrontFeeMinor: minor(upfront), monthlyFeeMinor: minor(fee), includesCosts, minimumPercentBps: minor(minimumPercent, true), minimumFloorMinor: minor(minimumFloor, true), expiryDate: expiry || null, afterAprBps: minor(afterApr, true), conditions }) }; } catch (cause) { return { value: null, error: cause instanceof z.ZodError ? cause.issues.map((issue) => `${issue.path.join(" ")}: ${issue.message}`).join(". ") : cause instanceof Error ? cause.message : "Review the terms" }; } }, [initial, sourceAccepted, card.id, row.id, row.fingerprint, arrangement, status, amount, start, firstDue, months, monthly, apr, upfront, fee, includesCosts, minimumPercent, minimumFloor, expiry, afterApr, conditions]);
+  const parsed = (() => {
+    try {
+      const opening = openingDate || openingPrincipal ? { date: openingDate, principalMinor: minor(openingPrincipal) } : undefined;
+      return { value: repaymentPlanSchema.parse({ id: initial.id, revision: initial.revision, cardId: card.id, transactionId: sources[0]?.transactionId ?? null, fingerprint: sources[0]?.fingerprint ?? null, sourceTransactions: sources, sourceMode: mode, reference, recording, balanceOnly, arrangement, amountMinor: minor(amount || (mode === "existing" && balanceOnly ? openingPrincipal : "")), startDate: start, firstDueDate: firstDue || start, months: Number(months), monthlyMinor: minor(monthly, true), aprBps: minor(apr), upfrontFeeMinor: minor(upfront), monthlyFeeMinor: minor(fee), includesCosts, minimumPercentBps: minor(minimumPercent, true), minimumFloorMinor: minor(minimumFloor, true), expiryDate: expiry || null, afterAprBps: plan?.afterAprBps ?? null, conditions, status, opening: mode === "existing" ? opening : undefined, tracking: recording === "tracking" && trackingId ? { accountId: trackingId, tag, opening: mode === "existing" ? opening : undefined } : undefined, refundReview: links.some((link) => link.role === "refund") ? refundReview : undefined }), error: "" };
+    } catch (cause) { return { value: null, error: cause instanceof Error ? cause.message : "Review the plan details" }; }
+  })();
   const value = parsed.value;
-  const signature = JSON.stringify({ value, amount, start, firstDue, months, monthly, apr, upfront, fee, includesCosts, minimumPercent, minimumFloor, expiry, afterApr, conditions, links, status });
+  const projection = value ? planProjection(value, card) : null;
+  const signature = JSON.stringify({ sources, mode, reference, amount, start, recording, balanceOnly, trackingId, tag, openingDate, openingPrincipal, arrangement, months, monthly, firstDue, apr, upfront, fee, includesCosts, minimumPercent, minimumFloor, expiry, conditions, status, refundReview, links });
   const [initialSignature] = useState(signature);
-  const { requestClose, discardDialog } = useDiscardChanges(signature !== initialSignature, onClose);
-  const projection = useMemo(() => value ? planProjection(value, card) : null, [value, card]);
-  const candidates = snapshot.rows.filter((entry) => (["conversion-credit", "refund"].includes(role) ? entry.amountMinor > 0 : entry.amountMinor < 0) && entry.date >= start && entry.id !== row.id && !entry.transferId && !links.some((link) => link.transactionId === entry.id) && !workspace.plans?.some((entryPlan) => entryPlan.transactionId === entry.id) && !workspace.planLinks?.some((link) => link.planId !== initial.planId && link.transactionId === entry.id));
-  const observed = sumMinor(links.flatMap((link) => { const posting = snapshot.rows.find((entry) => entry.id === link.transactionId && entry.fingerprint === link.fingerprint); return posting && ["instalment-billed", "plan-fee"].includes(link.role) ? [-posting.amountMinor] : []; }));
+  const { requestClose, discardDialog } = useDiscardChanges(signature !== initialSignature || refundDirty, onClose);
+  const candidates = snapshot.rows.filter((entry) => entry.amountMinor < 0 && !financingCostKind(entry, card, workspace) && (!planForTransaction(workspace, entry.id) || planForTransaction(workspace, entry.id)?.id === plan?.id));
+  function chooseSource(entry: ActivityRow, checked: boolean) {
+    const next = checked ? [...sources.filter((source) => source.transactionId !== entry.id), { transactionId: entry.id, fingerprint: entry.fingerprint }] : sources.filter((source) => source.transactionId !== entry.id);
+    setSources(next);
+    if (next.length) setAmount(minorToMajorText(sumMinor(next.map((source) => -(snapshot.rows.find((entry) => entry.id === source.transactionId)?.amountMinor ?? 0))), 2));
+  }
   function save() {
     try {
-      if (root.current?.querySelector('[aria-invalid="true"]')) throw new Error("Correct the invalid date before saving");
-      if (!available) throw new Error("Refresh Actual activity before saving this plan");
-      if (!sourceAccepted) throw new Error("Review and accept the changed original transaction before saving");
+      if (!available) throw new Error("Refresh Actual activity before saving");
       if (!value) throw new Error(parsed.error);
-      if (["fixed", "minimum-deadline"].includes(value.arrangement) && !projection?.calculated) throw new Error(projection?.reason ?? "Review the calculation");
-      if (projection?.calculated && projection.unusualFinal && !acceptFinal) throw new Error("Confirm the different final amount or correct the repayment terms");
-      creditCardStore.getState().savePlan(budget, card.id, initial.cardRevision, snapshot, value, links);
+      if (refundDirty) throw new Error("Confirm the changed refund treatment before saving");
+      if (recording === "tracking" && !trackingId) throw new Error("Choose the off-budget plan account");
+      creditCardStore.getState().savePlan(budget, card.id, expectedCardRevision, snapshot, value, links);
       onClose();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save plan"); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save the plan"); }
   }
-  const field = (label: string, control: React.ReactNode) => <div className="space-y-1.5"><Label htmlFor={`${prefix}-${label}`}>{label}</Label>{control}</div>;
-  const input = (label: string, text: string, change: (value: string) => void, type = "text") => field(label, <Input id={`${prefix}-${label}`} value={text} type={type} inputMode={type === "text" && label !== "Conditions" ? "decimal" : undefined} onChange={(event) => change(event.target.value)} />);
-  const date = (label: string, text: string, change: (value: string) => void) => field(label, <DateInput id={`${prefix}-${label}`} value={text} onValueChange={change} dateFormat={CARD_DATE_FORMAT} />);
-  return <><Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}><DialogContent ref={root} className="flex max-h-[92dvh] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-5xl">
-    <DialogHeader className="border-b p-5"><DialogTitle>{plan ? "Edit repayment plan" : "Add instalment plan"}</DialogTitle><DialogDescription>Describes how this debt is repaid. It doesn’t add debt or create transactions in Actual.</DialogDescription></DialogHeader>
-    <div className="grid min-h-0 overflow-auto lg:grid-cols-[3fr_2fr]">
-      <div className="space-y-5 p-5"><div className="rounded-xl border p-3"><p className="font-medium">{row.label}</p><p className="text-xs text-muted-foreground">{formatCardDate(row.date)} · {card.nickname}</p><p className="mt-1 font-semibold tabular-nums text-destructive">{formatAmount(row.amountMinor, 2)}</p></div>
-        {plan && plan.fingerprint !== row.fingerprint && <div className="rounded-xl border border-chart-5/30 bg-chart-5/5 p-3 text-xs"><p>The original Actual transaction changed. Review its current amount and classification before accepting this evidence.</p><Button variant="outline" size="xs" className="mt-2" aria-pressed={sourceAccepted} onClick={() => setSourceAccepted(true)}>{sourceAccepted ? "Current source accepted" : "Accept current source"}</Button></div>}
-        <div><Label>Arrangement</Label><div role="group" aria-label="Repayment arrangement" className="mt-2 flex rounded-lg bg-muted p-1">{(["fixed", "minimum-deadline", "other"] as const).map((choice) => <Button key={choice} className="flex-1" size="sm" variant={choice === arrangement || (choice === "other" && !["fixed", "minimum-deadline"].includes(arrangement)) ? "secondary" : "ghost"} aria-pressed={choice === arrangement || choice === "other" && !["fixed", "minimum-deadline"].includes(arrangement)} onClick={() => setArrangement(choice === "other" ? "promotional" : choice)}>{choice === "other" ? "Other terms" : arrangementLabels[choice]}</Button>)}</div></div>
-        <div className="grid gap-4 sm:grid-cols-2">{input("Amount converted", amount, setAmount)}{date("Plan start date", start, setStart)}{date("First instalment due", firstDue, setFirstDue)}{input("Number of instalments", months, setMonths, "number")}</div>
-        {arrangement === "fixed" && input("Monthly instalment", monthly, setMonthly)}
-        {arrangement === "minimum-deadline" && <><div className="grid gap-4 sm:grid-cols-2">{input("Monthly minimum %", minimumPercent, setMinimumPercent)}{input("Monthly minimum floor", minimumFloor, setMinimumFloor)}</div><p className="text-xs text-muted-foreground">The final instalment clears the expected remainder. This is a plan estimate, not the card’s bank-confirmed minimum.</p></>}
-        {["fixed", "minimum-deadline"].includes(arrangement) ? <><div className="grid gap-4 sm:grid-cols-2">{input("Interest rate % per year", apr, setApr)}{input("Upfront fee", upfront, setUpfront)}{input("Monthly plan fee", fee, setFee)}</div>{arrangement === "fixed" && <fieldset className="rounded-xl border bg-muted/20 p-3"><legend className="px-1 text-sm">Does the monthly amount already include interest and fees?</legend><div className="flex flex-wrap gap-2">{[[true, "Yes, included"], [false, "No, billed separately"]].map(([flag, label]) => <Button key={String(flag)} variant={includesCosts === flag ? "secondary" : "outline"} size="sm" className={includesCosts === flag ? "ring-1 ring-foreground" : undefined} aria-pressed={includesCosts === flag} onClick={() => setIncludesCosts(flag as boolean)}>{label}</Button>)}</div><p className="mt-2 text-xs text-muted-foreground">Upfront fee is separate on the first due date. Prevents adding monthly costs twice.</p></fieldset>}{arrangement === "minimum-deadline" && <p className="text-xs text-muted-foreground">Plan fees are separate from this minimum estimate.</p>}</> : <><Status tone="attention">Not calculated</Status><div className="grid gap-4 sm:grid-cols-2">{field("Recorded arrangement", <Select id={`${prefix}-Recorded arrangement`} value={arrangement} onValueChange={(next) => setArrangement(next as RepaymentPlan["arrangement"])} options={["promotional", "deferred", "revolving"].map((item) => ({ value: item, label: arrangementLabels[item as keyof typeof arrangementLabels] }))} />)}{input("Interest rate % per year", apr, setApr)}{date("Expiry date", expiry, setExpiry)}{input("Rate after expiry %", afterApr, setAfterApr)}</div>{input("Conditions", conditions, setConditions)}<p className="text-xs text-muted-foreground">Recorded only. Bench does not calculate promotional, deferred or revolving arrangements.</p></>}
-        {plan && field("Plan status", <Select id={`${prefix}-Plan status`} value={status} onValueChange={(next) => setStatus(next as RepaymentPlan["status"])} options={["active", "completed", "cancelled"].map((item) => ({ value: item, label: item[0].toUpperCase() + item.slice(1) }))} />)}
-        {status !== "active" && <p className="text-xs text-muted-foreground">Saving confirms this plan is {status}. No Actual transaction or payment is created.</p>}
-      </div>
-      <aside className="space-y-5 border-t bg-muted/20 p-5 lg:border-t-0 lg:border-l"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cost of this plan</h3>{projection?.calculated ? <><dl className="space-y-2 text-sm">{[["Principal", projection.principalMinor], [value?.arrangement === "fixed" && value.includesCosts ? "Included finance cost" : "Interest (estimated)", projection.interestMinor], ["Upfront fee", projection.upfrontFeeMinor], ["Monthly fees", projection.monthlyFeesMinor], ["Expected total", projection.totalMinor]].map(([label, amount]) => <div key={label} className="flex justify-between gap-4"><dt>{label}</dt><dd className="font-medium tabular-nums">{formatAmount(amount as number, 2)}</dd></div>)}</dl><p className="text-xs text-muted-foreground">{projection.reason}</p>{projection.warning && <div className="rounded-xl border border-amber-400/40 bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/20 dark:text-amber-200"><p>{projection.warning}</p>{projection.unusualFinal && <label className="mt-2 flex items-center gap-2"><Checkbox checked={acceptFinal} onCheckedChange={setAcceptFinal} />I confirm the final amount {formatAmount(projection.rows.at(-1)?.amountMinor ?? 0, 2)}</label>}</div>}<div className="flex justify-between"><h3 className="text-sm font-medium">Expected schedule</h3><span className="rounded-full border border-dashed px-2 text-xs">Expected</span></div><div className="max-h-64 overflow-auto"><table className="w-full text-left text-xs"><thead><tr><th>#</th><th>Due</th><th>Amount</th><th>Evidence</th></tr></thead><tbody>{projection.rows.map((entry) => { const billed = links.find((link) => link.role === "instalment-billed" && link.instalment === entry.index); const actual = snapshot.rows.find((posting) => posting.id === billed?.transactionId && posting.fingerprint === billed.fingerprint); return <tr key={entry.index} className="border-t"><td className="py-2">{entry.index}</td><td>{formatCardDate(entry.date)}</td><td className="tabular-nums">{formatAmount(actual ? -actual.amountMinor : entry.amountMinor, 2)}</td><td><span className={`rounded-full border px-2 py-0.5 ${actual ? "" : "border-dashed"}`}>{actual ? "Billed" : entry.final ? "Expected · final" : "Expected"}</span></td></tr>; })}</tbody></table></div></> : <p className="text-sm text-muted-foreground">{projection?.reason ?? "Enter valid terms to preview the schedule."}</p>}
-        <p className="text-xs text-muted-foreground">Expected instalments never count as payments. Billed entries come only from linked Actual postings.</p>
-        <div className="flex items-center justify-between"><h3 className="text-sm font-medium">Linked Actual entries</h3><Button variant="outline" size="xs" onClick={() => setLinking(!linking)}><Link2 className="size-3" />Link entry</Button></div>
-        {linking && <div className="space-y-2 rounded-xl border p-3"><Select aria-label="Actual posting" value={postingId} onValueChange={setPostingId} options={[{ value: "", label: "Choose Actual entry" }, ...candidates.map((entry) => ({ value: entry.id, label: `${formatCardDate(entry.date)} · ${entry.label} · ${formatAmount(entry.amountMinor, 2)}` }))]} /><Select aria-label="Plan posting role" value={role} onValueChange={(next) => { setRole(next as PlanLink["role"]); setPostingId(""); }} options={Object.entries(roleLabels).map(([value, label]) => ({ value, label }))} />{role === "instalment-billed" && <Input aria-label="Instalment number" type="number" min={1} max={Number(months)} value={instalment} onChange={(event) => setInstalment(event.target.value)} />}<Button size="xs" disabled={!postingId} onClick={() => { const posting = candidates.find((entry) => entry.id === postingId)!; setLinks([...links, { planId: initial.planId, transactionId: posting.id, fingerprint: posting.fingerprint, role, instalment: role === "instalment-billed" ? Number(instalment) : null }]); setPostingId(""); setLinking(false); }}>Stage link</Button></div>}
-        {!links.length && <p className="rounded-xl border border-dashed p-3 text-xs text-muted-foreground">Link conversion credits, instalments billed and plan fees. Each entry belongs to one plan.</p>}
-        {links.map((link) => <div key={link.transactionId} className="flex items-center justify-between gap-2 rounded-lg border p-2 text-xs"><span>{roleLabels[link.role]} · {snapshot.rows.find((entry) => entry.id === link.transactionId)?.label ?? "Source unavailable"}</span><Button size="icon-xs" variant="ghost" aria-label={`Unlink ${link.transactionId}`} onClick={() => setLinks(links.filter((entry) => entry.transactionId !== link.transactionId))}><Trash2 className="size-3" /></Button></div>)}
-        {links.length > 0 && <p className="text-xs">Actual billed charges and fees: <strong>{formatAmount(observed, 2)}</strong>. These are observed postings, separate from the expected cost; never added together.</p>}
-      </aside>
-    </div>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/10 p-4"><p className="max-w-xl text-xs text-muted-foreground"><ShieldCheck className="mr-1 inline size-3" />The original charge is already in Actual. This plan adds no debt.</p>{error && <p role="alert" className="w-full text-xs text-destructive">{error}</p>}<div className="ml-auto flex gap-2"><Button variant="outline" onClick={requestClose}>Cancel</Button><Button disabled={!available} onClick={save}>Save plan</Button></div></div>
+  const field = (label: string, element: React.ReactNode) => <div className="space-y-1.5"><Label htmlFor={`${prefix}-${label}`}>{label}</Label>{element}</div>;
+  const input = (label: string, text: string, update: (value: string) => void) => field(label, <Input id={`${prefix}-${label}`} value={text} onChange={(event) => update(event.target.value)} />);
+  const date = (label: string, text: string, update: (value: string) => void) => field(label, <DateInput id={`${prefix}-${label}`} value={text} onValueChange={update} dateFormat={CARD_DATE_FORMAT} />);
+  return <><Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}><DialogContent className="flex h-[min(850px,92dvh)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-5xl">
+    <DialogHeader className="border-b p-5"><DialogTitle>{plan ? "Edit repayment plan" : "Add repayment plan"}</DialogTitle><DialogDescription>Link existing Actual transactions and describe your plan. No transaction or additional debt is created.</DialogDescription></DialogHeader>
+    <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="min-h-0 flex-1 overflow-hidden"><TabsList className="px-5"><TabsTrigger value="terms">Plan details</TabsTrigger><TabsTrigger value="transactions">Transactions ({links.length})</TabsTrigger></TabsList>
+      <TabsContent value="terms" keepMounted className="overflow-auto"><div className="grid lg:grid-cols-[3fr_2fr]"><div className="space-y-5 p-5">
+        <fieldset className="space-y-3 rounded-xl border p-4"><legend className="px-1 text-sm font-medium">Start tracking</legend><div className="flex gap-2">{(["new", "existing"] as const).map((item) => <Button key={item} variant="outline" aria-pressed={mode === item} className={mode === item ? "ring-1 ring-foreground" : ""} onClick={() => setMode(item)}>{item === "new" ? "Start a new plan" : "Track an existing plan"}</Button>)}</div>
+          {input("Plan name / reference", reference, setReference)}<div className="grid grid-cols-2 gap-3">{input(mode === "existing" && balanceOnly ? "Original amount (if known)" : "Original / converted amount", amount, setAmount)}{date("Plan start date", start, setStart)}</div>
+          {mode === "existing" && <><p className="text-xs text-muted-foreground">Enter the principal remaining at the end of your tracking start date. Earlier transactions are not required. For balance-only tracking, leave the original amount blank if unknown.</p><div className="grid grid-cols-2 gap-3">{date("Start tracking from", openingDate, (value) => { if (!plan && !sources.length && (start === openingDate || start === bankToday(card.bankTimeZone))) setStart(value); setOpeningDate(value); })}{input("Remaining principal at start", openingPrincipal, setOpeningPrincipal)}</div></>}
+          <p className="text-xs text-muted-foreground">Original purchases are optional for an existing plan or a balance/cash/transfer reference. Select several when they form one plan.</p>
+          <div className="max-h-36 space-y-2 overflow-auto" role="group" aria-label="Original transactions">{candidates.map((entry) => <label key={entry.id} className="flex items-start gap-2 text-xs"><Checkbox checked={sources.some((source) => source.transactionId === entry.id)} onCheckedChange={(checked) => chooseSource(entry, checked)} /><span>{formatCardDate(entry.date)} · {entry.label} · {formatAmount(entry.amountMinor, 2)}</span></label>)}</div>
+          {sources.some((source) => !snapshot.rows.some((entry) => entry.id === source.transactionId && entry.fingerprint === source.fingerprint)) && <div className="text-xs"><p>Check the original source: it changed or is unavailable.</p><Button size="xs" variant="outline" onClick={() => setSources(sources.flatMap((source) => { const current = snapshot.rows.find((entry) => entry.id === source.transactionId); return current ? [{ transactionId: current.id, fingerprint: current.fingerprint }] : []; }))}>Use current original transactions</Button></div>}
+        </fieldset>
+        <fieldset className="space-y-3 rounded-xl border p-4"><legend className="px-1 text-sm font-medium">Debt tracking</legend>{field("How the plan is recorded", <Select id={`${prefix}-How the plan is recorded`} value={recording} onValueChange={(next) => setRecording(next as typeof recording)} options={[{ value: "tracking", label: "Transfers through a plan account" }, { value: "instalments", label: "Instalment charges on the card" }, { value: "retained", label: "Full balance stays on the card" }]} />)}
+          {recording === "tracking" && <>{field("Repayment-plan account", <Select id={`${prefix}-Repayment-plan account`} value={trackingId} onValueChange={setTrackingId} options={[{ value: "", label: "Choose off-budget account" }, ...(snapshot.accounts?.filter((entry) => entry.offBudget && !entry.closed) ?? []).map((entry) => ({ value: entry.id, label: entry.name }))]} />)}{input("Plan hashtag (optional)", tag, setTag)}<p className="text-xs text-muted-foreground">Tags improve suggestions. Without tags, assign conversion, principal and adjustment entries in Transactions. Only principal moves through this account; fees and interest remain expenses.</p></>}
+        </fieldset>
+        <fieldset className="space-y-4 rounded-xl border p-4"><legend className="px-1 text-sm font-medium">Payment expectations</legend><label className="flex items-center gap-2 text-sm"><Checkbox checked={balanceOnly} onCheckedChange={setBalanceOnly} />Track balance only - no schedule required</label>
+          {!balanceOnly && <><div role="group" aria-label="Repayment arrangement" className="flex gap-2">{(["fixed", "minimum-deadline", "promotional"] as const).map((item) => <Button key={item} variant="outline" aria-pressed={arrangement === item} className={arrangement === item ? "ring-1 ring-foreground" : ""} onClick={() => setArrangement(item)}>{item === "fixed" ? "Fixed instalments" : item === "minimum-deadline" ? "Minimum + deadline" : "Other terms"}</Button>)}</div><div className="grid grid-cols-2 gap-3">{date("First instalment due", firstDue, setFirstDue)}{input("Number of instalments", months, setMonths)}{input("Monthly instalment", monthly, setMonthly)}{input("Interest rate % per year", apr, setApr)}{input("Upfront fee", upfront, setUpfront)}{input("Monthly plan fee", fee, setFee)}</div>
+          {arrangement === "fixed" && <fieldset className="rounded-lg border p-3"><legend className="px-1 text-xs">Does the monthly amount include interest and fees?</legend><div className="flex gap-2">{[[true, "Yes, included"], [false, "No, billed separately"]].map(([flag, text]) => <Button key={String(flag)} size="sm" variant="outline" aria-pressed={includesCosts === flag} className={includesCosts === flag ? "ring-1 ring-foreground" : ""} onClick={() => setIncludesCosts(flag as boolean)}>{text}</Button>)}</div></fieldset>}
+          {arrangement === "minimum-deadline" && <div className="grid grid-cols-2 gap-3">{input("Monthly minimum %", minimumPercent, setMinimumPercent)}{input("Monthly minimum floor", minimumFloor, setMinimumFloor)}</div>}
+          {!["fixed", "minimum-deadline"].includes(arrangement) && <>{date("Expiry date", expiry, setExpiry)}{input("Conditions", conditions, setConditions)}</>}</>}
+        </fieldset>
+        {field("Plan status", <Select id={`${prefix}-Plan status`} value={status} onValueChange={(next) => setStatus(next as typeof status)} options={[{ value: "active", label: "Active" }, { value: "completed", label: "Completed" }, { value: "cancelled", label: "Cancelled" }]} />)}
+        {value && <PlanRefundReview plan={value} card={card} links={links} snapshot={snapshot} review={refundReview} onDraftChange={setRefundDirty} onConfirm={(review) => { setRefundDirty(false); setRefundReview(review); if (review.treatment === "cancelled") setStatus("cancelled"); }} />}
+        {status !== "active" && <p className="text-xs text-muted-foreground">Changing status does not repay or erase recorded debt.</p>}
+      </div><aside className="space-y-4 border-l bg-muted/20 p-5"><h3 className="text-sm font-semibold">Expected schedule</h3>{projection?.calculated && value ? <><dl className="space-y-2 text-xs">{[["Principal", projection.principalMinor], ["Estimated / included finance cost", projection.interestMinor], ["Upfront fee", projection.upfrontFeeMinor], ["Monthly fees", projection.monthlyFeesMinor], ["Expected total", projection.totalMinor]].map(([label, amount]) => <div key={label} className="flex justify-between gap-3"><dt>{label}</dt><dd>{formatAmount(amount as number, 2)}</dd></div>)}</dl><p className="text-xs text-muted-foreground">{projection.reason}</p>{projection.warning && <p className="text-xs text-amber-700">{projection.warning} Expectations do not block linking actual postings.</p>}<table className="w-full text-left text-xs"><thead><tr><th>#</th><th>Due</th><th>Expected</th><th>Evidence</th></tr></thead><tbody>{planSchedule(value, card, links).map((entry) => <tr key={entry.index} className="border-t"><td className="py-2">{entry.index}</td><td>{formatCardDate(entry.date)}</td><td>{formatAmount(entry.amountMinor, 2)}</td><td>{links.some((link) => ["instalment-billed", "combined-instalment"].includes(link.role) && link.instalment === entry.index) ? "Billed" : "Expected"}</td></tr>)}</tbody></table></> : <p className="text-xs text-muted-foreground">{projection?.reason ?? "Enter the amount and dates to preview expectations."}</p>}<p className="text-xs text-muted-foreground">Expectations never create payments, fees or debt. Actual postings determine what was billed; billing does not mean paid.</p><Button size="sm" variant="outline" onClick={() => setTab("transactions")}>Manage linked transactions ({links.length})</Button></aside></div></TabsContent>
+      <TabsContent value="transactions" className="overflow-auto"><PlanTransactions available={available} plan={value} planId={initial.id} card={card} workspace={workspace} snapshot={snapshot} links={links} onChange={(next) => { setLinks(next); if (!next.some((link) => link.role === "refund")) setRefundDirty(false); }} focusId={focusTransactionId} onClassified={() => setExpectedCardRevision(creditCardStore.getState().workspaces[budget]?.cards.find((entry) => entry.id === card.id)?.revision ?? expectedCardRevision)} budget={budget} /></TabsContent>
+    </Tabs><div className="flex items-center justify-between gap-3 border-t p-4"><p className="text-xs text-muted-foreground">Actual transactions remain unchanged.</p><div className="flex gap-2"><Button variant="outline" onClick={requestClose}>Cancel</Button><Button disabled={!available} onClick={save}>Save plan</Button></div></div>{error && <p role="alert" className="px-5 pb-4 text-xs text-destructive">{error}</p>}
   </DialogContent></Dialog>{discardDialog}</>;
 }

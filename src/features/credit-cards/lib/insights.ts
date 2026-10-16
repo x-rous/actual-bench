@@ -2,7 +2,8 @@ import type { ActivitySnapshot } from "./activity";
 import { activityKind } from "./activity";
 import type { Card, Statement, Workspace } from "./models";
 import { effectiveActivityDate, latestStatement, settlements } from "./repayments";
-import { sumMinor } from "./statements";
+import { paymentTarget } from "./paymentTargets";
+import { sumMinor, statementReview } from "./statements";
 
 /** All bridge amounts are signed integer minor units: debt additions positive, credits negative. */
 export function netActivitySinceStatement(card: Card, statement: Statement, workspace: Workspace, snapshot: ActivitySnapshot, signedCurrentMinor: number, today: string) {
@@ -10,6 +11,8 @@ export function netActivitySinceStatement(card: Card, statement: Statement, work
   // crosses the cutoff. Reviewed exclusions within this cycle remain unbilled activity.
   const billedStatements = new Set(workspace.statements.filter((entry) => entry.cardId === card.id && entry.bankConfirmed && entry.closingDate <= statement.closingDate).map((entry) => entry.id));
   if (statement.bankConfirmed) billedStatements.add(statement.id);
+  const currentReview = statementReview(statement, workspace, snapshot);
+  const currentIncluded = new Set(currentReview.rows.filter((_, index) => currentReview.memberships[index].decision === "included").map((row) => row.id));
   const included = new Map<string, Set<string>>();
   const excluded = new Map<string, string>();
   for (const decision of workspace.memberships) {
@@ -24,8 +27,8 @@ export function netActivitySinceStatement(card: Card, statement: Statement, work
   const rows = snapshot.rows.filter((row) => {
     if (row.accountId !== card.accountId || row.date > today) return false;
     const date = effectiveActivityDate(row, card.id, workspace);
-    if (date > today || included.get(row.id)?.has(row.fingerprint)) return false;
-    return date > statement.closingDate || date >= statement.periodStart && excluded.get(row.id) === row.fingerprint;
+    if (date > today || included.get(row.id)?.has(row.fingerprint) || currentIncluded.has(row.id)) return false;
+    return date >= statement.periodStart || excluded.get(row.id) === row.fingerprint;
   });
   const covered = snapshot.from <= statement.closingDate && snapshot.to >= today && !snapshot.issues.length;
   const groups = new Map<string, number[]>();
@@ -47,7 +50,7 @@ export function statementPaymentTotals(cards: Card[], workspace: Workspace, sour
     const source = sources[index];
     const payment = statement && source ? settlements(card, workspace, source, todays[index]).find((entry) => entry.statementId === statement.id) : undefined;
     if (!payment || payment.fullRemainingMinor === null) return null;
-    const remaining = Math.max(0, statement!.officialBalanceMinor - payment.confirmedPaidMinor - (payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0));
+    const remaining = Math.max(0, paymentTarget(statement!) - payment.confirmedPaidMinor - (payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0));
     const minimum = Math.max(0, statement!.minimumDueMinor - payment.confirmedPaidMinor);
     return { remaining, minimum, pending: payment.provisionalMinor, overdue: statement!.dueDate < todays[index] && minimum > 0 ? minimum : 0 };
   });

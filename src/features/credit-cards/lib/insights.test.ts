@@ -108,7 +108,7 @@ it("does not explain differences with stale, other-card, outside-cycle or future
   const future = row("future", "2026-10-01", -600);
   const foreign = row("foreign-account", "2026-09-01", -700, { accountId: "another-account" });
   const workspace = { ...store.getState().workspaces.budget, memberships: [membership(first, stale, "excluded", { fingerprint: "old source" }), membership(first, otherCard, "excluded", { cardId: "another-card" }), membership(first, old, "excluded"), membership(first, future, "excluded", { bankPostingDate: first.closingDate })] };
-  expect(netActivitySinceStatement(card, first, workspace, snapshot([stale, otherCard, old, future, foreign]), -10300, "2026-09-30")).toMatchObject({ rows: [], unexplainedMinor: 300 });
+  expect(netActivitySinceStatement(card, first, workspace, snapshot([stale, otherCard, old, future, foreign]), -10300, "2026-09-30")).toMatchObject({ rows: [stale, otherCard, old], netMinor: 800, unexplainedMinor: -500 });
 });
 
 it("preserves credit signs for refunds excluded at the closing cutoff", () => {

@@ -1,8 +1,10 @@
 import { addMonths, dateInMonth, daysBetween, parseIsoDate } from "@/lib/financial-models/calendar/dates";
 import type { ActivitySnapshot } from "./activity";
-import { activityKind, paymentEvidence } from "./activity";
+import { activityKind, isSettlementCredit, paymentEvidence } from "./activity";
 import type { Card, PaymentAllocation, Statement, Workspace } from "./models";
+import { currentPlanLink } from "./plans";
 import { sumMinor } from "./statements";
+import { paymentTarget } from "./paymentTargets";
 
 export type DebtOrigin = { id: string; date: string; label: string; originalMinor: number; remainingMinor: number };
 export type Settlement = {
@@ -24,6 +26,9 @@ export type Settlement = {
   confirmedCashbackByDueMinor?: number; confirmedCreditByDueMinor?: number;
   /** Full-settlement dates include cashback; minimum-threshold dates use payments only. Recorded dates include pending evidence. */
   confirmedPaidDate: string | null; confirmedMinimumPaidDate: string | null;
+  /** Monthly target evidence, separate from full-statement settlement; integer minor units. */
+  targetRemainingMinor?: number | null; targetCarriedAtDueMinor?: number | null;
+  targetByDue?: boolean | null; targetPaidDate?: string | null; confirmedTargetPaidDate?: string | null;
 };
 export type RepaymentLedger = {
   origins: DebtOrigin[]; allocations: PaymentAllocation[]; creditMinor: number;
@@ -57,7 +62,7 @@ export function repaymentLedger(card: Card, workspace: Workspace, snapshot: Acti
     const postingDates = [...new Set(workspace.memberships.filter((entry) => entry.cardId === card.id && entry.transactionId === row.id && entry.fingerprint === row.fingerprint && entry.bankPostingDate).map((entry) => entry.bankPostingDate!))];
     if (postingDates.length > 1) result.issues.push(`Conflicting bank posting dates: ${row.id}`);
     return postingDates.length === 1 ? { ...row, date: postingDates[0] } : row;
-  }).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  }).sort((a, b) => a.date.localeCompare(b.date) || Number(a.amountMinor > 0) - Number(b.amountMinor > 0) || a.id.localeCompare(b.id));
   for (const row of datedRows.filter((entry) => entry.date > anchor.closingDate && entry.date <= until)) {
     const kind = activityKind(row, card, workspace, snapshot);
     if (row.cleared !== true) {
@@ -67,7 +72,7 @@ export function repaymentLedger(card: Card, workspace: Workspace, snapshot: Acti
       continue;
     }
     if (row.amountMinor < 0) {
-      if (row.transferId && !["cash-advance", "money-transfer", "balance-transfer"].includes(kind)) result.issues.push(`Outgoing borrowing transfer needs classification: ${row.id}`);
+      if (row.transferId && !currentPlanLink(workspace, row) && !["cash-advance", "money-transfer", "balance-transfer"].includes(kind)) result.issues.push(`Outgoing borrowing transfer needs classification: ${row.id}`);
       const originalMinor = -row.amountMinor;
       const credit = Math.min(result.creditMinor, originalMinor);
       result.creditMinor -= credit;
@@ -75,7 +80,7 @@ export function repaymentLedger(card: Card, workspace: Workspace, snapshot: Acti
       continue;
     }
     if (kind === "payment") {
-      if (paymentEvidence(row, snapshot) !== "confirmed") { result.provisionalMinor = sumMinor([result.provisionalMinor, row.amountMinor]); result.issues.push(`Transfer counterpart needs review: ${row.id}`); continue; }
+      if (paymentEvidence(row, snapshot, workspace) !== "confirmed") { result.provisionalMinor = sumMinor([result.provisionalMinor, row.amountMinor]); result.issues.push(`Transfer counterpart needs review: ${row.id}`); continue; }
       const manual = workspace.allocations.filter((entry) => entry.cardId === card.id && entry.transactionId === row.id && entry.provenance === "manual");
       if (manual.length) {
         const total = sumMinor(manual.map((entry) => entry.amountMinor));
@@ -97,7 +102,16 @@ export function repaymentLedger(card: Card, workspace: Workspace, snapshot: Acti
         result.creditMinor = sumMinor([result.creditMinor, left]);
       }
       result.confirmedMinor = sumMinor([result.confirmedMinor, row.amountMinor]);
-    } else if ((kind === "refund" || kind === "cashback" || kind === "other-credit")) reduce(row.amountMinor);
+    } else if (currentPlanLink(workspace, row)?.role === "conversion-credit") {
+      const link = currentPlanLink(workspace, row)!;
+      const plan = workspace.plans?.find((entry) => entry.id === link.planId);
+      const origin = result.origins.find((entry) => entry.id === plan?.transactionId);
+      if (origin) {
+        const offset = Math.min(origin.remainingMinor, row.amountMinor);
+        origin.remainingMinor -= offset;
+        result.creditMinor = sumMinor([result.creditMinor, row.amountMinor - offset]);
+      } else result.issues.push(`Conversion credit needs its original purchase evidence: ${row.id}`);
+    } else if (isSettlementCredit(row, card, workspace, snapshot)) reduce(row.amountMinor);
     else if (row.amountMinor > 0) result.issues.push(`Positive activity needs classification: ${row.id}`);
   }
   return result;
@@ -114,7 +128,7 @@ export function matchedPaymentStatement(date: string, statements: Statement[], w
  */
 export function settlements(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, today: string): Settlement[] {
   const statements = workspace.statements.filter((entry) => entry.cardId === card.id).sort((a, b) => a.closingDate.localeCompare(b.closingDate));
-  const payments = snapshot.rows.filter((row) => row.date <= today && (paymentEvidence(row, snapshot) !== "not-payment" || ["cashback", "refund", "other-credit"].includes(activityKind(row, card, workspace, snapshot)))).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  const payments = snapshot.rows.map((row) => row.amountMinor > 0 && !row.transferId ? { ...row, date: effectiveActivityDate(row, card.id, workspace) } : row).filter((row) => row.date <= today && (paymentEvidence(row, snapshot, workspace) !== "not-payment" || isSettlementCredit(row, card, workspace, snapshot))).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const windows = statements.map((statement) => {
     const closing = parseIsoDate(statement.closingDate);
     const day = card.closingDay ?? closing.day;
@@ -132,7 +146,7 @@ export function settlements(card: Card, workspace: Workspace, snapshot: Activity
   return statements.map((statement) => {
     const paymentWindowEnd = windows.find((window) => window.statementId === statement.id)!.paymentWindowEnd;
     const windowActivity = payments.filter((row) => assignments.get(row.id) === statement.id);
-    const credits = windowActivity.filter((row) => ["cashback", "refund", "other-credit"].includes(activityKind(row, card, workspace, snapshot)));
+    const credits = windowActivity.filter((row) => isSettlementCredit(row, card, workspace, snapshot));
     const creditMinor = sumMinor(credits.map((row) => row.amountMinor));
     const confirmedCreditMinor = sumMinor(credits.filter((row) => row.cleared === true).map((row) => row.amountMinor));
     const provisionalCreditMinor = creditMinor - confirmedCreditMinor;
@@ -141,16 +155,19 @@ export function settlements(card: Card, workspace: Workspace, snapshot: Activity
     const confirmedCashbackMinor = sumMinor(cashback.filter((row) => row.cleared === true).map((row) => row.amountMinor));
     const provisionalCashbackMinor = cashbackMinor - confirmedCashbackMinor;
     const windowPayments = windowActivity.filter((row) => activityKind(row, card, workspace, snapshot) === "payment");
-    const confirmed = windowPayments.filter((row) => paymentEvidence(row, snapshot) === "confirmed");
+    const confirmed = windowPayments.filter((row) => paymentEvidence(row, snapshot, workspace) === "confirmed");
     const confirmedPaidMinor = sumMinor(confirmed.map((row) => row.amountMinor));
     const paidMinor = sumMinor(windowPayments.map((row) => row.amountMinor));
-    const provisionalMinor = sumMinor(windowPayments.filter((row) => paymentEvidence(row, snapshot) === "provisional").map((row) => row.amountMinor));
+    const provisionalMinor = sumMinor(windowPayments.filter((row) => paymentEvidence(row, snapshot, workspace) === "provisional").map((row) => row.amountMinor));
     const balance = Math.max(0, statement.officialBalanceMinor);
+    const target = paymentTarget(statement);
+    let targetPaidDate: string | null = null, confirmedTargetPaidDate: string | null = null;
     let running = 0, paidDate: string | null = null, minimumPaidDate: string | null = null;
     let runningPaid = 0;
     for (const payment of windowActivity) {
       if (activityKind(payment, card, workspace, snapshot) === "payment") runningPaid = sumMinor([runningPaid, payment.amountMinor]);
       running = sumMinor([running, payment.amountMinor]);
+      if (target > 0 && running >= target && targetPaidDate === null) targetPaidDate = payment.date;
       if (balance > 0 && running >= balance && paidDate === null) paidDate = payment.date;
       if (statement.minimumDueMinor > 0 && runningPaid >= statement.minimumDueMinor && minimumPaidDate === null) minimumPaidDate = payment.date;
     }
@@ -159,12 +176,14 @@ export function settlements(card: Card, workspace: Workspace, snapshot: Activity
     for (const payment of windowActivity.filter((row) => row.cleared === true)) {
       if (activityKind(payment, card, workspace, snapshot) === "payment") confirmedRunningPaid = sumMinor([confirmedRunningPaid, payment.amountMinor]);
       confirmedRunning = sumMinor([confirmedRunning, payment.amountMinor]);
+      if (target > 0 && confirmedRunning >= target && confirmedTargetPaidDate === null) confirmedTargetPaidDate = payment.date;
       if (balance > 0 && confirmedRunning >= balance && confirmedPaidDate === null) confirmedPaidDate = payment.date;
       if (statement.minimumDueMinor > 0 && confirmedRunningPaid >= statement.minimumDueMinor && confirmedMinimumPaidDate === null) confirmedMinimumPaidDate = payment.date;
     }
     const covered = snapshot.from <= statement.closingDate && snapshot.to >= (today < paymentWindowEnd ? today : paymentWindowEnd) && !snapshot.issues.length;
     const known = statement.bankConfirmed && covered;
     const fullRemainingMinor = known ? Math.max(0, balance - paidMinor - creditMinor) : null;
+    const targetRemainingMinor = known ? Math.max(0, target - paidMinor - creditMinor) : null;
     const minimumRemainingMinor = known ? Math.max(0, statement.minimumDueMinor - paidMinor) : null;
     const paidByDue = sumMinor(windowPayments.filter((row) => row.date <= statement.dueDate).map((row) => row.amountMinor));
     const confirmedPaidByDueMinor = sumMinor(confirmed.filter((row) => row.date <= statement.dueDate).map((row) => row.amountMinor));
@@ -174,9 +193,12 @@ export function settlements(card: Card, workspace: Workspace, snapshot: Activity
     const pendingByDue = paidByDue - confirmedPaidByDueMinor + creditsByDue - confirmedCreditsByDue;
     const carriedAtDueMinor = dueCovered && pendingByDue === 0 ? Math.max(0, balance - confirmedPaidByDueMinor - confirmedCreditsByDue) : null;
     const fullByDue = dueCovered && (pendingByDue === 0 || confirmedPaidByDueMinor + confirmedCreditsByDue >= balance) ? confirmedPaidByDueMinor + confirmedCreditsByDue >= balance : null;
+    const targetByDue = dueCovered && (pendingByDue === 0 || confirmedPaidByDueMinor + confirmedCreditsByDue >= target) ? confirmedPaidByDueMinor + confirmedCreditsByDue >= target : null;
+    const targetCarriedAtDueMinor = dueCovered && pendingByDue === 0 ? Math.max(0, target - confirmedPaidByDueMinor - confirmedCreditsByDue) : null;
     const minimumByDue = dueCovered && (paidByDue === confirmedPaidByDueMinor || confirmedPaidByDueMinor >= statement.minimumDueMinor) ? confirmedPaidByDueMinor >= statement.minimumDueMinor : null;
     const delayDays = known && paidDate ? Math.max(0, daysBetween(statement.dueDate, paidDate)) : null;
     return { statementId: statement.id, dueDate: statement.dueDate, paymentWindowEnd, paidMinor, provisionalMinor, confirmedPaidMinor, cashbackMinor, confirmedCashbackMinor, provisionalCashbackMinor, creditMinor, confirmedCreditMinor, provisionalCreditMinor,
+      targetRemainingMinor, targetCarriedAtDueMinor, targetByDue, targetPaidDate: known ? targetPaidDate : null, confirmedTargetPaidDate: known ? confirmedTargetPaidDate : null,
       carriedAtDueMinor, confirmedPaidByDueMinor, confirmedCashbackByDueMinor: sumMinor(cashback.filter((row) => row.date <= statement.dueDate && row.cleared === true).map((row) => row.amountMinor)), confirmedCreditByDueMinor: confirmedCreditsByDue,
       confirmedPaidDate: known ? confirmedPaidDate : null, confirmedMinimumPaidDate: known ? confirmedMinimumPaidDate : null,
       paidDate: known ? paidDate : null, minimumPaidDate: known ? minimumPaidDate : null, delayDays,

@@ -6,6 +6,8 @@ import { statementReview } from "./statements";
 import type { Statement, Workspace } from "./models";
 import { paymentDeadline, type Settlement } from "./repayments";
 
+import { paymentTarget } from "./paymentTargets";
+
 type Line = { text: string; detail?: string; tone: "neutral" | "success" | "attention" | "danger" };
 const money = (minor: number) => formatAmount(minor, 2);
 const line = (text: string, tone: Line["tone"] = "neutral"): Line => ({ text, tone });
@@ -16,7 +18,7 @@ export function statementPaymentSummary(statement: Statement, payment: Settlemen
     const reason = !available ? "Refresh activity" : !statement.bankConfirmed ? "Confirm bank values" : "Load payment history";
     return { progress: [line(reason)], timing: [line("Not confirmed")], detail: `${reason} to confirm payment amounts and timing. Missing evidence is not a zero payment.` };
   }
-  const balance = Math.max(0, statement.officialBalanceMinor), minimum = statement.minimumDueMinor;
+  const balance = paymentTarget(statement), minimum = statement.minimumDueMinor;
   const cashback = payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0;
   const pendingCashback = payment.provisionalCreditMinor ?? payment.provisionalCashbackMinor ?? 0;
   const fullRemaining = Math.max(0, balance - payment.confirmedPaidMinor - cashback);
@@ -28,12 +30,12 @@ export function statementPaymentSummary(statement: Statement, payment: Settlemen
     return line(`${label}: ${formatCardDate(date)} · ${days ? `${days} ${days === 1 ? "day" : "days"} late` : "on time"}`, days ? "attention" : "success");
   };
   const minimumDelay = payment.confirmedMinimumPaidDate ? Math.max(0, daysBetween(statement.dueDate, payment.confirmedMinimumPaidDate)) : null;
-  const detail = `Credits confirmed ${money(cashback)}; pending ${money(pendingCashback)}. Credits reduce the balance; they don’t count toward the minimum. Recorded payments ${money(payment.paidMinor)}; confirmed ${money(payment.confirmedPaidMinor)}; pending ${money(payment.provisionalMinor)}. Minimum due ${money(minimum)}; full balance ${money(balance)}. Full remaining deducts confirmed payments and credits; minimum remaining deducts payments only. Minimum timing: ${minimumDelay === null ? "not confirmed" : minimumDelay > 0 ? `${minimumDelay} days late` : "on time"}. Minimum reached ${payment.confirmedMinimumPaidDate ? formatCardDate(payment.confirmedMinimumPaidDate) : "not yet"}; full reached ${payment.confirmedPaidDate ? formatCardDate(payment.confirmedPaidDate) : "not yet"}. Pending threshold dates: minimum ${payment.minimumPaidDate ? formatCardDate(payment.minimumPaidDate) : "not reached"}; full ${payment.paidDate ? formatCardDate(payment.paidDate) : "not reached"}. Recorded excess ${money(Math.max(0, payment.paidMinor - balance))} may include pending transfers. Payments beyond the statement obligation are not necessarily unused account credit. Dates identify cumulative thresholds, not every transfer.`;
+  const detail = `Credits confirmed ${money(cashback)}; pending ${money(pendingCashback)}. Credits reduce the balance; they don’t count toward the minimum. Recorded payments ${money(payment.paidMinor)}; confirmed ${money(payment.confirmedPaidMinor)}; pending ${money(payment.provisionalMinor)}. Minimum due ${money(minimum)}; Total Payment Due ${money(balance)}; statement balance ${money(statement.officialBalanceMinor)}. Full remaining deducts confirmed payments and credits; minimum remaining deducts payments only. Minimum timing: ${minimumDelay === null ? "not confirmed" : minimumDelay > 0 ? `${minimumDelay} days late` : "on time"}. Minimum reached ${payment.confirmedMinimumPaidDate ? formatCardDate(payment.confirmedMinimumPaidDate) : "not yet"}; full reached ${payment.confirmedPaidDate ? formatCardDate(payment.confirmedPaidDate) : "not yet"}. Pending threshold dates: minimum ${payment.minimumPaidDate ? formatCardDate(payment.minimumPaidDate) : "not reached"}; full ${payment.paidDate ? formatCardDate(payment.paidDate) : "not reached"}. Recorded excess ${money(Math.max(0, payment.paidMinor - balance))} may include pending transfers. Payments beyond the statement obligation are not necessarily unused account credit. Dates identify cumulative thresholds, not every transfer.`;
   if (balance === 0) return { progress: [line(statement.officialBalanceMinor < 0 ? `Card credit: ${money(-statement.officialBalanceMinor)}` : "No payment required"), ...(payment.paidMinor ? [paid] : [])], timing: [line("No payment required")], detail };
   if (fullRemaining === 0 && minRemaining > 0 && cashback > 0) return { progress: [paid, line(`Credits: ${money(cashback)}`), line(`Minimum due: ${money(minRemaining)}`, "attention")], timing: [line(statement.dueDate < today ? "Minimum overdue" : paymentDeadline(statement.dueDate, today), statement.dueDate < today ? "danger" : "neutral")], detail };
   if (fullRemaining === 0) return {
-    progress: [paid, ...(cashback || pendingCashback ? [line(`${payment.confirmedCreditMinor !== payment.confirmedCashbackMinor ? "Credits" : "Cashback"}: ${money(cashback)}${pendingCashback ? ` · pending ${money(pendingCashback)}` : ""}`)] : []), line(`${cashback ? "Settled" : "Paid in full"}${excess ? ` · excess ${money(excess)}` : ""}`, "success")],
-    timing: [payment.confirmedPaidDate ? dateLine(cashback ? "Settled" : "Paid", payment.confirmedPaidDate) : line("Payment date unavailable")], detail,
+    progress: [paid, ...(cashback || pendingCashback ? [line(`${payment.confirmedCreditMinor !== payment.confirmedCashbackMinor ? "Credits" : "Cashback"}: ${money(cashback)}${pendingCashback ? ` · pending ${money(pendingCashback)}` : ""}`)] : []), line(`${balance < Math.max(0, statement.officialBalanceMinor) ? "Paid this month" : cashback ? "Settled" : "Paid in full"}${excess ? ` · excess ${money(excess)}` : ""}`, "success")],
+    timing: [(balance === Math.max(0, statement.officialBalanceMinor) ? payment.confirmedPaidDate : payment.confirmedTargetPaidDate) ? dateLine(cashback ? "Settled" : "Paid", (balance === Math.max(0, statement.officialBalanceMinor) ? payment.confirmedPaidDate : payment.confirmedTargetPaidDate)!) : line("Payment date unavailable")], detail,
   };
   const pending = payment.provisionalMinor > 0 || pendingCashback > 0;
   const awaitingFull = pending && payment.paidMinor + (payment.creditMinor ?? payment.cashbackMinor ?? 0) >= balance;
@@ -63,21 +65,25 @@ export function statementOutcome(statement: Statement | undefined, payment: Sett
   if (!available) return { ...result, label: "Payment data unavailable", timing: "Refresh payment history" };
   if (!payment || payment.fullRemainingMinor == null || payment.minimumRemainingMinor == null) return result;
   const days = daysBetween(today, statement.dueDate);
-  const fullRemaining = Math.max(0, statement.officialBalanceMinor - payment.confirmedPaidMinor - (payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0));
+  const fullRemaining = Math.max(0, paymentTarget(statement) - payment.confirmedPaidMinor - (payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0));
   const minimumRemaining = Math.max(0, statement.minimumDueMinor - payment.confirmedPaidMinor);
   const pending = payment.provisionalMinor > 0 || (payment.provisionalCreditMinor ?? payment.provisionalCashbackMinor ?? 0) > 0;
+  const standardTarget = paymentTarget(statement) === Math.max(0, statement.officialBalanceMinor);
+  const targetDate = standardTarget ? payment.confirmedPaidDate : payment.confirmedTargetPaidDate ?? null;
+  const targetByDue = standardTarget ? payment.fullByDue : payment.targetByDue;
+  const targetCarry = standardTarget ? payment.carriedAtDueMinor : payment.targetCarriedAtDueMinor;
   const dayCount = (count: number) => `${count} ${count === 1 ? "day" : "days"}`;
   const dueText = `Due ${formatCardDate(statement.dueDate)} · ${days > 0 ? `in ${dayCount(days)}` : days === 0 ? "today" : `${dayCount(-days)} overdue`}`;
   const detail = `${result.detail} Balance remaining at due date: ${payment.carriedAtDueMinor == null ? "unknown" : formatAmount(payment.carriedAtDueMinor, 2)}. Remaining after confirmed payments and credits: ${formatAmount(fullRemaining, 2)}.`;
   const countdown = days > 0 ? `in ${dayCount(days)}` : days === 0 ? "today" : `${dayCount(-days)} overdue`;
-  const known = { ...result, known: true, detail, countdown, carried: (payment.carriedAtDueMinor ?? 0) > 0 };
-  if (statement.officialBalanceMinor <= 0) return { ...known, countdown: "", label: statement.officialBalanceMinor < 0 ? "Card credit" : "No payment required", timing: "No payment required" };
+  const known = { ...result, known: true, detail, countdown, carried: (targetCarry ?? 0) > 0 };
+  if (paymentTarget(statement) === 0) return { ...known, countdown: "", label: statement.officialBalanceMinor < 0 ? "Card credit" : "No payment required", timing: "No payment required" };
   if (fullRemaining === 0 && minimumRemaining === 0) {
-    const date = payment.confirmedPaidDate;
-    const late = Boolean(date && date > statement.dueDate || payment.fullByDue === false || known.carried);
+    const date = targetDate;
+    const late = Boolean(date && date > statement.dueDate || targetByDue === false || known.carried);
     const cashPaid = payment.confirmedPaidMinor >= statement.officialBalanceMinor;
     const delay = date ? Math.max(0, daysBetween(statement.dueDate, date)) : null;
-    const label = cashPaid ? late ? "Paid in full · late" : "Paid in full" : late ? "Covered by credits late" : "Covered by credits";
+    const label = paymentTarget(statement) < Math.max(0, statement.officialBalanceMinor) && payment.confirmedPaidMinor + (payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0) < statement.officialBalanceMinor ? late ? "Paid this month · late" : "Paid this month" : cashPaid ? late ? "Paid in full · late" : "Paid in full" : late ? "Settled with credits · late" : "Settled with credits";
     return { ...known, label, countdown: "", paid: true, late, tone: late ? "attention" : date ? "success" : "neutral", marker: late ? "late" : date ? "on-time" : "unknown", date,
       timing: date ? `${formatCardDate(date)} · ${delay ? `${dayCount(delay)} late` : late ? "after due date" : "on time"}` : "Timing unknown" };
   }
@@ -92,7 +98,12 @@ export function statementOutcome(statement: Statement | undefined, payment: Sett
       timing: `${formatCardDate(minimumDate)} · ${delay ? `${dayCount(delay)} late` : "on time"}` };
   }
   if (days < 0) return { ...known, label: "Balance carried", tone: "attention", marker: "overdue", date: today, timing: `${dayCount(-days)} past due · balance unpaid` };
-  if (pending) return { ...known, label: "Clearing pending", tone: "attention", marker: "pending", date: payment.paidDate, timing: `Clearing pending · due ${formatCardDate(statement.dueDate)}` };
+  if (pending) {
+    const recordedCoverage = payment.paidMinor + (payment.creditMinor ?? payment.cashbackMinor ?? 0);
+    const coversFull = recordedCoverage >= paymentTarget(statement);
+    return { ...known, label: coversFull ? "Clearing pending" : "Part payment pending", tone: "attention", marker: "pending", date: payment.paidDate,
+      timing: coversFull ? `Clearing pending · due ${formatCardDate(statement.dueDate)}` : `${money(fullRemaining)} due · part pending` };
+  }
   if (payment.confirmedPaidMinor > 0) return { ...known, label: "Part paid", tone: "neutral", marker: "partial", timing: dueText };
   return { ...known, label: days === 0 ? "Due today" : days <= 7 ? "Due soon" : "Payment due", tone: days <= 7 ? "attention" : "info", marker: "upcoming", timing: dueText };
 }

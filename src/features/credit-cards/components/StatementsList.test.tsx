@@ -22,6 +22,7 @@ it.each([{ covered: true, paid: true }, { covered: false, paid: true }, { covere
   const cells = within(table).getAllByRole("row")[1].querySelectorAll("td");
   expect(cells).toHaveLength(11);
   expect(cells[2]).toHaveTextContent(covered ? "810.00" : "-");
+  expect(cells[3]).toHaveTextContent(covered ? "0.00" : "-");
   expect(cells[3]).toHaveTextContent(covered ? "100.00" : "-");
   expect(within(table).getByRole("columnheader", { name: "Balance" })).toBeVisible();
   expect(within(cells[8]).queryByText(/^Minimum due:/)).not.toBeInTheDocument();

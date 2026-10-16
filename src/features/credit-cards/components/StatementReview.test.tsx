@@ -208,7 +208,7 @@ it("shows attention rather than a success icon when Actual evidence is unavailab
   const snapshot: ActivitySnapshot = { accountId: "card", from: "2026-08-30", to: "2026-10-02", rows: [], counterparts: [], issues: [], fetchedAt: "now", signature: "empty" };
   render(<StatementReview budget="budget" statement={statement} workspace={creditCardStore.getState().workspaces.budget} snapshot={snapshot} available={false} onClose={jest.fn()} />);
   expect(screen.getByRole("img", { name: "Reconciliation needs attention" })).toBeVisible();
-  expect(screen.getByText("Evidence unavailable")).toBeVisible();
+  expect(screen.getByText("Couldn’t load transactions")).toBeVisible();
   expect(screen.queryByRole("img", { name: "Bank balance matches" })).not.toBeInTheDocument();
 });
 

@@ -1,7 +1,8 @@
-import { activityKind } from "./activity";
+import { paymentTarget } from "./paymentTargets";
+import { activityKind, isSettlementCredit } from "./activity";
 import type { ActivityRow, ActivitySnapshot } from "./activity";
 import type { Card, Workspace } from "./models";
-import { matchedPaymentStatement, type Settlement } from "./repayments";
+import { matchedPaymentStatement, effectiveActivityDate, type Settlement } from "./repayments";
 import { sumMinor } from "./statements";
 import { formatAmount } from "@/features/assets-debt/lib/money";
 
@@ -16,7 +17,7 @@ export type PaymentEffect = {
 /** Read-only effects within the existing statement windows; amounts remain integer minor units. */
 export function paymentEffects(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, windows: Settlement[], today: string) {
   const statements = workspace.statements.filter((entry) => entry.cardId === card.id);
-  const events = snapshot.rows.filter((row) => row.amountMinor > 0 && ["payment", "refund", "cashback", "other-credit"].includes(activityKind(row, card, workspace, snapshot)));
+  const events = snapshot.rows.map((row) => row.transferId ? row : { ...row, date: effectiveActivityDate(row, card.id, workspace) }).filter((row) => row.amountMinor > 0 && (activityKind(row, card, workspace, snapshot) === "payment" || isSettlementCredit(row, card, workspace, snapshot)));
   const assigned = new Map(events.map((row) => [row.id, matchedPaymentStatement(row.date, statements, windows)]));
   const effects = new Map<string, PaymentEffect>();
   const total = (rows: ActivityRow[]) => sumMinor(rows.map((row) => row.amountMinor));
@@ -34,14 +35,14 @@ export function paymentEffects(card: Card, workspace: Workspace, snapshot: Activ
       const isPayment = (entry: ActivityRow) => activityKind(entry, card, workspace, snapshot) === "payment";
       const priorPaid = total(prior.filter(isPayment)), priorCredits = total(prior.filter((entry) => !isPayment(entry)));
       const dayPayments = sameDay.filter(isPayment), dayPaid = total(dayPayments), dayCredits = total(sameDay.filter((entry) => !isPayment(entry)));
-      const balance = Math.max(0, statement.officialBalanceMinor);
+      const balance = paymentTarget(statement);
       const remainingBefore = Math.max(0, balance - priorPaid - priorCredits);
       const minimumBefore = Math.max(0, statement.minimumDueMinor - priorPaid);
       const remainingAfter = Math.max(0, remainingBefore - dayPaid - dayCredits);
       const minimumAfter = Math.max(0, minimumBefore - dayPaid);
       const minimum = statement.minimumDueMinor === 0 ? "No minimum required" : minimumAfter === 0 ? "Minimum covered" : `Minimum still short ${formatAmount(minimumAfter, 2)}`;
       const detail = `After confirmed activity through this date: full remaining ${formatAmount(remainingAfter, 2)}; minimum remaining ${formatAmount(minimumAfter, 2)}. Credits reduce full remaining, never the minimum. This describes recorded effect, not payment intent. Excess over a statement obligation is not necessarily unused card credit.`;
-      const label = dayPayments.length > 1 ? "Same-day payments" : dayCredits > 0 ? "Payment + credits" : row.amountMinor > Math.max(remainingBefore, minimumBefore) ? "Excess payment" : remainingAfter === 0 && minimumAfter === 0 ? "Completes statement" : row.amountMinor === statement.minimumDueMinor && row.amountMinor === minimumBefore && minimumBefore > 0 ? "Minimum payment" : "Partial payment";
+      const label = dayPayments.length > 1 ? "Same-day payments" : dayCredits > 0 ? "Payment + credits" : row.amountMinor > Math.max(remainingBefore, minimumBefore) ? "Excess payment" : remainingAfter === 0 && minimumAfter === 0 ? balance < statement.officialBalanceMinor ? "Meets monthly target" : "Completes statement" : row.amountMinor === statement.minimumDueMinor && row.amountMinor === minimumBefore && minimumBefore > 0 ? "Minimum payment" : "Partial payment";
       effect = { label, minimum, remainingMinor: remainingAfter, detail: `${dayPayments.length > 1 || dayCredits > 0 ? "Same-day entries are assessed together because their within-day sequence is unknown. " : ""}${detail}` };
     }
     if (row.date <= today && row.cleared !== true) {
