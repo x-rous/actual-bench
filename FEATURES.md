@@ -316,7 +316,7 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Links from Payees and Categories pages filter the rules list to that entity automatically
 - Resolved entity names displayed throughout (no raw IDs shown)
 - Entity-reference chips (payee, category, account) are visually distinct from plain string value chips — blue for entity references, green for string values
-- Account, category and payee pickers use the shared picker (see Keyboard & Table UX); hidden categories and closed accounts remain listed, dimmed and marked, so rules referencing them can still be edited
+- Category dropdowns group categories under their parent group, preserving server order; hidden categories and groups remain visible so rules referencing them can still be edited; search matches group names (shows all children) or category names
 - CSV import and export, round-tripping splits and options losslessly via `split_index` and `options` columns (`key=value;key=value` for the allocation `method` and an amount condition's `inflow`/`outflow`); files exported before those columns still import, and an action operator the importer does not recognise skips its rule with a stated reason instead of being silently rewritten as a `set`
 
 ## Rule Diagnostics
@@ -642,10 +642,10 @@ Bare-letter shortcuts (`V`, `F`, `H`, `E`, `[`, `]`) are scoped so they never fi
 
 ### Envelope-Mode Staged Transfers
 - Right-click any spending category cell → **Cover Overspending** (negative balance) or **Transfer to Another Category** (positive balance) → opens the staged transfer dialog
-- **Cover Overspending**: picks the destination automatically (the right-clicked, overspent category); user selects a source from the category picker, filtered to categories with available balance and showing each one's balance, and enters the amount (pre-filled to the overspending amount, capped at the source's available balance)
-- **Transfer to Another Category**: the right-clicked category is the source; user selects a destination from the category picker and enters an amount (pre-filled to the source's full balance, capped there)
+- **Cover Overspending**: picks the destination automatically (the right-clicked, overspent category); user selects a source from a grouped category combobox filtered to categories with available balance, and enters the amount (pre-filled to the overspending amount, capped at the source's available balance)
+- **Transfer to Another Category**: the right-clicked category is the source; user selects a destination from the full category combobox and enters an amount (pre-filled to the source's full balance, capped there)
 - Both legs are staged together as a single undo step under a shared `transferGroupId`; the draft panel renders the pair as one linked row ("Transfer  From → To  +$amount")
-- The effective balance shown in the picker is staged-aware — if a prior edit already affects a category's budgeted amount, the displayed balance reflects that
+- The effective balance shown in the combobox is staged-aware — if a prior edit already affects a category's budgeted amount, the displayed balance reflects that
 - On save, complete transfer pairs are sent via the atomic `POST /months/{month}/categorytransfers` endpoint; standalone edits and incomplete legs use the existing `PATCH` path. This prevents "onFinish inside spreadsheet transaction" errors that occur when two PATCHes for the same transfer race the server's internal recalculation
 
 ### Navigation Safety
@@ -804,11 +804,6 @@ budget-bundle-<label>-<date>.zip
 - Disabled bulk-selection checkboxes use dimmed styling with explanatory tooltips for system-managed rows
 - Row action buttons appear on hover or keyboard focus, and remain visible on rows with save errors or delete/revert recovery actions
 - Bulk-add: add multiple empty rows at once with a configurable count
-- **One picker for accounts, categories and payees**, everywhere one is chosen (rules, schedules and their filters, reconciliation, Budget File Sync flows, Assets & Debt, budget transfers, Quick Create, the Categories table). Every picker can be searched, and lists the same way:
-  - **Accounts** under **On budget** / **Off budget**, then by account group where the budget has groups (ungrouped accounts first); closed accounts are dimmed and marked *closed*
-  - **Categories** under **Expense** / **Income**, then by category group; hidden categories are dimmed and marked *hidden*. Category groups list under Expense / Income too
-  - **Payees** in one alphabetical list; transfer payees are marked *transfer*
-  - Order follows Actual's own; searching a section or group name shows everything under it. Each feature can narrow the list where it needs to (open accounts only, expense categories only, no transfer payees), and short fixed choices keep a plain dropdown
 - Global undo/redo keyboard shortcuts: Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z or Ctrl+Y to redo; suppressed inside text inputs so native browser undo is not interrupted
 - Filter bars stay pinned to the top of each table when scrolling long lists (Payees, Accounts, Categories, Tags)
 - **Filter state persistence**: search text and active filter pills on all six entity pages (Accounts, Payees, Categories, Tags, Schedules, Rules) are persisted to `sessionStorage` and restored on navigation. Filters reset to defaults when the active connection changes. Inline "Clear filters" links appear in the empty state when filters are active.
