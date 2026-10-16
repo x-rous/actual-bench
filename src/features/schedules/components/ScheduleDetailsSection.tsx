@@ -10,8 +10,8 @@ import {
 } from "react-hook-form";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { SearchableCombobox } from "@/components/ui/combobox";
-import type { ComboboxOption } from "@/components/ui/combobox";
+import { AccountPicker, PayeePicker } from "@/components/ui/entity-picker";
+import { useStagedAccounts, useStagedPayees } from "@/hooks/useStagedEntities";
 import type { ScheduleFormValues } from "../schemas/schedule.schema";
 
 type SetScheduleValue = <K extends Path<ScheduleFormValues>>(
@@ -24,8 +24,6 @@ type Props = {
   errors: FieldErrors<ScheduleFormValues>;
   register: UseFormRegister<ScheduleFormValues>;
   setFieldValue: SetScheduleValue;
-  payeeOptions: ComboboxOption[];
-  accountOptions: ComboboxOption[];
 };
 
 export function ScheduleDetailsSection({
@@ -33,9 +31,9 @@ export function ScheduleDetailsSection({
   errors,
   register,
   setFieldValue,
-  payeeOptions,
-  accountOptions,
 }: Props) {
+  const payees = useStagedPayees();
+  const { accounts, groups } = useStagedAccounts();
   const payeeId = useWatch({ control, name: "payeeId" }) ?? "";
   const accountId = useWatch({ control, name: "accountId" }) ?? "";
 
@@ -55,11 +53,13 @@ export function ScheduleDetailsSection({
           <Label className="text-xs">
             Payee <span className="text-muted-foreground">(optional)</span>
           </Label>
-          <SearchableCombobox
-            options={payeeOptions}
+          <PayeePicker
+            payees={payees}
+            transfers="exclude"
             value={payeeId}
             onChange={(value) => setFieldValue("payeeId", value)}
-            placeholder="- none -"
+            ariaLabel="Payee"
+            allowNone
           />
           {errors.payeeId?.message && (
             <p className="text-xs text-destructive">{errors.payeeId.message}</p>
@@ -69,11 +69,13 @@ export function ScheduleDetailsSection({
           <Label className="text-xs">
             Account <span className="text-muted-foreground">(optional)</span>
           </Label>
-          <SearchableCombobox
-            options={accountOptions}
+          <AccountPicker
+            accounts={accounts}
+            groups={groups}
             value={accountId}
             onChange={(value) => setFieldValue("accountId", value)}
-            placeholder="- none -"
+            ariaLabel="Account"
+            allowNone
           />
           {errors.accountId?.message && (
             <p className="text-xs text-destructive">{errors.accountId.message}</p>

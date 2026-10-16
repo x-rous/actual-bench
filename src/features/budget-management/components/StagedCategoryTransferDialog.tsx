@@ -7,10 +7,8 @@ import { formatCurrency } from "../lib/format";
 import { useMonthData } from "../hooks/useMonthData";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { useStagedTransfer } from "../hooks/useStagedTransfer";
-import {
-  CategoryBalanceCombobox,
-  type CategoryWithBalance,
-} from "./CategoryBalanceCombobox";
+import { CategoryPicker } from "@/components/ui/entity-picker";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
 type Props = {
@@ -31,7 +29,6 @@ export function StagedCategoryTransferDialog({
   const { stageTransfer } = useStagedTransfer();
 
   const amountInputId = useId();
-  const comboboxId = useId();
 
   const [otherCategoryId, setOtherCategoryId] = useState("");
   const [userAmountStr, setUserAmountStr] = useState<string | null>(null);
@@ -55,9 +52,11 @@ export function StagedCategoryTransferDialog({
 
   // ── Eligible categories ───────────────────────────────────────────────────
 
-  function buildEligible(filterPositiveBalance: boolean): CategoryWithBalance[] {
+  type Eligible = { id: string; name: string; groupId: string; groupName: string; effectiveBalance: number };
+
+  function buildEligible(filterPositiveBalance: boolean): Eligible[] {
     if (!monthData) return [];
-    const result: CategoryWithBalance[] = [];
+    const result: Eligible[] = [];
     for (const groupId of monthData.groupOrder) {
       const group = monthData.groupsById[groupId];
       if (!group || group.hidden) continue;
@@ -240,12 +239,23 @@ export function StagedCategoryTransferDialog({
 
           {/* Category combobox */}
           <div>
-            <label htmlFor={comboboxId} className="block text-xs font-medium mb-1">
+            <p className="block text-xs font-medium mb-1">
               {mode === "cover" ? "Cover from" : "Transfer to"}
-            </label>
-            <CategoryBalanceCombobox
-              id={comboboxId}
+            </p>
+            <CategoryPicker
+              ariaLabel={mode === "cover" ? "Cover from" : "Transfer to"}
+              size="sm"
               categories={eligibleCategories}
+              trailing={(cat) => (
+                <span
+                  className={cn(
+                    cat.effectiveBalance > 0 && "text-emerald-700 dark:text-emerald-400",
+                    cat.effectiveBalance < 0 && "text-destructive"
+                  )}
+                >
+                  {formatCurrency(cat.effectiveBalance)}
+                </span>
+              )}
               value={otherCategoryId}
               onChange={(id) => {
                 setOtherCategoryId(id);

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatAmount } from "../../lib/money";
 import { extraTransactions, simKey, type SimAssumption, type SimAssumptionKind, type SimulationState } from "../../lib/simulatorModel";
-import { DateField, FeatureSwitch, MoneyField, SelectField, TextField } from "../fields";
+import { AccountField, DateField, FeatureSwitch, MoneyField, SelectField, TextField } from "../fields";
 
 export const KIND_LABEL: Record<SimAssumptionKind, string> = {
   "extra-repayment": "Extra payment",
@@ -94,7 +94,8 @@ function AssumptionEditor({ item, sim, onCancel, onSave }: { item: SimAssumption
   const amountLabel = draft.kind === "offset-balance" ? "Offset balance from this date" : draft.kind === "payment-change" ? "New repayment" : draft.kind === "offset-deposit" ? "Deposit amount" : draft.kind === "offset-withdrawal" ? "Withdrawal amount" : "Amount";
   const destination = draft.kind === "offset-deposit" ? "offset" : "loan";
   const source = draft.kind === "offset-withdrawal" ? "offset" : "loan";
-  const offsetOptions = sim.offsets.map((offset, index) => ({ value: offset.placeholderAccountId, label: `Offset account ${index + 1}` }));
+  // Simulated accounts: no budget status or group, so the picker lists them flat.
+  const offsetAccounts = sim.offsets.map((offset, index) => ({ id: offset.placeholderAccountId, name: `Offset account ${index + 1}` }));
 
   return (
     <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); if (!problems.length) onSave(draft); }}>
@@ -115,7 +116,7 @@ function AssumptionEditor({ item, sim, onCancel, onSave }: { item: SimAssumption
         />
       ) : null}
       {offsetKind && sim.offsets.length > 1 ? (
-        <SelectField label="Offset account" value={draft.offsetAccountId ?? ""} options={offsetOptions} onChange={(offsetAccountId) => set({ offsetAccountId })} />
+        <AccountField label="Offset account" accounts={offsetAccounts} value={draft.offsetAccountId ?? ""} onChange={(offsetAccountId) => set({ offsetAccountId })} />
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <MoneyField label={amountLabel} valueMinor={draft.amountMinor || null} minorDigits={sim.minorDigits} onChange={(amountMinor) => set({ amountMinor: amountMinor ?? 0 })} />

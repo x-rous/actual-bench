@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchableCombobox } from "@/components/ui/combobox";
+import { AccountPicker } from "@/components/ui/entity-picker";
+import type { Account, AccountGroup } from "@/types/entities";
 
 /**
  * Picking the account to reconcile.
@@ -29,7 +30,9 @@ import { SearchableCombobox } from "@/components/ui/combobox";
 export type NewSessionDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  accounts: { id: string; name: string }[];
+  /** Open accounts only: a statement cannot be reconciled against a closed one. */
+  accounts: Account[];
+  accountGroups: AccountGroup[];
   /** Tags already used, offered as suggestions so they stay consistent. */
   knownTags: string[];
   isCreating: boolean;
@@ -40,6 +43,7 @@ export function NewSessionDialog({
   open,
   onOpenChange,
   accounts,
+  accountGroups,
   knownTags,
   isCreating,
   onStart,
@@ -91,11 +95,11 @@ export function NewSessionDialog({
           {/* The combobox renders a button, not an input with an id, so the
               visible label cannot point at it. It carries its own name. */}
           <Label className="text-xs">Account</Label>
-          <SearchableCombobox
-            options={accounts}
+          <AccountPicker
+            accounts={accounts}
+            groups={accountGroups}
             value={accountId}
             onChange={setAccountId}
-            placeholder="Select an account…"
             ariaLabel="Account"
             autoFocus
           />

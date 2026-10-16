@@ -29,6 +29,7 @@ import { UnattendedEnrollment } from "./UnattendedEnrollment";
 import { BudgetSelect, useBudgetChoices } from "@/features/connect/BudgetSelect";
 import type { ConnectionInstance } from "@/store/connection";
 import { Select } from "@/components/ui/select";
+import { AccountPicker } from "@/components/ui/entity-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DateInput } from "@/components/ui/date-input";
 
@@ -136,19 +137,21 @@ function InlineEndpoint({
       />
       {savedConnector.dialog}
       {entityMode ? null : (
-      <Select
-        aria-label={`${label} account`}
-        size="sm"
-        className="min-w-0 flex-1"
-        value={endpoint.accountId}
-        disabled={!endpoint.connectionId || accounts.isLoading}
-        placeholder={accounts.isLoading ? "Loading…" : "account…"}
-        onValueChange={(value) => {
-          const a = (accounts.data ?? []).find((x) => x.id === value);
-          onChange({ ...endpoint, accountId: a?.id ?? "", accountName: a?.name ?? "" });
-        }}
-        options={(accounts.data ?? []).map((a) => ({ value: a.id, label: a.name }))}
-      />
+      <div className="min-w-0 flex-1">
+        {/* The other budget's accounts: on/off budget, without its account groups. */}
+        <AccountPicker
+          ariaLabel={`${label} account`}
+          size="sm"
+          accounts={accounts.data ?? []}
+          value={endpoint.accountId}
+          disabled={!endpoint.connectionId || accounts.isLoading}
+          placeholder={accounts.isLoading ? "Loading…" : "Select account…"}
+          onChange={(value) => {
+            const a = (accounts.data ?? []).find((x) => x.id === value);
+            onChange({ ...endpoint, accountId: a?.id ?? "", accountName: a?.name ?? "" });
+          }}
+        />
+      </div>
       )}
     </div>
   );

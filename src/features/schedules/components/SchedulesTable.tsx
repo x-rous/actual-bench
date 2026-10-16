@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useHighlight } from "@/hooks/useHighlight";
 import { useTableSelection } from "@/hooks/useTableSelection";
+import { useStagedAccounts, useStagedPayees } from "@/hooks/useStagedEntities";
 import { Pencil, Trash2, RotateCcw, Copy, Braces, AlertTriangle, Info, RefreshCw, Check, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,7 +15,7 @@ import { generateId } from "@/lib/uuid";
 import { recurSummary, frequencyLabel } from "../lib/recurSummary";
 import { FilterBar } from "./FilterBar";
 import type { ScheduleDeleteIntent } from "./SchedulesTableOverlays";
-import type { AutoAddFilter, StatusFilter, FrequencyFilter, EntityOption } from "./FilterBar";
+import type { AutoAddFilter, StatusFilter, FrequencyFilter } from "./FilterBar";
 import { useScheduleTransactions } from "../hooks/useScheduleTransactions";
 import { computeScheduleStatus, STATUS_BADGE } from "../lib/scheduleStatus";
 import { useBudgetPreferences } from "@/hooks/useBudgetPreferences";
@@ -139,30 +140,24 @@ export function SchedulesTable({
   const { selectedIds, toggleSelect, toggleSelectAll: _toggleSelectAll, clearSelection } =
     useTableSelection();
 
-  // ── Payee / account filter options (from all non-deleted schedules) ──────────
-  const { payeeOptions, accountOptions } = useMemo<{
-    payeeOptions: EntityOption[];
-    accountOptions: EntityOption[];
-  }>(() => {
-    const payeeMap = new Map<string, string>();
-    const accountMap = new Map<string, string>();
+  // ── Payee / account filter options (those used by a non-deleted schedule) ──
+  // The active filter stays listed even once no schedule uses it, so the picker
+  // keeps showing what is filtered rather than reading "All".
+  const { accounts: allAccounts, groups: accountGroups } = useStagedAccounts();
+  const allPayees = useStagedPayees();
+  const { filterPayees, filterAccounts } = useMemo(() => {
+    const payeeIds = new Set<string>(payeeFilter ? [payeeFilter] : []);
+    const accountIds = new Set<string>(accountFilter ? [accountFilter] : []);
     for (const s of Object.values(staged)) {
       if (s.isDeleted) continue;
-      if (s.entity.payeeId) {
-        const name = stagedPayees[s.entity.payeeId]?.entity.name;
-        if (name) payeeMap.set(s.entity.payeeId, name);
-      }
-      if (s.entity.accountId) {
-        const name = stagedAccounts[s.entity.accountId]?.entity.name;
-        if (name) accountMap.set(s.entity.accountId, name);
-      }
+      if (s.entity.payeeId) payeeIds.add(s.entity.payeeId);
+      if (s.entity.accountId) accountIds.add(s.entity.accountId);
     }
-    const sortByLabel = (a: EntityOption, b: EntityOption) => a.label.localeCompare(b.label);
     return {
-      payeeOptions:   [...payeeMap.entries()].map(([value, label]) => ({ value, label })).sort(sortByLabel),
-      accountOptions: [...accountMap.entries()].map(([value, label]) => ({ value, label })).sort(sortByLabel),
+      filterPayees: allPayees.filter((p) => payeeIds.has(p.id)),
+      filterAccounts: allAccounts.filter((a) => accountIds.has(a.id)),
     };
-  }, [staged, stagedPayees, stagedAccounts]);
+  }, [staged, allPayees, allAccounts, payeeFilter, accountFilter]);
 
   // ── Derived rows ─────────────────────────────────────────────────────────────
   const rows = useMemo<StagedEntity<Schedule>[]>(() => {
@@ -290,8 +285,8 @@ export function SchedulesTable({
         statusFilter={statusFilter}  onStatusFilterChange={setStatusFilter}
         autoAddFilter={autoAddFilter} onAutoAddFilterChange={setAutoAddFilter}
         frequencyFilter={frequencyFilter} onFrequencyFilterChange={setFrequencyFilter}
-        payeeFilter={payeeFilter}    onPayeeFilterChange={setPayeeFilter}  payeeOptions={payeeOptions}
-        accountFilter={accountFilter} onAccountFilterChange={setAccountFilter} accountOptions={accountOptions}
+        payeeFilter={payeeFilter}    onPayeeFilterChange={setPayeeFilter}  payees={filterPayees}
+        accountFilter={accountFilter} onAccountFilterChange={setAccountFilter} accounts={filterAccounts} accountGroups={accountGroups}
         filteredCount={rows.length}  totalCount={totalCount}
         selectedCount={activeSelectedIds.length}
         onBulkDelete={handleBulkDelete}

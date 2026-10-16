@@ -55,6 +55,30 @@ describe("filterGroupedOptions", () => {
   });
 });
 
+describe("filterGroupedOptions with sections", () => {
+  const SECTIONED: ComboboxOption[] = [
+    { id: "section:on", name: "On budget", isGroupHeader: true, section: true },
+    { id: "checking", name: "Checking" },
+    { id: "group:cards", name: "Cards", isGroupHeader: true },
+    { id: "visa", name: "Visa" },
+    { id: "section:off", name: "Off budget", isGroupHeader: true, section: true },
+    { id: "house", name: "House" },
+  ];
+  const ids = (search: string) => filterGroupedOptions(SECTIONED, search).map((o) => o.id);
+
+  it("keeps a match's section and group headings above it", () => {
+    expect(ids("visa")).toEqual(["section:on", "group:cards", "visa"]);
+  });
+
+  it("brings a matched section's rows along, groups included", () => {
+    expect(ids("on budget")).toEqual(["section:on", "checking", "group:cards", "visa"]);
+  });
+
+  it("does not carry a group heading past its section", () => {
+    expect(ids("house")).toEqual(["section:off", "house"]);
+  });
+});
+
 /*
  * `filterGroupedOptions` decides what the list draws. What it can *walk* is a
  * narrower set - covered rows are ticked and inert - and conflating the two made

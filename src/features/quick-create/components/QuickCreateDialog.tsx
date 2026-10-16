@@ -11,7 +11,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { SearchableCombobox } from "@/components/ui/combobox";
+import { CategoryGroupPicker } from "@/components/ui/entity-picker";
+import { useStagedCategories } from "@/hooks/useStagedEntities";
 import { cn } from "@/lib/utils";
 import { generateId } from "@/lib/uuid";
 import { useStagedStore } from "@/store/staged";
@@ -47,7 +48,6 @@ function QuickCreateForm({
   const stagedCategories     = useStagedStore((s) => s.categories);
   const stagedAccounts       = useStagedStore((s) => s.accounts);
   const stagedTags           = useStagedStore((s) => s.tags);
-  const stagedCategoryGroups = useStagedStore((s) => s.categoryGroups);
 
   // Initial values come from props — no effect needed (component is re-keyed on each open)
   const [selectedType, setSelectedType] = useState<QuickCreateEntityType>(preselectedType ?? "payee");
@@ -63,14 +63,7 @@ function QuickCreateForm({
     setColor(undefined);
   }
 
-  const groupOptions = useMemo(
-    () =>
-      Object.values(stagedCategoryGroups)
-        .filter((s) => !s.isDeleted)
-        .sort((a, b) => a.entity.name.localeCompare(b.entity.name))
-        .map((s) => ({ id: s.entity.id, name: s.entity.name })),
-    [stagedCategoryGroups]
-  );
+  const { groups: categoryGroups } = useStagedCategories();
 
   const isDuplicate = useMemo(() => {
     const lower = name.trim().toLowerCase();
@@ -178,13 +171,13 @@ function QuickCreateForm({
           <label className="text-xs font-medium text-foreground">
             Group <span className="text-destructive">*</span>
           </label>
-          <SearchableCombobox
-            options={groupOptions}
+          <CategoryGroupPicker
+            groups={categoryGroups}
             value={groupId}
             onChange={setGroupId}
-            placeholder="Select group…"
+            ariaLabel="Group"
           />
-          {groupOptions.length === 0 && (
+          {categoryGroups.length === 0 && (
             <p className="text-xs text-muted-foreground italic">
               No category groups exist yet - create one on the Categories page first.
             </p>

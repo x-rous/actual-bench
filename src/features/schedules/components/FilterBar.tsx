@@ -2,7 +2,8 @@
 
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
-import { Select } from "@/components/ui/select";
+import { AccountPicker, PayeePicker } from "@/components/ui/entity-picker";
+import type { Account, AccountGroup, Payee } from "@/types/entities";
 import { SearchInput } from "@/components/ui/search-input";
 
 export type StatusFilter = "active" | "all" | "missed" | "completed";
@@ -31,8 +32,6 @@ const FREQUENCY_OPTIONS: { value: FrequencyFilter; label: string }[] = [
   { value: "yearly",  label: "Yearly" },
 ];
 
-export type EntityOption = { value: string; label: string };
-
 type Props = {
   search: string;
   onSearchChange: (v: string) => void;
@@ -44,10 +43,12 @@ type Props = {
   onFrequencyFilterChange: (v: FrequencyFilter) => void;
   payeeFilter: string;
   onPayeeFilterChange: (v: string) => void;
-  payeeOptions: EntityOption[];
+  /** The payees and accounts some schedule uses: a filter only offers what can match. */
+  payees: Payee[];
   accountFilter: string;
   onAccountFilterChange: (v: string) => void;
-  accountOptions: EntityOption[];
+  accounts: Account[];
+  accountGroups: AccountGroup[];
   filteredCount: number;
   totalCount: number;
   selectedCount: number;
@@ -60,8 +61,8 @@ export function FilterBar({
   statusFilter, onStatusFilterChange,
   autoAddFilter, onAutoAddFilterChange,
   frequencyFilter, onFrequencyFilterChange,
-  payeeFilter, onPayeeFilterChange, payeeOptions,
-  accountFilter, onAccountFilterChange, accountOptions,
+  payeeFilter, onPayeeFilterChange, payees,
+  accountFilter, onAccountFilterChange, accounts, accountGroups,
   filteredCount, totalCount,
   selectedCount, onBulkDelete, onDeselect,
 }: Props) {
@@ -95,25 +96,38 @@ export function FilterBar({
       <PillGroup options={FREQUENCY_OPTIONS} value={frequencyFilter} onChange={onFrequencyFilterChange} />
 
       {/* Payee filter */}
-      {payeeOptions.length > 0 && (
-        <Select
-          className="h-6 w-auto"
-          value={payeeFilter}
-          onValueChange={onPayeeFilterChange}
-          aria-label="Filter by payee"
-          options={[{ value: "", label: "All Payees" }, ...payeeOptions]}
-        />
+      {payees.length > 0 && (
+        <div className="w-44">
+          <PayeePicker
+            size="sm"
+            className="h-6"
+            payees={payees}
+            value={payeeFilter}
+            onChange={onPayeeFilterChange}
+            ariaLabel="Filter by payee"
+            placeholder="All payees"
+            allowNone
+            noneLabel="All payees"
+          />
+        </div>
       )}
 
       {/* Account filter */}
-      {accountOptions.length > 0 && (
-        <Select
-          className="h-6 w-auto"
-          value={accountFilter}
-          onValueChange={onAccountFilterChange}
-          aria-label="Filter by account"
-          options={[{ value: "", label: "All Accounts" }, ...accountOptions]}
-        />
+      {accounts.length > 0 && (
+        <div className="w-44">
+          <AccountPicker
+            size="sm"
+            className="h-6"
+            accounts={accounts}
+            groups={accountGroups}
+            value={accountFilter}
+            onChange={onAccountFilterChange}
+            ariaLabel="Filter by account"
+            placeholder="All accounts"
+            allowNone
+            noneLabel="All accounts"
+          />
+        </div>
       )}
 
       {hasFilters && (
