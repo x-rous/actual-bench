@@ -5,6 +5,8 @@ import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, type SelectOption } from "@/components/ui/select";
+import { AccountPicker, CategoryPicker, type AccountPickerProps, type CategoryPickerProps } from "@/components/ui/entity-picker";
+import type { AccountItem, CategoryItem } from "@/components/ui/entity-options";
 import { Switch } from "@/components/ui/switch";
 import { fractionToPercent, minorToMajorText, parseMajorToMinor, percentToFraction } from "../lib/money";
 
@@ -174,6 +176,32 @@ export function SelectField({ label, labelAccessory, hint, issue, value, onChang
         {labelAccessory ? <span className="text-right text-[11px] text-muted-foreground">{labelAccessory}</span> : null}
       </div>
       <Select className="text-[13px]" value={value} onValueChange={onChange} options={options} placeholder={placeholder ?? "Choose…"} aria-labelledby={`${id}-label`} id={id} />
+      <Described id={id} hint={hint} issue={issue} />
+    </div>
+  );
+}
+
+type PickerFieldProps<P> = Common & Omit<P, "ariaLabel" | "ariaDescribedBy" | "className">;
+
+/** A labelled account picker, laid out like the other fields. */
+export function AccountField({ label, hint, issue, className, hideLabel, ...picker }: PickerFieldProps<AccountPickerProps<AccountItem>>) {
+  const id = useId();
+  return (
+    <div className={`flex flex-col gap-1 ${className ?? ""}`}>
+      <Label className={labelClass(hideLabel)}>{label}</Label>
+      <AccountPicker {...picker} className="text-[13px]" ariaLabel={label} ariaDescribedBy={describedBy(id, hint, issue)} />
+      <Described id={id} hint={hint} issue={issue} />
+    </div>
+  );
+}
+
+/** A labelled category picker, laid out like the other fields. */
+export function CategoryField({ label, hint, issue, className, hideLabel, ...picker }: PickerFieldProps<CategoryPickerProps<CategoryItem>>) {
+  const id = useId();
+  return (
+    <div className={`flex flex-col gap-1 ${className ?? ""}`}>
+      <Label className={labelClass(hideLabel)}>{label}</Label>
+      <CategoryPicker {...picker} className="text-[13px]" ariaLabel={label} ariaDescribedBy={describedBy(id, hint, issue)} />
       <Described id={id} hint={hint} issue={issue} />
     </div>
   );

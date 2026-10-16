@@ -13,7 +13,7 @@ import type { DebtBacktestResult } from "@/lib/financial-models/matching";
 import { cn } from "@/lib/utils";
 import { checkDraftMatchRule, createMatchRule, updateMatchRule } from "../../lib/debtsApi";
 import { conditionsToSettings, defaultActions, recommendedSettings, settingsToConditions, type AmountFilter, type MatchingSettings } from "../../lib/matchingRuleBuilder";
-import { DateField, IntegerField, MoneyField, SelectField, TextField } from "../fields";
+import { AccountField, CategoryField, DateField, IntegerField, MoneyField, SelectField, TextField } from "../fields";
 import { formatAmount } from "../../lib/money";
 import { isHandled } from "./BacktestResultsTable";
 import { PURPOSE_LABEL } from "./MatchingCard";
@@ -134,8 +134,6 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
   const purposes: DebtMatchPurpose[] = ["repayment", "lender-repayment-row", ...(ctx.lenderPattern === "separate-interest" ? ["interest-charge" as const] : [])];
   // Off-budget rows carry no category in Actual: a category condition there can never match.
   const offBudgetCategory = settings?.category.mode === "exact" && !!accounts.find((a) => a.id === settings?.sourceAccountId)?.offBudget;
-  const accountOptions = accounts.filter((a) => !a.closed).map((a) => ({ value: a.id, label: `${a.name}${a.offBudget ? " (off budget)" : ""}` }));
-  const categoryOptions = [{ value: "", label: "Any category" }, { value: "__empty", label: "Uncategorized only" }, ...categories.filter((c) => !c.hidden).map((c) => ({ value: c.id, label: `${c.groupName}: ${c.name}` }))];
   const amount = settings?.amount;
   const loanAccountName = accounts.find((a) => a.id === ctx.detail.data?.debt.liabilityAccountId)?.name ?? null;
   const inline = "inline-flex w-auto align-middle";
@@ -177,7 +175,7 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
               <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm leading-8">
                 <span>a payment</span>
                 <SelectField hideLabel label="Direction" className={inline} value={settings.direction} options={[{ value: "outflow", label: "out of" }, { value: "inflow", label: "into" }, { value: "either", label: "in or out of" }]} onChange={(v) => update({ direction: v as MatchingSettings["direction"] })} />
-                <SelectField hideLabel label="Account" className={inline} value={settings.sourceAccountId} options={accountOptions} onChange={(v) => update({ sourceAccountId: v })} />
+                <AccountField hideLabel label="Account" className={`${inline} w-56`} accounts={accounts} closed="exclude" value={settings.sourceAccountId} onChange={(v) => update({ sourceAccountId: v })} />
                 <span>of</span>
                 <SelectField hideLabel label="Amount" className={inline} value={settings.amount.mode} options={[{ value: "approximate", label: "about" }, { value: "exact", label: "exactly" }, { value: "between", label: "between" }, { value: "any", label: "any amount" }]}
                   onChange={(v) => {
@@ -208,7 +206,7 @@ function EditorBody({ debtId, rule, ctx, onClose }: { debtId: string; rule: Matc
               </Button>
               {moreOpen ? (
                 <div role="region" aria-label="More conditions" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <SelectField label="Category is" issue={offBudgetCategory ? "This account is off budget, and Actual keeps no category on its rows, so this condition never matches. Set it to any category, or look in the account the payment comes from." : undefined} value={settings.category.mode === "exact" ? settings.category.categoryId : settings.category.mode === "empty" ? "__empty" : ""} options={categoryOptions} onChange={(v) => update({ category: v === "" ? { mode: "any" } : v === "__empty" ? { mode: "empty" } : { mode: "exact", categoryId: v } })} />
+                  <CategoryField label="Category is" categories={categories} hidden="exclude" allowNone noneLabel="Any category" placeholder="Any category" extra={[{ id: "__empty", name: "Uncategorized only" }]} issue={offBudgetCategory ? "This account is off budget, and Actual keeps no category on its rows, so this condition never matches. Set it to any category, or look in the account the payment comes from." : undefined} value={settings.category.mode === "exact" ? settings.category.categoryId : settings.category.mode === "empty" ? "__empty" : ""} onChange={(v) => update({ category: v === "" ? { mode: "any" } : v === "__empty" ? { mode: "empty" } : { mode: "exact", categoryId: v } })} />
                   <TextField label="Bank text contains" value={settings.importedPayeeContains} onChange={(v) => update({ importedPayeeContains: v })} placeholder="For example LOAN REPAYMENT" />
                   <TextField label="Notes contain" value={settings.notesContains} onChange={(v) => update({ notesContains: v })} />
                   <IntegerField label="Only on day of month" hint="Empty uses the due dates alone." value={settings.dayOfMonth} min={1} onChange={(v) => update({ dayOfMonth: v === null ? null : Math.min(31, Math.max(1, v)) })} />

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { SearchableCombobox } from "@/components/ui/combobox";
+import { PayeePicker } from "@/components/ui/entity-picker";
+import type { CategoryItem, PayeeItem } from "@/components/ui/entity-options";
 import { canStageField } from "@/lib/reconciliation/session/staging";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationItem, StagedPatch } from "@/lib/reconciliation/types";
@@ -23,7 +24,8 @@ import { Textarea } from "@/components/ui/textarea";
  * text is not worth more than whatever the user wrote there.
  */
 
-export type Option = { id: string; name: string };
+/** A payee or category: what the panels name, plus what the pickers group by. */
+export type Option = PayeeItem & CategoryItem;
 
 export type StagedFieldsProps = {
   item: ReconciliationItem;
@@ -108,12 +110,14 @@ export function StagedFields({
         {/* Searchable: a budget's payee list runs to hundreds of entries, and
             scrolling one to reach "Talabat" is not a way to work. */}
         {field("payeeId").allowed ? (
-          <SearchableCombobox
-            options={[{ id: "", name: "No payee" }, ...payees]}
+          <PayeePicker
+            payees={payees}
             value={payeeValue}
             onChange={(next) => onStage("payeeId", next || null)}
             placeholder="No payee"
             ariaLabel="Payee"
+            allowNone
+            noneLabel="No payee"
           />
         ) : (
           // A guard refuses this field, so it reads as what it is: the current

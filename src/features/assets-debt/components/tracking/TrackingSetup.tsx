@@ -6,11 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import { crossesBudgetBoundary } from "@/lib/assets-debt/actual/ledgerPort";
-import type { SelectOption } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { reconcileTrackingComponents, type SaveIssue, type SimulationState, type TrackingComponent, type TrackingState } from "../../lib/simulatorModel";
 import { DEBT_TYPE_OPTIONS, DESTINATION_OPTIONS, SIGN_CONVENTION_OPTIONS } from "../../lib/vocabulary";
-import { IntegerField, MoneyField, SelectField, TextField } from "../fields";
+import { AccountField, CategoryField, IntegerField, MoneyField, SelectField, TextField } from "../fields";
 
 export { strategyAdvice, type StrategyAdvice } from "../../lib/strategyAdvice";
 
@@ -64,8 +63,9 @@ export function TrackingSetup({ sim, setSimulation, tracking, setTracking, direc
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const set = (patch: Partial<TrackingState>) => setTracking({ ...tracking, ...patch });
   const issue = (field: string) => issues.find((i) => i.field === field)?.message;
-  const accounts: SelectOption[] = [{ value: "", label: "Not chosen yet" }, ...(directory?.accounts ?? []).map((a) => ({ value: a.id, label: `${a.name} (${a.offBudget ? "off budget" : "on budget"}${a.closed ? ", closed" : ""})`, disabled: a.closed }))];
-  const categories: SelectOption[] = [{ value: "", label: "Choose a category" }, ...(directory?.categories ?? []).filter((c) => !c.isIncome && !c.hidden).map((c) => ({ value: c.id, label: c.groupName ? `${c.groupName}: ${c.name}` : c.name }))];
+  // A loan is tracked against open accounts and visible expense categories.
+  const accountProps = { accounts: directory?.accounts ?? [], closed: "disable", allowNone: true, noneLabel: "Not chosen yet", placeholder: "Not chosen yet" } as const;
+  const categoryProps = { categories: directory?.categories ?? [], side: "expense", hidden: "exclude", allowNone: true, placeholder: "Choose a category" } as const;
   const liability = directory?.accounts.find((a) => a.id === tracking.liabilityAccountId);
   const payment = directory?.accounts.find((a) => a.id === tracking.paymentAccountId);
   const crosses = !!(liability && payment && crossesBudgetBoundary(liability, payment));
@@ -98,15 +98,16 @@ export function TrackingSetup({ sim, setSimulation, tracking, setTracking, direc
 
           <Section title="Accounts in Actual">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <SelectField label={owedToMe ? "Receivable account" : "Loan account"} value={tracking.liabilityAccountId ?? ""} options={accounts} onChange={(v) => set({ liabilityAccountId: v || null })} issue={issue("liabilityAccountId")} />
-              <SelectField label={owedToMe ? "Repayments arrive in" : "Repayments are paid from"} value={tracking.paymentAccountId ?? ""} options={accounts} onChange={(v) => set({ paymentAccountId: v || null })} issue={issue("paymentAccountId")} />
+              <AccountField {...accountProps} label={owedToMe ? "Receivable account" : "Loan account"} value={tracking.liabilityAccountId ?? ""} onChange={(v) => set({ liabilityAccountId: v || null })} issue={issue("liabilityAccountId")} />
+              <AccountField {...accountProps} label={owedToMe ? "Repayments arrive in" : "Repayments are paid from"} value={tracking.paymentAccountId ?? ""} onChange={(v) => set({ paymentAccountId: v || null })} issue={issue("paymentAccountId")} />
             </div>
             {sim.offsets.map((o, i) => (
               <div key={o.key} className="flex flex-col gap-2 rounded border border-border p-2">
-                <SelectField
+                <AccountField
+                  {...accountProps}
                   label={sim.offsets.length > 1 ? `Offset account ${i + 1}` : "Offset account"}
                   value={tracking.offsetAccountMap[o.placeholderAccountId] ?? ""}
-                  options={accounts.filter((a) => a.value !== tracking.liabilityAccountId)}
+                  exclude={[tracking.liabilityAccountId]}
                   onChange={(v) => set({ offsetAccountMap: { ...tracking.offsetAccountMap, [o.placeholderAccountId]: v } })}
                   issue={issue(`offset:${o.key}`)}
                   hint="The account whose balance you simulated as the offset. Required even for a draft."
@@ -187,9 +188,9 @@ export function TrackingSetup({ sim, setSimulation, tracking, setTracking, direc
                         <td className="px-2 py-2">
                           {principal
                             ? crosses
-                              ? <SelectField hideLabel label="Loan payment category" value={tracking.loanPaymentCategoryId ?? ""} options={categories} onChange={(v) => set({ loanPaymentCategoryId: v || null })} issue={issue("loanPaymentCategoryId")} />
+                              ? <CategoryField {...categoryProps} hideLabel label="Loan payment category" value={tracking.loanPaymentCategoryId ?? ""} onChange={(v) => set({ loanPaymentCategoryId: v || null })} issue={issue("loanPaymentCategoryId")} />
                               : <span className="text-muted-foreground">Not needed</span>
-                            : <SelectField hideLabel label={`${partLabel(c)} category`} value={c.categoryId ?? ""} options={categories} onChange={(v) => setComponent(c.key, { categoryId: v || null })} />}
+                            : <CategoryField {...categoryProps} hideLabel label={`${partLabel(c)} category`} value={c.categoryId ?? ""} onChange={(v) => setComponent(c.key, { categoryId: v || null })} />}
                         </td>
                         <td className="py-2 pl-2"><TextField hideLabel label={`${partLabel(c)} note on the line`} value={c.label} onChange={(v) => setComponent(c.key, { label: v })} /></td>
                       </tr>
@@ -199,7 +200,7 @@ export function TrackingSetup({ sim, setSimulation, tracking, setTracking, direc
                     <tr className="border-t border-border/60 align-middle">
                       <th scope="row" className="py-2 pr-2 text-left font-medium">Draws</th>
                       <td className="px-2 py-2">From {loanName}</td>
-                      <td className="px-2 py-2"><SelectField hideLabel label="Draw category" value={tracking.drawCategoryId ?? ""} options={categories} onChange={(v) => set({ drawCategoryId: v || null })} issue={issue("drawCategoryId")} /></td>
+                      <td className="px-2 py-2"><CategoryField {...categoryProps} hideLabel label="Draw category" value={tracking.drawCategoryId ?? ""} onChange={(v) => set({ drawCategoryId: v || null })} issue={issue("drawCategoryId")} /></td>
                       <td className="py-2 pl-2" />
                     </tr>
                   ) : null}

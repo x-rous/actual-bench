@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Controller, useForm, type Path, type PathValue } from "react-hook-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EditableDrawer } from "@/components/ui/editable-drawer";
-import type { ComboboxOption } from "@/components/ui/combobox";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { ConfirmState } from "@/components/ui/confirm-dialog";
 import { useTransactionCountsForIds } from "@/hooks/useTransactionCountsForIds";
@@ -246,8 +245,6 @@ type Props = {
 
 export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRule }: Props) {
   const stagedSchedules = useStagedStore((s) => s.schedules);
-  const stagedPayees    = useStagedStore((s) => s.payees);
-  const stagedAccounts  = useStagedStore((s) => s.accounts);
   const stageNew    = useStagedStore((s) => s.stageNew);
   const stageUpdate = useStagedStore((s) => s.stageUpdate);
   const stageDelete = useStagedStore((s) => s.stageDelete);
@@ -279,25 +276,6 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
       setValue(key, value, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
     },
     [setValue]
-  );
-
-  // ── Selectors ────────────────────────────────────────────────────────────────
-  const payeeOptions: ComboboxOption[] = useMemo(
-    () =>
-      Object.values(stagedPayees)
-        .filter((s) => !s.isDeleted && !s.entity.transferAccountId)
-        .map((s) => ({ id: s.entity.id, name: s.entity.name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [stagedPayees]
-  );
-
-  const accountOptions: ComboboxOption[] = useMemo(
-    () =>
-      Object.values(stagedAccounts)
-        .filter((s) => !s.isDeleted)
-        .map((s) => ({ id: s.entity.id, name: s.entity.name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [stagedAccounts]
   );
 
   const { data: txCounts, isLoading: txLoading } = useTransactionCountsForIds(
@@ -445,8 +423,6 @@ export function ScheduleFormDrawer({ open, onOpenChange, scheduleId, onEditAsRul
             errors={errors}
             register={register}
             setFieldValue={setFieldValue}
-            payeeOptions={payeeOptions}
-            accountOptions={accountOptions}
           />
 
           <div className="border-t border-border" />

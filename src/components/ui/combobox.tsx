@@ -36,13 +36,68 @@ export function useComboboxState(): ComboboxStateResult {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ComboboxOption = { id: string; name: string; isGroupHeader?: true; hidden?: boolean };
+export type ComboboxOption = {
+  id: string;
+  name: string;
+  /** A heading row: never a choice (unless a multi-select makes groups selectable). */
+  isGroupHeader?: true;
+  /**
+   * A top-level heading above the group headings (On budget, Expense). Always
+   * set together with `isGroupHeader`, and never selectable.
+   */
+  section?: true;
+  /** Dimmed, still selectable: a hidden category, a closed account. */
+  hidden?: boolean;
+  /** Shown but not selectable. */
+  disabled?: boolean;
+  /** Muted text at the end of the row: "closed", "transfer", a balance. */
+  trailing?: React.ReactNode;
+};
+
+/** Indent by depth: a section, the groups under it, the items under those. */
+const DEPTH_PADDING = ["pl-2", "pl-4", "pl-6"] as const;
+
+/**
+ * How deep each row sits, from the headings above it. Lists without sections
+ * keep their old shape: group headings at the margin, items one step in.
+ */
+function rowDepths(options: ComboboxOption[]): number[] {
+  let inSection = false;
+  let inGroup = false;
+  return options.map((o) => {
+    if (o.section) {
+      inSection = true;
+      inGroup = false;
+      return 0;
+    }
+    if (o.isGroupHeader) {
+      inGroup = true;
+      return inSection ? 1 : 0;
+    }
+    return (inSection ? 1 : 0) + (inGroup ? 1 : 0);
+  });
+}
+
+function headerClass(option: ComboboxOption, depth: number) {
+  return cn(
+    "pt-2 pb-0.5 select-none pointer-events-none",
+    DEPTH_PADDING[depth],
+    // The top level is the loud one; a group under a section steps back.
+    depth === 0 ? "text-[10px] font-semibold uppercase tracking-wide" : "text-[11px] font-medium",
+    option.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
+  );
+}
+
+function Trailing({ children }: { children: React.ReactNode }) {
+  if (children === undefined || children === null || children === "") return null;
+  return <span className="ml-auto shrink-0 pl-2 text-[11px] text-muted-foreground tabular-nums">{children}</span>;
+}
 
 /**
  * Filters a grouped options list (containing group headers + selectable items)
  * against a search term:
- * - A match on a group name includes all its children.
- * - A match on an option name includes that option (plus its nearest preceding group header).
+ * - A match on a section or group name includes all its children.
+ * - A match on an option name includes that option (plus its section and group headers).
  * - Groups with no matching children are hidden.
  * - If search is empty, returns the full list unchanged.
  */
@@ -65,28 +120,35 @@ export function filterGroupedOptions(
   if (!term) return options;
 
   const result: ComboboxOption[] = [];
+  const matches = (o: ComboboxOption) => o.name.toLowerCase().includes(term);
+  let sectionMatches = false;
   let groupMatches = false;
+  let pendingSection: ComboboxOption | null = null;
   let pendingGroup: ComboboxOption | null = null;
+  // Headings are only drawn above something they hold.
+  const flushHeaders = () => {
+    if (pendingSection) { result.push(pendingSection); pendingSection = null; }
+    if (pendingGroup) { result.push(pendingGroup); pendingGroup = null; }
+  };
 
   for (const opt of options) {
+    if (opt.section) {
+      sectionMatches = matches(opt);
+      groupMatches = false;
+      pendingSection = opt;
+      pendingGroup = null;
+      continue;
+    }
     if (opt.isGroupHeader) {
-      groupMatches = opt.name.toLowerCase().includes(term);
+      groupMatches = matches(opt);
       pendingGroup = opt;
       // A selectable group that matched is a result in its own right, so it is
       // emitted now rather than waiting on a child to carry it in.
-      if (groupMatches && groupsAreSelectable) {
-        result.push(opt);
-        pendingGroup = null;
-      }
+      if (groupMatches && groupsAreSelectable) flushHeaders();
       continue;
     }
-    if (groupMatches && !groupsAreSelectable) {
-      // Group name matched — include all children
-      if (pendingGroup) { result.push(pendingGroup); pendingGroup = null; }
-      result.push(opt);
-    } else if (opt.name.toLowerCase().includes(term)) {
-      // Child matched — include it with its nearest group header
-      if (pendingGroup) { result.push(pendingGroup); pendingGroup = null; }
+    if (sectionMatches || (groupMatches && !groupsAreSelectable) || matches(opt)) {
+      flushHeaders();
       result.push(opt);
     }
   }
@@ -104,9 +166,12 @@ export function SearchableCombobox({
   footer,
   triggerClassName,
   ariaLabel,
+  ariaDescribedBy,
   autoFocus,
   allowNone = true,
+  noneLabel = "- none -",
   disabled,
+  onOpenChange,
 }: {
   options: ComboboxOption[];
   value: string;
@@ -119,13 +184,19 @@ export function SearchableCombobox({
    * required: the list then holds only real options.
    */
   allowNone?: boolean;
+  /** The text of that row: "- none -", or "All accounts" in a filter. */
+  noneLabel?: string;
   disabled?: boolean;
+  /** Told when the list closes, for an inline editor that ends with it. */
+  onOpenChange?: (open: boolean) => void;
   /**
    * Names the control where no visible `<label>` can point at it — the trigger
    * is a button, so `htmlFor` has nothing to bind to and the accessible name
    * would otherwise be whichever option happens to be selected.
    */
   ariaLabel?: string;
+  /** Ties a hint or validation message to the trigger. */
+  ariaDescribedBy?: string;
   /**
    * Opens the list and puts the caret in its search box on mount, for a dialog
    * whose first question this is: the reader can start typing an account name
@@ -133,8 +204,12 @@ export function SearchableCombobox({
    */
   autoFocus?: boolean;
 }) {
-  const { open, openDropdown, closeDropdown, search, setSearch, searchRef } =
+  const { open, openDropdown, closeDropdown: closeList, search, setSearch, searchRef } =
     useComboboxState();
+  function closeDropdown() {
+    closeList();
+    onOpenChange?.(false);
+  }
 
   const selectedLabel = options.find((o) => !o.isGroupHeader && o.id === value)?.name ?? "";
   const filtered = filterGroupedOptions(options, search);
@@ -147,7 +222,11 @@ export function SearchableCombobox({
    * The empty id is the "- none -" row, which is a real choice: it clears the
    * field.
    */
-  const navigable = [...(allowNone ? [""] : []), ...filtered.filter((o) => !o.isGroupHeader).map((o) => o.id)];
+  const navigable = [
+    ...(allowNone ? [""] : []),
+    ...filtered.filter((o) => !o.isGroupHeader && !o.disabled).map((o) => o.id),
+  ];
+  const depths = rowDepths(filtered);
   const indexOf = new Map(navigable.map((id, index) => [id, index]));
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -219,6 +298,7 @@ export function SearchableCombobox({
       >
         <PopoverPrimitive.Trigger
           aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
           disabled={disabled}
           aria-haspopup="listbox"
           className={cn(
@@ -280,44 +360,46 @@ export function SearchableCombobox({
                       )}
                     >
                       <Check className={cn("h-3 w-3 shrink-0", value === "" ? "opacity-100" : "opacity-0")} />
-                      - none -
+                      {noneLabel}
                     </button>
                   </li>
                 )}
                 {filtered.filter((o) => !o.isGroupHeader).length === 0 ? (
                   <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
                 ) : (
-                  filtered.map((o) =>
+                  filtered.map((o, row) =>
                     o.isGroupHeader ? (
-                      <li
-                        key={`group-${o.id}`}
-                        className={cn(
-                          "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
-                          o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
-                        )}
-                      >
+                      <li key={`group-${o.id}`} className={headerClass(o, depths[row])}>
                         {o.name}
                       </li>
                     ) : (
                       <li key={o.id}>
                         <button
                           type="button"
-                          data-index={indexOf.get(o.id)}
-                          id={optionId(indexOf.get(o.id) ?? 0)}
+                          disabled={o.disabled}
+                          {...(indexOf.has(o.id)
+                            ? { "data-index": indexOf.get(o.id), id: optionId(indexOf.get(o.id) as number) }
+                            : {})}
                           role="option"
                           aria-selected={value === o.id}
+                          aria-disabled={o.disabled || undefined}
                           onClick={() => select(o.id)}
-                          onMouseEnter={() => setActiveIndex(indexOf.get(o.id) ?? 0)}
+                          onMouseEnter={() => indexOf.has(o.id) && setActiveIndex(indexOf.get(o.id) as number)}
                           className={cn(
-                            "flex w-full items-center gap-2 pl-4 pr-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
-                            o.hidden ? "text-foreground/60" : "text-foreground",
-                            activeIndex === indexOf.get(o.id) && "bg-accent text-accent-foreground"
+                            "flex w-full items-center gap-2 pr-2 py-1.5 text-xs",
+                            DEPTH_PADDING[depths[row]],
+                            o.disabled
+                              ? "cursor-not-allowed text-muted-foreground/60"
+                              : "hover:bg-accent hover:text-accent-foreground",
+                            !o.disabled && (o.hidden ? "text-foreground/60" : "text-foreground"),
+                            !o.disabled && activeIndex === indexOf.get(o.id) && "bg-accent text-accent-foreground"
                           )}
                         >
                           <Check
                             className={cn("h-3 w-3 shrink-0", value === o.id ? "opacity-100" : "opacity-0")}
                           />
                           <span className="truncate">{o.name}</span>
+                          <Trailing>{o.trailing}</Trailing>
                         </button>
                       </li>
                     )
@@ -413,18 +495,19 @@ export function MultiSearchableCombobox({
 
   const filtered = filterGroupedOptions(options, search, selectableGroups);
 
-  const selectedOptions = options.filter(
-    (o) => (selectableGroups || !o.isGroupHeader) && values.includes(o.id)
-  );
+  // A group can be a choice here; a section never is.
+  const isChoice = (o: ComboboxOption) => !o.section && (selectableGroups || !o.isGroupHeader);
+  const selectedOptions = options.filter((o) => isChoice(o) && values.includes(o.id));
 
   // Same arrow-key walk as the single-select, minus the "- none -" row: with
   // several selections, clearing is what the chips' own buttons are for.
   const isCovered = (id: string) => coveredIds?.has(id) ?? false;
   const isExclusive = (id: string) => exclusiveIds?.has(id) ?? false;
   /** Rows the list draws - headings included only where they can be picked. */
-  const visible = filtered.filter((o) => selectableGroups || !o.isGroupHeader);
+  const visible = filtered.filter(isChoice);
   /** Of those, the ones the arrow keys can land on. */
-  const navigable = visible.filter((o) => !isCovered(o.id)).map((o) => o.id);
+  const navigable = visible.filter((o) => !isCovered(o.id) && !o.disabled).map((o) => o.id);
+  const depths = rowDepths(filtered);
   const indexOf = new Map(navigable.map((id, index) => [id, index]));
 
   const [activeIndex, setActiveIndex] = useState(0);
@@ -587,15 +670,9 @@ export function MultiSearchableCombobox({
                 {visible.length === 0 ? (
                   <li className="px-3 py-2 text-xs text-muted-foreground italic">No results</li>
                 ) : (
-                  filtered.map((o) =>
-                    o.isGroupHeader && !selectableGroups ? (
-                      <li
-                        key={`group-${o.id}`}
-                        className={cn(
-                          "px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide select-none pointer-events-none",
-                          o.hidden ? "text-muted-foreground/60" : "text-muted-foreground"
-                        )}
-                      >
+                  filtered.map((o, row) =>
+                    !isChoice(o) ? (
+                      <li key={`group-${o.id}`} className={headerClass(o, depths[row])}>
                         {o.name}
                       </li>
                     ) : (
@@ -611,7 +688,7 @@ export function MultiSearchableCombobox({
                               // `aria-activedescendant` could then resolve to.
                               {})}
                           role="option"
-                          disabled={isCovered(o.id)}
+                          disabled={isCovered(o.id) || o.disabled}
                           aria-selected={values.includes(o.id) || isCovered(o.id)}
                           // Says *why* it cannot be clicked. A row that is ticked
                           // and inert with no explanation reads as broken.
@@ -620,21 +697,18 @@ export function MultiSearchableCombobox({
                           onMouseEnter={() => setActiveIndex(indexOf.get(o.id) ?? 0)}
                           className={cn(
                             "flex w-full items-center gap-2 pr-2 py-1.5 text-xs",
-                            isCovered(o.id)
+                            isCovered(o.id) || o.disabled
                               ? "cursor-default text-muted-foreground"
                               : "hover:bg-accent hover:text-accent-foreground",
                             // The indent is the whole point of the grouping: a
                             // heading sits at the margin and its children step in
                             // from it, so the shape of the list says what belongs
                             // to what without any lines being drawn.
-                            o.isGroupHeader && !isExclusive(o.id)
-                              ? "pl-2 font-semibold uppercase tracking-wide text-[10px]"
-                              : isExclusive(o.id)
-                                ? "pl-2 font-medium"
-                                : "pl-6",
+                            isExclusive(o.id) ? "pl-2 font-medium" : DEPTH_PADDING[depths[row]],
+                            o.isGroupHeader && !isExclusive(o.id) && "font-semibold uppercase tracking-wide text-[10px]",
                             isExclusive(o.id) && values.includes(o.id) && "text-primary",
-                            o.hidden && !isCovered(o.id) && "text-foreground/60",
-                            !o.hidden && !isCovered(o.id) && "text-foreground",
+                            o.hidden && !isCovered(o.id) && !o.disabled && "text-foreground/60",
+                            !o.hidden && !isCovered(o.id) && !o.disabled && "text-foreground",
                             !isCovered(o.id) &&
                               activeIndex === indexOf.get(o.id) &&
                               "bg-accent text-accent-foreground"
@@ -667,6 +741,7 @@ export function MultiSearchableCombobox({
                             </span>
                           )}
                           <span className="truncate">{o.name}</span>
+                          <Trailing>{o.trailing}</Trailing>
                         </button>
                       </li>
                     )

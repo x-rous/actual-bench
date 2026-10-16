@@ -20,6 +20,9 @@ import { cn } from "@/lib/utils";
 import { formatDateLabel } from "../lib/pdfReviewTable";
 import type { ReconciliationSessionRecord } from "../lib/reconciliationApi";
 import { Select } from "@/components/ui/select";
+import { AccountPicker } from "@/components/ui/entity-picker";
+import type { AccountItem } from "@/components/ui/entity-options";
+import { useStagedAccounts } from "@/hooks/useStagedEntities";
 import { SearchInput } from "@/components/ui/search-input";
 
 /**
@@ -262,15 +265,18 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
     [sessions]
   );
 
+  // The accounts some session belongs to, in the budget's order and grouping;
+  // an account since deleted from the budget keeps the name its session saved.
+  const { accounts: budgetAccounts, groups: budgetAccountGroups } = useStagedAccounts();
   const accounts = useMemo(() => {
-    const byId = new Map<string, string>();
+    const byId = new Map<string, AccountItem>();
     for (const session of sessions) {
-      if (!byId.has(session.accountId)) byId.set(session.accountId, accountNameOf(session));
+      if (!byId.has(session.accountId)) byId.set(session.accountId, { id: session.accountId, name: accountNameOf(session) });
     }
-    return [...byId]
-      .map(([id, label]) => ({ id, label }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [sessions]);
+    const known = budgetAccounts.filter((account) => byId.has(account.id));
+    const gone = [...byId.values()].filter((account) => !known.some((k) => k.id === account.id));
+    return [...known, ...gone];
+  }, [sessions, budgetAccounts]);
 
   const years = useMemo(() => {
     const present = new Set<string>();
@@ -454,13 +460,20 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         )}
 
         {accounts.length > 0 && (
-          <Select
-            className="h-6 w-auto max-w-56"
-            value={accountFilter}
-            onValueChange={setAccountFilter}
-            aria-label="Filter by account"
-            options={[{ value: "all", label: "Any account" }, ...accounts.map((account) => ({ value: account.id, label: account.label }))]}
-          />
+          <div className="w-48">
+            <AccountPicker
+              size="sm"
+              className="h-6"
+              accounts={accounts}
+              groups={budgetAccountGroups}
+              value={accountFilter === "all" ? "" : accountFilter}
+              onChange={(value) => setAccountFilter(value || "all")}
+              ariaLabel="Filter by account"
+              placeholder="Any account"
+              allowNone
+              noneLabel="Any account"
+            />
+          </div>
         )}
 
         {tags.length > 0 && (

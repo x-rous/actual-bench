@@ -2,10 +2,17 @@
 
 import { Plus } from "lucide-react";
 import { SearchableCombobox, MultiSearchableCombobox } from "@/components/ui/combobox";
-import { cn } from "@/lib/utils";
 import type { ComboboxOption } from "@/components/ui/combobox";
 import type { RuleEntityType } from "../lib/ruleEditor";
 
+const ENTITY_LABEL: Record<RuleEntityType, string> = {
+  payee: "Payee",
+  category: "Category",
+  categoryGroup: "Category group",
+  account: "Account",
+};
+
+/** The rule editor's entity pickers: the shared lists, plus a "Create …" footer. */
 export function EntityCombobox({
   entity,
   options,
@@ -30,6 +37,7 @@ export function EntityCombobox({
       ? "Select category group…"
       : "Select account…";
 
+  const ariaLabel = ENTITY_LABEL[entity];
   const canQuickCreate = onQuickCreate && (entity === "payee" || entity === "category");
   const entityLabel = entity === "payee" ? "payee" : "category";
 
@@ -39,10 +47,8 @@ export function EntityCombobox({
       value={value}
       onChange={onChange}
       placeholder={placeholder}
-      triggerClassName={cn(
-        "border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/20",
-        compact && "h-7"
-      )}
+      ariaLabel={ariaLabel}
+      triggerClassName={compact ? "h-7" : undefined}
       footer={
         canQuickCreate
           ? (search) =>
@@ -89,10 +95,8 @@ export function MultiEntityCombobox({
       values={values}
       onChange={onChange}
       placeholder={placeholder}
-      triggerClassName={cn(
-        "border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/20",
-        compact && "h-7"
-      )}
+      ariaLabel={ENTITY_LABEL[entity]}
+      triggerClassName={compact ? "h-7" : undefined}
     />
   );
 }

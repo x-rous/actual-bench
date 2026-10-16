@@ -26,7 +26,9 @@ import { statementText } from "@/lib/reconciliation/statement/text";
 import { findNoteTags } from "@/lib/reconciliation/noteTags";
 import type { Option } from "./StagedFields";
 import { Select } from "@/components/ui/select";
-import { SearchableCombobox } from "@/components/ui/combobox";
+import { SearchableCombobox, type ComboboxOption } from "@/components/ui/combobox";
+import { buildCategoryOptions, buildPayeeOptions } from "@/components/ui/entity-options";
+import { PayeePicker } from "@/components/ui/entity-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
@@ -146,16 +148,21 @@ const ACTIONS: { id: ActionKind; label: string }[] = [
 function pickerFor(
   condition: Condition,
   lists: { payees: Option[]; categories: Option[]; tags: Option[] }
-): Option[] | null {
+): ComboboxOption[] | null {
   const exact = condition.operator === "equals" || condition.operator === "notEquals";
-  if (condition.field === "payee" && exact) return lists.payees;
-  if (condition.field === "category" && exact) return lists.categories;
+  if (condition.field === "payee" && exact) return byName(buildPayeeOptions(lists.payees));
+  if (condition.field === "category" && exact) return byName(buildCategoryOptions(lists.categories));
   if (condition.operator === "hasTag" || condition.operator === "doesNotHaveTag") {
     // Only when the session actually has tags; an empty list would strand the
     // user with a picker that cannot be answered.
-    return lists.tags.length > 0 ? lists.tags : null;
+    return lists.tags.length > 0 ? byName(lists.tags) : null;
   }
   return null;
+}
+
+/** These conditions compare names, so the value a row stands for is its name. */
+function byName(options: ComboboxOption[]): ComboboxOption[] {
+  return options.map((option) => (option.isGroupHeader ? option : { ...option, id: option.name }));
 }
 
 /**
@@ -496,10 +503,7 @@ export function TransformDialog({
                       previous.map((entry, i) => (i === index ? { ...entry, value } : entry))
                     )
                   }
-                  options={pickerFor(condition, { payees, categories, tags: tagOptions })!.map((option) => ({
-                    id: option.name,
-                    name: option.name,
-                  }))}
+                  options={pickerFor(condition, { payees, categories, tags: tagOptions })!}
                 />
               </div>
             ) : condition.field === "date" ? (
@@ -776,10 +780,12 @@ export function TransformDialog({
 
             {action.kind === "setPayee" && (
               <div className="w-52">
-                <SearchableCombobox
+                <PayeePicker
                   ariaLabel="Payee"
-                  triggerClassName="h-7"
+                  size="sm"
                   placeholder="None"
+                  allowNone
+                  payees={payees}
                   value={action.payeeId ?? ""}
                   onChange={(value) =>
                     setActions((previous) =>
@@ -788,7 +794,6 @@ export function TransformDialog({
                       )
                     )
                   }
-                  options={payees.map((option) => ({ id: option.id, name: option.name }))}
                 />
               </div>
             )}

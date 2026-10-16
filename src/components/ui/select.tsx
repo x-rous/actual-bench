@@ -11,8 +11,9 @@ export type SelectOption = { value: string; label: React.ReactNode; disabled?: b
 export type SelectOptionGroup = { label: string; options: SelectOption[] };
 
 /**
- * The app's dropdown: the same look as the searchable pickers (budgets,
- * categories), for choices short enough not to need a search box. Its list
+ * The app's dropdown: the same look as the searchable pickers, for short fixed
+ * choices that do not need a search box. Accounts, categories, category groups
+ * and payees always use the pickers in `entity-picker.tsx` instead. Its list
  * opens in a layer above the page, so a scrolling table or dialog never clips
  * it, and it keeps the platform's keys: arrows, Enter, Escape, and typing to
  * jump to an option.

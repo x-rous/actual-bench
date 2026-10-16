@@ -33,6 +33,7 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import { useStagedStore } from "@/store/staged";
+import { useStagedAccounts, useStagedCategories, useStagedPayees } from "@/hooks/useStagedEntities";
 import { usePayees } from "@/features/payees/hooks/usePayees";
 import { useCategoryGroups } from "@/features/categories/hooks/useCategoryGroups";
 import {
@@ -169,8 +170,9 @@ export function ReconciliationView() {
 
   usePayees();
   useCategoryGroups();
-  const stagedPayees = useStagedStore((state) => state.payees);
-  const stagedCategories = useStagedStore((state) => state.categories);
+  const { groups: accountGroups } = useStagedAccounts();
+  const payeeOptions = useStagedPayees();
+  const { categories: stagedCategories, groups: categoryGroups } = useStagedCategories();
 
   const sessionsQuery = useReconciliationSessions();
   const mutations = useReconciliationMutations();
@@ -552,23 +554,12 @@ export function ReconciliationView() {
     [baselines, transactionsById]
   );
 
-  const payeeOptions = useMemo(
-    () =>
-      Object.values(stagedPayees)
-        .filter((staged) => !staged.isDeleted)
-        .map((staged) => ({ id: staged.entity.id, name: staged.entity.name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [stagedPayees]
-  );
-
-  const categoryOptions = useMemo(
-    () =>
-      Object.values(stagedCategories)
-        .filter((staged) => !staged.isDeleted)
-        .map((staged) => ({ id: staged.entity.id, name: staged.entity.name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [stagedCategories]
-  );
+  // Named by group, so the category pickers can head each group without the
+  // group list being threaded through every panel.
+  const categoryOptions = useMemo(() => {
+    const groupNames = new Map(categoryGroups.map((group) => [group.id, group.name]));
+    return stagedCategories.map((category) => ({ ...category, groupName: groupNames.get(category.groupId) }));
+  }, [stagedCategories, categoryGroups]);
 
   /**
    * What Apply would do, derived rather than tracked.
@@ -2089,7 +2080,8 @@ export function ReconciliationView() {
         <NewSessionDialog
           open={newSessionOpen}
           onOpenChange={setNewSessionOpen}
-          accounts={visibleAccounts.map((account) => ({ id: account.id, name: account.name }))}
+          accounts={visibleAccounts}
+          accountGroups={accountGroups}
           knownTags={[
             ...new Set(
               (sessionsQuery.data ?? [])

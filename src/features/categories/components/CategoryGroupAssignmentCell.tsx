@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Select } from "@/components/ui/select";
+import { CategoryGroupPicker } from "@/components/ui/entity-picker";
 
 export type CategoryGroupOption = { id: string; name: string };
 
@@ -47,21 +47,22 @@ export const CategoryGroupAssignmentCell = React.memo(
     }
 
     return (
-      <Select
-        defaultOpen
+      <CategoryGroupPicker
+        autoFocus
+        size="sm"
         className="h-6"
-        aria-label="Category group"
+        ariaLabel="Category group"
+        groups={options}
         value={groupId}
         onOpenChange={(open) => {
           if (!open) setIsEditing(false);
         }}
-        onValueChange={(nextGroupId) => {
+        onChange={(nextGroupId) => {
           if (nextGroupId !== groupId) {
             onCommit(categoryId, nextGroupId);
           }
           setIsEditing(false);
         }}
-        options={options.map((option) => ({ value: option.id, label: option.name }))}
       />
     );
   },
