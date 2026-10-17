@@ -435,27 +435,6 @@ export function Inspector({
           </section>
         )}
 
-        {/* Editing is offered once the row is about a specific transaction, or is
-            going to become one. Until then there is nothing to edit. */}
-        {!readOnly && !candidateSelection &&
-          (item.disposition === "create" ||
-            item.disposition === "matched" ||
-            item.disposition === "correct-amount") && (
-          <StagedFields
-            key={item.id}
-            item={item}
-            current={{
-              payeeId: chosen?.payeeId ?? null,
-              categoryId: chosen?.categoryId ?? null,
-              notes: chosen?.notes ?? null,
-            }}
-            payees={payees}
-            categories={categories}
-            onStage={onStage}
-            onUnstage={onUnstage}
-          />
-        )}
-
         {readOnly ? (
           <p className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
             This reconciliation has been applied, so its decisions are a record rather than something
@@ -484,6 +463,27 @@ export function Inspector({
             onDisposition={onDisposition}
             onUseCandidate={onUseCandidate}
             onCorrectAmount={onCorrectAmount}
+          />
+        )}
+
+        {/* Editing is offered once the row is about a specific transaction, or is
+            going to become one. Until then there is nothing to edit. */}
+        {!readOnly && !candidateSelection &&
+          (item.disposition === "create" ||
+            item.disposition === "matched" ||
+            item.disposition === "correct-amount") && (
+          <StagedFields
+            key={item.id}
+            item={item}
+            current={{
+              payeeId: chosen?.payeeId ?? null,
+              categoryId: chosen?.categoryId ?? null,
+              notes: chosen?.notes ?? null,
+            }}
+            payees={payees}
+            categories={categories}
+            onStage={onStage}
+            onUnstage={onUnstage}
           />
         )}
 

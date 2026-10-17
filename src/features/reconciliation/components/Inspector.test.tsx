@@ -137,7 +137,7 @@ it("offers the statement date explicitly and exposes its staged undo", () => {
   expect(screen.queryByRole("button", { name: /Use statement date/ })).not.toBeInTheDocument();
 });
 
-it("groups evidence and edits before actions, with the date action inside the comparison", () => {
+it("groups evidence and actions before edits, with the date action inside the comparison", () => {
   const actual = { ...transaction, date: "2026-08-13", amount: row.amount };
   const matched: ReconciliationItem = { ...statementOnly, disposition: "matched", actualTransactionIds: [actual.id],
     match: { type: "suggested", evidenceSource: "bench", confidence: 100, label: "high", reasons: [
@@ -156,7 +156,7 @@ it("groups evidence and edits before actions, with the date action inside the co
   expect(screen.queryByText("Reference")).not.toBeInTheDocument();
   expect(within(screen.getByRole("region", { name: "Comparison" })).getByRole("button", { name: "Use statement date" })).toBeInTheDocument();
   const editor = screen.getByRole("region", { name: "Resulting transaction" });
-  expect(editor.compareDocumentPosition(screen.getByRole("region", { name: "Actions" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Actions" }).compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it("keeps candidate comparison read-only until explicit confirmation", () => {

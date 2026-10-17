@@ -196,7 +196,7 @@ Consolidate budgets kept in **different currencies**: a transaction flow can con
 
 - **Fresh data when resuming:** Direct syncs first and both connections read current Actual transactions before enabling decisions. Saved choices remain; a failed refresh offers a retry.
 - **Resolve group:** compare connected bank rows against their existing Actual candidates in one matrix. Select a cell to inspect it, confirm **Use this match**, and undo the last pairing if needed. Choosing one transaction removes it from competing rows; the last pair still needs confirmation.
-- **Match details panel:** grouped comparison, bank/Actual source details, resulting fields, and actions; compact evidence, aligned labels, contextual date correction, and a fixed header while scrolling. Candidate comparisons keep editing behind explicit match confirmation.
+- **Match details panel:** grouped comparison, bank/Actual source details, actions, and resulting fields; compact evidence, aligned labels, contextual date correction, and a fixed header while scrolling. Candidate comparisons keep editing behind explicit match confirmation.
 - **Use statement date:** explicitly stage the bank date on an accepted match, review it with the other changes, or undo it. Unchanged dates stay untouched.
 - Decision saves run in order, bulk edits save together, and Apply checks that the reviewed decisions are saved. A running Apply locks the session; an interrupted run can be recovered by reading Actual after its original tab has stopped.
 - Successful rows stay fixed while remaining rows can be reviewed. **Finish** closes a fully decided session that needs no writes. Displayed amounts are searchable; cleared payees and notes preview consistently.
