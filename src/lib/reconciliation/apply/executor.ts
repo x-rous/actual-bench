@@ -122,8 +122,11 @@ export async function executeApplyPlan(input: ApplyExecutorInput): Promise<Apply
       pendingCreates.forEach((operation, index) => {
         createResults.set(operation.id, {
           operationId: operation.id,
-          status: "applied",
+          status: byIndex.get(index)?.transactionId ? "applied" : "failed",
           transactionId: byIndex.get(index)?.transactionId ?? null,
+          ...(!byIndex.get(index)?.transactionId ? {
+            error: "The create could not be confirmed. Retry will check its marker before creating again.",
+          } : {}),
         });
       });
     } catch (error) {

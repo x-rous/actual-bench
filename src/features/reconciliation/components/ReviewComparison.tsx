@@ -156,8 +156,12 @@ export function ReviewComparison({
 
     const built = items.map((item) => {
       const statementRow = statementRows.get(item.statementRowIds[0] ?? "");
-      const transaction = transactions.get(item.actualTransactionIds[0] ?? "");
       const operation = operationByItem.get(item.id);
+      const current = transactions.get(item.actualTransactionIds[0] ?? "");
+      const transaction = current && operation?.kind === "update"
+        ? { ...current, date: operation.date, amount: operation.amount } : current;
+      const reviewedItem = { ...item, stagedChanges: operation?.kind === "update" ? operation.patch
+        : operation?.kind === "create" ? item.stagedChanges : undefined };
 
       const action: ReviewRow["action"] = operation
         ? operation.kind
@@ -179,7 +183,7 @@ export function ReviewComparison({
           }
         : null;
 
-      const changedFields = new Set<string>(stagedFields(item.stagedChanges));
+      const changedFields = new Set<string>(stagedFields(reviewedItem.stagedChanges));
       const clearedByThisRun =
         (operation?.kind === "update" && operation.cleared === true) ||
         (operation?.kind === "create" && operation.cleared === true);
@@ -198,7 +202,7 @@ export function ReviewComparison({
         transaction,
         action,
         provenance,
-        pending: prospectiveTransaction({ item, statementRow, transaction, applyConfig, statementFormat }),
+        pending: prospectiveTransaction({ item: reviewedItem, statementRow, transaction, applyConfig, statementFormat }),
         changedFields,
       };
     });

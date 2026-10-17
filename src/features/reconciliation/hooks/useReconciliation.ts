@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { ReconciliationSaveQueue } from "../lib/saveQueue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useConnectionStore } from "@/store/connection";
 import * as api from "../lib/reconciliationApi";
@@ -60,6 +62,7 @@ export function usePdfStatementLayouts(accountId?: string) {
 
 export function useReconciliationMutations() {
   const queryClient = useQueryClient();
+  const [queue] = useState(() => new ReconciliationSaveQueue());
   const budgetSyncId = useActiveBudgetSyncId();
 
   const invalidateSessions = () =>
@@ -80,7 +83,7 @@ export function useReconciliationMutations() {
 
   const updateSession = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof api.updateSession>[1] }) =>
-      api.updateSession(id, payload),
+      queue.enqueue(() => api.updateSession(id, payload)),
     onSuccess: (_result, variables) => {
       invalidateSessions();
       void invalidateSession(variables.id);
@@ -100,9 +103,7 @@ export function useReconciliationMutations() {
       items: unknown[];
       patch: Parameters<typeof api.updateSession>[1];
     }) => {
-      await api.putStatementRows(input.sessionId, input.statementRows);
-      await api.putItems(input.sessionId, input.items);
-      return api.updateSession(input.sessionId, input.patch);
+      return queue.enqueue(() => api.saveWork(input.sessionId, { statementRows: input.statementRows, items: input.items, patch: input.patch }));
     },
     onSuccess: (_result, variables) => {
       invalidateSessions();
@@ -161,17 +162,31 @@ export function useReconciliationMutations() {
   /** Rewrite the whole item set — used when a decision adds or removes rows. */
   const replaceItems = useMutation({
     mutationFn: ({ sessionId, items }: { sessionId: string; items: unknown[] }) =>
-      api.putItems(sessionId, items),
+      queue.enqueue(() => api.saveWork(sessionId, { items })),
+    onSuccess: (_result, variables) => invalidateSession(variables.sessionId),
+  });
+
+  const patchItems = useMutation({
+    mutationFn: ({ sessionId, items }: { sessionId: string; items: unknown[] }) =>
+      queue.enqueue(() => api.saveWork(sessionId, { itemPatches: items })),
     onSuccess: (_result, variables) => invalidateSession(variables.sessionId),
   });
 
   const patchItem = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: unknown; sessionId: string }) =>
-      api.patchItem(id, payload),
+      queue.enqueue(() => api.patchItem(id, payload)),
     onSuccess: (_result, variables) => invalidateSession(variables.sessionId),
   });
 
   return {
+    loadSession: (id: string) => queryClient.fetchQuery({ queryKey: sessionKey(id), queryFn: () => api.getSession(id), staleTime: 0 }),
+    hasFailedSaves: queue.hasFailures,
+    flushSaves: () => queue.flush(),
+    retrySaves: async (id?: string | null) => {
+      await queue.retry();
+      await invalidateSessions();
+      if (id) await invalidateSession(id);
+    },
     createSession,
     updateSession,
     deleteSession,
@@ -184,6 +199,7 @@ export function useReconciliationMutations() {
     renamePdfStatementLayout,
     deletePdfStatementLayout,
     patchItem,
+    patchItems,
     replaceItems,
   };
 }

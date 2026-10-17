@@ -1,3 +1,4 @@
+import { recoverApply } from "./recovery";
 import type { ActualTransactionSnapshot } from "../types";
 import type { ApplyOperation, ApplyPlan, OperationResult } from "./operations";
 import { verifyApply } from "./verification";
@@ -82,7 +83,7 @@ describe("reading the account back after applying", () => {
       plan,
       results: allApplied(plan),
       latest: [
-        snapshot({ id: "t2", importedId: "recon:abc" }),
+        snapshot({ id: "t2", amount: -1000, importedId: "recon:abc" }),
         snapshot({ id: "t1", notes: "Imported #Two" }),
       ],
       snapshots: new Map([["t1", snapshot()]]),
@@ -114,7 +115,7 @@ describe("reading the account back after applying", () => {
       plan,
       results: allApplied(plan),
       latest: [
-        snapshot({ id: "t2", importedId: "recon:abc" }),
+        snapshot({ id: "t2", amount: -1000, importedId: "recon:abc" }),
         snapshot({ id: "t3", importedId: "recon:abc" }),
       ],
       snapshots: new Map(),
@@ -178,7 +179,7 @@ describe("reading the account back after applying", () => {
     const report = verifyApply({
       plan,
       results: allApplied(plan),
-      latest: [snapshot({ importedId: "recon:abc", importedPayee: "AMZN Mktp AE*23981" })],
+      latest: [snapshot({ amount: -1000, importedId: "recon:abc", importedPayee: "AMZN Mktp AE*23981" })],
       snapshots: new Map(),
     });
 
@@ -289,4 +290,24 @@ describe("reading the account back after applying", () => {
 
     expect(report.ok).toBe(true);
   });
+});
+
+
+it("does not verify a create whose amount/date/clearing differs from approval", () => {
+  const plan = planOf({ ...createOperation, cleared: true });
+  const report = verifyApply({ plan, results: allApplied(plan), latest: [snapshot({ importedId: "recon:abc" })], snapshots: new Map() });
+  expect(report.ok).toBe(false);
+  expect(report.issues.map((issue) => issue.detail).join(" ")).toContain("amount");
+  expect(report.issues.map((issue) => issue.detail).join(" ")).toContain("cleared");
+});
+
+it("recovers only confirmed outcomes and leaves incomplete changes retryable", () => {
+  const plan = planOf(createOperation, updateOperation, deleteOperation);
+  const input = { plan, snapshots: new Map([["t1", snapshot()]]), latest: [snapshot({ id: "created", importedId: "recon:abc", amount: -1000 })] };
+  const results = recoverApply(input);
+  expect(results.find((result) => result.operationId === createOperation.id)).toMatchObject({ status: "skipped", transactionId: "created" });
+  expect(results.find((result) => result.operationId === updateOperation.id)?.status).toBe("failed");
+  expect(results.find((result) => result.operationId === deleteOperation.id)?.status).toBe("skipped");
+  const duplicates = recoverApply({ ...input, latest: [...input.latest, snapshot({ id: "duplicate", importedId: "recon:abc", amount: -1000 })] });
+  expect(duplicates.find((result) => result.operationId === createOperation.id)?.status).toBe("failed");
 });

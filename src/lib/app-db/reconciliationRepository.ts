@@ -14,6 +14,8 @@
  * proposal until the user explicitly applies it.
  */
 
+import { decisionSignature } from "@/lib/reconciliation/session/signature";
+import { normalizeApplyConfig } from "@/lib/reconciliation/session/plan";
 import { generateId } from "@/lib/uuid";
 import { AppDbValidationError } from "./errors";
 import type { SqliteDatabase } from "./types";
@@ -535,6 +537,9 @@ export function updateReconciliationSession(
     .prepare("SELECT * FROM reconciliation_sessions WHERE id = ?")
     .get<SessionRow>(id);
   if (!existing) return null;
+  if (existing.status === "applying" && Object.keys(input).some((key) => key !== "applyResults")) {
+    throw new AppDbValidationError("This reconciliation is applying. Return to its running tab or recover the interrupted apply.");
+  }
 
   const assignments: string[] = [];
   const values: unknown[] = [];
@@ -583,6 +588,7 @@ export function updateReconciliationSession(
 
 /** Deletes the session and, by cascade, its statement rows and items. */
 export function deleteReconciliationSession(db: SqliteDatabase, id: string): boolean {
+  assertReconciliationEditable(db, id);
   const result = db.prepare("DELETE FROM reconciliation_sessions WHERE id = ?").run(id);
   return result.changes > 0;
 }
@@ -619,6 +625,9 @@ export function replaceStatementRows(
   sessionId: string,
   rows: StatementRowInput[]
 ): number {
+  assertReconciliationEditable(db, sessionId);
+  const session = getReconciliationSession(db, sessionId);
+  if (session?.appliedAt) throw new AppDbValidationError("An applied statement cannot be replaced.");
   const insert = db.prepare(
     `INSERT INTO reconciliation_statement_rows
        (id, session_id, source_row_number, posted_date, amount, imported_payee, bank_notes,
@@ -630,12 +639,12 @@ export function replaceStatementRows(
   const run = db.transaction(() => {
     db.prepare("DELETE FROM reconciliation_statement_rows WHERE session_id = ?").run(sessionId);
     for (const row of rows) {
-      if (row.originalAmount != null && !Number.isInteger(row.originalAmount)) {
+      if (row.originalAmount != null && !Number.isSafeInteger(row.originalAmount)) {
         throw new AppDbValidationError(
           `Statement row ${row.sourceRowNumber} original amount must be an integer in minor units`
         );
       }
-      if (!Number.isInteger(row.amount)) {
+      if (!Number.isSafeInteger(row.amount)) {
         // Minor units are integers by definition; a float here means a parsing
         // bug upstream and must not be silently persisted.
         throw new AppDbValidationError(
@@ -699,6 +708,15 @@ export function replaceReconciliationItems(
   sessionId: string,
   items: ItemInput[]
 ): number {
+  assertReconciliationEditable(db, sessionId);
+  const existingItems = listReconciliationItems(db, sessionId);
+  const session = getReconciliationSession(db, sessionId);
+  const fixed = new Map(existingItems.filter((item) => isAppliedItem(session?.applyResults, item.id)).map((item) => [item.id, item]));
+  const incomingIds = new Set(items.map((item) => item.id));
+  for (const id of fixed.keys()) if (!incomingIds.has(id)) {
+    throw new AppDbValidationError("Already applied rows must be retained.");
+  }
+  items = items.map((item) => fixed.get(item.id ?? "") ?? item);
   const insert = db.prepare(
     `INSERT INTO reconciliation_items
        (id, session_id, statement_row_ids_json, actual_transaction_ids_json, disposition,
@@ -751,6 +769,10 @@ export function updateReconciliationItem(
 ): ReconciliationItemRecord | null {
   const existing = db.prepare("SELECT * FROM reconciliation_items WHERE id = ?").get<ItemRow>(id);
   if (!existing) return null;
+  assertReconciliationEditable(db, existing.session_id);
+  if (isAppliedItem(getReconciliationSession(db, existing.session_id)?.applyResults, id)) {
+    throw new AppDbValidationError("This row has already been applied.");
+  }
 
   const assignments: string[] = [];
   const values: unknown[] = [];
@@ -780,4 +802,70 @@ export function updateReconciliationItem(
 
   const updated = db.prepare("SELECT * FROM reconciliation_items WHERE id = ?").get<ItemRow>(id);
   return updated ? itemToRecord(updated) : null;
+}
+
+
+/** Uses existing result identities; never parses an Actual import marker. */
+export function isAppliedItem(results: unknown, itemId: string): boolean {
+  return Array.isArray(results) && results.some((entry) => entry &&
+    (entry.status === "applied" || entry.status === "skipped") &&
+    ["create", "update", "delete"].some((kind) => entry.operationId === `${kind}:${itemId}`));
+}
+
+export function assertReconciliationEditable(db: SqliteDatabase, id: string): void {
+  if (getReconciliationSession(db, id)?.status === "applying") {
+    throw new AppDbValidationError("This reconciliation is currently applying.");
+  }
+}
+
+/** One commit for the complete matched revision, or a set of ordinary edits. */
+export function saveReconciliationWork(db: SqliteDatabase, id: string, input: {
+  statementRows?: StatementRowInput[]; items?: ItemInput[];
+  itemPatches?: { id: string; patch: Partial<ItemInput> }[];
+  patch?: UpdateSessionInput;
+}): ReconciliationSessionRecord {
+  return db.transaction(() => {
+    const session = getReconciliationSession(db, id);
+    if (!session) throw new AppDbValidationError("Reconciliation session not found");
+    assertReconciliationEditable(db, id);
+    if (input.statementRows) replaceStatementRows(db, id, input.statementRows);
+    if (input.items) replaceReconciliationItems(db, id, input.items);
+    for (const entry of input.itemPatches ?? []) {
+      const item = db.prepare("SELECT session_id FROM reconciliation_items WHERE id = ?").get<{ session_id: string }>(entry.id);
+      if (item?.session_id !== id) throw new AppDbValidationError("Item does not belong to this reconciliation");
+      updateReconciliationItem(db, entry.id, entry.patch);
+    }
+    return updateReconciliationSession(db, id, input.patch ?? {})!;
+  })();
+}
+
+/** Compare approved decisions and claim the existing status in the same transaction. */
+export function claimReconciliationApply(db: SqliteDatabase, id: string, expected: string,
+  itemPatches: { id: string; patch: Partial<ItemInput> }[] = []): ReconciliationSessionRecord {
+  return db.transaction(() => {
+    const session = getReconciliationSession(db, id);
+    if (!session) throw new AppDbValidationError("Reconciliation session not found");
+    assertReconciliationEditable(db, id);
+    if (decisionSignature(listReconciliationItems(db, id), normalizeApplyConfig(session.applyConfig)) !== expected) {
+      throw new AppDbValidationError("The saved decisions changed. Reopen the reconciliation before applying.");
+    }
+    saveReconciliationWork(db, id, { itemPatches });
+    const result = db.prepare("UPDATE reconciliation_sessions SET status = 'applying', updated_at = ? WHERE id = ? AND status != 'applying'")
+      .run(nowIso(), id);
+    if (result.changes !== 1) throw new AppDbValidationError("This reconciliation is already applying");
+    return getReconciliationSession(db, id)!;
+  })();
+}
+
+/** Finish/recover only through the Apply path; ordinary edits cannot release a running session. */
+export function finishReconciliationApply(db: SqliteDatabase, id: string, input: {
+  status: "completed" | "partial" | "needs_review"; applyResults: unknown; appliedAt: string | null;
+}): ReconciliationSessionRecord {
+  return db.transaction(() => {
+    const session = getReconciliationSession(db, id);
+    if (!session || session.status !== "applying") throw new AppDbValidationError("This reconciliation is not applying");
+    db.prepare("UPDATE reconciliation_sessions SET status = ?, apply_results_json = ?, applied_at = ?, updated_at = ? WHERE id = ? AND status = 'applying'")
+      .run(input.status, JSON.stringify(input.applyResults), input.appliedAt, nowIso(), id);
+    return getReconciliationSession(db, id)!;
+  })();
 }

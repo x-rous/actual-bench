@@ -74,16 +74,30 @@ export function StagedFields({
   const patch = item.stagedChanges;
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
 
-  const payeeValue = patch?.payeeId?.staged ?? current.payeeId ?? "";
-  const notesValue = notesDraft ?? patch?.notes?.staged ?? current.notes ?? "";
+  const payeeValue = (patch?.payeeId ? patch.payeeId.staged : current.payeeId) ?? "";
+  const notesValue = notesDraft ?? ((patch?.notes ? patch.notes.staged : current.notes) ?? "");
 
-  const field = (name: StageableField) => canStageField(item, name);
+  const payeeGuard = canStageField(item, "payeeId");
+  const notesGuard = canStageField(item, "notes");
+  const sharedRestriction = !payeeGuard.allowed && !notesGuard.allowed && payeeGuard.reason === notesGuard.reason
+    ? payeeGuard.reason : null;
 
   return (
-    <section className="flex flex-col gap-3 border-t border-border/50 pt-3">
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide">
+    <section aria-label="Resulting transaction" className="space-y-3 rounded-lg border border-border/60 bg-background p-3">
+      <h4 className="text-xs font-semibold">
         Resulting transaction
       </h4>
+
+      {sharedRestriction && <p className="text-[11px] text-muted-foreground">{sharedRestriction}</p>}
+      {patch?.date && (
+        <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2.5 text-xs">
+          <span className="text-muted-foreground">Date</span>
+          <div>
+            <p className="text-amber-600 dark:text-amber-400">{patch.date.original} → {patch.date.staged}</p>
+            <Button size="sm" variant="ghost" className="mt-1 h-6 px-1 text-[11px]" onClick={() => onUnstage("date")}>Undo date</Button>
+          </div>
+        </div>
+      )}
 
       {patch?.amount && (
         <div className="rounded-md border border-amber-500/40 px-2.5 py-2 text-xs">
@@ -102,35 +116,17 @@ export function StagedFields({
         </div>
       )}
 
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <Label className="text-[11px] uppercase tracking-wide">Payee</Label>
+      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-2.5">
+        <Label className="text-xs text-muted-foreground">Payee</Label>
+        <div className="min-w-0 space-y-1">
+          {payeeGuard.allowed ? (
+            <PayeePicker payees={payees} value={payeeValue}
+              onChange={(next) => onStage("payeeId", next || null)} placeholder="No payee"
+              ariaLabel="Payee" allowNone noneLabel="No payee" />
+          ) : <p className="py-1 text-xs">{payees.find((payee) => payee.id === payeeValue)?.name ?? "No payee"}</p>}
           <ChangedMark patch={patch} field="payeeId" onUnstage={() => onUnstage("payeeId")} />
+          {!payeeGuard.allowed && !sharedRestriction && <p className="text-[11px] text-muted-foreground">{payeeGuard.reason}</p>}
         </div>
-        {/* Searchable: a budget's payee list runs to hundreds of entries, and
-            scrolling one to reach "Talabat" is not a way to work. */}
-        {field("payeeId").allowed ? (
-          <PayeePicker
-            payees={payees}
-            value={payeeValue}
-            onChange={(next) => onStage("payeeId", next || null)}
-            placeholder="No payee"
-            ariaLabel="Payee"
-            allowNone
-            noneLabel="No payee"
-          />
-        ) : (
-          // A guard refuses this field, so it reads as what it is: the current
-          // value, plainly shown and not editable.
-          <p className="flex h-8 items-center rounded-md border border-input bg-muted/40 px-2 text-xs text-muted-foreground">
-            {payees.find((payee) => payee.id === payeeValue)?.name ?? "No payee"}
-          </p>
-        )}
-        {!field("payeeId").allowed && (
-          <p className="text-[11px] text-muted-foreground">
-            {(field("payeeId") as { reason: string }).reason}
-          </p>
-        )}
       </div>
 
       {/*
@@ -145,10 +141,10 @@ export function StagedFields({
           visible - that reconciliation never touches categories is a promise
           worth seeing rather than discovering on hover. */}
       <div
-        className="grid grid-cols-[5.5rem_1fr] items-baseline gap-2"
+        className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-2.5"
         title="Categories are set in Actual, where the rules and the budget context are. A reconciliation never changes them."
       >
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           Category
         </span>
         <p className="text-xs">
@@ -157,33 +153,19 @@ export function StagedFields({
         </p>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="staged-notes" className="text-[11px] uppercase tracking-wide">
-            Notes
-          </Label>
+      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2.5">
+        <Label htmlFor="staged-notes" className="pt-2 text-xs text-muted-foreground">Notes</Label>
+        <div className="min-w-0 space-y-1">
+          <Textarea id="staged-notes" rows={2} className="min-h-16 text-xs"
+            value={notesValue} disabled={!notesGuard.allowed}
+            onChange={(event) => setNotesDraft(event.target.value)}
+            // Persist the complete edit on blur, rather than every keystroke.
+            onBlur={() => {
+              if (notesDraft !== null) { onStage("notes", notesDraft || null); setNotesDraft(null); }
+            }} />
           <ChangedMark patch={patch} field="notes" onUnstage={() => onUnstage("notes")} />
+          {!notesGuard.allowed && !sharedRestriction && <p className="text-[11px] text-muted-foreground">{notesGuard.reason}</p>}
         </div>
-        <Textarea
-          id="staged-notes"
-          rows={3}
-          value={notesValue}
-          disabled={!field("notes").allowed}
-          onChange={(event) => setNotesDraft(event.target.value)}
-          // Committed on blur rather than per keystroke: every commit persists,
-          // and a note is edited as a whole thought rather than a character.
-          onBlur={() => {
-            if (notesDraft !== null) {
-              onStage("notes", notesDraft || null);
-              setNotesDraft(null);
-            }
-          }}
-        />
-        {!field("notes").allowed && (
-          <p className="text-[11px] text-muted-foreground">
-            {(field("notes") as { reason: string }).reason}
-          </p>
-        )}
       </div>
     </section>
   );

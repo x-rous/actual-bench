@@ -1,6 +1,6 @@
 "use client";
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { REASON } from "@/lib/reconciliation/session/build";
 import type {
   ActualTransactionSnapshot,
@@ -116,4 +116,57 @@ describe("being asked whether two rows are the same transaction", () => {
       screen.getByRole("button", { name: /These are the same transaction/ })
     ).toBeInTheDocument();
   });
+});
+
+it("offers the statement date explicitly and exposes its staged undo", () => {
+  const item: ReconciliationItem = { ...statementOnly, disposition: "matched", actualTransactionIds: ["t1"] };
+  const actual = { ...transaction, date: "2026-08-13", amount: row.amount };
+  const onStage = jest.fn(); const onUnstage = jest.fn();
+  const props = { item, statementRow: row, transactions: [actual], payees: [], categories: [],
+    onStage, onUnstage, onClose: jest.fn(), onDisposition: jest.fn(), onUseCandidate: jest.fn(), onCorrectAmount: jest.fn() };
+  const view = render(<Inspector {...props} />);
+  expect(onStage).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /Use statement date/ }));
+  expect(onStage).toHaveBeenCalledWith("date", "2026-08-15");
+  view.rerender(<Inspector {...props} item={{ ...item, stagedChanges: {
+    date: { original: actual.date, staged: row.postedDate, source: "manual" },
+  } }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Undo date" }));
+  expect(onUnstage).toHaveBeenCalledWith("date");
+  view.rerender(<Inspector {...props} item={{ ...item, guards: { ...item.guards, protectedReconciled: true } }} />);
+  expect(screen.queryByRole("button", { name: /Use statement date/ })).not.toBeInTheDocument();
+});
+
+it("groups evidence and edits before actions, with the date action inside the comparison", () => {
+  const actual = { ...transaction, date: "2026-08-13", amount: row.amount };
+  const matched: ReconciliationItem = { ...statementOnly, disposition: "matched", actualTransactionIds: [actual.id],
+    match: { type: "suggested", evidenceSource: "bench", confidence: 100, label: "high", reasons: [
+      { kind: "amount", verdict: "exact" }, { kind: "date", deltaDays: -2 },
+      { kind: "text", field: "payeeName", mode: "symmetric", similarity: .52 },
+      { kind: "text", field: "notes", mode: "containment", similarity: 1 },
+    ] } };
+  render(<Inspector item={matched} statementRow={row} transactions={[actual]} payees={[]} categories={[]}
+    onClose={jest.fn()} onDisposition={jest.fn()} onUseCandidate={jest.fn()} onCorrectAmount={jest.fn()}
+    onStage={jest.fn()} onUnstage={jest.fn()} />);
+  const summary = screen.getByRole("region", { name: "Match summary" });
+  expect(within(summary).getByText("High confidence")).toBeInTheDocument();
+  expect(within(summary).getAllByRole("listitem")).toHaveLength(3);
+  expect(within(summary).getByText("Notes 100% similar")).toBeInTheDocument();
+  expect(within(summary).queryByText("Payee 52% similar")).not.toBeInTheDocument();
+  expect(screen.queryByText("Reference")).not.toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Comparison" })).getByRole("button", { name: "Use statement date" })).toBeInTheDocument();
+  const editor = screen.getByRole("region", { name: "Resulting transaction" });
+  expect(editor.compareDocumentPosition(screen.getByRole("region", { name: "Actions" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("keeps candidate comparison read-only until explicit confirmation", () => {
+  const onUseCandidate = jest.fn();
+  render(<Inspector item={{ ...statementOnly, actualTransactionIds: [transaction.id] }}
+    statementRow={row} transactions={[transaction]} payees={[]} categories={[]} candidateSelection
+    onClose={jest.fn()} onDisposition={jest.fn()} onUseCandidate={onUseCandidate} onCorrectAmount={jest.fn()}
+    onStage={jest.fn()} onUnstage={jest.fn()} />);
+  expect(screen.getByText("Candidate comparison")).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Resulting transaction" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Use this match" }));
+  expect(onUseCandidate).toHaveBeenCalledWith(transaction.id);
 });

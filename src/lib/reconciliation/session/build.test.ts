@@ -1,3 +1,4 @@
+import { matchingGroups } from "./groups";
 import { DEFAULT_MATCH_CONFIG } from "../match/config";
 import { match } from "../match/matcher";
 import type {
@@ -976,5 +977,22 @@ describe("accepting a pairing", () => {
     });
 
     expect(item.stagedChanges).toBeUndefined();
+  });
+});
+
+describe("connected group decisions", () => {
+  it("derives existing edges, withdraws a chosen ID globally and leaves the last pair explicit", () => {
+    const transactions = new Map([txn({ id: "t1" }), txn({ id: "t2" }), txn({ id: "t3" })].map((t) => [t.id, t]));
+    const items: ReconciliationItem[] = ["s1", "s2"].map((id) => ({ id, statementRowIds: [id],
+      actualTransactionIds: ["t1", "t2"], disposition: "unresolved",
+      guards: { protectedReconciled: false, splitParent: false, transfer: "no" } }));
+    expect(matchingGroups(items, transactions)).toEqual([{ itemIds: ["s1", "s2"], transactionIds: ["t1", "t2"] }]);
+    const next = resolveToTransaction({ items, itemId: "s1", transactionId: "t1", transactions, transfersReported: true, makeId });
+    expect(next.find((item) => item.id === "s1")?.disposition).toBe("matched");
+    expect(next.find((item) => item.id === "s2")).toMatchObject({ disposition: "unresolved", actualTransactionIds: ["t2"] });
+    expect(matchingGroups(next, transactions)).toEqual([]);
+    expect(resolveToTransaction({ items: next, itemId: "s2", transactionId: "t1", transactions, transfersReported: true, makeId })).toBe(next);
+    expect(resolveToTransaction({ items, itemId: "s1", transactionId: "t3", transactions, transfersReported: true, makeId })).toBe(items);
+    expect(items[0].actualTransactionIds).toEqual(["t1", "t2"]);
   });
 });

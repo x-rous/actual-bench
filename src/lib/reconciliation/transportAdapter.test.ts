@@ -164,8 +164,9 @@ describe("createReconciliationTransport", () => {
     expect(result).toBeNull();
   });
 
-  it("maps a re-read into a snapshot carrying the drift-relevant fields", async () => {
-    const inner = fakeTransport([]);
+  it("maps a moved re-read using full current protections", async () => {
+    const inner = fakeTransport([sourceRow({ id: "t1", amount: -4250, date: "2026-07-02",
+      categoryId: "c9", payeeId: "p9", notes: "Imported #One | Paid by Manaf" })]);
     (inner.readTargetTransactionForSync as jest.Mock).mockResolvedValue({
       amount: -4250,
       date: "2026-07-02",
@@ -256,4 +257,14 @@ describe("createReconciliationTransport", () => {
     expect(input.notes).toBeUndefined();
     expect(input.payeeId).toBeUndefined();
   });
+});
+
+it("finds retry markers outside the original date range with one identity query", async () => {
+  const inner = fakeTransport([]);
+  inner.queryTransactionsForSync = jest.fn().mockResolvedValue([sourceRow({ date: "2026-12-01", importedId: "recon:moved" })]);
+  const adapter = createReconciliationTransport(inner);
+  const rows = await adapter.findCreatedTransactions!({ accountId: "acct-1", markers: ["recon:moved"] });
+  expect(rows[0]).toMatchObject({ importedId: "recon:moved", date: "2026-12-01" });
+  expect(inner.queryTransactionsForSync).toHaveBeenCalledWith({ importedIds: ["recon:moved"] });
+  expect(inner.listTransactionsForSync).not.toHaveBeenCalled();
 });

@@ -388,6 +388,35 @@ For each difference, you can:
 - keep an existing transaction that is not on the statement; or
 - leave the row undecided. Apply does not change undecided rows.
 
+### Resolve competing matches together
+
+When several bank rows share Actual candidates, open a row and select **Resolve group**. Bank rows
+run down the matrix and Actual transactions run across it. Each eligible cell states the amount
+and date difference. Selecting a cell opens its comparison in the right panel; select **Use this
+match** to confirm it. The panel states any amount correction that accepting the pair will stage.
+
+A confirmed transaction disappears from the other candidate lists. The last remaining pair still
+needs your confirmation. **Undo last pairing** restores the previous relationships, including any
+released Actual rows. An unrelated edit clears that undo. It is available during this visit only.
+
+**None of these** leaves the bank row undecided and keeps released Actual transactions available
+for their usual keep/delete decisions. Use **Back to all rows** to handle those remaining decisions.
+Selecting cells does not fetch data or write to Actual.
+
+### Read the match details
+
+The right panel groups the match summary, date/amount comparison, bank and Actual details,
+resulting transaction, and actions. Differences show their size beside the Actual value. The
+header stays visible while you scroll. Payee and notes edits are grouped separately from decisions;
+category remains read-only. Candidate comparisons show **Use this match** before exposing the editor.
+
+### Use the bank's date
+
+On an accepted match with different dates, **Use statement date** beside the date comparison stages the bank date on the
+existing Actual transaction. It does not change the date merely because the rows matched. The
+resulting transaction shows the staged date and **Undo date** removes that proposal. Review includes
+the date change before Apply. Existing protections still apply.
+
 ### When amounts disagree
 
 When a matched amount differs from the statement, accepting the pairing stages the statement amount
@@ -483,6 +512,10 @@ the previous value when an existing imported payee would be replaced.
 
 ## Apply safely
 
+Decision saves finish before Apply checks the budget. A failed save must be retried before writing;
+bulk decisions save together. If a staged date already matches Actual, it needs no further write.
+If Actual has a different third date, that row is held for review.
+
 Select **Apply** only after reviewing the plan. Immediately before writing, Actual Bench re-reads
 every affected transaction. It writes rows that are still safe and holds back conflicts or changes it
 cannot combine safely.
@@ -496,6 +529,13 @@ transaction twice. The result identifies successful, skipped, and failed actions
 failed** attempts only unfinished work. After writing, Actual Bench reads the account again to verify
 the result.
 
+If an Apply was interrupted, return to the session and choose **Recover interrupted Apply** only
+after the original tab has stopped. Recovery reads Actual to confirm outcomes; it does not repeat
+writes. Confirmed rows stay fixed, and unconfirmed work remains available for review and retry.
+A session that was only partly applied can still be used to decide its remaining rows.
+
+When every row is decided and no writes are needed, select **Finish** to close the session.
+
 An applied session cannot be re-matched because it is an audit record of its decisions and writes.
 Its Review page remains readable, but its write choices are locked to the options that were used. To
 reconcile the account again, start a new session.
@@ -507,6 +547,11 @@ file name, the period, the number of statement rows, and where it has got to. **
 gathers an account's sessions under one heading, and is off by default because most accounts have a
 single session. Opening a session goes to the step its work is at - a draft opens on **Import**, an
 applied one on its result, and everything else on the workbench.
+
+Opening a saved session fetches current Actual transactions; a Direct connection syncs first.
+Your saved decisions and staged edits remain. Editing and Apply wait for that read to succeed,
+with **Retry reading Actual** available after a failure. Saved snapshots are used for conflict checks
+and historical results, rather than as current Actual data.
 
 The **Year** filter starts on the current year when there are sessions in it; **Clear filters** widens
 it back out. A statement period that runs across a year answers to both, so a December-to-January

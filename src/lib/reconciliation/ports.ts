@@ -98,6 +98,8 @@ export type LoadedCandidateWindow = {
 };
 
 export type ReconciliationTransport = {
+  /** Targeted retry/recovery read, including markers moved outside the original date window. */
+  findCreatedTransactions?: (input: { accountId: string; markers: string[] }) => Promise<ActualTransactionSnapshot[]>;
   /** Load the candidate window. Split children are excluded. */
   loadTransactions(input: LoadTransactionsInput): Promise<LoadedCandidateWindow>;
   /**

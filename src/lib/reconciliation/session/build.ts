@@ -276,6 +276,13 @@ export function resolveToTransaction(input: {
   const item = items.find((entry) => entry.id === itemId);
   if (!item) return items;
 
+  if (transactionId !== null && (
+    !item.actualTransactionIds.includes(transactionId) || !transactions.has(transactionId) ||
+    items.some((other) => other.id !== itemId &&
+      (other.disposition === "matched" || other.disposition === "correct-amount") &&
+      other.actualTransactionIds.includes(transactionId))
+  )) return items;
+
   const releasedIds = item.actualTransactionIds.filter((id) => id !== transactionId);
 
   const resolved: ReconciliationItem = transactionId
@@ -343,10 +350,11 @@ export function resolveToTransaction(input: {
       guards: guardsFor(transactions.get(id), transfersReported),
     }));
 
+  const restById = new Map(rest.map((entry) => [entry.id, entry]));
   return items.flatMap((entry) =>
     entry.id === itemId
       ? [resolved, ...released]
-      : [rest.find((candidate) => candidate.id === entry.id) ?? entry]
+      : [restById.get(entry.id) ?? entry]
   );
 }
 

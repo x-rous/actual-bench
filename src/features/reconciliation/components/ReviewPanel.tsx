@@ -125,7 +125,8 @@ export function ReviewPanel({
   // actually reviewing.
   // Once the pre-flight check has run, the button has to speak about the work
   // that will actually happen rather than the work that was planned.
-  const withheld = drift?.withheld.length ?? 0;
+  const withheldIds = new Set(drift?.withheld.map((entry) => entry.operationId));
+  const withheld = plan.operations.filter((operation) => withheldIds.has(operation.id)).length;
   const applicable = Math.max(total - withheld, 0);
 
   const fieldCounts = new Map<string, number>();

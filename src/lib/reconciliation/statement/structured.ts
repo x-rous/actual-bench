@@ -105,7 +105,7 @@ export function normalizeStructuredStatement(
     const amount: MinorUnitAmount | null = parseMoneyToMinorUnits(
       transaction.amount ?? "",
       decimalSeparator,
-      config.minorUnitDigits
+      2 // Actual boundary: integer hundredths, never the source currency scale.
     );
     if (amount === null) {
       errors.push({

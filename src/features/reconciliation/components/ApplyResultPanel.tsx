@@ -149,10 +149,10 @@ export function ApplyResultPanel({
         )}
         <div>
           <h2 className="text-sm font-semibold">
-            {result.complete ? "Applied" : "Applied with problems"}
+            {result.results.length === 0 ? "Finished" : result.complete ? "Applied" : "Applied with problems"}
           </h2>
           <p className="text-xs text-muted-foreground">
-            {describeWrites(appliedSummary)} written
+            {result.results.length === 0 ? "No changes to Actual were needed." : `${describeWrites(appliedSummary)} written`}
             {result.skipped > 0 && ` · ${describeWrites(skippedSummary)} already done`}
             {result.failed > 0 && ` · ${result.failed} failed`}
           </p>
@@ -282,7 +282,8 @@ export function ApplyResultPanel({
               <tbody>
                 {written.map((entry) => {
                   const operation = operationsById.get(entry.operationId);
-                  const item = operation ? itemById.get(operation.itemId) : undefined;
+                  const resultItemId = operation?.itemId ?? entry.operationId.slice(entry.operationId.indexOf(":") + 1);
+                  const item = itemById.get(resultItemId);
                   const statementRow = item
                     ? statementRows.get(item.statementRowIds[0] ?? "")
                     : undefined;

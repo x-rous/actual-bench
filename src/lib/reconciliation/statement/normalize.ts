@@ -80,8 +80,8 @@ export type StatementParseConfig = {
   signConvention: SignConvention;
   decimalSeparator: "." | ",";
   /**
-   * Digits in the currency's minor unit. Actual stores 2-decimal integer minor
-   * units, so this is 2 unless a profile is explicitly told otherwise.
+   * Legacy source-scale setting, retained when reading saved profiles.
+   * Normalized Actual transaction amounts always use integer hundredths.
    */
   minorUnitDigits: number;
   /**
@@ -277,30 +277,43 @@ export function parseMoneyToMinorUnits(
   let value = String(text).trim();
   if (!value) return null;
 
-  let negative = false;
-
-  // (1,234.56) is an accounting negative.
+  // Currency codes/symbols may precede the sign; two-letter DR/CR stay intact.
+  value = value.replace(/(?<![A-Z])[A-Z]{3}(?![A-Z])/gi, "").replace(/[$€£¥₹]/g, "").trim();
+  const signs: number[] = [];
   if (/^\(.*\)$/.test(value)) {
-    negative = true;
-    value = value.slice(1, -1);
+    signs.push(-1);
+    value = value.slice(1, -1).trim();
   }
-
-  // Trailing DR/CR markers, e.g. "1,234.56 DR".
-  const marker = value.match(/\b(DR|CR)\b\s*$/i);
+  const marker = value.match(/(DR|CR)\s*$/i);
   if (marker) {
-    if (marker[1].toUpperCase() === "DR") negative = true;
+    signs.push(marker[1].toUpperCase() === "DR" ? -1 : 1);
     value = value.slice(0, marker.index).trim();
   }
-
-  if (value.startsWith("-")) {
-    negative = !negative;
-    value = value.slice(1).trim();
-  } else if (value.startsWith("+")) {
+  if (/^\(.*\)$/.test(value)) {
+    signs.push(-1); value = value.slice(1, -1).trim();
+  }
+  if (value.startsWith("-") || value.startsWith("+")) {
+    signs.push(value.startsWith("-") ? -1 : 1);
     value = value.slice(1).trim();
   }
+  if (value.endsWith("-")) {
+    signs.push(-1);
+    value = value.slice(0, -1).trim();
+  }
+  if (signs.includes(-1) && signs.includes(1)) return null;
+  const negative = signs.includes(-1);
 
-  // Drop currency symbols/codes and any remaining spaces.
-  value = value.replace(/[^\d.,'’  ]/g, "").replace(/[\s '’]/g, "");
+  if (/[a-z]/i.test(value)) return null;
+  // Currency decorations may surround the sign (e.g. AED -10.00).
+  // Retain sign characters until their meaning is established.
+  value = value.replace(/[^\d.,'’  +\-()]/g, "").trim();
+  if (/^[+-]/.test(value)) {
+    signs.push(value[0] === "-" ? -1 : 1);
+    value = value.slice(1).trim();
+  }
+  if (/[+\-()]/.test(value) || (signs.includes(-1) && signs.includes(1))) return null;
+  const isNegative = negative || signs.includes(-1);
+  value = value.replace(/[\s '’]/g, "");
   if (!value || !/\d/.test(value)) return null;
 
   const groupSeparator = decimalSeparator === "." ? "," : ".";
@@ -313,17 +326,17 @@ export function parseMoneyToMinorUnits(
   const fractionRaw = parts[1] ?? "";
   if (!/^\d*$/.test(whole) || !/^\d*$/.test(fractionRaw)) return null;
 
-  // Pad or truncate to the currency's minor-unit width using string ops, so no
-  // binary floating point is involved at any point.
+  // Only lossless conversion is allowed; extra zeroes do not change the value.
+  if (/[1-9]/.test(fractionRaw.slice(minorUnitDigits))) return null;
   const fraction = fractionRaw
     .slice(0, minorUnitDigits)
     .padEnd(minorUnitDigits, "0");
 
   const scale = 10 ** minorUnitDigits;
   const magnitude = Number(whole) * scale + (minorUnitDigits > 0 ? Number(fraction) : 0);
-  if (!Number.isFinite(magnitude)) return null;
+  if (!Number.isSafeInteger(magnitude)) return null;
 
-  return negative ? -magnitude : magnitude;
+  return isNegative ? -magnitude : magnitude;
 }
 
 /**
@@ -659,27 +672,34 @@ function dateSamples(samples: string[]): string[] {
  * identity, and therefore cannot cause a retry to create a duplicate.
  */
 export function fingerprintRow(cells: string[], sourceRowNumber: number): string {
-  return fnv1aHex(`${sourceRowNumber} ${cells.join("")}`);
+  return fnv1aHex(`${sourceRowNumber}\0${cells.join("")}`);
 }
 
-/**
- * Stable fingerprint of a whole statement, for recognising a re-import.
- *
- * Built from the rows' own fingerprints, **sorted** — the same statement
- * exported twice can arrive in a different order, and someone who reversed the
- * sort in their banking app has not produced a different statement.
- *
- * Derived from the rows rather than the file, so a statement pasted one month
- * and uploaded the next is still recognised, and re-parsing under a corrected
- * column mapping does not invent a new identity for the same document.
- *
- * Uses the same NUL/SOH separators as `fingerprintRow`, so no field's contents
- * can imitate a separator and collide with a different statement.
- */
-export function fingerprintStatement(rows: { fingerprint: string }[]): string | null {
+/** Statement identity uses normalized contents without source-row positions.
+ * Per-row fingerprints and existing retry markers keep their original format. */
+export function fingerprintStatement(rows: {
+  fingerprint: string;
+  postedDate?: string;
+  amount?: number;
+  importedPayee?: string;
+  bankNotes?: string;
+}[]): string | null {
   if (rows.length === 0) return null;
-  const sorted = rows.map((row) => row.fingerprint).sort();
-  return fnv1aHex(`${rows.length}\x00${sorted.join("\x01")}`);
+  if (rows.every((row) => row.postedDate !== undefined && row.amount !== undefined)) {
+    // Source positions remain in row fingerprints/retry markers. Statement
+    // identity uses a multiset of normalized contents, preserving duplicates.
+    const content = rows.map((row) => JSON.stringify([
+      row.postedDate, row.amount, row.importedPayee ?? "", row.bankNotes ?? "",
+    ])).sort();
+    return `v2:${fnv1aHex(JSON.stringify(content))}`;
+  }
+  return legacyFingerprintStatement(rows);
+}
+
+/** Read-only compatibility for sessions whose fingerprint included row positions. */
+export function legacyFingerprintStatement(rows: { fingerprint: string }[]): string | null {
+  if (rows.length === 0) return null;
+  return fnv1aHex(`${rows.length}\x00${rows.map((row) => row.fingerprint).sort().join("\x01")}`);
 }
 
 function cell(cells: string[], index: number | undefined): string {
@@ -703,7 +723,7 @@ export function originalAmountFor(
   if (!config.detectOriginalCurrencyAmount) return {};
   for (const text of texts) {
     if (!text) continue;
-    const original = extractOriginalAmount(text, config.minorUnitDigits);
+    const original = extractOriginalAmount(text, 2);
     if (!original) continue;
     return {
       originalAmount: amount !== 0 ? Math.sign(amount) * Math.abs(original.amount) : undefined,
@@ -772,11 +792,17 @@ export function normalizeStatement(
 }
 
 function readAmount(cells: string[], config: StatementParseConfig): MinorUnitAmount | null {
-  const { decimalSeparator, minorUnitDigits, columns } = config;
+  const { decimalSeparator, columns } = config;
+  // Actual transactions use integer hundredths, regardless of source scale.
+  const minorUnitDigits = 2;
 
   if (config.signConvention === "debit-credit") {
-    const debit = parseMoneyToMinorUnits(cell(cells, columns.debit), decimalSeparator, minorUnitDigits);
-    const credit = parseMoneyToMinorUnits(cell(cells, columns.credit), decimalSeparator, minorUnitDigits);
+    const debitText = cell(cells, columns.debit).trim();
+    const creditText = cell(cells, columns.credit).trim();
+    const debit = parseMoneyToMinorUnits(debitText, decimalSeparator, minorUnitDigits);
+    const credit = parseMoneyToMinorUnits(creditText, decimalSeparator, minorUnitDigits);
+    if ((debitText && debit === null) || (creditText && credit === null) ||
+        (debit && credit)) return null;
     // Debit columns are written as positive magnitudes; money leaving the
     // account is negative in Actual.
     if (debit !== null && debit !== 0) return -Math.abs(debit);

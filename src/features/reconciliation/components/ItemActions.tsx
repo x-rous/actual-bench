@@ -1,6 +1,7 @@
 "use client";
 
 import { Ban, Check, Pencil, Plus, Trash2, Undo2, Unlink } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { REASON } from "@/lib/reconciliation/session/build";
 import { canStageDelete, canStageField } from "@/lib/reconciliation/session/staging";
@@ -31,6 +32,7 @@ export type ItemActionsProps = {
   /** null means "none of these" — every candidate is released. */
   onUseCandidate: (transactionId: string | null) => void;
   onCorrectAmount: (transactionId: string, amount: number) => void;
+  evidenceFor?: (transactionId: string) => string[];
 };
 
 function GuardedButton({
@@ -62,6 +64,7 @@ export function ItemActions({
   onDisposition,
   onUseCandidate,
   onCorrectAmount,
+  evidenceFor,
 }: ItemActionsProps) {
   const hasStatementRow = item.statementRowIds.length > 0;
   const hasTransaction = item.actualTransactionIds.length > 0;
@@ -92,6 +95,9 @@ export function ItemActions({
    * bank is not a match.
    */
   const differenceIsStuck = amountsDisagree && !amountVerdict.allowed;
+  const hasPrimaryActions = (hasStatementRow && !hasTransaction) || (hasTransaction && !hasStatementRow) ||
+    (hasStatementRow && item.actualTransactionIds.length === 1 && transactions.length === 1 &&
+      (item.disposition !== "matched" || amountsDisagree));
   const isDuplicate = item.reasonCode === REASON.likelyDuplicate;
 
   /*
@@ -113,8 +119,8 @@ export function ItemActions({
     : transactions;
 
   return (
-    <section className="flex flex-col gap-3 border-t border-border/50 pt-3">
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide">Decide</h4>
+    <section aria-label="Actions" className="space-y-2.5 rounded-lg border border-border/60 bg-background p-3">
+      <h4 className="text-xs font-semibold">Actions</h4>
 
       {/* Choosing between competing candidates comes first: everything else
           depends on which transaction this row is actually about. */}
@@ -130,8 +136,9 @@ export function ItemActions({
               Which one is this row? The rest stay available to the other rows. Nothing is lost.
             </p>
           )}
-          {ordered.map((transaction) => (
-            <Button
+          {ordered.map((transaction) => {
+            const evidence = evidenceFor?.(transaction.id) ?? [];
+            return <Button
               key={transaction.id}
               variant="outline"
               size="sm"
@@ -161,17 +168,18 @@ export function ItemActions({
                   </span>
                 </span>
                 <span className="break-words font-medium">
-                  {transaction.payeeName ?? "No payee"}
+                  {transaction.payeeName ?? transaction.importedPayee ?? "No payee"}
                 </span>
                 {transaction.notes && (
                   <span className="break-words text-muted-foreground">{transaction.notes}</span>
                 )}
+                {evidence.length > 0 && <span className="text-[11px] text-muted-foreground">{evidence.join(" · ")}</span>}
                 {transaction.categoryName && (
                   <span className="text-muted-foreground">{transaction.categoryName}</span>
                 )}
               </span>
-            </Button>
-          ))}
+            </Button>;
+          })}
 
           {hasStatementRow && (
             <Button
@@ -186,7 +194,7 @@ export function ItemActions({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1.5">
+      {hasPrimaryActions && <div className="flex flex-wrap gap-1.5">
         {/*
           Accepting the pairing, which had no control at all.
           
@@ -207,7 +215,7 @@ export function ItemActions({
           item.disposition !== "matched" &&
           (!amountsDisagree || differenceIsStuck) && (
           <div className="flex flex-col gap-0.5">
-          <Button size="sm" variant="outline" onClick={() => onDisposition("matched")}>
+          <Button size="sm" onClick={() => onDisposition("matched")}>
             <Check className="mr-1 h-3.5 w-3.5" />
             {/*
               Accepting a pairing now takes the statement's amount with it, so
@@ -270,7 +278,7 @@ export function ItemActions({
         {hasStatementRow && !hasTransaction && (
           <Button
             size="sm"
-            variant={item.disposition === "create" ? "default" : "outline"}
+            variant="default"
             onClick={() => onDisposition("create")}
           >
             <Plus className="mr-1 h-3.5 w-3.5" />
@@ -298,25 +306,12 @@ export function ItemActions({
         {hasTransaction && !hasStatementRow && (
           <Button
             size="sm"
-            variant={item.disposition === "keep" ? "default" : "outline"}
+            variant="default"
             onClick={() => onDisposition("keep")}
           >
             <Check className="mr-1 h-3.5 w-3.5" />
             Keep as is
           </Button>
-        )}
-
-        {hasTransaction && (
-          <GuardedButton
-            size="sm"
-            variant={item.disposition === "delete" ? "destructive" : "outline"}
-            allowed={deleteVerdict.allowed}
-            reason={deleteVerdict.allowed ? undefined : deleteVerdict.reason}
-            onClick={() => onDisposition("delete")}
-          >
-            <Trash2 className="mr-1 h-3.5 w-3.5" />
-            Delete from Actual
-          </GuardedButton>
         )}
 
         {/* Correcting an amount keeps the transaction and everything on it; it
@@ -328,13 +323,28 @@ export function ItemActions({
         {amountsDisagree && statementRow && primary && (
           <GuardedButton
             size="sm"
-            variant={item.disposition === "correct-amount" ? "default" : "outline"}
+            variant="default"
             allowed={amountVerdict.allowed}
             reason={amountVerdict.allowed ? undefined : amountVerdict.reason}
             onClick={() => onCorrectAmount(primary.id, statementRow.amount)}
           >
             <Pencil className="mr-1 h-3.5 w-3.5" />
             {`Use the statement's ${formatMinorUnits(statementRow.amount)}`}
+          </GuardedButton>
+        )}
+
+      </div>}
+      <div className={cn("flex flex-wrap gap-1.5", hasPrimaryActions && "border-t border-border/50 pt-2")}>
+        {hasTransaction && (
+          <GuardedButton
+            size="sm"
+            variant={item.disposition === "delete" ? "destructive" : "outline"}
+            allowed={deleteVerdict.allowed}
+            reason={deleteVerdict.allowed ? undefined : deleteVerdict.reason}
+            onClick={() => onDisposition("delete")}
+          >
+            <Trash2 className="mr-1 h-3.5 w-3.5" />
+            Delete from Actual
           </GuardedButton>
         )}
 

@@ -8,7 +8,7 @@ import { MultiPillGroup, PillGroup } from "@/components/ui/pill-group";
 import { cn } from "@/lib/utils";
 import { REASON, REVIEW_REASONS } from "@/lib/reconciliation/session/build";
 import { statementText } from "@/lib/reconciliation/statement/text";
-import { datesSpanYears, formatShortDate } from "../lib/format";
+import { datesSpanYears, formatMinorUnits, formatShortDate } from "../lib/format";
 import { canDecideOneTransaction, canStageDelete } from "@/lib/reconciliation/session/staging";
 import type { ReconciliationCoverage } from "@/lib/reconciliation/session/build";
 import type { InvertedSignDiagnosis } from "@/lib/reconciliation/session/invertedSigns";
@@ -39,6 +39,10 @@ import { TransformDialog } from "./TransformDialog";
 import { WorkbenchRow } from "./WorkbenchRow";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { matchingGroups, type MatchingGroup } from "@/lib/reconciliation/session/groups";
+import { buildActualIndex } from "@/lib/reconciliation/match/actualIndex";
+import { candidateEvidence } from "../lib/candidateEvidence";
+import { GroupMatchingView } from "./GroupMatchingView";
 import { SearchInput } from "@/components/ui/search-input";
 
 /**
@@ -452,6 +456,8 @@ export type WorkbenchProps = {
    * moved. Reading it stays useful; editing it does not.
    */
   readOnly?: boolean;
+  appliedItemIds?: ReadonlySet<string>;
+  onRestoreItems?: (items: ReconciliationItem[]) => void;
   /** Lock persisted write choices as soon as Apply starts. */
   writeSettingsLocked?: boolean;
   /**
@@ -606,6 +612,8 @@ export function Workbench({
   canRematch,
   rematchBlockedReason,
   readOnly = false,
+  appliedItemIds,
+  onRestoreItems,
   writeSettingsLocked = false,
   snapshotIsStored = false,
   payees,
@@ -638,8 +646,24 @@ export function Workbench({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   /** The scroll container the grid lives in, for revealing the selected row. */
   const gridRef = useRef<HTMLDivElement>(null);
+  const savedGridPosition = useRef({ top: 0, left: 0 });
+  const attachGrid = useCallback((node: HTMLDivElement | null) => {
+    gridRef.current = node;
+    if (node) { node.scrollTop = savedGridPosition.current.top; node.scrollLeft = savedGridPosition.current.left; }
+  }, []);
   const { selectedIds, toggleSelect, toggleSelectAll, clearSelection } = useTableSelection();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [group, setGroup] = useState<MatchingGroup | null>(null);
+  const groups = useMemo(() => matchingGroups(items, transactions), [items, transactions]);
+  const groupFor = useMemo(() => new Map(groups.flatMap((entry) => entry.itemIds.map((id) => [id, entry] as const))), [groups]);
+  const candidateIndex = useMemo(() => buildActualIndex([...transactions.values()]), [transactions]);
+  const evidenceItems = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  const evidenceFor = useCallback((itemId: string, transactionId: string) => {
+    const item = evidenceItems.get(itemId);
+    const row = statementRows.get(item?.statementRowIds[0] ?? "");
+    const actual = transactions.get(transactionId);
+    return row && actual ? candidateEvidence(row, actual, matchConfig, candidateIndex) : [];
+  }, [evidenceItems, statementRows, transactions, matchConfig, candidateIndex]);
   const [optionsOpen, setOptionsOpen] = useState(false);
 
   /*
@@ -844,6 +868,8 @@ export function Workbench({
             row.bankNotes ?? "",
             row.bankReference ?? "",
             String(row.amount),
+            formatMinorUnits(row.amount),
+            formatMinorUnits(row.amount).replaceAll(",", ""),
             // Both readings, so "15 Aug" and "2026-08-15" each find the row.
             row.postedDate,
             formatShortDate(row.postedDate)
@@ -858,6 +884,8 @@ export function Workbench({
             transaction.importedPayee ?? "",
             transaction.notes ?? "",
             String(transaction.amount),
+            formatMinorUnits(transaction.amount),
+            formatMinorUnits(transaction.amount).replaceAll(",", ""),
             transaction.date,
             formatShortDate(transaction.date)
           );
@@ -914,8 +942,8 @@ export function Workbench({
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const selectedItems = useMemo(
-    () => items.filter((item) => selectedIds.has(item.id)),
-    [items, selectedIds]
+    () => items.filter((item) => selectedIds.has(item.id) && !appliedItemIds?.has(item.id)),
+    [items, selectedIds, appliedItemIds]
   );
 
   const selected = useMemo(
@@ -1046,7 +1074,7 @@ export function Workbench({
     (key: string) => {
       if (readOnly) return;
       const item = visible.find((entry) => entry.id === selectedId);
-      if (!item) return;
+      if (!item || appliedItemIds?.has(item.id)) return;
 
       const hasStatementRow = item.statementRowIds.length > 0;
       const hasTransaction = item.actualTransactionIds.length > 0;
@@ -1097,14 +1125,14 @@ export function Workbench({
         advance();
       }
     },
-    [visible, selectedId, onDisposition, goToNextUndecided, readOnly]
+    [visible, selectedId, onDisposition, goToNextUndecided, readOnly, appliedItemIds]
   );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       // Popovers are not dialogs, but their controls still sit above the grid.
       // Do not let row navigation or decision shortcuts act behind them.
-      if (optionsOpen) return;
+      if (optionsOpen || group) return;
 
       // Never act behind a dialog. The listener is on the window, so without
       // this an Enter meant for the transform dialog's button would also decide
@@ -1148,7 +1176,14 @@ export function Workbench({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, goToNextUndecided, decideSelected, optionsOpen]);
+  }, [step, goToNextUndecided, decideSelected, optionsOpen, group]);
+
+  if (group && onRestoreItems && !readOnly) return (
+    <GroupMatchingView group={group} items={items} statementRows={statementRows} transactions={transactions}
+      payees={payees} categories={categories} evidenceFor={evidenceFor}
+      onClose={() => setGroup(null)} onRestoreItems={onRestoreItems} onDisposition={onDisposition}
+      onUseCandidate={onUseCandidate} onCorrectAmount={onCorrectAmount} onStage={onStage} onUnstage={onUnstage} />
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -1166,8 +1201,7 @@ export function Workbench({
         )}
         {snapshotIsStored && (
           <p role="status" className="mt-1.5 text-[11px] text-muted-foreground">
-            Showing the transactions this session recorded, not a fresh read of the account.
-            Reconnect to see Actual as it stands now.
+            Waiting for current Actual transactions before decisions can be changed.
           </p>
         )}
       </header>
@@ -1547,7 +1581,7 @@ export function Workbench({
       )}
 
       <div className="flex min-h-0 flex-1">
-        <div ref={gridRef} className="min-h-0 flex-1 overflow-auto">
+        <div ref={attachGrid} className="min-h-0 flex-1 overflow-auto">
           <table className="w-full border-collapse">
             <caption className="sr-only">
               Bank statement rows matched against Actual transactions
@@ -1727,7 +1761,13 @@ export function Workbench({
               .filter((t): t is ActualTransactionSnapshot => Boolean(t))}
             payees={payees}
             categories={categories}
-            readOnly={readOnly}
+            readOnly={readOnly || appliedItemIds?.has(selected.id)}
+            evidenceFor={(id) => evidenceFor(selected.id, id)}
+            onResolveGroup={!readOnly && onRestoreItems && groupFor.has(selected.id)
+              ? () => {
+                savedGridPosition.current = { top: gridRef.current?.scrollTop ?? 0, left: gridRef.current?.scrollLeft ?? 0 };
+                setGroup(groupFor.get(selected.id)!);
+              } : undefined}
             onClose={() => setSelectedId(null)}
             onDisposition={(disposition) => onDisposition(selected.id, disposition)}
             onUseCandidate={(transactionId) => onUseCandidate(selected.id, transactionId)}

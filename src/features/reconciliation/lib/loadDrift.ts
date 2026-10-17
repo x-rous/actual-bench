@@ -1,4 +1,4 @@
-import type { ReconciliationTransport } from "@/lib/reconciliation/ports";
+import type { LoadedCandidateWindow, ReconciliationTransport } from "@/lib/reconciliation/ports";
 import type { ActualTransactionSnapshot } from "@/lib/reconciliation/types";
 
 /**
@@ -21,11 +21,12 @@ export async function loadLatestForDrift(input: {
   /** The range the session loaded, so the re-read covers the same ground. */
   startDate: string;
   endDate: string;
+  window?: LoadedCandidateWindow;
 }): Promise<Map<string, ActualTransactionSnapshot | null>> {
   const latest = new Map<string, ActualTransactionSnapshot | null>();
   if (input.transactionIds.length === 0) return latest;
 
-  const window = await input.transport.loadTransactions({
+  const window = input.window ?? await input.transport.loadTransactions({
     accountId: input.accountId,
     startDate: input.startDate,
     endDate: input.endDate,

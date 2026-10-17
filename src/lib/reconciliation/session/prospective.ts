@@ -134,7 +134,7 @@ export function prospectiveTransaction(input: {
     notes: effectiveValue(patch, "notes", baselineNotes),
     payeeId: effectiveValue(patch, "payeeId", transaction?.payeeId ?? null),
     payeeName:
-      isNew && !effectiveValue(patch, "payeeId", null) && applyConfig.payeeStrategy === "imported-payee"
+      isNew && !patch?.payeeId && applyConfig.payeeStrategy === "imported-payee"
         ? statementImportedPayee
         : null,
     // Attached on create, and refreshed on a match when enrichment is on;

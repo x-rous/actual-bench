@@ -3,6 +3,9 @@ import { getAppDb } from "@/lib/app-db/connection";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import {
+  claimReconciliationApply,
+  finishReconciliationApply,
+  saveReconciliationWork,
   deleteReconciliationSession,
   getReconciliationSession,
   listReconciliationItems,
@@ -12,6 +15,8 @@ import {
   type ReconciliationStatementFormat,
   type UpdateSessionInput,
 } from "@/lib/app-db/reconciliationRepository";
+
+import { reconciliationItems, reconciliationObject, reconciliationPatch, reconciliationRows } from "@/lib/app-db/reconciliationPayload";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -103,6 +108,41 @@ export async function DELETE(_request: Request, context: RouteContext) {
     // Cascades to the session's statement rows and items.
     if (!deleteReconciliationSession(getAppDb(), id)) return notFound();
     return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    return appDbErrorResponse(error);
+  }
+}
+
+/** Atomic session edits and Apply lifecycle; no Actual requests are made here. */
+export async function POST(request: Request, context: RouteContext) {
+  try {
+    const { id } = await context.params;
+    const db = getAppDb();
+    if (!getReconciliationSession(db, id)) return notFound();
+    const body = reconciliationObject(await readJsonBody(request));
+    const patches = body.itemPatches === undefined ? undefined : reconciliationItems(body.itemPatches)
+      .map(({ id: itemId, ...patch }) => ({ id: itemId!, patch }));
+    if (body.action === "claim") {
+      if (typeof body.expected !== "string") throw new AppDbValidationError("Expected reviewed decisions");
+      return NextResponse.json({ session: claimReconciliationApply(db, id, body.expected, patches) });
+    }
+    if (body.action === "finish" || body.action === "recover") {
+      const patch = reconciliationPatch(body.patch);
+      if (!["completed", "partial", "needs_review"].includes(patch.status ?? "") || !Array.isArray(patch.applyResults)) {
+        throw new AppDbValidationError("Invalid Apply outcome");
+      }
+      return NextResponse.json({ session: finishReconciliationApply(db, id, {
+        status: patch.status as "completed" | "partial" | "needs_review", applyResults: patch.applyResults,
+        appliedAt: typeof patch.appliedAt === "string" ? patch.appliedAt : null,
+      }) });
+    }
+    if (body.action !== "save") throw new AppDbValidationError("Unknown reconciliation action");
+    return NextResponse.json({ session: saveReconciliationWork(db, id, {
+      ...(body.statementRows !== undefined ? { statementRows: reconciliationRows(body.statementRows) } : {}),
+      ...(body.items !== undefined ? { items: reconciliationItems(body.items) } : {}),
+      itemPatches: patches,
+      patch: body.patch === undefined ? {} : reconciliationPatch(body.patch),
+    }) });
   } catch (error) {
     return appDbErrorResponse(error);
   }

@@ -298,3 +298,21 @@ describe("choosing which rows to re-read", () => {
     expect(driftTargets(plan).sort()).toEqual(["t1", "t2"]);
   });
 });
+
+it("drops a converged date and withholds a conflicting third date", () => {
+  const operation = updateOperation({ patch: { date: { original: "2026-07-04", staged: "2026-07-06", source: "manual" } } });
+  const input = { plan: planOf(operation), snapshots: new Map([["t1", snapshot()]]), latest: new Map([["t1", snapshot({ date: "2026-07-06" })]]) };
+  expect(reconcilePlanWithDrift(input).plan.operations).toEqual([]);
+  const conflicting = reconcilePlanWithDrift({ ...input, latest: new Map([["t1", snapshot({ date: "2026-07-07" })]]) });
+  expect(conflicting.plan.operations).toEqual([]);
+  expect(conflicting.report.withheld[0]).toMatchObject({ status: "conflict", fields: ["date"] });
+});
+
+it.each([
+  { reconciled: true }, { isChild: true }, { accountId: "other-account" },
+])("rejects current protection changes before writing: %j", (change) => {
+  const checked = reconcilePlanWithDrift({ plan: planOf(updateOperation({ patch: { notes: { original: "Imported #One", staged: "reviewed", source: "manual" } } })),
+    snapshots: new Map([["t1", snapshot()]]), latest: new Map([["t1", snapshot(change)]]) });
+  expect(checked.plan.operations).toEqual([]);
+  expect(checked.report.withheld[0].status).toBe("conflict");
+});

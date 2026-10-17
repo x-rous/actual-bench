@@ -272,3 +272,15 @@ describe("narrowing the table to one kind of write", () => {
   });
 });
 
+
+it("shows checked patches and carried dates after pre-flight rather than the original proposal", () => {
+  const staged: StagedPatch = { notes: { original: "old", staged: "old reviewed", source: "manual" } };
+  const checked = update({ notes: { original: "new", staged: "new reviewed", source: "manual" } });
+  checked.date = "2025-08-09";
+  render(<ReviewComparison plan={plan(checked)} items={[item(staged)]}
+    statementRows={new Map([["s1", statementRow()]])} transactions={new Map([["t1", transaction()]])}
+    payees={[]} categories={[]} applyConfig={DEFAULT_APPLY_CONFIG} />);
+  expect(screen.getByText("new reviewed")).toBeInTheDocument();
+  expect(screen.queryByText("old reviewed")).not.toBeInTheDocument();
+  expect(screen.getByText("09 Aug")).toBeInTheDocument();
+});

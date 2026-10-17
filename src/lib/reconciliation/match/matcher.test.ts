@@ -738,3 +738,13 @@ describe("the review tiers respect the user's date tolerance", () => {
     expect(graph.ambiguous).toHaveLength(1);
   });
 });
+
+it("offers repeated imported IDs for explicit review regardless of transport load order", () => {
+  const statementRows = [row({ id: "s1", externalId: "same-bank-id" })];
+  const actual = [txn({ id: "t2", importedId: "same-bank-id" }), txn({ id: "t1", importedId: "same-bank-id" })];
+  const graph = run(statementRows, actual);
+  expect(graph.matched).toEqual([]);
+  expect(graph.ambiguous).toHaveLength(1);
+  expect(graph.ambiguous[0].candidates.map((candidate) => candidate.actualTransactionId)).toEqual(["t1", "t2"]);
+  expect(run(statementRows, [...actual].reverse())).toEqual(graph);
+});
