@@ -4,7 +4,7 @@ import { normalizeActivity, readCardActivity, type ActivitySnapshot, type Activi
 import { cycleDates, minimumEstimate, recentClosings } from "./cycles";
 import { statementDrafts, statementReview, statementTags } from "./statements";
 import { repaymentLedger, settlements } from "./repayments";
-import { portfolio, minimumPaymentStreak } from "./history";
+import { portfolio } from "./history";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
 
@@ -101,14 +101,14 @@ it("partial and late transfers settle debt without rewriting missed due-date sta
   const ledger = repaymentLedger(card, store.getState().workspaces.budget, source);
   expect(ledger.origins[0].remainingMinor).toBe(0);
   expect(ledger.confirmedMinor).toBe(9000);
-  expect(settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0]).toMatchObject({ statementId: first.id, fullRemainingMinor: 0, minimumRemainingMinor: 0, minimumByDue: false, fullByDue: false, paidMinor: 9000, confirmedPaidMinor: 9000, confirmedCreditMinor: 1000, targetRemainingMinor: 1000, confirmedPaidDate: null, status: "Minimum paid late · balance carried" });
+  expect(settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0]).toMatchObject({ statementId: first.id, recordedDebtRemainingMinor: 0, recordedMinimumRemainingMinor: 0, minimumByDue: false, fullByDue: false, paidMinor: 9000, confirmedPaidMinor: 9000, confirmedCreditMinor: 1000, recordedTargetRemainingMinor: 1000, confirmedPaidDate: null });
 });
 
 it("pending transfers stay pending, peer absence does not hide incoming repayments, and outgoing transfers are separate", () => {
   const { store, card } = setup();
   const pending = snapshot([row("pending", "2026-10-10", 10000, { transferId: "peer", cleared: false })]);
   expect(repaymentLedger(card, store.getState().workspaces.budget, pending).provisionalMinor).toBe(10000);
-  expect(settlements(card, store.getState().workspaces.budget, pending, "2026-12-01")[0]).toMatchObject({ fullRemainingMinor: 0, paidMinor: 10000, provisionalMinor: 10000, confirmedPaidMinor: 0, status: "Payment recorded · clearing pending" });
+  expect(settlements(card, store.getState().workspaces.budget, pending, "2026-12-01")[0]).toMatchObject({ recordedDebtRemainingMinor: 0, paidMinor: 10000, provisionalMinor: 10000, confirmedPaidMinor: 0 });
   const broken = { ...pending, rows: [{ ...pending.rows[0], cleared: true }], counterparts: [] };
   expect(repaymentLedger(card, store.getState().workspaces.budget, broken).confirmedMinor).toBe(10000);
   const reversed = snapshot([row("p", "2026-10-10", 10000, { transferId: "peer" }), row("reverse", "2026-10-11", -10000, { transferId: "reverse-peer" })]);
@@ -192,7 +192,7 @@ it("refunds clearing the full balance do not silently waive an official minimum"
   const { store, card } = setup();
   const source = snapshot([row("refund", "2026-10-10", 10000)]);
   const status = settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0];
-  expect(status).toMatchObject({ fullRemainingMinor: 0, minimumRemainingMinor: 2000, minimumByDue: false, paidMinor: 0, confirmedPaidMinor: 0, confirmedCreditMinor: 10000, targetRemainingMinor: 10000, status: "Minimum overdue" });
+  expect(status).toMatchObject({ recordedDebtRemainingMinor: 0, recordedMinimumRemainingMinor: 2000, minimumByDue: false, paidMinor: 0, confirmedPaidMinor: 0, confirmedCreditMinor: 10000, recordedTargetRemainingMinor: 10000 });
 });
 
 it("correcting earlier bank facts reopens later statements without changing source data", () => {
@@ -235,13 +235,13 @@ it("uses closing-month notes tags across cutoff dates, flags conflicting tags an
   expect(statementReview(first, workspace, snapshot([{ ...tagged, fingerprint: "changed-notes" }]), [manual]).memberships[0].decision).toBe("review");
 });
 
-it("preserves full notes and invalidates source fingerprints when statement tags change", () => {
+it("preserves financial decisions but refreshes review evidence when statement tags change", () => {
   const source: SyncSourceTransaction = { id: "notes", accountId: "card-account", date: "2026-09-10", amount: -100, payeeId: null, payeeName: "Shop", categoryId: null, categoryName: null, notes: "Receipt #2026-09", cleared: true, reconciled: false, importedId: null, transferId: null, isParent: false, isChild: false, parentId: null, splitLines: [] };
   const initial = normalizeActivity([source]).rows[0];
   expect(initial.notes).toBe(source.notes);
   const repayment = { ...source, amount: 100, transferId: "funding" };
   expect(normalizeActivity([repayment]).rows[0].fingerprint).toBe(normalizeActivity([{ ...repayment, notes: "#2026-10" }]).rows[0].fingerprint);
-  expect(normalizeActivity([{ ...source, notes: "Receipt #2026-10" }]).rows[0].fingerprint).not.toBe(initial.fingerprint);
+  expect(normalizeActivity([{ ...source, notes: "Receipt #2026-10" }]).rows[0].evidenceFingerprint).not.toBe(initial.evidenceFingerprint);
 });
 
 it("matches complete valid month tags only and deduplicates repeated tags", () => {
@@ -261,7 +261,7 @@ it("assigns incoming transfers by date windows once, ignoring tags, missing peer
   ], { counterparts: [] });
   const workspace = { ...store.getState().workspaces.budget, statements: store.getState().workspaces.budget.statements.map((statement) => ({ ...statement, openingAnchor: false, verification: "needs-review" as const })) };
   const result = settlements(card, workspace, source, "2026-12-01");
-  expect(result[0]).toMatchObject({ statementId: first.id, paidMinor: 11000, paidDate: "2026-10-25", delayDays: 4, fullRemainingMinor: 0, minimumByDue: true, fullByDue: false });
+  expect(result[0]).toMatchObject({ statementId: first.id, paidMinor: 11000, paidDate: "2026-10-25", delayDays: 4, recordedDebtRemainingMinor: 0, minimumByDue: true, fullByDue: false });
   expect(result[1]).toMatchObject({ statementId: second.id, paidMinor: 5000, paidDate: "2026-11-01", delayDays: 0, fullByDue: true });
   expect(result.reduce((sum, entry) => sum + entry.paidMinor, 0)).toBe(16000);
   const review = statementReview(second, workspace, source);
@@ -301,7 +301,7 @@ it("counts uncleared transfers on an explicit holiday-adjusted due date, ignorin
   const configured = { ...card, closingDay: 7, dueRule: { kind: "day-of-month" as const, day: 1 } };
   const workspace = { ...store.getState().workspaces.budget, statements: [statement] };
   const source = snapshot([row("holiday-payment", "2026-10-02", 10000, { cleared: false, transferId: "peer", notes: "#2026-11" })]);
-  expect(settlements(configured, workspace, source, "2026-10-10")[0]).toMatchObject({ dueDate: "2026-10-02", paidMinor: 10000, confirmedPaidMinor: 0, provisionalMinor: 10000, paidDate: "2026-10-02", delayDays: 0, fullRemainingMinor: 0, minimumRemainingMinor: 0, fullByDue: null, carriedAtDueMinor: null, status: "Payment recorded · clearing pending" });
+  expect(settlements(configured, workspace, source, "2026-10-10")[0]).toMatchObject({ dueDate: "2026-10-02", paidMinor: 10000, confirmedPaidMinor: 0, provisionalMinor: 10000, paidDate: "2026-10-02", delayDays: 0, recordedDebtRemainingMinor: 0, recordedMinimumRemainingMinor: 0, fullByDue: null, debtCarriedAtDueMinor: null });
 });
 
 it("extends matching through an official due date beyond the next close without counting the payment twice", () => {
@@ -322,12 +322,12 @@ it.each([-1000, 1000])("never uses month tags for a transfer with amount %s", (a
 });
 
 
-it("keeps pending recorded outcomes out of the confirmed payment streak", () => {
+it("requires clearing for confirmed minimum outcomes", () => {
   const { store, card } = setup();
   const workspace = store.getState().workspaces.budget;
   const pending = row("pending", "2026-10-10", 10000, { transferId: "peer", cleared: false });
-  expect(minimumPaymentStreak(settlements(card, workspace, snapshot([pending]), "2026-12-01"), "2026-12-01")).toBe(0);
-  expect(minimumPaymentStreak(settlements(card, workspace, snapshot([{ ...pending, cleared: true }]), "2026-12-01"), "2026-12-01")).toBe(1);
+  expect(settlements(card, workspace, snapshot([pending]), "2026-12-01")[0].minimumByDue).toBeNull();
+  expect(settlements(card, workspace, snapshot([{ ...pending, cleared: true }]), "2026-12-01")[0].minimumByDue).toBe(true);
 });
 
 it("uses closing-month tags for draft billing balances while transfers always follow dates", () => {

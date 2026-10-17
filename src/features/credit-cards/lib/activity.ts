@@ -1,3 +1,4 @@
+import { evidenceHash, financialFingerprint } from "./evidence";
 import { bankToday } from "./cycles";
 import { financingCostKind, isTrackingTransfer } from "./planTracking";
 import { currentPlanLink } from "./plans";
@@ -10,7 +11,8 @@ export type ActivityRow = {
   id: string; accountId: string; date: string; amountMinor: number; label: string; notes: string | null;
   categoryId: string | null; categoryName: string | null;
   cleared: boolean | null; transferId: string | null; transferKnown: boolean;
-  fingerprint: string; parentId: string | null;
+  /** Stable financial compatibility; evidenceFingerprint also includes clearing/category/notes. */
+  fingerprint: string; evidenceFingerprint?: string; parentId: string | null;
 };
 export type ActivitySnapshot = {
   accountId: string; from: string; to: string; rows: ActivityRow[]; counterparts: ActivityRow[];
@@ -29,12 +31,13 @@ export function normalizeActivity(source: SyncSourceTransaction[]) {
   const rows: ActivityRow[] = [];
   const issues: string[] = [];
   const seen = new Map<string, string>();
-  const add = (value: Omit<ActivityRow, "fingerprint">) => {
+  const add = (value: Omit<ActivityRow, "fingerprint" | "evidenceFingerprint">) => {
     if (!isIsoDate(value.date) || !minorAmountSchema.safeParse(value.amountMinor).success) { issues.push("A transaction has invalid dates or money units"); return; }
-    const fingerprint = JSON.stringify([value.id, value.accountId, value.date, value.amountMinor, value.cleared, value.transferKnown, value.transferId, value.categoryId, value.parentId, value.transferId ? null : value.notes]);
-    if (seen.has(value.id)) { if (seen.get(value.id) !== fingerprint) issues.push("Conflicting copies of a transaction require refresh"); return; }
-    seen.set(value.id, fingerprint);
-    rows.push({ ...value, fingerprint });
+    const fingerprint = financialFingerprint(value);
+    const evidenceFingerprint = evidenceHash([fingerprint, value.cleared, value.categoryId, value.transferId ? null : value.notes]);
+    if (seen.has(value.id)) { if (seen.get(value.id) !== evidenceFingerprint) issues.push("Conflicting copies of a transaction require refresh"); return; }
+    seen.set(value.id, evidenceFingerprint);
+    rows.push({ ...value, fingerprint, evidenceFingerprint });
   };
   for (const row of source) {
     if (row.isChild) {
@@ -76,7 +79,7 @@ export async function readCardActivity(transport: ActivityTransport, accountId: 
   const nativeDate = bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const directBalanceAdjustmentMinor = transport.getSyncCapabilities().mode === "browser-api" ? minorAmountSchema.parse(Number(normalized.rows.filter((row) => row.accountId === accountId && row.date > (to < nativeDate ? to : nativeDate) && row.date <= (to > nativeDate ? to : nativeDate)).reduce((total, row) => total + BigInt(row.amountMinor) * BigInt(to < nativeDate ? -1 : 1), BigInt(0)))) : 0;
   const linksKnown = transport.canVerifyTransferLinks ? await transport.canVerifyTransferLinks({ accountId, sinceDate: from }) : transport.getSyncCapabilities().mode === "browser-api";
-  const rows = normalized.rows.filter((row) => row.accountId === accountId && row.date >= from && row.date <= to).map((row) => linksKnown ? row : { ...row, transferKnown: false, fingerprint: JSON.stringify([row.fingerprint, "transfer-field-unknown"]) });
+  const rows = normalized.rows.filter((row) => row.accountId === accountId && row.date >= from && row.date <= to).map((row) => linksKnown ? row : { ...row, transferKnown: false, fingerprint: financialFingerprint({ ...row, transferKnown: false }), evidenceFingerprint: evidenceHash([row.evidenceFingerprint, "transfer-field-unknown"]) });
   const ids = [...new Set(rows.flatMap((row) => row.transferId ? [row.transferId] : []))];
   const counterparts: ActivityRow[] = [];
   const issues = [...normalized.issues];
@@ -92,17 +95,15 @@ export async function readCardActivity(transport: ActivityTransport, accountId: 
       }
     }
   }
-  return { accountId, from, to, rows, counterparts, futureDeltaMinor, directBalanceAdjustmentMinor, issues, fetchedAt: new Date().toISOString(), signature: JSON.stringify([rows.map((r) => r.fingerprint), counterparts.map((r) => r.fingerprint), futureDeltaMinor, issues]) };
+  return { accountId, from, to, rows, counterparts, futureDeltaMinor, directBalanceAdjustmentMinor, issues, fetchedAt: new Date().toISOString(), signature: evidenceHash([rows.map((r) => r.evidenceFingerprint ?? r.fingerprint), counterparts.map((r) => r.evidenceFingerprint ?? r.fingerprint), futureDeltaMinor, issues]) };
 }
 
 /** An incoming card-side transfer is a repayment; peer reads only enrich its details. */
 export function paymentEvidence(row: ActivityRow, snapshot: ActivitySnapshot, workspace?: Workspace) {
   if (isTrackingTransfer(row, snapshot, workspace) || workspace?.planLinks?.some((link) => link.transactionId === row.id && link.role === "conversion-credit")) return "not-payment" as const;
-  const configuredCard = workspace?.cards.find((card) => card.accountId === row.accountId);
-  const manual = workspace?.classifications.find((entry) => entry.transactionId === row.id && entry.fingerprint === row.fingerprint);
-  if (manual && manual.kind !== "payment") return "not-payment" as const;
-  if (!manual && configuredCard && recognizeActivity(row, configuredCard).kind === "plan-conversion") return "not-payment" as const;
+  const card = workspace?.cards.find((entry) => entry.accountId === row.accountId);
   if (row.accountId !== snapshot.accountId || row.amountMinor <= 0 || !row.transferId) return "not-payment" as const;
+  if (card && workspace && activityKind(row, card, workspace, snapshot) !== "payment") return "not-payment" as const;
   return row.cleared === true ? "confirmed" as const : "provisional" as const;
 }
 
@@ -110,12 +111,15 @@ export function activityKind(row: ActivityRow, card: Card, workspace: Workspace,
   const manual = workspace.classifications.find((entry) => entry.cardId === card.id && entry.transactionId === row.id && entry.fingerprint === row.fingerprint);
   if (manual) return manual.kind;
   const link = currentPlanLink(workspace, row);
+  // Explicit principal relationships win over incidental words in transfer memos.
+  if (link && ["conversion-credit", "instalment-billed", "combined-instalment", "principal-release", "adjustment"].includes(link.role)) return link.role === "conversion-credit" ? "plan-conversion" : ["principal-release", "adjustment"].includes(link.role) ? "plan-adjustment" : "plan-instalment";
+  if (isTrackingTransfer(row, snapshot, workspace)) return row.amountMinor > 0 ? "plan-conversion" : "plan-instalment";
+  if (row.transferId && row.amountMinor > 0 && !workspace.planLinks?.some((entry) => entry.transactionId === row.id)) return recognizeActivity(row, card).kind === "plan-conversion" ? "plan-conversion" : "payment";
   const cost = financingCostKind(row, card, workspace);
   if (cost) return row.amountMinor > 0 ? cost === "interest" ? "interest-refund" : "fee-refund" : cost;
   if (link) return link.role === "refund" ? "refund" : link.role === "conversion-credit" ? "plan-conversion" : link.role === "adjustment" || link.role === "principal-release" ? "plan-adjustment" : "plan-instalment";
   // A changed saved conversion must not silently become a cash payment.
   if (workspace.planLinks?.some((entry) => entry.transactionId === row.id && entry.role === "conversion-credit")) return "plan-conversion";
-  if (isTrackingTransfer(row, snapshot, workspace)) return row.amountMinor > 0 ? "plan-conversion" : "plan-instalment";
   const suggestion = recognizeActivity(row, card);
   if (row.transferId && row.amountMinor > 0) return suggestion.kind === "plan-conversion" ? "plan-conversion" : "payment";
   return suggestion.kind;

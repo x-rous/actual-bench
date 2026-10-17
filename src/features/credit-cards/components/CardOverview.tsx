@@ -9,7 +9,7 @@ import { DashboardPanel } from "./DashboardPanels";
 import { ClearingStatus } from "./ClearingStatus";
 import type { Card, Statement, Workspace } from "../lib/models";
 import { activityKind, type ActivitySnapshot } from "../lib/activity";
-import { paymentTarget, paymentTargetRemaining } from "../lib/paymentTargets";
+import { paymentTarget, confirmedPaymentProgress } from "../lib/paymentTargets";
 import type { Settlement } from "../lib/repayments";
 import { isStartingPoint, statementOutcome } from "../lib/paymentSummary";
 import { netActivitySinceStatement } from "../lib/insights";
@@ -36,11 +36,12 @@ export function CardOverview({ budget, card, bank, payment, balance, workspace, 
     ? "Some transaction details are incomplete. Refresh to retry."
     : snapshot.to < today ? `Activity loaded through ${formatCardDate(snapshot.to)}. Refresh for today.`
       : `Activity starts on ${formatCardDate(snapshot.from)}. Refresh to load the full period.` : null;
-  const known = payment?.fullRemainingMinor != null;
+  const progress = bank ? confirmedPaymentProgress(bank, payment) : null;
+  const known = progress?.known ?? false;
   const credits = payment?.confirmedCreditMinor ?? payment?.confirmedCashbackMinor ?? 0;
   const pendingStatementCredits = payment?.provisionalCreditMinor ?? payment?.provisionalCashbackMinor ?? 0;
-  const remaining = bank && known ? paymentTargetRemaining(bank, payment!.confirmedPaidMinor) : null;
-  const minimum = bank && known ? Math.max(0, bank.minimumDueMinor - payment!.confirmedPaidMinor) : null;
+  const remaining = progress?.toPayMinor ?? null;
+  const minimum = progress?.minimumToPayMinor ?? null;
   const paid = known ? payment!.confirmedPaidMinor : null;
   const percent = bank && paymentTarget(bank) > 0 && paid !== null ? Math.min(100, paid / paymentTarget(bank) * 100) : 0;
   const marker = bank && paymentTarget(bank) > 0 ? Math.min(100, bank.minimumDueMinor / paymentTarget(bank) * 100) : 0;

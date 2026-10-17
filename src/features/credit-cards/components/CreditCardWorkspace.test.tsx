@@ -1,10 +1,13 @@
 import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as statements from "../lib/statements";
 import { CreditCardWorkspace } from "./CreditCardWorkspace";
 import { getTransport } from "@/lib/actual";
 import type { ActivityRow } from "../lib/activity";
 import { creditCardStore } from "../lib/memory";
 import { useConnectionStore, type ConnectionInstance } from "@/store/connection";
+
+jest.mock("../lib/statements", () => { const actual = jest.requireActual("../lib/statements"); return { ...actual, statementDrafts: jest.fn(actual.statementDrafts) }; });
 
 const mockSync = jest.fn().mockResolvedValue(undefined);
 jest.mock("@/lib/actual", () => ({ getTransport: jest.fn(() => ({ sync: mockSync })) }));
@@ -14,7 +17,7 @@ const mockDirectory = {
   isFetching: false, isError: false, refetch: jest.fn(),
 };
 jest.mock("../hooks/useCreditCardDirectory", () => ({ useCreditCardDirectory: () => mockDirectory, useCreditCardCategories: () => ({ data: { categories: [{ id: "interest", name: "Card interest" }, { id: "fees", name: "Bank fees" }] }, isFetching: false, isError: false, refetch: jest.fn() }) }));
-const mockActivity = { data: { accountId: "account", from: "2026-01-01", to: "2026-12-31", rows: [] as ActivityRow[], counterparts: [] as ActivityRow[], issues: [] as string[], fetchedAt: "2026-10-10T12:00:00Z", signature: "empty" }, isFetching: false, isError: false, refetch: jest.fn() };
+const mockActivity = { data: { accountId: "account", from: "2026-01-01", to: "2026-12-31", rows: [] as ActivityRow[], counterparts: [] as ActivityRow[], issues: [] as string[], fetchedAt: "2026-10-10T12:00:00Z", directBalanceAdjustmentMinor: 0, signature: "empty" }, isFetching: false, isError: false, refetch: jest.fn() };
 jest.mock("../hooks/useCreditCardActivity", () => ({ useCreditCardTracking: () => [], useCreditCardActivities: (_connection: unknown, cards: unknown[]) => cards.map(() => mockActivity) }));
 jest.mock("@/features/accounts/hooks/useAccountClasses", () => ({ useAccountClasses: () => ({ available: true, maps: { accounts: new Map([["account", "credit-card"]]), groups: new Map() } }) }));
 const connection: ConnectionInstance = { id: "connection", budgetSyncId: "budget", label: "Budget", mode: "http-api", baseUrl: "http://localhost", apiKey: "test" };
@@ -28,6 +31,7 @@ beforeEach(() => {
   mockDirectory.refetch.mockReset().mockResolvedValue({ isError: false });
   mockActivity.refetch.mockReset().mockResolvedValue({ isError: false });
   creditCardStore.setState({ workspaces: {}, undoHistory: {}, notices: {} });
+  mockActivity.data.directBalanceAdjustmentMinor = 0;
   mockActivity.data.from = "2026-01-01";
   mockActivity.data.to = "2026-12-31";
   mockActivity.data.rows = [];
@@ -675,4 +679,23 @@ it("guides a new card to its earliest unconfirmed statement and opens that exact
   fireEvent.click(screen.getByRole("button", { name: "Confirm statement" }));
   expect(screen.getByRole("dialog", { name: "Add latest statement" })).toBeVisible();
   expect(screen.getByLabelText("Closing date")).toHaveValue("30 Jun 2026");
+});
+
+it("passes Direct's same adjusted estimate anchor into portfolio and detail draft generation", () => {
+  const card = register();
+  useConnectionStore.setState({ instances: [{ ...connection, mode: "browser-api", serverPassword: "test" }], activeInstanceId: connection.id });
+  mockActivity.data.directBalanceAdjustmentMinor = -1000;
+  const spy = jest.mocked(statements.statementDrafts);
+  spy.mockClear();
+  try {
+    render(<TestWorkspace />);
+    const portfolio = spy.mock.calls.filter((args) => args[0].id === card.id).map((args) => args[4]);
+    expect(portfolio.length).toBeGreaterThan(0);
+    expect(portfolio.every((anchor) => anchor === -316000)).toBe(true);
+    spy.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
+    const detail = spy.mock.calls.filter((args) => args[0].id === card.id).map((args) => args[4]);
+    expect(detail.length).toBeGreaterThan(0);
+    expect(detail.every((anchor) => anchor === -316000)).toBe(true);
+  } finally { spy.mockClear(); }
 });

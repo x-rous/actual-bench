@@ -49,7 +49,7 @@ export function ActivityTable({ budget, card, workspace, snapshot, available, on
     const original = planSources(plan).some((source) => source.transactionId === row.id && source.fingerprint === row.fingerprint);
     const name = plan.reference || snapshot.rows.find((entry) => planSources(plan).some((source) => source.transactionId === entry.id))?.label || "Repayment plan";
     const role = original ? "Original" : link ? link.instalment !== null ? `Instalment ${link.instalment}/${plan.months} · ${roleLabels[link.role]}` : roleLabels[link.role] : "Check changed link";
-    return { text: `${name} · ${role}`, detail: `${name}\n${role}\nPlan amount ${formatAmount(plan.amountMinor, 2)}${plan.balanceOnly ? " · Balance only" : ` · ${plan.months} instalments`}. The transaction amount below is separate from remaining plan debt.` };
+    return { text: `${name} · ${role}`, detail: `${name}\n${role}\nPlan amount ${plan.amountMinor === null ? "unknown" : formatAmount(plan.amountMinor, 2)}${plan.balanceOnly ? " · Balance only" : ` · ${plan.months} instalments`}. The transaction amount below is separate from remaining plan debt.` };
   };
   const rows = snapshot.rows.filter((row) => (!included || included.has(row.id)) && (!filter || activityKind(row, card, workspace, snapshot) === filter) && [row.label, row.notes ?? "", activityCategoryLabel(row, snapshot), planSummary(row).text, statementSummary(row).text, classificationLabels[activityKind(row, card, workspace, snapshot)], formatCardDate(row.date), formatAmount(row.amountMinor, 2)].join(" ").toLowerCase().includes(search.toLowerCase()));
   const value = (row: ActivityRow, column: ActivityColumn) => {

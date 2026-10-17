@@ -50,7 +50,7 @@ export function StatementTimeline({ card, statements, snapshot, workspace, today
   }
   const cycleDetail = (cycle: Cycle) => {
     const statement = cycle.statement, status = statuses.find((entry) => entry.statementId === statement?.id);
-    const known = available && status?.fullRemainingMinor != null;
+    const known = available && status?.recordedDebtRemainingMinor != null;
     const credits = status?.confirmedCreditMinor ?? status?.confirmedCashbackMinor ?? 0;
     const remaining = known && statement ? paymentTargetRemaining(statement, status.confirmedPaidMinor) : null;
     const outcome = statement ? statementOutcome(statement, status, today, available) : null;
@@ -64,7 +64,7 @@ export function StatementTimeline({ card, statements, snapshot, workspace, today
       {cycles.filter((cycle) => cycle.dueDate >= from && cycle.closingDate < until).map((cycle) => {
         const statement = cycle.statement, status = statuses.find((entry) => entry.statementId === statement?.id);
         const outcome = statement ? statementOutcome(statement, status, today, available) : null;
-        const known = available && !cycle.estimated && status?.fullRemainingMinor != null;
+        const known = available && !cycle.estimated && status?.recordedDebtRemainingMinor != null;
         const target = statement ? paymentTarget(statement) : null;
         const remaining = known ? paymentTargetRemaining(statement!, status.confirmedPaidMinor) : null;
         const minimumRemaining = known && statement ? Math.max(0, statement.minimumDueMinor - status.confirmedPaidMinor) : null;

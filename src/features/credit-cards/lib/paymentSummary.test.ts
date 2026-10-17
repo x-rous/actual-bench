@@ -25,12 +25,11 @@ it("does not call pending thresholds met, and uses confirmed dates once cleared 
   expect(texts(pending.summary.progress)).toContain("Paid: 0.00 · pending 100.00 | Remaining: 100.00 | Minimum due: 20.00");
   expect(texts(pending.summary.timing)).toBe("Awaiting clearance");
   const mixed = scenario([{ date: "2026-09-01", amount: 10000, pending: true }, { date: "2026-09-04", amount: 10000 }]);
-  expect(mixed.settlement).toMatchObject({ paidDate: "2026-09-01", confirmedPaidDate: "2026-09-04", confirmedMinimumPaidDate: "2026-09-04", status: "Paid late" });
+  expect(mixed.settlement).toMatchObject({ paidDate: "2026-09-01", confirmedPaidDate: "2026-09-04", confirmedMinimumPaidDate: "2026-09-04" });
   expect(texts(mixed.summary.timing)).toBe("Paid: 04 Sep 2026 · 3 days late");
   expect(mixed.summary.detail).toContain("Minimum timing: 3 days late");
   expect(mixed.summary.detail).toContain("Recorded excess 100.00 may include pending");
   const carried = scenario([{ date: "2026-09-01", amount: 3000, pending: true }, { date: "2026-09-04", amount: 2000 }]);
-  expect(carried.settlement.status).toBe("Minimum paid late · balance carried");
   expect(texts(carried.summary.timing)).toContain("Minimum paid: 04 Sep 2026 · 3 days late | Balance carried");
 });
 it("shows partial and missed minimums without losing full remaining amounts", () => {

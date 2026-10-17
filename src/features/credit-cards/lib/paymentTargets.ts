@@ -9,3 +9,13 @@ export function paymentTarget(statement: Statement) {
 export function paymentTargetRemaining(statement: Statement, paidMinor: number) {
   return Math.max(0, paymentTarget(statement) - paidMinor);
 }
+
+/** Confirmed payment obligation, in integer minor units. Pending transfers and credits never cover it. */
+export function confirmedPaymentProgress(statement: Statement, payment: import("./repayments").Settlement | undefined) {
+  const known = payment?.recordedDebtRemainingMinor != null && payment.recordedMinimumRemainingMinor != null;
+  return {
+    known,
+    toPayMinor: known ? paymentTargetRemaining(statement, payment.confirmedPaidMinor) : null,
+    minimumToPayMinor: known ? Math.max(0, statement.minimumDueMinor - payment.confirmedPaidMinor) : null,
+  };
+}

@@ -1,3 +1,4 @@
+import { evidenceHash } from "./evidence";
 import { createCreditCardStore } from "./memory";
 import { activityKind, type ActivityRow, type ActivitySnapshot } from "./activity";
 import { repaymentPlanSchema } from "./models";
@@ -127,14 +128,14 @@ it("keeps tiny inclusive instalments level while conserving principal and financ
   expect(result.calculated).toBe(true);
   if (!result.calculated) return;
   expect(result.rows.map((row) => row.amountMinor)).toEqual([1, 1, 1, 1, 1, 1]);
-  expect(result.rows.reduce((total, row) => total + row.principalMinor, 0)).toBe(1);
-  expect(result.rows.reduce((total, row) => total + row.interestMinor, 0)).toBe(5);
+  expect(result.rows.reduce((total, row) => total + (row.principalMinor ?? 0), 0)).toBe(1);
+  expect(result.rows.reduce((total, row) => total + (row.interestMinor ?? 0), 0)).toBe(5);
 });
 
 it("requires current refund confirmation and rejects revisions to billed history atomically", () => {
   const { store, card, plan, snapshot } = setup();
   const links = [{ planId: plan.id, transactionId: "refund", fingerprint: "refund", role: "refund" as const, instalment: null }, { planId: plan.id, transactionId: "instalment", fingerprint: "instalment", role: "instalment-billed" as const, instalment: 1 }];
-  const signature = JSON.stringify([["refund", "refund"]]);
+  const signature = evidenceHash([["refund", "refund"]]);
   const unchanged = { ...plan, refundReview: { treatment: "unchanged" as const, signature, remaining: [] } };
   store.getState().savePlan("budget", card.id, card.revision, snapshot, unchanged, links);
   const workspace = store.getState().workspaces.budget;
@@ -152,7 +153,7 @@ it("saves issuer-confirmed remaining totals without rewriting billed entries or 
   const { store, card, plan, snapshot } = setup();
   const links = [{ planId: plan.id, transactionId: "refund", fingerprint: "refund", role: "refund" as const, instalment: null }, { planId: plan.id, transactionId: "instalment", fingerprint: "instalment", role: "instalment-billed" as const, instalment: 1 }];
   const remaining = planProjection(plan, card).rows.slice(1).map((entry) => ({ index: entry.index, date: entry.date, amountMinor: entry.amountMinor - (entry.final ? 1000 : 0) }));
-  const review = { treatment: "revised" as const, signature: JSON.stringify([["refund", "refund"]]), remaining };
+  const review = { treatment: "revised" as const, signature: evidenceHash([["refund", "refund"]]), remaining };
   const originalRows = JSON.stringify(snapshot.rows);
   store.getState().savePlan("budget", card.id, card.revision, snapshot, { ...plan, refundReview: review }, links);
   const workspace = store.getState().workspaces.budget;

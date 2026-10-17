@@ -1,7 +1,6 @@
-import { portfolioInterestTrend, portfolioStatementTrend, paymentTotalsDetail, portfolioPaymentTiming } from "./portfolioView";
+import { portfolioInterestTrend, portfolioStatementTrend, paymentTotalsDetail } from "./portfolioView";
 import { creditCardStore } from "./memory";
 import type { ActivitySnapshot } from "./activity";
-import type { Settlement } from "./repayments";
 
 beforeEach(() => creditCardStore.setState({ workspaces: {}, undoHistory: {}, notices: {} }));
 function fixture(count: number) {
@@ -51,16 +50,6 @@ it("omits zero KPI noise while exposing incomplete coverage and pending minimums
   expect(paymentTotalsDetail(totals)).toBe("No minimum payment outstanding");
   expect(paymentTotalsDetail({ ...totals, coverage: 9 })).toBe("9 of 10 cards confirmed; total is partial");
   expect(paymentTotalsDetail({ ...totals, minimumMinor: 2500, overdueMinimumMinor: 2500, pendingMinor: 1000 })).toBe("Minimum remaining 25.00 · Overdue minimum 25.00 · Pending 10.00");
-});
-
-it("distinguishes a passed full-payment deadline from a missed minimum and preserves late settlement", () => {
-  const { statements } = fixture(1);
-  const statement = statements[1];
-  const payment = { fullRemainingMinor: 9000, confirmedPaidMinor: Math.max(0, statement.officialBalanceMinor - 9000), minimumRemainingMinor: 0, status: "Minimum met · full balance remains" } as Settlement;
-  expect(portfolioPaymentTiming(statement, payment, "2026-09-19")).toBe("Due soon");
-  expect(portfolioPaymentTiming(statement, payment, "2026-09-20")).toBe("Due today");
-  expect(portfolioPaymentTiming(statement, payment, "2026-09-23")).toBe("Full balance remaining · 3 days past due date");
-  expect(portfolioPaymentTiming(statement, { ...payment, confirmedPaidMinor: statement.officialBalanceMinor, fullRemainingMinor: 0, confirmedPaidDate: "2026-09-23" }, "2026-10-11")).toBe("Paid 3 days late");
 });
 
 it("combines explicit and description-based interest classifications with coverage detail", () => {

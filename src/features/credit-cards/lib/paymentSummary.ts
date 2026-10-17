@@ -6,7 +6,7 @@ import { statementReview } from "./statements";
 import type { Statement, Workspace } from "./models";
 import { paymentDeadline, type Settlement } from "./repayments";
 
-import { paymentTarget, paymentTargetRemaining } from "./paymentTargets";
+import { paymentTarget, confirmedPaymentProgress } from "./paymentTargets";
 
 type Line = { text: string; detail?: string; tone: "neutral" | "success" | "attention" | "danger" };
 const money = (minor: number) => formatAmount(minor, 2);
@@ -14,15 +14,16 @@ const line = (text: string, tone: Line["tone"] = "neutral"): Line => ({ text, to
 
 /** Integer minor units. Confirmed settlement is independent of pending recorded transfers. */
 export function statementPaymentSummary(statement: Statement, payment: Settlement | undefined, today: string, available: boolean) {
-  if (!available || !payment || payment.fullRemainingMinor === null || payment.minimumRemainingMinor === null) {
+  if (!available || !payment || payment.recordedDebtRemainingMinor === null || payment.recordedMinimumRemainingMinor === null) {
     const reason = !available ? "Refresh activity" : !statement.bankConfirmed ? "Confirm bank values" : "Load payment history";
     return { progress: [line(reason)], timing: [line("Not confirmed")], detail: `${reason} to confirm payment amounts and timing. Missing evidence is not a zero payment.` };
   }
   const balance = paymentTarget(statement), minimum = statement.minimumDueMinor;
   const cashback = payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0;
   const pendingCashback = payment.provisionalCreditMinor ?? payment.provisionalCashbackMinor ?? 0;
-  const fullRemaining = paymentTargetRemaining(statement, payment.confirmedPaidMinor);
-  const minRemaining = Math.max(0, minimum - payment.confirmedPaidMinor);
+  const progress = confirmedPaymentProgress(statement, payment);
+  const fullRemaining = progress.toPayMinor!;
+  const minRemaining = progress.minimumToPayMinor!;
   const excess = Math.max(0, payment.confirmedPaidMinor - balance);
   const paid = line(`Paid: ${money(payment.confirmedPaidMinor)}${payment.provisionalMinor ? ` · pending ${money(payment.provisionalMinor)}` : ""}`);
   const dateLine = (label: string, date: string): Line => {
@@ -63,10 +64,11 @@ export function statementOutcome(statement: Statement | undefined, payment: Sett
   if (baseline) return { ...result, label: "Starting point", timing: "Opening balance", known: true, detail: "Opening balance used as the starting point for tracked statements. This is not a payment obligation." };
   if (!statement.bankConfirmed) return { ...result, label: "Estimated", timing: `Due ${formatCardDate(statement.dueDate)} · estimated` };
   if (!available) return { ...result, label: "Payment data unavailable", timing: "Refresh payment history" };
-  if (!payment || payment.fullRemainingMinor == null || payment.minimumRemainingMinor == null) return result;
+  if (!payment || payment.recordedDebtRemainingMinor == null || payment.recordedMinimumRemainingMinor == null) return result;
   const days = daysBetween(today, statement.dueDate);
-  const fullRemaining = paymentTargetRemaining(statement, payment.confirmedPaidMinor);
-  const minimumRemaining = Math.max(0, statement.minimumDueMinor - payment.confirmedPaidMinor);
+  const progress = confirmedPaymentProgress(statement, payment);
+  const fullRemaining = progress.toPayMinor!;
+  const minimumRemaining = progress.minimumToPayMinor!;
   const pending = payment.provisionalMinor > 0;
   const standardTarget = paymentTarget(statement) === Math.max(0, statement.officialBalanceMinor);
   const targetDate = standardTarget ? payment.confirmedPaidDate : payment.confirmedTargetPaidDate ?? null;
@@ -74,7 +76,7 @@ export function statementOutcome(statement: Statement | undefined, payment: Sett
   const targetCarry = payment.targetCarriedAtDueMinor;
   const dayCount = (count: number) => `${count} ${count === 1 ? "day" : "days"}`;
   const dueText = `Due ${formatCardDate(statement.dueDate)} · ${days > 0 ? `in ${dayCount(days)}` : days === 0 ? "today" : `${dayCount(-days)} overdue`}`;
-  const detail = `${result.detail} Balance remaining at due date: ${payment.carriedAtDueMinor == null ? "unknown" : formatAmount(payment.carriedAtDueMinor, 2)}. To pay after confirmed payments: ${formatAmount(fullRemaining, 2)}.`;
+  const detail = `${result.detail} Balance remaining at due date: ${payment.debtCarriedAtDueMinor == null ? "unknown" : formatAmount(payment.debtCarriedAtDueMinor, 2)}. To pay after confirmed payments: ${formatAmount(fullRemaining, 2)}.`;
   const countdown = days > 0 ? `in ${dayCount(days)}` : days === 0 ? "today" : `${dayCount(-days)} overdue`;
   const known = { ...result, known: true, detail, countdown, carried: (targetCarry ?? 0) > 0 };
   if (paymentTarget(statement) === 0) return { ...known, countdown: "", label: statement.officialBalanceMinor < 0 ? "Card credit" : "No payment required", timing: "No payment required" };

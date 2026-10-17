@@ -2,7 +2,7 @@ import { financingCostKind, isTrackingTransfer, planOwnsTrackingRow, trackingBal
 import { createStore } from "zustand/vanilla";
 import { parseIsoDate, daysBetween } from "@/lib/financial-models/calendar/dates";
 import { generateId } from "@/lib/uuid";
-import { repaymentPlanSchema, planLinkSchema, membershipSchema, allocationSchema, activityClassificationSchema, cardInputSchema, cardSchema, statementFactsSchema, statementSchema, type Card, type Statement, type OpeningPosition, type Membership, type Workspace } from "./models";
+import { repaymentPlanSchema, planLinkSchema, membershipSchema, allocationSchema, activityClassificationSchema, cardInputSchema, cardSchema, statementFactsSchema, statementSchema, type Card, type Statement, type Membership, type Workspace } from "./models";
 
 import type { ActivitySnapshot } from "./activity";
 import { paymentEvidence } from "./activity";
@@ -14,6 +14,8 @@ export type CreditCardState = {
   workspaces: Readonly<Record<string, Workspace>>;
   undoHistory: Readonly<Record<string, Workspace[]>>;
   notices: Readonly<Record<string, string>>;
+  /** Immutable expected head; external replacement makes whole-session Undo unsafe. */
+  undoHeads: Readonly<Record<string, Workspace>>;
   undo: (budget: string) => void;
   resetReview: (budget: string, statementId: string, expectedRevision: number) => void;
   deleteStatement: (budget: string, statementId: string, expectedRevision: number) => void;
@@ -32,10 +34,6 @@ export type CreditCardState = {
 };
 export const EMPTY_WORKSPACE: Workspace = { cards: [], statements: [], memberships: [], allocations: [], classifications: [] };
 
-export function openingPosition(workspace: Workspace, cardId: string): OpeningPosition | null {
-  const anchor = workspace.statements.find((s) => s.cardId === cardId && s.openingAnchor);
-  return anchor ? { cardId, statementId: anchor.id, date: anchor.closingDate, balanceMinor: anchor.officialBalanceMinor } : null;
-}
 
 function requireRevision(record: { revision: number } | undefined, expected: number) {
   if (!record) throw new Error("This record is no longer available in the active budget");
@@ -62,23 +60,25 @@ export function createCreditCardStore() {
     const read = (budget: string) => get().workspaces[budget] ?? EMPTY_WORKSPACE;
     const write = (budget: string, workspace: Workspace, notice = "Changes saved") => set((state) => ({
       workspaces: { ...state.workspaces, [budget]: workspace },
+      undoHeads: { ...state.undoHeads, [budget]: workspace },
       undoHistory: { ...state.undoHistory, [budget]: [...(state.undoHistory[budget] ?? []).slice(-19), read(budget)] },
       notices: { ...state.notices, [budget]: notice },
     }));
     return {
-      workspaces: {}, undoHistory: {}, notices: {},
+      workspaces: {}, undoHistory: {}, notices: {}, undoHeads: {},
       undo(budget) {
         const history = get().undoHistory[budget] ?? [];
         const previous = history.at(-1);
         if (!previous) return;
         const current = read(budget);
+        if (current !== get().undoHeads[budget]) { set((state) => ({ notices: { ...state.notices, [budget]: "Workspace changed; Undo is unavailable. Your current records were kept." } })); return; }
         // Undo must not make an old editor revision valid again (ABA prevention).
         const restored: Workspace = { ...previous,
           cards: previous.cards.map((card) => ({ ...card, revision: Math.max(card.revision, current.cards.find((entry) => entry.id === card.id)?.revision ?? 0) + 1 })),
           plans: (previous.plans ?? []).map((plan) => ({ ...plan, revision: Math.max(plan.revision, current.plans?.find((entry) => entry.id === plan.id)?.revision ?? 0) + 1 })),
           statements: previous.statements.map((statement) => ({ ...statement, revision: Math.max(statement.revision, current.statements.find((entry) => entry.id === statement.id)?.revision ?? 0) + 1 })),
         };
-        set((state) => ({ workspaces: { ...state.workspaces, [budget]: restored }, undoHistory: { ...state.undoHistory, [budget]: history.slice(0, -1) }, notices: { ...state.notices, [budget]: "Last change undone" } }));
+        set((state) => ({ workspaces: { ...state.workspaces, [budget]: restored }, undoHeads: { ...state.undoHeads, [budget]: restored }, undoHistory: { ...state.undoHistory, [budget]: history.slice(0, -1) }, notices: { ...state.notices, [budget]: "Last change undone" } }));
       },
       recordStatement(budget, cardId, expected, raw, bankConfirmed) {
         const workspace = read(budget);
@@ -148,7 +148,7 @@ export function createCreditCardStore() {
         const allocations = [...workspace.allocations.filter((entry) => !(entry.cardId === cardId && entry.transactionId === transactionId)), ...input];
         const candidate = { ...workspace, allocations };
         const ledger = repaymentLedger(card!, candidate, snapshot);
-        if (ledger.issues.some((issue) => issue.includes(transactionId))) throw new Error("Allocation exceeds this payment or its eligible debt origins");
+        if (!ledger.anchorDate || row.date <= ledger.anchorDate || row.date > snapshot.to || ledger.invalidAllocationIds.includes(transactionId) || input.some((entry) => !ledger.allocations.some((saved) => saved.transactionId === transactionId && saved.originId === entry.originId && saved.amountMinor === entry.amountMinor))) throw new Error("Allocation exceeds this payment or its eligible debt origins");
         if (input.length && sumMinor(input.map((entry) => entry.amountMinor)) > row.amountMinor) throw new Error("Allocation exceeds this payment");
         write(budget, { ...candidate, cards: workspace.cards.map((entry) => entry.id === cardId ? { ...entry, revision: expected + 1 } : entry) }, input.length ? "Payment allocation saved" : "Oldest-first allocation restored");
       },
@@ -158,25 +158,29 @@ export function createCreditCardStore() {
         requireRevision(card, expected);
         const input = repaymentPlanSchema.parse(raw);
         const existing = workspace.plans?.find((entry) => entry.id === input.id);
-        if (existing) requireRevision(existing, input.revision);
+        if (existing) {
+          if (existing.cardId !== cardId) throw new Error("A plan cannot move to another card");
+          requireRevision(existing, input.revision);
+        }
         else if (input.revision !== 1) throw new Error("New plans must start at revision one");
         if (snapshot.issues.length || snapshot.accountId !== card!.accountId || input.cardId !== cardId) throw new Error("Refresh this card's Actual activity before saving");
-        const sourceRefs = input.sourceTransactions ?? (input.transactionId && input.fingerprint ? [{ transactionId: input.transactionId, fingerprint: input.fingerprint }] : []);
+        if (input.settledDate && input.settledDate > snapshot.to) throw new Error("The bank-confirmed end date cannot be in the future");
+        const sourceRefs = input.sourceTransactions;
         if (new Set(sourceRefs.map((source) => source.transactionId)).size !== sourceRefs.length) throw new Error("Choose each original transaction once");
         const sources = sourceRefs.map((source) => {
           const row = snapshot.rows.find((entry) => entry.id === source.transactionId);
           if (!row || row.fingerprint !== source.fingerprint || row.amountMinor >= 0 || financingCostKind(row, card!, workspace)) throw new Error("The original Actual charge changed; refresh and review it");
-          if (workspace.plans?.some((plan) => plan.id !== input.id && (plan.transactionId === row.id || plan.sourceTransactions?.some((entry) => entry.transactionId === row.id))) || workspace.planLinks?.some((link) => link.planId !== input.id && link.transactionId === row.id)) throw new Error("This transaction already belongs to another plan");
+          if (workspace.plans?.some((plan) => plan.id !== input.id && plan.sourceTransactions.some((entry) => entry.transactionId === row.id)) || workspace.planLinks?.some((link) => link.planId !== input.id && link.transactionId === row.id)) throw new Error("This transaction already belongs to another plan");
           return row;
         });
-        const opening = input.tracking?.opening ?? input.opening;
-        if (input.sourceMode === "existing" || input.sourceMode === undefined && opening) {
+        const opening = input.opening;
+        if (input.sourceMode === "existing") {
           if (!opening) throw new Error("Enter the remaining principal and tracking start date");
         } else {
           if (!sources.length && !input.reference?.trim()) throw new Error("Choose original transactions or enter a balance/cash/transfer reference");
-          if (sources.length && (input.amountMinor > sumMinor(sources.map((row) => -row.amountMinor)) || sources.some((row) => row.date > input.startDate))) throw new Error("Plan amount/date must fit the original charges");
+          if (sources.length && (input.amountMinor !== null && input.amountMinor > sumMinor(sources.map((row) => -row.amountMinor)) || sources.some((row) => row.date > input.startDate))) throw new Error("Plan amount/date must fit the original charges");
         }
-        if (opening && (opening.date > snapshot.to || opening.date < input.startDate || opening.principalMinor > input.amountMinor)) throw new Error("Opening principal must be within the plan amount and dated between plan start and today");
+        if (opening && (opening.date > snapshot.to || opening.date < input.startDate || input.amountMinor !== null && opening.principalMinor > input.amountMinor)) throw new Error("Opening principal must be within the plan amount and dated between plan start and today");
         if (input.tracking) {
           const account = snapshot.accounts?.find((entry) => entry.id === input.tracking!.accountId);
           if (!account?.offBudget || account.closed) throw new Error("Choose an available off-budget tracking account");
@@ -197,14 +201,14 @@ export function createCreditCardStore() {
           if (trackerEntry && link.role !== "adjustment") throw new Error("A plan-account entry is linked as an adjustment; link the card side for billed instalments");
           if (posting.transferId && !trackingTransferMatches(posting, input, snapshot)) throw new Error("Review this transfer's configured plan account and reciprocal link");
           if ((["conversion-credit", "refund"].includes(link.role) && posting.amountMinor <= 0) || (["instalment-billed", "combined-instalment", "principal-release"].includes(link.role) && posting.amountMinor >= 0)) throw new Error("Posting role must match its amount direction");
-          if (["instalment-billed", "combined-instalment"].includes(link.role) && link.instalment !== null && link.instalment > input.months) throw new Error("Choose a valid instalment number");
+          if (["instalment-billed", "combined-instalment"].includes(link.role) && link.instalment !== null && input.months !== null && link.instalment > input.months) throw new Error("Choose a valid instalment number");
           if (!["instalment-billed", "combined-instalment"].includes(link.role) && link.instalment !== null) throw new Error("Only billed instalments have an instalment number");
-          if (workspace.planLinks?.some((other) => other.planId !== input.id && (other.transactionId === posting.id || other.transactionId === posting.transferId)) || workspace.plans?.some((plan) => plan.id !== input.id && (plan.transactionId === posting.id || plan.sourceTransactions?.some((source) => source.transactionId === posting.id)))) throw new Error("This Actual entry belongs to another plan");
+          if (workspace.planLinks?.some((other) => other.planId !== input.id && (other.transactionId === posting.id || other.transactionId === posting.transferId)) || workspace.plans?.some((plan) => plan.id !== input.id && plan.sourceTransactions.some((source) => source.transactionId === posting.id))) throw new Error("This Actual entry belongs to another plan");
         }
         if (existing?.tracking) {
           const previous = trackingBalance(existing, snapshot, snapshot.to, workspace.planLinks);
           const changedAccount = existing.tracking.accountId !== input.tracking?.accountId;
-          const losesAssignment = (snapshot.trackingAccounts?.find((account) => account.accountId === existing.tracking!.accountId)?.rows ?? []).some((row) => row.date <= snapshot.to && (!existing.tracking!.opening || row.date > existing.tracking!.opening.date) && planOwnsTrackingRow(existing, row, snapshot, workspace.planLinks) && !planOwnsTrackingRow(input, row, snapshot, links));
+          const losesAssignment = (snapshot.trackingAccounts?.find((account) => account.accountId === existing.tracking!.accountId)?.rows ?? []).some((row) => row.date <= snapshot.to && (!existing.opening || row.date > existing.opening.date) && planOwnsTrackingRow(existing, row, snapshot, workspace.planLinks) && !planOwnsTrackingRow(input, row, snapshot, links));
           if ((!previous || previous.signedMinor < 0) && (changedAccount || losesAssignment)) throw new Error("Move or reassign remaining plan principal before removing its account or entry assignments");
         }
         const billed = links.filter((link) => ["instalment-billed", "combined-instalment"].includes(link.role));
@@ -213,12 +217,12 @@ export function createCreditCardStore() {
           if (input.refundReview.signature !== signature) throw new Error("Review the current refund evidence before confirming treatment");
           if (input.refundReview.treatment === "cancelled" && input.status !== "cancelled") throw new Error("Confirm the cancelled plan status");
           const remaining = input.refundReview.remaining;
-          const unbilled = Array.from({ length: input.months }, (_, index) => index + 1).filter((index) => !billed.some((link) => link.instalment === index));
+          const unbilled = planProjection(input, card!).rows.filter((row) => (!opening || row.date > opening.date) && !billed.some((link) => link.instalment === row.index)).map((row) => row.index);
           if (input.refundReview.treatment === "revised") {
             const schedule = planSchedule(input, card!, links);
             if (!planProjection(input, card!).calculated || schedule.some((entry, index) => index > 0 && entry.date <= schedule[index - 1].date)) throw new Error("Revised dates must follow the billed schedule; use supported plan terms");
           }
-          if (input.refundReview.treatment === "revised" && (remaining.length !== unbilled.length || new Set(remaining.map((entry) => entry.index)).size !== remaining.length || remaining.some((entry) => !unbilled.includes(entry.index) || entry.date <= input.startDate) || [...remaining].sort((a, b) => a.index - b.index).some((entry, index, rows) => index > 0 && entry.date <= rows[index - 1].date))) throw new Error("Enter a dated total for every unbilled instalment; billed history cannot be revised");
+          if (input.refundReview.treatment === "revised" && (remaining.length !== unbilled.length || new Set(remaining.map((entry) => entry.index)).size !== remaining.length || remaining.some((entry) => !unbilled.includes(entry.index) || entry.date <= (opening?.date ?? input.startDate)) || [...remaining].sort((a, b) => a.index - b.index).some((entry, index, rows) => index > 0 && entry.date <= rows[index - 1].date))) throw new Error("Enter a dated total for every unbilled instalment; billed history cannot be revised");
         }
         const saved = { ...input, revision: existing ? existing.revision + 1 : 1 };
         write(budget, { ...workspace, plans: [...(workspace.plans ?? []).filter((entry) => entry.id !== saved.id), saved], planLinks: [...(workspace.planLinks ?? []).filter((entry) => entry.planId !== saved.id), ...links], cards: workspace.cards.map((entry) => entry.id === cardId ? { ...entry, revision: expected + 1 } : entry) }, "Repayment plan saved");

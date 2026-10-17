@@ -98,8 +98,6 @@ export const allocationSchema = z.strictObject({
 });
 export type PaymentAllocation = z.infer<typeof allocationSchema>;
 
-/** Logical anchor; derived from one official statement, never an Actual transaction. */
-export type OpeningPosition = { cardId: string; statementId: string; date: string; balanceMinor: number };
 export const activityClassificationSchema = z.strictObject({
   cardId: id, transactionId: id, fingerprint: id,
   kind: z.enum(["purchase", "cash-advance", "money-transfer", "balance-transfer", "interest", "fee", "interest-refund", "fee-refund", "refund", "cashback", "payment", "transfer", "plan-instalment", "plan-conversion", "plan-adjustment", "dispute-credit", "dispute-adjustment", "adjustment", "other-charge", "other-credit", "other"]),
@@ -114,19 +112,22 @@ export type Workspace = {
 };
 
 /** Expected arrangement metadata; never an additional Actual balance or scheduled transaction. */
-export const repaymentPlanSchema = z.strictObject({
-  id, cardId: id, transactionId: id.nullable(), fingerprint: id.nullable(), revision,
-  sourceMode: z.enum(["new", "existing"]).optional(),
-  sourceTransactions: z.array(z.strictObject({ transactionId: id, fingerprint: id })).max(500).optional(),
+const planFactsSchema = z.strictObject({
+  id, cardId: id, revision,
+  sourceMode: z.enum(["new", "existing"]),
+  sourceTransactions: z.array(z.strictObject({ transactionId: id, fingerprint: id })).max(500),
   reference: z.string().trim().max(200).optional(),
   balanceOnly: z.boolean().optional(),
-  recording: z.enum(["tracking", "instalments", "retained"]).optional(),
+  recording: z.enum(["tracking", "instalments", "retained"]),
   /** Dated principal context in integer minor units; never an additional Actual balance. */
   opening: z.strictObject({ date, principalMinor: nonnegativeMinor }).optional(),
   arrangement: z.enum(["fixed", "minimum-deadline", "promotional", "deferred", "revolving"]),
   status: z.enum(["active", "completed", "cancelled"]).default("active"),
-  amountMinor: nonnegativeMinor.positive(), startDate: date, firstDueDate: date,
-  months: z.number().int().min(1).max(360),
+  /** Bank-confirmed end of plan terms; independent of Actual debt and payment evidence. */
+  settledDate: date.optional(),
+  /** Original converted principal, in integer minor units; null means unknown, never remaining principal. */
+  amountMinor: nonnegativeMinor.positive().nullable(), startDate: date, firstDueDate: date.nullable(),
+  months: z.number().int().min(1).max(360).nullable(),
   monthlyMinor: nonnegativeMinor.nullable(),
   aprBps: z.number().int().min(0).max(100_000),
   upfrontFeeMinor: nonnegativeMinor, monthlyFeeMinor: nonnegativeMinor,
@@ -137,8 +138,6 @@ export const repaymentPlanSchema = z.strictObject({
   conditions: z.string().trim().max(2000),
   /** Optional Actual liability account and exact, budget-unique plan hashtag. No balance is created. */
   tracking: z.strictObject({ accountId: id, tag: z.string().trim().regex(/^(?:#[\p{L}\p{N}_-]+)?$/u, "Use one optional hashtag, for example #laptop-plan"),
-    /** Confirmed principal in the tracking account at end of this date, for mid-plan starts; minor units. */
-    opening: z.strictObject({ date, principalMinor: nonnegativeMinor }).optional(),
   }).optional(),
   /** Session metadata: confirmation is tied to exact refund evidence, not a balance adjustment. */
   refundReview: z.strictObject({
@@ -147,12 +146,31 @@ export const repaymentPlanSchema = z.strictObject({
     remaining: z.array(z.strictObject({ index: z.number().int().min(1).max(360), date, amountMinor: nonnegativeMinor })).max(360),
   }).optional(),
 }).superRefine((value, ctx) => {
-  if (!value.balanceOnly && value.firstDueDate <= value.startDate) ctx.addIssue({ code: "custom", message: "First due date must be after plan start", path: ["firstDueDate"] });
+  if (!value.balanceOnly && (!value.firstDueDate || value.months === null)) ctx.addIssue({ code: "custom", message: "Enter the first due date and number of instalments", path: ["firstDueDate"] });
+  if (value.recording === "tracking" && !value.tracking || value.recording !== "tracking" && value.tracking) ctx.addIssue({ code: "custom", message: "Plan recording must match its tracking account", path: ["recording"] });
+  if (value.sourceMode === "existing" && !value.opening) ctx.addIssue({ code: "custom", message: "Enter remaining principal and its date", path: ["opening"] });
+  if (value.sourceMode === "new" && value.opening) ctx.addIssue({ code: "custom", message: "Use existing-plan mode for a dated opening", path: ["opening"] });
+  if (value.amountMinor === null && value.sourceMode !== "existing") ctx.addIssue({ code: "custom", message: "Enter converted principal for a new plan", path: ["amountMinor"] });
+  if (!value.balanceOnly && value.firstDueDate && value.firstDueDate <= (value.amountMinor === null ? value.opening?.date ?? value.startDate : value.startDate)) ctx.addIssue({ code: "custom", message: "First due date must be after plan start", path: ["firstDueDate"] });
   if (!value.balanceOnly && value.arrangement === "fixed" && (value.monthlyMinor === null || value.monthlyMinor <= 0)) ctx.addIssue({ code: "custom", message: "Enter the contractual monthly instalment", path: ["monthlyMinor"] });
   if (!value.balanceOnly && value.arrangement === "minimum-deadline" && value.minimumPercentBps === null) ctx.addIssue({ code: "custom", message: "Enter the monthly minimum percentage", path: ["minimumPercentBps"] });
   if (!value.balanceOnly && value.arrangement === "fixed" && value.includesCosts && value.monthlyMinor !== null && value.monthlyFeeMinor >= value.monthlyMinor) ctx.addIssue({ code: "custom", message: "The included monthly fee must be less than the monthly instalment", path: ["monthlyFeeMinor"] });
+  if (value.settledDate && (value.settledDate < value.startDate || value.status === "active")) ctx.addIssue({ code: "custom", message: "An ended plan needs an end date on or after its start", path: ["settledDate"] });
   if (value.expiryDate && value.expiryDate < value.startDate) ctx.addIssue({ code: "custom", message: "Expiry must not precede plan start", path: ["expiryDate"] });
 });
+/** One-time input compatibility for earlier session shapes; saved plans have one representation. */
+export const repaymentPlanSchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const value = { ...raw } as Record<string, unknown>;
+  const tracking = value.tracking && typeof value.tracking === "object" ? { ...value.tracking as Record<string, unknown> } : undefined;
+  const opening = value.opening ?? tracking?.opening;
+  const sources = value.sourceTransactions ?? (value.transactionId && value.fingerprint ? [{ transactionId: value.transactionId, fingerprint: value.fingerprint }] : []);
+  delete value.transactionId; delete value.fingerprint;
+  if (tracking) delete tracking.opening;
+  return { ...value, sourceMode: value.sourceMode ?? (opening ? "existing" : "new"), sourceTransactions: sources, recording: value.recording ?? (tracking ? "tracking" : "instalments"), opening, tracking,
+    ...(value.balanceOnly ? { firstDueDate: null, months: null, monthlyMinor: null } : {}),
+  };
+}, planFactsSchema);
 export type RepaymentPlan = z.infer<typeof repaymentPlanSchema>;
 export const planLinkSchema = z.strictObject({
   planId: id, transactionId: id, fingerprint: id,

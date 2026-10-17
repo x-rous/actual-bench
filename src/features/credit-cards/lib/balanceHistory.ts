@@ -21,7 +21,7 @@ export function dailyBalanceHistory(card: Card, workspace: Workspace, source: Ac
   const from = [addMonths(`${today.slice(0, 7)}-01`, -4, 1), source.from, card.firstTrackedStatementDate ?? source.from].sort().at(-1)!;
   const until = addDays(addMonths(`${today.slice(0, 7)}-01`, 3, 1), -1);
   const dates = Array.from({ length: Math.max(0, daysBetween(from, today) + 1) }, (_, index) => addDays(from, index));
-  const snapshot = { ...source, rows: source.rows.filter((row) => row.date <= today) };
+  const snapshot = source.rows.some((row) => row.date > today) ? { ...source, rows: source.rows.filter((row) => row.date <= today) } : source;
   const statements = workspace.statements.filter((entry) => entry.cardId === card.id);
   const confirmed = statements.filter((entry) => entry.bankConfirmed && entry.closingDate <= today);
   const statuses = settlements(card, workspace, snapshot, today);
@@ -40,7 +40,7 @@ export function dailyBalanceHistory(card: Card, workspace: Workspace, source: Ac
   const points: BalanceDay[] = dates.map((date, index) => {
     const point = raw[index];
     // No grace-period inference for a separate interest-bearing plan, including historical plans.
-    const interestPlan = workspace.plans?.some((plan) => plan.cardId === card.id && plan.aprBps !== null && plan.aprBps > 0 && plan.startDate <= date);
+    const interestPlan = workspace.plans?.some((plan) => plan.cardId === card.id && plan.aprBps !== null && plan.aprBps > 0 && plan.startDate <= date && (!plan.settledDate || date < plan.settledDate));
     const interest = costWindows.some((window) => date >= window.from && date <= window.to) ? "charged" : !interestPlan && freeWindows.some((window) => date >= window.from && date <= window.to) ? "free" : null;
     const part = (label: string) => point?.value == null ? null : point.breakdown?.find((entry) => entry.label === label)?.value ?? 0;
     return { date, valueMinor: point?.value ?? null, onCardMinor: part("On card"), planMinor: part("In plan account"), transitMinor: part("Transfer in transit"), interest: point?.value != null ? interest : null };

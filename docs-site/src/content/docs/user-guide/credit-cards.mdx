@@ -96,7 +96,7 @@ The Payments header shows three stacked figures: **Repaid** is the confirmed rep
 Choose **Add plan** on Overview or from an eligible original transaction. The wider editor uses compact labelled fields and outlined sections; original transactions are optional and can be expanded when needed. It supports:
 
 - **Start a new plan:** one or multiple original purchases, or a balance/cash/transfer reference. The converted amount cannot exceed the selected original charges.
-- **Track an existing plan:** enter a dated remaining-principal opening; earlier original transactions are optional. In balance-only mode the original amount may be left blank when unknown; the dated remaining principal supplies the starting context.
+- **Track an existing plan:** enter a dated remaining-principal opening; earlier original transactions are optional. The original amount may be left blank when unknown; the dated remaining principal supplies the starting context.
 - **Track balance only:** save useful tracking without a forecast or regular schedule.
 
 Choose how Actual records the agreement: transfers through a plan account, instalment charges on the card, or the full balance retained on the card. Existing Actual balances always determine recorded debt; no expected schedule is added as another liability.
@@ -127,15 +127,15 @@ Select compatible suggestions and choose **Apply selected links**, or link a row
 
 The list separates **Plan account**, **Billed this month**, **Progress**, **Next expected** and **Status**. Billed does not mean Paid. A retained-card plan does not need a fresh monthly debit; missing expected postings ask for a check rather than fabricating a missed payment, default or fee.
 
-For a mid-plan start, the opening is the remaining principal at the **end** of the entered date. Only later assigned movements adjust it. Earlier payments are not invented; earlier unreliable history stays a gap. The billed card balance stays separate.
+For a mid-plan start, the opening is the remaining principal at the **end** of the entered date. Only later assigned movements adjust it. Earlier periods are excluded from tracked progress and Next expected; earlier payments are not invented, and unreliable history stays a gap. The billed card balance stays separate.
 
 ### Refunds, early settlement and missed payments
 
-For a linked refund, **Does the bank keep, change or close the plan?** defaults to keeping the schedule. Record revised remaining dates/totals or closure when known. The existing credit is counted once; a refund or status change does not erase plan-account principal without an actual adjustment.
+For a linked refund, **Does the bank keep, change or close the plan?** defaults to keeping the schedule. Record revised remaining dates/totals or closure when known. Revised totals are used in the schedule, summary and suggestions; Bench does not invent their principal/interest/fee split. The existing credit is counted once; a refund or status change does not erase plan-account principal without an actual adjustment.
 
 For early release, link the lump-sum principal movement onto the card and the separate external payment. Release alone preserves total owed. Mark completion explicitly when appropriate. A card credit can offset part of total liability while principal still remains in the plan account; that does not prove the named plan closed.
 
-No or partial payments preserve debt. Dates passing never reduce it. Completed/Cancelled metadata cannot erase Actual balances; resolve still-held plan principal before removing its setup. Source changes require refreshed links. Explicit Save, revision checks, discard guards and Undo protect edits.
+No or partial payments preserve debt. Dates passing never reduce it. Completed/Cancelled metadata cannot erase Actual balances; resolve still-held plan principal before removing its setup. Normal clearing, category and description changes preserve financial classifications and links. Material amount, account, date or transfer-relationship changes require review. Conflicting copies of a principal transfer leave its debt unavailable until refreshed. Explicit Save, revision checks, discard guards and Undo protect edits.
 
 ## Dashboards and history
 
@@ -151,7 +151,7 @@ A card’s Overview starts with four compact, equal-height summaries: **To pay**
 
 Due-date diamonds and payment dots sit beneath the balance. Pending payments have outlined dots; future due dates inferred from the card’s settings use dashed diamonds. The Today divider ends the recorded balance: two future months show key dates without projecting debt. Select a recorded due date to locate its statement, or an individual payment dot to open payment details.
 
-Blue **interest-free windows** follow confirmed statements paid in full by their deadline, without identified interest or borrowing in that cycle. Yellow hatching marks statement periods containing cleared interest charges. These indicators do not calculate the bank’s exact daily interest; other periods remain unshaded. Remaining 0% plan principal alone never implies interest. Interest-bearing plan terms prevent that shading. The calculation and limitations are explained in the chart’s info tooltip.
+Blue **interest-free windows** follow confirmed statements paid in full by their deadline, without identified interest or borrowing in that cycle. Yellow hatching marks statement periods containing cleared interest charges. These indicators do not calculate the bank’s exact daily interest; other periods remain unshaded. Remaining 0% plan principal alone never implies interest. Interest-bearing plan terms prevent that shading until a bank-confirmed end date. An optional end-date field appears for Completed or Cancelled plans; status alone does not prove when those terms ended or that debt was repaid. The calculation and limitations are explained in the chart’s info tooltip.
 
 The side summary shows the average of known end-of-day balances, the highest balance and its date, and cleared interest and fees net of refunds over the displayed history. Missing openings or history stay gaps and are excluded from the average. Pending entries are included provisionally and identified below the chart. Interest and fee histories use recorded signed postings; gross charges and refunds remain available in details. Exact values are in accessible tooltips without a View trend values button.
 
@@ -165,7 +165,7 @@ The Payments tab places a compact **When you pay** box to the left of the timing
 
 The far-right **How to use** dialog follows the ActualQL reference layout, with left-hand navigation and a scrollable content panel. It has Get started, Classifications, Statements & payments, Plans, and Linking & tags tabs, with relevant workspace actions. Help/popovers support keyboard navigation and padded, scrollable text.
 
-**Refresh** synchronizes and rereads Actual through the active transport. Bank facts and unsaved editors/review drafts remain; changed source evidence requires review. Known balances remain visible when their cutoff is reliable even if detail loading fails; affected details offer retry rather than a guessed zero.
+**Refresh** synchronizes and rereads Actual through the active transport. Bank facts and unsaved editors/review drafts remain; changed source evidence requires review. Source-dependent classification saves in plan dialogs are disabled while data is unavailable. Known balances remain visible when their cutoff is reliable even if detail loading fails; affected details offer retry rather than a guessed zero.
 
 All credit-card setup, classifications, statement decisions, plans and links are intentionally **tab-session memory only**. Refresh within Bench retains them; closing or reloading the browser loses them. App-database persistence is a separately deferred phase. Global Save still applies the app’s other staged Actual edits; credit-card metadata uses its own explicit Save actions. Direct/API future-date differences are normalized once before reporting.
 

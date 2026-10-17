@@ -27,7 +27,7 @@ it("keeps unknown mid-plan history blank and ignores future entries in the curre
   const current = dailyBalanceHistory(cards[0], workspace, sources[0], -450000, "2026-10-16");
   const withFuture = { ...sources[0], rows: [...sources[0].rows, { ...sources[0].rows[0], id: "future", date: "2026-11-10", amountMinor: -999000 }] };
   expect(dailyBalanceHistory(cards[0], workspace, withFuture, -450000, "2026-10-16").points).toEqual(current.points);
-  const openingWorkspace = { ...workspace, plans: [{ ...plans[0], tracking: { ...plans[0].tracking!, opening: { date: "2026-10-08", principalMinor: 1000000 } } }, plans[1]] };
+  const openingWorkspace = { ...workspace, plans: [{ ...plans[0], opening: { date: "2026-10-08", principalMinor: 1000000 } }, plans[1]] };
   const partial = dailyBalanceHistory(cards[0], openingWorkspace, sources[0], -450000, "2026-10-16");
   expect(partial.points.filter((point) => point.date < "2026-10-08").every((point) => point.valueMinor === null)).toBe(true);
   expect(partial.knownDays).toBe(9);

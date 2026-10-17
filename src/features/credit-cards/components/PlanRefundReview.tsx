@@ -14,7 +14,7 @@ import { CARD_DATE_FORMAT } from "../lib/displayDates";
 export function PlanRefundReview({ plan, card, links, snapshot, review, onDraftChange, onConfirm }: { plan: RepaymentPlan; card: Card; links: PlanLink[]; snapshot: ActivitySnapshot; review: RepaymentPlan["refundReview"]; onDraftChange: (dirty: boolean) => void; onConfirm: (review: NonNullable<RepaymentPlan["refundReview"]>) => void }) {
   const [treatment, setTreatment] = useState<NonNullable<RepaymentPlan["refundReview"]>["treatment"]>(review?.treatment ?? "unchanged");
   const projection = planProjection(plan, card);
-  const unbilled = projection.rows.filter((entry) => !links.some((link) => ["instalment-billed", "combined-instalment"].includes(link.role) && link.instalment === entry.index));
+  const unbilled = projection.rows.filter((entry) => (!plan.opening || entry.date > plan.opening.date) && !links.some((link) => ["instalment-billed", "combined-instalment"].includes(link.role) && link.instalment === entry.index));
   const [draft, setDraft] = useState<Record<number, { date: string; amount: string }>>({});
   const [error, setError] = useState("");
   const refunds = links.filter((link) => link.role === "refund");

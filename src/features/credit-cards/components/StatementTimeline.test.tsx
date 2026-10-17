@@ -42,7 +42,7 @@ it("positions events on one continuous date axis and groups payments on the same
 
 it("keeps the issued payment target visible when credits clear recorded debt", () => {
   const { cards, workspace, sources } = transferPlanScenario();
-  const statuses = settlements(cards[0], workspace, sources[0], "2026-10-16").map((entry) => entry.statementId === "s-a-4" ? { ...entry, fullRemainingMinor: 0, minimumRemainingMinor: 10000, confirmedPaidMinor: 0, confirmedCreditMinor: 500000, confirmedPaidDate: null } : entry);
+  const statuses = settlements(cards[0], workspace, sources[0], "2026-10-16").map((entry) => entry.statementId === "s-a-4" ? { ...entry, recordedDebtRemainingMinor: 0, recordedMinimumRemainingMinor: 10000, confirmedPaidMinor: 0, confirmedCreditMinor: 500000, confirmedPaidDate: null } : entry);
   render(<StatementTimeline card={cards[0]} statements={workspace.statements} snapshot={sources[0]} workspace={workspace} statuses={statuses} today="2026-10-16" available onStatement={jest.fn()} />);
   expect(screen.getByRole("button", { name: "Open closing 08 Oct 2026" })).toHaveTextContent("5,000.00");
   expect(screen.getByRole("button", { name: "Open closing 08 Oct 2026" })).toHaveTextContent("to pay");

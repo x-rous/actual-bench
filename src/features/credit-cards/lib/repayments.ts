@@ -2,7 +2,7 @@ import { addMonths, dateInMonth, daysBetween, parseIsoDate } from "@/lib/financi
 import type { ActivitySnapshot } from "./activity";
 import { activityKind, isSettlementCredit, paymentEvidence } from "./activity";
 import type { Card, PaymentAllocation, Statement, Workspace } from "./models";
-import { currentPlanLink } from "./plans";
+import { currentPlanLink, planSources } from "./plans";
 import { sumMinor } from "./statements";
 import { paymentTarget } from "./paymentTargets";
 
@@ -10,10 +10,8 @@ export type DebtOrigin = { id: string; date: string; label: string; originalMino
 export type Settlement = {
   statementId: string; dueDate: string;
   /** Recorded debt remaining after payments and credits, in integer minor units; not the payment target. */
-  fullRemainingMinor: number | null; minimumRemainingMinor: number | null;
+  recordedDebtRemainingMinor: number | null; recordedMinimumRemainingMinor: number | null;
   fullByDue: boolean | null; minimumByDue: boolean | null; paidMinor: number;
-  /** Internal settlement diagnostic; UI labels and tones come from statementOutcome. */
-  status: string;
   paymentWindowEnd: string; paidDate: string | null; minimumPaidDate: string | null; delayDays: number | null; provisionalMinor: number;
   /** Integer minor units from cleared card-side transfers, within paidMinor. */
   confirmedPaidMinor: number;
@@ -22,19 +20,19 @@ export type Settlement = {
   /** All classified statement credits, including cashback; integer minor units, never payments. */
   creditMinor?: number; confirmedCreditMinor?: number; provisionalCreditMinor?: number;
   /** Confirmed carry frozen at the due-date cutoff; null before due or with incomplete/pending evidence. */
-  carriedAtDueMinor?: number | null;
+  debtCarriedAtDueMinor?: number | null;
   confirmedPaidByDueMinor?: number;
   /** Cleared cashback posted by the due date, in integer minor units. */
   confirmedCashbackByDueMinor?: number; confirmedCreditByDueMinor?: number;
   /** Payment thresholds use payments only. Recorded dates include pending payments; credits only reduce debt. */
   confirmedPaidDate: string | null; confirmedMinimumPaidDate: string | null;
   /** Monthly target evidence, separate from full-statement settlement; integer minor units. */
-  targetRemainingMinor?: number | null; targetCarriedAtDueMinor?: number | null;
+  recordedTargetRemainingMinor?: number | null; targetCarriedAtDueMinor?: number | null;
   targetByDue?: boolean | null; targetPaidDate?: string | null; confirmedTargetPaidDate?: string | null;
 };
 export type RepaymentLedger = {
   origins: DebtOrigin[]; allocations: PaymentAllocation[]; creditMinor: number;
-  confirmedMinor: number; provisionalMinor: number; issues: string[]; anchorDate: string | null;
+  confirmedMinor: number; provisionalMinor: number; issues: string[]; invalidAllocationIds: string[]; anchorDate: string | null;
 };
 
 /** User-recorded bank posting date overrides Actual's date for card settlement timing. */
@@ -47,7 +45,7 @@ export function effectiveActivityDate(row: import("./activity").ActivityRow, car
 /** Attribution ledger only: rolling bank snapshots never create extra principal. */
 export function repaymentLedger(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, until = snapshot.to): RepaymentLedger {
   const anchor = workspace.statements.find((entry) => entry.cardId === card.id && entry.openingAnchor && entry.bankConfirmed);
-  const result: RepaymentLedger = { origins: [], allocations: [], creditMinor: 0, confirmedMinor: 0, provisionalMinor: 0, issues: [], anchorDate: anchor?.closingDate ?? null };
+  const result: RepaymentLedger = { origins: [], allocations: [], creditMinor: 0, confirmedMinor: 0, provisionalMinor: 0, issues: [], invalidAllocationIds: [], anchorDate: anchor?.closingDate ?? null };
   if (!anchor || anchor.closingDate > until || snapshot.from > anchor.closingDate) { result.issues.push("Record an opening bank statement within the loaded window to track settlement"); return result; }
   result.creditMinor = Math.max(0, -anchor.officialBalanceMinor);
   if (anchor.officialBalanceMinor > 0) result.origins.push({ id: anchor.id, date: anchor.closingDate, label: "Opening statement", originalMinor: anchor.officialBalanceMinor, remainingMinor: anchor.officialBalanceMinor });
@@ -87,7 +85,7 @@ export function repaymentLedger(card: Card, workspace: Workspace, snapshot: Acti
       if (manual.length) {
         const total = sumMinor(manual.map((entry) => entry.amountMinor));
         const valid = total === Math.min(row.amountMinor, sumMinor(result.origins.map((origin) => origin.remainingMinor))) && new Set(manual.map((entry) => entry.originId)).size === manual.length && manual.every((entry) => entry.fingerprint === row.fingerprint && result.origins.some((origin) => origin.id === entry.originId && origin.remainingMinor >= entry.amountMinor));
-        if (!valid) { result.issues.push(`Saved allocation changed or exceeds available debt: ${row.id}`); continue; }
+        if (!valid) { result.invalidAllocationIds.push(row.id); result.issues.push(`Saved allocation changed or exceeds available debt: ${row.id}`); continue; }
         for (const entry of manual) {
           result.origins.find((origin) => origin.id === entry.originId)!.remainingMinor -= entry.amountMinor;
           result.allocations.push(entry);
@@ -107,11 +105,15 @@ export function repaymentLedger(card: Card, workspace: Workspace, snapshot: Acti
     } else if (currentPlanLink(workspace, row)?.role === "conversion-credit") {
       const link = currentPlanLink(workspace, row)!;
       const plan = workspace.plans?.find((entry) => entry.id === link.planId);
-      const origin = result.origins.find((entry) => entry.id === plan?.transactionId);
-      if (origin) {
-        const offset = Math.min(origin.remainingMinor, row.amountMinor);
-        origin.remainingMinor -= offset;
-        result.creditMinor = sumMinor([result.creditMinor, row.amountMinor - offset]);
+      const sourceIds = new Set(plan ? planSources(plan).map((source) => source.transactionId) : []);
+      const origins = result.origins.filter((entry) => sourceIds.has(entry.id));
+      if (origins.length) {
+        let remaining = row.amountMinor;
+        for (const origin of origins) {
+          const offset = Math.min(origin.remainingMinor, remaining);
+          origin.remainingMinor -= offset; remaining -= offset;
+        }
+        result.creditMinor = sumMinor([result.creditMinor, remaining]);
       } else result.issues.push(`Conversion credit needs its original purchase evidence: ${row.id}`);
     } else if (isSettlementCredit(row, card, workspace, snapshot)) reduce(row.amountMinor);
     else if (row.amountMinor > 0) result.issues.push(`Positive activity needs classification: ${row.id}`);
@@ -128,7 +130,19 @@ export function matchedPaymentStatement(date: string, statements: Statement[], w
 /** One payment window per cycle: after closing, through the next closing date inclusive.
  * Notes, membership decisions and spending evidence never choose a repayment's statement.
  */
+const settlementCache = new WeakMap<Workspace, WeakMap<ActivitySnapshot, WeakMap<Card, Map<string, Settlement[]>>>>();
 export function settlements(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, today: string): Settlement[] {
+  let snapshots = settlementCache.get(workspace);
+  if (!snapshots) { snapshots = new WeakMap(); settlementCache.set(workspace, snapshots); }
+  let cards = snapshots.get(snapshot);
+  if (!cards) { cards = new WeakMap(); snapshots.set(snapshot, cards); }
+  let dates = cards.get(card);
+  if (!dates) { dates = new Map(); cards.set(card, dates); }
+  let result = dates.get(today);
+  if (!result) { result = calculateSettlements(card, workspace, snapshot, today); dates.set(today, result); }
+  return result;
+}
+function calculateSettlements(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, today: string): Settlement[] {
   const statements = workspace.statements.filter((entry) => entry.cardId === card.id).sort((a, b) => a.closingDate.localeCompare(b.closingDate));
   const payments = snapshot.rows.map((row) => row.amountMinor > 0 && !row.transferId ? { ...row, date: effectiveActivityDate(row, card.id, workspace) } : row).filter((row) => row.date <= today && (paymentEvidence(row, snapshot, workspace) !== "not-payment" || isSettlementCredit(row, card, workspace, snapshot))).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const windows = statements.map((statement) => {
@@ -180,16 +194,16 @@ export function settlements(card: Card, workspace: Workspace, snapshot: Activity
     }
     const covered = snapshot.from <= statement.closingDate && snapshot.to >= (today < paymentWindowEnd ? today : paymentWindowEnd) && !snapshot.issues.length;
     const known = statement.bankConfirmed && covered;
-    const fullRemainingMinor = known ? Math.max(0, balance - paidMinor - creditMinor) : null;
-    const targetRemainingMinor = known ? Math.max(0, target - paidMinor) : null;
-    const minimumRemainingMinor = known ? Math.max(0, statement.minimumDueMinor - paidMinor) : null;
+    const recordedDebtRemainingMinor = known ? Math.max(0, balance - paidMinor - creditMinor) : null;
+    const recordedTargetRemainingMinor = known ? Math.max(0, target - paidMinor) : null;
+    const recordedMinimumRemainingMinor = known ? Math.max(0, statement.minimumDueMinor - paidMinor) : null;
     const paidByDue = sumMinor(windowPayments.filter((row) => row.date <= statement.dueDate).map((row) => row.amountMinor));
     const confirmedPaidByDueMinor = sumMinor(confirmed.filter((row) => row.date <= statement.dueDate).map((row) => row.amountMinor));
     const dueCovered = statement.bankConfirmed && statement.dueDate < today && snapshot.from <= statement.closingDate && snapshot.to >= statement.dueDate && !snapshot.issues.length;
     const creditsByDue = sumMinor(credits.filter((row) => row.date <= statement.dueDate).map((row) => row.amountMinor));
     const confirmedCreditsByDue = sumMinor(credits.filter((row) => row.date <= statement.dueDate && row.cleared === true).map((row) => row.amountMinor));
     const pendingByDue = paidByDue - confirmedPaidByDueMinor + creditsByDue - confirmedCreditsByDue;
-    const carriedAtDueMinor = dueCovered && pendingByDue === 0 ? Math.max(0, balance - confirmedPaidByDueMinor - confirmedCreditsByDue) : null;
+    const debtCarriedAtDueMinor = dueCovered && pendingByDue === 0 ? Math.max(0, balance - confirmedPaidByDueMinor - confirmedCreditsByDue) : null;
     const pendingPaymentsByDue = paidByDue - confirmedPaidByDueMinor;
     const fullByDue = dueCovered && (pendingPaymentsByDue === 0 || confirmedPaidByDueMinor >= balance) ? confirmedPaidByDueMinor >= balance : null;
     const targetByDue = dueCovered && (pendingPaymentsByDue === 0 || confirmedPaidByDueMinor >= target) ? confirmedPaidByDueMinor >= target : null;
@@ -197,12 +211,11 @@ export function settlements(card: Card, workspace: Workspace, snapshot: Activity
     const minimumByDue = dueCovered && (paidByDue === confirmedPaidByDueMinor || confirmedPaidByDueMinor >= statement.minimumDueMinor) ? confirmedPaidByDueMinor >= statement.minimumDueMinor : null;
     const delayDays = known && paidDate ? Math.max(0, daysBetween(statement.dueDate, paidDate)) : null;
     return { statementId: statement.id, dueDate: statement.dueDate, paymentWindowEnd, paidMinor, provisionalMinor, confirmedPaidMinor, cashbackMinor, confirmedCashbackMinor, provisionalCashbackMinor, creditMinor, confirmedCreditMinor, provisionalCreditMinor,
-      targetRemainingMinor, targetCarriedAtDueMinor, targetByDue, targetPaidDate: known ? targetPaidDate : null, confirmedTargetPaidDate: known ? confirmedTargetPaidDate : null,
-      carriedAtDueMinor, confirmedPaidByDueMinor, confirmedCashbackByDueMinor: sumMinor(cashback.filter((row) => row.date <= statement.dueDate && row.cleared === true).map((row) => row.amountMinor)), confirmedCreditByDueMinor: confirmedCreditsByDue,
+      recordedTargetRemainingMinor, targetCarriedAtDueMinor, targetByDue, targetPaidDate: known ? targetPaidDate : null, confirmedTargetPaidDate: known ? confirmedTargetPaidDate : null,
+      debtCarriedAtDueMinor, confirmedPaidByDueMinor, confirmedCashbackByDueMinor: sumMinor(cashback.filter((row) => row.date <= statement.dueDate && row.cleared === true).map((row) => row.amountMinor)), confirmedCreditByDueMinor: confirmedCreditsByDue,
       confirmedPaidDate: known ? confirmedPaidDate : null, confirmedMinimumPaidDate: known ? confirmedMinimumPaidDate : null,
       paidDate: known ? paidDate : null, minimumPaidDate: known ? minimumPaidDate : null, delayDays,
-      fullRemainingMinor, minimumRemainingMinor, fullByDue, minimumByDue,
-      status: !statement.bankConfirmed ? "Estimate · confirm bank facts" : !covered ? "Coverage unknown" : target === 0 && statement.minimumDueMinor === 0 ? "No payment required" : targetRemainingMinor === 0 && minimumRemainingMinor === 0 ? confirmedPaidMinor >= Math.max(target, statement.minimumDueMinor) ? (confirmedTargetPaidDate && confirmedTargetPaidDate > statement.dueDate ? "Paid late" : target < balance ? "Monthly target paid" : "Settled") : "Payment recorded · clearing pending" : minimumRemainingMinor === 0 ? confirmedPaidMinor >= statement.minimumDueMinor ? confirmedMinimumPaidDate && confirmedMinimumPaidDate > statement.dueDate ? "Minimum paid late · balance carried" : "Minimum met · full balance remains" : "Minimum recorded · clearing pending" : statement.dueDate < today ? "Minimum overdue" : paymentDeadline(statement.dueDate, today),
+      recordedDebtRemainingMinor, recordedMinimumRemainingMinor, fullByDue, minimumByDue,
     };
   });
 }

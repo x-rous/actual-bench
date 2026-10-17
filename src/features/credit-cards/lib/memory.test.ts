@@ -1,4 +1,4 @@
-import { createCreditCardStore, openingPosition } from "./memory";
+import { createCreditCardStore } from "./memory";
 import { allocationSchema, cardInputSchema, repaymentPlanSchema, statementFactsSchema } from "./models";
 
 const card = { budgetSyncId: "budget-a", accountId: "account", nickname: "Visa", issuer: "", last4: "", creditLimitMinor: null, purchaseAprBps: null, bankTimeZone: "Asia/Dubai", status: "active" };
@@ -47,7 +47,7 @@ it("scopes identical account IDs by budget, rejects duplicates and rolls no bank
   store.getState().recordOpeningStatement("budget-a", first.id, 1, facts);
   const state = store.getState();
   expect(state.workspaces["budget-b"].statements).toEqual([]);
-  expect(openingPosition(state.workspaces["budget-a"], first.id)).toMatchObject({ balanceMinor: 285000, date: "2026-10-04" });
+  expect(state.workspaces["budget-a"].statements.find((entry) => entry.openingAnchor)).toMatchObject({ officialBalanceMinor: 285000, closingDate: "2026-10-04" });
   expect(state.workspaces["budget-a"].statements[0]).toMatchObject({ coverage: "unknown", verification: "recorded" });
   expect(() => state.recordOpeningStatement("budget-a", first.id, 2, facts)).toThrow("already recorded");
 });
@@ -75,7 +75,7 @@ it("statement edits update current facts without correction history and retain r
   expect(workspace.statements).toHaveLength(1);
   expect(workspace.statements[0]).toMatchObject({ officialBalanceMinor: 290000, revision: 2, verification: "needs-review", openingAnchor: true });
   expect(workspace).not.toHaveProperty("corrections");
-  expect(openingPosition(workspace, registered.id)?.balanceMinor).toBe(290000);
+  expect(workspace.statements.find((entry) => entry.openingAnchor)?.officialBalanceMinor).toBe(290000);
   expect(() => store.getState().correctStatement("budget-a", statement.id, 1, facts)).toThrow("changed");
   store.getState().undo("budget-a");
   expect(store.getState().workspaces["budget-a"].statements[0].officialBalanceMinor).toBe(285000);

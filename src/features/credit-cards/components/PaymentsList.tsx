@@ -23,7 +23,7 @@ export function PaymentsList({ card, payments, snapshot, accounts = [], availabl
   const confirmed = payments.filter((entry) => entry.row.cleared === true && (!today || entry.row.date <= today) && (!card.firstTrackedStatementDate || entry.row.date > card.firstTrackedStatementDate));
   const completed = (workspace?.statements ?? []).filter((statement) => statement.cardId === card.id && statement.bankConfirmed && statement.officialBalanceMinor > 0 && (!today || statement.closingDate <= today)).flatMap((statement) => {
     const status = statuses?.find((entry) => entry.statementId === statement.id);
-    if (!status || status.fullRemainingMinor === null || status.confirmedPaidMinor < statement.officialBalanceMinor || status.confirmedPaidMinor < statement.minimumDueMinor) return [];
+    if (!status || status.recordedDebtRemainingMinor === null || status.confirmedPaidMinor < statement.officialBalanceMinor || status.confirmedPaidMinor < statement.minimumDueMinor) return [];
     const completedDate = [status.confirmedPaidDate, statement.minimumDueMinor > 0 ? status.confirmedMinimumPaidDate : null].filter((date): date is string => date !== null).sort().at(-1);
     return completedDate ? [{ late: completedDate > statement.dueDate }] : [];
   });

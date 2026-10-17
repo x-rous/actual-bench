@@ -1,3 +1,4 @@
+import { evidenceHash } from "./evidence";
 import { addDays, parseIsoDate } from "@/lib/financial-models/calendar/dates";
 import type { ActivityRow, ActivitySnapshot } from "./activity";
 import type { Card, Membership, Statement, Workspace } from "./models";
@@ -94,7 +95,20 @@ export function membershipOwner(statement: Statement, transactionId: string, wor
   return ownershipIndex(workspace, decisions).get(statement.cardId)?.get(transactionId)?.find((owner) => owner.id !== statement.id);
 }
 
+type StatementReview = ReturnType<typeof calculateStatementReview>;
+const reviewCache = new WeakMap<Workspace, WeakMap<ActivitySnapshot, WeakMap<Membership[], WeakMap<Statement, StatementReview>>>>();
 export function statementReview(statement: Statement, workspace: Workspace, snapshot: ActivitySnapshot, decisions = workspace.memberships) {
+  let snapshots = reviewCache.get(workspace);
+  if (!snapshots) { snapshots = new WeakMap(); reviewCache.set(workspace, snapshots); }
+  let choices = snapshots.get(snapshot);
+  if (!choices) { choices = new WeakMap(); snapshots.set(snapshot, choices); }
+  let statements = choices.get(decisions);
+  if (!statements) { statements = new WeakMap(); choices.set(decisions, statements); }
+  let result = statements.get(statement);
+  if (!result) { result = calculateStatementReview(statement, workspace, snapshot, decisions); statements.set(statement, result); }
+  return result;
+}
+function calculateStatementReview(statement: Statement, workspace: Workspace, snapshot: ActivitySnapshot, decisions = workspace.memberships) {
   const prior = workspace.statements.filter((entry) => entry.cardId === statement.cardId && entry.bankConfirmed && entry.closingDate < statement.closingDate).sort((a, b) => b.closingDate.localeCompare(a.closingDate))[0];
   const continuity = Boolean(prior && addDays(prior.closingDate, 1) === statement.periodStart);
   const decisionsByTransaction = new Map(decisions.filter((entry) => entry.statementId === statement.id).map((entry) => [entry.transactionId, entry]));
@@ -122,7 +136,7 @@ export function statementReview(statement: Statement, workspace: Workspace, snap
   const duplicate = rows.some((row) => scopedDecisions.some((entry) => entry.transactionId === row.id && entry.decision === "included" && entry.fingerprint === row.fingerprint) && Boolean(membershipOwner(statement, row.id, workspace, decisions)));
   // Ownership changes on already-excluded candidates cannot change this statement.
   // Keep owners for included/undecided candidates so genuine conflicts still invalidate evidence.
-  const signature = JSON.stringify([rows.flatMap((row, index) => memberships[index].decision === "excluded" ? [] : [[row.fingerprint, membershipOwner(statement, row.id, workspace, decisions)?.id ?? null]]), prior ? [prior.id, prior.officialBalanceMinor, prior.closingDate] : null, coverage, snapshot.issues, ...(statement.openingAnchor && statement.openingBalanceMinor != null ? [statement.openingBalanceMinor] : [])]);
+  const signature = evidenceHash([rows.flatMap((row, index) => memberships[index].decision === "excluded" ? [] : [[row.evidenceFingerprint ?? row.fingerprint, membershipOwner(statement, row.id, workspace, decisions)?.id ?? null]]), prior ? [prior.id, prior.officialBalanceMinor, prior.closingDate] : null, coverage, snapshot.issues, ...(statement.openingAnchor && statement.openingBalanceMinor != null ? [statement.openingBalanceMinor] : [])]);
   return { signature, rows, memberships, startingBalanceMinor, calculatedMinor, varianceMinor, unresolved, coverage, continuity, duplicate,
     canVerify: statement.bankConfirmed && startingBalanceMinor !== null && coverage && unresolved === 0 && !duplicate && varianceMinor === 0,
     stale: statement.reviewedSnapshot !== null && statement.reviewedSnapshot !== signature,

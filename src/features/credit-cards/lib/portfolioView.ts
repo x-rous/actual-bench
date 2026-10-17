@@ -1,12 +1,10 @@
-import { paymentTarget, paymentTargetRemaining } from "./paymentTargets";
-import { addDays, addMonths, daysBetween } from "@/lib/financial-models/calendar/dates";
+import { addDays, addMonths } from "@/lib/financial-models/calendar/dates";
 import { formatAmount } from "@/features/assets-debt/lib/money";
 import { formatCardDate } from "./displayDates";
 import { observedInterestTotals } from "./history";
 import { sumMinor } from "./statements";
 import type { ActivitySnapshot } from "./activity";
 import type { Card, Statement, Workspace } from "./models";
-import type { Settlement } from "./repayments";
 import type { statementPaymentTotals } from "./insights";
 
 export const formatCardMonth = (date: string) => new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`));
@@ -53,14 +51,4 @@ export function paymentTotalsDetail(totals: ReturnType<typeof statementPaymentTo
   return [totals.minimumMinor > 0 ? `Minimum remaining ${formatAmount(totals.minimumMinor, 2)}` : null, totals.overdueMinimumMinor > 0 ? `Overdue minimum ${formatAmount(totals.overdueMinimumMinor, 2)}` : null, totals.pendingMinor > 0 ? `Pending ${formatAmount(totals.pendingMinor, 2)}` : null,
     !totals.minimumMinor && totals.coverage === totals.total ? "No minimum payment outstanding" : null,
     totals.coverage < totals.total ? `${totals.coverage} of ${totals.total} cards confirmed; total is partial` : null].filter(Boolean).join(" · ");
-}
-
-/** Amount outcome stays separate from timing: carried debt does not imply a missed minimum. */
-export function portfolioPaymentTiming(statement: Statement | undefined, payment: Settlement | undefined, today: string) {
-  if (!statement || !payment || payment.fullRemainingMinor === null) return null;
-  const delay = daysBetween(statement.dueDate, today);
-  if (paymentTargetRemaining(statement, payment.confirmedPaidMinor) > 0) return delay > 0 ? `Full balance remaining · ${delay} ${delay === 1 ? "day" : "days"} past due date` : delay === 0 ? "Due today" : delay >= -7 ? "Due soon" : "Upcoming";
-  const paidDate = paymentTarget(statement) === Math.max(0, statement.officialBalanceMinor) ? payment.confirmedPaidDate : payment.confirmedTargetPaidDate;
-  if (paidDate) { const late = daysBetween(statement.dueDate, paidDate); const outcome = "Paid"; return late > 0 ? `${outcome} ${late} ${late === 1 ? "day" : "days"} late` : `${outcome} on time`; }
-  return null;
 }

@@ -3,7 +3,7 @@ import type { ActivityRow, ActivitySnapshot } from "./activity";
 import { settlements, repaymentLedger } from "./repayments";
 import { statementOutcome } from "./paymentSummary";
 import { paymentEffects } from "./paymentEffects";
-import { statementChargeBreakdown, planDebtBreakdown } from "./planReporting";
+import { statementChargeBreakdown } from "./planReporting";
 import { planHealth, planProjection, planSchedule, refundEvidenceSignature, suggestPlanLink } from "./plans";
 import { statementReview } from "./statements";
 
@@ -53,7 +53,7 @@ it("reconciles all five cycles while excluding conversion offsets from settlemen
   for (const statement of statements) expect(statementReview(statement, workspace, snapshot).varianceMinor).toBe(0);
   const payments = settlements(card, workspace, snapshot, "2026-10-15");
   expect(payments[2]).toMatchObject({ confirmedPaidDate: "2026-09-02", confirmedCreditMinor: 0, fullByDue: true });
-  expect(payments[3]).toMatchObject({ confirmedPaidDate: null, confirmedPaidMinor: 46833, confirmedCreditMinor: 10000, targetRemainingMinor: 10000 });
+  expect(payments[3]).toMatchObject({ confirmedPaidDate: null, confirmedPaidMinor: 46833, confirmedCreditMinor: 10000, recordedTargetRemainingMinor: 10000 });
   expect(paymentEffects(card, workspace, snapshot, payments, "2026-10-15").get("pay-august")?.label).toBe("Completes statement");
   expect(statementOutcome(statements[4], payments[4], "2026-10-15", true)).toMatchObject({ label: "Part payment pending", timing: "538.33 due · part pending" });
   expect(repaymentLedger(card, workspace, snapshot, "2026-10-15").origins.find((entry) => entry.id === "original-b")?.remainingMinor).toBe(0);
@@ -62,12 +62,6 @@ it("separates plan flows and debt from future commitments, without allocating pe
   const { card, workspace, snapshot, statements } = planScenario();
   expect(statementChargeBreakdown(card, statements[4], workspace, snapshot)).toMatchObject({ newChargesMinor: 0, planChargesMinor: 53333, planFeesMinor: 500, otherCostsMinor: 500 });
   expect(statementChargeBreakdown(card, statements[1], workspace, snapshot)).toMatchObject({ newChargesMinor: 120000, planChargesMinor: 20000 });
-  expect(planDebtBreakdown(card, workspace, snapshot, -55833, "2026-10-15")).toMatchObject({ known: true, planMinor: 53333, otherMinor: 500, pendingOtherMinor: 4500, pendingCreditMinor: 2500, differenceMinor: 0, futureMinor: 73834 });
-});
-it("keeps mixed-bucket repayments unallocated and reconciles the recorded total", () => {
-  const { card, workspace, snapshot } = planScenario();
-  const mixed = { ...snapshot, rows: snapshot.rows.map((row) => row.id === "pending-buy" ? { ...row, cleared: true, date: "2026-10-13" } : row.id === "pending-pay" ? { ...row, cleared: true } : row) };
-  expect(planDebtBreakdown(card, workspace, mixed, -55833, "2026-10-15")).toMatchObject({ planMinor: 53333, otherMinor: 5000, unallocatedMinor: 2500, differenceMinor: 0 });
 });
 it("shows consistently inclusive expected totals and only revises unbilled expectations after explicit refund confirmation", () => {
   const { card, workspace, snapshot, plans } = planScenario();

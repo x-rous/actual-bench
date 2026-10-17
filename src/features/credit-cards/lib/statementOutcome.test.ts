@@ -38,19 +38,19 @@ it("separates bank confirmation, incomplete source, baseline and actual zero sta
 
 it("does not infer success from pending transfers or credits that leave the minimum unpaid", () => {
   const { statement, payment } = base();
-  const pending: Settlement = { ...payment, confirmedPaidMinor: 0, provisionalMinor: statement.officialBalanceMinor, confirmedPaidDate: null, confirmedMinimumPaidDate: null, carriedAtDueMinor: null };
+  const pending: Settlement = { ...payment, confirmedPaidMinor: 0, provisionalMinor: statement.officialBalanceMinor, confirmedPaidDate: null, confirmedMinimumPaidDate: null, debtCarriedAtDueMinor: null };
   expect(statementOutcome(statement, pending, "2025-11-02", true)).toMatchObject({ label: "Minimum overdue", marker: "overdue", timing: "1 day overdue · clearance pending" });
   const credits = { ...pending, provisionalMinor: 0, confirmedCreditMinor: statement.officialBalanceMinor, confirmedPaidDate: statement.dueDate };
   expect(statementOutcome(statement, credits, "2025-11-02", true).label).toBe("Minimum overdue");
-  const paidMinimum = { ...credits, confirmedPaidMinor: statement.minimumDueMinor, confirmedMinimumPaidDate: statement.dueDate, fullByDue: true, carriedAtDueMinor: 0 };
+  const paidMinimum = { ...credits, confirmedPaidMinor: statement.minimumDueMinor, confirmedMinimumPaidDate: statement.dueDate, fullByDue: true, debtCarriedAtDueMinor: 0 };
   expect(statementOutcome(statement, paidMinimum, "2025-11-02", true)).toMatchObject({ label: "Minimum paid · carried", marker: "partial", paid: false });
 });
 
 it("preserves late minimums, zero minimums, missing payment dates and future partial payments", () => {
   const { statement, payment } = base();
-  const partial = { ...payment, confirmedPaidMinor: statement.minimumDueMinor, fullRemainingMinor: statement.officialBalanceMinor - statement.minimumDueMinor, confirmedPaidDate: null, confirmedMinimumPaidDate: "2025-11-04", minimumByDue: false, carriedAtDueMinor: statement.officialBalanceMinor };
+  const partial = { ...payment, confirmedPaidMinor: statement.minimumDueMinor, recordedDebtRemainingMinor: statement.officialBalanceMinor - statement.minimumDueMinor, confirmedPaidDate: null, confirmedMinimumPaidDate: "2025-11-04", minimumByDue: false, debtCarriedAtDueMinor: statement.officialBalanceMinor };
   expect(statementOutcome(statement, partial, "2025-11-06", true)).toMatchObject({ label: "Minimum paid late", marker: "late" });
   expect(statementOutcome({ ...statement, minimumDueMinor: 0 }, { ...partial, confirmedPaidMinor: 0, confirmedMinimumPaidDate: null }, "2025-11-06", true)).toMatchObject({ label: "Balance carried", marker: "overdue" });
   expect(statementOutcome(statement, { ...payment, confirmedPaidDate: null, fullByDue: null }, "2025-11-06", true)).toMatchObject({ marker: "unknown", timing: "Timing unknown" });
-  expect(statementOutcome({ ...statement, dueDate: "2025-11-20" }, { ...partial, confirmedPaidMinor: 500, confirmedMinimumPaidDate: null, carriedAtDueMinor: null }, "2025-11-06", true)).toMatchObject({ label: "Part paid", marker: "partial", countdown: "in 14 days" });
+  expect(statementOutcome({ ...statement, dueDate: "2025-11-20" }, { ...partial, confirmedPaidMinor: 500, confirmedMinimumPaidDate: null, debtCarriedAtDueMinor: null }, "2025-11-06", true)).toMatchObject({ label: "Part paid", marker: "partial", countdown: "in 14 days" });
 });

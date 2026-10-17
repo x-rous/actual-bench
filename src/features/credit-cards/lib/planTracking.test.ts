@@ -4,7 +4,6 @@ import { normalizeActivity, activityKind, paymentEvidence } from "./activity";
 import { repaymentLedger, settlements } from "./repayments";
 import { createCreditCardStore } from "./memory";
 import { planHealth } from "./plans";
-import { planDebtBreakdown } from "./planReporting";
 
 it("keeps conversion and instalment transfers out of cash repayments, and apportions a shared liability once", () => {
   const { cards, sources, workspace } = transferPlanScenario();
@@ -17,7 +16,6 @@ it("keeps conversion and instalment transfers out of cash repayments, and apport
   expect(settlements(cards[0], workspace, a, "2026-10-16")[1].confirmedPaidMinor).toBe(505000);
   expect(trackedCardDebt(cards[0], workspace, a, -450000, "2026-10-16")).toMatchObject({ known: true, trackingMinor: 1000000, debtMinor: 1450000, confirmedDebtMinor: 1550000, problems: [] });
   expect(trackedCardDebt(cards[1], workspace, b, -200000, "2026-10-16")).toMatchObject({ trackingMinor: 400000, debtMinor: 600000 });
-  expect(planDebtBreakdown(cards[0], workspace, a, -450000, "2026-10-16")).toMatchObject({ known: true, planMinor: 1500000, otherMinor: 50000, pendingCreditMinor: 100000, differenceMinor: 0 });
 });
 
 it("preserves total debt when principal is billed, reduces it for cash, and retains missed amounts", () => {
@@ -31,14 +29,14 @@ it("preserves total debt when principal is billed, reduces it for cash, and reta
 
 it("starts mid-plan from confirmed opening principal without inventing earlier payments or doubling history", () => {
   const { cards, sources, plans, workspace } = transferPlanScenario();
-  const plan = { ...plans[0], transactionId: "instalment-a-8", fingerprint: "instalment-a-8", tracking: { ...plans[0].tracking!, opening: { date: "2026-08-08", principalMinor: 2000000 } } };
+  const plan = { ...plans[0], sourceMode: "existing" as const, sourceTransactions: [{ transactionId: "instalment-a-8", fingerprint: "instalment-a-8" }], opening: { date: "2026-08-08", principalMinor: 2000000 } };
   const snapshot = { ...sources[0], from: "2026-08-08", rows: sources[0].rows.filter((row) => row.date >= "2026-08-08") };
   expect(trackingBalance(plan, snapshot, "2026-10-16")?.signedMinor).toBe(-1000000);
   expect(trackingBalance(plan, snapshot, "2026-07-01")).toBeNull();
   const store = createCreditCardStore();
   store.setState({ workspaces: { test: { ...workspace, plans: plans.slice(1), planLinks: workspace.planLinks!.filter((link) => link.planId !== "a") } } });
   store.getState().savePlan("test", cards[0].id, cards[0].revision, snapshot, plan, []);
-  expect(store.getState().workspaces.test.plans?.find((entry) => entry.id === "a")?.tracking?.opening?.principalMinor).toBe(2000000);
+  expect(store.getState().workspaces.test.plans?.find((entry) => entry.id === "a")?.opening?.principalMinor).toBe(2000000);
   expect(trackedDebtPoints(cards[0], { ...workspace, plans: [plan, plans[1]] }, snapshot, -450000, ["2026-07-08"])[0].value).toBeNull();
 });
 
@@ -104,7 +102,6 @@ it("splits a billed instalment into principal and a separate fee expense, counti
   const links = [...workspace.planLinks!, { planId: "a", transactionId: principal.id, fingerprint: principal.fingerprint, role: "instalment-billed" as const, instalment: 5 }, { planId: "a", transactionId: fee.id, fingerprint: fee.fingerprint, role: "plan-fee" as const, instalment: null }];
   const candidate = { ...workspace, cards: [card, cards[1]], planLinks: links };
   expect(trackedCardDebt(card, candidate, snapshot, -551500, "2026-10-16")).toMatchObject({ known: true, trackingMinor: 900000, debtMinor: 1451500 });
-  expect(planDebtBreakdown(card, candidate, snapshot, -551500, "2026-10-16")).toMatchObject({ planMinor: 1500000, otherMinor: 51500, pendingCreditMinor: 100000, differenceMinor: 0 });
   const store = createCreditCardStore(); store.setState({ workspaces: { test: { ...workspace, cards: [card, cards[1]] } } });
   store.getState().savePlan("test", "a", 1, snapshot, plans[0], links.filter((link) => link.planId === "a"));
   expect(store.getState().workspaces.test.planLinks?.filter((link) => link.planId === "a")).toHaveLength(8);
@@ -121,7 +118,7 @@ it.each(["cash-advance", "balance-transfer"] as const)("keeps %s origination dis
   const source = sources[0], original = { ...source.rows.find((row) => row.id === "purchase-a")!, transferId: "borrowing-peer", fingerprint: "borrowing-source" };
   const peer = { ...original, id: "borrowing-peer", accountId: kind === "cash-advance" ? "funding" : "card-b", amountMinor: 3000000, transferId: original.id };
   const snapshot = { ...source, rows: source.rows.map((row) => row.id === original.id ? original : row), counterparts: [...source.counterparts, peer] };
-  const plan = { ...plans[0], fingerprint: original.fingerprint };
+  const plan = { ...plans[0], sourceTransactions: [{ transactionId: original.id, fingerprint: original.fingerprint }] };
   const candidate = { ...workspace, plans: [plan, plans[1]], classifications: [{ cardId: "a", transactionId: original.id, fingerprint: original.fingerprint, kind, reason: "Confirmed borrowing origination" }] };
   expect(activityKind(original, cards[0], candidate, snapshot)).toBe(kind);
   const store = createCreditCardStore(); store.setState({ workspaces: { test: candidate } });
@@ -150,7 +147,7 @@ it("separates other cards’ shared principal from this card’s review queue an
   const rows = unassignedPlanEntries(unlinked, sources[0], cards[0]);
   expect(rows).toHaveLength(5);
   expect(rows.every((row) => row.transferId?.includes("-a"))).toBe(true);
-  const midway = { ...unlinked, plans: [{ ...unlinked.plans[0], tracking: { ...unlinked.plans[0].tracking, opening: { date: "2026-10-08", principalMinor: 1000000 } } }] };
+  const midway = { ...unlinked, plans: [{ ...unlinked.plans[0], opening: { date: "2026-10-08", principalMinor: 1000000 } }] };
   expect(unassignedPlanEntries(midway, sources[0], cards[0])).toEqual([]);
 });
 

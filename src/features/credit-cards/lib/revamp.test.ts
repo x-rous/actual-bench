@@ -60,14 +60,14 @@ it("pays a smaller monthly target without declaring remaining full debt overdue 
   const source = { ...sources[0], rows: [payment], to: "2026-11-05" };
   const candidate = { ...workspace, statements: [statement] };
   const statuses = settlements(cards[0], candidate, source, "2026-11-05");
-  expect(statuses[0]).toMatchObject({ targetRemainingMinor: 0, fullRemainingMinor: 2500000, targetByDue: true });
+  expect(statuses[0]).toMatchObject({ recordedTargetRemainingMinor: 0, recordedDebtRemainingMinor: 2500000, targetByDue: true });
   expect(statementOutcome(statement, statuses[0], "2026-11-05", true)).toMatchObject({ label: "Paid this month", overdue: false, carried: false });
   expect(paymentEffects(cards[0], candidate, source, statuses, "2026-11-05").get(payment.id)).toMatchObject({ label: "Meets monthly target", remainingMinor: 0 });
   const store = createCreditCardStore(); store.setState({ workspaces: { test: candidate } });
   store.getState().correctStatement("test", statement.id, statement.revision, { periodStart: statement.periodStart, closingDate: statement.closingDate, dueDate: statement.dueDate, officialBalanceMinor: statement.officialBalanceMinor, minimumDueMinor: statement.minimumDueMinor });
   const reset = store.getState().workspaces.test;
   expect(reset.statements[0].totalPaymentDueMinor).toBeUndefined();
-  expect(settlements(cards[0], reset, source, "2026-11-05")[0].targetRemainingMinor).toBe(2500000);
+  expect(settlements(cards[0], reset, source, "2026-11-05")[0].recordedTargetRemainingMinor).toBe(2500000);
 });
 
 it("keeps a matched bill valid as new cutoff rows appear, then offers them to the next bill once", () => {
@@ -103,12 +103,12 @@ it("saves existing balance-only plans and multiple originals while preserving pr
   const store = createCreditCardStore(); store.setState({ workspaces: { test: { ...workspace, plans: [], planLinks: [] } } });
   const source = sources[0];
   const opening = { date: "2026-10-08", principalMinor: 1000000 };
-  const existing = { ...plans[0], transactionId: null, fingerprint: null, sourceTransactions: [], sourceMode: "existing", balanceOnly: true, monthlyMinor: null, reference: "Existing agreement", tracking: { accountId: "tracking", tag: "", opening } };
+  const existing = { ...plans[0], transactionId: null, fingerprint: null, sourceTransactions: [], sourceMode: "existing", balanceOnly: true, monthlyMinor: null, reference: "Existing agreement", opening, tracking: { accountId: "tracking", tag: "" } };
   store.getState().savePlan("test", "a", 1, source, existing, []);
   expect(trackedCardDebt(cards[0], store.getState().workspaces.test, source, -450000, "2026-10-16").debtMinor).toBe(1450000);
   expect(() => store.getState().deletePlan("test", "a", 1, 2, source)).toThrow("remaining plan principal");
   const originals = source.rows.filter((row) => row.id === "purchase-a" || row.id === "ordinary");
-  const multi = { ...plans[0], id: "new", sourceTransactions: originals.map((row) => ({ transactionId: row.id, fingerprint: row.fingerprint })), sourceMode: "new", startDate: "2026-10-10", firstDueDate: "2026-11-02", amountMinor: 3050000, tracking: undefined };
+  const multi = { ...plans[0], id: "new", sourceTransactions: originals.map((row) => ({ transactionId: row.id, fingerprint: row.fingerprint })), sourceMode: "new", startDate: "2026-10-10", firstDueDate: "2026-11-02", amountMinor: 3050000, recording: "instalments", tracking: undefined };
   store.getState().savePlan("test", "a", 2, source, multi, []);
   expect(store.getState().workspaces.test.plans?.find((plan) => plan.id === "new")?.sourceTransactions).toHaveLength(2);
   expect(() => store.getState().savePlan("test", "a", 3, source, { ...multi, amountMinor: 9000000 }, [])).toThrow("original charges");

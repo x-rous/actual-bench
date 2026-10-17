@@ -12,6 +12,7 @@ const sum = (values: number[]) => {
   return value;
 };
 const indexes = new WeakMap<ActivitySnapshot, Map<string, ActivityRow>>();
+const accountRows = new WeakMap<ActivitySnapshot, Map<string, ActivityRow[]>>();
 const conflictingIds = new WeakMap<ActivitySnapshot, Set<string>>();
 /** Immutable snapshot index, shared by linking, balances and historical points. */
 export function trackingRowIndex(snapshot: ActivitySnapshot) {
@@ -21,11 +22,14 @@ export function trackingRowIndex(snapshot: ActivitySnapshot) {
     const conflicts = new Set<string>();
     for (const row of [...snapshot.rows, ...snapshot.counterparts, ...(snapshot.trackingAccounts ?? []).flatMap((account) => [...account.rows, ...(account.counterparts ?? [])])]) {
       const old = index.get(row.id);
-      if (old && (old.accountId !== row.accountId || old.amountMinor !== row.amountMinor || old.transferId !== row.transferId)) conflicts.add(row.id);
+      if (old && (old.accountId !== row.accountId || old.amountMinor !== row.amountMinor || old.transferId !== row.transferId || old.date !== row.date || old.cleared !== row.cleared || old.transferKnown !== row.transferKnown || old.parentId !== row.parentId)) conflicts.add(row.id);
       if (!old) index.set(row.id, row);
     }
     conflictingIds.set(snapshot, conflicts);
     indexes.set(snapshot, index);
+    const accounts = new Map<string, ActivityRow[]>();
+    for (const row of index.values()) { const rows = accounts.get(row.accountId) ?? []; rows.push(row); accounts.set(row.accountId, rows); }
+    accountRows.set(snapshot, accounts);
   }
   return index;
 }
@@ -95,9 +99,11 @@ function balanceThrough(rows: ActivityRow[], date: string) {
 export function trackingBalance(plan: RepaymentPlan, snapshot: ActivitySnapshot, date: string, links: PlanLink[] = noLinks) {
   if (!plan.tracking) return null;
   const account = snapshot.trackingAccounts?.find((entry) => entry.accountId === plan.tracking!.accountId);
-  const opening = plan.tracking.opening;
+  const opening = plan.opening;
   if (!account || account.issues.length || account.to < date || opening && opening.date > date) return null;
   const assigned = assignedRows(plan, snapshot, links);
+  trackingRowIndex(snapshot);
+  if (assigned.some((row) => conflictingIds.get(snapshot)?.has(row.id) || row.transferId && conflictingIds.get(snapshot)?.has(row.transferId))) return null;
   if (!opening && !assigned.length) return null;
   const current = balanceThrough(assigned, date);
   const before = opening ? balanceThrough(assigned, opening.date) : { signed: 0, confirmed: 0 };
@@ -105,7 +111,7 @@ export function trackingBalance(plan: RepaymentPlan, snapshot: ActivitySnapshot,
 }
 export function hasTrackingCostTransfer(plan: RepaymentPlan, card: Card, workspace: Workspace, snapshot: ActivitySnapshot, date: string) {
   return assignedRows(plan, snapshot, workspace.planLinks ?? noLinks).some((row) => {
-    if (row.date > date || plan.tracking?.opening && row.date <= plan.tracking.opening.date || !row.transferId) return false;
+    if (row.date > date || plan.opening && row.date <= plan.opening.date || !row.transferId) return false;
     const peer = trackingRowIndex(snapshot).get(row.transferId);
     return peer?.accountId === card.accountId && financingCostKind(peer, card, workspace) !== null;
   });
@@ -129,8 +135,8 @@ export function trackedCardDebt(card: Card, workspace: Workspace, snapshot: Acti
     trackingSignedMinor = sum([trackingSignedMinor, balance.signedMinor]);
     confirmedTrackingSignedMinor = sum([confirmedTrackingSignedMinor, balance.confirmedSignedMinor]);
     if (balance.signedMinor > 0) { problems.push("Check the plan opening and principal transfers"); invalid = true; }
-    for (const row of all.values()) {
-      if (row.accountId !== binding.accountId || !planOwnsTrackingRow(plan, row, snapshot, links)) continue;
+    for (const row of accountRows.get(snapshot)?.get(binding.accountId) ?? []) {
+      if (!planOwnsTrackingRow(plan, row, snapshot, links)) continue;
       if (!row.transferId) continue;
       const peer = all.get(row.transferId);
       if (!peer || peer.accountId !== card.accountId || !trackingTransferMatches(row, plan, snapshot)) { problems.push("Check this plan transfer link"); invalid = true; continue; }
@@ -166,14 +172,15 @@ export function trackedCardDebt(card: Card, workspace: Workspace, snapshot: Acti
 }
 export function unassignedPlanEntries(workspace: Workspace, snapshot: ActivitySnapshot, card?: Card) {
   const index = trackingRowIndex(snapshot);
-  return (snapshot.trackingAccounts ?? []).flatMap((account) => account.rows.filter((row) => (!card || index.get(row.transferId ?? "")?.accountId === card.accountId && workspace.plans?.some((plan) => plan.cardId === card.id && plan.tracking?.accountId === account.accountId && (!plan.tracking.opening || row.date > plan.tracking.opening.date))) && !(workspace.plans ?? []).filter((plan) => plan.tracking?.accountId === account.accountId).some((plan) => planOwnsTrackingRow(plan, row, snapshot, workspace.planLinks))).map((row) => ({ ...row, accountLabel: snapshot.accounts?.find((entry) => entry.id === row.accountId)?.name ?? "Plan account" })));
+  return (snapshot.trackingAccounts ?? []).flatMap((account) => account.rows.filter((row) => (!card || index.get(row.transferId ?? "")?.accountId === card.accountId && workspace.plans?.some((plan) => plan.cardId === card.id && plan.tracking?.accountId === account.accountId && (!plan.opening || row.date > plan.opening.date))) && !(workspace.plans ?? []).filter((plan) => plan.tracking?.accountId === account.accountId).some((plan) => planOwnsTrackingRow(plan, row, snapshot, workspace.planLinks))).map((row) => ({ ...row, accountLabel: snapshot.accounts?.find((entry) => entry.id === row.accountId)?.name ?? "Plan account" })));
 }
 
 /** Recorded history; billing alone never repays debt. */
 export function trackedDebtPoints(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, signedCardTodayMinor: number, dates: string[]) {
+  const total = balanceThrough(snapshot.rows, "9999-12-31").signed;
   return dates.map((date) => {
     if (date < snapshot.from || date > snapshot.to) return { date, value: null };
-    const signed = sum([signedCardTodayMinor, ...snapshot.rows.filter((row) => row.date > date).map((row) => -row.amountMinor)]);
+    const signed = sum([signedCardTodayMinor, -total, balanceThrough(snapshot.rows, date).signed]);
     const debt = trackedCardDebt(card, workspace, snapshot, signed, date);
     return { date, value: debt.known ? debt.debtMinor : null, source: "Recorded total debt", breakdown: [{ label: "On card", value: -signed }, ...(debt.tracked ? [{ label: "In plan account", value: debt.known ? debt.trackingMinor : null }, ...(debt.transitMinor ? [{ label: "Transfer in transit", value: debt.transitMinor }] : [])] : [])] };
   });

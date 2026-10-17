@@ -1,4 +1,4 @@
-import { createCreditCardStore, openingPosition } from "./memory";
+import { createCreditCardStore } from "./memory";
 import { cardInputSchema } from "./models";
 import { cardActivityWindow } from "./cycles";
 import { statementDrafts, effectiveMembership } from "./statements";
@@ -39,10 +39,10 @@ it("deletes saved facts and ownership without silently promoting a new opening a
   expect(workspace.memberships).toEqual([]);
   expect(workspace.classifications).toEqual([classification]);
   expect(workspace.cards[0].firstTrackedStatementDate).toBe("2026-05-31");
-  expect(openingPosition(workspace, card.id)).toBeNull();
+  expect(workspace.statements.find((entry) => entry.cardId === card.id && entry.openingAnchor)).toBeUndefined();
   expect(() => store.getState().deleteStatement("other-budget", later.id, 2)).toThrow("active budget");
   store.getState().undo("budget");
-  expect(openingPosition(store.getState().workspaces.budget, card.id)?.statementId).toBe(first.id);
+  expect(store.getState().workspaces.budget.statements.find((entry) => entry.cardId === card.id && entry.openingAnchor)?.id).toBe(first.id);
   expect(store.getState().workspaces.budget.memberships).toHaveLength(1);
 });
 
@@ -92,7 +92,7 @@ it("reanchors only after an explicit tracking-start change, while guarding open 
   const current = store.getState().workspaces.budget.cards[0];
   const input = cardInputSchema.parse(Object.fromEntries(Object.entries(current).filter(([key]) => key !== "id" && key !== "revision")));
   store.getState().updateCard("budget", card.id, current.revision, { ...input, firstTrackedStatementDate: later.closingDate });
-  expect(openingPosition(store.getState().workspaces.budget, card.id)?.statementId).toBe(later.id);
+  expect(store.getState().workspaces.budget.statements.find((entry) => entry.cardId === card.id && entry.openingAnchor)?.id).toBe(later.id);
   expect(() => store.getState().saveReview("budget", later.id, 1, { accountId: "card", from: "2026-01-01", to: "2026-10-11", rows: [], counterparts: [], issues: [], fetchedAt: "now", signature: "empty" }, [], false)).toThrow("changed");
 });
 

@@ -34,6 +34,7 @@ import { CardMark } from "./CardIdentity";
 import { StatementReview } from "./StatementReview";
 import { PaymentDetails } from "./PaymentDetails";
 import { ActivityTable } from "./ActivityTable";
+import { cardReadSnapshot } from "../lib/readModel";
 import { asOfCardBalance } from "../lib/financialAdapter";
 import { Status } from "./WorkspaceVisuals";
 import { bankToday, type StatementDraft } from "../lib/cycles";
@@ -60,12 +61,8 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const [reviewId, setReviewId] = useState<string | null>(null);
   const activityQueries = useCreditCardActivities(connection, workspace.cards, workspace.statements);
   const trackingQueries = useCreditCardTracking(connection, workspace.plans, workspace.cards.map((entry) => bankToday(entry.bankTimeZone)).sort().at(-1) ?? bankToday("UTC"));
-  const sources = activityQueries.map((entry) => entry.data ? { ...entry.data, accounts: directory.data?.accounts,
-    trackingAccounts: trackingQueries.flatMap((query) => {
-      const data = query.data, balance = data && directory.data?.balances.get(data.accountId);
-      return data && !query.isFetching && !query.isError ? [{ accountId: data.accountId, rows: data.rows, counterparts: data.counterparts, issues: data.issues, to: data.to, signedBalanceMinor: balance ? asOfCardBalance(balance, data.futureDeltaMinor, connection.mode === "browser-api", data.directBalanceAdjustmentMinor).signedBalanceMinor : undefined }] : [];
-    }),
-  } : undefined);
+  const trackingSources = trackingQueries.map((query) => !query.isFetching && !query.isError ? query.data : undefined);
+  const sources = activityQueries.map((entry) => entry.data ? cardReadSnapshot(entry.data, directory.data?.accounts, trackingSources, directory.data?.balances, connection.mode === "browser-api") : undefined);
   const [statementAction, setStatementAction] = useState<{ kind: "reset" | "delete"; statement: Statement } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -120,7 +117,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
     const source = activityQueries[index]?.data;
     const live = directory.data?.balances.get(entry.accountId);
     const confirmed = workspace.statements.filter((statement) => statement.cardId === entry.id);
-    const estimates = available && source && live && !activityQueries[index]?.isFetching && !activityQueries[index]?.isError ? statementDrafts(entry, bankToday(entry.bankTimeZone), undefined, source, asOfCardBalance(live, source.futureDeltaMinor, connection.mode === "browser-api").rawSignedBalanceMinor, workspace.statements).filter((draft) => !confirmed.some((statement) => !(statement.closingDate < draft.periodStart || statement.periodStart > draft.closingDate))) : [];
+    const estimates = available && source && live && balances.has(entry.accountId) && !activityQueries[index]?.isFetching && !activityQueries[index]?.isError ? statementDrafts(entry, bankToday(entry.bankTimeZone), undefined, source, balances.get(entry.accountId)!.rawSignedBalanceMinor, workspace.statements).filter((draft) => !confirmed.some((statement) => !(statement.closingDate < draft.periodStart || statement.periodStart > draft.closingDate))) : [];
     return [...confirmed, ...previewStatements(entry.id, estimates)];
   });
   const openStatement = (statement?: Statement, draft?: StatementDraft) => { setEditingStatement(statement); setSuggested(draft); setEditor("statement"); };

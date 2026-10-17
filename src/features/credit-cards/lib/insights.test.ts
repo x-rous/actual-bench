@@ -23,7 +23,7 @@ it("freezes actual carry at the due date, excludes upcoming periods and keeps la
   expect(carriedDebtPoints(card, workspace, source, "2026-09-20")).toEqual([]);
   expect(carriedDebtPoints(card, workspace, source, "2026-09-21")[0]).toMatchObject({ date: first.dueDate, value: 8000 });
   expect(carriedDebtPoints(card, workspace, source, "2026-09-30")[0].value).toBe(8000);
-  expect(settlements(card, workspace, source, "2026-09-30")[0]).toMatchObject({ fullRemainingMinor: 0, status: "Paid late", minimumByDue: true, fullByDue: false });
+  expect(settlements(card, workspace, source, "2026-09-30")[0]).toMatchObject({ recordedDebtRemainingMinor: 0, minimumByDue: true, fullByDue: false });
 });
 it("does not present pending or incomplete deadline evidence as actual carried debt", () => {
   const { store, card } = setup();

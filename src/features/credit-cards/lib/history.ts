@@ -1,14 +1,11 @@
-import type { ActivitySnapshot, ActivityRow } from "./activity";
+import type { ActivitySnapshot } from "./activity";
 import { activityKind } from "./activity";
 import type { Card, Workspace } from "./models";
 import { statementReview, sumMinor } from "./statements";
 import { settlements } from "./repayments";
 import { costFamily } from "./recognition";
 
-/** Applied category/description/default classifications are usable without per-row approval. */
-export function chargeClassificationKnown(...context: [Card, Workspace, ActivityRow[], "interest" | "fee"]) { void context; return true; }
-
-/** Observed charges require explicit classification; purchases are not guessed to be interest. */
+/** Signed expense totals use the shared category/description/default classification. */
 export function statementHistory(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, today: string) {
   const statuses = settlements(card, workspace, snapshot, today);
   return workspace.statements.filter((entry) => entry.cardId === card.id).sort((a, b) => b.closingDate.localeCompare(a.closingDate)).map((statement) => {
@@ -16,9 +13,7 @@ export function statementHistory(card: Card, workspace: Workspace, snapshot: Act
     const rows = review.rows.filter((_, index) => review.memberships[index].decision === "included");
     const classified = (kind: string) => sumMinor(rows.filter((row) => (activityKind(row, card, workspace, snapshot) === kind || costFamily(activityKind(row, card, workspace, snapshot)) === kind) && row.cleared === true).map((row) => ["interest", "fee"].includes(kind) ? -row.amountMinor : Math.abs(row.amountMinor)));
     const covered = snapshot.from <= statement.periodStart && snapshot.to >= statement.closingDate && !snapshot.issues.length && review.unresolved === 0 && !review.duplicate;
-    const interestKnown = chargeClassificationKnown(card, workspace, rows, "interest");
-    const feesKnown = chargeClassificationKnown(card, workspace, rows, "fee");
-    return { statement, covered, interestMinor: covered && interestKnown ? classified("interest") : null, feesMinor: covered && feesKnown ? classified("fee") : null, unclassifiedMinor: covered ? sumMinor(rows.filter((row) => row.amountMinor < 0 && ["unclassified", "ambiguous"].includes(activityKind(row, card, workspace, snapshot))).map((row) => -row.amountMinor)) : null, spendingMinor: covered ? sumMinor(rows.filter((row) => row.amountMinor < 0 && ["purchase", "cash-advance", "money-transfer", "balance-transfer", "other-charge", "unclassified", "ambiguous"].includes(activityKind(row, card, workspace, snapshot))).map((row) => -row.amountMinor)) : null, refundsMinor: covered ? classified("refund") : null, cashbackMinor: covered ? classified("cashback") : null,
+    return { statement, covered, interestMinor: covered ? classified("interest") : null, feesMinor: covered ? classified("fee") : null, unclassifiedMinor: covered ? sumMinor(rows.filter((row) => row.amountMinor < 0 && ["unclassified", "ambiguous"].includes(activityKind(row, card, workspace, snapshot))).map((row) => -row.amountMinor)) : null, spendingMinor: covered ? sumMinor(rows.filter((row) => row.amountMinor < 0 && ["purchase", "cash-advance", "money-transfer", "balance-transfer", "other-charge", "unclassified", "ambiguous"].includes(activityKind(row, card, workspace, snapshot))).map((row) => -row.amountMinor)) : null, refundsMinor: covered ? classified("refund") : null, cashbackMinor: covered ? classified("cashback") : null,
       utilization: card.creditLimitMinor && card.creditLimitMinor > 0 ? Math.max(0, statement.officialBalanceMinor) / card.creditLimitMinor * 100 : null,
       settlement: statuses.find((entry) => entry.statementId === statement.id)!,
     };
@@ -38,16 +33,6 @@ export function portfolio(cards: Card[], balances: Map<string, { debtMinor: numb
 }
 
 
-export function minimumPaymentStreak(statuses: ReturnType<typeof settlements>, today: string) {
-  let count = 0;
-  for (const status of statuses.filter((entry) => entry.dueDate < today).reverse()) {
-    if (status.minimumByDue === null || status.provisionalMinor > 0) break;
-    if (!status.minimumByDue) break;
-    count += 1;
-  }
-  return count;
-}
-
 /** Integer minor-unit cumulative charges, never interest paid or a sum across coverage gaps. */
 export function cumulativeInterestCharges(history: ReturnType<typeof statementHistory>) {
   let totalMinor: number | null = 0;
@@ -63,7 +48,7 @@ export function observedChargeTotals(card: Card, workspace: Workspace, snapshot:
   const to = snapshot.to < today ? snapshot.to : today;
   const rows = snapshot.rows.filter((row) => row.date >= from && row.date <= to);
   const charges = rows.filter((row) => row.cleared === true && costFamily(activityKind(row, card, workspace, snapshot)) === kind);
-  return { classificationKnown: snapshot.issues.length === 0 && chargeClassificationKnown(card, workspace, rows, kind), totalMinor: sumMinor(charges.map((row) => -row.amountMinor)), grossMinor: sumMinor(charges.filter((row) => row.amountMinor < 0).map((row) => -row.amountMinor)), refundsMinor: sumMinor(charges.filter((row) => row.amountMinor > 0).map((row) => row.amountMinor)), from, to };
+  return { classificationKnown: snapshot.issues.length === 0, totalMinor: sumMinor(charges.map((row) => -row.amountMinor)), grossMinor: sumMinor(charges.filter((row) => row.amountMinor < 0).map((row) => -row.amountMinor)), refundsMinor: sumMinor(charges.filter((row) => row.amountMinor > 0).map((row) => row.amountMinor)), from, to };
 }
 
 /** Reporting covers only available activity, using Actual posting dates. */

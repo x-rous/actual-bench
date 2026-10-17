@@ -1,3 +1,5 @@
+import { transferPlanScenario } from "../lib/planTracking.fixture";
+import { evidenceHash } from "../lib/evidence";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { PlanEditor } from "./PlanEditor";
 import { creditCardStore } from "../lib/memory";
@@ -49,7 +51,7 @@ it("requires explicit acceptance of changed original evidence and preserves the 
   fireEvent.click(screen.getByRole("button", { name: "Use current original transactions" }));
   fireEvent.click(screen.getByRole("button", { name: "Save plan" }));
   expect(close).toHaveBeenCalledTimes(1);
-  expect(creditCardStore.getState().workspaces.budget.plans![0].fingerprint).toBe("original");
+  expect(creditCardStore.getState().workspaces.budget.plans![0].sourceTransactions[0].fingerprint).toBe("original");
 });
 
 it("opens linked postings against the original purchase and stages amount-based matches in Transactions", () => {
@@ -66,7 +68,7 @@ it("opens linked postings against the original purchase and stages amount-based 
   fireEvent.click(screen.getByRole("button", { name: "Link entry" }));
   fireEvent.click(screen.getByRole("button", { name: "Save plan" }));
   const saved = creditCardStore.getState().workspaces.budget;
-  expect(saved.plans![0].transactionId).toBe(props.row.id);
+  expect(saved.plans![0].sourceTransactions[0].transactionId).toBe(props.row.id);
   expect(saved.planLinks).toEqual([{ planId: plan.id, transactionId: posting.id, fingerprint: posting.fingerprint, role: "combined-instalment", instalment: 1 }]);
 });
 
@@ -74,7 +76,7 @@ it("releases refund confirmation when the refund is explicitly unlinked", () => 
   const props = setup();
   const refund = { ...props.row, id: "refund", fingerprint: "refund", label: "Refund entry", amountMinor: 10000, date: "2026-10-01" };
   const snapshot = { ...props.snapshot, rows: [props.row, refund] };
-  const plan = repaymentPlanSchema.parse({ id: "plan", cardId: props.card.id, transactionId: props.row.id, fingerprint: props.row.fingerprint, revision: 1, arrangement: "fixed", amountMinor: 120000, startDate: props.row.date, firstDueDate: "2026-10-20", months: 6, monthlyMinor: 20000, aprBps: 0, upfrontFeeMinor: 0, monthlyFeeMinor: 0, includesCosts: true, minimumPercentBps: 500, minimumFloorMinor: 10000, expiryDate: null, afterAprBps: null, conditions: "", refundReview: { treatment: "unchanged", signature: JSON.stringify([["refund", "refund"]]), remaining: [] } });
+  const plan = repaymentPlanSchema.parse({ id: "plan", cardId: props.card.id, transactionId: props.row.id, fingerprint: props.row.fingerprint, revision: 1, arrangement: "fixed", amountMinor: 120000, startDate: props.row.date, firstDueDate: "2026-10-20", months: 6, monthlyMinor: 20000, aprBps: 0, upfrontFeeMinor: 0, monthlyFeeMinor: 0, includesCosts: true, minimumPercentBps: 500, minimumFloorMinor: 10000, expiryDate: null, afterAprBps: null, conditions: "", refundReview: { treatment: "unchanged", signature: evidenceHash([["refund", "refund"]]), remaining: [] } });
   creditCardStore.getState().savePlan("budget", props.card.id, props.card.revision, snapshot, plan, [{ planId: plan.id, transactionId: refund.id, fingerprint: refund.fingerprint, role: "refund", instalment: null }]);
   const workspace = creditCardStore.getState().workspaces.budget;
   render(<PlanEditor {...props} snapshot={snapshot} card={workspace.cards[0]} workspace={workspace} plan={workspace.plans![0]} budget="budget" available initialTab="transactions" focusTransactionId={refund.id} onClose={jest.fn()} />);
@@ -82,4 +84,19 @@ it("releases refund confirmation when the refund is explicitly unlinked", () => 
   fireEvent.click(screen.getByRole("button", { name: "Save plan" }));
   expect(creditCardStore.getState().workspaces.budget.planLinks).toEqual([]);
   expect(creditCardStore.getState().workspaces.budget.plans![0].refundReview).toBeUndefined();
+});
+
+it("keeps classification drafts but blocks saving while plan source data is unavailable", () => {
+  const { cards, plans, workspace, sources } = transferPlanScenario();
+  creditCardStore.setState({ workspaces: { test: workspace }, undoHistory: {}, undoHeads: {}, notices: {} });
+  const props = { budget: "test", card: cards[0], plan: plans[0], workspace, snapshot: sources[0], focusTransactionId: "ordinary", initialTab: "transactions" as const, onClose: jest.fn() };
+  const { rerender } = render(<PlanEditor {...props} available />);
+  fireEvent.click(screen.getByRole("button", { name: "Classify ordinary" }));
+  fireEvent.change(screen.getByLabelText("Classification reason for ordinary"), { target: { value: "Keep this draft during refresh" } });
+  rerender(<PlanEditor {...props} available={false} />);
+  expect(screen.getByRole("button", { name: "Save classification" })).toBeDisabled();
+  expect(screen.getByLabelText("Classification reason for ordinary")).toHaveValue("Keep this draft during refresh");
+  expect(creditCardStore.getState().workspaces.test).toBe(workspace);
+  rerender(<PlanEditor {...props} available />);
+  expect(screen.getByRole("button", { name: "Save classification" })).toBeEnabled();
 });

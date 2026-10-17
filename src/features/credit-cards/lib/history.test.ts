@@ -49,8 +49,7 @@ it("recognizes complete individual classification without category mappings", ()
 });
 
 it("preserves lateness after full settlement, including in debt history", () => {
-  expect(settlements(card, workspace, source(), "2026-10-10")[0]).toMatchObject({ status: "Paid late", delayDays: 3, fullRemainingMinor: 0 });
-  expect(statementHistory(card, workspace, source(), "2026-10-10")[0].settlement.status).toBe("Paid late");
+  expect(settlements(card, workspace, source(), "2026-10-10")[0]).toMatchObject({ delayDays: 3, recordedDebtRemainingMinor: 0 });
 });
 
 it("accumulates observed charges chronologically and refuses unknown coverage", () => {

@@ -49,7 +49,7 @@ export function statementPaymentTotals(cards: Card[], workspace: Workspace, sour
     const statement = latestStatement(workspace.statements.filter((entry) => entry.bankConfirmed), card.id);
     const source = sources[index];
     const payment = statement && source ? settlements(card, workspace, source, todays[index]).find((entry) => entry.statementId === statement.id) : undefined;
-    if (!payment || payment.fullRemainingMinor === null) return null;
+    if (!payment || payment.recordedDebtRemainingMinor === null) return null;
     const remaining = paymentTargetRemaining(statement!, payment.confirmedPaidMinor);
     const minimum = Math.max(0, statement!.minimumDueMinor - payment.confirmedPaidMinor);
     return { remaining, minimum, pending: payment.provisionalMinor, overdue: statement!.dueDate < todays[index] && minimum > 0 ? minimum : 0 };
@@ -62,6 +62,6 @@ export function carriedDebtPoints(card: Card, workspace: Workspace, snapshot: Ac
   const statuses = settlements(card, workspace, snapshot, today);
   return workspace.statements.filter((statement) => statement.cardId === card.id).filter((statement) => statement.dueDate < today).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).map((statement) => {
     const payment = statuses.find((entry) => entry.statementId === statement.id)!;
-    return { date: statement.dueDate, value: payment.carriedAtDueMinor ?? null, source: "Confirmed payments at bank due date", breakdown: [{ label: "Billed statement balance", value: statement.officialBalanceMinor }, { label: "Confirmed payments by due date", value: payment.confirmedPaidByDueMinor ?? null }, { label: "Confirmed credits by due date", value: payment.confirmedCreditByDueMinor ?? payment.confirmedCashbackByDueMinor ?? null }] };
+    return { date: statement.dueDate, value: payment.debtCarriedAtDueMinor ?? null, source: "Confirmed payments at bank due date", breakdown: [{ label: "Billed statement balance", value: statement.officialBalanceMinor }, { label: "Confirmed payments by due date", value: payment.confirmedPaidByDueMinor ?? null }, { label: "Confirmed credits by due date", value: payment.confirmedCreditByDueMinor ?? payment.confirmedCashbackByDueMinor ?? null }] };
   });
 }

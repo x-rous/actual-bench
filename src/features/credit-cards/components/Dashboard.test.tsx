@@ -44,7 +44,7 @@ it("separates a verified overdue obligation from total owed and shows recent sta
 
 it("keeps the payment target and minimum outstanding when credits clear the recorded debt", () => {
   const { card, workspace, snapshot, bank, payment } = overview("late");
-  const credited = { ...payment, fullRemainingMinor: 0, minimumRemainingMinor: bank.minimumDueMinor, confirmedPaidMinor: 0, confirmedCreditMinor: bank.officialBalanceMinor };
+  const credited = { ...payment, recordedDebtRemainingMinor: 0, recordedMinimumRemainingMinor: bank.minimumDueMinor, confirmedPaidMinor: 0, confirmedCreditMinor: bank.officialBalanceMinor };
   render(<CardOverview budget="scenarios" card={card} workspace={workspace} snapshot={snapshot} bank={bank} payment={credited} today="2026-10-15" available onSettings={noop} />);
   const obligation = screen.getByRole("region", { name: "Statement and payment" });
   expect(within(obligation).getByText("Minimum to pay").nextElementSibling).toHaveTextContent("25.00");

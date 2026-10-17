@@ -1,4 +1,4 @@
-import { createCreditCardStore, openingPosition } from "./memory";
+import { createCreditCardStore } from "./memory";
 import { statementReview } from "./statements";
 import { statementMovement } from "./history";
 import type { ActivityRow, ActivitySnapshot } from "./activity";
@@ -26,7 +26,7 @@ it.each([[0, -10000], [5000, -5000], [-5000, -15000]])("reconciles explicit zero
   store.getState().saveReview("budget", statement.id, 1, snapshot, review.memberships, true);
   expect(store.getState().workspaces.budget.statements[0].verification).toBe("verified");
   // The existing closing balance remains the repayment anchor; brought-forward debt is never added again.
-  expect(openingPosition(store.getState().workspaces.budget, card.id)?.balanceMinor).toBe(10000);
+  expect(store.getState().workspaces.budget.statements.find((entry) => entry.cardId === card.id && entry.openingAnchor)?.officialBalanceMinor).toBe(10000);
 });
 
 it("counts cycle payments/credits once and blocks nonzero variance or incomplete evidence", () => {
