@@ -54,6 +54,8 @@ export type BulkDecisionBarProps = {
   selected: ReconciliationItem[];
   statementRows: Map<string, StatementRow>;
   transactions: Map<string, ActualTransactionSnapshot>;
+  /** Transactions in unresolved groups must be chosen individually before bulk writes. */
+  groupTransactionIds?: ReadonlySet<string>;
   onClear: () => void;
   onBulkDisposition: (itemIds: string[], disposition: ReconciliationDisposition) => void;
   onBulkCorrectAmount: (items: { itemId: string; transactionId: string; amount: number }[]) => void;
@@ -68,6 +70,7 @@ export function BulkDecisionBar({
   selected,
   statementRows,
   transactions,
+  groupTransactionIds,
   onClear,
   onBulkDisposition,
   onBulkCorrectAmount,
@@ -142,13 +145,14 @@ export function BulkDecisionBar({
       : null;
 
   const deletable = selected.filter(
-    (item) => item.actualTransactionIds.length > 0 && canStageDelete(item).allowed
+    (item) => item.actualTransactionIds.length > 0 &&
+      !groupTransactionIds?.has(item.actualTransactionIds[0]) && canStageDelete(item).allowed
   );
 
   // Correctable rows are those with exactly one candidate whose amount differs
   // from the statement's, and where no guardrail forbids changing it.
   const correctable = selected.flatMap((item) => {
-    if (item.actualTransactionIds.length !== 1) return [];
+    if (item.actualTransactionIds.length !== 1 || groupTransactionIds?.has(item.actualTransactionIds[0])) return [];
     if (!canStageField(item, "amount").allowed) return [];
     const row = statementRows.get(item.statementRowIds[0] ?? "");
     const transaction = transactions.get(item.actualTransactionIds[0]);
@@ -191,7 +195,7 @@ export function BulkDecisionBar({
       ),
       excludedReason:
         correctable.length < selected.length
-          ? `${selected.length - correctable.length} have no differing amount to correct`
+          ? `${selected.length - correctable.length} need a match or have no correctable amount`
           : null,
       run: () => onBulkCorrectAmount(correctable),
     },
@@ -214,7 +218,7 @@ export function BulkDecisionBar({
       eligible: deletable,
       excludedReason:
         deletable.length < selected.length
-          ? `${selected.length - deletable.length} are protected or not in Actual`
+          ? `${selected.length - deletable.length} are protected, need a match, or are not in Actual`
           : null,
       run: () => onBulkDisposition(deletable.map((item) => item.id), "delete"),
     },

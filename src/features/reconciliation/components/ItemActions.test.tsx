@@ -7,7 +7,7 @@ import type {
   ReconciliationItem,
   StatementRow,
 } from "@/lib/reconciliation/types";
-import { ItemActions } from "./ItemActions";
+import { ItemActions, ItemCandidates } from "./ItemActions";
 
 function statementRow(): StatementRow {
   return {
@@ -56,13 +56,11 @@ const item: ReconciliationItem = {
 
 function renderActions(transactions: ActualTransactionSnapshot[]) {
   render(
-    <ItemActions
+    <ItemCandidates
       item={item}
       statementRow={statementRow()}
       transactions={transactions}
-      onDisposition={() => {}}
       onUseCandidate={() => {}}
-      onCorrectAmount={() => {}}
     />
   );
 }
@@ -99,13 +97,11 @@ describe("choosing between candidates", () => {
   it("orders nothing when there is no statement row to measure against", () => {
     // An Actual-only row has nothing to be close to; the given order stands.
     render(
-      <ItemActions
+      <ItemCandidates
         item={{ ...item, statementRowIds: [] }}
         statementRow={undefined}
         transactions={[txn("far", -1218), txn("near", -974)]}
-        onDisposition={() => {}}
         onUseCandidate={() => {}}
-        onCorrectAmount={() => {}}
       />
     );
 

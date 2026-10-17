@@ -13,8 +13,9 @@ import type {
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { PossiblePair } from "@/lib/reconciliation/session/possiblePairs";
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
+import { REASON } from "@/lib/reconciliation/session/build";
 import { canStageField } from "@/lib/reconciliation/session/staging";
-import { ItemActions } from "./ItemActions";
+import { ItemActions, ItemCandidates } from "./ItemActions";
 import { StagedFields, type Option } from "./StagedFields";
 import { statementText } from "@/lib/reconciliation/statement/text";
 import {
@@ -23,14 +24,6 @@ import {
   formatMinorUnits,
   formatShortDate,
 } from "../lib/format";
-
-/** Current bank/Actual comparison and staged edits for the selected row. */
-function PanelSection({ title, children }: { title: string; children: ReactNode }) {
-  return <section aria-label={title} className="space-y-2.5 rounded-lg border border-border/60 bg-background p-3">
-    <h4 className="text-xs font-semibold">{title}</h4>
-    {children}
-  </section>;
-}
 
 /** Keep the most useful evidence without repeating every text channel. */
 function evidenceSummary(reasons: MatchReason[]): string[] {
@@ -82,7 +75,7 @@ function Compared({
   action?: ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)] items-baseline gap-2">
+    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] items-baseline gap-2">
       <dt className="whitespace-nowrap text-xs text-muted-foreground">{label}</dt>
       <dd className="tabular-nums text-xs">{statement || "-"}</dd>
       <dd
@@ -162,6 +155,8 @@ export type InspectorProps = {
   candidateSelection?: boolean;
   evidenceFor?: (transactionId: string) => string[];
   onResolveGroup?: () => void;
+  /** Match the rendered height of the adjacent table header. */
+  headerHeight?: number;
   /**
    * The other half of a pair the matcher could not relate.
    *
@@ -197,6 +192,7 @@ export function Inspector({
   candidateSelection = false,
   evidenceFor,
   onResolveGroup,
+  headerHeight,
   possiblePartner = null,
   onLinkPossible,
 }: InspectorProps) {
@@ -226,49 +222,53 @@ export function Inspector({
     (item.disposition === "matched" || item.disposition === "correct-amount") &&
     chosen.date !== statementRow.postedDate && canStageField(item, "date").allowed;
 
+  const title = candidateSelection ? "Candidate comparison"
+    : item.disposition === "create" ? "Will create"
+    : item.disposition === "delete" ? "Will delete"
+    : item.disposition === "ignored" ? "Ignored"
+    : item.disposition === "keep" ? (item.reasonCode === REASON.outsideStatementPeriod ? "Outside period" : "Keep in Actual")
+    : item.disposition === "correct-amount" ? "Will fix amount"
+    : item.disposition === "unresolved"
+      ? (item.reasonCode === REASON.likelyDuplicate ? "Likely duplicate"
+        : item.actualTransactionIds.length > 1 || onResolveGroup || item.reasonCode === REASON.merchantCluster ? "Needs pairing"
+        : !item.actualTransactionIds.length && statementRow ? "Not in Actual"
+        : !statementRow && chosen ? "Actual only"
+        : chosen && statementRow && chosen.amount !== statementRow.amount ? "Amount differs" : "Needs review")
+      : manual ? "Matched manually"
+      : item.match?.label === "exact" ? "Exact match"
+      : item.match ? `${confidenceLabelText(item.match.label)} confidence` : "Matched";
+
   return (
     <aside aria-label="Match details"
-      className="flex min-h-0 w-96 shrink-0 flex-col border-l border-border/60 bg-background">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
-        <h3 className="text-sm font-semibold">Match details</h3>
-        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Close match details" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+      className="flex min-h-0 w-[394px] shrink-0 flex-col border-l border-border/60 bg-background">
+      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-4"
+        style={headerHeight ? { height: headerHeight } : undefined}>
+        <h3 className="min-w-0 truncate text-sm font-semibold">{title}</h3>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {!readOnly && onResolveGroup && <Button size="sm" onClick={onResolveGroup}>Resolve group</Button>}
+          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Close match details" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </header>
       <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3">
-        {(item.match || candidateSelection || evidence.length > 0) && (
-          <section aria-label="Match summary" className="overflow-hidden rounded-lg border border-border/60">
-            <div className="space-y-0.5 bg-muted/40 px-3 py-2">
-              <h4 className="text-sm font-semibold">
-                {candidateSelection ? "Candidate comparison" : manual ? "Matched manually"
-                  : item.match?.label === "exact" ? "Exact match"
-                  : item.match ? `${confidenceLabelText(item.match.label)} confidence` : "Match evidence"}
-              </h4>
-              {manual && <p className="text-[11px] text-muted-foreground">
-                You matched these manually
-              </p>}
-            </div>
-            {evidence.length > 0 && <ul className="space-y-1 px-3 py-2 text-xs text-muted-foreground">
-              {evidence.map((detail) => <li key={detail} className="flex items-baseline gap-2">
-                <span aria-hidden="true" className="text-muted-foreground/60">·</span>{detail}
-              </li>)}
-            </ul>}
-          </section>
-        )}
-        {!readOnly && onResolveGroup && (
-          <Button size="sm" variant="outline" className="w-full" onClick={onResolveGroup}>Resolve group</Button>
+        {evidence.length > 0 && (
+          <ul aria-label="Match evidence" className="space-y-1 rounded-lg border border-border/60 bg-background px-3 py-2 text-xs text-muted-foreground">
+            {evidence.map((detail) => <li key={detail} className="flex items-baseline gap-2">
+              <span aria-hidden="true" className="text-muted-foreground/60">·</span>{detail}
+            </li>)}
+          </ul>
         )}
 
         {/* The two facts both sides state, compared rather than listed twice. */}
         {statementRow && chosen && (
-          <PanelSection title="Comparison">
+          <section aria-label="Comparison" className="space-y-2.5 rounded-lg border border-border/60 bg-background p-3">
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 text-[11px] font-medium">
+              <h4 className="text-xs font-semibold">Comparison</h4>
+              <span className="rounded bg-muted px-1.5 py-1">Bank</span>
+              <span className="rounded bg-muted px-1.5 py-1">Actual</span>
+            </div>
             <dl className="space-y-2">
-              <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-[11px] font-medium">
-                <span />
-                <span className="rounded bg-muted px-1.5 py-1">Bank</span>
-                <span className="rounded bg-muted px-1.5 py-1">Actual</span>
-              </div>
-
               <Compared
                 label="Date"
                 statement={statementRow.postedDate}
@@ -293,7 +293,7 @@ export function Inspector({
                 }
               />
             </dl>
-          </PanelSection>
+          </section>
         )}
 
         {(statementRow || chosen) && <div aria-label="Transaction details" className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
@@ -435,36 +435,22 @@ export function Inspector({
           </section>
         )}
 
-        {readOnly ? (
+        {readOnly && (
           <p className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
             This reconciliation has been applied, so its decisions are a record rather than something
             still to settle. Start a new reconciliation to check the account as it stands now.
           </p>
-        ) : candidateSelection && chosen ? (
-          <PanelSection title="Actions">
-            {statementRow && statementRow.amount !== chosen.amount && (
-              <p className="text-xs text-muted-foreground">
-                {canStageField(item, "amount").allowed
-                  ? `Amount will change to ${formatMinorUnits(statementRow.amount)}.`
-                  : `Amount stays ${formatMinorUnits(chosen.amount)}: ${canStageField(item, "amount").allowed ? "" : "protected transaction"}.`}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => onUseCandidate(chosen.id)}>Use this match</Button>
-              <Button size="sm" variant="ghost" onClick={() => onUseCandidate(null)}>None of these</Button>
-            </div>
-          </PanelSection>
-        ) : (
-          <ItemActions
-            item={item}
-            statementRow={statementRow}
-            transactions={transactions}
-            evidenceFor={evidenceFor}
-            onDisposition={onDisposition}
-            onUseCandidate={onUseCandidate}
-            onCorrectAmount={onCorrectAmount}
-          />
         )}
+        {!readOnly && !candidateSelection && <ItemCandidates item={item} statementRow={statementRow}
+          transactions={transactions} evidenceFor={evidenceFor} onUseCandidate={onUseCandidate} />}
+        {!readOnly && item.reasonCode === REASON.merchantCluster && <p className="text-[11px] text-muted-foreground">
+          Several rows and transactions here share this merchant and date. Pick this row&apos;s one
+          above; each choice makes the next easier.
+        </p>}
+        {!readOnly && item.disposition === "create" && <p className="text-[11px] text-muted-foreground">
+          Actual&apos;s rules run on transactions as they are created, so the payee or category may
+          end up different from what you set here.
+        </p>}
 
         {/* Editing is offered once the row is about a specific transaction, or is
             going to become one. Until then there is nothing to edit. */}
@@ -488,6 +474,34 @@ export function Inspector({
         )}
 
       </div>
+      {!readOnly && <footer className="max-h-[45%] shrink-0 overflow-y-auto border-t border-border/60 bg-muted px-3 py-2.5">
+        {candidateSelection && chosen ? (
+          <section aria-label="Actions" className="space-y-2">
+            {statementRow && statementRow.amount !== chosen.amount && (
+              <p className="text-xs text-muted-foreground">
+                {canStageField(item, "amount").allowed
+                  ? `Amount will change to ${formatMinorUnits(statementRow.amount)}.`
+                  : `Amount stays ${formatMinorUnits(chosen.amount)}: ${canStageField(item, "amount").allowed ? "" : "protected transaction"}.`}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => onUseCandidate(chosen.id)}>Use this match</Button>
+              <Button size="sm" variant="ghost" onClick={() => onUseCandidate(null)}>None of these</Button>
+            </div>
+          </section>
+        ) : (
+          <ItemActions
+            item={item}
+            statementRow={statementRow}
+            transactions={transactions}
+            evidenceFor={evidenceFor}
+            onDisposition={onDisposition}
+            onUseCandidate={onUseCandidate}
+            onCorrectAmount={onCorrectAmount}
+          />
+        )}
+
+      </footer>}
     </aside>
   );
 }

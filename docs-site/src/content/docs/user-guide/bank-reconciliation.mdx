@@ -388,14 +388,29 @@ For each difference, you can:
 - keep an existing transaction that is not on the statement; or
 - leave the row undecided. Apply does not change undecided rows.
 
+Actual amounts with a staged correction appear in amber in the matching table.
+
 ### Resolve competing matches together
 
-When several bank rows share Actual candidates, open a row and select **Resolve group**. Bank rows
-run down the matrix and Actual transactions run across it. Each eligible cell states the amount
-and date difference. Selecting a cell opens its comparison in the right panel; select **Use this
-match** to confirm it. The panel states any amount correction that accepting the pair will stage.
+When several bank rows share Actual candidates, open a row and select the highlighted **Resolve group**
+button in its panel header. Bank rows
+run down the matrix and Actual transactions run across it. Each row and column header shows a
+bold amount above the date and merchant. Each eligible cell states the amount
+and date difference. Actual column headers include a single-line notes preview, and same-day
+candidates stay highlighted while you select other cells. Selecting a cell opens its comparison in
+the right panel; select **Use this match** to confirm it. The panel states any amount correction
+that accepting the pair will stage.
 
-A confirmed transaction disappears from the other candidate lists. The last remaining pair still
+Confirming a pair closes the panel. **Paired** shows both transactions using the reconciliation
+table layout, including their dates, amounts, payee, notes, and decision. Select a paired row to
+reopen its details. The group title is on the left, with navigation on the right. After the last
+confirmation, the completion message appears beside **Paired** and **Back to all rows** is
+highlighted. The paired table stays visible so you can
+review it or use **Undo last pairing** before returning.
+
+A confirmed transaction disappears from the other candidate lists. Columns that no remaining
+bank row can use are hidden; these Actual transactions remain available in the main reconciliation
+table. The last remaining pair still
 needs your confirmation. **Undo last pairing** restores the previous relationships, including any
 released Actual rows. An unrelated edit clears that undo. It is available during this visit only.
 
@@ -405,10 +420,12 @@ Selecting cells does not fetch data or write to Actual.
 
 ### Read the match details
 
-The right panel groups the match summary, date/amount comparison, bank and Actual details,
-actions, and resulting transaction. Differences show their size beside the Actual value. The
-header stays visible while you scroll. Payee and notes edits are grouped separately from decisions;
-category remains read-only. Candidate comparisons show **Use this match** before exposing the editor.
+The right panel shows the current result or confidence in its fixed header, with supporting evidence
+below. **Comparison**, **Bank**, and **Actual** share one header row, and differences show their size
+beside the Actual value. Decision buttons stay visible in a gray footer while details, candidate
+choices, and resulting fields scroll above it. Payee and notes edits are grouped separately from
+decisions; category remains read-only. Candidate comparisons show **Use this match** before exposing
+the editor.
 
 ### Use the bank's date
 
@@ -418,6 +435,13 @@ resulting transaction shows the staged date and **Undo date** removes that propo
 the date change before Apply. Existing protections still apply.
 
 ### When amounts disagree
+
+To correct several rows together, select them and choose **Use the statement amount**. Each eligible
+row is recorded as decided, with its correction staged for Review and Apply. **Undo that** restores
+the previous decisions and staged edits until another edit is made. Rows with several candidates
+need a chosen match first. Bulk decisions apply only to eligible selected rows currently visible
+in the table. Shared Actual candidates must be paired individually in **Resolve group**
+before bulk amount corrections or deletion.
 
 When a matched amount differs from the statement, accepting the pairing stages the statement amount
 on the existing transaction. Actual Bench will not change the amount of a reconciled transaction, a
@@ -450,7 +474,8 @@ are kept by default and do not count as undecided work.
 
 ### Transform transactions
 
-Use transformations to preview and stage a payee change or note changes across several rows. Set a
+Use transformations to preview and stage a payee change or note changes across several rows.
+Already-applied rows are excluded from the preview and changes. Set a
 payee, or use note actions to add, remove, move, or replace tags and text. Conditions can use a
 payee, category, or tag. Transformations do not write any change until Apply, and do not overwrite a
 hand-edited value unless you choose to do so.

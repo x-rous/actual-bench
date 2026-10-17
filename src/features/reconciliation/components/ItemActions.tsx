@@ -57,6 +57,91 @@ function GuardedButton({
   );
 }
 
+/** Candidate choices stay in the scrolling body while decision buttons stay visible. */
+export function ItemCandidates({
+  item, statementRow, transactions, onUseCandidate, evidenceFor,
+}: Pick<ItemActionsProps, "item" | "statementRow" | "transactions" | "onUseCandidate" | "evidenceFor">) {
+  if (transactions.length <= 1 || item.disposition !== "unresolved") return null;
+  const isDuplicate = item.reasonCode === REASON.likelyDuplicate;
+  /*
+   * Closest amount first.
+   *
+   * These rows are the same merchant on the same day, so the amount is the only
+   * thing that separates them — it is why each one states its distance from the
+   * statement. Leaving them in match order made the reader do the comparison the
+   * list had already done.
+   *
+   * Ordering only. Nothing is pre-selected and nothing is matched: the amounts
+   * disagree, which is precisely why the choice is the user's.
+   */
+  const ordered = statementRow
+    ? [...transactions].sort(
+        (a, b) =>
+          Math.abs(a.amount - statementRow.amount) - Math.abs(b.amount - statementRow.amount)
+      )
+    : transactions;
+
+  return <section aria-label="Possible matches" className="rounded-lg border border-border/60 bg-background p-3">
+    <div className="flex flex-col gap-1.5">
+      {isDuplicate ? (
+        <p className="text-[11px] text-muted-foreground">
+          This looks like the same transaction recorded more than once. Keep one; the rest
+          become their own rows, to keep or delete.
+        </p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">
+          Which one is this row? The rest stay available to the other rows. Nothing is lost.
+        </p>
+      )}
+      {ordered.map((transaction) => {
+        const evidence = evidenceFor?.(transaction.id) ?? [];
+        return <Button
+          key={transaction.id}
+          variant="outline"
+          size="sm"
+          className="h-auto w-full items-start justify-start whitespace-normal py-2 text-left"
+          onClick={() => onUseCandidate(transaction.id)}
+        >
+          <Check className="mr-1.5 mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {/* Shown in full rather than truncated: this is the moment the
+              user is choosing between transactions, so the text they are
+              choosing on must be readable. */}
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs">
+            <span className="flex justify-between gap-2">
+              <span className="tabular-nums text-muted-foreground">{transaction.date}</span>
+              <span className="tabular-nums">
+                {formatMinorUnits(transaction.amount)}
+                {/* How far this candidate is from the statement, stated
+                    rather than left to be worked out across a column of
+                    near-identical figures. It is the evidence that
+                    separates them: the rest of the row is the same
+                    merchant on the same day. */}
+                {statementRow && transaction.amount !== statementRow.amount && (
+                  <span className="ml-1 text-[11px] text-amber-600 dark:text-amber-400">
+                    {transaction.amount > statementRow.amount ? "+" : "−"}
+                    {formatMinorUnits(Math.abs(transaction.amount - statementRow.amount))}
+                  </span>
+                )}
+              </span>
+            </span>
+            <span className="break-words font-medium">
+              {transaction.payeeName ?? transaction.importedPayee ?? "No payee"}
+            </span>
+            {transaction.notes && (
+              <span className="break-words text-muted-foreground">{transaction.notes}</span>
+            )}
+            {evidence.length > 0 && <span className="text-[11px] text-muted-foreground">{evidence.join(" · ")}</span>}
+            {transaction.categoryName && (
+              <span className="text-muted-foreground">{transaction.categoryName}</span>
+            )}
+          </span>
+        </Button>;
+      })}
+
+    </div>
+  </section>;
+}
+
 export function ItemActions({
   item,
   statementRow,
@@ -64,7 +149,6 @@ export function ItemActions({
   onDisposition,
   onUseCandidate,
   onCorrectAmount,
-  evidenceFor,
 }: ItemActionsProps) {
   const hasStatementRow = item.statementRowIds.length > 0;
   const hasTransaction = item.actualTransactionIds.length > 0;
@@ -95,106 +179,18 @@ export function ItemActions({
    * bank is not a match.
    */
   const differenceIsStuck = amountsDisagree && !amountVerdict.allowed;
-  const hasPrimaryActions = (hasStatementRow && !hasTransaction) || (hasTransaction && !hasStatementRow) ||
+  const hasCandidateChoices = transactions.length > 1 && item.disposition === "unresolved";
+  const hasPrimaryActions = (hasCandidateChoices && hasStatementRow) || (hasStatementRow && !hasTransaction) || (hasTransaction && !hasStatementRow) ||
     (hasStatementRow && item.actualTransactionIds.length === 1 && transactions.length === 1 &&
       (item.disposition !== "matched" || amountsDisagree));
-  const isDuplicate = item.reasonCode === REASON.likelyDuplicate;
-
-  /*
-   * Closest amount first.
-   *
-   * These rows are the same merchant on the same day, so the amount is the only
-   * thing that separates them — it is why each one states its distance from the
-   * statement. Leaving them in match order made the reader do the comparison the
-   * list had already done.
-   *
-   * Ordering only. Nothing is pre-selected and nothing is matched: the amounts
-   * disagree, which is precisely why the choice is the user's.
-   */
-  const ordered = statementRow
-    ? [...transactions].sort(
-        (a, b) =>
-          Math.abs(a.amount - statementRow.amount) - Math.abs(b.amount - statementRow.amount)
-      )
-    : transactions;
 
   return (
-    <section aria-label="Actions" className="space-y-2.5 rounded-lg border border-border/60 bg-background p-3">
-      <h4 className="text-xs font-semibold">Actions</h4>
-
-      {/* Choosing between competing candidates comes first: everything else
-          depends on which transaction this row is actually about. */}
-      {transactions.length > 1 && item.disposition === "unresolved" && (
-        <div className="flex flex-col gap-1.5">
-          {isDuplicate ? (
-            <p className="text-[11px] text-muted-foreground">
-              This looks like the same transaction recorded more than once. Keep one; the rest
-              become their own rows, to keep or delete.
-            </p>
-          ) : (
-            <p className="text-[11px] text-muted-foreground">
-              Which one is this row? The rest stay available to the other rows. Nothing is lost.
-            </p>
-          )}
-          {ordered.map((transaction) => {
-            const evidence = evidenceFor?.(transaction.id) ?? [];
-            return <Button
-              key={transaction.id}
-              variant="outline"
-              size="sm"
-              className="h-auto w-full items-start justify-start whitespace-normal py-2 text-left"
-              onClick={() => onUseCandidate(transaction.id)}
-            >
-              <Check className="mr-1.5 mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {/* Shown in full rather than truncated: this is the moment the
-                  user is choosing between transactions, so the text they are
-                  choosing on must be readable. */}
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs">
-                <span className="flex justify-between gap-2">
-                  <span className="tabular-nums text-muted-foreground">{transaction.date}</span>
-                  <span className="tabular-nums">
-                    {formatMinorUnits(transaction.amount)}
-                    {/* How far this candidate is from the statement, stated
-                        rather than left to be worked out across a column of
-                        near-identical figures. It is the evidence that
-                        separates them: the rest of the row is the same
-                        merchant on the same day. */}
-                    {statementRow && transaction.amount !== statementRow.amount && (
-                      <span className="ml-1 text-[11px] text-amber-600 dark:text-amber-400">
-                        {transaction.amount > statementRow.amount ? "+" : "−"}
-                        {formatMinorUnits(Math.abs(transaction.amount - statementRow.amount))}
-                      </span>
-                    )}
-                  </span>
-                </span>
-                <span className="break-words font-medium">
-                  {transaction.payeeName ?? transaction.importedPayee ?? "No payee"}
-                </span>
-                {transaction.notes && (
-                  <span className="break-words text-muted-foreground">{transaction.notes}</span>
-                )}
-                {evidence.length > 0 && <span className="text-[11px] text-muted-foreground">{evidence.join(" · ")}</span>}
-                {transaction.categoryName && (
-                  <span className="text-muted-foreground">{transaction.categoryName}</span>
-                )}
-              </span>
-            </Button>;
-          })}
-
-          {hasStatementRow && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="justify-start text-xs"
-              onClick={() => onUseCandidate(null)}
-            >
-              None of these - this row is not in Actual
-            </Button>
-          )}
-        </div>
-      )}
+    <section aria-label="Actions" className="space-y-2">
 
       {hasPrimaryActions && <div className="flex flex-wrap gap-1.5">
+        {hasCandidateChoices && hasStatementRow && (
+          <Button size="sm" variant="outline" onClick={() => onUseCandidate(null)}>None of these</Button>
+        )}
         {/*
           Accepting the pairing, which had no control at all.
           
@@ -365,25 +361,6 @@ export function ItemActions({
         )}
       </div>
 
-      {/*
-        Rules run when a transaction is created, so a payee or category chosen
-        here can be changed by the budget's own rules on the way in. Said where
-        the choice is made rather than only at the end, when it is too late to
-        matter.
-      */}
-      {item.disposition === "create" && (
-        <p className="text-[11px] text-muted-foreground">
-          Actual&apos;s rules run on transactions as they are created, so the payee or category may
-          end up different from what you set here.
-        </p>
-      )}
-
-      {item.reasonCode === REASON.merchantCluster && (
-        <p className="text-[11px] text-muted-foreground">
-          Several rows and transactions here share this merchant and date. Pick this row&apos;s one
-          above; each choice makes the next easier.
-        </p>
-      )}
     </section>
   );
 }

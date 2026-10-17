@@ -27,6 +27,7 @@ import type { ApplyConfig } from "@/lib/reconciliation/session/plan";
 import type { StatementFormat } from "@/lib/reconciliation/statement/normalize";
 import type { TransformContext } from "@/lib/reconciliation/transform/rules";
 import type { StagedPatch } from "@/lib/reconciliation/types";
+import { useTableHeaderHeight } from "../hooks/useTableHeaderHeight";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
 import { CoverageSummary, DecisionProgressStrip, ShortcutsButton } from "./CoverageSummary";
@@ -644,6 +645,7 @@ export function Workbench({
   const [attributeFilters, setAttributeFilters] = useState<Set<AttributeFilter>>(new Set());
   const [search, setSearch] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const { headerHeight, headerRef } = useTableHeaderHeight();
   /** The scroll container the grid lives in, for revealing the selected row. */
   const gridRef = useRef<HTMLDivElement>(null);
   const savedGridPosition = useRef({ top: 0, left: 0 });
@@ -655,6 +657,7 @@ export function Workbench({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [group, setGroup] = useState<MatchingGroup | null>(null);
   const groups = useMemo(() => matchingGroups(items, transactions), [items, transactions]);
+  const groupTransactionIds = useMemo(() => new Set(groups.flatMap((group) => group.transactionIds)), [groups]);
   const groupFor = useMemo(() => new Map(groups.flatMap((entry) => entry.itemIds.map((id) => [id, entry] as const))), [groups]);
   const candidateIndex = useMemo(() => buildActualIndex([...transactions.values()]), [transactions]);
   const evidenceItems = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
@@ -941,10 +944,15 @@ export function Workbench({
 
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
-  const selectedItems = useMemo(
-    () => items.filter((item) => selectedIds.has(item.id) && !appliedItemIds?.has(item.id)),
-    [items, selectedIds, appliedItemIds]
+  const editableItems = useMemo(
+    () => items.filter((item) => !appliedItemIds?.has(item.id)),
+    [items, appliedItemIds]
   );
+  const selectedItems = useMemo(
+    () => visible.filter((item) => selectedIds.has(item.id) && !appliedItemIds?.has(item.id)),
+    [visible, selectedIds, appliedItemIds]
+  );
+  const selectedEditableIds = useMemo(() => new Set(selectedItems.map((item) => item.id)), [selectedItems]);
 
   const selected = useMemo(
     () => items.find((item) => item.id === selectedId) ?? null,
@@ -1340,7 +1348,7 @@ export function Workbench({
             variant="outline"
             size="sm"
             aria-expanded={transformOpen}
-            disabled={readOnly}
+            disabled={readOnly || editableItems.length === 0}
             title={readOnly ? rematchBlockedReason ?? undefined : undefined}
             onClick={() => setTransformOpen((open) => !open)}
           >
@@ -1567,8 +1575,8 @@ export function Workbench({
 
       {transformOpen && (
         <TransformDialog
-          items={items}
-          selectedIds={selectedIds}
+          items={editableItems}
+          selectedIds={selectedEditableIds}
           contextFor={transformContextFor}
           payees={payees}
           categories={categories}
@@ -1596,7 +1604,7 @@ export function Workbench({
               translucent one lets the rows scroll through underneath — both of
               which leave a sticky header with body text showing through it.
             */}
-            <thead className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
+            <thead ref={headerRef} className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th scope="col" className="w-8 bg-muted px-2 pt-2" />
                 <th scope="col" className="w-8 bg-muted px-2 pt-2" />
@@ -1748,6 +1756,7 @@ export function Workbench({
             permanently occupying space (UX §26). */}
         {selected && (
           <Inspector
+            headerHeight={headerHeight}
             item={selected}
             statementRow={
               selected.statementRowIds[0]
@@ -1783,6 +1792,7 @@ export function Workbench({
       {!readOnly && (
         <BulkDecisionBar
           selected={selectedItems}
+          groupTransactionIds={groupTransactionIds}
           statementRows={statementRows}
           transactions={transactions}
           onClear={clearSelection}

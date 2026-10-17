@@ -292,8 +292,9 @@ export type WorkbenchRowProps = {
    */
   contestedBy?: number;
   selected: boolean;
-  checked: boolean;
-  onToggleChecked: (checked: boolean) => void;
+  checked?: boolean;
+  /** Omit selection controls when displaying already-paired rows. */
+  onToggleChecked?: (checked: boolean) => void;
   onSelect: () => void;
 };
 
@@ -364,7 +365,7 @@ export function WorkbenchRow({
         selected ? "bg-accent" : "hover:bg-accent/40"
       )}
     >
-      <td className="px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+      {onToggleChecked && <td className="px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
         <Checkbox
           checked={checked}
           onCheckedChange={(checked) => onToggleChecked(checked)}
@@ -374,7 +375,7 @@ export function WorkbenchRow({
               : `Select ${primary?.payeeName ?? "transaction"}`
           }
         />
-      </td>
+      </td>}
       <td className="px-2 py-1.5 text-center">{doneState(item)}</td>
 
       {/* Bank statement */}
@@ -493,7 +494,10 @@ export function WorkbenchRow({
       >
         {(!several && primary?.notes) || EMPTY}
       </td>
-      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
+      <td className={cn("whitespace-nowrap px-2 py-1.5 text-right tabular-nums",
+        (item.disposition === "matched" || item.disposition === "correct-amount") &&
+          item.stagedChanges?.amount && item.stagedChanges.amount.staged !== primary?.amount &&
+          "text-amber-600 dark:text-amber-400")}>
         {primary && !several ? formatMinorUnits(primary.amount) : EMPTY}
       </td>
     </tr>

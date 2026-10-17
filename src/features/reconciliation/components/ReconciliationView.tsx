@@ -38,6 +38,7 @@ import { useStagedAccounts, useStagedCategories, useStagedPayees } from "@/hooks
 import { usePayees } from "@/features/payees/hooks/usePayees";
 import { useCategoryGroups } from "@/features/categories/hooks/useCategoryGroups";
 import {
+  canStageField,
   stageField,
   unstageField,
   type StageableField,
@@ -1213,6 +1214,8 @@ function ReconciliationSessionView() {
     }
 
     function updateItem(itemId: string, change: (item: ReconciliationItem) => ReconciliationItem) {
+      // A later row edit must not be overwritten by an older bulk snapshot.
+      setLastBulk(null);
       updateItems([{ id: itemId, change }]);
     }
 
@@ -1341,6 +1344,7 @@ function ReconciliationSessionView() {
 
     /** Stage what a transformation produced, one write per changed row. */
     function handleTransform(changes: { itemId: string; patch: StagedPatch | undefined }[]) {
+      if (changes.length > 0) setLastBulk(null);
       updateItems(changes.map((change) => ({ id: change.itemId,
         change: (entry) => ({ ...entry, stagedChanges: change.patch }) })));
     }
@@ -1354,9 +1358,8 @@ function ReconciliationSessionView() {
      * machinery the Budget page has; this is the cheap ninety percent, and the
      * bulk bar is the one place that makes fifty changes in a single press.
      *
-     * Captures the fields a bulk action can touch — everything else on the item
-     * is left as found, so restoring cannot clobber an unrelated edit made in
-     * between.
+     * Captures the fields a bulk action can touch. A later row edit or
+     * transformation clears this snapshot so undo cannot discard newer work.
      */
     function rememberBulk(itemIds: string[], label: string) {
       const before = itemIds
@@ -1395,30 +1398,27 @@ function ReconciliationSessionView() {
         entries.map((entry) => entry.itemId),
         `${entries.length} ${entries.length === 1 ? "amount" : "amounts"}`
       );
-      updateItems(entries.map((entry) => ({ id: entry.itemId, change: (item) => correctAmountFromStatement({
-        item, statementRow: statementRowsById.get(item.statementRowIds[0] ?? ""),
-        transaction: transactionsById.get(entry.transactionId),
-      }) })));
+      updateItems(entries.map((entry) => ({ id: entry.itemId,
+        change: (item) => withCorrectedAmount(item, entry.transactionId, entry.amount) })));
+    }
+
+    /** Explicit corrections stage integer minor units with the same guards in both surfaces. */
+    function withCorrectedAmount(item: ReconciliationItem, transactionId: string, amount: number): ReconciliationItem {
+      const snapshot = transactionsById.get(transactionId);
+      if (!snapshot || item.actualTransactionIds.length !== 1 || item.actualTransactionIds[0] !== transactionId ||
+          !canStageField(item, "amount").allowed) return item;
+      const { patch } = stageField({
+        patch: item.stagedChanges,
+        field: "amount",
+        original: snapshot.amount,
+        next: amount,
+        source: "manual",
+      });
+      return { ...item, disposition: "correct-amount", stagedChanges: patch };
     }
 
     function handleCorrectAmount(itemId: string, transactionId: string, amount: number) {
-      updateItem(itemId, (item) => {
-        const snapshot = transactionsById.get(transactionId);
-        if (!snapshot) return item;
-        const { patch } = stageField({
-          patch: item.stagedChanges,
-          field: "amount",
-          original: snapshot.amount,
-          next: amount,
-          source: "manual",
-        });
-        return {
-          ...item,
-          actualTransactionIds: [transactionId],
-          disposition: "correct-amount",
-          stagedChanges: patch,
-        };
-      });
+      updateItem(itemId, (item) => withCorrectedAmount(item, transactionId, amount));
     }
 
     function handleStage(itemId: string, field: StageableField, value: string | null) {
