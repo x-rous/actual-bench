@@ -2,7 +2,7 @@ import type { ActivitySnapshot } from "./activity";
 import { activityKind } from "./activity";
 import type { Card, Statement, Workspace } from "./models";
 import { effectiveActivityDate, latestStatement, settlements } from "./repayments";
-import { paymentTarget } from "./paymentTargets";
+import { paymentTargetRemaining } from "./paymentTargets";
 import { sumMinor, statementReview } from "./statements";
 
 /** All bridge amounts are signed integer minor units: debt additions positive, credits negative. */
@@ -50,7 +50,7 @@ export function statementPaymentTotals(cards: Card[], workspace: Workspace, sour
     const source = sources[index];
     const payment = statement && source ? settlements(card, workspace, source, todays[index]).find((entry) => entry.statementId === statement.id) : undefined;
     if (!payment || payment.fullRemainingMinor === null) return null;
-    const remaining = Math.max(0, paymentTarget(statement!) - payment.confirmedPaidMinor - (payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor ?? 0));
+    const remaining = paymentTargetRemaining(statement!, payment.confirmedPaidMinor);
     const minimum = Math.max(0, statement!.minimumDueMinor - payment.confirmedPaidMinor);
     return { remaining, minimum, pending: payment.provisionalMinor, overdue: statement!.dueDate < todays[index] && minimum > 0 ? minimum : 0 };
   });

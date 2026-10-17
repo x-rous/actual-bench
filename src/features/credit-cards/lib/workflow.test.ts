@@ -41,6 +41,9 @@ it("counts split children once and refuses missing structural amounts", () => {
   const result = normalizeActivity([base, { ...base, id: "a", amount: -40, isParent: false, isChild: true, parentId: "parent", splitLines: [] }]);
   expect(result.rows.map((entry) => entry.amountMinor)).toEqual([-40, -60]);
   expect(result.rows[1].cleared).toBeNull();
+  expect(result.rows[0].label).toBe("Shop");
+  expect(normalizeActivity([{ ...base, payeeName: null }]).rows.map((entry) => entry.label)).toEqual(["-", "-"]);
+  expect(normalizeActivity([{ ...base, isParent: false, splitLines: [], payeeName: "  " }]).rows[0].label).toBe("-");
   expect(normalizeActivity([{ ...base, splitLines: [] }]).issues).toHaveLength(1);
 });
 
@@ -98,7 +101,7 @@ it("partial and late transfers settle debt without rewriting missed due-date sta
   const ledger = repaymentLedger(card, store.getState().workspaces.budget, source);
   expect(ledger.origins[0].remainingMinor).toBe(0);
   expect(ledger.confirmedMinor).toBe(9000);
-  expect(settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0]).toMatchObject({ statementId: first.id, fullRemainingMinor: 0, minimumRemainingMinor: 0, minimumByDue: false, fullByDue: false, paidMinor: 9000, status: "Settled late · includes credits" });
+  expect(settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0]).toMatchObject({ statementId: first.id, fullRemainingMinor: 0, minimumRemainingMinor: 0, minimumByDue: false, fullByDue: false, paidMinor: 9000, confirmedPaidMinor: 9000, confirmedCreditMinor: 1000, targetRemainingMinor: 1000, confirmedPaidDate: null, status: "Minimum paid late · balance carried" });
 });
 
 it("pending transfers stay pending, peer absence does not hide incoming repayments, and outgoing transfers are separate", () => {
@@ -189,7 +192,7 @@ it("refunds clearing the full balance do not silently waive an official minimum"
   const { store, card } = setup();
   const source = snapshot([row("refund", "2026-10-10", 10000)]);
   const status = settlements(card, store.getState().workspaces.budget, source, "2026-12-01")[0];
-  expect(status).toMatchObject({ fullRemainingMinor: 0, minimumRemainingMinor: 2000, minimumByDue: false, paidMinor: 0, status: "Balance covered by credits · minimum unpaid" });
+  expect(status).toMatchObject({ fullRemainingMinor: 0, minimumRemainingMinor: 2000, minimumByDue: false, paidMinor: 0, confirmedPaidMinor: 0, confirmedCreditMinor: 10000, targetRemainingMinor: 10000, status: "Minimum overdue" });
 });
 
 it("correcting earlier bank facts reopens later statements without changing source data", () => {

@@ -1,5 +1,5 @@
 import { transferPlanScenario } from "./planTracking.fixture";
-import { activityKind, readCardActivity, type ActivityRow } from "./activity";
+import { activityCategoryLabel, activityKind, readCardActivity, type ActivityRow } from "./activity";
 import { cardBalance, asOfCardBalance } from "./financialAdapter";
 import { observedChargeTotals } from "./history";
 import { createCreditCardStore } from "./memory";
@@ -137,4 +137,14 @@ it("aligns Direct’s local cutoff to a different requested card day without adj
     const behind = await readCardActivity(yesterdayTransport, "card-a", "2026-01-01", "2026-10-15");
     expect(asOfCardBalance(cardBalance(-1100), behind.futureDeltaMinor, true, behind.directBalanceAdjustmentMinor).debtMinor).toBe(100000);
   } finally { jest.useRealTimers(); }
+});
+
+it("labels reciprocal on-budget transfers without inventing an expense category", () => {
+  const { sources } = scenario();
+  const source = sources[0];
+  const row = source.rows.find((entry) => entry.id === "cash-a-10")!;
+  const accounts = [{ id: "card-a", name: "Card", offBudget: false }, { id: "funding", name: "Checking", offBudget: false }];
+  expect(activityCategoryLabel(row, { ...source, accounts })).toBe("Transfer");
+  expect(activityCategoryLabel(row, { ...source, accounts: accounts.map((account) => ({ ...account, offBudget: account.id === "funding" })) })).toBe("Uncategorized");
+  expect(activityCategoryLabel({ ...row, categoryName: "Real category" }, { ...source, accounts })).toBe("Real category");
 });

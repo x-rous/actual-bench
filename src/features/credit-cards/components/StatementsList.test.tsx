@@ -20,22 +20,23 @@ it.each([{ covered: true, paid: true }, { covered: false, paid: true }, { covere
   expect(within(table).getByText("01 Sep – 30 Sep")).toBeVisible();
   expect(within(table).getByText("30 Sep 2026")).toBeVisible();
   const cells = within(table).getAllByRole("row")[1].querySelectorAll("td");
-  expect(cells).toHaveLength(11);
+  expect(cells).toHaveLength(12);
+  expect(cells[6]).toHaveTextContent(covered ? "5.00" : "-");
   expect(cells[2]).toHaveTextContent(covered ? "810.00" : "-");
   expect(cells[3]).toHaveTextContent(covered ? "0.00" : "-");
   expect(cells[3]).toHaveTextContent(covered ? "100.00" : "-");
-  expect(within(table).getByRole("columnheader", { name: "Balance" })).toBeVisible();
-  expect(within(cells[8]).queryByText(/^Minimum due:/)).not.toBeInTheDocument();
+  expect(within(table).getByRole("columnheader", { name: "Statement balance" })).toBeVisible();
+  expect(within(cells[9]).queryByText(/^Minimum due:/)).not.toBeInTheDocument();
   if (!covered) return;
   expect(within(table).getByText("65.00")).toHaveClass("text-right");
   expect(within(table).getByText("65.00").closest("td")).toHaveClass("text-destructive");
   expect(within(table).queryByText("Interest 25.00 · Fees 40.00")).not.toBeInTheDocument();
   expect(within(table).getByRole("columnheader", { name: "Carried at due" })).toBeVisible();
-  expect(cells[7]).toHaveTextContent(paid ? "570.00" : "770.00");
+  expect(cells[8]).toHaveTextContent(paid ? "570.00" : "770.00");
   if (paid) expect(within(table).getByText("01 Oct 2026 · on time")).toBeVisible();
   else {
     expect(cells[5]).toHaveTextContent("100.00");
-    expect(within(cells[8]).getByText("Minimum overdue")).toBeVisible();
+    expect(within(cells[9]).getByText("Minimum overdue")).toBeVisible();
   }
   expect(within(table).queryByText(/days past full-payment/)).not.toBeInTheDocument();
 });
@@ -64,7 +65,7 @@ it.each(["full", "late", "carry"] as const)("makes the RD098 %s scenario scannab
   expect(review).not.toHaveBeenCalled();
   if (kind === "full") {
     expect(within(latest).queryByText("Review")).not.toBeInTheDocument();
-    expect(within(latest).getByText("Paid in full")).toHaveClass("text-muted-foreground");
+    expect(within(latest).getByText("Paid in full")).toHaveAttribute("data-variant", "status-active");
   } else if (kind === "late") {
     expect(within(latest).getByText("14 days overdue · unpaid")).toBeVisible();
     expect(within(latest).getByText("Minimum overdue")).toBeVisible();

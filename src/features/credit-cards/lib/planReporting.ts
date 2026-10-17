@@ -16,6 +16,7 @@ export function statementChargeBreakdown(card: Card, statement: Statement, works
   const isPlanCharge = (row: ActivityRow) => !isCost(row) && (["instalment-billed", "combined-instalment", "principal-release"].includes(currentPlanLink(workspace, row)?.role ?? "") || activityKind(row, card, workspace, snapshot) === "plan-instalment");
   const sum = (predicate: (row: ActivityRow) => boolean) => sumMinor(rows.filter(predicate).map((row) => -row.amountMinor));
   return {
+    cyclePaymentsMinor: -sum((row) => row.amountMinor > 0 && activityKind(row, card, workspace, snapshot) === "payment"),
     newChargesMinor: sum((row) => row.amountMinor < 0 && !isPlanCharge(row) && !isCost(row)),
     planChargesMinor: sum((row) => row.amountMinor < 0 && isPlanCharge(row)),
     planFeesMinor: sum((row) => ["plan-fee", "plan-interest"].includes(currentPlanLink(workspace, row)?.role ?? "")),

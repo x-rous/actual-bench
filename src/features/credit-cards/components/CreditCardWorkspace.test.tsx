@@ -96,11 +96,12 @@ it("registers a labelled card without touching Actual or browser storage", () =>
   expect(creditCardStore.getState().workspaces.budget.cards).toHaveLength(1);
 });
 
-it("records an opening statement without claiming verification or paid status", () => {
+it("records an opening statement without claiming verification or paid status", async () => {
   const card = register();
   render(<TestWorkspace />);
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
-  fireEvent.click(screen.getByRole("button", { name: "Add latest statement" }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Statements/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Add statement" }));
   const dialog = screen.getByRole("dialog", { name: "Add latest statement" });
   for (const [label, value] of [["Period start", "2026-09-05"], ["Closing date", "2026-10-04"], ["Payment due date", "2026-10-29"]]) {
     const input = within(dialog).getByLabelText(label);
@@ -116,7 +117,8 @@ it("records an opening statement without claiming verification or paid status", 
   fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
   expect(creditCardStore.getState().workspaces.budget.statements[0]).toMatchObject({ cardId: card.id, officialBalanceMinor: 285000, minimumDueMinor: 15000, verification: "recorded", coverage: "unknown" });
   expect(screen.getByText("Opening balance missing")).toBeInTheDocument();
-  expect(screen.getByText("Confirmed paid")).toBeVisible();
+  fireEvent.click(screen.getByText("Payment breakdown"));
+  await waitFor(() => expect(within(screen.getByRole("dialog", { name: "Payment breakdown" })).getByText("Repaid")).toBeVisible());
 });
 
 it("preserves editor drafts through refresh, hides bank facts across budgets and restores committed records on navigation", () => {
@@ -174,10 +176,21 @@ it("keeps card metrics on Overview and shows complete payment notes and funding 
   mockActivity.data.counterparts = [{ ...payment, id: "funding", accountId: "checking", amountMinor: -10000, notes: "Funding account memo", transferId: "payment" }];
   render(<TestWorkspace />);
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
-  expect(screen.getAllByText("Total debt")[0]).toBeVisible();
+  expect(screen.getAllByText("Total owed")[0]).toBeVisible();
+  const balanceChart = screen.getByRole("figure", { name: "Balance over time" });
+  expect(balanceChart.parentElement).toBe(screen.getByRole("tabpanel", { name: "Overview" }).lastElementChild);
+  fireEvent.click(screen.getByRole("tab", { name: "Debt & history" }));
+  expect(screen.queryByRole("figure", { name: "Balance over time" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
   expect(screen.queryByRole("combobox", { name: "Activity history window" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("tab", { name: "Payments" }));
-  expect(screen.queryByText("Total debt")).not.toBeInTheDocument();
+  const header = screen.getByRole("banner", { name: "Credit card workspace" });
+  const headerButtons = within(header).getAllByRole("button");
+  expect(headerButtons.at(-1)).toHaveTextContent("How to use");
+  fireEvent.click(within(header).getByRole("button", { name: "Add plan" }));
+  const planEditor = screen.getByRole("dialog", { name: "Add repayment plan" });
+  fireEvent.click(within(planEditor).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "View all payments" }));
+  expect(screen.queryByText("Total owed")).not.toBeInTheDocument();
   expect(screen.getByText("Monthly card repayment")).toBeVisible();
   expect(screen.getAllByRole("table")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Allocate payment" })).not.toBeInTheDocument();
@@ -202,11 +215,11 @@ it("sorts recorded statements together with automatic drafts and shows the closi
   fireEvent.click(screen.getByRole("tab", { name: "Statements" }));
   const table = screen.getByRole("table", { name: "Statements for Actual Visa" });
   expect(within(table).getByRole("columnheader", { name: "Statement date" })).toBeInTheDocument();
-  const dates = within(table).getAllByRole("row").slice(1).filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 11).map((row) => within(row).getAllByRole("cell")[0].querySelector("p")!.textContent!);
+  const dates = within(table).getAllByRole("row").slice(1).filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 12).map((row) => within(row).getAllByRole("cell")[0].querySelector("p")!.textContent!);
   expect(dates).toEqual([...dates].sort((a, b) => Date.parse(b) - Date.parse(a)));
   expect(dates.indexOf("04 Aug 2026")).toBeGreaterThan(0);
   fireEvent.change(screen.getByLabelText("Search Statements for Actual Visa"), { target: { value: "04 Aug 2026" } });
-  expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 11)).toHaveLength(1);
+  expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 12)).toHaveLength(1);
 });
 
 it("shows statement total paid, full payment date and lateness independently of spending review", () => {
@@ -223,7 +236,7 @@ it("shows statement total paid, full payment date and lateness independently of 
   expect(statement).toHaveTextContent("01 Oct 2026");
   expect(statement).toHaveTextContent("2 days late");
   fireEvent.change(screen.getByLabelText("Search Statements for Actual Visa"), { target: { value: "2026-10-01" } });
-  expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 11)).toHaveLength(1);
+  expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 12)).toHaveLength(1);
   fireEvent.click(screen.getByRole("tab", { name: "Payments" }));
   const payments = screen.getByRole("table", { name: "Card repayments" });
   expect(within(payments).getAllByRole("row")[1]).toHaveTextContent("04 Sep 2026");
@@ -281,7 +294,7 @@ it("shows pending and unmatched payments clearly and navigates to statement outc
   fireEvent.click(paidOption, { detail: 1 });
   expect(within(statements).getAllByRole("row")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
-  expect(within(statements).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 11)).toHaveLength(1);
+  expect(within(statements).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 12)).toHaveLength(1);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
@@ -378,7 +391,7 @@ it("consolidates missing statement values into actionable explanations and compa
   fireEvent.click(screen.getByRole("tab", { name: "Statements" }));
   const table = screen.getByRole("table", { name: "Statements for Actual Visa" });
   expect(within(table).queryByText("Unavailable")).not.toBeInTheDocument();
-  for (const label of ["Balance", "Minimum", "Payment against due date", "Outcome", "Bank match"]) expect(within(table).getByRole("columnheader", { name: label })).toBeInTheDocument();
+  for (const label of ["Statement balance", "Minimum", "Payment against due date", "Outcome", "Bank match"]) expect(within(table).getByRole("columnheader", { name: label })).toBeInTheDocument();
   expect(within(table).queryByRole("button", { name: /Expand statement/ })).not.toBeInTheDocument();
   expect(within(table).queryByText("Balance movement")).not.toBeInTheDocument();
   expect(within(table).queryByRole("button", { name: "Confirm Statement" })).not.toBeInTheDocument();
@@ -453,13 +466,13 @@ it("shows monthly debt periods, omits an empty interest panel and expires action
     render(<TestWorkspace />);
     expect(screen.getByRole("button", { name: "Read full saved statement health" })).toHaveTextContent("2 statements need review");
     expect(screen.getByText("Statement verified")).toBeVisible();
-    expect(screen.queryByText("Observed interest charges")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Debt history summary")).not.toBeInTheDocument();
     expect(screen.queryByText("Interest charged by month")).not.toBeInTheDocument();
     act(() => jest.advanceTimersByTime(6000));
     expect(screen.queryByText("Statement verified")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Read full saved statement health" })).toHaveTextContent("2 statements need review");
     expect(screen.queryByRole("button", { name: "View trend values" })).not.toBeInTheDocument();
-    expect(screen.getByText("Total debt over time").closest("figure")).not.toBeNull();
+    expect(screen.getByText("Total owed over time").closest("figure")).not.toBeNull();
   } finally { jest.useRealTimers(); }
 });
 
@@ -472,7 +485,7 @@ it("shows identified interest even when there is only one reporting month", () =
   render(<TestWorkspace />);
   expect(screen.getByText("Interest charged by month")).toBeVisible();
   expect(screen.getByText("Interest charged by month").closest("figure")).not.toBeNull();
-  expect(screen.queryByText("Observed interest charges")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Debt history summary")).not.toBeInTheDocument();
 });
 
 it("groups overview facts without duplicate repayment actions or an empty attention panel", () => {
@@ -481,13 +494,14 @@ it("groups overview facts without duplicate repayment actions or an empty attent
   render(<TestWorkspace />);
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
   const statement = screen.getByRole("region", { name: "Statement and payment" });
-  expect(within(statement).queryByText("Billed balance")).not.toBeInTheDocument();
-  expect(within(statement).getByText("Minimum remaining").nextElementSibling).toHaveTextContent("150.00");
-  expect(within(statement).getByText("Remaining to pay")).toBeVisible();
-  expect(within(statement).getByText("Minimum remaining")).toBeVisible();
+  expect(within(statement).queryByText("Statement balance")).not.toBeInTheDocument();
+  expect(within(statement).getByText("Minimum to pay").nextElementSibling).toHaveTextContent("150.00");
+  expect(within(statement).getByText("To pay")).toBeVisible();
+  expect(within(statement).getByText("Minimum to pay")).toBeVisible();
   expect(within(statement).getByText(/25 Oct 2026/)).toBeVisible();
-  expect(screen.getAllByRole("button", { name: "Review repayments" })).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Review repayments" })).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Needs attention" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Statements verified")).not.toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Card terms" })).toHaveTextContent("Auto-pay");
   expect(screen.getByRole("region", { name: "Current balance and activity" })).not.toHaveTextContent("Unexplained difference");
   expect(screen.queryByText("Net transactions")).not.toBeInTheDocument();
@@ -502,8 +516,8 @@ it("keeps a distinct transaction total when it does not explain the balance chan
   creditCardStore.getState().recordOpeningStatement("budget", card.id, 1, { periodStart: "2026-09-01", closingDate: "2026-09-30", dueDate: "2026-10-25", officialBalanceMinor: 285000, minimumDueMinor: 15000 });
   render(<TestWorkspace />);
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
-  const balance = screen.getByRole("region", { name: "Current balance and activity" });
-  expect(within(balance).getByText("Total debt").nextElementSibling).toHaveTextContent("3,150.00");
+  const balance = screen.getByRole("region", { name: "Total owed" });
+  expect(within(balance).getByText("Total owed").nextElementSibling).toHaveTextContent("3,150.00");
   expect(within(balance).queryByText("Balance details")).not.toBeInTheDocument();
   expect(within(balance).queryByText("Unexplained difference")).not.toBeInTheDocument();
 });
@@ -537,13 +551,13 @@ it("filters current verification state and opens the review-count list without i
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
   fireEvent.click(screen.getByRole("button", { name: "1 statement needs review" }));
   const table = screen.getByRole("table", { name: "Statements for Actual Visa" });
-  expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 11)).toHaveLength(1);
+  expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 12)).toHaveLength(1);
   expect(within(table).getByText("Source changed")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "More statement status filters" }));
   const verified = screen.getByRole("menuitem", { name: "Verified" });
   fireEvent.pointerDown(verified, { pointerType: "mouse", button: 0 });
   fireEvent.click(verified, { detail: 1 });
-  expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 11)).toHaveLength(1);
+  expect(within(table).getAllByRole("row").filter((row) => Array.from(row.children).filter((child) => child.tagName === "TD").length === 12)).toHaveLength(1);
   expect(within(table).getByText("Verified")).toBeVisible();
   expect(within(table).queryByText("Source changed")).not.toBeInTheDocument();
   expect(within(table).getByRole("button", { name: /Open statement/ })).toBeVisible();
@@ -560,13 +574,14 @@ it("shows cashback as balance activity and classification while keeping it out o
   ];
   render(<TestWorkspace />);
   fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
-  expect(screen.getByRole("region", { name: "Current balance and activity" })).toHaveTextContent("Payments / credits");
+  const activitySummary = screen.getByRole("region", { name: "Current balance and activity" });
+  expect(within(activitySummary).getByText("Payments").nextElementSibling).toHaveTextContent("10.00");
+  expect(within(activitySummary).getByText("Other credits").nextElementSibling).toHaveTextContent("5.00");
   fireEvent.click(screen.getByRole("tab", { name: "Payments" }));
   const payments = screen.getByRole("table", { name: "Card repayments" });
   expect(within(payments).getByText("Funding account")).toBeVisible();
   expect(within(payments).queryByText("Card reward credit")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("tab", { name: "Debt & history" }));
-  fireEvent.click(screen.getByRole("button", { name: "Review classifications" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
   const activity = screen.getByRole("table", { name: "Actual card activity classification" });
   const reward = within(activity).getByText("Card reward credit").closest("tr")!;
   expect(within(reward).getByText("Cashback / reward")).toBeVisible();
@@ -611,13 +626,13 @@ it.each(["loading", "failed", "incomplete"])("withholds current debt consistentl
   try {
     expect(screen.getByText(/0 of 1 balances available/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
-    const debt = () => within(screen.getByRole("region", { name: "Current balance and activity" })).getByText("Total debt").closest("div")!;
-    expect(debt()).toHaveTextContent("Total debt-");
+    const debt = () => within(screen.getByRole("region", { name: "Total owed" })).getByText("Total owed").closest("div")!;
+    expect(debt()).toHaveTextContent("Total owed-");
     mockActivity.isFetching = false;
     mockActivity.isError = false;
     source.issues = [];
     view.rerender(<TestWorkspace />);
-    expect(debt()).toHaveTextContent("Total debt100.00");
+    expect(debt()).toHaveTextContent("Total owed100.00");
     fireEvent.click(screen.getByRole("button", { name: "All cards" }));
     expect(screen.queryByText(/1 of 1 balances available/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "About Portfolio data coverage" })).toBeVisible();
@@ -644,10 +659,20 @@ it.each([0, 2500])("keeps cutoff charges and uncleared activity separate from a 
   const activity = screen.getByRole("region", { name: "Current balance and activity" });
   expect(within(activity).getAllByText("Charges")[0].nextElementSibling?.textContent).toBe("150.00");
   expect(within(activity).queryByText("Unexplained difference")).not.toBeInTheDocument();
-  expect(within(activity).getByText("14 uncleared transactions are included in activity; figures are provisional.")).toBeVisible();
+  expect(within(activity).getByText("14 uncleared transactions included.")).toBeVisible();
   expect(within(activity).queryByText("0.00 is unexplained.")).not.toBeInTheDocument();
   expect(within(activity).queryByText("25.00 is unexplained.")).not.toBeInTheDocument();
   expect(creditCardStore.getState().workspaces.budget.statements[0].verification).toBe("verified");
   fireEvent.click(within(activity).getByRole("button", { name: "View contributing transactions" }));
   expect(within(screen.getByRole("table", { name: "Transactions outside the latest statement" })).getAllByRole("row")).toHaveLength(15);
+});
+
+it("guides a new card to its earliest unconfirmed statement and opens that exact draft", () => {
+  creditCardStore.getState().register({ budgetSyncId: "budget", accountId: "account", nickname: "Actual Visa", issuer: "", last4: "", creditLimitMinor: null, purchaseAprBps: null, bankTimeZone: "UTC", status: "active", closingDay: 31, firstTrackedStatementDate: "2026-06-30" });
+  render(<TestWorkspace />);
+  fireEvent.click(screen.getByRole("button", { name: "Actual Visa" }));
+  expect(screen.getByText("Start by confirming your opening statement: 30 Jun 2026.")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm statement" }));
+  expect(screen.getByRole("dialog", { name: "Add latest statement" })).toBeVisible();
+  expect(screen.getByLabelText("Closing date")).toHaveValue("30 Jun 2026");
 });

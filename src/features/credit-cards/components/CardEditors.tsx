@@ -70,7 +70,7 @@ function Field({ label, children, htmlFor }: { label: string; children: React.Re
   const help = FIELD_HELP[label];
   return <div className="flex min-w-0 flex-col gap-1"><div className="flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground"><Label className="text-xs leading-4" htmlFor={htmlFor}>{label}{label === "Statement closing day" && <span aria-hidden="true"> *</span>}</Label>{help && <Popover><PopoverTrigger type="button" aria-label={`About ${label}`} className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><Info className="size-3.5" aria-hidden="true" /></PopoverTrigger><PopoverContent align="start" aria-label={`Help for ${label}`} className="max-w-[min(22rem,90vw)] p-3 text-xs leading-relaxed">{help}</PopoverContent></Popover>}</div>{children}</div>;
 }
-const dialogClass = "flex flex-col overflow-hidden rounded-2xl h-auto max-h-[90dvh] p-5 sm:h-auto sm:max-h-[90dvh] sm:max-w-2xl";
+const dialogClass = "flex flex-col overflow-hidden rounded-lg h-auto max-h-[90dvh] p-5 sm:h-auto sm:max-h-[90dvh] sm:max-w-2xl";
 
 export function CardEditor({ budgetSyncId, card, accounts, categories = [], categoriesLoading = false, categoriesError = false, onRetryCategories, canRegister, onClose, onSaved, onDeleted }: {
   budgetSyncId: string; card?: Card; accounts: Account[]; categories?: { id: string; name: string }[]; categoriesLoading?: boolean; categoriesError?: boolean; onRetryCategories?: () => void; canRegister: boolean; onClose: () => void; onSaved: (id: string) => void; onDeleted?: () => void;
@@ -219,19 +219,19 @@ export function StatementEditor({ budgetSyncId, card, statement, suggested, canR
     <DialogContent className={dialogClass}>
       <DialogHeader><DialogTitle>{statement ? "Correct bank facts" : "Add latest statement"}</DialogTitle><DialogDescription>{card.nickname} · Enter values from your official bank statement.</DialogDescription></DialogHeader>
       <form onSubmit={save} className="mt-4 flex min-h-0 flex-1 flex-col"><div className="min-h-0 space-y-4 overflow-auto">
-        <fieldset className="rounded-xl border p-4"><legend className="px-1 text-sm font-semibold">Statement dates</legend><div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <fieldset className="rounded-lg border p-4"><legend className="px-1 text-sm font-semibold">Statement dates</legend><div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Period start" htmlFor={`${prefix}-start`}><DateInput dateFormat={CARD_DATE_FORMAT} size="default" id={`${prefix}-start`} value={periodStart} onValueChange={setPeriodStart} /></Field>
           <Field label="Closing date" htmlFor={`${prefix}-close`}><DateInput dateFormat={CARD_DATE_FORMAT} size="default" id={`${prefix}-close`} value={closingDate} onValueChange={setClosingDate} /></Field>
           <Field label="Payment due date" htmlFor={`${prefix}-due`}><DateInput dateFormat={CARD_DATE_FORMAT} size="default" id={`${prefix}-due`} value={dueDate} onValueChange={setDueDate} /></Field>
         </div></fieldset>
-        <fieldset className="rounded-xl border p-4"><legend className="px-1 text-sm font-semibold">Bank figures</legend><div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <fieldset className="rounded-lg border p-4"><legend className="px-1 text-sm font-semibold">Bank figures</legend><div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Statement balance" htmlFor={`${prefix}-balance`}><Input size="default" id={`${prefix}-balance`} value={balance} onBlur={() => formatInput(balance, setBalance)} onChange={(event) => setBalance(event.target.value)} inputMode="decimal" required /></Field>
           <Field label="Total Payment Due (optional)" htmlFor={`${prefix}-total-due`}><Input id={`${prefix}-total-due`} value={totalPaymentDue} placeholder="Defaults to statement balance" onBlur={() => formatInput(totalPaymentDue, setTotalPaymentDue)} onChange={(event) => setTotalPaymentDue(event.target.value)} inputMode="decimal" /></Field>
           <Field label="Minimum due" htmlFor={`${prefix}-minimum`}><Input size="default" id={`${prefix}-minimum`} value={minimum} onBlur={() => formatInput(minimum, setMinimum)} onChange={(event) => setMinimum(event.target.value)} inputMode="decimal" required /></Field>
           {isFirstStatement && <Field label="Balance brought forward (optional)" htmlFor={`${prefix}-opening-balance`}><Input size="default" id={`${prefix}-opening-balance`} value={openingBalance} onChange={(event) => setOpeningBalance(event.target.value)} inputMode="decimal" /></Field>}
         </div></fieldset>
         {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
-        </div><p className="mt-4 rounded-xl border bg-muted/20 p-3 text-xs text-muted-foreground">Saving updates bank values and opens transaction review. Later statements may need review again.</p><div className="mt-3 flex shrink-0 justify-end gap-2 border-t pt-3"><Button variant="outline" type="button" onClick={requestClose}>Cancel</Button><Button type="submit" disabled={!statement && !canRecord}>{onSaved ? "Save and review" : "Save statement"}</Button></div>
+        </div><div className="mt-3 flex shrink-0 justify-end gap-2 border-t pt-3"><Button variant="outline" type="button" onClick={requestClose}>Cancel</Button><Button type="submit" disabled={!statement && !canRecord}>{onSaved ? "Save and review" : "Save statement"}</Button></div>
       </form>
     </DialogContent>
   </Dialog>{discardDialog}</>;

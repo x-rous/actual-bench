@@ -53,7 +53,7 @@ it("reconciles all five cycles while excluding conversion offsets from settlemen
   for (const statement of statements) expect(statementReview(statement, workspace, snapshot).varianceMinor).toBe(0);
   const payments = settlements(card, workspace, snapshot, "2026-10-15");
   expect(payments[2]).toMatchObject({ confirmedPaidDate: "2026-09-02", confirmedCreditMinor: 0, fullByDue: true });
-  expect(payments[3]).toMatchObject({ confirmedPaidDate: "2026-10-02", confirmedPaidMinor: 46833, confirmedCreditMinor: 10000 });
+  expect(payments[3]).toMatchObject({ confirmedPaidDate: null, confirmedPaidMinor: 46833, confirmedCreditMinor: 10000, targetRemainingMinor: 10000 });
   expect(paymentEffects(card, workspace, snapshot, payments, "2026-10-15").get("pay-august")?.label).toBe("Completes statement");
   expect(statementOutcome(statements[4], payments[4], "2026-10-15", true)).toMatchObject({ label: "Part payment pending", timing: "538.33 due · part pending" });
   expect(repaymentLedger(card, workspace, snapshot, "2026-10-15").origins.find((entry) => entry.id === "original-b")?.remainingMinor).toBe(0);

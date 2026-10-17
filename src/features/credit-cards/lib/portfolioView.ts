@@ -1,3 +1,4 @@
+import { paymentTarget, paymentTargetRemaining } from "./paymentTargets";
 import { addDays, addMonths, daysBetween } from "@/lib/financial-models/calendar/dates";
 import { formatAmount } from "@/features/assets-debt/lib/money";
 import { formatCardDate } from "./displayDates";
@@ -58,7 +59,8 @@ export function paymentTotalsDetail(totals: ReturnType<typeof statementPaymentTo
 export function portfolioPaymentTiming(statement: Statement | undefined, payment: Settlement | undefined, today: string) {
   if (!statement || !payment || payment.fullRemainingMinor === null) return null;
   const delay = daysBetween(statement.dueDate, today);
-  if (payment.fullRemainingMinor > 0) return delay > 0 ? `Full balance remaining · ${delay} ${delay === 1 ? "day" : "days"} past due date` : delay === 0 ? "Due today" : delay >= -7 ? "Due soon" : "Upcoming";
-  if (payment.confirmedPaidDate) { const late = daysBetween(statement.dueDate, payment.confirmedPaidDate); const outcome = (payment.confirmedCreditMinor ?? payment.confirmedCashbackMinor) ? "Settled" : "Paid"; return late > 0 ? `${outcome} ${late} ${late === 1 ? "day" : "days"} late` : `${outcome} on time`; }
+  if (paymentTargetRemaining(statement, payment.confirmedPaidMinor) > 0) return delay > 0 ? `Full balance remaining · ${delay} ${delay === 1 ? "day" : "days"} past due date` : delay === 0 ? "Due today" : delay >= -7 ? "Due soon" : "Upcoming";
+  const paidDate = paymentTarget(statement) === Math.max(0, statement.officialBalanceMinor) ? payment.confirmedPaidDate : payment.confirmedTargetPaidDate;
+  if (paidDate) { const late = daysBetween(statement.dueDate, paidDate); const outcome = "Paid"; return late > 0 ? `${outcome} ${late} ${late === 1 ? "day" : "days"} late` : `${outcome} on time`; }
   return null;
 }

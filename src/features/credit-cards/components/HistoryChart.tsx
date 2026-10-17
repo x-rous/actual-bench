@@ -17,8 +17,8 @@ export function HistoryChart({ title, points, percent = false, tone = "debt", ze
     const gap = historical && previous && point.date.slice(0, 7) > addMonths(previous.date, 1).slice(0, 7);
     return gap ? [{ date: addMonths(previous.date, 1), value: null }, point] : [point];
   });
-  if (points.filter((point) => point.value !== null).length < (allowSingle ? 1 : 2)) return <div className="flex min-w-0 flex-col rounded-xl border border-border bg-background p-4"><h3 className="text-sm font-semibold">{title}</h3><p className="mt-3 text-xs text-muted-foreground">{allowSingle ? "No known values in the tracked history yet." : "At least two statement periods with known values are needed for a trend."}</p></div>;
-  return <figure className="flex min-w-0 flex-col rounded-xl border border-border bg-background p-4">
+  if (points.filter((point) => point.value !== null).length < (allowSingle ? 1 : 2)) return <div className="flex min-w-0 flex-col rounded-lg border border-border bg-background p-4"><h3 className="text-sm font-semibold">{title}</h3><p className="mt-3 text-xs text-muted-foreground">{allowSingle ? "No known values in the tracked history yet." : "At least two statement periods with known values are needed for a trend."}</p></div>;
+  return <figure className="flex min-w-0 flex-col rounded-lg border border-border bg-background p-4">
     <figcaption className="mb-3 text-sm font-semibold">{title}</figcaption>
     {kind === "bar" ? <MonthlyBars title={title} points={chartPoints} monthly={monthly} tone={tone} zeroReference={showReference} percent={percent} /> : <HistoryTrend title={title} points={chartPoints} percent={percent} tone={tone} zeroReference={showReference} fullDates={!monthly} discrete={historical} solid />}
 

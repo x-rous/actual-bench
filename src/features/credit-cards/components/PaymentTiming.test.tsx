@@ -31,9 +31,9 @@ it("keeps the empty payments summary neutral and statement obligations in Statem
   render(<PaymentsList card={card} payments={[]} available today="2026-10-01" onStatements={onStatements} onDetails={jest.fn()} />);
   expect(screen.queryByText(/Statement payment/)).not.toBeInTheDocument();
   expect(screen.getByRole("table", { name: "Card repayments" }).querySelectorAll("tbody tr")).toHaveLength(0);
-  expect(screen.getByText("Cleared paid").nextElementSibling).toHaveTextContent("0.00");
-  expect(screen.getByText("Pending").nextElementSibling).toHaveTextContent("0.00 · 0 payments");
-  expect(screen.getByText("Payments").nextElementSibling).toHaveTextContent("0");
+  expect(screen.getByText("Repaid").nextElementSibling).toHaveTextContent("0.00");
+  expect(screen.getByText("Paid in full").nextElementSibling).toHaveTextContent("0");
+  expect(screen.getByText("Paid late").nextElementSibling).toHaveTextContent("0");
   fireEvent.click(screen.getByRole("button", { name: "View statements" }));
   expect(onStatements).toHaveBeenCalledWith();
 });

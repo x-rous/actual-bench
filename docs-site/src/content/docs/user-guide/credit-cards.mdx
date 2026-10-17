@@ -22,10 +22,12 @@ The optional credit limit and purchase APR support utilization and illustrations
 | Amount | Meaning |
 |---|---|
 | Statement balance | The bank’s closing figure, used to match the bill and show statement history. |
-| Total Payment Due | The original target for this month. It defaults to the statement balance until you enter another amount. |
-| Total debt | What remains owed on the card plus its assigned off-budget plan principal, counted once. |
+| To pay | What is left of this month’s payment target, after confirmed payments. |
+| Total owed | What remains owed on the card plus its assigned off-budget plan principal, counted once. |
 
-**Remaining to pay** subtracts confirmed eligible payments and applicable credits from Total Payment Due, floored at zero. **Minimum remaining** subtracts confirmed payments only. Refunds, cashback and cost credits can reduce the monthly remainder under Bench’s simple convention, but they do not satisfy a positive minimum. Update entered bank values if the bank treats a credit differently.
+**Total Payment Due** is the bank’s monthly payment target. It defaults to the statement balance unless you enter another amount. **To pay** subtracts confirmed payments from that target, floored at zero. **Repaid**, the progress bar and **Minimum to pay** use confirmed payments only. Pending payments stay separate.
+
+Refunds, cashback and other credits reduce **Total owed** without automatically changing an issued payment target. For example, a 2,000 bill followed by 80 of purchases and a 20 refund leaves **To pay 2,000** and **Total owed 2,060**. If the bank explicitly reduces its target to 1,980, edit **Total Payment Due** to 1,980; Bench uses that new target without subtracting the refund again.
 
 For a 30,000 plan with a 5,000 monthly target, paying 5,000 can produce **Paid this month** while 25,000 debt remains. **Paid in full** means the statement amount was covered; it does not mean all current and future debt vanished. A smaller target is not a promise that the bank will waive interest.
 
@@ -45,7 +47,7 @@ Non-transfer teller/payment-looking credits remain Refund / credit in this phase
 
 ## Check statements
 
-Automatic drafts use Actual transactions and your billing rules. Confirm the printed closing balance, minimum and dates. **Total Payment Due (optional)** accepts a different monthly target; blank visibly defaults to the statement balance. Estimates remain labelled until confirmed.
+Automatic drafts use Actual transactions and your billing rules. New-card guidance starts at the earliest unconfirmed statement in the tracked period, and its button opens that exact draft. Confirm the printed closing balance, minimum and dates. **Total Payment Due (optional)** accepts a different monthly target; blank visibly defaults to the statement balance. Estimates remain labelled until confirmed.
 
 Saving bank values opens statement review. Compare the bank closing figure with the previous/brought-forward balance plus included signed Actual movements. Select **Include**, **Exclude** or **Undecided** per transaction; bulk actions are available. Tags such as `#2026-10` suggest a statement, while saved decisions override them. Transfers use their own source dates. A saved bank-posting date is an explicit review correction.
 
@@ -61,10 +63,21 @@ The compact Statements table retains fixed money columns, a full payment-timing 
 - **Plan charges:** principal or combined instalments; hidden when there are none.
 - **Interest & fees:** separate costs, including plan costs, net of their refunds.
 - **Credits:** other non-payment credits, including identifiable conversion adjustments; excludes cost refunds already netted above.
+- **Payments in cycle:** payments included in this statement period, usually for the previous bill. These differ from the later payments shown against this bill’s due date; conversions and refunds are excluded.
+
+The table fills the available width with 12px text throughout, including headers and amounts. Columns share consistent padding and default minimum widths, with spare space distributed across the table. Status badges stay on one line. Headings and values stay on one line; horizontal scrolling preserves full content when needed.
+
+Above the table, the deadline timeline covers four recent calendar months (including the current month) and two ahead. Each statement bar runs from closing to its payment deadline, showing the amount remaining or settled and its payment status. Green identifies paid/covered bills, amber late/carried balances, and red overdue payments. Bar length represents dates, rather than payment amounts. Real payment dots sit below; hollow dots await clearance and same-day payments share a counted marker. Select a statement for payment and charge details, or a payment to open its source. Dashed bars identify future estimates based on known plan expectations where available.
+
+Rows belonging to another statement have a gray background and a lock. Transfers between on-budget accounts show **Transfer** when no expense category applies. Statement and transaction menus share a compact layout. **Paid in full** uses a green badge; **No payment required** uses gray. **Paid this month** remains distinct from clearing the entire statement debt.
 
 Source notes stay on one line with ellipsis, hover text and keyboard-accessible full-text popovers. Payee, Category and Classification retain the wider review columns.
 
 Click a row or its date to review. Each saved row’s three-dot menu offers **Edit bank values**, **Reset transaction review** and **Delete saved statement**. Reset preserves bank facts and classifications. Deletion releases statement ownership and reopens dependent reviews. Both ask for confirmation and support Undo; neither changes Actual. Deleting the opening statement leaves a missing anchor until restored or reconfigured.
+
+## Review activity
+
+The **Activity** tab contains all loaded card transactions in a compact 12px table with Statement, Payee, Category, Classification, Plan, Amount, Cleared and Notes columns. The Plan summary identifies the agreement and the transaction’s role, such as Original or Instalment 3/6. It describes that entry, not how much debt remains. Missing payees display a dash. Ordinary charges use regular text; repayments and refunds use green, while interest and fee charges use red. The classification pencil appears on row hover or keyboard focus. Clearing uses the same checked-circle, pending and unknown icons as statement review, with accessible labels. The **Statement** column shows each transaction’s included statement, respecting saved cutoff corrections; **Not assigned** means no included match yet. Statement labels are searchable and open to show the billed balance. Search includes categories and plan summaries; classification filters and bulk corrections remain available. Use the statement filter to select a closing date and billed balance, then see only transactions included in that statement. It respects the same review decisions, ownership and cutoff corrections as statement review. Payments appear in the statement cycle in which they were posted, independently of which bill they settle. Entries still awaiting a statement decision are disclosed below the filters. Changing statements clears the selection; **All activity** restores the full loaded list. When selecting rows, the action bar stays visible above the separately scrolling table, with classification, category-mapping and Clear selection actions. Column headings stay visible while scrolling too, using the shared sortable headers. Activity defaults to transaction date, newest first; select any data heading to change the sort, with amounts sorted numerically and statement dates chronologically. It is separate from **Debt & history**, which focuses on balances, costs and repayment history. Help links open Activity directly.
 
 ## Read payments
 
@@ -72,11 +85,15 @@ Payments lists supported incoming external Actual transfers, including pending a
 
 Plan conversions and principal moves are not customer payments. They cannot satisfy a minimum. A known incoming transfer can be corrected to a non-payment financial type when its purpose differs. Ordinary outgoing transfers do not cancel earlier payments.
 
-**Payment effect** describes what confirmed activity through that date did: partial payment, minimum coverage, monthly-target completion, full-statement completion or excess. Same-day entries are assessed together. Pending amounts do not establish settlement. A transfer beyond the statement obligation is not necessarily unused card credit.
+The Payments header shows three stacked figures: **Repaid** is the confirmed repayment amount since tracking began; **Paid in full** counts confirmed statements with complete payment evidence that have been fully covered by confirmed payments, including the minimum; **Paid late** is the subset completed after the due date. Split repayments never inflate the statement counts. Pending activity remains visible in the table and as outlined timing dots.
+
+**Paid from** has more room, while **Notes** stays narrow, muted and ellipsized with full text available on selection. Payment dates are plain text; use the details icon at the end of each row to inspect the transfer. The 11px dot/size/pending legend appears above the timing chart.
+
+**Payment effect** describes what confirmed activity through that date did: partial payment, minimum coverage, monthly-target completion, full-statement completion or excess. A payment matching the original bill or monthly target is recognised as completing it even when earlier partial payments lowered the remaining target. Paying the smaller monthly target does not declare the full bank balance settled. Details retain any amount above the remaining target; a genuinely larger or additional payment can still be labelled Excess payment. Same-day entries are assessed together. Pending amounts do not establish settlement. A transfer beyond the statement obligation is not necessarily unused card credit.
 
 ## Track repayment plans
 
-Choose **Add plan** on Overview or from an eligible original transaction. The editor supports:
+Choose **Add plan** on Overview or from an eligible original transaction. The wider editor uses compact labelled fields and outlined sections; original transactions are optional and can be expanded when needed. It supports:
 
 - **Start a new plan:** one or multiple original purchases, or a balance/cash/transfer reference. The converted amount cannot exceed the selected original charges.
 - **Track an existing plan:** enter a dated remaining-principal opening; earlier original transactions are optional. In balance-only mode the original amount may be left blank when unknown; the dated remaining principal supplies the starting context.
@@ -94,7 +111,7 @@ When a converted charge is reversed on the card, choose its off-budget **Repayme
 2. Billing transfers principal back from the card to the plan account. Debt moves onto the card; combined debt is unchanged.
 3. An actual external payment into the card reduces combined debt.
 
-30,000 converted leaves 30,000 total debt. Billing 5,000 leaves 5,000 on the card plus 25,000 in the plan account. Paying 5,000 leaves 25,000 total. An unpaid later instalment remains on the card.
+30,000 converted leaves 30,000 total owed. Billing 5,000 leaves 5,000 on the card plus 25,000 in the plan account. Paying 5,000 leaves 25,000 total. An unpaid later instalment remains on the card.
 
 Only principal moves through this account. Interest, fees and tax remain separate expenses or actual split children. Link split principal as **Principal billed**, interest as **Plan interest / profit**, and fees as **Plan fee**. An unsplit cost-inclusive debit stays **Combined instalment**; Bench does not guess its principal/interest split. Split parents count once through their children. A financing-cost transfer incorrectly reducing the principal account needs correction.
 
@@ -108,7 +125,7 @@ Use **Transactions** in the plan editor or **Link to plan** in statement review.
 
 Select compatible suggestions and choose **Apply selected links**, or link a row manually, then **Save plan**. Each source component has one plan owner. Several principal/cost components can belong to one instalment; its billed progress counts that period once. Classification corrections apply across Bench; plan links stay staged until Save plan.
 
-The list separates **Remaining in plan account**, **Billed this month**, **Progress**, **Next expected** and **Status**. Billed does not mean Paid. A retained-card plan does not need a fresh monthly debit; missing expected postings ask for a check rather than fabricating a missed payment, default or fee.
+The list separates **Plan account**, **Billed this month**, **Progress**, **Next expected** and **Status**. Billed does not mean Paid. A retained-card plan does not need a fresh monthly debit; missing expected postings ask for a check rather than fabricating a missed payment, default or fee.
 
 For a mid-plan start, the opening is the remaining principal at the **end** of the entered date. Only later assigned movements adjust it. Earlier payments are not invented; earlier unreliable history stays a gap. The billed card balance stays separate.
 
@@ -116,24 +133,46 @@ For a mid-plan start, the opening is the remaining principal at the **end** of t
 
 For a linked refund, **Does the bank keep, change or close the plan?** defaults to keeping the schedule. Record revised remaining dates/totals or closure when known. The existing credit is counted once; a refund or status change does not erase plan-account principal without an actual adjustment.
 
-For early release, link the lump-sum principal movement onto the card and the separate external payment. Release alone preserves total debt. Mark completion explicitly when appropriate. A card credit can offset part of total liability while principal still remains in the plan account; that does not prove the named plan closed.
+For early release, link the lump-sum principal movement onto the card and the separate external payment. Release alone preserves total owed. Mark completion explicitly when appropriate. A card credit can offset part of total liability while principal still remains in the plan account; that does not prove the named plan closed.
 
 No or partial payments preserve debt. Dates passing never reduce it. Completed/Cancelled metadata cannot erase Actual balances; resolve still-held plan principal before removing its setup. Source changes require refreshed links. Explicit Save, revision checks, discard guards and Undo protect edits.
 
 ## Dashboards and history
 
-All cards separates **Total debt**, **Remaining to pay**, **Minimum remaining** and recorded **Interest charged**. Sort by next due, largest debt or name. Overview separates the statement payment panel from current debt/activity. Plan cards show signed **On card + In plan account**, including any in-transit adjustment once. Ordinary cards omit plan equations, zero subtotals and empty plan panels; Add plan remains available.
+Section panels across Credit Cards use a consistent smaller corner radius.
 
-**Total debt over time** reconstructs recorded balances plus assigned plan principal. Billing alone stays flat; real payments reduce it. **Statement balances** is a separate view of closing figures. Missing openings/history stay gaps. Interest and fee histories come from signed cleared postings, not forecasts; gross charges/refunds remain available in details. Exact chart values are in accessible tooltips without a View trend values button.
+All cards separates **Total owed**, **To pay**, **Minimum to pay** and recorded **Interest charged**. **Due in the next 7 days** and **Available credit** complete a single row of six compact summaries. Due soon uses the latest confirmed monthly target per card, less confirmed payments, from today through seven days ahead; overdue targets appear separately. Available credit includes only cards with known limits and balances. Sort by next due, largest debt or name. Each card row uses at most two lines per cell; credit usage includes the full **Limit** and **Available** amounts. Additional long details open on demand.
 
-**Estimated available** is derived from the entered limit and recorded credit usage. Pending repayments do not release credit. This is not a live issuer authorization figure.
+A card’s Overview starts with four compact, equal-height summaries: **To pay**, **Total owed**, **Credit used** and **Since last statement**. The payment outcome sits beside To pay; **Repaid** is visible above the progress bar, with credits kept in Payment breakdown and pending payments shown separately. **Payment breakdown** opens a popover with statement balance, monthly target, minimum, payments and credits, so opening it does not stretch the summary row. An overdue minimum is emphasized in red; when the minimum is met, the carried-balance outcome remains without a red overdue heading or countdown. Available credit appears beside the utilization percentage, with the full limit below. **View activity** opens the contributing transaction list directly below these four summaries, above card terms and plans. The date range appears on the right of Since last statement, and **View activity** sits to the right of the large net amount. Charges and classified payments are separate; **Other credits** appears when refunds, cashback, conversion credits or other positive entries are present. Uncleared entry counts and their gross charges/credits appear only when needed. Coverage notices show whether the loaded activity ends before today, starts too late, or contains incomplete transaction details; uncleared transactions alone are not a read failure. Statement review, repayment review and bank-value editing remain in the Statements and Payments tabs. Plan cards show signed **On card + In plan account**, including any in-transit adjustment once.
 
-Debt & history keeps due-date carry distinct from current debt. The optional minimum-only illustration uses the shared engine and required minimum settings, with assumptions in help. It is hidden for zero/credit balances and unavailable for active plans whose separate terms it cannot represent. It does not promise grace-period savings, model payment allocation or create recorded costs.
+**Recent statements**, **Recent payments** and **Card terms** use compact rows and sit alongside each other in equal-height panels on wide screens. They use the same four-column grid and gaps as the summaries: Recent statements spans **To pay** and **Total owed**, Recent payments aligns with **Credit used**, and Card terms aligns with **Since last statement**. The panels stack in narrower desktop windows. The recent panels show the five newest statements and payments. The wider Payment column places the outcome badge to the right of its timing indicator on the same row. Statement dates and View all open the relevant tab; payment details open from the eye button. Pending payments retain their clearing marker. Repayment plans appear below this row when present. **Add plan** is available in the card header, including for cards without plans. There is no empty plan panel or settlement-streak banner. Use **Edit settings** in Card terms to change its settings.
+
+**Balance over time** sits at the bottom of **Overview**, after repayment plans and any attention notices. It shows a daily stepped area of total owed, including assigned plan principal once. It covers up to four preceding calendar months and the current month, bounded by the available history. Instalment transfers move principal between accounts; external payments reduce total owed. Statement-close markers show total owed on that date and the percentage of the card limit. Hover or use the keyboard to inspect exact daily amounts; select a statement marker to locate that statement. **Statement balances** remains a separate view of bank closing figures.
+
+Due-date diamonds and payment dots sit beneath the balance. Pending payments have outlined dots; future due dates inferred from the card’s settings use dashed diamonds. The Today divider ends the recorded balance: two future months show key dates without projecting debt. Select a recorded due date to locate its statement, or an individual payment dot to open payment details.
+
+Blue **interest-free windows** follow confirmed statements paid in full by their deadline, without identified interest or borrowing in that cycle. Yellow hatching marks statement periods containing cleared interest charges. These indicators do not calculate the bank’s exact daily interest; other periods remain unshaded. Remaining 0% plan principal alone never implies interest. Interest-bearing plan terms prevent that shading. The calculation and limitations are explained in the chart’s info tooltip.
+
+The side summary shows the average of known end-of-day balances, the highest balance and its date, and cleared interest and fees net of refunds over the displayed history. Missing openings or history stay gaps and are excluded from the average. Pending entries are included provisionally and identified below the chart. Interest and fee histories use recorded signed postings; gross charges and refunds remain available in details. Exact values are in accessible tooltips without a View trend values button.
+
+**Available** is derived from the entered limit and recorded credit usage. Pending repayments do not release credit, including when an overpayment temporarily makes the account balance positive. This is not a live issuer authorization figure.
+
+Debt & history keeps due-date carry distinct from total owed. When historical interest is zero, the cumulative-interest chart, its reveal button and the interest footer are omitted; the summary figure remains. The optional minimum-only illustration uses the shared engine and required minimum settings, with assumptions in help. It is hidden for zero/credit balances and unavailable for active plans whose separate terms it cannot represent. It does not promise grace-period savings, model payment allocation or create recorded costs.
+
+The Payments tab places a compact **When you pay** box to the left of the timing chart. **Repaid**, **Paid in full** and **Paid late** appear as three stacked label/value rows. Refunds and credits are excluded from Repaid.
 
 ## Help, refresh and the current preview phase
 
-The top-right **How to use** dialog has Get started, Classifications, Statements & payments, Plans, and Linking & tags tabs, with relevant workspace actions. Help/popovers support keyboard navigation and padded, scrollable text.
+The far-right **How to use** dialog follows the ActualQL reference layout, with left-hand navigation and a scrollable content panel. It has Get started, Classifications, Statements & payments, Plans, and Linking & tags tabs, with relevant workspace actions. Help/popovers support keyboard navigation and padded, scrollable text.
 
 **Refresh** synchronizes and rereads Actual through the active transport. Bank facts and unsaved editors/review drafts remain; changed source evidence requires review. Known balances remain visible when their cutoff is reliable even if detail loading fails; affected details offer retry rather than a guessed zero.
 
 All credit-card setup, classifications, statement decisions, plans and links are intentionally **tab-session memory only**. Refresh within Bench retains them; closing or reloading the browser loses them. App-database persistence is a separately deferred phase. Global Save still applies the app’s other staged Actual edits; credit-card metadata uses its own explicit Save actions. Direct/API future-date differences are normalized once before reporting.
+
+## Understand shared plan-account messages
+
+Only principal assigned to this card’s registered plans is added to its card balance. **Other balance in shared plan account**, shown once in the All cards Total owed KPI, reports the amount outside the registered plan balances; it can belong to other cards or plans. This is separate from statement verification. **Plan balance unavailable** means the required data could not be read. **Check plan balances** identifies an opening or link problem.
+
+**Review plan entries** lists only unlinked plan-account transfers connected to the current card. Entries for other cards are not offered. Choose the current card’s plan and review the link in Transactions.
+
+**How to use** provides short visual steps, worked monthly-payment and plan-debt examples, and buttons to open the relevant workspace screen. Card setup and review metadata remain session-only during this preview.

@@ -115,6 +115,8 @@ export function hasTrackingCostTransfer(plan: RepaymentPlan, card: Card, workspa
 export function trackedCardDebt(card: Card, workspace: Workspace, snapshot: ActivitySnapshot, signedCardMinor: number, date: string) {
   const plans = workspace.plans?.filter((plan) => plan.cardId === card.id && plan.tracking) ?? [];
   const links = workspace.planLinks ?? noLinks, problems: string[] = [];
+  // Account-level remainder is separate from this card’s plan validity; integer minor units.
+  const sharedAccounts: { accountId: string; differenceMinor: number; unlinkedCurrentCount: number }[] = [];
   let trackingSignedMinor = 0, confirmedTrackingSignedMinor = 0, transitSignedMinor = 0, confirmedTransitSignedMinor = 0, invalid = false;
   const all = trackingRowIndex(snapshot), pairs = new Set<string>();
   for (const plan of plans) {
@@ -151,16 +153,20 @@ export function trackedCardDebt(card: Card, workspace: Workspace, snapshot: Acti
     const allocations = allPlans.map((plan) => trackingBalance(plan, snapshot, date, links));
     if (!account || account.signedBalanceMinor === undefined || allocations.some((entry) => !entry)) { problems.push("Plan account total unavailable"); continue; }
     const actual = sum([account.signedBalanceMinor, ...account.rows.filter((row) => row.date > date).map((row) => -row.amountMinor)]);
-    if (actual !== sum(allocations.map((entry) => entry!.signedMinor))) problems.push("Shared plan account has unassigned entries; totals cover assigned plans only");
+    const differenceMinor = sum(allocations.map((entry) => entry!.signedMinor)) - actual;
+    if (differenceMinor !== 0) sharedAccounts.push({ accountId, differenceMinor, unlinkedCurrentCount: unassignedPlanEntries(workspace, snapshot, card).filter((row) => row.accountId === accountId && row.date <= date).length });
   }
   const pendingCard = sum(snapshot.rows.filter((row) => row.date <= date && row.cleared !== true).map((row) => row.amountMinor));
   const pendingCredits = sum(snapshot.rows.filter((row) => row.date <= date && row.cleared !== true && row.amountMinor > 0 && !isTrackingTransfer(row, snapshot, workspace)).map((row) => row.amountMinor));
   const signedMinor = sum([signedCardMinor, trackingSignedMinor, transitSignedMinor]);
   const confirmedSignedMinor = sum([signedCardMinor, -pendingCard, confirmedTrackingSignedMinor, confirmedTransitSignedMinor]);
-  return { tracked: plans.length > 0, known: plans.every((plan) => trackingBalance(plan, snapshot, date, links) !== null) && !invalid, trackingMinor: -trackingSignedMinor, transitMinor: -transitSignedMinor, signedMinor, debtMinor: Math.max(0, -signedMinor), confirmedDebtMinor: Math.max(0, -confirmedSignedMinor), creditUsedMinor: Math.max(0, -signedMinor + pendingCredits), problems: [...new Set(problems)] };
+  // Signed integer minor units eligible for credit capacity; pending credits cannot release it.
+  const capacitySignedMinor = sum([signedMinor, -pendingCredits]);
+  return { capacitySignedMinor, tracked: plans.length > 0, known: plans.every((plan) => trackingBalance(plan, snapshot, date, links) !== null) && !invalid, trackingMinor: -trackingSignedMinor, transitMinor: -transitSignedMinor, signedMinor, debtMinor: Math.max(0, -signedMinor), confirmedDebtMinor: Math.max(0, -confirmedSignedMinor), creditUsedMinor: Math.max(0, -capacitySignedMinor), problems: [...new Set(problems)], sharedAccounts };
 }
-export function unassignedPlanEntries(workspace: Workspace, snapshot: ActivitySnapshot) {
-  return (snapshot.trackingAccounts ?? []).flatMap((account) => account.rows.filter((row) => !(workspace.plans ?? []).filter((plan) => plan.tracking?.accountId === account.accountId).some((plan) => planOwnsTrackingRow(plan, row, snapshot, workspace.planLinks))).map((row) => ({ ...row, accountLabel: snapshot.accounts?.find((entry) => entry.id === row.accountId)?.name ?? "Plan account" })));
+export function unassignedPlanEntries(workspace: Workspace, snapshot: ActivitySnapshot, card?: Card) {
+  const index = trackingRowIndex(snapshot);
+  return (snapshot.trackingAccounts ?? []).flatMap((account) => account.rows.filter((row) => (!card || index.get(row.transferId ?? "")?.accountId === card.accountId && workspace.plans?.some((plan) => plan.cardId === card.id && plan.tracking?.accountId === account.accountId && (!plan.tracking.opening || row.date > plan.tracking.opening.date))) && !(workspace.plans ?? []).filter((plan) => plan.tracking?.accountId === account.accountId).some((plan) => planOwnsTrackingRow(plan, row, snapshot, workspace.planLinks))).map((row) => ({ ...row, accountLabel: snapshot.accounts?.find((entry) => entry.id === row.accountId)?.name ?? "Plan account" })));
 }
 
 /** Recorded history; billing alone never repays debt. */

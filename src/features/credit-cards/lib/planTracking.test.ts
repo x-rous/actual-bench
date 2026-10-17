@@ -1,4 +1,4 @@
-import { hasPlanTag, trackedCardDebt, trackedDebtPoints, trackingBalance, trackingTransferMatches } from "./planTracking";
+import { hasPlanTag, unassignedPlanEntries, trackedCardDebt, trackedDebtPoints, trackingBalance, trackingTransferMatches } from "./planTracking";
 import { transferPlanScenario } from "./planTracking.fixture";
 import { normalizeActivity, activityKind, paymentEvidence } from "./activity";
 import { repaymentLedger, settlements } from "./repayments";
@@ -79,7 +79,7 @@ it("fails closed on conflicting tags, missing reads and changed transfer evidenc
   const wrongCard = { ...source, trackingAccounts: source.trackingAccounts!.map((account) => ({ ...account, counterparts: account.counterparts?.map((entry) => entry.id === "conversion-a" ? { ...entry, accountId: "card-b" } : entry) })) };
   expect(trackedCardDebt(cards[0], workspace, wrongCard, -450000, "2026-10-16").known).toBe(false);
   const unassigned = { ...source, trackingAccounts: source.trackingAccounts!.map((account) => ({ ...account, signedBalanceMinor: -1500000 })) };
-  expect(trackedCardDebt(cards[0], workspace, unassigned, -450000, "2026-10-16").problems.join(" ")).toContain("unassigned");
+  expect(trackedCardDebt(cards[0], workspace, unassigned, -450000, "2026-10-16")).toMatchObject({ known: true, problems: [], sharedAccounts: [{ differenceMinor: 100000 }] });
 });
 
 
@@ -138,4 +138,28 @@ it("keeps each plan’s transfer validation scoped to its own tag when one card 
   const snapshot = { ...sources[0], rows: sources.flatMap((source) => source.rows.map(combine)), trackingAccounts: sources[0].trackingAccounts!.map((account) => ({ ...account, counterparts: account.counterparts!.map(combine) })) };
   const candidate = { ...workspace, cards: [card], plans: plans.map((plan) => ({ ...plan, cardId: card.id })) };
   for (const plan of candidate.plans) expect(planHealth(plan, candidate, snapshot, "2026-10-16")).toMatchObject({ status: "Active", reasons: [] });
+});
+
+it("separates other cards’ shared principal from this card’s review queue and debt", () => {
+  const { cards, plans, sources, workspace } = transferPlanScenario();
+  const onlyA = { ...workspace, plans: [plans[0]], planLinks: workspace.planLinks?.filter((link) => link.planId === plans[0].id) };
+  const debt = trackedCardDebt(cards[0], onlyA, sources[0], -450000, "2026-10-16");
+  expect(debt).toMatchObject({ known: true, trackingMinor: 1000000, debtMinor: 1450000, problems: [], sharedAccounts: [{ differenceMinor: 400000, unlinkedCurrentCount: 0 }] });
+  expect(unassignedPlanEntries(onlyA, sources[0], cards[0])).toEqual([]);
+  const unlinked = { ...onlyA, plans: [{ ...plans[0], tracking: { ...plans[0].tracking!, tag: "" } }], planLinks: [] };
+  const rows = unassignedPlanEntries(unlinked, sources[0], cards[0]);
+  expect(rows).toHaveLength(5);
+  expect(rows.every((row) => row.transferId?.includes("-a"))).toBe(true);
+  const midway = { ...unlinked, plans: [{ ...unlinked.plans[0], tracking: { ...unlinked.plans[0].tracking, opening: { date: "2026-10-08", principalMinor: 1000000 } } }] };
+  expect(unassignedPlanEntries(midway, sources[0], cards[0])).toEqual([]);
+});
+
+it("does not release ordinary-card credit for a pending repayment, even when it creates a temporary surplus", () => {
+  const { cards, sources, workspace } = transferPlanScenario();
+  const snapshot = { ...sources[0], rows: sources[0].rows.filter((row) => row.id === "pending").map((row) => ({ ...row, amountMinor: 20000 })) };
+  const result = trackedCardDebt(cards[0], { ...workspace, plans: [], planLinks: [] }, snapshot, 10000, "2026-10-16");
+  expect(result.tracked).toBe(false);
+  expect(result.debtMinor).toBe(0);
+  expect(result.capacitySignedMinor).toBe(-10000);
+  expect(result.creditUsedMinor).toBe(10000);
 });

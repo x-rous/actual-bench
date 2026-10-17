@@ -26,11 +26,11 @@ it("uses earlier confirmed payments while ignoring pending transfers", () => {
   expect(effects.get("r3")).toMatchObject({ label: "Completes statement" });
 });
 
-it("counts credits toward the full balance but never the minimum", () => {
+it("does not count credits toward the issued payment target or minimum", () => {
   const { effects } = scenario([{ date: "2026-09-01", amount: 10000, credit: true }, { date: "2026-09-02", amount: 500 }, { date: "2026-09-03", amount: 500 }]);
   expect(effects.has("r0")).toBe(false);
   expect(effects.get("r1")).toMatchObject({ label: "Partial payment", minimum: "Minimum still short 5.00" });
-  expect(effects.get("r2")).toMatchObject({ label: "Completes statement", minimum: "Minimum covered" });
+  expect(effects.get("r2")).toMatchObject({ label: "Partial payment", minimum: "Minimum covered", remainingMinor: 9000 });
 });
 
 it("does not claim a within-day sequence for multiple payments or credits", () => {
@@ -38,7 +38,7 @@ it("does not claim a within-day sequence for multiple payments or credits", () =
   expect([...grouped.effects.values()].map((effect) => effect.label)).toEqual(["Same-day payments", "Same-day payments"]);
   expect(grouped.effects.get("r0")?.detail).toContain("within-day sequence is unknown");
   const credited = scenario([{ date: "2026-09-01", amount: 3000, credit: true }, { date: "2026-09-01", amount: 7000 }]);
-  expect(credited.effects.get("r1")).toMatchObject({ label: "Payment + credits", minimum: "Minimum covered" });
+  expect(credited.effects.get("r1")).toMatchObject({ label: "Partial payment", minimum: "Minimum covered", remainingMinor: 3000 });
 });
 
 it("leaves incomplete, unmatched, future, unknown-clearing and estimated evidence explicit", () => {
@@ -79,8 +79,8 @@ it("groups the same day's confirmed payments and credits without assigning an in
     { date: "2026-09-01", amount: 3000, credit: true },
     { date: "2026-09-01", amount: 1000 },
   ]);
-  expect(effects.get("r0")?.remainingMinor).toBe(4000);
-  expect(effects.get("r2")?.remainingMinor).toBe(4000);
+  expect(effects.get("r0")?.remainingMinor).toBe(7000);
+  expect(effects.get("r2")?.remainingMinor).toBe(7000);
 });
 
 it("never manufactures zero remaining from missing or unconfirmed evidence", () => {
@@ -91,4 +91,20 @@ it("never manufactures zero remaining from missing or unconfirmed evidence", () 
   const rows = { ...data.snapshot, rows: [{ ...data.snapshot.rows[0], date: "2026-09-10" }] };
   expect(paymentEffects(data.card, estimated, rows, data.windows, "2026-09-30").get("r0")?.remainingMinor).toBeUndefined();
   expect(paymentEffects(data.card, data.workspace, { ...rows, issues: ["Incomplete source"] }, data.windows, "2026-09-30").get("r0")?.remainingMinor).toBeUndefined();
+});
+
+it.each(["credit", "partial"] as const)("recognises an exact full bill after an earlier %s without falsely labelling it excess", (earlier) => {
+  const data = scenario([{ date: "2026-09-01", amount: 2000, credit: earlier === "credit" }, { date: "2026-09-02", amount: 10000 }]);
+  expect(data.effects.get("r1")).toMatchObject({ label: "Completes statement", minimum: "Minimum covered", remainingMinor: 0 });
+  if (earlier === "partial") expect(data.effects.get("r1")?.detail).toContain("by 20.00");
+  else expect(data.effects.get("r1")?.detail).not.toContain("Payments exceed");
+});
+
+it("distinguishes an exact monthly target from paying the full billed balance", () => {
+  for (const amount of [3000, 10000]) {
+    const data = scenario([{ date: "2026-09-01", amount: 1000, credit: true }, { date: "2026-09-02", amount }]);
+    const workspace = { ...data.workspace, statements: data.workspace.statements.map((entry) => ({ ...entry, totalPaymentDueMinor: 3000 })) };
+    const effects = paymentEffects(data.card, workspace, data.snapshot, settlements(data.card, workspace, data.snapshot, "2026-09-30"), "2026-09-30");
+    expect(effects.get("r1")?.label).toBe(amount === 3000 ? "Meets monthly target" : "Completes statement");
+  }
 });

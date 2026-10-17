@@ -51,7 +51,7 @@ it("retains actual overpayment and pending partial payments with provisional rem
   expect(texts(scenario([{ date: "2026-09-01", amount: 15000 }]).summary.progress)).toContain("Paid: 150.00 | Paid in full · excess 50.00");
   const { summary } = scenario([{ date: "2026-09-01", amount: 500, pending: true }]);
   expect(texts(summary.progress)).toContain("Paid: 0.00 · pending 5.00 | Remaining: 100.00 | Minimum due: 20.00");
-  expect(summary.detail).toContain("Full remaining deducts confirmed payments and credits");
+  expect(summary.detail).toContain("To pay deducts confirmed payments only");
 });
 it("never invents zero payments when coverage, bank facts or current source are unknown", () => {
   const { summary, statement, settlement } = scenario([], 10000, 2000, "2026-10-10", false);

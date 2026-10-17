@@ -15,7 +15,7 @@ const tones = {
 export function Metric({ label, children, detail, tone = "info", icon }: { label: string; children: ReactNode; detail?: string; tone?: Tone; icon?: LucideIcon }) {
   const style = tones[tone];
   const Icon = icon ?? style.icon;
-  return <div className={cn("rounded-2xl border bg-background p-4", style.surface)}><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className={cn("rounded-md p-1.5", style.accent)}><Icon className="size-3.5" aria-hidden="true" /></span></div><div className="text-2xl font-semibold tabular-nums">{children}</div>{detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}</div>;
+  return <div className={cn("rounded-lg border bg-background p-4", style.surface)}><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className={cn("rounded-md p-1.5", style.accent)}><Icon className="size-3.5" aria-hidden="true" /></span></div><div className="text-2xl font-semibold tabular-nums">{children}</div>{detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}</div>;
 }
 
 export function Status({ children, tone = "neutral", className }: { children: ReactNode; tone?: Tone; className?: string }) {

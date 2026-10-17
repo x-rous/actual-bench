@@ -2,7 +2,7 @@ import { activityKind, type ActivityRow, type ActivitySnapshot } from "./activit
 import { createCreditCardStore } from "./memory";
 import { repaymentLedger, settlements } from "./repayments";
 import { statementHistory, statementMovement } from "./history";
-import { statementPaymentSummary } from "./paymentSummary";
+import { statementOutcome, statementPaymentSummary } from "./paymentSummary";
 import { netActivitySinceStatement, statementPaymentTotals } from "./insights";
 
 const row = (id: string, date: string, amountMinor: number, categoryId: string | null = "cashback", cleared = true): ActivityRow => ({ id, accountId: "card", date, amountMinor, categoryId, categoryName: categoryId, cleared, transferId: null, transferKnown: true, fingerprint: id, parentId: null, label: id, notes: null });
@@ -20,21 +20,21 @@ it("separates mapped cashback from refunds and leaves real transfers as payments
   expect(activityKind(row("outflow", "2026-09-01", -500), card, workspace, snapshot)).not.toBe("cashback");
   expect(activityKind({ ...row("transfer", "2026-09-01", 500), transferId: "peer" }, card, workspace, snapshot)).toBe("payment");
 });
-it("reduces debt, carried balance and portfolio remaining without counting cashback as repayment or minimum satisfaction", () => {
+it("reduces recorded debt and carried balance without reducing the payment target or counting cashback as repayment", () => {
   const { card, workspace, snapshot, statement } = setup([row("credit", "2026-09-01", 3000)]);
   const payment = settlements(card, workspace, snapshot, "2026-10-10")[0];
   expect(payment).toMatchObject({ paidMinor: 0, confirmedPaidMinor: 0, confirmedCashbackMinor: 3000, fullRemainingMinor: 7000, minimumRemainingMinor: 2000, minimumByDue: false, carriedAtDueMinor: 7000 });
   expect(repaymentLedger(card, workspace, snapshot)).toMatchObject({ confirmedMinor: 0, creditMinor: 0, origins: [expect.objectContaining({ remainingMinor: 7000 })] });
-  expect(statementPaymentTotals([card], workspace, [snapshot], ["2026-10-10"])).toMatchObject({ remainingMinor: 7000, minimumMinor: 2000 });
+  expect(statementPaymentTotals([card], workspace, [snapshot], ["2026-10-10"])).toMatchObject({ remainingMinor: 10000, minimumMinor: 2000 });
   const summary = statementPaymentSummary(statement, payment, "2026-10-10", true);
-  expect(summary.progress.map((entry) => entry.text)).toEqual(["Paid: 0.00 · cashback 30.00", "Remaining: 70.00", "Minimum due: 20.00"]);
+  expect(summary.progress.map((entry) => entry.text)).toEqual(["Paid: 0.00 · cashback 30.00", "Remaining: 100.00", "Minimum due: 20.00"]);
   expect(netActivitySinceStatement(card, statement, workspace, snapshot, -7000, "2026-10-10")).toMatchObject({ unexplainedMinor: 0, groups: [{ label: "Cashback", value: -3000 }] });
 });
-it("settles the full balance with payments and cashback without inflating paid or excess amounts", () => {
+it("keeps the payment target outstanding when cashback clears the recorded debt", () => {
   const { card, workspace, snapshot, statement } = setup([{ ...row("payment", "2026-09-01", 8000, null), transferId: "peer" }, row("credit", "2026-09-04", 2500)]);
   const payment = settlements(card, workspace, snapshot, "2026-10-10")[0];
-  expect(payment).toMatchObject({ paidMinor: 8000, fullRemainingMinor: 0, confirmedPaidDate: "2026-09-04", minimumPaidDate: "2026-09-01", status: "Settled · includes credits", fullByDue: true });
-  expect(statementPaymentSummary(statement, payment, "2026-10-10", true).progress.map((entry) => entry.text)).toEqual(["Paid: 80.00", "Cashback: 25.00", "Settled"]);
+  expect(payment).toMatchObject({ paidMinor: 8000, fullRemainingMinor: 0, targetRemainingMinor: 2000, confirmedPaidDate: null, minimumPaidDate: "2026-09-01", status: "Minimum met · full balance remains", fullByDue: false });
+  expect(statementPaymentSummary(statement, payment, "2026-10-10", true).progress.map((entry) => entry.text)).toEqual(["Paid: 80.00 · cashback 25.00", "Remaining: 20.00", "Minimum met"]);
   expect(repaymentLedger(card, workspace, snapshot)).toMatchObject({ confirmedMinor: 8000, creditMinor: 500 });
 });
 it("keeps pending cashback provisional and does not erase due-date carry or claim confirmed settlement", () => {
@@ -43,7 +43,7 @@ it("keeps pending cashback provisional and does not erase due-date carry or clai
   expect(payment).toMatchObject({ confirmedCashbackMinor: 0, provisionalCashbackMinor: 10000, confirmedPaidDate: null, carriedAtDueMinor: null, minimumPaidDate: null });
   const summary = statementPaymentSummary(statement, payment, "2026-10-10", true);
   expect(summary.progress.map((entry) => entry.text)).toContain("Remaining: 100.00");
-  expect(summary.timing.map((entry) => entry.text)).toEqual(["Awaiting clearance"]);
+  expect(summary.timing.map((entry) => entry.text)).toEqual(["Minimum: 20 days overdue"]);
 });
 it("shows cashback separately in billing history and never counts it twice in the statement bridge", () => {
   const { card, workspace, snapshot, statement } = setup([row("credit", "2026-08-15", 500)]);
@@ -69,7 +69,7 @@ it("keeps the bank minimum outstanding when credits cover the full balance", () 
   expect(payment.minimumByDue).toBe(false);
   const summary = statementPaymentSummary(statement, payment, "2026-10-10", true);
   expect(summary.progress.at(-1)?.text).toContain("Minimum due:");
-  expect(summary.timing[0].text).toBe("Minimum overdue");
+  expect(summary.timing[0].text).toBe("Minimum: 20 days overdue");
 });
 
 it("keeps minimum satisfaction certain when only non-payment credit clearing is pending", () => {
@@ -78,4 +78,18 @@ it("keeps minimum satisfaction certain when only non-payment credit clearing is 
   expect(status.minimumByDue).toBe(false);
   expect(status.confirmedPaidMinor).toBe(0);
   expect(status.provisionalCashbackMinor).toBe(500);
+});
+
+it("uses an explicitly revised bank target once while keeping full-statement payment evidence separate", () => {
+  const { card, workspace, snapshot, statement } = setup([
+    row("refund", "2026-09-01", 3000, "shopping"),
+    { ...row("payment", "2026-09-02", 7000, null), transferId: "peer" },
+  ]);
+  const [original] = settlements(card, workspace, snapshot, "2026-10-10");
+  expect(original).toMatchObject({ fullRemainingMinor: 0, carriedAtDueMinor: 0, targetRemainingMinor: 3000, targetCarriedAtDueMinor: 3000, targetByDue: false, fullByDue: false, confirmedPaidDate: null });
+  expect(statementOutcome(statement, original, "2026-10-10", true)).toMatchObject({ paid: false });
+  const revised = { ...statement, totalPaymentDueMinor: 7000 };
+  const [updated] = settlements(card, { ...workspace, statements: [revised] }, snapshot, "2026-10-10");
+  expect(updated).toMatchObject({ targetRemainingMinor: 0, confirmedTargetPaidDate: "2026-09-02", targetByDue: true, fullByDue: false, confirmedPaidDate: null });
+  expect(statementOutcome(revised, updated, "2026-10-10", true)).toMatchObject({ label: "Paid this month", paid: true, late: false });
 });

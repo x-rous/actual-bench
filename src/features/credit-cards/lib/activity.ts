@@ -49,14 +49,14 @@ export function normalizeActivity(source: SyncSourceTransaction[]) {
         if (!child.id) { issues.push("A split child has no stable identity"); continue; }
         add({
         id: child.id, accountId: row.accountId, date: row.date, amountMinor: child.amount,
-        notes: child.notes ?? row.notes, label: child.payeeName ?? row.payeeName ?? "Split transaction", categoryId: child.categoryId, categoryName: child.categoryName,
+        notes: child.notes ?? row.notes, label: child.payeeName?.trim() || row.payeeName?.trim() || "-", categoryId: child.categoryId, categoryName: child.categoryName,
         cleared: child.cleared ?? null, transferId: child.transferId ?? null,
         transferKnown: child.transferId !== undefined, parentId: row.id,
       });
       }
     } else add({
       id: row.id, accountId: row.accountId, date: row.date, amountMinor: row.amount,
-      notes: row.notes, label: row.payeeName ?? "Transaction", categoryId: row.categoryId, categoryName: row.categoryName,
+      notes: row.notes, label: row.payeeName?.trim() || "-", categoryId: row.categoryId, categoryName: row.categoryName,
       cleared: typeof row.cleared === "boolean" ? row.cleared : null,
       transferId: row.transferId ?? null, transferKnown: row.transferId !== undefined, parentId: row.parentId,
     });
@@ -132,4 +132,13 @@ export function classificationReason(row: ActivityRow, card: Card, workspace: Wo
 /** Conversion offsets belong to their originating purchase, never an earlier statement's settlement. */
 export function isSettlementCredit(row: ActivityRow, card: Card, workspace: Workspace, snapshot: ActivitySnapshot) {
   return row.amountMinor > 0 && !isTrackingTransfer(row, snapshot, workspace) && !workspace.planLinks?.some((link) => link.transactionId === row.id && link.role === "conversion-credit") && ["cashback", "refund", "other-credit", "interest-refund", "fee-refund", "dispute-credit", "adjustment"].includes(activityKind(row, card, workspace, snapshot));
+}
+
+/** Transfers between on-budget accounts have no expense category in Actual. */
+export function activityCategoryLabel(row: ActivityRow, snapshot: ActivitySnapshot) {
+  if (row.categoryName || row.categoryId) return row.categoryName ?? row.categoryId!;
+  const peer = snapshot.counterparts.find((entry) => entry.id === row.transferId);
+  const source = snapshot.accounts?.find((entry) => entry.id === row.accountId);
+  const target = snapshot.accounts?.find((entry) => entry.id === peer?.accountId);
+  return row.transferKnown && peer?.transferId === row.id && source && target && !source.offBudget && !target.offBudget ? "Transfer" : "Uncategorized";
 }

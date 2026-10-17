@@ -56,11 +56,11 @@ it("omits zero KPI noise while exposing incomplete coverage and pending minimums
 it("distinguishes a passed full-payment deadline from a missed minimum and preserves late settlement", () => {
   const { statements } = fixture(1);
   const statement = statements[1];
-  const payment = { fullRemainingMinor: 9000, minimumRemainingMinor: 0, status: "Minimum met · full balance remains" } as Settlement;
+  const payment = { fullRemainingMinor: 9000, confirmedPaidMinor: Math.max(0, statement.officialBalanceMinor - 9000), minimumRemainingMinor: 0, status: "Minimum met · full balance remains" } as Settlement;
   expect(portfolioPaymentTiming(statement, payment, "2026-09-19")).toBe("Due soon");
   expect(portfolioPaymentTiming(statement, payment, "2026-09-20")).toBe("Due today");
   expect(portfolioPaymentTiming(statement, payment, "2026-09-23")).toBe("Full balance remaining · 3 days past due date");
-  expect(portfolioPaymentTiming(statement, { ...payment, fullRemainingMinor: 0, confirmedPaidDate: "2026-09-23" }, "2026-10-11")).toBe("Paid 3 days late");
+  expect(portfolioPaymentTiming(statement, { ...payment, confirmedPaidMinor: statement.officialBalanceMinor, fullRemainingMinor: 0, confirmedPaidDate: "2026-09-23" }, "2026-10-11")).toBe("Paid 3 days late");
 });
 
 it("combines explicit and description-based interest classifications with coverage detail", () => {
