@@ -233,6 +233,7 @@ async function configurePayeeChange(name: string) {
 
 it.each([
   ["p1", "Danube", "Danube"],
+  ["p1", "Snapshot merchant", "Snapshot merchant"],
   [null, null, "No payee"],
   ["missing", null, "Unavailable payee"],
   ["historical", "Original merchant", "Original merchant"],

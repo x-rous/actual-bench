@@ -311,3 +311,33 @@ it("recovers only confirmed outcomes and leaves incomplete changes retryable", (
   const duplicates = recoverApply({ ...input, latest: [...input.latest, snapshot({ id: "duplicate", importedId: "recon:abc", amount: -1000 })] });
   expect(duplicates.find((result) => result.operationId === createOperation.id)?.status).toBe("failed");
 });
+
+it("confirms and recovers a create after Actual rules rewrite its payee and notes", () => {
+  const plan = planOf({ ...createOperation, payeeId: "approved-payee", notes: "Approved note", cleared: true });
+  const input = {
+    plan, snapshots: new Map(),
+    latest: [snapshot({ id: "created", importedId: "recon:abc", amount: -1000,
+      payeeId: "rule-payee", notes: "Rule note", cleared: true })],
+  };
+  expect(verifyApply({ ...input, results: allApplied(plan) })).toMatchObject({ ok: true, checked: 1, issues: [] });
+  expect(recoverApply(input)).toEqual([expect.objectContaining({
+    operationId: createOperation.id, status: "skipped", transactionId: "created",
+  })]);
+});
+
+it.each([
+  ["accountId", "another-account"],
+  ["amount", -9999],
+  ["date", "2026-07-05"],
+  ["cleared", false],
+])("still rejects and refuses to recover a create with a mismatched %s", (field, value) => {
+  const plan = planOf({ ...createOperation, cleared: true });
+  const input = {
+    plan, snapshots: new Map(),
+    latest: [snapshot({ importedId: "recon:abc", amount: -1000, cleared: true, [field]: value })],
+  };
+  expect(verifyApply({ ...input, results: allApplied(plan) })).toMatchObject({
+    ok: false, issues: [expect.objectContaining({ kind: "unapplied-field" })],
+  });
+  expect(recoverApply(input)[0].status).toBe("failed");
+});

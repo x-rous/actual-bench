@@ -353,6 +353,7 @@ export function TransformDialog({
     if (field !== "payeeId") return value ?? "-";
     const row = rowDetails.get(itemId);
     if (!value) return (before && row?.proposedPayeeName) || "No payee";
+    if (before && row?.payeeId === value && row.payeeName) return row.payeeName;
     return payeeNames.get(value) || (row?.payeeId === value ? row.payeeName : null) || "Unavailable payee";
   }
 

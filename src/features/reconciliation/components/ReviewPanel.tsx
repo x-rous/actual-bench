@@ -424,7 +424,8 @@ function DriftNotice({
   /** Enough of a row for the reader to recognise which transaction is meant. */
   const describe = (verdict: DriftVerdict): string => {
     const operation = operationById.get(verdict.operationId);
-    const item = operation ? itemById.get(operation.itemId) : undefined;
+    const itemId = operation?.itemId ?? verdict.operationId.split(":").slice(1).join(":");
+    const item = itemById.get(itemId);
     const row = item ? statementRows.get(item.statementRowIds[0] ?? "") : undefined;
     if (row) return `${row.postedDate} · ${statementText(row)}`;
     const transaction = item ? transactions.get(item.actualTransactionIds[0] ?? "") : undefined;
