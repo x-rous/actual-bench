@@ -265,12 +265,15 @@ export function changesFor(rule: TransformRule, context: TransformContext): Fiel
 
   let notes = startingNotes;
   let notesTouched = false;
+  let payeeId = context.pending.payeeId;
+  let payeeTouched = false;
   const changes: FieldChange[] = [];
 
   for (const action of rule.actions) {
     switch (action.kind) {
       case "setPayee":
-        changes.push({ field: "payeeId", value: action.payeeId });
+        payeeId = action.payeeId;
+        payeeTouched = true;
         break;
       case "addTag":
         notes = addNoteTag(notes, action.tag, action.position ?? "end");
@@ -312,6 +315,11 @@ export function changesFor(rule: TransformRule, context: TransformContext): Fiel
         break;
       }
     }
+  }
+
+  // Preview the final value once, including when several actions set the payee.
+  if (payeeId !== context.pending.payeeId || (payeeTouched && context.pending.payeeName !== null)) {
+    changes.push({ field: "payeeId", value: payeeId });
   }
 
   // A note action that changed nothing produces no change, so a rule run over

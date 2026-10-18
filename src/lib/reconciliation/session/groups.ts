@@ -1,4 +1,5 @@
 import type { ActualTransactionSnapshot, ReconciliationItem } from "../types";
+import { transactionOwners } from "./build";
 
 export type MatchingGroup = { itemIds: string[]; transactionIds: string[] };
 
@@ -7,9 +8,7 @@ export function matchingGroups(
   items: ReconciliationItem[],
   transactions: Map<string, ActualTransactionSnapshot>
 ): MatchingGroup[] {
-  const claimed = new Set(items.filter((item) =>
-    item.disposition === "matched" || item.disposition === "correct-amount"
-  ).flatMap((item) => item.actualTransactionIds));
+  const claimed = transactionOwners(items);
   const rows = new Map(items.filter((item) => item.disposition === "unresolved" &&
     item.statementRowIds.length === 1).map((item) => [item.id, item]));
   const owners = new Map<string, string[]>();

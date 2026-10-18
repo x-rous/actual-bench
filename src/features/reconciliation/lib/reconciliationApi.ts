@@ -102,7 +102,7 @@ export function saveWork(id: string, payload: {
 }
 
 export function sessionCommand(id: string, payload: {
-  action: "save" | "claim" | "finish" | "recover";
+  action: "save" | "claim" | "finish" | "recover" | "complete";
   expected?: string; itemPatches?: unknown[]; statementRows?: unknown[]; items?: unknown[];
   patch?: Parameters<typeof updateSession>[1];
 }) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { DEFAULT_APPLY_CONFIG } from "@/lib/reconciliation/session/plan";
 import { prospectiveTransaction } from "@/lib/reconciliation/session/prospective";
 import type {
@@ -206,4 +206,82 @@ describe("replacing text in the notes", () => {
       screen.queryByText("Fill in the rule above to see what it would change.")
     ).not.toBeInTheDocument();
   });
+});
+
+
+function renderPayeePreview(transactionOverrides: Partial<ActualTransactionSnapshot> = {}, itemOverrides: Partial<ReconciliationItem> = {}) {
+  const entry = { ...item, ...itemOverrides };
+  const transaction = entry.actualTransactionIds.length ? { ...txn("#API DANUBE"), ...transactionOverrides } : undefined;
+  const onApply = jest.fn();
+  const onClose = jest.fn();
+  render(<TransformDialog items={[entry]} selectedIds={new Set()} payees={[{ id: "p1", name: "Danube" }, { id: "p2", name: "Neighbourhood Grocery" }]}
+    categories={[]} onApply={onApply} onClose={onClose} contextFor={() => ({
+      item: entry, statementRow, transaction,
+      pending: prospectiveTransaction({ item: entry, statementRow, transaction, applyConfig: DEFAULT_APPLY_CONFIG }),
+      payeeName: (id) => id === "p1" ? "Danube" : id === "p2" ? "Neighbourhood Grocery" : null,
+      categoryName: () => null,
+    })} />);
+  return { onApply, onClose };
+}
+
+async function configurePayeeChange(name: string) {
+  await chooseSelectOption(screen.getByLabelText("Field"), "Decision");
+  await chooseSelectOption(screen.getByLabelText("Decision"), "Matched");
+  await chooseSelectOption(screen.getByLabelText("Action"), "Set payee");
+  await chooseSelectOption(screen.getByLabelText("Payee"), name);
+}
+
+it.each([
+  ["p1", "Danube", "Danube"],
+  [null, null, "No payee"],
+  ["missing", null, "Unavailable payee"],
+  ["historical", "Original merchant", "Original merchant"],
+])("displays the payee name for %s but stages its ID", async (payeeId, payeeName, expectedBefore) => {
+  const { onApply, onClose } = renderPayeePreview({ payeeId, payeeName });
+  await configurePayeeChange("Neighbourhood Grocery");
+  const table = screen.getByRole("table");
+  expect(within(table).getByText(expectedBefore!)).toBeInTheDocument();
+  expect(within(table).getByText("Neighbourhood Grocery")).toBeInTheDocument();
+  expect(within(table).queryByText(/^(p1|p2|missing|historical)$/)).not.toBeInTheDocument();
+  expect(within(table).getByText("15 Aug")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Change 1 row" }));
+  expect(onApply).toHaveBeenCalledWith([{ itemId: "i1", patch: { payeeId: { original: payeeId, staged: "p2", source: "transform" } } }]);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("explains a matched row that already has the requested value", async () => {
+  renderPayeePreview();
+  await configurePayeeChange("Danube");
+  expect(screen.getByText("Matching rows already have these values.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Change 0 rows" })).toBeDisabled();
+});
+
+it("explains protected rows without claiming that the conditions matched nothing", async () => {
+  renderPayeePreview({}, { guards: { ...item.guards, protectedReconciled: true } });
+  await configurePayeeChange("Neighbourhood Grocery");
+  expect(screen.getByText("Matching rows are protected and cannot take these changes.")).toBeInTheDocument();
+  expect(screen.getByText("1 left alone")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Change 0 rows" })).toBeDisabled();
+});
+
+it("explains skipped manual edits and requires the existing override before staging them", async () => {
+  const { onApply } = renderPayeePreview({}, { stagedChanges: { payeeId: { original: "p1", staged: "p2", source: "manual" } } });
+  await configurePayeeChange("Danube");
+  expect(screen.getByText("Matching rows have manual edits and were left unchanged.")).toBeInTheDocument();
+  expect(onApply).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("checkbox", { name: /Also change rows I edited by hand/ }));
+  expect(screen.getByRole("button", { name: "Change 1 row" })).toBeEnabled();
+});
+
+
+it("shows the proposed bank payee before explicitly clearing a new row's payee", async () => {
+  const { onApply } = renderPayeePreview({}, { disposition: "create", actualTransactionIds: [] });
+  await chooseSelectOption(screen.getByLabelText("Field"), "Decision");
+  await chooseSelectOption(screen.getByLabelText("Decision"), "Create in Actual");
+  await chooseSelectOption(screen.getByLabelText("Action"), "Set payee");
+  const cells = within(screen.getByRole("table")).getAllByRole("cell");
+  expect(cells[2]).toHaveTextContent(statementRow.importedPayee);
+  expect(cells[3]).toHaveTextContent("No payee");
+  fireEvent.click(screen.getByRole("button", { name: "Change 1 row" }));
+  expect(onApply).toHaveBeenCalledWith([{ itemId: "i1", patch: { payeeId: { original: null, staged: null, source: "transform" } } }]);
 });

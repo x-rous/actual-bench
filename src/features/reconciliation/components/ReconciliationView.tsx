@@ -19,6 +19,7 @@ import {
   correctAmountFromStatement,
   linkManually,
   resolveToTransaction,
+  resolveSingleCandidateTransactions,
   summarizeCoverage,
 } from "@/lib/reconciliation/session/build";
 import {
@@ -295,12 +296,7 @@ function ReconciliationSessionView() {
   /** The last bulk action's prior state, so one press can reverse it. */
   const [lastBulk, setLastBulk] = useState<{
     label: string;
-    before: {
-      id: string;
-      disposition: ReconciliationItem["disposition"];
-      actualTransactionIds: string[];
-      stagedChanges: ReconciliationItem["stagedChanges"];
-    }[];
+    before: ReconciliationItem[];
   } | null>(null);
 
   // Matching options live with the session (and, once saved, the import
@@ -1008,17 +1004,28 @@ function ReconciliationSessionView() {
      * report showing itself, not someone arriving fresh.
      */
     async function finishWithoutWrites(id: string) {
+      if (applyRunning.current) return;
+      applyRunning.current = true;
+      setIsCheckingDrift(true);
       try {
         await mutations.flushSaves();
         ensureConnection();
-        if (itemsRef.current.some((item) => item.disposition === "unresolved")) return;
-        const history = (Array.isArray(sessionQuery.data?.session.applyResults)
-          ? sessionQuery.data.session.applyResults as OperationResult[] : [])
+        const session = sessionQuery.data?.session;
+        if (!session) return;
+        const plan = buildApplyPlan({ sessionId: id, budgetSyncId: session.budgetSyncId, accountId: session.accountId,
+          items: itemsRef.current, statementRows: statementRowsById, transactions: transactionsById,
+          applyConfig, statementFormat: sessionQuery.data?.session.statementFormat ?? null, appliedOperationIds });
+        if (plan.operations.length || plan.blocked.length || itemsRef.current.some((item) => item.disposition === "unresolved")) return;
+        const { session: completed } = await sessionCommand(id, { action: "complete", expected: decisionSignature(itemsRef.current, applyConfig) });
+        ensureConnection();
+        const history = (Array.isArray(completed.applyResults)
+          ? completed.applyResults as OperationResult[] : [])
           .filter((entry) => entry.status === "applied" || entry.status === "skipped");
-        await mutations.updateSession.mutateAsync({ id, payload: { status: "completed", applyResults: history } });
+        await sessionQuery.refetch();
         setApplyResult({ results: history, ...summarizeResults(history) });
         setScreen({ name: "result", sessionId: id });
       } catch (error) { setMatchError(error instanceof Error ? error.message : "Could not finish the session"); }
+      finally { applyRunning.current = false; setIsCheckingDrift(false); }
     }
 
     function enterReview(id: string) {
@@ -1234,6 +1241,12 @@ function ReconciliationSessionView() {
 
     /** Record a decision. The rules that travel with one live in `applyDisposition`. */
     function handleDisposition(itemId: string, disposition: ReconciliationDisposition) {
+      const item = itemsRef.current.find((entry) => entry.id === itemId);
+      if (disposition === "matched" && item?.actualTransactionIds.length === 1) {
+        resolveSingleCandidates([itemId], (entry) => applyDisposition({ item: entry, disposition,
+          statementRow: statementRowsById.get(entry.statementRowIds[0] ?? ""), transaction: snapshotFor(entry) }));
+        return;
+      }
       updateItem(itemId, (item) =>
         applyDisposition({
           item,
@@ -1362,28 +1375,24 @@ function ReconciliationSessionView() {
      * transformation clears this snapshot so undo cannot discard newer work.
      */
     function rememberBulk(itemIds: string[], label: string) {
-      const before = itemIds
-        .map((id) => items.find((entry) => entry.id === id))
-        .filter((entry): entry is ReconciliationItem => entry !== undefined)
-        .map((entry) => ({
-          id: entry.id,
-          disposition: entry.disposition,
-          actualTransactionIds: entry.actualTransactionIds,
-          stagedChanges: entry.stagedChanges,
-        }));
+      const selected = new Set(itemIds);
+      const before = itemsRef.current.filter((entry) => selected.has(entry.id));
       if (before.length > 0) setLastBulk({ label, before });
     }
 
     function undoLastBulk() {
       if (!lastBulk) return;
-      updateItems(lastBulk.before.map((entry) => ({ id: entry.id, change: (item) => ({
-        ...item, disposition: entry.disposition, actualTransactionIds: entry.actualTransactionIds,
-        stagedChanges: entry.stagedChanges,
-      }) })));
+      updateItems(lastBulk.before.map((entry) => ({ id: entry.id, change: () => entry })));
       setLastBulk(null);
     }
 
     function handleBulkDisposition(itemIds: string[], disposition: ReconciliationDisposition) {
+      if (disposition === "matched") {
+        resolveSingleCandidates(itemIds, (item) => applyDisposition({ item, disposition,
+          statementRow: statementRowsById.get(item.statementRowIds[0] ?? ""), transaction: snapshotFor(item) }),
+          `${itemIds.length} rows`);
+        return;
+      }
       rememberBulk(itemIds, `${itemIds.length} ${itemIds.length === 1 ? "row" : "rows"}`);
       updateItems(itemIds.map((id) => ({ id, change: (item) => applyDisposition({
         item, disposition, statementRow: statementRowsById.get(item.statementRowIds[0] ?? ""),
@@ -1394,12 +1403,28 @@ function ReconciliationSessionView() {
     function handleBulkCorrectAmount(
       entries: { itemId: string; transactionId: string; amount: number }[]
     ) {
-      rememberBulk(
-        entries.map((entry) => entry.itemId),
-        `${entries.length} ${entries.length === 1 ? "amount" : "amounts"}`
-      );
-      updateItems(entries.map((entry) => ({ id: entry.itemId,
-        change: (item) => withCorrectedAmount(item, entry.transactionId, entry.amount) })));
+      const byId = new Map(entries.map((entry) => [entry.itemId, entry]));
+      resolveSingleCandidates(entries.map((entry) => entry.itemId), (item) => {
+        const entry = byId.get(item.id)!;
+        return withCorrectedAmount(item, entry.transactionId, entry.amount);
+      }, `${entries.length} ${entries.length === 1 ? "amount" : "amounts"}`);
+    }
+
+    /** Single-candidate bulk decisions still withdraw the candidate from competing rows. */
+    function resolveSingleCandidates(itemIds: string[], change: (item: ReconciliationItem) => ReconciliationItem, label?: string) {
+      if (snapshotIsStored || applyRunning.current || sessionStatus === "applying" || sessionStatus === "completed") return;
+      const before = itemsRef.current;
+      const selected = new Set(itemIds);
+      const eligible = new Set(before.filter((item) => selected.has(item.id) && !appliedItemIds.has(item.id) &&
+        item.actualTransactionIds.length === 1 && change(item) !== item).map((item) => item.id));
+      const resolved = resolveSingleCandidateTransactions({ items: before, itemIds: [...eligible],
+        transactions: transactionsById, transfersReported });
+      const next = resolved.map((item, index) => eligible.has(item.id) && item !== before[index] ? change(item) : item);
+      const changes = next.flatMap((item, index) => item === before[index] ? [] : [{ id: item.id, change: () => item }]);
+      if (!changes.length) return;
+      if (label) rememberBulk(changes.map((entry) => entry.id), label);
+      else setLastBulk(null);
+      updateItems(changes);
     }
 
     /** Explicit corrections stage integer minor units with the same guards in both surfaces. */
@@ -1418,7 +1443,7 @@ function ReconciliationSessionView() {
     }
 
     function handleCorrectAmount(itemId: string, transactionId: string, amount: number) {
-      updateItem(itemId, (item) => withCorrectedAmount(item, transactionId, amount));
+      resolveSingleCandidates([itemId], (item) => withCorrectedAmount(item, transactionId, amount));
     }
 
     function handleStage(itemId: string, field: StageableField, value: string | null) {
@@ -1552,7 +1577,7 @@ function ReconciliationSessionView() {
 
         // Newly appearing rows must be available for manual linking rather
         // than duplicating them from a saved Create decision.
-        const known = new Set(snapshot.map((row) => row.id));
+        const known = new Set(itemsRef.current.flatMap((item) => item.actualTransactionIds));
         const markers = new Set(plan.operations.flatMap((op) => op.kind === "create" ? [op.marker] : []));
         const newRows = window.transactions.filter((row) => !known.has(row.id) && !markers.has(row.importedId ?? ""));
         const createRows = plan.operations.flatMap((op) => op.kind === "create"
@@ -1560,17 +1585,27 @@ function ReconciliationSessionView() {
         if (newRows.length && createRows.length) {
           const graph = match({ statementRows: createRows, actualTransactions: newRows, config: matchConfig });
           if (graph.matched.length || graph.ambiguous.length) {
-            const next = [...itemsRef.current, ...newRows.map((row): ReconciliationItem => ({
-              id: generateId(), statementRowIds: [], actualTransactionIds: [row.id],
-              disposition: row.date < session.statementStart! || row.date > session.statementEnd! ? "keep" : "unresolved",
-              reasonCode: row.date < session.statementStart! || row.date > session.statementEnd! ? REASON.outsideStatementPeriod : REASON.notOnStatement, guards: { protectedReconciled: row.reconciled,
-                splitParent: row.isParent, transfer: !window.transfersReported ? "unknown" : row.transferId ? "yes" : "no" },
-            }))];
+            const discovered = buildReconciliationItems({ statementRows: createRows, actualTransactions: newRows,
+              graph, transfersReported: window.transfersReported, makeId: () => generateId(),
+              statementPeriod: session.statementStart && session.statementEnd ? { start: session.statementStart, end: session.statementEnd } : null });
+            const candidates = new Map(discovered.filter((item) => item.statementRowIds.length && item.actualTransactionIds.length)
+              .map((item) => [item.statementRowIds[0], item]));
+            const next = itemsRef.current.map((item): ReconciliationItem => {
+              const candidate = item.disposition === "create" ? candidates.get(item.statementRowIds[0]) : undefined;
+              return candidate ? { ...item, actualTransactionIds: candidate.actualTransactionIds, guards: candidate.guards,
+                match: candidate.match, reasonCode: candidate.reasonCode, disposition: "unresolved" } : item;
+            }).concat(discovered.filter((item) => !item.statementRowIds.length));
             setSnapshot(window.transactions); setTransfersReported(window.transfersReported);
-            restoreItems(next);
+            setLastBulk(null);
+            setItems(next);
             setCheckedPlan(null);
             setMatchError("New Actual transactions may match rows marked Create. Review the new rows before applying.");
             setScreen({ name: "workbench", sessionId: session.id });
+            const discoveredById = new Map(newRows.map((row) => [row.id, row]));
+            await mutations.replaceItems.mutateAsync({ sessionId: session.id, items: next.map((item) => ({
+              ...item, stagedChanges: item.stagedChanges ?? null,
+              actualSnapshot: baselineFor(item) ?? discoveredById.get(item.actualTransactionIds[0]) ?? null,
+            })) });
             return;
           }
         }

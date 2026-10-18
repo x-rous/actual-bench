@@ -56,6 +56,7 @@ export type BulkDecisionBarProps = {
   transactions: Map<string, ActualTransactionSnapshot>;
   /** Transactions in unresolved groups must be chosen individually before bulk writes. */
   groupTransactionIds?: ReadonlySet<string>;
+  transactionOwners?: ReadonlyMap<string, ReadonlySet<string>>;
   onClear: () => void;
   onBulkDisposition: (itemIds: string[], disposition: ReconciliationDisposition) => void;
   onBulkCorrectAmount: (items: { itemId: string; transactionId: string; amount: number }[]) => void;
@@ -71,6 +72,7 @@ export function BulkDecisionBar({
   statementRows,
   transactions,
   groupTransactionIds,
+  transactionOwners,
   onClear,
   onBulkDisposition,
   onBulkCorrectAmount,
@@ -144,14 +146,24 @@ export function BulkDecisionBar({
         })()
       : null;
 
+  const ownedElsewhere = (item: ReconciliationItem) => item.actualTransactionIds.some((id) =>
+    [...transactionOwners?.get(id) ?? []].some((owner) => owner !== item.id));
+  const selectedOwners = new Map<string, number>();
+  for (const item of selected) for (const id of item.actualTransactionIds) {
+    selectedOwners.set(id, (selectedOwners.get(id) ?? 0) + 1);
+  }
+  const contested = (item: ReconciliationItem) => ownedElsewhere(item) ||
+    item.actualTransactionIds.some((id) => (selectedOwners.get(id) ?? 0) > 1);
   const deletable = selected.filter(
     (item) => item.actualTransactionIds.length > 0 &&
+      !contested(item) &&
       !groupTransactionIds?.has(item.actualTransactionIds[0]) && canStageDelete(item).allowed
   );
 
   // Correctable rows are those with exactly one candidate whose amount differs
   // from the statement's, and where no guardrail forbids changing it.
   const correctable = selected.flatMap((item) => {
+    if (contested(item)) return [];
     if (item.actualTransactionIds.length !== 1 || groupTransactionIds?.has(item.actualTransactionIds[0])) return [];
     if (!canStageField(item, "amount").allowed) return [];
     const row = statementRows.get(item.statementRowIds[0] ?? "");

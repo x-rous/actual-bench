@@ -21,6 +21,7 @@ import type {
 } from "../types";
 import type { StatementFormat } from "../statement/normalize";
 import { prospectiveTransaction } from "./prospective";
+import { transactionOwners } from "./build";
 import {
   canDecideOneTransaction,
   canStageDelete,
@@ -211,10 +212,16 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
   let alreadyApplied = 0;
   let unresolved = 0;
   const unreconciledDifferences: { itemId: string; difference: number }[] = [];
+  const owners = transactionOwners(input.items);
 
   for (const item of input.items) {
     if (["create", "update", "delete"].some((kind) => input.appliedOperationIds?.has(operationId(kind, item.id)))) {
       alreadyApplied += 1;
+      continue;
+    }
+    if (["matched", "correct-amount", "delete"].includes(item.disposition) &&
+        item.actualTransactionIds.some((id) => (owners.get(id)?.size ?? 0) > 1)) {
+      blocked.push({ itemId: item.id, reason: "Another decided row uses this Actual transaction. Review the pairing before applying." });
       continue;
     }
     switch (item.disposition) {

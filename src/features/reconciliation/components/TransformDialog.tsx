@@ -10,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { generateId } from "@/lib/uuid";
 import { previewTransform } from "@/lib/reconciliation/transform/preview";
 import type {
@@ -32,6 +31,7 @@ import { PayeePicker } from "@/components/ui/entity-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { DateInput } from "@/components/ui/date-input";
+import { datesSpanYears, formatShortDate } from "../lib/format";
 
 /**
  * Bulk transformation (feature spec §47).
@@ -321,33 +321,40 @@ export function TransformDialog({
     [conditions, actions]
   );
 
-  /**
-   * How a row is named in the impact table.
-   *
-   * The bank's own description first: it is what the user recognises, and for a
-   * row about to be created it is the only name that exists yet.
-   */
-  const labelFor = useMemo(() => {
-    const byId = new Map(items.map((item) => [item.id, item]));
-    return (itemId: string): string => {
-      const item = byId.get(itemId);
-      if (!item) return "-";
-      const context = contextFor(item);
-      return (
-        statementText(context.statementRow) ||
-        context.transaction?.payeeName ||
-        context.transaction?.notes ||
-        "-"
-      );
-    };
-  }, [items, contextFor]);
-
   // Recomputed as the rule is edited, with the same code that will apply it, so
   // the preview cannot disagree with the outcome.
   const preview = useMemo(
     () => previewTransform({ rule, items: scopedItems, contextFor, overrideManual }),
     [rule, scopedItems, contextFor, overrideManual]
   );
+
+  const payeeNames = useMemo(() => new Map(payees.map((payee) => [payee.id, payee.name])), [payees]);
+  // Only format rows actually displayed. Payee IDs remain unchanged in the staged patch.
+  const rowDetails = useMemo(() => {
+    const byId = new Map(scopedItems.map((item) => [item.id, item]));
+    const rows = preview.changed.flatMap((row) => {
+      const item = byId.get(row.itemId);
+      if (!item) return [];
+      const context = contextFor(item);
+      return [{ id: item.id,
+        label: statementText(context.statementRow) || context.transaction?.payeeName || context.transaction?.notes || "-",
+        date: context.statementRow?.postedDate ?? context.transaction?.date,
+        payeeId: context.transaction?.payeeId, payeeName: context.transaction?.payeeName,
+        proposedPayeeName: context.pending.payeeName,
+      }];
+    });
+    const showYear = datesSpanYears(rows.map((row) => row.date));
+    const dates = new Map([...new Set(rows.map((row) => row.date).filter((date): date is string => Boolean(date)))]
+      .map((date) => [date, formatShortDate(date, showYear)]));
+    return new Map(rows.map((row) => [row.id, { ...row, shortDate: dates.get(row.date ?? "") ?? "" }]));
+  }, [preview, scopedItems, contextFor]);
+
+  function displayValue(itemId: string, field: string, value: string | null, before = false) {
+    if (field !== "payeeId") return value ?? "-";
+    const row = rowDetails.get(itemId);
+    if (!value) return (before && row?.proposedPayeeName) || "No payee";
+    return payeeNames.get(value) || (row?.payeeId === value ? row.payeeName : null) || "Unavailable payee";
+  }
 
   const ready =
     actions.length > 0 &&
@@ -372,6 +379,18 @@ export function TransformDialog({
       return true;
     });
 
+  const emptyMessage = !ready
+    ? "Fill in the rule above to see what it would change."
+    : preview.matched === 0
+      ? "Nothing matches this rule yet."
+      : preview.skipped.every((row) => row.reason === "no-change")
+        ? "Matching rows already have these values."
+        : preview.skipped.every((row) => row.reason === "manual-edit")
+          ? "Matching rows have manual edits and were left unchanged."
+          : preview.skipped.every((row) => row.reason === "guarded")
+            ? "Matching rows are protected and cannot take these changes."
+            : "Matching rows were left unchanged. See the reasons above.";
+
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
       {/*
@@ -380,15 +399,14 @@ export function TransformDialog({
         examples asks the user to approve two hundred changes on the strength of
         five. The table below is the whole list.
       */}
-      <DialogContent className="flex h-[85vh] max-h-[85vh] flex-col gap-3 sm:max-w-[min(1200px,95vw)]">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="flex h-[85vh] max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1200px,95vw)]">
+        <DialogHeader className="shrink-0 gap-1 border-b border-border/60 px-4 py-3 pr-12">
+          <DialogTitle className="flex items-center gap-2 font-sans text-sm font-semibold leading-5">
             <Wand2 className="h-4 w-4" aria-hidden="true" />
             Change many rows at once
           </DialogTitle>
-          <DialogDescription>
-            Nothing is written to your budget - this stages the changes, and you still review them
-            before applying.
+          <DialogDescription className="text-xs leading-relaxed">
+            Changes are added to this reconciliation for review. Your Actual budget is updated only when you select Apply.
           </DialogDescription>
         </DialogHeader>
 
@@ -396,11 +414,11 @@ export function TransformDialog({
             floor; past that the body scrolls as one. The rule is never its own
             scroll box, or an open picker would scroll inside it instead of
             opening over the table. */}
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-        <div className="shrink-0 space-y-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+        <section aria-label="Transformation rule" className="shrink-0 overflow-hidden rounded-md border border-border/60 bg-background">
 
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border/50 bg-muted/20 px-3 py-2 text-xs">
           <span className="text-muted-foreground">Apply to</span>
           {(
             [
@@ -421,13 +439,29 @@ export function TransformDialog({
         </div>
       )}
 
-      <section className="flex flex-col gap-2">
-        <Label className="text-xs font-semibold uppercase tracking-wide">If</Label>
+      <section aria-labelledby="transform-if-heading" className="flex flex-col gap-2 px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 id="transform-if-heading" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">If</h3>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 text-xs"
+          onClick={() =>
+            setConditions((previous) => [
+              ...previous,
+              { field: "notes", operator: "hasTag", value: "" },
+            ])
+          }
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add a condition
+        </Button>
+        </div>
         {conditions.map((condition, index) => (
           <div key={index} className="flex flex-wrap items-center gap-1.5">
             <Select
               size="sm"
-              className="w-auto"
+              className="w-44 shrink-0 border-indigo-200 bg-indigo-50 font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300"
               value={condition.field}
               aria-label="Field"
               options={FIELDS.map((field) => ({ value: field.id, label: field.label }))}
@@ -452,7 +486,7 @@ export function TransformDialog({
 
             <Select
               size="sm"
-              className="w-auto"
+              className="w-40 shrink-0"
               value={condition.operator}
               aria-label="Comparison"
               onValueChange={(value) =>
@@ -481,7 +515,7 @@ export function TransformDialog({
             {condition.field === "matchStatus" ? (
               <Select
                 size="sm"
-                className="w-40"
+                className="w-56 max-w-full"
                 value={condition.value}
                 aria-label="Decision"
                 onValueChange={(value) =>
@@ -492,7 +526,7 @@ export function TransformDialog({
                 options={DECISION_VALUES.map((entry) => ({ value: entry.id, label: entry.label }))}
               />
             ) : pickerFor(condition, { payees, categories, tags: tagOptions }) ? (
-              <div className="w-40">
+              <div className="w-56 max-w-full">
                 <SearchableCombobox
                   ariaLabel="Value"
                   triggerClassName="h-7"
@@ -509,7 +543,7 @@ export function TransformDialog({
             ) : condition.field === "date" ? (
               <DateInput
                 size="sm"
-                className="w-40"
+                className="w-56 max-w-full"
                 value={condition.value}
                 aria-label="Value"
                 onValueChange={(value) =>
@@ -521,7 +555,7 @@ export function TransformDialog({
             ) : (
               <Input
                 size="sm"
-                className="w-40"
+                className="w-56 max-w-full"
                 value={condition.value}
                 type={condition.field === "amount" ? "number" : "text"}
                 step={condition.field === "amount" ? "0.01" : undefined}
@@ -541,7 +575,7 @@ export function TransformDialog({
                 // Stored as ISO like the lower bound, so the two compare as dates.
                 <DateInput
                   size="sm"
-                  className="w-40"
+                  className="w-56 max-w-full"
                   value={condition.value2 ?? ""}
                   aria-label="Upper bound"
                   onValueChange={(value2) =>
@@ -571,7 +605,7 @@ export function TransformDialog({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
               aria-label="Remove this condition"
               onClick={() => setConditions((previous) => previous.filter((_, i) => i !== index))}
             >
@@ -579,29 +613,27 @@ export function TransformDialog({
             </Button>
           </div>
         ))}
+
+      </section>
+
+      <section aria-labelledby="transform-then-heading" className="flex flex-col gap-2 border-t border-border/50 px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 id="transform-then-heading" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Then</h3>
         <Button
           variant="ghost"
           size="sm"
-          className="self-start text-xs"
-          onClick={() =>
-            setConditions((previous) => [
-              ...previous,
-              { field: "notes", operator: "hasTag", value: "" },
-            ])
-          }
+          className="h-6 text-xs"
+          onClick={() => setActions((previous) => [...previous, emptyAction("addTag")])}
         >
           <Plus className="mr-1 h-3.5 w-3.5" />
-          Add a condition
+          Add an action
         </Button>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <Label className="text-xs font-semibold uppercase tracking-wide">Then</Label>
+        </div>
         {actions.map((action, index) => (
           <div key={index} className="flex flex-wrap items-center gap-1.5">
             <Select
               size="sm"
-              className="w-auto"
+              className="w-56 shrink-0 border-violet-200 bg-violet-50 font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300"
               value={action.kind}
               aria-label="Action"
               onValueChange={(value) =>
@@ -714,7 +746,7 @@ export function TransformDialog({
               <>
                 <Input
                   size="sm"
-                  className="w-40"
+                  className="w-56 max-w-full"
                   value={action.from}
                   placeholder="AMZN Mktp"
                   aria-label="Text to replace"
@@ -731,7 +763,7 @@ export function TransformDialog({
                 <span className="text-xs text-muted-foreground">with</span>
                 <Input
                   size="sm"
-                  className="w-40"
+                  className="w-56 max-w-full"
                   value={action.to}
                   placeholder="Amazon"
                   aria-label="Replacement text"
@@ -779,7 +811,7 @@ export function TransformDialog({
             )}
 
             {action.kind === "setPayee" && (
-              <div className="w-52">
+              <div className="w-64 max-w-full">
                 <PayeePicker
                   ariaLabel="Payee"
                   size="sm"
@@ -801,7 +833,7 @@ export function TransformDialog({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
               aria-label="Remove this action"
               onClick={() => setActions((previous) => previous.filter((_, i) => i !== index))}
             >
@@ -809,33 +841,25 @@ export function TransformDialog({
             </Button>
           </div>
         ))}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start text-xs"
-          onClick={() => setActions((previous) => [...previous, emptyAction("addTag")])}
-        >
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Add an action
-        </Button>
+
       </section>
 
-      <label className="flex items-start gap-2 text-xs">
+      <label className="flex items-start gap-2 border-t border-border/50 bg-muted/20 px-3 py-2 text-xs">
         <Checkbox className="mt-0.5"
           checked={overrideManual}
           onCheckedChange={(checked) => setOverrideManual(checked)}
         />
         <span>
-          Also change rows I edited by hand
-          <span className="block text-[11px] text-muted-foreground">
+          Also change rows I edited by hand{" "}
+          <span className="ml-2 text-[11px] text-muted-foreground">
             Off by default, so a bulk change cannot quietly undo something you set deliberately.
           </span>
         </span>
       </label>
 
-        </div>
+        </section>
 
-        <section className="flex min-h-64 flex-1 flex-col rounded-md border border-border/60 bg-background">
+        <section className="flex min-h-64 flex-1 flex-col overflow-hidden rounded-md border border-border/60 bg-background">
           <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border/50 px-3 py-2">
             <p className="text-xs font-medium">
               {preview.changed.length} row{preview.changed.length === 1 ? "" : "s"} will change
@@ -864,16 +888,14 @@ export function TransformDialog({
           <div className="min-h-0 flex-1 overflow-auto">
             {preview.changed.length === 0 ? (
               <p className="px-3 py-8 text-center text-xs text-muted-foreground">
-                {ready
-                  ? "Nothing matches this rule yet."
-                  : "Fill in the rule above to see what it would change."}
+                {emptyMessage}
               </p>
             ) : (
-              <table className="w-full border-collapse text-xs">
+              <table className="w-full table-fixed border-separate border-spacing-0 text-xs">
                 <caption className="sr-only">
                   Every row this rule would change, with its current and resulting value
                 </caption>
-                <thead className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <thead className="sticky top-0 z-10 bg-background text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th scope="col" className="w-[22%] border-b border-border bg-background px-3 py-1.5 text-left font-medium">
                       Row
@@ -892,21 +914,24 @@ export function TransformDialog({
                 <tbody>
                   {preview.changed.map((row) =>
                     row.changes.map((change, index) => (
-                      <tr key={`${row.itemId}-${change.field}`} className="border-b border-border/20">
+                      <tr key={`${row.itemId}-${change.field}`} className="[&>td]:border-b [&>td]:border-border/20">
                         {/* The row is named once, on its first changed field,
                             so a rule touching two fields reads as one row
                             rather than two. */}
-                        <td className="max-w-0 truncate px-3 py-1 align-top text-muted-foreground">
-                          {index === 0 ? labelFor(row.itemId) : ""}
+                        <td className="px-3 py-1 align-top">
+                          {index === 0 && <div className="flex min-w-0 items-baseline gap-2" title={[rowDetails.get(row.itemId)?.date, rowDetails.get(row.itemId)?.label].filter(Boolean).join(" · ")}>
+                            {rowDetails.get(row.itemId)?.shortDate && <span className="shrink-0 text-muted-foreground">{rowDetails.get(row.itemId)?.shortDate}</span>}
+                            <span className="min-w-0 truncate">{rowDetails.get(row.itemId)?.label ?? "-"}</span>
+                          </div>}
                         </td>
                         <td className="px-3 py-1 align-top text-muted-foreground">
                           {FIELD_LABELS[change.field] ?? change.field}
                         </td>
-                        <td className="px-3 py-1 align-top text-muted-foreground">
-                          {change.before ?? "-"}
+                        <td className="whitespace-pre-wrap px-3 py-1 align-top text-muted-foreground [overflow-wrap:anywhere]">
+                          {displayValue(row.itemId, change.field, change.before, true)}
                         </td>
-                        <td className="px-3 py-1 align-top text-amber-600 dark:text-amber-400">
-                          {change.after ?? "-"}
+                        <td className="whitespace-pre-wrap px-3 py-1 align-top text-amber-600 [overflow-wrap:anywhere] dark:text-amber-400">
+                          {displayValue(row.itemId, change.field, change.after)}
                         </td>
                       </tr>
                     ))
@@ -918,7 +943,7 @@ export function TransformDialog({
         </section>
         </div>
 
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 pt-3">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/50 px-4 py-3">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>

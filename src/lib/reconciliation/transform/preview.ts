@@ -111,6 +111,11 @@ export function previewTransform(input: PreviewInput): TransformPreview {
       }
 
       patch = result.patch;
+      // A new row can have a proposed bank payee without an ID. Explicitly
+      // clearing it must override that default, like the single-row editor.
+      if (field === "payeeId" && change.value === null && context.pending.isNew) {
+        patch.payeeId = { original: null, staged: null, source: "transform" };
+      }
       rowChanges.push({ field, before, after: change.value });
     }
 

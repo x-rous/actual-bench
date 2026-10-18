@@ -420,6 +420,7 @@ Selecting cells does not fetch data or write to Actual.
 
 ### Read the match details
 
+The matching table header keeps its bottom divider visible while scrolling.
 The right panel shows the current result or confidence in its fixed header, with supporting evidence
 below. **Comparison**, **Bank**, and **Actual** share one header row, and differences show their size
 beside the Actual value. Decision buttons stay visible in a gray footer while details, candidate
@@ -479,6 +480,16 @@ Already-applied rows are excluded from the preview and changes. Set a
 payee, or use note actions to add, remove, move, or replace tags and text. Conditions can use a
 payee, category, or tag. Transformations do not write any change until Apply, and do not overwrite a
 hand-edited value unless you choose to do so.
+
+The **If** and **Then** controls sit together in a rule section, with the manual-edit override
+beneath them. The preview shows payee names in **Now** and **After**, and a date beside each row's
+description helps distinguish repeated merchants. An unset payee shows **No payee**; if its name
+cannot be found, the preview shows **Unavailable payee**. The preview explains when matching rows
+already have the requested values or were left unchanged by protections or manual edits. The
+header and action buttons remain visible while you scroll through the preview.
+
+Selecting **Change N rows** adds the changes to this reconciliation for review. Your Actual budget
+is updated only when you select **Apply**.
 
 For text, you can prepend, append, or replace an exact value. You can also extend a merchant name in
 an existing note to the longer statement description. If Actual Bench cannot identify the bank text
@@ -541,6 +552,11 @@ Decision saves finish before Apply checks the budget. A failed save must be retr
 bulk decisions save together. If a staged date already matches Actual, it needs no further write.
 If Actual has a different third date, that row is held for review.
 
+If a new Actual transaction could match a row marked Create, the row returns to undecided with
+the new candidate available for review. It cannot be created until you resolve that choice.
+Accepting a match or correcting its amount removes that Actual transaction from competing rows;
+Apply also refuses conflicting decisions about the same transaction.
+
 Select **Apply** only after reviewing the plan. Immediately before writing, Actual Bench re-reads
 every affected transaction. It writes rows that are still safe and holds back conflicts or changes it
 cannot combine safely.
@@ -560,6 +576,8 @@ writes. Confirmed rows stay fixed, and unconfirmed work remains available for re
 A session that was only partly applied can still be used to decide its remaining rows.
 
 When every row is decided and no writes are needed, select **Finish** to close the session.
+Finish checks the saved decisions too. If another tab has changed them, reopen the session to
+review the current choices before finishing.
 
 An applied session cannot be re-matched because it is an audit record of its decisions and writes.
 Its Review page remains readable, but its write choices are locked to the options that were used. To

@@ -857,6 +857,27 @@ export function claimReconciliationApply(db: SqliteDatabase, id: string, expecte
   })();
 }
 
+/** Finishing without Actual writes still requires the exact saved decisions. No extra revision is stored. */
+export function completeReconciliationWithoutWrites(db: SqliteDatabase, id: string, expected: string): ReconciliationSessionRecord {
+  return db.transaction(() => {
+    const session = getReconciliationSession(db, id);
+    if (!session) throw new AppDbValidationError("Reconciliation session not found");
+    assertReconciliationEditable(db, id);
+    const items = listReconciliationItems(db, id);
+    if (decisionSignature(items, normalizeApplyConfig(session.applyConfig)) !== expected) {
+      throw new AppDbValidationError("The saved decisions changed. Reopen the reconciliation before finishing.");
+    }
+    if (items.some((item) => item.disposition === "unresolved")) {
+      throw new AppDbValidationError("Resolve the remaining rows before finishing.");
+    }
+    const history = Array.isArray(session.applyResults) ? session.applyResults.filter((entry) =>
+      entry?.status === "applied" || entry?.status === "skipped") : [];
+    db.prepare("UPDATE reconciliation_sessions SET status = 'completed', apply_results_json = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify(history), nowIso(), id);
+    return getReconciliationSession(db, id)!;
+  })();
+}
+
 /** Finish/recover only through the Apply path; ordinary edits cannot release a running session. */
 export function finishReconciliationApply(db: SqliteDatabase, id: string, input: {
   status: "completed" | "partial" | "needs_review"; applyResults: unknown; appliedAt: string | null;

@@ -120,3 +120,9 @@ it("hides released candidates that no pending bank row can use and restores them
   expect(within(matrix).getByText("Reference one")).toBeInTheDocument();
   expect(within(matrix).getByText("Reference two")).toBeInTheDocument();
 });
+
+it("excludes a candidate reserved for deletion from the matrix", () => {
+  renderGroup([...initial, { ...initial[0], id: "deleted", statementRowIds: [], actualTransactionIds: ["t1"], disposition: "delete" }]);
+  expect(screen.queryByRole("button", { name: /Compare .* -10.00 on 2026-07-04/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Compare s1 with Cafe -9.00 on 2026-07-05" })).toBeInTheDocument();
+});

@@ -361,7 +361,7 @@ export function WorkbenchRow({
       aria-selected={selected}
       onClick={onSelect}
       className={cn(
-        "cursor-pointer border-b border-border/30 text-xs transition-colors",
+        "cursor-pointer text-xs transition-colors [&>td]:border-b [&>td]:border-b-border/30",
         selected ? "bg-accent" : "hover:bg-accent/40"
       )}
     >

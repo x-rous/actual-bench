@@ -137,3 +137,12 @@ it.each([false, true])("does not bulk write a shared candidate (other bank row h
   expect(screen.queryByRole("button", { name: /Delete from Actual/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: `Ignore ${hideOther ? 1 : 2}` })).toBeInTheDocument();
 });
+
+it.each(["matched", "correct-amount", "delete"] as const)("excludes a bulk candidate owned by a hidden %s row after its group disappears", (disposition) => {
+  const props = propsFor([{ ...base, disposition }, { ...base, id: "i2", statementRowIds: ["s2"] }]);
+  render(<Workbench {...props} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "Search reconciliation rows" }), { target: { value: "s2" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select all visible rows" }));
+  expect(screen.queryByRole("button", { name: /Use the statement amount/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Delete from Actual/ })).not.toBeInTheDocument();
+});

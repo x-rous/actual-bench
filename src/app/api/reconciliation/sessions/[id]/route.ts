@@ -4,6 +4,7 @@ import { AppDbValidationError } from "@/lib/app-db/errors";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 import {
   claimReconciliationApply,
+  completeReconciliationWithoutWrites,
   finishReconciliationApply,
   saveReconciliationWork,
   deleteReconciliationSession,
@@ -125,6 +126,10 @@ export async function POST(request: Request, context: RouteContext) {
     if (body.action === "claim") {
       if (typeof body.expected !== "string") throw new AppDbValidationError("Expected reviewed decisions");
       return NextResponse.json({ session: claimReconciliationApply(db, id, body.expected, patches) });
+    }
+    if (body.action === "complete") {
+      if (typeof body.expected !== "string") throw new AppDbValidationError("Expected reviewed decisions");
+      return NextResponse.json({ session: completeReconciliationWithoutWrites(db, id, body.expected) });
     }
     if (body.action === "finish" || body.action === "recover") {
       const patch = reconciliationPatch(body.patch);

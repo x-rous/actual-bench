@@ -229,6 +229,52 @@ export function buildReconciliationItems(input: BuildItemsInput): Reconciliation
   return items;
 }
 
+/** Settled relationships, including deletions, reserve their Actual transactions. */
+export function transactionOwners(items: ReconciliationItem[]): Map<string, Set<string>> {
+  const owners = new Map<string, Set<string>>();
+  for (const item of items) {
+    if (!["matched", "correct-amount", "delete"].includes(item.disposition)) continue;
+    for (const id of item.actualTransactionIds) {
+      const entries = owners.get(id) ?? new Set<string>();
+      entries.add(item.id);
+      owners.set(id, entries);
+    }
+  }
+  return owners;
+}
+
+/** Batch the unambiguous case without repeatedly scanning the whole session. */
+export function resolveSingleCandidateTransactions(input: {
+  items: ReconciliationItem[]; itemIds: string[];
+  transactions: Map<string, ActualTransactionSnapshot>; transfersReported: boolean;
+}): ReconciliationItem[] {
+  const selected = new Set(input.itemIds);
+  const owners = transactionOwners(input.items);
+  const choices = new Map<string, ReconciliationItem[]>();
+  for (const item of input.items) {
+    if (!selected.has(item.id) || item.actualTransactionIds.length !== 1) continue;
+    const id = item.actualTransactionIds[0];
+    if (!input.transactions.has(id) || [...owners.get(id) ?? []].some((owner) => owner !== item.id)) continue;
+    const entries = choices.get(id) ?? [];
+    entries.push(item);
+    choices.set(id, entries);
+  }
+  const claims = new Map([...choices].filter(([, entries]) => entries.length === 1)
+    .map(([id, entries]) => [id, entries[0].id]));
+  if (!claims.size) return input.items;
+  const claimedIds = new Set(claims.keys());
+  return input.items.map((item) => {
+    const id = item.actualTransactionIds[0];
+    if (claims.get(id) === item.id) {
+      return { ...item, disposition: "matched", reasonCode: undefined,
+        guards: guardsFor(input.transactions.get(id), input.transfersReported),
+        match: { type: "manual", evidenceSource: "manual", label: "exact", reasons: [] } };
+    }
+    if (item.disposition !== "unresolved" || !item.actualTransactionIds.some((id) => claims.has(id))) return item;
+    return withoutCandidates(item, claimedIds, input.transactions, input.transfersReported);
+  });
+}
+
 /**
  * Resolve a review item to one transaction, and settle what that frees.
  *
@@ -279,7 +325,7 @@ export function resolveToTransaction(input: {
   if (transactionId !== null && (
     !item.actualTransactionIds.includes(transactionId) || !transactions.has(transactionId) ||
     items.some((other) => other.id !== itemId &&
-      (other.disposition === "matched" || other.disposition === "correct-amount") &&
+      (other.disposition === "matched" || other.disposition === "correct-amount" || other.disposition === "delete") &&
       other.actualTransactionIds.includes(transactionId))
   )) return items;
 
@@ -375,7 +421,14 @@ function withoutCandidate(
   transactions: Map<string, ActualTransactionSnapshot>,
   transfersReported: boolean
 ): ReconciliationItem {
-  const remaining = item.actualTransactionIds.filter((id) => id !== transactionId);
+  return withoutCandidates(item, new Set([transactionId]), transactions, transfersReported);
+}
+
+function withoutCandidates(
+  item: ReconciliationItem, transactionIds: ReadonlySet<string>,
+  transactions: Map<string, ActualTransactionSnapshot>, transfersReported: boolean
+): ReconciliationItem {
+  const remaining = item.actualTransactionIds.filter((id) => !transactionIds.has(id));
 
   if (remaining.length === 0) {
     return {

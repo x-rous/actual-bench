@@ -1179,3 +1179,25 @@ describe("pairings accepted with the amounts still apart", () => {
     expect(result.unreconciledDifferences).toEqual([]);
   });
 });
+
+describe("exclusive Actual transaction ownership", () => {
+  it.each(["matched", "correct-amount", "delete"] as const)("blocks a correction that competes with a %s decision", (disposition) => {
+    const result = plan([
+      item({ id: "first", disposition, actualTransactionIds: ["t1"] }),
+      item({ id: "second", disposition: "correct-amount", actualTransactionIds: ["t1"],
+        stagedChanges: { amount: { original: -6850, staged: -7000, source: "manual" } } }),
+    ], [], [txn({ id: "t1" })]);
+    expect(result.operations).toEqual([]);
+    expect(result.blocked.map((entry) => entry.itemId)).toEqual(["first", "second"]);
+  });
+
+  it("keeps a successful earlier update reserved during a partial retry", () => {
+    const result = plan([
+      item({ id: "first", disposition: "matched", actualTransactionIds: ["t1"] }),
+      item({ id: "second", disposition: "delete", actualTransactionIds: ["t1"] }),
+    ], [], [txn({ id: "t1" })], undefined, new Set(["update:first"]));
+    expect(result.operations).toEqual([]);
+    expect(result.alreadyApplied).toBe(1);
+    expect(result.blocked.map((entry) => entry.itemId)).toEqual(["second"]);
+  });
+});

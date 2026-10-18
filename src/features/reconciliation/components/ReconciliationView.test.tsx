@@ -49,6 +49,9 @@ jest.mock("./Workbench", () => {
           onClear={() => setSelectionCleared(true)} />
         <button onClick={() => setSelectionCleared(false)}>Select test rows</button>
         <button onClick={() => props.onStage(props.items[0].id, "notes", "Later manual edit")}>Edit row notes</button>
+        <button onClick={() => props.onCorrectAmount(props.items[0].id, props.items[0].actualTransactionIds[0], props.statementRows.get(props.items[0].statementRowIds[0])!.amount)}>Correct first amount</button>
+        <button onClick={() => props.onDisposition(props.items[0].id, "matched")}>Accept first match</button>
+        <button onClick={() => props.onBulkCorrectAmount([{ itemId: props.items[0].id, transactionId: props.items[0].actualTransactionIds[0], amount: props.statementRows.get(props.items[0].statementRowIds[0])!.amount }])}>Bulk correct first amount</button>
         <button onClick={() => props.onTransform([{ itemId: props.items[0].id,
           patch: { notes: { original: null, staged: "Later transformation", source: "transform" } } }])}>Transform row notes</button>
       </>}
@@ -60,7 +63,8 @@ const mockSync = jest.fn();
 const mockRead = jest.fn();
 const mockUpdate = jest.fn();
 const mockCommand = jest.fn();
-jest.mock("@/lib/actual", () => ({ getTransport: () => ({ mode: "browser-api", sync: mockSync, listTransactionsForSync: mockRead, updateTransactionForSync: mockUpdate }) }));
+const mockCreate = jest.fn();
+jest.mock("@/lib/actual", () => ({ getTransport: () => ({ mode: "browser-api", sync: mockSync, listTransactionsForSync: mockRead, updateTransactionForSync: mockUpdate, createTransactionsForSync: mockCreate }) }));
 jest.mock("../lib/reconciliationApi", () => ({
   sessionCommand: (...args: unknown[]) => mockCommand(...args),
   updateSession: jest.fn().mockResolvedValue({}), saveWork: jest.fn().mockResolvedValue({}),
@@ -96,6 +100,8 @@ jest.mock("../hooks/useReconciliation", () => ({
 }));
 beforeEach(() => {
   jest.clearAllMocks();
+  mockCommand.mockReset(); mockCreate.mockReset();
+  mockSession.applyConfig = null;
   mockSession.status = "needs_review"; mockSession.appliedAt = null; mockSession.applyResults = null;
   mockData.items = [{ id: "i1", statementRowIds: ["s1"], actualTransactionIds: ["t1"], disposition: "unresolved", reasonCode: undefined,
     actualSnapshot: { ...current, importedPayee: null, scheduleId: null, transferId: null, amount: -9999 },
@@ -314,4 +320,102 @@ it("keeps the staged decisions available and reports a failed bulk save", async 
   await screen.findByText("Could not save selected decisions");
   expect(stagedDecisions()[0].disposition).toBe("create");
   expect(mockUpdate).not.toHaveBeenCalled();
+});
+
+
+it.each([false, true])("persists new candidates and withdraws Create, including when the save fails (%s)", async (saveFails) => {
+  mockData.items = [{ id: "i1", statementRowIds: ["s1"], actualTransactionIds: [], disposition: "create",
+    guards: { protectedReconciled: false, splitParent: false, transfer: "no" },
+    stagedChanges: { notes: { original: null, staged: "Keep this note", source: "manual" } } }];
+  mockRead.mockResolvedValueOnce([]).mockResolvedValue([{ ...current, payeeName: "Bank", importedPayee: "Bank" }]);
+  if (saveFails) mockMutations.replaceItems.mutateAsync.mockRejectedValueOnce(new Error("Candidate save failed"));
+  render(<ReconciliationView />);
+  fireEvent.click(screen.getByRole("button", { name: "Open saved session" }));
+  await screen.findByText("Decisions enabled");
+  fireEvent.click(screen.getByRole("button", { name: /^Review/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Apply / }));
+  await screen.findByText(saveFails ? "Candidate save failed" : "New Actual transactions may match rows marked Create. Review the new rows before applying.");
+  expect(stagedDecisions()[0]).toMatchObject({ id: "i1", disposition: "unresolved", actualTransactionIds: ["t1"],
+    stagedChanges: { notes: { staged: "Keep this note" } } });
+  expect(mockMutations.replaceItems.mutateAsync).toHaveBeenCalledTimes(1);
+  expect(mockMutations.replaceItems.mutateAsync.mock.calls[0][0].items[0].actualSnapshot.id).toBe("t1");
+  // A second attempt returns to the decision gate; it cannot recreate the row.
+  fireEvent.click(screen.getByRole("button", { name: /^Review/ }));
+  expect(screen.queryByRole("button", { name: /^Apply / })).not.toBeInTheDocument();
+  expect(mockCommand).not.toHaveBeenCalled();
+  expect(mockCreate).not.toHaveBeenCalled();
+});
+
+it.each(["Correct first amount", "Accept first match", "Bulk correct first amount"])("%s withdraws the transaction from competing rows and saves the whole decision", async (action) => {
+  const before: ReconciliationItem[] = [1, 2].map((n) => ({ id: `i${n}`, statementRowIds: [`s${n}`], actualTransactionIds: ["t1"],
+    disposition: "unresolved", reasonCode: "merchant-cluster", guards: { protectedReconciled: false, splitParent: false, transfer: "no" } }));
+  await openBulkSession(before, [{ ...current, amount: -900 }]);
+  fireEvent.click(screen.getByRole("button", { name: action }));
+  expect(stagedDecisions()[0]).toMatchObject({ disposition: "correct-amount", actualTransactionIds: ["t1"], stagedChanges: { amount: { staged: -1000 } } });
+  expect(stagedDecisions()[1].actualTransactionIds).toEqual([]);
+  const saved = mockMutations.patchItems;
+  expect(saved.mutateAsync).toHaveBeenCalledTimes(1);
+  expect(saved.mutateAsync.mock.calls[0][0].items).toHaveLength(2);
+  if (action === "Bulk correct first amount") {
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo that" }));
+    expect(stagedDecisions()).toEqual(before);
+  }
+  expect(mockUpdate).not.toHaveBeenCalled();
+});
+
+it("sends Finish through signature comparison and leaves changed decisions open", async () => {
+  mockData.items = [{ ...mockData.items[0], disposition: "ignored", actualTransactionIds: [] }];
+  mockRead.mockResolvedValue([]);
+  mockCommand.mockRejectedValue(new Error("The saved decisions changed. Reopen the reconciliation before finishing."));
+  render(<ReconciliationView />);
+  fireEvent.click(screen.getByRole("button", { name: "Open saved session" }));
+  await screen.findByText("Decisions enabled");
+  fireEvent.click(screen.getByRole("button", { name: /^Finish/ }));
+  await screen.findByText("The saved decisions changed. Reopen the reconciliation before finishing.");
+  expect(mockCommand).toHaveBeenCalledWith("session", { action: "complete", expected: expect.any(String) });
+  expect(mockMutations.updateSession.mutateAsync).not.toHaveBeenCalledWith(expect.objectContaining({ payload: expect.objectContaining({ status: "completed" }) }));
+  expect(screen.queryByRole("heading", { name: "Finished" })).not.toBeInTheDocument();
+  expect(mockSession.status).toBe("needs_review");
+});
+
+it("locks decisions during Finish and displays the server's retained history", async () => {
+  mockData.items = [{ ...mockData.items[0], disposition: "ignored", actualTransactionIds: [] }];
+  mockRead.mockResolvedValue([]);
+  let release!: (value: unknown) => void;
+  mockCommand.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+  render(<ReconciliationView />);
+  fireEvent.click(screen.getByRole("button", { name: "Open saved session" }));
+  await screen.findByText("Decisions enabled");
+  fireEvent.click(screen.getByRole("button", { name: /^Finish/ }));
+  await screen.findByText("Decisions disabled");
+  await waitFor(() => expect(mockCommand).toHaveBeenCalledTimes(1));
+  await act(async () => release({ session: { ...mockSession, status: "completed", applyResults: [] } }));
+  await screen.findByRole("heading", { name: "Finished" });
+  expect(mockUpdate).not.toHaveBeenCalled();
+  expect(mockCreate).not.toHaveBeenCalled();
+});
+
+
+it("equal-amount acceptance also withdraws a shared candidate", async () => {
+  await openBulkSession([1, 2].map((n) => ({ id: `i${n}`, statementRowIds: [`s${n}`], actualTransactionIds: ["t1"],
+    disposition: "unresolved", guards: { protectedReconciled: false, splitParent: false, transfer: "no" } })));
+  fireEvent.click(screen.getByRole("button", { name: "Accept first match" }));
+  expect(stagedDecisions()[0].disposition).toBe("matched");
+  expect(stagedDecisions()[1].actualTransactionIds).toEqual([]);
+});
+
+it("exposes a counterpart already present on resume for explicit pairing", async () => {
+  // A failed prior save can leave Create persisted; the fresh read must expose its counterpart.
+  mockData.items = [{ id: "i1", statementRowIds: ["s1"], actualTransactionIds: [], disposition: "create",
+    guards: { protectedReconciled: false, splitParent: false, transfer: "no" } }];
+  mockRead.mockResolvedValue([{ ...current, payeeName: "Bank", importedPayee: "Bank" }]);
+  render(<ReconciliationView />);
+  fireEvent.click(screen.getByRole("button", { name: "Open saved session" }));
+  await screen.findByText("Decisions enabled");
+  expect(stagedDecisions()).toEqual(expect.arrayContaining([expect.objectContaining({ disposition: "unresolved", actualTransactionIds: ["t1"] })]));
+  fireEvent.click(screen.getByRole("button", { name: /^Review/ }));
+  expect(screen.queryByRole("button", { name: /^Apply / })).not.toBeInTheDocument();
+  expect(mockCommand).not.toHaveBeenCalled();
+  expect(mockCreate).not.toHaveBeenCalled();
 });

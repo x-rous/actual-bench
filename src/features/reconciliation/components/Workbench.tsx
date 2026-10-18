@@ -30,6 +30,7 @@ import type { StagedPatch } from "@/lib/reconciliation/types";
 import { useTableHeaderHeight } from "../hooks/useTableHeaderHeight";
 import { useTableSelection } from "@/hooks/useTableSelection";
 import { BulkDecisionBar } from "./BulkDecisionBar";
+import { transactionOwners } from "@/lib/reconciliation/session/build";
 import { CoverageSummary, DecisionProgressStrip, ShortcutsButton } from "./CoverageSummary";
 import { InvertedSignsNotice } from "./InvertedSignsNotice";
 import { NewTransactionOptions } from "./NewTransactionOptions";
@@ -658,6 +659,7 @@ export function Workbench({
   const [group, setGroup] = useState<MatchingGroup | null>(null);
   const groups = useMemo(() => matchingGroups(items, transactions), [items, transactions]);
   const groupTransactionIds = useMemo(() => new Set(groups.flatMap((group) => group.transactionIds)), [groups]);
+  const owners = useMemo(() => transactionOwners(items), [items]);
   const groupFor = useMemo(() => new Map(groups.flatMap((entry) => entry.itemIds.map((id) => [id, entry] as const))), [groups]);
   const candidateIndex = useMemo(() => buildActualIndex([...transactions.values()]), [transactions]);
   const evidenceItems = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
@@ -1590,7 +1592,7 @@ export function Workbench({
 
       <div className="flex min-h-0 flex-1">
         <div ref={attachGrid} className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full border-collapse">
+          <table className="w-full border-separate border-spacing-0">
             <caption className="sr-only">
               Bank statement rows matched against Actual transactions
             </caption>
@@ -1599,10 +1601,9 @@ export function Workbench({
               carried by the group headings, a band down the statement's columns,
               and a solid divider between them.
 
-              Every cell paints its own **opaque** background. A background on
-              the `<thead>` is not painted under `border-collapse`, and a
-              translucent one lets the rows scroll through underneath — both of
-              which leave a sticky header with body text showing through it.
+              Each cell paints an opaque background and its own borders.
+              Separate borders with zero spacing keep the sticky header's bottom
+              edge opaque instead of sharing a seam with the scrolling rows.
             */}
             <thead ref={headerRef} className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr>
@@ -1793,6 +1794,7 @@ export function Workbench({
         <BulkDecisionBar
           selected={selectedItems}
           groupTransactionIds={groupTransactionIds}
+          transactionOwners={owners}
           statementRows={statementRows}
           transactions={transactions}
           onClear={clearSelection}

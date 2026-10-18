@@ -12,6 +12,7 @@ import type { WorkbenchProps } from "./Workbench";
 import { Inspector } from "./Inspector";
 import { WorkbenchRow } from "./WorkbenchRow";
 import { useTableHeaderHeight } from "../hooks/useTableHeaderHeight";
+import { transactionOwners } from "@/lib/reconciliation/session/build";
 
 type Props = Pick<WorkbenchProps, "items" | "statementRows" | "transactions" | "payees" |
   "categories" | "onDisposition" | "onUseCandidate" | "onCorrectAmount" | "onStage" | "onUnstage"> & {
@@ -44,8 +45,7 @@ export function GroupMatchingView({ group, items, statementRows, transactions, p
   const members = group.itemIds.map((id) => byId.get(id)).filter((item): item is ReconciliationItem => Boolean(item));
   const pending = members.filter((item) => item.disposition === "unresolved");
   const resolved = members.filter((item) => item.disposition === "matched" || item.disposition === "correct-amount");
-  const claimed = new Set(items.filter((item) => item.disposition === "matched" || item.disposition === "correct-amount")
-    .flatMap((item) => item.actualTransactionIds));
+  const claimed = transactionOwners(items);
   const availableCandidates = new Set(pending.flatMap((item) => item.actualTransactionIds));
   const columns = group.transactionIds.filter((id) => !claimed.has(id) && availableCandidates.has(id)).map((id) => transactions.get(id))
     .filter((transaction): transaction is NonNullable<typeof transaction> => Boolean(transaction));
@@ -80,7 +80,7 @@ export function GroupMatchingView({ group, items, statementRows, transactions, p
     </div>
     <div className="flex min-h-0 flex-1">
       <div className="min-w-0 flex-1 overflow-auto">
-        {pending.length > 0 && <table className="w-full border-collapse text-xs">
+        {pending.length > 0 && <table className="w-full border-separate border-spacing-0 text-xs">
           <caption className="sr-only">Bank rows and their existing Actual candidates</caption>
           <thead ref={headerRef} className="sticky top-0 z-10 bg-muted">
             <tr><th scope="col" className="sticky left-0 z-20 min-w-56 border-b border-r border-border bg-muted p-3 text-left">Bank statement</th>
@@ -95,7 +95,7 @@ export function GroupMatchingView({ group, items, statementRows, transactions, p
             const row = statementRows.get(item.statementRowIds[0]);
             if (!row) return null;
             const candidates = new Set(item.actualTransactionIds);
-            return <tr key={item.id} className="border-b border-border/40">
+            return <tr key={item.id} className="[&>*]:border-b [&>*]:border-b-border/40">
               <th scope="row" className="sticky left-0 border-r border-border bg-background p-3 text-left font-normal">
                 <TransactionHeading date={row.postedDate} amount={row.amount} description={statementText(row)} showYear={showYear} />
               </th>
@@ -127,7 +127,7 @@ export function GroupMatchingView({ group, items, statementRows, transactions, p
             <h4 className="font-semibold">Paired</h4>
             {pending.length === 0 && <span role="status" className="text-muted-foreground">The bank rows in this group are decided.</span>}
           </div>
-          <table className="w-full min-w-[56rem] border-collapse">
+          <table className="w-full min-w-[56rem] border-separate border-spacing-0">
             <caption className="sr-only">Paired bank and Actual transactions</caption>
             <thead ref={pending.length === 0 ? headerRef : undefined} className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr>
