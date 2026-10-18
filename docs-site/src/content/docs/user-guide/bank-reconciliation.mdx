@@ -388,7 +388,61 @@ For each difference, you can:
 - keep an existing transaction that is not on the statement; or
 - leave the row undecided. Apply does not change undecided rows.
 
+Actual amounts with a staged correction appear in amber in the matching table.
+
+### Resolve competing matches together
+
+When several bank rows share Actual candidates, open a row and select the highlighted **Resolve group**
+button in its panel header. Bank rows
+run down the matrix and Actual transactions run across it. Each row and column header shows a
+bold amount above the date and merchant. Each eligible cell states the amount
+and date difference. Actual column headers include a single-line notes preview, and same-day
+candidates stay highlighted while you select other cells. Selecting a cell opens its comparison in
+the right panel; select **Use this match** to confirm it. The panel states any amount correction
+that accepting the pair will stage.
+
+Confirming a pair closes the panel. **Paired** shows both transactions using the reconciliation
+table layout, including their dates, amounts, payee, notes, and decision. Select a paired row to
+reopen its details. The group title is on the left, with navigation on the right. After the last
+confirmation, the completion message appears beside **Paired** and **Back to all rows** is
+highlighted. The paired table stays visible so you can
+review it or use **Undo last pairing** before returning.
+
+A confirmed transaction disappears from the other candidate lists. Columns that no remaining
+bank row can use are hidden; these Actual transactions remain available in the main reconciliation
+table. The last remaining pair still
+needs your confirmation. **Undo last pairing** restores the previous relationships, including any
+released Actual rows. An unrelated edit clears that undo. It is available during this visit only.
+
+**None of these** leaves the bank row undecided and keeps released Actual transactions available
+for their usual keep/delete decisions. Use **Back to all rows** to handle those remaining decisions.
+Selecting cells does not fetch data or write to Actual.
+
+### Read the match details
+
+The matching table header keeps its bottom divider visible while scrolling.
+The right panel shows the current result or confidence in its fixed header, with supporting evidence
+below. **Comparison**, **Bank**, and **Actual** share one header row, and differences show their size
+beside the Actual value. Decision buttons stay visible in a gray footer while details, candidate
+choices, and resulting fields scroll above it. Payee and notes edits are grouped separately from
+decisions; category remains read-only. Candidate comparisons show **Use this match** before exposing
+the editor.
+
+### Use the bank's date
+
+On an accepted match with different dates, **Use statement date** beside the date comparison stages the bank date on the
+existing Actual transaction. It does not change the date merely because the rows matched. The
+resulting transaction shows the staged date and **Undo date** removes that proposal. Review includes
+the date change before Apply. Existing protections still apply.
+
 ### When amounts disagree
+
+To correct several rows together, select them and choose **Use the statement amount**. Each eligible
+row is recorded as decided, with its correction staged for Review and Apply. **Undo that** restores
+the previous decisions and staged edits until another edit is made. Rows with several candidates
+need a chosen match first. Bulk decisions apply only to eligible selected rows currently visible
+in the table. Shared Actual candidates must be paired individually in **Resolve group**
+before bulk amount corrections or deletion.
 
 When a matched amount differs from the statement, accepting the pairing stages the statement amount
 on the existing transaction. Actual Bench will not change the amount of a reconciled transaction, a
@@ -421,10 +475,21 @@ are kept by default and do not count as undecided work.
 
 ### Transform transactions
 
-Use transformations to preview and stage a payee change or note changes across several rows. Set a
+Use transformations to preview and stage a payee change or note changes across several rows.
+Already-applied rows are excluded from the preview and changes. Set a
 payee, or use note actions to add, remove, move, or replace tags and text. Conditions can use a
 payee, category, or tag. Transformations do not write any change until Apply, and do not overwrite a
 hand-edited value unless you choose to do so.
+
+The **If** and **Then** controls sit together in a rule section, with the manual-edit override
+beneath them. The preview shows payee names in **Now** and **After**, and a date beside each row's
+description helps distinguish repeated merchants. An unset payee shows **No payee**; if its name
+cannot be found, the preview shows **Unavailable payee**. The preview explains when matching rows
+already have the requested values or were left unchanged by protections or manual edits. The
+header and action buttons remain visible while you scroll through the preview.
+
+Selecting **Change N rows** adds the changes to this reconciliation for review. Your Actual budget
+is updated only when you select **Apply**.
 
 For text, you can prepend, append, or replace an exact value. You can also extend a merchant name in
 an existing note to the longer statement description. If Actual Bench cannot identify the bank text
@@ -483,6 +548,15 @@ the previous value when an existing imported payee would be replaced.
 
 ## Apply safely
 
+Decision saves finish before Apply checks the budget. A failed save must be retried before writing;
+bulk decisions save together. If a staged date already matches Actual, it needs no further write.
+If Actual has a different third date, that row is held for review.
+
+If a new Actual transaction could match a row marked Create, the row returns to undecided with
+the new candidate available for review. It cannot be created until you resolve that choice.
+Accepting a match or correcting its amount removes that Actual transaction from competing rows;
+Apply also refuses conflicting decisions about the same transaction.
+
 Select **Apply** only after reviewing the plan. Immediately before writing, Actual Bench re-reads
 every affected transaction. It writes rows that are still safe and holds back conflicts or changes it
 cannot combine safely.
@@ -496,6 +570,15 @@ transaction twice. The result identifies successful, skipped, and failed actions
 failed** attempts only unfinished work. After writing, Actual Bench reads the account again to verify
 the result.
 
+If an Apply was interrupted, return to the session and choose **Recover interrupted Apply** only
+after the original tab has stopped. Recovery reads Actual to confirm outcomes; it does not repeat
+writes. Confirmed rows stay fixed, and unconfirmed work remains available for review and retry.
+A session that was only partly applied can still be used to decide its remaining rows.
+
+When every row is decided and no writes are needed, select **Finish** to close the session.
+Finish checks the saved decisions too. If another tab has changed them, reopen the session to
+review the current choices before finishing.
+
 An applied session cannot be re-matched because it is an audit record of its decisions and writes.
 Its Review page remains readable, but its write choices are locked to the options that were used. To
 reconcile the account again, start a new session.
@@ -507,6 +590,11 @@ file name, the period, the number of statement rows, and where it has got to. **
 gathers an account's sessions under one heading, and is off by default because most accounts have a
 single session. Opening a session goes to the step its work is at - a draft opens on **Import**, an
 applied one on its result, and everything else on the workbench.
+
+Opening a saved session fetches current Actual transactions; a Direct connection syncs first.
+Your saved decisions and staged edits remain. Editing and Apply wait for that read to succeed,
+with **Retry reading Actual** available after a failure. Saved snapshots are used for conflict checks
+and historical results, rather than as current Actual data.
 
 The **Year** filter starts on the current year when there are sessions in it; **Clear filters** widens
 it back out. A statement period that runs across a year answers to both, so a December-to-January

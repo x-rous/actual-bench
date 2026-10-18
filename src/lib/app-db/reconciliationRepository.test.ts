@@ -1,9 +1,15 @@
+import { decisionSignature } from "../reconciliation/session/signature";
+import { DEFAULT_APPLY_CONFIG } from "../reconciliation/session/plan";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getAppDb, resetAppDbForTests } from "./connection";
 import { AppDbValidationError } from "./errors";
 import {
+  claimReconciliationApply,
+  completeReconciliationWithoutWrites,
+  finishReconciliationApply,
+  saveReconciliationWork,
   createReconciliationSession,
   deleteReconciliationProfile,
   deleteReconciliationSession,
@@ -515,5 +521,90 @@ describe("import profiles", () => {
     expect(deleteReconciliationProfile(db, saved.id)).toBe(true);
     // ON DELETE SET NULL: the session survives with no profile.
     expect(getReconciliationSession(db, session.id)?.profileId).toBeNull();
+  });
+});
+
+describe("atomic work and Apply ownership", () => {
+  afterEach(() => resetAppDbForTests());
+
+  it("rolls back rows, decisions and metadata together on a late failure", () => {
+    const db = tempDb(); const session = newSession(db);
+    replaceStatementRows(db, session.id, [ROW]);
+    replaceReconciliationItems(db, session.id, [{ id: "i1", disposition: "unresolved" }]);
+    expect(() => saveReconciliationWork(db, session.id, {
+      statementRows: [{ ...ROW, amount: -100 }],
+      items: [{ id: "i2", disposition: "create" }], patch: { status: "invalid" as never },
+    })).toThrow();
+    expect(listStatementRows(db, session.id)[0].amount).toBe(ROW.amount);
+    expect(listReconciliationItems(db, session.id).map((item) => item.id)).toEqual(["i1"]);
+    expect(getReconciliationSession(db, session.id)?.status).toBe("draft");
+  });
+
+  it("compares saved decisions, claims once and prevents writes until explicit recovery", () => {
+    const db = tempDb(); const session = newSession(db);
+    replaceReconciliationItems(db, session.id, [{ id: "i1", disposition: "create", statementRowIds: ["s1"] }]);
+    const signature = () => decisionSignature(listReconciliationItems(db, session.id), DEFAULT_APPLY_CONFIG);
+    const stale = signature();
+    updateReconciliationItem(db, "i1", { disposition: "ignored" });
+    expect(() => claimReconciliationApply(db, session.id, stale)).toThrow("saved decisions changed");
+    claimReconciliationApply(db, session.id, signature());
+    expect(() => claimReconciliationApply(db, session.id, signature())).toThrow("applying");
+    expect(() => updateReconciliationItem(db, "i1", { disposition: "create" })).toThrow("applying");
+    expect(() => replaceStatementRows(db, session.id, [ROW])).toThrow("applying");
+    expect(() => updateReconciliationSession(db, session.id, { status: "ready" })).toThrow("applying");
+    expect(() => deleteReconciliationSession(db, session.id)).toThrow("applying");
+    updateReconciliationSession(db, session.id, { applyResults: [] });
+    finishReconciliationApply(db, session.id, { status: "needs_review", applyResults: [], appliedAt: null });
+    updateReconciliationItem(db, "i1", { disposition: "create" });
+    expect(listReconciliationItems(db, session.id)[0].disposition).toBe("create");
+  });
+
+  it("fixes successful rows while allowing remaining decisions and rejects cross-session patches", () => {
+    const db = tempDb(); const session = newSession(db); const other = newSession(db);
+    replaceReconciliationItems(db, session.id, [{ id: "i1", disposition: "create" }, { id: "i2", disposition: "unresolved" }]);
+    replaceReconciliationItems(db, other.id, [{ id: "other", disposition: "ignored" }]);
+    updateReconciliationSession(db, session.id, { status: "partial", appliedAt: "2026-10-17", applyResults: [{ operationId: "create:i1", status: "applied" }] });
+    expect(() => updateReconciliationItem(db, "i1", { disposition: "ignored" })).toThrow("already been applied");
+    expect(() => replaceReconciliationItems(db, session.id, [{ id: "i2", disposition: "keep" }])).toThrow("retained");
+    replaceReconciliationItems(db, session.id, [{ id: "i1", disposition: "delete" }, { id: "i2", disposition: "keep" }]);
+    expect(listReconciliationItems(db, session.id).map((item) => item.disposition)).toEqual(["create", "keep"]);
+    expect(() => saveReconciliationWork(db, session.id, { itemPatches: [{ id: "other", patch: { disposition: "create" } }] })).toThrow("does not belong");
+    expect(() => replaceStatementRows(db, session.id, [ROW])).toThrow("cannot be replaced");
+  });
+});
+
+
+describe("finishing without writes", () => {
+  afterEach(() => resetAppDbForTests());
+
+  it.each(["decision", "patch", "config"])("rejects a stale Finish when another tab changes the %s", (change) => {
+    const db = tempDb(); const session = newSession(db);
+    replaceReconciliationItems(db, session.id, [{ id: "i1", disposition: "ignored", statementRowIds: ["s1"] }]);
+    const expected = decisionSignature(listReconciliationItems(db, session.id), DEFAULT_APPLY_CONFIG);
+    if (change === "decision") updateReconciliationItem(db, "i1", { disposition: "create" });
+    if (change === "patch") updateReconciliationItem(db, "i1", { stagedChanges: { notes: { original: null, staged: "New edit", source: "manual" } } });
+    if (change === "config") updateReconciliationSession(db, session.id, { applyConfig: { ...DEFAULT_APPLY_CONFIG, clearedTarget: "reconciled" } });
+    expect(() => completeReconciliationWithoutWrites(db, session.id, expected)).toThrow("saved decisions changed");
+    expect(getReconciliationSession(db, session.id)?.status).toBe("draft");
+    if (change === "decision") expect(listReconciliationItems(db, session.id)[0].disposition).toBe("create");
+  });
+
+  it("completes atomically and retains successful Apply history and its timestamp", () => {
+    const db = tempDb(); const session = newSession(db);
+    replaceReconciliationItems(db, session.id, [{ id: "i1", disposition: "ignored" }]);
+    const history = [{ operationId: "update:old", status: "applied" }];
+    updateReconciliationSession(db, session.id, { status: "partial", appliedAt: "2026-10-18", applyResults: [...history, { operationId: "update:ignored", status: "failed" }] });
+    const expected = decisionSignature(listReconciliationItems(db, session.id), DEFAULT_APPLY_CONFIG);
+    const result = completeReconciliationWithoutWrites(db, session.id, expected);
+    expect(result).toMatchObject({ status: "completed", applyResults: history, appliedAt: "2026-10-18" });
+  });
+
+  it("refuses unresolved decisions and a running Apply", () => {
+    const db = tempDb(); const session = newSession(db);
+    replaceReconciliationItems(db, session.id, [{ id: "i1", disposition: "unresolved" }]);
+    const expected = decisionSignature(listReconciliationItems(db, session.id), DEFAULT_APPLY_CONFIG);
+    expect(() => completeReconciliationWithoutWrites(db, session.id, expected)).toThrow("remaining rows");
+    claimReconciliationApply(db, session.id, expected);
+    expect(() => completeReconciliationWithoutWrites(db, session.id, expected)).toThrow("applying");
   });
 });

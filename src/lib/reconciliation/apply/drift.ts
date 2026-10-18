@@ -68,6 +68,7 @@ export type DriftInput = {
    * withholding everything.
    */
   latest: Map<string, ActualTransactionSnapshot | null>;
+  transfersReported?: boolean;
 };
 
 function targetedTransactionId(operation: ApplyOperation): string | null {
@@ -99,6 +100,7 @@ export function reconcilePlanWithDrift(input: DriftInput): {
 } {
   const verdicts: DriftVerdict[] = [];
   const operations: ApplyOperation[] = [];
+  const alreadyGone = new Set<string>();
 
   for (const operation of input.plan.operations) {
     const transactionId = targetedTransactionId(operation);
@@ -122,6 +124,7 @@ export function reconcilePlanWithDrift(input: DriftInput): {
       // A delete whose target is already gone is the outcome the user asked
       // for, so it is dropped rather than reported as a problem.
       if (operation.kind === "delete") {
+        alreadyGone.add(operation.id);
         verdicts.push({
           operationId: operation.id,
           status: "vanished",
@@ -138,19 +141,35 @@ export function reconcilePlanWithDrift(input: DriftInput): {
     }
 
     if (!snapshot) {
-      operations.push(operation);
+      verdicts.push({ operationId: operation.id, status: "conflict", fields: ["snapshot"],
+        reason: "The original transaction snapshot is missing. Reopen and review this row before applying." });
       continue;
     }
 
     // Reconciled since the snapshot: locked in Actual, and not something to
     // work around silently.
-    if (live.reconciled && !snapshot.reconciled) {
+    if (live.reconciled) {
       verdicts.push({
         operationId: operation.id,
         status: "conflict",
         fields: ["reconciled"],
         reason: "This transaction has been reconciled in Actual since the session loaded it.",
       });
+      continue;
+    }
+
+    const structuralConflict = live.accountId !== operation.accountId || live.isChild ||
+      ((operation.kind === "delete" || (operation.kind === "update" &&
+        (operation.patch.amount !== undefined || operation.patch.payeeId !== undefined))) &&
+        (Boolean(live.transferId) || input.transfersReported === false)) ||
+      (operation.kind === "update" && live.isParent &&
+        (operation.patch.amount !== undefined || operation.patch.payeeId !== undefined)) ||
+      (operation.kind === "delete" &&
+        (live.isParent !== snapshot.isParent ||
+          JSON.stringify(live.splitLines) !== JSON.stringify(snapshot.splitLines)));
+    if (structuralConflict) {
+      verdicts.push({ operationId: operation.id, status: "conflict", fields: ["structure"],
+        reason: "This transaction's account, transfer or split structure changed. Review it in Actual before applying." });
       continue;
     }
 
@@ -191,6 +210,10 @@ export function reconcilePlanWithDrift(input: DriftInput): {
       const outcome = rebaseNotes(stagedNotes.original, stagedNotes.staged, live.notes);
       if (outcome.status === "conflict") {
         conflicts.push("notes");
+      } else if (outcome.notes === live.notes) {
+        const patch = { ...revised.patch };
+        delete patch.notes;
+        revised = { ...revised, patch };
       } else {
         // Whether it was replayed or already converged, the recorded original
         // moves to what Actual says now, so the write describes itself honestly.
@@ -211,6 +234,12 @@ export function reconcilePlanWithDrift(input: DriftInput): {
       if (field === "notes") continue;
       const value = operation.patch[field];
       if (!value) continue;
+      if (live[field] === value.staged) {
+        const patch = { ...revised.patch };
+        delete patch[field];
+        revised = { ...revised, patch, date: live.date, amount: live.amount };
+        continue;
+      }
       if (live[field] === value.original) continue;
       conflicts.push(field);
     }
@@ -243,7 +272,9 @@ export function reconcilePlanWithDrift(input: DriftInput): {
       revised = { ...revised, cleared: undefined };
     }
 
-    operations.push(revised);
+    if (revised.importedPayee === live.importedPayee) revised = { ...revised, importedPayee: undefined };
+    if (Object.keys(revised.patch).length > 0 || revised.cleared !== undefined ||
+        revised.importedPayee !== undefined || staged.length === 0) operations.push(revised);
 
     if (rebasedTo) {
       verdicts.push({
@@ -260,7 +291,7 @@ export function reconcilePlanWithDrift(input: DriftInput): {
   }
 
   const withheld = verdicts.filter(
-    (verdict) => verdict.status === "conflict" || verdict.status === "vanished"
+    (verdict) => verdict.status === "conflict" || (verdict.status === "vanished" && !alreadyGone.has(verdict.operationId))
   );
 
   return {

@@ -194,6 +194,16 @@ Consolidate budgets kept in **different currencies**: a transaction flow can con
 
 ## Bank Statement Reconciliation
 
+- **Fresh data when resuming:** Direct syncs first and both connections read current Actual transactions before enabling decisions. Saved choices remain; a failed refresh offers a retry.
+- **Resolve group:** compare connected bank rows against their existing Actual candidates in one matrix. Select a cell to inspect it, confirm **Use this match**, and undo the last pairing if needed. Bold amounts appear above the date and merchant. Actual columns include a short notes preview and same-day candidates stay highlighted. Columns with no remaining eligible bank rows disappear. Paired rows use the reconciliation table layout. Confirming a pair closes its panel; selecting a paired row reopens it. After the last pair, completion is shown beside **Paired** and **Back to all rows** is highlighted while the paired table stays open for review. Choosing one transaction removes it from competing rows; the last pair still needs confirmation.
+- **Match details panel:** current result or confidence and a highlighted Resolve group action in a fixed header aligned with the table header, whose bottom divider stays visible while scrolling; compact evidence, aligned comparison and source details, contextual date correction, and resulting fields. Decision buttons stay visible in a gray footer while the details and candidate choices scroll. Candidate comparisons keep editing behind explicit match confirmation.
+- **Use statement date:** explicitly stage the bank date on an accepted match, review it with the other changes, or undo it. Unchanged dates stay untouched.
+- **Transform preview:** grouped If/Then controls use the Rules drawer style. Payee changes show names, dated row descriptions distinguish repeated merchants, and skipped or unchanged rows have a clear explanation. Changes stay in reconciliation for Review and Apply.
+- **Bulk decisions:** Create, Keep, Delete, Ignore, and statement amount corrections apply to eligible selected rows currently visible in the table. Shared Actual candidates require individual pairing in Resolve group. Corrections use the same staging as the right panel. Actual amounts with a staged correction appear in amber in the matching table. Undo restores the previous decisions and edits until another edit is made. Transform excludes already-applied rows.
+- Each Actual transaction can belong to only one decided match or deletion; conflicting relationships block Apply. New Actual counterparts discovered before a Create return the affected rows to review.
+- Decision saves run in order, bulk edits save together, and Apply checks that the reviewed decisions are saved. A running Apply locks the session; an interrupted run can be recovered by reading Actual after its original tab has stopped.
+- Successful rows stay fixed while remaining rows can be reviewed. **Finish** closes a fully decided session that needs no writes after checking that its saved decisions have not changed in another tab. Displayed amounts are searchable; cleared payees and notes preview consistently.
+
 A workbench for checking a bank statement against an account in Actual and settling the differences. Import the statement, match it, decide each row, review, then apply — nothing is written to your budget until the explicit Apply, and the review screen names staged **changes** separately from bank-provenance writes.
 
 ### Importing a statement
@@ -277,7 +287,7 @@ Exact signed amount is a hard requirement for an automatic match. Text never *fi
 - Afterwards the account is **read back and compared against what was approved** — created rows present and present once, updated fields holding the approved values, deleted rows gone, split parents still adding up, nothing reconciled in Actual moved
 - Actual's rules run on created transactions, so a created row's payee or category may end up different from the preview; this is stated on the review screen rather than discovered afterwards
 
-Sessions — the normalized statement rows, your decisions, the matching options, and the record of what was written — are stored in the **Actual Bench metadata database on the server**, which is what makes them resumable and a retry safe. They are deletable from the session list at any time; deleting one removes its statement rows and never touches your budget.
+Sessions — the normalized statement rows, your decisions, the matching options, and the record of what was written — are stored in the **Actual Bench metadata database on the server**, which is what makes them resumable and a retry safe. They are deletable from the session list while no Apply is running; deleting one removes its statement rows and never touches your budget.
 
 ## Data Browser
 

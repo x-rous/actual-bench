@@ -1,17 +1,21 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Link2, Lock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
   ActualTransactionSnapshot,
+  MatchReason,
   ReconciliationItem,
   StatementRow,
 } from "@/lib/reconciliation/types";
 import type { StageableField } from "@/lib/reconciliation/session/staging";
 import type { PossiblePair } from "@/lib/reconciliation/session/possiblePairs";
 import type { ReconciliationDisposition } from "@/lib/reconciliation/types";
-import { ItemActions } from "./ItemActions";
+import { REASON } from "@/lib/reconciliation/session/build";
+import { canStageField } from "@/lib/reconciliation/session/staging";
+import { ItemActions, ItemCandidates } from "./ItemActions";
 import { StagedFields, type Option } from "./StagedFields";
 import { statementText } from "@/lib/reconciliation/statement/text";
 import {
@@ -21,21 +25,14 @@ import {
   formatShortDate,
 } from "../lib/format";
 
-/**
- * The selected-row inspector (UX §9, feature spec §46).
- *
- * Read-only in this milestone. It answers "why does Actual Bench think these
- * match?", shows both sides side by side, and states which guardrails apply —
- * the editing surface arrives with the staged-resolution milestone.
- */
+/** Keep the most useful evidence without repeating every text channel. */
+function evidenceSummary(reasons: MatchReason[]): string[] {
+  const facts = reasons.filter((reason) => reason.kind !== "text" && reason.kind !== "text-skipped");
+  const text = reasons.filter((reason): reason is Extract<MatchReason, { kind: "text" }> => reason.kind === "text" && reason.similarity > 0)
+    .sort((a, b) => b.similarity - a.similarity)[0];
+  return [...new Set([...facts, ...(text ? [text] : [])].map(describeReason))].slice(0, 3);
+}
 
-/**
- * One fact, label left and value right.
- *
- * Stacked, each field cost two lines and the panel ran to a scroll for what is
- * a dozen short values. Side by side it reads as a list of facts, which is what
- * it is.
- */
 function Field({
   label,
   value,
@@ -46,9 +43,9 @@ function Field({
   numeric?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[5.5rem_1fr] items-baseline gap-2">
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className={cn("break-words text-xs", numeric && "tabular-nums")}>{value || "-"}</dd>
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-2.5">
+      <dt className="whitespace-nowrap text-xs text-muted-foreground">{label}</dt>
+      <dd className={cn("min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed", numeric && "tabular-nums")}>{value || "-"}</dd>
     </div>
   );
 }
@@ -67,6 +64,7 @@ function Compared({
   actual,
   differs,
   note,
+  action,
 }: {
   label: string;
   statement: string | null;
@@ -74,20 +72,22 @@ function Compared({
   differs: boolean;
   /** The size of the difference, when saying it is more useful than showing it. */
   note?: string | null;
+  action?: ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[3.5rem_1fr_1fr] items-baseline gap-2">
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] items-baseline gap-2">
+      <dt className="whitespace-nowrap text-xs text-muted-foreground">{label}</dt>
       <dd className="tabular-nums text-xs">{statement || "-"}</dd>
       <dd
         className={cn(
-          "tabular-nums text-xs",
+          "min-w-0 tabular-nums text-xs",
           differs ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
         )}
         title={note ?? undefined}
       >
         {actual || "-"}
-        {differs && note && <span className="block text-[10px]">{note}</span>}
+        {differs && note && <span className="mt-0.5 block text-[11px]">{note}</span>}
+        {action && <span className="mt-1.5 block text-foreground">{action}</span>}
       </dd>
     </div>
   );
@@ -152,6 +152,11 @@ export type InspectorProps = {
   onUnstage: (field: StageableField) => void;
   /** The session has been applied: show the record, offer no more decisions. */
   readOnly?: boolean;
+  candidateSelection?: boolean;
+  evidenceFor?: (transactionId: string) => string[];
+  onResolveGroup?: () => void;
+  /** Match the rendered height of the adjacent table header. */
+  headerHeight?: number;
   /**
    * The other half of a pair the matcher could not relate.
    *
@@ -184,6 +189,10 @@ export function Inspector({
   onStage,
   onUnstage,
   readOnly = false,
+  candidateSelection = false,
+  evidenceFor,
+  onResolveGroup,
+  headerHeight,
   possiblePartner = null,
   onLinkPossible,
 }: InspectorProps) {
@@ -206,275 +215,293 @@ export function Inspector({
     item.actualTransactionIds.length === 1 && transactions.length === 1
       ? transactions[0]
       : undefined;
-  const reasons = item.match?.reasons ?? [];
+  const manual = item.match?.evidenceSource === "manual";
+  const currentEvidence = chosen && !manual ? evidenceFor?.(chosen.id) : undefined;
+  const evidence = (currentEvidence ?? (item.match ? evidenceSummary(item.match.reasons) : [])).slice(0, 3);
+  const canUseDate = !readOnly && !candidateSelection && chosen && statementRow &&
+    (item.disposition === "matched" || item.disposition === "correct-amount") &&
+    chosen.date !== statementRow.postedDate && canStageField(item, "date").allowed;
+
+  const title = candidateSelection ? "Candidate comparison"
+    : item.disposition === "create" ? "Will create"
+    : item.disposition === "delete" ? "Will delete"
+    : item.disposition === "ignored" ? "Ignored"
+    : item.disposition === "keep" ? (item.reasonCode === REASON.outsideStatementPeriod ? "Outside period" : "Keep in Actual")
+    : item.disposition === "correct-amount" ? "Will fix amount"
+    : item.disposition === "unresolved"
+      ? (item.reasonCode === REASON.likelyDuplicate ? "Likely duplicate"
+        : item.actualTransactionIds.length > 1 || onResolveGroup || item.reasonCode === REASON.merchantCluster ? "Needs pairing"
+        : !item.actualTransactionIds.length && statementRow ? "Not in Actual"
+        : !statementRow && chosen ? "Actual only"
+        : chosen && statementRow && chosen.amount !== statementRow.amount ? "Amount differs" : "Needs review")
+      : manual ? "Matched manually"
+      : item.match?.label === "exact" ? "Exact match"
+      : item.match ? `${confidenceLabelText(item.match.label)} confidence` : "Matched";
 
   return (
-    <aside
-      aria-label="Match details"
-      className="flex w-96 shrink-0 flex-col gap-3 overflow-auto border-l border-border/50 p-4"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-sm font-semibold">Match details</h3>
-        <Button variant="ghost" size="icon" aria-label="Close match details" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {item.match && (
-        <section className="flex flex-col gap-1">
-          <p className="text-sm font-medium">
-            {item.match.confidence != null && item.match.label !== "exact"
-              ? `${item.match.confidence}% ${confidenceLabelText(item.match.label)}`
-              : confidenceLabelText(item.match.label)}
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            {/* Users must be able to tell a Bench suggestion from a manual link
-                — and, later, from Actual's own native verdict. */}
-            {item.match.evidenceSource === "manual"
-              ? "You matched these manually"
-              : "Suggested by Actual Bench"}
-          </p>
-          <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-            {reasons.map((reason, index) => (
-              <li key={`${reason.kind}-${index}`}>{describeReason(reason)}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* The two facts both sides state, compared rather than listed twice. */}
-      {statementRow && chosen && (
-        <section className="flex flex-col gap-1.5">
-          <dl className="flex flex-col gap-1.5">
-            <div className="grid grid-cols-[3.5rem_1fr_1fr] gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-              <span />
-              <span>Bank</span>
-              <span>Actual</span>
-            </div>
-            <Compared
-              label="Date"
-              statement={statementRow.postedDate}
-              actual={chosen.date}
-              differs={statementRow.postedDate !== chosen.date}
-              note={dayGap(statementRow.postedDate, chosen.date)}
-            />
-            <Compared
-              label="Amount"
-              statement={formatMinorUnits(statementRow.amount)}
-              actual={formatMinorUnits(chosen.amount)}
-              differs={statementRow.amount !== chosen.amount}
-              note={
-                statementRow.amount !== chosen.amount
-                  ? `${chosen.amount > statementRow.amount ? "+" : "−"}${formatMinorUnits(
-                      Math.abs(chosen.amount - statementRow.amount)
-                    )}`
-                  : null
-              }
-            />
-          </dl>
-        </section>
-      )}
-
-      {statementRow && (
-        <section className="flex flex-col gap-1.5">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide">Bank statement</h4>
-          <dl className="flex flex-col gap-1.5">
-            {!chosen && !possiblePartner && (
-              <Field label="Date" value={statementRow.postedDate} />
-            )}
-            <Field label="Imported payee" value={statementRow.importedPayee} />
-            {statementRow.bankNotes && (
-              <Field label="Bank notes" value={statementRow.bankNotes} />
-            )}
-            {!chosen && !possiblePartner && (
-              <Field label="Amount" value={formatMinorUnits(statementRow.amount)} numeric />
-            )}
-            {/* A foreign purchase carries two amounts, and which one Actual
-                holds is exactly what makes these rows hard to match by hand. */}
-            {statementRow.originalAmount != null && (
-              <Field
-                label="Original"
-                value={`${formatMinorUnits(statementRow.originalAmount)} ${
-                  statementRow.originalCurrency ?? ""
-                }`.trim()}
-                numeric
-              />
-            )}
-            <Field
-              label="Reference"
-              value={statementRow.bankReference ?? statementRow.externalId ?? null}
-            />
-          </dl>
-        </section>
-      )}
-
-      {chosen && (
-        <section className="flex flex-col gap-1.5">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wide">In Actual</h4>
-          <dl className="flex flex-col gap-1.5">
-            {!statementRow && <Field label="Date" value={chosen.date} />}
-            {!statementRow && (
-              <Field label="Amount" value={formatMinorUnits(chosen.amount)} numeric />
-            )}
-            <Field label="Payee" value={chosen.payeeName} />
-            {/* The bank's raw text is shown separately from the curated payee —
-                the statement never silently replaces user data. */}
-            <Field label="Imported payee" value={chosen.importedPayee} />
-            <Field label="Category" value={chosen.categoryName} />
-            <Field label="Notes" value={chosen.notes} />
-          </dl>
-        </section>
-      )}
-
-      {/*
-        Shown above the decide actions, because if these two are the same thing
-        then none of the decisions below is the right one.
-
-        **Both sides, always.** The first version showed only the difference —
-        "0.67 apart" — while the panel above it showed whichever row happened to
-        be selected. So the user was asked to confirm a pairing without ever
-        being shown the other half of it, which is not a question anyone can
-        answer. The comparison is the same shape the panel uses for a matched
-        row: one line per fact, both readings, differences marked.
-      */}
-      {!readOnly && possiblePartner?.row && possiblePartner.transaction && onLinkPossible && (
-        <section className="flex flex-col gap-2 rounded-md border border-sky-500/40 bg-sky-500/5 p-2.5">
-          <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
-            <Link2 className="h-3 w-3" aria-hidden="true" />
-            Possibly the same transaction
-          </h4>
-
-          {/*
-            Stacked, not side by side.
-            
-            A three-column compare fits a *matched* row, where the panel is
-            reporting a conclusion and the two readings of each fact belong on
-            one line. Here the user is choosing, and choosing is what the
-            candidate list already does - one block per transaction, read top to
-            bottom. Two shapes for the same act is one more thing to learn, and
-            in a 24rem panel the columns were too narrow for a merchant name.
-          */}
-          <PairSide
-            label="From the statement"
-            date={possiblePartner.row.postedDate}
-            amount={possiblePartner.row.amount}
-            title={statementText(possiblePartner.row)}
-          />
-          <PairSide
-            label="In Actual"
-            date={possiblePartner.transaction.date}
-            amount={possiblePartner.transaction.amount}
-            // The same three channels the comparison itself reads. Falling
-            // straight to "No payee" threw away the bank text the pairing was
-            // very likely found on.
-            title={
-              possiblePartner.transaction.payeeName ??
-              possiblePartner.transaction.importedPayee ??
-              ""
-            }
-            detail={possiblePartner.transaction.notes}
-            category={possiblePartner.transaction.categoryName}
-          />
-
-          {/* What separates them, said once rather than marked on each line. */}
-          <p className="text-[11px] text-muted-foreground">
-            {possiblePartner.pair.dayGap === 0
-              ? "Same day"
-              : `${Math.abs(possiblePartner.pair.dayGap)} day${
-                  Math.abs(possiblePartner.pair.dayGap) === 1 ? "" : "s"
-                } apart`}
-            {possiblePartner.pair.amountDifference !== 0 &&
-              ` · ${formatMinorUnits(Math.abs(possiblePartner.pair.amountDifference))} apart`}
-            . Matching would not relate these, so neither row was offered to the other.
-          </p>
-
-          <Button
-            size="sm"
-            variant="outline"
-            className="self-start"
-            onClick={() =>
-              onLinkPossible(
-                possiblePartner.pair.statementItemId,
-                possiblePartner.pair.actualItemId
-              )
-            }
-          >
-            <Link2 className="mr-1 h-3.5 w-3.5" />
-            These are the same transaction
+    <aside aria-label="Match details"
+      className="flex min-h-0 w-[394px] shrink-0 flex-col border-l border-border/60 bg-background">
+      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-4"
+        style={headerHeight ? { height: headerHeight } : undefined}>
+        <h3 className="min-w-0 truncate text-sm font-semibold">{title}</h3>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {!readOnly && onResolveGroup && <Button size="sm" onClick={onResolveGroup}>Resolve group</Button>}
+          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Close match details" onClick={onClose}>
+            <X className="h-4 w-4" />
           </Button>
-        </section>
-      )}
-
-      {readOnly ? (
-        <p className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
-          This reconciliation has been applied, so its decisions are a record rather than something
-          still to settle. Start a new reconciliation to check the account as it stands now.
-        </p>
-      ) : (
-        <ItemActions
-          item={item}
-          statementRow={statementRow}
-          transactions={transactions}
-          onDisposition={onDisposition}
-          onUseCandidate={onUseCandidate}
-          onCorrectAmount={onCorrectAmount}
-        />
-      )}
-
-      {/* Editing is offered once the row is about a specific transaction, or is
-          going to become one. Until then there is nothing to edit. */}
-      {!readOnly &&
-        (item.disposition === "create" ||
-          item.disposition === "matched" ||
-          item.disposition === "correct-amount") && (
-        <StagedFields
-          item={item}
-          current={{
-            payeeId: chosen?.payeeId ?? null,
-            categoryId: chosen?.categoryId ?? null,
-            notes: chosen?.notes ?? null,
-          }}
-          payees={payees}
-          categories={categories}
-          onStage={onStage}
-          onUnstage={onUnstage}
-        />
-      )}
-
-      {(item.guards.protectedReconciled ||
-        item.guards.splitParent ||
-        item.guards.transfer !== "no") && (
-        <section className="flex flex-col gap-1.5 rounded-md border border-border/60 p-2.5">
-          <h4 className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide">
-            <Lock className="h-3 w-3" aria-hidden="true" />
-            Protected
-          </h4>
-          <ul className="space-y-1 text-xs text-muted-foreground">
-            {item.guards.protectedReconciled && (
-              <li>
-                This transaction is reconciled in Actual. Actual Bench will not change or delete it.
-              </li>
-            )}
-            {item.guards.splitParent && (
-              <li>
-                This is a split transaction. Its category lives on the split lines, so the category
-                cannot be changed from here.
-              </li>
-            )}
-            {item.guards.transfer === "yes" && (
-              <li>
-                This is one leg of a transfer. Deleting it would change the other account too, so it
-                cannot be deleted from here.
-              </li>
-            )}
-            {item.guards.transfer === "unknown" && (
-              <li>
-                This connection does not report transfers, so deletion needs explicit confirmation.
-              </li>
-            )}
+        </div>
+      </header>
+      <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-3">
+        {evidence.length > 0 && (
+          <ul aria-label="Match evidence" className="space-y-1 rounded-lg border border-border/60 bg-background px-3 py-2 text-xs text-muted-foreground">
+            {evidence.map((detail) => <li key={detail} className="flex items-baseline gap-2">
+              <span aria-hidden="true" className="text-muted-foreground/60">·</span>{detail}
+            </li>)}
           </ul>
-        </section>
-      )}
+        )}
+
+        {/* The two facts both sides state, compared rather than listed twice. */}
+        {statementRow && chosen && (
+          <section aria-label="Comparison" className="space-y-2.5 rounded-lg border border-border/60 bg-background p-3">
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 text-[11px] font-medium">
+              <h4 className="text-xs font-semibold">Comparison</h4>
+              <span className="rounded bg-muted px-1.5 py-1">Bank</span>
+              <span className="rounded bg-muted px-1.5 py-1">Actual</span>
+            </div>
+            <dl className="space-y-2">
+              <Compared
+                label="Date"
+                statement={statementRow.postedDate}
+                actual={chosen.date}
+                differs={statementRow.postedDate !== chosen.date}
+                note={dayGap(statementRow.postedDate, chosen.date)}
+                action={canUseDate ? <Button size="sm" variant="outline" className="h-auto whitespace-normal px-2 py-1 text-[11px]"
+                  disabled={item.stagedChanges?.date?.staged === statementRow.postedDate}
+                  onClick={() => onStage("date", statementRow.postedDate)}>Use statement date</Button> : undefined}
+              />
+              <Compared
+                label="Amount"
+                statement={formatMinorUnits(statementRow.amount)}
+                actual={formatMinorUnits(chosen.amount)}
+                differs={statementRow.amount !== chosen.amount}
+                note={
+                  statementRow.amount !== chosen.amount
+                    ? `${chosen.amount > statementRow.amount ? "+" : "−"}${formatMinorUnits(
+                        Math.abs(chosen.amount - statementRow.amount)
+                      )}`
+                    : null
+                }
+              />
+            </dl>
+          </section>
+        )}
+
+        {(statementRow || chosen) && <div aria-label="Transaction details" className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+        {statementRow && (
+          <section className="space-y-2 p-3">
+            <h4 className="text-xs font-semibold">Bank statement</h4>
+            <dl className="flex flex-col gap-1.5">
+              {!chosen && !possiblePartner && (
+                <Field label="Date" value={statementRow.postedDate} />
+              )}
+              {statementRow.importedPayee && <Field label="Imported payee" value={statementRow.importedPayee} />}
+              {statementRow.bankNotes && (
+                <Field label="Bank notes" value={statementRow.bankNotes} />
+              )}
+              {!chosen && !possiblePartner && (
+                <Field label="Amount" value={formatMinorUnits(statementRow.amount)} numeric />
+              )}
+              {/* A foreign purchase carries two amounts, and which one Actual
+                  holds is exactly what makes these rows hard to match by hand. */}
+              {statementRow.originalAmount != null && (
+                <Field
+                  label="Original"
+                  value={`${formatMinorUnits(statementRow.originalAmount)} ${
+                    statementRow.originalCurrency ?? ""
+                  }`.trim()}
+                  numeric
+                />
+              )}
+              {(statementRow.bankReference || statementRow.externalId) && <Field
+                label="Reference" value={statementRow.bankReference || statementRow.externalId || null} />}
+            </dl>
+          </section>
+        )}
+
+        {chosen && (
+          <section className="space-y-2 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-xs font-semibold">In Actual</h4>
+              {(item.guards.protectedReconciled || item.guards.splitParent || item.guards.transfer === "yes") && (
+                <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <Lock className="h-3 w-3" aria-hidden="true" />
+                  {[item.guards.protectedReconciled && "Reconciled", item.guards.splitParent && "Split", item.guards.transfer === "yes" && "Transfer"].filter(Boolean).join(" · ")}
+                </span>
+              )}
+            </div>
+            <dl className="flex flex-col gap-1.5">
+              {!statementRow && <Field label="Date" value={chosen.date} />}
+              {!statementRow && (
+                <Field label="Amount" value={formatMinorUnits(chosen.amount)} numeric />
+              )}
+              <Field label="Payee" value={chosen.payeeName || "No payee"} />
+              {/* The bank's raw text is shown separately from the curated payee —
+                  the statement never silently replaces user data. */}
+              {chosen.importedPayee && <Field label="Imported payee" value={chosen.importedPayee} />}
+              <Field label="Category" value={chosen.categoryName} />
+              {chosen.notes && <Field label="Notes" value={chosen.notes} />}
+            </dl>
+          </section>
+        )}
+
+        </div>}
+
+        {/*
+          Shown above the decide actions, because if these two are the same thing
+          then none of the decisions below is the right one.
+
+          **Both sides, always.** The first version showed only the difference —
+          "0.67 apart" — while the panel above it showed whichever row happened to
+          be selected. So the user was asked to confirm a pairing without ever
+          being shown the other half of it, which is not a question anyone can
+          answer. The comparison is the same shape the panel uses for a matched
+          row: one line per fact, both readings, differences marked.
+        */}
+        {!readOnly && possiblePartner?.row && possiblePartner.transaction && onLinkPossible && (
+          <section className="flex flex-col gap-2 rounded-md border border-sky-500/40 bg-sky-500/5 p-2.5">
+            <h4 className="flex items-center gap-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300">
+              <Link2 className="h-3 w-3" aria-hidden="true" />
+              Possibly the same transaction
+            </h4>
+
+            {/*
+              Stacked, not side by side.
+
+              A three-column compare fits a *matched* row, where the panel is
+              reporting a conclusion and the two readings of each fact belong on
+              one line. Here the user is choosing, and choosing is what the
+              candidate list already does - one block per transaction, read top to
+              bottom. Two shapes for the same act is one more thing to learn, and
+              in a 24rem panel the columns were too narrow for a merchant name.
+            */}
+            <PairSide
+              label="From the statement"
+              date={possiblePartner.row.postedDate}
+              amount={possiblePartner.row.amount}
+              title={statementText(possiblePartner.row)}
+            />
+            <PairSide
+              label="In Actual"
+              date={possiblePartner.transaction.date}
+              amount={possiblePartner.transaction.amount}
+              // The same three channels the comparison itself reads. Falling
+              // straight to "No payee" threw away the bank text the pairing was
+              // very likely found on.
+              title={
+                possiblePartner.transaction.payeeName ??
+                possiblePartner.transaction.importedPayee ??
+                ""
+              }
+              detail={possiblePartner.transaction.notes}
+              category={possiblePartner.transaction.categoryName}
+            />
+
+            {/* What separates them, said once rather than marked on each line. */}
+            <p className="text-[11px] text-muted-foreground">
+              {possiblePartner.pair.dayGap === 0
+                ? "Same day"
+                : `${Math.abs(possiblePartner.pair.dayGap)} day${
+                    Math.abs(possiblePartner.pair.dayGap) === 1 ? "" : "s"
+                  } apart`}
+              {possiblePartner.pair.amountDifference !== 0 &&
+                ` · ${formatMinorUnits(Math.abs(possiblePartner.pair.amountDifference))} apart`}
+              . Matching would not relate these, so neither row was offered to the other.
+            </p>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start"
+              onClick={() =>
+                onLinkPossible(
+                  possiblePartner.pair.statementItemId,
+                  possiblePartner.pair.actualItemId
+                )
+              }
+            >
+              <Link2 className="mr-1 h-3.5 w-3.5" />
+              These are the same transaction
+            </Button>
+          </section>
+        )}
+
+        {readOnly && (
+          <p className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
+            This reconciliation has been applied, so its decisions are a record rather than something
+            still to settle. Start a new reconciliation to check the account as it stands now.
+          </p>
+        )}
+        {!readOnly && !candidateSelection && <ItemCandidates item={item} statementRow={statementRow}
+          transactions={transactions} evidenceFor={evidenceFor} onUseCandidate={onUseCandidate} />}
+        {!readOnly && item.reasonCode === REASON.merchantCluster && <p className="text-[11px] text-muted-foreground">
+          Several rows and transactions here share this merchant and date. Pick this row&apos;s one
+          above; each choice makes the next easier.
+        </p>}
+        {!readOnly && item.disposition === "create" && <p className="text-[11px] text-muted-foreground">
+          Actual&apos;s rules run on transactions as they are created, so the payee or category may
+          end up different from what you set here.
+        </p>}
+
+        {/* Editing is offered once the row is about a specific transaction, or is
+            going to become one. Until then there is nothing to edit. */}
+        {!readOnly && !candidateSelection &&
+          (item.disposition === "create" ||
+            item.disposition === "matched" ||
+            item.disposition === "correct-amount") && (
+          <StagedFields
+            key={item.id}
+            item={item}
+            current={{
+              payeeId: chosen?.payeeId ?? null,
+              categoryId: chosen?.categoryId ?? null,
+              notes: chosen?.notes ?? null,
+            }}
+            payees={payees}
+            categories={categories}
+            onStage={onStage}
+            onUnstage={onUnstage}
+          />
+        )}
+
+      </div>
+      {!readOnly && <footer className="max-h-[45%] shrink-0 overflow-y-auto border-t border-border/60 bg-muted px-3 py-2.5">
+        {candidateSelection && chosen ? (
+          <section aria-label="Actions" className="space-y-2">
+            {statementRow && statementRow.amount !== chosen.amount && (
+              <p className="text-xs text-muted-foreground">
+                {canStageField(item, "amount").allowed
+                  ? `Amount will change to ${formatMinorUnits(statementRow.amount)}.`
+                  : `Amount stays ${formatMinorUnits(chosen.amount)}: ${canStageField(item, "amount").allowed ? "" : "protected transaction"}.`}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => onUseCandidate(chosen.id)}>Use this match</Button>
+              <Button size="sm" variant="ghost" onClick={() => onUseCandidate(null)}>None of these</Button>
+            </div>
+          </section>
+        ) : (
+          <ItemActions
+            item={item}
+            statementRow={statementRow}
+            transactions={transactions}
+            evidenceFor={evidenceFor}
+            onDisposition={onDisposition}
+            onUseCandidate={onUseCandidate}
+            onCorrectAmount={onCorrectAmount}
+          />
+        )}
+
+      </footer>}
     </aside>
   );
 }

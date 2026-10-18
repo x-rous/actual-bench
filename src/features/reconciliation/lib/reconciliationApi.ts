@@ -94,6 +94,23 @@ export function deleteSession(id: string) {
   });
 }
 
+export function saveWork(id: string, payload: {
+  statementRows?: unknown[]; items?: unknown[]; itemPatches?: unknown[];
+  patch?: Parameters<typeof updateSession>[1];
+}) {
+  return sessionCommand(id, { action: "save", ...payload });
+}
+
+export function sessionCommand(id: string, payload: {
+  action: "save" | "claim" | "finish" | "recover" | "complete";
+  expected?: string; itemPatches?: unknown[]; statementRows?: unknown[]; items?: unknown[];
+  patch?: Parameters<typeof updateSession>[1];
+}) {
+  return request<{ session: ReconciliationSessionRecord }>(`/api/reconciliation/sessions/${encodeURIComponent(id)}`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+}
+
 export function putStatementRows(sessionId: string, statementRows: unknown[]) {
   return request<{ count: number }>(
     `/api/reconciliation/sessions/${encodeURIComponent(sessionId)}/rows`,

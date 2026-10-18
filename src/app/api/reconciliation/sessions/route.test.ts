@@ -1,3 +1,5 @@
+import { decisionSignature } from "@/lib/reconciliation/session/signature";
+import { DEFAULT_APPLY_CONFIG } from "@/lib/reconciliation/session/plan";
 jest.mock("next/server", () => {
   // 204 responses are built with `new NextResponse(null, ...)`, so the mock
   // needs the constructor as well as the `json` helper.
@@ -19,7 +21,7 @@ import { tmpdir } from "node:os";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
 import type { ReconciliationSessionRecord } from "@/lib/app-db/reconciliationRepository";
 import { GET, POST } from "./route";
-import { DELETE, GET as GET_ONE, PATCH } from "./[id]/route";
+import { DELETE, GET as GET_ONE, PATCH, POST as COMMAND } from "./[id]/route";
 import { PUT as PUT_ROWS } from "./[id]/rows/route";
 import { PUT as PUT_ITEMS } from "./[id]/items/route";
 
@@ -364,4 +366,14 @@ describe("/api/reconciliation/sessions", () => {
     const response = await DELETE(urlRequest("http://x/s"), context("missing"));
     expect(response.status).toBe(404);
   });
+  it("requires the reviewed signature to finish without writes", async () => {
+    const session = await createSession();
+    const expected = decisionSignature([], DEFAULT_APPLY_CONFIG);
+    expect((await COMMAND(jsonRequest({ action: "complete" }), context(session.id))).status).toBe(400);
+    expect((await COMMAND(jsonRequest({ action: "complete", expected: "stale" }), context(session.id))).status).toBe(400);
+    const response = await COMMAND(jsonRequest({ action: "complete", expected }), context(session.id));
+    expect(response.status).toBe(200);
+    expect((await response.json()).session.status).toBe("completed");
+  });
+
 });

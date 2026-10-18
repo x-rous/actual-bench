@@ -17,6 +17,7 @@ import { CSV_MAX_BYTES } from "@/lib/csv";
 import { generateId } from "@/lib/uuid";
 import {
   fingerprintStatement,
+  legacyFingerprintStatement,
   DEFAULT_PARSE_CONFIG,
   normalizeParseConfig,
   type NormalizedStatement,
@@ -598,7 +599,7 @@ export function ImportPanel({
     if (!parsed || parsed.rows.length === 0 || !knownStatements?.length) return null;
     const fingerprint = fingerprintStatement(parsed.rows);
     if (!fingerprint) return null;
-    return knownStatements.find((entry) => entry.fingerprint === fingerprint) ?? null;
+    return knownStatements.find((entry) => entry.fingerprint === fingerprint || entry.fingerprint === legacyFingerprintStatement(parsed.rows)) ?? null;
   }, [parsed, knownStatements]);
 
   /*

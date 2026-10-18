@@ -21,6 +21,7 @@ import type {
 } from "../types";
 import type { StatementFormat } from "../statement/normalize";
 import { prospectiveTransaction } from "./prospective";
+import { transactionOwners } from "./build";
 import {
   canDecideOneTransaction,
   canStageDelete,
@@ -208,10 +209,21 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
   const operations: ApplyOperation[] = [];
   const blocked: { itemId: string; reason: string }[] = [];
   let noWriteMatches = 0;
+  let alreadyApplied = 0;
   let unresolved = 0;
   const unreconciledDifferences: { itemId: string; difference: number }[] = [];
+  const owners = transactionOwners(input.items);
 
   for (const item of input.items) {
+    if (["create", "update", "delete"].some((kind) => input.appliedOperationIds?.has(operationId(kind, item.id)))) {
+      alreadyApplied += 1;
+      continue;
+    }
+    if (["matched", "correct-amount", "delete"].includes(item.disposition) &&
+        item.actualTransactionIds.some((id) => (owners.get(id)?.size ?? 0) > 1)) {
+      blocked.push({ itemId: item.id, reason: "Another decided row uses this Actual transaction. Review the pairing before applying." });
+      continue;
+    }
     switch (item.disposition) {
       case "create": {
         const row = input.statementRows.get(item.statementRowIds[0] ?? "");
@@ -349,16 +361,9 @@ export function buildApplyPlan(input: PlanInput): ApplyPlan {
     }
   }
 
-  // Filtered at the end rather than at each branch, so every operation is
-  // built the same way and only then checked against what has already run.
-  const applied = input.appliedOperationIds;
-  const remaining = applied
-    ? operations.filter((operation) => !applied.has(operation.id))
-    : operations;
-
   return {
-    operations: remaining,
-    alreadyApplied: operations.length - remaining.length,
+    operations,
+    alreadyApplied,
     noWriteMatches,
     unreconciledDifferences,
     unresolved,
@@ -398,7 +403,7 @@ function createOperationFor(
     // The payee candidate. A staged payee id always wins; leaving this null
     // hands the decision to Actual's rules, which run on create.
     payeeName:
-      patch?.payeeId?.staged || config.payeeStrategy !== "imported-payee"
+      patch?.payeeId || config.payeeStrategy !== "imported-payee"
         ? null
         : importedPayee,
     // Left unset so Actual's rules decide it on the way in, which is where

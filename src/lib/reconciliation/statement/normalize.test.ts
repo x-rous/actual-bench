@@ -77,11 +77,14 @@ describe("parseMoneyToMinorUnits — integer minor units, no floating point", ()
     expect(parseMoneyToMinorUnits("1'234.56")).toBe(123456);
   });
 
-  it("rounds nothing away: 1.005 keeps its exact minor units", () => {
-    // Math.round(1.005 * 100) is 100 in binary floating point — this must be 100
-    // via truncation of the third digit, not via a float multiply.
-    expect(parseMoneyToMinorUnits("1.005")).toBe(100);
-    expect(parseMoneyToMinorUnits("1.999")).toBe(199);
+  it("rejects meaningful precision loss and unsafe integers", () => {
+    expect(parseMoneyToMinorUnits("1.005")).toBeNull();
+    expect(parseMoneyToMinorUnits("1.999")).toBeNull();
+    expect(parseMoneyToMinorUnits("1.230")).toBe(123);
+    expect(parseMoneyToMinorUnits("90071992547409.93")).toBeNull();
+    expect(parseMoneyToMinorUnits("-42.50 DR")).toBe(-4250);
+    expect(parseMoneyToMinorUnits("(42.50) DR")).toBe(-4250);
+    expect(parseMoneyToMinorUnits("-42.50 CR")).toBeNull();
   });
 
   it("pads a short fraction", () => {
@@ -578,4 +581,20 @@ describe("totalsFor", () => {
   it("is zero for an empty statement", () => {
     expect(totalsFor([])).toEqual({ debits: 0, credits: 0, net: 0, rowCount: 0 });
   });
+});
+
+it("identifies reordered normalized statements without changing existing row fingerprints", () => {
+  const first = normalizeStatement(parseStatementText("2026-07-01,Shop,-10.00\n2026-07-02,Cafe,-2.50"), mapping(), makeId);
+  const reverse = normalizeStatement(parseStatementText("2026-07-02,Cafe,-2.50\n2026-07-01,Shop,-10.00"), mapping(), makeId);
+  expect(first.rows[0].fingerprint).not.toBe(reverse.rows[1].fingerprint);
+  expect(fingerprintStatement(first.rows)).toBe(fingerprintStatement(reverse.rows));
+  expect(fingerprintStatement([...first.rows, first.rows[0]])).not.toBe(fingerprintStatement(first.rows));
+});
+
+it("normalizes a saved source scale to Actual hundredths without truncation", () => {
+  const result = normalizeStatement(parseStatementText("2026-07-01,Shop,-10.00\n2026-07-02,Other,-2.501"), mapping({ minorUnitDigits: 3 }), makeId);
+  expect(result.rows.map((row) => row.amount)).toEqual([-1000]);
+  expect(result.errors).toHaveLength(1);
+  expect(parseMoneyToMinorUnits("AED -10.00")).toBe(-1000);
+  expect(parseMoneyToMinorUnits("1-2.00")).toBeNull();
 });

@@ -259,3 +259,14 @@ row rather than a setting to change.
 Loosening any of these would widen what you are *offered*, never what is decided for you: the
 exact-amount rule and the auto-match floor govern that, and neither leftover tier can match anything
 on its own.
+
+## Resolving connected candidates
+
+**Resolve group** compares connected bank rows and their existing Actual candidates in one matrix.
+Select a cell to compare, then confirm **Use this match**. The chosen transaction is withdrawn from
+competing rows, and the last remaining pair still needs confirmation. **Undo last pairing** restores
+the previous relationships during the current visit. This view does not widen matching rules.
+
+**Use statement date** explicitly stages the bank date on an accepted pair. A date gap never changes
+Actual automatically. Resumed sessions fetch current data before edits while keeping saved choices
+and their original values for the pre-Apply conflict check.

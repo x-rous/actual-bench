@@ -1,3 +1,4 @@
+import { matchingGroups } from "./groups";
 import { DEFAULT_MATCH_CONFIG } from "../match/config";
 import { match } from "../match/matcher";
 import type {
@@ -12,6 +13,7 @@ import {
   correctAmountFromStatement,
   linkManually,
   resolveToTransaction,
+  resolveSingleCandidateTransactions,
   summarizeCoverage,
 } from "./build";
 
@@ -977,4 +979,56 @@ describe("accepting a pairing", () => {
 
     expect(item.stagedChanges).toBeUndefined();
   });
+});
+
+describe("connected group decisions", () => {
+  it("derives existing edges, withdraws a chosen ID globally and leaves the last pair explicit", () => {
+    const transactions = new Map([txn({ id: "t1" }), txn({ id: "t2" }), txn({ id: "t3" })].map((t) => [t.id, t]));
+    const items: ReconciliationItem[] = ["s1", "s2"].map((id) => ({ id, statementRowIds: [id],
+      actualTransactionIds: ["t1", "t2"], disposition: "unresolved",
+      guards: { protectedReconciled: false, splitParent: false, transfer: "no" } }));
+    expect(matchingGroups(items, transactions)).toEqual([{ itemIds: ["s1", "s2"], transactionIds: ["t1", "t2"] }]);
+    const next = resolveToTransaction({ items, itemId: "s1", transactionId: "t1", transactions, transfersReported: true, makeId });
+    expect(next.find((item) => item.id === "s1")?.disposition).toBe("matched");
+    expect(next.find((item) => item.id === "s2")).toMatchObject({ disposition: "unresolved", actualTransactionIds: ["t2"] });
+    expect(matchingGroups(next, transactions)).toEqual([]);
+    expect(resolveToTransaction({ items: next, itemId: "s2", transactionId: "t1", transactions, transfersReported: true, makeId })).toBe(next);
+    expect(resolveToTransaction({ items, itemId: "s1", transactionId: "t3", transactions, transfersReported: true, makeId })).toBe(items);
+    expect(items[0].actualTransactionIds).toEqual(["t1", "t2"]);
+  });
+});
+
+
+describe("single-candidate ownership", () => {
+  const base: ReconciliationItem = { id: "bank1", statementRowIds: ["s1"], actualTransactionIds: ["t1"],
+    disposition: "unresolved", reasonCode: "merchant-cluster", guards: { protectedReconciled: false, splitParent: false, transfer: "no" } };
+
+  it("withdraws a claim from all competitors and recomputes the next candidate's guards", () => {
+    const transactions = new Map([txn({ id: "t1" }), txn({ id: "t2", reconciled: true })].map((entry) => [entry.id, entry]));
+    const result = resolveSingleCandidateTransactions({ items: [base, { ...base, id: "bank2", statementRowIds: ["s2"], actualTransactionIds: ["t1", "t2"] }],
+      itemIds: ["bank1"], transactions, transfersReported: true });
+    expect(result[0]).toMatchObject({ disposition: "matched", actualTransactionIds: ["t1"] });
+    expect(result[1]).toMatchObject({ disposition: "unresolved", actualTransactionIds: ["t2"], reasonCode: "same-merchant-date", guards: { protectedReconciled: true } });
+  });
+
+  it("refuses two selected bank rows competing for one transaction", () => {
+    const items = [base, { ...base, id: "bank2", statementRowIds: ["s2"] }];
+    expect(resolveSingleCandidateTransactions({ items, itemIds: ["bank1", "bank2"], transactions: new Map([["t1", txn({ id: "t1" })]]), transfersReported: true })).toBe(items);
+  });
+
+  it.each(["matched", "correct-amount", "delete"] as const)("refuses a candidate held by a %s decision", (disposition) => {
+    const items = [base, { ...base, id: "bank2", disposition }];
+    const transactions = new Map([["t1", txn({ id: "t1" })]]);
+    expect(resolveSingleCandidateTransactions({ items, itemIds: ["bank1"], transactions, transfersReported: true })).toBe(items);
+    expect(resolveToTransaction({ items, itemId: "bank1", transactionId: "t1", transactions, transfersReported: true, makeId })).toBe(items);
+  });
+});
+
+it("does not form a group around a transaction reserved for deletion", () => {
+  const guards = { protectedReconciled: false, splitParent: false, transfer: "no" as const };
+  const items: ReconciliationItem[] = [
+    { id: "delete", disposition: "delete", statementRowIds: [], actualTransactionIds: ["t1"], guards },
+    ...["s1", "s2"].map((id): ReconciliationItem => ({ id, disposition: "unresolved", statementRowIds: [id], actualTransactionIds: ["t1"], guards })),
+  ];
+  expect(matchingGroups(items, new Map([["t1", txn({ id: "t1" })]]))).toEqual([]);
 });

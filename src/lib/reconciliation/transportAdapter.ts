@@ -128,31 +128,24 @@ export function createReconciliationTransport(
     async readTransaction(input) {
       const applied = await transport.readTargetTransactionForSync(input);
       if (!applied) return null;
-      // The single-row read returns only the syncable fields, so the caller gets
-      // a partial snapshot: enough to detect drift on the fields Apply writes.
-      return {
-        id: input.transactionId,
-        accountId: input.accountId,
-        date: applied.date,
-        amount: applied.amount,
-        payeeId: applied.payeeId,
-        payeeName: null,
-        importedPayee: applied.importedPayee ?? null,
-        categoryId: applied.categoryId,
-        categoryName: null,
-        notes: applied.notes,
-        cleared: applied.cleared,
-        // Not exposed by the single-row read; a caller needing certainty about
-        // protection re-loads the window rather than trusting this.
-        reconciled: false,
-        importedId: null,
-        transferId: null,
-        scheduleId: null,
-        isParent: false,
-        isChild: false,
-        parentId: null,
-        splitLines: [],
-      };
+      // The narrow sync read locates a moved row, but cannot establish its
+      // protections. Load its current day before allowing a mutation.
+      const rows = await transport.listTransactionsForSync({
+        accountId: input.accountId, startDate: applied.date, endDate: applied.date,
+      });
+      const row = rows.find((entry) => entry.id === input.transactionId && !entry.isChild);
+      return row ? toActualSnapshot(row, { transfersReported: transportReportsTransfers(rows) }) : null;
+    },
+
+    async findCreatedTransactions({ accountId, markers }) {
+      if (!markers.length) return [];
+      const rows = transport.queryTransactionsForSync
+        ? await transport.queryTransactionsForSync({ importedIds: markers })
+        : await transport.listTransactionsForSync({ accountId });
+      const wanted = new Set(markers);
+      const transfersReported = transportReportsTransfers(rows);
+      return rows.filter((row) => row.importedId && wanted.has(row.importedId) && !row.isChild)
+        .map((row) => toActualSnapshot(row, { transfersReported }));
     },
 
     async readExistingMarkers(input) {

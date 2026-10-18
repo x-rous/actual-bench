@@ -38,15 +38,28 @@ export function match(input: MatchInput): MatchGraph {
   const { statementRows, config } = input;
   const index = buildActualIndex(input.actualTransactions);
 
-  const pinned = pinByImportedId(statementRows, index);
+  const identityReviews: AmbiguousMatch[] = statementRows.flatMap((row) => {
+    const ids = [...new Set([row.externalId, row.bankReference]
+      .flatMap((id) => id ? index.importedIdCollisions.get(id) ?? [] : []))].sort();
+    return ids.length ? [{ statementRowId: row.id, why: "duplicate-candidates" as const,
+      candidates: ids.map((id) => ({ statementRowId: row.id, actualTransactionId: id,
+        score: 100, label: "exact" as const, tier: "reference-imported-id" as const,
+        reasons: [{ kind: "reference" as const, where: "importedId" as const }],
+      })),
+    }] : [];
+  });
+  const identityRows = new Set(identityReviews.map((entry) => entry.statementRowId));
+  const identityTransactions = new Set(identityReviews.flatMap((entry) => entry.candidates.map((c) => c.actualTransactionId)));
+  const pinned = pinByImportedId(statementRows.filter((row) => !identityRows.has(row.id)), index)
+    .filter((pin) => !identityTransactions.has(pin.actualTransactionId));
   const pinnedRows = new Set(pinned.map((p) => p.statementRowId));
   const pinnedTransactions = new Set(pinned.map((p) => p.actualTransactionId));
 
   const candidates: ScoredCandidate[] = [];
   for (const row of statementRows) {
-    if (pinnedRows.has(row.id)) continue;
+    if (pinnedRows.has(row.id) || identityRows.has(row.id)) continue;
     for (const transaction of candidatesFor(row, index, config)) {
-      if (pinnedTransactions.has(transaction.id)) continue;
+      if (pinnedTransactions.has(transaction.id) || identityTransactions.has(transaction.id)) continue;
       const candidate = scoreCandidate(row, transaction, config, index);
       if (candidate) candidates.push(candidate);
     }
@@ -64,6 +77,9 @@ export function match(input: MatchInput): MatchGraph {
       .map((transaction) => transaction.id),
     config,
   });
+
+  result.ambiguous.push(...identityReviews);
+  result.unmatchedStatementRowIds = result.unmatchedStatementRowIds.filter((id) => !identityRows.has(id));
 
   const withLeftovers = addLeftoverReviews(result, statementRows, index, config);
 

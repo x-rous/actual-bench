@@ -142,6 +142,19 @@ function verifyOne(
         });
       }
     }
+    const created = context.byMarker.get(operation.marker);
+    if (count === 1 && created) {
+      // Actual rules can rewrite payee and notes on creation. Those changes
+      // must not turn a confirmed create into a failed retry or recovery.
+      const expected: Record<string, unknown> = { accountId: operation.accountId, amount: operation.amount, date: operation.date };
+      if (operation.cleared !== undefined) expected.cleared = operation.cleared;
+      for (const [field, value] of Object.entries(expected)) {
+        if (created[field as keyof ActualTransactionSnapshot] !== value) issues.push({
+          operationId: operation.id, kind: "unapplied-field",
+          detail: `The created transaction's ${FIELD_LABELS[field] ?? field} differs from the approved value. Check any Actual rules that ran on creation.`,
+        });
+      }
+    }
     return issues;
   }
 

@@ -522,3 +522,27 @@ describe("replacing a piece of text in the notes", () => {
     expect(run(null, "AMZN", "Amazon")).toEqual([]);
   });
 });
+
+it("previews only the final payee and excludes unchanged payees", () => {
+  const rule: TransformRule = { id: "payee", conditions: [], actions: [{ kind: "setPayee", payeeId: "p1" }] };
+  expect(changesFor(rule, context())).toEqual([]);
+  rule.actions = [{ kind: "setPayee", payeeId: "p2" }, { kind: "setPayee", payeeId: "p3" }];
+  expect(changesFor(rule, context())).toEqual([{ field: "payeeId", value: "p3" }]);
+  rule.actions.push({ kind: "setPayee", payeeId: "p1" });
+  expect(changesFor(rule, context())).toEqual([]);
+});
+
+it("stages an explicit empty payee when a new row would otherwise use the bank payee", () => {
+  const entry = item({ disposition: "create", actualTransactionIds: [] });
+  const preview = previewTransform({
+    rule: { id: "unset-payee", conditions: [], actions: [{ kind: "setPayee", payeeId: null }] },
+    items: [entry], contextFor: () => context({ item: entry, transaction: undefined }),
+  });
+  expect(preview.changed).toHaveLength(1);
+  const patch = preview.changed[0].patch;
+  expect(patch.payeeId).toEqual({ original: null, staged: null, source: "transform" });
+  const result = prospectiveTransaction({ item: { ...entry, stagedChanges: patch }, statementRow: statementRow(),
+    transaction: undefined, applyConfig: DEFAULT_APPLY_CONFIG });
+  expect(result.payeeId).toBeNull();
+  expect(result.payeeName).toBeNull();
+});

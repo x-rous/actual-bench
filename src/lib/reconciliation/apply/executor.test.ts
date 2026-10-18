@@ -583,3 +583,11 @@ describe("executeApplyPlan - transfers over HTTP (P1.0a)", () => {
     expect(window.transactions[0].transferId).not.toBeNull();
   });
 });
+
+it("does not report an unconfirmed create receipt as applied", async () => {
+  const transport = fakeTransport({ createTransactions: jest.fn().mockResolvedValue([]) });
+  const result = await executeApplyPlan({ plan: planOf([CREATE]), transport });
+  expect(result.applied).toBe(0);
+  expect(result.failed).toBe(1);
+  expect(result.results[0].error).toMatch(/could not be confirmed/);
+});

@@ -30,11 +30,13 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const patch: Partial<ItemInput> = {};
     if ("statementRowIds" in body) {
+      if (!Array.isArray(body.statementRowIds)) throw new AppDbValidationError("Expected statement ids");
       patch.statementRowIds = (body.statementRowIds as unknown[]).filter(
         (value): value is string => typeof value === "string"
       );
     }
     if ("actualTransactionIds" in body) {
+      if (!Array.isArray(body.actualTransactionIds)) throw new AppDbValidationError("Expected transaction ids");
       patch.actualTransactionIds = (body.actualTransactionIds as unknown[]).filter(
         (value): value is string => typeof value === "string"
       );

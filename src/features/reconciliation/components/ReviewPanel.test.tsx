@@ -13,6 +13,7 @@ import type {
   StatementRow,
 } from "@/lib/reconciliation/types";
 import { ReviewPanel } from "./ReviewPanel";
+import { reconcilePlanWithDrift } from "@/lib/reconciliation/apply/drift";
 
 function statementRow(id: string, merchant: string): StatementRow {
   return {
@@ -78,6 +79,26 @@ function update(id: string, merchant: string, patch: StagedPatch = {}): UpdateOp
     importedPayee: merchant,
   };
 }
+
+it.each([true, false])("names withheld rows after drift removes their operations (statement row: %s)", (hasStatement) => {
+  const patch: StagedPatch = { notes: { original: null, staged: "Approved note", source: "manual" } };
+  const original = transaction("1");
+  const plan: ApplyPlan = {
+    operations: [update("1", "AMAZON AE", patch)], alreadyApplied: 0, noWriteMatches: 0,
+    unresolved: 0, blocked: [], unreconciledDifferences: [],
+  };
+  const checked = reconcilePlanWithDrift({
+    plan, snapshots: new Map([[original.id, original]]), latest: new Map([[original.id, null]]),
+  });
+  expect(checked.plan.operations).toHaveLength(0);
+  expect(checked.report.withheld).toHaveLength(1);
+  render(<ReviewPanel plan={checked.plan} items={[item("1", patch)]}
+    statementRows={new Map(hasStatement ? [["s-1", statementRow("1", "AMAZON AE")]] : [])}
+    transactions={new Map([[original.id, original]])} payees={[]} categories={[]}
+    drift={checked.report} applyConfig={DEFAULT_APPLY_CONFIG} onApplyConfigChange={() => {}} />);
+  expect(screen.getByText(hasStatement ? "2025-08-01 · AMAZON AE" : "2025-08-01 · Payee 1")).toBeInTheDocument();
+  expect(screen.queryByText("One transaction")).not.toBeInTheDocument();
+});
 
 describe("reconciliation review field summary", () => {
   it("counts every imported-payee write, including one riding on a staged edit", () => {

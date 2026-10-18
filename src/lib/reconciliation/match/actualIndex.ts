@@ -33,6 +33,7 @@ export type ActualIndex = {
   byDate: ActualTransactionSnapshot[];
   /** Actual `imported_id` -> row id, for the strongest tier. */
   byImportedId: Map<string, string>;
+  importedIdCollisions: Map<string, string[]>;
   /** Exact signed minor-unit amount -> rows, ascending by date. */
   byAmount: Map<MinorUnitAmount, ActualTransactionSnapshot[]>;
   /** Token frequencies across the candidate window, for the needle floor. */
@@ -51,6 +52,7 @@ export function buildActualIndex(
 ): ActualIndex {
   const byId = new Map<string, ActualTransactionSnapshot>();
   const byImportedId = new Map<string, string>();
+  const importedIdCollisions = new Map<string, string[]>();
   const byAmount = new Map<MinorUnitAmount, ActualTransactionSnapshot[]>();
 
   for (const transaction of transactions) {
@@ -58,18 +60,20 @@ export function buildActualIndex(
     byId.set(transaction.id, transaction);
 
     if (transaction.importedId) {
-      // First writer wins: a duplicated imported_id is itself a data problem,
-      // and the loser surfaces through normal duplicate detection rather than
-      // silently replacing the winner here.
-      if (!byImportedId.has(transaction.importedId)) {
-        byImportedId.set(transaction.importedId, transaction.id);
-      }
+      const previous = byImportedId.get(transaction.importedId);
+      if (previous) {
+        const ids = importedIdCollisions.get(transaction.importedId) ?? [previous];
+        ids.push(transaction.id);
+        importedIdCollisions.set(transaction.importedId, ids);
+      } else byImportedId.set(transaction.importedId, transaction.id);
     }
 
     const bucket = byAmount.get(transaction.amount);
     if (bucket) bucket.push(transaction);
     else byAmount.set(transaction.amount, [transaction]);
   }
+
+  for (const ids of importedIdCollisions.values()) ids.sort();
 
   for (const bucket of byAmount.values()) {
     // ISO `YYYY-MM-DD` sorts lexicographically in chronological order. Ties are
@@ -85,6 +89,7 @@ export function buildActualIndex(
   return {
     byId,
     byImportedId,
+    importedIdCollisions,
     byAmount,
     byDate,
     notesCorpus: buildTextCorpus([...byId.values()].map((t) => t.notes)),
