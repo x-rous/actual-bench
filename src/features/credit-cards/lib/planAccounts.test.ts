@@ -90,7 +90,7 @@ it("uses exact tags in a shared account, for debt and for progress alike (PL-7)"
   expect(ledger.unassigned.map((entry) => entry.id)).toEqual(["phone-peer"]);
   expect(planProgress(test.plan(), test.card(), test.workspace(), test.source).billedCount).toBe(3);
   // The other plan's transfer is the account's business, not this plan's: it shows as a card-level entry with no plan.
-  expect(planStatus(test.plan(), test.card(), test.workspace(), test.source, TODAY).key).not.toBe("does-not-add-up");
+  expect(planStatus(test.plan(), test.card(), test.workspace(), test.source, TODAY).key).toBe("on-track");
   // Untagged money moved from this card still counts in its Total owed, as not linked yet.
   expect(test.owed()).toMatchObject({ unassignedMinor: 1000000, owedMinor: 3000000 });
 });

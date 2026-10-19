@@ -76,13 +76,16 @@ it("ends just after the next bill's due date, projects paying Left to pay, and s
   const late = statementScenario("late");
   const signed = sumMinor(late.snapshot.rows.map((entry) => entry.amountMinor));
   const history = dailyBalanceHistory(late.card, late.workspace, late.snapshot, signed, "2026-10-15");
-  const open = history.bills.find((bill) => bill.dueDate > "2026-10-15");
-  if (open) {
-    expect(history.until > open.dueDate).toBe(true);
-    if (history.projection) expect(history.projection.endMinor).toBe(Math.max(0, history.projection.startMinor - history.projection.payMinor));
-  } else {
-    expect(history.until).toBe("2026-10-15");
-  }
+  // On 15 Oct every bill is past due: the chart ends today and projects nothing.
+  expect(history.bills.some((bill) => bill.dueDate > "2026-10-15")).toBe(false);
+  expect(history.until).toBe("2026-10-15");
+  expect(history.projection).toBeNull();
+  // On 30 Sep the bill closing that day is still to come due (1 Oct): the chart runs two days past it and
+  // projects paying its Left to pay.
+  const closing = dailyBalanceHistory(late.card, late.workspace, late.snapshot,
+    sumMinor(late.snapshot.rows.filter((entry) => entry.date <= "2026-09-30").map((entry) => entry.amountMinor)), "2026-09-30");
+  expect(closing.until).toBe("2026-10-03");
+  expect(closing.projection).toMatchObject({ from: "2026-09-30", to: "2026-10-01", startMinor: 111000, payMinor: 111000, endMinor: 0 });
   expect(history.bills.length).toBeGreaterThan(0);
   expect(history.bills.some((bill) => bill.status.late || bill.status.key === "paid-late")).toBe(true);
   expect(history.billsPaidInFull.paid).toBeLessThan(history.billsPaidInFull.total);

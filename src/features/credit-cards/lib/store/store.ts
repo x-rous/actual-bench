@@ -227,14 +227,19 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
         const history = get().undoHistory[budget] ?? [];
         const entry = history.at(-1);
         if (!entry) return Promise.resolve();
-        set((state) => ({ undoHistory: { ...state.undoHistory, [budget]: history.slice(0, -1) } }));
+        const rest = history.slice(0, -1);
+        set((state) => ({ undoHistory: { ...state.undoHistory, [budget]: rest } }));
         return then(commit(budget, entry.changes), (committed) => {
           settle(budget, committed);
           notify(budget, "Last change undone");
         }).catch((error: unknown) => {
-          notify(budget, error instanceof CreditCardConflictError
+          const conflict = error instanceof CreditCardConflictError;
+          // A conflict makes the inverse stale; any other failure changed nothing, so Undo stays available.
+          // Restored only if nothing was recorded meanwhile, so the history keeps its order.
+          if (!conflict) set((state) => (state.undoHistory[budget] === rest ? { undoHistory: { ...state.undoHistory, [budget]: history } } : {}));
+          notify(budget, conflict
             ? "Can't undo; this changed since. Your current records were kept."
-            : "Undo failed; your current records were kept.");
+            : "Undo failed; your current records were kept. Try again.");
         });
       },
 
@@ -517,7 +522,10 @@ export function createCreditCardStore(persistence: CreditCardPersistence = memor
 /** §12.3: own-account and shared-tag plans never mix in one account; tags are unique. */
 function checkPlanAccount(plan: RepaymentPlan, workspace: Workspace, snapshot: ActivitySnapshot) {
   if (!plan.planAccountId) return;
+  const card = workspace.cards.find((entry) => entry.id === plan.cardId);
+  if (card && plan.planAccountId === card.accountId) throw new Error("A card cannot be its own plan account");
   const account = snapshot.accounts?.find((entry) => entry.id === plan.planAccountId);
+  if (snapshot.accounts && !account) throw new Error("This plan account is not in your budget");
   if (account && (!account.offBudget || account.closed)) throw new Error("Choose an open off-budget plan account");
   const others = workspace.plans.filter((entry) => entry.id !== plan.id && entry.planAccountId === plan.planAccountId);
   if (plan.planAccountTag === null && others.length) {

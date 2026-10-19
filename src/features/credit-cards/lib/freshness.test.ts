@@ -94,4 +94,7 @@ it("adds plan-account principal to the calculated balance when the bank includes
   expect(review).toMatchObject({ planChangeMinor: 50000, calculatedMinor: 50000, varianceMinor: 0 });
   // The same transfer is never counted as a payment.
   expect(transactionType(source.rows[1], context.card(), context.workspace(), source).kind).toBe("instalment");
+  // The plan change is part of the reviewed facts: turning plan balances off changes the review's signature.
+  const without = { ...context.workspace(), cards: context.workspace().cards.map((card) => ({ ...card, statementsIncludePlanBalances: false })) };
+  expect(statementReview(statement, without, source).signature).not.toBe(review.signature);
 });

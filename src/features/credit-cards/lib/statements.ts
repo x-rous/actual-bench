@@ -294,6 +294,9 @@ function calculateStatementReview(statement: Statement, workspace: Workspace, sn
     startingBalanceMinor,
     statement.balanceMinor,
     coverage,
+    // With plan balances on the statement, the plan change is a financial fact of the match. Only added
+    // when the card includes them, so other cards keep the reviews they already have.
+    ...(card?.statementsIncludePlanBalances ? [["plan-balances", planChangeMinor]] : []),
   ]);
   return {
     signature,

@@ -46,17 +46,18 @@ const RULES: readonly Rule[] = [
     pattern: /^(?:RETURNED|REVERSED|DISHONOU?RED|REJECTED) PAYMENT\b|\bPAYMENT (?:REVERSAL|RETURNED)\b/,
     reason: "Returned-payment wording",
   },
-  {
-    kind: "payment",
-    sign: "credit",
-    pattern: /\b(?:PAYMENT|THANK YOU|AUTOPAY|AUTO PAY|DIRECT DEBIT)\b/,
-    reason: "Payment wording",
-  },
+  // Before payment wording: "CASHBACK FOR AUTOPAY" is cashback, never a payment.
   {
     kind: "cashback",
     sign: "credit",
     pattern: /\b(?:CASHBACK|CASH BACK|REWARDS? CREDIT|POINTS REDEMPTION)\b/,
     reason: "Rewards wording",
+  },
+  {
+    kind: "payment",
+    sign: "credit",
+    pattern: /\b(?:PAYMENT|THANK YOU|AUTOPAY|AUTO PAY|DIRECT DEBIT)\b/,
+    reason: "Payment wording",
   },
   {
     kind: "cash-advance",

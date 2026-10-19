@@ -17,7 +17,9 @@ export function useDiscardChanges(dirty: boolean, onClose: () => void) {
     const navigate = (event: MouseEvent) => {
       if (bypass.current) return;
       const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-      if (!link || link.target === "_blank" || link.getAttribute("href")?.startsWith("#") || event.ctrlKey || event.metaKey) return;
+      // Leave the browser's own link behaviours alone: new tab or window, downloads, and clicks already handled.
+      if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      if (!link || link.target === "_blank" || link.hasAttribute("download") || link.getAttribute("href")?.startsWith("#")) return;
       event.preventDefault();
       event.stopPropagation();
       setPending({ leave: () => { bypass.current = true; link.click(); bypass.current = false; } });

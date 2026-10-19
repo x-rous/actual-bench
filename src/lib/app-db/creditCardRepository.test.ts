@@ -136,6 +136,18 @@ describe("credit-card repository", () => {
       decisions: [{ statementId: "s1", rows: [] }, { statementId: "s2", rows: [decision("s2")] }],
     });
     expect(moved.decisions).toEqual([decision("s2")]);
+    // The reverse move while both statements hold decisions: s1 is written first and must not meet s2's old row.
+    const other = { ...decision("s1"), transactionId: "t2" };
+    const withOther = commit({
+      statements: { put: [{ ...moved.statements.find((entry) => entry.id === "s1")!, revision: 4 }], remove: [] },
+      decisions: [{ statementId: "s1", rows: [other] }],
+    });
+    const back = commit({
+      statements: { put: withOther.statements.map((entry) => ({ ...entry, revision: entry.revision + 1 })), remove: [] },
+      decisions: [{ statementId: "s1", rows: [other, decision("s1")] }, { statementId: "s2", rows: [] }],
+    });
+    expect(back.decisions).toEqual(expect.arrayContaining([other, decision("s1")]));
+    expect(back.decisions).toHaveLength(2);
   });
 
   it("skips rows a newer build wrote instead of failing or rewriting them", () => {

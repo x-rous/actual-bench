@@ -43,7 +43,7 @@ const plainNotes = (notes: string | null | undefined) => (notes ?? "").replace(/
 const nameFromTag = (tag: string) => tag.slice(1).replace(/[_-]+/g, " ").trim();
 const total = (values: number[]) => safeIntegerSum(values) ?? values.reduce((sum, value) => sum + value, 0);
 
-const discoveries = new WeakMap<ActivitySnapshot, WeakMap<Workspace["plans"], WeakMap<Card, PlanDiscovery>>>();
+const discoveries = new WeakMap<ActivitySnapshot, WeakMap<Workspace["plans"], WeakMap<Workspace["planAccounts"], WeakMap<Card, PlanDiscovery>>>>();
 
 /**
  * Plans waiting in this card's plan accounts, from transfers no plan owns yet. Rules, for any bank:
@@ -54,8 +54,11 @@ const discoveries = new WeakMap<ActivitySnapshot, WeakMap<Workspace["plans"], We
 export function discoverPlans(card: Card, workspace: Workspace, snapshot: ActivitySnapshot): PlanDiscovery {
   let byPlans = discoveries.get(snapshot);
   if (!byPlans) discoveries.set(snapshot, byPlans = new WeakMap());
-  let byCard = byPlans.get(workspace.plans);
-  if (!byCard) byPlans.set(workspace.plans, byCard = new WeakMap());
+  let byAccounts = byPlans.get(workspace.plans);
+  if (!byAccounts) byPlans.set(workspace.plans, byAccounts = new WeakMap());
+  // The registered plan accounts decide which accounts are searched.
+  let byCard = byAccounts.get(workspace.planAccounts);
+  if (!byCard) byAccounts.set(workspace.planAccounts, byCard = new WeakMap());
   let found = byCard.get(card);
   if (!found) byCard.set(card, found = build(card, workspace, snapshot));
   return found;

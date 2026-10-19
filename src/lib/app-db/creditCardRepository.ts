@@ -293,8 +293,15 @@ function writeDifference(db: SqliteDatabase, budgetSyncId: string, current: Work
     if (change.next) writeType(db, change.next, now);
     else db.prepare("DELETE FROM credit_card_transaction_types WHERE card_id = ? AND transaction_id = ?").run(change.cardId, change.transactionId);
   }
+  // Budget-wide unique indexes (one included bill per transaction, one plan per transaction or pair): delete
+  // every replaced parent's rows before inserting any, so a move between parents never meets its own old row.
   for (const entry of changes.decisions) {
     db.prepare("DELETE FROM credit_card_statement_decisions WHERE statement_id = ?").run(entry.statementId);
+  }
+  for (const entry of changes.planEntries) {
+    db.prepare("DELETE FROM credit_card_plan_entries WHERE plan_id = ? AND budget_sync_id = ?").run(entry.planId, budgetSyncId);
+  }
+  for (const entry of changes.decisions) {
     for (const decision of entry.rows) writeDecision(db, decision, now);
   }
   for (const entry of changes.limitChanges) {
@@ -305,7 +312,6 @@ function writeDifference(db: SqliteDatabase, budgetSyncId: string, current: Work
     }
   }
   for (const entry of changes.planEntries) {
-    db.prepare("DELETE FROM credit_card_plan_entries WHERE plan_id = ? AND budget_sync_id = ?").run(entry.planId, budgetSyncId);
     for (const row of entry.rows) writeEntry(db, row, budgetSyncId, now);
   }
   if (changes.planAccounts) {

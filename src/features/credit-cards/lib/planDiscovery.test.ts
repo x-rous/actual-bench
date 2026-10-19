@@ -83,3 +83,12 @@ it("keeps a plan topped up with a second booking as one plan, while a bank tag a
     ["#EMI_A", 2, 150000, true],
   ]);
 });
+
+it("searches again when the registered plan accounts change, with the same plans and snapshot", () => {
+  const legs = [booking("a", "2025-01-10", 100000, "#PLAN_A")];
+  const { card, workspace, read } = scenario(legs);
+  const registered = workspace();
+  expect(discoverPlans(card(), registered, read).candidates).toHaveLength(1);
+  // Same plans array, snapshot and card; only the registered plan accounts differ.
+  expect(discoverPlans(card(), { ...registered, planAccounts: [] }, read).candidates).toEqual([]);
+});

@@ -1,5 +1,5 @@
 import { createCreditCardStore } from "./store/store";
-import { memoryPersistence } from "./store/persistence";
+import { CreditCardUnavailableError, httpPersistence, memoryPersistence } from "./store/persistence";
 import { CreditCardConflictError } from "@/lib/credit-cards/changes";
 import { projectCardMinimums } from "./financialAdapter";
 import { NEW_CARD_DEFAULTS, cardSchema, statementFactsSchema } from "./models";
@@ -152,4 +152,44 @@ it("stops the payoff illustration at the first cycle the minimum does not amorti
   const result = projectCardMinimums(card(), "2026-03-15", 500000);
   expect(performance.now() - started).toBeLessThan(500);
   expect(result).toMatchObject({ ok: true, neverPaysOff: true, payoffDate: null });
+});
+
+it("keeps Undo available after a failure that changed nothing, so it can be retried", async () => {
+  const memory = memoryPersistence();
+  let fail = false;
+  const store = createCreditCardStore({ read: memory.read, commit: (budget, changes) => {
+    if (fail) throw new CreditCardUnavailableError();
+    return memory.commit(budget, changes);
+  } });
+  const card = addCard(store, CARD_INPUT);
+  addStatement(store, BUDGET, card.id, facts("2026-02-10", 0));
+  fail = true;
+  await store.getState().undo(BUDGET);
+  expect(store.getState().notices[BUDGET]).toContain("Try again");
+  expect(store.getState().workspaces[BUDGET].statements).toHaveLength(1);
+  fail = false;
+  await store.getState().undo(BUDGET);
+  expect(store.getState().workspaces[BUDGET].statements).toEqual([]);
+});
+
+it("reports only HTTP 503 as storage unavailable and keeps other server messages", async () => {
+  const fetchMock = jest.spyOn(globalThis, "fetch");
+  try {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: "Request body too large" }), { status: 413 }));
+    await expect(httpPersistence.read(BUDGET)).rejects.toThrow("Request body too large");
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 503 }));
+    await expect(httpPersistence.read(BUDGET)).rejects.toBeInstanceOf(CreditCardUnavailableError);
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 500 }));
+    await expect(httpPersistence.read(BUDGET)).rejects.toThrow("(500)");
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
+
+it("never accepts the card's own account, or an account missing from the budget, as a plan account", () => {
+  const { store, card } = setup({});
+  const plan = { id: "plan", cardId: card().id, revision: 1, name: "Laptop", recordedAs: "plan-account" as const, originalAmountMinor: 1000, startDate: "2026-02-01" };
+  const accounts = snapshot([], { accounts: [{ id: "plan-off", name: "Plan", offBudget: true, closed: false }] });
+  expect(() => store.getState().savePlan(BUDGET, null, accounts, { ...plan, planAccountId: card().accountId }, [])).toThrow("its own plan account");
+  expect(() => store.getState().savePlan(BUDGET, null, accounts, { ...plan, planAccountId: "missing" }, [])).toThrow("not in your budget");
 });

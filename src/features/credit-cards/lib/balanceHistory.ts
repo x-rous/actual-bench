@@ -70,13 +70,25 @@ const paymentEvent = (row: { id: string; label: string; amountMinor: number; cle
  * `range` months before the current one are shown (6 or 12). The only
  * future shown is the closed bill still to come due, so the chart ends just after its due date.
  */
+const trimmed = new WeakMap<ActivitySnapshot, Map<string, ActivitySnapshot>>();
+
+/** The snapshot without future-dated rows, one object per source and day so snapshot-keyed caches still hit. */
+function upToToday(source: ActivitySnapshot, today: string) {
+  if (!source.rows.some((row) => row.date > today)) return source;
+  let byDay = trimmed.get(source);
+  if (!byDay) trimmed.set(source, byDay = new Map());
+  let snapshot = byDay.get(today);
+  if (!snapshot) byDay.set(today, snapshot = { ...source, rows: source.rows.filter((row) => row.date <= today) });
+  return snapshot;
+}
+
 export function dailyBalanceHistory(
   card: Card, workspace: Workspace, source: ActivitySnapshot, signedTodayMinor: number | undefined, today: string, range: BalanceRange = 6,
 ) {
   const start = addMonths(`${today.slice(0, 7)}-01`, -range, 1);
   const from = [start, source.from, card.firstTrackedStatementDate ?? source.from].sort().at(-1)!;
   const dates = Array.from({ length: Math.max(0, daysBetween(from, today) + 1) }, (_, index) => addDays(from, index));
-  const snapshot = source.rows.some((row) => row.date > today) ? { ...source, rows: source.rows.filter((row) => row.date <= today) } : source;
+  const snapshot = upToToday(source, today);
   const statements = workspace.statements.filter((entry) => entry.cardId === card.id);
   const saved = statements.filter((entry) => !entry.estimate && entry.closingDate <= today);
   const payments = statementPayments(card, workspace, snapshot, today);

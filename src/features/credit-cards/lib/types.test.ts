@@ -53,6 +53,7 @@ const ISSUER_PHRASES: [string, number, TransactionType][] = [
   ["PAYMENT REVERSAL", -50000, "payment"],
   ["DISHONOURED PAYMENT", -50000, "payment"],
   ["CASHBACK", 1200, "cashback"],
+  ["CASHBACK FOR AUTOPAY", 1200, "cashback"],
   ["REWARDS CREDIT", 1200, "cashback"],
   ["POINTS REDEMPTION", 1200, "cashback"],
   ["ATM CASH WITHDRAWAL", -20000, "cash-advance"],

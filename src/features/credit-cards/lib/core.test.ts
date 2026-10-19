@@ -102,6 +102,10 @@ it("refuses reads without split support, and keeps reads when funding details fa
 it("aligns Direct's local cutoff to a different requested card day without adjusting future entries twice", async () => {
   jest.useFakeTimers();
   jest.setSystemTime(new Date("2026-10-16T12:00:00Z"));
+  // Pin the runtime's own time zone, so the native date is 16 Oct on any host (UTC+12 and later included).
+  const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+  const zone = jest.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+    .mockImplementation(function (this: Intl.DateTimeFormat) { return { ...resolved.call(this), timeZone: "UTC" }; });
   try {
     const transaction = source({ id: "boundary", accountId: "card-a", date: "2026-10-17", amount: -10000 });
     const transport = {
@@ -115,6 +119,7 @@ it("aligns Direct's local cutoff to a different requested card day without adjus
     const behind = await readCardActivity(yesterday, "card-a", "2026-01-01", "2026-10-15");
     expect(asOfCardBalance(cardBalance(-1100), behind.futureDeltaMinor, true, behind.directBalanceAdjustmentMinor).debtMinor).toBe(100000);
   } finally {
+    zone.mockRestore();
     jest.useRealTimers();
   }
 });

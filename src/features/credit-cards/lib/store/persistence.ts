@@ -41,7 +41,9 @@ async function failure(response: Response): Promise<never> {
   const body = (await response.json().catch(() => ({}))) as ErrorBody;
   if (response.status === 409) throw new CreditCardConflictError(body.error);
   if (response.status === 400) throw new CreditCardRuleError(body.error ?? "These values could not be saved");
-  throw new CreditCardUnavailableError();
+  if (response.status === 503) throw new CreditCardUnavailableError();
+  // Other failures are not fixed by retrying later: keep the server's message.
+  throw new Error(body.error ?? `The app database returned an error (${response.status})`);
 }
 
 async function request(input: string, init?: RequestInit) {
