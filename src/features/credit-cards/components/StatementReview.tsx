@@ -143,6 +143,12 @@ export function StatementReview(props: Props) {
   }
   function note(transactionId: string, text: string) {
     const item = items.find((entry) => entry.row.id === transactionId)!;
+    // Undecided answers are never saved, so a note needs Yes or No first; on a suggested row it confirms the suggestion.
+    if ((drafts[transactionId]?.decision ?? item.membership.decision) === "review") {
+      setError("Answer Yes or No before adding a note");
+      return;
+    }
+    setError("");
     setDrafts((current) => ({
       ...current,
       [transactionId]: {

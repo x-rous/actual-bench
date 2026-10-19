@@ -90,7 +90,8 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const guide = useGuide();
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [portfolioSort, setPortfolioSort] = useState<"due" | "debt" | "name">("due");
-  const lastCard = useRef<string | null>(null);
+  // The card the user last opened, so All cards returns focus to it (kept in state: never read a ref in render).
+  const [lastCard, setLastCard] = useState<string | null>(null);
   const [reviewed, setReviewed] = useState<string | null>(null);
   const activityQueries = useCreditCardActivities(connection, workspace.cards, workspace.statements);
   const latestToday = workspace.cards.map((entry) => bankToday(entry.bankTimeZone)).sort().at(-1) ?? bankToday("UTC");
@@ -106,6 +107,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
     .sort((a, b) => a.name.localeCompare(b.name)) ?? [];
   const cardIndex = workspace.cards.findIndex((entry) => entry.id === url.card);
   const card = workspace.cards[cardIndex];
+  if (card && lastCard !== card.id) setLastCard(card.id);
   const query = activityQueries[cardIndex];
   const snapshot = sources[cardIndex];
   const accounts = accountsData ?? [];
@@ -153,7 +155,6 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const sourceText = reading ? "Refreshing…" : readAt ? `Read from Actual ${readTime(readAt)}` : "Reading Actual…";
   const failed = refreshError ?? (directory.isError ? "Couldn't read Actual" : null);
 
-  useEffect(() => { if (card) lastCard.current = card.id; }, [card]);
   // Warm the chart code in idle time while the list is on screen, so the first chart a user opens draws at once.
   useEffect(() => preloadWhenIdle(() => { void preloadBalanceChart(); void preloadHistoryCharts(); }), []);
 
@@ -401,7 +402,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
       {!classes.available && <p className="text-xs text-muted-foreground">Account types are loading. You can add a card once they load.</p>}
     </div>;
   } else {
-    body = <PortfolioScreen sort={portfolioSort} onSort={setPortfolioSort} entries={entries} workspace={workspace} focusCardId={lastCard.current} onOpen={selectCard} />;
+    body = <PortfolioScreen sort={portfolioSort} onSort={setPortfolioSort} entries={entries} workspace={workspace} focusCardId={lastCard} onOpen={selectCard} />;
   }
 
   // Plan accounts for the card editors (Add card and Settings): from the directory, so they're known before

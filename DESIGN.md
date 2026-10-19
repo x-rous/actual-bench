@@ -313,7 +313,7 @@ Target **WCAG 2.2 AA** on new/changed interfaces; this document does **not** cer
 - Don't rely on color or hover alone. Test light/dark, 200% zoom, reduced motion and narrow layouts.
 - Respect `prefers-reduced-motion`; don't animate financial numbers through misleading intermediate values.
 
-**Verification:** Use existing Jest/React Testing Library tests for behavior; check keyboard and focus manually; test representative flows with a screen reader. **Proposal:** introduce `axe-core`/`@axe-core/playwright` checks and CI coverage where the project adopts that tooling. Do not claim automated accessibility checks are already configured.
+**Verification:** Use existing Jest/React Testing Library tests for behavior; check keyboard and focus manually; test representative flows with a screen reader. `axe-core` runs in Jest for the Credit Cards screens (`src/features/credit-cards/components/testing/axe.ts`, used by its Quality, Screens and workspace tests); keep those checks passing and extend them as other features adopt it. Other features have no automated accessibility checks yet, and browser-level (`@axe-core/playwright`) checks remain a proposal.
 
 ---
 

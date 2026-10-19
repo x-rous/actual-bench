@@ -80,6 +80,7 @@ export function ActivityScreen(props: Props) {
   const [menu, setMenu] = useState<{ row: ActivityRow; anchor: Element } | null>(null);
   const [linking, setLinking] = useState<string[] | null>(null);
   const [bulk, setBulk] = useState(false);
+  const [acceptError, setAcceptError] = useState("");
   const searchBox = useRef<HTMLDivElement>(null);
   const plans = workspace.plans.filter((plan) => plan.cardId === card.id);
   const { statements, views } = useMemo(() => {
@@ -233,10 +234,13 @@ export function ActivityScreen(props: Props) {
         variant="outline"
         disabled={!available}
         onClick={() => {
-          void creditCardStore.getState().setTypes(budget, card.id, snapshot, rows.map((view) => ({ transactionId: view.row.id, kind: view.type.kind })))
-            .catch(() => undefined);
+          setAcceptError("");
+          Promise.resolve()
+            .then(() => creditCardStore.getState().setTypes(budget, card.id, snapshot, rows.map((view) => ({ transactionId: view.row.id, kind: view.type.kind }))))
+            .catch((cause: unknown) => setAcceptError(cause instanceof Error ? cause.message : "Couldn't accept the suggestions"));
         }}
       >Accept {plural(rows.length, "suggestion")}</Button>}
+      {acceptError && <p role="alert" className="text-xs text-destructive">{acceptError}</p>}
       <span className="ml-auto text-xs text-muted-foreground" role="status">
         {filtered ? `${rows.length} of ${plural(views.length, "transaction")}` : plural(views.length, "transaction")}
       </span>
