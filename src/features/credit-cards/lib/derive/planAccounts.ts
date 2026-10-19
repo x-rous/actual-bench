@@ -167,8 +167,10 @@ function buildLedger(card: Card, workspace: Workspace, snapshot: ActivitySnapsho
   for (const accountId of accounts) {
     const needed = plans.some((plan) => plan.planAccountId === accountId);
     const history = planAccountHistory(snapshot, accountId);
+    // Any registered account may hold this card's unassigned transfers (they count in Total owed), so an
+    // unread one leaves the totals unknown even when no plan of this card uses it.
     if (!history || history.issues.length) {
-      if (needed) unavailable.add(accountId);
+      unavailable.add(accountId);
       continue;
     }
     const accountPlans = workspace.plans.filter((plan) => plan.planAccountId === accountId);

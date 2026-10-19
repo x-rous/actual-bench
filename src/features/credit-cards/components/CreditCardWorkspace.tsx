@@ -156,7 +156,8 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const failed = refreshError ?? (directory.isError ? "Couldn't read Actual" : null);
 
   // Warm the chart code in idle time while the list is on screen, so the first chart a user opens draws at once.
-  useEffect(() => preloadWhenIdle(() => { void preloadBalanceChart(); void preloadHistoryCharts(); }), []);
+  // The promise is returned so a failed import is caught there (best effort; a mount retries).
+  useEffect(() => preloadWhenIdle(() => Promise.all([preloadBalanceChart(), preloadHistoryCharts()])), []);
 
   const selectCard = (id: string | null) => go({ card: id, tab: "overview", statement: null, review: null, payment: null, view: null, in: null, plan: null });
   const setTab = (tab: WorkspaceTab, patch: Parameters<typeof go>[0] = {}) =>

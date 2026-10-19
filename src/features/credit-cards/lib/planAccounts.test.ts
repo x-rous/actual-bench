@@ -130,6 +130,15 @@ it("keeps Total owed visible while a plan needs checking, and hides it only with
   expect(totalOwed(test.card(), test.workspace(), unread, test.signedCard, TODAY).known).toBe(false);
 });
 
+it("leaves Total owed unknown when any registered plan account is unread, even one no plan of this card uses", () => {
+  const { purchase, conversion, billed } = laptop();
+  const test = context({}, [conversion, ...billed], [purchase]);
+  expect(test.owed().known).toBe(true);
+  // A spare registered account (for example after its plan was deleted) may hold this card's transfers.
+  test.store.getState().setPlanAccounts("budget", [PLAN_ACCOUNT, "spare-plan-account"]);
+  expect(test.owed()).toMatchObject({ known: false, unavailable: ["spare-plan-account"] });
+});
+
 it("rejects an own-account plan in an account that already holds tagged plans (§12.3)", () => {
   const { purchase, conversion } = laptop({ tag: "#laptop" });
   const test = context({ planAccountTag: "#laptop" }, [conversion], [purchase]);
