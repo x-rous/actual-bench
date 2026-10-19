@@ -46,6 +46,16 @@
 - Budget File Health opens a read-only exported-snapshot workspace for inspecting budget health locally in the browser
 - Data Browser opens the exported budget's raw SQLite tables, views, and rows directly (its own page, sharing the cached snapshot)
 
+## Credit Cards
+
+- Reads on-budget **Credit Card** accounts through Direct and HTTP API; Actual is never written. Card setup, statement figures, review answers, type corrections, instalment plans and limit changes are saved per budget in the app database, with revision checks, a two-tab conflict guard and Undo.
+- **All cards** portfolio, then per card: **Overview** (to pay, total owed, credit used, attention items, 6/12-month balance chart with the limit as a step), **Statements**, **Payments**, **Activity**, **Instalment Plans** and **Insights**. New cards default to closing day 10, due day 3, minimum 5% with a floor of 100.
+- **Statement review** reconciles the bank balance as an equation (previous − payments & credits + charges + interest & fees ± plan balances) with a Difference box; answer Yes/No/? per transaction (keyboard Y/N/?), bulk answers and moves, `#YYYY-MM` tag suggestions, and in-place **Edit bank figures**. Bench never creates a balancing transaction.
+- **Payments** count toward the bill whose window (after close, until the later of due date and next close) contains them. One status per bill: Paid in full, Paid late, Minimum paid, Part paid, Pending, Overdue, Covered with credits, Settled with a plan.
+- **Types** for every transaction, suggested from category mappings, transfer accounts and descriptions, correctable everywhere with one choice.
+- **Instalment plans** kept in a plan account in Actual (own or shared by exact `#tag`), billed by the bank, or in the card balance; fixed, minimum-by-deadline, balance-only or other schedules. Plans are found automatically from tags in plan accounts. Each plan has a timeline of expected and posted instalments with the remaining principal.
+- **Credit-limit changes** by effective date drive utilisation and the chart. A built-in, searchable **Guide** explains every screen.
+
 ## Assets & Debt
 
 - **Release safeguards:** every explicit Apply, Undo or interrupted-link completion requires a successful sync first (once before a bulk run). Interrupted writes become checkable after their execution lease expires; recovery verifies the marked transaction’s contents, retains partial or changed writes for review, and never retries them automatically. Archived loans are read-only.

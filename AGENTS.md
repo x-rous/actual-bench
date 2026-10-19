@@ -1,193 +1,208 @@
 # Actual Bench — Agent Instructions
 
-> Applies to the whole repo unless a deeper `AGENTS.md` exists.
-> Product: advanced administration, budgeting, diagnostics, ActualQL and budget-file-sync workbench for Actual Budget. It complements Actual Budget; it does not replace day-to-day transaction entry.
+Advanced administration, budgeting, diagnostics, ActualQL and budget-file-sync workbench for Actual Budget. It complements Actual; it is not for day-to-day transaction entry. Desktop/laptop only; mobile is out of scope.
 
-## 1. Start Here
+## 1. Sources of Truth
 
-1. Identify the smallest shippable scope of the request.
-2. Inspect the relevant code, nearby tests and interfaces before trusting docs.
-3. If `agents/` exists (gitignored, often absent), follow §10. If not, skip it.
-4. State any material conflict between request, PR spec, code, tests and docs. Don't silently pick one.
+| Question | Source |
+|---|---|
+| What to do | The user request |
+| PR scope | Active `agents/pr-specs/PR-*.md` |
+| Current behavior | Live code, types, migrations, tests |
+| Planned / approved work | `agents/roadmap.md` (RD-###), `agents/findings.md` (F-###), `agents/knowledge.md` |
+| What's next | `agents/pr-specs/INDEX.md` (the only dispatch table) |
+| Process | `agents/FRAMEWORK.md` |
+| Manual testing target | `agents/live-test-server.md` |
+| User-facing behavior | `README.md`, `FEATURES.md`, `docs-site/` |
+| Versions, commands | `package.json`, `package-lock.json`, `.github/workflows/`, `next.config.ts` |
 
-Sources of truth: the user request (what to do); active `agents/pr-specs/PR-*.md` (PR scope); live code/types/migrations/tests (current behavior); `agents/roadmap.md`, `findings.md`, `knowledge.md` (planned/approved); `README.md`, `FEATURES.md`, `docs-site/` (user-facing); `package.json`, lockfiles, `.github/workflows/`, `next.config.ts` (versions and commands). Historical docs explain rationale; they never override live indexes or an active PR spec. Never hard-code the next RD/F/PR number; derive it from the master index.
+Other planning and historical docs are context only; their status text is never authoritative. If sources conflict, say so; don't silently pick one.
 
-## 2. Product Invariants
+## 2. Transport
 
-### Transport
-Two transports: **Direct** (browser runtime, `@actual-app/api`) and **HTTP API** (browser → Next.js proxy → `actual-http-api`).
-- All Actual reads/writes go through `getTransport()` from `@/lib/actual`. Never call Actual Server or `actual-http-api` from feature components/hooks.
-- Add operations in `src/lib/actual/transport.ts`, implement both transports where supported. Never bypass capability checks.
-- HTTP helpers: `src/lib/api/` via `apiRequest()`. Browser runtime: `src/lib/actual/browser/` or `browserApiTransport.ts`.
+- Two transports: **Direct** (browser runtime, `@actual-app/api`) and **HTTP API** (browser → Next.js proxy → `actual-http-api`).
+- All Actual reads/writes go through `getTransport()` in `src/lib/actual/`. Never call Actual Server or `actual-http-api` from components or hooks.
+- New operations: add to `src/lib/actual/transport.ts`, implement in both transports where supported, keep capability checks.
+- HTTP helpers: `src/lib/api/` via `apiRequest()`. Browser runtime: `src/lib/actual/browser/`.
+- Every server-side `actual-http-api` request goes through `src/lib/http/serverQueue.ts` (FIFO + per-server lease); browser requests reach it via the proxy. `src/lib/http/serverRequestGate.ts` is only the browser-safe interface to it, not a serializer. Concurrent requests wedge budgets; never bypass the queue.
 - External providers (e.g. FX) live in provider/service modules and server routes.
-- Every `actual-http-api` request goes through `src/lib/http/serverQueue.ts` (FIFO + per-server lease); browser-safe code uses `serverRequestGate.ts`. Concurrent requests can wedge a budget. Never bypass it.
 
-### Write model
+## 3. Write Model
+
 | Area | Behavior |
 |---|---|
-| Accounts, payees, categories, rules, schedules, tags | Stage in `src/store/staged.ts`; write only on **Save** |
-| Budget amounts, transfers, holds | Stage in `src/store/budgetEdits.ts`; write only on **Save** |
-| Carryover toggle | Intentional direct write (`useCarryoverToggle`), per-item results |
-| Notes | Intentional immediate save via transport note methods |
-| Budget File Sync | Preview first; write only on **Apply** or opted-in safe-only automation |
-| Bank Reconciliation | Stage in session; write only on **Apply** after a pre-flight re-read confirms rows are unchanged. Never writes a category |
-| Sync flows, run history, FX registry, health metadata | Persist to the app DB |
+| Accounts, payees, categories, rules, schedules, tags | Staged in `src/store/staged.ts`; written on **Save** |
+| Budget amounts, transfers, holds | Staged in `src/store/budgetEdits.ts`; written on **Save** |
+| Carryover toggle | Immediate write (`useCarryoverToggle`), per-item results |
+| Notes | Immediate save via transport note methods |
+| Budget File Sync | Preview first; written on **Apply** or opted-in safe-only automation |
+| Bank Reconciliation | Staged in session; written on **Apply** after a pre-flight re-read confirms rows are unchanged; never writes a category |
+| Sync flows, run history, FX registry, health metadata | App DB |
+| Credit cards | App DB; each explicit **Save** writes immediately as one guarded change set; never writes Actual |
 | Diagnostics, ActualQL | Read-only unless a named workflow applies changes |
 
-Don't change a workflow between staged and immediate without an approved product decision and updated tests/docs.
+Never claim "nothing writes until Save" in code comments or docs; the exceptions above are intentional.
 
-### Misc
-- IDs: use `generateId()` from `@/lib/uuid`, never `crypto.randomUUID()` (plain-HTTP self-hosting).
-- Version endpoints are optional: use `Promise.allSettled()`, degrade gracefully, never fail a successful connection over them.
+## 4. Code Rules
 
-## 3. Runtime and Dependencies
-
-`package.json`, lockfiles and `.github/workflows/` are authoritative; don't copy versions into this file. Stack: Next.js 16 (Turbopack dev), React 19 + React Compiler, Tailwind 4 (config in `src/app/globals.css`, no `tailwind.config.js`), Zustand 5, TanStack Query 5 / Table 8, React Hook Form 7, Zod 4, strict TypeScript with `@/*` → `src/*`. Node version is whatever CI and `docker/Dockerfile.prod` pin; a local difference isn't a bug. Jest has two projects, `browser` (jsdom) and `node`; see `jest.config.cjs`.
-
-- Next.js has breaking changes vs. your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing Next.js code.
-- Don't add `--webpack` to dev commands.
-- The `react-hooks/incompatible-library` warning is expected. Don't weaken architecture or disable the React Compiler to silence it.
-- Build output: `.next-build` outside Vercel, `.next` on Vercel, `output: "standalone"` for Docker. CI/Docker/cache/deploy changes must preserve this.
-
-## 4. Persistence, Secrets and Workers
-
-### Browser
-Connections and all credentials are memory-only. Saved server presets may keep non-secret metadata in `sessionStorage`. Query caches are session-only. UI prefs in browser storage must hold no credentials or budget data. Never put API keys, server passwords, budget encryption passwords, the vault key or decrypted unattended credentials in storage, URLs, logs, analytics or error messages.
-
-### App DB (`src/lib/app-db/`, server-only, `better-sqlite3`)
-- Never import it into client code. Use repository/service modules, not SQL in components.
-- Migrations: additive, ordered, transactional, backward compatible. Never edit a shipped migration; add a new one.
-- A new persisted enum value (schedule kind, run status, trigger) needs a schema-version bump even with no column change, because `runMigrations` refuses a newer DB. Readers handle unknown values explicitly.
-- Use foreign keys and indexes where access patterns need them; wrap multi-row transitions in transactions.
-- Default path `/data/actual-bench.sqlite`; Vercel uses non-durable temp storage unless configured. It is workflow metadata, not a copy of a budget.
-
-### Credential store
-Every secret is a row in the `credentials` table, accessed only via `src/lib/credentials/store.ts` and the modules on top (`rememberedCredentials`, `unattendedCredentials`, `backupSecrets`). Don't add another sealing table/module.
-- Each secret has one fixed **key domain**: `passphrase` (remembered, opened after user unlock) or `operator` (unattended/backup, opened with the vault key).
-- Never read a secret in one domain and write it in the other (Bench has no login). Enrolling a remembered server for unattended use means the user re-supplies the secret.
-- Reset/withdrawal in one domain never touches the other. Migrations copy ciphertext and never decrypt.
-
-### Unattended-sync vault
-Opt-in, server-side, for HTTP API and Direct alike.
-- HTTP API enrols its API key. Direct enrols the Actual server **password**, never a session token (shared, non-expiring, survives password change). Secrets are one per server, with encryption passwords per budget.
-- An enrolment is verified against the Actual server, in a worker, **before** storing (`src/lib/credentials/enrolments.ts`).
-- Encrypted at rest with the operator key, resolved only in `src/lib/credentials/vaultKey.ts`: `ACTUAL_BENCH_VAULT_KEY` → deprecated `SYNC_VAULT_KEY` → `secrets/vault.key`.
-- A key is generated only when no operator-domain secret exists; otherwise only a key that opens the stored secrets is acceptable (`vaultState.ts`). Never regenerate or overwrite a key file.
-- Missing/wrong key = **locked**: fail closed, show it in App Health, never seal new operator secrets.
-- Decrypted values never reach the browser. Direct budgets run unattended in a worker via `src/lib/actual/runtime/nodeHost.ts`, never on the web server thread.
-
-### Automation workers (`src/lib/workers/`, `src/lib/automation/executor.ts`)
-Every run executes in a disposable worker thread; the engine claims, schedules and records.
-- A job uses only its context and the app DB. Server memory, `globalThis` singletons and module state aren't shared.
-- Call `ctx.enterPhase("mutating")` (or `"external"`) immediately **before** the first budget/destination write or third-party-actionable request. Stopped after → `indeterminate`, never retried; before → failed. A write before the call is misreported.
-- Honour `ctx.signal` (deadline + cancel) or the job is killed after a grace period.
-- No plaintext secret crosses the worker boundary: tasks carry references. The sole exception is a not-yet-stored secret (enrolment check), sealed with the vault key and opened only in the worker.
-- Tests run jobs in-thread (`ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread`); the worker path uses `src/lib/workers/testing/fakeWorker.ts`; Docker smoke tests a real worker.
-
-## 5. State and Data Flow
-
-| Owner | Responsibility |
-|---|---|
-| TanStack Query | Fetch triggers, loading/error state, server snapshots |
-| `staged.ts` | Entity working set, pending changes, save errors, merge metadata, undo/redo |
-| `budgetEdits.ts` | Budget-cell/hold edits, selection, inverse-patch undo/redo |
-| `connection.ts` / `savedServers.ts` | Memory-only connections / non-secret presets |
-| App DB | Sync flows/runs/mappings, vault records, FX registry/snapshots, reconciliation data |
-| Local React state | Ephemeral UI only |
-
-**Queries:** the client uses infinite stale/cache times with no focus/reconnect refetch, because background loads can clobber unsaved work. New queries: scope keys by connection, invalidate explicit keys after writes, preserve staged rows on refetch, and add no broad auto-refetch without proving it can't overwrite unsaved edits.
-
-**Save pipeline:** derive create/update/delete from staged state → call the active transport → keep per-item partial failures → clear only successes → record actionable errors on failed entries → sync the Direct runtime after success → invalidate the smallest query keys → leave failures retryable. Direct writes are serialized where required; don't swap in unconditional `Promise.all()`.
-
-## 6. Data Contracts and Money
-
-- Domain types are camelCase; upstream payloads may be snake_case. Normalize and denormalize only at the API/transport boundary. Don't leak `Api*` types outside `src/lib/api/` or transport internals.
-- Never infer units from names:
+- IDs: `generateId()` from `@/lib/uuid`. Never `crypto.randomUUID()` (fails on plain-HTTP self-hosting).
+- Version endpoints are optional: use `Promise.allSettled()`; never fail a connection over them.
+- Domain types are camelCase. Convert snake_case only at the API/transport boundary. `Api*` types stay inside `src/lib/api/` and transport internals.
+- Money units. Never infer them from names:
 
 | Context | Unit |
 |---|---|
-| Budget, category and transaction amounts | Integer minor units |
-| Account balances on entity pages; `initialBalance` in UI model | Decimal whole units (converted at boundary) |
+| Budget, category, transaction amounts | Integer minor units |
+| Account balances on entity pages; `initialBalance` in the UI model | Decimal whole units (converted at the boundary) |
 | FX rates | Positive decimal strings |
-| FX conversion | Integer minor units, exact integer arithmetic, round only the final amount |
+| FX conversion | Integer minor units, exact integer math, round only the final amount |
 
-- Comment units on new public types and non-obvious variables. Never mix whole and minor units. No binary floats for persisted FX math. Preserve signs. Add boundary and rounding tests.
+- Comment the unit on new public types and non-obvious variables. Never mix units, never use binary floats for persisted FX math, preserve signs.
 
-## 7. Budget File Sync
+## 5. State and Data Flow
 
-One engine. Type-specific behavior lives in a registered `SyncKindAdapter`; never build a parallel preview/apply/automation engine. Keep preview, apply, history, review queue, flow health and scheduling generic. Capability-gate; don't assume transport parity.
+| Owner | Owns |
+|---|---|
+| TanStack Query | Fetching, loading/error state, server snapshots |
+| `src/store/staged.ts` | Entity working set, pending changes, save errors, merge metadata, undo/redo |
+| `src/store/budgetEdits.ts` | Budget-cell/hold edits, selection, inverse-patch undo/redo |
+| `src/store/connection.ts` | Active connection (memory-only) |
+| `src/store/savedServers.ts` | Non-secret server presets (`sessionStorage`) |
+| App DB | Sync flows/runs/mappings, vault records, FX registry/snapshots, reconciliation data, credit-card metadata |
+| `creditCardStore` | Credit-card cache per budget (loaded from the app DB), command-scoped undo |
+| Local React state | Ephemeral UI only |
 
+- **Queries** use infinite stale/cache time and no focus/reconnect refetch, because refetches clobber unsaved edits. New queries: key by connection, invalidate explicit keys after writes, preserve staged rows on refetch, no broad auto-refetch.
+- **Save pipeline:** staged state → create/update/delete → active transport → keep per-item failures retryable → clear only successes → sync the Direct runtime → invalidate the smallest query keys. Keep Direct writes serialized; no blanket `Promise.all()`.
+
+## 6. Persistence and Secrets
+
+**Browser**
+- Connections and credentials are memory-only. Query caches are session-only.
+- Never put API keys, passwords, encryption passwords, the vault key or decrypted credentials in browser storage, URLs, logs, analytics or error messages.
+
+**App DB** (`src/lib/app-db/`, server-only, `better-sqlite3`)
+- Never import it into client code; no SQL in components.
+- Migrations are additive, ordered, transactional and backward compatible. Never edit a shipped migration; add a new one.
+- A new persisted enum value (schedule kind, run status, trigger) needs a schema-version bump, because `runMigrations` refuses a newer DB. Readers handle unknown values.
+- Path: `/data/actual-bench.sqlite`; on Vercel, a non-durable temp directory unless configured (`src/lib/app-db/connection.ts`). It stores workflow metadata, never a budget copy.
+
+**Credentials** (`src/lib/credentials/`)
+- Every secret is a row in the `credentials` table, accessed only through `src/lib/credentials/store.ts` and its `rememberedCredentials`, `unattendedCredentials` and `backupSecrets` modules. Never add another sealing table or module.
+- Each secret has one fixed key domain: `passphrase` (remembered, user unlock) or `operator` (unattended/backup, vault key). Never move a secret between domains; unattended enrolment makes the user re-enter it. Resetting one domain never touches the other. Migrations copy ciphertext and never decrypt.
+
+**Unattended-sync vault**
+- HTTP API enrols its API key. Direct enrols the server **password**, never a session token. One secret per server; encryption passwords per budget.
+- Verify every enrolment against the Actual server, in a worker, before storing (`src/lib/credentials/enrolments.ts`).
+- The key resolves only in `src/lib/credentials/vaultKey.ts`: `ACTUAL_BENCH_VAULT_KEY` → `SYNC_VAULT_KEY` (deprecated) → `secrets/vault.key`. A key is generated only when no operator secret exists (`src/lib/credentials/vaultState.ts`). Never regenerate or overwrite a key file.
+- Missing or wrong key = **locked**: fail closed, show it in App Health, seal nothing new.
+- Decrypted values never reach the browser. Unattended Direct budgets run in a worker via `src/lib/actual/runtime/nodeHost.ts`, never on the web server thread.
+
+**Automation workers** (`src/lib/workers/`, `src/lib/automation/executor.ts`)
+- Each run is a disposable worker thread. Jobs use only their context and the app DB; no shared memory, `globalThis` singletons or module state.
+- Call `ctx.enterPhase("mutating")` (or `"external"`) immediately before the first write or third-party-actionable request. Before that phase: user cancel = `cancelled`, deadline or worker failure = `failed`. Forced termination after it = `indeterminate`, never retried (`src/lib/automation/engine.ts`).
+- Honour `ctx.signal` (deadline and cancel), or the job is killed.
+- Tasks carry secret references, never plaintext. Sole exception: an enrolment check's not-yet-stored secret, sealed with the vault key and opened only in the worker.
+
+## 7. Budget File Sync (`src/lib/sync/`)
+
+- One engine. Type-specific logic lives in a registered `SyncKindAdapter`; never build a parallel preview/apply/automation path. Capability-gate; never assume transport parity.
 - Preview never writes. Apply re-checks route identity, capabilities, preview freshness and target guards.
-- Automation is server policy-gated; safe-only automation applies only explicitly classified safe items. Duplicates, drift, source deletion, blocked items, warnings and ambiguous mappings stay reviewable unless a spec says otherwise. Never widen the auto-apply set as "cleanup".
-- **Markers** are deterministic and portable, derived from source budget ID, target budget ID, target account ID and source item key. Never derive them from flow IDs, server URLs, local DB IDs or display names. App DB mappings are the primary local record; markers are the cross-instance dedupe mechanism. Treat them as opaque equality keys; don't parse them.
-- A Direct runtime (tab or worker Node host) holds **one budget at a time**; Direct→Direct flows switch sequentially. No in-place same-server switch unless upstream adds a supported primitive and the architecture is revisited.
+- Safe-only automation applies only items classified safe. Duplicates, drift, source deletions, blocked items, warnings and ambiguous mappings stay in review. Never widen the auto-apply set.
+- **Markers** derive only from source budget ID, target budget ID, target account ID and source item key; never from flow IDs, URLs, local DB IDs or names. They are opaque equality keys; never parse them. App DB mappings are the local record; markers dedupe across instances.
+- A Direct runtime holds one budget at a time; Direct→Direct flows switch sequentially.
 
-## 8. UI, Styling, Accessibility
+## 8. Stack and UI
 
-- Reuse `src/components/ui/` (primitives), `src/components/layout/`, `src/features/<feature>/`, `src/app/(app)/...`. Don't create empty template folders.
-- Tailwind 4 syntax, `cn()` for conditionals, semantic tokens from `globals.css` over raw palette/dark pairs. No unrelated mass token refactors.
-- New/changed UI: icon-only controls get `aria-label`; keyboard behavior matches the ARIA role; status never by color alone; form controls labelled; preserve focus management in dialogs/popovers/drawers/menus; check narrow screens; reuse Base UI/shadcn patterns.
+- npm only (`package-lock.json`). Never use yarn/pnpm or add other lockfiles.
+- Versions live in `package.json`; the Node version is pinned by `.github/workflows/` and `docker/Dockerfile.prod`. A local difference is not a bug.
+- Next.js has breaking changes vs. your training data; see the managed block at the end. Never add `--webpack`.
+- React Compiler is on. The `react-hooks/incompatible-library` warning is expected; leave it.
+- Build output: `.next-build` (default, overridable via `ACTUAL_BENCH_DIST_DIR`), `.next` on Vercel, `output: "standalone"` for Docker. Preserve all of these in CI/Docker changes.
+- Tailwind 4: config in `src/app/globals.css` (`@theme`); no `tailwind.config.js`. Use `cn()` and semantic tokens from `src/app/globals.css`.
+- Reuse `src/components/ui/`, `src/components/layout/` and `src/features/<feature>/`. Never create empty template folders.
+- Accessibility on new/changed UI: `aria-label` on icon-only controls, keyboard behavior matching the ARIA role, status never by color alone, labelled inputs, focus preserved in dialogs, popovers, drawers and menus.
 
-## 9. Testing and Validation
+## 9. Testing (light)
 
-Add co-located regression tests (`.test.ts` / `.test.tsx`) only for major changes with big impacts, prioritizing: normalization/units, staged-state preservation and partial saves, transport parity and capability gates, sync planning/idempotency/apply guards, migrations and transactions, secret handling and serialization, easy-to-regress accessibility. Don't hard-code test counts in docs. Do not create a regression test for every small fix.
+- Add regression tests only for major, high-impact changes. Never add a test per small fix.
+- Default checks, scoped to what you changed:
+  ```bash
+  npm test -- --findRelatedTests <changed-files>
+  npm run lint -- <changed-paths>
+  npm run typecheck
+  ```
+- If a scoped run shows wider impact, widen to that feature area, not the repo.
+- Run the full suite (`npm run lint`, `npm run typecheck`, `npm test`) only when the user asks or you changed `src/types/`, the `src/lib/actual/` transport contract, `src/store/`, `src/lib/app-db/` or migrations, `src/lib/sync/`, `jest.config.cjs`, `tsconfig.json`, `eslint.config.mjs`, `package.json` or `package-lock.json`.
+- Run `npm run build` only when you changed `next.config.ts`, routing under `src/app/`, the server/client import boundary, Docker/runtime layout, or dependencies.
+- CI (`.github/workflows/ci.yml`) is the full gate.
+- Never add `--no-cache` to lint; a cold lint takes minutes. Delete `.eslintcache` only after upgrading an ESLint plugin or config.
+- `docs-site/` changes: `npm --prefix docs-site ci && npm --prefix docs-site run build`. Markdown-only changes: no checks.
+- Automation tests run in-thread (`ACTUAL_BENCH_AUTOMATION_EXECUTOR=in-thread`); the worker path uses `src/lib/workers/testing/fakeWorker.ts`.
+- Report what ran and what didn't. Never claim CI passed unless you saw it.
 
-**CI is the full gate. Locally, run the smallest check that covers your change.** Full suite, cold lint and production build each cost minutes, and CI (`.github/workflows/ci.yml`) runs them in parallel on every PR.
+## 10. Dev Server and Live Data
 
-**While implementing (every edit):**
-```bash
-npm test -- --findRelatedTests <changed-files> --bail   # or: npm test -- <path-or-pattern>
-npm run lint -- <changed-paths>
-```
-- If a scoped run suggests wider impact, widen to that feature area, not the repo.
-- Run `npm run typecheck` once per logical unit, not per edit.
-- Run independent checks in parallel.
-- `npm run lint` is cached and additive. **Never add `--no-cache`**: a cold lint takes minutes because `react-hooks/static-components` runs the React Compiler on every component. Run `rm -f .eslintcache` only after upgrading an ESLint plugin/config (the cache keys on file content, not rules).
+- Use the existing dev server in this workspace. Never start `next dev`, `npm run dev` or another server unless the task explicitly requires it (`docs-site/scripts/capture-screenshots.mjs` intentionally starts its own isolated server).
+- Manual checks run only against the test Actual server and budget in `agents/live-test-server.md`; connect with the details there. Never Save, Apply, run a sync or automation, enrol credentials or touch the vault on any other server or budget. If you can't tell which budget is active, stop and ask.
+- Never copy values from `agents/live-test-server.md` into code, tests, logs, commits, docs or PR text.
 
-**Before push or PR, scoped gate (default):**
-```bash
-npm run lint -- <changed-paths>
-npm run typecheck
-npm test -- --findRelatedTests <changed-files>
-```
-**Full gate** (`npm run lint`, `typecheck`, `npm test`, `npm run build`) only if: the user asks; you changed shared infrastructure (`src/types/`, the `src/lib/actual/` transport contract, `src/store/`, `src/lib/app-db/` or migrations, the `src/lib/sync/` engine, `jest.*`, `tsconfig.json`, `eslint.config.mjs`, `package.json`/lockfiles); or a scoped run implied wider reach.
-**`npm run build`** only when you changed `next.config.ts`, routing/`src/app/` structure, the server/client import boundary, Docker/runtime layout, or dependencies.
+## 11. Docs
 
-`docs-site/` changes: `npm --prefix docs-site ci && npm --prefix docs-site run build`. Markdown-only root changes: no app suite unless executable config is affected or the user asks.
+Update in the same change:
 
-Report exactly what ran, which gate (scoped/full) and why, and what didn't run. Never claim CI passed unless observed.
-
-## 10. Docs and Internal Planning
-
-**Update docs in the same change:**
 | Change | Update |
 |---|---|
-| User-facing behavior | `FEATURES.md` + relevant `docs-site/` guide |
-| Setup, architecture, entry point, privacy, positioning | `README.md` + admin docs |
-| Env var | Config/deployment docs + example/reference |
+| User-facing behavior | `FEATURES.md` + the relevant `docs-site/` guide |
+| Setup, architecture, entry point, privacy, positioning | `README.md` + `docs-site/` admin docs |
+| Env var | `docs-site/` config/deployment docs + example env file |
 | Demo | `docs/DEMO_DEPLOYMENT.md`, `demo/` |
-| Docker/runtime layout | `docker/Dockerfile.prod`, deployment docs, CI paths |
+| Docker/runtime layout | `docker/Dockerfile.prod`, `docs-site/` deployment docs, `.github/workflows/` paths |
 
-Keep claims consistent; avoid absolutes like "nothing writes until Save" given the documented exceptions.
+## 12. Planning (`agents/`)
 
-**`agents/` (internal, gitignored; skip if absent).** Read only the live indexes: `roadmap.md` (RD-###), `findings.md` (F-###), `knowledge.md` (constraints, rejected/deferred), `FRAMEWORK.md` (process), `pr-specs/INDEX.md` (the only "what's next" dispatch table). Stale status text elsewhere isn't authoritative.
-For non-trivial work: confirm the RD/F item and PR-spec → read its Why, Scope, Out of scope, Relevant files, Acceptance criteria, Status → verify files against the repo → one short-lived branch per shippable spec (lettered milestones stay on the parent branch) → on completion update the spec, `INDEX.md`, `roadmap.md`/`findings.md` (move resolved F to Done), `knowledge.md` for new binding constraints, and user docs. Batch items into one PR only if they share files or a tightly coupled area.
-Numbers: never reuse; derive the next from the master index; record merged/superseded items instead of renumbering.
+**Planning files are only for implementing an RD-### or F-### item.**
+- Never create an RD or F item on your own. Create one only when the user explicitly asks to add it to the roadmap or findings. A task request is not that request.
+- Create a PR-spec, or edit `agents/pr-specs/INDEX.md`, `agents/roadmap.md` or `agents/findings.md`, only when implementing an existing RD/F item or adding one the user asked for.
+- Everything else (fixes, tweaks, refactors, adjustments, follow-ups) is done directly: no RD/F item, no PR-spec, no new number, no index or roadmap edits.
+- `agents/` is gitignored, so its edits never appear in `git diff`. List every `agents/` file you changed in the handoff.
 
-## 11. Git and Change Control
+**RD/F work**
+- Follow its PR-spec (Why, Scope, Out of scope, Relevant files, Acceptance criteria). If the spec's files have drifted from the repo, report it before implementing.
+- One short-lived branch per shippable PR-spec. Lettered PR-specs (`PR-NNNa`, `PR-NNNb`) stay on the parent branch.
+- Combine items in one PR only when they share files or a tightly coupled area.
+- On completion update: the PR-spec, `agents/pr-specs/INDEX.md`, `agents/roadmap.md` or `agents/findings.md` (move resolved F items to Done), `agents/knowledge.md` (new binding constraints), and docs per §11.
 
-- Never work on `main`; PRs target `main`. Branch prefixes: `feat/`, `fix/`, `refactor/`, `docs/` (with a PR-spec: `<type>/pr-NNN-<slug>`). Keep changes focused.
-- No amend, rebase, force-push, branch deletion or history rewrite without explicit approval.
-- Don't commit, push, open a PR, merge or release on your own initiative: show the diff, propose wording, wait for approval. **Exception:** an explicit user/session instruction (e.g. "commit and push to branch X") is that approval, for the named branch and action only. It doesn't extend to opening a PR, merging or releasing.
-- Author identity, when required: GitHub user `x-rous`, name `Manaf`.
-- Commit messages and PR titles (PR titles become changelog entries): `<type>(<optional scope>): <summary>`, with type one of `feat|fix|refactor|docs|chore|test`; imperative mood, lowercase start (unless a code symbol/proper noun), no trailing punctuation, specific about what and where.
-  `fix(ui): prevent double submission on submit button click` ✅ · `fix(ui): fix button bug` ❌
+**Numbering: the user decides when an RD/F item exists; you assign its number.** PR numbers are assigned only for PR-specs that implement an RD/F item.
+- Each namespace has one index: RD → `agents/roadmap.md`, F → `agents/findings.md`, PR → `agents/pr-specs/INDEX.md`.
+- Next number = the next free number in that index, skipping any number its numbering/reservation notes reserve.
+- Re-read the index, then add the row before starting work.
+- Never reuse or renumber; mark merged/superseded items instead.
 
-## 12. Completion Standard
+## 13. Git
 
-Done means: requested behavior implemented without scope creep; both transports handled (or the unsupported capability is explicit and tested); write model preserved; no secret persisted or logged; units explicit and tested; staged changes can't be silently overwritten; sync preview/idempotency/review gates intact; relevant tests pass; docs and internal indexes updated. Don't mark an RD/F/PR item complete unless its acceptance criteria and doc updates are satisfied. State uncertainty plainly.
+- Never work on `main`; PRs target `main`. Branches: `feat/`, `fix/`, `refactor/`, `docs/`; with a PR-spec: `<type>/pr-NNN-<slug>`.
+- Commit, push, open a PR, merge, tag or release only when explicitly instructed. An instruction covers only the named action and branch. Otherwise show the diff and the proposed message, then wait.
+- Never amend, rebase, force-push, delete branches or rewrite history without approval.
+- Commits are authored as Manaf Abu Rous (GitHub `x-rous`). Never change git config.
+- Never commit secrets, `secrets/`, `.env*` files with real values, vault keys or app DB files.
+- Commit messages and PR titles (PR titles become changelog entries): `<type>(<scope>): <summary>`, type `feat|fix|refactor|docs|chore|test`, imperative, lowercase start, no trailing period.
+  ✅ `fix(ui): prevent double submission on submit button click` · ❌ `fix(ui): fix button bug`
 
-Handoff lists: files changed, behavior changed, validation performed (scoped or full), known limitations/follow-ups, commands not run.
+## 14. Ask First
+
+- Adding, removing or major-upgrading a dependency.
+- Changing build output, Docker/runtime layout or CI beyond the task.
+- Changing `src/lib/http/serverQueue.ts`, `src/lib/http/serverRequestGate.ts`, `src/lib/credentials/vaultKey.ts`, `src/lib/credentials/vaultState.ts` or a shipped migration.
+- Switching a workflow between staged and immediate writes.
+
+With nobody available to answer, stop at that point and state what you would have done.
+
+## 15. Done
+
+Done = the request is implemented without scope creep; both transports are handled or the gap is explicit; write model, secrets, units, staged edits and sync gates are intact; scoped checks pass; docs are updated (and, for RD/F work only, `agents/` indexes). Mark an RD/F/PR item complete only when its acceptance criteria are met.
+
+Handoff: files changed (including `agents/`), numbers created, behavior changed, checks run and not run, known gaps.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

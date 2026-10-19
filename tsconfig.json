@@ -58,6 +58,7 @@
     "out",
     "dist",
     "build",
-    "docs-site"
+    "docs-site",
+    "agents"
   ]
 }

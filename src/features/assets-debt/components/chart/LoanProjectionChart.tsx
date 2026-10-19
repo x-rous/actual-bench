@@ -7,7 +7,7 @@ import type { ChartData, ChartRateChangeGroup, SeriesId } from "../../lib/result
 import { formatChartDate, formatChartPeriod, SERIES_META } from "./chartMeta";
 
 /**
- * The loan chart (P1.3b T223; FR-223). The only module that imports Recharts,
+ * The loan chart (P1.3b T223; FR-223). Loaded lazily alongside the other financial charts,
  * and it only renders: the series and their values come from the pure
  * `chartSeries()` (lib/results.ts), which reads engine output. Series are
  * told apart by name, dash pattern and colour; Recharts' accessibility layer

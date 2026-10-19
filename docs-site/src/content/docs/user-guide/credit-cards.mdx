@@ -1,0 +1,84 @@
+---
+title: Credit Cards
+description: Check card statements against the bank, see what each bill still needs, and track instalment plans, all from your Actual transactions.
+---
+
+Open **Tools → Credit Cards** after connecting your Actual budget. Bench reads your card transactions through Direct or HTTP API and saves its own records (cards, statements, your answers, plans) in its database. It never changes anything in Actual.
+
+**All cards** lists each card with its balance, credit used, next due date and anything needing attention. A card has six tabs: **Overview**, **Statements**, **Payments**, **Activity**, **Instalment Plans** and **Insights**. **Guide** opens the built-in guide, with a searchable glossary.
+
+## Set up a card
+
+1. In **Accounts**, give the card's on-budget account the **Credit Card** class (an inherited group class also works).
+2. Choose **Add card** and pick the account.
+3. Check the **Essentials**: credit limit, purchase APR, the **first tracked statement** and its status and time zone.
+4. Set **Billing**: the closing day and the due day. New cards start at closing on day **10** and due on day **3**; short months use their last day.
+5. Optionally map your Actual categories for interest, fees and cashback under **Categories in Actual**, so Bench types those transactions for you.
+
+Bench reads activity from the **first tracked statement** onwards and never invents earlier history. **Minimum and interest estimates** hold the minimum rule (5% with a floor of 100 by default); a minimum printed on the bank statement always wins.
+
+**Credit limit changes.** When the bank raises or lowers your limit, open **Settings → Record a limit change**, enter the effective date and the new limit. Bench keeps the history: the balance chart draws the limit as a step, and utilisation on each date uses the limit in force on that date.
+
+**Delete card** removes only Bench's records for the card; **Undo** restores them.
+
+## Statements
+
+Each row of **Statements** is one bank statement: what the bank printed, and how the bill is going (amount due, minimum, paid, left to pay, paid against the due date). Rows you haven't entered yet are marked **Estimate**.
+
+**Enter statement** asks for the figures on the paper or PDF: period, closing and due dates, statement balance and minimum due. If the bank prints a separate amount due, enter that too; otherwise the statement balance is used.
+
+### Review a statement
+
+Saving the figures opens **Review statement**. The bar at the top reads as an equation:
+
+**Previous − Payments & credits + Charges + Interest & fees = Calculated**, next to the **Bank** balance and a **Difference** box.
+
+- **Matches bank** (green) means your answers explain the bank's balance exactly.
+- A difference (amber) shows the amount still unexplained.
+- While some transactions are undecided, the figures are greyed and the box says how many are left to decide. Select that line to show only those transactions. When answering **Yes** to all of them would close the gap exactly, it says so.
+
+Answer **On this statement?** for each transaction with **Yes**, **No** or **?** (unsure), or press **Y**, **N**, **?** on the focused row (**T** changes its type). Select several rows to answer them together or **Move** them to another statement. Tags such as `#2026-10` in a transaction's notes suggest which statement it belongs to; your answer always wins. A transaction belongs to one statement only.
+
+If you typed a figure wrong, use **Edit bank figures** in the review. Unsaved answers are discarded first, after a confirmation, and the review reopens on the corrected figures.
+
+Bench never adds a balancing transaction: fix the transaction in Actual, your answer, or the bank figures.
+
+## Payments
+
+A payment counts toward a bill when it lands after that statement closes and no later than its due date (or the next close, if that is later). The **Payments** tab lists every payment with the bill it paid and what was left after it. Each bill shows one status: **Paid in full**, **Paid late**, **Minimum paid**, **Part paid**, **Pending** (made in time, not cleared in Actual yet), **Overdue**, or **Due in N days**.
+
+Refunds and cashback reduce what you owe but are never counted as payments. When a bill is settled by refunds and payments together it shows **Covered with credits**. When the bank moves part of a bill into an instalment plan after the statement closes, the bill shows **Settled with a plan**: **Paid** still shows only your real payments, and the minimum is met only by real payments.
+
+## Activity and types
+
+**Activity** lists the card's transactions with their notes, category, type, amount, cleared status, statement and plan. Tags in notes are shown in blue. Sort by the **Date**, **Payee**, **Type** or **Amount** header.
+
+Every transaction has a **type** (purchase, interest, fee, payment, refund, plan instalment and so on), suggested from your category mappings, the account on the other side and the description. A dotted chip is a suggestion, a plain chip comes from your category, and a solid chip with ✓ is one you set. Click the chip (or press **T**) to change it; your choice applies everywhere in Bench. Suggested interest and fees are not counted until you accept them.
+
+## Instalment plans
+
+An instalment plan is a purchase, balance transfer or cash the bank lets you repay in instalments. Add one from **Instalment Plans → Add instalment plan**, or from a transaction's menu with **Make this a plan**. Choose where the principal is kept:
+
+- **Plan account in Actual**: the principal moves to an off-budget account and comes back to the card with each instalment.
+- **Bank bills instalments**: the bank bills each instalment on the card.
+- **Stays in card balance**: the plan is part of the card balance (for example a 0% promotion with a deadline).
+
+Then pick the schedule: **Balance only**, **Fixed instalments**, **Minimum by a deadline** or **Other terms**; the editor shows the expected schedule and cost.
+
+**Shared plan accounts.** One off-budget account can hold several plans. Give each plan a tag (for example `#EMI_LAPTOP`) and put it in the transfer notes; Bench assigns transfers by their exact tag and only looks at transfers with this card. Tags it finds that no plan uses yet appear under **Found in your plan accounts**, with **Add plan** to set one up in a click. Month tags such as `#2026-10` are never plan tags.
+
+Open a plan to see its summary and **timeline**: each expected instalment with what actually posted, the difference and the principal remaining after it, plus each transaction's category, notes, cleared status and statement. **Link** accepts a suggested match. For plan-account plans, transfers belong to the plan automatically, and **Add original purchase** links the purchase it was made from. A plan that started before the card's tracked history shows that its purchase isn't loaded; its original amount and start date cover it.
+
+If the bank includes plan balances in the statement balance, tick **Statement balance includes plan balances** in the card's **Settings → Instalment plans**, so reviews add the plan change for the period.
+
+## Overview and Insights
+
+**Overview** shows what to pay now, total owed (card plus plan principal, counted once), credit used and a 6- or 12-month balance chart with statements, payments, due dates and the limit. **Insights** shows interest and fees, how bills were paid, and an estimate of paying only the minimum (an illustration, not a bank quote).
+
+## What is stored where
+
+| Kept in Actual (read only) | Kept in Bench |
+|---|---|
+| Accounts, transactions, categories, notes, cleared status | Card settings and limit changes, bank statement figures, your statement answers and moves, type corrections, plans and their links |
+
+Records are saved per budget and survive reloads. If two tabs save the same budget, the second save is refused rather than overwriting the first; reload and retry. **Undo** reverses your last change.
