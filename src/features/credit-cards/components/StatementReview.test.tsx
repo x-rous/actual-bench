@@ -299,3 +299,22 @@ it("shows #tags in notes in blue, and groups the bulk answers as one choice", ()
   const group = within(screen.getByRole("region", { name: "Selected transactions" })).getByRole("group", { name: "Answer for the selected transactions" });
   expect(within(group).getAllByRole("button").map((button) => button.textContent)).toEqual([ON, OFF, UNSURE]);
 });
+
+it("asks for Yes or No before keeping a note on an undecided row, then keeps it once answered", () => {
+  const { saved, workspace } = setup([september]);
+  const rows = [row({ id: "Zulu", date: "2026-09-30", amount: -1000, payeeName: "Zulu", categoryId: "travel" })];
+  review(saved[0], workspace(), snapshot(rows, { from: "2026-08-01", to: "2026-11-01" }));
+  const write = (text: string) => {
+    fireEvent.click(screen.getByRole("button", { name: /note for Zulu/ }));
+    const input = screen.getByRole("textbox", { name: /^Note for Zulu/ });
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  };
+  write("Paid by work");
+  expect(screen.getByRole("alert")).toHaveTextContent("Answer Yes or No before adding a note");
+  expect(screen.getByText("No unsaved changes")).toBeVisible();
+  choose("Zulu", ON);
+  write("Paid by work");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Edit note for Zulu/ })).toHaveTextContent("Paid by work");
+});
