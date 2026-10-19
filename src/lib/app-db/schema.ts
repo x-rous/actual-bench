@@ -1133,3 +1133,192 @@ CREATE TABLE IF NOT EXISTS account_classes (
   PRIMARY KEY (budget_sync_id, scope, account_id)
 );
 `;
+
+/*
+ * Credit cards (RD-098 / PR-127c, migration v48). Bench-owned metadata only: Actual ids, opaque
+ * evidence hashes and the user's own statement figures and decisions. Never Actual transactions,
+ * balances or credentials. Enumerations are validated in code (readers skip unknown values), so a
+ * newer build can add a value without a table rebuild (AGENTS.md §6).
+ */
+export const CREDIT_CARD_TABLES_SQL = [
+  `CREATE TABLE IF NOT EXISTS credit_cards (
+  id text PRIMARY KEY,
+  budget_sync_id text NOT NULL CHECK (length(budget_sync_id) BETWEEN 1 AND 200),
+  account_id text NOT NULL CHECK (length(account_id) BETWEEN 1 AND 200),
+  status text NOT NULL DEFAULT 'active',
+  network text NOT NULL DEFAULT 'unknown',
+  color text CHECK (color IS NULL OR (length(color) = 7 AND color GLOB '#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]')),
+  bank_time_zone text NOT NULL CHECK (length(bank_time_zone) BETWEEN 1 AND 64),
+  credit_limit_minor integer CHECK (credit_limit_minor IS NULL OR (typeof(credit_limit_minor) = 'integer' AND credit_limit_minor >= 0)),
+  purchase_apr_bps integer CHECK (purchase_apr_bps IS NULL OR (typeof(purchase_apr_bps) = 'integer' AND purchase_apr_bps BETWEEN 0 AND 10000)),
+  interest_model text NOT NULL DEFAULT 'daily-simple-365',
+  closing_day integer CHECK (closing_day IS NULL OR (typeof(closing_day) = 'integer' AND closing_day BETWEEN 1 AND 31)),
+  due_rule_kind text,
+  due_rule_value integer CHECK (due_rule_value IS NULL OR (typeof(due_rule_value) = 'integer' AND due_rule_value BETWEEN 0 AND 90)),
+  billing_days_source text NOT NULL DEFAULT 'default',
+  minimum_percent_bps integer CHECK (minimum_percent_bps IS NULL OR (typeof(minimum_percent_bps) = 'integer' AND minimum_percent_bps BETWEEN 0 AND 10000)),
+  minimum_floor_minor integer CHECK (minimum_floor_minor IS NULL OR (typeof(minimum_floor_minor) = 'integer' AND minimum_floor_minor >= 0)),
+  interest_category_id text,
+  fee_category_id text,
+  cashback_category_id text,
+  statements_include_plan_balances integer NOT NULL DEFAULT 0 CHECK (statements_include_plan_balances IN (0, 1)),
+  first_tracked_statement_date text CHECK (first_tracked_statement_date IS NULL OR date(first_tracked_statement_date) IS first_tracked_statement_date),
+  opened_date text CHECK (opened_date IS NULL OR date(opened_date) IS opened_date),
+  auto_pay text NOT NULL DEFAULT 'unknown',
+  annual_fee_minor integer CHECK (annual_fee_minor IS NULL OR (typeof(annual_fee_minor) = 'integer' AND annual_fee_minor >= 0)),
+  annual_fee_renewal_date text CHECK (annual_fee_renewal_date IS NULL OR date(annual_fee_renewal_date) IS annual_fee_renewal_date),
+  revision integer NOT NULL CHECK (typeof(revision) = 'integer' AND revision >= 1),
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  CHECK ((due_rule_kind IS NULL) = (due_rule_value IS NULL)),
+  CHECK (fee_category_id IS NULL OR fee_category_id IS NOT interest_category_id),
+  UNIQUE (budget_sync_id, account_id),
+  UNIQUE (id, budget_sync_id)
+)`,
+  `CREATE TABLE IF NOT EXISTS credit_card_plan_accounts (
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL CHECK (length(account_id) BETWEEN 1 AND 200),
+  created_at text NOT NULL,
+  PRIMARY KEY (budget_sync_id, account_id)
+)`,
+  `CREATE TABLE IF NOT EXISTS credit_card_statements (
+  id text PRIMARY KEY,
+  card_id text NOT NULL REFERENCES credit_cards(id) ON DELETE CASCADE,
+  period_start text NOT NULL CHECK (date(period_start) IS period_start),
+  closing_date text NOT NULL CHECK (date(closing_date) IS closing_date),
+  due_date text NOT NULL CHECK (date(due_date) IS due_date),
+  balance_minor integer NOT NULL CHECK (typeof(balance_minor) = 'integer'),
+  minimum_due_minor integer NOT NULL CHECK (typeof(minimum_due_minor) = 'integer' AND minimum_due_minor >= 0),
+  amount_due_minor integer CHECK (amount_due_minor IS NULL OR (typeof(amount_due_minor) = 'integer' AND amount_due_minor >= 0)),
+  previous_balance_minor integer CHECK (previous_balance_minor IS NULL OR typeof(previous_balance_minor) = 'integer'),
+  review_state text NOT NULL DEFAULT 'not_reviewed',
+  review_hash text CHECK (review_hash IS NULL OR length(review_hash) BETWEEN 8 AND 64),
+  reviewed_at text,
+  scope_accepted_difference_minor integer CHECK (scope_accepted_difference_minor IS NULL OR typeof(scope_accepted_difference_minor) = 'integer'),
+  revision integer NOT NULL CHECK (typeof(revision) = 'integer' AND revision >= 1),
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  CHECK (period_start <= closing_date AND closing_date <= due_date),
+  CHECK (amount_due_minor IS NULL OR minimum_due_minor <= amount_due_minor),
+  CHECK (amount_due_minor IS NULL OR amount_due_minor <= max(balance_minor, 0)),
+  CHECK (minimum_due_minor <= max(balance_minor, 0)),
+  CHECK ((review_hash IS NULL) = (reviewed_at IS NULL)),
+  UNIQUE (card_id, closing_date),
+  UNIQUE (id, card_id)
+)`,
+  `CREATE TABLE IF NOT EXISTS credit_card_statement_decisions (
+  statement_id text NOT NULL,
+  card_id text NOT NULL,
+  transaction_id text NOT NULL CHECK (length(transaction_id) BETWEEN 1 AND 200),
+  decision text NOT NULL CHECK (decision IN ('included', 'excluded')),
+  bank_posting_date text CHECK (bank_posting_date IS NULL OR date(bank_posting_date) IS bank_posting_date),
+  origin text NOT NULL DEFAULT 'user',
+  source_hash text NOT NULL CHECK (length(source_hash) BETWEEN 8 AND 64),
+  note text CHECK (note IS NULL OR length(note) <= 500),
+  updated_at text NOT NULL,
+  PRIMARY KEY (statement_id, transaction_id),
+  FOREIGN KEY (statement_id, card_id) REFERENCES credit_card_statements(id, card_id) ON DELETE CASCADE
+)`,
+  `CREATE TABLE IF NOT EXISTS credit_card_transaction_types (
+  card_id text NOT NULL REFERENCES credit_cards(id) ON DELETE CASCADE,
+  transaction_id text NOT NULL CHECK (length(transaction_id) BETWEEN 1 AND 200),
+  kind text NOT NULL,
+  identity_hash text NOT NULL CHECK (length(identity_hash) BETWEEN 8 AND 64),
+  source_hash text NOT NULL CHECK (length(source_hash) BETWEEN 8 AND 64),
+  note text CHECK (note IS NULL OR length(note) <= 500),
+  updated_at text NOT NULL,
+  PRIMARY KEY (card_id, transaction_id)
+)`,
+  `CREATE TABLE IF NOT EXISTS credit_card_plans (
+  id text PRIMARY KEY,
+  card_id text NOT NULL,
+  budget_sync_id text NOT NULL,
+  name text NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 200),
+  recorded_as text NOT NULL,
+  plan_account_id text,
+  plan_account_tag text CHECK (plan_account_tag IS NULL OR (length(plan_account_tag) BETWEEN 2 AND 100 AND plan_account_tag GLOB '#*')),
+  status text NOT NULL DEFAULT 'active',
+  original_amount_minor integer CHECK (original_amount_minor IS NULL OR (typeof(original_amount_minor) = 'integer' AND original_amount_minor > 0)),
+  start_date text CHECK (start_date IS NULL OR date(start_date) IS start_date),
+  opening_date text CHECK (opening_date IS NULL OR date(opening_date) IS opening_date),
+  opening_principal_minor integer CHECK (opening_principal_minor IS NULL OR (typeof(opening_principal_minor) = 'integer' AND opening_principal_minor >= 0)),
+  schedule_kind text,
+  first_due_date text CHECK (first_due_date IS NULL OR date(first_due_date) IS first_due_date),
+  instalment_count integer CHECK (instalment_count IS NULL OR (typeof(instalment_count) = 'integer' AND instalment_count BETWEEN 1 AND 360)),
+  instalment_minor integer CHECK (instalment_minor IS NULL OR (typeof(instalment_minor) = 'integer' AND instalment_minor > 0)),
+  apr_bps integer NOT NULL DEFAULT 0 CHECK (typeof(apr_bps) = 'integer' AND apr_bps BETWEEN 0 AND 10000),
+  upfront_fee_minor integer NOT NULL DEFAULT 0 CHECK (typeof(upfront_fee_minor) = 'integer' AND upfront_fee_minor >= 0),
+  monthly_fee_minor integer NOT NULL DEFAULT 0 CHECK (typeof(monthly_fee_minor) = 'integer' AND monthly_fee_minor >= 0),
+  instalment_includes_costs integer NOT NULL DEFAULT 1 CHECK (instalment_includes_costs IN (0, 1)),
+  minimum_percent_bps integer CHECK (minimum_percent_bps IS NULL OR (typeof(minimum_percent_bps) = 'integer' AND minimum_percent_bps BETWEEN 0 AND 10000)),
+  minimum_floor_minor integer CHECK (minimum_floor_minor IS NULL OR (typeof(minimum_floor_minor) = 'integer' AND minimum_floor_minor >= 0)),
+  expiry_date text CHECK (expiry_date IS NULL OR date(expiry_date) IS expiry_date),
+  ended_on text CHECK (ended_on IS NULL OR date(ended_on) IS ended_on),
+  note text NOT NULL DEFAULT '' CHECK (length(note) <= 2000),
+  revision integer NOT NULL CHECK (typeof(revision) = 'integer' AND revision >= 1),
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  CHECK ((recorded_as IS 'plan-account') = (plan_account_id IS NOT NULL)),
+  CHECK (plan_account_tag IS NULL OR plan_account_id IS NOT NULL),
+  CHECK ((opening_date IS NULL) = (opening_principal_minor IS NULL)),
+  CHECK (original_amount_minor IS NOT NULL OR opening_date IS NOT NULL OR recorded_as IS 'plan-account'),
+  CHECK (schedule_kind IS NOT NULL OR (first_due_date IS NULL AND instalment_count IS NULL AND instalment_minor IS NULL)),
+  CHECK (schedule_kind IS NOT 'fixed' OR (first_due_date IS NOT NULL AND instalment_count IS NOT NULL AND instalment_minor IS NOT NULL)),
+  CHECK (schedule_kind IS NOT 'minimum-deadline' OR (first_due_date IS NOT NULL AND instalment_count IS NOT NULL AND minimum_percent_bps IS NOT NULL)),
+  CHECK (start_date IS NULL OR first_due_date IS NULL OR first_due_date > start_date),
+  CHECK (ended_on IS NULL OR status IS NOT 'active'),
+  FOREIGN KEY (card_id, budget_sync_id) REFERENCES credit_cards(id, budget_sync_id) ON DELETE CASCADE,
+  UNIQUE (id, budget_sync_id)
+)`,
+  `CREATE TABLE IF NOT EXISTS credit_card_plan_entries (
+  plan_id text NOT NULL,
+  budget_sync_id text NOT NULL,
+  transaction_id text NOT NULL CHECK (length(transaction_id) BETWEEN 1 AND 200),
+  role text NOT NULL,
+  instalment_number integer CHECK (instalment_number IS NULL OR (typeof(instalment_number) = 'integer' AND instalment_number BETWEEN 1 AND 360)),
+  transfer_pair_key text CHECK (transfer_pair_key IS NULL OR length(transfer_pair_key) BETWEEN 1 AND 401),
+  identity_hash text NOT NULL CHECK (length(identity_hash) BETWEEN 8 AND 64),
+  source_hash text NOT NULL CHECK (length(source_hash) BETWEEN 8 AND 64),
+  created_at text NOT NULL,
+  PRIMARY KEY (plan_id, transaction_id),
+  FOREIGN KEY (plan_id, budget_sync_id) REFERENCES credit_card_plans(id, budget_sync_id) ON DELETE CASCADE
+)`,
+];
+
+/** v49: credit-limit changes, one per card per effective date; deleting a card deletes them. */
+export const CREDIT_CARD_LIMIT_CHANGES_SQL = [
+  `CREATE TABLE IF NOT EXISTS credit_card_limit_changes (
+  card_id text NOT NULL REFERENCES credit_cards(id) ON DELETE CASCADE,
+  effective_date text NOT NULL CHECK (date(effective_date) IS effective_date),
+  limit_minor integer NOT NULL CHECK (typeof(limit_minor) = 'integer' AND limit_minor >= 0),
+  created_at text NOT NULL,
+  PRIMARY KEY (card_id, effective_date)
+)`,
+];
+
+export const CREDIT_CARD_INDEX_SQL = [
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_statements_card_closing ON credit_card_statements(card_id, closing_date)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_decisions_one_bill ON credit_card_statement_decisions(card_id, transaction_id) WHERE decision = 'included'",
+  "CREATE INDEX IF NOT EXISTS idx_cc_plans_card ON credit_card_plans(card_id)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_plans_own_account ON credit_card_plans(budget_sync_id, plan_account_id) WHERE plan_account_id IS NOT NULL AND plan_account_tag IS NULL",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_plans_account_tag ON credit_card_plans(budget_sync_id, plan_account_id, plan_account_tag) WHERE plan_account_tag IS NOT NULL",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_plan_entries_one_plan ON credit_card_plan_entries(budget_sync_id, transaction_id)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_plan_entries_one_pair ON credit_card_plan_entries(budget_sync_id, transfer_pair_key) WHERE transfer_pair_key IS NOT NULL",
+];
+
+export const CREDIT_CARD_TRIGGER_SQL = [
+  `CREATE TRIGGER IF NOT EXISTS credit_cards_identity_immutable
+  BEFORE UPDATE OF id, budget_sync_id, account_id ON credit_cards
+  WHEN OLD.id IS NOT NEW.id OR OLD.budget_sync_id IS NOT NEW.budget_sync_id OR OLD.account_id IS NOT NEW.account_id
+  BEGIN SELECT RAISE(ABORT, 'credit card identity is immutable'); END`,
+  `CREATE TRIGGER IF NOT EXISTS credit_card_statements_no_overlap_insert
+  BEFORE INSERT ON credit_card_statements
+  WHEN EXISTS (SELECT 1 FROM credit_card_statements s WHERE s.card_id = NEW.card_id AND s.id <> NEW.id
+               AND s.period_start <= NEW.closing_date AND s.closing_date >= NEW.period_start)
+  BEGIN SELECT RAISE(ABORT, 'statement periods overlap'); END`,
+  `CREATE TRIGGER IF NOT EXISTS credit_card_statements_no_overlap_update
+  BEFORE UPDATE OF period_start, closing_date ON credit_card_statements
+  WHEN EXISTS (SELECT 1 FROM credit_card_statements s WHERE s.card_id = NEW.card_id AND s.id <> NEW.id
+               AND s.period_start <= NEW.closing_date AND s.closing_date >= NEW.period_start)
+  BEGIN SELECT RAISE(ABORT, 'statement periods overlap'); END`,
+];

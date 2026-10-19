@@ -64,11 +64,15 @@ import {
   ASSETS_DEBT_V44_INDEX_SQL,
   ASSETS_DEBT_V44_TRIGGER_SQL,
   ACCOUNT_CLASS_TABLE_SQL,
+  CREDIT_CARD_INDEX_SQL,
+  CREDIT_CARD_TABLES_SQL,
+  CREDIT_CARD_TRIGGER_SQL,
+  CREDIT_CARD_LIMIT_CHANGES_SQL,
 } from "./schema";
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 47;
+export const LATEST_SCHEMA_VERSION = 49;
 
 type Migration = {
   version: number;
@@ -581,6 +585,17 @@ const MIGRATIONS: readonly Migration[] = [
     // Retirement is a new persisted account-class value. Stamp compatibility
     // so older builds refuse this database; no columns or existing rows change.
     statements: [],
+  },
+  {
+    version: 48,
+    // RD-098 / PR-127c: credit-card metadata (cards, statements, decisions, types, plans, plan
+    // entries, plan accounts). Additive: new tables only, no existing row changes.
+    statements: [...CREDIT_CARD_TABLES_SQL, ...CREDIT_CARD_INDEX_SQL, ...CREDIT_CARD_TRIGGER_SQL],
+  },
+  {
+    version: 49,
+    // Credit-limit changes over time. Additive: one new table, no existing row changes.
+    statements: CREDIT_CARD_LIMIT_CHANGES_SQL,
   },
 ];
 
