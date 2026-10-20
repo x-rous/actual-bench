@@ -17,7 +17,6 @@ import { useCreditCardDirectory, useCreditCardCategories } from "../hooks/useCre
 import { useCreditCardActivities, useCreditCardPlanAccounts } from "../hooks/useCreditCardActivity";
 import { useWorkspaceUrl, type WorkspaceTab } from "../hooks/useWorkspaceUrl";
 import { cardReadSnapshot } from "../lib/readModel";
-import { asOfCardBalance } from "../lib/financialAdapter";
 import { bankToday, type StatementDraft } from "../lib/cycles";
 import { formatCardDate } from "../lib/displayDates";
 import { formatPercentBps } from "../lib/percent";
@@ -27,6 +26,7 @@ import { planAccountIds, totalOwed, unassignedPlanEntries } from "../lib/derive/
 import { planStatus } from "../lib/plans";
 import type { Card, RepaymentPlan, Statement } from "../lib/models";
 import { CardEditor, StatementEditor, type PlanAccountChoices } from "./CardEditors";
+import { currentCardBalance } from "../lib/derive/currentBalance";
 import { PlanEditor } from "./PlanEditor";
 import type { PlanCandidate } from "../lib/derive/planDiscovery";
 import { preloadBalanceChart } from "./BalanceHistory";
@@ -121,15 +121,10 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
   const unregistered = eligible.filter((account) => !workspace.cards.some((entry) => entry.accountId === account.id));
   const cardEligible = Boolean(card && eligible.some((account) => account.id === card.accountId));
   // Current debt needs both the ledger balance and its future-entry adjustment.
-  const runtimeToday = bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const balances = new Map(workspace.cards.flatMap((entry, index) => {
     const source = activityQueries[index];
-    const live = directory.data?.balances.get(entry.accountId);
-    const cutoffSafe = direct && bankToday(entry.bankTimeZone) === runtimeToday;
-    const sourceUsable = source?.data && !source.isError && !source.data.issues.length;
-    if (!live || !(cutoffSafe || sourceUsable)) return [];
-    const balance = asOfCardBalance(live, source?.data?.futureDeltaMinor, direct, source?.data?.directBalanceAdjustmentMinor);
-    return [[entry.accountId, balance] as const];
+    const balance = currentCardBalance(entry, directory.data?.balances.get(entry.accountId), source?.data, Boolean(source?.isError), direct);
+    return balance ? [[entry.accountId, balance] as const] : [];
   }));
   const entries: CardEntry[] = workspace.cards.map((entry, index) => {
     const entryToday = bankToday(entry.bankTimeZone);

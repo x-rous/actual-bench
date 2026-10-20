@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AccountPicker } from "@/components/ui/entity-picker";
@@ -36,7 +37,12 @@ export type NewSessionDialogProps = {
   /** Tags already used, offered as suggestions so they stay consistent. */
   knownTags: string[];
   isCreating: boolean;
-  onStart: (accountId: string, tag: string | null) => void;
+  /**
+   * Whether an account is a credit card in Credit Cards: registered (its statement figures can be entered),
+   * a credit-card account not added there yet, or not a card at all (null).
+   */
+  cardStatus?: (accountId: string) => "registered" | "unregistered" | null;
+  onStart: (accountId: string, tag: string | null, enterCardFigures: boolean) => void;
 };
 
 export function NewSessionDialog({
@@ -46,10 +52,13 @@ export function NewSessionDialog({
   accountGroups,
   knownTags,
   isCreating,
+  cardStatus,
   onStart,
 }: NewSessionDialogProps) {
   const [accountId, setAccountId] = useState("");
   const [tag, setTag] = useState("");
+  const [cardFigures, setCardFigures] = useState(false);
+  const card = accountId && cardStatus ? cardStatus(accountId) : null;
 
   // Cleared on the way out rather than on the way in: reopening should not
   // silently reuse the previous choice, and resetting from an effect would
@@ -58,6 +67,7 @@ export function NewSessionDialog({
     if (!next) {
       setAccountId("");
       setTag("");
+      setCardFigures(false);
     }
     onOpenChange(next);
   }
@@ -88,7 +98,7 @@ export function NewSessionDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (!accountId || isCreating) return;
-            onStart(accountId, tag.trim() || null);
+            onStart(accountId, tag.trim() || null, card === "registered" && cardFigures);
           }}
         >
         <div className="flex flex-col gap-1.5">
@@ -99,7 +109,7 @@ export function NewSessionDialog({
             accounts={accounts}
             groups={accountGroups}
             value={accountId}
-            onChange={setAccountId}
+            onChange={(id) => { setAccountId(id); setCardFigures(false); }}
             ariaLabel="Account"
             autoFocus
           />
@@ -134,6 +144,20 @@ export function NewSessionDialog({
             Helps tell this month&apos;s reruns and corrections apart in the list.
           </p>
         </div>
+
+        {/* A credit card's statement is open now, so its bank figures can be entered before the import. */}
+        {card && <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <Checkbox id="reconciliation-card-figures" checked={card === "registered" && cardFigures}
+              disabled={card !== "registered"} onCheckedChange={(checked) => setCardFigures(checked === true)} />
+            <Label htmlFor="reconciliation-card-figures" className="text-xs">Also enter this card&apos;s bank statement figures</Label>
+          </div>
+          <p className="pl-6 text-[11px] text-muted-foreground">
+            {card === "registered"
+              ? "After you apply this reconciliation, review the statement in Credit Cards to match its transactions."
+              : "Add this card in Credit Cards first."}
+          </p>
+        </div>}
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)}>

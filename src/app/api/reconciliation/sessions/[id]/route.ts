@@ -89,6 +89,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if ("statementFormat" in body) {
       patch.statementFormat = body.statementFormat as ReconciliationStatementFormat | null;
     }
+    if ("cardStatementId" in body) patch.cardStatementId = body.cardStatementId as string | null;
     if ("matchConfig" in body) patch.matchConfig = body.matchConfig;
     if ("totals" in body) patch.totals = body.totals;
     if ("applyResults" in body) patch.applyResults = body.applyResults;

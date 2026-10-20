@@ -86,6 +86,8 @@ export type ReconciliationSessionRecord = {
   status: ReconciliationSessionStatus;
   /** Null on a session created before the format was recorded. */
   statementFormat: ReconciliationStatementFormat | null;
+  /** The credit-card statement whose figures were entered with this reconciliation; a link only. */
+  cardStatementId: string | null;
   statementName: string | null;
   statementStart: string | null;
   statementEnd: string | null;
@@ -172,6 +174,7 @@ type SessionRow = {
   candidate_end: string | null;
   statement_fingerprint: string | null;
   statement_format: string | null;
+  card_statement_id: string | null;
   match_config_json: string | null;
   totals_json: string | null;
   apply_results_json: string | null;
@@ -298,6 +301,7 @@ function sessionToRecord(row: SessionRow): ReconciliationSessionRecord {
     candidateEnd: row.candidate_end,
     statementFingerprint: row.statement_fingerprint,
     statementFormat: row.statement_format as ReconciliationStatementFormat | null,
+    cardStatementId: row.card_statement_id ?? null,
     matchConfig: parseJson(row.match_config_json),
     totals: parseJson(row.totals_json),
     applyResults: parseJson(row.apply_results_json),
@@ -512,6 +516,7 @@ export function listReconciliationSessions(
 export type UpdateSessionInput = {
   status?: ReconciliationSessionStatus;
   statementFormat?: ReconciliationStatementFormat | null;
+  cardStatementId?: string | null;
   accountName?: string | null;
   profileId?: string | null;
   statementName?: string | null;
@@ -556,6 +561,7 @@ export function updateReconciliationSession(
       input.statementFormat === null ? null : requireStatementFormat(input.statementFormat)
     );
   }
+  if (input.cardStatementId !== undefined) set("card_statement_id", optionalText(input.cardStatementId, "card statement id", 100));
   if (input.accountName !== undefined) set("account_name", optionalText(input.accountName, "account name"));
   if (input.profileId !== undefined) set("profile_id", input.profileId);
   if (input.statementName !== undefined) set("statement_name", optionalText(input.statementName, "statement name"));

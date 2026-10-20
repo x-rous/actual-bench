@@ -23,6 +23,7 @@ function session(
     candidateEnd: null,
     statementFingerprint: null,
     statementFormat: null,
+    cardStatementId: null,
     matchConfig: null,
     totals: { rowCount: 42 },
     applyResults: null,

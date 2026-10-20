@@ -23,6 +23,13 @@ jest.mock("@/hooks/useStagedEntities", () => ({
 }));
 jest.mock("@/features/payees/hooks/usePayees", () => ({ usePayees: () => {} }));
 jest.mock("@/features/accounts/hooks/useAccounts", () => ({ useAccounts: () => {} }));
+jest.mock("@/features/accounts/hooks/useAccountClasses", () => ({ useAccountClasses: () => ({ maps: { accounts: new Map(), groups: new Map() } }) }));
+jest.mock("@/features/credit-cards/components/CardStatementFigures", () => ({
+  useRegisteredCards: () => ({ ready: true, cards: [] }),
+  CardStatementFigures: () => null,
+  ReviewCardStatementLink: () => null,
+  CardStatementHeaderAction: () => null,
+}));
 jest.mock("@/features/categories/hooks/useCategoryGroups", () => ({ useCategoryGroups: () => {} }));
 jest.mock("@/lib/sync/capabilities", () => ({ getBudgetFileSyncCapabilities: () => ({ capabilities: { listTransactions: true } }) }));
 jest.mock("@/components/layout/PageLayout", () => ({ PageLayout: ({ header, children }: { header?: ReactNode; children: ReactNode }) => <>{header}{children}</> }));
@@ -71,7 +78,7 @@ jest.mock("../lib/reconciliationApi", () => ({
 }));
 const mockSession: ReconciliationSessionRecord = {
   id: "session", budgetSyncId: "budget", accountId: "account", accountName: "Test account",
-  profileId: null, status: "needs_review", statementFormat: "delimited", statementName: null, tag: null,
+  profileId: null, status: "needs_review", statementFormat: "delimited", cardStatementId: null, statementName: null, tag: null,
   statementStart: "2026-07-01", statementEnd: "2026-07-31", candidateStart: null, candidateEnd: null,
   statementFingerprint: null, matchConfig: DEFAULT_MATCH_CONFIG, totals: null, applyConfig: null, applyResults: null,
   appliedAt: null, createdAt: "2026-07-01", updatedAt: "2026-07-01",

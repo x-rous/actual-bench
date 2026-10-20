@@ -619,6 +619,17 @@ export function CardEditor({
   </>;
 }
 
+/** One statement the editor can switch to (the reconciliation flow): a saved one, or an estimate to pre-fill. */
+export type StatementEditorChoice = {
+  key: string;
+  label: string;
+  statement?: Statement;
+  draft?: StatementDraft;
+  previousMissing: boolean;
+  /** Shown under the selector, e.g. that changing a verified statement reopens its review. */
+  note?: string;
+};
+
 type StatementEditorProps = {
   budgetSyncId: string;
   card: Card;
@@ -630,36 +641,89 @@ type StatementEditorProps = {
   canRecord: boolean;
   onClose: () => void;
   onSaved?: (id: string) => void;
+  /** Lets the user pick the statement in the editor itself; `statement`, `suggested` and `previousMissing` then follow the choice. */
+  choices?: { options: StatementEditorChoice[]; initial: string };
+  title?: string;
+  saveLabel?: string;
+  cancelLabel?: string;
 };
 
 const PREFILL_HINT = "Pre-filled from Actual - check each marked value against your statement";
 const amountText = (minor: number | null | undefined) => (minor == null ? "" : formatAmount(minor, 2));
 
-export function StatementEditor({ budgetSyncId, card, cardName, statement, suggested, previousMissing, canRecord, onClose, onSaved }: StatementEditorProps) {
+/** The editor's field values for a statement, or for the estimate that pre-fills one not entered yet. */
+function figuresFor(statement: Statement | undefined, suggested: StatementDraft | undefined) {
+  return {
+    periodStart: statement?.periodStart ?? suggested?.periodStart ?? "",
+    closingDate: statement?.closingDate ?? suggested?.closingDate ?? "",
+    dueDate: statement?.dueDate ?? suggested?.dueDate ?? "",
+    balance: amountText(statement?.balanceMinor ?? suggested?.balanceMinor),
+    minimum: amountText(statement?.minimumDueMinor ?? (suggested?.minimumKnown ? suggested.minimumDueMinor : null)),
+    amountDue: minorToMajorText(statement?.amountDueMinor ?? null, 2),
+    previousBalance: minorToMajorText(statement?.previousBalanceMinor ?? null, 2),
+    // D19: estimate-filled fields carry a hint until the user edits them.
+    prefilled: new Set(statement || !suggested ? [] : [
+      "periodStart", "closingDate", "dueDate", "balance", ...(suggested.minimumKnown ? ["minimum"] : []),
+    ]),
+  };
+}
+
+/** What "unsaved changes" compares: the typed values, not the pre-fill hints. */
+const figuresSignature = (values: Omit<ReturnType<typeof figuresFor>, "prefilled">) => JSON.stringify({
+  periodStart: values.periodStart, closingDate: values.closingDate, dueDate: values.dueDate, balance: values.balance,
+  minimum: values.minimum, amountDue: values.amountDue, previousBalance: values.previousBalance,
+});
+
+export function StatementEditor({
+  budgetSyncId, card, cardName, statement, suggested, previousMissing, canRecord, onClose, onSaved, choices, title, saveLabel, cancelLabel,
+}: StatementEditorProps) {
   const prefix = useId();
-  const [initial] = useState({ card, statement });
-  const [periodStart, setPeriodStart] = useState(statement?.periodStart ?? suggested?.periodStart ?? "");
-  const [closingDate, setClosingDate] = useState(statement?.closingDate ?? suggested?.closingDate ?? "");
-  const [dueDate, setDueDate] = useState(statement?.dueDate ?? suggested?.dueDate ?? "");
-  const [balance, setBalance] = useState(amountText(statement?.balanceMinor ?? suggested?.balanceMinor));
-  const [minimum, setMinimum] = useState(amountText(statement?.minimumDueMinor ?? (suggested?.minimumKnown ? suggested.minimumDueMinor : null)));
-  const [amountDue, setAmountDue] = useState(minorToMajorText(statement?.amountDueMinor ?? null, 2));
-  const [previousBalance, setPreviousBalance] = useState(minorToMajorText(statement?.previousBalanceMinor ?? null, 2));
-  // D19: estimate-filled fields carry a hint until the user edits them.
-  const [prefilled, setPrefilled] = useState(() => new Set(statement || !suggested ? [] : [
-    "periodStart", "closingDate", "dueDate", "balance", ...(suggested.minimumKnown ? ["minimum"] : []),
-  ]));
+  const [initial] = useState({ card });
+  const [choiceKey, setChoiceKey] = useState(choices?.initial ?? null);
+  const choice = choices?.options.find((entry) => entry.key === choiceKey);
+  const start = choice ? figuresFor(choice.statement, choice.draft) : figuresFor(statement, suggested);
+  // The statement being saved: fixed at open, or the current choice.
+  const [target, setTarget] = useState(() => (choice ? choice.statement : statement));
+  const [periodStart, setPeriodStart] = useState(start.periodStart);
+  const [closingDate, setClosingDate] = useState(start.closingDate);
+  const [dueDate, setDueDate] = useState(start.dueDate);
+  const [balance, setBalance] = useState(start.balance);
+  const [minimum, setMinimum] = useState(start.minimum);
+  const [amountDue, setAmountDue] = useState(start.amountDue);
+  const [previousBalance, setPreviousBalance] = useState(start.previousBalance);
+  const [prefilled, setPrefilled] = useState(start.prefilled);
   const edited = (key: string) => setPrefilled((current) => {
     if (!current.has(key)) return current;
     const next = new Set(current);
     next.delete(key);
     return next;
   });
-  const showPrevious = previousMissing || statement?.previousBalanceMinor != null;
+  const showPrevious = (choice ? choice.previousMissing : previousMissing) || target?.previousBalanceMinor != null;
   const [error, setError] = useState("");
-  const signature = JSON.stringify({ periodStart, closingDate, dueDate, balance, minimum, amountDue, previousBalance });
-  const [initialSignature] = useState(signature);
-  const { requestClose, discardDialog } = useDiscardChanges(signature !== initialSignature, onClose);
+  const signature = figuresSignature({ periodStart, closingDate, dueDate, balance, minimum, amountDue, previousBalance });
+  const [initialSignature, setInitialSignature] = useState(signature);
+  const { requestClose, confirmThen, discardDialog } = useDiscardChanges(signature !== initialSignature, onClose);
+
+  /** Switches to another statement; typed changes are discarded only after asking. */
+  function choose(key: string) {
+    const next = choices?.options.find((entry) => entry.key === key);
+    if (!next || key === choiceKey) return;
+    confirmThen(() => {
+      const values = figuresFor(next.statement, next.draft);
+      setChoiceKey(key);
+      setTarget(next.statement);
+      setPeriodStart(values.periodStart);
+      setClosingDate(values.closingDate);
+      setDueDate(values.dueDate);
+      setBalance(values.balance);
+      setMinimum(values.minimum);
+      setAmountDue(values.amountDue);
+      setPreviousBalance(values.previousBalance);
+      setPrefilled(values.prefilled);
+      setError("");
+      setInitialSignature(figuresSignature(values));
+    });
+  }
 
   function formatInput(value: string, set: (value: string) => void) {
     try {
@@ -674,7 +738,7 @@ export function StatementEditor({ budgetSyncId, card, cardName, statement, sugge
     event.preventDefault();
     try {
       if (event.currentTarget.querySelector('[aria-invalid="true"]')) throw new Error("Correct the invalid date before saving");
-      if (!initial.statement && !canRecord) throw new Error("Refresh the card account and its classification before recording a statement");
+      if (!target && !canRecord) throw new Error("Refresh the card account and its classification before recording a statement");
       const facts = {
         periodStart,
         closingDate,
@@ -685,8 +749,8 @@ export function StatementEditor({ budgetSyncId, card, cardName, statement, sugge
         previousBalanceMinor: showPrevious ? readAmount(previousBalance, false, true) : null,
       };
       const store = creditCardStore.getState();
-      let savedId = initial.statement?.id;
-      if (initial.statement) await store.correctStatement(budgetSyncId, initial.statement.id, initial.statement.revision, facts);
+      let savedId = target?.id;
+      if (target) await store.correctStatement(budgetSyncId, target.id, target.revision, facts);
       else savedId = (await store.recordStatement(budgetSyncId, initial.card.id, facts)).id;
       if (onSaved && savedId) onSaved(savedId);
       else onClose();
@@ -724,7 +788,7 @@ export function StatementEditor({ budgetSyncId, card, cardName, statement, sugge
     <Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}>
       <DialogContent className={dialogClass}>
         <DialogHeader>
-          <DialogTitle>{statement ? "Correct bank figures" : "Add statement"}</DialogTitle>
+          <DialogTitle>{title ?? (statement ? "Correct bank figures" : "Add statement")}</DialogTitle>
           <DialogDescription>{cardName} · Enter the figures from your bank statement.</DialogDescription>
           {prefilled.size > 0 && <p className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300">
             <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />{PREFILL_HINT}
@@ -732,6 +796,13 @@ export function StatementEditor({ budgetSyncId, card, cardName, statement, sugge
         </DialogHeader>
         <form onSubmit={save} className="mt-4 flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 space-y-4 overflow-auto">
+            {choices && <div className="space-y-1">
+              <Field label="Statement" htmlFor={`${prefix}-choice`}>
+                <Select id={`${prefix}-choice`} aria-label="Statement" value={choiceKey ?? ""} onValueChange={choose}
+                  options={choices.options.map((entry) => ({ value: entry.key, label: entry.label }))} />
+              </Field>
+              {choice?.note && <p className="text-xs text-muted-foreground">{choice.note}</p>}
+            </div>}
             <fieldset className="rounded-lg border p-4">
               <legend className="px-1 text-sm font-semibold">Statement dates</legend>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -752,8 +823,8 @@ export function StatementEditor({ budgetSyncId, card, cardName, statement, sugge
             {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
           </div>
           <div className="mt-3 flex shrink-0 justify-end gap-2 border-t pt-3">
-            <Button variant="outline" type="button" onClick={requestClose}>Cancel</Button>
-            <Button type="submit" disabled={!statement && !canRecord}>{onSaved ? "Save and review" : "Save statement"}</Button>
+            <Button variant="outline" type="button" onClick={requestClose}>{cancelLabel ?? "Cancel"}</Button>
+            <Button type="submit" disabled={!target && !canRecord}>{saveLabel ?? (onSaved ? "Save and review" : "Save statement")}</Button>
           </div>
         </form>
       </DialogContent>

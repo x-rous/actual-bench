@@ -73,6 +73,7 @@ export function updateSession(
     candidateEnd: string | null;
     statementFingerprint: string | null;
     statementFormat: ReconciliationStatementFormat | null;
+    cardStatementId: string | null;
     profileId: string | null;
     matchConfig: unknown;
     totals: unknown;

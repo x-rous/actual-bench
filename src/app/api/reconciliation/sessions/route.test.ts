@@ -262,6 +262,14 @@ describe("/api/reconciliation/sessions", () => {
     expect(body.session.statementFormat).toBe("ofx");
   });
 
+  it("stores the credit-card statement a reconciliation entered figures for, and clears it", async () => {
+    const session = await createSession();
+    const linked = await PATCH(jsonRequest({ cardStatementId: "statement-1" }), context(session.id));
+    expect(((await linked.json()) as { session: ReconciliationSessionRecord }).session.cardStatementId).toBe("statement-1");
+    const cleared = await PATCH(jsonRequest({ cardStatementId: null }), context(session.id));
+    expect(((await cleared.json()) as { session: ReconciliationSessionRecord }).session.cardStatementId).toBeNull();
+  });
+
   it("rejects an unknown status", async () => {
     const session = await createSession();
     const response = await PATCH(jsonRequest({ status: "nonsense" }), context(session.id));
