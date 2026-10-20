@@ -1374,7 +1374,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(47);
+      expect(LATEST_SCHEMA_VERSION).toBe(49);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
@@ -1777,6 +1777,82 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
       const raw = new Database(path);
       expect(() => runMigrations(raw as unknown as SqliteDatabase)).toThrow(/newer than this app supports/);
       raw.close();
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("v48 credit-card metadata", () => {
+  afterEach(() => {
+    resetAppDbForTests();
+  });
+
+  const CREDIT_CARD_TABLES = [
+    "credit_card_limit_changes", "credit_card_plan_accounts", "credit_card_plan_entries", "credit_card_plans", "credit_card_statement_decisions",
+    "credit_card_statements", "credit_card_transaction_types", "credit_cards",
+  ];
+
+  it("upgrades an applied v47 database with empty credit-card tables, other data unchanged, and a second run changes nothing", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v48-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      getAppDb(path);
+      resetAppDbForTests();
+      const seed = new Database(path);
+      for (const { name } of seed.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'credit_card%'").all() as { name: string }[]) {
+        seed.exec(`DROP TRIGGER ${name}`);
+      }
+      for (const table of ["credit_card_limit_changes", "credit_card_plan_entries", "credit_card_plans", "credit_card_statement_decisions", "credit_card_transaction_types", "credit_card_statements", "credit_card_plan_accounts", "credit_cards"]) {
+        seed.exec(`DROP TABLE ${table}`);
+      }
+      seed.prepare("UPDATE app_meta SET value = '47' WHERE key = 'schema_version'").run();
+      const existing = (seed.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'app_meta'").all() as { name: string }[]).map((t) => t.name);
+      const snapshot = dumpTables(seed as unknown as SqliteDatabase, existing);
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      const meta = runMigrations(upgraded);
+      expect(meta.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+      expect(objectNames(upgraded, "table").filter((t) => t.startsWith("credit_card"))).toEqual(CREDIT_CARD_TABLES);
+      for (const t of CREDIT_CARD_TABLES) expect(upgraded.prepare(`SELECT count(*) AS n FROM ${t}`).get<{ n: number }>()?.n).toBe(0);
+      expect(objectNames(upgraded, "trigger").filter((t) => t.startsWith("credit_card"))).toHaveLength(3);
+      expect(dumpTables(upgraded, existing)).toEqual(snapshot);
+      expect(upgraded.pragma("foreign_key_check")).toEqual([]);
+      expect(runMigrations(upgraded)).toEqual(meta);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("v49 credit-limit changes", () => {
+  afterEach(() => {
+    resetAppDbForTests();
+  });
+
+  it("adds an empty limit-change table to a v48 database, keeps every existing row, and a second run changes nothing", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v49-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      getAppDb(path);
+      resetAppDbForTests();
+      const seed = new Database(path);
+      seed.exec("DROP TABLE credit_card_limit_changes");
+      seed.prepare("UPDATE app_meta SET value = '48' WHERE key = 'schema_version'").run();
+      const existing = (seed.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'app_meta'").all() as { name: string }[]).map((t) => t.name);
+      const snapshot = dumpTables(seed as unknown as SqliteDatabase, existing);
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      const meta = runMigrations(upgraded);
+      expect(meta.schemaVersion).toBe(49);
+      expect(upgraded.prepare("SELECT count(*) AS n FROM credit_card_limit_changes").get<{ n: number }>()?.n).toBe(0);
+      expect(dumpTables(upgraded, existing)).toEqual(snapshot);
+      expect(upgraded.pragma("foreign_key_check")).toEqual([]);
+      expect(runMigrations(upgraded)).toEqual(meta);
     } finally {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });

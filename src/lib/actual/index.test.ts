@@ -447,7 +447,44 @@ describe("Actual transport factory", () => {
     expect(aqlQuery).not.toHaveBeenCalled();
   });
 
-  it("Direct account balances are converted from cents without using fetch", async () => {
+  it("Direct account balances come from one grouped read-only query, never one mutation per account", async () => {
+    const builder = createMockQueryBuilder();
+    const q = jest.fn().mockReturnValue(builder);
+    const aqlQuery = jest.fn().mockResolvedValue({ data: [{ account: "account-1", balance: 12345 }] });
+    const getAccountBalance = jest.fn();
+    mockGetBrowserApiRuntime.mockResolvedValue({
+      q, aqlQuery, getAccountBalance,
+      getAccounts: jest.fn().mockResolvedValue([
+        { id: "account-1", name: "Checking", offbudget: false, closed: false },
+        { id: "account-2", name: "Empty", offbudget: false, closed: false },
+      ]),
+    } as never);
+
+    const balances = await getTransport(browserConnection).getAccountBalances();
+
+    expect([...balances.entries()]).toEqual([["account-1", 123.45], ["account-2", 0]]);
+    expect(getAccountBalance).not.toHaveBeenCalled();
+    expect(q).toHaveBeenCalledWith("transactions");
+    expect(builder.filter).toHaveBeenCalledWith({ date: { $lte: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) } });
+    expect(builder.groupBy).toHaveBeenCalledWith("account");
+    expect(aqlQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("Direct transfer-link verification samples one structural row instead of re-reading the account", async () => {
+    const builder = createMockQueryBuilder();
+    const q = jest.fn().mockReturnValue(builder);
+    const aqlQuery = jest.fn().mockResolvedValue({ data: [{ id: "t1", transfer_id: null }] });
+    mockGetBrowserApiRuntime.mockResolvedValue({ q, aqlQuery } as never);
+
+    await expect(getTransport(browserConnection).canVerifyTransferLinks!({ accountId: "card", sinceDate: "2026-01-01" })).resolves.toBe(true);
+    expect(builder.limit).toHaveBeenCalledWith(1);
+    expect(builder.options).toHaveBeenCalledWith({ splits: "all" });
+
+    aqlQuery.mockResolvedValueOnce({ data: [{ id: "t1" }] });
+    await expect(getTransport(browserConnection).canVerifyTransferLinks!({ accountId: "card", sinceDate: "2026-01-01" })).resolves.toBe(false);
+  });
+
+  it("Direct account balances fall back to per-account reads on runtimes without a query builder", async () => {
     const originalFetch = global.fetch;
     const fetchMock = jest.fn();
     Object.defineProperty(global, "fetch", {

@@ -602,12 +602,60 @@ async function getBrowserAccountBalances(
 ): Promise<Map<string, number>> {
   const api = await host.getRuntime(connection);
   const accounts = await getBrowserAccounts(host, connection);
+  const grouped = await groupedBrowserBalances(api);
+  if (grouped) return new Map(accounts.map((account) => [account.id, (grouped.get(account.id) ?? 0) / 100] as const));
   const entries = await mapWithConcurrency(accounts, 6, async (account) => {
     const balance = await api.getAccountBalance(account.id);
     return [account.id, balance / 100] as const;
   });
 
   return new Map(entries);
+}
+
+/**
+ * Whether Direct reads report `transfer_id`. The structural read selects every field, so the answer is
+ * the same for every row: one sampled row decides it instead of re-reading the whole account (which
+ * queued behind other reads for seconds when a page opened). Falls back to the full read when the
+ * runtime has no query builder.
+ */
+async function directReportsTransferIds(host: ActualRuntimeHost, connection: BrowserApiConnection, accountId: string, sinceDate: string) {
+  const api = await host.getRuntime(connection);
+  const runner = api.aqlQuery?.bind(api) ?? api.runQuery?.bind(api);
+  const query = api.q && runner ? api.q("transactions").filter({ $and: [
+    { account: accountId }, { is_child: false }, ...(sinceDate ? [{ date: { $gte: sinceDate } }] : []),
+  ] }).select("*").options({ splits: "all" }) : null;
+  if (!query || !runner || typeof query.limit !== "function") {
+    return readsReportTransferIds(directStructurePrimitives(host, connection), accountId, sinceDate);
+  }
+  const response = await runner(query.limit(1));
+  if (!isRecord(response) || !Array.isArray(response.data)) throw new Error("Actual returned an incomplete structural transaction query.");
+  return response.data.every((row) => isRecord(row) && Object.prototype.hasOwnProperty.call(row, "transfer_id"));
+}
+
+/**
+ * Every account's balance in one read-only query, the same sum `getAccountBalance` returns (live,
+ * non-parent transactions dated up to today in the runtime's local time). `getAccountBalance` runs as a
+ * mutation in the browser runtime, so one call per account queued every other read for seconds per
+ * call. Null when the runtime has no query builder; callers then fall back to per-account reads.
+ */
+async function groupedBrowserBalances(api: ActualApi): Promise<Map<string, number> | null> {
+  const runner = api.aqlQuery?.bind(api) ?? api.runQuery?.bind(api);
+  if (!api.q || !runner) return null;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  try {
+    const response = await runner(api.q("transactions").filter({ date: { $lte: today } }).groupBy("account")
+      .select(["account", { balance: { $sum: "$amount" } }]));
+    if (!isRecord(response) || !Array.isArray(response.data)) return null;
+    const balances = new Map<string, number>();
+    for (const row of response.data) {
+      if (!isRecord(row) || typeof row.account !== "string" || typeof row.balance !== "number") return null;
+      balances.set(row.account, row.balance);
+    }
+    return balances;
+  } catch {
+    return null;
+  }
 }
 
 async function getBrowserCategoryGroups(
@@ -797,10 +845,55 @@ async function queryBrowserTransactionsForSync(host: ActualRuntimeHost, connecti
   const api = await host.getRuntime(connection);
   const runner = api.aqlQuery?.bind(api) ?? api.runQuery?.bind(api);
   if (!api.q || !runner) throw unsupportedTransportOperation("browser-api", "Structural transaction queries");
-  const response = await runner(api.q("transactions").filter(syncTransactionFilter(input)).select("*").options({ splits: "grouped" }));
-  if (!isRecord(response) || !Array.isArray(response.data)) throw new Error("Actual returned an incomplete structural transaction query.");
+  const filter = syncTransactionFilter(input);
+  const data = input.ids?.length && !input.importedIds?.length
+    ? await groupedById(api, runner, [...new Set(input.ids)])
+    : queryData(await runner(api.q("transactions").filter(filter).select("*").options({ splits: "grouped" })));
   const lookup: NameLookup = input.resolveNames === false ? { payeeNames: new Map(), categoryNames: new Map() } : await names(api);
-  return response.data.filter((row): row is ApiTransaction => isRecord(row) && typeof row.id === "string" && row.is_child !== true).map((row) => toSyncSourceTransaction(row, lookup));
+  return data.filter((row): row is ApiTransaction => isRecord(row) && typeof row.id === "string" && row.is_child !== true).map((row) => toSyncSourceTransaction(row, lookup));
+}
+
+function queryData(response: unknown): unknown[] {
+  if (!isRecord(response) || !Array.isArray(response.data)) throw new Error("Actual returned an incomplete structural transaction query.");
+  return response.data;
+}
+
+/** Actual's default transaction order (date desc, starting balance, sort_order desc, id), with SQLite's binary text order. */
+function actualTransactionOrder(a: Record<string, unknown>, b: Record<string, unknown>) {
+  const text = (x: unknown, y: unknown) => { const [p, q] = [String(x ?? ""), String(y ?? "")]; return p < q ? -1 : p > q ? 1 : 0; };
+  return text(b.date, a.date)
+    || Number(Boolean(a.starting_balance_flag)) - Number(Boolean(b.starting_balance_flag))
+    || (Number(b.sort_order) || 0) - (Number(a.sort_order) || 0)
+    || text(a.id, b.id);
+}
+
+/**
+ * The `splits: "grouped"` result for these ids, assembled from flat reads. A grouped lookup by id
+ * scans the whole budget (about 85 ms per query in Node, several hundred in the browser runtime, on a
+ * 38,000-transaction budget); the flat reads take about a millisecond each. A split line resolves to
+ * its parent with every line, as in grouped mode, and rows keep Actual's default order. Checked
+ * against grouped mode on a live budget for split lines, parents, transfers and missing ids.
+ */
+async function groupedById(api: ActualApi, runner: (query: ActualQueryBuilder) => Promise<unknown>, ids: string[]): Promise<unknown[]> {
+  const flat = (filter: object) => runner(api.q!("transactions").filter(filter).select("*").options({ splits: "all" }))
+    .then((response) => queryData(response).filter(isRecord));
+  const found = await flat({ id: { $oneof: ids } });
+  const parentIds = new Set<string>();
+  for (const row of found) {
+    if (row.is_child === true && typeof row.parent_id === "string") parentIds.add(row.parent_id);
+    if (row.is_parent === true && typeof row.id === "string") parentIds.add(row.id);
+  }
+  const have = new Set(found.map((row) => row.id));
+  const missing = [...parentIds].filter((id) => !have.has(id));
+  const [parents, lines] = await Promise.all([
+    missing.length ? flat({ id: { $oneof: missing } }) : Promise.resolve([]),
+    parentIds.size ? flat({ parent_id: { $oneof: [...parentIds] } }) : Promise.resolve([]),
+  ]);
+  const top = new Map<unknown, Record<string, unknown>>();
+  for (const row of [...found, ...parents]) if (row.is_child !== true && !top.has(row.id)) top.set(row.id, row);
+  return [...top.values()].sort(actualTransactionOrder).map((row) => (row.is_parent === true
+    ? { ...row, subtransactions: lines.filter((line) => line.parent_id === row.id).sort(actualTransactionOrder) }
+    : row));
 }
 
 async function withRuntimeTransactionReadSession<T>(
@@ -1609,7 +1702,7 @@ export function createActualRuntimeTransport(
     unlinkTransfer: (input) => unlinkTransfer(directStructurePrimitives(host, connection), input),
     convertToTransfer: (input) => convertToTransfer(directStructurePrimitives(host, connection), input),
     revertTransferConversion: (input) => revertTransferConversion(directStructurePrimitives(host, connection), input),
-    canVerifyTransferLinks: (input) => readsReportTransferIds(directStructurePrimitives(host, connection), input.accountId, input.sinceDate),
+    canVerifyTransferLinks: (input) => directReportsTransferIds(host, connection, input.accountId, input.sinceDate),
     getTargetLookupForSync: (input) =>
       getBrowserTargetLookupForSync(host, connection, input),
 

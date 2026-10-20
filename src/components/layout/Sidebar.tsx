@@ -34,6 +34,7 @@ import {
   Timer,
   DatabaseBackup,
   HandCoins,
+  CreditCard,
   Gem,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -115,6 +116,7 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
         { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
         // Loans and debts (RD-084), and assets (a later phase): separate pages, set up per budget.
         { id: "loans", label: "Loans & Debt", href: "/loans", icon: HandCoins },
+        { id: "credit-cards", label: "Credit Cards", href: "/credit-cards", icon: CreditCard },
         { id: "assets", label: "Assets", href: "/assets", icon: Gem },
         // Sits with the tools rather than in the footer: a backup is about a
         // budget's data, not about the app's own configuration. Above

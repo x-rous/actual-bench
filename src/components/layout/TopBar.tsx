@@ -57,6 +57,7 @@ import {
 } from "@/features/budget-management/lib/budgetSaveReview";
 import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "@/features/budget-management/types";
 import { clearBudgetQueries } from "@/lib/queryClient";
+import { hasUnsavedDrafts } from "@/lib/unsavedDrafts";
 
 type PendingAction =
   | { kind: "switch"; id: string }
@@ -202,7 +203,7 @@ export function TopBar() {
   // ── Guarded action helpers ────────────────────────────────────────────────────
 
   function requestAction(action: PendingAction) {
-    if (hasChanges) {
+    if (hasChanges || hasUnsavedDrafts()) {
       setPendingAction(action);
     } else {
       void executeAction(action);
@@ -651,7 +652,7 @@ export function TopBar() {
           <DialogHeader>
             <DialogTitle>Discard unsaved changes?</DialogTitle>
             <DialogDescription>
-              You have unsaved staged edits. This action will discard them permanently.
+              You have unsaved changes. Continuing will discard these edits.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
