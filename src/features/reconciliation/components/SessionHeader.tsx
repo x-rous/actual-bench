@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, ArrowLeft, Check } from "lucide-react";
+import { CardStatementHeaderAction } from "@/features/credit-cards/components/CardStatementFigures";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -116,6 +117,8 @@ export type SessionHeaderProps = {
    * pairing changed shape from phase to phase.
    */
   actions?: React.ReactNode;
+  /** Opens the credit-card statement figures for this session's card (enter, or edit the linked statement). */
+  onCardFigures?: () => void;
 };
 
 export function SessionHeader({
@@ -127,6 +130,7 @@ export function SessionHeader({
   blockedSteps,
   onExit,
   actions,
+  onCardFigures,
 }: SessionHeaderProps) {
   const status = session?.status ?? "draft";
   const reached = reachedIndex(status);
@@ -185,6 +189,9 @@ export function SessionHeader({
               · {statement}
             </span>
           )}
+          {/* The credit-card statement whose bank figures were entered with this reconciliation. */}
+          <CardStatementHeaderAction statementId={session?.cardStatementId} accountId={session?.accountId}
+            period={start && end ? { start, end } : null} onOpen={onCardFigures} />
         </div>
       </div>
 

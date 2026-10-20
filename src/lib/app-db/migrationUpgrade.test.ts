@@ -1374,7 +1374,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(49);
+      expect(LATEST_SCHEMA_VERSION).toBe(50);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
@@ -1848,10 +1848,41 @@ describe("v49 credit-limit changes", () => {
 
       const upgraded = getAppDb(path);
       const meta = runMigrations(upgraded);
-      expect(meta.schemaVersion).toBe(49);
+      expect(meta.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       expect(upgraded.prepare("SELECT count(*) AS n FROM credit_card_limit_changes").get<{ n: number }>()?.n).toBe(0);
       expect(dumpTables(upgraded, existing)).toEqual(snapshot);
       expect(upgraded.pragma("foreign_key_check")).toEqual([]);
+      expect(runMigrations(upgraded)).toEqual(meta);
+    } finally {
+      resetAppDbForTests();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("v50 reconciliation card-statement link", () => {
+  afterEach(() => {
+    resetAppDbForTests();
+  });
+
+  it("adds a nullable card_statement_id to existing reconciliation sessions, keeps them, and a second run changes nothing", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v50-"));
+    const path = join(root, "metadata.sqlite");
+    try {
+      getAppDb(path);
+      resetAppDbForTests();
+      const seed = new Database(path);
+      seed.exec("ALTER TABLE reconciliation_sessions DROP COLUMN card_statement_id");
+      seed.prepare(`INSERT INTO reconciliation_sessions (id, budget_sync_id, account_id, account_name, status, tag, created_at, updated_at)
+        VALUES ('s1', 'budget', 'card', 'Visa', 'draft', 'October', 'now', 'now')`).run();
+      seed.prepare("UPDATE app_meta SET value = '49' WHERE key = 'schema_version'").run();
+      seed.close();
+
+      const upgraded = getAppDb(path);
+      const meta = runMigrations(upgraded);
+      expect(meta.schemaVersion).toBe(50);
+      expect(upgraded.prepare("SELECT id, account_name, tag, card_statement_id FROM reconciliation_sessions").all())
+        .toEqual([{ id: "s1", account_name: "Visa", tag: "October", card_statement_id: null }]);
       expect(runMigrations(upgraded)).toEqual(meta);
     } finally {
       resetAppDbForTests();

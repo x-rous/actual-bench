@@ -72,7 +72,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 49;
+export const LATEST_SCHEMA_VERSION = 50;
 
 type Migration = {
   version: number;
@@ -597,6 +597,11 @@ const MIGRATIONS: readonly Migration[] = [
     // Credit-limit changes over time. Additive: one new table, no existing row changes.
     statements: CREDIT_CARD_LIMIT_CHANGES_SQL,
   },
+  {
+    version: 50,
+    // A reconciliation remembers the credit-card statement whose figures it entered. Additive: one nullable column.
+    apply: applyReconciliationCardStatementColumn,
+  },
 ];
 
 /**
@@ -968,6 +973,12 @@ function applyReconciliationStatementFormatColumn(db: SqliteDatabase): void {
   // schema creates it with this column already in place.
   if (!tableExists(db, "reconciliation_sessions")) return;
   addColumnIfMissing(db, "reconciliation_sessions", "statement_format", "text");
+}
+
+function applyReconciliationCardStatementColumn(db: SqliteDatabase): void {
+  // Guarded on the table like the statement-format column: where it is missing, the base schema creates it.
+  if (!tableExists(db, "reconciliation_sessions")) return;
+  addColumnIfMissing(db, "reconciliation_sessions", "card_statement_id", "text");
 }
 
 function applyAutomationClaimColumn(db: SqliteDatabase): void {

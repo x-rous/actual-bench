@@ -112,6 +112,10 @@ import type {
 import { ImportPanel } from "./ImportPanel";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { NewSessionDialog } from "./NewSessionDialog";
+import { CardStatementFigures, ReviewCardStatementLink, useRegisteredCards } from "@/features/credit-cards/components/CardStatementFigures";
+import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
+import { resolveAccountClass } from "@/lib/account-class";
+import type { Card } from "@/features/credit-cards/lib/models";
 import { ReviewGateDialog } from "./ReviewGateDialog";
 import { SessionList, rowCountOf } from "./SessionList";
 import { Workbench } from "./Workbench";
@@ -171,6 +175,15 @@ function ReconciliationSessionView() {
   const connection = useConnectionStore(selectActiveInstance);
   useAccounts();
   const accounts = useStagedStore((state) => state.accounts);
+  // Credit cards (PR-128): a reconciliation can also enter the card's bank statement figures.
+  const accountClasses = useAccountClasses();
+  const { cards: registeredCards } = useRegisteredCards(connection);
+  const [cardFigures, setCardFigures] = useState<{ sessionId: string; card: Card; cardName: string; statementId: string | null } | null>(null);
+  /** Opens the card statement figures for a session's card: the linked statement, or a new choice. */
+  function openCardFigures(session: ReconciliationSessionRecord | undefined) {
+    const card = session ? registeredCards.find((entry) => entry.accountId === session.accountId) : undefined;
+    if (session && card) setCardFigures({ sessionId: session.id, card, cardName: session.accountName ?? "Credit card", statementId: session.cardStatementId });
+  }
 
   usePayees();
   useCategoryGroups();
@@ -866,7 +879,7 @@ function ReconciliationSessionView() {
      * account and starts in the same handler, and reading the state it just set
      * would read the previous render's value.
      */
-    async function startSession(chosenId?: string, tag?: string | null) {
+    async function startSession(chosenId?: string, tag?: string | null, enterCardFigures = false) {
       const account = visibleAccounts.find((entry) => entry.id === (chosenId ?? accountId));
       if (!account) return;
       setNewSessionOpen(false);
@@ -904,6 +917,9 @@ function ReconciliationSessionView() {
         accountId: account.id,
         accountName: account.name,
       });
+      // The import screen stays underneath; skipping or saving the figures returns to it.
+      const card = enterCardFigures ? registeredCards.find((entry) => entry.accountId === account.id) : undefined;
+      if (card) setCardFigures({ sessionId: session.id, card, cardName: account.name, statementId: null });
     }
 
     /*
@@ -1780,6 +1796,7 @@ function ReconciliationSessionView() {
         <PageLayout
           header={
             <SessionHeader
+              onCardFigures={() => openCardFigures(sessionQuery.data?.session)}
               session={sessionQuery.data?.session}
               current="import"
               // Navigable only once the session has a statement to go back to.
@@ -1932,6 +1949,7 @@ function ReconciliationSessionView() {
         <PageLayout
           header={
             <SessionHeader
+              onCardFigures={() => openCardFigures(sessionQuery.data?.session)}
               session={session}
               current={screen.name === "review" ? "review" : "applied"}
               period={period}
@@ -1994,6 +2012,10 @@ function ReconciliationSessionView() {
         >
           {recoveryNotice}
           {errorNotice}
+          {/* Once applied, offer the linked card statement's review (never an automatic jump). */}
+          {screen.name === "result" && (applyResult || session?.appliedAt) && (
+            <ReviewCardStatementLink statementId={session?.cardStatementId} />
+          )}
           {screen.name === "review" ? (
             <ReviewPanel
               plan={reviewPlan}
@@ -2045,6 +2067,7 @@ function ReconciliationSessionView() {
         <PageLayout
           header={
             <SessionHeader
+              onCardFigures={() => openCardFigures(sessionQuery.data?.session)}
               session={session}
               current="reconcile"
               period={period}
@@ -2249,9 +2272,14 @@ function ReconciliationSessionView() {
             ),
           ].sort()}
           isCreating={mutations.createSession.isPending}
-          onStart={(id, tag) => {
+          cardStatus={(id) => {
+            const account = visibleAccounts.find((entry) => entry.id === id);
+            if (!account || resolveAccountClass(account.id, account.groupId, accountClasses.maps).accountClass !== "credit-card") return null;
+            return registeredCards.some((entry) => entry.accountId === id) ? "registered" : "unregistered";
+          }}
+          onStart={(id, tag, enterCardFigures) => {
             setAccountId(id);
-            void startSession(id, tag);
+            void startSession(id, tag, enterCardFigures);
           }}
         />
 
@@ -2299,6 +2327,21 @@ function ReconciliationSessionView() {
   return (
     <>
       {renderScreen()}
+      {cardFigures && connection && <CardStatementFigures
+        connection={connection}
+        card={cardFigures.card}
+        cardName={cardFigures.cardName}
+        statementId={cardFigures.statementId}
+        onClose={() => setCardFigures(null)}
+        onLinked={(statementId) => {
+          const { sessionId: linkedSession } = cardFigures;
+          setCardFigures(null);
+          void mutations.updateSession.mutateAsync({ id: linkedSession, payload: { cardStatementId: statementId } })
+            .catch((error: unknown) => setMatchError(error instanceof Error
+              ? `The figures were saved, but the reconciliation could not remember the statement: ${error.message}`
+              : "The figures were saved, but the reconciliation could not remember the statement"));
+        }}
+      />}
       <ConfirmDialog
         open={confirm !== null}
         onOpenChange={(open) => {

@@ -608,3 +608,27 @@ describe("finishing without writes", () => {
     expect(() => completeReconciliationWithoutWrites(db, session.id, expected)).toThrow("applying");
   });
 });
+
+describe("credit-card statement link on a session (PR-128)", () => {
+  afterEach(() => {
+    resetAppDbForTests();
+  });
+
+  it("starts empty, stores and reads back the linked statement, and can be cleared", () => {
+    const db = tempDb();
+    const session = newSession(db);
+    expect(session.cardStatementId).toBeNull();
+
+    updateReconciliationSession(db, session.id, { cardStatementId: "statement-1" });
+    expect(getReconciliationSession(db, session.id)?.cardStatementId).toBe("statement-1");
+
+    expect(updateReconciliationSession(db, session.id, { cardStatementId: null })?.cardStatementId).toBeNull();
+  });
+
+  it("leaves the link alone when other fields change", () => {
+    const db = tempDb();
+    const session = newSession(db);
+    updateReconciliationSession(db, session.id, { cardStatementId: "statement-1" });
+    expect(updateReconciliationSession(db, session.id, { tag: "October" })?.cardStatementId).toBe("statement-1");
+  });
+});

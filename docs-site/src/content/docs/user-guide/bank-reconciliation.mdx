@@ -48,6 +48,15 @@ transactions. You cannot change the account after the session starts.
 
 ![The New reconciliation dialog: an account picker and an optional tag field, with Cancel and Start.](../../../assets/screenshots/dialogs/dialog-recon-new-session.png)
 
+**Credit cards.** When the account is a card you have added in **Credit Cards**, you can tick **Also enter
+this card's bank statement figures**. After Start, **Card statement figures** opens: choose the statement at the
+top (each one shows its period, balance and whether its figures are entered or verified), then enter or check its
+figures and **Save figures**, or **Skip** straight to the import. The reconciliation remembers the statement and
+shows it in its header, marked *different period?* if the imported file looks like another statement. Select it
+there to edit the figures again at any step, or **Enter card statement figures** if you skipped. Once you apply,
+select **Review statement** to open that statement's review in Credit Cards and match its transactions. A
+credit-card account that is not added in Credit Cards shows the option disabled.
+
 Paste a statement or upload a file. The import screen shows the parsed rows before you continue.
 For CSV and TSV files, correct the mapping if needed. For example, map separate debit and credit
 columns when the bank does not supply one signed amount column. Check the date format and sign

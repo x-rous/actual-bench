@@ -499,6 +499,8 @@ CREATE TABLE IF NOT EXISTS reconciliation_sessions (
   -- list of reruns and corrections for one account can be told apart by what
   -- they were *for* rather than only by when they were made.
   tag text,
+  -- The credit-card statement whose bank figures were entered for this reconciliation (a link only; v50).
+  card_statement_id text,
   created_at text NOT NULL,
   updated_at text NOT NULL,
   applied_at text
