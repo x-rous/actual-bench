@@ -103,8 +103,8 @@ export function CardStatementFigures({ connection, card, cardName, statementId, 
   const direct = connection.mode === "browser-api";
   const live = directory.data?.balances.get(card.accountId);
   const balance = currentCardBalance(card, live, activity?.data, Boolean(activity?.isError), direct);
-  const balances = live && balance ? new Map([[card.accountId, live]]) : undefined;
-  const snapshot = activity?.data ? cardReadSnapshot(activity.data, directory.data?.accounts, tracking, balances, direct) : undefined;
+  // The full balance map, as Credit Cards passes it: plan accounts need their own balances too.
+  const snapshot = activity?.data ? cardReadSnapshot(activity.data, directory.data?.accounts, tracking, directory.data?.balances, direct) : undefined;
   const view = deriveCardView({ card, workspace, snapshot, rawSignedBalanceMinor: balance?.rawSignedBalanceMinor, today });
   const choices = statementChoices(card, workspace, view.drafts);
   const reading = !activity || activity.isPending;

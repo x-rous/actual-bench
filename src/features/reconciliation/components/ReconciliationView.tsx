@@ -177,7 +177,7 @@ function ReconciliationSessionView() {
   const accounts = useStagedStore((state) => state.accounts);
   // Credit cards (PR-128): a reconciliation can also enter the card's bank statement figures.
   const accountClasses = useAccountClasses();
-  const { cards: registeredCards } = useRegisteredCards(connection);
+  const { cards: registeredCards, ready: cardsReady } = useRegisteredCards(connection);
   const [cardFigures, setCardFigures] = useState<{ sessionId: string; card: Card; cardName: string; statementId: string | null } | null>(null);
   /** Opens the card statement figures for a session's card: the linked statement, or a new choice. */
   function openCardFigures(session: ReconciliationSessionRecord | undefined) {
@@ -2273,6 +2273,8 @@ function ReconciliationSessionView() {
           ].sort()}
           isCreating={mutations.createSession.isPending}
           cardStatus={(id) => {
+            // Until Bench's card records load, say nothing rather than call a registered card unregistered.
+            if (!cardsReady) return null;
             const account = visibleAccounts.find((entry) => entry.id === id);
             if (!account || resolveAccountClass(account.id, account.groupId, accountClasses.maps).accountClass !== "credit-card") return null;
             return registeredCards.some((entry) => entry.accountId === id) ? "registered" : "unregistered";
