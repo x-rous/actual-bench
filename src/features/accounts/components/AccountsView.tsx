@@ -53,6 +53,7 @@ export function AccountsView() {
   const accountClasses = useAccountClasses();
 
   const staged = useStagedStore((s) => s.accounts);
+  const stagedGroups = useStagedStore((s) => s.accountGroups);
   const stageNew = useStagedStore((s) => s.stageNew);
   const pushUndo = useStagedStore((s) => s.pushUndo);
 
@@ -69,6 +70,7 @@ export function AccountsView() {
       offBudget: values.offBudget,
       closed: false,
       initialBalance: values.initialBalance,
+      ...(groupsSupported ? { groupId: values.groupId ?? null } : {}),
     });
     if (values.accountClass) useStagedStore.getState().stageAccountClass(id, values.accountClass);
   }
@@ -286,6 +288,9 @@ export function AccountsView() {
         open={formDrawerOpen}
         onOpenChange={setFormDrawerOpen}
         onSubmit={handleCreateAccount}
+        groups={groupsSupported ? liveGroups(stagedGroups) : undefined}
+        groupClasses={accountClasses.maps.groups}
+        groupsReady={!accountClasses.enabled || accountClasses.available}
       />
 
       <AccountGroupsDialog open={groupsDialogOpen} onOpenChange={setGroupsDialogOpen} />

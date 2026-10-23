@@ -8,7 +8,7 @@
 - **Sign-in:** one password protects Actual Bench and also encrypts saved connections, so signing in opens them. The first visitor to a new install sets it (or `ACTUAL_BENCH_PASSWORD` does); stay signed in for 8 hours to 30 days; change it or sign out from the account menu. `ACTUAL_BENCH_AUTH=none` turns sign-in off for installs already behind their own authentication, with a warning on App Health. Requests to Actual Bench's API from other websites are refused
 - Saved server presets keep non-secret URLs/labels for reconnecting without retyping the server URL
 - Optional encryption password for end-to-end encrypted budgets
-- Direct Actual Server mode is the target architecture and opens a selected budget through the browser API worker without an `actual-http-api` proxy (listing a server's budgets is three quick requests, without starting that worker); core entity pages, Budget Management, Budget File Health, Data Browser, and ActualQL Queries support the Direct transport
+- Direct Actual Server mode is the target architecture and opens a selected budget through the browser API worker without an `actual-http-api` proxy (listing a server's budgets is three quick requests, without starting that worker); core entity pages, Budget Cockpit, Budget File Health, Data Browser, and ActualQL Queries support the Direct transport
 - HTTP API Server mode remains fully maintained as the `actual-http-api` compatibility path; HTTP-specific actions stay mode-aware, and ActualQL cURL generation is shown only for HTTP API Server query executions
 - Remove saved connections individually
 - Per-connection query cache and staged data scoping — switching connections never leaks data between sessions
@@ -27,7 +27,7 @@
 - Hard blocks: empty name, or Category selected with no group chosen
 - On submit, the entity is staged immediately (one undo step) and a toast confirms the action; the dialog closes and the user stays on the current page
 - **Inline "Create" prompt** in the Rule Drawer: typing in a payee or category combobox and finding no match shows a `+ Create [type] "[name]"` footer button — clicking it opens the Quick Create dialog pre-seeded with the typed name; the new entity appears in the combobox options as soon as the dialog closes
-- **Global keyboard shortcuts modal** accessible from a standalone "Keyboard shortcuts" button in the sidebar footer; lists app-wide shortcuts (Quick Create, Global Search, Undo, Redo) with keyboard badge styling; references the budget workspace `?` shortcut for workspace-specific bindings
+- **Global keyboard shortcuts modal** accessible from **Help & feedback → Keyboard shortcuts** in the top bar; lists app-wide shortcuts (Quick Create, Global Search, Undo, Redo) with keyboard badge styling; references the budget workspace `?` shortcut for workspace-specific bindings
 
 ## Global Search
 
@@ -42,7 +42,7 @@
 - Derived snapshot context includes **Budget Mode** (`Envelope`, `Tracking`, or `Unidentified`) and **Budgeting since** from the oldest transaction date
 - Manual refresh button with loading state and last-refreshed status
 - Snapshot values switch to loading placeholders immediately during budget switching or manual refresh
-- Main navigation hub for the connected budget with direct links to the core entity pages and ActualQL Queries
+- Main navigation hub with all 19 implemented features, grouped consistently with the sidebar, with descriptions and direct resource links; Actual access summaries are available from the feature information control
 - Budget File Health opens a read-only exported-snapshot workspace for inspecting budget health locally in the browser
 - Data Browser opens the exported budget's raw SQLite tables, views, and rows directly (its own page, sharing the cached snapshot)
 
@@ -57,6 +57,8 @@
 - **Credit-limit changes** by effective date drive utilisation and the chart. A built-in, searchable **Guide** explains every screen.
 
 ## Assets & Debt
+
+- Loans & Debt normally uses the full workspace width without the global pending-changes panel, including the simulator and individual loan pages. Entry requires clean global drafts; drafts created after entry reveal their panel without closing local editors.
 
 - **Release safeguards:** every explicit Apply, Undo or interrupted-link completion requires a successful sync first (once before a bulk run). Interrupted writes become checkable after their execution lease expires; recovery verifies the marked transaction’s contents, retains partial or changed writes for review, and never retries them automatically. Archived loans are read-only.
 - **Financial privacy and dates:** financial drafts and status caches remain in browser memory; legacy financial browser-storage entries are removed. Financial “today” follows the local calendar, while audit timestamps stay in UTC.
@@ -119,7 +121,7 @@ See `docs/AUTOMATIONS.md`.
 
 ## Backups
 
-Verified copies of your budget and of Bench's own settings, taken on a schedule or on request, kept in as many places as you like, and checked by **opening them** rather than by assuming. Open it from **Tools → Backups**, which splits into **Setup** (destinations, rules, recovery points) and **Backups** (the copies that exist). A fresh install opens on Setup; a configured one opens on the copies.
+Verified copies of your budget and of Bench's own settings, taken on a schedule or on request, kept in as many places as you like, and checked by **opening them** rather than by assuming. Open it from **Sync & Automations → Backups**, which splits into **Setup** (destinations, rules, recovery points) and **Backups** (the copies that exist). A fresh install opens on Setup; a configured one opens on the copies.
 
 - **A Direct connection can be backed up too, on request.** A scheduled backup needs credentials the server can use with your browser closed, which a Direct connection has none of - its budget lives in the browser. Rather than hiding the feature from those users, the rule is offered as **manual**: no schedule, and **Back up now** exports the budget in the browser through Actual's own `exportBudget` - the same call the HTTP path makes one process further away - and uploads it. Everything after that is unchanged, so the copy lands in the same inventory, at the same destinations, verified the same way. Backups taken by hand are **kept until deleted** - Bench does not expire them - so a manual rule accumulates copies rather than rotating them as a scheduled one does.
 - **A readiness statement, deliberately pessimistic** — one sentence saying what you would get back and how old it is. A copy Bench has never opened, a destination that failed last night, or every copy sitting in one place all pull it down, with the reasons listed underneath.
@@ -191,7 +193,7 @@ Consolidate budgets kept in **different currencies**: a transaction flow can con
 - **Locked-by-default snapshots**: every converted transaction stores the exact rate, source/target amounts, provider, and dates as a per-transaction snapshot, plus a compact audit note on the target transaction. Rates **lock at first sync**, so a later rate change never silently rewrites past conversions.
 - **Update on rate change** (opt-in, off by default): if you later correct a rate, enable *Update synced transactions when the rate changes* on the flow to push the new conversion to already-synced targets through the normal previewed, safety-checked update path. This replaces the existing snapshot in place with the corrected rate and converted amount — it never happens silently, and the original snapshot is not preserved as audit history (though the audit note on the target transaction remains).
 
-**FX Rates page** — a dedicated per-currency-pair workspace at **sidebar → Tools → FX Rates** (`/fx-rates`):
+**FX Rates page** — a dedicated per-currency-pair workspace at **sidebar → Financial Management → FX Rates** (`/fx-rates`):
 
 - Hero card with the latest rate, a trend sparkline, and coverage for the selected date range
 - **Fill range from Frankfurter** backfills every missing day in the range in one click (reports how many were inserted vs. already set)
@@ -357,7 +359,7 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 ## Accounts
 
 - Create, rename, and delete accounts
-- "Add Account" opens a form drawer with Name, an optional Initial Balance (seeds the account's starting balance on creation), Budget Type, and Account Class
+- "Add Account" opens a form drawer with an optional Account Group (where supported), Name, an optional Initial Balance (seeds the account's starting balance on creation), Budget Type, and Account Class
 - Budget type (on-budget / off-budget) is set at creation time via a toggle switch and displayed as a read-only badge thereafter — reflecting Actual Budget's constraint that account type cannot be changed after creation
 - Current balance column shows the live account balance fetched via ActualQL aggregation, refreshed every 60 seconds, or via the toolbar "Refresh" action; negative balances are highlighted in red
 - **Sync banks** asks Actual to pull new transactions from your connected banks (SimpleFIN / GoCardless), so you do not have to open Actual to press Sync. Bench triggers Actual's own import — it does not build the transactions and does not second-guess Actual's duplicate handling. Accounts are synced one at a time so a single failing bank cannot hide the rest, failures name the account, and an account with no bank link is reported as unlinked rather than counted as synced. Where the connection finishes the import (Direct mode) Bench reports how many new transactions it observed; over the HTTP API the server answers "started", so Bench says the sync began instead of quoting a number it cannot verify
@@ -385,7 +387,7 @@ A standalone page (own navigation item) for browsing the active budget's exporte
 - Transfer payees show a disabled selection checkbox in the bulk-select column to make their non-selectable status explicit
 - Rules count displayed per payee — click it to jump to the rules list filtered to that payee
 - Filter by name, type (regular / transfer / all), and whether a payee has associated rules
-- Bulk delete and bulk merge — select 2 or more regular payees, click Merge; the **first payee you check** becomes the merge target (survives) regardless of table sort order, the rest are absorbed; the operation is staged and shown in the Draft Changes panel as "Merge Deleted" before being sent to the server on Save; supports Ctrl+Z undo
+- Bulk delete and bulk merge — select 2 or more regular payees, click Merge; the **first payee you check** becomes the merge target (survives) regardless of table sort order, the rest are absorbed; the operation is staged and shown in the Changes panel as "Merge Deleted" before being sent to the server on Save; supports Ctrl+Z undo
 - Inline editing with keyboard navigation
 - CSV import and export
 - Duplicate name detection with visual warning
@@ -503,7 +505,7 @@ counts rules that *set* a payee.
 - CSV import and export
 - Info button on each row opens the Usage Inspector drawer; tags show the rules badge and a note that transaction data is not available for tags
 
-## Budget Management Workspace
+## Budget Cockpit Workspace
 
 URL: `/budget-management`
 
@@ -735,7 +737,7 @@ Transaction counts are fetched lazily when the drawer opens, gated by the same `
 
 - All changes (creates, updates, deletes) are held locally until explicitly saved — nothing touches the server until you confirm
 - Colour-coded rows: green = new, amber = updated, strikethrough = deleted, red = validation error
-- Save all staged changes to the server in one action from the top bar
+- Save all staged changes to the server in one action from the pending-changes panel header
 - Discard all staged changes to revert to the last server state
 - Full undo / redo history for all staged edits within a session
 - Refresh reloads data from the server — if unsaved changes exist, a confirmation prompt lets you choose to discard them and continue, or cancel
@@ -812,7 +814,7 @@ budget-bundle-<label>-<date>.zip
 - Accepts a `.zip` file produced by Bundle Export (partial bundles with a subset of CSVs are valid)
 - Preview step shows each detected entity type with its row count before any staging occurs
 - Import processes entity types in dependency order — categories first, rules last — so that name→ID resolution for Schedules and Rules picks up Accounts and Payees staged earlier in the same operation
-- All imported rows are staged; nothing is saved until the user clicks Save in the top bar
+- All imported rows are staged; nothing is saved until the user clicks Save in the pending-changes panel header
 - Result summary shows staged count, skipped count, and any parse errors per entity type; quick-navigation links jump directly to each entity page to review the staged rows
 - A single undo step covers the entire bundle import
 
@@ -831,13 +833,19 @@ budget-bundle-<label>-<date>.zip
 
 ## Navigation & Layout
 
-- Collapsible sidebar with a standalone `Overview` item and grouped `Data Management` / `Tools` sections; collapse state persists across reloads
-- Top bar shows the active connection with a switcher dropdown, undo/redo, discard, save, and a refresh button — refresh prompts for confirmation when unsaved changes exist. **Refresh pulls the budget from the server before clearing the caches in front of it**, in that order: a Direct connection reads a copy of the budget held in the browser, so clearing the caches alone re-read the same data and could not surface anything changed elsewhere. If the server cannot be reached it says so and still refreshes what is already loaded
+- One shared feature catalogue supplies the sidebar, Overview directory, maturity, data-access descriptions, help links and staged-action visibility
+- Collapsible sidebar with Overview above four fixed, flat groups: Budget Setup; Financial Management; Sync & Automations; Analyze & Cleanup. Analyze & Cleanup starts with ActualQL Queries, followed by Payee Cleanup, Rule Diagnostics, Budget File Health and Data Browser. App Health remains in the footer; the unfinished Assets placeholder is excluded. Collapse state persists across reloads. Sidebar and Overview reuse the budget table’s overlay scrollbars: hidden when idle, revealed on hover or scrolling, with no reserved scrollbar gutter
+- Overview lists all 19 implemented features in four full-width, borderless sections with small uppercase headers matching the sidebar, no section descriptions, and three equal-width tiles per row on wide desktops (1600px+), two on narrower desktop screens: feature, purpose, and direct Docs/Feedback links. Tiles never span columns. Cards size to their content with equal heights within each row and show full descriptions without an Actual-access footer; click anywhere on the card to open the feature. Docs and Feedback have icons and appear at the top right on card hover or keyboard focus as independent links. There is no feature search or information button. Accounts/Categories/Payees/Tags/Schedules share one feedback thread; Budget File Health has no Feedback link
+- Experimental features: Credit Cards, Loans & Debt, Budget File Sync and Automations. Small Experimental badges sit at the top right beside feature names on Overview rows and appear in the feature top bar, never beside sidebar names. Stable features carry no badge; Overview and App Health have no maturity
+- About-feature information in the top bar provides the same descriptions, access summaries and links without changing right panels
+- The Changes and Budget details panels have compact editing controls in their headers. A shared minimize/restore preference follows navigation and reloads in the same browser. Minimized rails retain pending counts and save-error indicators; drafts are never cleared by minimizing. Saved-data entry screens temporarily show the relevant review panel without overwriting the remembered preference. Panel headers use one toolbar-aligned header row with a numeric badge beside the title; the budget heading is shortened to Budget.
+- The catalogue defines each feature’s global pending-changes panel and whether saved data is required before opening. Bank Reconciliation, Credit Cards and Loans & Debt hide the global panel and block entry while entity/budget drafts remain. Budget Cockpit blocks on entity drafts while retaining its own budget edits. Save/Discard/Undo/Redo live in the pending-changes panel header and expose the pending draft’s existing pipeline in a temporarily expanded review panel on guarded entries; partial save failures stay blocked. Once admitted, an editor stays mounted if Quick Create or Redo adds a global draft; the relevant panel opens so it can be resolved without losing local work. Re-entering the route or switching budgets checks drafts again. Keyboard Undo/Redo use the same draft owner as the panel, while text-input and already-handled grid shortcuts are preserved. Normal staged destinations and feature-local actions remain unchanged
+- Top bar shows the active connection, search, refresh, feature information, help, theme and user controls — refresh prompts for confirmation when unsaved changes exist. **Refresh pulls the budget from the server before clearing the caches in front of it**, in that order: a Direct connection reads a copy of the budget held in the browser, so clearing the caches alone re-read the same data and could not surface anything changed elsewhere. If the server cannot be reached it says so and still refreshes what is already loaded
 - Toast notifications for all success, error, and warning states
 - Entity counts shown in page headers
-- Help menu in the sidebar with links to the GitHub repository, issue tracker, and changelog; a separate standalone "Keyboard shortcuts" button below it opens an app-wide shortcuts cheatsheet
+- Help menu in the top-right bar with links to the GitHub repository, issue tracker, and changelog; its Keyboard shortcuts entry opens the app-wide shortcuts cheatsheet
 - Top bar shows a compact version cluster beside the active connection with `API` and `Actual` version badges when available
-- **Dark mode toggle** in the sidebar footer: cycles System → Light → Dark; preference persists in `localStorage`; icon reflects the resolved appearance (Moon when OS is dark in System mode, Sun when OS is light)
+- **Theme switcher** in the top-right bar beside Help and the user menu: cycles System → Light → Dark; preference persists in `localStorage`; icon and tooltip identify the selected System, Light or Dark setting and the next choice
 - **Connection health indicator**: HTTP API Server connections poll `GET /actualhttpapiversion` every 30 seconds through the proxy. Green = healthy (with round-trip latency in the tooltip), pulsing amber = checking, solid amber = degraded (>3 s response), red = offline. Direct connections show a distinct Direct browser-session status without pinging HTTP API version endpoints. When an HTTP API Server is unreachable for two consecutive checks, a non-blocking red strip appears below the top bar and the Save button is disabled with an explanatory tooltip. The banner and disabled state clear automatically as soon as a check succeeds. Polling pauses when the browser tab is hidden and resumes immediately on tab focus.
 
 ---

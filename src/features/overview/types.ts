@@ -1,5 +1,3 @@
-import type { ComponentType } from "react";
-
 export type OverviewStatKey =
   | "transactions"
   | "accounts"
@@ -17,18 +15,6 @@ export type BudgetOverviewSnapshot = {
   stats: BudgetOverviewStats;
   budgetMode: BudgetMode | null;
   budgetingSince: string | null;
-};
-
-export type OverviewActionTone = "entity" | "tool" | "disabled";
-
-export type OverviewActionCard = {
-  id: string;
-  label: string;
-  description: string;
-  href?: string;
-  icon: ComponentType<{ className?: string }>;
-  tone: OverviewActionTone;
-  comingSoon?: boolean;
 };
 
 export type OverviewRefreshResult = {

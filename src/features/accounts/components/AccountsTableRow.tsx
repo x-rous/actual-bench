@@ -297,7 +297,7 @@ function AccountsTableRowComponent({
         )}
       </td>
 
-      <td className="w-40 px-2 py-0.5">
+      <td className="w-28 px-2 py-0.5">
         {!isNew ? (
           <Badge variant={entity.offBudget ? "status-inactive" : "status-active"} className="text-xs font-normal">
             {entity.offBudget ? "Off Budget" : "On Budget"}
@@ -327,16 +327,16 @@ function AccountsTableRowComponent({
         )}
       </td>
 
-      <td className="w-32 px-2 py-0.5">
+      <td className="w-26 px-2 py-0.5">
         <Badge variant={entity.closed ? "status-inactive" : "status-active"} className="text-xs font-normal">
           {entity.closed ? "Closed" : "Open"}
         </Badge>
       </td>
 
-      <td className="w-40 px-2 py-0.5">
+      <td className="w-32 px-2 py-0.5">
         {!isDeleted && (
           <button
-            className="inline-flex items-center rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
+            className="inline-flex items-center whitespace-nowrap rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
             onClick={() => onOpenRules(entity.id, entity.name, ruleCount)}
             title={ruleCount > 0 ? "View rules for this account" : "Create a rule for this account"}
           >

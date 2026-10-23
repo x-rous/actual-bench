@@ -116,6 +116,7 @@ function normalizeDirectAccount(raw: unknown): Account | null {
     offbudget: asBoolean(raw.offbudget),
     closed: asBoolean(raw.closed),
     account_group_id: asString(raw.account_group_id) || null,
+    ...(typeof raw.sort_order === "number" && Number.isFinite(raw.sort_order) ? { sort_order: raw.sort_order } : {}),
   } satisfies ApiAccount);
 }
 
@@ -1279,7 +1280,13 @@ function accountGroupMethods(
     getAccountGroups: async () => {
       const api = await runtimeWithGroups();
       return (await api.getAccountGroups())
-        .map((raw) => (isRecord(raw) ? normalizeAccountGroup(raw as ApiAccountGroup) : null))
+        .map((raw) => {
+          if (!isRecord(raw)) return null;
+          return normalizeAccountGroup({
+            ...raw,
+            sort_order: typeof raw.sort_order === "number" && Number.isFinite(raw.sort_order) ? raw.sort_order : null,
+          } as ApiAccountGroup);
+        })
         .filter((group): group is AccountGroup => group !== null);
     },
     createAccountGroup: async (input) => {

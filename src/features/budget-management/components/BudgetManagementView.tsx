@@ -327,33 +327,13 @@ export function BudgetManagementView() {
   if (hasError) {
     return (
       <div className="flex items-center justify-center h-full p-8 text-destructive" role="alert">
-        Failed to load budget management data. Please check your connection and try again.
+        Failed to load Budget Cockpit data. Please check your connection and try again.
       </div>
     );
   }
 
-  // Entry guard: unsaved entity changes must be resolved before entering the budget page.
-  if (hasEntityChanges) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center p-8 gap-4">
-        <div className="max-w-sm text-center space-y-2">
-          <p className="font-semibold text-sm">Unsaved changes on another page</p>
-          <p className="text-sm text-muted-foreground">
-            Please save or discard your pending changes using the top bar before
-            accessing Budget Management.
-          </p>
-          <button
-            type="button"
-            onClick={discardEntityChanges}
-            className="mt-2 px-4 py-1.5 text-sm rounded border border-border hover:bg-muted transition-colors text-destructive"
-          >
-            Discard changes and continue
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  // AppShell checks entity drafts on entry. Later Quick Create must leave
+  // the open budget workspace and its local editors mounted.
   return (
     <BudgetDisplayProvider value={{ showDecimals }}>
     <div className="flex flex-col h-full min-h-0">

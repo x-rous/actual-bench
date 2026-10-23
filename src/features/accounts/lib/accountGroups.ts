@@ -8,12 +8,18 @@ export const NEW_GROUP = "__new_group__";
 
 export const GROUP_NAME_MAX = 100;
 
-/** Groups that will exist after Save: everything not staged for deletion, by name. */
+/** Groups that will exist after Save, in Actual's sort order when available. */
 export function liveGroups(staged: StagedMap<AccountGroup>): AccountGroup[] {
-  return Object.values(staged)
+  const groups = Object.values(staged)
     .filter((entry) => !entry.isDeleted)
-    .map((entry) => entry.entity)
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    .map((entry) => entry.entity);
+  const compareByName = (a: AccountGroup, b: AccountGroup) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  if (groups.every((group) => group.sortOrder === undefined)) return groups.sort(compareByName);
+  return groups.sort((a, b) =>
+    (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER)
+    || compareByName(a, b)
+  );
 }
 
 /**

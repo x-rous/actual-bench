@@ -8,7 +8,7 @@ sidebar:
 Use Accounts to create, rename, close, reopen, import, export, and delete accounts. Review balances,
 transactions, and rule references before you remove an account.
 
-Open it from **Data Management → Accounts** (`/accounts`).
+Open it from **Budget Setup → Accounts** (`/accounts`).
 
 **Budget impact:** Account changes remain staged for review until you **Save**. Account notes save immediately.
 
@@ -17,7 +17,7 @@ Open it from **Data Management → Accounts** (`/accounts`).
 *Balance, budget treatment, status and rule references on one row - so the question "what depends on
 this account?" is answered before you touch it.*
 
-It shares the [editing model](../../getting-started/editing-and-saving/) every Data Management page
+It shares the [editing model](../../getting-started/editing-and-saving/) every Budget Setup page
 uses.
 
 ## What you get beyond Actual Budget
@@ -37,9 +37,10 @@ uses.
 2. Enter a **Name**.
 3. Optionally set an **Initial Balance** (seeds the account's starting balance on creation).
 4. Choose **on-budget** or **off-budget** with the toggle.
-5. Choose an **Account Class**, or leave it **Unclassified**. Off-budget-only classes are disabled for on-budget accounts.
-6. Select **Add Account** to stage the account and its class.
-7. Select the page’s **Save** to create it in Actual. Its class is then saved in Bench against the returned account id.
+5. Optionally choose an **Account Group**, where supported, including groups you have staged but not saved. Groups with an off-budget-only class are unavailable for on-budget accounts.
+6. Choose an **Account Class**, or leave it **Unclassified**. If the selected group has a class, the account inherits it. Off-budget-only classes are disabled for on-budget accounts.
+7. Select **Add Account** to stage the account, group assignment and its class.
+8. Select the page’s **Save** to create it in Actual. Its class is then saved in Bench against the returned account id.
 
 To create several at once, use the bottom **Add Rows** / paste flow - the **Balance** column is
 editable there so you can set each new account's initial balance inline.

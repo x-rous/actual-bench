@@ -45,3 +45,48 @@ describe("new account class selection", () => {
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Account Class" })).toHaveTextContent("Unclassified"));
   });
 });
+
+async function chooseGroup(name: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: "Account Group" }));
+  const option = await screen.findByRole("option", { name });
+  fireEvent.pointerDown(option, { pointerType: "mouse" });
+  fireEvent.pointerUp(option, { pointerType: "mouse" });
+  fireEvent.click(option);
+}
+
+describe("new account group selection", () => {
+  const groups = [{ id: "checking", name: "Checking" }, { id: "pensions", name: "Pensions" }];
+  const groupClasses = new Map([["checking", "bank"], ["pensions", "retirement"]] as const);
+
+  it("submits the selected group and inherits its class without staging an override", async () => {
+    const onSubmit = jest.fn();
+    render(<AccountFormDrawer open onOpenChange={jest.fn()} onSubmit={onSubmit} groups={groups} groupClasses={groupClasses} />);
+    fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Daily account" } });
+    await chooseGroup("Checking");
+    expect(screen.getByRole("combobox", { name: "Account Class" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Account Class" })).toHaveTextContent("Bank");
+    fireEvent.click(screen.getByRole("button", { name: "Add Account" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ groupId: "checking", accountClass: null })));
+  });
+
+  it("prevents on-budget assignment to an off-budget-only group", async () => {
+    render(<AccountFormDrawer open onOpenChange={jest.fn()} onSubmit={jest.fn()} groups={groups} groupClasses={groupClasses} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Account Group" }));
+    expect(await screen.findByRole("option", { name: /Pensions/ })).toHaveAttribute("aria-disabled", "true");
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    fireEvent.click(screen.getByRole("switch", { name: "Off Budget" }));
+    await chooseGroup("Pensions");
+    expect(screen.getByRole("switch", { name: "On Budget" })).toBeDisabled();
+  });
+
+  it("resets group selection on reopen and omits the selector when groups are unsupported", async () => {
+    const props = { onOpenChange: jest.fn(), onSubmit: jest.fn(), groups };
+    const { rerender } = render(<AccountFormDrawer open {...props} />);
+    await chooseGroup("Checking");
+    rerender(<AccountFormDrawer open={false} {...props} />);
+    rerender(<AccountFormDrawer open {...props} />);
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Account Group" })).toHaveTextContent("No group"));
+    rerender(<AccountFormDrawer open onOpenChange={props.onOpenChange} onSubmit={props.onSubmit} />);
+    expect(screen.queryByRole("combobox", { name: "Account Group" })).not.toBeInTheDocument();
+  });
+});

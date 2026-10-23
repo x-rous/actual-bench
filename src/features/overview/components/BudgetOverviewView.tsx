@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { BundleExportDialog } from "@/features/bundle/components/BundleExportDialog";
 import { BundleImportDialog } from "@/features/bundle/components/BundleImportDialog";
 import { useBudgetOverview } from "../hooks/useBudgetOverview";
@@ -19,7 +20,7 @@ export function BudgetOverviewView() {
   const [importOpen, setImportOpen] = useState(false);
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
+    <OverlayScrollArea className="flex-1">
       {/* Wider than the usual reading column on purpose: this is a launcher,
           not prose, and the cards are what the width is for. Capped rather than
           full-bleed so the stats row does not stretch into a ticker tape on an
@@ -50,6 +51,6 @@ export function BudgetOverviewView() {
 
       <BundleExportDialog open={exportOpen} onOpenChange={setExportOpen} />
       <BundleImportDialog open={importOpen} onOpenChange={setImportOpen} />
-    </div>
+    </OverlayScrollArea>
   );
 }

@@ -1,7 +1,10 @@
 import type { EffectiveAccountClass } from "@/lib/account-class";
 import { NO_CLUSTER, buildClusters, formatCents, sumBalancesCents } from "./accountClusters";
 
-const row = (id: string, groupId: string | null = null, isDeleted = false) => ({ entity: { id, groupId }, isDeleted });
+const row = (id: string, groupId: string | null = null, isDeleted = false, offBudget = false, sortOrder?: number) => ({
+  entity: { id, groupId, offBudget, sortOrder },
+  isDeleted,
+});
 const groups = [
   { id: "g2", name: "Savings" },
   { id: "g1", name: "Everyday" },
@@ -41,6 +44,24 @@ describe("buildClusters by group", () => {
 
   it("subtotals each cluster, null where there are no balances", () => {
     expect(clusters.map((c) => c.subtotalCents)).toEqual([null, 1550, null]);
+  });
+
+  it("puts groups with on-budget accounts before off-budget-only groups, then follows group sort order", () => {
+    const groupsWithSortOrder = [
+      { id: "assets", name: "Assets", sortOrder: 1 },
+      { id: "cash", name: "Cash", sortOrder: 20 },
+      { id: "checking", name: "Checking", sortOrder: 10 },
+    ];
+    const grouped = buildClusters([
+      row("asset", "assets", false, true, 1),
+      row("cash", "cash", false, false, 1),
+      row("checking", "checking", false, false, 1),
+    ], "group", {
+      groups: groupsWithSortOrder,
+      effective: new Map(),
+      balances: undefined,
+    });
+    expect(grouped.map((cluster) => cluster.label)).toEqual(["Checking", "Cash", "Assets"]);
   });
 });
 

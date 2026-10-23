@@ -1,125 +1,47 @@
+"use client";
+
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
-import {
-  ADVANCED_TOOLS_DESCRIPTION,
-  ENTITY_CARDS,
-  MANAGE_DATA_DESCRIPTION,
-  MANAGE_DATA_TITLE,
-  TOOL_CARDS,
-} from "../lib/overviewCards";
-import type { OverviewActionCard } from "../types";
+import { FeatureLinks, FeatureMaturity } from "@/components/layout/FeatureInformation";
+import { FEATURE_SECTIONS, type FeatureDefinition } from "@/lib/features/catalogue";
 
-function ActionCard({ card }: { card: OverviewActionCard }) {
-  const isDisabled = Boolean(card.comingSoon);
-  const isTool = card.tone === "tool";
-
-  const className = cn(
-    "group rounded-xl border px-4 py-3 transition-colors",
-    isDisabled
-      ? "cursor-default border-dashed border-border/50 bg-background/25 opacity-55"
-      : isTool
-        ? "border-border/70 bg-muted/14 hover:border-foreground/15 hover:bg-muted/22"
-        : "border-border/70 bg-background hover:border-foreground/15 hover:bg-accent/15"
-  );
-
-  const content = (
-    // The arrow overlays the corner rather than taking a column of its own:
-    // as a flex sibling it stole a chunk of every card's width and wrapped the
-    // descriptions early, which read as a huge right-hand margin.
-    <div className="relative flex items-start gap-3">
-      <div
-        className={cn(
-          "rounded-lg border p-2",
-          isDisabled
-            ? "border-border/40 bg-background/45"
-            : isTool
-              ? "border-border/60 bg-background/70"
-              : "border-border/70 bg-muted/25"
-        )}
-      >
-        <card.icon
-          className={cn(
-            "h-4 w-4 text-muted-foreground",
-            isDisabled && "text-muted-foreground/55"
-          )}
-        />
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 pr-5">
-          <div
-            className={cn(
-              "text-[15px] font-semibold tracking-tight text-foreground/95",
-              isDisabled && "text-foreground/60"
-            )}
-          >
-            {card.label}
-          </div>
-          {isDisabled && (
-            <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/80">
-              Planned
-            </span>
-          )}
-        </div>
-        <p
-          className={cn(
-            "mt-1 min-h-[3.75rem] text-[13px] leading-5 text-muted-foreground/85",
-            isDisabled && "text-muted-foreground/70"
-          )}
-        >
-          {card.description}
-        </p>
-      </div>
-
-      {!isDisabled && (
-        <ArrowRight className="absolute right-0 top-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform group-hover:translate-x-0.5" />
-      )}
-    </div>
-  );
-
-  if (!card.href || isDisabled) {
-    return <div className={className}>{content}</div>;
-  }
-
+function FeatureTile({ feature }: { feature: FeatureDefinition }) {
+  const Icon = feature.icon;
   return (
-    <Link href={card.href} className={className}>
-      {content}
-    </Link>
+    <article className="group/card relative flex min-h-[88px] min-w-0 flex-col rounded-lg border border-border/70 bg-background shadow-xs transition-colors has-[a[data-feature-link]:hover]:border-ring/50 has-[a[data-feature-link]:hover]:bg-accent/30 has-[a[data-feature-link]:active]:bg-accent/60">
+      <div className="flex items-center gap-2 px-3.5 pt-2">
+        <Link
+          href={feature.href}
+          data-feature-link
+          aria-labelledby={`feature-title-${feature.id}`}
+          aria-describedby={`feature-description-${feature.id}`}
+          className="group flex min-w-0 flex-1 items-center gap-2 after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-offset-2 focus-visible:after:ring-offset-background"
+        >
+          <Icon className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <h3 id={`feature-title-${feature.id}`} className="min-w-0 text-sm font-semibold leading-5">{feature.label}</h3>
+          <FeatureMaturity feature={feature} />
+        </Link>
+        <div className="pointer-events-none relative z-10 shrink-0 opacity-0 group-hover/card:pointer-events-auto group-hover/card:opacity-100 group-focus-within/card:pointer-events-auto group-focus-within/card:opacity-100">
+          <FeatureLinks feature={feature} />
+        </div>
+      </div>
+      <p id={`feature-description-${feature.id}`} className="mt-1 px-3.5 pb-3 text-[13px] leading-[1.125rem] text-muted-foreground">{feature.description}</p>
+    </article>
   );
 }
 
 export function OverviewNavigationSection() {
   return (
-    <div className="space-y-6">
-      <section className="space-y-3 pt-1">
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold tracking-tight">{MANAGE_DATA_TITLE}</h2>
-          <p className="text-[13px] leading-5 text-muted-foreground/80">{MANAGE_DATA_DESCRIPTION}</p>
-        </div>
-        {/* Four across at desk width, five on a large display: sixteen cards in
-            three columns pushed the second half of the page below the fold, and
-            a launcher you have to scroll to use is a slower version of the
-            sidebar it duplicates. */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {ENTITY_CARDS.map((card) => (
-            <ActionCard key={card.id} card={card} />
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-3 pt-1">
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold tracking-tight">Advanced Tools</h2>
-          <p className="text-[13px] leading-5 text-muted-foreground/80">{ADVANCED_TOOLS_DESCRIPTION}</p>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {TOOL_CARDS.map((card) => (
-            <ActionCard key={card.id} card={card} />
-          ))}
-        </div>
-      </section>
-    </div>
+    <section className="space-y-5" aria-label="Feature directory">
+      {FEATURE_SECTIONS.map((section) => {
+        return (
+          <section key={section.id} aria-labelledby={`feature-group-${section.id}`}>
+            <h2 id={`feature-group-${section.id}`} className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">{section.label}</h2>
+            <div className="grid gap-3 md:grid-cols-2 min-[100rem]:grid-cols-3">
+              {section.items.map((feature) => <FeatureTile key={feature.id} feature={feature} />)}
+            </div>
+          </section>
+        );
+      })}
+    </section>
   );
 }

@@ -15,6 +15,8 @@ export type Account = BaseEntity & {
   name: string;
   offBudget: boolean;
   closed: boolean;
+  /** Actual's ordering within the account list. */
+  sortOrder?: number;
   /** Whole-currency-unit balance to seed on creation. Create-time only — never returned by the API. */
   initialBalance?: number;
   /**
@@ -27,9 +29,11 @@ export type Account = BaseEntity & {
 
 // ─── Account Group ───────────────────────────────────────────────────────────
 
-/** A single-level, named grouping of accounts. Order is the server's list order. */
+/** A single-level, named grouping of accounts. */
 export type AccountGroup = BaseEntity & {
   name: string;
+  /** Actual's ordering among account groups. */
+  sortOrder?: number;
 };
 
 // ─── Payee ───────────────────────────────────────────────────────────────────

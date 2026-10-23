@@ -7,7 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { isAccountClassAllowed } from "@/lib/account-class";
+import type { AccountGroup } from "@/types/entities";
+import { NO_GROUP, NEW_GROUP } from "../lib/accountGroups";
+import { buildGroupOptions } from "./AccountGroupCell";
+import { isAccountClassAllowed, type AccountClass } from "@/lib/account-class";
 import { buildAccountClassGroups, UNCLASSIFIED, UNCLASSIFIED_OPTIONS } from "./AccountClassCell";
 import {
   Sheet,
@@ -23,9 +26,12 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: AccountFormValues) => void;
+  groups?: AccountGroup[];
+  groupClasses?: ReadonlyMap<string, AccountClass>;
+  groupsReady?: boolean;
 };
 
-export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
+export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupClasses, groupsReady = true }: Props) {
   const isEditing = false;
 
   const {
@@ -33,6 +39,7 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
     handleSubmit,
     reset,
     setValue,
+    setError,
     formState: { errors, isSubmitting },
     control,
   } = useForm<AccountFormValues>({
@@ -42,20 +49,30 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
       offBudget: false,
       initialBalance: undefined,
       accountClass: null,
+      groupId: null,
     },
   });
 
   useEffect(() => {
-    if (open) reset({ name: "", offBudget: false, initialBalance: undefined, accountClass: null });
+    if (open) reset({ name: "", offBudget: false, initialBalance: undefined, accountClass: null, groupId: null });
   }, [open, reset]);
 
   function handleFormSubmit(values: AccountFormValues) {
-    onSubmit(values);
+    if (values.groupId && (!groups?.some((group) => group.id === values.groupId) ||
+      !isAccountClassAllowed(groupClasses?.get(values.groupId), values.offBudget))) {
+      setError("groupId", { message: "Choose an available group that supports this budget type." });
+      return;
+    }
+    onSubmit({ ...values, accountClass: inheritedClass ? null : values.accountClass });
     onOpenChange(false);
   }
 
   const offBudget = useWatch({ control, name: "offBudget" });
   const accountClass = useWatch({ control, name: "accountClass" });
+
+  const groupId = useWatch({ control, name: "groupId" });
+  const inheritedClass = groupId ? groupClasses?.get(groupId) : undefined;
+  const effectiveClass = inheritedClass ?? accountClass;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -114,8 +131,8 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
                 type="button"
                 role="switch"
                 aria-checked={!offBudget}
-                disabled={!isAccountClassAllowed(accountClass, false)}
-                title={!isAccountClassAllowed(accountClass, false) ? "Off-budget accounts only" : undefined}
+                disabled={!isAccountClassAllowed(effectiveClass, false)}
+                title={!isAccountClassAllowed(effectiveClass, false) ? "Off-budget accounts only" : undefined}
                 onClick={() => setValue("offBudget", false)}
                 className="flex h-8 flex-1 items-center justify-center rounded-md border text-sm font-medium transition-colors aria-checked:bg-primary aria-checked:text-primary-foreground aria-not-checked:border-border aria-not-checked:bg-background aria-not-checked:text-foreground"
               >
@@ -136,15 +153,36 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
             </p>
           </div>
 
+          {groups && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="account-group">Account Group</Label>
+              <Select
+                id="account-group"
+                value={groupId ?? NO_GROUP}
+                disabled={!groupsReady}
+                options={buildGroupOptions(groups, groupClasses, !offBudget).filter((option) => option.value !== NEW_GROUP)}
+                onValueChange={(next) => {
+                  if (!isAccountClassAllowed(groupClasses?.get(next), offBudget)) return;
+                  setValue("groupId", next === NO_GROUP ? null : next, { shouldDirty: true, shouldValidate: true });
+                  if (groupClasses?.has(next)) setValue("accountClass", null, { shouldValidate: true });
+                }}
+              />
+              {!groupsReady && <p className="text-xs text-muted-foreground">Account classes must load before choosing a group.</p>}
+              {errors.groupId && <p className="text-xs text-destructive" role="alert">{errors.groupId.message}</p>}
+            </div>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="account-class">Account Class</Label>
             <Select
               id="account-class"
-              value={accountClass ?? UNCLASSIFIED}
+              value={effectiveClass ?? UNCLASSIFIED}
+              disabled={!!inheritedClass}
               options={UNCLASSIFIED_OPTIONS}
               groups={buildAccountClassGroups(!offBudget)}
               onValueChange={(next) => setValue("accountClass", next === UNCLASSIFIED ? null : next as NonNullable<AccountFormValues["accountClass"]>, { shouldDirty: true, shouldValidate: true })}
             />
+            {inheritedClass && <p className="text-xs text-muted-foreground">Inherited from the selected account group.</p>}
             {errors.accountClass && <p className="text-xs text-destructive" role="alert">{errors.accountClass.message}</p>}
           </div>
 
@@ -154,7 +192,7 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit }: Props) {
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="submit" form="account-form" disabled={isSubmitting}>
+          <Button type="submit" form="account-form" disabled={isSubmitting || (!!groupId && !groupsReady)}>
             {isEditing ? "Apply Changes" : "Add Account"}
           </Button>
         </SheetFooter>

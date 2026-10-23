@@ -1,10 +1,12 @@
 "use client";
 
 import Image from "next/image";
+import { createPortal } from "react-dom";
+import { usePendingPanel } from "./PendingPanelContext";
 import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Save, X, Undo2, Redo2, RefreshCw, Search } from "lucide-react";
+import { Save, X, Undo2, Redo2, RefreshCw, Search, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -58,6 +60,11 @@ import {
 import type { BudgetCellKey, StagedBudgetEdit, StagedHold } from "@/features/budget-management/types";
 import { clearBudgetQueries } from "@/lib/queryClient";
 import { hasUnsavedDrafts } from "@/lib/unsavedDrafts";
+import { getFeatureForPath } from "@/lib/features/catalogue";
+import { getFeatureEntryState } from "@/lib/features/pendingChanges";
+import { HelpMenu } from "./HelpMenu";
+import { ThemeToggle } from "./ThemeToggle";
+import { FeatureInformation, FeatureMaturity } from "./FeatureInformation";
 
 type PendingAction =
   | { kind: "switch"; id: string }
@@ -65,6 +72,7 @@ type PendingAction =
   | { kind: "addConnection" }
   | { kind: "disconnect" }
   | { kind: "disconnectAll" }
+  | { kind: "clearAllData" }
   | { kind: "signOut" };
 
 /** A thin divider between groups of top-bar controls. */
@@ -112,8 +120,10 @@ function TopBarVersionChip({
 }
 
 export function TopBar() {
+  const { actionsTarget } = usePendingPanel();
   const router = useRouter();
   const pathname = usePathname();
+  const feature = getFeatureForPath(pathname);
   const queryClient = useQueryClient();
   const { data: authStatus } = useAuthStatus();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -172,19 +182,19 @@ export function TopBar() {
   const { isSaving: isBudgetSaving } = useBudgetSave();
 
   // Route-aware resolution
-  const isBudgetPage = pathname?.startsWith("/budget-management") ?? false;
-  const hasChanges = isBudgetPage ? budgetHasChanges : stagedHasChanges;
-  const canUndo = isBudgetPage ? budgetCanUndo : stagedCanUndo;
-  const canRedo = isBudgetPage ? budgetCanRedo : stagedCanRedo;
-  const isSaving = isBudgetPage ? (isBudgetSaving || budgetSaveEdits !== null) : isEntitySaving;
+  const { usesBudgetActions, showStagedActions } = getFeatureEntryState(feature, stagedHasChanges, budgetHasChanges);
+  const hasChanges = usesBudgetActions ? budgetHasChanges : stagedHasChanges;
+  const canUndo = usesBudgetActions ? budgetCanUndo : stagedCanUndo;
+  const canRedo = usesBudgetActions ? budgetCanRedo : stagedCanRedo;
+  const isSaving = isEntitySaving || isBudgetSaving || budgetSaveEdits !== null;
   const saveDisabled =
     !hasChanges ||
     isSaving ||
     isOffline ||
-    (isBudgetPage && budgetSaveReviewEdits !== null);
+    (usesBudgetActions && budgetSaveReviewEdits !== null);
 
   function handleDiscardAll() {
-    if (isBudgetPage) {
+    if (usesBudgetActions) {
       budgetDiscardAll();
     } else {
       stagedDiscardAll();
@@ -259,6 +269,12 @@ export function TopBar() {
       clearAll();
       clearServers();
       router.push("/connect");
+    } else if (action.kind === "clearAllData") {
+      handleDiscardAll();
+      queryClient.clear();
+      clearAll();
+      clearServers();
+      router.push("/connect");
     } else if (action.kind === "signOut") {
       await signOut({ beforeLeave: handleDiscardAll });
     }
@@ -298,7 +314,7 @@ export function TopBar() {
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
   async function handleSave() {
-    if (isBudgetPage) {
+    if (usesBudgetActions) {
       const { edits, holds } = useBudgetEditsStore.getState();
       const editSnapshot = { ...edits };
       const holdSnapshot = { ...holds };
@@ -488,13 +504,13 @@ export function TopBar() {
 
         </div>
 
-        {/* Right: search | undo/redo, refresh, discard, save | account */}
+        {/* Right: search, refresh, help, theme and account */}
         <div className="flex items-center gap-1">
           {activeInstance && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 justify-start gap-1.5 sm:w-36 text-xs text-muted-foreground"
+              className="h-7 justify-start gap-1.5 sm:w-28 lg:w-36 text-xs text-muted-foreground"
               onClick={openSearch}
               title={`Search (${searchShortcutLabel})`}
             >
@@ -505,28 +521,13 @@ export function TopBar() {
               </kbd>
             </Button>
           )}
+          {activeInstance && feature && (
+            <>
+              <FeatureMaturity feature={feature} />
+              <FeatureInformation key={feature.id} feature={feature} />
+            </>
+          )}
           {activeInstance && <TopBarSeparator />}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            disabled={!canUndo}
-            onClick={isBudgetPage ? budgetUndo : stagedUndo}
-            title="Undo"
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            disabled={!canRedo}
-            onClick={isBudgetPage ? budgetRedo : stagedRedo}
-            title="Redo"
-          >
-            <Redo2 className="h-3.5 w-3.5" />
-          </Button>
-
           <Button
             variant="ghost"
             size="icon"
@@ -534,54 +535,87 @@ export function TopBar() {
             disabled={isRefreshing}
             onClick={handleRefresh}
             title="Refresh data from server"
+            aria-label="Refresh data from server"
           >
             <RefreshCw className={`h-3.5 w-3.5${isRefreshing ? " animate-spin" : ""}`} />
+          </Button>
+          <HelpMenu />
+          <ThemeToggle />
+          {authStatus?.authMode === "password" && <TopBarSeparator />}
+          <AccountMenu
+            onSignOut={() => requestAction({ kind: "signOut" })}
+            onClearAllData={() => requestAction({ kind: "clearAllData" })}
+          />
+        </div>
+      </header>
+
+      {actionsTarget && (showStagedActions || canUndo || canRedo) && createPortal(
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            disabled={!canUndo}
+            onClick={usesBudgetActions ? budgetUndo : stagedUndo}
+            title="Undo"
+            aria-label="Undo"
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            disabled={!canRedo}
+            onClick={usesBudgetActions ? budgetRedo : stagedRedo}
+            title="Redo"
+            aria-label="Redo"
+          >
+            <Redo2 className="h-3.5 w-3.5" />
           </Button>
 
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs"
+            className="h-6 w-6 p-0 text-xs"
+            title="Discard all pending changes"
+            aria-label="Discard"
             disabled={!hasChanges}
             onClick={() => {
               handleDiscardAll();
-              if (!isBudgetPage) void queryClient.resetQueries();
+              if (!usesBudgetActions) void queryClient.resetQueries();
             }}
           >
-            <X className="mr-1 h-3.5 w-3.5" />
-            Discard
+            <X className="h-3.5 w-3.5" />
           </Button>
 
-          {isBudgetPage && budgetSaveReviewSkipped && (
+          {usesBudgetActions && budgetSaveReviewSkipped && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs"
+              className="h-6 w-6 p-0 text-xs"
+              aria-label="Reset budget save review"
               onClick={handleResetBudgetSaveReview}
               title="Show the budget save review dialog before saving again"
             >
-              Reset review
+              <RotateCcw className="h-3.5 w-3.5" />
             </Button>
           )}
-
           <Button
             size="sm"
             className={cn(
-              "h-7 text-xs bg-action text-action-foreground hover:bg-action-hover",
-              hasChanges && !isSaving && "ring-2 ring-offset-1 ring-action/50"
+              "h-7 px-2 text-xs bg-action text-action-foreground hover:bg-action-hover"
             )}
             disabled={saveDisabled}
             onClick={handleSave}
-            title={isOffline ? "Cannot save - server is unreachable" : undefined}
+            title={isOffline ? "Cannot save - server is unreachable" : takingRecoveryPoint ? "Taking a recovery point before saving" : isSaving ? "Saving changes" : "Save changes"}
+            aria-label={takingRecoveryPoint ? "Backing up before saving" : isSaving ? "Saving changes" : "Save"}
           >
-            <Save className="mr-1 h-3.5 w-3.5" />
-            {takingRecoveryPoint ? "Backing up…" : isSaving ? "Saving…" : "Save"}
+            {takingRecoveryPoint || isSaving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
+            Save
           </Button>
-          {/* AccountMenu renders nothing unless Bench asks for a password. */}
-          {authStatus?.authMode === "password" && <TopBarSeparator />}
-          <AccountMenu onSignOut={() => requestAction({ kind: "signOut" })} />
-        </div>
-      </header>
+        </>, actionsTarget
+      )}
 
       {budgetSaveReviewEdits !== null && (
         <BudgetSaveReviewDialog

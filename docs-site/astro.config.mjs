@@ -86,42 +86,44 @@ export default defineConfig({
 					],
 				},
 				{
-					// The app's Data Management group, in its order.
-					label: 'Data Management',
+					label: 'Budget Setup',
 					items: [
-						{ label: 'Budget', link: '/user-guide/budget-management/' },
-						{ label: 'Rules', link: '/user-guide/rules/' },
 						{ label: 'Accounts', link: '/user-guide/accounts/' },
-						{ label: 'Payees', link: '/user-guide/payees/' },
 						{ label: 'Categories', link: '/user-guide/categories/' },
-						{ label: 'Schedules', link: '/user-guide/schedules/' },
+						{ label: 'Payees', link: '/user-guide/payees/' },
 						{ label: 'Tags', link: '/user-guide/tags/' },
+						{ label: 'Rules', link: '/user-guide/rules/' },
+						{ label: 'Schedules', link: '/user-guide/schedules/' },
 					],
 				},
 				{
-					// The app's Tools group, in its order — including the two
-					// adjacencies the app's own sidebar carries: FX Rates directly
-					// under Budget File Sync, because it exists to serve
-					// cross-currency syncing and nobody comes to it on its own, and
-					// Bank Sync directly under Automations, because that is the engine
-					// it runs on. Neither is indented; the app does not indent them,
-					// and a headline feature should not read as a footnote to one.
-					label: 'Tools',
+					label: 'Financial Management',
 					items: [
-						{ label: 'Rule Diagnostics', link: '/user-guide/rule-diagnostics/' },
-						{ label: 'Payee Cleanup', link: '/user-guide/payee-cleanup/' },
+						{ label: 'Budget Cockpit', link: '/user-guide/budget-management/' },
+						{ label: 'Credit Cards', link: '/user-guide/credit-cards/' },
+						{ label: 'Loans & Debt', link: '/user-guide/assets-debt/' },
 						{ label: 'Bank Reconciliation', link: '/user-guide/bank-reconciliation/' },
 						{ label: 'How Matching Works', link: '/user-guide/reconciliation-matching/' },
-						{ label: 'Budget File Sync', link: '/user-guide/budget-sync/' },
 						{ label: 'FX Rates', link: '/user-guide/fx-rates/' },
-						{ label: 'Assets & Debt', link: '/user-guide/assets-debt/' },
-						{ label: 'Credit Cards', link: '/user-guide/credit-cards/' },
+					],
+				},
+				{
+					label: 'Sync & Automations',
+					items: [
+						{ label: 'Budget File Sync', link: '/user-guide/budget-sync/' },
 						{ label: 'Backups', link: '/user-guide/backups/' },
 						{ label: 'Automations', link: '/user-guide/automations/' },
 						{ label: 'Bank Sync', link: '/user-guide/bank-sync/' },
+					],
+				},
+				{
+					label: 'Analyze & Cleanup',
+					items: [
 						{ label: 'ActualQL Queries', link: '/user-guide/actualql/' },
-						{ label: 'Data Browser', link: '/user-guide/data-browser/' },
+						{ label: 'Payee Cleanup', link: '/user-guide/payee-cleanup/' },
+						{ label: 'Rule Diagnostics', link: '/user-guide/rule-diagnostics/' },
 						{ label: 'Budget File Health', link: '/user-guide/budget-file-health/' },
+						{ label: 'Data Browser', link: '/user-guide/data-browser/' },
 					],
 				},
 				{

@@ -1,0 +1,343 @@
+import type { ComponentType } from "react";
+import {
+  ArrowLeftRight, Banknote, Calendar, ClipboardCheck, CreditCard, Database,
+  DatabaseBackup, HandCoins, Landmark, LayoutList, ScrollText, ShieldCheck,
+  Sparkles, Stethoscope, Tag, Terminal, Timer, Users, Wallet,
+} from "lucide-react";
+
+/** Presentation metadata only. Existing services own capabilities and writes. */
+export type FeatureDefinition = {
+  id: string;
+  label: string;
+  href: string;
+  groupId: FeatureGroupId;
+  icon: ComponentType<{ className?: string }>;
+  description: string;
+  /** What this feature can change in Actual, not its internal Bench persistence. */
+  accessSummary: string;
+  maturity: "stable" | "experimental";
+  docsUrl: string;
+  feedbackUrl?: string;
+  /** Visibility of existing staged-Actual controls; never selects a save handler. */
+  usesStagedActions: boolean;
+  /** Global panel shown alongside this feature; local workflow panels are separate. */
+  pendingChangesPanel: "entities" | "budget" | "none";
+  /** Resolve incompatible global drafts before mounting the workspace. */
+  requiresSavedData: boolean;
+};
+
+export const FEATURE_GROUPS = [
+  { id: "budget-structure", label: "Budget Setup" },
+  { id: "financial-management", label: "Financial Management" },
+  { id: "sync-automations", label: "Sync & Automations" },
+  { id: "analyze-cleanup", label: "Analyze & Cleanup" },
+] as const;
+
+export type FeatureGroupId = (typeof FEATURE_GROUPS)[number]["id"];
+
+export const DOCS_BASE_URL = "https://x-rous.github.io/actual-bench/";
+const ISSUE_BASE_URL = "https://github.com/x-rous/actual-bench/issues/";
+
+/** Array order is the fixed navigation/directory order within each group. */
+export const FEATURES: readonly FeatureDefinition[] = [
+  {
+    id: "accounts",
+    label: "Accounts",
+    href: "/accounts",
+    groupId: "budget-structure",
+    icon: Landmark,
+    description: "Import and export accounts in bulk, classify assets and debts, compare grouped balances, sync connected banks, and check dependencies.",
+    accessSummary: "Create, edit and delete accounts.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/accounts/`,
+    feedbackUrl: `${ISSUE_BASE_URL}393`,
+    usesStagedActions: true,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "categories",
+    label: "Categories",
+    href: "/categories",
+    groupId: "budget-structure",
+    icon: LayoutList,
+    description: "Import or export your entire category hierarchy, inspect linked rules, and see the impact before deleting groups.",
+    accessSummary: "Create, edit and delete categories and groups.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/categories/`,
+    feedbackUrl: `${ISSUE_BASE_URL}393`,
+    usesStagedActions: true,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "payees",
+    label: "Payees",
+    href: "/payees",
+    groupId: "budget-structure",
+    icon: Users,
+    description: "Import and merge payees in bulk, inspect linked rules, and review undoable changes together before saving.",
+    accessSummary: "Create, edit, merge and delete payees.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/payees/`,
+    feedbackUrl: `${ISSUE_BASE_URL}393`,
+    usesStagedActions: true,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "tags",
+    label: "Tags",
+    href: "/tags",
+    groupId: "budget-structure",
+    icon: Tag,
+    description: "Set up tags through CSV, edit colors and descriptions inline, and check rule references before bulk deletion.",
+    accessSummary: "Create, edit and delete tags.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/tags/`,
+    feedbackUrl: `${ISSUE_BASE_URL}393`,
+    usesStagedActions: true,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "rules",
+    label: "Rules",
+    href: "/rules",
+    groupId: "budget-structure",
+    icon: ScrollText,
+    description: "Manage your full rule set with spreadsheet import/export, rule merging, and editors for templates, formulas and transaction splits.",
+    accessSummary: "Create, edit, merge and delete rules.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/rules/`,
+    feedbackUrl: `${ISSUE_BASE_URL}199`,
+    usesStagedActions: true,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "schedules",
+    label: "Schedules",
+    href: "/schedules",
+    groupId: "budget-structure",
+    icon: Calendar,
+    description: "Set up schedules through CSV, inspect their linked rules, and review multiple changes together before saving.",
+    accessSummary: "Create, edit and delete schedules.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/schedules/`,
+    feedbackUrl: `${ISSUE_BASE_URL}393`,
+    usesStagedActions: true,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "budget-management",
+    label: "Budget Cockpit",
+    href: "/budget-management",
+    groupId: "financial-management",
+    icon: Wallet,
+    description: "Review twelve months in a single view, compare plans with actuals, and update many budget cells through spreadsheet-style editing.",
+    accessSummary: "Edit budget amounts, transfers, holds, carryover and notes.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/budget-management/`,
+    feedbackUrl: `${ISSUE_BASE_URL}196`,
+    usesStagedActions: true,
+    pendingChangesPanel: "budget",
+    requiresSavedData: true,
+  },
+  {
+    id: "reconciliation",
+    label: "Bank Reconciliation",
+    href: "/reconciliation",
+    groupId: "financial-management",
+    icon: ClipboardCheck,
+    description: "Import transactions from bank statements, including PDFs, and reconcile them row by row with Actual. Review changes before applying.",
+    accessSummary: "Create, edit and delete transactions on Apply.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/bank-reconciliation/`,
+    feedbackUrl: `${ISSUE_BASE_URL}200`,
+    usesStagedActions: false,
+    pendingChangesPanel: "none",
+    requiresSavedData: true,
+  },
+  {
+    id: "credit-cards",
+    label: "Credit Cards",
+    href: "/credit-cards",
+    groupId: "financial-management",
+    icon: CreditCard,
+    description: "Track card balances, payments, credit utilization and instalment plans, and review statements without changing your Actual transactions.",
+    accessSummary: "Read-only accounts and transactions.",
+    maturity: "experimental",
+    docsUrl: `${DOCS_BASE_URL}user-guide/credit-cards/`,
+    feedbackUrl: `${ISSUE_BASE_URL}398`,
+    usesStagedActions: false,
+    pendingChangesPanel: "none",
+    requiresSavedData: true,
+  },
+  {
+    id: "loans",
+    label: "Loans & Debt",
+    href: "/loans",
+    groupId: "financial-management",
+    icon: HandCoins,
+    description: "Explore repayment options, track loans against Actual transactions, and see how interest, extra payments and offsets affect payoff.",
+    accessSummary: "Create and change transactions through approved repayment workflows.",
+    maturity: "experimental",
+    docsUrl: `${DOCS_BASE_URL}user-guide/assets-debt/`,
+    feedbackUrl: `${ISSUE_BASE_URL}399`,
+    usesStagedActions: false,
+    pendingChangesPanel: "none",
+    requiresSavedData: true,
+  },
+  {
+    id: "fx-rates",
+    label: "FX Rates",
+    href: "/fx-rates",
+    groupId: "financial-management",
+    icon: Banknote,
+    description: "Check exchange rates, fill missing dates or set your own rates for syncing budgets in different currencies.",
+    accessSummary: "No direct changes to Actual. Rates are used by Budget File Sync.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/fx-rates/`,
+    feedbackUrl: `${ISSUE_BASE_URL}197`,
+    usesStagedActions: false,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "sync",
+    label: "Budget File Sync",
+    href: "/sync",
+    groupId: "sync-automations",
+    icon: ArrowLeftRight,
+    description: "Auto sync transactions, payees and categories between budget files. Preview changes before applying them, or automate safe changes.",
+    accessSummary: "Copy transactions, payees and categories; review transaction updates and deletions.",
+    maturity: "experimental",
+    docsUrl: `${DOCS_BASE_URL}user-guide/budget-sync/`,
+    feedbackUrl: `${ISSUE_BASE_URL}197`,
+    usesStagedActions: false,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "backups",
+    label: "Backups",
+    href: "/backups",
+    groupId: "sync-automations",
+    icon: DatabaseBackup,
+    description: "Keep verified backups of your budget and Bench settings, choose where they’re stored, and check what you could recover.",
+    accessSummary: "Read-only budget export.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/backups/`,
+    feedbackUrl: `${ISSUE_BASE_URL}225`,
+    usesStagedActions: false,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "automations",
+    label: "Automations",
+    href: "/automations",
+    groupId: "sync-automations",
+    icon: Timer,
+    description: "Schedule bank syncs, backups and budget-file syncs. Review run history, investigate failures and follow up on flagged work.",
+    accessSummary: "Scheduled jobs can import transactions or apply safe sync changes.",
+    maturity: "experimental",
+    docsUrl: `${DOCS_BASE_URL}user-guide/automations/`,
+    feedbackUrl: `${ISSUE_BASE_URL}224`,
+    usesStagedActions: false,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "query",
+    label: "ActualQL Queries",
+    href: "/query",
+    groupId: "analyze-cleanup",
+    icon: Terminal,
+    description: "Investigate questions beyond standard screens with query examples, explanations, reusable queries across budgets and multiple result views.",
+    accessSummary: "Read-only budget queries.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/actualql/`,
+    feedbackUrl: `${ISSUE_BASE_URL}198`,
+    usesStagedActions: false,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "payees-cleanup",
+    label: "Payee Cleanup",
+    href: "/payees/cleanup",
+    groupId: "analyze-cleanup",
+    icon: Sparkles,
+    description: "Find duplicate payees, remove unused ones, and create rules that match bank descriptions to the right payee.",
+    accessSummary: "Rename, merge or delete payees; create or extend assignment rules on Save.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/payee-cleanup/`,
+    feedbackUrl: `${ISSUE_BASE_URL}215`,
+    usesStagedActions: true,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "rules-diagnostics",
+    label: "Rule Diagnostics",
+    href: "/rules/diagnostics",
+    groupId: "analyze-cleanup",
+    icon: ShieldCheck,
+    description: "Find conflicting, duplicate or broken rules, understand each problem, and edit or merge rules directly from the findings.",
+    accessSummary: "Edit rules and linked schedules through explicitly staged fixes.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/rule-diagnostics/`,
+    feedbackUrl: `${ISSUE_BASE_URL}199`,
+    usesStagedActions: true,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "budget-diagnostics",
+    label: "Budget File Health",
+    href: "/budget-diagnostics",
+    groupId: "analyze-cleanup",
+    icon: Stethoscope,
+    description: "Check your budget file for data problems and database errors, review findings, and export a report without changing anything.",
+    accessSummary: "Read-only budget inspection.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/budget-file-health/`,
+    usesStagedActions: false,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+  {
+    id: "data-browser",
+    label: "Data Browser",
+    href: "/data-browser",
+    groupId: "analyze-cleanup",
+    icon: Database,
+    description: "Browse your budget’s database tables, inspect linked records and export data to CSV without changing the budget.",
+    accessSummary: "Read-only tables and rows.",
+    maturity: "stable",
+    docsUrl: `${DOCS_BASE_URL}user-guide/data-browser/`,
+    feedbackUrl: `${ISSUE_BASE_URL}401`,
+    usesStagedActions: false,
+    pendingChangesPanel: "entities",
+    requiresSavedData: false,
+  },
+];
+
+export const FEATURE_SECTIONS = FEATURE_GROUPS.map((group) => ({
+  ...group,
+  items: FEATURES.filter((feature) => feature.groupId === group.id),
+}));
+
+/** Longest segment-boundary match keeps standalone tools distinct from parents. */
+export function getFeatureForPath(pathname: string | null): FeatureDefinition | undefined {
+  if (!pathname) return undefined;
+  return FEATURES.filter(
+    (feature) => pathname === feature.href || pathname.startsWith(feature.href + "/")
+  ).reduce<FeatureDefinition | undefined>(
+    (best, feature) => !best || feature.href.length > best.href.length ? feature : best,
+    undefined
+  );
+}
