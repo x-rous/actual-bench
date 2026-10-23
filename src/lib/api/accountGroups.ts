@@ -10,7 +10,11 @@ import type { AccountGroup } from "@/types/entities";
 
 export function normalizeAccountGroup(raw: ApiAccountGroup): AccountGroup | null {
   if (!raw.id) return null;
-  return { id: raw.id, name: raw.name };
+  return {
+    id: raw.id,
+    name: raw.name,
+    ...(typeof raw.sort_order === "number" ? { sortOrder: raw.sort_order } : {}),
+  };
 }
 
 export async function getAccountGroups(connection: ConnectionInstance): Promise<AccountGroup[]> {

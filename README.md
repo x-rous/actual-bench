@@ -63,7 +63,7 @@ No setup, no account. A year of household Envelope and Tracking budgets to poke 
 
 **Plan and edit**
 
-- **[Budget Management](https://x-rous.github.io/actual-bench/user-guide/budget-management/)** - twelve months on one screen, with range selection, copy/paste from a spreadsheet, fill actions, undo/redo, and a draft panel that shows every pending change before you save.
+- **[Budget Cockpit](https://x-rous.github.io/actual-bench/user-guide/budget-management/)** - twelve months on one screen, with range selection, copy/paste from a spreadsheet, fill actions, undo/redo, and a draft panel that shows every pending change before you save.
 - **[Rules](https://x-rous.github.io/actual-bench/user-guide/rules/)** - the whole rule set on one page, with every reference shown as the payee, category or account it names instead of an id. Split rules across categories, use templates and formulas, merge duplicates, and round-trip the lot through CSV.
 - **[Entity admin](https://x-rous.github.io/actual-bench/user-guide/accounts/)** - accounts, payees, categories, schedules and tags, with inline editing, filters, bulk actions, CSV import/export, and delete dialogs that tell you what a deletion would take with it.
 - **[Bundle export / import](https://x-rous.github.io/actual-bench/getting-started/bundle-export-import/)** - a budget's whole structure in one ZIP. Build a reusable template, seed a new budget from an old one, or take a snapshot before a cleanup you might regret.
@@ -71,7 +71,7 @@ No setup, no account. A year of household Envelope and Tracking budgets to poke 
 **Clean up and audit**
 
 - **[Payee Cleanup](https://x-rous.github.io/actual-bench/user-guide/payee-cleanup/)** - reviews possible duplicate payees, finds payees whose bank text needs an assignment rule, and lets you remove unused payees through a staged cleanup plan.
-- **[Rule Diagnostics](https://x-rous.github.io/actual-bench/user-guide/rule-diagnostics/)** - reads your rules as a set: what shadows what, what can never fire, what duplicates what. Read-only; it never edits your budget.
+- **[Rule Diagnostics](https://x-rous.github.io/actual-bench/user-guide/rule-diagnostics/)** - reads your rules as a set: what shadows what, what can never fire, what duplicates what. Analysis does not change your budget; fixes you explicitly start use the normal staged Save.
 - **[Budget File Health](https://x-rous.github.io/actual-bench/user-guide/budget-file-health/)** and **[Data Browser](https://x-rous.github.io/actual-bench/user-guide/data-browser/)** - open a budget snapshot in your browser, run health checks, and browse its tables directly.
 - **[ActualQL](https://x-rous.github.io/actual-bench/user-guide/actualql/)** - a query console with saved queries, plain-English explain, and table, JSON, scalar and tree result views.
 

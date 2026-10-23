@@ -12,7 +12,7 @@ uses **Save** for staged edits and **Apply** for a reviewed workflow, but both f
 
 | Where you work | Review step | Confirmation |
 |---|---|---|
-| Data Management and Budget | Edits collect in **Draft Changes** | **Save** |
+| Budget Setup and Budget Cockpit | Edits collect in **Changes** | **Save** |
 | Bank Reconciliation and Budget File Sync | A session or preview lists planned changes | **Apply** |
 
 Check the active budget and review the listed changes before you confirm either action.
@@ -28,7 +28,7 @@ version-locked. Avoid changing the same transactions in Actual while reconciliat
 
 ## Staged work
 
-New, edited and deleted rows are marked as you go. The **Draft Changes** panel and the top bar count
+New, edited and deleted rows are marked as you go. The **Changes** panel counts
 what is waiting. **Save** writes the draft. **Discard** throws it away and re-reads the server. Undo
 and redo work on the draft only - once something is saved, undo cannot reach it.
 
@@ -38,10 +38,10 @@ A draft belongs to one budget. With several open, check which one is active befo
 
 - **Notes** save the moment you confirm the editor. Discarding the rest of your draft will not take
   them back.
-- **Carryover** writes directly, through its own action in Budget Management. It was never part of
+- **Carryover** writes directly, through its own action in Budget Cockpit. It was never part of
   the cell draft.
 
-These actions are not part of **Draft Changes**. They write when you confirm them.
+These actions are not part of **Changes**. They write when you confirm them.
 
 ## Automated budget changes
 
@@ -77,3 +77,10 @@ and [Configuration](../../administration/configuration/#metadata-database) for s
 2. Review the listed changes before you select **Save** or **Apply**.
 
 Go to the workflow that brought you here.
+
+## App-wide controls
+
+**Help & feedback** and the theme switcher are in the top-right bar beside the account menu. Help
+includes documentation, feedback, the repository, changelog and keyboard shortcuts. The theme
+button cycles through **System**, **Light** and **Dark**; its tooltip names the current setting and
+the next choice. App Health stays in the sidebar footer.

@@ -27,6 +27,19 @@ jest.mock("../hooks/useBudgetOverview", () => ({
 import { BudgetOverviewView } from "./BudgetOverviewView";
 import { useBudgetOverview } from "../hooks/useBudgetOverview";
 
+// jsdom does not measure layout or provide ResizeObserver.
+const originalResizeObserver = globalThis.ResizeObserver;
+beforeAll(() => {
+  globalThis.ResizeObserver = class implements ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
+afterAll(() => {
+  globalThis.ResizeObserver = originalResizeObserver;
+});
+
 const mockUseBudgetOverview = useBudgetOverview as jest.MockedFunction<typeof useBudgetOverview>;
 
 const loadedStats: BudgetOverviewStats = {

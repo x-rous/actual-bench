@@ -16,10 +16,10 @@ It has three separate workflows:
 - **Unused payees:** find payees with no transactions or rule references, then review and stage
   deletions.
 
-You can use each workflow on its own. Open it from **Tools → Payee Cleanup** (`/payees/cleanup`).
+You can use each workflow on its own. Open it from **Analyze & Cleanup → Payee Cleanup** (`/payees/cleanup`).
 
 **Writing to Actual:** Scanning, accepting, and dismissing suggestions do not write to Actual.
-**Stage cleanup** adds selected changes to Draft Changes. Use the app-wide **Save** action only after
+**Stage cleanup** adds selected changes to Changes. Use the app-wide **Save** action only after
 reviewing those changes.
 
 ## Before you start
@@ -36,7 +36,7 @@ settings you want to keep.
 2. Review duplicate-payee suggestions, then accept, correct, or dismiss them.
 3. Review rule suggestions for payees that need import automation.
 4. Review unused payees and mark any you want to delete.
-5. Select **Stage cleanup** to add your accepted work to Draft Changes.
+5. Select **Stage cleanup** to add your accepted work to Changes.
 6. Review the staged changes, then use **Save** to write them to Actual.
 
 ## Duplicate payees
@@ -151,7 +151,7 @@ The **Unused payees** tab identifies regular payees with no transactions and no 
 
 Use the checkbox in the **Payee** header to choose every unused payee currently shown.
 Select a payee's checkbox to include its deletion in Changes. Then select **Stage cleanup**,
-review the Draft Changes, and use **Save** to write the deletion to Actual. Nothing is deleted when
+review the Changes, and use **Save** to write the deletion to Actual. Nothing is deleted when
 you select it.
 
 Cleanup is deliberately cautious: a payee that a rule sets or checks is not shown as unused. Before
@@ -160,7 +160,7 @@ staging, Cleanup checks the payee again so a new transaction or rule reference p
 ## Stage and save
 
 When you are ready, select **Stage cleanup**. Accepted merges, renames, rules, and selected unused
-payee deletions appear in Draft Changes.
+payee deletions appear in Changes.
 
 Review the staged changes, then use the app-wide **Save** action to write them to Actual. Payee
 changes are saved before dependent rules.

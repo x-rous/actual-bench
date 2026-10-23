@@ -3,8 +3,14 @@
 import { useEffect, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
+import { PendingPanelProvider } from "./PendingPanelContext";
+import { getFeatureEntryState } from "@/lib/features/pendingChanges";
+import { useStagedStore, selectHasChanges } from "@/store/staged";
+import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { TopBar } from "./TopBar";
 import { Sidebar } from "./Sidebar";
+import { getFeatureForPath } from "@/lib/features/catalogue";
+import { FeatureEntryGuard } from "./FeatureEntryGuard";
 import { DraftPanel } from "./DraftPanel";
 import { BudgetDraftPanel } from "@/features/budget-management/components/BudgetDraftPanel";
 import { ConnectionOfflineBanner } from "./ConnectionOfflineBanner";
@@ -47,13 +53,15 @@ import { resumeSession } from "@/features/connect/resumeSession";
  * disconnect) always goes straight to /connect — vault-resume is a
  * page-load feature, not an auto-reconnect-on-disconnect feature.
  *
- * On the /budget-management route, the normal DraftPanel (entity staged changes)
- * is replaced by BudgetDraftPanel (budget cell staged changes) so both panel
- * systems never compete for the same layout slot.
+ * Catalogue metadata selects the global panel and clean-draft entry policy.
+ * A guard is scoped to the active connection and route; admitted editors stay
+ * mounted when global drafts appear later. Only one global panel is shown.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const hasEntities = useStagedStore(selectHasChanges);
+  const hasBudget = useBudgetEditsStore(s => Object.keys(s.edits).length > 0 || Object.keys(s.holds).length > 0);
   const activeInstance = useConnectionStore(selectActiveInstance);
 
   // Overview is a lightweight landing page, so avoid booting the full entity
@@ -165,15 +173,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  const isBudgetPage = pathname?.startsWith("/budget-management") ?? false;
-  // The reconciliation workbench needs the full content width for its
-  // three-column Bank | Match | Actual grid, and stages its own changes rather
-  // than through the entity staged store, so the global draft panel is hidden.
-  const isReconciliationPage = pathname?.startsWith("/reconciliation") ?? false;
-  // Credit Cards owns its review drafts and uses the full workbench width.
-  const isCreditCardsPage = pathname === "/credit-cards" || pathname?.startsWith("/credit-cards/");
+  const feature = getFeatureForPath(pathname);
+  const { blocked, usesBudgetActions } = getFeatureEntryState(feature, hasEntities, hasBudget);
+  const pendingPanel = pathname === "/overview" ? "none" : blocked ? (usesBudgetActions ? "budget" : "entities") : feature?.pendingChangesPanel ?? "entities";
 
   return (
+    <PendingPanelProvider forceExpanded={blocked}>
     <ConnectionHealthContext.Provider value={health}>
     <VersionCheckContext.Provider value={versionCheck}>
       <div className="flex h-full flex-col">
@@ -186,12 +191,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar />
           <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {children}
+            <FeatureEntryGuard key={`${activeInstance.id}:${pathname}`} feature={feature}>{children}</FeatureEntryGuard>
           </main>
-          {isReconciliationPage || isCreditCardsPage ? null : isBudgetPage ? <BudgetDraftPanel /> : <DraftPanel />}
+          {pendingPanel === "none" ? null : pendingPanel === "budget" ? <BudgetDraftPanel /> : <DraftPanel />}
         </div>
       </div>
     </VersionCheckContext.Provider>
     </ConnectionHealthContext.Provider>
+    </PendingPanelProvider>
   );
 }

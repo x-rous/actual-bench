@@ -222,11 +222,30 @@ export function AccountsTable({
       result.push(r);
     }
 
+    const groupOrderById = new Map((groups ?? []).map((group, index) => [group.id, {
+      sortOrder: group.sortOrder,
+      listOrder: index,
+    }]));
     // New (unsaved) rows always float to the top regardless of sort column.
     result.sort((a, b) => {
       if (a.isNew && !b.isNew) return -1;
       if (!a.isNew && b.isNew) return 1;
-      if (!sortCol) return 0;
+      if (!sortCol) {
+        // Match Actual's account list: budget placement, group order, then account order.
+        const budgetOrder = Number(a.entity.offBudget) - Number(b.entity.offBudget);
+        if (budgetOrder !== 0) return budgetOrder;
+        const groupOrder = (groupId: string | null | undefined) =>
+          groupId ? groupOrderById.get(groupId) : undefined;
+        const groupA = groupOrder(a.entity.groupId);
+        const groupB = groupOrder(b.entity.groupId);
+        const groupSortOrderA = groupA?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+        const groupSortOrderB = groupB?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+        if (groupSortOrderA !== groupSortOrderB) return groupSortOrderA - groupSortOrderB;
+        const groupListOrderA = groupA?.listOrder ?? Number.MAX_SAFE_INTEGER;
+        const groupListOrderB = groupB?.listOrder ?? Number.MAX_SAFE_INTEGER;
+        if (groupListOrderA !== groupListOrderB) return groupListOrderA - groupListOrderB;
+        return (a.entity.sortOrder ?? 0) - (b.entity.sortOrder ?? 0);
+      }
       let av: string | boolean, bv: string | boolean;
       if (sortCol === "name") { av = a.entity.name.toLowerCase(); bv = b.entity.name.toLowerCase(); }
       else if (sortCol === "group") {
@@ -748,7 +767,7 @@ export function AccountsTable({
                   </th>
 
                   <th
-                    className="w-32 px-2 py-1.5 text-left"
+                    className="w-28 px-2 py-1.5 text-left"
                     aria-sort={sortCol === "offBudget" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     <button
@@ -762,7 +781,7 @@ export function AccountsTable({
                   </th>
 
                   <th
-                    className="w-32 px-2 py-1.5 text-left"
+                    className="w-26 px-2 py-1.5 text-left"
                     aria-sort={sortCol === "closed" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   >
                     <button
@@ -775,7 +794,7 @@ export function AccountsTable({
                     </button>
                   </th>
 
-                  <th className="w-40 px-2 py-1.5 text-left">
+                  <th className="w-32 px-2 py-1.5 text-left">
                     <span className="text-xs font-medium text-muted-foreground">Rules</span>
                   </th>
 

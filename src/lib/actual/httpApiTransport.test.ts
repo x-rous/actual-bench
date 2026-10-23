@@ -339,7 +339,7 @@ describe("account groups", () => {
     respond = () => ({
       json: {
         data: [
-          { id: "a1", name: "Checking", offbudget: false, closed: false, account_group_id: "g1" },
+          { id: "a1", name: "Checking", offbudget: false, closed: false, account_group_id: "g1", sort_order: 12 },
           { id: "a2", name: "Cash", offbudget: false, closed: false, account_group_id: null },
           { id: "a3", name: "Old", offbudget: true, closed: false },
         ],
@@ -347,11 +347,12 @@ describe("account groups", () => {
     });
     const accounts = await transport().getAccounts();
     expect(accounts.map((a) => a.groupId)).toEqual(["g1", null, null]);
+    expect(accounts[0].sortOrder).toBe(12);
   });
 
   it("lists groups, dropping rows without an id", async () => {
-    respond = () => ({ json: { data: [{ id: "g1", name: "Everyday" }, { name: "No id" }] } });
-    await expect(transport().getAccountGroups!()).resolves.toEqual([{ id: "g1", name: "Everyday" }]);
+    respond = () => ({ json: { data: [{ id: "g1", name: "Everyday", sort_order: 7 }, { name: "No id" }] } });
+    await expect(transport().getAccountGroups!()).resolves.toEqual([{ id: "g1", name: "Everyday", sortOrder: 7 }]);
     expect(only().url).toBe("https://actual.example.com/v1/budgets/budget-abc/accountgroups");
   });
 

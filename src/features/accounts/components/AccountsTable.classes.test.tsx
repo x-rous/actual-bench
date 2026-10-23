@@ -163,6 +163,26 @@ describe("accounts table and Groups dialog share account classes", () => {
     expect(order()).toEqual(["a2", "a1", "a3"]);
   });
 
+  it("defaults to on-budget accounts first, then account group, with ungrouped last", async () => {
+    useStagedStore.getState().loadAccountGroups([
+      { id: "g-alpha", name: "Alpha", sortOrder: 20 },
+      { id: "g-zulu", name: "Zulu", sortOrder: 10 },
+    ]);
+    useStagedStore.getState().loadAccounts([
+      { id: "off-alpha", name: "Off budget Alpha", offBudget: true, closed: false, groupId: "g-alpha", sortOrder: 1 },
+      { id: "on-zulu-later", name: "On budget Zulu later", offBudget: false, closed: false, groupId: "g-zulu", sortOrder: 20 },
+      { id: "on-ungrouped", name: "On budget ungrouped", offBudget: false, closed: false, groupId: null },
+      { id: "on-zulu-first", name: "On budget Zulu first", offBudget: false, closed: false, groupId: "g-zulu", sortOrder: 10 },
+      { id: "on-alpha", name: "On budget Alpha", offBudget: false, closed: false, groupId: "g-alpha", sortOrder: 1 },
+    ]);
+    renderTable();
+
+    await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(6));
+    expect(screen.getAllByRole("row").slice(1).map((row) => row.getAttribute("data-row-id"))).toEqual([
+      "on-zulu-first", "on-zulu-later", "on-alpha", "on-ungrouped", "off-alpha",
+    ]);
+  });
+
   it("disables restricted bulk classes for a mixed selection without applying a partial change", async () => {
     useStagedStore.getState().loadAccounts([
       { id: "a1", name: "Checking", offBudget: false, closed: false, groupId: null },

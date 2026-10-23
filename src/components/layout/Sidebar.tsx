@@ -2,48 +2,18 @@
 
 import { useState } from "react";
 import type { ComponentType } from "react";
-import { useTheme } from "next-themes";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
 import {
-  Landmark,
-  Users,
-  LayoutList,
-  ScrollText,
-  Calendar,
-  Tag,
-  ShieldCheck,
-  Stethoscope,
-  Database,
-  Terminal,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Trash2,
-  LayoutDashboard,
-  Wallet,
-  Monitor,
-  Sun,
-  Moon,
-  ArrowUpCircle,
-  ArrowLeftRight,
-  Banknote,
-  Settings,
-  ClipboardCheck,
-  Sparkles,
-  Timer,
-  DatabaseBackup,
-  HandCoins,
-  CreditCard,
-  Gem,
+  PanelLeftClose, PanelLeftOpen, LayoutDashboard,
+  ArrowUpCircle, Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useConnectionStore } from "@/store/connection";
-import { useSavedServersStore } from "@/store/savedServers";
-import { useStagedStore } from "@/store/staged";
 import { useVersionCheckContext } from "@/hooks/useVersionCheck";
 
-import { HelpMenu } from "./HelpMenu";
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
+
+import { FEATURE_SECTIONS, getFeatureForPath } from "@/lib/features/catalogue";
 
 const LS_KEY = "sidebar-collapsed";
 
@@ -52,7 +22,6 @@ type NavItem = {
   label: string;
   href: string;
   icon: ComponentType<{ className?: string }>;
-  badge?: string;
 };
 
 type NavGroup = {
@@ -65,97 +34,26 @@ type SidebarSection =
   | { type: "item"; item: NavItem }
   | { type: "group"; group: NavGroup };
 
-/**
- * Exported so the overview page's cards can be checked against this order
- * rather than drifting from it — two lists of the same destinations in two
- * different orders read as two different sets of tools.
- */
+/** Overview is an application page; feature destinations come from the catalogue. */
 export const SIDEBAR_SECTIONS: SidebarSection[] = [
-  {
-    type: "item",
-    item: {
-      id: "overview",
-      label: "Overview",
-      href: "/overview",
-      icon: LayoutDashboard,
-    },
-  },
-  {
-    type: "group",
-    group: {
-      id: "data-management",
-      label: "Data Management",
-      items: [
-        { id: "budget-management", label: "Budget", href: "/budget-management", icon: Wallet },
-        { id: "rules", label: "Rules", href: "/rules", icon: ScrollText },
-        { id: "accounts", label: "Accounts", href: "/accounts", icon: Landmark },
-        { id: "payees", label: "Payees", href: "/payees", icon: Users },
-        { id: "categories", label: "Categories", href: "/categories", icon: LayoutList },
-        { id: "schedules", label: "Schedules", href: "/schedules", icon: Calendar },
-        { id: "tags", label: "Tags", href: "/tags", icon: Tag },
-      ],
-    },
-  },
-  {
-    type: "group",
-    group: {
-      id: "tools",
-      label: "Tools",
-      items: [
-        { id: "rule-diagnostics", label: "Rule Diagnostics", href: "/rules/diagnostics", icon: ShieldCheck },
-        { id: "payee-cleanup", label: "Payee Cleanup", href: "/payees/cleanup", icon: Sparkles },
-        {
-          id: "reconciliation",
-          label: "Bank Reconciliation",
-          href: "/reconciliation",
-          icon: ClipboardCheck,
-        },
-        { id: "sync", label: "Budget File Sync", href: "/sync", icon: ArrowLeftRight },
-        // Directly under Sync: exchange rates exist to serve cross-currency
-        // syncing, not as a feature anyone comes here for on its own.
-        { id: "fx-rates", label: "FX Rates", href: "/fx-rates", icon: Banknote },
-        // Loans and debts (RD-084), and assets (a later phase): separate pages, set up per budget.
-        { id: "loans", label: "Loans & Debt", href: "/loans", icon: HandCoins },
-        { id: "credit-cards", label: "Credit Cards", href: "/credit-cards", icon: CreditCard },
-        { id: "assets", label: "Assets", href: "/assets", icon: Gem },
-        // Sits with the tools rather than in the footer: a backup is about a
-        // budget's data, not about the app's own configuration. Above
-        // Automations because it is a thing you set up, where Automations is
-        // where you watch what came of it.
-        { id: "backups", label: "Backups", href: "/backups", icon: DatabaseBackup },
-        // "Automations" here means *Bench's* scheduled jobs. Actual Budget's own
-        // experimental Budget Automations (RD-047) are a different feature Bench
-        // does not drive, so the label must not read as that.
-        { id: "automations", label: "Automations", href: "/automations", icon: Timer },
-        { id: "query", label: "ActualQL Queries", href: "/query", icon: Terminal },
-        { id: "data-browser", label: "Data Browser", href: "/data-browser", icon: Database },
-        {
-          id: "budget-diagnostics",
-          label: "Budget File Health",
-          href: "/budget-diagnostics",
-          icon: Stethoscope,
-        },
-      ],
-    },
-  },
+  { type: "item", item: { id: "overview", label: "Overview", href: "/overview", icon: LayoutDashboard } },
+  ...FEATURE_SECTIONS.map((group): SidebarSection => ({ type: "group", group })),
 ];
 
 // App Health is app-wide (not a budget tool), so it lives in the footer rather
-// than the Tools group.
+// than a feature group.
 const APP_HEALTH_ITEM: NavItem = { id: "app-health", label: "App Health", href: "/app-health", icon: Settings };
 
 type SidebarNavLinkProps = {
   item: NavItem;
   collapsed: boolean;
   pathname: string;
-  allHrefs: string[];
 };
 
-function SidebarNavLink({ item, collapsed, pathname, allHrefs }: SidebarNavLinkProps) {
+function SidebarNavLink({ item, collapsed, pathname }: SidebarNavLinkProps) {
   const isExactMatch = pathname === item.href;
-  // Suppress ancestor highlighting when another sidebar item owns the exact path.
-  const anotherItemOwnsPath = allHrefs.some((h) => h !== item.href && h === pathname);
-  const isAncestorMatch = !anotherItemOwnsPath && pathname.startsWith(item.href + "/");
+  const feature = getFeatureForPath(pathname);
+  const isAncestorMatch = !isExactMatch && feature?.href === item.href;
   const active = isExactMatch || isAncestorMatch;
   const ariaCurrent = isExactMatch ? "page" : isAncestorMatch ? "location" : undefined;
   const Icon = item.icon;
@@ -168,7 +66,7 @@ function SidebarNavLink({ item, collapsed, pathname, allHrefs }: SidebarNavLinkP
       data-active={active ? "true" : undefined}
       aria-current={ariaCurrent}
       className={cn(
-        // The Tools group keeps growing, but a nav that is shorter and harder
+        // Feature groups keep growing, but a nav that is shorter and harder
         // to read is not a win: the type size and horizontal padding stay, and
         // the rows keep enough vertical room to be distinguishable at a glance.
         // 5px rather than 6px trims 2px a row - enough to matter down a long
@@ -184,30 +82,14 @@ function SidebarNavLink({ item, collapsed, pathname, allHrefs }: SidebarNavLinkP
       {!collapsed && (
         <>
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
-          {item.badge && (
-            <span className="ml-auto rounded-sm bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground/60">
-              {item.badge}
-            </span>
-          )}
         </>
       )}
     </Link>
   );
 }
 
-const ALL_SIDEBAR_HREFS: string[] = SIDEBAR_SECTIONS.flatMap((section) =>
-  section.type === "item"
-    ? [section.item.href]
-    : section.group.items.map((item) => item.href)
-);
-
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const clearAll = useConnectionStore((s) => s.clearAll);
-  const clearServers = useSavedServersStore((s) => s.clearServers);
-  const discardAll = useStagedStore((s) => s.discardAll);
   const version = process.env.NEXT_PUBLIC_APP_VERSION;
   const { updateAvailable, latestVersion } = useVersionCheckContext();
 
@@ -216,24 +98,6 @@ export function Sidebar() {
     return localStorage.getItem(LS_KEY) === "1";
   });
 
-  const { theme, resolvedTheme, setTheme } = useTheme();
-  const themeOrder = ["system", "light", "dark"] as const;
-  const themeLabels: Record<string, string> = { system: "System", light: "Light", dark: "Dark" };
-  // Icon reflects the resolved appearance (so system+dark OS shows Moon); label reflects the stored mode.
-  const ThemeIcon = resolvedTheme === "light" ? Sun : resolvedTheme === "dark" ? Moon : Monitor;
-  const cycleTheme = () => {
-    const idx = themeOrder.indexOf((theme ?? "system") as typeof themeOrder[number]);
-    setTheme(themeOrder[(idx + 1) % themeOrder.length]);
-  };
-
-  function handleClearAll() {
-    if (!window.confirm("Clear all connections and cached data? This cannot be undone.")) return;
-    discardAll();
-    queryClient.clear();
-    clearAll();
-    clearServers();
-    router.push("/connect");
-  }
 
   function toggle() {
     setCollapsed((prev) => {
@@ -250,66 +114,67 @@ export function Sidebar() {
         collapsed ? "w-12" : "w-52"
       )}
     >
-      <nav className="flex flex-1 flex-col overflow-y-auto p-2 pt-3">
-        {SIDEBAR_SECTIONS.map((section, index) => {
-          const sectionSpacing = index === 0 ? "" : collapsed ? "mt-3" : "mt-4";
+      <OverlayScrollArea className="flex-1">
+        <nav className="flex min-h-full flex-col p-2 pt-3">
+          {SIDEBAR_SECTIONS.map((section, index) => {
+            const sectionSpacing = index === 0 ? "" : collapsed ? "mt-3" : "mt-4";
 
-          if (section.type === "item") {
-            return (
-              <div key={section.item.id} className={sectionSpacing}>
-                <SidebarNavLink
-                  item={section.item}
-                  collapsed={collapsed}
-                  pathname={pathname}
-                  allHrefs={ALL_SIDEBAR_HREFS}
-                />
-              </div>
-            );
-          }
-
-          const groupClassName = sectionSpacing;
-
-          return (
-            <div key={section.group.id} className={groupClassName}>
-              {!collapsed && (
-                <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                  {section.group.label}
-                </div>
-              )}
-              <div className="flex flex-col gap-1">
-                {section.group.items.map((item) => (
+            if (section.type === "item") {
+              return (
+                <div key={section.item.id} className={sectionSpacing}>
                   <SidebarNavLink
-                    key={item.id}
-                    item={item}
+                    item={section.item}
                     collapsed={collapsed}
                     pathname={pathname}
-                    allHrefs={ALL_SIDEBAR_HREFS}
                   />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+                </div>
+              );
+            }
 
-        {!collapsed && updateAvailable && latestVersion && (
-          <div className="mt-auto flex flex-col gap-0.5 px-3 pt-3">
-            <a
-              href="https://github.com/x-rous/actual-bench/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-            >
-              <ArrowUpCircle className="h-3 w-3 shrink-0" />
-              v{latestVersion} available
-            </a>
-          </div>
-        )}
-      </nav>
+            const groupClassName = sectionSpacing;
+
+            return (
+              <div key={section.group.id} className={groupClassName}>
+                {!collapsed && (
+                  <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                    {section.group.label}
+                  </div>
+                )}
+                <div className="flex flex-col gap-1">
+                  {section.group.items.map((item) => (
+                    <SidebarNavLink
+                      key={item.id}
+                      item={item}
+                      collapsed={collapsed}
+                      pathname={pathname}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {!collapsed && updateAvailable && latestVersion && (
+            <div className="mt-auto flex flex-col gap-0.5 px-3 pt-3">
+              <a
+                href="https://github.com/x-rous/actual-bench/releases"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                <ArrowUpCircle className="h-3 w-3 shrink-0" />
+                v{latestVersion} available
+              </a>
+            </div>
+          )}
+        </nav>
+      </OverlayScrollArea>
 
       <div className="shrink-0 border-t border-border p-2 flex flex-col gap-0.5">
         <Link
           href={APP_HEALTH_ITEM.href}
           title={collapsed ? APP_HEALTH_ITEM.label : undefined}
+          aria-label={collapsed ? APP_HEALTH_ITEM.label : undefined}
           aria-current={pathname === APP_HEALTH_ITEM.href ? "page" : undefined}
           className={cn(
             "flex w-full items-center rounded-md px-2 py-1.5 text-xs transition-colors",
@@ -325,36 +190,12 @@ export function Sidebar() {
             <span className="ml-auto text-xs text-muted-foreground/55">v{version}</span>
           )}
         </Link>
-        <HelpMenu collapsed={collapsed} />
 
-        <button
-          type="button"
-          onClick={handleClearAll}
-          title="Clear all connections and cached data"
-          className={cn(
-            "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive",
-            collapsed ? "justify-center" : "gap-2"
-          )}
-        >
-          <Trash2 className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Clear all data</span>}
-        </button>
-        <button
-          type="button"
-          onClick={cycleTheme}
-          title={`Theme: ${themeLabels[theme ?? "system"]} - click to cycle`}
-          className={cn(
-            "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
-            collapsed ? "justify-center" : "gap-2"
-          )}
-        >
-          <ThemeIcon className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>{themeLabels[theme ?? "system"]}</span>}
-        </button>
         <button
           type="button"
           onClick={toggle}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
             "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
             collapsed ? "justify-center" : "gap-2"

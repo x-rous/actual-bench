@@ -9,7 +9,6 @@ import {
   HelpCircle,
   Keyboard,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,15 +18,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { GlobalShortcutsHelp } from "./GlobalShortcutsHelp";
 
-export const DOCS_URL = "https://x-rous.github.io/actual-bench/";
+import { DOCS_BASE_URL } from "@/lib/features/catalogue";
+
+export const DOCS_URL = DOCS_BASE_URL;
 const GITHUB_URL = "https://github.com/x-rous/actual-bench";
 
 function openExternal(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-/** Help, feedback and keyboard shortcuts in one sidebar menu; the documentation comes first. */
-export function HelpMenu({ collapsed }: { collapsed: boolean }) {
+/** App-wide help and keyboard shortcuts in the top bar. */
+export function HelpMenu() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   return (
@@ -35,15 +36,12 @@ export function HelpMenu({ collapsed }: { collapsed: boolean }) {
       <DropdownMenu>
         <DropdownMenuTrigger
           title="Help & feedback"
-          className={cn(
-            "flex w-full items-center rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground",
-            collapsed ? "justify-center" : "gap-2"
-          )}
+          aria-label="Help & feedback"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
           <HelpCircle className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Help & feedback</span>}
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="end" className="w-52 text-xs text-muted-foreground">
+        <DropdownMenuContent side="bottom" align="end" className="w-52 text-xs text-muted-foreground">
           <DropdownMenuItem onClick={() => openExternal(DOCS_URL)}>
             <FileText className="h-4 w-4 text-xs text-muted-foreground" />
             Documentation

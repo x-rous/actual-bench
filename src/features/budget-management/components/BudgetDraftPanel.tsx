@@ -1,7 +1,8 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { Separator } from "@/components/ui/separator";
+import { PendingPanelFrame } from "@/components/layout/PendingPanelFrame";
 import { Badge } from "@/components/ui/badge";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import { countLogicalEdits } from "./draft-panel/StagedChangesSection";
@@ -20,31 +21,23 @@ export function BudgetDraftPanel() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const changeCount = countLogicalEdits(edits, holds);
+  const errorCount = [...Object.values(edits), ...Object.values(holds)].filter(edit => edit.saveError).length;
 
   return (
-    <aside
-      // Wider than w-68 for the redesigned details content; the grid's category
-      // column is minmax(180px, 1fr), so it yields the space.
-      className="flex w-72 shrink-0 flex-col border-l border-border bg-background"
-      data-budget-details-panel>
-      <div className="flex items-center justify-between px-3 shrink-0 h-[2.7rem]">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Budget Details
-        </span>
-        {changeCount > 0 && (
+    <PendingPanelFrame data-budget-details-panel title="Budget details" displayTitle="Budget" count={changeCount} errors={errorCount} collapsible={false} width="w-72" badge={
+        changeCount > 0 ? (
           <Badge
             render={<button type="button" />}
-            variant="outline"
-            className="text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950/20"
+            variant={errorCount ? "destructive" : "outline"}
+            className={cn("h-5 shrink-0 cursor-pointer px-1.5 text-[10px] tabular-nums", !errorCount && "text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/20")}
             onClick={() => setDialogOpen(true)}
             aria-label={`${changeCount} staged change${changeCount !== 1 ? "s" : ""} - click to review`}
             title="Review staged changes"
           >
-            {changeCount} {changeCount === 1 ? "change" : "changes"}
+            {errorCount ? `! ${errorCount}` : changeCount}
           </Badge>
-        )}
-      </div>
-      <Separator />
+        ) : null
+      }>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <BudgetDetailsPanel />
@@ -53,6 +46,6 @@ export function BudgetDraftPanel() {
       {dialogOpen && (
         <StagedChangesDialog onClose={() => setDialogOpen(false)} />
       )}
-    </aside>
+    </PendingPanelFrame>
   );
 }

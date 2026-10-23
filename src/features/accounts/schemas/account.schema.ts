@@ -14,6 +14,7 @@ export const accountFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name cannot exceed 100 characters"),
   offBudget: z.boolean(),
   initialBalance: z.number().optional(),
+  groupId: z.string().min(1).nullable().optional(),
   accountClass: z.enum(ACCOUNT_CLASSES).nullable().optional(),
 }).refine((values) => isAccountClassAllowed(values.accountClass, values.offBudget), {
   path: ["accountClass"],

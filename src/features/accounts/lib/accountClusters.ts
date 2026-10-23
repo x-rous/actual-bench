@@ -19,7 +19,10 @@ export type AccountCluster<R> = {
 /** Key of the cluster that holds accounts with no group, or no class. */
 export const NO_CLUSTER = "__none__";
 
-type ClusterRow = { entity: { id: string; groupId?: string | null }; isDeleted: boolean };
+type ClusterRow = {
+  entity: { id: string; groupId?: string | null; offBudget?: boolean; sortOrder?: number };
+  isDeleted: boolean;
+};
 
 /** Balances on this page are whole currency units (decimals); sum them as integer minor units. */
 export function sumBalancesCents(ids: readonly string[], balances: ReadonlyMap<string, number> | undefined): number | null {
@@ -37,9 +40,10 @@ export function sumBalancesCents(ids: readonly string[], balances: ReadonlyMap<s
 
 /**
  * Splits already filtered and sorted rows into clusters, keeping the row order
- * inside each cluster. Groups are ordered by name and classes in list order
- * (assets, then liabilities); the "none" cluster is always last. A group that no
- * longer exists counts as no group.
+ * inside each cluster. Group clusters with on-budget accounts come first, then
+ * use Actual's group sort order; the "none" cluster is always last. Classes are
+ * ordered in list order (assets, then liabilities). A deleted group counts as
+ * no group.
  */
 export function buildClusters<R extends ClusterRow>(
   rows: readonly R[],
@@ -69,7 +73,19 @@ export function buildClusters<R extends ClusterRow>(
   const keys = [...buckets.keys()].sort((a, b) => {
     if (a === NO_CLUSTER || b === NO_CLUSTER) return a === NO_CLUSTER ? 1 : -1;
     if (by === "class") return (classOrder.get(a) ?? 0) - (classOrder.get(b) ?? 0);
-    return (groupById.get(a)?.name ?? "").localeCompare(groupById.get(b)?.name ?? "", undefined, { sensitivity: "base" });
+    const rowsA = buckets.get(a) ?? [];
+    const rowsB = buckets.get(b) ?? [];
+    const onBudgetA = rowsA.some((row) => !row.entity.offBudget);
+    const onBudgetB = rowsB.some((row) => !row.entity.offBudget);
+    if (onBudgetA !== onBudgetB) return onBudgetA ? -1 : 1;
+    const groupA = groupById.get(a);
+    const groupB = groupById.get(b);
+    if (groupA?.sortOrder !== undefined || groupB?.sortOrder !== undefined) {
+      const groupSortOrderA = groupA?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      const groupSortOrderB = groupB?.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      if (groupSortOrderA !== groupSortOrderB) return groupSortOrderA - groupSortOrderB;
+    }
+    return (groupA?.name ?? "").localeCompare(groupB?.name ?? "", undefined, { sensitivity: "base" });
   });
 
   return keys.map((key) => {

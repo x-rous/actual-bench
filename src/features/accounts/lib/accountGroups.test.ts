@@ -43,6 +43,14 @@ describe("liveGroups / groupLabel", () => {
     expect(liveGroups(map).map((g) => g.name)).toEqual(["Banking", "savings"]);
   });
 
+  it("uses Actual sort order when groups have sort order values", () => {
+    const ordered = groups(
+      staged({ id: "g2", name: "Alpha", sortOrder: 20 }),
+      staged({ id: "g1", name: "Zulu", sortOrder: 10 }),
+    );
+    expect(liveGroups(ordered).map((group) => group.id)).toEqual(["g1", "g2"]);
+  });
+
   it("labels a missing or deleted group as no group", () => {
     const live = liveGroups(map);
     expect(groupLabel("g1", live)).toBe("Banking");

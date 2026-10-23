@@ -51,6 +51,43 @@ describe("the account menu (RD-096)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Account" }));
     expect(await screen.findByText("Set by ACTUAL_BENCH_PASSWORD")).toBeInTheDocument();
   });
+
+  it("offers Clear all data in the account menu after confirmation", async () => {
+    getVaultStatus.mockResolvedValue(status());
+    const onClearAllData = jest.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AccountMenu onClearAllData={onClearAllData} />
+      </QueryClientProvider>
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
+    const clearAction = await screen.findByRole("menuitem", { name: "Clear all data" });
+    jest.spyOn(window, "confirm").mockReturnValue(false);
+    fireEvent.click(clearAction);
+    expect(onClearAllData).not.toHaveBeenCalled();
+
+    jest.mocked(window.confirm).mockReturnValue(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Account" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Clear all data" }));
+    expect(onClearAllData).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Clear all data available when password authentication is disabled", async () => {
+    getVaultStatus.mockResolvedValue(status({ authMode: "none" }));
+    const onClearAllData = jest.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AccountMenu onClearAllData={onClearAllData} />
+      </QueryClientProvider>
+    );
+    expect(await screen.findByRole("button", { name: "Account" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    expect(await screen.findByRole("menuitem", { name: "Clear all data" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Change password" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Sign out" })).not.toBeInTheDocument();
+  });
 });
 
 describe("signOut", () => {

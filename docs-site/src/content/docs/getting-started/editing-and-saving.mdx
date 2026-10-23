@@ -1,11 +1,11 @@
 ---
 title: Editing, review and save
-description: Learn the shared staged-editing workflow for Data Management pages, including bulk actions, CSV, review, and Save.
+description: Learn the shared staged-editing workflow for Budget Setup pages, including bulk actions, CSV, review, and Save.
 sidebar:
   order: 5
 ---
 
-Data Management pages use the same staged-editing workflow: Budget, Rules, Accounts, Payees,
+Budget Cockpit and Budget Setup pages use staged editing: Rules, Accounts, Payees,
 Categories, Schedules, and Tags. Use this page to learn how to make bulk changes, review them, and
 save them.
 
@@ -28,7 +28,7 @@ save them.
 2. Filter or search until the affected rows are visible.
 3. Inspect usage before deleting or merging anything important.
 4. Stage the edits or bulk action.
-5. Review **Draft Changes**, then **Save**.
+5. Review **Changes**, then **Save**.
 
 Moving an entire structure? Use [Bundle Export / Import](../bundle-export-import/) rather than
 repeating that loop on eight pages.
@@ -99,7 +99,7 @@ the [Rules](../../user-guide/rules/) page filtered to that entity.
 
 ## Review and Save
 
-Creates, edits, deletes and merges collect in the **Draft Changes** panel and the top bar. Your Actual
+Creates, edits, deletes and merges collect in the **Changes** panel. Its header holds **Save**, **Discard**, **Undo** and **Redo**. Your Actual
 Server sees none of it until you **Save**. **Discard** throws the draft away and goes back to the last
 saved state.
 
@@ -113,3 +113,18 @@ part of the draft, and **Discard** will not take them back. See
 
 - [Accounts](../../user-guide/accounts/) · [Payees](../../user-guide/payees/) · [Payee Cleanup](../../user-guide/payee-cleanup/) · [Categories](../../user-guide/categories/) · [Tags](../../user-guide/tags/)
 - [Work safely](../core-concepts/)
+
+## Minimize the changes panel
+
+The right panel keeps its editing controls on one toolbar-aligned header row, with the numeric change badge beside the title. **Save** has a text label; the Undo,
+Redo and Discard icons have tooltips. Minimize the panel to get more working space, then use the
+restore button on the right rail to reopen it. Pending counts and save-error indicators remain
+visible on the rail. This preference follows you between pages and survives reloads in this browser;
+it stores no drafts or financial data. Saved-data entry screens temporarily show the relevant changes panel for review and Save/Discard.
+Minimization is temporarily unavailable during that review. This does not overwrite the remembered
+minimized preference, which resumes once the draft is resolved.
+
+Keyboard Undo/Redo follow the draft shown by the panel controls, including budget edits on a
+saved-data entry screen. Text fields keep native undo, and shortcuts already handled by the
+budget grid are not repeated. Quick Create or Redo after entry can reveal the panel without
+closing an open editor or discarding its local work.

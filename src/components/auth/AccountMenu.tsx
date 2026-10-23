@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { KeyRound, LogOut, UserRound } from "lucide-react";
+import { KeyRound, LogOut, Trash2, UserRound } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,11 +45,18 @@ export async function signOut({ beforeLeave }: { beforeLeave?: () => void } = {}
  * Sign out and change password (RD-096). Shown only when Actual Bench asks for
  * its password. `onSignOut` lets the app shell ask about unsaved changes first.
  */
-export function AccountMenu({ onSignOut = () => signOut() }: { onSignOut?: () => void | Promise<void> }) {
+export function AccountMenu({
+  onSignOut = () => signOut(),
+  onClearAllData,
+}: {
+  onSignOut?: () => void | Promise<void>;
+  onClearAllData?: () => void;
+}) {
   const [changeOpen, setChangeOpen] = useState(false);
   const { data: status } = useAuthStatus();
 
-  if (status?.authMode !== "password") return null;
+  const passwordAuthEnabled = status?.authMode === "password";
+  if (!passwordAuthEnabled && !onClearAllData) return null;
 
   return (
     <>
@@ -62,34 +69,56 @@ export function AccountMenu({ onSignOut = () => signOut() }: { onSignOut?: () =>
           <UserRound className="size-4" aria-hidden />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
+          {passwordAuthEnabled && (
+            <>
+              <DropdownMenuItem
+                disabled={status.passwordFromEnv}
+                onClick={() => setChangeOpen(true)}
+              >
+                <KeyRound aria-hidden />
+                <span className="flex flex-col">
+                  <span>Change password</span>
+                  {status.passwordFromEnv && (
+                    <span className="text-xs text-muted-foreground">Set by ACTUAL_BENCH_PASSWORD</span>
+                  )}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
           <DropdownMenuItem
-            disabled={status.passwordFromEnv}
-            onClick={() => setChangeOpen(true)}
+            variant="destructive"
+            onClick={() => {
+              if (window.confirm("Clear all connections and cached data? This cannot be undone.")) {
+                onClearAllData?.();
+              }
+            }}
           >
-            <KeyRound aria-hidden />
-            <span className="flex flex-col">
-              <span>Change password</span>
-              {status.passwordFromEnv && (
-                <span className="text-xs text-muted-foreground">Set by ACTUAL_BENCH_PASSWORD</span>
-              )}
-            </span>
+            <Trash2 aria-hidden />
+            Clear all data
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => void onSignOut()}>
-            <LogOut aria-hidden />
-            Sign out
-          </DropdownMenuItem>
+          {passwordAuthEnabled && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void onSignOut()}>
+                <LogOut aria-hidden />
+                Sign out
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <ChangePasswordDialog
-        open={changeOpen}
-        onOpenChange={setChangeOpen}
-        onSubmit={async (current, next) => {
-          await changeVaultPassphrase(current, next, readVaultUnlockDuration());
-          toast.success("Password changed. Other browsers were signed out.");
-        }}
-      />
+      {passwordAuthEnabled && (
+        <ChangePasswordDialog
+          open={changeOpen}
+          onOpenChange={setChangeOpen}
+          onSubmit={async (current, next) => {
+            await changeVaultPassphrase(current, next, readVaultUnlockDuration());
+            toast.success("Password changed. Other browsers were signed out.");
+          }}
+        />
+      )}
     </>
   );
 }

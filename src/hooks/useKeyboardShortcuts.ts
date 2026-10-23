@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import { useStagedStore } from "@/store/staged";
+import { usePathname } from "next/navigation";
+import { useBudgetEditsStore } from "@/store/budgetEdits";
+import { getFeatureForPath } from "@/lib/features/catalogue";
+import { getFeatureEntryState } from "@/lib/features/pendingChanges";
+import { useStagedStore, selectHasChanges } from "@/store/staged";
 import { useGlobalSearchStore } from "@/features/global-search/store/useGlobalSearchStore";
 import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreateStore";
 
 /**
- * Wires global keyboard shortcuts for the staged store and app-wide actions.
+ * Wires global shortcuts to the same draft owner as the panel controls.
  * Must be called once, inside a client component (AppShell).
  *
  * Ctrl/Cmd+Z        → undo
@@ -21,8 +25,7 @@ import { useQuickCreateStore } from "@/features/quick-create/store/useQuickCreat
  * including text inputs, consistent with standard modal-trigger conventions.
  */
 export function useKeyboardShortcuts() {
-  const undo = useStagedStore((s) => s.undo);
-  const redo = useStagedStore((s) => s.redo);
+  const pathname = usePathname();
   const openSearch = useGlobalSearchStore((s) => s.open);
   const openQuickCreate = useQuickCreateStore((s) => s.open);
 
@@ -32,7 +35,7 @@ export function useKeyboardShortcuts() {
       // `key` is absent on synthetic keydowns — browser autofill and some
       // password managers dispatch them — and this handler is bound to the
       // window on every page, so an unguarded read throws for the whole app.
-      if (!e.key) return;
+      if (!e.key || e.defaultPrevented) return;
       const key = e.key.toLowerCase();
 
       // Bare "N" — open quick-create only when no input/dialog is focused
@@ -71,16 +74,23 @@ export function useKeyboardShortcuts() {
         target.isContentEditable
       ) return;
 
+      // Resolve at keypress time: drafts can change before React re-renders.
+      const entities = useStagedStore.getState();
+      const budget = useBudgetEditsStore.getState();
+      const { usesBudgetActions } = getFeatureEntryState(
+        getFeatureForPath(pathname), selectHasChanges(entities), budget.hasPendingEdits(),
+      );
+      const owner = usesBudgetActions ? budget : entities;
       if (key === "z" && !e.shiftKey) {
         e.preventDefault();
-        undo();
+        owner.undo();
       } else if ((key === "z" && e.shiftKey) || key === "y") {
         e.preventDefault();
-        redo();
+        owner.redo();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [undo, redo, openSearch, openQuickCreate]);
+  }, [pathname, openSearch, openQuickCreate]);
 }

@@ -23,6 +23,7 @@ export function normalizeAccount(raw: ApiAccount): Account {
     name: raw.name,
     offBudget: raw.offbudget,
     closed: raw.closed,
+    ...(typeof raw.sort_order === "number" ? { sortOrder: raw.sort_order } : {}),
     // Absent on servers without account groups; null/absent both mean ungrouped.
     groupId: raw.account_group_id ?? null,
   };

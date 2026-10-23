@@ -2,15 +2,13 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Layers } from "lucide-react";
-import { useStagedStore, selectHasChanges } from "@/store/staged";
+import { useStagedStore } from "@/store/staged";
 import { CONDITION_FIELDS, ACTION_FIELDS } from "@/features/rules/utils/ruleFields";
 import { rulePreview, valueToString } from "@/features/rules/utils/rulePreview";
 import type { BaseEntity, Rule, ConditionOrAction, Schedule } from "@/types/entities";
 import type { StagedEntity, StagedMap } from "@/types/staged";
 import type { Payee, Category, Account, CategoryGroup } from "@/types/entities";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { PendingPanelFrame } from "./PendingPanelFrame";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -249,7 +247,6 @@ function EntitySection({
 
 export function DraftPanel() {
   const router            = useRouter();
-  const hasChanges          = useStagedStore(selectHasChanges);
   const mergeDependencies   = useStagedStore((s) => s.mergeDependencies);
   const pendingPayeeMerges  = useStagedStore((s) => s.pendingPayeeMerges);
   const accounts          = useStagedStore((s) => s.accounts);
@@ -307,49 +304,15 @@ export function DraftPanel() {
     deleted: new Set(pendingPayeeMerges.flatMap((m) => m.mergeIds)),
   }), [pendingPayeeMerges]);
 
-  const hasPayeeMerges = pendingPayeeMerges.length > 0;
 
   const getRuleLabelFn = useMemo(
     () => (entity: BaseEntity) => getRuleLabel(entity as unknown as Rule, entityMaps),
     [entityMaps]
   );
 
-  const isExpanded = hasChanges || hasPayeeMerges || errorCount > 0;
 
-  // ── Collapsed strip — shown when no pending changes ───────────────────────────
-  if (!isExpanded) {
-    return (
-      <aside
-        className="flex w-10 shrink-0 flex-col items-center border-l border-border bg-background pt-3"
-        title="No pending changes"
-      >
-        <Layers className="h-4 w-4 text-muted-foreground/40" />
-      </aside>
-    );
-  }
-
-  // ── Expanded panel — shown when there are staged changes or errors ─────────────
   return (
-    <aside className="flex w-90 shrink-0 flex-col border-l border-border bg-background">
-      <div className="flex items-center justify-between px-3 py-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Draft Changes
-        </span>
-        <div className="flex gap-1">
-          {errorCount > 0 && (
-            <Badge variant="destructive" className="text-xs">
-              {errorCount} error{errorCount !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {hasChanges && errorCount === 0 && (
-            <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-              {totalCount} change{totalCount !== 1 ? "s" : ""}
-            </Badge>
-          )}
-        </div>
-      </div>
-      <Separator />
-
+    <PendingPanelFrame title="Changes" count={Math.max(totalCount, pendingPayeeMerges.length)} errors={errorCount} autoCollapseEmpty>
       <div className="flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto">
         {(Object.keys(ENTITY_LABELS) as EntityKey[]).map((key) => (
           <EntitySection
@@ -366,6 +329,6 @@ export function DraftPanel() {
           />
         ))}
       </div>
-    </aside>
+    </PendingPanelFrame>
   );
 }

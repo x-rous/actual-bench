@@ -47,6 +47,7 @@ export type ApiAccount = {
   name: string;
   offbudget: boolean;
   closed: boolean;
+  sort_order?: number | null;
   /** Present on servers with account groups; null when the account is ungrouped. */
   account_group_id?: string | null;
 };
@@ -56,6 +57,7 @@ export type ApiAccountInput = Omit<ApiAccount, "id">;
 export type ApiAccountGroup = {
   id?: string;
   name: string;
+  sort_order?: number | null;
 };
 
 /** POST /accounts body shape — initialBalance is a one-time creation param, in cents. */

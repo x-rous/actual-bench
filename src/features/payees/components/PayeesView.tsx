@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, Download, Upload } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, Download, Upload, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -27,6 +28,7 @@ const RuleDrawer = dynamic(
 );
 
 export function PayeesView() {
+  const router = useRouter();
   const importInputRef = useRef<HTMLInputElement>(null);
   const [ruleDrawerOpen, setRuleDrawerOpen] = useState(false);
   const [ruleSeed, setRuleSeed] = useState<RuleSeed | undefined>(undefined);
@@ -127,6 +129,16 @@ export function PayeesView() {
             className="hidden"
             onChange={handleImportCsv}
           />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/payees/cleanup")}
+            aria-label="Open payee cleanup"
+            title="Open payee cleanup"
+          >
+            <Sparkles />
+            Payee Cleanup
+          </Button>
           <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} title="Import CSV">
             <Download />
             Import

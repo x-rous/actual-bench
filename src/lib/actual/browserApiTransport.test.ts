@@ -224,23 +224,24 @@ describe("notes", () => {
 describe("account groups", () => {
   it("reads an account's group id, null when absent", async () => {
     const getAccounts = jest.fn().mockResolvedValue([
-      { id: "a1", name: "Checking", offbudget: false, closed: false, account_group_id: "g1" },
+      { id: "a1", name: "Checking", offbudget: false, closed: false, account_group_id: "g1", sort_order: 12 },
       { id: "a2", name: "Cash", offbudget: false, closed: false, account_group_id: null },
       { id: "a3", name: "Old", offbudget: true, closed: false },
     ]);
     const accounts = await withRuntime({ getAccounts }).getAccounts();
     expect(accounts.map((a) => a.groupId)).toEqual(["g1", null, null]);
+    expect(accounts[0].sortOrder).toBe(12);
   });
 
   it("lists groups, dropping malformed rows", async () => {
-    const getAccountGroups = jest.fn().mockResolvedValue([{ id: "g1", name: "Everyday" }, { name: "no id" }, null]);
+    const getAccountGroups = jest.fn().mockResolvedValue([{ id: "g1", name: "Everyday", sort_order: 7 }, { name: "no id" }, null]);
     const groups = await withRuntime({
       getAccountGroups,
       createAccountGroup: jest.fn(),
       updateAccountGroup: jest.fn(),
       deleteAccountGroup: jest.fn(),
     }).getAccountGroups!();
-    expect(groups).toEqual([{ id: "g1", name: "Everyday" }]);
+    expect(groups).toEqual([{ id: "g1", name: "Everyday", sortOrder: 7 }]);
   });
 
   it("creates, renames and deletes groups through the runtime", async () => {
