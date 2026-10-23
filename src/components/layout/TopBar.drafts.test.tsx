@@ -109,7 +109,7 @@ it.each(["/credit-cards", "/loans/new", "/reconciliation/session", "/budget-mana
   const view = setup();
   expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-  expect(useStagedStore.getState().payees).toBeDefined();
+  expect(useStagedStore.getState().payees["blocked-payee"]).toBeUndefined();
   if (path !== "/budget-management") expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
   view.unmount();
   useStagedStore.getState().discardAll();
