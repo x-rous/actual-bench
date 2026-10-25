@@ -94,3 +94,15 @@ it("keeps non-collapsible panels visible regardless of the stored preference", (
   expect(screen.queryByRole("button", { name: "Show budget details" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Minimize budget details" })).not.toBeInTheDocument();
 });
+it("tucks an emptied panel away after a successful save, even though pressing Save focused it", () => {
+  function Harness() {
+    const [count, setCount] = useState(2);
+    const panel = usePendingPanel();
+    return <><button onClick={() => { setCount(0); panel.requestCollapse(); }}>Save</button><PendingPanelFrame title="Changes" count={count} autoCollapseEmpty><button>Inside</button></PendingPanelFrame></>;
+  }
+  render(<PendingPanelProvider><Harness /></PendingPanelProvider>);
+  fireEvent.focus(screen.getByRole("button", { name: "Inside" })); // the Save button sits inside the panel, so it opens the panel
+  expect(screen.getByRole("complementary", { name: "Changes" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(screen.getByRole("complementary", { name: "Changes minimized" })).toBeInTheDocument();
+});

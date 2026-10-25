@@ -52,8 +52,12 @@ export function checkLoanLimits(links: AssetDebtLink[]): string | null {
     const sorted = [...rows].sort(byStart);
     for (let i = 1; i < sorted.length; i++) if (sorted[i - 1].effectiveTo === null || sorted[i - 1].effectiveTo! > sorted[i].effectiveFrom) return "Allocation periods for the same asset and loan cannot overlap";
   }
-  for (const boundary of new Set(links.map((l) => l.effectiveFrom))) { // the sum only rises at a start; ends are exclusive
-    if (links.filter((l) => covers(l, boundary)).reduce((s, l) => s + l.allocationBps, 0) > FULL) return `Allocations to this loan would exceed 100% on ${boundary}`;
+  const loans = new Map<string, AssetDebtLink[]>();
+  for (const l of links) loans.set(l.debtId, [...(loans.get(l.debtId) ?? []), l]);
+  for (const loanLinks of loans.values()) {
+    for (const boundary of new Set(loanLinks.map((l) => l.effectiveFrom))) { // the sum only rises at a start; ends are exclusive
+      if (loanLinks.filter((l) => covers(l, boundary)).reduce((s, l) => s + l.allocationBps, 0) > FULL) return `Allocations to this loan would exceed 100% on ${boundary}`;
+    }
   }
   return null;
 }

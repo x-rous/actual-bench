@@ -132,7 +132,7 @@ function DateInput({
               type="button"
               disabled={disabled}
               aria-label={ariaLabel ? `Choose ${ariaLabel.toLowerCase()} from a calendar` : "Choose a date from a calendar"}
-              className="absolute right-1.5 text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+              className="absolute right-0.5 flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
             >
               <CalendarDays className="size-3.5" aria-hidden="true" />
             </button>

@@ -213,7 +213,7 @@ export function DataTable<T>(props: Props<T>) {
               ? <button
                 type="button"
                 tabIndex={-1}
-                className={cn("inline-flex items-center gap-1 hover:text-foreground", column.align === "right" && "flex-row-reverse")}
+                className={cn("inline-flex min-h-6 items-center gap-1 hover:text-foreground", column.align === "right" && "flex-row-reverse")}
                 onClick={() => onSort({ key: column.key, direction: sorted === "desc" ? "asc" : "desc" })}
               >
                 {column.headerIcon ?? <span className={column.hiddenHeader ? "sr-only" : undefined}>{column.header}</span>}

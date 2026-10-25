@@ -25,6 +25,8 @@ it("a change before a later saved period closes only the containing period and k
 it("refuses overlap and any allocation above 100% at every boundary, including archived and future periods", () => {
   expect(checkLoanLimits([link("2026-01-01", "2026-07-01", 6000), link("2026-07-01", null, 6000)])).toBeNull();
   expect(checkLoanLimits([link("2026-01-01", null, 6000), link("2026-03-01", null, 6000, "boat")])).toMatch(/exceed 100%/);
+  // the limit is per loan: full allocations to different loans do not add up
+  expect(checkLoanLimits([link("2026-01-01", null, 10000), link("2026-01-01", null, 10000, "house", "other-loan"), link("2026-01-01", null, 6000, "boat", "third")])).toBeNull();
   // a future period of another (e.g. archived) asset still reserves its share
   expect(checkLoanLimits([link("2026-01-01", null, 5000), link("2027-01-01", null, 6000, "boat")])).toMatch(/2027-01-01/);
   expect(checkLoanLimits([link("2026-01-01", "2026-08-01", 5000), link("2026-07-01", null, 1000)])).toMatch(/cannot overlap/);

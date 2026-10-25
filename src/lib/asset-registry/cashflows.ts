@@ -26,7 +26,9 @@ export function cashflowChoices(amountMinor: number): CashflowType[] {
   return (Object.keys(CASHFLOW_TYPES) as CashflowType[]).filter((type) => type === "other-excluded" || (amountMinor > 0 ? ["rental-income", "dividends-distributions", "interest-yield", "other-income", "disposal-proceeds"].includes(type) : amountMinor < 0 && ["operating-expense", "taxes-insurance-service-charges", "financing-interest", "capital-expenditure"].includes(type)));
 }
 /** `accountIssues` scopes each read problem to its source account, so reporting is limited to assets linked to it. */
-export type ExternalSnapshot = { rows: ActivityRow[]; issues: string[]; accountIssues?: Record<string, string[]>; accounts: Account[]; fetchedAt: string };
+export type ExternalSnapshot = { rows: ActivityRow[]; issues: string[]; accountIssues?: Record<string, string[]>; accounts: Account[]; fetchedAt: string;
+  /** The accounts whose rows were read; absent when every external account was read. */
+  readAccountIds?: string[] };
 /**
  * Complete reads of the named external accounts only (never the whole budget). Each account read has a fixed cost,
  * so the registry reads just the accounts that hold links, and an action reads just the accounts of the rows it
@@ -37,7 +39,8 @@ export async function readExternal(transport: ActualBenchTransport, bookAccountI
   const rows: ActivityRow[] = []; const issues: string[] = []; const accountIssues: Record<string, string[]> = {};
   const wanted = accountIds ? new Set(accountIds) : null;
   const targets = accounts.filter((a) => !bookAccountIds.includes(a.id) && (!wanted || wanted.has(a.id)));
-  if (targets.length === 0) return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString() };
+  const readAccountIds = accountIds ? targets.map((a) => a.id) : undefined;
+  if (targets.length === 0) return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), readAccountIds };
   const caps = transport.getSyncCapabilities().capabilities;
   if (!caps.listTransactions || !caps.readSplitLines) throw new Error("Complete cashflow reads are unsupported by this connection");
   for (const account of targets) {
@@ -51,7 +54,7 @@ export async function readExternal(transport: ActualBenchTransport, bookAccountI
     } catch { local.push(`Could not read ${account.name}. Refresh before linking or posting.`); }
     if (local.length) { accountIssues[account.id] = local; issues.push(...local); }
   }
-  return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString() };
+  return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), readAccountIds };
 }
 /** The external accounts the registry must read: those holding a linked cashflow or a capitalized-expense source. */
 export const linkedExternalAccountIds = (registry: { cashflows?: { actualAccountId: string }[] }, bookAccountIds: string[]): string[] =>

@@ -2,16 +2,16 @@ import { FEATURES, FEATURE_SECTIONS, getFeatureForPath } from "./catalogue";
 
 describe("feature presentation contracts", () => {
   it("keeps implemented features complete and uniquely registered", () => {
-    expect(FEATURES).toHaveLength(19);
-    expect(new Set(FEATURES.map((feature) => feature.id)).size).toBe(19);
-    expect(new Set(FEATURES.map((feature) => feature.href)).size).toBe(19);
+    expect(FEATURES).toHaveLength(20);
+    expect(new Set(FEATURES.map((feature) => feature.id)).size).toBe(20);
+    expect(new Set(FEATURES.map((feature) => feature.href)).size).toBe(20);
     expect(FEATURE_SECTIONS.flatMap((section) => section.items)).toEqual(FEATURES);
-    expect(FEATURES.filter((feature) => feature.maturity === "experimental")).toHaveLength(4);
+    expect(FEATURES.filter((feature) => feature.maturity === "experimental")).toHaveLength(5);
     expect(FEATURES.filter((feature) => feature.groupId === "financial-management").map((feature) => feature.id)).toEqual([
-      "budget-management", "reconciliation", "credit-cards", "loans", "fx-rates",
+      "budget-management", "reconciliation", "credit-cards", "assets", "loans", "fx-rates",
     ]);
     expect(getFeatureForPath("/reconciliation")?.maturity).toBe("stable");
-    expect(getFeatureForPath("/assets")).toBeUndefined();
+    expect(getFeatureForPath("/assets")?.id).toBe("assets");
     expect(getFeatureForPath("/overview")).toBeUndefined();
     expect(getFeatureForPath("/app-health")).toBeUndefined();
   });

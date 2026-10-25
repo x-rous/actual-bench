@@ -101,6 +101,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Budget Cockpit', link: '/user-guide/budget-management/' },
 						{ label: 'Credit Cards', link: '/user-guide/credit-cards/' },
+						{ label: 'Assets', link: '/user-guide/asset-registry/' },
 						{ label: 'Loans & Debt', link: '/user-guide/assets-debt/' },
 						{ label: 'Bank Reconciliation', link: '/user-guide/bank-reconciliation/' },
 						{ label: 'How Matching Works', link: '/user-guide/reconciliation-matching/' },

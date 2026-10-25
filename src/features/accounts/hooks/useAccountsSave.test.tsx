@@ -95,6 +95,19 @@ describe("useAccountsSave", () => {
     useStagedStore.getState().discardAll();
   });
 
+  it("saves the embedded account without touching unrelated account or group drafts", async () => {
+    const transport = makeTransport("http-api");
+    mockGetTransport.mockReturnValue(transport);
+    stageNewAccount();
+    useStagedStore.getState().stageNew("accounts", { id: "unrelated", name: "Other draft", offBudget: false, closed: false });
+    useStagedStore.getState().stageNew("accountGroups", { id: "other-group", name: "Pending group" });
+    const { result } = renderHook(() => useAccountsSave(), { wrapper: makeWrapper(new QueryClient()) });
+    await act(async () => { await result.current.save({ accountIds: ["client-account-1"] }); });
+    expect(transport.createAccount).toHaveBeenCalledTimes(1);
+    expect(useStagedStore.getState().accounts.unrelated.isNew).toBe(true);
+    expect(useStagedStore.getState().accountGroups["other-group"].isNew).toBe(true);
+  });
+
   it("saves HTTP API staged creates through the selected transport without Direct sync", async () => {
     const transport = makeTransport("http-api");
     mockGetTransport.mockReturnValue(transport);

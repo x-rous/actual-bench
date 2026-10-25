@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { daysInMonth, isIsoDate, parseIsoDate } from "@/lib/financial-models/calendar/dates";
+import { daysInMonth, isIsoDate } from "@/lib/financial-models/calendar/dates";
 import { divRoundInt } from "@/lib/financial-models/money";
 import { dateSchema, type BookMetadata } from "./models";
 
@@ -87,7 +87,7 @@ export function periodStatuses(rows: ScheduleRow[], metadata: BookMetadata[], as
     return { ...row, state, association };
   });
 }
-export const isPeriod = (value: string): boolean => /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && parseIsoDate(`${value}-01`).month >= 1;
+export const isPeriod = (value: string): boolean => /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && isIsoDate(`${value}-01`);
 /** Posted months whose Actual row is gone: flagged for attention, never a reason to block other actions. */
 export const missingMonths = (metadata: BookMetadata[], assetId: string, actualIds: ReadonlySet<string>): string[] =>
   metadata.filter((m) => m.assetId === assetId && m.depreciationPeriod && !actualIds.has(m.actualTransactionId)).map((m) => m.depreciationPeriod!).sort();

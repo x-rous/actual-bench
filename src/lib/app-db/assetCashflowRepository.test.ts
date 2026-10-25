@@ -74,7 +74,7 @@ it("keeps one posted depreciation month per asset across schedule edits and prot
   expect(replaced.metadata.filter((m) => m.depreciationPeriod === "2026-01").map((m) => m.actualTransactionId)).toEqual(["jan-again"]);
 });
 it("matches an existing, already classified book row to its CapEx expense without writing anything else", () => {
-  const { db, save, link } = fixture();
+  const { db, save, link, sources } = fixture();
   const existing: CashflowChange = { role: "book", actualTransactionId: "book", actualAccountId: "vehicles", assetId: "byd", classification: "capital-expenditure", revision: 0 };
   save([existing, link]); // both classified on their own; no relationship yet
   expect(readRegistry(db, "budget").metadata[0].capitalizedFromTransactionId ?? null).toBeNull();
@@ -82,5 +82,6 @@ it("matches an existing, already classified book row to its CapEx expense withou
   expect(matched.metadata[0]).toMatchObject({ actualTransactionId: "book", capitalizedFromTransactionId: "expense", revision: 2 });
   expect(matched.cashflows).toHaveLength(1);
   // a second adjustment cannot claim the same expense
-  expect(() => save([{ ...existing, actualTransactionId: "other-book", capitalizedFromTransactionId: "expense", revision: 0 }])).toThrow();
+  const live = [...sources, { ...sources.find((r) => r.id === "book")!, id: "other-book" }];
+  expect(() => save([{ ...existing, actualTransactionId: "other-book", capitalizedFromTransactionId: "expense", revision: 0 }], live)).toThrow(/already capitalized/);
 });

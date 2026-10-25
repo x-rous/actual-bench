@@ -38,7 +38,10 @@ export function useAccountsSave() {
     [staged, stagedGroups]
   );
 
-  async function save(): Promise<SaveSummary> {
+  async function save(options?: { accountIds: string[] }): Promise<SaveSummary> {
+    // Embedded entity creation saves only its owned draft; normal Accounts Save keeps its full scope.
+    const staged = options ? Object.fromEntries(Object.entries(useStagedStore.getState().accounts).filter(([id]) => options.accountIds.includes(id))) : useStagedStore.getState().accounts;
+    const stagedGroups: ReturnType<typeof useStagedStore.getState>["accountGroups"] = options ? {} : useStagedStore.getState().accountGroups;
     if (!connection) throw new Error("No active connection");
 
     setIsSaving(true);

@@ -69,6 +69,7 @@ export function prepareCapital(context: CapitalContext, input: CapitalInput): Ca
     if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) throw new Error("Enter a positive acquisition amount");
     const account = context.external.accounts.find((a) => a.id === input.sourceAccountId && !a.closed && !context.registry.assets.some((asset) => asset.actualAccountId === a.id));
     if (!account || (!account.offBudget && !input.categoryId)) throw new Error("Choose a saved source account and the on-budget expense category");
+    if (context.external.readAccountIds && !context.external.readAccountIds.includes(account.id)) throw new Error("The source account has not been read. Refresh before recording the acquisition.");
     if (context.external.rows.some((r) => r.accountId === account.id && r.date === input.date && r.amountMinor === -input.amountMinor)) throw new Error("A matching payment already exists. Inspect/classify the existing movement instead.");
     delta = input.amountMinor;
   }

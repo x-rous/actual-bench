@@ -124,4 +124,8 @@ test("boundTreatment names the treatment that owns a row", () => {
   expect(boundTreatment({ metadata: [meta({ depreciationPeriod: "2026-01" })] }, "r")).toBe("depreciation");
   expect(boundTreatment({ metadata: [meta({ capitalizedFromTransactionId: "x" })] }, "r")).toBe("capital-expenditure");
   expect(boundTreatment({ metadata: [meta({})] }, "r")).toBeNull();
+  const disposal = { data: { kind: "disposal", bookAdjustmentTransactionId: "companion" } };
+  expect(boundTreatment({ metadata: [meta({ context: disposal })] }, "r")).toBe("disposal");
+  expect(boundTreatment({ metadata: [meta({ context: disposal })] }, "companion")).toBe("disposal");
+  expect(boundTreatment({ metadata: [], cashflows: [{ context: disposal } as never] }, "companion")).toBe("disposal");
 });

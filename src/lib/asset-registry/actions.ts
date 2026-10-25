@@ -127,7 +127,7 @@ export async function writeTypeTags(context: ActionContext, rowIds: string[], ty
   const edits: { row: SyncSourceTransaction; notes: string }[] = [];
   for (const id of rowIds) {
     const row = snapshot.source.find((r) => r.id === id);
-    if (!row || !caps.updateTransaction || protectedReason(row, snapshot.transferKnown)) { skipped.push(id); continue; }
+    if (!row || !caps.updateTransaction || protectedReason(row, snapshot.transferKnown) || boundTreatment(context.registry, id)) { skipped.push(id); continue; }
     const notes = withTypeTag(row.notes, type);
     if (notes === (row.notes ?? "")) continue; // already carries exactly this tag
     edits.push({ row, notes });

@@ -120,7 +120,7 @@ function TopBarVersionChip({
 }
 
 export function TopBar() {
-  const { actionsTarget } = usePendingPanel();
+  const { actionsTarget, requestCollapse } = usePendingPanel();
   const router = useRouter();
   const pathname = usePathname();
   const feature = getFeatureForPath(pathname);
@@ -358,6 +358,7 @@ export function TopBar() {
       clearHistory();
       if (totalFailed === 0) {
         toast.success(`Saved ${totalSucceeded} item${totalSucceeded !== 1 ? "s" : ""} successfully.`);
+        requestCollapse();
       } else {
         toast.error(`${totalSucceeded} saved, ${totalFailed} failed.`);
       }

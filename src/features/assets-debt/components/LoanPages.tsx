@@ -27,6 +27,7 @@ import { purgeLegacyLoanStorage } from "../lib/loanStorage";
 import { LoanActivity } from "./workspace/LoanActivity";
 import { MatchingEditor } from "./rules/MatchingEditor";
 import { LoanSetup, loanSettingsComplete, setupChecklist } from "./workspace/LoanSetup";
+import { LinkedAssetsNote } from "@/features/asset-registry/LinkedAssetsNote";
 import { WorkspaceFrame, workspaceTabFor, workspaceTabSlug, type WorkspaceTab } from "./workspace/WorkspaceFrame";
 
 /**
@@ -408,6 +409,7 @@ function LoanEditor({ id }: { id: string }) {
         }
       }}
     >
+      <LinkedAssetsNote debtId={detail.debt.id} budgetSyncId={detail.debt.budgetSyncId} />
       <IssueList issues={issues} />
       {remoteChanged ? <div role="alert" className="mx-4 my-2 text-sm">The saved loan changed. Your edits are preserved. <Button variant="outline" size="sm" onClick={() => { setEditingBase(saved); setSim(saved?.simulation ?? null); setTracking(saved?.tracking ?? null); }}>Discard edits and reload</Button></div> : null}
       {staleStrategy && !readOnly ? <p className="mx-4 mt-2 text-xs text-muted-foreground">{staleStrategy}</p> : null}

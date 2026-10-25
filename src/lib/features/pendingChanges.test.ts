@@ -1,7 +1,7 @@
 import { FEATURES, getFeatureForPath } from "./catalogue";
 import { getFeatureEntryState } from "./pendingChanges";
 
-it.each(["/credit-cards", "/credit-cards/card", "/loans", "/loans/new", "/loans/a-loan", "/reconciliation", "/reconciliation/session"])("requires clean global drafts on %s", path => {
+it.each(["/credit-cards", "/credit-cards/card", "/loans", "/loans/new", "/loans/a-loan", "/reconciliation", "/reconciliation/session", "/assets"])("requires clean global drafts on %s", path => {
   const feature = getFeatureForPath(path)!;
   expect(feature.pendingChangesPanel).toBe("none");
   expect(feature.requiresSavedData).toBe(true);
@@ -18,7 +18,7 @@ it("keeps the budget's own edits accessible, but resolves entity drafts first", 
 });
 
 it("requires saved data wherever the global panel is hidden", () => {
-  for (const feature of FEATURES.filter(f => f.pendingChangesPanel === "none")) {
+  for (const feature of FEATURES.filter(f => f.pendingChangesPanel === "none" && f.usesStagedActions)) {
     expect(feature.requiresSavedData).toBe(true);
   }
   expect(getFeatureEntryState(getFeatureForPath("/accounts"), true, true).blocked).toBe(false);

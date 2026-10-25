@@ -21,8 +21,11 @@ type Props = {
 };
 
 export function PendingPanelFrame({ title, displayTitle = title, count, errors = 0, autoCollapseEmpty = false, collapsible = true, width = "w-90", badge, children, "data-budget-details-panel": budgetDetailsPanel }: Props) {
-  const { minimized, setMinimized, forceExpanded } = usePendingPanel();
+  const { minimized, setMinimized, forceExpanded, collapseSignal } = usePendingPanel();
   const [openedEmpty, setOpenedEmpty] = useState(false);
+  // The Save button lives in this panel, so pressing it counts as "opened". After a save that leaves nothing pending, tuck the panel away.
+  const [seenSignal, setSeenSignal] = useState(collapseSignal);
+  if (seenSignal !== collapseSignal) { setSeenSignal(collapseSignal); if (count === 0 && errors === 0) setOpenedEmpty(false); }
   const collapsed = collapsible && !forceExpanded && (minimized || (autoCollapseEmpty && count === 0 && errors === 0 && !openedEmpty));
   const panelRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
