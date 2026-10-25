@@ -1,0 +1,6 @@
+import type { Asset } from "./models";
+import type { SyncSourceTransaction } from "@/lib/actual/transport";
+export const testAsset = (id = "byd", extra: Partial<Asset> = {}): Asset => ({ id, budgetSyncId: "budget", actualAccountId: "vehicles", name: id, assetType: "vehicle", assetTag: `#asset_${id}`, description: null, status: "active", incomeGenerating: true, revision: 1, ownership: [{ effectiveFrom: "2025-01-01", ownershipBps: 10000 }], createdAt: "now", updatedAt: "now", archivedAt: null, ...extra });
+export const testRow = (id: string, amount: number, extra: Partial<SyncSourceTransaction> = {}): SyncSourceTransaction => ({ id, accountId: "vehicles", date: "2026-01-01", amount, payeeId: null, payeeName: null, categoryId: null, categoryName: null, notes: null, cleared: false, reconciled: false, importedId: null, transferId: null, scheduleId: null, isParent: false, isChild: false, parentId: null, splitLines: [], ...extra });
+/** A transport that accepts Notes edits, for tests that exercise type tagging. */
+export const tagTransport = () => ({ mode: "http-api", getSyncCapabilities: () => ({ capabilities: { updateTransaction: true } }), updateTransactionForSync: jest.fn(async () => null) }) as unknown as import("@/lib/actual/transport").ActualBenchTransport;

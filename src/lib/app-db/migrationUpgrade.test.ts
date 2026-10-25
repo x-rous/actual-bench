@@ -1374,7 +1374,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(50);
+      expect(LATEST_SCHEMA_VERSION).toBe(58);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
@@ -1880,7 +1880,7 @@ describe("v50 reconciliation card-statement link", () => {
 
       const upgraded = getAppDb(path);
       const meta = runMigrations(upgraded);
-      expect(meta.schemaVersion).toBe(50);
+      expect(meta.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       expect(upgraded.prepare("SELECT id, account_name, tag, card_statement_id FROM reconciliation_sessions").all())
         .toEqual([{ id: "s1", account_name: "Visa", tag: "October", card_statement_id: null }]);
       expect(runMigrations(upgraded)).toEqual(meta);
