@@ -24,6 +24,7 @@ export type PaymentBadgeKey =
   | "settled-with-plan"
   | "paid-late"
   | "minimum-paid"
+  | "not-paid"
   | "overdue";
 
 export type PaymentStatus = {
@@ -43,11 +44,26 @@ export type PaymentStatus = {
 const days = (count: number) => `${count} ${count === 1 ? "day" : "days"}`;
 
 /**
+ * Whether a later statement of the same card has been issued. Its balance carries whatever this one
+ * left unpaid, so this statement stops counting days overdue and the next one owns the debt.
+ */
+export function hasLaterStatement(statements: Statement[], statement: Statement) {
+  return statements.some((other) => other.cardId === statement.cardId && !other.estimate && other.closingDate > statement.closingDate);
+}
+
+/**
  * One ordered rule list → one of the 12 payment badges (§9.13), plus "Payment history
  * incomplete" when the allocation is unknown. Every screen reads this; labels never switch
  * meaning with state.
  */
-export function paymentStatus(statement: Statement | undefined, payment: StatementPayment | undefined, today: string, startingPoint = false): PaymentStatus {
+export function paymentStatus(
+  statement: Statement | undefined,
+  payment: StatementPayment | undefined,
+  today: string,
+  startingPoint = false,
+  /** A later statement has been issued (see `hasLaterStatement`). */
+  superseded = false
+): PaymentStatus {
   const base = { date: null, known: false, paid: false, late: false, overdue: false } as const;
   if (!statement) return { ...base, key: "unknown", label: "No statement", tone: "muted", line: "" };
   if (statement.estimate) {
@@ -95,6 +111,11 @@ export function paymentStatus(statement: Statement | undefined, payment: Stateme
         ...known, key: "minimum-paid", label: "Minimum paid", tone: "attention",
         line: late ? "Minimum paid late · balance carried" : "Balance carried", date: payment.minimumPaidDate, late,
       };
+    }
+    // A missed payment is overdue only until the next statement is issued; that statement's balance
+    // already includes it, so it is flagged amber as not paid and no longer asks for attention.
+    if (superseded) {
+      return { ...known, key: "not-paid", label: "Not paid", tone: "attention", line: "Carried into the next statement", late: true };
     }
     return { ...known, key: "overdue", label: "Overdue", tone: "danger", line: dueLine, date: today, overdue: true };
   }
