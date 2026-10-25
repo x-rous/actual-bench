@@ -26,7 +26,7 @@ const STEPS: { id: SessionStep; label: string }[] = [
   { id: "import", label: "Import" },
   { id: "reconcile", label: "Reconcile" },
   { id: "review", label: "Review" },
-  { id: "applied", label: "Applied" },
+  { id: "applied", label: "Apply" },
 ];
 
 /**

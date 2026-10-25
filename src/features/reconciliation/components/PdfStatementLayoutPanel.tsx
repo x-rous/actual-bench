@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Save, Settings2 } from "lucide-react";
+import { AlertTriangle, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -109,16 +109,6 @@ export function PdfStatementLayoutPanel({
                 .map((profile) => ({ value: profile.recordId, label: profile.envelope.profile.name })),
             }))}
         />
-        {onSave && (
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={disabled || !canSave}
-            onClick={onSave}
-          >
-            <Save aria-hidden="true" className="mr-1 size-3.5" />Save layout
-          </Button>
-        )}
       </div>
 
       {/*

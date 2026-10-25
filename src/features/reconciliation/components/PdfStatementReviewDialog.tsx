@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ChevronRight,
@@ -9,7 +9,6 @@ import {
   Save,
   ShieldCheck,
   Trash2,
-  TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
@@ -29,6 +28,7 @@ import {
   buildPdfDiagnosticsReport,
   columnExamplesForRegions,
   guidanceFromPdfLayoutProfile,
+  isPageIgnoredByRules,
   layoutReadingFromGuidance,
   layoutReadingKey,
   matchPdfLayoutProfile,
@@ -85,9 +85,11 @@ type ScopedCorrectionOffer = {
 /**
  * Warnings that a bulk "mark reviewed" would clear without resolving. They are
  * named in a confirmation so accepting them stays a decision, not a reflex.
+ *
+ * A possible duplicate is not one of them: the same charge twice on a day is
+ * ordinary on a card statement, and the row says so for as long as it is shown.
  */
 const UNRESOLVED_REVIEW_REASONS: PdfConfidenceReason[] = [
-  "POSSIBLE_DUPLICATE",
   "BALANCE_MISMATCH",
   "STATEMENT_SUMMARY_MISMATCH",
   "DATE_OUTSIDE_STATEMENT_PERIOD",
@@ -97,6 +99,33 @@ const UNRESOLVED_REVIEW_REASONS: PdfConfidenceReason[] = [
 ];
 
 const NOOP = () => {};
+
+/**
+ * A function that keeps its identity while always calling the latest one.
+ *
+ * The table's rows are memoised, and an inline handler is a new function on
+ * every render, so each one re-rendered the whole table for a change to a
+ * single row.
+ */
+function useStableCallback<Args extends unknown[], Result>(callback: (...args: Args) => Result) {
+  const latest = useRef(callback);
+  useEffect(() => {
+    latest.current = callback;
+  });
+  return useCallback((...args: Args) => latest.current(...args), []);
+}
+
+/** The table's version of a row, kept for as long as the row itself is. */
+const tableRowCache = new WeakMap<PdfTransactionProposal, PdfTransactionProposal>();
+
+function tableRowFor(row: PdfTransactionProposal) {
+  let shown = tableRowCache.get(row);
+  if (!shown) {
+    shown = { ...row, amount: formatTableAmount(row.amount) };
+    tableRowCache.set(row, shown);
+  }
+  return shown;
+}
 
 export type PdfDetectionProfileOption = {
   recordId: string;
@@ -187,7 +216,8 @@ export function PdfStatementReviewDialog({
   const [controlFocus, setControlFocus] = useState<{ id: string; requestId: number } | null>(null);
   const [interpretationOpen, setInterpretationOpen] = useState(true);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
-  const [pageWarningsAcknowledged, setPageWarningsAcknowledged] = useState(false);
+  // The pages the reader has said they checked, so a different set asks again.
+  const [acknowledgedPages, setAcknowledgedPages] = useState<string | null>(null);
 
   const rows = useMemo(() => parsed?.transactions ?? [], [parsed]);
   const visibleRows = useMemo(
@@ -195,10 +225,7 @@ export function PdfStatementReviewDialog({
     [filter, rows, search]
   );
   const sortedRows = useMemo(() => sortTransactions(visibleRows, sort), [sort, visibleRows]);
-  const tableRows = useMemo(
-    () => sortedRows.map((row) => ({ ...row, amount: formatTableAmount(row.amount) })),
-    [sortedRows]
-  );
+  const tableRows = useMemo(() => sortedRows.map(tableRowFor), [sortedRows]);
   const visibleIds = useMemo(() => visibleRows.map((row) => row.id), [visibleRows]);
   const selectedVisible = visibleIds.filter((id) => selectedIds.has(id)).length;
   const allVisibleSelected = visibleIds.length > 0 && selectedVisible === visibleIds.length;
@@ -303,20 +330,27 @@ export function PdfStatementReviewDialog({
       parsed ? columnExamplesForRegions(parsed.reconstructedPages, draftGuidance?.regions ?? [], column) : [],
     ])
   ), [draftGuidance?.columns, draftGuidance?.regions, parsed]);
-  const detectionIssues = useMemo(
-    () => detectionIssuesFor(parsed, draftGuidance, preview),
-    [draftGuidance, parsed, preview]
-  );
   // Pages the parser could not read are missing transactions, not a detail in
-  // a secondary view: import stays disabled until they are acknowledged.
-  const unreadablePageCount = (parsed?.metrics.unreadablePages ?? 0) + (parsed?.metrics.imageOnlyPages ?? 0);
-  const pageWarnings = useMemo(
-    () => (parsed?.notices ?? [])
+  // a secondary view: import stays disabled until they are acknowledged. A
+  // page the layout's page rules leave out is not missing anything. The pages
+  // PDF.js failed on come from the first read, which is the only one that
+  // saw them; a re-run starts from the document and reports image-only pages.
+  const unreadablePages = useMemo(() => {
+    const pageCount = parsed?.reconstructedPages.length ?? 0;
+    const noted = (parsed?.notices ?? [])
       .filter((notice) => notice.code === "IMAGE_ONLY_PAGES" || notice.code === "UNREADABLE_PAGES")
-      .map((notice) => notice.message),
-    [parsed?.notices]
+      .flatMap((notice) => notice.pageNumbers ?? []);
+    return [...new Set([...(result?.extraction?.unreadablePages ?? []), ...noted])]
+      .filter((pageNumber) => !isPageIgnoredByRules(pageNumber, pageCount, parsed?.guidance.pageRules))
+      .sort((left, right) => left - right);
+  }, [parsed?.guidance.pageRules, parsed?.notices, parsed?.reconstructedPages.length, result?.extraction?.unreadablePages]);
+  const unreadablePagesKey = unreadablePages.join(",");
+  const pagesChecked = unreadablePages.length === 0 || acknowledgedPages === unreadablePagesKey;
+  const importBlockedByPages = !pagesChecked;
+  const detectionIssues = useMemo(
+    () => detectionIssuesFor(parsed, draftGuidance, preview, pagesChecked ? [] : unreadablePages),
+    [draftGuidance, pagesChecked, parsed, preview, unreadablePages]
   );
-  const importBlockedByPages = unreadablePageCount > 0 && !pageWarningsAcknowledged;
 
   useEffect(() => {
     if (filter !== "all" && !rows.some((row) => matchesCategory(row, filter))) setFilter("all");
@@ -327,7 +361,49 @@ export function PdfStatementReviewDialog({
     setColumnFocusRequest(null);
   }, [fileName, result?.document]);
 
+  // Handed to the table's memoised rows, so they keep their identity.
+  const toggleRow = useStableCallback((id: string, checked: boolean) => {
+    setScopedCorrectionOffer(null);
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  });
+  const changeDirection = useStableCallback(
+    (row: PdfTransactionProposal, direction: "debit" | "credit") => setDirection(row, direction)
+  );
+  const changeField = useStableCallback((row: PdfTransactionProposal, field: PdfTransactionField, value: string | null) =>
+    setField(row, field, field === "amount" && value ? normalizeTableAmountInput(value) : value));
+  const openSource = useStableCallback(
+    (row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) => showSource(row, field)
+  );
+  const acceptRow = useStableCallback((row: PdfTransactionProposal) =>
+    structuralCorrection({ kind: "accept-transaction", transactionIds: [row.id] }));
+  const ignoreRow = useStableCallback((row: PdfTransactionProposal) =>
+    structuralCorrection({ kind: "ignore-block", blockId: row.id }));
+  const [addedRowId, setAddedRowId] = useState<string | null>(null);
+  const clearAddedRow = useStableCallback(() => setAddedRowId(null));
+  const addTransaction = useStableCallback(() => {
+    const transactionId = generateId();
+    // The new row is rejected until it is filled in, and a filter or a search
+    // that does not match it would hide the one thing just asked for.
+    setFilter("all");
+    setSearch("");
+    setAddedRowId(transactionId);
+    structuralCorrection({ kind: "add-transaction", transactionId });
+  });
+  const splitRow = useStableCallback((row: PdfTransactionProposal) => {
+    const block = parsed?.blocks.find((entry) => entry.id === row.id);
+    if (block?.rowIds[1]) structuralCorrection({ kind: "split-block", blockId: block.id, beforeRowId: block.rowIds[1] });
+  });
+
   function resolveIssue(issue: PdfDetectionIssue) {
+    if (issue.confirmsPages) {
+      setAcknowledgedPages(unreadablePagesKey);
+      return;
+    }
     setScopedCorrectionOffer(null);
     setDiagnosticsOpen(false);
     setMode("adjust");
@@ -758,18 +834,6 @@ export function PdfStatementReviewDialog({
                   />
                 </nav>
                 {isParsing && <span role="status" className="shrink-0 text-xs text-muted-foreground">Re-running parser…</span>}
-                {unreadablePageCount > 0 && pageWarningsAcknowledged && (
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    className="shrink-0 text-amber-700 dark:text-amber-300"
-                    title="Show the pages that could not be read"
-                    onClick={() => setPageWarningsAcknowledged(false)}
-                  >
-                    <TriangleAlert aria-hidden="true" className="mr-1 size-3.5" />
-                    {unreadablePageCount} {unreadablePageCount === 1 ? "page" : "pages"} unreadable
-                  </Button>
-                )}
                 {layoutDrifted && onSaveProfile && (
                   <Button
                     size="xs"
@@ -790,21 +854,6 @@ export function PdfStatementReviewDialog({
             {parserError && (
               <div role="alert" className="shrink-0 border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
                 Re-run failed: {parserError}
-              </div>
-            )}
-
-            {pageWarnings.length > 0 && !pageWarningsAcknowledged && (
-              <div role="alert" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-amber-500/40 bg-amber-500/5 px-4 py-2 text-xs">
-                <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
-                <span className="min-w-0 flex-1">{pageWarnings.join(" ")}</span>
-                <Button
-                  className="shrink-0"
-                  size="xs"
-                  variant="outline"
-                  onClick={() => setPageWarningsAcknowledged(true)}
-                >
-                  I checked these pages
-                </Button>
               </div>
             )}
 
@@ -837,28 +886,16 @@ export function PdfStatementReviewDialog({
                     return next;
                   });
                 }}
-                onToggle={(id, checked) => {
-                  setScopedCorrectionOffer(null);
-                  setSelectedIds((current) => {
-                    const next = new Set(current);
-                    if (checked) next.add(id);
-                    else next.delete(id);
-                    return next;
-                  });
-                }}
-                onDirection={setDirection}
-                onField={(row, field, value) => setField(
-                  row,
-                  field,
-                  field === "amount" && value ? normalizeTableAmountInput(value) : value
-                )}
-                onSource={showSource}
-                onAccept={(row) => structuralCorrection({ kind: "accept-transaction", transactionIds: [row.id] })}
-                onIgnore={(row) => structuralCorrection({ kind: "ignore-block", blockId: row.id })}
-                onSplit={(row) => {
-                  const block = parsed.blocks.find((entry) => entry.id === row.id);
-                  if (block?.rowIds[1]) structuralCorrection({ kind: "split-block", blockId: block.id, beforeRowId: block.rowIds[1] });
-                }}
+                onToggle={toggleRow}
+                onDirection={changeDirection}
+                onField={changeField}
+                onSource={openSource}
+                onAccept={acceptRow}
+                onIgnore={ignoreRow}
+                onSplit={splitRow}
+                onAdd={addTransaction}
+                focusRowId={addedRowId}
+                onFocusHandled={clearAddedRow}
                 sourcePanel={sourceOpen && page ? (
                   <aside className="flex w-[42%] min-w-[26rem] flex-col border-l max-lg:absolute max-lg:inset-0 max-lg:z-30 max-lg:w-full max-lg:min-w-0 max-lg:bg-background">
                     {/* Same height and rule as the table's toolbar, so the two
@@ -1066,7 +1103,14 @@ export function PdfStatementReviewDialog({
             {/* Beside the button it is about, so the reason and the disabled
                 control are read together rather than at opposite ends. */}
             <span className="mr-1 text-xs">
-              {importBlockedByPages ? <span className="text-amber-700 dark:text-amber-300">Confirm the pages that could not be read before importing.</span>
+              {importBlockedByPages ? (
+                <span className="inline-flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                  {pageListText(unreadablePages)} could not be read, so transactions printed there are missing.
+                  <Button size="xs" variant="outline" onClick={() => setAcknowledgedPages(unreadablePagesKey)}>
+                    I checked these pages
+                  </Button>
+                </span>
+              )
                 : blockingCount > 0 ? <span className="text-destructive">Resolve {blockingCount} rejected {blockingCount === 1 ? "transaction" : "transactions"}.</span>
                 : reviewCount > 0 ? <span className="text-amber-700 dark:text-amber-300">Check and mark {reviewCount} {reviewCount === 1 ? "transaction" : "transactions"} reviewed.</span>
                   : <span className="text-muted-foreground">All transactions are ready.</span>}
@@ -1117,10 +1161,18 @@ function initialReviewFilter(result: PdfStatementParseResult | null): PdfReviewC
  * settles it: a Statement interpretation control to focus, or a row to show.
  * Items waiting on the reader come first; the rest are notes.
  */
+/** "Page 8", "Pages 8 and 9", "Pages 3, 5 and 9". */
+function pageListText(pages: number[]) {
+  if (pages.length === 1) return `Page ${pages[0]}`;
+  return `Pages ${pages.slice(0, -1).join(", ")} and ${pages.at(-1)}`;
+}
+
 function detectionIssuesFor(
   applied: PdfStatementParseResult | null,
   guidance: PdfParserGuidance | null,
-  preview: PdfStatementParseResult | null = null
+  preview: PdfStatementParseResult | null = null,
+  /** Pages with no readable text that nobody has said they checked. */
+  unconfirmedPages: number[] = []
 ): PdfDetectionIssue[] {
   if (!applied || !guidance) return [{ message: "No detection result is available.", kind: "answer" }];
   // What the rows say is read from the previewed re-read when there is one: it
@@ -1188,7 +1240,17 @@ function detectionIssuesFor(
     });
   }
 
+  if (unconfirmedPages.length) {
+    issues.push({
+      message: `${pageListText(unconfirmedPages)} ${unconfirmedPages.length === 1 ? "has" : "have"} no readable text layer, so any transactions printed there are missing.`,
+      kind: "answer",
+      actionLabel: "I checked these pages",
+      confirmsPages: true,
+    });
+  }
   for (const notice of result.notices ?? []) {
+    // Said once, above, with the pages the page rules leave out removed.
+    if (notice.code === "IMAGE_ONLY_PAGES" || notice.code === "UNREADABLE_PAGES") continue;
     const focus = notice.setting ? SETTING_CONTROLS[notice.setting] : undefined;
     issues.push({
       message: notice.message,

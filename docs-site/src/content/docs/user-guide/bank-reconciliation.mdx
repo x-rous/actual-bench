@@ -24,6 +24,9 @@ If you then create a global draft through Quick Create or Redo, the relevant pan
 closing your current editor. Resolve the global draft there; local work stays in place. Re-entering
 the page or switching budgets checks pending drafts again.
 
+The **Guide** button at the top right of the session list opens an illustrated walk-through of the whole
+feature, from importing a statement to applying safely, without leaving the page.
+
 ## Before you start
 
 You need a statement file and the Actual account to compare it with. Supported files are CSV, TSV,
@@ -117,7 +120,9 @@ mapping with its neighbour, moving it left or right on the page.
 transactions there would be, how many are ready to import, and how the net change moves, each with
 the difference stated. Underneath it summarizes the row changes - added, removed, amounts, dates,
 descriptions - and warns when a change would leave transactions unreadable. **Apply changes and
-review** then reuses the extracted file and preserves your row corrections.
+review** then reuses the extracted file and preserves your row corrections. These actions, with
+**Reset detection** and **Save layout**, stay at the top of the settings column, and the preview
+opens directly under them.
 
 #### Review transactions
 
@@ -139,11 +144,17 @@ Use **All**, **Needs review**, and **Ready** above the table to change the view;
 shows non-empty structural, date, amount, direction, balance, reconciliation, and duplicate filters.
 Direct edits change one row, and after an eligible edit the footer can offer the same correction to a
 stated number of similar rows or all remaining rows. Marking several selected rows reviewed at once
-first names the warnings that action would accept without resolving, such as possible duplicates or a
-balance that does not reconcile.
+first names the warnings that action would accept without resolving, such as a balance that does not
+reconcile.
 
-Possible duplicates remain included: mark both reviewed when they are separate transactions, or
-ignore the repeated row. Ignored rows can be restored from **Check detection**. A dated row inside a
+Possible duplicates remain included and are marked reviewed straight away, since the same charge twice
+on a day is ordinary: mark both reviewed when they are separate transactions, or ignore the repeated
+row.
+
+**Add transaction**, beside the search box, adds a transaction the statement does not show. It goes
+at the end of the list, empty and marked **Fix** until its date, description, and amount are filled
+in, and it counts in the totals and statement checks like any other row. It has no source on the PDF,
+and undo removes it again. Ignored rows can be restored from **Check detection**. A dated row inside a
 transaction table stays available for correction even when its amount cannot be read.
 
 **Export**, beside the search box, saves the transactions to CSV exactly as the table shows them -
@@ -186,8 +197,8 @@ compared with fresh detection to reject a headerless layout. Conflicting detecte
 incompatible headerless page shapes keep the layout unapplied. A layout carrying amount-direction settings says so when it
 is applied, so you can confirm those against the statement.
 
-To save one, apply the detection changes and select **Save layout**, either in the **Statement
-layout** panel or on the confirmation that follows. Enter the bank and layout names, and assign it to
+To save one, apply the detection changes and select **Save layout**, in the actions at the top of
+the settings column or on the confirmation that follows. Enter the bank and layout names, and assign it to
 the account if you want it used automatically. Layouts are not versioned, so a name that is already
 taken asks whether to replace that layout's settings or keep it and save under a different name, and
 a layout can only be saved when it has no rejected transactions. Select **Manage** to change an
@@ -225,7 +236,7 @@ period is read from the first two pages, including a label printed on one line w
 next. A date printed without a year, on a statement whose period cannot be found, is not guessed:
 those rows ask for the statement period, and set once, it supplies every year.
 A label such as **Date** before a numeric date does not prevent it being read. Named-month dates
-require a recognised month name; ambiguous date order and invalid calendar dates still need review.
+require a recognised month name, and may be printed without separators, as `06JUL` or `06JUL2019`; ambiguous date order and invalid calendar dates still need review.
 Transaction date is the default import date, marked by the check in its column header. Posting and
 value dates are optional and stay separate; removing one of their mappings stops it being validated.
 
@@ -281,8 +292,9 @@ are not kept here; they appear in **What needs attention**, beside the settings 
 
 A page that has no readable text layer, or that could not be read at all, is reported above the
 transaction table, and import stays disabled until you confirm that you checked those pages: their
-transactions are missing from the statement. Selecting **I checked these pages** dismisses the
-message and leaves a marker in the toolbar that brings it back. A row inside a transaction area that prints
+transactions are missing from the statement. The page is named once, in **What needs attention**,
+and again beside the import button, and **I checked these pages** at either place settles it. A page
+the layout's **Ignore first / last N pages** setting leaves out is not reported. A row inside a transaction area that prints
 an amount but did not become a transaction is reported in **What needs attention** with its page, and
 **Show** takes you to it, so you can mark it in **Check detection** instead of losing it silently.
 Lines of text alone - a translated label, a heading on its own line, a disclaimer - cannot be
@@ -537,8 +549,8 @@ Check these choices before you apply:
 - **Mark as cleared:** leave transactions unchanged, mark only new transactions cleared, or mark
   every statement-confirmed transaction cleared. The last option also writes the cleared status to
   matched transactions that otherwise need no update.
-- **Record the statement's payee:** add the bank's payee text to new rows only, or to matching rows
-  as well. This changes `imported_payee`, not the curated payee, notes, or category.
+- **Save the statement's text as imported payee:** save the statement's description as the imported
+  payee on new rows only, or on matching rows as well. This changes `imported_payee`, not the curated payee, notes, or category.
 
 New transactions always record the statement payee when the statement provides one. Their payee and
 notes follow the options you set during Import.
@@ -555,7 +567,7 @@ imported-payee write when it already has the same bank text.
 
 | Field | On a new transaction | On a matched transaction |
 | --- | --- | --- |
-| Imported payee | The statement payee, when present | Written only when **Record the statement's payee** includes matched rows |
+| Imported payee | The statement payee, when present | Written only when **Save the statement's text as imported payee** includes matched rows |
 | Payee | Resolved from the statement, or set by Actual rules | Kept unless you stage a payee change |
 | Notes | Follow the Import choice | Kept unless you stage a note change |
 | Category | Set only by Actual rules | Kept as it is |
@@ -614,7 +626,7 @@ with **Retry reading Actual** available after a failure. Saved snapshots are use
 and historical results, rather than as current Actual data.
 
 The **Year** filter starts on the current year when there are sessions in it; **Clear filters** widens
-it back out. A statement period that runs across a year answers to both, so a December-to-January
+it back out. A draft has no statement period yet, so it is always listed whatever the year. A statement period that runs across a year answers to both, so a December-to-January
 cycle is found under either.
 
 Sessions are stored in the Actual Bench metadata database on the server, not in the budget file. They

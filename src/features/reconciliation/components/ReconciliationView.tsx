@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { CircleHelp, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
@@ -118,6 +118,8 @@ import { resolveAccountClass } from "@/lib/account-class";
 import type { Card } from "@/features/credit-cards/lib/models";
 import { ReviewGateDialog } from "./ReviewGateDialog";
 import { SessionList, rowCountOf } from "./SessionList";
+import { ReconciliationGuide, type ReconciliationGuideSection } from "./ReconciliationGuide";
+import { FEATURES } from "@/lib/features/catalogue";
 import { Workbench } from "./Workbench";
 
 /**
@@ -278,6 +280,7 @@ function ReconciliationSessionView() {
   const [verification, setVerification] = useState<VerificationReport | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [guide, setGuide] = useState<ReconciliationGuideSection | null>(null);
   /**
    * The statement the import screen has parsed, lifted so the toolbar's phase
    * button can act on it. `null` until it parses to at least one row.
@@ -2248,12 +2251,26 @@ function ReconciliationSessionView() {
         onRetry={() => void sessionsQuery.refetch()}
         scrollManaged
         actions={
-          <Button size="sm" onClick={() => setNewSessionOpen(true)}>
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            New reconciliation
-          </Button>
+          <>
+            <Button size="sm" variant="outline" onClick={() => setGuide("start")}>
+              <CircleHelp className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+              Guide
+            </Button>
+            <Button size="sm" onClick={() => setNewSessionOpen(true)}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              New reconciliation
+            </Button>
+          </>
         }
       >
+        {guide && (
+          <ReconciliationGuide
+            section={guide}
+            onSection={setGuide}
+            onClose={() => setGuide(null)}
+            docsUrl={FEATURES.find((feature) => feature.id === "reconciliation")?.docsUrl}
+          />
+        )}
         {/* Starting a session fails *here*, on the list, so the message has to
             be here too — the other screens render it, but this is the one the
             user is looking at when the write is refused. */}

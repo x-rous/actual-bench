@@ -21,6 +21,8 @@ export type PdfDetectionIssue = {
   focus?: string;
   /** Rows to take the reader to, in page order; "Show" steps through them. */
   goTo?: { pageNumber: number; rowId: string }[];
+  /** Settled by the reader saying they checked the pages with no readable text. */
+  confirmsPages?: boolean;
 };
 
 /** Enough to see what needs doing without the list becoming the panel. */
@@ -80,7 +82,7 @@ export function PdfDetectionIssueList({
                   setRowIndex((current) => ({ ...current, [issue.message]: (index + 1) % issue.goTo!.length }));
                 }}
               />
-            ) : issue.focus && (
+            ) : (issue.focus || issue.confirmsPages) && (
               <Button size="xs" variant="outline" className="shrink-0" onClick={() => onResolve(issue)}>
                 {issue.actionLabel ?? "Fix this"}
               </Button>

@@ -15,6 +15,9 @@ export type ExactDecimal = {
   ambiguous: boolean;
 };
 
+/** A day and a month name with nothing between them, and optionally a year. */
+export const GLUED_DAY_MONTH = /(?<![\p{L}\d])\d{1,2}[\p{L}]{3,9}(?:\d{2,4})?(?![\p{L}\d])/giu;
+
 export function looksLikeDate(value: string) {
   return dateCandidates(value).length > 0;
 }
@@ -24,6 +27,9 @@ export function dateCandidates(value: string) {
   const patterns = [
     /\b(?:\d{8}|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?)\b/giu,
     /\b(?:\d{1,2}(?:st|nd|rd|th)?[-\s][\p{L}]{3,}\.?(?:[-\s]\d{2,4})?|[\p{L}]{3,}\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{2,4})?)\b/giu,
+    // Day and month run together, "06JUL" or "06JUL2019": some statements
+    // print no separator at all. Only a real month name is kept.
+    GLUED_DAY_MONTH,
   ];
   return patterns.flatMap((pattern) => validMatches(pattern, text))
     .sort((left, right) => left.index - right.index)
@@ -58,6 +64,8 @@ export function normalizePdfDateText(value: string) {
 }
 
 function validDateCandidate(match: string) {
+  const glued = match.match(/^(\d{1,2})([\p{L}]{3,9})(?:\d{2,4})?$/u);
+  if (glued) return Number(glued[1]) >= 1 && Number(glued[1]) <= 31 && isMonthName(glued[2]);
   const textualDmy = match.match(/^(\d{1,2})(?:st|nd|rd|th)?[-\s]([\p{L}]{3,})/iu);
   if (textualDmy) {
     return Number(textualDmy[1]) >= 1

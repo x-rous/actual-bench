@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { Download, Redo2, Undo2 } from "lucide-react";
+import { Download, Plus, Redo2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PillGroup } from "@/components/ui/pill-group";
 import type { SortDirection } from "@/components/ui/sortable-header";
@@ -42,6 +42,9 @@ export function PdfReviewStep({
   onAccept,
   onIgnore,
   onSplit,
+  onAdd,
+  focusRowId,
+  onFocusHandled,
   sourcePanel,
 }: {
   rows: PdfTransactionProposal[];
@@ -71,6 +74,10 @@ export function PdfReviewStep({
   onAccept: (row: PdfTransactionProposal) => void;
   onIgnore: (row: PdfTransactionProposal) => void;
   onSplit: (row: PdfTransactionProposal) => void;
+  /** Starts a transaction the statement does not print, at the end of the list. */
+  onAdd: () => void;
+  focusRowId: string | null;
+  onFocusHandled: () => void;
   sourcePanel: React.ReactNode;
 }) {
   const filtered = filter !== "all" || search.trim().length > 0;
@@ -91,6 +98,7 @@ export function PdfReviewStep({
           canRedo={canRedo}
           onUndo={onUndo}
           onRedo={onRedo}
+          onAdd={onAdd}
         />
         <PdfTransactionTable
           rows={tableRows}
@@ -112,6 +120,8 @@ export function PdfReviewStep({
           onAccept={onAccept}
           onIgnore={onIgnore}
           onSplit={onSplit}
+          focusRowId={focusRowId}
+          onFocusHandled={onFocusHandled}
         />
       </div>
       {sourcePanel}
@@ -141,6 +151,7 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
   canRedo,
   onUndo,
   onRedo,
+  onAdd,
 }: {
   rows: PdfTransactionProposal[];
   filter: PdfReviewCategory;
@@ -155,6 +166,7 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  onAdd: () => void;
 }) {
   const count = (category: PdfReviewCategory) => rows.filter((row) => matchesCategory(row, category)).length;
   const issueCategories = REVIEW_CATEGORIES
@@ -207,6 +219,16 @@ const PdfReviewToolbar = memo(function PdfReviewToolbar({
         clearLabel="Clear the transaction search"
         title="Searches the description, reference, amount, and import date"
       />
+      <Button
+        size="xs"
+        variant="outline"
+        className="shrink-0"
+        disabled={busy}
+        title="Add a transaction the statement does not show. It goes at the end and counts in the totals."
+        onClick={onAdd}
+      >
+        <Plus aria-hidden="true" className="mr-1 size-3.5" />Add transaction
+      </Button>
       <Button
         size="xs"
         variant="outline"

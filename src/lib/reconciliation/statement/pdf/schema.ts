@@ -71,7 +71,7 @@ export function detectPdfTableSchemas(
   );
   const transactionRowKeys = new Set(rows.filter(rowLooksLikeDate).map((row) => row.id));
   const contentHypothesis = withExamples(
-    columnsFromContent(clusters, referencePageWidth, transactionRowKeys),
+    columnsFromContent(clusters, referencePageWidth, transactionRowKeys, pages),
     pages,
     transactionRegions
   );
@@ -147,7 +147,8 @@ function columnsFromHeaders(clusters: PdfVisualCell[][], referencePageWidth: num
 function columnsFromContent(
   clusters: PdfVisualCell[][],
   referencePageWidth: number,
-  transactionRowKeys: Set<string>
+  transactionRowKeys: Set<string>,
+  pages: PdfReconstructedPage[]
 ): PdfColumn[] {
   const supported = clusters.map((cells, index) => {
     const transactionCells = cells.filter((cell) => transactionRowKeys.has(rowKey(cell)));
@@ -175,12 +176,20 @@ function columnsFromContent(
   const descriptionCluster = supported
     .filter((candidate) => candidate.dateRatio < 0.25 && candidate.moneyRatio < 0.25 && candidate.directionRatio < 0.65)
     .sort((left, right) => average(right.samples.map((sample) => sample.length)) - average(left.samples.map((sample) => sample.length)))[0];
-  let dateIndex = 0;
+  // A date column is named by the label printed above it when there is one;
+  // only a column with no label falls back to its position, taking the first
+  // date role no label has already claimed.
+  const labelledDates = new Map<number, PdfColumnRole>();
+  supported.forEach(({ cells, index, dateRatio }) => {
+    if (dateRatio < 0.65) return;
+    const role = dateRoleFromLabel(cells, pages);
+    if (role && ![...labelledDates.values()].includes(role)) labelledDates.set(index, role);
+  });
+  const unclaimedDateRoles = DATE_ROLES.filter((role) => ![...labelledDates.values()].includes(role));
   return supported.flatMap(({ cells, index, dateRatio, moneyRatio, directionRatio }) => {
     let role: PdfColumnRole | null = null;
     if (dateRatio >= 0.65) {
-      role = dateIndex === 0 ? "transaction-date" : dateIndex === 1 ? "posting-date" : "value-date";
-      dateIndex += 1;
+      role = labelledDates.get(index) ?? unclaimedDateRoles.shift() ?? "value-date";
     } else if (moneyRatio >= 0.65 && (moneyClusters.length === 1 || dominantMoneyCluster?.index === index)) {
       role = "amount";
     } else if (directionRatio >= 0.65) {
@@ -192,6 +201,37 @@ function columnsFromContent(
       ? [columnFromCluster(cells, index, role, null, Math.max(dateRatio, moneyRatio, directionRatio, 0.65), referencePageWidth)]
       : [];
   });
+}
+
+const DATE_ROLES: PdfColumnRole[] = ["transaction-date", "posting-date", "value-date"];
+
+/** How far above its first transaction a column's printed label can sit. */
+const DATE_LABEL_REACH = 120;
+
+/**
+ * The date role a column's printed label names - "Posting Date" over the
+ * left-hand date column, say - read from the lines above its first
+ * transaction. Used when the header was not a row of its own that the header
+ * hypothesis could read, which is how statements that print the labels
+ * bilingually, one language above the other, arrive here.
+ */
+function dateRoleFromLabel(cells: PdfVisualCell[], pages: PdfReconstructedPage[]): PdfColumnRole | null {
+  const first = [...cells].sort((a, b) => a.pageNumber - b.pageNumber || a.y - b.y)[0];
+  const page = pages.find((entry) => entry.pageNumber === first?.pageNumber);
+  if (!first || !page) return null;
+  const left = Math.min(...cells.map((cell) => cell.x));
+  const right = Math.max(...cells.map((cell) => cell.x + cell.width));
+  const labels = page.rows
+    .filter((row) => row.y < first.y && first.y - row.y <= DATE_LABEL_REACH)
+    .flatMap((row) => row.cells)
+    .flatMap((cell) => {
+      const role = HEADER_ROLES.find(([candidate, pattern]) => DATE_ROLES.includes(candidate) && pattern.test(cell.text))?.[0];
+      const overlap = Math.min(right, cell.x + cell.width) - Math.max(left, cell.x);
+      return role && overlap > 0 ? [{ role, overlap, y: cell.y }] : [];
+    })
+    // The nearest label wins, then the one sharing the most width with the column.
+    .sort((a, b) => b.y - a.y || b.overlap - a.overlap);
+  return labels[0]?.role ?? null;
 }
 
 function rowKey(cell: PdfVisualCell) {

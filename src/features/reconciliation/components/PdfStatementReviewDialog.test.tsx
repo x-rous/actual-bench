@@ -407,6 +407,47 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeEnabled();
   });
 
+  it("adds a transaction by hand at the end, blocks the import until it is filled in, and counts it", () => {
+    const onImport = jest.fn();
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={onImport} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add transaction" }));
+
+    // One new row after the one read from the PDF, empty, so it holds the import back.
+    expect(screen.getAllByLabelText(/^Description for PDF row/)).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /Use 2 transactions/ })).toBeDisabled();
+    expect(screen.getByText("Manual changes")).toBeInTheDocument();
+    // Nothing on the statement to point to.
+    expect(screen.queryByRole("button", { name: "Show description in statement for PDF row 2" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Show description in statement for PDF row 1" })).toBeInTheDocument();
+
+    const date = screen.getByLabelText("Transaction date for PDF row 2");
+    fireEvent.change(date, { target: { value: "2026-08-16" } });
+    fireEvent.blur(date);
+    const description = screen.getByLabelText("Description for PDF row 2");
+    fireEvent.change(description, { target: { value: "CASH PAID" } });
+    fireEvent.blur(description);
+    const amount = screen.getByLabelText("Amount for PDF row 2");
+    fireEvent.change(amount, { target: { value: "20.00" } });
+    fireEvent.blur(amount);
+
+    fireEvent.click(screen.getByRole("button", { name: /Use 2 transactions/ }));
+    expect(onImport).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({ description: "ANON SHOP" }),
+        expect.objectContaining({ description: "CASH PAID", amount: "-20.00", importDate: "2026-08-16" }),
+      ],
+      expect.anything()
+    );
+
+    // Undoing every correction made takes the row away again: adding it, the
+    // date (and the import date that follows it), the description, the amount.
+    for (let step = 0; step < 5; step += 1) {
+      fireEvent.click(screen.getByRole("button", { name: "Undo PDF correction" }));
+    }
+    expect(screen.getAllByLabelText(/^Description for PDF row/)).toHaveLength(1);
+  });
+
   it("states the statement currency over the amounts rather than on every row", () => {
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={ordinaryResult()} open onOpenChange={() => {}} onImport={() => {}} />);
 
@@ -500,7 +541,8 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(floatingSectionControl).toHaveClass("bg-emerald-600");
     expect(sectionOverviewControl).toHaveClass("bg-emerald-500/10");
     const previewChanges = screen.getByRole("button", { name: "Preview updated transactions" });
-    expect(previewChanges.closest(".border-t")).toBeInTheDocument();
+    // The actions sit at the top of the settings column, not under it.
+    expect(previewChanges.closest(".border-b")).toBeInTheDocument();
     // Previewing is an offer, not a gate: nothing is written by applying.
     expect(screen.getByRole("button", { name: "Apply changes and review" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Select transaction area" })).toBeInTheDocument();
@@ -515,7 +557,7 @@ describe("PdfStatementReviewDialog v2", () => {
     expect(viewerControls).toContainElement(screen.getByRole("button", { name: "Hide column mappings" }));
     expect(viewerControls).toContainElement(screen.getByRole("button", { name: "Zoom in PDF" }));
     const interpretation = screen.getByText("Statement Interpretation");
-    expect(interpretation.compareDocumentPosition(previewChanges) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(interpretation.compareDocumentPosition(previewChanges) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     expect(screen.queryByText("Change preview")).not.toBeInTheDocument();
     expect(interpretation.closest(".overflow-auto")).toBeInTheDocument();
 
@@ -955,7 +997,10 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(screen.getByRole("button", { name: /Check detection/ }));
     const layoutSection = screen.getByRole("region", { name: "Statement Layout" });
     expect(within(layoutSection).getByLabelText("Use layout")).toBeInTheDocument();
-    expect(within(layoutSection).getByRole("button", { name: "Save layout" })).toBeInTheDocument();
+    // Saving is with the other actions on the settings, at the top of the column.
+    expect(screen.getByRole("button", { name: "Save layout" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save layout" }).parentElement)
+      .toContainElement(screen.getByRole("button", { name: "Apply changes and review" }));
   });
 
   it("states a layout notice once, with the layout control it is about", () => {
@@ -996,7 +1041,7 @@ describe("PdfStatementReviewDialog v2", () => {
     );
 
     const layoutSection = screen.getByRole("region", { name: "Statement Layout" });
-    expect(within(layoutSection).getByRole("button", { name: "Save layout" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save layout" })).toBeDisabled();
     expect(within(layoutSection).getByText("Resolve rejected transactions before saving this layout"))
       .toBeInTheDocument();
   });
@@ -1036,17 +1081,31 @@ describe("PdfStatementReviewDialog v2", () => {
     parsed.notices = [...parsed.notices, { code: "UNREADABLE_PAGES", kind: "note", message, pageNumbers: [2] }];
     render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("could not be read");
+    // Said once, beside the detection settings, and again at the button it
+    // holds back - not in a banner across the dialog.
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeDisabled();
+    expect(screen.getByText(/Page 2 could not be read/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "I checked these pages" }));
 
-    // Acknowledging dismisses the banner and leaves a way back to it.
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/Page 2 could not be read/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /unreadable/ })).toBeNull();
     expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeEnabled();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: /1 page unreadable/ }));
-    expect(screen.getByRole("alert")).toHaveTextContent("could not be read");
+  it("does not ask about a page the page rules leave out", () => {
+    const parsed = ordinaryResult();
+    const pageCount = parsed.reconstructedPages.length;
+    parsed.guidance = { ...parsed.guidance, pageRules: { ignoreFirst: 0, ignoreLast: 1 } };
+    parsed.notices = [...parsed.notices, {
+      code: "UNREADABLE_PAGES", kind: "note", message: "A page could not be read.", pageNumbers: [pageCount + 1],
+    }];
+    parsed.reconstructedPages = [...parsed.reconstructedPages, { ...parsed.reconstructedPages[0], pageNumber: pageCount + 1 }];
+    render(<PdfStatementReviewDialog fileName="statement.pdf" result={parsed} open onOpenChange={() => {}} onImport={() => {}} />);
+
+    expect(screen.queryByRole("button", { name: "I checked these pages" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Use 1 transaction/ })).toBeEnabled();
   });
 
   it("selects the source row behind a transaction instead of the transaction id", () => {
@@ -1099,16 +1158,9 @@ describe("PdfStatementReviewDialog v2", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all visible PDF rows" }));
     fireEvent.click(screen.getByRole("button", { name: "Mark 2 reviewed" }));
 
-    // Accepting warnings that are still unresolved is confirmed first, and the
-    // confirmation names them.
-    const confirmation = screen.getByRole("dialog", { name: /Mark 2 transactions reviewed/ });
-    expect(within(confirmation).getByText(/Possible duplicate/)).toBeInTheDocument();
-    // The confirmation renders inside a paragraph, so it must not introduce
-    // block elements that cannot legally nest there.
-    expect(document.querySelector("[data-slot='dialog-description'] ul, [data-slot='dialog-description'] div"))
-      .toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed anyway" }));
-
+    // The same charge twice on a day is ordinary on a card statement, so a
+    // possible duplicate is accepted straight away rather than confirmed.
+    expect(screen.queryByRole("dialog", { name: /Mark 2 transactions reviewed/ })).toBeNull();
     expect(screen.getByRole("button", { name: /Use 2 transactions/ })).toBeEnabled();
     expect(screen.queryByRole("button", { name: /Mark PDF row \d+ reviewed/ })).toBeNull();
   });

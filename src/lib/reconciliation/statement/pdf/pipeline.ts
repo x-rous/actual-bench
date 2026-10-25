@@ -1,7 +1,7 @@
 import { assemblePdfTransactionBlocks } from "./blocks";
 import { divideCellsAcrossColumns, rowValuesForColumn } from "./columns";
 import { dateCandidates, looksLikeMoney } from "./candidates";
-import { applyBlockCorrections, applyFieldCorrections, applyGuidanceCorrections, type PdfCorrection } from "./corrections";
+import { addManualTransactions, applyBlockCorrections, applyFieldCorrections, applyGuidanceCorrections, type PdfCorrection } from "./corrections";
 import { inferPdfDateFormat, parsePdfDateCandidate } from "./dates";
 import { reconstructPdfLayout } from "./layout";
 import { interpretPdfBlocks } from "./interpret";
@@ -14,7 +14,7 @@ import {
   type PdfStatementParseResult,
 } from "./model";
 import { createPdfLayoutSignature } from "./profiles";
-import { applyPageRules, classifyPdfRegions, extendRegionsWithMappedColumns } from "./regions";
+import { applyPageRules, classifyPdfRegions, extendRegionsWithMappedColumns, isPageIgnoredByRules } from "./regions";
 import { detectPdfTableSchemas } from "./schema";
 import { validatePdfTransactions } from "./validate";
 
@@ -129,7 +129,7 @@ export function parsePdfStatementDocumentV2(
     inferredFormats
   );
   const correctedTransactions = applyFieldCorrections(
-    interpreted.transactions,
+    addManualTransactions(interpreted.transactions, corrections, effectiveGuidance.currency),
     corrections.filter((correction) => correction.kind !== "accept-transaction")
   );
   const validated = validatePdfTransactions(correctedTransactions, effectiveGuidance, {
@@ -152,7 +152,10 @@ export function parsePdfStatementDocumentV2(
     .filter((row) => !assignedRowIds.has(row.id) && row.cells.some((cell) => looksLikeMoney(cell.text)))
     .sort((left, right) => left.pageNumber - right.pageNumber || left.y - right.y);
   const likelyScanned = layout.pages.length > 0 && layout.pages.every((page) => page.imageOnlyLikelihood >= 0.75);
-  const imageOnlyPages = layout.pages.filter((page) => page.imageOnlyLikelihood >= 0.75);
+  // A page the layout's page rules leave out cannot be missing transactions.
+  const imageOnlyPages = layout.pages.filter((page) =>
+    page.imageOnlyLikelihood >= 0.75
+    && !isPageIgnoredByRules(page.pageNumber, layout.pages.length, effectiveGuidance.pageRules));
   const metrics = {
     pages: layout.pages.length,
     transactionPages: new Set(effectiveGuidance.regions.filter((region) => region.kind === "transactions" && region.included).map((region) => region.pageNumber)).size,

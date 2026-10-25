@@ -62,7 +62,8 @@ export function parsePdfDateCandidate(
   const iso = raw.match(/\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
   if (iso) return accepted(raw, date(Number(iso[1]), Number(iso[2]), Number(iso[3])), sourceIds);
 
-  const textualDmy = raw.match(/\b(\d{1,2})(?:st|nd|rd|th)?[-\s]([\p{L}]{3,})\.?(?:[-\s](\d{2,4}))?\b/iu);
+  // The separators are optional: some statements print "06JUL" or "06JUL2019".
+  const textualDmy = raw.match(/\b(\d{1,2})(?:st|nd|rd|th)?[-\s]?([\p{L}]{3,})\.?(?:[-\s]?(\d{2,4}))?\b/iu);
   // Header labels and surrounding prose can resemble a named-month date.
   // Only recognised months may claim it; otherwise try the numeric date below.
   if (textualDmy && MONTHS[textualDmy[2].toLowerCase()]) {

@@ -46,6 +46,9 @@ type PdfTransactionTableProps = {
   onAccept: (row: PdfTransactionProposal) => void;
   onIgnore: (row: PdfTransactionProposal) => void;
   onSplit: (row: PdfTransactionProposal) => void;
+  /** A row just added by hand, to scroll to and put the caret in. */
+  focusRowId?: string | null;
+  onFocusHandled?: () => void;
 };
 
 export function PdfTransactionTable({
@@ -66,6 +69,8 @@ export function PdfTransactionTable({
   onAccept,
   onIgnore,
   onSplit,
+  focusRowId = null,
+  onFocusHandled,
 }: PdfTransactionTableProps) {
   const showPosting = result.guidance.columns.some((column) => column.role === "posting-date")
     || rows.some((row) => row.postedDate);
@@ -80,6 +85,17 @@ export function PdfTransactionTable({
   // whole statement, so the row that was being typed in is a new element by
   // the time the keystroke has been acted on.
   const pendingFocus = useRef<{ index: number; field: string } | null>(null);
+
+  useEffect(() => {
+    if (!focusRowId) return;
+    const cell = gridRef.current?.querySelector<HTMLElement>(
+      `[data-pdf-row-id="${focusRowId}"] [data-pdf-cell="transactionDate"]`
+    );
+    if (!cell) return;
+    cell.scrollIntoView?.({ block: "nearest" });
+    cell.focus();
+    onFocusHandled?.();
+  }, [focusRowId, onFocusHandled, rows]);
 
   useEffect(() => {
     const target = pendingFocus.current;
@@ -270,11 +286,13 @@ const PdfTransactionRow = memo(function PdfTransactionRow({
   const reasons = groupRowReasons(row);
   const hasNotes = reasons.blocking.length + reasons.attention.length + reasons.evidence.length > 0;
   const waitingOn = row.status === "accepted" ? null : reasons.primary;
+  const manual = row.sectionId === "manual";
   const cellInput = "h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 focus:border-input focus:bg-background disabled:opacity-60";
 
   return (
     <tr
       data-pdf-row-index={rowIndex}
+      data-pdf-row-id={row.id}
       className={cn(
         // A row is as tall as its description, which may carry a note. Aligning
         // every cell to the top keeps the checkbox, the status and the row
@@ -303,9 +321,9 @@ const PdfTransactionRow = memo(function PdfTransactionRow({
           <PdfTransactionStatus status={row.status} reasons={row.issueCodes} />
         )}
       </td>
-      <PdfEditableDate row={row} field="transactionDate" value={row.transactionDate} confidence="transactionDate" busy={busy} onField={onField} onSource={onSource} />
-      {showPosting && <PdfEditableDate row={row} field="postedDate" value={row.postedDate} confidence="postingDate" busy={busy} onField={onField} onSource={onSource} />}
-      {showValue && <PdfEditableDate row={row} field="valueDate" value={row.valueDate} confidence="valueDate" busy={busy} onField={onField} onSource={onSource} />}
+      <PdfEditableDate row={row} field="transactionDate" value={row.transactionDate} confidence="transactionDate" busy={busy} manual={manual} onField={onField} onSource={onSource} />
+      {showPosting && <PdfEditableDate row={row} field="postedDate" value={row.postedDate} confidence="postingDate" busy={busy} manual={manual} onField={onField} onSource={onSource} />}
+      {showValue && <PdfEditableDate row={row} field="valueDate" value={row.valueDate} confidence="valueDate" busy={busy} manual={manual} onField={onField} onSource={onSource} />}
       <td className="p-0.5">
         <div className="flex">
           {/* eslint-disable-next-line no-restricted-syntax -- an editor inside a table cell, sized to the cell */}
@@ -322,6 +340,7 @@ const PdfTransactionRow = memo(function PdfTransactionRow({
             label={`Show description in statement for PDF row ${row.sourceRowNumber}`}
             title="Show description in statement"
             onClick={() => onSource(row, "description")}
+            hidden={manual}
           />
         </div>
         {(details || waitingOn) && (
@@ -370,6 +389,7 @@ const PdfTransactionRow = memo(function PdfTransactionRow({
             label={`Show amount in statement for PDF row ${row.sourceRowNumber}`}
             title="Show amount in statement"
             onClick={() => onSource(row, "accountAmount")}
+            hidden={manual}
           />
         </div>
       </td>
@@ -436,7 +456,9 @@ const PdfTransactionRow = memo(function PdfTransactionRow({
   && previous.showValue === next.showValue
   && previous.showBalance === next.showBalance);
 
-function PdfSourceButton({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
+function PdfSourceButton({ label, title, onClick, hidden = false }: { label: string; title: string; onClick: () => void; hidden?: boolean }) {
+  // A row added by hand has no place on the statement to point to.
+  if (hidden) return null;
   return (
     <button
       type="button"
@@ -456,6 +478,7 @@ function PdfEditableDate({
   value,
   confidence,
   busy,
+  manual,
   onField,
   onSource,
 }: {
@@ -464,6 +487,7 @@ function PdfEditableDate({
   value: string | null;
   confidence: keyof PdfTransactionProposal["confidence"];
   busy: boolean;
+  manual: boolean;
   onField: (row: PdfTransactionProposal, field: PdfTransactionField, value: string | null) => void;
   onSource: (row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) => void;
 }) {
@@ -486,6 +510,7 @@ function PdfEditableDate({
           label={`Show ${field} in statement for PDF row ${row.sourceRowNumber}`}
           title={`Show ${label.toLowerCase()} date in statement`}
           onClick={() => onSource(row, confidence)}
+          hidden={manual}
         />
       </div>
     </td>

@@ -1,6 +1,6 @@
 "use client";
 
-import { ListPlus, ListRestart, SquareDashedMousePointer, TriangleAlert, Undo2 } from "lucide-react";
+import { ListPlus, ListRestart, Save, SquareDashedMousePointer, TriangleAlert, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -215,7 +215,38 @@ export function PdfDetectionStep({
         </div>
 
         <div className="flex min-h-0 flex-col">
+          {/*
+            At the top of the column, where the reader is when they decide to
+            try the settings, rather than under the mapping list they have
+            just scrolled through. Applying is not a commitment: nothing
+            reaches the budget file until the import at the end, and every
+            correction is re-read from the document anyway. So previewing is
+            an offer, not a gate - the reader who already knows what they
+            changed can apply it.
+          */}
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b bg-muted/20 px-4 py-2 text-xs">
+            {layoutPanel.onSave && (
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={layoutPanel.disabled || !layoutPanel.canSave}
+                title={!layoutPanel.canSave ? layoutPanel.saveBlockedReason ?? undefined : undefined}
+                onClick={layoutPanel.onSave}
+                className="mr-auto"
+              >
+                <Save aria-hidden="true" className="mr-1 size-3.5" />Save layout
+              </Button>
+            )}
+            <Button size="xs" variant="ghost" disabled={busy} onClick={onReset}>
+              <ListRestart className="mr-1 size-3" />Reset detection
+            </Button>
+            <Button size="xs" variant="outline" disabled={busy} onClick={onPreview}>
+              {busy ? "Re-running…" : "Preview updated transactions"}
+            </Button>
+            <Button size="xs" disabled={busy} onClick={onApply}>Apply changes and review</Button>
+          </div>
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+            {preview && previewDiff && <PdfDetectionChangePreview diff={previewDiff} />}
             <PdfDetectionIssueList
               label="What needs attention"
               issues={issues}
@@ -258,25 +289,6 @@ export function PdfDetectionStep({
                 />
               </div>
             </PdfPanelSection>
-          </div>
-
-          <div className="shrink-0 border-t bg-muted/20 px-4 py-3 text-xs">
-            {preview && previewDiff && <PdfDetectionChangePreview diff={previewDiff} />}
-            {/*
-              Applying is not a commitment: nothing reaches the budget file
-              until the import at the end, and every correction is re-read from
-              the document anyway. So previewing is an offer, not a gate - the
-              reader who already knows what they changed can apply it.
-            */}
-            <div className="flex items-center justify-end gap-2">
-              <Button size="xs" variant="ghost" disabled={busy} onClick={onReset}>
-                <ListRestart className="mr-1 size-3" />Reset detection
-              </Button>
-              <Button size="xs" variant="outline" disabled={busy} onClick={onPreview}>
-                {busy ? "Re-running…" : "Preview updated transactions"}
-              </Button>
-              <Button size="xs" disabled={busy} onClick={onApply}>Apply changes and review</Button>
-            </div>
           </div>
         </div>
       </div>

@@ -14,15 +14,15 @@ function counted(value: number, singular: string, plural: string): string {
  *
  * An enrichment is a write, but it does not change the user's curated payee,
  * notes or category. Calling both kinds "changes" is what made a review full
- * of matched rows look destructive when it was only recording bank provenance.
+ * of matched rows look destructive when it was only recording imported payees.
  */
 export function describeWrites({ userChanges, enrichments }: WriteSummary): string {
   const changes = counted(userChanges, "change", "changes");
-  const bankDetails = counted(enrichments, "bank detail", "bank details");
+  const importedPayees = counted(enrichments, "imported payee", "imported payees");
 
   if (enrichments === 0) return changes;
-  if (userChanges === 0) return bankDetails;
-  return `${changes} · ${bankDetails}`;
+  if (userChanges === 0) return importedPayees;
+  return `${changes} · ${importedPayees}`;
 }
 
 export function writeActionLabel(

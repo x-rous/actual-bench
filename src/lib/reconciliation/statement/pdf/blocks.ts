@@ -1,5 +1,5 @@
 import { looksLikeDate, moneyCandidates } from "./candidates";
-import { rowHasMoney, rowLooksLikeDate } from "./rows";
+import { rowHasMoney, rowLooksLikeDate, rowLooksLikeMoney } from "./rows";
 import { diagnostic } from "./diagnostics";
 import { rowValuesForColumn } from "./columns";
 import type {
@@ -87,7 +87,9 @@ export function assemblePdfTransactionBlocks(
       sectionDirection = declaredDirection;
       continue;
     }
-    if (SECTION_HEADER.test(row.text) && separated && !rowLooksLikeDate(row)) {
+    // A card or account heading is a boundary whatever the spacing: it names
+    // the section under it, and a description line never starts with one.
+    if (SECTION_HEADER.test(row.text) && !rowLooksLikeDate(row) && !rowLooksLikeMoney(row)) {
       appendPendingToPrevious(pendingRows);
       pendingRows = [];
       sectionIndex += 1;
@@ -393,6 +395,10 @@ function carriedRowsForAnchor(
   rowPitch: number
 ) {
   const lastSeparator = findLastIndex(pending, isSeparatorRow);
+  const evenlySpaced = Boolean(previousAnchor)
+    && previousAnchor!.pageNumber === anchor.pageNumber
+    && pending.every((row) => row.pageNumber === anchor.pageNumber)
+    && isEvenlySpaced([previousAnchor!, ...pending, anchor]);
   // A printed separator is the statement's own boundary and is taken at face
   // value, including when the transaction prints its total on its first line.
   if (lastSeparator >= 0) return pending.slice(lastSeparator + 1).filter((row) => !isSeparatorRow(row));
@@ -407,7 +413,13 @@ function carriedRowsForAnchor(
       // sharing this anchor's own baseline is claimed.
       const reach = samePageAsPrevious ? 1.25 : 0.75;
       if (!anchorCells.some((cell) => sharesAnchorBand(row, cell, rowPitch, reach))) return false;
-      return !samePageAsPrevious || verticalDistance(row, anchor) < verticalDistance(row, previousAnchor!);
+      if (!samePageAsPrevious) return true;
+      // Lines printed at one steady pitch from the previous transaction's date
+      // to this one are that transaction's wrapped description: its last line
+      // is as near this date as it is to the line above, and nearness alone
+      // took it from the transaction it belongs to.
+      if (evenlySpaced) return false;
+      return verticalDistance(row, anchor) < verticalDistance(row, previousAnchor!);
     });
 
   // Without a separator, a line carrying the previous transaction's account
@@ -418,6 +430,18 @@ function carriedRowsForAnchor(
   if (!previousAnchor) return claimed;
   const lastAccountAmount = findLastIndex(claimed, (row) => hasMappedAccountAmount(row, columns, pageWidth));
   return lastAccountAmount >= 0 ? claimed.slice(lastAccountAmount + 1) : claimed;
+}
+
+/**
+ * Whether lines run down the page at one steady pitch. Rows printed on the
+ * same baseline are one line; two or more distinct gaps are needed to call
+ * anything steady, and the largest may be at most a fifth bigger than the
+ * smallest.
+ */
+function isEvenlySpaced(rows: PdfVisualRow[]) {
+  const centers = rows.map((row) => row.y + row.height / 2).sort((left, right) => left - right);
+  const gaps = centers.slice(1).map((center, index) => center - centers[index]).filter((gap) => gap > 2);
+  return gaps.length >= 2 && Math.max(...gaps) / Math.min(...gaps) <= 1.2;
 }
 
 function verticalDistance(row: PdfVisualRow, other: PdfVisualRow) {
