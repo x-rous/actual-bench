@@ -152,7 +152,7 @@ function ApplyFlow() {
 const SESSION_STATES: [string, Tone, string][] = [
   ["Draft", "muted", "Started, no statement imported yet. Opens on Import. A draft is always listed, whatever year is selected."],
   ["In progress", "warn", "Imported and being matched or decided. Opens on the workbench."],
-  ["Ready to apply", "actual", "Every row is decided. Opens on Review."],
+  ["Ready to apply", "actual", "Every row is decided. Opens on the workbench; go on to Review from there."],
   ["Applying", "actual", "A write is running right now."],
   ["Applied", "match", "Written and verified. Kept as an audit record, read-only."],
   ["Applied with problems", "bad", "Some actions were skipped or failed. Retry what failed, or decide the rest."],
@@ -236,7 +236,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
             </ul>
             <Heading>Pages that could not be read</Heading>
             <Para>A page with no text layer (a scan) has no transactions the reader can see. Import stays off until you confirm <b>I checked these pages</b>. A page your layout leaves out with <b>Ignore first / last N pages</b> is not reported.</Para>
-            <Callout title="Save the layout">Once a statement reads well, <b>Save layout</b> keeps the areas, columns and settings under the bank&apos;s name, so next month&apos;s statement is read the same way. Layouts are shared across accounts and are not versioned.</Callout>
+            <Callout title="Save the layout">Once a statement reads well, <b>Save layout</b> keeps the columns and reading settings under the bank&apos;s name (transaction areas belong to one statement and are not saved), so next month&apos;s statement is read the same way. Layouts are shared across accounts and are not versioned.</Callout>
           </>}
 
           {section === "matching" && <>

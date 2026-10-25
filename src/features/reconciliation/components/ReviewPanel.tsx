@@ -294,7 +294,7 @@ export function ReviewPanel({
             {
               value: "off",
               label: "On new rows only",
-              hint: "Only transactions created from this statement get an imported payee. Matched transactions are not written to unless you staged a change on them, and keep any imported payee they already have.",
+              hint: "Only transactions created from this statement get an imported payee. A matched transaction keeps any imported payee it already has, and is written to only if you staged a change on it or chose to mark it cleared above.",
             },
           ]}
         />

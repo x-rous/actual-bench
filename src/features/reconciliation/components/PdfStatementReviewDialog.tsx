@@ -371,14 +371,6 @@ export function PdfStatementReviewDialog({
       return next;
     });
   });
-  const changeDirection = useStableCallback(
-    (row: PdfTransactionProposal, direction: "debit" | "credit") => setDirection(row, direction)
-  );
-  const changeField = useStableCallback((row: PdfTransactionProposal, field: PdfTransactionField, value: string | null) =>
-    setField(row, field, field === "amount" && value ? normalizeTableAmountInput(value) : value));
-  const openSource = useStableCallback(
-    (row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) => showSource(row, field)
-  );
   const acceptRow = useStableCallback((row: PdfTransactionProposal) =>
     structuralCorrection({ kind: "accept-transaction", transactionIds: [row.id] }));
   const ignoreRow = useStableCallback((row: PdfTransactionProposal) =>
@@ -510,6 +502,14 @@ export function PdfStatementReviewDialog({
     setSourceOpen(true);
   }
 
+  const changeDirection = useStableCallback(
+    (row: PdfTransactionProposal, direction: "debit" | "credit") => setDirection(row, direction)
+  );
+  const changeField = useStableCallback((row: PdfTransactionProposal, field: PdfTransactionField, value: string | null) =>
+    setField(row, field, field === "amount" && value ? normalizeTableAmountInput(value) : value));
+  const openSource = useStableCallback(
+    (row: PdfTransactionProposal, field: keyof PdfTransactionProposal["confidence"]) => showSource(row, field)
+  );
   function focusMappedColumn(column: PdfColumn) {
     if (column.pageNumber !== null) setPageNumber(column.pageNumber);
     setColumnFocusRequest((current) => ({ columnId: column.id, requestId: (current?.requestId ?? 0) + 1 }));

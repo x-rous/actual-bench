@@ -123,7 +123,7 @@ function balanceQuery(debt: DebtSummary, connection: Connection, today: string) 
  *
  * Actual holds one currency per budget, so the totals are one figure each. If loans were saved with
  * different currency codes, that is a data slip rather than a second currency: the code most loans
- * carry is used, and a loan with another number of minor digits is rescaled to it before adding.
+ * carry is used, and a schedule saved with another number of minor digits is rescaled to it before adding.
  */
 export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
   const connection = useConnectionStore(selectActiveInstance);
@@ -141,8 +141,10 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
     const schedule = schedules[i]?.data;
     const balance = balances[i]?.data;
     const progress = schedule?.ok ? schedule.summary : null;
+    // The balance is read from the budget's ledger, so it is already in the budget's precision; only
+    // the schedule's amounts follow the digits the loan was saved with.
     const rescale = (minor: number) => Math.round(minor * 10 ** (total.digits - debt.currencyMinorDigits));
-    total.owed += typeof balance === "number" ? rescale(balance) : 0;
+    total.owed += typeof balance === "number" ? balance : 0;
     total.due += rescale(progress?.dueSoonMinor ?? 0);
     total.dueCount += progress?.dueSoonCount ?? 0;
   });
