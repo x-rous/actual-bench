@@ -87,15 +87,15 @@ export function CreditCardGuide({ section, onSection, onClose }: { section: Guid
 
 // ─── Building blocks ─────────────────────────────────────────────────────────
 
-function Heading({ children }: { children: ReactNode }) {
+export function Heading({ children }: { children: ReactNode }) {
   return <h3 className="mt-5 mb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase first:mt-0">{children}</h3>;
 }
 
-function Para({ children }: { children: ReactNode }) {
+export function Para({ children }: { children: ReactNode }) {
   return <p className="mb-3 max-w-3xl text-xs leading-relaxed text-foreground/80">{children}</p>;
 }
 
-function Steps({ items }: { items: [string, ReactNode][] }) {
+export function Steps({ items }: { items: [string, ReactNode][] }) {
   return <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{items.map(([title, body], index) => <li key={title} className="flex gap-3 rounded-lg border p-3">
     <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">{index + 1}</span>
     <div className="min-w-0 text-xs">
@@ -115,7 +115,7 @@ function Box({ label, value, tone }: { label: string; value: string; tone?: "res
 const Op = ({ children }: { children: ReactNode }) => <span className="text-sm font-semibold text-muted-foreground" aria-hidden>{children}</span>;
 
 /** A small example table; only an Amount column is right-aligned, descriptions read left to right. */
-function Example({ caption, head, rows }: { caption: string; head: string[]; rows: (string | ReactNode)[][] }) {
+export function Example({ caption, head, rows }: { caption: string; head: string[]; rows: (string | ReactNode)[][] }) {
   const numeric = (index: number) => head[index] === "Amount";
   return <table className="mb-3 w-full max-w-3xl border-collapse text-xs">
     <caption className="mb-1 text-left text-[11px] text-muted-foreground">{caption}</caption>
@@ -126,8 +126,8 @@ function Example({ caption, head, rows }: { caption: string; head: string[]; row
   </table>;
 }
 
-const Tag = ({ children }: { children: ReactNode }) => <code className="rounded bg-muted/70 px-1 font-mono text-[11px]">{children}</code>;
-const Key = ({ children }: { children: ReactNode }) => <kbd className="rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">{children}</kbd>;
+export const Tag = ({ children }: { children: ReactNode }) => <code className="rounded bg-muted/70 px-1 font-mono text-[11px]">{children}</code>;
+export const Key = ({ children }: { children: ReactNode }) => <kbd className="rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">{children}</kbd>;
 
 // ─── Sections ────────────────────────────────────────────────────────────────
 

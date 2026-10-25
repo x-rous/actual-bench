@@ -31,7 +31,7 @@ export function MultiPillGroup<T extends string>({
           aria-pressed={selected.size === 0}
           onClick={() => onChange([])}
           className={cn(
-            "rounded px-2 py-0.5 text-xs transition-colors",
+            "rounded px-2 py-1 text-xs transition-colors",
             selected.size === 0
               ? "bg-background font-medium shadow-sm"
               : "text-muted-foreground hover:text-foreground"
@@ -53,7 +53,7 @@ export function MultiPillGroup<T extends string>({
               )
             }
             className={cn(
-              "rounded px-2 py-0.5 text-xs transition-colors",
+              "rounded px-2 py-1 text-xs transition-colors",
               on
                 ? "bg-background font-medium shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
@@ -91,7 +91,7 @@ export function PillGroup<T extends string>({
           aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
-            "rounded px-2 py-0.5 text-xs whitespace-nowrap transition-colors",
+            "rounded px-2 py-1 text-xs whitespace-nowrap transition-colors",
             value === opt.value
               ? "bg-background font-medium shadow-sm"
               : "text-muted-foreground hover:text-foreground"

@@ -9,12 +9,16 @@ type PanelContext = {
   minimized: boolean;
   forceExpanded: boolean;
   setMinimized: (value: boolean) => void;
+  /** Increments after a successful save, so an emptied panel can tuck itself away. */
+  collapseSignal: number;
+  requestCollapse: () => void;
 };
 const Context = createContext<PanelContext | null>(null);
 
 /** Shell-wide UI preference only; never persists financial drafts. */
 export function PendingPanelProvider({ children, forceExpanded = false }: { children: ReactNode; forceExpanded?: boolean }) {
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null);
+  const [collapseSignal, setCollapseSignal] = useState(0);
   const [minimized, updateMinimized] = useState(() => {
     try { return typeof window !== "undefined" && localStorage.getItem(STORAGE_KEY) === "1"; }
     catch { return false; }
@@ -24,7 +28,7 @@ export function PendingPanelProvider({ children, forceExpanded = false }: { chil
     try { localStorage.setItem(STORAGE_KEY, value ? "1" : "0"); }
     catch { /* The in-memory preference still works when storage is unavailable. */ }
   }
-  return <Context value={{ actionsTarget, setActionsTarget, minimized, setMinimized, forceExpanded }}>{children}</Context>;
+  return <Context value={{ actionsTarget, setActionsTarget, minimized, setMinimized, forceExpanded, collapseSignal, requestCollapse: () => setCollapseSignal((n) => n + 1) }}>{children}</Context>;
 }
 
 export function usePendingPanel() {

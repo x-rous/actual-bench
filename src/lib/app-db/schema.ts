@@ -1324,3 +1324,42 @@ export const CREDIT_CARD_TRIGGER_SQL = [
                AND s.period_start <= NEW.closing_date AND s.closing_date >= NEW.period_start)
   BEGIN SELECT RAISE(ABORT, 'statement periods overlap'); END`,
 ];
+
+/** PR-130a: metadata only. Actual remains the sole ledger. */
+export const ASSET_REGISTRY_SQL = [
+  `CREATE TABLE IF NOT EXISTS assets (
+    id TEXT PRIMARY KEY NOT NULL, budget_sync_id TEXT NOT NULL CHECK(length(budget_sync_id) BETWEEN 1 AND 200),
+    actual_account_id TEXT NOT NULL CHECK(length(actual_account_id) BETWEEN 1 AND 200),
+    name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 200),
+    asset_type TEXT NOT NULL CHECK(asset_type IN ('real-estate','vehicle','investment','retirement','crypto','precious-metal','collectible','other')),
+    asset_tag TEXT NOT NULL CHECK(length(asset_tag) BETWEEN 8 AND 100), description TEXT CHECK(length(description)<=2000),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived')),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(typeof(revision)='integer' AND revision BETWEEN 1 AND 9007199254740991),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, archived_at TEXT,
+    UNIQUE(id,budget_sync_id), UNIQUE(budget_sync_id,asset_tag),
+    CHECK((status IS 'archived') = (archived_at IS NOT NULL)))`,
+  `CREATE TRIGGER IF NOT EXISTS asset_identity_guard BEFORE UPDATE ON assets
+    WHEN NEW.id IS NOT OLD.id OR NEW.budget_sync_id IS NOT OLD.budget_sync_id
+      OR NEW.actual_account_id IS NOT OLD.actual_account_id OR NEW.asset_tag IS NOT OLD.asset_tag
+    BEGIN SELECT RAISE(ABORT,'Asset identity cannot change'); END`,
+  `CREATE TABLE IF NOT EXISTS asset_ownership_periods (
+    asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    effective_from TEXT NOT NULL CHECK(length(effective_from)=10),
+    ownership_bps INTEGER NOT NULL CHECK(typeof(ownership_bps)='integer' AND ownership_bps BETWEEN 0 AND 10000),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(asset_id,effective_from))`,
+  `CREATE TABLE IF NOT EXISTS asset_transaction_metadata (
+    budget_sync_id TEXT NOT NULL CHECK(length(budget_sync_id) BETWEEN 1 AND 200),
+    actual_transaction_id TEXT NOT NULL CHECK(length(actual_transaction_id) BETWEEN 1 AND 200),
+    actual_account_id TEXT NOT NULL CHECK(length(actual_account_id) BETWEEN 1 AND 200),
+    role TEXT NOT NULL CHECK(role IN ('book','cashflow')), asset_id TEXT,
+    classification TEXT, note TEXT CHECK(length(note)<=2000),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(typeof(revision)='integer' AND revision BETWEEN 1 AND 9007199254740991),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    PRIMARY KEY(budget_sync_id,actual_transaction_id),
+    FOREIGN KEY(asset_id,budget_sync_id) REFERENCES assets(id,budget_sync_id) ON DELETE RESTRICT,
+    CHECK(role<>'cashflow' OR asset_id IS NOT NULL))`,
+  `CREATE INDEX IF NOT EXISTS idx_assets_budget_status ON assets(budget_sync_id,status)`,
+  `CREATE INDEX IF NOT EXISTS idx_assets_budget_account ON assets(budget_sync_id,actual_account_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_asset_tx_account ON asset_transaction_metadata(budget_sync_id,actual_account_id,role)`,
+  `CREATE INDEX IF NOT EXISTS idx_asset_tx_asset_role ON asset_transaction_metadata(asset_id,role)`,
+] as const;

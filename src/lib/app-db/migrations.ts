@@ -3,6 +3,7 @@ import type { ConnectionMode } from "@/store/connection";
 import { serverFingerprint } from "@/lib/sync/connectionRef";
 import {
   APP_META_TABLE_SQL,
+  ASSET_REGISTRY_SQL,
   ASSETS_DEBT_V38_INDEX_SQL,
   ASSETS_DEBT_V38_TRIGGER_SQL,
   ASSETS_DEBT_V42_INDEX_SQL,
@@ -72,7 +73,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 50;
+export const LATEST_SCHEMA_VERSION = 58;
 
 type Migration = {
   version: number;
@@ -602,6 +603,86 @@ const MIGRATIONS: readonly Migration[] = [
     // A reconciliation remembers the credit-card statement whose figures it entered. Additive: one nullable column.
     apply: applyReconciliationCardStatementColumn,
   },
+  { version: 51, statements: ASSET_REGISTRY_SQL },
+  // Preserve existing identities and metadata; dedicated assets no longer need a hashtag.
+  { version: 52, statements: [
+    "CREATE TEMP TABLE asset_tags_assets AS SELECT * FROM assets",
+    "CREATE TEMP TABLE asset_tags_ownership AS SELECT * FROM asset_ownership_periods",
+    "CREATE TEMP TABLE asset_tags_metadata AS SELECT * FROM asset_transaction_metadata",
+    "DROP TABLE asset_transaction_metadata",
+    "DROP TABLE asset_ownership_periods",
+    "DROP TABLE assets",
+    ...ASSET_REGISTRY_SQL.map((sql) => sql.replace("asset_tag TEXT NOT NULL CHECK(length(asset_tag) BETWEEN 8 AND 100)", "asset_tag TEXT CHECK(asset_tag IS NULL OR length(asset_tag) BETWEEN 8 AND 100)")),
+    "INSERT INTO assets(id,budget_sync_id,actual_account_id,name,asset_type,asset_tag,description,status,revision,created_at,updated_at,archived_at) SELECT id,budget_sync_id,actual_account_id,name,asset_type,asset_tag,description,status,revision,created_at,updated_at,archived_at FROM asset_tags_assets",
+    "INSERT INTO asset_ownership_periods SELECT * FROM asset_tags_ownership",
+    "INSERT INTO asset_transaction_metadata(budget_sync_id,actual_transaction_id,actual_account_id,role,asset_id,classification,note,revision,created_at,updated_at) SELECT budget_sync_id,actual_transaction_id,actual_account_id,role,asset_id,classification,note,revision,created_at,updated_at FROM asset_tags_metadata",
+    "DROP TABLE asset_tags_assets",
+    "DROP TABLE asset_tags_ownership",
+    "DROP TABLE asset_tags_metadata",
+  ] },
+  { version: 53, statements: [
+    "ALTER TABLE asset_transaction_metadata ADD COLUMN capitalized_from_transaction_id TEXT CHECK(capitalized_from_transaction_id IS NULL OR (length(capitalized_from_transaction_id) BETWEEN 1 AND 200 AND role='book' AND asset_id IS NOT NULL AND classification IS 'capital-expenditure' AND capitalized_from_transaction_id<>actual_transaction_id))",
+    "ALTER TABLE asset_transaction_metadata ADD COLUMN context_json TEXT CHECK(context_json IS NULL OR (json_valid(context_json) AND length(context_json)<=8192))",
+    "CREATE UNIQUE INDEX idx_asset_tx_capitalized_source ON asset_transaction_metadata(budget_sync_id,capitalized_from_transaction_id) WHERE capitalized_from_transaction_id IS NOT NULL",
+  ] },
+  // Depreciation (PR-130c): one optional current schedule per asset and the posted-month identity on book rows.
+  { version: 54, statements: [
+    `CREATE TABLE IF NOT EXISTS asset_depreciation_settings (
+      asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+      method TEXT NOT NULL CHECK(method IN ('straight-line','declining-balance')),
+      basis_minor INTEGER NOT NULL CHECK(typeof(basis_minor)='integer' AND basis_minor BETWEEN 0 AND 9007199254740991),
+      residual_minor INTEGER NOT NULL CHECK(typeof(residual_minor)='integer' AND residual_minor BETWEEN 0 AND 9007199254740991),
+      start_date TEXT NOT NULL CHECK(length(start_date)=10),
+      life_months INTEGER CHECK(life_months IS NULL OR (typeof(life_months)='integer' AND life_months BETWEEN 1 AND 1200)),
+      annual_rate_bps INTEGER CHECK(annual_rate_bps IS NULL OR (typeof(annual_rate_bps)='integer' AND annual_rate_bps BETWEEN 1 AND 10000)),
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      CHECK(residual_minor <= basis_minor),
+      CHECK((method='straight-line' AND life_months IS NOT NULL AND annual_rate_bps IS NULL) OR (method='declining-balance' AND annual_rate_bps IS NOT NULL AND life_months IS NULL)))`,
+    "ALTER TABLE asset_transaction_metadata ADD COLUMN depreciation_period TEXT CHECK(depreciation_period IS NULL OR (depreciation_period GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]' AND role='book' AND asset_id IS NOT NULL AND classification IS 'depreciation' AND capitalized_from_transaction_id IS NULL))",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_tx_depreciation_period ON asset_transaction_metadata(asset_id,depreciation_period) WHERE depreciation_period IS NOT NULL",
+  ] },
+  // Asset financing (PR-130d): effective-period allocations of an existing loan to an asset.
+  { version: 55, statements: [
+    `CREATE TABLE IF NOT EXISTS asset_debt_links (
+      asset_id TEXT NOT NULL, debt_id TEXT NOT NULL, budget_sync_id TEXT NOT NULL CHECK(length(budget_sync_id) BETWEEN 1 AND 200),
+      allocation_bps INTEGER NOT NULL CHECK(typeof(allocation_bps)='integer' AND allocation_bps BETWEEN 1 AND 10000),
+      effective_from TEXT NOT NULL CHECK(length(effective_from)=10),
+      effective_to TEXT CHECK(effective_to IS NULL OR (length(effective_to)=10 AND effective_to > effective_from)),
+      note TEXT CHECK(note IS NULL OR length(note)<=2000),
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      PRIMARY KEY(asset_id,debt_id,effective_from),
+      FOREIGN KEY(asset_id,budget_sync_id) REFERENCES assets(id,budget_sync_id) ON DELETE RESTRICT,
+      FOREIGN KEY(debt_id,budget_sync_id) REFERENCES debts(id,budget_sync_id) ON DELETE RESTRICT)`,
+    "CREATE INDEX IF NOT EXISTS idx_asset_debt_links_debt ON asset_debt_links(debt_id,effective_from,effective_to)",
+  ] },
+  // Whether an asset is expected to generate income (rent, dividends, interest). Drives which returns are shown; existing rows default by type.
+  { version: 56, statements: [
+    "ALTER TABLE assets ADD COLUMN income_generating INTEGER NOT NULL DEFAULT 0 CHECK (income_generating IN (0,1))",
+    "UPDATE assets SET income_generating = 1 WHERE asset_type IN ('real-estate','investment','retirement','crypto')",
+  ] },
+  // Saved rules that propose Actual income/expense rows to link to an asset (reviewed and confirmed each time).
+  { version: 57, statements: [
+    `CREATE TABLE IF NOT EXISTS asset_link_rules (
+      id TEXT PRIMARY KEY NOT NULL, asset_id TEXT NOT NULL, budget_sync_id TEXT NOT NULL CHECK(length(budget_sync_id) BETWEEN 1 AND 200),
+      name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),
+      payee_ids TEXT NOT NULL CHECK(json_valid(payee_ids)), category_ids TEXT NOT NULL CHECK(json_valid(category_ids)), account_ids TEXT NOT NULL CHECK(json_valid(account_ids)),
+      notes_contains TEXT CHECK(notes_contains IS NULL OR length(notes_contains) BETWEEN 1 AND 200),
+      amount_sign TEXT CHECK(amount_sign IS NULL OR amount_sign IN ('positive','negative')),
+      classification TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      FOREIGN KEY(asset_id,budget_sync_id) REFERENCES assets(id,budget_sync_id) ON DELETE RESTRICT)`,
+    "CREATE INDEX IF NOT EXISTS idx_asset_link_rules_asset ON asset_link_rules(asset_id)",
+  ] },
+  // Link rules became field → operation → value conditions. The v57 draft shape was never released; its rules are discarded.
+  { version: 58, statements: [
+    "DROP TABLE IF EXISTS asset_link_rules",
+    `CREATE TABLE asset_link_rules (
+      id TEXT PRIMARY KEY NOT NULL, asset_id TEXT NOT NULL, budget_sync_id TEXT NOT NULL CHECK(length(budget_sync_id) BETWEEN 1 AND 200),
+      name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100), match TEXT NOT NULL CHECK(match IN ('all','any')),
+      conditions TEXT NOT NULL CHECK(json_valid(conditions) AND json_type(conditions)='array' AND json_array_length(conditions) BETWEEN 1 AND 20),
+      classification TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      FOREIGN KEY(asset_id,budget_sync_id) REFERENCES assets(id,budget_sync_id) ON DELETE RESTRICT)`,
+    "CREATE INDEX idx_asset_link_rules_asset ON asset_link_rules(asset_id)",
+  ] },
 ];
 
 /**

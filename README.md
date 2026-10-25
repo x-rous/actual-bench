@@ -31,6 +31,7 @@ budget file health checks, verified backups, and automations that run with Bench
 Actual Bench is a web app that connects to your [Actual Budget](https://github.com/actualbudget/actual)
 server and adds tools Actual Budget does not have:
 
+- **Assets** - register off-budget assets, reconcile dedicated/shared account values and classify or adjust supported Actual book rows after confirmation. Settings and ownership are Bench metadata. See the [Asset Registry guide](https://x-rous.github.io/actual-bench/user-guide/asset-registry/).
 - **Credit Cards** - link Actual card accounts, record and verify bank statements, track repayments and instalment plans, and explore debt history. Card setup and review decisions are saved in Actual Bench's metadata database; Actual is never written.
 - **Bank reconciliation** - match a downloaded statement (CSV/TSV, OFX/QFX, QIF, or text-based PDF)
   against your transactions line by line, and fix the differences.

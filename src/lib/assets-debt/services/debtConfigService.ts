@@ -575,6 +575,7 @@ export function deleteArchivedDebtPermanently(db: SqliteDatabase, id: string): v
   if (!existing) throw new AppDbValidationError("Debt not found");
   if (existing.status !== "archived") throw new AppDbValidationError("Archive the loan before deleting it permanently");
   db.transaction(() => {
+    if (db.prepare("SELECT 1 FROM asset_debt_links WHERE debt_id = ? LIMIT 1").get(id)) throw new AppDbValidationError("Remove this loan's asset allocations in Assets before deleting it");
     // Links name the changes that made them, and undos name the change they reverse, so they go first.
     db.prepare("DELETE FROM debt_transaction_links WHERE debt_id = ? OR posting_id IN (SELECT id FROM financial_postings WHERE subject_kind = 'debt' AND subject_id = ?)").run(id, id);
     db.prepare("DELETE FROM financial_postings WHERE subject_kind = 'debt' AND subject_id = ? AND reversal_of IS NOT NULL").run(id);

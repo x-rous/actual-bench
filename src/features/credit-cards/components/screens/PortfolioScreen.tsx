@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LineChart, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
@@ -19,6 +19,7 @@ import { HistoryChart } from "../HistoryChart";
 import type { CardEntry } from "../cardEntry";
 import { DataTable, HEADER_ROW_HEIGHT, Stack, type Column, type TableController } from "../primitives/DataTable";
 import { attentionSummary, cardAttention } from "../cardAttention";
+import { Figure } from "../primitives/Figure";
 import { SidePanel } from "../primitives/SidePanel";
 import { StatusBadge } from "../primitives/StatusBadge";
 import { MISSING, money, ordinal, plural, shortDate } from "../primitives/format";
@@ -75,18 +76,6 @@ function Sparkline({ values, bars = false }: { values: (number | null)[]; bars?:
   </svg>;
 }
 
-function Figure({ label, value, detail, tone, trend, onTrend }: {
-  label: string; value: string; detail?: ReactNode; tone?: "danger"; trend?: ReactNode; onTrend?: () => void;
-}) {
-  return <div className={cn("relative min-w-0 px-4 py-3", trend && "pr-32")}>
-    <dt className="text-xs text-muted-foreground">{label}</dt>
-    <dd className={cn("mt-0.5 text-xl font-semibold whitespace-nowrap tabular-nums", tone === "danger" && "text-red-700 dark:text-red-400")}>{value}</dd>
-    {detail && <dd className="truncate text-xs text-muted-foreground">{detail}</dd>}
-    {trend && <dd className="absolute right-4 bottom-3">
-      <button type="button" onClick={onTrend} aria-label={`Show ${label} trend`} className="rounded hover:bg-muted">{trend}</button>
-    </dd>}
-  </div>;
-}
 
 /**
  * All cards (§9.7): an edge-to-edge summary strip, then one table of cards with two-line rows.

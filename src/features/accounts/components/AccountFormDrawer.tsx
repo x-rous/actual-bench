@@ -29,9 +29,12 @@ type Props = {
   groups?: AccountGroup[];
   groupClasses?: ReadonlyMap<string, AccountClass>;
   groupsReady?: boolean;
+  initialValues?: Partial<AccountFormValues>;
+  submitLabel?: string;
+  description?: string;
 };
 
-export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupClasses, groupsReady = true }: Props) {
+export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupClasses, groupsReady = true, initialValues, submitLabel, description }: Props) {
   const isEditing = false;
 
   const {
@@ -54,8 +57,8 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
   });
 
   useEffect(() => {
-    if (open) reset({ name: "", offBudget: false, initialBalance: undefined, accountClass: null, groupId: null });
-  }, [open, reset]);
+    if (open) reset({ name: "", offBudget: false, initialBalance: undefined, accountClass: null, groupId: null, ...initialValues });
+  }, [open, reset, initialValues]);
 
   function handleFormSubmit(values: AccountFormValues) {
     if (values.groupId && (!groups?.some((group) => group.id === values.groupId) ||
@@ -80,9 +83,9 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
         <SheetHeader>
           <SheetTitle>{isEditing ? "Edit Account" : "New Account"}</SheetTitle>
           <SheetDescription>
-            {isEditing
+            {description ?? (isEditing
               ? "Changes are staged and must be saved to apply."
-              : "The new account will be staged until you save."}
+              : "The new account will be staged until you save.")}
           </SheetDescription>
         </SheetHeader>
 
@@ -193,7 +196,7 @@ export function AccountFormDrawer({ open, onOpenChange, onSubmit, groups, groupC
             Cancel
           </Button>
           <Button type="submit" form="account-form" disabled={isSubmitting || (!!groupId && !groupsReady)}>
-            {isEditing ? "Apply Changes" : "Add Account"}
+            {submitLabel ?? (isEditing ? "Apply Changes" : "Add Account")}
           </Button>
         </SheetFooter>
       </SheetContent>
