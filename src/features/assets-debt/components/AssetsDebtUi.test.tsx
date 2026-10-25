@@ -207,6 +207,22 @@ describe("Loans & Debt list", () => {
     expect(totals).toHaveTextContent("OwedUnavailable");
   });
 
+  it("shows one owed figure and one due figure even when loans carry different currency codes", async () => {
+    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
+    wrap(<LoansSummary debts={[summary(1, { currency: "USD", openingDate: "2020-01-01", liabilityAccountId: null }), summary(2, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(3, { openingDate: "2020-01-01", liabilityAccountId: null })]} />);
+    const totals = screen.getByLabelText("All loans");
+    await waitFor(() => expect(totals).toHaveTextContent("Due in the next 30 days1,500.00(3 repayments)"));
+    expect(totals.querySelectorAll("dt")).toHaveLength(3);
+    expect(totals).not.toHaveTextContent(/USD|AUD/);
+  });
+
+  it("rescales a schedule saved with other minor digits, leaving ledger balances alone", async () => {
+    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
+    wrap(<LoansSummary debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(2, { currencyMinorDigits: 0, openingDate: "2020-01-01", liabilityAccountId: null })]} />);
+    // 500.00 at two digits plus 50,000 whole units scaled to two digits.
+    await waitFor(() => expect(screen.getByLabelText("All loans")).toHaveTextContent("Due in the next 30 days50,500.00"));
+  });
+
   it("says what each loan needs, in words, next to its status", () => {
     wrap(<DebtList debts={[summary(1), summary(2)]} attention={{ d1: "31 changes to review" }} />);
     const [first, second] = screen.getAllByRole("row").slice(1);

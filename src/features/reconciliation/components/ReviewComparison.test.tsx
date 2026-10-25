@@ -114,10 +114,10 @@ function renderComparison(options: {
 }
 
 describe("reconciliation review write labels", () => {
-  it("names a fill-only imported-payee write as neutral bank text", () => {
+  it("names a fill-only imported-payee write as neutral", () => {
     renderComparison({});
 
-    const action = screen.getByText("Bank text").closest("td");
+    const action = screen.getAllByText("Imported payee").find((element) => element.closest("td"))?.closest("td");
     expect(action).toHaveClass("text-muted-foreground");
     expect(action).not.toHaveClass("text-amber-600");
     expect(action).toHaveTextContent(
@@ -146,7 +146,7 @@ describe("reconciliation review write labels", () => {
     expect(previous).toHaveAttribute("title", "Imported payee was: AMZN MKTP AE");
   });
 
-  it("names a staged edit that also records bank text as a mixed write", () => {
+  it("names a staged edit that also records the imported payee as a mixed write", () => {
     const patch: StagedPatch = {
       notes: {
         original: "#2025-08 Amazon.ae Dubai DXB",
@@ -156,7 +156,7 @@ describe("reconciliation review write labels", () => {
     };
     renderComparison({ stagedChanges: patch });
 
-    const action = screen.getByText("Update + bank text").closest("td");
+    const action = screen.getByText("Update + imported payee").closest("td");
     expect(action).toHaveClass("text-amber-600");
     expect(screen.getByText("#2025-08 Amazon.ae Dubai DXB · household")).toHaveClass(
       "text-amber-600"
@@ -243,9 +243,12 @@ describe("narrowing the table to one kind of write", () => {
     renderMixed();
 
     const group = screen.getByRole("group", { name: "Filter by what will happen" });
-    for (const label of ["Create", "Update", "Delete"]) {
+    // A row that only gains its imported payee is counted on its own, the way
+    // the summary above the table counts it, not as an update.
+    for (const label of ["Create", "Imported payee", "Delete"]) {
       expect(within(group).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
     }
+    expect(within(group).queryByRole("button", { name: /^Update/ })).toBeNull();
   });
 
   it("shows only the chosen kind, and restores the rest", () => {

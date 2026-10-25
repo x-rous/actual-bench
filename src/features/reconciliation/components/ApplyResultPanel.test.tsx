@@ -119,15 +119,15 @@ function renderResult(
 }
 
 describe("reconciliation apply-result write labels", () => {
-  it("records a provenance-only outcome as a bank detail", () => {
+  it("records a provenance-only outcome as an imported payee", () => {
     renderResult();
 
-    expect(screen.getByText("1 bank detail written")).toBeInTheDocument();
-    expect(screen.getByText("Bank text")).toBeInTheDocument();
+    expect(screen.getByText("1 imported payee written")).toBeInTheDocument();
+    expect(screen.getByText("Imported payee")).toBeInTheDocument();
     expect(screen.queryByText("Updated")).toBeNull();
   });
 
-  it("states when an update also recorded bank text", () => {
+  it("states when an update also recorded the imported payee", () => {
     renderResult({
       notes: {
         original: "#2025-08 Amazon.ae Dubai DXB",
@@ -137,7 +137,7 @@ describe("reconciliation apply-result write labels", () => {
     });
 
     expect(screen.getByText("1 change written")).toBeInTheDocument();
-    expect(screen.getByText("Updated + bank text")).toBeInTheDocument();
+    expect(screen.getByText("Updated + imported payee")).toBeInTheDocument();
   });
 
   it("counts an outcome missing from the restored plan as a user change", () => {
@@ -149,7 +149,7 @@ describe("reconciliation apply-result write labels", () => {
   it("reports skipped writes in the headline and marks their row already done", () => {
     renderResult({}, { status: "skipped" });
 
-    expect(screen.getByText(/0 changes written · 1 bank detail already done/)).toBeInTheDocument();
+    expect(screen.getByText(/0 changes written · 1 imported payee already done/)).toBeInTheDocument();
     expect(screen.getByText("already done")).toBeInTheDocument();
   });
 });

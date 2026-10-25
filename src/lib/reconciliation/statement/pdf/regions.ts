@@ -257,6 +257,22 @@ export function extendRegionsWithMappedColumns(
   };
 }
 
+function pageRulesCoverEveryPage(pageCount: number, rules: PdfPageRules | undefined) {
+  const { ignoreFirst, ignoreLast } = rules ?? NO_PAGE_RULES;
+  return pageCount > 0 && ignoreFirst + ignoreLast >= pageCount;
+}
+
+/**
+ * Whether the page rules leave this page out. Rules that would leave no page
+ * at all are not applied, so they ignore nothing.
+ */
+export function isPageIgnoredByRules(pageNumber: number, pageCount: number, rules: PdfPageRules | undefined) {
+  const { ignoreFirst, ignoreLast } = rules ?? NO_PAGE_RULES;
+  return pageNumber >= 1 && pageNumber <= pageCount
+    && !pageRulesCoverEveryPage(pageCount, rules)
+    && (pageNumber <= ignoreFirst || pageNumber > pageCount - ignoreLast);
+}
+
 /**
  * Switch off the transaction areas on pages the layout's page rules ignore.
  *
@@ -271,10 +287,8 @@ export function applyPageRules(
   pageCount: number,
   rules: PdfPageRules | undefined
 ): { regions: PdfRegion[]; coversEveryPage: boolean } {
-  const { ignoreFirst, ignoreLast } = rules ?? NO_PAGE_RULES;
-  const coversEveryPage = pageCount > 0 && ignoreFirst + ignoreLast >= pageCount;
-  const ignored = (pageNumber: number) => !coversEveryPage
-    && (pageNumber <= ignoreFirst || pageNumber > pageCount - ignoreLast);
+  const coversEveryPage = pageRulesCoverEveryPage(pageCount, rules);
+  const ignored = (pageNumber: number) => isPageIgnoredByRules(pageNumber, pageCount, rules);
   return {
     coversEveryPage,
     regions: regions.map((region) => {

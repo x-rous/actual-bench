@@ -1,5 +1,5 @@
 import { statementPayments } from "./derive/payments";
-import { paymentStatus } from "./derive/status";
+import { hasLaterStatement, paymentStatus } from "./derive/status";
 import { statementReview } from "./statements";
 import { addStatement, BANK_ACCOUNT, facts, PLAN_ACCOUNT, row, setup, snapshot, transfer } from "./fixtures/testKit";
 import type { ActivityRow } from "./activity";
@@ -158,4 +158,20 @@ describe("plan conversions settle the bill they convert", () => {
     const { payment } = await converted("2026-09-05");
     expect(payment).toMatchObject({ convertedMinor: 0, leftToPayMinor: 871275 });
   });
+});
+
+it("flags a missed bill as not paid, not overdue, once the next statement is issued", () => {
+  const context = twoBills();
+  const workspace = context.workspace();
+  const source = snapshot([purchase]);
+  const payment = statementPayments(context.card(), workspace, source, "2028-01-01").find((entry) => entry.statementId === context.bill.id);
+  const statement = workspace.statements.find((entry) => entry.id === context.bill.id)!;
+
+  // No later statement recorded: it keeps counting days overdue.
+  expect(paymentStatus(statement, payment, "2028-01-01")).toMatchObject({ key: "overdue", overdue: true });
+  // A later one is issued: its balance already carries this one, so it is amber and asks for nothing.
+  expect(paymentStatus(statement, payment, "2028-01-01", false, true))
+    .toMatchObject({ key: "not-paid", tone: "attention", overdue: false, late: true });
+  expect(hasLaterStatement(workspace.statements, statement)).toBe(false);
+  expect(hasLaterStatement(workspace.statements, workspace.statements.find((entry) => entry.id === context.previous.id)!)).toBe(true);
 });

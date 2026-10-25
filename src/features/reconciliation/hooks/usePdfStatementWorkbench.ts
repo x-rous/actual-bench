@@ -8,7 +8,41 @@ import type {
   PdfParserGuidance,
   PdfStatementParseResult,
 } from "@/lib/reconciliation/statement/pdf";
+import { parsePdfStatementDocument } from "@/lib/reconciliation/statement/pdf";
 import { parsePdfStatementOffMainThread } from "@/lib/reconciliation/statement/pdfClient";
+
+/**
+ * A statement this small is re-read on the page itself after a correction.
+ * Starting a worker means loading the parser again and copying the whole
+ * document across and the whole result back, which cost more than reading
+ * a statement of this size; a long one is still worth keeping off the page.
+ */
+const INLINE_PARSE_MAX_TEXT_ITEMS = 30_000;
+
+/**
+ * The new result, sharing every transaction and block with the previous one
+ * that came out the same. A correction re-reads the whole statement, but it
+ * changes a row or two; handing the table the same objects for the rest is
+ * what lets it skip them.
+ */
+function sharingUnchangedRows(
+  previous: PdfStatementParseResult | null,
+  next: PdfStatementParseResult
+): PdfStatementParseResult {
+  if (!previous) return next;
+  const reuse = <T extends { id: string }>(before: T[], after: T[]) => {
+    const known = new Map(before.map((entry) => [entry.id, [entry, JSON.stringify(entry)] as const]));
+    return after.map((entry) => {
+      const match = known.get(entry.id);
+      return match && match[1] === JSON.stringify(entry) ? match[0] : entry;
+    });
+  };
+  return {
+    ...next,
+    transactions: reuse(previous.transactions, next.transactions),
+    blocks: reuse(previous.blocks, next.blocks),
+  };
+}
 
 export type PdfCorrectionInput = PdfCorrection extends infer Correction
   ? Correction extends PdfCorrection
@@ -49,16 +83,19 @@ export function usePdfStatementWorkbench(
   function rerun(
     nextGuidance: PdfParserGuidance,
     nextCorrections: PdfCorrection[],
-    onComplete: (output: PdfStatementParseResult) => void
+    onComplete: (output: PdfStatementParseResult) => void,
+    /** A correction to rows, which a small statement takes on this thread. */
+    inline = false
   ) {
     if (!parsed || isParsing) return;
     setParserError(null);
     let output: PdfStatementParseResult | Promise<PdfStatementParseResult>;
     try {
-      output = parsePdfStatementOffMainThread(parsed.document, {
-        guidance: nextGuidance,
-        corrections: nextCorrections,
-      });
+      const options = { guidance: nextGuidance, corrections: nextCorrections };
+      const textItems = parsed.document.pages.reduce((total, entry) => total + entry.items.length, 0);
+      output = inline && textItems <= INLINE_PARSE_MAX_TEXT_ITEMS
+        ? parsePdfStatementDocument(parsed.document, options)
+        : parsePdfStatementOffMainThread(parsed.document, options);
     } catch (error: unknown) {
       // Where there is no Worker the parser runs here and throws here, so this
       // failure arrives as an exception rather than a rejected promise. Left
@@ -83,7 +120,7 @@ export function usePdfStatementWorkbench(
   }
 
   function adopt(output: PdfStatementParseResult) {
-    setParsed(output);
+    setParsed(sharingUnchangedRows(parsed, output));
     setDraftGuidance(output.guidance);
     setPreview(null);
   }
@@ -96,7 +133,7 @@ export function usePdfStatementWorkbench(
       setRedoCorrections([]);
       adopt(output);
       onCorrectionsApplied?.();
-    });
+    }, true);
   }
 
   function structuralCorrections(items: PdfCorrectionInput[], scope: PdfCorrectionScope = "row") {
@@ -115,12 +152,12 @@ export function usePdfStatementWorkbench(
     rerun(parsed.guidance, next, (output) => {
       setRedoCorrections((current) => [removed, ...current]);
       setCorrections(next);
-      setParsed(output);
+      setParsed(sharingUnchangedRows(parsed, output));
       setDraftGuidance(output.guidance);
       // Undoing re-assembles the blocks just as applying does, so a row the
       // caller had selected may no longer exist. Same reason as the other two.
       onCorrectionsApplied?.();
-    });
+    }, true);
   }
 
   function redo() {
@@ -130,10 +167,10 @@ export function usePdfStatementWorkbench(
     rerun(parsed.guidance, next, (output) => {
       setCorrections(next);
       setRedoCorrections((current) => current.slice(1));
-      setParsed(output);
+      setParsed(sharingUnchangedRows(parsed, output));
       setDraftGuidance(output.guidance);
       onCorrectionsApplied?.();
-    });
+    }, true);
   }
 
   /**

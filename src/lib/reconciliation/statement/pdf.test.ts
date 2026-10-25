@@ -20,6 +20,7 @@ import {
   PDF_SCHEMA_FAMILY_IDS,
 } from "./pdf/fixtureManifest";
 import { inferPdfDateFormat, parsePdfDateCandidate } from "./pdf/dates";
+import { isPageIgnoredByRules } from "./pdf/regions";
 import { normalizeReviewedPdfStatement } from "./pdfNormalize";
 
 type Cell = { x: number; text: string; dir?: "ltr" | "rtl" };
@@ -2078,5 +2079,93 @@ describe("saved-layout header shapes in any script", () => {
     // Combining marks on their own are text too (an Arabic shadda, a Devanagari vowel sign).
     expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: withShape("Aّ A") })).toBeNull();
     expect(sanitizePdfLayoutProfileEnvelope({ kind: "pdf-layout-v3", profile: withShape("A A (A)") })).not.toBeNull();
+  });
+});
+
+describe("statements printed without separators or with long wrapped narratives", () => {
+  it("reads a day and month run together, and names the date columns from labels printed over them", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 780, cells: [{ x: 300, text: "Statement Date" }, { x: 420, text: "06JUL2019" }] },
+      // The labels are not on one line with Description and Amount, as on a
+      // statement that prints each in two languages, one above the other.
+      { y: 700, cells: [{ x: 270, text: "Transaction Details" }] },
+      { y: 697, cells: [{ x: 52, text: "Posting Date" }, { x: 140, text: "Transaction Date" }] },
+      { y: 685, cells: [{ x: 498, text: "Amount" }] },
+      { y: 660, cells: [{ x: 62, text: "06JUL" }, { x: 160, text: "04JUL" }, { x: 270, text: "FIRST SHOP" }, { x: 500, text: "110.00" }] },
+      { y: 640, cells: [{ x: 62, text: "08JUN" }, { x: 160, text: "01JUN" }, { x: 270, text: "SECOND SHOP" }, { x: 500, text: "47.60" }] },
+      { y: 620, cells: [{ x: 62, text: "08JUN" }, { x: 160, text: "31MAY" }, { x: 270, text: "THIRD SHOP" }, { x: 500, text: "9.00" }] },
+    ])], { guidance: guidance({ currency: "AED", dateFormat: "auto", unsignedDirection: "debit" }) });
+
+    expect(result.guidance.statementPeriod.end).toBe("2019-07-06");
+    expect(result.activeSchema?.columns.map((column) => column.role)).toEqual(
+      expect.arrayContaining(["posting-date", "transaction-date"])
+    );
+    expect(result.transactions).toHaveLength(3);
+    expect(result.transactions[0]).toMatchObject({ postedDate: "2019-07-06", transactionDate: "2019-07-04" });
+    expect(result.transactions[1]).toMatchObject({ postedDate: "2019-06-08", transactionDate: "2019-06-01" });
+  });
+
+  it("keeps the last line of an evenly spaced narrative with its own transaction", () => {
+    const result = parsePdfStatementPages([page([
+      { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 500, text: "Amount" }] },
+      { y: 720, cells: [{ x: 20, text: "25/10/2025" }, { x: 120, text: "PAYMENT RECEIVED" }, { x: 500, text: "100.00CR" }] },
+      { y: 710, cells: [{ x: 120, text: "Payment of AED 100.00 received on" }] },
+      { y: 700, cells: [{ x: 120, text: "towards Principle: AED" }] },
+      { y: 690, cells: [{ x: 120, text: "90.00; Interest:AED 0.00;" }] },
+      { y: 680, cells: [{ x: 120, text: "Charges:AED 15.35" }] },
+      { y: 670, cells: [{ x: 20, text: "24/10/2025" }, { x: 120, text: "SHOP" }, { x: 500, text: "26.46" }] },
+    ])], { guidance: guidance({ currency: "AED", dateFormat: "dmy", unsignedDirection: "debit" }) });
+
+    expect(result.transactions).toHaveLength(2);
+    expect(result.transactions[0].description).toContain("Charges:AED 15.35");
+    expect(result.transactions[1].description).toBe("SHOP");
+    // A narrative that mentions a figure and a date is still one description.
+    expect(result.transactions[0].issueCodes).not.toContain("ROW_CONTINUATION_UNCERTAIN");
+  });
+
+  it("does not count a page the page rules ignore", () => {
+    expect(isPageIgnoredByRules(9, 9, { ignoreFirst: 0, ignoreLast: 2 })).toBe(true);
+    expect(isPageIgnoredByRules(7, 9, { ignoreFirst: 0, ignoreLast: 2 })).toBe(false);
+    // Rules that would leave nothing are not applied.
+    expect(isPageIgnoredByRules(1, 2, { ignoreFirst: 1, ignoreLast: 1 })).toBe(false);
+  });
+});
+
+describe("transactions added by hand", () => {
+  const rows = [
+    { y: 760, cells: [{ x: 20, text: "Date" }, { x: 120, text: "Description" }, { x: 500, text: "Amount" }] },
+    { y: 720, cells: [{ x: 20, text: "25/10/2025" }, { x: 120, text: "SHOP" }, { x: 500, text: "26.46" }] },
+  ];
+  const added = (transactionId: string) => ({ id: `c-${transactionId}`, scope: "row" as const, createdAt: "", kind: "add-transaction" as const, transactionId });
+
+  it("come after the transactions read from the PDF, empty and blocking until filled in", () => {
+    const result = parsePdfStatementPages([page(rows)], {
+      guidance: guidance({ currency: "AED", dateFormat: "dmy", unsignedDirection: "debit" }),
+      corrections: [added("manual-1")],
+    });
+
+    expect(result.transactions.map((transaction) => transaction.id)).toHaveLength(2);
+    expect(result.transactions[1]).toMatchObject({ id: "manual-1", status: "rejected", description: "" });
+    expect(result.transactions[1].issueCodes).toEqual(expect.arrayContaining(["ROW_MANUALLY_CHANGED", "AMOUNT_MISSING"]));
+    expect(result.metrics.rejected).toBe(1);
+  });
+
+  it("take part in the totals once filled in, and leave when ignored", () => {
+    const fill = [
+      { id: "f1", scope: "row" as const, createdAt: "", kind: "set-field" as const, transactionIds: ["manual-1"], field: "transactionDate" as const, value: "2025-10-26" },
+      { id: "f2", scope: "row" as const, createdAt: "", kind: "set-field" as const, transactionIds: ["manual-1"], field: "importDate" as const, value: "2025-10-26" },
+      { id: "f3", scope: "row" as const, createdAt: "", kind: "set-field" as const, transactionIds: ["manual-1"], field: "description" as const, value: "CASH" },
+      { id: "f4", scope: "row" as const, createdAt: "", kind: "set-field" as const, transactionIds: ["manual-1"], field: "amount" as const, value: "-10.00" },
+    ];
+    const options = { guidance: guidance({ currency: "AED", dateFormat: "dmy", unsignedDirection: "debit" }) };
+    const filled = parsePdfStatementPages([page(rows)], { ...options, corrections: [added("manual-1"), ...fill] });
+    expect(filled.transactions[1]).toMatchObject({ description: "CASH", amount: "-10.00", importDate: "2025-10-26" });
+    expect(filled.transactions[1].status).not.toBe("rejected");
+
+    const removed = parsePdfStatementPages([page(rows)], {
+      ...options,
+      corrections: [added("manual-1"), ...fill, { id: "i", scope: "row" as const, createdAt: "", kind: "ignore-block" as const, blockId: "manual-1" }],
+    });
+    expect(removed.transactions).toHaveLength(1);
   });
 });

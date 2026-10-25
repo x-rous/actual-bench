@@ -32,7 +32,7 @@ jest.mock("@/features/credit-cards/components/CardStatementFigures", () => ({
 }));
 jest.mock("@/features/categories/hooks/useCategoryGroups", () => ({ useCategoryGroups: () => {} }));
 jest.mock("@/lib/sync/capabilities", () => ({ getBudgetFileSyncCapabilities: () => ({ capabilities: { listTransactions: true } }) }));
-jest.mock("@/components/layout/PageLayout", () => ({ PageLayout: ({ header, children }: { header?: ReactNode; children: ReactNode }) => <>{header}{children}</> }));
+jest.mock("@/components/layout/PageLayout", () => ({ PageLayout: ({ header, actions, children }: { header?: ReactNode; actions?: ReactNode; children: ReactNode }) => <>{header}{actions}{children}</> }));
 jest.mock("./SessionHeader", () => ({ SessionHeader: ({ actions, onExit }: { actions: ReactNode; onExit?: () => void }) => <>{actions}<button onClick={onExit}>Sessions</button></> }));
 jest.mock("./SessionList", () => ({ rowCountOf: () => 1, SessionList: ({ onOpen }: { onOpen: (session: unknown) => void }) => <button onClick={() => onOpen(mockSession)}>Open saved session</button> }));
 jest.mock("./NewSessionDialog", () => ({ NewSessionDialog: () => null }));
@@ -425,4 +425,11 @@ it("exposes a counterpart already present on resume for explicit pairing", async
   expect(screen.queryByRole("button", { name: /^Apply / })).not.toBeInTheDocument();
   expect(mockCommand).not.toHaveBeenCalled();
   expect(mockCreate).not.toHaveBeenCalled();
+});
+
+it("opens the guide from the top of the sessions page", async () => {
+  render(<ReconciliationView />);
+  fireEvent.click(await screen.findByRole("button", { name: "Guide" }));
+  expect(await screen.findByRole("heading", { name: "Getting started" })).toBeInTheDocument();
+  expect(screen.getByText("Bank Reconciliation guide")).toBeInTheDocument();
 });

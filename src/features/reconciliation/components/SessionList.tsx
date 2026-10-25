@@ -309,7 +309,9 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
       if (tagFilter !== "all" && (session.tag ?? "") !== tagFilter) return false;
       if (accountFilter !== "all" && session.accountId !== accountFilter) return false;
 
-      if (year !== "all") {
+      // A draft has no statement period yet, so a year cannot place it: it is
+      // always shown, or the filter would hide work that is still unfinished.
+      if (year !== "all" && session.status !== "draft") {
         const months = monthsBySession.get(session.id) ?? [];
         if (!months.some((entry) => entry.slice(0, 4) === year)) return false;
       }

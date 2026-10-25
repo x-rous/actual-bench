@@ -57,6 +57,7 @@ function AgainstDueDate({ row, today }: { row: StatementRow; today: string }) {
   }
   if (payment.pendingByDue) return <span className="text-amber-700 dark:text-amber-400">Pending · not cleared yet</span>;
   if (due >= today) return <>{MISSING}</>;
+  if (row.status.key === "not-paid") return <span className="text-amber-700 dark:text-amber-400">Not paid · in the next statement</span>;
   if (payment.minimumPaidDate && payment.minimumPaidDate <= due) {
     return <span className="text-amber-700 dark:text-amber-400">{shortDate(payment.minimumPaidDate, today)} · minimum only</span>;
   }

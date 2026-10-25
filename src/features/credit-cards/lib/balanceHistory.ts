@@ -7,7 +7,7 @@ import { paymentRows, statementPayments } from "./derive/payments";
 import { transactionType } from "./derive/types";
 import { BORROWING_KINDS, costFamilyOf } from "./derive/families";
 import { statementReview, sumMinor } from "./statements";
-import { paymentStatus, type PaymentStatus } from "./derive/status";
+import { hasLaterStatement, paymentStatus, type PaymentStatus } from "./derive/status";
 
 /** Reconstructed end-of-day balances; all monetary fields are integer minor units. */
 export type BalanceDay = {
@@ -158,7 +158,7 @@ export function dailyBalanceHistory(
       statementId: statement.id,
       closingDate: statement.closingDate,
       dueDate: statement.dueDate,
-      status: paymentStatus(statement, payment, today),
+      status: paymentStatus(statement, payment, today, false, hasLaterStatement(saved, statement)),
       amountDueMinor: payment?.amountDueMinor ?? null,
       payments: (payment?.rows ?? []).filter(({ row }) => row.amountMinor > 0).map(({ row, date }) => paymentEvent(row, date)),
       costsMinor: costsByStatement.get(statement.id) ?? null,

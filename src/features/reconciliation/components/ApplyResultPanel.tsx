@@ -118,8 +118,8 @@ export function ApplyResultPanel({
 
   const operationLabel = (operation: ApplyOperation | undefined, fallbackKind: string): string => {
     if (operation?.kind === "update") {
-      if (isEnrichmentOnly(operation)) return "Bank text";
-      if (operation.importedPayee != null) return "Updated + bank text";
+      if (isEnrichmentOnly(operation)) return "Imported payee";
+      if (operation.importedPayee != null) return "Updated + imported payee";
     }
     return KIND_LABELS[operation?.kind ?? fallbackKind] ?? fallbackKind;
   };

@@ -312,3 +312,22 @@ describe("reconciliation sessions grouped by account", () => {
     expect(statementOrder()).toEqual(["dubai-applied.csv", "dubai-active.csv"]);
   });
 });
+
+describe("the statement year filter", () => {
+  it("never hides a draft, which has no statement period to place it in a year", async () => {
+    const { hsbcApplied } = fixtures();
+    const draft = session({
+      id: "draft",
+      status: "draft",
+      statementName: "draft.csv",
+      statementStart: null,
+      statementEnd: null,
+      appliedAt: null,
+    });
+    await renderList([hsbcApplied, draft], { allYears: false });
+    await chooseSelectOption(screen.getByLabelText("Filter by statement year"), "2025");
+
+    expect(screen.getByText("hsbc-applied.csv")).toBeInTheDocument();
+    expect(screen.getByText("draft.csv")).toBeInTheDocument();
+  });
+});

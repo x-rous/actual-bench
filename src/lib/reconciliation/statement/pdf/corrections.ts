@@ -17,6 +17,8 @@ export type PdfCorrection = {
   | { kind: "merge-blocks"; blockIds: string[] }
   | { kind: "split-block"; blockId: string; beforeRowId: string }
   | { kind: "mark-row"; rowId: string; pageNumber: number }
+  /** A transaction the statement does not print, started empty and filled in with `set-field`. */
+  | { kind: "add-transaction"; transactionId: string }
   | { kind: "accept-transaction"; transactionIds: string[] }
   | { kind: "set-field"; transactionIds: string[]; field: "transactionDate" | "postedDate" | "valueDate" | "importDate" | "description" | "reference" | "amount" | "currency"; value: string | null }
   | { kind: "set-direction"; transactionIds: string[]; direction: Exclude<PdfDirection, "unknown"> }
@@ -72,6 +74,79 @@ export function applyBlockCorrections(blocks: PdfTransactionBlock[], corrections
     // geometry is available. It is intentionally not guessed here.
   });
   return output;
+}
+
+/**
+ * The transactions the reader added by hand, after the ones read from the PDF.
+ *
+ * They are made before validation so the statement checks - totals, period,
+ * duplicates - count them like any other, and they start with every required
+ * field missing, so one that is never filled in blocks the import instead of
+ * quietly being left out. Removing one is `ignore-block` on its id, as for a
+ * row read from the PDF; `restore-block` brings it back.
+ */
+export function addManualTransactions(
+  transactions: PdfTransactionProposal[],
+  corrections: PdfCorrection[],
+  currency: string | null
+): PdfTransactionProposal[] {
+  const added = corrections.flatMap((correction) => correction.kind === "add-transaction" ? [correction.transactionId] : []);
+  if (!added.length) return transactions;
+  const removed = new Set<string>();
+  corrections.forEach((correction) => {
+    if (correction.kind === "ignore-block" && added.includes(correction.blockId)) removed.add(correction.blockId);
+    if (correction.kind === "restore-block") removed.delete(correction.blockId);
+  });
+  let rowNumber = Math.max(0, ...transactions.map((transaction) => transaction.sourceRowNumber));
+  const field = (reason: "DATE_INVALID" | "DESCRIPTION_MISSING" | "AMOUNT_MISSING") => rejected(reason);
+  const accepted = () => ({ status: "accepted" as const, score: 1, reasons: [], sourceIds: [] });
+  return [
+    ...transactions,
+    ...added.filter((id) => !removed.has(id)).map((id): PdfTransactionProposal => {
+      rowNumber += 1;
+      return {
+        id,
+        sourceRowNumber: rowNumber,
+        sectionId: "manual",
+        transactionDate: null,
+        postedDate: null,
+        valueDate: null,
+        importDate: null,
+        description: "",
+        reference: null,
+        amount: "",
+        exactAmount: null,
+        originalAmount: null,
+        exchangeRate: null,
+        fees: [],
+        vat: [],
+        direction: "debit",
+        directionEvidence: "manual",
+        balance: null,
+        currency,
+        confidence: {
+          rowBoundary: { status: "accepted", score: 1, reasons: ["ROW_MANUALLY_CHANGED"], sourceIds: [] },
+          transactionDate: field("DATE_INVALID"),
+          postingDate: null,
+          valueDate: null,
+          importDate: field("DATE_INVALID"),
+          description: field("DESCRIPTION_MISSING"),
+          reference: null,
+          accountAmount: field("AMOUNT_MISSING"),
+          originalAmount: null,
+          exchangeRate: null,
+          fees: [],
+          vat: [],
+          direction: { status: "accepted", score: 1, reasons: ["ROW_MANUALLY_CHANGED"], sourceIds: [] },
+          currency: accepted(),
+          balance: null,
+        },
+        status: "rejected",
+        issueCodes: ["ROW_MANUALLY_CHANGED", "DATE_INVALID", "DESCRIPTION_MISSING", "AMOUNT_MISSING"],
+        raw: { pageNumber: 0, lines: [], sourceIds: [] },
+      };
+    }),
+  ];
 }
 
 export function applyFieldCorrections(

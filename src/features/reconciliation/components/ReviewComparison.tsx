@@ -106,9 +106,20 @@ function Changed({
  * "also show the rows nothing happens to" toggle beside this, and offering the
  * same set through two controls that can disagree is worse than one.
  */
-const ACTION_FILTERS: { id: ReviewRow["action"]; label: string }[] = [
+type ActionFilter = ReviewRow["action"] | "imported-payee";
+
+/**
+ * A row that only gains its imported payee is counted apart from the updates:
+ * it changes nothing the user curated, and the summary above says the same.
+ */
+function filterOf(row: ReviewRow): ActionFilter {
+  return row.action === "update" && row.provenance?.only ? "imported-payee" : row.action;
+}
+
+const ACTION_FILTERS: { id: ActionFilter; label: string }[] = [
   { id: "create", label: "Create" },
   { id: "update", label: "Update" },
+  { id: "imported-payee", label: "Imported payee" },
   { id: "delete", label: "Delete" },
 ];
 
@@ -146,7 +157,7 @@ export function ReviewComparison({
    * able to ask directly, and scrolling a few hundred rows looking for the four
    * amber ones is not an answer. `null` is everything.
    */
-  const [actionFilter, setActionFilter] = useState<ReviewRow["action"] | null>(null);
+  const [actionFilter, setActionFilter] = useState<ActionFilter | null>(null);
 
   const nameOf = (options: Option[], id: string | null) =>
     id ? options.find((option) => option.id === id)?.name ?? null : null;
@@ -227,7 +238,7 @@ export function ReviewComparison({
    * columns it will turn up in.
    */
   const needle = search.trim().toLowerCase();
-  const byAction = actionFilter ? shown.filter((row) => row.action === actionFilter) : shown;
+  const byAction = actionFilter ? shown.filter((row) => filterOf(row) === actionFilter) : shown;
   const visible = needle
     ? byAction.filter((row) => {
         const payeeName = nameOf(payees, row.pending.payeeId);
@@ -276,7 +287,7 @@ export function ReviewComparison({
         */}
         <div role="group" aria-label="Filter by what will happen" className="flex items-center gap-1">
           {ACTION_FILTERS.map((entry) => {
-            const count = shown.filter((row) => row.action === entry.id).length;
+            const count = shown.filter((row) => filterOf(row) === entry.id).length;
             if (count === 0) return null;
             const active = actionFilter === entry.id;
             return (
@@ -424,7 +435,7 @@ export function ReviewComparison({
 
                   {/*
                     Amber means "your data is changing". A row that only gains
-                    the bank's merchant text is muted instead — unless it is
+                    the imported payee is muted instead — unless it is
                     replacing an imported payee that was already there, which is
                     the one case where something is genuinely being overwritten
                     and earns both the colour and a line saying what it was.
@@ -448,9 +459,9 @@ export function ReviewComparison({
                     }
                   >
                     {row.provenance?.only
-                      ? "Bank text"
+                      ? "Imported payee"
                       : row.provenance
-                        ? `${ACTION_LABELS[row.action]} + bank text`
+                        ? `${ACTION_LABELS[row.action]} + imported payee`
                         : ACTION_LABELS[row.action]}
                     {row.provenance && (
                       // The visible label carries the distinction; this spells

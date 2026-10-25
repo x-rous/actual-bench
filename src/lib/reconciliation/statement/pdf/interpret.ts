@@ -192,9 +192,22 @@ function interpretBlock(
   // Only a continuation that could stand on its own - it carries both a date
   // and a money-shaped value - might be a transaction the grouping swallowed.
   // Reference numbers, times, and foreign-currency lines are ordinary detail.
-  const uncertainContinuation = continuationRows.some((row) =>
-    dateCandidates(row.text).length > 0 && looksLikeMoney(row.text)
-  ) || spansPages;
+  const dateColumns = columns.filter((column) => ["transaction-date", "posting-date", "value-date"].includes(column.role));
+  const amountColumns = columns.filter((column) => ["amount", "debit", "credit"].includes(column.role));
+  // With the columns mapped, the date and the amount must sit in their own
+  // columns: a narrative that mentions a date and a figure ("received on
+  // 25-Oct-2025 towards Principle AED 21,760.07") is still one description.
+  const couldStandAlone = (row: PdfVisualRow) => {
+    if (!dateColumns.length || !amountColumns.length) {
+      return dateCandidates(row.text).length > 0 && looksLikeMoney(row.text);
+    }
+    const width = index.widthByPage.get(row.pageNumber) ?? 1;
+    const inColumns = (mapped: PdfColumn[], matches: (text: string) => boolean) =>
+      mapped.some((column) => rowValuesForColumn(row, column, width).some((cell) => matches(cell.text)));
+    return inColumns(dateColumns, (text) => dateCandidates(text).length > 0)
+      && inColumns(amountColumns, (text) => looksLikeMoney(text));
+  };
+  const uncertainContinuation = continuationRows.some(couldStandAlone) || spansPages;
   const rowBoundary: PdfFieldConfidence = {
     status: block.manuallyCreated || uncertainContinuation ? "review" : "accepted",
     score: block.manuallyCreated ? 0.7 : uncertainContinuation ? 0.82 : 0.94,

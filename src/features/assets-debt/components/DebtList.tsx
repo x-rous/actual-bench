@@ -119,7 +119,11 @@ function balanceQuery(debt: DebtSummary, connection: Connection, today: string) 
 
 /**
  * A short line of totals above the rows (owner request 2026-10-07): what is owed across the active
- * loans and what falls due in the next 30 days, one figure per currency. Reads what the rows read.
+ * loans and what falls due in the next 30 days. Reads what the rows read.
+ *
+ * Actual holds one currency per budget, so the totals are one figure each. If loans were saved with
+ * different currency codes, that is a data slip rather than a second currency: the code most loans
+ * carry is used, and a schedule saved with another number of minor digits is rescaled to it before adding.
  */
 export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
   const connection = useConnectionStore(selectActiveInstance);
@@ -127,33 +131,32 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
   const active = debts.filter((d) => d.status === "active" && !d.paidOffOn && !d.blocked);
   const schedules = useQueries({ queries: active.map((d) => scheduleQuery(d, today, connection)) });
   const balances = useQueries({ queries: active.map((d) => balanceQuery(d, connection, today)) });
-  const byCurrency = new Map<string, { digits: number; owed: number; due: number; dueCount: number }>();
+  if (!active.length) return null;
+  const codes = new Map<string, number>();
+  active.forEach((debt) => codes.set(debt.currency, (codes.get(debt.currency) ?? 0) + 1));
+  // The most common code; the first loan's wins a tie.
+  const main = active.find((debt) => debt.currency === [...codes].sort((left, right) => right[1] - left[1])[0][0])!;
+  const total = { digits: main.currencyMinorDigits, owed: 0, due: 0, dueCount: 0 };
   active.forEach((debt, i) => {
     const schedule = schedules[i]?.data;
     const balance = balances[i]?.data;
     const progress = schedule?.ok ? schedule.summary : null;
-    const owed = typeof balance === "number" ? balance : 0;
-    const entry = byCurrency.get(debt.currency) ?? { digits: debt.currencyMinorDigits, owed: 0, due: 0, dueCount: 0 };
-    entry.owed += owed;
-    entry.due += progress?.dueSoonMinor ?? 0;
-    entry.dueCount += progress?.dueSoonCount ?? 0;
-    byCurrency.set(debt.currency, entry);
+    // The balance is read from the budget's ledger, so it is already in the budget's precision; only
+    // the schedule's amounts follow the digits the loan was saved with.
+    const rescale = (minor: number) => Math.round(minor * 10 ** (total.digits - debt.currencyMinorDigits));
+    total.owed += typeof balance === "number" ? balance : 0;
+    total.due += rescale(progress?.dueSoonMinor ?? 0);
+    total.dueCount += progress?.dueSoonCount ?? 0;
   });
-  if (!active.length) return null;
   const incomplete = !connection || active.some((debt) => !debt.liabilityAccountId || !debt.openingDate || debt.openingPrincipalMinor === null || (debt.budgetSyncId && debt.budgetSyncId !== connection.budgetSyncId)) || balances.some((query) => query.isError);
   const loading = balances.some((query) => query.data === undefined && !query.isError);
   const unavailable = incomplete ? "Unavailable" : loading ? "Loading…" : null;
   const dueUnavailable = active.some((debt) => !debt.openingDate || debt.openingPrincipalMinor === null) || schedules.some((query) => query.isError) ? "Unavailable" : schedules.some((query) => query.data === undefined) ? "Loading…" : null;
-  const several = byCurrency.size > 1;
   return (
     <dl aria-label="All loans" className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
       <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Active loans</dt><dd className="font-semibold tabular-nums">{active.length}</dd></div>
-      {[...byCurrency].map(([currency, t]) => (
-        <div key={currency} className="contents">
-          <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Owed{several ? ` (${currency})` : ""}</dt><dd className="font-semibold tabular-nums">{unavailable ?? formatAmount(t.owed, t.digits)}</dd></div>
-          <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Due in the next 30 days{several ? ` (${currency})` : ""}</dt><dd className="font-semibold tabular-nums">{dueUnavailable ?? formatAmount(t.due, t.digits)}{!dueUnavailable && t.dueCount ? <span className="ml-1 font-normal text-muted-foreground">({t.dueCount} repayment{t.dueCount === 1 ? "" : "s"})</span> : null}</dd></div>
-        </div>
-      ))}
+      <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Owed</dt><dd className="font-semibold tabular-nums">{unavailable ?? formatAmount(total.owed, total.digits)}</dd></div>
+      <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Due in the next 30 days</dt><dd className="font-semibold tabular-nums">{dueUnavailable ?? formatAmount(total.due, total.digits)}{!dueUnavailable && total.dueCount ? <span className="ml-1 font-normal text-muted-foreground">({total.dueCount} repayment{total.dueCount === 1 ? "" : "s"})</span> : null}</dd></div>
     </dl>
   );
 }

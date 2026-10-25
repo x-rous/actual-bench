@@ -4,7 +4,7 @@ import { latestStatement } from "../insights";
 import type { Card, Statement, Workspace } from "../models";
 import { previewStatements, statementDrafts, statementReview } from "../statements";
 import { paymentAssignments, paymentRows, statementPayments, type StatementPayment } from "./payments";
-import { bankMatch, needsAttention, paymentStatus, type BankMatch, type PaymentStatus } from "./status";
+import { bankMatch, hasLaterStatement, needsAttention, paymentStatus, type BankMatch, type PaymentStatus } from "./status";
 
 /** One statement as every screen shows it. */
 export type StatementRow = {
@@ -108,7 +108,7 @@ function calculate({ card, workspace, snapshot, rawSignedBalanceMinor, today }: 
   const rows = statements.map((statement): StatementRow => {
     const payment = payments.find((entry) => entry.statementId === statement.id);
     const starting = startingPoint(card, statement, workspace, snapshot);
-    const status = paymentStatus(statement, payment, today, starting);
+    const status = paymentStatus(statement, payment, today, starting, hasLaterStatement(statements.filter((entry) => entry.closingDate <= today), statement));
     const match = bankMatch(statement, statementWorkspace, snapshot);
     const attention = statement.estimate ? statement === awaitingStatement : needsAttention(match, status);
     return { statement, payment, status, match, attention, startingPoint: starting };

@@ -190,9 +190,9 @@ export function ReviewPanel({
           {enrichments > 0 && (
             <span
               className="text-muted-foreground"
-              title="Matched transactions that keep their payee, notes and category, and gain the merchant text your bank used."
+              title="The statement's description, saved on each of these transactions as its imported payee. Payee, notes and category are not changed."
             >
-              {enrichments} bank {enrichments === 1 ? "detail" : "details"} recorded
+              {enrichments} imported {enrichments === 1 ? "payee" : "payees"} to save
             </span>
           )}
         </div>
@@ -277,8 +277,8 @@ export function ReviewPanel({
         />
 
         <WriteSetting
-          label="Record the bank's merchant text"
-          legend="Whether matched transactions gain the bank's own merchant text"
+          label="Save the statement's text as imported payee"
+          legend="Whether matched transactions also get the statement's description saved as their imported payee"
           name="enrich-imported-payee"
           value={applyConfig.enrichImportedPayee ? "on" : "off"}
           disabled={writeSettingsLocked}
@@ -289,12 +289,12 @@ export function ReviewPanel({
             {
               value: "on",
               label: "On new and matched rows",
-              hint: "A matched transaction keeps its payee, notes and category exactly as they are - only the statement's payee is attached as the imported payee. Rows already reconciled in Actual are skipped.",
+              hint: "Actual's rules and later imports can recognise the transaction by it. A matched transaction keeps its payee, notes and category exactly as they are. Rows already reconciled in Actual are skipped.",
             },
             {
               value: "off",
               label: "On new rows only",
-              hint: "Only transactions created from this statement record it. Matched transactions are not written to at all unless you staged a change on them, and keep whatever imported payee they already have.",
+              hint: "Only transactions created from this statement get an imported payee. A matched transaction keeps any imported payee it already has, and is written to only if you staged a change on it or chose to mark it cleared above.",
             },
           ]}
         />
@@ -345,7 +345,7 @@ export function ReviewPanel({
                 {pluralFieldLabel(field, count)}
                 {field === "importedPayee" && (
                   <span className="text-muted-foreground">
-                    {" "}- set from the statement&apos;s payee
+                    {" "}- set from the statement&apos;s description
                   </span>
                 )}
               </span>

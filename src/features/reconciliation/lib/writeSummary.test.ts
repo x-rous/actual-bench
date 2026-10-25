@@ -45,14 +45,14 @@ function plan(operations: UpdateOperation[]): ApplyPlan {
 }
 
 describe("reconciliation write summaries", () => {
-  it("names provenance-only writes as bank details rather than changes", () => {
+  it("names provenance-only writes as imported payees rather than changes", () => {
     const input = plan([
       update("one", { importedPayee: "AMAZON" }),
       update("two", { importedPayee: "TALABAT" }),
     ]);
 
-    expect(writeActionLabel("Review", input)).toBe("Review 2 bank details");
-    expect(describeWrites({ userChanges: 0, enrichments: 1 })).toBe("1 bank detail");
+    expect(writeActionLabel("Review", input)).toBe("Review 2 imported payees");
+    expect(describeWrites({ userChanges: 0, enrichments: 1 })).toBe("1 imported payee");
   });
 
   it("keeps staged changes and pure provenance writes separately visible", () => {
@@ -61,7 +61,7 @@ describe("reconciliation write summaries", () => {
       update("bank", { importedPayee: "TALABAT" }),
     ]);
 
-    expect(writeActionLabel("Apply", input)).toBe("Apply 1 change · 1 bank detail");
+    expect(writeActionLabel("Apply", input)).toBe("Apply 1 change · 1 imported payee");
   });
 
   it("classifies the exact operations left after drift withholds a row", () => {
@@ -72,7 +72,7 @@ describe("reconciliation write summaries", () => {
 
     const remaining = withoutOperations(input, new Set(["change"]));
     expect(writeActionLabel("Apply", remaining, { other: true })).toBe(
-      "Apply the other 1 bank detail"
+      "Apply the other 1 imported payee"
     );
   });
 });

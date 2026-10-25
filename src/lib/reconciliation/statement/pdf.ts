@@ -20,6 +20,7 @@ export { diagnosticsArePrivacySafe } from "./pdf/diagnostics";
 export { buildPdfDiagnosticsReport, maskForDiagnostics } from "./pdf/report";
 export { normalizePdfText } from "./pdf/text";
 export { reconstructPdfLayout } from "./pdf/layout";
+export { isPageIgnoredByRules } from "./pdf/regions";
 export { columnExamplesForRegions } from "./pdf/columns";
 
 export function parsePdfStatementDocument(
