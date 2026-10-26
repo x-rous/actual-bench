@@ -85,6 +85,17 @@ it("in single mode a second click on the chosen row confirms it", async () => {
   fireEvent.click(screen.getByText("Payee 2")); // confirms
   await waitFor(() => expect(onConfirm).toHaveBeenCalledWith([expect.objectContaining({ id: "2" })]));
 });
+it("does not confirm on a second click when the caller blocks that selection", async () => {
+  const onConfirm = jest.fn();
+  renderPicker({ multiple: false, onConfirm, confirmDisabled: (rows) => rows.some((r) => r.id === "2") });
+  await screen.findByText("Payee 1");
+  fireEvent.click(screen.getByText("Payee 2")); fireEvent.click(screen.getByText("Payee 2"));
+  expect(screen.getByRole("button", { name: "Use" })).toBeDisabled();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(onConfirm).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("Payee 1")); fireEvent.click(screen.getByText("Payee 1")); // an allowed row still confirms
+  await waitFor(() => expect(onConfirm).toHaveBeenCalledWith([expect.objectContaining({ id: "1" })]));
+});
 it("loads the next page when a full page came back, and says the count is so far", async () => {
   jest.mocked(fetchPickerPage).mockImplementation(async (_c, _s, _k, _t, offset) => offset === 0 ? { rows: [row("1"), row("2")], fetched: PICKER_PAGE_SIZE } : { rows: [row("3")], fetched: 1 });
   renderPicker();

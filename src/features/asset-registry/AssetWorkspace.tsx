@@ -17,6 +17,7 @@ import { DepreciationPanel } from "./DepreciationPanel";
 import { depreciationSchedule, forecastMonths, periodStatuses } from "@/lib/asset-registry/depreciation";
 import { capitalMovements } from "@/lib/asset-registry/capitalMovements";
 import { financingEvents, type OperatingEntry } from "./timeline";
+import { earliestDate } from "./dateRange";
 import { DEFAULT_CHART_PREFS, type BookFocus, type CashflowFocus } from "./TimelineSection";
 import { DepreciationEditor } from "./DepreciationEditor";
 import { FinancingPanel } from "./FinancingPanel";
@@ -207,12 +208,19 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     return { ...context, external: await readTouched(context.transport, context.registry.assets, touched) };
   }
   const ensureExternal = (touched: string[]) => readTouched(transport, registry.assets, touched);
-  /** The date of an asset's first ledger entry: where its history, and every all-time figure, starts. */
+  /** The date of an asset's first linked income or expense row, when Actual still has it. */
+  const firstCashDate = (a: Asset): string | undefined => earliestDate(...(registry.cashflows ?? []).filter((m) => m.assetId === a.id).map((m) => externalQuery.data?.rows.find((r) => r.id === m.actualTransactionId && r.accountId === m.actualAccountId)?.date));
+  /**
+   * Where an asset's history, and every all-time figure, starts: its first ledger entry or its first linked income or expense,
+   * whichever is earlier, so "all time" never leaves out a row the Income & Expenses table shows. The ledger's own opening and
+   * capital are unaffected: nothing sits in the ledger before its first entry.
+   */
   const firstDates = new Map<string, string>();
   const firstDateOf = (a: Asset): string => {
     const known = firstDates.get(a.id); if (known) return known;
     const q = books.get(a.actualAccountId);
-    const first = q?.isSuccess && q.data && available ? attributeBook(q.data, registry.assets, registry.metadata).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] ?? date : date;
+    const ledger = q?.isSuccess && q.data && available ? attributeBook(q.data, registry.assets, registry.metadata).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
+    const first = earliestDate(ledger, firstCashDate(a)) ?? date;
     firstDates.set(a.id, first); return first;
   };
   /** The performance report; the whole history up to today unless dates are given. */
@@ -307,6 +315,8 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const links = registry.debtLinks ?? [];
   const firstLink = asset ? links.filter((l) => l.assetId === asset.id).map((l) => l.effectiveFrom).sort()[0] : undefined;
   const debtAtDate = (on: string): number | null => !asset || !firstLink || on < firstLink ? null : trackedEquity(asset.id, on, links, null, debtsAt(on)).allocatedDebtMinor;
+  /** Where the Overview and Income & Expenses start (a loan allocation still starts from the first ledger entry, `firstBookDate`). */
+  const historyStart = asset ? firstDateOf(asset) : date;
   const firstBookDate = asset && book ? book.rows.filter((r) => r.assetId === asset.id).map((r) => r.date).sort()[0] ?? date : date;
   const financingTimeline = asset ? financingEvents(links.filter((l) => l.assetId === asset.id), (id) => loans.find((d) => d.id === id)?.name ?? "Loan") : [];
   const capitalContext = asset && snapshot && externalQuery.data ? { asset, registry, snapshot, transport, external: externalQuery.data } : undefined;
@@ -366,10 +376,10 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     </div> : asset ? <div className="flex min-h-0 flex-1 overflow-hidden"><div className="flex min-w-0 flex-1 flex-col">
         {Boolean(reason || book?.issues.length) && <div role="alert" className="border-b px-4 py-2 text-xs text-destructive">{reason ?? book?.issues[0]}<Button size="xs" variant="ghost" onClick={() => setEditorAsset(asset)}>Details</Button></div>}
         {currentQuery?.isError && <p role="alert" className="border-b p-3 text-sm text-destructive">Book read failed: {currentQuery.error.message}</p>}
-        <TabsContent value="Overview" className="flex min-h-0 flex-col"><AssetOverview asset={asset} date={date} valueMinor={value(asset)} reading={externalQuery.isPending} reportFor={(start, end) => isIsoDate(start) && isIsoDate(end) && start <= end ? report(asset, start, end) : undefined} firstDate={firstBookDate} book={book} debtAt={debtAtDate} unposted={unpostedMonths} operating={operatingEntries} capital={capitalEntries} financing={financingTimeline} depreciationDue={depreciationDue} onBook={openBook} onTab={setTab} chartPrefs={chartPrefs} onChartPrefs={setChartPrefs}
+        <TabsContent value="Overview" className="flex min-h-0 flex-col"><AssetOverview asset={asset} date={date} valueMinor={value(asset)} reading={externalQuery.isPending} reportFor={(start, end) => isIsoDate(start) && isIsoDate(end) && start <= end ? report(asset, start, end) : undefined} firstDate={historyStart} book={book} debtAt={debtAtDate} unposted={unpostedMonths} operating={operatingEntries} capital={capitalEntries} financing={financingTimeline} depreciationDue={depreciationDue} onBook={openBook} onTab={setTab} chartPrefs={chartPrefs} onChartPrefs={setChartPrefs}
           onFocusBook={(focus) => { setBookFocus(focus); setBookView("asset"); setTab("Asset Ledger"); }} onFocusCashflow={(focus) => { setCashFocus(focus); setTab("Income & Expenses"); }} /></TabsContent>
         <TabsContent value="Asset Ledger" className="flex min-h-0 flex-col">{snapshot && available ? <BookPanel key={asset.id} payeeOptions={payeesQuery.data} onCapitalAction={(kind) => { if (!financialUnknown && capitalContext && asset.status === "active") setCapitalKind(kind); }} recordDisabled={financialUnknown || !capitalContext || asset.status !== "active"} asset={asset} registry={registry} snapshot={snapshot} fresh={fresh} onSaved={refresh} financialBlocked={financialUnknown} onUncertain={() => setFinancialUnknown(true)} accountName={accounts.find((a) => a.id === asset.actualAccountId)?.name} view={bookView} onViewChange={setBookView} focus={bookFocus} onClearFocus={() => setBookFocus(null)} /> : <p role="status" className="p-4 text-sm">Reading the Asset Ledger… Refresh to retry if unavailable.</p>}</TabsContent>
-        <TabsContent value="Income & Expenses" className="flex min-h-0 flex-col">{externalQuery.data ? <IncomeExpensesTab key={asset.id} asset={asset} registry={registry} external={externalQuery.data} categories={categoryQuery.data?.categories} firstDate={firstBookDate} operating={operatingEntries} reportFor={(start, end) => report(asset, start, end)} valueAt={(on) => valueAt(asset, on)} focus={cashFocus} onClearFocus={() => setCashFocus(null)} today={date} fresh={freshCapital} ensureExternal={ensureExternal} onSaved={refresh} /> : <p role="status" className="p-4 text-sm">Reading source accounts… Refresh to retry.</p>}</TabsContent>
+        <TabsContent value="Income & Expenses" className="flex min-h-0 flex-col">{externalQuery.data ? <IncomeExpensesTab key={asset.id} asset={asset} registry={registry} external={externalQuery.data} categories={categoryQuery.data?.categories} firstDate={historyStart} operating={operatingEntries} reportFor={(start, end) => report(asset, start, end)} valueAt={(on) => valueAt(asset, on)} focus={cashFocus} onClearFocus={() => setCashFocus(null)} today={date} fresh={freshCapital} ensureExternal={ensureExternal} onSaved={refresh} /> : <p role="status" className="p-4 text-sm">Reading source accounts… Refresh to retry.</p>}</TabsContent>
         <TabsContent value="Depreciation Schedule" className="flex min-h-0 flex-col">{snapshot && available ? <div className="flex min-h-0 flex-1"><DepreciationPanel key={asset.id} asset={asset} registry={registry} snapshot={snapshot} valueMinor={value(asset)} today={date} fresh={fresh} onSaved={refresh} onEdit={() => setDepreciationEditing(true)} onOpenBook={() => openBook()} financialBlocked={financialUnknown} onUncertain={() => setFinancialUnknown(true)} />
           {depreciationEditing && <DepreciationEditor asset={asset} settings={registry.depreciation?.find((d) => d.assetId === asset.id)} recordedMinor={value(asset)} today={date} onSaved={async (next) => { await refresh(next); }} onClose={() => setDepreciationEditing(false)} />}</div> : <p role="status" className="p-4 text-sm">Reading the asset book… Refresh to retry if unavailable.</p>}</TabsContent>
         <TabsContent value="Linked Loans" className="flex min-h-0 flex-col">{available ? <FinancingPanel key={asset.id} asset={asset} registry={registry} loans={loans} loansReady={loansQuery.isSuccess} accounts={accounts} asOf={asOf} onAsOf={setAsOf} today={date} valueAt={(on) => valueAt(asset, on)} debtsAt={debtsAt} onSaved={refresh} firstDate={firstBookDate} balanceAt={loanBalanceAt} repayments={repayments} /> : <p role="status" className="p-4 text-sm">Reading financing data… Refresh to retry if unavailable.</p>}</TabsContent>

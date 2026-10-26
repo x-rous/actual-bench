@@ -7,6 +7,9 @@ export type AssetRange = PickerFilterState["date"];
 export const ALL_TIME: AssetRange = { preset: "all" };
 export const isAllTime = (range: AssetRange): boolean => range.preset === "all";
 
+/** The earliest of the dates given (some may be missing), or undefined when there are none. */
+export const earliestDate = (...dates: (string | undefined)[]): string | undefined => dates.filter((d): d is string => !!d).sort()[0];
+
 /**
  * The inclusive dates a range means, for the KPI strip. An open start is the first date of the asset's history and an
  * open end is today; a range never reaches into the future (there is no dated value to report on) or before the history.
