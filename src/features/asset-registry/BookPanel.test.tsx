@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { BookPanel } from "./BookPanel";
 import { normalizeActivity } from "@/features/credit-cards/lib/activity";
 import { tagTransport, testAsset, testRow } from "@/lib/asset-registry/testing";
@@ -6,7 +6,7 @@ import { registryRequest } from "./api";
 import type { ActionContext } from "@/lib/asset-registry/actions";
 import type { BookSnapshot } from "@/lib/asset-registry/ledger";
 jest.mock("./api", () => ({ registryRequest: jest.fn() }));
-jest.mock("./BookActionEditor", () => ({ BookActionEditor: ({ kind, row, onUncertain, onClose }: { kind: string; row?: { id: string }; onUncertain: () => void; onClose: () => void }) => <><output aria-label="Editor operation">{kind}:{row?.id ?? "new"}</output><button onClick={() => { onUncertain(); onClose(); }}>Simulate uncertain write and close</button></> }));
+jest.mock("./BookActionEditor", () => ({ BookActionEditor: ({ kind, row, initialClassification, onUncertain, onClose }: { kind: string; row?: { id: string }; initialClassification?: string; onUncertain: () => void; onClose: () => void }) => <><output aria-label="Editor operation">{kind}:{row?.id ?? "new"}</output><output aria-label="Editor type">{initialClassification ?? "none"}</output><button onClick={() => { onUncertain(); onClose(); }}>Simulate uncertain write and close</button></> }));
 const addEntry = () => { fireEvent.click(screen.getByRole("button", { name: "Add Entry" })); fireEvent.click(screen.getByRole("menuitem", { name: /Value adjustment/ })); };
 it("keeps financial actions locked after an uncertain editor closes until explicit refresh", () => {
   const source = [testRow("opening", 100)];
@@ -77,16 +77,25 @@ it("shows only the period and types chosen from a chart event, with a visible fi
   fireEvent.click(screen.getByRole("button", { name: "Clear filter Purchases · Mar 2026" }));
   expect(onClearFocus).toHaveBeenCalled();
 });
-it("has no KPI strip; its status line gives the recorded value, and the net of what is shown once the list is narrowed", () => {
+it("summarises the entries shown, and follows the search and the date range except for the unclassified count", () => {
   const source = [testRow("a", 100, { date: "2026-03-02" }), testRow("b", -30, { date: "2026-03-31" }), testRow("c", 5, { date: "2026-04-01" })];
   const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source, rows: normalizeActivity(source).rows, balanceMinor: 75, issues: [], fetchedAt: "read", transferKnown: true };
   const registry = { assets: [testAsset()], metadata: [{ actualTransactionId: "a", actualAccountId: "vehicles", assetId: "byd", classification: "revaluation", revision: 1 }] };
   render(<BookPanel asset={testAsset()} registry={registry} snapshot={snapshot} fresh={jest.fn()} onSaved={jest.fn()} />);
-  expect(screen.queryByLabelText("Account transactions summary")).not.toBeInTheDocument();
-  expect(screen.getByText(/3 entries/)).toHaveTextContent("0.75 recorded value");
+  const strip = screen.getByLabelText("Asset Ledger summary");
+  const tile = (name: string) => within(strip).getByText(name).parentElement!;
+  expect(tile("Entries shown")).toHaveTextContent("3"); expect(tile("Value change")).toHaveTextContent("+1.05"); // the revaluation, plus the +0.05 a suggestion treats as one
+  expect(tile("Last value update")).toHaveTextContent("Mar"); expect(tile("Last value update")).toHaveTextContent("all dates");
+  const unclassified = tile("Unclassified").textContent; // looks at every date and ignores the filters
   fireEvent.change(screen.getByLabelText("Search entries"), { target: { value: "zzz" } });
-  fireEvent.click(screen.getByRole("button", { name: /Unclassified/ }));
-  expect(screen.getByText(/entr(y|ies) ·/)).toHaveTextContent(/net/);
+  expect(tile("Entries shown")).toHaveTextContent("0"); expect(tile("Entries shown")).toHaveTextContent("of 3 in this view");
+  expect(tile("Unclassified").textContent).toBe(unclassified); // a problem outside the filter cannot hide
+  fireEvent.change(screen.getByLabelText("Search entries"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Date filter" }));
+  fireEvent.click(screen.getByRole("button", { name: "Last year" }));
+  expect(tile("Entries shown")).toHaveTextContent("0"); expect(tile("Unclassified").textContent).toBe(unclassified);
+  fireEvent.click(screen.getByRole("button", { name: "This year" }));
+  expect(tile("Entries shown")).toHaveTextContent("3");
 });
 it("offers every financial entry from one Add Entry menu beside Update value", () => {
   const source = [testRow("opening", 100)];
@@ -125,4 +134,78 @@ it("puts the cleared marker right after the amount", () => {
   const headers = screen.getAllByRole("columnheader").map((h) => h.textContent?.trim());
   expect(headers.indexOf("Cleared")).toBe(headers.indexOf("Amount") + 1);
   expect(headers.indexOf("Running value")).toBeGreaterThan(headers.indexOf("Cleared"));
+});
+it("filters the ledger by several types, a payee or an amount with the picker's chips", () => {
+  const source = [testRow("a", 10000, { date: "2026-03-02", payeeName: "Valuer" }), testRow("b", -3000, { date: "2026-03-31", payeeName: "Garage" }), testRow("c", 500, { date: "2026-04-01", payeeName: "Valuer" })];
+  const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source, rows: normalizeActivity(source).rows, balanceMinor: 7500, issues: [], fetchedAt: "read", transferKnown: true };
+  const meta = (id: string, classification: string) => ({ actualTransactionId: id, actualAccountId: "vehicles", assetId: "byd", classification, revision: 1 });
+  const registry = { assets: [testAsset()], metadata: [meta("a", "revaluation"), meta("b", "depreciation"), meta("c", "other-adjustment")] };
+  render(<BookPanel asset={testAsset()} registry={registry} snapshot={snapshot} fresh={jest.fn()} onSaved={jest.fn()} />);
+  const strip = () => within(screen.getByLabelText("Asset Ledger summary")).getByText("Entries shown").parentElement!;
+  expect(screen.queryByLabelText("Entry type")).not.toBeInTheDocument(); // a picker chip now
+  fireEvent.click(screen.getByRole("button", { name: "Type filter" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Revaluation / Appreciation" })); fireEvent.click(screen.getByRole("checkbox", { name: "Depreciation" }));
+  expect(strip()).toHaveTextContent("2"); expect(strip()).toHaveTextContent("of 3 in this view");
+  fireEvent.click(screen.getByRole("button", { name: "Clear Type filter" }));
+  fireEvent.click(screen.getByRole("button", { name: "Payee filter" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Valuer" }));
+  expect(strip()).toHaveTextContent("2");
+  fireEvent.click(screen.getByRole("button", { name: "Clear Payee filter" }));
+  fireEvent.click(screen.getByRole("button", { name: "Amount filter" }));
+  fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "30" } });
+  expect(strip()).toHaveTextContent("1"); // the 30.00 payment, whichever its sign
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(strip()).toHaveTextContent("3");
+});
+it("opens on the unclassified entries when asked for that view", () => {
+  const source = [testRow("a", 100, { date: "2026-03-02" })];
+  const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source, rows: normalizeActivity(source).rows, balanceMinor: 100, issues: [], fetchedAt: "read", transferKnown: true };
+  const onViewChange = jest.fn();
+  render(<BookPanel asset={testAsset()} registry={{ assets: [testAsset()], metadata: [] }} snapshot={snapshot} view="unclassified" onViewChange={onViewChange} fresh={jest.fn()} onSaved={jest.fn()} />);
+  expect(screen.getByRole("button", { name: "Type filter: Unclassified" })).toBeInTheDocument(); expect(onViewChange).toHaveBeenCalledWith("asset");
+});
+it("gives the value change as a percentage of the opening value and capital added", () => {
+  const source = [testRow("open", 100000, { date: "2025-01-01" }), testRow("up", 5000, { date: "2026-02-01" })];
+  const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source, rows: normalizeActivity(source).rows, balanceMinor: 105000, issues: [], fetchedAt: "read", transferKnown: true };
+  const meta = (id: string, classification: string) => ({ actualTransactionId: id, actualAccountId: "vehicles", assetId: "byd", classification, revision: 1 });
+  render(<BookPanel asset={testAsset()} registry={{ assets: [testAsset()], metadata: [meta("open", "opening-balance"), meta("up", "revaluation")] }} snapshot={snapshot} fresh={jest.fn()} onSaved={jest.fn()} />);
+  const tile = within(screen.getByLabelText("Asset Ledger summary")).getByText("Value change").parentElement!;
+  expect(tile).toHaveTextContent("+50.00"); expect(tile).toHaveTextContent("+5.00% of opening value and capital added");
+  fireEvent.click(screen.getByRole("button", { name: "Date filter" })); fireEvent.click(screen.getByRole("button", { name: "This year" }));
+  expect(tile).toHaveTextContent("+5.00%"); // the 1,000.00 the year started with, plus nothing added
+});
+it("leaves other assets' entries out of the KPIs even when they are shown", () => {
+  const source = [testRow("mine", 100000, { date: "2026-03-01", notes: "#asset_byd" }), testRow("theirs", 900000, { date: "2026-03-03", notes: "#asset_toyota" })];
+  const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source, rows: normalizeActivity(source).rows, balanceMinor: 1000000, issues: [], fetchedAt: "read", transferKnown: true };
+  const meta = (id: string, assetId: string) => ({ actualTransactionId: id, actualAccountId: "vehicles", assetId, classification: "opening-balance", revision: 1 });
+  render(<BookPanel asset={testAsset()} registry={{ assets: [testAsset(), testAsset("toyota")], metadata: [meta("mine", "byd"), meta("theirs", "toyota")] }} snapshot={snapshot} fresh={jest.fn()} onSaved={jest.fn()} />);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Show other assets' entries" }));
+  const strip = within(screen.getByLabelText("Asset Ledger summary"));
+  expect(strip.getByText("Entries shown").parentElement).toHaveTextContent("2");
+  expect(strip.getByText("Capital added").parentElement).toHaveTextContent("+1,000.00"); // not the 9,000.00 that belongs to the other asset
+});
+it("opens the unclassified entries from a link with every other filter cleared", () => {
+  const source = [testRow("a", 100, { date: "2026-03-02" })];
+  const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source, rows: normalizeActivity(source).rows, balanceMinor: 100, issues: [], fetchedAt: "read", transferKnown: true };
+  const props = { asset: testAsset(), registry: { assets: [testAsset()], metadata: [] }, snapshot, fresh: jest.fn(), onSaved: jest.fn(), onViewChange: jest.fn() };
+  const { rerender } = render(<BookPanel {...props} view="asset" />);
+  fireEvent.click(screen.getByRole("button", { name: "Date filter" })); fireEvent.click(screen.getByRole("button", { name: "Last year" }));
+  fireEvent.change(screen.getByLabelText("Search entries"), { target: { value: "zzz" } });
+  rerender(<BookPanel {...props} view="unclassified" />);
+  expect(screen.queryByRole("button", { name: /Date filter:/ })).not.toBeInTheDocument(); expect(screen.getByLabelText("Search entries")).toHaveValue("");
+  expect(screen.getByRole("button", { name: "Type filter: Unclassified" })).toBeInTheDocument();
+});
+it("orders the filter chips Date, Amount, Payee, then Type", () => {
+  const source = [testRow("a", 100)];
+  const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source, rows: normalizeActivity(source).rows, balanceMinor: 100, issues: [], fetchedAt: "read", transferKnown: true };
+  render(<BookPanel asset={testAsset()} registry={{ assets: [testAsset()], metadata: [] }} snapshot={snapshot} fresh={jest.fn()} onSaved={jest.fn()} />);
+  expect(screen.getAllByRole("button", { name: /^(Date|Amount|Payee|Type) filter/ }).map((b) => b.getAttribute("aria-label"))).toEqual(["Date filter", "Amount filter", "Payee filter", "Type filter"]);
+});
+it("opens a suggested entry as unclassified, so saving it never records the suggestion unasked", () => {
+  const source = [testRow("a", 100, { date: "2026-03-02", payeeName: "Valuer" })];
+  const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source, rows: normalizeActivity(source).rows, balanceMinor: 100, issues: [], fetchedAt: "read", transferKnown: true };
+  render(<BookPanel asset={testAsset()} registry={{ assets: [testAsset()], metadata: [] }} snapshot={snapshot} fresh={jest.fn()} onSaved={jest.fn()} />);
+  expect(screen.getByRole("button", { name: /^Classify Valuer/ })).toHaveTextContent("suggested"); // the table shows a suggestion
+  fireEvent.click(screen.getByRole("button", { name: /^Edit entry/ }));
+  expect(screen.getByLabelText("Editor type")).toHaveTextContent("none"); // only a saved type is handed to the editor
 });

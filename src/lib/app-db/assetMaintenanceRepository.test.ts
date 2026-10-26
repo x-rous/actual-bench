@@ -49,3 +49,9 @@ it("deletes only an archived asset and everything Bench stored for it", () => {
   expect(registry.assets).toEqual([]); expect(registry.metadata).toEqual([]); expect(registry.cashflows).toBeUndefined();
   expect(readRegistry(db, "budget").assets).toEqual([]);
 });
+it("never treats an empty account directory as proof that every account is gone", () => {
+  const { db } = fixture();
+  expect(() => pruneStaleAssetMetadata(db, { budgetSyncId: "budget", directory: [], accounts: [] })).toThrow(/directory is empty/);
+  expect(readRegistry(db, "budget").metadata).toHaveLength(1);
+  expect(readRegistry(db, "budget").cashflows).toHaveLength(1);
+});

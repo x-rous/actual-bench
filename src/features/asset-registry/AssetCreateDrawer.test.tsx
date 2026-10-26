@@ -90,3 +90,38 @@ it("shares an account with a hashtag typed after a fixed #asset_ prefix, suggest
   fireEvent.change(screen.getByRole("textbox", { name: /Asset hashtag/ }), { target: { value: "My Car!" } });
   expect(screen.getByRole("textbox", { name: /Asset hashtag/ })).toHaveValue("my_car_");
 });
+it("refuses an ownership share too small to store (under 0.01%) or finer than two decimals", async () => {
+  mount();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Family car" } });
+  const share = screen.getByLabelText("Your ownership");
+  for (const bad of ["0.001", "0", "100.5", "33.333"]) { fireEvent.change(share, { target: { value: bad } }); expect(await screen.findByText(/Enter a share between 0.01 and 100/)).toBeInTheDocument(); }
+  fireEvent.change(share, { target: { value: "33.33" } });
+  await waitFor(() => expect(screen.queryByText(/Enter a share between 0.01 and 100/)).not.toBeInTheDocument());
+  create();
+  await waitFor(() => expect(registryRequest).toHaveBeenCalled());
+  expect(registryRequest).toHaveBeenCalledWith("budget", "POST", expect.objectContaining({ asset: expect.objectContaining({ ownership: [expect.objectContaining({ ownershipBps: 3333 })] }) }));
+});
+it("reuses the account it already created when saving the asset is tried again, instead of creating a second one", async () => {
+  jest.mocked(registryRequest).mockRejectedValueOnce(new Error("Actual did not answer")).mockResolvedValue({ assets: [], metadata: [] });
+  const { onOpenAsset } = mount();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Family car" } });
+  create();
+  expect(await screen.findByText(/Actual did not answer/)).toBeInTheDocument();
+  expect(saveAccounts).toHaveBeenCalledTimes(1);
+  create();
+  await waitFor(() => expect(onOpenAsset).toHaveBeenCalled());
+  expect(saveAccounts).toHaveBeenCalledTimes(1); // the account made on the first try is used again
+  expect(registryRequest).toHaveBeenLastCalledWith("budget", "POST", expect.objectContaining({ asset: expect.objectContaining({ actualAccountId: "permanent" }) }));
+});
+it("keeps Create asset disabled until the opening value is written too", async () => {
+  let finish: (value: unknown) => void = () => undefined;
+  jest.mocked(recordStartingValue).mockReturnValue(new Promise((resolve) => { finish = resolve; }) as never);
+  const { onOpenAsset } = mount();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Family car" } });
+  fireEvent.change(screen.getByLabelText("Value"), { target: { value: "100" } });
+  create();
+  await waitFor(() => expect(recordStartingValue).toHaveBeenCalled());
+  expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  finish({ assets: [], metadata: [] });
+  await waitFor(() => expect(onOpenAsset).toHaveBeenCalled());
+});

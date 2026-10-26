@@ -3,14 +3,15 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { buildAccountOptions, buildCategoryOptions, buildPayeeOptions } from "@/components/ui/entity-options";
 import { getTransport } from "@/lib/actual";
+import type { Tag } from "@/types/entities";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 
-/** Accounts, categories and payees of the active budget as combobox options, plus id → name lookups. */
+/** Accounts, categories, payees and tags of the active budget as combobox options, plus id → name lookups. */
 export function useTransactionReference(opts: { excludeAccountIds?: string[]; excludeTransferPayees?: boolean } = {}) {
   const connection = useConnectionStore(selectActiveInstance);
   const reference = useQuery({
     queryKey: ["transactionPickerReference", connection?.id], enabled: !!connection,
-    queryFn: async () => { const t = getTransport(connection!); const [accounts, groups, payees] = await Promise.all([t.getAccounts(), t.getCategoryGroups(), t.getPayees()]); return { accounts, groups, payees }; },
+    queryFn: async () => { const t = getTransport(connection!); const [accounts, groups, payees, tags] = await Promise.all([t.getAccounts(), t.getCategoryGroups(), t.getPayees(), t.getTags().catch(() => [] as Tag[])]); return { accounts, groups, payees, tags }; },
   });
   const { excludeAccountIds, excludeTransferPayees } = opts;
   const accounts = useMemo(() => (reference.data?.accounts ?? []).filter((a) => !(excludeAccountIds ?? []).includes(a.id)), [reference.data, excludeAccountIds]);
@@ -23,5 +24,7 @@ export function useTransactionReference(opts: { excludeAccountIds?: string[]; ex
     const account = new Map((reference.data?.accounts ?? []).map((a) => [a.id, a.name]));
     return { category: (id: string) => category.get(id) ?? "unknown category", payee: (id: string) => payee.get(id) ?? "unknown payee", account: (id: string) => account.get(id) ?? "unknown account" };
   }, [reference.data]);
-  return { ready: !!reference.data, accountOptions, categoryOptions, payeeOptions, names };
+  /** Actual's defined tags: `value` is the `#name` as it appears in Notes (lower case). */
+  const tags = useMemo(() => (reference.data?.tags ?? []).map((t) => ({ id: `#${t.name.replace(/^#/, "")}`.toLocaleLowerCase(), name: `#${t.name.replace(/^#/, "")}`, color: t.color })), [reference.data]);
+  return { ready: !!reference.data, accountOptions, categoryOptions, payeeOptions, tags, names };
 }

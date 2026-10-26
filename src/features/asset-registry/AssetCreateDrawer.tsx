@@ -42,6 +42,8 @@ export function AssetCreateDrawer({ connection, accounts, registry, today, onSav
   const [accountPick, setAccountPick] = useState<"new" | "existing">("new");
   const [startAmount, setStartAmount] = useState(""); const [startDate, setStartDate] = useState(today); const [startError, setStartError] = useState("");
   const [created, setCreated] = useState<{ assetId: string; message: string } | null>(null);
+  /** True from the click until the asset and its opening value are both written, so a second click cannot start another save. */
+  const [submitting, setSubmitting] = useState(false);
   const accountClass = ASSET_TYPES[draft.assetType]?.accountClass;
   const picked = accountPick === "existing" && !!draft.actualAccountId;
   const balances = useQuery({ queryKey: ["assetAccountBalances", connection.id], queryFn: () => getTransport(connection).getAccountBalances(), enabled: picked, retry: false });
@@ -49,9 +51,11 @@ export function AssetCreateDrawer({ connection, accounts, registry, today, onSav
   /** The chosen account's balance in integer minor units (Actual's entity balances are whole units). */
   const balance = typeof wholeBalance === "number" ? Math.round(wholeBalance * 100) : undefined;
   const changeShare = (text: string) => {
-    setShare(text); const n = Number(text); const ok = text.trim() !== "" && Number.isFinite(n) && n > 0 && n <= 100;
-    setShareError(ok ? "" : "Enter a share between 0.01 and 100.");
-    if (ok) setDraft((d) => ({ ...d, ownership: [{ effectiveFrom: OWNERSHIP_FROM_START, ownershipBps: Math.round(n * 100) }] }));
+    // Ownership is stored in basis points (0.01%), so a share needs at least that, and no finer a precision.
+    setShare(text); const n = Number(text); const bps = Math.round(n * 100);
+    const ok = text.trim() !== "" && Number.isFinite(n) && bps >= 1 && n <= 100 && Math.abs(n * 100 - bps) < 1e-6;
+    setShareError(ok ? "" : "Enter a share between 0.01 and 100, with at most two decimals.");
+    if (ok) setDraft((d) => ({ ...d, ownership: [{ effectiveFrom: OWNERSHIP_FROM_START, ownershipBps: bps }] }));
   };
   const changeType = (value: string) => { setAccountPick("new"); setDraft({ ...draft, assetType: value as AssetType, actualAccountId: "", ...(setup.incomeTouched ? {} : { incomeGenerating: defaultIncomeGenerating(value) }) }); };
   const startParsed = parseMajorToMinor(startAmount.trim(), 2);
@@ -63,9 +67,13 @@ export function AssetCreateDrawer({ connection, accounts, registry, today, onSav
     if (startMinor < 0 || (startAmount.trim() !== "" && startMinor === 0)) { setStartError("Enter a positive opening value, or leave it empty."); return; }
     setStartError("");
     if (accountPick === "existing" && !setup.validate()) return;
-    // A new account is derived from the asset: its name, off budget, and the class its type needs.
-    const staged = accountPick === "new" ? setup.stageAccount({ name: draft.name.trim(), offBudget: true, accountClass } as AccountFormValues) : null;
-    if (accountPick === "new" && !staged) return;
+    // A new account is derived from the asset: its name, off budget, and the class its type needs. After a failed save its account
+    // already exists in Actual (and is in the draft), so a retry reuses it instead of creating another.
+    const reuse = accountPick === "new" && !!draft.actualAccountId && !pendingId;
+    const staged = accountPick === "new" && !reuse ? setup.stageAccount({ name: draft.name.trim(), offBudget: true, accountClass } as AccountFormValues) : null;
+    if (accountPick === "new" && !reuse && !staged) return;
+    setSubmitting(true);
+    try {
     const result = await setup.save(staged ?? undefined);
     if (!result) return;
     onSaved(result.registry);
@@ -76,6 +84,7 @@ export function AssetCreateDrawer({ connection, accounts, registry, today, onSav
     } catch (e) {
       setCreated({ assetId: result.assetId, message: `The asset was created, but its opening value was not recorded: ${e instanceof Error ? e.message : "the write failed"}. Open the asset to check the Asset Ledger, then use Add Entry if it is missing.` });
     }
+    } finally { setSubmitting(false); }
   }
   return <>
     {setup.discard.discardDialog}
@@ -119,7 +128,7 @@ export function AssetCreateDrawer({ connection, accounts, registry, today, onSav
         </form>
         <SheetFooter className="flex-row justify-end border-t px-6 py-4">
           {created ? <><Button variant="outline" onClick={onClose}>Close</Button><Button onClick={() => onOpenAsset(created.assetId)}>Open asset</Button></>
-            : <><Button variant="outline" disabled={busy} onClick={setup.close}>Cancel</Button><Button form="asset-create" type="submit" disabled={busy || !classes.available || createUncertain}>{busy ? "Saving…" : "Create asset"}</Button></>}
+            : <><Button variant="outline" disabled={busy || submitting} onClick={setup.close}>Cancel</Button><Button form="asset-create" type="submit" disabled={busy || submitting || !classes.available || createUncertain}>{busy || submitting ? "Saving…" : "Create asset"}</Button></>}
         </SheetFooter>
       </SheetContent>
     </Sheet>

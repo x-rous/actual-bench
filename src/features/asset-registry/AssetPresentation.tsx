@@ -22,9 +22,9 @@ export function AssetMark({ type, header = false }: { type: string; header?: boo
   const Icon = icons[type] ?? Box;
   return <span className={`flex shrink-0 items-center justify-center rounded-[5px] border bg-muted/40 text-muted-foreground ${header ? "h-7 w-11" : "size-7"}`}><Icon className="size-3.5" aria-hidden /></span>;
 }
-export function SummaryStrip({ items, label }: { label: string; items: { label: string; value: ReactNode; detail: ReactNode }[] }) {
+export function SummaryStrip({ items, label }: { label: string; items: { label: string; value: ReactNode; detail: ReactNode; wrap?: boolean }[] }) {
   return <dl aria-label={label} className={cn("grid shrink-0 grid-cols-2 divide-x border-b", items.length >= 6 ? "lg:grid-cols-3 2xl:grid-cols-6" : items.length === 5 ? "lg:grid-cols-5" : items.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
-    {items.map((item) => <Figure key={item.label} {...item} />)}
+    {items.map((item) => <Figure key={item.label} smallDecimals {...item} />)}
   </dl>;
 }
 export type AssetAttention = { label: string; tone: "success" | "attention" | "danger" | "neutral"; detail?: string };

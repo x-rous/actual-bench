@@ -19,16 +19,16 @@ const renderPanel = (asOf: string, debtsAt = debts(100000, 80000)) => render(<Fi
 beforeEach(() => jest.clearAllMocks());
 it("shows June at 100% and July at 60% from same-date Actual debt, with the remainder explicit", () => {
   const june = renderPanel("2026-06-30");
-  expect(screen.getByText("Tracked equity").nextElementSibling).toHaveTextContent("4,000.00");
+  expect(screen.getByText("Equity").nextElementSibling).toHaveTextContent("4,000.00");
   june.unmount();
   renderPanel("2026-07-31");
-  expect(screen.getByText("Tracked equity").nextElementSibling).toHaveTextContent("4,520.00");
+  expect(screen.getByText("Equity").nextElementSibling).toHaveTextContent("4,520.00");
   const table = screen.getByLabelText("Asset loan allocations");
   expect(within(table).getByText("Unallocated 40.00%")).toBeInTheDocument(); // the remainder is in the same table
 });
 it("makes equity unavailable instead of substituting data when the dated Actual balance is missing", () => {
   renderPanel("2026-07-31", debts(100000, null));
-  expect(screen.getByText("Tracked equity").nextElementSibling).toHaveTextContent("Unavailable");
+  expect(screen.getByText("Equity").nextElementSibling).toHaveTextContent("Unavailable");
   expect(screen.getByText(/Actual loan balance is unavailable on that date/)).toBeInTheDocument();
 });
 it("saves a change with the loan's expected period set and surfaces a stale refusal", async () => {
@@ -59,4 +59,28 @@ it("shows the loan-to-value and offers End on an open allocation", () => {
   renderPanel("2026-07-31");
   expect(screen.getByText("Loan-to-value").nextElementSibling).toHaveTextContent("%");
   expect(screen.getByRole("button", { name: /^End allocation for Mortgage/ })).toBeInTheDocument();
+});
+it("shows an empty state, not five empty tiles, while no loan is linked", () => {
+  render(<FinancingPanel asset={asset} registry={{ ...registry, debtLinks: [] }} loans={loans} loansReady accounts={accounts} asOf="2026-07-31" onAsOf={jest.fn()} today="2026-10-24" valueAt={() => 500000} debtsAt={debts(100000, 80000)} onSaved={jest.fn(async () => {})} />);
+  expect(screen.getByText("No loan linked")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Asset financing summary")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Link loan" }));
+  expect(screen.getByLabelText(/^Share of the loan/)).toBeInTheDocument();
+});
+it("shows the debt repaid on your share since the first link, and the regular payment scaled to your share", () => {
+  const priced = [{ ...loans[0], repaymentFrequency: "monthly", annualRateDecimal: "0.045", contractualTermMonths: 300 }] as unknown as DebtSummary[];
+  render(<FinancingPanel asset={asset} registry={registry} loans={priced} loansReady accounts={accounts} asOf="2026-07-31" onAsOf={jest.fn()} today="2026-10-24" valueAt={() => 500000} debtsAt={debts(100000, 80000)} repayments={{ loan: 10000 }} onSaved={jest.fn(async () => {})} />);
+  const tile = (name: string) => within(screen.getByLabelText("Asset financing summary")).getByText(name).parentElement!;
+  expect(tile("Equity built")).toHaveTextContent("120.00"); // the loan fell from 1,000.00 to 800.00; 60% of that is yours today. The cut from 100% to 60% is not a repayment
+  expect(tile("Monthly payment")).toHaveTextContent("60.00"); expect(tile("Monthly payment")).toHaveTextContent("4.5% a year · 25 years");
+});
+it("offers the free share of the loan you pick, not of the one picked before it", async () => {
+  const two = [{ ...loans[0], id: "first", name: "First loan", openingDate: "2026-01-01" }, { ...loans[0], id: "second", name: "Second loan", openingDate: "2026-01-01" }] as unknown as DebtSummary[];
+  const held = { assets: [asset, testAsset("other")], metadata: [], debtLinks: [{ assetId: "other", debtId: "first", allocationBps: 7000, effectiveFrom: "2026-01-01", effectiveTo: null, note: null }] };
+  render(<FinancingPanel asset={asset} registry={held} loans={two} loansReady accounts={accounts} asOf="2026-10-24" onAsOf={jest.fn()} today="2026-10-24" firstDate="2026-01-01" valueAt={() => 500000} debtsAt={() => []} balanceAt={async () => 100000} onSaved={jest.fn(async () => {})} />);
+  fireEvent.click(screen.getByRole("button", { name: /Link loan/ }));
+  await chooseSelectOption(screen.getByLabelText(/^Loan/), "First loan");
+  expect(screen.getByLabelText(/^Share of the loan/)).toHaveValue("30.00"); // another asset holds 70% of it
+  await chooseSelectOption(screen.getByLabelText(/^Loan/), "Second loan");
+  expect(screen.getByLabelText(/^Share of the loan/)).toHaveValue("100.00"); // nobody holds the second
 });

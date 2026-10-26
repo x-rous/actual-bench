@@ -13,7 +13,8 @@ import { typeFromNotes } from "@/lib/asset-registry/tags";
 import { DEPRECIATION_TAG, depreciationEvidence, depreciationMetadata, executeDepreciation, prepareDepreciation, type DepreciationPrepared } from "@/lib/asset-registry/depreciationActions";
 import type { Asset, Registry } from "@/lib/asset-registry/models";
 import type { BookSnapshot } from "@/lib/asset-registry/ledger";
-import { AttentionBadge, SummaryStrip, assetMoney, type AssetAttention } from "./AssetPresentation";
+import { AttentionBadge, NA, SummaryStrip, assetMoney, type AssetAttention } from "./AssetPresentation";
+import { yearsBetween } from "@/lib/asset-registry/yields";
 import { registryRequest } from "./api";
 
 const BADGES: Record<PeriodState, AssetAttention> = {
@@ -33,6 +34,11 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
   const actual = new Map(snapshot.source.map((r) => [r.id, r]));
   const rows = settings ? periodStatuses(depreciationSchedule(settings, forecastMonths(settings, today)), registry.metadata, asset.id, new Set(actual.keys()), today) : [];
   const posted = rows.filter((r) => r.state === "posted").length;
+  /** What the posted months took off the account, as Actual holds it (negative), and the next month still to post. */
+  const postedMinor = rows.filter((r) => r.state === "posted").reduce((sum, r) => sum + (actual.get(r.association!.actualTransactionId)?.amount ?? 0), 0);
+  const next = rows.find((r) => r.amountMinor > 0 && (r.state === "due" || r.state === "forecast"));
+  /** The month the schedule reaches its residual value, looking past the forecast window the table shows. */
+  const finalRow = settings ? depreciationSchedule(settings, settings.method === "straight-line" ? settings.lifeMonths ?? 0 : 600).find((r) => r.closingMinor <= settings.residualMinor) : undefined;
   /** Book rows tagged as depreciation that no schedule month claims (manual entries, older postings). */
   const linkedIds = new Set(registry.metadata.filter((m) => m.depreciationPeriod).map((m) => m.actualTransactionId));
   const otherTagged = snapshot.source.filter((r) => typeFromNotes(r.notes) === "depreciation" && !linkedIds.has(r.id)).length;
@@ -89,14 +95,15 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
     { key: "posted", header: "Actual posted amount", width: 150, align: "right", cell: (r) => r.state === "posted" ? assetMoney(actual.get(r.association!.actualTransactionId)?.amount) : "-" },
     { key: "result", header: "Last action", width: 220, grow: true, cell: (r) => <Text>{outcomes[r.period]?.message ?? "-"}</Text> },
   ];
-  if (!settings) return <div className="flex min-h-0 flex-1 flex-col"><div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2"><div><h2 className="text-sm font-semibold">Depreciation</h2><p className="text-xs text-muted-foreground">Optional monthly forecast · no automatic posting or rebasing</p></div><Button className="ml-auto" size="sm" disabled={asset.status !== "active"} onClick={onEdit}><Settings2 className="size-3.5" aria-hidden />Set up schedule</Button></div>
+  if (!settings) return <div className="flex min-h-0 flex-1 flex-col"><div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">Depreciation</h2><p className="text-xs text-muted-foreground">Optional monthly forecast · no automatic posting or rebasing</p></div><Button className="ml-auto" size="sm" disabled={asset.status !== "active"} onClick={onEdit}><Settings2 className="size-3.5" aria-hidden />Set up schedule</Button></div>
     <p className="p-4 text-sm text-muted-foreground">No schedule is saved. A schedule is a planning forecast; you post each ended month explicitly. Manual depreciation entries remain available in Asset Ledger.</p></div>;
   return <div className="flex min-h-0 flex-1 flex-col">
     <SummaryStrip label="Depreciation summary" items={[
-      { label: "Schedule basis", value: assetMoney(settings.basisMinor), detail: "Independent of later revaluation" },
-      { label: "Residual value", value: assetMoney(settings.residualMinor), detail: "Forecast floor" },
-      { label: "Recorded Actual value", value: assetMoney(valueMinor), detail: "Still read from the account's transactions" },
-      { label: "First monthly decrease", value: assetMoney(rows[0]?.amountMinor), detail: settings.method === "straight-line" ? "Straight-line · cumulative exact rounding" : `Declining · ${(settings.annualRateBps ?? 0) / 100}% per year ÷ 12` },
+      { label: "Recorded value", value: assetMoney(valueMinor), detail: `Schedule basis ${assetMoney(settings.basisMinor)}`, wrap: true },
+      { label: "Depreciation posted", value: assetMoney(postedMinor), detail: `${posted} of ${rows.filter((r) => r.amountMinor > 0).length} months in the forecast`, wrap: true },
+      { label: "Remaining to depreciate", value: valueMinor === null ? NA : assetMoney(Math.max(0, valueMinor - settings.residualMinor)), detail: `Down to the residual value ${assetMoney(settings.residualMinor)}`, wrap: true },
+      { label: "Next monthly charge", value: next ? assetMoney(next.amountMinor) : NA, detail: next ? `${monthLabel(next.period)} · ${next.state === "due" ? "due now" : "forecast"}` : "Nothing left to post", wrap: true },
+      { label: "Fully depreciated by", value: finalRow ? shortDate(finalRow.postDate, today) : NA, detail: finalRow ? (finalRow.postDate <= today ? "Reached the residual value" : `${yearsBetween(today, finalRow.postDate).toFixed(1)} years from now · ${settings.method === "straight-line" ? "straight-line" : `declining ${(settings.annualRateBps ?? 0) / 100}% a year`}`) : "Not within 50 years", wrap: true },
     ]} />
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5">
       <h2 className="text-sm font-semibold">Schedule</h2>

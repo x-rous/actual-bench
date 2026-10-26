@@ -15,7 +15,7 @@ import { type attributeBook } from "@/lib/asset-registry/ledger";
 import { assetMoney, bookTypeLabel, NA, SummaryStrip } from "./AssetPresentation";
 import { cashflowByPeriod } from "./cashflowSummary";
 import { percent } from "./ReportControls";
-import { TimelineSection, type BookFocus, type CashflowFocus } from "./TimelineSection";
+import { TimelineSection, type BookFocus, type CashflowFocus, type ChartPrefs } from "./TimelineSection";
 import type { FinancingEvent, OperatingEntry } from "./timeline";
 import type { BookView } from "./BookPanel";
 
@@ -30,6 +30,7 @@ type Props = {
   /** Schedule months that are due or whose Actual row is missing. */ depreciationDue: number;
   onBook: (view?: BookView) => void; onTab: (tab: string) => void;
   onFocusBook: (focus: BookFocus) => void; onFocusCashflow: (focus: CashflowFocus) => void;
+  /** The chart choices, kept by the page so they survive a change of tab. */ chartPrefs?: ChartPrefs; onChartPrefs?: (prefs: ChartPrefs) => void;
 };
 /** Attention items already shown elsewhere on this page (unclassified: chart; unassigned: its own button). */
 const SHOWN_ELSEWHERE = new Set(["Unclassified entries", "Unassigned entries require review"]);
@@ -48,7 +49,7 @@ type Column = { key: string; label: string; sub?: string; from: string; to: stri
 function Row({ label, values, strong, indent }: { label: string; values: ReactNode[]; strong?: boolean; indent?: boolean }) {
   return <tr className="border-t border-border/50"><th scope="row" className={strong ? "px-4 py-2 text-left text-sm font-semibold" : `px-4 py-2 text-left font-normal text-muted-foreground ${indent ? "pl-7" : ""}`}>{label}</th>{values.map((v, i) => <td key={i} className={strong ? "px-3 py-2 text-right text-sm font-semibold" : "px-3 py-2 text-right"}>{v}</td>)}</tr>;
 }
-export function AssetOverview({ asset, date, valueMinor, reading, reportFor, firstDate, book, debtAt, unposted, operating, capital, financing, depreciationDue, onBook, onTab, onFocusBook, onFocusCashflow }: Props) {
+export function AssetOverview({ asset, date, valueMinor, reading, reportFor, firstDate, book, debtAt, unposted, operating, capital, financing, depreciationDue, onBook, onTab, onFocusBook, onFocusCashflow, chartPrefs, onChartPrefs }: Props) {
   const own = book?.rows.filter((r) => r.assetId === asset.id) ?? [];
   const available = valueMinor !== null;
   const unassignedRows = book?.rows.filter((r) => !r.assetId).length ?? 0;
@@ -65,7 +66,6 @@ export function AssetOverview({ asset, date, valueMinor, reading, reportFor, fir
   // The whole life of the asset: how its value came to be what it is.
   const life = valueBridge(own, null, date);
   const lifePerformance = reportFor(firstDate, date);
-  const irrNote = lifePerformance?.irr == null ? "" : ` · ${percent(lifePerformance.irr)} a year (IRR)`;
   const otherMinor = life.disposalMinor + life.otherMinor;
   const year = Number(date.slice(0, 4));
   const columns: Column[] = [
@@ -89,12 +89,11 @@ export function AssetOverview({ asset, date, valueMinor, reading, reportFor, fir
   ];
   return <div className="min-h-0 flex-1 overflow-auto">
     <SummaryStrip label="Asset financial summary" items={[
-      { label: "Recorded value", value: assetMoney(valueMinor), detail: `Recorded since ${shortDate(firstDate, date)}` },
-      { label: "Capital added", value: available ? signed(life.capitalMinor) : NA, detail: "Opening value and purchases" },
-      { label: "Valuation adjustments", value: available ? signed(life.revaluationMinor + life.depreciationMinor) : NA, detail: available ? `Revaluation ${signed(life.revaluationMinor)} · Depreciation ${signed(life.depreciationMinor)}` : "Needs the account's values" },
-      ...(available && otherMinor !== 0 ? [{ label: "Disposals & other", value: signed(otherMinor), detail: "Disposals, other adjustments and unclassified rows" }] : []),
-      ...(showOperating ? [{ label: "Operating Result", value: figure(assetMoney(lifePerformance?.operatingMinor)), detail: "Linked income − costs · all time" }] : []),
-      { label: "Simple Total Return", value: figure(percent(lifePerformance?.simpleReturn)), detail: reading ? "Reading linked accounts…" : lifePerformance?.simpleReturn == null ? returnBlocker(lifePerformance) : showOperating ? `Operating yield ${percent(lifePerformance?.operatingYield)} · all time${irrNote}` : `All time · non-annualized${irrNote}` },
+      { label: "Current value", value: assetMoney(valueMinor), detail: `Recorded since ${shortDate(firstDate, date)}`, wrap: true },
+      { label: "Capital invested", value: available ? signed(life.capitalMinor) : NA, detail: "Opening value, purchases and added capital", wrap: true },
+      { label: "Value gain", value: available ? signed(life.revaluationMinor + life.depreciationMinor) : NA, detail: available ? `Revaluation ${signed(life.revaluationMinor)} · Depreciation ${signed(life.depreciationMinor)}${otherMinor !== 0 ? ` · Other ${signed(otherMinor)}` : ""}` : "Needs the account's values", wrap: true },
+      { label: "Net cash flow", value: figure(assetMoney(lifePerformance?.operatingMinor)), detail: "Linked income less expenses, all time", wrap: true },
+      { label: "Total return", value: figure(percent(lifePerformance?.simpleReturn)), detail: reading ? "Reading linked accounts…" : lifePerformance?.simpleReturn == null ? returnBlocker(lifePerformance) : `Total result ${assetMoney(lifePerformance.totalMinor)}${lifePerformance.irr == null ? " · not annualized" : ` · ${percent(lifePerformance.irr)} a year (IRR)`}`, wrap: true },
     ]} />
     {attention.length > 0 && <div role="status" aria-label="Needs attention" className="flex flex-wrap items-center gap-2 border-b bg-amber-50/60 px-4 py-2 text-xs text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
       <TriangleAlert className="size-3.5 shrink-0" aria-hidden /><span className="font-medium">Needs attention</span>
@@ -102,7 +101,7 @@ export function AssetOverview({ asset, date, valueMinor, reading, reportFor, fir
     </div>}
     <div className="grid gap-4 p-4">
       <TimelineSection today={date} valueMinor={valueMinor} rows={own.map((r) => ({ date: r.date, classification: r.classification, amountMinor: r.amountMinor, runningMinor: r.runningMinor }))}
-        debtAt={debtAt} unposted={unposted} operating={operating} capital={capital} financing={financing} onFinancing={() => onTab("Linked Loans")} showCashflow={income || hasCashflows} reading={reading} onBook={onFocusBook} onCashflow={onFocusCashflow}
+        debtAt={debtAt} unposted={unposted} operating={operating} capital={capital} financing={financing} onFinancing={() => onTab("Linked Loans")} showCashflow={income || hasCashflows} reading={reading} onBook={onFocusBook} onCashflow={onFocusCashflow} prefs={chartPrefs} onPrefs={onChartPrefs}
         notice={unclassified > 0
           ? <Button size="xs" variant="outline" className={AMBER} onClick={() => onBook("unclassified")}>{unclassified} unclassified {unclassified === 1 ? "transaction" : "transactions"}<ArrowRight className="size-3" aria-hidden /></Button>
           : available ? <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="size-3.5" aria-hidden />All transactions have a type</span> : null} />

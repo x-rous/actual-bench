@@ -687,6 +687,11 @@ const MIGRATIONS: readonly Migration[] = [
   // (only the ones a treatment gives it), and a link rule no longer carries a type.
   { version: 59, statements: [
     "UPDATE asset_transaction_metadata SET classification='other-adjustment' WHERE role='book' AND classification='ownership-adjustment'",
+    // CapEx is gone: a book row that capitalized an expense is plain Added Capital (the pairing is dropped first, because its check needs
+    // the old type), and a linked expense that was marked CapEx is unlinked, so it no longer counts as an operating expense.
+    "UPDATE asset_transaction_metadata SET capitalized_from_transaction_id=NULL WHERE role='book' AND classification='capital-expenditure' AND capitalized_from_transaction_id IS NOT NULL",
+    "UPDATE asset_transaction_metadata SET classification='added-capital' WHERE role='book' AND classification='capital-expenditure'",
+    "DELETE FROM asset_transaction_metadata WHERE role='cashflow' AND classification='capital-expenditure'",
     "UPDATE asset_transaction_metadata SET classification=NULL WHERE role='cashflow' AND classification IS NOT NULL AND classification NOT IN ('capital-expenditure','disposal-proceeds','other-excluded')",
     "ALTER TABLE asset_link_rules DROP COLUMN classification",
   ] },

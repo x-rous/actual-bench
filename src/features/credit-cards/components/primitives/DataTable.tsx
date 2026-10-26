@@ -58,6 +58,8 @@ type Props<T> = {
    * figure under its value (`Stack`). Every second line in a column is the same kind of fact.
    */
   stacked?: boolean;
+  /** Virtualised tables only: called when the last rows are in view, so a paged list can load the next page. */
+  onNearEnd?: () => void;
   className?: string;
 };
 
@@ -81,7 +83,7 @@ const INTERACTIVE = "button, a, input, select, textarea, label, [role=menuitem],
  * reached with the screen's keys, never Tab, so value cells are text, not buttons.
  */
 export function DataTable<T>(props: Props<T>) {
-  const { label, columns, rows, rowKey, rowLabel, onOpen, activeKey, rowClassName, onRowKeys, rowHeight, sort, onSort, empty, controller, compact, dense = false, stacked = false, className } = props;
+  const { label, columns, rows, rowKey, rowLabel, onOpen, activeKey, rowClassName, onRowKeys, rowHeight, sort, onSort, empty, controller, compact, dense = false, stacked = false, onNearEnd, className } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const pending = useRef<string | null>(null);
@@ -96,6 +98,8 @@ export function DataTable<T>(props: Props<T>) {
     observeElementRect: observeViewport,
   });
   const virtualRows = rowHeight ? virtualizer.getVirtualItems() : [];
+  const lastShown = virtualRows.length ? virtualRows[virtualRows.length - 1].index : -1;
+  useEffect(() => { if (onNearEnd && rowHeight && rows.length > 0 && lastShown >= rows.length - 20) onNearEnd(); }, [onNearEnd, rowHeight, rows.length, lastShown]);
   const visible = rowHeight ? virtualRows.map((item) => ({ row: rows[item.index], index: item.index })) : rows.map((row, index) => ({ row, index }));
   const paddingTop = virtualRows.length ? virtualRows[0].start : 0;
   const paddingBottom = virtualRows.length ? virtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end : 0;

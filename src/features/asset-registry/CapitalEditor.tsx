@@ -138,7 +138,7 @@ export function CapitalEditor({ kind, context, categories, fresh, onSaved, onClo
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </div>
       <DialogFooter className="mx-0 mb-0 shrink-0 items-center border-t px-6 py-3"><Button variant="outline" disabled={busy} onClick={close}>{complete || uncertain ? "Close" : "Cancel"}</Button>{prepared && !known && !uncertain && !complete && <Button variant="outline" disabled={busy} onClick={() => setPrepared(null)}>Edit details</Button>}{!complete && !uncertain && <Button disabled={busy} onClick={() => void (prepared ? confirm() : review())}>{busy ? "Working…" : known ? "Retry metadata only" : prepared ? "Confirm Actual write" : "Review"}</Button>}</DialogFooter>
-      {picker && <TransactionPickerDialog today={today} title={picker === "fees" ? "Link selling costs" : "Select the payment you received"} multiple={picker === "fees"} disabledReason={reasonOf} confirmLabel={picker === "fees" ? "Use selected costs" : "Use selected transaction"}
+      {picker && <TransactionPickerDialog today={today} title={picker === "fees" ? "Link selling costs" : "Select the payment you received"} multiple={picker === "fees"} disabledReason={reasonOf} lockedLabels={{ accounts: "Asset accounts excluded" }} confirmLabel={picker === "fees" ? "Use selected costs" : "Use selected transaction"}
       constraints={{ excludeAccountIds: assetAccounts, excludeTransfers: true, amountSign: picker === "fees" ? "negative" : "positive" }} onClose={() => setPicker(null)} onConfirm={(rows) => choose(rows)} />}
     </DialogContent></Dialog></>;
   }
@@ -173,7 +173,7 @@ export function CapitalEditor({ kind, context, categories, fresh, onSaved, onClo
     {uncertain && <p role="alert" className="p-4 text-sm">Refresh and inspect Actual before another action. This editor will not repeat the write.</p>}
     {error && <p role="alert" className="p-4 text-sm text-destructive">{error}</p>}
   </SidePanel>
-  {picker && <TransactionPickerDialog today={today} title="Select the expense" disabledReason={reasonOf} confirmLabel="Use selected expense"
+  {picker && <TransactionPickerDialog today={today} title="Select the expense" disabledReason={reasonOf} lockedLabels={{ accounts: "Asset accounts excluded" }} confirmLabel="Use selected expense"
     constraints={{ excludeAccountIds: assetAccounts, excludeTransfers: true, amountSign: "negative" }}
     onClose={() => setPicker(null)} onConfirm={(rows) => choose(rows)} />}
   </>;

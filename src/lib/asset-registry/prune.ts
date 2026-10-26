@@ -8,7 +8,7 @@ import { idSchema, type Registry } from "./models";
  */
 export const pruneEvidenceSchema = z.object({
   budgetSyncId: idSchema,
-  /** Every account that exists in Actual now. */ directory: z.array(idSchema).max(10000),
+  /** Every account that exists in Actual now. Never empty: a budget without accounts proves nothing, so it is refused rather than read as "everything is gone". */ directory: z.array(idSchema).min(1, "The account directory is empty").max(10000),
   /** Accounts read completely (no read issue, ledger reconciled) with every transaction id they hold. */
   accounts: z.array(z.object({ accountId: idSchema, ids: z.array(idSchema).max(500000) }).strict()).max(10000),
 }).strict();

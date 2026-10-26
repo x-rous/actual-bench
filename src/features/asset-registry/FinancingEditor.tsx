@@ -20,9 +20,13 @@ class FieldFailure extends Error {}
 const pct = (bps: number) => `${(bps / 100).toFixed(2)}%`;
 /** One short line about a loan, from what Loans & Debt already knows. */
 export function loanFacts(loan: DebtSummary): string[] {
+  return [loan.openingPrincipalMinor !== null ? `Original ${assetMoney(loan.openingPrincipalMinor)}` : null, loan.openingDate ? `Opened ${shortDate(loan.openingDate)}` : null, ...loanTerms(loan)].filter((x): x is string => !!x);
+}
+/** The loan's interest rate and term, as short phrases, for whichever the loan record holds. */
+export function loanTerms(loan: DebtSummary): string[] {
   const term = loan.contractualTermMonths ? (loan.contractualTermMonths % 12 === 0 ? `${loan.contractualTermMonths / 12} years` : `${loan.contractualTermMonths} months`) : null;
   const rate = loan.annualRateDecimal !== null && loan.annualRateDecimal !== undefined ? `${(Number(loan.annualRateDecimal) * 100).toFixed(2).replace(/\.?0+$/, "")}% a year` : null;
-  return [loan.openingPrincipalMinor !== null ? `Original ${assetMoney(loan.openingPrincipalMinor)}` : null, loan.openingDate ? `Opened ${shortDate(loan.openingDate)}` : null, rate, term].filter((x): x is string => !!x);
+  return [rate, term].filter((x): x is string => !!x);
 }
 export function FinancingEditor({ asset, registry, loans, preset, initialMode = "set", today, firstDate, valueAt, debtsAt, balanceAt, onSaved, onClose }: {
   asset: Asset; registry: Registry; loans: DebtSummary[]; preset?: AssetDebtLink; initialMode?: "set" | "end"; today: string; onSaved: (registry: Registry) => Promise<void>; onClose: () => void;
@@ -45,8 +49,8 @@ export function FinancingEditor({ asset, registry, loans, preset, initialMode = 
   const dirty = !!debtId && (mode === "end" || !!share) && !busy;
   const discard = useDiscardChanges(dirty, onClose);
   const loan = loans.find((d) => d.id === debtId);
-  const remainderAt = (date: string) => debtId && isIsoDate(date) ? loanShares(links.filter((l) => l.assetId !== asset.id), debtId, date).unallocatedBps : null;
-  const remainder = remainderAt(from);
+  const remainderAt = (id: string, date: string) => id && isIsoDate(date) ? loanShares(links.filter((l) => l.assetId !== asset.id), id, date).unallocatedBps : null;
+  const remainder = remainderAt(debtId, from);
 
   /** Choosing a loan fills what it implies: the date it opened (never before the asset's first entry) and the share nobody else holds. */
   function chooseLoan(id: string) {
@@ -56,7 +60,7 @@ export function FinancingEditor({ asset, registry, loans, preset, initialMode = 
     const start = firstDate && opened < firstDate ? firstDate : opened;
     const nextFrom = touched.from ? from : start;
     if (!touched.from) setFrom(start);
-    const free = remainderAt(nextFrom) ?? 10000;
+    const free = remainderAt(id, nextFrom) ?? 10000;
     if (!touched.share) setShare((Math.max(free, 1) / 100).toFixed(2));
   }
 
@@ -139,7 +143,7 @@ export function FinancingEditor({ asset, registry, loans, preset, initialMode = 
             <dt className="text-muted-foreground">On {shortDate(previewDate)}</dt><dd className="text-right text-muted-foreground">Now</dd><dd className="text-right text-muted-foreground">After</dd>
             <dt>Recorded value</dt><dd className="text-right">{money(value)}</dd><dd className="text-right">{money(value)}</dd>
             <dt>Allocated debt</dt><dd className="text-right">{money(before?.allocatedDebtMinor)}</dd><dd className="text-right">{money(after?.allocatedDebtMinor)}</dd>
-            <dt className="font-medium">Tracked equity</dt><dd className="text-right font-medium">{money(before?.equityMinor)}</dd><dd className="text-right font-medium">{money(after?.equityMinor)}</dd></dl>}
+            <dt className="font-medium">Equity</dt><dd className="text-right font-medium">{money(before?.equityMinor)}</dd><dd className="text-right font-medium">{money(after?.equityMinor)}</dd></dl>}
         </>}
       </aside>
     </div>

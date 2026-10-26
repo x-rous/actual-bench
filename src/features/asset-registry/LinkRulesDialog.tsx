@@ -5,15 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { SearchableCombobox } from "@/components/ui/combobox";
+import { ConditionsEditor, newCondition } from "@/components/transactions/ConditionsEditor";
 import { useTransactionReference } from "@/components/transactions/useTransactionReference";
-import { comparesRecord, describeRule, linkRuleInputSchema, OPERATOR_LABELS, OPERATORS_BY_FIELD, RULE_FIELDS, type LinkRule, type RuleCondition, type RuleField, type RuleOperator } from "@/lib/asset-registry/linkRules";
+import { describeRule, linkRuleInputSchema, type LinkRule, type RuleCondition } from "@/lib/asset-registry/linkRules";
 import { type Asset, type Registry } from "@/lib/asset-registry/models";
 import { registryRequest } from "./api";
 
 type Draft = { id?: string; name: string; match: "all" | "any"; conditions: RuleCondition[] };
-const newCondition = (): RuleCondition => ({ field: "payee", operator: "equals", value: "" });
 const blank = (): Draft => ({ name: "", match: "all", conditions: [newCondition()] });
 const draftOf = (r: LinkRule): Draft => ({ id: r.id, name: r.name, match: r.match, conditions: r.conditions });
 
@@ -42,39 +40,11 @@ export function LinkRulesDialog({ asset, registry, assetAccountIds, onSaved, onA
     if (!parsed.success) { setError(parsed.error.issues[0].message); return; }
     if (await send({ kind: "save", rule: parsed.data })) setDraft(null);
   }
-  const update = (index: number, patch: Partial<RuleCondition>) => setDraft((d) => d && { ...d, conditions: d.conditions.map((c, i) => i === index ? { ...c, ...patch } : c) });
-  const changeField = (index: number, field: RuleField) => setDraft((d) => d && { ...d, conditions: d.conditions.map((c, i) => {
-    if (i !== index) return c;
-    const allowed = OPERATORS_BY_FIELD[field];
-    return { field, operator: allowed.includes(c.operator) ? c.operator : allowed[0], value: "", value2: undefined };
-  }) });
-  const changeOperator = (index: number, operator: RuleOperator) => setDraft((d) => d && { ...d, conditions: d.conditions.map((c, i) => i === index ? { ...c, operator, value: comparesRecord({ field: c.field, operator }) !== comparesRecord(c) ? "" : c.value } : c) });
-  const optionsFor = (field: RuleField) => field === "payee" ? ref.payeeOptions : field === "category" ? ref.categoryOptions : ref.accountOptions;
-  const valueControl = (c: RuleCondition, index: number) => comparesRecord(c)
-    ? <div className="min-w-48 flex-1"><SearchableCombobox allowNone={false} ariaLabel="Condition value" value={c.value} options={optionsFor(c.field)} onChange={(value) => update(index, { value })} placeholder={`Choose a ${c.field}…`} /></div>
-    : c.field === "amount"
-      ? <><Input className="w-32" aria-label="Condition value" inputMode="decimal" placeholder="-350.00" value={c.value} onChange={(e) => update(index, { value: e.target.value })} />
-        {c.operator === "between" && <><span className="text-xs text-muted-foreground">and</span><Input className="w-32" aria-label="Condition second value" inputMode="decimal" value={c.value2 ?? ""} onChange={(e) => update(index, { value2: e.target.value })} /></>}</>
-      : <Input className="min-w-48 flex-1" aria-label="Condition value" placeholder={c.operator === "hasTag" || c.operator === "doesNotHaveTag" ? "#tag" : "Text"} value={c.value} onChange={(e) => update(index, { value: e.target.value })} />;
   if (draft) return <Dialog open onOpenChange={(open) => { if (!open && !busy) setDraft(null); }}><DialogContent className="sm:max-w-3xl">
     <DialogHeader><DialogTitle>{draft.id ? "Edit link rule" : "New link rule"}</DialogTitle><DialogDescription>{asset.name} · saving a rule links nothing; you review the matches first.</DialogDescription></DialogHeader>
     <fieldset disabled={busy} className="grid gap-4">
       <FormField label="Rule name" htmlFor="rule-name" required><Input id="rule-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Rent from tenant" /></FormField>
-      <section aria-label="Conditions" className="grid gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">If <Select size="sm" className="w-20 normal-case" aria-label="Match" value={draft.match} onValueChange={(v) => setDraft({ ...draft, match: v as "all" | "any" })} options={[{ value: "all", label: "all" }, { value: "any", label: "any" }]} /> of these match</h3>
-          <Button type="button" variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setDraft({ ...draft, conditions: [...draft.conditions, newCondition()] })}><Plus className="mr-1 size-3.5" aria-hidden />Add a condition</Button>
-        </div>
-        {draft.conditions.map((c, index) => <div key={index} className="flex flex-wrap items-center gap-1.5">
-          <Select size="sm" className="w-36 shrink-0 border-indigo-200 bg-indigo-50 font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300" aria-label="Field" value={c.field} onValueChange={(v) => changeField(index, v as RuleField)} options={RULE_FIELDS.map((f) => ({ value: f.id, label: f.label }))} />
-          <Select size="sm" className="w-44 shrink-0" aria-label="Operation" value={c.operator} onValueChange={(v) => changeOperator(index, v as RuleOperator)} options={OPERATORS_BY_FIELD[c.field].map((op) => ({ value: op, label: OPERATOR_LABELS[op] }))} />
-          {valueControl(c, index)}
-          <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 text-muted-foreground hover:text-destructive" aria-label="Remove this condition" disabled={draft.conditions.length === 1} onClick={() => setDraft({ ...draft, conditions: draft.conditions.filter((_, i) => i !== index) })}><Trash2 className="size-3.5" aria-hidden /></Button>
-        </div>)}
-      </section>
-      <section aria-label="Then" className="grid gap-2 border-t pt-3">
-        <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Then</h3>
-      </section>
+      <ConditionsEditor value={{ match: draft.match, conditions: draft.conditions }} onChange={(next) => setDraft({ ...draft, ...next })} excludeAccountIds={assetAccountIds} />
     </fieldset>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <DialogFooter><Button variant="outline" disabled={busy} onClick={() => { setDraft(null); setError(""); }}>Back</Button><Button disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save rule"}</Button></DialogFooter>

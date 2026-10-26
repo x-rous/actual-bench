@@ -10,12 +10,15 @@ const base = { date: "2026-10-24", valueMinor: 1100000, reading: false, reportFo
 const book = bookWith([row("a", "2025-01-10", "opening-balance", 1000000, 1000000), row("b", "2025-06-01", "revaluation", 300000, 1300000), row("c", "2026-03-31", "depreciation", -200000, 1100000)]);
 beforeEach(() => jest.clearAllMocks());
 
+/** A KPI value whose decimals are set smaller is split across elements, so match the figure by its whole text. */
+const figure = (text: string) => (_: string, el: Element | null) => el?.tagName === "DD" && el.textContent === text;
+
 it("explains a plain asset's whole life: capital in, valuation adjustments, one timeline and a value-only breakdown", () => {
   render(<AssetOverview {...base} book={book} asset={testAsset("x", { incomeGenerating: false })} reportFor={() => perf({ gaps: ["Linked source is missing or moved"] })} />);
   const strip = screen.getByLabelText("Asset financial summary");
-  expect(within(strip).getByText("Capital added")).toBeInTheDocument();
-  expect(within(strip).getByText("+10,000.00")).toBeInTheDocument(); // opening balance
-  expect(within(strip).getByText("Valuation adjustments").nextElementSibling).toHaveTextContent("+1,000.00"); // +3,000 revaluation − 2,000 depreciation, from classified rows
+  expect(within(strip).getByText("Capital invested")).toBeInTheDocument();
+  expect(within(strip).getByText(figure("+10,000.00"))).toBeInTheDocument(); // opening balance
+  expect(within(strip).getByText("Value gain").nextElementSibling).toHaveTextContent("+1,000.00"); // +3,000 revaluation − 2,000 depreciation, from classified rows
   expect(within(strip).getByText(/Revaluation \+3,000.00 · Depreciation -2,000.00/)).toBeInTheDocument();
   expect(within(strip).queryByText("Opening value")).not.toBeInTheDocument(); // a life starts from nothing
   expect(within(strip).queryByText("Debt")).not.toBeInTheDocument();
@@ -27,16 +30,16 @@ it("explains a plain asset's whole life: capital in, valuation adjustments, one 
   expect(within(breakdown).getByRole("columnheader", { name: "Recorded history" })).toBeInTheDocument();
   expect(within(breakdown).getByText("Revaluation (net)")).toBeInTheDocument(); expect(within(breakdown).queryByText("Operating result")).not.toBeInTheDocument();
 });
-it("shows a disposal as its own tile only when there is one", () => {
+it("notes a disposal or other adjustment on the value gain only when there is one", () => {
   render(<AssetOverview {...base} book={bookWith([row("a", "2025-01-10", "opening-balance", 1000000, 1000000), row("d", "2026-05-01", "disposal", -400000, 600000)])} valueMinor={600000} asset={testAsset("x")} />);
-  expect(within(screen.getByLabelText("Asset financial summary")).getByText("Disposals & other")).toBeInTheDocument();
+  expect(within(screen.getByLabelText("Asset financial summary")).getByText(/Other -4,000.00/)).toBeInTheDocument();
 });
 it("shows income assets their returns, both timelines, the latest years with data and shortcuts for what needs attention", () => {
   const onBook = jest.fn();
   render(<AssetOverview {...base} onBook={onBook} asset={testAsset("flat", { incomeGenerating: true })} depreciationDue={2}
     operating={[{ date: "2025-05-05", category: "Rent", amountMinor: 150000, income: true }]} capital={[{ date: "2026-03-01", kind: "investment", amountMinor: -2000000, rowIds: ["roof"] }]}
     book={{ rows: [{ id: "u", assetId: null, date: "2026-01-02", amountMinor: 1, classification: null }], issues: [], totals: new Map(), unassignedMinor: 1, available: true } as never} />);
-  expect(screen.getByText("Operating Result")).toBeInTheDocument();
+  expect(screen.getByText("Net cash flow")).toBeInTheDocument(); expect(screen.getByText("Total return")).toBeInTheDocument();
   expect(screen.getByRole("figure", { name: "Income, expenses & capital" })).toBeInTheDocument();
   const table = screen.getByRole("region", { name: "Income and expenses by period" });
   expect(within(table).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["Category", "This year", "Last year", "Recorded history"]); // the same periods as the performance breakdown
@@ -55,4 +58,10 @@ it("adds a removable custom period column to the breakdown", () => {
   expect(within(breakdown).getAllByRole("columnheader")).toHaveLength(5);
   fireEvent.click(within(breakdown).getByRole("button", { name: "Remove custom period" }));
   expect(within(breakdown).getAllByRole("columnheader")).toHaveLength(4);
+});
+it("sets the decimals of the strip's figures smaller, so the whole number is what stands out", () => {
+  render(<AssetOverview {...base} book={book} asset={testAsset("x", { incomeGenerating: false })} reportFor={() => perf()} />);
+  const strip = screen.getByLabelText("Asset financial summary");
+  const decimals = within(strip).getAllByText(".00", { selector: "span" })[0];
+  expect(decimals).toHaveClass("text-[0.7em]"); expect(decimals.parentElement).toHaveTextContent(/\d\.00/);
 });

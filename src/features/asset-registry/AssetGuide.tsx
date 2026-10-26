@@ -135,18 +135,18 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
           {section === "overview" && <>
             <Para>The strip at the top is the asset&apos;s whole life. The charts show how it got there. The tables show how it did in a period.</Para>
             <div className="grid max-w-4xl gap-2 sm:grid-cols-3">
-              <Tile tone="value" label="Recorded value" value="2,118,000.00" detail="What Actual says it is worth" />
-              <Tile tone="capital" label="Capital added" value="+2,020,000.00" detail="Purchases" />
-              <Tile tone="value" label="Valuation adjustments" value="+98,000.00" detail="Revaluation +100,000 · Depreciation −2,000" />
-              <Tile tone="income" label="Operating Result" value="12,950.00" detail="Linked income − costs" />
-              <Tile label="Simple Total Return" value="N/A" detail="Needs unclassified transactions classified" />
+              <Tile tone="value" label="Current value" value="2,118,000.00" detail="What Actual says it is worth" />
+              <Tile tone="capital" label="Capital invested" value="+2,020,000.00" detail="Purchases" />
+              <Tile tone="value" label="Value gain" value="+98,000.00" detail="Revaluation +100,000 · Depreciation −2,000" />
+              <Tile tone="income" label="Net cash flow" value="12,950.00" detail="Linked income − costs" />
+              <Tile label="Total return" value="N/A" detail="Needs unclassified transactions classified" />
             </div>
             <Heading>The timeline</Heading>
             <MiniTimeline />
             <Para>Hover a period to read its value, debt and equity. Click a marker to see the transactions behind it. A drop in the debt line at a dot is a <b>change in how much of the loan is yours</b>, not a repayment.</Para>
             <Example caption="How the results are worked out" head={["Figure", "How"]} rows={[
-              ["Valuation adjustments", "Revaluation + depreciation + write-downs, added up from the typed transactions"], ["Operating Result", "Linked income − linked expenses; capital and disposals are left out"],
-              ["Total Result", "Closing − opening − capital added + net proceeds + operating result"], ["Simple Total Return", "Total Result ÷ (opening + capital added). Not annualized. Shown only when it can be worked out"],
+              ["Value gain", "Revaluation + depreciation + write-downs, added up from the typed transactions"], ["Net cash flow", "Linked income − linked expenses; capital and disposals are left out"],
+              ["Total Result", "Closing − opening − capital added + net proceeds + operating result"], ["Total return", "Total Result ÷ (opening + capital added). Not annualized. Shown only when it can be worked out"],
             ]} />
             <Callout tone="warn" title="Why is a figure N/A?">Bench shows N/A rather than guess. The tile says what is missing, most often an entry still without a type (money moved out by transfer has none until you choose). Give it one in the Asset Ledger and the figure appears.</Callout>
           </>}
@@ -159,7 +159,7 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
           </>}
           {section === "loans" && <>
             <Para>Link a loan you already track in Loans &amp; Debt, and say what share of it belongs to this asset. Bench then plots the debt beside the value and works out your equity.</Para>
-            <div className="grid max-w-4xl gap-2 sm:grid-cols-3"><Tile tone="value" label="Recorded value" value="252,000.00" detail="On 25 Oct" /><Tile tone="loan" label="Allocated debt" value="118,800.00" detail="Your share of the loan" /><Tile tone="income" label="Tracked equity" value="133,200.00" detail="Value − allocated debt" /></div>
+            <div className="grid max-w-4xl gap-2 sm:grid-cols-3"><Tile tone="value" label="Recorded value" value="252,000.00" detail="On 25 Oct" /><Tile tone="loan" label="Debt allocated" value="118,800.00" detail="Your share of the loan" /><Tile tone="income" label="Equity" value="133,200.00" detail="Value − allocated debt" /></div>
             <Heading>Shares can change</Heading>
             <Example caption="One loan, two periods" head={["From", "Your share", "What it means"]} rows={[["1 Jan 2026", "100%", "The whole loan is yours"], ["1 Jul 2026", "60%", "Someone else took on 40%; earlier months keep their share"]]} />
             <Callout title="A share change isn't a repayment">When your share drops, the allocated debt drops too, even though the loan itself is unchanged. The timeline marks the change so the line isn&apos;t misread. Equity is only shown when the loan&apos;s balance on that date is known.</Callout>
@@ -170,9 +170,9 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
             <Para>A shared account also uses a permanent <Tag>#asset_name</Tag> tag to say which asset a transaction belongs to.</Para>
           </>}
           {section === "glossary" && <Example caption="Terms" head={["Term", "Meaning"]} rows={[
-            [<Chip key="a" tone="value">Recorded value</Chip>, "The sum of the transactions in the asset's own account."], [<Chip key="b" tone="capital">Capital added</Chip>, "Opening balance, purchases and improvements."],
-            [<Chip key="c" tone="loan">Allocated debt</Chip>, "Your share of a loan's Actual balance on a date."], [<Chip key="d" tone="value">Tracked equity</Chip>, "Recorded value minus allocated debt."],
-            [<Chip key="f" tone="income">Operating Result</Chip>, "Linked income minus linked expenses."],
+            [<Chip key="a" tone="value">Recorded value</Chip>, "The sum of the transactions in the asset's own account."], [<Chip key="b" tone="capital">Capital invested</Chip>, "Opening balance, purchases and improvements."],
+            [<Chip key="c" tone="loan">Allocated debt</Chip>, "Your share of a loan's Actual balance on a date."], [<Chip key="d" tone="value">Equity</Chip>, "Recorded value minus allocated debt."],
+            [<Chip key="f" tone="income">Net cash flow</Chip>, "Linked income minus linked expenses."],
             [<StatusBadge key="g" label="Unassigned" tone="attention" />, "A transaction in a shared account that no asset claims yet."], [<StatusBadge key="h" label="Projected" tone="muted" />, "A forecast, not yet posted to Actual."],
           ]} />}
         </div>

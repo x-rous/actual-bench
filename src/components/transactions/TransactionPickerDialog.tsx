@@ -11,7 +11,7 @@ export type TransactionPickerProps = Omit<TransactionPickerPanelProps, "onSelect
   confirmLabel: string;
   /** Extra control beside the selection summary, for example a "Link as" select. */
   footerSlot?: ReactNode | ((picked: PickedTransaction[]) => ReactNode);
-  confirmDisabled?: boolean;
+  confirmDisabled?: boolean | ((picked: PickedTransaction[]) => boolean);
   onClose: () => void;
   /** Resolve to close; throw to keep the dialog open with the message shown. */
   onConfirm: (rows: PickedTransaction[]) => Promise<void> | void;
@@ -28,9 +28,9 @@ export function TransactionPickerDialog({ title, description, confirmLabel, foot
   }
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}><DialogContent className="flex h-[min(56rem,94dvh)] flex-col gap-3 overflow-hidden sm:max-w-[min(94vw,90rem)]">
     <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description ?? "Select whole existing Actual transactions. Their category, payee, amount, Notes and date are never changed."}</DialogDescription></DialogHeader>
-    <TransactionPickerPanel {...panel} onSelectionChange={setPicked} />
+    <TransactionPickerPanel {...panel} onSelectionChange={setPicked} onSubmit={() => { if (picked.length > 0 && !busy) void confirm(); }} />
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <DialogFooter className="items-center gap-3 sm:justify-between"><div className="flex min-w-0 flex-wrap items-center gap-3"><span role="status" className="text-xs">{picked.length} selected{picked.length > 0 && <> · total <span className="font-medium tabular-nums">{money(total)}</span></>}</span>{typeof footerSlot === "function" ? footerSlot(picked) : footerSlot}</div>
-      <div className="flex gap-2"><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button disabled={busy || confirmDisabled || picked.length === 0} onClick={() => void confirm()}>{busy ? "Working…" : confirmLabel}</Button></div></DialogFooter>
+      <div className="flex gap-2"><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button disabled={busy || (typeof confirmDisabled === "function" ? confirmDisabled(picked) : !!confirmDisabled) || picked.length === 0} onClick={() => void confirm()}>{busy ? "Working…" : confirmLabel}</Button></div></DialogFooter>
   </DialogContent></Dialog>;
 }
