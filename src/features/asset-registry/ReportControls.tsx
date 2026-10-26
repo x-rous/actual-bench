@@ -8,7 +8,7 @@ export function PerformanceGaps({ gaps }: { gaps: string[] }) {
 }
 export function IncomeSummary({ performance }: { performance?: AssetPerformance }) {
   return <><SummaryStrip label="Asset income and returns summary" items={[
-    { label: "Operating Result", value: assetMoney(performance?.operatingMinor), detail: "Linked income less expenses · excludes CapEx, proceeds, selling costs and principal" },
+    { label: "Operating Result", value: assetMoney(performance?.operatingMinor), detail: "Linked income less expenses · not purchases, sale proceeds or loan principal" },
     { label: "Operating Yield", value: percent(performance?.operatingYield), detail: "Operating Result / (Opening + Capital Added)" },
     { label: "Total Result", value: assetMoney(performance?.totalMinor), detail: "Close − Open − Capital Added + Net Proceeds + Operating Result" },
     { label: "Simple Total Return", value: percent(performance?.simpleReturn), detail: "Non-annualized, non-time-weighted" },

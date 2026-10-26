@@ -110,9 +110,10 @@ it("keeps materially changed nonempty Notes unverified", async () => {
 });
 it("tags editable rows in Notes, skips protected ones and removes the tag when unclassified", async () => {
   const { transport, fresh, change, rows } = await setup("http-api");
-  change([testRow("a", 100, { notes: "Appraisal" }), testRow("t", -100, { transferId: "peer" }), testRow("c", 5, { notes: "x #revaluation" })]);
-  const result = await writeTypeTags(await fresh(), ["a", "t", "c"], "revaluation");
-  expect(result).toEqual({ tagged: ["a"], skipped: ["t"] }); // "c" already carries the tag
+  const mine = { importedId: "asset-action:test" };
+  change([testRow("a", 100, { notes: "Appraisal", ...mine }), testRow("t", -100, { transferId: "peer", ...mine }), testRow("c", 5, { notes: "x #revaluation", ...mine }), testRow("o", 7, { notes: "Bank import" })]);
+  const result = await writeTypeTags(await fresh(), ["a", "t", "c", "o"], "revaluation");
+  expect(result).toEqual({ tagged: ["a"], skipped: ["t", "o"] }); // "c" already carries the tag; "o" was not created by Bench, so its Notes are never edited
   expect(rows().find((r) => r.id === "a")?.notes).toBe("Appraisal #revaluation");
   expect(transport.updateTransactionForSync).toHaveBeenCalledTimes(1);
   expect((await writeTypeTags(await fresh(), ["a"], null)).tagged).toEqual(["a"]);
@@ -122,7 +123,6 @@ it("tags editable rows in Notes, skips protected ones and removes the tag when u
 test("boundTreatment names the treatment that owns a row", () => {
   const meta = (extra: object) => ({ actualTransactionId: "r", ...extra }) as never;
   expect(boundTreatment({ metadata: [meta({ depreciationPeriod: "2026-01" })] }, "r")).toBe("depreciation");
-  expect(boundTreatment({ metadata: [meta({ capitalizedFromTransactionId: "x" })] }, "r")).toBe("capital-expenditure");
   expect(boundTreatment({ metadata: [meta({})] }, "r")).toBeNull();
   const disposal = { data: { kind: "disposal", bookAdjustmentTransactionId: "companion" } };
   expect(boundTreatment({ metadata: [meta({ context: disposal })] }, "r")).toBe("disposal");

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AssetEditor } from "./AssetEditor";
 import { getTransport } from "@/lib/actual";
@@ -31,8 +31,8 @@ function mount(props: Partial<React.ComponentProps<typeof AssetEditor>> = {}) {
 
 it("puts Status first, shows the account as a summary and ownership as a table with the current share marked", () => {
   mount();
-  const labels = screen.getAllByText(/^(Details|Actual account|Ownership)$/).map((e) => e.textContent);
-  expect(labels).toEqual(["Details", "Actual account", "Ownership"]);
+  const labels = screen.getAllByText(/^(Asset details|Linked Actual account|Ownership|Delete)$/).map((e) => e.textContent);
+  expect(labels).toEqual(["Asset details", "Linked Actual account", "Ownership", "Delete"]);
   expect(screen.getByRole("switch", { name: "Active" })).toBeChecked(); // beside Generates income
   const table = screen.getByRole("table");
   expect(within(table).getAllByRole("row")).toHaveLength(3); // header + two periods
@@ -55,4 +55,21 @@ it("warns when archiving an asset that still has a value, and rejects two shares
   fireEvent.change(screen.getByLabelText("Ownership effective date 3"), { target: { value: "01/01/2026" } });
   fireEvent.blur(screen.getByLabelText("Ownership effective date 3"));
   expect(await screen.findByText(/Two rows have the same date/)).toBeInTheDocument();
+});
+
+it("offers permanent deletion only once the asset is archived, and says Actual is untouched", async () => {
+  const { onSaved, onClose } = mount();
+  expect(screen.queryByRole("button", { name: "Delete asset permanently" })).not.toBeInTheDocument();
+  expect(screen.getByText(/turn off Active and save to archive it first/)).toBeInTheDocument();
+  cleanup();
+  const archived = { ...asset, status: "archived", archivedAt: "now" };
+  useConnectionStore.setState({ instances: [connection], activeInstanceId: connection.id });
+  const onDeleted = jest.fn(); const saved = jest.fn(); const closed = jest.fn();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AssetEditor connection={connection} asset={archived} registry={{ assets: [archived], metadata: [] }} accounts={[account]} onClose={closed} onSaved={saved} onDeleted={onDeleted} /></QueryClientProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Delete asset permanently" }));
+  expect(screen.getByText(/The Actual account and its transactions are not changed/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Delete asset" }));
+  await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+  expect(registryRequest).toHaveBeenCalledWith("budget", "DELETE", { assetId: "byd" });
+  expect(saved).toHaveBeenCalled(); expect(closed).toHaveBeenCalled(); expect(onSaved).not.toHaveBeenCalled(); expect(onClose).not.toHaveBeenCalled();
 });

@@ -1,10 +1,11 @@
+import { CAPITAL_TYPES } from "./models";
 /**
  * How an asset's recorded value moved over a period, summed from the classified book rows (never inferred from the change
  * in value): Opening + Capital added + Revaluation + Depreciation & write-downs + Disposals & other = Closing.
  * Capital added uses the same types as Performance, so the two agree whenever Performance is complete.
  */
 export type ValueBridge = { openingMinor: number; capitalMinor: number; revaluationMinor: number; depreciationMinor: number; disposalMinor: number; otherMinor: number; closingMinor: number };
-const CAPITAL = new Set(["opening-balance", "acquisition", "capital-expenditure", "ownership-adjustment"]);
+const CAPITAL = new Set(CAPITAL_TYPES);
 const DEPRECIATION = new Set(["depreciation", "impairment"]);
 
 export function valueBridge(rows: { date: string; classification: string | null; amountMinor: number }[], from: string | null, to: string): ValueBridge {

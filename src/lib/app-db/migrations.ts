@@ -73,7 +73,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 58;
+export const LATEST_SCHEMA_VERSION = 59;
 
 type Migration = {
   version: number;
@@ -682,6 +682,13 @@ const MIGRATIONS: readonly Migration[] = [
       classification TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       FOREIGN KEY(asset_id,budget_sync_id) REFERENCES assets(id,budget_sync_id) ON DELETE RESTRICT)`,
     "CREATE INDEX idx_asset_link_rules_asset ON asset_link_rules(asset_id)",
+  ] },
+  // Simpler asset ledger: Ownership Adjustment is an Other Adjustment, a linked income or expense has no owner-picked type
+  // (only the ones a treatment gives it), and a link rule no longer carries a type.
+  { version: 59, statements: [
+    "UPDATE asset_transaction_metadata SET classification='other-adjustment' WHERE role='book' AND classification='ownership-adjustment'",
+    "UPDATE asset_transaction_metadata SET classification=NULL WHERE role='cashflow' AND classification IS NOT NULL AND classification NOT IN ('capital-expenditure','disposal-proceeds','other-excluded')",
+    "ALTER TABLE asset_link_rules DROP COLUMN classification",
   ] },
 ];
 

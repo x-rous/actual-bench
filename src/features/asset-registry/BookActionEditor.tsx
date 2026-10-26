@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { assetHashtags, attributeBook, type BookSnapshot } from "@/lib/asset-registry/ledger";
 import { bookTypeChoices } from "./bookTypes";
 import { BOOK_TYPES, type Asset, type BookType, type Registry } from "@/lib/asset-registry/models";
-import { BOOK_TYPE_TAGS, withTypeTag } from "@/lib/asset-registry/tags";
+import { BOOK_TYPE_TAGS, isBenchCreated, withTypeTag } from "@/lib/asset-registry/tags";
 import { boundTreatment, executeAction, prepareAction, UncertainAssetWrite, writeTypeTags, type ActionContext, type BookEdit, type PreparedAction, type ActionResult } from "@/lib/asset-registry/actions";
 import { formatAmount, minorToMajorText, parseMajorToMinor } from "@/features/assets-debt/lib/money";
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
@@ -20,7 +20,8 @@ import { bankToday } from "@/features/credit-cards/lib/cycles";
 import { registryRequest } from "./api";
 
 const money = (n: number) => formatAmount(n, 2);
-export function BookActionEditor({ kind, row: sourceRow, accountName, initialClassification, asset, registry, snapshot, financialLock, registerNavigationGuard, fresh, onClose, onSaved, onUncertain }: {
+export function BookActionEditor({ kind, payeeOptions = [], row: sourceRow, accountName, initialClassification, asset, registry, snapshot, financialLock, registerNavigationGuard, fresh, onClose, onSaved, onUncertain }: {
+  /** Ordinary payees already loaded by the workspace, so the picker is filled the moment the editor opens. */ payeeOptions?: { id: string; name: string; transferAccountId?: string | null }[];
   asset?: Asset; registry?: Registry; snapshot?: BookSnapshot; financialLock?: string | null;
   registerNavigationGuard?: (guard: ((action: () => void) => void) | null) => void;
   kind: BookEdit["kind"]; row?: SyncSourceTransaction; accountName?: string; initialClassification?: BookType; fresh: (date: string) => Promise<ActionContext>;
@@ -33,7 +34,7 @@ export function BookActionEditor({ kind, row: sourceRow, accountName, initialCla
   const [amount, setAmount] = useState(row ? minorToMajorText(row.amount, 2) : "");
   const [notes, setNotes] = useState(row?.notes ?? "");
   const [payeeId, setPayeeId] = useState(row?.payeeId ?? "");
-  const [payees, setPayees] = useState<{ id: string; name: string }[]>([]);
+  const [payees, setPayees] = useState<{ id: string; name: string }[]>(() => payeeOptions.filter((p) => !p.transferAccountId));
   const [classification, setClassification] = useState<string>(initialClassification ?? (row ? "" : "revaluation"));
   const [prepared, setPrepared] = useState<PreparedAction | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -106,7 +107,8 @@ export function BookActionEditor({ kind, row: sourceRow, accountName, initialCla
       if (assignmentChanged && assetHashtags(notes).length) throw new Error("Remove the conflicting hashtag before changing assignment.");
       setMetadataAssignment(shared && row && !assetHashtags(notes).length ? assignment || null : ctx.registry.metadata.find((m) => m.actualTransactionId === row?.id)?.assetId ?? (shared && !ctx.asset.assetTag ? ctx.asset.id : null));
       setMetadataRevision(ctx.registry.metadata.find((m) => m.actualTransactionId === row?.id)?.revision ?? 0);
-      const finalNotes = kind === "delete" ? notes : classification ? withTypeTag(notes, classification as BookType) : savedClassification ? withTypeTag(notes, null) : notes;
+      const mayTag = kind === "create" || kind === "set-value" || isBenchCreated(row?.importedId);
+      const finalNotes = kind === "delete" || !mayTag ? notes : classification ? withTypeTag(notes, classification as BookType) : savedClassification ? withTypeTag(notes, null) : notes;
       setPrepared(prepareAction(ctx, { kind, date, amountMinor, notes: finalNotes, payeeId: payeeId || null, transactionId: row?.id }));
     } catch (e) { setError(e instanceof Error ? e.message : "Preview failed"); }
     finally { setBusy(false); }
@@ -133,7 +135,7 @@ export function BookActionEditor({ kind, row: sourceRow, accountName, initialCla
   }
   const autoPreview = useRef(false);
   useEffect(() => { if (kind === "delete" && !autoPreview.current) { autoPreview.current = true; void preview(); } });
-  const title = kind === "set-value" ? "Update value" : kind === "delete" ? "Delete from Actual" : kind === "edit" ? "Edit account transaction" : "Add Transaction";
+  const title = kind === "set-value" ? "Update value" : kind === "delete" ? "Delete from Actual" : kind === "edit" ? "Edit entry" : "Value adjustment";
   const dirty = !complete && !uncertain && ((row ? financialChanged : !!amount || !!notes || !!payeeId || date !== initialDate || (shared && assignment !== asset?.id)) || !!assignmentChanged || classification !== savedClassification);
   const discard = useDiscardChanges(dirty, onClose);
   const closeGuard = useRef(discard.confirmThen);
@@ -151,27 +153,26 @@ export function BookActionEditor({ kind, row: sourceRow, accountName, initialCla
     {asDialog
       ? <DialogHeader className="shrink-0 border-b px-4 py-3 pr-12"><DialogTitle className="text-sm">{title}</DialogTitle><DialogDescription className="text-xs">{accountName ?? "Linked asset account"}</DialogDescription></DialogHeader>
       : <>
-    <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-4"><h3 className="text-sm font-semibold">{title}</h3><Button variant="ghost" size="icon" className="size-7" aria-label="Close transaction editor" disabled={busy} onClick={close}><X className="size-4" /></Button></header>
-    <p className="shrink-0 border-b px-4 py-2 text-xs text-muted-foreground">{accountName ?? "Linked asset account"}</p>
+    <header className="flex h-[45px] shrink-0 items-center justify-between gap-2 border-b border-border/60 px-4"><h3 className="text-sm font-semibold">{title}</h3><Button variant="ghost" size="icon" className="size-7" aria-label="Close transaction editor" disabled={busy} onClick={close}><X className="size-4" /></Button></header>
       </>}
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
       <fieldset disabled={!!prepared || busy || complete || uncertain || !!financialLock} className="grid gap-4">
-        {kind !== "delete" && <FormField label="Effective date" htmlFor="book-date" help="The date the row has in Actual and the date the value change takes effect."><DateInput id="book-date" value={date} onValueChange={setDate} /></FormField>}
-        {kind !== "delete" && <><FormField label={kind === "set-value" ? "Target owned recorded value" : "Signed amount"} htmlFor="book-amount" required help={kind === "set-value" ? "Bench adds the one adjustment that makes the asset reach this value." : "Positive adds to the asset, negative reduces it."} error={fieldError?.amount} errorId="book-amount-error"><Input id="book-amount" inputMode="decimal" aria-required="true" aria-invalid={!!fieldError?.amount} aria-describedby={fieldError?.amount ? "book-amount-error" : undefined} value={amount} onChange={(e) => { setAmount(e.target.value); setFieldError(null); }} /></FormField>
-          <FormField label="Actual Notes" htmlFor="book-notes" help="Stored on the Actual transaction. The type tag and the asset tag are added for you."><Input id="book-notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></FormField>
-          <FormField label="Existing payee" htmlFor="book-payee" help="Optional. Only ordinary payees can be used, not transfer payees."><PayeePicker ariaLabel="Existing payee" value={payeeId} allowNone noneLabel="No payee" payees={payees} onOpenChange={(open) => { if (open) void fresh(date).then((ctx) => ctx.transport.getPayees()).then((list) => setPayees(list.filter((p) => !p.transferAccountId))).catch(() => setError("Could not load payees")); }} onChange={setPayeeId} /></FormField>
+        {kind !== "delete" && <FormField label="Date" htmlFor="book-date" help="The date of the transaction in Actual and the date the value change takes effect."><DateInput id="book-date" value={date} onValueChange={setDate} /></FormField>}
+        {kind !== "delete" && <><FormField label={kind === "set-value" ? "New value" : kind === "edit" ? "Amount" : "Adjustment amount"} htmlFor="book-amount" required help={kind === "set-value" ? "What the asset is worth now. Bench adds the one adjustment that makes it reach this value." : "Positive adds to the asset's value, negative reduces it."} error={fieldError?.amount} errorId="book-amount-error"><Input id="book-amount" inputMode="decimal" aria-required="true" aria-invalid={!!fieldError?.amount} aria-describedby={fieldError?.amount ? "book-amount-error" : undefined} value={amount} onChange={(e) => { setAmount(e.target.value); setFieldError(null); }} /></FormField>
+          <FormField label="Payee" htmlFor="book-payee" help="Optional. Only ordinary payees can be used, not transfer payees."><PayeePicker ariaLabel="Payee" value={payeeId} allowNone noneLabel="No payee" payees={payees} onOpenChange={(open) => { if (open && payees.length === 0) void fresh(date).then((ctx) => ctx.transport.getPayees()).then((list) => setPayees(list.filter((p) => !p.transferAccountId))).catch(() => setError("Could not load payees")); }} onChange={setPayeeId} /></FormField>
+          <FormField label="Notes" htmlFor="book-notes" help="Stored in the Notes of the Actual transaction. For an entry Bench creates, the type tag and the asset tag are added for you."><Input id="book-notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></FormField>
           </>}
       </fieldset>
       {financialLock && <p role="note" className="flex items-start gap-2 text-xs text-muted-foreground"><Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />{financialLock}</p>}
       {kind !== "delete" && <fieldset disabled={busy || !!result || complete || uncertain} className="grid gap-4">
-        <FormField label="Bench classification" htmlFor="book-type" help={classification ? `Saved in Bench and written to the Notes in Actual as ${BOOK_TYPE_TAGS[classification as BookType]} (not for protected rows).` : "Saved in Bench and written to the Notes in Actual as a tag (not for protected rows)."} error={fieldError?.type} errorId="book-type-error"><Select id="book-type" aria-describedby={fieldError?.type ? "book-type-error" : undefined} value={classification} onValueChange={(v) => { setClassification(v); setFieldError(null); }} options={[{ value: "", label: "Unclassified" }, ...allowedTypes.map((value) => ({ value, label: BOOK_TYPES[value] }))]} /></FormField>
+        <FormField label="Type" htmlFor="book-type" help={row && !isBenchCreated(row.importedId) ? "Saved in Bench only. This transaction was not created by Bench, so its Notes in Actual are never changed." : classification ? `Saved in Bench and written to the Notes in Actual as ${BOOK_TYPE_TAGS[classification as BookType]} (not for protected rows).` : "Saved in Bench and written to the Notes in Actual as a tag (not for protected rows)."} error={fieldError?.type} errorId="book-type-error"><Select id="book-type" aria-describedby={fieldError?.type ? "book-type-error" : undefined} value={classification} onValueChange={(v) => { setClassification(v); setFieldError(null); }} options={[{ value: "", label: "Unclassified" }, ...allowedTypes.map((value) => ({ value, label: BOOK_TYPES[value] }))]} /></FormField>
         {shared && kind !== "set-value" && <FormField label="Asset assignment" htmlFor="book-assignment" help="Which asset in this shared account the row belongs to." note={tagLocked ? "Assigned by the hashtag in Actual Notes." : undefined}><Select id="book-assignment" value={assignment} disabled={tagLocked || !!prepared} onValueChange={setAssignment} options={[...(row ? [{ value: "", label: "Unassigned" }] : []), ...members.map((member) => ({ value: member.id, label: member.name }))]} /></FormField>}
       </fieldset>}
       {prepared && <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 text-sm">
         <p className="font-medium">{kind === "delete" ? "This removes the transaction from Actual" : `${title} · ${date}`}</p><p>Actual account: {accountName ?? "Linked asset account"}</p>
         {row && <p>Existing row: {row.date} · {money(row.amount)} · {row.payeeName ?? "No payee"} · {row.notes ?? "No Notes"}</p>}
         <dl className="grid grid-cols-2 gap-2"><dt>Asset value before</dt><dd className="text-right tabular-nums">{money(prepared.beforeMinor)}</dd><dt>Signed change</dt><dd className="text-right tabular-nums">{money(prepared.deltaMinor)}</dd><dt>Asset value after</dt><dd className="text-right tabular-nums">{money(prepared.afterMinor)}</dd></dl>
-        <details><summary className="cursor-pointer text-xs text-muted-foreground">Actual Notes & attribution</summary><p className="mt-2 break-words text-xs">{prepared.edit.notes || "-"} · {prepared.assetTag}</p></details><p>Payee: {payees.find((p) => p.id === payeeId)?.name ?? "No payee"}</p>
+        <details><summary className="cursor-pointer text-xs text-muted-foreground">Notes & attribution</summary><p className="mt-2 break-words text-xs">{prepared.edit.notes || "-"} · {prepared.assetTag}</p></details><p>Payee: {payees.find((p) => p.id === payeeId)?.name ?? "No payee"}</p>
       </div>}
       {result && !complete && <p role="status" className="rounded border p-3 text-sm">Actual write confirmed{result.transactionId ? `: ${result.transactionId}` : ""}. Classification remains pending. Retry saves metadata only.</p>}
       {complete && <p role="status">{!result ? "Classification and assignment saved." : result?.noop ? "Value already matches; no row created." : "Actual write verified. Refresh complete."}</p>}
@@ -181,8 +182,8 @@ export function BookActionEditor({ kind, row: sourceRow, accountName, initialCla
     <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t p-3"><Button variant="outline" disabled={busy} onClick={close}>{complete || uncertain ? "Close" : "Cancel"}</Button>{prepared && !result && !uncertain && !complete && kind !== "delete" && <Button variant="outline" disabled={busy} onClick={() => setPrepared(null)}>Edit details</Button>}{!complete && !uncertain && <Button variant={kind === "delete" ? "destructive" : "default"} disabled={busy || (kind === "delete" && !prepared && !result)} onClick={() => void (row && kind === "edit" && !financialChanged ? saveOnlyMetadata() : prepared ? confirm() : preview())}>{busy ? "Working…" : result ? "Retry metadata only" : prepared ? (kind === "delete" ? "Delete from Actual" : "Confirm Actual write") : row && kind === "edit" && !financialChanged ? "Save changes" : "Review change"}</Button>}</footer>
   </>;
   return <>{discard.discardDialog}{asDialog
-    ? <Dialog open onOpenChange={(open) => { if (!open) close(); }}><DialogContent aria-label="Account transaction editor" className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">{content}</DialogContent></Dialog>
-    : <aside aria-label="Account transaction editor" className="flex min-h-0 w-[394px] shrink-0 flex-col border-l border-border/60 bg-background" onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector('[role="listbox"], [data-slot="popover-content"]')) { event.preventDefault(); close(); } }}>
+    ? <Dialog open onOpenChange={(open) => { if (!open) close(); }}><DialogContent aria-label="Entry editor" className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">{content}</DialogContent></Dialog>
+    : <aside aria-label="Entry editor" className="flex min-h-0 w-[394px] shrink-0 flex-col border-l border-border/60 bg-background" onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector('[role="listbox"], [data-slot="popover-content"]')) { event.preventDefault(); close(); } }}>
     {content}
   </aside>}</>;
 }

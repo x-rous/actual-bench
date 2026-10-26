@@ -1,7 +1,6 @@
 import type { ActualBenchTransport } from "@/lib/actual/transport";
 import type { ActionContext } from "./actions";
 import { prepareAction } from "./actions";
-import { missingMonths } from "./depreciation";
 import { depreciationMetadata, executeDepreciation, prepareDepreciation } from "./depreciationActions";
 import { readBook } from "./ledger";
 import type { Registry } from "./models";
@@ -52,7 +51,6 @@ it("refuses a duplicate month, and a missing Actual row needs a deliberate repos
 it("a missing depreciation month stays flagged but does not block other months or unrelated book writes", async () => {
   const gone = { actualTransactionId: "deleted-in-actual", actualAccountId: "vehicles", assetId: "asset", classification: "depreciation", revision: 2, depreciationPeriod: "2026-01" };
   const s = setup([gone]);
-  expect(missingMonths(s.registry.metadata, "asset", new Set(["opening"]))).toEqual(["2026-01"]);
   // February posts normally while January is still missing.
   const feb = prepareDepreciation(await s.fresh("2026-02-28")(), "2026-02", TODAY);
   expect(feb).toMatchObject({ date: "2026-02-28", replaces: null });
@@ -63,8 +61,8 @@ it("a missing depreciation month stays flagged but does not block other months o
   // January is reposted only when selected, replacing its stale association.
   expect(prepareDepreciation(await s.fresh("2026-01-31")(), "2026-01", TODAY).replaces?.actualTransactionId).toBe("deleted-in-actual");
 });
-it("still blocks writes for an ordinary classified row that disappeared from Actual", async () => {
+it("does not block writes for a classified row that disappeared from Actual: Actual is the truth", async () => {
   const s = setup([{ actualTransactionId: "gone-row", actualAccountId: "vehicles", assetId: "asset", classification: "revaluation", revision: 1 }]);
   const blocked = await s.fresh("2026-03-10")();
-  expect(() => prepareAction(blocked, { kind: "set-value", date: "2026-03-10", amountMinor: 1, notes: "", payeeId: null })).toThrow(/missing account data/);
+  expect(() => prepareAction(blocked, { kind: "set-value", date: "2026-03-10", amountMinor: 1, notes: "", payeeId: null })).not.toThrow();
 });

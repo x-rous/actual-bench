@@ -9,13 +9,13 @@ import { Select } from "@/components/ui/select";
 import { SearchableCombobox } from "@/components/ui/combobox";
 import { useTransactionReference } from "@/components/transactions/useTransactionReference";
 import { comparesRecord, describeRule, linkRuleInputSchema, OPERATOR_LABELS, OPERATORS_BY_FIELD, RULE_FIELDS, type LinkRule, type RuleCondition, type RuleField, type RuleOperator } from "@/lib/asset-registry/linkRules";
-import { CASHFLOW_GROUPS, CASHFLOW_TYPES, type Asset, type Registry } from "@/lib/asset-registry/models";
+import { type Asset, type Registry } from "@/lib/asset-registry/models";
 import { registryRequest } from "./api";
 
-type Draft = { id?: string; name: string; match: "all" | "any"; conditions: RuleCondition[]; classification: string };
+type Draft = { id?: string; name: string; match: "all" | "any"; conditions: RuleCondition[] };
 const newCondition = (): RuleCondition => ({ field: "payee", operator: "equals", value: "" });
-const blank = (): Draft => ({ name: "", match: "all", conditions: [newCondition()], classification: "" });
-const draftOf = (r: LinkRule): Draft => ({ id: r.id, name: r.name, match: r.match, conditions: r.conditions, classification: r.classification ?? "" });
+const blank = (): Draft => ({ name: "", match: "all", conditions: [newCondition()] });
+const draftOf = (r: LinkRule): Draft => ({ id: r.id, name: r.name, match: r.match, conditions: r.conditions });
 
 /**
  * Saved link rules for one asset, written like a reconciliation transform: "If [all|any] of these conditions match",
@@ -37,7 +37,7 @@ export function LinkRulesDialog({ asset, registry, assetAccountIds, onSaved, onA
   }
   async function save() {
     if (!draft) return;
-    const parsed = linkRuleInputSchema.safeParse({ ...(draft.id ? { id: draft.id } : {}), name: draft.name, match: draft.match, classification: draft.classification || null,
+    const parsed = linkRuleInputSchema.safeParse({ ...(draft.id ? { id: draft.id } : {}), name: draft.name, match: draft.match,
       conditions: draft.conditions.map((c) => ({ field: c.field, operator: c.operator, value: c.value, ...(c.operator === "between" ? { value2: c.value2 ?? "" } : {}) })) });
     if (!parsed.success) { setError(parsed.error.issues[0].message); return; }
     if (await send({ kind: "save", rule: parsed.data })) setDraft(null);
@@ -74,7 +74,6 @@ export function LinkRulesDialog({ asset, registry, assetAccountIds, onSaved, onA
       </section>
       <section aria-label="Then" className="grid gap-2 border-t pt-3">
         <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Then</h3>
-        <FormField label="Link as" htmlFor="rule-type" help="Applied to the matches when you confirm. You can still change it per row afterwards."><Select id="rule-type" className="sm:w-80" value={draft.classification} onValueChange={(v) => setDraft({ ...draft, classification: v })} options={[{ value: "", label: "Unclassified" }]} groups={CASHFLOW_GROUPS.map((g) => ({ label: g.label, options: g.types.map((value) => ({ value, label: CASHFLOW_TYPES[value] })) }))} /></FormField>
       </section>
     </fieldset>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
@@ -86,7 +85,7 @@ export function LinkRulesDialog({ asset, registry, assetAccountIds, onSaved, onA
     <ul aria-label="Saved link rules" className="max-h-80 divide-y overflow-auto rounded-md border text-sm">
       {rules.length === 0 && <li className="p-4 text-center text-xs text-muted-foreground">No rules yet. Create one to find rent, dividends or recurring bills without searching each time.</li>}
       {rules.map((r) => <li key={r.id} className="flex items-center gap-2 px-3 py-2">
-        <div className="min-w-0 flex-1"><p className="truncate font-medium">{r.name}</p><p className="truncate text-xs text-muted-foreground" title={describeRule(r, ref.names)}>{describeRule(r, ref.names)}{r.classification ? ` → ${CASHFLOW_TYPES[r.classification]}` : ""}</p></div>
+        <div className="min-w-0 flex-1"><p className="truncate font-medium">{r.name}</p><p className="truncate text-xs text-muted-foreground" title={describeRule(r, ref.names)}>{describeRule(r, ref.names)}</p></div>
         <Button size="xs" onClick={() => onApply(r)}>Apply</Button>
         <Button size="icon-xs" variant="ghost" aria-label={`Edit rule ${r.name}`} onClick={() => setDraft(draftOf(r))}><Pencil className="size-3.5" /></Button>
         <Button size="icon-xs" variant="ghost" aria-label={`Delete rule ${r.name}`} disabled={busy} onClick={() => void send({ kind: "delete", id: r.id })}><Trash2 className="size-3.5" /></Button>

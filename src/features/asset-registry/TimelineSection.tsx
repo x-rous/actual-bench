@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { CapitalMovement } from "@/lib/asset-registry/capitalMovements";
 import { bookTypeShort } from "@/lib/asset-registry/models";
 import { InfoHint } from "@/components/ui/info-hint";
+import { CAPITAL_TYPES } from "@/lib/asset-registry/models";
 import { assetMoney, NA } from "./AssetPresentation";
 import { MARKER_COLORS, MarkerLane } from "./MarkerLane";
 import { bookMarkers, buildBuckets, cashflowMarkers, cashflowPoints, financingMarkers, valuePoints, type FinancingEvent, type Marker, type OperatingEntry, type View } from "./timeline";
@@ -16,8 +17,8 @@ const ValuePlot = valuePlot.Chart; const CashPlot = cashPlot.Chart;
 const LOADING = <div className="h-[230px] animate-pulse rounded bg-muted/30" aria-label="Loading chart" />;
 const VIEWS: [View, string][] = [["monthly", "Monthly"], ["yearly", "Yearly"]];
 const signed = (minor: number) => `${minor > 0 ? "+" : ""}${assetMoney(minor)}`;
-const BOOK_KIND_LABEL = { in: "Purchase & CapEx", revalue: "Revaluation & write-down", out: "Disposal", depreciation: "Depreciation", operating: "Income & expenses", financing: "Loan allocation change" } as const;
-const CAPITAL_LABEL: Record<string, string> = { investment: "Acquisition payments", capex: "Capital expenditure", disposal: "Disposal proceeds, net of selling costs" };
+const BOOK_KIND_LABEL = { in: "Purchases & payments", revalue: "Revaluation & write-down", out: "Disposal", depreciation: "Depreciation", operating: "Income & expenses", financing: "Loan allocation change" } as const;
+const CAPITAL_LABEL: Record<string, string> = { investment: "Purchases and payments", disposal: "Disposal proceeds, net of selling costs" };
 
 export type BookFocus = { from: string; to: string; types?: string[]; label: string };
 export type CashflowFocus = { from: string; to: string; type?: string; label: string };
@@ -38,7 +39,7 @@ function Card({ title, hint, legend, children }: { title: string; hint: string; 
     <div className="p-4">{children}</div>
   </figure>;
 }
-const Stat = ({ label, value, detail }: { label: string; value: string; detail?: string }) => <div><dt className="text-muted-foreground">{label}</dt><dd className="mt-0.5 text-sm font-semibold tabular-nums">{value}</dd>{detail && <dd className="text-[11px] text-muted-foreground">{detail}</dd>}</div>;
+const Stat = ({ label, value, detail }: { label: string; value: string; detail?: string }) => <div><dt className="text-muted-foreground">{label}</dt><dd className="mt-0.5 text-sm font-semibold tabular-nums">{value}</dd><dd className="min-h-4 text-[11px] text-muted-foreground">{detail ?? " "}</dd></div>;
 const Swatch = ({ children, label }: { children: ReactNode; label: string }) => <span className="inline-flex items-center gap-1.5"><svg width="16" height="10" aria-hidden>{children}</svg>{label}</span>;
 
 /** The two synchronized timelines: asset value with debt, events and projected depreciation; and income, expenses and capital. */
@@ -57,13 +58,21 @@ export function TimelineSection(p: TimelineProps) {
   const first = known[0]; const last = known[known.length - 1];
   // The summary follows the pointer (or the focused marker); at rest it shows the latest period.
   const at = known.find((k) => k.index === hover) ?? last;
-  const change = first && at ? at.value - first.value : null;
+  // Money put in (purchases, opening value, added capital) is not a change in worth: value change leaves it out.
+  const capitalInRange = first && at ? p.rows.filter((r) => CAPITAL_TYPES.includes(r.classification ?? "") && r.date > buckets[first.index].to && r.date <= buckets[at.index].to).reduce((sum, r) => sum + r.amountMinor, 0) : 0;
+  const change = first && at ? at.value - first.value - capitalInRange : null;
+  const changeBase = first ? first.value + capitalInRange : 0;
+  const changeDetail = change !== null && changeBase > 0 ? `${change > 0 ? "+" : ""}${((change / changeBase) * 100).toFixed(2)}%` : undefined;
+  // Before the first loan allocation there is no debt to show: that is "no loan yet", not an unreadable balance.
+  const firstLoan = p.financing.map((e) => e.date).sort()[0];
+  const noLoanYet = !!at && !!firstLoan && buckets[at.index].to < firstLoan;
+  const ofValue = (minor: number | null) => minor !== null && at && at.value > 0 ? `${((minor / at.value) * 100).toFixed(1)}% of value` : undefined;
   const equityAt = at && at.debt !== null ? at.value - at.debt : null;
   const hasDebt = points.some((pt) => pt.debt !== null);
   const markers = [...bookMarkers(buckets, p.rows), ...financingMarkers(buckets, p.financing)];
   const cashPts = cashflowPoints(buckets, p.operating, p.capital).map((pt, i) => ({ ...pt, title: titles[i] }));
   const cashMarkers = cashflowMarkers(buckets, cashPts, p.capital);
-  const sum = (key: "income" | "expenses" | "net" | "investment" | "capex" | "disposal") => cashPts.reduce((s, pt) => s + pt[key], 0);
+  const sum = (key: "income" | "expenses" | "net" | "investment" | "disposal") => cashPts.reduce((s, pt) => s + pt[key], 0);
   const hasCapital = p.capital.some((m) => buckets.some((b) => m.date >= b.from && m.date <= b.to));
   const describeBook = (m: Marker) => m.kind === "financing" ? `${buckets[m.index].title}: ${m.note}. Open Financing` : `${buckets[m.index].title}: ${m.count > 1 ? `${m.count} ` : ""}${m.kind === "depreciation" ? "depreciation postings" : m.types.map(bookTypeShort).join(", ")} ${signed(m.amountMinor)}. Show these transactions`;
   const describeCash = (m: Marker) => m.kind === "operating" ? `${buckets[m.index].title}: net operating result ${signed(m.amountMinor)}. Show income and expenses` : `${buckets[m.index].title}: ${CAPITAL_LABEL[m.types[0]]} ${signed(m.amountMinor)}${m.count > 1 ? ` (${m.count})` : ""}. Show these transactions`;
@@ -71,12 +80,11 @@ export function TimelineSection(p: TimelineProps) {
   const cashSelect = (m: Marker) => {
     const b = buckets[m.index];
     if (m.kind === "operating") p.onCashflow({ from: m.from, to: m.to, label: b.title });
-    else if (m.types[0] === "capex") p.onCashflow({ from: m.from, to: m.to, type: "capital-expenditure", label: `Capital expenditure · ${b.title}` });
-    else p.onBook({ from: m.from, to: m.to, types: [m.types[0] === "disposal" ? "disposal" : "acquisition"], label: `${CAPITAL_LABEL[m.types[0]]} · ${b.title}` });
+    else p.onBook({ from: m.from, to: m.to, types: m.types[0] === "disposal" ? ["disposal"] : ["acquisition", "added-capital"], label: `${CAPITAL_LABEL[m.types[0]]} · ${b.title}` });
   };
   const kinds = (Object.keys(BOOK_KIND_LABEL_SHOWN) as (keyof typeof BOOK_KIND_LABEL_SHOWN)[]).filter((k) => markers.some((m) => m.kind === k));
   return <section aria-label="Timelines" className="grid gap-3">
-    <Card title="Recorded value over time" hint="The asset's value from its Actual account transactions; future transactions are excluded. Hover a period to read its value, debt and equity; click a marker to see the transactions behind it." legend={<>
+    <Card title="Recorded value over time" hint="The asset's value from its Actual Asset Ledger entries; future transactions are excluded. Hover a period to read its value, debt and equity; click a marker to see the transactions behind it." legend={<>
       {p.notice}
       <Swatch label="Recorded value"><path d="M0 7h6V3h10" fill="none" stroke="var(--chart-1)" strokeWidth="1.5" /></Swatch>
       {hasDebt && <Swatch label="Allocated debt"><path d="M0 7h6V3h10" fill="none" stroke="#e11d48" strokeWidth="1.5" /></Swatch>}
@@ -84,7 +92,7 @@ export function TimelineSection(p: TimelineProps) {
       {kinds.map((k) => <span key={k} className="inline-flex items-center gap-1.5"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>{k === "depreciation" ? <rect x="5" y="1" width="2" height="10" rx="1" fill={MARKER_COLORS[k]} /> : k === "financing" ? <circle cx="6" cy="6" r="4" fill={MARKER_COLORS[k]} /> : <path d="M6 0.5l5 5.5-5 5.5-5-5.5z" fill={MARKER_COLORS[k]} />}</svg>{BOOK_KIND_LABEL_SHOWN[k]}</span>)}
       <div role="group" aria-label="Chart view" className="inline-flex overflow-hidden rounded-md border text-xs">{VIEWS.map(([value, text]) => <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} className={cn("h-6 px-2.5 font-medium", view === value ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>{text}</button>)}</div>
     </>}>
-      {known.length === 0 ? <p className="py-8 text-sm text-muted-foreground">{NA} No recorded value yet. Values appear once the asset has account transactions.</p> :
+      {known.length === 0 ? <p className="py-8 text-sm text-muted-foreground">{NA} No recorded value yet. Values appear once the asset has Asset Ledger entries.</p> :
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_200px]"><div className="min-w-0">
           <ValuePlot fallback={LOADING} points={points} onActive={setHover} />
           <MarkerLane label="Value chart events" buckets={buckets} markers={markers} describe={describeBook} onSelect={bookFocus} onFocusBucket={setHover} />
@@ -93,17 +101,17 @@ export function TimelineSection(p: TimelineProps) {
             <div className="col-span-full text-[11px] text-muted-foreground">As of {at.title.replace(" (to date)", "")}</div>
             {hasDebt ? <>
               <Stat label="Recorded value" value={assetMoney(at.value)} />
-              <Stat label="Allocated debt" value={at.debt === null ? "Unavailable" : assetMoney(at.debt)} />
-              <Stat label="Tracked equity" value={equityAt === null ? "Unavailable" : assetMoney(equityAt)} />
-              <Stat label="Value change in range" value={change === null ? NA : signed(change)} detail={change !== null && first.value > 0 ? `${change > 0 ? "+" : ""}${((change / first.value) * 100).toFixed(2)}%` : undefined} />
+              <Stat label="Allocated debt" value={at.debt === null ? (noLoanYet ? NA : "Unavailable") : assetMoney(at.debt)} detail={noLoanYet ? "No loan yet" : ofValue(at.debt)} />
+              <Stat label="Tracked equity" value={equityAt === null ? (noLoanYet ? NA : "Unavailable") : assetMoney(equityAt)} detail={noLoanYet ? "No loan yet" : ofValue(equityAt)} />
+              <Stat label="Value change in range" value={change === null ? NA : signed(change)} detail={changeDetail} />
             </> : <>
               <Stat label="Opening value" value={assetMoney(first.value)} detail={`as of ${first.title}`} />
-              <Stat label="Change in range" value={change === null ? NA : signed(change)} detail={change !== null && first.value > 0 ? `${change > 0 ? "+" : ""}${((change / first.value) * 100).toFixed(2)}%` : undefined} />
+              <Stat label="Change in range" value={change === null ? NA : signed(change)} detail={changeDetail} />
               <Stat label="Closing value" value={assetMoney(at.value)} detail={`as of ${at.title.replace(" (to date)", "")}`} />
             </>}
           </dl></div>}
     </Card>
-    {p.showCashflow && <Card title="Income, expenses & capital" hint="Linked transactions from your other accounts, over the same periods as the chart above. Income and expenses make the operating result; capital movements (purchases, CapEx, sale proceeds net of selling costs) are shown apart." legend={<>
+    {p.showCashflow && <Card title="Income, expenses & capital" hint="Linked transactions from your other accounts, over the same periods as the chart above. Income and expenses make the operating result; capital movements (purchases and payments, sale proceeds net of selling costs) are shown apart." legend={<>
       <Swatch label="Income"><rect width="16" height="8" y="1" fill="#16a34a" /></Swatch><Swatch label="Expenses"><rect width="16" height="8" y="1" fill="#dc2626" /></Swatch>
       <button type="button" aria-pressed={showNet} onClick={() => setShowNet((v) => !v)} className={cn("inline-flex items-center gap-1.5 rounded hover:text-foreground", !showNet && "line-through opacity-60")}><svg width="16" height="10" aria-hidden><path d="M0 5h16" stroke="var(--foreground)" strokeWidth="2" /></svg>Net operating result</button>
       {hasCapital && <label className="inline-flex cursor-pointer items-center gap-1.5"><Checkbox checked={includeCapital} onCheckedChange={(v) => setIncludeCapital(v === true)} />Include capital movements</label>}
@@ -116,7 +124,7 @@ export function TimelineSection(p: TimelineProps) {
           <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4 xl:grid-cols-1 xl:gap-4 xl:pt-2">
             <Stat label="Operating income" value={assetMoney(sum("income"))} detail="in range" /><Stat label="Operating expenses" value={assetMoney(sum("expenses"))} detail="in range" />
             <Stat label="Net operating result" value={assetMoney(sum("net"))} detail="income less expenses" />
-            {hasCapital && <Stat label="Capital out" value={assetMoney(sum("investment") + sum("capex"))} detail="acquisitions and CapEx" />}
+            {hasCapital && <Stat label="Capital out" value={assetMoney(sum("investment"))} detail="purchases and payments" />}
             {hasCapital && <Stat label="Net disposal proceeds" value={assetMoney(sum("disposal"))} detail="after selling costs" />}
           </dl></div>}
     </Card>}

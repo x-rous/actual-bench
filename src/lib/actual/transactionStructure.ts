@@ -217,7 +217,10 @@ export type UnlinkTransferInput = {
 
 export type UnlinkTransferResult = { sourceDifferences: string[]; counterpartDifferences: string[]; counterpartExists: boolean };
 
-export type ConvertToTransferInput = { expected: TransactionPreflight; transferPayeeId: string; counterpartAccountId: string };
+export type ConvertToTransferInput = {
+  expected: TransactionPreflight; transferPayeeId: string; counterpartAccountId: string;
+  /** Convert a reconciled payment too (its cleared status is unchanged). Loans never set it. */ allowReconciled?: boolean;
+};
 export type ConvertToTransferResult = { transactionId: string; transferId: string | null; counterpart: RowState | null };
 
 export type RevertTransferInput = { converted: TransactionPreflight; counterpart: TransactionPreflight; restoreTo: RowState };
@@ -629,7 +632,7 @@ export async function unlinkTransfer(primitives: StructurePrimitives, input: Unl
 export async function convertToTransfer(primitives: StructurePrimitives, input: ConvertToTransferInput): Promise<ConvertToTransferResult> {
   primitives = withinDates(primitives, [input.expected.date]);
   const { row } = await requireUnchanged(primitives, input.expected);
-  if (row.reconciled === true) throw new TransactionStructureRefusedError("A reconciled transaction is never changed.");
+  if (row.reconciled === true && input.allowReconciled !== true) throw new TransactionStructureRefusedError("A reconciled transaction is never changed.");
   if (row.is_parent === true || row.is_child === true) throw new TransactionStructureRefusedError("A split or split line is not converted into a transfer.");
   if (str(row.transfer_id) !== null) throw new TransactionStructureRefusedError("The transaction is already a transfer.");
   const watch = { accountIds: [...new Set([input.expected.accountId, input.counterpartAccountId])], sinceDate: input.expected.date };

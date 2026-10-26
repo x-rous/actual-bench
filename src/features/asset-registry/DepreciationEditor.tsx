@@ -59,7 +59,7 @@ export function DepreciationEditor({ asset, settings, recordedMinor, today, onSa
   }
   const err = (field: string) => invalid(field) ? fieldError!.message : null;
   const bind = (field: string) => ({ "aria-invalid": invalid(field) || undefined, "aria-describedby": invalid(field) ? `dep-${field}-err` : undefined });
-  return <>{discard.discardDialog}<ConfirmDialog open={confirmRemove} onOpenChange={setConfirmRemove} state={{ title: "Remove depreciation schedule?", message: "The planning schedule is deleted from Bench. Months already posted to Actual stay where they are; edit or delete them in Account Transactions.", destructiveLabel: "Remove schedule", onConfirm: () => void save(true) }} />
+  return <>{discard.discardDialog}<ConfirmDialog open={confirmRemove} onOpenChange={setConfirmRemove} state={{ title: "Remove depreciation schedule?", message: "The planning schedule is deleted from Bench. Months already posted to Actual stay where they are; edit or delete them in Asset Ledger.", destructiveLabel: "Remove schedule", onConfirm: () => void save(true) }} />
     <Dialog open onOpenChange={(open) => { if (!open && !busy) discard.requestClose(); }}><DialogContent className="sm:max-w-lg">
       <DialogHeader><DialogTitle>Depreciation schedule</DialogTitle><DialogDescription>{asset.name} · saving stores a planning schedule in Bench only. No Actual transaction is written.</DialogDescription></DialogHeader>
       <fieldset disabled={busy} className="grid gap-3 sm:grid-cols-2">

@@ -36,7 +36,7 @@ it("shows current summary cards and a compact registry; searching changes the ta
   expect(screen.queryByLabelText("Sort assets")).not.toBeInTheDocument(); // columns sort instead
   expect(screen.getByText(/5,000.00 Unassigned/)).toBeInTheDocument();
   expect(screen.queryByLabelText("As of")).not.toBeInTheDocument();
-  expect(screen.queryByText("Account-backed values and account transactions")).not.toBeInTheDocument();
+  expect(screen.queryByText("Account-backed values and Asset Ledger entries")).not.toBeInTheDocument();
   expect(screen.queryByRole("table", { name: "Linked asset accounts" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Linked accounts" }));
   const accountsDialog = await screen.findByRole("dialog", { name: "Linked accounts" });
@@ -62,7 +62,7 @@ it("shows financial Overview and recent activity, with a direct Unassigned revie
   expect(within(header).getByText(/Shared account · #asset_byd/)).toBeInTheDocument(); // sharing and the permanent tag moved to the header
   fireEvent.click(screen.getByRole("button", { name: /Review 1 unassigned row/ }));
   expect(screen.getByRole("button", { name: /Unassigned\s*1/ })).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByRole("textbox", { name: "Search account transactions" })).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Search entries" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Classify - on 2026-01-01" })).toBeInTheDocument();
-  expect(screen.getByRole("checkbox", { name: "Select all visible account transactions" })).toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "Select all visible entries" })).toBeInTheDocument();
 });

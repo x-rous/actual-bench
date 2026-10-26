@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { parseMajorToMinor } from "@/features/assets-debt/lib/money";
-import { CASHFLOW_TYPES, idSchema, type CashflowType } from "./models";
+import { idSchema } from "./models";
 
 /**
  * A saved rule for linking Actual income and expense rows to an asset, written like a reconciliation transform:
@@ -45,7 +45,6 @@ export const linkRuleInputSchema = z.object({
   name: z.string().trim().min(1, "Name the rule").max(100),
   match: z.enum(["all", "any"]),
   conditions: z.array(ruleConditionSchema).min(1, "Add at least one condition").max(20),
-  classification: z.enum(Object.keys(CASHFLOW_TYPES) as [CashflowType, ...CashflowType[]]).nullable(),
 }).strict();
 export type LinkRuleInput = z.infer<typeof linkRuleInputSchema>;
 export type LinkRule = Omit<LinkRuleInput, "id"> & { id: string; assetId: string; updatedAt: string };

@@ -1374,7 +1374,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(58);
+      expect(LATEST_SCHEMA_VERSION).toBe(59);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);

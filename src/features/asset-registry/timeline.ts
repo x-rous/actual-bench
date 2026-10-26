@@ -1,6 +1,5 @@
 import { daysInMonth } from "@/lib/financial-models/calendar/dates";
 import type { CapitalMovement } from "@/lib/asset-registry/capitalMovements";
-import type { CashflowType } from "@/lib/asset-registry/models";
 
 /** Pure data for the two Overview timelines. Both charts use the same buckets, so their columns line up. */
 export type View = "monthly" | "yearly";
@@ -56,7 +55,7 @@ export function valuePoints(buckets: Bucket[], rows: { date: string; runningMino
 
 export type MarkerKind = "in" | "revalue" | "out" | "depreciation" | "operating" | "financing";
 export type Marker = { index: number; kind: MarkerKind; count: number; amountMinor: number; types: string[]; from: string; to: string; /** Plain-language text for markers that are not transactions (financing changes). */ note?: string };
-const BOOK_KIND: Record<string, MarkerKind> = { acquisition: "in", "capital-expenditure": "in", revaluation: "revalue", impairment: "revalue", "ownership-adjustment": "revalue", disposal: "out", depreciation: "depreciation" };
+const BOOK_KIND: Record<string, MarkerKind> = { acquisition: "in", "added-capital": "in", revaluation: "revalue", impairment: "revalue", disposal: "out", depreciation: "depreciation" };
 /** Book events grouped per bucket and kind, so a busy month is one marker, not a pile. */
 export function bookMarkers(buckets: Bucket[], rows: { date: string; classification: string | null; amountMinor: number }[]): Marker[] {
   const groups = new Map<string, Marker>();
@@ -69,18 +68,20 @@ export function bookMarkers(buckets: Bucket[], rows: { date: string; classificat
   return [...groups.values()].sort((a, b) => a.index - b.index);
 }
 
-export const INCOME_TYPES: CashflowType[] = ["rental-income", "dividends-distributions", "interest-yield", "other-income"];
-export const EXPENSE_TYPES: CashflowType[] = ["operating-expense", "taxes-insurance-service-charges", "financing-interest"];
-export type OperatingEntry = { date: string; type: CashflowType; amountMinor: number };
-export type CashflowPoint = { label: string; income: number; expenses: number; net: number; investment: number; capex: number; disposal: number; projected: boolean };
+/**
+ * One linked income or expense. `income` follows Actual's category type (an income category, so a refund nets into it); with no
+ * category it follows the amount sign. The category is Actual's own.
+ */
+export type OperatingEntry = { date: string; category: string; amountMinor: number; income: boolean };
+export type CashflowPoint = { label: string; income: number; expenses: number; net: number; investment: number; disposal: number; projected: boolean };
 /** Operating income (positive) and expenses (negative) per bucket; capital movements kept apart so they never change the net. */
 export function cashflowPoints(buckets: Bucket[], operating: OperatingEntry[], capital: CapitalMovement[]): CashflowPoint[] {
   return buckets.map((b, index) => {
     const inB = (date: string) => bucketOf(buckets, date) === index;
-    const income = operating.filter((e) => inB(e.date) && INCOME_TYPES.includes(e.type) && e.amountMinor > 0).reduce((s, e) => s + e.amountMinor, 0);
-    const expenses = operating.filter((e) => inB(e.date) && EXPENSE_TYPES.includes(e.type) && e.amountMinor < 0).reduce((s, e) => s + e.amountMinor, 0);
+    const income = operating.filter((e) => inB(e.date) && e.income).reduce((s, e) => s + e.amountMinor, 0);
+    const expenses = operating.filter((e) => inB(e.date) && !e.income).reduce((s, e) => s + e.amountMinor, 0);
     const cap = (kind: CapitalMovement["kind"]) => capital.filter((m) => m.kind === kind && inB(m.date)).reduce((s, m) => s + m.amountMinor, 0);
-    return { label: b.label, income, expenses, net: income + expenses, investment: cap("investment"), capex: cap("capex"), disposal: cap("disposal"), projected: b.projected };
+    return { label: b.label, income, expenses, net: income + expenses, investment: cap("investment"), disposal: cap("disposal"), projected: b.projected };
   });
 }
 /** Capital movements grouped per bucket and kind, plus one "operating" marker for each bucket with income or expenses. */
@@ -88,7 +89,7 @@ export function cashflowMarkers(buckets: Bucket[], points: CashflowPoint[], capi
   const markers: Marker[] = [];
   points.forEach((p, index) => {
     if (p.income !== 0 || p.expenses !== 0) markers.push({ index, kind: "operating", count: 0, amountMinor: p.net, types: [], from: buckets[index].from, to: buckets[index].to });
-    for (const kind of ["investment", "capex", "disposal"] as const) {
+    for (const kind of ["investment", "disposal"] as const) {
       const items = capital.filter((m) => m.kind === kind && bucketOf(buckets, m.date) === index);
       if (items.length) markers.push({ index, kind: kind === "disposal" ? "out" : "in", count: items.length, amountMinor: items.reduce((s, m) => s + m.amountMinor, 0), types: [kind], from: buckets[index].from, to: buckets[index].to });
     }

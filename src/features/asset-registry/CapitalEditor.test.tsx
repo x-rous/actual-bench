@@ -16,31 +16,31 @@ function context(): CapitalContext {
   const expense = testRow("expense", -2000000, { accountId: "bank", categoryId: "renovation", date: "2026-01-01" });
   const deposit = testRow("deposit", 9000000, { accountId: "bank", date: "2026-01-01", notes: null });
   const asset = testAsset("asset", { assetTag: null });
-  return { asset, registry: { assets: [asset], metadata: [{ actualTransactionId: "opening", actualAccountId: "vehicles", assetId: null, classification: "opening-balance", revision: 1 }] }, snapshot: { accountId: "vehicles", date: "2026-10-24", source: [opening], rows: normalizeActivity([opening]).rows, balanceMinor: opening.amount, issues: [], transferKnown: true, fetchedAt: "read" }, external: { rows: normalizeActivity([expense, deposit]).rows, issues: [], accounts: [{ id: "bank", name: "Bank", offBudget: false, closed: false }], fetchedAt: "read" }, transport: { getSyncCapabilities: () => ({ capabilities: { createTransaction: true, createTransactionWithImportedId: true } }) } as CapitalContext["transport"] };
+  return { asset, registry: { assets: [asset], metadata: [{ actualTransactionId: "opening", actualAccountId: "vehicles", assetId: null, classification: "opening-balance", revision: 1 }] }, snapshot: { accountId: "vehicles", date: "2026-10-24", source: [opening], rows: normalizeActivity([opening]).rows, balanceMinor: opening.amount, issues: [], transferKnown: true, fetchedAt: "read" }, external: { rows: normalizeActivity([expense, deposit]).rows, issues: [], accounts: [{ id: "bank", name: "Bank", offBudget: false, closed: false }], fetchedAt: "read" }, transport: { getSyncCapabilities: () => ({ capabilities: { createTransaction: true, createTransactionWithImportedId: true } }), convertToTransfer: jest.fn() } as unknown as CapitalContext["transport"] };
 }
 beforeEach(() => jest.clearAllMocks());
 async function review() {
-  fireEvent.click(screen.getByRole("button", { name: "Choose existing transaction…" }));
+  fireEvent.click(screen.getByRole("button", { name: "Choose the expense…" }));
   fireEvent.click(screen.getByRole("button", { name: /^Mock pick/ }));
-  fireEvent.click(await screen.findByRole("button", { name: "Review change" }));
-  return screen.findByRole("button", { name: "Confirm Actual write" });
+  fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+  return screen.findByRole("button", { name: "Convert to transfer" });
 }
-it("retains confirmed financial success and retries only metadata after CapEx save failure", async () => {
+it("retains confirmed financial success and retries only metadata after a metadata save failure", async () => {
   const ctx = context(); const pending = jest.fn();
   jest.mocked(executeCapital).mockResolvedValue({ transactionId: "created", noop: false, deleted: false });
   jest.mocked(registryRequest).mockRejectedValueOnce(new Error("Metadata unavailable")).mockResolvedValue(ctx.registry);
-  render(<CapitalEditor kind="capitalize" context={ctx} categories={[]} fresh={async (date) => ({ ...ctx, snapshot: { ...ctx.snapshot, date } })} onSaved={jest.fn(async () => {})} onClose={jest.fn()} onUncertain={jest.fn()} onPendingMetadata={pending} />);
+  render(<CapitalEditor kind="payment" context={ctx} categories={[]} fresh={async (date) => ({ ...ctx, snapshot: { ...ctx.snapshot, date } })} onSaved={jest.fn(async () => {})} onClose={jest.fn()} onUncertain={jest.fn()} onPendingMetadata={pending} />);
   fireEvent.click(await review()); await screen.findByText("Metadata unavailable");
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.getByText(/Retry the pending metadata before closing/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Retry metadata only" }));
-  await screen.findByText("Treatment saved and Actual values refreshed.");
+  await screen.findByText("Payment recorded and Actual values refreshed.");
   expect(executeCapital).toHaveBeenCalledTimes(1); expect(registryRequest).toHaveBeenCalledTimes(2); expect(pending).toHaveBeenCalled();
 });
-it("locks an uncertain CapEx create without offering a blind retry", async () => {
+it("locks an uncertain conversion without offering a blind retry", async () => {
   const ctx = context(); const unknown = jest.fn();
   jest.mocked(executeCapital).mockRejectedValue(new UncertainAssetWrite());
-  render(<CapitalEditor kind="capitalize" context={ctx} categories={[]} fresh={async (date) => ({ ...ctx, snapshot: { ...ctx.snapshot, date } })} onSaved={jest.fn(async () => {})} onClose={jest.fn()} onUncertain={unknown} onPendingMetadata={jest.fn()} />);
+  render(<CapitalEditor kind="payment" context={ctx} categories={[]} fresh={async (date) => ({ ...ctx, snapshot: { ...ctx.snapshot, date } })} onSaved={jest.fn(async () => {})} onClose={jest.fn()} onUncertain={unknown} onPendingMetadata={jest.fn()} />);
   fireEvent.click(await review()); await screen.findByText(/This editor will not repeat the write/);
   expect(unknown).toHaveBeenCalledTimes(1); expect(screen.queryByRole("button", { name: "Retry metadata only" })).not.toBeInTheDocument();
 });

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import { testAsset } from "@/lib/asset-registry/testing";
 import type { AssetDebtLink } from "@/lib/asset-registry/financing";
 import type { DebtSummary } from "@/lib/assets-debt/services/debtConfigService";
@@ -39,4 +40,23 @@ it("saves a change with the loan's expected period set and surfaces a stale refu
   await screen.findByText(/allocations changed/);
   const body = jest.mocked(registryRequest).mock.calls[0][2] as { debtId: string; operation: { allocationBps: number }; expectedFingerprint: string; __path: string };
   expect(body).toMatchObject({ __path: "financing", debtId: "loan", operation: { kind: "set", allocationBps: 5000 } }); expect(body.expectedFingerprint).toContain("2026-07-01");
+});
+
+it("starts a new allocation from the day the loan opened (not before the asset's first entry), with the free share and a preview", async () => {
+  const other = [{ id: "second", name: "Equity loan", status: "active", liabilityAccountId: "liab2", blocked: null, signConvention: "negative-is-debt", openingDate: "2026-02-15", openingPrincipalMinor: 9000000, annualRateDecimal: "0.045", contractualTermMonths: 240 }] as unknown as DebtSummary[];
+  const balanceAt = jest.fn(async () => 300000);
+  render(<FinancingPanel asset={asset} registry={{ ...registry, debtLinks: [] }} loans={other} loansReady accounts={accounts} asOf="2026-10-24" onAsOf={jest.fn()} today="2026-10-24" firstDate="2026-03-01" valueAt={() => 500000} debtsAt={() => []} balanceAt={balanceAt} onSaved={jest.fn(async () => {})} />);
+  fireEvent.click(screen.getByRole("button", { name: /Link loan/ }));
+  await chooseSelectOption(screen.getByLabelText(/^Loan/), "Equity loan");
+  expect(["01/03/2026", "03/01/2026"]).toContain((screen.getByLabelText(/^Effective from/) as HTMLInputElement).value); // 1 March in the display locale: the loan opened 15 Feb, before the asset's first entry on 1 Mar
+  expect(screen.getByLabelText(/^Share of the loan/)).toHaveValue("100.00");
+  expect(screen.getByText(/Original 90,000.00/)).toBeInTheDocument();
+  const preview = screen.getByRole("complementary", { name: "What will happen" });
+  await waitFor(() => expect(within(preview).getAllByText("2,000.00").length).toBeGreaterThan(0)); // 5,000.00 value - 3,000.00 debt = equity 2,000.00
+  expect(within(preview).getByText(/Nothing changes in Actual or in the loan/)).toBeInTheDocument();
+});
+it("shows the loan-to-value and offers End on an open allocation", () => {
+  renderPanel("2026-07-31");
+  expect(screen.getByText("Loan-to-value").nextElementSibling).toHaveTextContent("%");
+  expect(screen.getByRole("button", { name: /^End allocation for Mortgage/ })).toBeInTheDocument();
 });

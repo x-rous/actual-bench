@@ -10,8 +10,8 @@ function calculate(bookRows = [testRow("opening", 10000, { date: "2025-12-31" })
   const rows = normalizeActivity(bookRows).rows;
   const snapshot: BookSnapshot = { accountId: "vehicles", date: "2026-10-24", source: bookRows, rows, balanceMinor: rows.reduce((s, r) => s + r.amountMinor, 0), issues: [], fetchedAt: "read", transferKnown: true };
   const registry: Registry = { assets: [asset], metadata: bookRows.map((r) => ({ actualTransactionId: r.id, actualAccountId: "vehicles", assetId: asset.id, classification: r.id === "opening" ? "opening-balance" : r.id === "capital" ? "acquisition" : "revaluation", revision: 1 })), cashflows: [
-    { actualTransactionId: "rent", actualAccountId: "bank", assetId: asset.id, classification: "rental-income", revision: 1 },
-    { actualTransactionId: "maintenance", actualAccountId: "bank", assetId: asset.id, classification: "operating-expense", revision: 1 },
+    { actualTransactionId: "rent", actualAccountId: "bank", assetId: asset.id, classification: null, revision: 1 },
+    { actualTransactionId: "maintenance", actualAccountId: "bank", assetId: asset.id, classification: null, revision: 1 },
   ] };
   const external = { accounts: [], issues: [], fetchedAt: "read", rows: normalizeActivity([testRow("rent", 500, { accountId: "bank" }), testRow("maintenance", -200, { accountId: "bank" })]).rows };
   const run = (from = "2026-01-01", to = "2026-10-24") => performance(asset, registry, snapshot, external, from, to);
@@ -41,17 +41,23 @@ it.each(["external-receipt", "asset-transfer"] as const)("deducts gross selling 
     expect(f.run("2026-11-01", "2026-11-30")).toMatchObject({ operatingMinor: 0, netProceedsMinor: 0, totalMinor: 0 });
   }
 });
-it("keeps independently computable operating amounts while suppressing incomplete total returns", () => {
+it("annualizes money-weighted only over a period long enough, and not while incomplete", () => {
   const f = calculate();
-  f.registry.metadata.find((m) => m.actualTransactionId === "capital")!.classification = null;
-  expect(f.run()).toMatchObject({ operatingMinor: 300, totalMinor: null, simpleReturn: null });
-  f.external.rows = f.external.rows.filter((r) => r.id !== "rent");
-  expect(f.run()).toMatchObject({ operatingMinor: null, totalMinor: null });
+  expect(f.run("2026-01-01", "2026-10-24").irr).toEqual(expect.any(Number));
+  expect(f.run("2026-10-01", "2026-10-24").irr).toBeNull(); // three weeks is too short to annualize
 });
-it("flags changed CapEx companions, moved sources, unclassified cashflows and a nonpositive base", () => {
+it("withholds total returns while a row is unclassified, and ignores a link whose transaction is gone", () => {
+  const f = calculate([testRow("opening", 10000, { date: "2025-12-31" }), testRow("capital", -2000, { transferId: "peer" }), testRow("revaluation", 1500)]);
+  f.registry.metadata = f.registry.metadata.filter((m) => m.actualTransactionId !== "capital"); // money out by transfer has no suggestion
+  expect(f.run()).toMatchObject({ operatingMinor: 300, totalMinor: null, simpleReturn: null, gaps: ["Unclassified entries"] });
+  const g = calculate();
+  g.external.rows = g.external.rows.filter((r) => r.id !== "rent"); // deleted in Actual: no longer counted, and nothing to review
+  expect(g.run()).toMatchObject({ operatingMinor: -200, gaps: [] });
+});
+it("does not flag a moved source; a hand-picked Disposal with no sale recorded is a gap, and a nonpositive base withholds returns", () => {
   const f = calculate();
-  f.registry.metadata.find((m) => m.actualTransactionId === "capital")!.capitalizedFromTransactionId = "maintenance";
-  expect(f.run().gaps.join(" ")).toMatch(/Capitalization/);
+  f.registry.metadata.find((m) => m.actualTransactionId === "capital")!.classification = "disposal"; // a hand-picked Disposal is the one gap Bench cannot resolve itself
+  expect(f.run().gaps).toEqual(["Disposal treatment is missing"]);
   const zero = calculate([testRow("opening", 0, { date: "2025-01-01" })]);
   zero.registry.cashflows = []; zero.external.rows = [];
   expect(zero.run()).toMatchObject({ totalMinor: 0, operatingYield: null, simpleReturn: null });
@@ -73,14 +79,10 @@ it("counts a posted depreciation month once, through closing value only, and rev
   f.registry.cashflows = []; f.external.rows = [];
   expect(f.run()).toMatchObject({ openingMinor: 10000, closingMinor: 10500, capitalAddedMinor: 0, operatingMinor: 0, totalMinor: 500, gaps: [] });
 });
-it("lists investments, capitalized expenses and nothing noncash as capital movements", () => {
+it("lists a transfer in as an investment, and nothing noncash as a capital movement", () => {
   const transfer = testRow("buy", 50000, { transferId: "bank-peer", date: "2026-02-01" });
-  const f = calculate([testRow("opening", 10000, { date: "2025-12-31" }), transfer, testRow("cap-pair", 2000, { date: "2026-03-01" })]);
-  f.registry.metadata = [{ actualTransactionId: "buy", actualAccountId: "vehicles", assetId: "asset", classification: "acquisition", revision: 1 }, { actualTransactionId: "cap-pair", actualAccountId: "vehicles", assetId: "asset", classification: "capital-expenditure", capitalizedFromTransactionId: "roof", revision: 1 }];
-  f.registry.cashflows = [{ actualTransactionId: "roof", actualAccountId: "bank", assetId: "asset", classification: "capital-expenditure", revision: 1 }];
-  f.external.rows = normalizeActivity([testRow("roof", -2000, { accountId: "bank", date: "2026-03-01" })]).rows;
-  expect(capitalMovements(f.asset, f.registry, f.snapshot, f.external)).toEqual([
-    { date: "2026-02-01", kind: "investment", amountMinor: -50000, rowIds: ["buy"] },
-    { date: "2026-03-01", kind: "capex", amountMinor: -2000, rowIds: ["roof"] }, // the noncash book pair is not a movement
-  ]);
+  const f = calculate([testRow("opening", 10000, { date: "2025-12-31" }), transfer, testRow("adjust", 2000, { date: "2026-03-01" })]);
+  f.registry.metadata = [{ actualTransactionId: "buy", actualAccountId: "vehicles", assetId: "asset", classification: "acquisition", revision: 1 }, { actualTransactionId: "adjust", actualAccountId: "vehicles", assetId: "asset", classification: "revaluation", revision: 1 }];
+  f.registry.cashflows = []; f.external.rows = [];
+  expect(capitalMovements(f.asset, f.registry, f.snapshot, f.external)).toEqual([{ date: "2026-02-01", kind: "investment", amountMinor: -50000, rowIds: ["buy"] }]); // the noncash adjustment is not a movement
 });

@@ -3,31 +3,31 @@ import { TimelineSection, type TimelineProps } from "./TimelineSection";
 
 const rows = [
   { date: "2026-01-10", classification: "opening-balance", amountMinor: 1000000, runningMinor: 1000000 },
-  { date: "2026-03-02", classification: "capital-expenditure", amountMinor: 100000, runningMinor: 1100000 },
+  { date: "2026-03-02", classification: "acquisition", amountMinor: 100000, runningMinor: 1100000 },
   { date: "2026-03-31", classification: "depreciation", amountMinor: -10000, runningMinor: 1090000 },
   { date: "2026-04-30", classification: "depreciation", amountMinor: -10000, runningMinor: 1080000 },
 ];
-const props = (extra: Partial<TimelineProps> = {}): TimelineProps => ({ today: "2026-10-25", valueMinor: 1080000, rows, debtAt: () => null, unposted: [], operating: [{ date: "2026-05-05", type: "rental-income", amountMinor: 150000 }, { date: "2026-05-14", type: "operating-expense", amountMinor: -35000 }],
-  capital: [{ date: "2026-03-01", kind: "capex", amountMinor: -100000, rowIds: ["roof"] }, { date: "2026-06-10", kind: "disposal", amountMinor: 50000, rowIds: ["sale"] }], showCashflow: true, reading: false, financing: [], onFinancing: jest.fn(), onBook: jest.fn(), onCashflow: jest.fn(), ...extra });
+const props = (extra: Partial<TimelineProps> = {}): TimelineProps => ({ today: "2026-10-25", valueMinor: 1080000, rows, debtAt: () => null, unposted: [], operating: [{ date: "2026-05-05", category: "Rent", amountMinor: 150000, income: true }, { date: "2026-05-14", category: "Repairs", amountMinor: -35000, income: false }],
+  capital: [{ date: "2026-03-01", kind: "investment", amountMinor: -100000, rowIds: ["roof"] }, { date: "2026-06-10", kind: "disposal", amountMinor: 50000, rowIds: ["sale"] }], showCashflow: true, reading: false, financing: [], onFinancing: jest.fn(), onBook: jest.fn(), onCashflow: jest.fn(), ...extra });
 
 it("groups book events into one marker per kind and month, reachable by keyboard as a single tab stop", () => {
   const p = props(); render(<TimelineSection {...p} />);
   const lane = screen.getByRole("toolbar", { name: "Value chart events" });
   const markers = within(lane);
-  expect(markers.getAllByRole("button")).toHaveLength(3); // CapEx (Mar), depreciation (Mar), depreciation (Apr)
+  expect(markers.getAllByRole("button")).toHaveLength(3); // purchase (Mar), depreciation (Mar), depreciation (Apr)
   expect(markers.getAllByRole("button").filter((b) => b.tabIndex === 0)).toHaveLength(1);
   fireEvent.keyDown(lane, { key: "ArrowRight" });
   expect(markers.getAllByRole("button")[1]).toHaveFocus();
-  fireEvent.click(markers.getByRole("button", { name: /Mar 2026: Capital expenditure \+1,000.00/ }));
-  expect(p.onBook).toHaveBeenCalledWith({ from: "2026-03-01", to: "2026-03-31", types: ["capital-expenditure"], label: "Capital expenditure · Mar 2026" });
+  fireEvent.click(markers.getByRole("button", { name: /Mar 2026: Acquisition \/ Purchase \+1,000.00/ }));
+  expect(p.onBook).toHaveBeenCalledWith({ from: "2026-03-01", to: "2026-03-31", types: ["acquisition"], label: "Acquisition / Purchase · Mar 2026" });
 });
 it("opens Income & Expenses for an operating month, and routes capital markers to where their rows live", () => {
   const p = props(); render(<TimelineSection {...p} />);
   const lane = within(screen.getByRole("toolbar", { name: "Income and capital markers" }));
   fireEvent.click(lane.getByRole("button", { name: /May ’26|May 2026: net operating result \+1,150.00/ }));
   expect(p.onCashflow).toHaveBeenCalledWith({ from: "2026-05-01", to: "2026-05-31", label: "May 2026" });
-  fireEvent.click(lane.getByRole("button", { name: /Mar 2026: Capital expenditure -1,000.00/ }));
-  expect(p.onCashflow).toHaveBeenLastCalledWith(expect.objectContaining({ type: "capital-expenditure", from: "2026-03-01" }));
+  fireEvent.click(lane.getByRole("button", { name: /Mar 2026: Purchases and payments -1,000.00/ }));
+  expect(p.onBook).toHaveBeenCalledWith(expect.objectContaining({ types: ["acquisition", "added-capital"], from: "2026-03-01" }));
   fireEvent.click(lane.getByRole("button", { name: /Jun 2026: Disposal proceeds, net of selling costs \+500.00/ }));
   expect(p.onBook).toHaveBeenCalledWith(expect.objectContaining({ types: ["disposal"], from: "2026-06-01" }));
 });
@@ -77,4 +77,26 @@ it("lets the net line and the projection be switched off from the legend", () =>
   expect(screen.getByRole("button", { name: "Net operating result" })).toHaveAttribute("aria-pressed", "false");
   fireEvent.click(screen.getByRole("button", { name: /Projected if the schedule posts/ }));
   expect(screen.getByRole("button", { name: /Projected if the schedule posts/ })).toHaveAttribute("aria-pressed", "false");
+});
+
+it("leaves money put in out of the value change, and shows debt and equity as a share of value", () => {
+  const p = props({ rows: [
+    { date: "2026-01-10", classification: "opening-balance", amountMinor: 1000000, runningMinor: 1000000 },
+    { date: "2026-03-02", classification: "acquisition", amountMinor: 500000, runningMinor: 1500000 },
+    { date: "2026-04-30", classification: "revaluation", amountMinor: 100000, runningMinor: 1600000 },
+  ], valueMinor: 1600000, debtAt: (date: string) => (date >= "2026-03-01" ? 400000 : null) });
+  render(<TimelineSection {...p} />);
+  const summary = screen.getByLabelText("Value summary");
+  expect(within(summary).getByText("Value change in range").nextElementSibling).toHaveTextContent("+1,000.00"); // the 5,000.00 purchase is not a gain
+  expect(within(summary).getByText("Allocated debt").parentElement).toHaveTextContent("25.0% of value");
+});
+it("says there is no loan yet, in place, for a period before the first allocation instead of an unavailable balance", () => {
+  const p = props({ financing: [{ date: "2026-04-01", text: "Loan: allocated at 100%" }], debtAt: (date: string) => (date >= "2026-04-01" ? 400000 : null) });
+  render(<TimelineSection {...p} />);
+  const summary = screen.getByLabelText("Value summary");
+  expect(within(summary).getByText("Allocated debt").parentElement).toHaveTextContent("of value"); // the latest period has a loan
+  fireEvent.focus(within(screen.getByRole("toolbar", { name: "Value chart events" })).getAllByRole("button")[0]); // the January marker
+  expect(within(summary).getByText("Allocated debt").parentElement).toHaveTextContent("No loan yet");
+  expect(within(summary).getByText("Tracked equity").parentElement).toHaveTextContent("No loan yet");
+  expect(within(summary).queryByText("Unavailable")).not.toBeInTheDocument();
 });

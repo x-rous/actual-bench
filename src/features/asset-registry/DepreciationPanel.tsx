@@ -18,7 +18,7 @@ import { registryRequest } from "./api";
 
 const BADGES: Record<PeriodState, AssetAttention> = {
   forecast: { label: "Forecast", tone: "neutral" }, due: { label: "Due", tone: "attention" }, posted: { label: "Posted", tone: "success" },
-  missing: { label: "Actual row missing", tone: "attention" }, complete: { label: "Complete", tone: "neutral" },
+  complete: { label: "Complete", tone: "neutral" },
 };
 const monthLabel = (period: string) => new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${period}-01T00:00:00Z`));
 type Outcome = { status: "posted" | "failed" | "metadata"; message: string };
@@ -36,7 +36,7 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
   /** Book rows tagged as depreciation that no schedule month claims (manual entries, older postings). */
   const linkedIds = new Set(registry.metadata.filter((m) => m.depreciationPeriod).map((m) => m.actualTransactionId));
   const otherTagged = snapshot.source.filter((r) => typeFromNotes(r.notes) === "depreciation" && !linkedIds.has(r.id)).length;
-  const selectable = (r: PeriodStatus) => (r.state === "due" || r.state === "missing") && asset.status === "active" && !financialBlocked && !retry;
+  const selectable = (r: PeriodStatus) => r.state === "due" && asset.status === "active" && !financialBlocked && !retry;
   async function preview() {
     setBusy(true); setError("");
     try {
@@ -87,10 +87,10 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
     { key: "closing", header: "Forecast carrying value", width: 160, align: "right", cell: (r) => assetMoney(r.closingMinor) },
     { key: "state", header: "State", width: 160, cell: (r) => <AttentionBadge status={BADGES[r.state]} /> },
     { key: "posted", header: "Actual posted amount", width: 150, align: "right", cell: (r) => r.state === "posted" ? assetMoney(actual.get(r.association!.actualTransactionId)?.amount) : "-" },
-    { key: "result", header: "Last action", width: 220, grow: true, cell: (r) => <Text>{outcomes[r.period]?.message ?? (r.state === "missing" ? "Explicit repost available after refresh" : "-")}</Text> },
+    { key: "result", header: "Last action", width: 220, grow: true, cell: (r) => <Text>{outcomes[r.period]?.message ?? "-"}</Text> },
   ];
   if (!settings) return <div className="flex min-h-0 flex-1 flex-col"><div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2"><div><h2 className="text-sm font-semibold">Depreciation</h2><p className="text-xs text-muted-foreground">Optional monthly forecast · no automatic posting or rebasing</p></div><Button className="ml-auto" size="sm" disabled={asset.status !== "active"} onClick={onEdit}><Settings2 className="size-3.5" aria-hidden />Set up schedule</Button></div>
-    <p className="p-4 text-sm text-muted-foreground">No schedule is saved. A schedule is a planning forecast; you post each ended month explicitly. Manual depreciation entries remain available in Account Transactions.</p></div>;
+    <p className="p-4 text-sm text-muted-foreground">No schedule is saved. A schedule is a planning forecast; you post each ended month explicitly. Manual depreciation entries remain available in Asset Ledger.</p></div>;
   return <div className="flex min-h-0 flex-1 flex-col">
     <SummaryStrip label="Depreciation summary" items={[
       { label: "Schedule basis", value: assetMoney(settings.basisMinor), detail: "Independent of later revaluation" },
@@ -100,9 +100,9 @@ export function DepreciationPanel({ asset, registry, snapshot, valueMinor, today
     ]} />
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5">
       <h2 className="text-sm font-semibold">Schedule</h2>
-      <p className="flex items-center gap-1 text-xs text-muted-foreground">Starts {shortDate(settings.startDate, today)} · {posted} of {rows.filter((r) => r.amountMinor > 0).length} months posted{otherTagged > 0 && ` · ${otherTagged} other ${DEPRECIATION_TAG} ${otherTagged === 1 ? "row" : "rows"} in the book`}<InfoHint label="depreciation schedules">Methods are personal planning conventions, not tax depreciation. The first calendar month is a full period. A month is due once its end date has arrived and posts at that date as a negative noncash row in the asset account tagged {DEPRECIATION_TAG}; nothing posts automatically. Revaluation never changes this schedule. Edit or delete posted rows in Account Transactions.</InfoHint></p>
+      <p className="flex items-center gap-1 text-xs text-muted-foreground">Starts {shortDate(settings.startDate, today)} · {posted} of {rows.filter((r) => r.amountMinor > 0).length} months posted{otherTagged > 0 && ` · ${otherTagged} other ${DEPRECIATION_TAG} ${otherTagged === 1 ? "row" : "rows"} in the book`}<InfoHint label="depreciation schedules">Methods are personal planning conventions, not tax depreciation. The first calendar month is a full period. A month is due once its end date has arrived and posts at that date as a negative noncash row in the asset account tagged {DEPRECIATION_TAG}; nothing posts automatically. Revaluation never changes this schedule. Edit or delete posted rows in Asset Ledger.</InfoHint></p>
       <div className="ml-auto flex items-center gap-2">
-        <Button size="xs" variant="ghost" onClick={onOpenBook}>Account Transactions<ArrowUpRight className="size-3" aria-hidden /></Button>
+        <Button size="xs" variant="ghost" onClick={onOpenBook}>Asset Ledger<ArrowUpRight className="size-3" aria-hidden /></Button>
         <Button size="sm" variant="outline" disabled={asset.status !== "active"} onClick={onEdit}><Settings2 className="size-3.5" aria-hidden />Edit schedule</Button>
         <Button size="sm" disabled={!selected.length || busy || financialBlocked || !!retry} onClick={() => void preview()}>{busy && !review ? "Working…" : `Post selected (${selected.length})`}</Button>
       </div>
