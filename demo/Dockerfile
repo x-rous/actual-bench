@@ -4,7 +4,7 @@ USER root
 
 # Build deps for better-sqlite3 + install the Actual sync server from npm.
 RUN apk add --no-cache python3 make g++ \
- && npm install -g @actual-app/sync-server@26.8.1
+ && npm install -g @actual-app/sync-server@26.10.0
 
 # Pre-synced demo budgets (see generate-seed.mjs). Baked in → reset on restart.
 COPY seed-data /seed-data

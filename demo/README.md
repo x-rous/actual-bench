@@ -34,7 +34,7 @@ This folder is the source for the Hugging Face Space
 From the repo root:
 
 ```bash
-npm install --no-save @actual-app/api@26.8.1 @actual-app/sync-server@26.8.1
+npm install --no-save @actual-app/api@26.10.0 @actual-app/sync-server@26.10.0
 node demo/generate-seed.mjs
 ```
 
