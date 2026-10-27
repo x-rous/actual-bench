@@ -386,6 +386,9 @@ export function StatementReview(props: Props) {
       onRowKeys={(event, { row }) => {
         const key = event.key.toLowerCase();
         if (key === "y" || key === "n" || event.key === "?") {
+          // These bare keys are statement-review decisions, not app-wide
+          // shortcuts such as Quick Create (N).
+          event.stopPropagation();
           answer(row.id, key === "y" ? "included" : key === "n" ? "excluded" : "review");
           return true;
         }

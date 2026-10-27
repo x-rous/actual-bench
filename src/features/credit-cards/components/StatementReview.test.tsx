@@ -79,6 +79,22 @@ it("answers with Y, N and ? on the focused row; the table is one tab stop", () =
   expect(within(answers("Alpha")).getByRole("radio", { name: UNSURE })).toHaveAttribute("aria-checked", "true");
 });
 
+it("keeps statement-review decision shortcuts from reaching global shortcuts", () => {
+  const { saved, workspace } = setup([september]);
+  const rows = [row({ id: "Alpha", date: "2026-09-10", amount: -1000, payeeName: "Alpha" })];
+  review(saved[0], workspace(), snapshot(rows, { from: "2026-08-01", to: "2026-11-01" }));
+  const globalShortcut = jest.fn();
+  window.addEventListener("keydown", globalShortcut);
+  try {
+    const first = screen.getByRole("row", { name: /^Alpha/ });
+    fireEvent.keyDown(first, { key: "n" });
+    expect(within(answers("Alpha")).getByRole("radio", { name: OFF })).toHaveAttribute("aria-checked", "true");
+    expect(globalShortcut).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener("keydown", globalShortcut);
+  }
+});
+
 it("saves an opening statement without a previous balance as reviewed, not Matches bank (CA-13)", async () => {
   const { saved, workspace } = setup([september]);
   const close = jest.fn();
