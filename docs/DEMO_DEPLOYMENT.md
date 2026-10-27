@@ -155,5 +155,6 @@ self-host.
 To regenerate the seed budgets, run `node demo/generate-seed.mjs` (see the script
 header for prerequisites). Configure the printed `DEMO_BUDGET_SYNC_ID` and
 `DEMO_TRACKING_BUDGET_SYNC_ID` values on the Demo UI deployment. The backend
-uses pinned `26.10.0` Actual Server and HTTP API images so generation and runtime
+uses the pinned `jhonderson/actual-http-api:26.10.0` image and
+`@actual-app/sync-server@26.10.0` npm package so generation and runtime
 interpret the budget files with the same release line.
