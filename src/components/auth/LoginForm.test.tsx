@@ -71,6 +71,20 @@ describe("the sign-in page (RD-096)", () => {
     localStorage.clear();
   });
 
+  it("explains how to reset a forgotten password without leaving sign-in", async () => {
+    getVaultStatus.mockResolvedValue(status());
+    render(<LoginForm next="/rules" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Forgot your password?" }));
+    expect(screen.getByRole("heading", { name: "Reset your password" })).toBeInTheDocument();
+    expect(screen.getByText("ACTUAL_BENCH_PASSWORD")).toBeInTheDocument();
+    expect(screen.getByText(/Saved connections encrypted with the old password will be cleared/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign-in configuration documentation" })).toHaveAttribute(
+      "href",
+      "https://x-rous.github.io/actual-bench/administration/configuration/#sign-in"
+    );
+  });
+
   it("shows the password on request", async () => {
     getVaultStatus.mockResolvedValue(status());
     render(<LoginForm next="/rules" />);
