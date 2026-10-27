@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { parseApiError } from "@/components/connect/utils";
 import { getVaultStatus, setVaultPassphrase, unlockVault, type VaultStatus } from "@/features/connect/vaultApi";
 import { readVaultUnlockDuration, saveVaultUnlockDuration } from "@/features/connect/vaultUnlockPreference";
@@ -24,6 +25,7 @@ import { MIN_PASSWORD_LENGTH } from "@/lib/auth/authMode";
 
 const DOCS_URL = "https://x-rous.github.io/actual-bench";
 const GITHUB_URL = "https://github.com/x-rous/actual-bench";
+const SIGN_IN_DOCS_URL = `${DOCS_URL}/administration/configuration/#sign-in`;
 
 /**
  * Sign in, or on a fresh install set the password (RD-096). One password:
@@ -136,6 +138,36 @@ export function LoginForm({ next }: { next: string }) {
               />
             </div>
 
+            {!settingUp && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox checked={keepSignedIn} onCheckedChange={setKeepSignedIn} disabled={busy} />
+                  Keep me signed in
+                </label>
+                <Popover>
+                  <PopoverTrigger
+                    render={<button type="button" className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground" />}
+                  >
+                    Forgot your password?
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-80 space-y-3 p-3" aria-label="Reset your password">
+                    <div className="space-y-1">
+                      <h2 className="text-sm font-medium">Reset your password</h2>
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">ACTUAL_BENCH_PASSWORD</code> to a new value in your Docker environment, then restart Actual Bench.
+                      </p>
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Saved connections encrypted with the old password will be cleared. Automations, backups, and their stored credentials are kept.
+                    </p>
+                    <a href={SIGN_IN_DOCS_URL} target="_blank" rel="noreferrer" className="inline-flex text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80">
+                      Sign-in configuration documentation
+                    </a>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
+
             {settingUp && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="confirm" className="text-sm text-muted-foreground">
@@ -151,6 +183,13 @@ export function LoginForm({ next }: { next: string }) {
               </div>
             )}
 
+            {settingUp && (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Checkbox checked={keepSignedIn} onCheckedChange={setKeepSignedIn} disabled={busy} />
+                Keep me signed in
+              </label>
+            )}
+
             {error && (
               <div className="flex items-start gap-2.5 rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" />
@@ -161,19 +200,6 @@ export function LoginForm({ next }: { next: string }) {
             <Button type="submit" disabled={busy || !password || (settingUp && !confirm)}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : settingUp ? "Set password and continue" : "Sign in"}
             </Button>
-
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Checkbox checked={keepSignedIn} onCheckedChange={setKeepSignedIn} disabled={busy} />
-              Keep me signed in
-            </label>
-
-            {!settingUp && (
-              <p className="text-sm text-muted-foreground">
-                Forgot your password? Set a new one with env variable{" "}
-                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">ACTUAL_BENCH_PASSWORD</code>{" "}
-                and restart Actual Bench.
-              </p>
-            )}
           </form>
         )}
       </div>
