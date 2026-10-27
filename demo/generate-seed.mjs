@@ -7,7 +7,7 @@
 // budgeting semantics, not source data.
 //
 // Prerequisites (from the repository root):
-//   npm i --no-save @actual-app/api@26.8.1 @actual-app/sync-server@26.8.1
+//   npm i --no-save @actual-app/api@26.10.0 @actual-app/sync-server@26.10.0
 // Run:
 //   node demo/generate-seed.mjs
 //
