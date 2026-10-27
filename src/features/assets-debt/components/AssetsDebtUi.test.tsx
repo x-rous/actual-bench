@@ -68,15 +68,15 @@ function summary(i: number, patch: Partial<DebtSummary> = {}): DebtSummary {
 
 /** jsdom has no layout; give the virtualized lists a viewport so they render a window of rows. */
 function withViewport() {
-  const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
-  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+  const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
   beforeAll(() => {
-    Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get: () => 800 });
-    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get: () => 600 });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 800 });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 600 });
   });
   afterAll(() => {
-    if (width) Object.defineProperty(HTMLElement.prototype, "offsetWidth", width);
-    if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
+    if (width) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
+    if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
   });
 }
 

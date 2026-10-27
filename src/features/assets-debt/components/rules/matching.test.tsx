@@ -95,10 +95,10 @@ describe("Repayment matching on Settings (rev 2)", () => {
 });
 
 describe("The matching editor (rev 2)", () => {
-  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-  beforeAll(() => Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get: () => 420 }));
+  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+  beforeAll(() => Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 420 }));
   afterAll(() => {
-    if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
+    if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
   });
   beforeEach(() => {
     jest.clearAllMocks();
@@ -166,10 +166,10 @@ describe("The matching editor (rev 2)", () => {
 });
 
 describe("Backtest results", () => {
-  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
-  beforeAll(() => Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get: () => 420 }));
+  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+  beforeAll(() => Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 420 }));
   afterAll(() => {
-    if (height) Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
+    if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
   });
   it("renders text and icons for every backtest state while keeping a long result bounded", () => {
     const statuses = ["unique", "missing", "multiple", "unsafe"] as const;
