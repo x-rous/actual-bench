@@ -11,3 +11,10 @@ export async function registryRequest(budget: string, method = "GET", payload?: 
   if (!response.ok) throw new Error(result.error ?? "Asset metadata request failed");
   return result as Registry;
 }
+/** Asks the server to drop saved links to transactions that are gone from Actual; `dropped` is how many it removed. */
+export async function pruneRequest(evidence: unknown): Promise<{ registry: Registry; dropped: number }> {
+  const response = await fetch(`${endpoint}/prune`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(evidence) });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error ?? "Asset cleanup failed");
+  return result;
+}

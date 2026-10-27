@@ -1374,7 +1374,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(58);
+      expect(LATEST_SCHEMA_VERSION).toBe(59);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
@@ -1888,5 +1888,28 @@ describe("v50 reconciliation card-statement link", () => {
       resetAppDbForTests();
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("v59 asset ledger simplification", () => {
+  afterEach(() => resetAppDbForTests());
+  it("turns legacy CapEx rows into Added Capital, unlinks CapEx income and expenses, and keeps everything else", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v59-"));
+    try {
+      const db = getAppDb(join(root, "metadata.sqlite"));
+      db.prepare("INSERT INTO assets (id,budget_sync_id,actual_account_id,name,asset_type,status,revision,created_at,updated_at) VALUES ('a','b','acc','Flat','real-estate','active',1,'t','t')").run();
+      const row = (id: string, role: string, classification: string | null, extra = "NULL") => db.prepare("INSERT INTO asset_transaction_metadata (budget_sync_id,actual_transaction_id,actual_account_id,role,asset_id,classification,revision,created_at,updated_at,capitalized_from_transaction_id) VALUES ('b',?,?,?,'a',?,1,'t','t',?)").run(id, role === "book" ? "acc" : "bank", role, classification, extra === "NULL" ? null : extra);
+      row("capex-book", "book", "capital-expenditure", "expense-1"); row("capex-book-2", "book", "capital-expenditure"); row("reval", "book", "revaluation");
+      row("capex-link", "cashflow", "capital-expenditure"); row("rent", "cashflow", null); row("sale", "cashflow", "disposal-proceeds");
+      // Back to the state before v59: the old schema version, and the link rules' type column.
+      db.exec("ALTER TABLE asset_link_rules ADD COLUMN classification TEXT");
+      db.prepare("UPDATE app_meta SET value='58' WHERE key='schema_version'").run();
+      runMigrations(db);
+      const rows = db.prepare("SELECT actual_transaction_id AS id, classification, capitalized_from_transaction_id AS from_id FROM asset_transaction_metadata ORDER BY actual_transaction_id").all<{ id: string; classification: string | null; from_id: string | null }>();
+      expect(rows).toEqual([
+        { id: "capex-book", classification: "added-capital", from_id: null }, { id: "capex-book-2", classification: "added-capital", from_id: null },
+        { id: "rent", classification: null, from_id: null }, { id: "reval", classification: "revaluation", from_id: null }, { id: "sale", classification: "disposal-proceeds", from_id: null },
+      ]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

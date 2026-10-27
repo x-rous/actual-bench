@@ -30,6 +30,7 @@ export function SearchInput({
   title,
   autoFocus,
   onKeyDown,
+  inputRef,
 }: {
   value: string
   onValueChange: (value: string) => void
@@ -41,6 +42,8 @@ export function SearchInput({
   title?: string
   autoFocus?: boolean
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>
+  /** The field itself, for a screen that focuses it from a shortcut. */
+  inputRef?: React.Ref<HTMLInputElement>
 }) {
   return (
     <div className={cn("relative flex w-44 items-center", className)}>
@@ -56,6 +59,7 @@ export function SearchInput({
         title={title}
         autoFocus={autoFocus}
         onKeyDown={onKeyDown}
+        ref={inputRef}
         className={cn(HEIGHTS[size], "pl-7 pr-7")}
       />
       {value && (

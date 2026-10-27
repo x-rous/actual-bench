@@ -4,7 +4,7 @@ it("reads exactly one type tag, case-insensitively, and ignores other hashtags",
   expect(typeFromNotes("Depreciation 2026-01 #depreciation")).toBe("depreciation");
   expect(typeFromNotes("#Depreciation #asset_byd")).toBe("depreciation");
   expect(typeFromNotes("#asset_byd only")).toBeNull();
-  expect(typeFromNotes("#capex #revaluation")).toBeNull(); // conflicting tags classify nothing
+  expect(typeFromNotes("#acquisition #revaluation")).toBeNull(); // conflicting tags classify nothing
   expect(typeFromNotes("not#capex")).toBeNull(); // a tag must be a whole token
   expect(typeFromNotes(null)).toBeNull();
 });

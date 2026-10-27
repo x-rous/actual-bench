@@ -20,7 +20,7 @@ import { registryRequest } from "./api";
 /**
  * The state and the save sequence behind creating or editing an asset: the draft, the account choice (an existing
  * off-budget account of the right class, or a new one staged and created with the asset), the shared-account hashtag
- * and validation. Used by the settings drawer and by the creation wizard, so both behave identically.
+ * and validation. Used by the settings drawer and by the creation drawer, so both behave identically.
  */
 export function useAssetSetup({ connection, asset, accounts, registry, onDiscard, ownershipFrom }: { connection: ConnectionInstance; asset?: Asset; accounts: Account[]; registry: Registry; onDiscard: () => void; /** Start of the first ownership period for a new asset (default: today). */ ownershipFrom?: string }) {
   const [draft, setDraft] = useState<AssetInput>(() => ({ id: asset?.id ?? generateId(), actualAccountId: asset?.actualAccountId ?? "", name: asset?.name ?? "", assetType: (asset?.assetType ?? "vehicle") as AssetType, description: asset?.description ?? "", status: asset?.status === "archived" ? "archived" : "active", incomeGenerating: asset?.incomeGenerating ?? defaultIncomeGenerating(asset?.assetType ?? "vehicle"), revision: asset?.revision ?? 0, ownership: asset?.ownership ?? [{ effectiveFrom: ownershipFrom ?? bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone), ownershipBps: 10000 }] }));
@@ -54,26 +54,28 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
     onDiscard();
   });
   function close() { if (!busy) discard.requestClose(); }
-  function stageAccount(values: AccountFormValues) {
+  /** Stages a new account for the asset and returns its draft ID, or null when the account cannot serve this asset. */
+  function stageAccount(values: AccountFormValues): string | null {
     const store = useStagedStore.getState();
     const reason = eligibility({ id: "draft", name: values.name, offBudget: values.offBudget, closed: false, groupId: values.groupId }, draft.assetType, { accounts: new Map(values.accountClass ? [["draft", values.accountClass]] : []), groups: classes.maps.groups });
-    if (reason) { setError(reason); return; }
+    if (reason) { setError(reason); return null; }
     if (pendingId && store.accounts[pendingId]?.isNew) store.stageDelete("accounts", pendingId);
     store.pushUndo();
     const id = generateId();
     store.stageNew("accounts", { id, name: values.name, offBudget: values.offBudget, closed: false, initialBalance: values.initialBalance, ...(groups.supported ? { groupId: values.groupId ?? null } : {}) });
     if (values.accountClass) store.stageAccountClass(id, values.accountClass);
     setPendingId(id); setDraft((d) => ({ ...d, actualAccountId: "" })); setError("");
+    return id;
   }
-  async function saveAccounts() {
+  async function saveAccounts(pid: string | null) {
     setError("");
-    const summary = await saver.save({ accountIds: pendingId ? [pendingId] : [] });
-    if (pendingId && !summary?.idMap?.[pendingId] && useStagedStore.getState().accounts[pendingId]?.isNew) {
+    const summary = await saver.save({ accountIds: pid ? [pid] : [] });
+    if (pid && !summary?.idMap?.[pid] && useStagedStore.getState().accounts[pid]?.isNew) {
       setCreateUncertain(true);
       await accountsQuery.refetch();
       throw new Error("Account creation was not confirmed. Inspect Actual and the Accounts table before retrying. Remove any duplicate unsaved draft, confirm the saved account class, then return to the preserved asset draft and select the saved account. This editor will not repeat the create.");
     }
-    const realId = pendingId ? summary?.idMap?.[pendingId] ?? pendingId : null;
+    const realId = pid ? summary?.idMap?.[pid] ?? pid : null;
     if (realId) setPendingId(realId); // retry failed class/group under its permanent ID
     const fresh = await getTransport(connection).getAccounts();
     const records = await queryClient.fetchQuery({ queryKey: ["accountClasses", connection.budgetSyncId], staleTime: 0, queryFn: async () => {
@@ -105,14 +107,15 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
     return Object.keys(next).length === 0;
   }
   /** Saves the account (if new) and the asset. Returns the saved registry, or null when something needs attention (shown in `error` / `errors`). */
-  async function save(): Promise<{ registry: Registry; assetId: string } | null> {
-    if (!validate()) return null;
+  async function save(stagedId?: string): Promise<{ registry: Registry; assetId: string } | null> {
+    const pid = stagedId ?? pendingId;
+    if (!validate(!!stagedId)) return null;
     setBusy(true); setError("");
     try {
-      if (!pendingId && !draft.actualAccountId) throw new Error("Choose a saved off-budget account, or create one.");
+      if (!pid && !draft.actualAccountId) throw new Error("Choose a saved off-budget account, or create one.");
       if (accountMode === "shared" && !/^#asset_[a-z0-9_-]{1,93}$/.test(hashtag)) throw new Error("Enter a unique hashtag such as #asset_family_car (lowercase letters, numbers, underscores or hyphens).");
       if (accountMode === "shared" && registry.assets.some((other) => other.id !== draft.id && other.assetTag === hashtag)) throw new Error("This hashtag is already used. Choose another.");
-      const actualAccountId = pendingId ? await saveAccounts() : draft.actualAccountId;
+      const actualAccountId = pid ? await saveAccounts(pid) : draft.actualAccountId;
       const directory = await getTransport(connection).getAccounts();
       const pending = useStagedStore.getState().accounts[actualAccountId ?? ""];
       if (pending && (pending.isNew || pending.isUpdated || pending.isDeleted || pending.pendingAccountClass !== undefined || pending.saveError)) throw new Error("Save pending changes to the selected account in Accounts first");

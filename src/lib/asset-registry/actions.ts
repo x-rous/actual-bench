@@ -4,7 +4,7 @@ import type { SyncSourceTransaction } from "@/lib/actual/transport";
 import { isIsoDate } from "@/lib/financial-models/calendar/dates";
 import { assetHashtags, attributeBook, readBook, sumMinor, type BookSnapshot } from "./ledger";
 import type { Asset, BookMetadata, BookType, Registry } from "./models";
-import { withTypeTag } from "./tags";
+import { BENCH_ROW_MARKER, isBenchCreated, withTypeTag } from "./tags";
 
 export type BookEdit = {
   kind: "create" | "set-value" | "edit" | "delete"; transactionId?: string;
@@ -17,10 +17,9 @@ export type PreparedAction = { edit: BookEdit; beforeMinor: number; afterMinor: 
  * The treatment that owns a row (depreciation, capital expenditure or disposal), mirroring the server rule that its type,
  * assignment and existence cannot change on their own. Checked before any Notes tag is written so Actual and Bench cannot disagree.
  */
-export function boundTreatment(registry: { metadata: BookMetadata[]; cashflows?: { context?: BookMetadata["context"] }[] }, rowId: string): "depreciation" | "capital-expenditure" | "disposal" | null {
+export function boundTreatment(registry: { metadata: BookMetadata[]; cashflows?: { context?: BookMetadata["context"] }[] }, rowId: string): "depreciation" | "disposal" | null {
   const paired = registry.metadata.find((m) => m.actualTransactionId === rowId);
   if (paired?.depreciationPeriod) return "depreciation";
-  if (paired?.capitalizedFromTransactionId) return "capital-expenditure";
   if (paired?.context?.data.kind === "disposal") return "disposal";
   return [...registry.metadata, ...(registry.cashflows ?? [])].some((m) => m.context?.data.kind === "disposal" && m.context.data.bookAdjustmentTransactionId === rowId) ? "disposal" : null;
 }
@@ -59,7 +58,7 @@ export function prepareAction(context: ActionContext, edit: BookEdit): PreparedA
   }
   const deltaMinor = edit.kind === "set-value" ? sumMinor([edit.amountMinor, -beforeMinor])
     : edit.kind === "delete" ? -oldAmount : sumMinor([edit.amountMinor, -oldAmount]);
-  return { edit, beforeMinor, afterMinor: sumMinor([beforeMinor, deltaMinor]), deltaMinor, signature: signature(context), marker: `asset-action:${generateId()}`, assetId: asset.id, accountId: asset.actualAccountId, assetTag: asset.assetTag };
+  return { edit, beforeMinor, afterMinor: sumMinor([beforeMinor, deltaMinor]), deltaMinor, signature: signature(context), marker: `${BENCH_ROW_MARKER}${generateId()}`, assetId: asset.id, accountId: asset.actualAccountId, assetTag: asset.assetTag };
 }
 export class UncertainAssetWrite extends Error {
   constructor() { super("Actual write outcome needs inspection. Refresh and inspect the account before starting another action; do not repeat this create."); }
@@ -117,8 +116,9 @@ export async function freshActionContext(transport: ActualBenchTransport, assetI
 }
 
 /**
- * Writes (or removes) the type hashtag in the Notes of the given book rows in Actual. Protected rows (transfers, splits,
- * reconciled or scheduled) are never edited and are reported as skipped: their type stays in Bench's metadata only.
+ * Writes (or removes) the type hashtag in the Notes of the given book rows in Actual, but only for rows Bench created itself.
+ * A transaction made elsewhere is never edited, and neither are protected rows (transfers, splits, reconciled or scheduled):
+ * those are reported as skipped and their type stays in Bench's metadata only.
  */
 export async function writeTypeTags(context: ActionContext, rowIds: string[], type: BookType | null): Promise<{ tagged: string[]; skipped: string[] }> {
   const { transport, snapshot } = context;
@@ -127,7 +127,7 @@ export async function writeTypeTags(context: ActionContext, rowIds: string[], ty
   const edits: { row: SyncSourceTransaction; notes: string }[] = [];
   for (const id of rowIds) {
     const row = snapshot.source.find((r) => r.id === id);
-    if (!row || !caps.updateTransaction || protectedReason(row, snapshot.transferKnown) || boundTreatment(context.registry, id)) { skipped.push(id); continue; }
+    if (!row || !isBenchCreated(row.importedId) || !caps.updateTransaction || protectedReason(row, snapshot.transferKnown) || boundTreatment(context.registry, id)) { skipped.push(id); continue; }
     const notes = withTypeTag(row.notes, type);
     if (notes === (row.notes ?? "")) continue; // already carries exactly this tag
     edits.push({ row, notes });

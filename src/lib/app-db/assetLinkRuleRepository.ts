@@ -28,9 +28,9 @@ export function saveLinkRule(db: SqliteDatabase, input: unknown) {
       const id = rule.id ?? generateId();
       const exists = db.prepare("SELECT 1 AS x FROM asset_link_rules WHERE id=? AND asset_id=? AND budget_sync_id=?").get(id, assetId, budget);
       if (rule.id && !exists) throw new AppDbValidationError("That rule no longer exists. Refresh and try again.");
-      const values = [rule.name, rule.match, JSON.stringify(rule.conditions), rule.classification, now];
-      if (exists) db.prepare("UPDATE asset_link_rules SET name=?,match=?,conditions=?,classification=?,updated_at=? WHERE id=?").run(...values, id);
-      else db.prepare("INSERT INTO asset_link_rules(name,match,conditions,classification,updated_at,id,asset_id,budget_sync_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)").run(...values, id, assetId, budget, now);
+      const values = [rule.name, rule.match, JSON.stringify(rule.conditions), now];
+      if (exists) db.prepare("UPDATE asset_link_rules SET name=?,match=?,conditions=?,updated_at=? WHERE id=?").run(...values, id);
+      else db.prepare("INSERT INTO asset_link_rules(name,match,conditions,updated_at,id,asset_id,budget_sync_id,created_at) VALUES(?,?,?,?,?,?,?,?)").run(...values, id, assetId, budget, now);
     }
     return readRegistry(db, budget);
   })();

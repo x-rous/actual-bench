@@ -1,12 +1,12 @@
 import { BOOK_TYPES, type BookType } from "./models";
 
 /**
- * Each book transaction type has a readable hashtag that Bench writes into the row's Notes in Actual, so the
- * classification is visible and searchable in Actual itself and survives without Bench's saved metadata.
+ * Each book transaction type has a readable hashtag. Bench writes it into the Notes only of rows Bench itself creates in
+ * Actual; it never edits the Notes of a transaction made elsewhere.
  */
 export const BOOK_TYPE_TAGS: Record<BookType, string> = {
-  "opening-balance": "#opening-balance", acquisition: "#acquisition", "capital-expenditure": "#capex", revaluation: "#revaluation",
-  depreciation: "#depreciation", impairment: "#impairment", "ownership-adjustment": "#ownership-adjustment", disposal: "#disposal", "other-adjustment": "#adjustment",
+  "opening-balance": "#opening-balance", acquisition: "#acquisition", "added-capital": "#added-capital", revaluation: "#revaluation",
+  depreciation: "#depreciation", impairment: "#impairment", disposal: "#disposal", "other-adjustment": "#adjustment",
 };
 export const DEPRECIATION_TAG = BOOK_TYPE_TAGS.depreciation;
 const TYPE_BY_TAG = new Map((Object.keys(BOOK_TYPES) as BookType[]).map((type) => [BOOK_TYPE_TAGS[type], type]));
@@ -22,3 +22,6 @@ export function withTypeTag(notes: string | null | undefined, type: BookType | n
   const kept = (notes ?? "").replace(/[ \t]*(?<![\p{L}\p{N}_#])#[\p{L}\p{N}_-]+/gu, (match) => TYPE_BY_TAG.has(match.trim().toLowerCase()) ? "" : match).trim();
   return type ? `${kept} ${BOOK_TYPE_TAGS[type]}`.trim() : kept;
 }
+/** Prefix of the imported ID Bench gives every row it creates in Actual; it is how Bench knows it wrote the row's Notes. */
+export const BENCH_ROW_MARKER = "asset-action:";
+export const isBenchCreated = (importedId: string | null | undefined): boolean => !!importedId?.startsWith(BENCH_ROW_MARKER);

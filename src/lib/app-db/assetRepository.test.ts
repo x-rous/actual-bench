@@ -20,7 +20,7 @@ afterEach(() => resetAppDbForTests());
 it("upgrades v50 additively and has bootstrap parity/idempotence", () => {
   const { db } = setup();
   db.exec("DROP TABLE asset_transaction_metadata; DROP TABLE asset_ownership_periods; DROP TABLE assets; UPDATE app_meta SET value='50' WHERE key='schema_version'");
-  expect(runMigrations(db).schemaVersion).toBe(58); expect(runMigrations(db).schemaVersion).toBe(58);
+  expect(runMigrations(db).schemaVersion).toBe(59); expect(runMigrations(db).schemaVersion).toBe(59);
   expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
   expect(readRegistry(db, "budget")).toEqual({ assets: [], metadata: [] });
 });
@@ -74,7 +74,7 @@ it("preserves saved tags, ownership and classification when upgrading existing v
   db.exec("UPDATE app_meta SET value='51' WHERE key='schema_version'");
   runMigrations(db);
   const before = readRegistry(db, "budget");
-  expect(runMigrations(db).schemaVersion).toBe(58);
+  expect(runMigrations(db).schemaVersion).toBe(59);
   expect(readRegistry(db, "budget")).toEqual(before);
   expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { idSchema, dateSchema, CASHFLOW_TYPES, BOOK_TYPES, type CashflowType } from "./models";
+import { idSchema, dateSchema, CASHFLOW_TYPES, BOOK_TYPES } from "./models";
 import type { ActivityRow } from "@/features/credit-cards/lib/activity";
 import { normalizeActivity } from "@/features/credit-cards/lib/activity";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
@@ -14,16 +14,13 @@ export const sourceEvidenceSchema = z.object({ id: idSchema, accountId: idSchema
 export const cashflowChangeSchema = z.object({
   role: z.enum(["book", "cashflow"]), actualTransactionId: idSchema, actualAccountId: idSchema, assetId: idSchema,
   classification: z.string().nullable(), revision: z.number().int().min(0), remove: z.boolean().optional(),
-  capitalizedFromTransactionId: idSchema.nullable().optional(), context: contextSchema.nullable().optional(),
+  context: contextSchema.nullable().optional(),
   /** `YYYY-MM` identity of a schedule-posted depreciation month. */ depreciationPeriod: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(),
 }).strict().refine((v) => v.classification === null || Object.hasOwn(v.role === "book" ? BOOK_TYPES : CASHFLOW_TYPES, v.classification), "Unknown transaction classification");
 export const cashflowSaveSchema = z.object({ budgetSyncId: idSchema, changes: z.array(cashflowChangeSchema).min(1).max(500), sources: z.array(sourceEvidenceSchema).max(100000) }).strict();
 export type CashflowChange = z.infer<typeof cashflowChangeSchema>;
 export function sourceEvidence(rows: ActivityRow[]) {
   return rows.map(({ id, accountId, date, amountMinor, parentId, transferId, categoryId, notes }) => ({ id, accountId, date, amountMinor, parentId, transferId, categoryId, notes }));
-}
-export function cashflowChoices(amountMinor: number): CashflowType[] {
-  return (Object.keys(CASHFLOW_TYPES) as CashflowType[]).filter((type) => type === "other-excluded" || (amountMinor > 0 ? ["rental-income", "dividends-distributions", "interest-yield", "other-income", "disposal-proceeds"].includes(type) : amountMinor < 0 && ["operating-expense", "taxes-insurance-service-charges", "financing-interest", "capital-expenditure"].includes(type)));
 }
 /** `accountIssues` scopes each read problem to its source account, so reporting is limited to assets linked to it. */
 export type ExternalSnapshot = { rows: ActivityRow[]; issues: string[]; accountIssues?: Record<string, string[]>; accounts: Account[]; fetchedAt: string;
@@ -56,7 +53,7 @@ export async function readExternal(transport: ActualBenchTransport, bookAccountI
   }
   return { rows, issues, accountIssues, accounts, fetchedAt: new Date().toISOString(), readAccountIds };
 }
-/** The external accounts the registry must read: those holding a linked cashflow or a capitalized-expense source. */
+/** The external accounts the registry must read: those holding a linked cashflow. */
 export const linkedExternalAccountIds = (registry: { cashflows?: { actualAccountId: string }[] }, bookAccountIds: string[]): string[] =>
   [...new Set((registry.cashflows ?? []).map((m) => m.actualAccountId))].filter((id) => !bookAccountIds.includes(id)).sort();
 /** The account a transaction currently lives in (one tiny query), or null when it is gone. */

@@ -6,13 +6,13 @@ import type { LinkRule } from "@/lib/asset-registry/linkRules";
 
 jest.mock("./api", () => ({ registryRequest: jest.fn() }));
 jest.mock("@/components/transactions/useTransactionReference", () => ({ useTransactionReference: () => ({ ready: true, accountOptions: [], categoryOptions: [], payeeOptions: [{ value: "tenant", label: "Tenant" }], names: { payee: () => "Tenant", category: () => "Rent", account: () => "Bank" } }) }));
-const rule: LinkRule = { id: "r1", assetId: "byd", name: "Rent unit 4", match: "all", conditions: [{ field: "payee", operator: "equals", value: "tenant" }, { field: "notes", operator: "hasTag", value: "#unit-4" }], classification: "rental-income", updatedAt: "now" };
+const rule: LinkRule = { id: "r1", assetId: "byd", name: "Rent unit 4", match: "all", conditions: [{ field: "payee", operator: "equals", value: "tenant" }, { field: "notes", operator: "hasTag", value: "#unit-4" }], updatedAt: "now" };
 const base = { asset: testAsset(), assetAccountIds: ["vehicles"], onSaved: jest.fn(async () => {}), onApply: jest.fn(), onClose: jest.fn() };
 beforeEach(() => jest.clearAllMocks());
 
 it("lists a rule in words and applies it", () => {
   render(<LinkRulesDialog {...base} registry={{ assets: [testAsset()], metadata: [], linkRules: [rule] }} />);
-  expect(screen.getByText(/payee is Tenant and notes has tag #unit-4 → Rental Income/)).toBeInTheDocument();
+  expect(screen.getByText(/payee is Tenant and notes has tag #unit-4/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Apply" }));
   expect(base.onApply).toHaveBeenCalledWith(rule);
 });
@@ -30,7 +30,7 @@ it("builds a condition as field, operation and value, and validates before savin
   await waitFor(() => expect(screen.getByLabelText("Field")).toHaveTextContent("Amount"));
   fireEvent.change(screen.getByLabelText("Condition value"), { target: { value: "-350.00" } });
   fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
-  await waitFor(() => expect(registryRequest).toHaveBeenCalledWith("budget", "PUT", { __path: "rules", assetId: "byd", operation: { kind: "save", rule: { name: "Fuel", match: "all", classification: null, conditions: [{ field: "amount", operator: "equals", value: "-350.00" }] } } }));
+  await waitFor(() => expect(registryRequest).toHaveBeenCalledWith("budget", "PUT", { __path: "rules", assetId: "byd", operation: { kind: "save", rule: { name: "Fuel", match: "all", conditions: [{ field: "amount", operator: "equals", value: "-350.00" }] } } }));
 });
 it("deletes a rule", async () => {
   jest.mocked(registryRequest).mockResolvedValue({ assets: [], metadata: [] });

@@ -12,6 +12,11 @@ async function fixture(mode: "browser-api" | "http-api", extraBook: SyncSourceTr
   const asset = testAsset("asset", { assetTag: null }); const registry: Registry = { assets: [asset], metadata: [{ actualTransactionId: "opening", actualAccountId: "vehicles", assetId: null, classification: "opening-balance", revision: 1 }] };
   const transport = { mode, sync: jest.fn(async () => {}), getPayees: async () => [{ id: "to-asset", name: "Asset", transferAccountId: "vehicles" }], getCategoryGroups: async () => ({ categories: [{ id: "purchase", isIncome: false }], groups: [] }),
     getSyncCapabilities: () => ({ capabilities: { listTransactions: true, readSplitLines: true, createTransaction: true, createTransactionWithImportedId: true } }),
+    convertToTransfer: jest.fn(async (input: { expected: { id: string }; transferPayeeId: string }) => {
+      const source = externalRows.find((r) => r.id === input.expected.id)!;
+      Object.assign(source, { payeeId: input.transferPayeeId, transferId: "converted" });
+      rows.push(testRow("converted", -source.amount, { date: source.date, transferId: source.id }));
+    }),
     getAccounts: async () => [{ id: "vehicles", name: "Asset", offBudget: true, closed: false }, { id: "bank", name: "Bank", offBudget: false, closed: false }],
     getAccountBalances: async () => new Map([["vehicles", rows.reduce((s, r) => s + r.amount, 0) / 100]]), canVerifyTransferLinks: async () => true,
     listTransactionsForSync: async ({ accountId }: { accountId: string }) => accountId === "vehicles" ? rows : externalRows,
@@ -25,16 +30,26 @@ async function fixture(mode: "browser-api" | "http-api", extraBook: SyncSourceTr
   const fresh = async (): Promise<CapitalContext> => ({ asset, registry, transport, snapshot: await readBook(transport, "vehicles", "2026-10-01"), external: { rows: normalizeActivity(externalRows).rows, issues: [], accounts: await transport.getAccounts(), fetchedAt: "read" } });
   return { transport, registry, fresh, rows: () => rows, externalRows };
 }
-it.each(["browser-api", "http-api"] as const)("capitalizes an existing expense once without changing bank fields in %s", async (mode) => {
-  const f = await fixture(mode); const before = JSON.stringify(f.externalRows);
-  const p = prepareCapital(await f.fresh(), { kind: "capitalize", sourceId: "capex", date: "2026-10-01", notes: "Renovation" });
+it.each(["browser-api", "http-api"] as const)("turns an existing expense into the transfer into the asset once, changing only its payee, in %s", async (mode) => {
+  const f = await fixture(mode); const before = f.externalRows.map((r) => ({ ...r }));
+  const p = prepareCapital(await f.fresh(), { kind: "convert", sourceId: "capex", date: "2026-10-01", notes: "" });
   const result = await executeCapital(p, f.fresh);
-  expect(p.deltaMinor).toBe(2000000); expect(JSON.stringify(f.externalRows)).toBe(before);
-  const changes = capitalMetadata(p, result); expect(changes[1].capitalizedFromTransactionId).toBe("capex");
-  f.registry.metadata.push({ ...changes[1], revision: 1 });
-  expect(() => prepareCapital(awaitNever(), p.input)).toThrow();
-  function awaitNever() { return { ...p.context, registry: f.registry }; }
-  expect(f.transport.createTransactionsForSync).toHaveBeenCalledTimes(1);
+  expect(p.deltaMinor).toBe(2000000); expect(result).toMatchObject({ transactionId: "converted" });
+  expect(f.transport.convertToTransfer).toHaveBeenCalledTimes(1);
+  expect(f.transport.convertToTransfer).toHaveBeenCalledWith(expect.objectContaining({ allowReconciled: true, transferPayeeId: "to-asset", counterpartAccountId: "vehicles" }));
+  const after = f.externalRows.find((r) => r.id === "capex")!; const was = before.find((r) => r.id === "capex")!;
+  expect({ ...after, payeeId: was.payeeId, transferId: was.transferId }).toEqual(was); // amount, date, category and Notes untouched
+  const changes = capitalMetadata(p, result); expect(changes).toEqual([expect.objectContaining({ role: "book", actualTransactionId: "converted", classification: "acquisition" })]);
+  expect(() => prepareCapital({ ...p.context, external: { ...p.context.external, rows: normalizeActivity(f.externalRows).rows } }, p.input)).toThrow(/not a transfer/); // it is a transfer now
+});
+it("refuses a deposit, an uncategorized on-budget expense, and a connection that cannot convert", async () => {
+  const f = await fixture("http-api");
+  const ctx = await f.fresh();
+  expect(() => prepareCapital(ctx, { kind: "convert", sourceId: "receipt", date: "2026-10-01", notes: "" })).toThrow(/expense/);
+  f.externalRows.push(testRow("bare", -1000, { accountId: "bank", date: "2026-09-02", categoryId: null }));
+  expect(() => prepareCapital({ ...ctx, external: { ...ctx.external, rows: normalizeActivity(f.externalRows).rows } }, { kind: "convert", sourceId: "bare", date: "2026-10-01", notes: "" })).toThrow(/category/);
+  const noConvert = { ...ctx, transport: { ...ctx.transport, convertToTransfer: undefined } as unknown as CapitalContext["transport"] };
+  expect(() => prepareCapital(noConvert, { kind: "convert", sourceId: "capex", date: "2026-10-01", notes: "" })).toThrow(/cannot turn an expense/);
 });
 it.each([11000000, 9000000, 4000000])("treats receipt and transfer proceeds %s without duplicate cash", async (proceeds) => {
   for (const representation of ["external-receipt", "asset-transfer"] as const) {
@@ -55,10 +70,10 @@ it("writes off carrying value, rejects excess/duplicate sources, and refuses sta
   const p = prepareCapital(await f.fresh(), { kind: "dispose", representation: "write-off", sourceId: "", date: "2026-10-01", carryingMinor: 10000000, proceedsBasis: "gross", feeIds: [], notes: "Write off" });
   expect(capitalMetadata(p, await executeCapital(p, f.fresh))[0].context?.data).toMatchObject({ representation: "write-off", bookAdjustmentTransactionId: null });
   expect(() => prepareCapital(p.context, { ...p.input, carryingMinor: 20000000 } as typeof p.input)).toThrow(/exceeds/);
-  const stale = await fixture("http-api"); const preview = prepareCapital(await stale.fresh(), { kind: "capitalize", sourceId: "capex", date: "2026-10-01", notes: "" });
+  const stale = await fixture("http-api"); const preview = prepareCapital(await stale.fresh(), { kind: "convert", sourceId: "capex", date: "2026-10-01", notes: "" });
   stale.externalRows[2].amount = -3000000;
   await expect(executeCapital(preview, stale.fresh)).rejects.toThrow(/changed/);
-  expect(stale.transport.createTransactionsForSync).not.toHaveBeenCalled();
+  expect(stale.transport.convertToTransfer).not.toHaveBeenCalled();
 });
 it.each(["browser-api", "http-api"] as const)("creates one genuine acquisition transfer and verifies its category/counterpart in %s", async (mode) => {
   const f = await fixture(mode);
@@ -70,9 +85,9 @@ it.each(["browser-api", "http-api"] as const)("creates one genuine acquisition t
   expect(() => prepareCapital(awaitNever(), p.input)).toThrow(/matching payment/);
   function awaitNever() { return { ...p.context, external: { ...p.context.external, rows: normalizeActivity(f.externalRows).rows } }; }
 });
-it("never repeats a create after a lost response", async () => {
-  const f = await fixture("http-api"); const p = prepareCapital(await f.fresh(), { kind: "capitalize", sourceId: "capex", date: "2026-10-01", notes: "" });
-  f.transport.createTransactionsForSync = jest.fn(async () => { throw new Error("lost response"); });
+it("never repeats a conversion after a lost response", async () => {
+  const f = await fixture("http-api"); const p = prepareCapital(await f.fresh(), { kind: "convert", sourceId: "capex", date: "2026-10-01", notes: "" });
+  f.transport.convertToTransfer = jest.fn(async () => { throw new Error("lost response"); });
   await expect(executeCapital(p, f.fresh)).rejects.toBeInstanceOf(UncertainAssetWrite);
-  expect(f.transport.createTransactionsForSync).toHaveBeenCalledTimes(1);
+  expect(f.transport.convertToTransfer).toHaveBeenCalledTimes(1);
 });

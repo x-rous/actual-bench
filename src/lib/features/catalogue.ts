@@ -178,7 +178,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
   {
     id: "assets", label: "Assets", href: "/assets", groupId: "financial-management", icon: Landmark,
     description: "Register off-budget assets, reconcile shared accounts, link income and expenses, track returns, depreciation and loan equity, and adjust their Actual book transactions.",
-    accessSummary: "Create, edit and delete supported asset-book transactions, acquisitions, CapEx and disposal adjustments, and post depreciation months, after confirmation.",
+    accessSummary: "Create, edit and delete supported asset-ledger entries, payments and disposal adjustments, and post depreciation months, after confirmation.",
     maturity: "experimental", docsUrl: `${DOCS_BASE_URL}user-guide/asset-registry/`,
     usesStagedActions: false, pendingChangesPanel: "none", requiresSavedData: true,
   },

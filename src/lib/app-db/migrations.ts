@@ -73,7 +73,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 58;
+export const LATEST_SCHEMA_VERSION = 59;
 
 type Migration = {
   version: number;
@@ -682,6 +682,18 @@ const MIGRATIONS: readonly Migration[] = [
       classification TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
       FOREIGN KEY(asset_id,budget_sync_id) REFERENCES assets(id,budget_sync_id) ON DELETE RESTRICT)`,
     "CREATE INDEX idx_asset_link_rules_asset ON asset_link_rules(asset_id)",
+  ] },
+  // Simpler asset ledger: Ownership Adjustment is an Other Adjustment, a linked income or expense has no owner-picked type
+  // (only the ones a treatment gives it), and a link rule no longer carries a type.
+  { version: 59, statements: [
+    "UPDATE asset_transaction_metadata SET classification='other-adjustment' WHERE role='book' AND classification='ownership-adjustment'",
+    // CapEx is gone: a book row that capitalized an expense is plain Added Capital (the pairing is dropped first, because its check needs
+    // the old type), and a linked expense that was marked CapEx is unlinked, so it no longer counts as an operating expense.
+    "UPDATE asset_transaction_metadata SET capitalized_from_transaction_id=NULL WHERE role='book' AND classification='capital-expenditure' AND capitalized_from_transaction_id IS NOT NULL",
+    "UPDATE asset_transaction_metadata SET classification='added-capital' WHERE role='book' AND classification='capital-expenditure'",
+    "DELETE FROM asset_transaction_metadata WHERE role='cashflow' AND classification='capital-expenditure'",
+    "UPDATE asset_transaction_metadata SET classification=NULL WHERE role='cashflow' AND classification IS NOT NULL AND classification NOT IN ('capital-expenditure','disposal-proceeds','other-excluded')",
+    "ALTER TABLE asset_link_rules DROP COLUMN classification",
   ] },
 ];
 

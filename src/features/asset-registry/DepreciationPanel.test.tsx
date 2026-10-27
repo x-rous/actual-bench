@@ -46,3 +46,13 @@ it("stops after a failed month and retries only the association after a metadata
   await screen.findByText("Posted 31 Jan");
   expect(executeDepreciation).toHaveBeenCalledTimes(1); expect(registryRequest).toHaveBeenCalledTimes(2);
 });
+it("summarises the schedule: what is posted, what is left, the next charge and when it ends", () => {
+  renderPanel();
+  const strip = screen.getByLabelText("Depreciation summary");
+  const tile = (name: string) => within(strip).getByText(name).parentElement!;
+  expect(tile("Depreciation posted")).toHaveTextContent("0.00"); expect(tile("Depreciation posted")).toHaveTextContent("0 of 12 months");
+  expect(tile("Remaining to depreciate")).toHaveTextContent("12,000.00");
+  expect(tile("Next monthly charge")).toHaveTextContent("1,000.00"); expect(tile("Next monthly charge")).toHaveTextContent("Jan 2026 · due now");
+  expect(tile("Fully depreciated by")).toHaveTextContent("31 Dec");
+  expect(within(strip).queryByText("Residual value")).not.toBeInTheDocument();
+});

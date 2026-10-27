@@ -22,17 +22,17 @@ it("plots value and debt per bucket and a forecast that subtracts unposted month
 it("groups book events per bucket and kind", () => {
   const buckets = buildBuckets("monthly", "2026-10-25", null);
   const markers = bookMarkers(buckets, [
-    { date: "2026-03-02", classification: "capital-expenditure", amountMinor: 100 }, { date: "2026-03-20", classification: "acquisition", amountMinor: 50 },
+    { date: "2026-03-02", classification: "acquisition", amountMinor: 100 }, { date: "2026-03-20", classification: "opening-balance", amountMinor: 50 },
     { date: "2026-03-31", classification: "depreciation", amountMinor: -10 }, { date: "2026-04-30", classification: "depreciation", amountMinor: -10 }, { date: "2026-04-01", classification: "other-adjustment", amountMinor: 1 },
   ]);
-  expect(markers.map((m) => [m.kind, m.count, m.amountMinor])).toEqual([["in", 2, 150], ["depreciation", 1, -10], ["depreciation", 1, -10]]);
+  expect(markers.map((m) => [m.kind, m.count, m.amountMinor])).toEqual([["in", 1, 100], ["depreciation", 1, -10], ["depreciation", 1, -10]]);
 });
 it("keeps capital out of the operating net", () => {
   const buckets = buildBuckets("monthly", "2026-10-25", null);
-  const points = cashflowPoints(buckets, [{ date: "2026-05-05", type: "rental-income", amountMinor: 1500 }, { date: "2026-05-14", type: "operating-expense", amountMinor: -350 }, { date: "2026-05-15", type: "rental-income", amountMinor: -1 }],
-    [{ date: "2026-05-20", kind: "capex", amountMinor: -20000, rowIds: ["x"] }, { date: "2026-05-21", kind: "disposal", amountMinor: 900, rowIds: ["y"] }]);
+  const points = cashflowPoints(buckets, [{ date: "2026-05-05", category: "Rent", amountMinor: 1500, income: true }, { date: "2026-05-14", category: "Repairs", amountMinor: -350, income: false }, { date: "2026-05-15", category: "Rent", amountMinor: -1, income: true }],
+    [{ date: "2026-05-20", kind: "investment", amountMinor: -20000, rowIds: ["x"] }, { date: "2026-05-21", kind: "disposal", amountMinor: 900, rowIds: ["y"] }]);
   const may = points[buildBuckets("monthly", "2026-10-25", null).findIndex((b) => b.label === "May ’26")];
-  expect(may).toMatchObject({ income: 1500, expenses: -350, net: 1150, capex: -20000, disposal: 900, investment: 0 }); // a wrong-signed income row is ignored
+  expect(may).toMatchObject({ income: 1499, expenses: -350, net: 1149, disposal: 900, investment: -20000 }); // income or expense follows the category type: a refund nets into its income category
 });
 import { financingEvents, financingMarkers } from "./timeline";
 it("explains allocation changes in words and marks them per bucket", () => {

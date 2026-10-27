@@ -18,32 +18,26 @@ export const ASSET_TYPES = {
 } as const;
 export type AssetType = keyof typeof ASSET_TYPES;
 export const BOOK_TYPES = {
-  "opening-balance": "Opening Balance", acquisition: "Acquisition / Purchase",
-  "capital-expenditure": "Capital expenditure (purchase or improvement)", revaluation: "Revaluation / Appreciation",
-  depreciation: "Depreciation", impairment: "Impairment / Write-down",
-  "ownership-adjustment": "Ownership Adjustment", disposal: "Disposal", "other-adjustment": "Other Adjustment",
+  "opening-balance": "Opening Balance", acquisition: "Acquisition / Purchase", "added-capital": "Added Capital",
+  revaluation: "Revaluation / Appreciation", depreciation: "Depreciation",
+  impairment: "Impairment / Write-down", disposal: "Disposal", "other-adjustment": "Other Adjustment",
 } as const;
 /** Shorter names for chart text and filter chips, where the full label would be too long. */
-export const bookTypeShort = (type: string): string => type === "capital-expenditure" ? "Capital expenditure" : (BOOK_TYPES as Partial<Record<string, string>>)[type] ?? type;
-export const CASHFLOW_TYPES = {
-  "rental-income": "Rental Income", "dividends-distributions": "Dividends / Distributions", "interest-yield": "Interest / Yield", "other-income": "Other Income",
-  "operating-expense": "Operating Expense / Maintenance", "taxes-insurance-service-charges": "Taxes / Insurance / Service Charges", "financing-interest": "Financing Interest",
-  "capital-expenditure": "Capital Expenditure", "disposal-proceeds": "Disposal Proceeds", "other-excluded": "Other / Excluded",
-} as const;
+export const bookTypeShort = (type: string): string => (BOOK_TYPES as Partial<Record<string, string>>)[type] ?? type;
+/**
+ * What Bench itself assigns to a linked income or expense row that is part of a treatment. A plain link has no type at all:
+ * whether it is income or an expense follows from its amount sign, and Actual's category says what it was for.
+ */
+export const CASHFLOW_TYPES = { "disposal-proceeds": "Disposal Proceeds", "other-excluded": "Selling cost" } as const;
 export type CashflowType = keyof typeof CASHFLOW_TYPES;
-/** How the cashflow types read to the owner: what is income, what is expense, and what moves book value instead. */
-export const CASHFLOW_GROUPS: { label: string; types: CashflowType[] }[] = [
-  { label: "Income · counts toward Operating Result", types: ["rental-income", "dividends-distributions", "interest-yield", "other-income"] },
-  { label: "Expenses · count toward Operating Result", types: ["operating-expense", "taxes-insurance-service-charges", "financing-interest"] },
-  { label: "Capital & disposal · changes the asset's value, not Operating Result", types: ["capital-expenditure", "disposal-proceeds"] },
-  { label: "Not counted", types: ["other-excluded"] },
-];
 /** All money in context is signed integer minor units; carrying removed is positive. */
 export type AssetContext = { version: 1; data: {
   kind: "disposal"; representation: "external-receipt" | "asset-transfer" | "write-off"; carryingRemovedMinor: number;
   bookAdjustmentTransactionId: string | null; proceedsBasis?: "gross" | "net";
 } | { kind: "selling-cost"; disposalTransactionId: string } };
 export type BookType = keyof typeof BOOK_TYPES;
+/** Entries that put money or cost into the asset. They are capital, never a change in its worth, so value change and returns leave them out. */
+export const CAPITAL_TYPES: readonly string[] = ["opening-balance", "acquisition", "added-capital"];
 export const idSchema = z.string().trim().min(1).max(200);
 export const dateSchema = z.string().refine(isIsoDate, "Use a valid YYYY-MM-DD date");
 export const ownershipSchema = z.object({ effectiveFrom: dateSchema, ownershipBps: z.number().int().min(0).max(10000) }).strict();
@@ -67,7 +61,7 @@ export type Asset = Omit<AssetInput, "assetType" | "status" | "incomeGenerating"
 };
 export type BookMetadata = {
   actualTransactionId: string; actualAccountId: string; assetId: string | null;
-  classification: string | null; revision: number; capitalizedFromTransactionId?: string | null; context?: AssetContext | null;
+  classification: string | null; revision: number; context?: AssetContext | null;
   /** `YYYY-MM` of a schedule-posted depreciation month (book rows only). */ depreciationPeriod?: string | null;
 };
 export type CashflowMetadata = BookMetadata & { assetId: string };

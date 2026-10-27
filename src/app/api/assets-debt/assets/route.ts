@@ -2,6 +2,7 @@ import { saveAssetCashflows } from "@/lib/app-db/assetCashflowRepository";
 import { NextResponse } from "next/server";
 import { getAppDb } from "@/lib/app-db/connection";
 import { readRegistry, saveAsset, saveBookMetadata } from "@/lib/app-db/assetRepository";
+import { deleteArchivedAsset } from "@/lib/app-db/assetMaintenanceRepository";
 import { appDbErrorResponse, readJsonBody } from "@/lib/app-db/routeResponses";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,5 +21,10 @@ export async function PATCH(request: Request) {
 
 export async function PUT(request: Request) {
   try { return NextResponse.json(saveAssetCashflows(getAppDb(), await readJsonBody(request))); }
+  catch (error) { return appDbErrorResponse(error); }
+}
+
+export async function DELETE(request: Request) {
+  try { return NextResponse.json(deleteArchivedAsset(getAppDb(), await readJsonBody(request))); }
   catch (error) { return appDbErrorResponse(error); }
 }

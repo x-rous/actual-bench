@@ -1,7 +1,7 @@
 import type { SqliteDatabase } from "./types";
 import { AppDbConflictError, AppDbValidationError } from "./errors";
 import { readRegistry } from "./assetRepository";
-import { cashflowChoices, cashflowSaveSchema } from "@/lib/asset-registry/cashflows";
+import { cashflowSaveSchema } from "@/lib/asset-registry/cashflows";
 import type { AssetContext, BookMetadata } from "@/lib/asset-registry/models";
 
 /** Scoped metadata transaction only. Live source evidence is read by the active transport; never stored. */
@@ -26,25 +26,17 @@ export function saveAssetCashflows(db: SqliteDatabase, input: unknown) {
       if (change.remove) { final.delete(change.actualTransactionId); continue; }
       const source = sources.find((s) => s.id === change.actualTransactionId && s.accountId === change.actualAccountId) ?? fail("Source transaction is missing or moved");
       if (change.role === "book" ? asset.actualAccountId !== source.accountId : registry.assets.some((a) => a.actualAccountId === source.accountId)) fail("Source is in the wrong account for its role");
-      if (change.role === "cashflow" && (source.transferId || (change.classification && !cashflowChoices(source.amountMinor).includes(change.classification as never)))) fail("Choose a sign-compatible external cashflow; transfers belong in Account Transactions");
+      if (change.role === "cashflow" && source.transferId) fail("A transfer belongs in the asset ledger, not in income and expenses");
       final.set(change.actualTransactionId, { ...old, ...change, revision: change.revision + 1 });
     }
     if (sources.some((row) => row.parentId && final.has(row.id) && final.has(row.parentId))) fail("Parent and child transactions cannot both be linked");
     for (const change of changes.filter((c) => !c.remove)) {
       const entry = final.get(change.actualTransactionId)!;
       const row = sources.find((r) => r.id === entry.actualTransactionId)!;
-      if (entry.capitalizedFromTransactionId) {
-        if (entry.role !== "book" || entry.classification !== "capital-expenditure" || row.amountMinor <= 0) fail("Capitalization requires one positive CapEx book row");
-        const source = sources.find((r) => r.id === entry.capitalizedFromTransactionId);
-        const link = final.get(entry.capitalizedFromTransactionId);
-        if (!source || source.amountMinor >= 0 || !source.categoryId || source.transferId || -source.amountMinor !== row.amountMinor || link?.role !== "cashflow" || link.assetId !== entry.assetId || link.classification !== "capital-expenditure") fail("Capitalization source/pair is missing or inconsistent");
-        if ([...final.values()].some((m) => m.actualTransactionId !== entry.actualTransactionId && m.capitalizedFromTransactionId === entry.capitalizedFromTransactionId)) fail("This expense is already capitalized");
-      }
       if (entry.depreciationPeriod) {
-        if (entry.role !== "book" || entry.classification !== "depreciation" || entry.capitalizedFromTransactionId || row.amountMinor >= 0) fail("A scheduled depreciation month needs one negative depreciation book row");
+        if (entry.role !== "book" || entry.classification !== "depreciation" || row.amountMinor >= 0) fail("A scheduled depreciation month needs one negative depreciation book row");
         if ([...final.values()].some((m) => m.actualTransactionId !== entry.actualTransactionId && m.assetId === entry.assetId && m.depreciationPeriod === entry.depreciationPeriod)) fail("This depreciation month is already posted");
       }
-      if (entry.role === "cashflow" && entry.classification !== "capital-expenditure" && [...final.values()].some((m) => m.capitalizedFromTransactionId === entry.actualTransactionId)) fail("A capitalized expense must retain its CapEx classification");
       const context = entry.context?.data;
       if (context?.kind === "selling-cost") {
         const anchor = final.get(context.disposalTransactionId);
@@ -69,9 +61,9 @@ export function saveAssetCashflows(db: SqliteDatabase, input: unknown) {
     for (const change of changes) {
       if (change.remove) { db.prepare("DELETE FROM asset_transaction_metadata WHERE budget_sync_id=? AND actual_transaction_id=?").run(budget, change.actualTransactionId); continue; }
       const m = final.get(change.actualTransactionId)!;
-      db.prepare(`INSERT INTO asset_transaction_metadata(budget_sync_id,actual_transaction_id,actual_account_id,role,asset_id,classification,capitalized_from_transaction_id,context_json,depreciation_period,revision,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,1,?,?) ON CONFLICT(budget_sync_id,actual_transaction_id) DO UPDATE SET asset_id=excluded.asset_id,classification=excluded.classification,capitalized_from_transaction_id=excluded.capitalized_from_transaction_id,context_json=excluded.context_json,depreciation_period=excluded.depreciation_period,revision=asset_transaction_metadata.revision+1,updated_at=excluded.updated_at`)
-        .run(budget, m.actualTransactionId, m.actualAccountId, m.role, m.assetId, m.classification, m.capitalizedFromTransactionId ?? null, m.context ? JSON.stringify(m.context as AssetContext) : null, m.depreciationPeriod ?? null, now, now);
+      db.prepare(`INSERT INTO asset_transaction_metadata(budget_sync_id,actual_transaction_id,actual_account_id,role,asset_id,classification,context_json,depreciation_period,revision,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,1,?,?) ON CONFLICT(budget_sync_id,actual_transaction_id) DO UPDATE SET asset_id=excluded.asset_id,classification=excluded.classification,context_json=excluded.context_json,depreciation_period=excluded.depreciation_period,revision=asset_transaction_metadata.revision+1,updated_at=excluded.updated_at`)
+        .run(budget, m.actualTransactionId, m.actualAccountId, m.role, m.assetId, m.classification, m.context ? JSON.stringify(m.context as AssetContext) : null, m.depreciationPeriod ?? null, now, now);
     }
     return readRegistry(db, budget);
   })();

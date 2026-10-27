@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
@@ -17,7 +18,7 @@ import { ChoiceCards } from "@/components/ui/choice-cards";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { attributeBook } from "@/lib/asset-registry/ledger";
 import { UncertainAssetWrite, type ActionResult } from "@/lib/asset-registry/actions";
-import { prepareCapital, executeCapital, capitalMetadata, capitalEvidence, type CapitalContext, type CapitalInput, type CapitalPrepared } from "@/lib/asset-registry/capitalActions";
+import { prepareCapital, executeCapital, capitalMetadata, capitalEvidence, type CapitalContext, type CapitalInput, type CapitalPrepared, type PaymentType } from "@/lib/asset-registry/capitalActions";
 import { accountOfTransaction, sourceEvidence } from "@/lib/asset-registry/cashflows";
 import type { Category } from "@/types/entities";
 import { assetMoney } from "./AssetPresentation";
@@ -27,42 +28,44 @@ import type { Registry } from "@/lib/asset-registry/models";
 
 const pickLabel = (r: PickedTransaction) => `${r.date} · ${r.payeeName ?? "No payee"} · ${assetMoney(r.amountMinor)}`;
 export function CapitalEditor({ kind, context, categories, fresh, onSaved, onClose, onUncertain, onPendingMetadata }: {
-  kind: CapitalInput["kind"]; context: CapitalContext; categories: Category[]; fresh: (date: string, accountIds?: string[]) => Promise<CapitalContext>;
+  /** "payment" is Add a payment (an existing expense or a new transfer); "dispose" is a sale or write-off. */ kind: "payment" | "dispose"; context: CapitalContext; categories: Category[]; fresh: (date: string, accountIds?: string[]) => Promise<CapitalContext>;
   onSaved: (registry?: Registry) => Promise<void>; onClose: () => void; onUncertain: () => void; onPendingMetadata: () => void;
 }) {
   const today = bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  const [date, setDate] = useState(today); const [notes, setNotes] = useState(""); const [notesAuto, setNotesAuto] = useState(false);
+  const [date, setDate] = useState(today); const [notes, setNotes] = useState("");
   const [sourcePick, setSourcePick] = useState<PickedTransaction | null>(null); const [transferId, setTransferId] = useState("");
   const [feePicks, setFeePicks] = useState<PickedTransaction[]>([]); const [picker, setPicker] = useState<"source" | "fees" | null>(null);
   const [representation, setRepresentation] = useState<"external-receipt" | "asset-transfer" | "write-off">("external-receipt"); const [basis, setBasis] = useState<"gross" | "net">("gross");
   const [amount, setAmount] = useState(() => kind === "dispose" ? minorToMajorText(attributeBook(context.snapshot, context.registry.assets, context.registry.metadata).totals.get(context.asset.id) ?? 0, 2) : ""); const [accountId, setAccountId] = useState(""); const [categoryId, setCategoryId] = useState(""); const [notRecorded, setNotRecorded] = useState(false);
   const [prepared, setPrepared] = useState<CapitalPrepared | null>(null); const [known, setKnown] = useState<ActionResult | null>(null); const [touched, setTouched] = useState<string[]>([]);
   const [busy, setBusy] = useState(false); const [complete, setComplete] = useState(false); const [uncertain, setUncertain] = useState(false); const [error, setError] = useState("");
+  const [mode, setMode] = useState<"existing" | "new">("existing");
+  // The first money into an asset is its purchase; later money is added capital.
+  const [asType, setAsType] = useState<PaymentType>(() => attributeBook(context.snapshot, context.registry.assets, context.registry.metadata).rows.some((r) => r.assetId === context.asset.id && ["acquisition", "added-capital"].includes(r.classification ?? "")) ? "added-capital" : "acquisition");
   const sourceId = kind === "dispose" && representation === "asset-transfer" ? transferId : sourcePick?.id ?? "";
   const discard = useDiscardChanges(!complete && !uncertain && (!!amount || !!sourceId || !!notes || !!accountId || feePicks.length > 0), onClose);
-  const title = kind === "capitalize" ? "Add expense to asset value" : kind === "dispose" ? "Record a sale or write-off" : "Record a purchase";
+  const title = kind === "dispose" ? "Record a sale or write-off" : "Add a payment";
   const book = attributeBook(context.snapshot, context.registry.assets, context.registry.metadata);
   const assetAccounts = [...new Set(context.registry.assets.map((a) => a.actualAccountId))];
   const allLinks = [...context.registry.metadata, ...(context.registry.cashflows ?? [])];
   const reasonOf = (row: PickedTransaction) => {
     const link = allLinks.find((m) => m.actualTransactionId === row.id);
     if (link && link.assetId && link.assetId !== context.asset.id) return "Already linked to another asset";
-    if (link?.context || context.registry.metadata.some((m) => m.capitalizedFromTransactionId === row.id)) return "Already part of a capital or disposal treatment";
+    if (link?.context) return "Already part of a sale";
     return null;
   };
   function choose(rows: PickedTransaction[]) {
     if (picker === "fees") { setFeePicks(rows); return; }
     const row = rows[0]; setSourcePick(row);
-    if (kind === "dispose" || kind === "capitalize") setDate(row.date); // an existing movement keeps its own date
-    if (kind === "capitalize" && (!notes || notesAuto)) { setNotes(`Capitalized: ${row.payeeName ?? "expense"} ${row.date}`); setNotesAuto(true); }
+    setDate(row.date); // an existing movement keeps its own date
   }
   async function review() {
     setBusy(true); setError("");
     try {
       const parsed = parseMajorToMinor(amount, 2); const minor = parsed.ok && parsed.value !== null ? parsed.value : 0;
       const base = { date, notes };
-      const input: CapitalInput = kind === "capitalize" ? { ...base, kind, sourceId } : kind === "dispose" ? { ...base, kind, sourceId, representation, carryingMinor: minor, proceedsBasis: basis, feeIds: feePicks.map((r) => r.id) } : { ...base, kind, sourceAccountId: accountId, categoryId, amountMinor: minor, paymentNotRecorded: notRecorded };
-      const accounts = new Set<string>([...(sourcePick ? [sourcePick.accountId] : []), ...feePicks.map((r) => r.accountId), ...(kind === "acquire" && accountId ? [accountId] : [])]);
+      const input: CapitalInput = kind === "payment" && mode === "existing" ? { ...base, kind: "convert", sourceId, asType } : kind === "dispose" ? { ...base, kind, sourceId, representation, carryingMinor: minor, proceedsBasis: basis, feeIds: feePicks.map((r) => r.id) } : { ...base, kind: "acquire", asType, sourceAccountId: accountId, categoryId, amountMinor: minor, paymentNotRecorded: notRecorded };
+      const accounts = new Set<string>([...(sourcePick ? [sourcePick.accountId] : []), ...feePicks.map((r) => r.accountId), ...(kind === "payment" && mode === "new" && accountId ? [accountId] : [])]);
       if (kind === "dispose" && representation === "asset-transfer" && transferId) {
         const counterpart = book.rows.find((r) => r.id === transferId)?.transferId;
         const where = counterpart ? await accountOfTransaction(context.transport, counterpart) : null;
@@ -119,7 +122,7 @@ export function CapitalEditor({ kind, context, categories, fresh, onSaved, onClo
                 <div className="flex items-center gap-2"><Input id="capital-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /><Button size="sm" variant="outline" className="shrink-0" onClick={() => setAmount(minorToMajorText(wholeMinor, 2))}>Whole asset</Button></div></FormField>
               <FormField label="Date of the sale" htmlFor="capital-date" help={hasSource ? "Taken from the payment you chose." : "The date of the asset's entry in Actual."}><DateInput id="capital-date" disabled={hasSource} value={date} onValueChange={setDate} /></FormField>
             </div>
-            <FormField label="Note (optional)" htmlFor="capital-notes" help="Stored on the asset's new entry in Actual. The type tag and the asset tag are added for you."><Input id="capital-notes" value={notes} onChange={(e) => { setNotes(e.target.value); setNotesAuto(false); }} /></FormField>
+            <FormField label="Note (optional)" htmlFor="capital-notes" help="Stored on the asset's new entry in Actual. The type tag and the asset tag are added for you."><Input id="capital-notes" value={notes} onChange={(e) => { setNotes(e.target.value); }} /></FormField>
           </fieldset>
         </fieldset>
         {prepared && model && <section aria-label="How this will be recorded" className="grid gap-3 rounded-xl border bg-muted/20 px-4 py-3 text-xs">
@@ -135,26 +138,43 @@ export function CapitalEditor({ kind, context, categories, fresh, onSaved, onClo
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </div>
       <DialogFooter className="mx-0 mb-0 shrink-0 items-center border-t px-6 py-3"><Button variant="outline" disabled={busy} onClick={close}>{complete || uncertain ? "Close" : "Cancel"}</Button>{prepared && !known && !uncertain && !complete && <Button variant="outline" disabled={busy} onClick={() => setPrepared(null)}>Edit details</Button>}{!complete && !uncertain && <Button disabled={busy} onClick={() => void (prepared ? confirm() : review())}>{busy ? "Working…" : known ? "Retry metadata only" : prepared ? "Confirm Actual write" : "Review"}</Button>}</DialogFooter>
-      {picker && <TransactionPickerDialog today={today} title={picker === "fees" ? "Link selling costs" : "Select the payment you received"} multiple={picker === "fees"} disabledReason={reasonOf} confirmLabel={picker === "fees" ? "Use selected costs" : "Use selected transaction"}
+      {picker && <TransactionPickerDialog today={today} title={picker === "fees" ? "Link selling costs" : "Select the payment you received"} multiple={picker === "fees"} disabledReason={reasonOf} lockedLabels={{ accounts: "Asset accounts excluded" }} confirmLabel={picker === "fees" ? "Use selected costs" : "Use selected transaction"}
       constraints={{ excludeAccountIds: assetAccounts, excludeTransfers: true, amountSign: picker === "fees" ? "negative" : "positive" }} onClose={() => setPicker(null)} onConfirm={(rows) => choose(rows)} />}
     </DialogContent></Dialog></>;
   }
-  const sourceButton = (label: string) => <FormField label={label} help={kind === "capitalize" ? "An expense already in Actual. It stays as it is; Bench links it as CapEx and adds one noncash row in the asset account." : "A transaction already in Actual. Its category, payee, amount, Notes and date never change."}><Button variant="outline" onClick={() => setPicker("source")}>{sourcePick ? pickLabel(sourcePick) : "Choose existing transaction…"}</Button></FormField>;
-  return <>{discard.discardDialog}<SidePanel title={title} description={context.asset.name} className="w-[394px]" onClose={close} footer={<div className="flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={busy} onClick={close}>{complete || uncertain ? "Close" : "Cancel"}</Button>{prepared && !known && !uncertain && !complete && <Button variant="outline" disabled={busy} onClick={() => setPrepared(null)}>Edit details</Button>}{!complete && !uncertain && <Button disabled={busy} onClick={() => void (prepared ? confirm() : review())}>{busy ? "Working…" : known ? "Retry metadata only" : prepared ? "Confirm Actual write" : "Review change"}</Button>}</div>}>
+  const converting = mode === "existing";
+  const sourceAccountName = sourcePick ? context.external.accounts.find((a) => a.id === sourcePick.accountId)?.name ?? sourcePick.accountName : "";
+  return <>{discard.discardDialog}<SidePanel title={title} description={context.asset.name} className="w-[394px]" onClose={close} footer={<div className="flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={busy} onClick={close}>{complete || uncertain ? "Close" : "Cancel"}</Button>{prepared && !known && !uncertain && !complete && <Button variant="outline" disabled={busy} onClick={() => setPrepared(null)}>Edit</Button>}{!prepared && !complete && !uncertain && <Button disabled={busy || (converting ? !sourceId : false)} onClick={() => void review()}>{busy ? "Checking…" : "Review"}</Button>}{prepared && !uncertain && !complete && <Button disabled={busy} onClick={() => void confirm()}>{busy ? "Working…" : known ? "Retry metadata only" : converting ? "Convert to transfer" : "Record payment"}</Button>}</div>}>
     <fieldset disabled={busy || !!prepared || complete || uncertain} className="grid gap-4 p-4">
-      <FormField label="Effective date" htmlFor="capital-date" help="The date of the asset adjustment. Picking a source transaction sets it to that transaction's date."><DateInput id="capital-date" value={date} onValueChange={setDate} /></FormField>
-      {kind === "acquire" ? <><FormField label="Pay from saved account" help="The account the payment leaves. Bench creates one transfer from it to the asset account."><AccountPicker ariaLabel="Acquisition payment account" value={accountId} onChange={setAccountId} accounts={context.external.accounts.filter((a) => !a.closed && !context.registry.assets.some((asset) => asset.actualAccountId === a.id))} /></FormField><FormField label="On-budget payment category" help="The category recorded on the on-budget side of the payment."><CategoryPicker ariaLabel="Acquisition payment category" value={categoryId} onChange={setCategoryId} categories={categories.filter((c) => !c.isIncome)} /></FormField><label className="flex items-start gap-2 text-xs"><Checkbox checked={notRecorded} onCheckedChange={(value) => setNotRecorded(value === true)} />This genuine payment has not already been recorded.</label></> : sourceButton("Existing categorized expense")}
-      {kind !== "capitalize" && <FormField label="Purchase amount" htmlFor="capital-amount" help="The amount paid for the asset."><Input id="capital-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></FormField>}
-      <FormField label="Adjustment Notes" htmlFor="capital-notes" help="Stored on the asset adjustment in Actual. The type tag and the asset tag are added for you."><Input id="capital-notes" value={notes} onChange={(e) => { setNotes(e.target.value); setNotesAuto(false); }} /></FormField>
+      <p className="text-xs text-muted-foreground">A payment is <span className="font-medium text-foreground">capital added to the asset&apos;s value</span>: it is recorded as a Acquisition / Purchase, counts toward what you have invested, and raises the recorded value by its amount.</p>
+      <div className="grid gap-2"><p className="text-xs font-medium text-muted-foreground">How was it paid?</p>
+        <div role="group" aria-label="How was it paid" className="grid grid-cols-2 gap-1 rounded-lg bg-muted/60 p-1">
+          {([["existing", "Already in Actual"], ["new", "Not in Actual yet"]] as const).map(([value, text]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setPrepared(null); setError(""); }} className={cn("h-8 rounded-md px-2 text-xs transition-colors", mode === value ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground")}>{text}</button>)}
+        </div>
+        <p className="text-xs text-muted-foreground">{converting ? "You entered the payment as an expense. Bench turns it into the transfer into this asset by changing only its payee." : "Bench records the payment as one transfer from the account you paid with."}</p></div>
+      <FormField label="Record it as" htmlFor="payment-type" help="Acquisition / Purchase is the purchase itself. Added Capital is money you put in afterwards, such as an improvement or an extra contribution. Both are capital: neither counts as a change in the asset's worth."><Select id="payment-type" value={asType} onValueChange={(v) => setAsType(v as PaymentType)} options={[{ value: "acquisition", label: "Acquisition / Purchase" }, { value: "added-capital", label: "Added Capital" }]} /></FormField>
+      {converting
+        ? <FormField label="The expense" help="An expense you already entered in Actual, paid out of another account. Its amount, date, category and Notes stay as they are."><Button variant="outline" className="h-auto justify-start py-1.5 text-left" onClick={() => setPicker("source")}>{sourcePick ? pickLabel(sourcePick) : "Choose the expense…"}</Button></FormField>
+        : <>
+          <FormField label="Paid from" help="The account the payment left. Bench creates one transfer from it to the asset account."><AccountPicker ariaLabel="Payment account" value={accountId} onChange={setAccountId} accounts={context.external.accounts.filter((a) => !a.closed && !context.registry.assets.some((asset) => asset.actualAccountId === a.id))} /></FormField>
+          <FormField label="Category" help="The category recorded on the on-budget side of the payment."><CategoryPicker ariaLabel="Payment category" value={categoryId} onChange={setCategoryId} categories={categories.filter((c) => !c.isIncome)} /></FormField>
+          <FormField label="Amount" htmlFor="capital-amount" help="The amount you paid."><Input id="capital-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></FormField>
+          <FormField label="Date" htmlFor="capital-date"><DateInput id="capital-date" value={date} onValueChange={setDate} /></FormField>
+          <FormField label="Notes (optional)" htmlFor="capital-notes" help="Stored on the transfer in Actual. The asset tag is added for you."><Input id="capital-notes" value={notes} onChange={(e) => { setNotes(e.target.value); }} /></FormField>
+          <label className="flex items-start gap-2 text-xs"><Checkbox checked={notRecorded} onCheckedChange={(value) => setNotRecorded(value === true)} />This payment is not already in Actual.</label>
+        </>}
     </fieldset>
-    {prepared && <div className="space-y-3 border-t p-4 text-sm"><p className="font-medium">{kind === "acquire" ? "One new cash-to-asset transfer" : "Existing cash movement stays unchanged"}</p><dl className="grid grid-cols-2 gap-2"><dt>Asset value before</dt><dd className="text-right tabular-nums">{assetMoney(prepared.beforeMinor)}</dd><dt>Asset adjustment</dt><dd className="text-right tabular-nums">{assetMoney(prepared.deltaMinor)}</dd><dt>Asset value after</dt><dd className="text-right tabular-nums">{assetMoney(prepared.afterMinor)}</dd></dl></div>}
-    {known && !complete && <p role="status" className="p-4 text-xs">Actual treatment confirmed. Only relationship metadata remains pending; retry does not repeat the financial write.</p>}
-    {complete && <p role="status" className="p-4 text-sm">Treatment saved and Actual values refreshed.</p>}
+    {prepared && <div className="space-y-3 border-t p-4 text-sm">
+      <p className="font-medium">{converting ? "This expense becomes a transfer" : "One new transfer into the asset"}</p>
+      {converting && sourcePick && <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground"><li>In {sourceAccountName}: the payee {sourcePick.payeeName ? `“${sourcePick.payeeName}”` : "(none)"} becomes the transfer to {context.asset.name}.</li><li>Amount, date, category and Notes stay as they are.</li><li>Actual adds the matching {assetMoney(prepared.deltaMinor)} entry in the asset&apos;s account.</li></ul>}
+      <dl className="grid grid-cols-2 gap-2"><dt>Asset value before</dt><dd className="text-right tabular-nums">{assetMoney(prepared.beforeMinor)}</dd><dt>Capital added</dt><dd className="text-right tabular-nums">{assetMoney(prepared.deltaMinor)}</dd><dt>Asset value after</dt><dd className="text-right font-medium tabular-nums">{assetMoney(prepared.afterMinor)}</dd></dl></div>}
+    {known && !complete && <p role="status" className="p-4 text-xs">Actual is updated. Only the relationship metadata remains pending; retry does not repeat the write.</p>}
+    {complete && <p role="status" className="p-4 text-sm">Payment recorded and Actual values refreshed.</p>}
     {uncertain && <p role="alert" className="p-4 text-sm">Refresh and inspect Actual before another action. This editor will not repeat the write.</p>}
     {error && <p role="alert" className="p-4 text-sm text-destructive">{error}</p>}
   </SidePanel>
-  {picker && <TransactionPickerDialog today={today} title={picker === "fees" ? "Link selling costs" : kind === "capitalize" ? "Select recorded expense" : "Select recorded receipt"} multiple={picker === "fees"} disabledReason={reasonOf} confirmLabel={picker === "fees" ? "Use selected costs" : "Use selected transaction"}
-    constraints={{ excludeAccountIds: assetAccounts, excludeTransfers: true, amountSign: picker === "fees" || kind === "capitalize" ? "negative" : "positive", requireCategory: picker !== "fees" && kind === "capitalize" }}
+  {picker && <TransactionPickerDialog today={today} title="Select the expense" disabledReason={reasonOf} lockedLabels={{ accounts: "Asset accounts excluded" }} confirmLabel="Use selected expense"
+    constraints={{ excludeAccountIds: assetAccounts, excludeTransfers: true, amountSign: "negative" }}
     onClose={() => setPicker(null)} onConfirm={(rows) => choose(rows)} />}
   </>;
 }

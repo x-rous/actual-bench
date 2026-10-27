@@ -16,14 +16,14 @@ it("retains known Actual success and retries metadata only; provides labelled ac
   jest.mocked(executeAction).mockResolvedValue({ transactionId: "known-row", deleted: false, noop: false });
   jest.mocked(registryRequest).mockRejectedValueOnce(new Error("Metadata unavailable")).mockResolvedValue({ assets: [testAsset()], metadata: [] });
   render(<BookActionEditor kind="create" fresh={async () => context} onClose={jest.fn()} onSaved={async () => {}} />);
-  const dialog = screen.getByRole("dialog", { name: "Add Transaction" });
+  const dialog = screen.getByRole("dialog", { name: "Value adjustment" });
   expect(await axeViolations(dialog)).toEqual([]);
-  fireEvent.change(screen.getByLabelText("Signed amount"), { target: { value: "5.00" } });
+  fireEvent.change(screen.getByLabelText("Adjustment amount"), { target: { value: "5.00" } });
   fireEvent.click(screen.getByRole("button", { name: "Review change" }));
   await screen.findByRole("button", { name: "Confirm Actual write" });
-  expect(screen.getByRole("dialog", { name: "Add Transaction" })).toBe(dialog);
-  expect(screen.getByLabelText("Signed amount")).toHaveValue("5.00");
-  expect(screen.getByLabelText("Signed amount")).toBeDisabled();
+  expect(screen.getByRole("dialog", { name: "Value adjustment" })).toBe(dialog);
+  expect(screen.getByLabelText("Adjustment amount")).toHaveValue("5.00");
+  expect(screen.getByLabelText("Adjustment amount")).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Confirm Actual write" }));
   await screen.findByText("Metadata unavailable");
   fireEvent.click(screen.getByRole("button", { name: "Retry metadata only" }));
@@ -33,7 +33,7 @@ it("retains known Actual success and retries metadata only; provides labelled ac
 it("locks uncertain writes and exposes inspection guidance without a retry button", async () => {
   jest.mocked(executeAction).mockRejectedValue(new UncertainAssetWrite());
   render(<BookActionEditor kind="set-value" fresh={async () => context} onClose={jest.fn()} onSaved={async () => {}} />);
-  fireEvent.change(screen.getByLabelText("Target owned recorded value"), { target: { value: "5" } });
+  fireEvent.change(screen.getByLabelText("New value"), { target: { value: "5" } });
   fireEvent.click(screen.getByRole("button", { name: "Review change" }));
   fireEvent.click(await screen.findByRole("button", { name: "Confirm Actual write" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm Actual write" })).not.toBeInTheDocument());
@@ -54,9 +54,9 @@ function editorProps(shared = false, protectedRow = false) {
 }
 it("opens an editable right panel directly and hides assignment for dedicated accounts", () => {
   render(<BookActionEditor kind="edit" {...editorProps()} />);
-  expect(screen.getByRole("complementary", { name: "Account transaction editor" })).toBeInTheDocument();
-  expect(screen.getByLabelText("Signed amount")).toBeEnabled();
-  expect(screen.getByLabelText("Bench classification")).toBeEnabled();
+  expect(screen.getByRole("complementary", { name: "Entry editor" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Amount")).toBeEnabled();
+  expect(screen.getByLabelText("Type")).toBeEnabled();
   expect(screen.queryByLabelText("Asset assignment")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Edit financial fields" })).not.toBeInTheDocument();
 });
@@ -64,10 +64,10 @@ it("saves shared assignment and classification together for protected rows witho
   const props = editorProps(true, true);
   jest.mocked(registryRequest).mockResolvedValue(props.registry);
   render(<BookActionEditor kind="edit" {...props} financialLock="Transfers are classify-only; amend them in Actual" />);
-  expect(screen.getByLabelText("Signed amount")).toBeDisabled();
-  expect(screen.getByLabelText("Bench classification")).toBeEnabled();
+  expect(screen.getByLabelText("Amount")).toBeDisabled();
+  expect(screen.getByLabelText("Type")).toBeEnabled();
   await selectValue("Asset assignment", "toyota");
-  await selectValue("Bench classification", "Revaluation / Appreciation");
+  await selectValue("Type", "Revaluation / Appreciation");
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await screen.findByText("Classification and assignment saved.", {}, { timeout: 4000 });
   expect(executeAction).not.toHaveBeenCalled();
@@ -76,7 +76,7 @@ it("saves shared assignment and classification together for protected rows witho
 it("prepares new shared transactions for the asset selected in the same panel", async () => {
   const props = editorProps(true);
   render(<BookActionEditor kind="create" {...props} row={undefined} />);
-  fireEvent.change(screen.getByLabelText("Signed amount"), { target: { value: "5" } });
+  fireEvent.change(screen.getByLabelText("Adjustment amount"), { target: { value: "5" } });
   await selectValue("Asset assignment", "toyota");
   fireEvent.click(screen.getByRole("button", { name: "Review change" }));
   await screen.findByRole("button", { name: "Confirm Actual write" });
@@ -97,10 +97,16 @@ it("preserves dirty fields when navigation to another row is cancelled", () => {
   const navigation = { guard: null as ((action: () => void) => void) | null };
   const navigate = jest.fn();
   render(<BookActionEditor kind="edit" {...editorProps()} registerNavigationGuard={(guard) => { navigation.guard = guard; }} />);
-  fireEvent.change(screen.getByLabelText("Signed amount"), { target: { value: "2.00" } });
+  fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2.00" } });
   act(() => navigation.guard?.(navigate));
   expect(screen.getByRole("dialog", { name: "Discard unsaved changes?" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
   expect(navigate).not.toHaveBeenCalled();
-  expect(screen.getByLabelText("Signed amount")).toHaveValue("2.00");
+  expect(screen.getByLabelText("Amount")).toHaveValue("2.00");
+});
+it("offers the payees the workspace already loaded, without waiting for a review", async () => {
+  render(<BookActionEditor kind="create" payeeOptions={[{ id: "p1", name: "Dubai Properties" }, { id: "t1", name: "Transfer : Bank", transferAccountId: "bank" }]} fresh={async () => context} onClose={jest.fn()} onSaved={async () => {}} />);
+  fireEvent.click(screen.getByLabelText("Payee"));
+  expect(await screen.findByText("Dubai Properties")).toBeInTheDocument();
+  expect(screen.queryByText("Transfer : Bank")).not.toBeInTheDocument(); // only ordinary payees
 });

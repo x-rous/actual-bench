@@ -1,4 +1,4 @@
-import { assetHashtags, attributeBook, readBook } from "./ledger";
+import { assetHashtags, attributeBook, readBook, suggestBookType } from "./ledger";
 import { testAsset, testRow } from "./testing";
 import { eligibility, ASSET_TYPES, ownershipAt } from "./models";
 import type { ActualBenchTransport } from "@/lib/actual/transport";
@@ -36,7 +36,7 @@ it("never treats missing balance, mismatched sums or dangling associations as ve
   t.getAccountBalances = async () => new Map([["vehicles", 0]]);
   expect((await readBook(t, "vehicles", "2026-10-24")).balanceMinor).toBeNull();
   const snapshot = await readBook(transport(), "vehicles", "2026-10-24");
-  expect(attributeBook(snapshot, assets, [{ actualTransactionId: "missing", actualAccountId: "vehicles", assetId: "byd", classification: null, revision: 1 }]).issues).toEqual([expect.stringContaining("Missing or moved")]);
+  expect(attributeBook(snapshot, assets, [{ actualTransactionId: "missing", actualAccountId: "vehicles", assetId: "byd", classification: null, revision: 1 }]).issues).toEqual([]); // a saved link to a transaction Actual no longer has is ignored, not an issue
 });
 it("honors all eight classes, group inheritance, budget placement and effective ownership", () => {
   for (const [key, type] of Object.entries(ASSET_TYPES)) {
@@ -62,11 +62,29 @@ it("compares full Unicode hashtag tokens rather than matching an asset tag prefi
     .toEqual(["#asset_bydé", "#asset_byd_suffix", "#asset_byd"]);
 });
 
-it("suppresses a dedicated value when contradictory tags prevent the full-account invariant", async () => {
+it("gives everything in a dedicated account to its asset, whatever hashtags the Notes carry", async () => {
   const snapshot = await readBook(transport([testRow("conflict", 100, { notes: "#asset_foreign" })]), "vehicles", "2026-10-24");
   const book = attributeBook(snapshot, [assets[0]], []);
-  expect(book.available).toBe(false); expect(book.unassignedMinor).toBe(100);
-  expect(book.issues).toContain("Dedicated account attribution conflicts require review");
+  expect(book.available).toBe(true); expect(book.unassignedMinor).toBe(0); expect(book.totals.get("byd")).toBe(100); expect(book.issues).toEqual([]);
+});
+it("ignores a saved mapping whose row now lives in another account", async () => {
+  const snapshot = await readBook(transport([testRow("moved", 100)]), "vehicles", "2026-10-24");
+  const rows = attributeBook(snapshot, [assets[0]], [{ actualTransactionId: "moved", actualAccountId: "elsewhere", assetId: "byd", classification: "disposal", revision: 1 }]).rows;
+  expect(rows[0].classification).not.toBe("disposal");
+});
+it("suggests a type from what Actual says, never from a saved choice, and leaves money out by transfer unclassified", async () => {
+  const rows = [testRow("in", 100, { transferId: "peer" }), testRow("out", -100, { transferId: "peer2" }), testRow("typed+", 100), testRow("typed-", -100), testRow("saved", 100, { transferId: "peer3" })];
+  const snapshot = await readBook(transport(rows), "vehicles", "2026-10-24");
+  const result = attributeBook(snapshot, [assets[0]], [{ actualTransactionId: "saved", actualAccountId: "vehicles", assetId: "byd", classification: "revaluation", revision: 1 }]).rows;
+  const by = (id: string) => result.find((r) => r.id === id)!;
+  expect([by("in").classification, by("in").suggested]).toEqual(["acquisition", true]);
+  expect([by("out").classification, by("out").suggested]).toEqual([null, false]);
+  expect(by("typed+").classification).toBe("revaluation"); expect(by("typed-").classification).toBe("other-adjustment");
+  expect([by("saved").classification, by("saved").suggested]).toEqual(["revaluation", false]);
+});
+it("suggests the opening balance for Actual's Starting Balance row", () => {
+  expect(suggestBookType({ amountMinor: 500, transferId: null, transferKnown: true, label: "Starting Balance" })).toBe("opening-balance");
+  expect(suggestBookType({ amountMinor: 500, transferId: null, transferKnown: false, label: "Someone" })).toBeNull(); // cannot tell a transfer from a typed value
 });
 it("reads a type from the Notes tag when Bench holds no classification, and prefers Bench's own", async () => {
   const t = transport([testRow("tagged", 100, { notes: "Wear #depreciation" }), testRow("mapped", 100, { notes: "Wear #depreciation" })]);

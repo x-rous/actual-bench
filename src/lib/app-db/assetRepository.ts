@@ -25,20 +25,20 @@ export function readRegistry(db: SqliteDatabase, budget: string): Registry {
     revision: r.revision, createdAt: r.created_at, updatedAt: r.updated_at, archivedAt: r.archived_at, incomeGenerating: r.income_generating === 1,
     ownership: db.prepare("SELECT effective_from AS effectiveFrom, ownership_bps AS ownershipBps FROM asset_ownership_periods WHERE asset_id=? ORDER BY effective_from").all(r.id),
   }));
-  type MetadataRow = BookMetadata & { role: string; capitalizedFromTransactionId: string | null; contextJson: string | null; depreciationPeriod: string | null };
+  type MetadataRow = BookMetadata & { role: string; contextJson: string | null; depreciationPeriod: string | null };
   const rows = db.prepare(`SELECT actual_transaction_id AS actualTransactionId, actual_account_id AS actualAccountId,
-    asset_id AS assetId, classification, revision, role, capitalized_from_transaction_id AS capitalizedFromTransactionId, context_json AS contextJson, depreciation_period AS depreciationPeriod
+    asset_id AS assetId, classification, revision, role, context_json AS contextJson, depreciation_period AS depreciationPeriod
     FROM asset_transaction_metadata WHERE budget_sync_id=? ORDER BY actual_transaction_id`).all<MetadataRow>(budget);
   const convert = (r: MetadataRow): BookMetadata => ({ actualTransactionId: r.actualTransactionId, actualAccountId: r.actualAccountId,
     assetId: r.assetId, classification: r.classification, revision: r.revision,
-    ...(r.capitalizedFromTransactionId ? { capitalizedFromTransactionId: r.capitalizedFromTransactionId } : {}), ...(r.contextJson ? { context: JSON.parse(r.contextJson) as AssetContext } : {}), ...(r.depreciationPeriod ? { depreciationPeriod: r.depreciationPeriod } : {}) });
+    ...(r.contextJson ? { context: JSON.parse(r.contextJson) as AssetContext } : {}), ...(r.depreciationPeriod ? { depreciationPeriod: r.depreciationPeriod } : {}) });
   const metadata = rows.filter((row) => row.role === "book").map(convert);
   const cashflows = rows.filter((row) => row.role === "cashflow").map(convert) as CashflowMetadata[];
   const depreciation = db.prepare(`SELECT s.asset_id AS assetId, s.method, s.basis_minor AS basisMinor, s.residual_minor AS residualMinor, s.start_date AS startDate,
     s.life_months AS lifeMonths, s.annual_rate_bps AS annualRateBps, s.updated_at AS updatedAt FROM asset_depreciation_settings s JOIN assets a ON a.id=s.asset_id WHERE a.budget_sync_id=? ORDER BY s.asset_id`).all<DepreciationSettings>(budget);
   const debtLinks = db.prepare(`SELECT asset_id AS assetId, debt_id AS debtId, allocation_bps AS allocationBps, effective_from AS effectiveFrom, effective_to AS effectiveTo, note
     FROM asset_debt_links WHERE budget_sync_id=? ORDER BY debt_id, asset_id, effective_from`).all<AssetDebtLink>(budget);
-  const linkRules = db.prepare(`SELECT r.id, r.asset_id AS assetId, r.name, r.match, r.conditions, r.classification, r.updated_at AS updatedAt
+  const linkRules = db.prepare(`SELECT r.id, r.asset_id AS assetId, r.name, r.match, r.conditions, r.updated_at AS updatedAt
     FROM asset_link_rules r WHERE r.budget_sync_id=? ORDER BY r.name, r.id`).all<Omit<LinkRule, "conditions"> & { conditions: string }>(budget)
     .map((r): LinkRule => ({ ...r, conditions: JSON.parse(r.conditions) }));
   return { assets, metadata, ...(linkRules.length ? { linkRules } : {}), ...(cashflows.length ? { cashflows } : {}), ...(depreciation.length ? { depreciation } : {}), ...(debtLinks.length ? { debtLinks } : {}) };
@@ -87,7 +87,7 @@ export function saveBookMetadata(db: SqliteDatabase, input: unknown): Registry {
       if (!registry.assets.some((a) => a.actualAccountId === change.actualAccountId)) throw new AppDbValidationError("No registered asset for that account");
       if (change.assetId && !registry.assets.some((a) => a.id === change.assetId && a.actualAccountId === change.actualAccountId)) throw new AppDbValidationError("Assignment must use an asset in this budget and account");
       const paired = registry.metadata.find((m) => m.actualTransactionId === change.actualTransactionId);
-      const bound = paired?.depreciationPeriod ? "depreciation" : paired?.capitalizedFromTransactionId ? "capital-expenditure" : paired?.context?.data.kind === "disposal" || [...registry.metadata, ...(registry.cashflows ?? [])].some((m) => m.context?.data.kind === "disposal" && m.context.data.bookAdjustmentTransactionId === change.actualTransactionId) ? "disposal" : null;
+      const bound = paired?.depreciationPeriod ? "depreciation" : paired?.context?.data.kind === "disposal" || [...registry.metadata, ...(registry.cashflows ?? [])].some((m) => m.context?.data.kind === "disposal" && m.context.data.bookAdjustmentTransactionId === change.actualTransactionId) ? "disposal" : null;
       if (bound && (change.remove || change.classification !== bound || (paired && change.assetId !== paired.assetId))) throw new AppDbValidationError("This row belongs to a capital/disposal treatment; inspect its linked sources first");
       if (change.remove) {
         db.prepare("DELETE FROM asset_transaction_metadata WHERE budget_sync_id=? AND actual_transaction_id=?").run(budget, change.actualTransactionId);

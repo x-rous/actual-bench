@@ -67,27 +67,26 @@ export function forecastMonths(settings: Pick<DepreciationSettings, "method" | "
   const horizon = Math.max(12, monthsBetween(settings.startDate.slice(0, 7), today.slice(0, 7)) + 13);
   return settings.method === "straight-line" ? Math.min(settings.lifeMonths ?? horizon, Math.max(horizon, 12)) : horizon;
 }
-export type PeriodState = "forecast" | "due" | "posted" | "missing" | "complete";
+export type PeriodState = "forecast" | "due" | "posted" | "complete";
 export type PeriodStatus = ScheduleRow & {
   state: PeriodState;
-  /** The Bench association for this month, if any (posted or missing). */
+  /** The Bench association for this month while its Actual row exists. */
   association: BookMetadata | null;
 };
 /**
  * Merge a forecast with the saved month associations. `actualIds` is the set of transaction IDs currently present in the
- * asset account: an association whose row is gone is "missing", never silently reposted. A month is due only once its end
+ * asset account: an association whose row is gone no longer counts as posted. A month is due only once its end
  * date has arrived (`postDate <= today`), and a month with no planned decrease is complete.
  */
 export function periodStatuses(rows: ScheduleRow[], metadata: BookMetadata[], assetId: string, actualIds: ReadonlySet<string>, today: string): PeriodStatus[] {
   const byPeriod = new Map(metadata.filter((m) => m.assetId === assetId && m.depreciationPeriod).map((m) => [m.depreciationPeriod!, m]));
   return rows.map((row) => {
-    const association = byPeriod.get(row.period) ?? null;
-    const state: PeriodState = association ? (actualIds.has(association.actualTransactionId) ? "posted" : "missing")
+    // A posted month whose Actual row is gone is simply not posted any more: Actual is the truth, so it is due (or a forecast) again.
+    const saved = byPeriod.get(row.period) ?? null;
+    const association = saved && actualIds.has(saved.actualTransactionId) ? saved : null;
+    const state: PeriodState = association ? "posted"
       : row.amountMinor === 0 ? "complete" : row.postDate <= today ? "due" : "forecast";
     return { ...row, state, association };
   });
 }
 export const isPeriod = (value: string): boolean => /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && isIsoDate(`${value}-01`);
-/** Posted months whose Actual row is gone: flagged for attention, never a reason to block other actions. */
-export const missingMonths = (metadata: BookMetadata[], assetId: string, actualIds: ReadonlySet<string>): string[] =>
-  metadata.filter((m) => m.assetId === assetId && m.depreciationPeriod && !actualIds.has(m.actualTransactionId)).map((m) => m.depreciationPeriod!).sort();

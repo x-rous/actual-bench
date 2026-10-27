@@ -27,7 +27,7 @@ it("builds a superset ActualQL clause, leaving negations to the exact check", ()
   expect(ruleWhere({ match: "any", conditions: [c("payee", "contains", "a"), c("notes", "notContains", "b")] })).toBeUndefined(); // one condition cannot be pushed down
 });
 it("rejects combinations that can never match and unreadable values", () => {
-  const parse = (conditions: unknown[]) => linkRuleInputSchema.safeParse({ name: "r", match: "all", conditions, classification: null });
+  const parse = (conditions: unknown[]) => linkRuleInputSchema.safeParse({ name: "r", match: "all", conditions });
   expect(parse([c("account", "contains", "x")]).success).toBe(false);
   expect(parse([c("amount", "equals", "abc")]).success).toBe(false);
   expect(parse([c("notes", "hasTag", "has space")]).success).toBe(false);

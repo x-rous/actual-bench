@@ -27,16 +27,19 @@ function mount(assetId?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
   render(<QueryClientProvider client={client}><AssetWorkspace assetId={assetId} /></QueryClientProvider>);
 }
+/** A KPI value whose decimals are set smaller is split across elements, so match the figure by its whole text. */
+const figure = (text: string) => (_: string, el: Element | null) => el?.tagName === "DD" && el.textContent === text;
+
 it("shows current summary cards and a compact registry; searching changes the table rather than the portfolio summary", async () => {
   mount();
-  await within(screen.getByLabelText("Asset registry summary")).findByText("185,000.00");
+  await within(screen.getByLabelText("Asset registry summary")).findAllByText(figure("185,000.00"));
   const summary = screen.getByLabelText("Asset registry summary");
   expect(screen.getByLabelText("Asset status")).toBeInTheDocument();
   expect(screen.getByLabelText("Filter asset type")).toBeInTheDocument();
   expect(screen.queryByLabelText("Sort assets")).not.toBeInTheDocument(); // columns sort instead
   expect(screen.getByText(/5,000.00 Unassigned/)).toBeInTheDocument();
   expect(screen.queryByLabelText("As of")).not.toBeInTheDocument();
-  expect(screen.queryByText("Account-backed values and account transactions")).not.toBeInTheDocument();
+  expect(screen.queryByText("Account-backed values and Asset Ledger entries")).not.toBeInTheDocument();
   expect(screen.queryByRole("table", { name: "Linked asset accounts" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Linked accounts" }));
   const accountsDialog = await screen.findByRole("dialog", { name: "Linked accounts" });
@@ -45,12 +48,12 @@ it("shows current summary cards and a compact registry; searching changes the ta
   fireEvent.change(screen.getByRole("textbox", { name: "Search assets" }), { target: { value: "BYD" } });
   expect(screen.getByRole("link", { name: "BYD Seal" })).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "Toyota Corolla" })).not.toBeInTheDocument();
-  expect(within(summary).getByText("185,000.00")).toBeInTheDocument();
+  expect(within(summary).getAllByText(figure("185,000.00")).length).toBeGreaterThan(0);
 });
 it("shows financial Overview and recent activity, with a direct Unassigned review and visible classification controls", async () => {
   mount("byd");
   const summary = await screen.findByLabelText("Asset financial summary");
-  await within(summary).findAllByText("110,000.00");
+  await within(summary).findAllByText(figure("110,000.00"));
   expect(screen.getByText("Recorded value over time")).toBeInTheDocument();
   const header = screen.getByRole("banner", { name: "Asset workspace" });
   expect(within(header).getByRole("tablist", { name: "Asset workspace" })).toBeInTheDocument();
@@ -62,7 +65,17 @@ it("shows financial Overview and recent activity, with a direct Unassigned revie
   expect(within(header).getByText(/Shared account · #asset_byd/)).toBeInTheDocument(); // sharing and the permanent tag moved to the header
   fireEvent.click(screen.getByRole("button", { name: /Review 1 unassigned row/ }));
   expect(screen.getByRole("button", { name: /Unassigned\s*1/ })).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByRole("textbox", { name: "Search account transactions" })).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Search entries" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Classify - on 2026-01-01" })).toBeInTheDocument();
-  expect(screen.getByRole("checkbox", { name: "Select all visible account transactions" })).toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "Select all visible entries" })).toBeInTheDocument();
+});
+it("opens the charts on years and keeps the choice when you switch tabs and come back", async () => {
+  mount("byd");
+  await screen.findByLabelText("Asset financial summary");
+  expect(screen.getByRole("button", { name: "Yearly" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Monthly" }));
+  fireEvent.click(screen.getByRole("tab", { name: /Asset Ledger/ }));
+  await screen.findByLabelText("Asset Ledger summary");
+  fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
+  expect(await screen.findByRole("button", { name: "Monthly" })).toHaveAttribute("aria-pressed", "true");
 });
