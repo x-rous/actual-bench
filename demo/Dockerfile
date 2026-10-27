@@ -1,4 +1,4 @@
-FROM jhonderson/actual-http-api:26.9.0
+FROM jhonderson/actual-http-api:26.10.0
 
 USER root
 
