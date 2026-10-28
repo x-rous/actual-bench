@@ -121,8 +121,8 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
       ]
     : [{ label: null, metrics: [interestImpact, payoffImpact] }];
   return (
-    <section aria-labelledby="events-heading" className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <section aria-labelledby="events-heading" className="flex flex-col gap-2 pt-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4">
         <h2 id="events-heading" className="text-sm font-semibold">Events</h2>
         <p className="text-xs text-muted-foreground">Additional payments, deposits, withdrawals, fees, rates, loan, and offset changes.</p>
         <HelpDialogButton
@@ -156,7 +156,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
           </DropdownMenu>
         </div>
       </div>
-      <div className="rounded-lg border border-border bg-card/40">
+      <div className="border-t border-border">
         {hasImpactEvents && groups.length ? (
           <div role="status" data-testid="events-impact" className={cn("flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3", rows.length && "border-b border-border")}>
             {groups.map((group) => (

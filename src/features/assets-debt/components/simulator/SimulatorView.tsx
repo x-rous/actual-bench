@@ -71,6 +71,8 @@ export type SimulatorViewProps = {
   };
   /** A loan tracked in Actual (design spec 06 §7.6): the history from the Loan Ledger and where the projection starts. */
   tracked?: (TrackedHistory & { onOpenLedger: () => void }) | null;
+  /** Where the chart's Monthly/Yearly choice is remembered in this browser (a saved loan); absent: not remembered. */
+  chartViewKey?: string;
   offsetTracking?: {
     asOfDate: string;
     onAsOfDateChange: (date: string) => void;
@@ -79,6 +81,15 @@ export type SimulatorViewProps = {
     problems: string[];
   };
 };
+
+function readChartView(key: string | undefined): "month" | "year" | null {
+  if (!key) return null;
+  try { const v = localStorage.getItem(key); return v === "month" || v === "year" ? v : null; } catch { return null; }
+}
+function writeChartView(key: string | undefined, view: "month" | "year"): void {
+  if (!key) return;
+  try { localStorage.setItem(key, view); } catch { /* storage unavailable: the choice lasts for this visit */ }
+}
 
 /** A tracked loan's calculation: the contract before the tracking start, what really happened, then the projection from today. */
 function composeTracked(projection: DebtProjection | null, contract: DebtProjection | null, tracked: TrackedHistory | null): DebtProjection | null {
@@ -91,7 +102,7 @@ function composeTracked(projection: DebtProjection | null, contract: DebtProject
   };
 }
 
-export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external, tracked = null }: SimulatorViewProps) {
+export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external, tracked = null, chartViewKey }: SimulatorViewProps) {
   const [comparingLocal, setComparing] = useState(false);
   const comparing = external ? external.comparing : comparingLocal;
   const [prompt, setPrompt] = useState<{ reason: string; candidate: SimulationState } | null>(null);
@@ -103,7 +114,11 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
   const [resetOpenLocal, setResetOpenLocal] = useState(false);
   const resetOpen = external ? external.resetOpen : resetOpenLocal;
   const setResetOpen = external ? external.onResetOpenChange : setResetOpenLocal;
-  const [chartView, setChartView] = useState<"month" | "year">("year");
+  // Monthly for loans up to 10 years; yearly for longer ones, where monthly points get too dense to read. A choice is
+  // remembered per loan in this browser.
+  const [chosenView, setChosenView] = useState<"month" | "year" | null>(() => readChartView(chartViewKey));
+  const chartView = chosenView ?? ((sim.termMonths ?? Infinity) <= 120 ? "month" : "year");
+  const setChartView = (view: "month" | "year") => { setChosenView(view); writeChartView(chartViewKey, view); };
   const unsaved = saved !== null && JSON.stringify(saved) !== JSON.stringify(sim);
   const noExtras = useMemo(() => withoutExtraTransactions(sim), [sim]);
   const hasExtras = noExtras !== sim;
@@ -202,9 +217,9 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
           <FeatureControls sim={sim} change={change} propose={propose} />
         </aside>
 
-        <main aria-label="Results" className="flex min-w-0 flex-1 flex-col gap-4 p-4" data-testid="results-region">
+        <main aria-label="Results" className="flex min-w-0 flex-1 flex-col divide-y divide-border border-l border-border" data-testid="results-region">
           {offsetTracking ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs">
               <label htmlFor="offset-observation-cutoff" className="font-medium">Actual offset history through</label>
               <DateInput id="offset-observation-cutoff" value={offsetTracking.asOfDate} onValueChange={offsetTracking.onAsOfDateChange} className="h-7 w-40 text-xs" />
               <span className="text-muted-foreground">Observed balances are authoritative through this inclusive date; simulated events resume afterward.</span>
@@ -219,10 +234,10 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
             announce={live.status === "ok" && head ? headlineSentence(head, sim.minorDigits, frequency) : null}
             details={details}
           />
-          {live.status === "incomplete" ? <p className="text-sm text-muted-foreground">Enter the {live.missing.join(", ")} to see the loan.</p> : null}
-          {live.status === "calculating" && !events ? <p className="text-sm text-muted-foreground">Calculating…</p> : null}
+          {live.status === "incomplete" ? <p className="px-4 py-3 text-sm text-muted-foreground">Enter the {live.missing.join(", ")} to see the loan.</p> : null}
+          {live.status === "calculating" && !events ? <p className="px-4 py-3 text-sm text-muted-foreground">Calculating…</p> : null}
           {(live.status === "blocked" || live.status === "error") && live.problems.length ? (
-            <div role="alert" className="rounded-md border border-destructive/40 px-3 py-2 text-sm">
+            <div role="alert" className="bg-destructive/5 px-4 py-3 text-sm">
               <p className="font-medium">This loan cannot be calculated yet.</p>
               <ul className="list-disc pl-5 text-xs">
                 {live.problems.map((p) => (
@@ -231,7 +246,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
               </ul>
             </div>
           ) : null}
-          {chart && chart.points.length ? <LoanChartPanel data={chart} view={chartView} onViewChange={setChartView} digits={sim.minorDigits} /> : null}
+          {chart && chart.points.length ? <div className="px-4 py-3"><LoanChartPanel data={chart} view={chartView} onViewChange={setChartView} digits={sim.minorDigits} /></div> : null}
           {events ? (
             <>
               <EventsSection sim={sim} current={head} baseline={impactBaseline} onEdit={setExtraEditor} onRemove={removeExtra} onEditRate={setRateEditor} onRemoveRate={removeRate}
@@ -241,12 +256,12 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
                   onToggle: (a) => change({ ...sim, assumptions: sim.assumptions.map((x) => (x.key === a.key ? { ...x, enabled: x.enabled === false } : x)) }),
                   onOpenLedger: tracked.onOpenLedger,
                 } : undefined} />
-              <div data-testid="schedule-region">
+              <div data-testid="schedule-region" className="pt-3">
                 <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates } : null} />
               </div>
             </>
           ) : null}
-          <p className="text-[11px] text-muted-foreground" data-testid="not-advice">
+          <p className="px-4 py-2 text-[11px] text-muted-foreground" data-testid="not-advice">
             {NOT_ADVICE}
           </p>
         </main>

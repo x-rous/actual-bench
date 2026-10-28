@@ -426,7 +426,7 @@ function LoanEditor({ id }: { id: string }) {
       )}
       {tab === "assets" ? <LinkedAssetsTab detail={detail} digits={sim.minorDigits} today={loanTracking.today} owedMinor={result ? result.figures.owedInActualMinor : null} /> : null}
       {tab === "calculation" ? (
-        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} title="Schedule" badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null} tracked={scheduleTracked}
+        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} chartViewKey={`assets-debt:chart-view:${id}`} title="Schedule" badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null} tracked={scheduleTracked}
           external={{ comparing, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen }} offsetTracking={trackedOffsetAccounts.length ? {
           asOfDate: offsetAsOfDate,
           onAsOfDateChange: setOffsetAsOfDate,

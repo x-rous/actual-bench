@@ -234,6 +234,15 @@ describe("Loans & Debt list", () => {
 });
 
 describe("the simulator workspace", () => {
+  it("the chart opens monthly for a loan of up to 10 years and yearly for a longer one", async () => {
+    const { unmount } = wrap(<Harness initial={shortLoan()} />);
+    const detail = await screen.findByRole("radiogroup", { name: "Chart detail" }, WAIT);
+    expect(within(detail).getByRole("radio", { name: "Monthly" })).toHaveAttribute("aria-checked", "true");
+    unmount();
+    wrap(<Harness initial={shortLoan({ termMonths: 300 })} />);
+    expect(within(await screen.findByRole("radiogroup", { name: "Chart detail" }, WAIT)).getByRole("radio", { name: "Yearly" })).toHaveAttribute("aria-checked", "true");
+  });
+
   withViewport();
   beforeEach(() => jest.clearAllMocks());
 
