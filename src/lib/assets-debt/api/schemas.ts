@@ -66,6 +66,7 @@ export const assumptionSchema = z.strictObject({
   feeTreatment: z.enum(["cash-paid", "capitalized"]).nullable(),
   offsetAccountId: id.nullable(),
   note: z.string().max(2_000).nullable(),
+  enabled: z.boolean().optional(),
 });
 
 export const debtSaveSchema = z.strictObject({
@@ -86,6 +87,11 @@ export const debtSaveSchema = z.strictObject({
   loanPaymentCategoryId: id.nullable(),
   drawCategoryId: id.nullable(),
   expectedObservationIntervalDays: z.number().int().nullable(),
+  trackingStartDueDate: isoDate.nullable().optional(),
+  openingObservationId: id.nullable().optional(),
+  principalNoteSuffix: z.string().max(100).optional(),
+  interestNoteSuffix: z.string().max(100).optional(),
+  missingGraceDays: z.number().int().min(0).max(60).optional(),
   status: z.enum(["draft", "active"]),
   /** Validated strictly by the `rd084.debt-config` parser in the service. */
   config: z.unknown(),

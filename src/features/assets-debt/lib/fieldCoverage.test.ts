@@ -130,6 +130,11 @@ const DEBT_COLUMNS: Record<keyof DebtFields | "status" | "changeSummary", Home> 
   drawCategoryId: on("I", "tracking", "Draw category"),
   expectedObservationIntervalDays: on("I", "tracking", "Remind me to check a lender statement every"),
   currentConfigJson: hidden("built from the simulation (CONFIG above)"),
+  trackingStartDueDate: on("I", "tracking", "First installment"),
+  openingObservationId: on("I", "tracking", "Use a lender statement"),
+  principalNoteSuffix: on("I", "tracking", "Added to the principal line"),
+  interestNoteSuffix: on("I", "tracking", "Added to the interest line"),
+  missingGraceDays: on("I", "tracking", "Missing after"),
   status: on("I", "pages", "Save as draft"),
   changeSummary: on("D", "pages", "What changed (optional)"),
 };
@@ -164,6 +169,7 @@ const OFFSET_COLUMNS: Record<keyof OffsetLinkInput, Home> = {
 const ASSUMPTION_COLUMNS: Record<keyof AssumptionInput, Home> = {
   id: hidden("row identity"),
   kind: on("D", "extras", "KIND_LABEL"),
+  enabled: on("D", "extras", "On"),
   effectiveFrom: on("D", "extras", "First date"),
   recurrence: on("D", "extras", "Repeats"),
   amountMinor: on("D", "extras", "Amount"),

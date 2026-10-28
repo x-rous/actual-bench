@@ -21,6 +21,7 @@ const LoanProjectionChart = dynamic(() => import("./LoanProjectionChart"), {
 
 const LABELS: Record<SeriesId, string> = {
   balance: "Loan balance",
+  actualBalance: "Balance in Actual",
   comparison: "Saved loan balance",
   offsetBalance: "Offset balance",
   interestBearing: "Interest-bearing balance",

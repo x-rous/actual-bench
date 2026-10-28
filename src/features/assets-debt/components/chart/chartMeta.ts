@@ -2,6 +2,7 @@ import type { SeriesId } from "../../lib/results";
 
 export const SERIES_META: Record<SeriesId, { label: string; color: string; dash?: string; axis: "balance" | "interest" }> = {
   balance: { label: "Loan balance", color: "var(--chart-1)", axis: "balance" },
+  actualBalance: { label: "Balance in Actual", color: "var(--chart-2)", axis: "balance" },
   comparison: { label: "Saved loan balance", color: "var(--chart-3)", dash: "8 4", axis: "balance" },
   offsetBalance: { label: "Offset balance", color: "var(--chart-2)", dash: "2 3", axis: "balance" },
   interestBearing: { label: "Interest-bearing balance", color: "var(--chart-4)", dash: "10 3 2 3", axis: "balance" },

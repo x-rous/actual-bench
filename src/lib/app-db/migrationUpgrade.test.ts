@@ -1345,7 +1345,7 @@ function v37Database(): { root: string; path: string } {
   resetAppDbForTests();
   const db = new Database(path);
   for (const trigger of V38_TRIGGERS) db.exec(`DROP TRIGGER ${trigger}`);
-  for (const table of ["debt_posting_leases", "debt_anchors", "debt_observations", "debt_transaction_links", "financial_postings", "debt_match_rules", "model_revisions", "debt_future_assumptions", "debt_offset_links", "debt_rate_periods", "debts"]) db.exec(`DROP TABLE ${table}`);
+  for (const table of ["debt_writes", "debt_payment_rules", "debt_ledger_entries", "debt_posting_leases", "debt_anchors", "debt_observations", "debt_transaction_links", "financial_postings", "debt_match_rules", "model_revisions", "debt_future_assumptions", "debt_offset_links", "debt_rate_periods", "debts"]) db.exec(`DROP TABLE ${table}`);
   db.prepare("UPDATE app_meta SET value = '37' WHERE key = 'schema_version'").run();
   // Real work already in the database.
   db.prepare("INSERT INTO saved_queries (id, name, query, is_favorite, created_at, updated_at) VALUES ('q1', 'Uncategorized', '{}', 1, 't', 't')").run();
@@ -1374,11 +1374,11 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(59);
+      expect(LATEST_SCHEMA_VERSION).toBe(60);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
-      expect(tables.filter((t) => t.startsWith("debt") || t === "model_revisions")).toEqual([...V43_TABLES, "debt_posting_leases"].sort());
+      expect(tables.filter((t) => t.startsWith("debt") || t === "model_revisions")).toEqual([...V43_TABLES, "debt_posting_leases", "debt_ledger_entries", "debt_payment_rules", "debt_writes"].sort());
       expect(objectNames(db, "index").filter((i) => V43_INDEXES.includes(i))).toEqual(V43_INDEXES);
       expect(objectNames(db, "trigger")).toEqual(expect.arrayContaining(V38_TRIGGERS));
       for (const child of ["debt_rate_periods", "debt_offset_links", "debt_future_assumptions"]) {
@@ -1388,7 +1388,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
       }
       expect(db.prepare("PRAGMA foreign_key_list(model_revisions)").all()).toEqual([]);
       const assumptionColumns = db.prepare("PRAGMA table_info(debt_future_assumptions)").all<{ name: string }>().map((c) => c.name);
-      expect(assumptionColumns).toEqual(["id", "debt_id", "assumption_kind", "effective_from", "recurrence_json", "amount_minor", "fee_treatment", "offset_account_id", "note", "created_at", "updated_at"]);
+      expect(assumptionColumns).toEqual(["id", "debt_id", "assumption_kind", "effective_from", "recurrence_json", "amount_minor", "fee_treatment", "offset_account_id", "note", "created_at", "updated_at", "enabled"]);
       expect(assumptionColumns).not.toContain("rate_decimal");
       expect(db.prepare("PRAGMA table_info(debt_offset_links)").all<{ name: string }>().map((c) => c.name)).toEqual(expect.arrayContaining(["fund_scheduled_repayments", "fund_scheduled_repayments_from", "use_actual_balance"]));
       const partial = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'idx_debts_live_liability_account'").get<{ sql: string }>();
@@ -1470,7 +1470,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
           "assumption_kind IN ('offset-balance', 'offset-deposit', 'offset-withdrawal')",
           "assumption_kind IS 'offset-balance'"
         ));
-      seed.exec(`INSERT INTO debt_future_assumptions SELECT * FROM debt_future_assumptions_latest`);
+      seed.exec(`INSERT INTO debt_future_assumptions SELECT id, debt_id, assumption_kind, effective_from, recurrence_json, amount_minor, fee_treatment, offset_account_id, note, created_at, updated_at FROM debt_future_assumptions_latest`);
       seed.exec("DROP TABLE debt_future_assumptions_latest");
       seed.exec(ASSETS_DEBT_V38_INDEX_SQL.find((sql) => sql.includes("idx_debt_future_assumptions_debt"))!);
       seed.prepare("UPDATE app_meta SET value = '38' WHERE key = 'schema_version'").run();
@@ -1910,6 +1910,33 @@ describe("v59 asset ledger simplification", () => {
         { id: "capex-book", classification: "added-capital", from_id: null }, { id: "capex-book-2", classification: "added-capital", from_id: null },
         { id: "rent", classification: null, from_id: null }, { id: "reval", classification: "revaluation", from_id: null }, { id: "sale", classification: "disposal-proceeds", from_id: null },
       ]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
+describe("v60 loan tracking", () => {
+  afterEach(() => resetAppDbForTests());
+  it("adds the tracking columns and tables, drops extra payments recorded from Actual and carries an account-and-payee rule over", () => {
+    const root = mkdtempSync(join(tmpdir(), "actual-bench-upgrade-v60-"));
+    try {
+      const db = getAppDb(join(root, "metadata.sqlite"));
+      db.prepare(`INSERT INTO debts (id,budget_sync_id,name,debt_type,behavior_class,currency,currency_minor_digits,liability_account_id,sign_convention,execution_strategy,drift_tolerance_minor,lender_charge_grace_days,current_revision,current_config_json,status,created_at,updated_at)
+        VALUES ('d','b','Home','mortgage','term-loan','USD',2,'loan','negative-is-debt','bench-daily',100,3,1,'{}','active','t','t')`).run();
+      const assumption = (id: string, note: string | null) => db.prepare("INSERT INTO debt_future_assumptions (id,debt_id,assumption_kind,effective_from,amount_minor,note,created_at,updated_at) VALUES (?,'d','extra-repayment','2025-06-20',2000000,?,'t','t')").run(id, note);
+      assumption("from-actual", "Extra payment recorded from Actual"); assumption("planned", "Bonus");
+      const rule = (id: string, items: object[]) => db.prepare("INSERT INTO debt_match_rules (id,debt_id,purpose,rule_format_version,conditions_json,actions_json,enabled,created_at,updated_at) VALUES (?,'d','repayment',1,?,'{}',1,'t','t')").run(id, JSON.stringify({ items }));
+      rule("r1", [{ kind: "source-account", accountId: "checking" }, { kind: "payee", operator: "exact", payeeId: "bank" }, { kind: "amount", operator: "approximately" }]);
+      db.prepare("UPDATE app_meta SET value='59' WHERE key='schema_version'").run();
+      expect(runMigrations(db).schemaVersion).toBe(60);
+      runMigrations(db); // idempotent
+      const debt = db.prepare("SELECT tracking_start_due_date AS start, principal_note_suffix AS p, interest_note_suffix AS i, missing_grace_days AS g FROM debts").get();
+      expect(debt).toEqual({ start: null, p: "", i: "#interest", g: 5 });
+      expect(db.prepare("SELECT id, enabled FROM debt_future_assumptions").all()).toEqual([{ id: "planned", enabled: 1 }]);
+      const rules = db.prepare("SELECT name, match, conditions FROM debt_payment_rules").all<{ name: string; match: string; conditions: string }>();
+      expect(rules).toHaveLength(1);
+      expect(JSON.parse(rules[0].conditions)).toEqual([{ field: "account", operator: "equals", value: "checking" }, { field: "payee", operator: "equals", value: "bank" }]);
+      expect(() => db.prepare("INSERT INTO debt_writes (id,debt_id,budget_sync_id,kind,target_ids_json,before_json,after_json,status,started_at) VALUES (?,'d','b','split','[]','{}','{}','applying','t')").run("w2")).not.toThrow();
+      expect(() => db.prepare("INSERT INTO debt_writes (id,debt_id,budget_sync_id,kind,target_ids_json,before_json,after_json,status,started_at) VALUES (?,'d','b','split','[]','{}','{}','applying','t')").run("w3")).toThrow(/UNIQUE/);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

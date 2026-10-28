@@ -2,6 +2,7 @@
 
 import { ChevronDown, Plus } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { formatAmount, fractionToPercent } from "../../lib/money";
@@ -57,17 +58,43 @@ const IMPACT_TONE = {
   neutral: "bg-muted text-muted-foreground",
 } as const;
 
+/** The Loan Ledger's events on a loan tracked in Actual: what happened, read-only here (design spec 06 §5.7). */
+export type LedgerEventRow = { date: string; kind: "extra-principal" | "draw" | "fee" | "interest-charged" | "adjustment"; amountMinor: number; rowId: string; payee: string | null; notes: string | null };
+
+export type TrackedEvents = {
+  startDate: string;
+  today: string;
+  ledgerEvents: readonly LedgerEventRow[];
+  /** What happened, against the contract without it; the switched-on what-ifs, against the history plus the contract. */
+  fromActual: [Headline | null, Headline | null];
+  whatIfs: [Headline | null, Headline | null];
+  onToggle: (assumption: SimAssumption) => void;
+  onOpenLedger: () => void;
+};
+
+const LEDGER_LABEL: Record<LedgerEventRow["kind"], string> = { "extra-principal": "Extra payment", draw: "Redraw / Withdraw", fee: "Fee", "interest-charged": "Interest charged", adjustment: "Adjustment" };
+
 type EventRow =
   | { key: string; date: string; kind: "assumption"; assumption: SimAssumption }
-  | { key: string; date: string; kind: "rate-change"; rate: SimRate; previousRate: string | null };
+  | { key: string; date: string; kind: "rate-change"; rate: SimRate; previousRate: string | null }
+  | { key: string; date: string; kind: "ledger"; ledger: LedgerEventRow };
 
-function eventRows(sim: SimulationState): EventRow[] {
+function eventRows(sim: SimulationState, tracked?: TrackedEvents): EventRow[] {
   const transactions = listedExtraTransactions(sim);
   const rates = [...sim.rates].sort((a, b) => a.accrualEffectiveFrom.localeCompare(b.accrualEffectiveFrom));
   return [
     ...transactions.map((assumption): EventRow => ({ key: `assumption:${assumption.key}`, date: assumption.effectiveFrom, kind: "assumption", assumption })),
     ...rates.slice(1).map((rate, index): EventRow => ({ key: `rate:${rate.key}`, date: rate.accrualEffectiveFrom, kind: "rate-change", rate, previousRate: rates[index]?.annualRateDecimal ?? null })),
+    ...(tracked?.ledgerEvents ?? []).filter((l) => l.kind !== "adjustment").map((ledger): EventRow => ({ key: `ledger:${ledger.rowId}`, date: ledger.date, kind: "ledger", ledger })),
   ].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === "rate-change" ? -1 : b.kind === "rate-change" ? 1 : a.key.localeCompare(b.key)));
+}
+
+/** Where a row of the Events list comes from on a tracked loan. */
+function sourceOf(row: EventRow, tracked: TrackedEvents): "From Actual" | "What-if" | "Contract" | "Before tracking" | "Passed" {
+  if (row.kind === "ledger") return "From Actual";
+  if (row.kind === "rate-change") return "Contract";
+  if (row.date < tracked.startDate) return "Before tracking";
+  return row.date > tracked.today ? "What-if" : "Passed";
 }
 
 function rateDetails(rate: SimRate): string {
@@ -81,11 +108,17 @@ function rateDetails(rate: SimRate): string {
   return [repayment, rate.paymentEffectiveFrom ? `Repayment changes ${rate.paymentEffectiveFrom}` : null, rate.source, rate.note].filter(Boolean).join(" · ");
 }
 
-export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEditRate, onRemoveRate }: { sim: SimulationState; current: Headline | null; baseline: Headline | null; onEdit: (editor: ExtraEditor) => void; onRemove: (assumption: SimAssumption) => void; onEditRate: (editor: "new" | SimRate) => void; onRemoveRate: (rate: SimRate) => void }) {
+export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEditRate, onRemoveRate, tracked }: { sim: SimulationState; current: Headline | null; baseline: Headline | null; onEdit: (editor: ExtraEditor) => void; onRemove: (assumption: SimAssumption) => void; onEditRate: (editor: "new" | SimRate) => void; onRemoveRate: (rate: SimRate) => void; /** A loan tracked in Actual. */ tracked?: TrackedEvents }) {
   const transactions = listedExtraTransactions(sim);
-  const rows = eventRows(sim);
-  const hasImpactEvents = transactions.length > 0;
+  const rows = eventRows(sim, tracked);
+  const hasImpactEvents = transactions.length > 0 || !!tracked?.ledgerEvents.some((l) => l.kind !== "adjustment");
   const [interestImpact, payoffImpact] = impactMetrics(current, baseline, sim.minorDigits);
+  const groups: { label: string | null; metrics: [ImpactMetric, ImpactMetric] }[] = tracked
+    ? [
+        ...(tracked.ledgerEvents.some((l) => l.kind !== "adjustment") ? [{ label: "From Actual", metrics: impactMetrics(tracked.fromActual[0], tracked.fromActual[1], sim.minorDigits) }] : []),
+        ...(transactions.some((a) => a.effectiveFrom > tracked.today && a.enabled !== false) ? [{ label: "What-ifs", metrics: impactMetrics(tracked.whatIfs[0], tracked.whatIfs[1], sim.minorDigits) }] : []),
+      ]
+    : [{ label: null, metrics: [interestImpact, payoffImpact] }];
   return (
     <section aria-labelledby="events-heading" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -123,12 +156,17 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
         </div>
       </div>
       <div className="rounded-lg border border-border bg-card/40">
-        {hasImpactEvents ? (
-          <div role="status" data-testid="events-impact" className={cn("flex flex-wrap items-center gap-2 px-4 py-3", rows.length && "border-b border-border")}>
-            {[interestImpact, payoffImpact].map((m) => (
-              <span key={m.label} className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs", IMPACT_TONE[toneOf(m.label)])}>
-                <span>{m.label}</span>
-                <span className="font-semibold tabular-nums">{m.value}</span>
+        {hasImpactEvents && groups.length ? (
+          <div role="status" data-testid="events-impact" className={cn("flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3", rows.length && "border-b border-border")}>
+            {groups.map((group) => (
+              <span key={group.label ?? "impact"} className="inline-flex flex-wrap items-center gap-2">
+                {group.label ? <span className="text-xs font-semibold">{group.label}</span> : null}
+                {group.metrics.map((m) => (
+                  <span key={m.label} className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs", IMPACT_TONE[toneOf(m.label)])}>
+                    <span>{m.label}</span>
+                    <span className="font-semibold tabular-nums">{m.value}</span>
+                  </span>
+                ))}
               </span>
             ))}
           </div>
@@ -140,32 +178,57 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
             <table aria-label="Events" className="w-full min-w-[720px] text-left text-xs">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
+                  {tracked ? <th className="w-14 px-4 py-2 text-center font-medium">On</th> : null}
                   <th className="px-4 py-2 font-medium">Date</th>
                   <th className="px-3 py-2 font-medium">Event type</th>
                   <th className="px-3 py-2 text-right font-medium">Value</th>
+                  {tracked ? <th className="px-3 py-2 font-medium">Source</th> : null}
                   <th className="px-3 py-2 font-medium">Details</th>
                   <th className="px-4 py-2 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {rows.map((row) => row.kind === "assumption" ? (
-                    <tr key={row.key}>
+                {rows.map((row) => {
+                  const source = tracked ? sourceOf(row, tracked) : null;
+                  const sourceCell = tracked ? <td className="px-3 py-2.5">{source === "From Actual" ? <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[11px]">From Actual</span> : <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">{source === "Passed" ? "What-if" : source}</span>}</td> : null;
+                  if (row.kind === "ledger") return (
+                    <tr key={row.key} className="bg-muted/20">
+                      {tracked ? <td className="px-4 py-2.5 text-center text-muted-foreground" title="From Actual: always included">-</td> : null}
+                      <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
+                      <td className="px-3 py-2.5 font-medium">{LEDGER_LABEL[row.ledger.kind]}</td>
+                      <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.ledger.amountMinor, sim.minorDigits)}</td>
+                      {sourceCell}
+                      <td className="px-3 py-2.5 text-muted-foreground">{[row.ledger.payee, row.ledger.notes].filter(Boolean).join(" · ") || "In the Loan Ledger"}</td>
+                      <td className="px-4 py-2.5"><div className="flex justify-end"><Button type="button" variant="ghost" size="sm" onClick={tracked?.onOpenLedger}>Open in Loan Ledger</Button></div></td>
+                    </tr>
+                  );
+                  if (row.kind === "assumption") {
+                    const passed = source === "Passed";
+                    const off = row.assumption.enabled === false;
+                    return (
+                    <tr key={row.key} className={cn((passed || off) && "text-muted-foreground")}>
+                      {tracked ? <td className="px-4 py-2.5 text-center">{source === "What-if" ? <Switch aria-label={`Include ${KIND_LABEL[row.assumption.kind]} on ${row.date} in the projection`} checked={!off} onCheckedChange={() => tracked.onToggle(row.assumption)} /> : <span className="text-muted-foreground">-</span>}</td> : null}
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">{KIND_LABEL[row.assumption.kind]}</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.assumption.amountMinor, sim.minorDigits)}</td>
-                      <td className="px-3 py-2.5 text-muted-foreground">{assumptionDetails(row.assumption)}{row.assumption.actualLinked ? <span className="block">Recorded from Actual · manage in Sync Repayments</span> : null}</td>
+                      {sourceCell}
+                      <td className="px-3 py-2.5 text-muted-foreground">{passed ? "Passed, not in the projection: what happened is in the Loan Ledger" : off ? `Off: not in the projection · ${assumptionDetails(row.assumption)}` : assumptionDetails(row.assumption)}</td>
                       <td className="px-4 py-2.5">
                         <div className="flex justify-end gap-1">
-                          <Button type="button" variant="ghost" size="sm" disabled={row.assumption.actualLinked} onClick={() => onEdit(row.assumption)} aria-label={`Edit ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Edit</Button>
-                          <Button type="button" variant="ghost" size="sm" disabled={row.assumption.actualLinked} onClick={() => onRemove(row.assumption)} aria-label={`Remove ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Remove</Button>
+                          {!passed ? <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(row.assumption)} aria-label={`Edit ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Edit</Button> : null}
+                          <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(row.assumption)} aria-label={`Remove ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Remove</Button>
                         </div>
                       </td>
                     </tr>
-                  ) : (
+                    );
+                  }
+                  return (
                     <tr key={row.key}>
+                      {tracked ? <td className="px-4 py-2.5 text-center text-muted-foreground">-</td> : null}
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">Rate change</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{fractionToPercent(row.previousRate)}% → {fractionToPercent(row.rate.annualRateDecimal)}%</td>
+                      {sourceCell}
                       <td className="px-3 py-2.5 text-muted-foreground">{rateDetails(row.rate)}</td>
                       <td className="px-4 py-2.5">
                         <div className="flex justify-end gap-1">
@@ -174,7 +237,8 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -254,3 +254,33 @@ describe.each(HARNESS_MODES)("transaction structure operations (%s)", (mode) => 
     expect(fake.writes().length).toBe(after);
   });
 });
+
+describe.each(HARNESS_MODES)("adjusting a split that was a transfer (%s)", (mode) => {
+  it("writes each line with its own payee and category, so no line can become a transfer", async () => {
+    const fake = createFakeActual({ accounts: ACCOUNTS, payees: [{ id: "p-lender", name: "Home Lender" }] });
+    const t = transportFor(mode, fake, mockApiRequest);
+    const toLoan = fake.transferPayeeId("mortgage");
+    const id = fake.seed({ account: "checking", date: "2026-03-01", amount: -830000, payee: "p-lender" });
+    const split = await t.restructureTransactionAsSplit!({ accountId: "checking", transactionId: id, expected: pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: "p-lender" }),
+      children: [{ amount: -700000, payeeId: toLoan, categoryId: "cat-loan", notes: "Principal" }, { amount: -130000, payeeId: null, categoryId: "cat-int", notes: "Interest" }] });
+    const [principal, interest] = split.children;
+    // The parent of a split that was a transfer keeps the loan's transfer payee.
+    // As stored, not as an edit: an edit with a transfer payee would make the line a transfer.
+    (fake.row(id) as Record<string, unknown>).payee = toLoan;
+    const counterpart = fake.accountRows("mortgage")[0];
+    const preParent = pre({ id, accountId: "checking", date: "2026-03-01", amount: -830000, payeeId: toLoan, isParent: true, childCount: 2 });
+    const child = (c: typeof principal, payeeId: string | null) => pre({ id: c.id, accountId: "checking", date: "2026-03-01", amount: c.amount, payeeId, categoryId: c.categoryId, notes: c.notes, transferId: c.transferId, isChild: true, parentId: id });
+    const writesBefore = fake.writes().length;
+    await t.adjustSplitAmounts!({
+      parent: preParent, children: [child(principal, toLoan), child(interest, null)],
+      counterpart: pre({ id: counterpart.id as string, accountId: "mortgage", date: "2026-03-01", amount: 700000, payeeId: counterpart.payee as string, notes: (counterpart.notes as string | null) ?? null, categoryId: (counterpart.category as string | null) ?? null, transferId: principal.id }),
+      amounts: [{ id: principal.id, amount: -699900 }, { id: interest.id, amount: -130100 }],
+    });
+    // Each line is written on its own with its own payee and category named, so Actual cannot hand it the parent's.
+    const updates = fake.writes().slice(writesBefore).filter((w) => w.op === "update" && (w.id === principal.id || w.id === interest.id || w.id === id));
+    expect(updates.map((w) => [w.id, w.fields])).toEqual([
+      [principal.id, { amount: -699900, payee: toLoan, category: "cat-loan" }],
+      [interest.id, { amount: -130100, payee: null, category: "cat-int" }],
+    ]);
+  });
+});

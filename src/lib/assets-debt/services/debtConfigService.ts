@@ -193,6 +193,12 @@ export function validateDebtSave(
   if (input.liabilityAccountId && input.liabilityAccountId === input.paymentAccountId) add("paymentAccountId", "must differ from the liability account");
   const otherLiabilities = new Set(listLiveLiabilityAccountIds(db, input.budgetSyncId, existingDebtId));
   if (input.liabilityAccountId && otherLiabilities.has(input.liabilityAccountId)) add("liabilityAccountId", "is already the liability account of another debt");
+  // Tracking in Actual (owner decision 2026-10-28): loans live in off-budget accounts only. A loan used as a calculator is not restricted.
+  if (input.trackingStartDueDate) {
+    if (!input.liabilityAccountId) add("liabilityAccountId", "is required to track the loan in Actual");
+    else if (liability && !liability.offBudget) add("liabilityAccountId", "must be an off-budget account: loans are tracked in an off-budget account. Create one in Accounts, then choose it here");
+    if (!isIsoDate(input.trackingStartDueDate)) add("trackingStartDueDate", "must be a date");
+  }
 
   // Budget-boundary categories (FR-011a): existing categories only, required only when crossing.
   const checkCategory = (id: string | null, field: string) => {
@@ -356,6 +362,11 @@ export function validateDebtSave(
         drawCategoryId: input.drawCategoryId || null,
         expectedObservationIntervalDays: input.expectedObservationIntervalDays ?? null,
         currentConfigJson: JSON.stringify(config),
+        ...(input.trackingStartDueDate !== undefined ? { trackingStartDueDate: input.trackingStartDueDate } : {}),
+        ...(input.openingObservationId !== undefined ? { openingObservationId: input.openingObservationId } : {}),
+        ...(input.principalNoteSuffix !== undefined ? { principalNoteSuffix: input.principalNoteSuffix } : {}),
+        ...(input.interestNoteSuffix !== undefined ? { interestNoteSuffix: input.interestNoteSuffix } : {}),
+        ...(input.missingGraceDays !== undefined ? { missingGraceDays: input.missingGraceDays } : {}),
       },
       config,
       rates,

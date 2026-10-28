@@ -632,6 +632,15 @@ export type DebtRecord = {
   loanPaymentCategoryId: string | null;
   drawCategoryId: string | null;
   expectedObservationIntervalDays: number | null;
+  /** The first tracked installment's due date; null while the loan is not tracked in Actual. */
+  trackingStartDueDate: string | null;
+  /** A lender statement used as the opening position instead of the calculation. */
+  openingObservationId: string | null;
+  /** Text added to the Notes of a split's principal and interest lines (after the payment's own Notes). */
+  principalNoteSuffix: string;
+  interestNoteSuffix: string;
+  /** Days after a due date before an installment without a payment counts as missing. */
+  missingGraceDays: number;
   autoApplyEnabled: boolean;
   driftAcceptedRevision: number | null;
   driftAcceptedFingerprint: string | null;
@@ -700,6 +709,8 @@ export type DebtAssumptionRecord = {
   feeTreatment: StoredEnum<FeeTreatmentValue> | null;
   offsetAccountId: string | null;
   note: string | null;
+  /** False for a what-if the user switched off: kept, but left out of the projection. */
+  enabled: boolean;
   createdAt: string;
   updatedAt: string;
 };

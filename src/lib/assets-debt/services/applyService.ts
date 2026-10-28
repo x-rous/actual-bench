@@ -93,12 +93,19 @@ async function read(transport: ActualBenchTransport, accountId: string, from: st
 
 export async function executeApprovedPosting(ticket: ApplyTicketView, ctx: ExecutorContext): Promise<ExecutorOutcome> {
   assertApproved(ticket);
-  const output = ticket.posting.output;
+  return executeOutput(ticket.posting.output, ctx, ticket.mode);
+}
+
+/**
+ * Write one output document to Actual and verify it. Callers own the user's explicit action and the journal entry that
+ * comes before it (loan tracking records the write in `debt_writes` first).
+ */
+export async function executeOutput(output: PostingOutputSnapshot, ctx: ExecutorContext, mode: "apply" | "complete-link" = "apply"): Promise<ExecutorOutcome> {
   const now = ctx.now ?? (() => new Date().toISOString());
   switch (output.kind) {
     case "create": return applyCreate(output, ctx, now);
     case "restructure": return applyRestructure(output, ctx, now);
-    case "link": return ticket.mode === "complete-link" ? completeLink(output, ctx, now) : applyLink(output, ctx, now);
+    case "link": return mode === "complete-link" ? completeLink(output, ctx, now) : applyLink(output, ctx, now);
     case "claim": return applyClaim(output, ctx, now);
     case "restore-split": return applyRestoreSplit(output, ctx, now);
     case "unlink": return applyUnlink(output, ctx, now);

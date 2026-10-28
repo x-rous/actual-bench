@@ -39,6 +39,7 @@ type AssumptionRow = {
   fee_treatment: string | null;
   offset_account_id: string | null;
   note: string | null;
+  enabled: number;
   created_at: string;
   updated_at: string;
 };
@@ -53,6 +54,8 @@ export type AssumptionInput = {
   feeTreatment: FeeTreatmentValue | null;
   offsetAccountId: string | null;
   note: string | null;
+  /** A what-if switched off stays saved but is left out of the projection. Omitted: on. */
+  enabled?: boolean;
 };
 
 function readRecurrence(raw: string | null): DebtAssumptionRecord["recurrence"] {
@@ -79,6 +82,7 @@ function rowToRecord(row: AssumptionRow): DebtAssumptionRecord {
     feeTreatment: row.fee_treatment === null ? null : readStoredEnum(FEE_TREATMENT_VALUES, row.fee_treatment),
     offsetAccountId: row.offset_account_id,
     note: row.note,
+    enabled: row.enabled !== 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -101,7 +105,7 @@ function columns(row: AssumptionInput) {
   const offsetAccountId = offsetKind ? requireText(row.offsetAccountId, "offsetAccountId") : null;
   if (!offsetKind && row.offsetAccountId) throw new AppDbValidationError("Only an offset assumption names an account");
   const minimum = kind === "extra-repayment" || kind === "draw" || kind === "fee" || kind === "offset-deposit" || kind === "offset-withdrawal" ? 1 : 0;
-  return [kind, from, recurrence, requireInteger(row.amountMinor, "amountMinor", minimum), feeTreatment, offsetAccountId, optionalText(row.note, "note")] as const;
+  return [kind, from, recurrence, requireInteger(row.amountMinor, "amountMinor", minimum), feeTreatment, offsetAccountId, optionalText(row.note, "note"), row.enabled === false ? 0 : 1] as const;
 }
 
 export function listDebtAssumptions(db: SqliteDatabase, debtId: string): DebtAssumptionRecord[] {
@@ -119,15 +123,15 @@ export function replaceDebtAssumptions(db: SqliteDatabase, debtId: string, rows:
         db
           .prepare(
             `INSERT INTO debt_future_assumptions (id, debt_id, assumption_kind, effective_from, recurrence_json,
-               amount_minor, fee_treatment, offset_account_id, note, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+               amount_minor, fee_treatment, offset_account_id, note, enabled, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(id, debtId, ...r.cols, now, now),
       update: (id, r) =>
         db
           .prepare(
             `UPDATE debt_future_assumptions SET assumption_kind = ?, effective_from = ?, recurrence_json = ?,
-               amount_minor = ?, fee_treatment = ?, offset_account_id = ?, note = ?, updated_at = ?
+               amount_minor = ?, fee_treatment = ?, offset_account_id = ?, note = ?, enabled = ?, updated_at = ?
              WHERE id = ? AND debt_id = ?`
           )
           .run(...r.cols, now, id, debtId),

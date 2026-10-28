@@ -27,7 +27,7 @@ function input(): DebtRevisionInput {
     id: "d1", budgetSyncId: "b1", name: "Home loan", debtType: "mortgage", behaviorClass: "term-loan", currency: "AUD", currencyMinorDigits: 2,
     liabilityAccountId: "acc-l", paymentAccountId: "acc-p", signConvention: "negative-is-debt", lenderPattern: "separate-interest",
     executionStrategy: "bench-periodic", driftToleranceMinor: 100, lenderChargeGraceDays: 3, onboardingDate: null, loanPaymentCategoryId: "cat-loan",
-    drawCategoryId: null, expectedObservationIntervalDays: 30, autoApplyEnabled: false, driftAcceptedRevision: null, driftAcceptedFingerprint: null, currentRevision: 1,
+    drawCategoryId: null, expectedObservationIntervalDays: 30, trackingStartDueDate: null, openingObservationId: null, principalNoteSuffix: "", interestNoteSuffix: "#interest", missingGraceDays: 5, autoApplyEnabled: false, driftAcceptedRevision: null, driftAcceptedFingerprint: null, currentRevision: 1,
     currentConfigJson: "{}", status: "active", createdAt: T, updatedAt: T, archivedAt: null, unknownValues: [],
   };
   const rates: DebtRatePeriodRecord[] = [
@@ -35,7 +35,7 @@ function input(): DebtRevisionInput {
     { id: "r1", debtId: "d1", announcedAt: null, accrualEffectiveFrom: "2024-01-01", annualRateDecimal: "0.0612", paymentRecalcPolicy: null, paymentEffectiveFrom: null, rateCapDecimal: null, rateFloorDecimal: null, paymentCap: null, source: "Contract", note: "first", createdAt: T, updatedAt: T },
   ];
   const offsets: DebtOffsetLinkRecord[] = [{ id: "o1", debtId: "d1", actualAccountId: "acc-o", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10000, balanceBasis: "total", capMinor: null, createdAt: T, updatedAt: T }];
-  const assumptions: DebtAssumptionRecord[] = [{ id: "a1", debtId: "d1", assumptionKind: "fee", effectiveFrom: "2025-06-01", recurrence: null, amountMinor: 3000, feeTreatment: "capitalized", offsetAccountId: null, note: "annual fee", createdAt: T, updatedAt: T }];
+  const assumptions: DebtAssumptionRecord[] = [{ id: "a1", debtId: "d1", assumptionKind: "fee", effectiveFrom: "2025-06-01", recurrence: null, amountMinor: 3000, feeTreatment: "capitalized", offsetAccountId: null, note: "annual fee", enabled: true, createdAt: T, updatedAt: T }];
   return { debt, config: config(), rates, offsets, assumptions };
 }
 
@@ -124,5 +124,13 @@ describe("rd084.debt-revision v2 snapshot", () => {
     const edited = structuredClone(base);
     (edited.debt as unknown as Record<string, unknown>).futurePostingPolicy = "strict";
     expect(hash(edited)).not.toBe(hash(base));
+  });
+});
+
+describe("loan tracking settings", () => {
+  it("never change the revision snapshot", () => {
+    const base = input();
+    const tracked = { ...base, debt: { ...base.debt, trackingStartDueDate: "2026-01-01", openingObservationId: "obs", principalNoteSuffix: "#p", interestNoteSuffix: "#i", missingGraceDays: 9 } };
+    expect(buildDebtRevisionSnapshot(tracked)).toEqual(buildDebtRevisionSnapshot(base));
   });
 });
