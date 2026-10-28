@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { CircleHelp, Plus } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FEATURES } from "@/lib/features/catalogue";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { PillGroup } from "@/components/ui/pill-group";
@@ -16,6 +17,7 @@ import { listDebts, listNeedsAttention } from "../lib/debtsApi";
 import { LOANS_PATH, NEW_LOAN_PATH } from "../lib/routes";
 import { useActiveBudgetSyncId } from "../lib/useAccountDirectory";
 import { DebtList, LoansSummary } from "./DebtList";
+import { LoanGuide, type LoanGuideSection } from "./guide/LoanGuide";
 import { purgeLegacyLoanStorage } from "../lib/loanStorage";
 
 /**
@@ -66,15 +68,17 @@ export function DebtListView() {
   const query = search.trim().toLocaleLowerCase();
   const shown = (debts.data ?? []).filter((d) => (!onlyAttention || attentionById[d.id]) && (!query || d.name.toLocaleLowerCase().includes(query)));
   const setFilter = (on: boolean) => router.replace(on ? `${LOANS_PATH}?filter=attention` : LOANS_PATH);
+  const [guide, setGuide] = useState<LoanGuideSection | null>(null);
   return (
     <AssetsDebtShell
       title="Loans & Debt"
       scrollManaged
-      actions={
+      actions={<>
+        <Button type="button" variant="outline" size="sm" onClick={() => setGuide("start")}><CircleHelp className="size-3.5" aria-hidden />Guide</Button>
         <Link href={NEW_LOAN_PATH} className={buttonVariants({ size: "sm" })}>
           <Plus className="mr-1 h-3.5 w-3.5" aria-hidden /> New loan
         </Link>
-      }
+      </>}
     >
       {!budgetSyncId ? (
         <NoConnection />
@@ -97,11 +101,12 @@ export function DebtListView() {
           </div>
           {debts.isLoading ? <p className="px-4 py-3 text-xs text-muted-foreground">Loading…</p> : null}
           {debts.isError ? <p role="alert" className="px-4 py-3 text-xs text-destructive">{(debts.error as Error).message}</p> : null}
-          {debts.data && debts.data.length === 0 ? <p className="px-4 py-3 text-sm text-muted-foreground">No loans yet. Add one to start.</p> : null}
+          {debts.data && debts.data.length === 0 ? <p className="px-4 py-3 text-sm text-muted-foreground">No loans yet. Add one to start: until it is saved it works as a loan calculator. <button type="button" className="font-medium text-primary hover:underline" onClick={() => setGuide("start")}>How loans work</button></p> : null}
           {debts.data && debts.data.length > 0 && shown.length === 0 ? <p className="px-3 py-6 text-center text-sm text-muted-foreground">{query ? "No loans match these filters." : "Nothing needs your attention."}</p> : null}
           {shown.length > 0 ? <DebtList debts={shown} attention={attentionById} hrefs={hrefById} /> : null}
         </div>
       )}
+      {guide ? <LoanGuide section={guide} onSection={setGuide} onClose={() => setGuide(null)} docsUrl={FEATURES.find((f) => f.id === "loans")?.docsUrl} /> : null}
     </AssetsDebtShell>
   );
 }

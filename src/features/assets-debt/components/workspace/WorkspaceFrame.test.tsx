@@ -30,6 +30,13 @@ describe("Loan workspace frame", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
+  it("the Guide opens on the section for the tab you are on", () => {
+    render(<WorkspaceFrame title="HSBC" state="Saved" tab="ledger" onTab={jest.fn()} dirty={false}><p>body</p></WorkspaceFrame>);
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    expect(screen.getByRole("dialog", { name: "Loans & Debt guide" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Loan Ledger" })).toBeInTheDocument();
+  });
+
   it("old and new links open the tab that holds their content", () => {
     expect(workspaceTabFor("simulator", "activity")).toBe("calculation");
     expect(workspaceTabFor("matching", "activity")).toBe("setup");
