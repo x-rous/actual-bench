@@ -67,7 +67,7 @@ const CONFIG: Record<Paths<DebtConfigV1, "config">, Home> = {
   "config.terms.firstInterestChargeDate": on("A", "drawer", "First interest charge"),
   "config.profile.amortization": on("A", "drawer", "Amortization"),
   "config.profile.rateQuote": on("A", "drawer", "Rate quoted as"),
-  "config.profile.dayCount": on("A", "drawer", "Day count"),
+  "config.profile.dayCount": on("P", "primary", "Day count"),
   "config.profile.accrual": on("A", "drawer", "Interest accrues"),
   "config.profile.chargeFrequency": on("A", "drawer", "Interest is charged"),
   "config.profile.chargeDay": on("A", "drawer", "Charge day of the month"),

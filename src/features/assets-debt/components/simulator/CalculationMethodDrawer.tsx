@@ -71,7 +71,8 @@ export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState
       <div className="min-w-0">
         <span className="block text-xs font-medium text-muted-foreground">Calculation method</span>
         <span className="block truncate text-xs text-foreground">
-          {profile.accrual === "per-period" ? labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote) : labelOf(DAY_COUNT_OPTIONS, profile.dayCount)} · {labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency)}
+          {/* The day count is set beside the interest rate, so the summary leaves it out. */}
+          {profile.accrual === "per-period" ? `${labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote)} · ` : null}{labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency)}
         </span>
         <span className="block truncate text-[11px] text-muted-foreground">{[accrual, labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation, businessDays, statement].filter(Boolean).join(" · ")}</span>
         <span className="block truncate text-[11px] text-muted-foreground">{engineLine(sim)}</span>

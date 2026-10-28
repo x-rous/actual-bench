@@ -250,6 +250,23 @@ describe("the simulator workspace", () => {
     expect(Math.round((first + second) * 100)).toBe(Math.round(total * 100));
   });
 
+  it("sets the day count beside the interest rate, and a different day count changes the interest", async () => {
+    wrap(<Harness initial={shortLoan()} />);
+    const interest = () => screen.getByText("Total interest").nextSibling?.textContent ?? "";
+    await waitFor(() => expect(interest()).not.toBe("–"), WAIT);
+    const before = interest();
+    const dayCount = screen.getByRole("combobox", { name: "Day count" });
+    expect(dayCount).toHaveTextContent("Actual/365 Fixed");
+    fireEvent.click(dayCount);
+    const option = await screen.findByRole("option", { name: "Actual/360" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.pointerUp(option, { pointerType: "mouse" });
+    fireEvent.mouseUp(option, { button: 0 });
+    fireEvent.click(option);
+    await waitFor(() => expect(interest()).not.toBe(before), WAIT);
+    expect(screen.getByRole("button", { name: "Open calculation method settings" })).not.toHaveTextContent("Actual/360");
+  });
+
   it("the chart opens monthly for a loan of up to 10 years and yearly for a longer one", async () => {
     const { unmount } = wrap(<Harness initial={shortLoan()} />);
     const detail = await screen.findByRole("radiogroup", { name: "Chart detail" }, WAIT);
