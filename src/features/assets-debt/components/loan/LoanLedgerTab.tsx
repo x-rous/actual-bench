@@ -100,8 +100,7 @@ export function LoanLedgerTab({ tracking, digits, onLinkToActual, onSaveEntries,
   const editRow = ledger.find((l) => l.row.id === editing) ?? null;
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <SummaryStrip label="Loan Ledger summary" items={[
           { label: "Account balance", value: money(balance), detail: tracking.reads?.complete === false ? "Didn't read completely: refresh" : "Loan account today · as Actual shows it", wrap: true },
           { label: "Repayments", value: money(sum((l) => l.type === "principal-repayment" && l.row.date > start)), detail: "Into the loan account since the tracking start", wrap: true },
@@ -129,12 +128,16 @@ export function LoanLedgerTab({ tracking, digits, onLinkToActual, onSaveEntries,
           </LoanMenuContent></DropdownMenu>
           <Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected([])}>Clear selection</Button></div> : null}
         {error ? <p role="alert" className="border-b p-3 text-sm text-destructive">{error}</p> : null}
+        {/* The entry editor opens beside the table only: the figures and the toolbar keep the full width. */}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <DataTable label="Loan Ledger" columns={columns} rows={sorted} rowKey={(l) => l.row.id} rowLabel={(l) => `${l.row.payeeName ?? "Row"} · ${l.row.date} · ${money(l.row.amount)}`} activeKey={editing} onOpen={(l) => setEditing(l.row.id)} sort={sort} onSort={setSort} dense rowHeight={30}
           rowClassName={(l) => (selected.includes(l.row.id) ? "bg-accent/40" : undefined)}
           onRowKeys={(e, l) => { if (e.key === " ") { setSelected((s) => (s.includes(l.row.id) ? s.filter((x) => x !== l.row.id) : [...s, l.row.id])); return true; } return false; }}
           empty={ledger.length ? "No entries match your filters." : "The loan account has no transactions yet."} />
-      </div>
+        </div>
       {editRow ? <EntryEditor key={editRow.row.id} row={editRow} money={money} writesLocked={writesLocked} onClose={() => setEditing(null)} onSaveNotes={onSaveNotes} onClassify={(t) => classify([editRow.row.id], t)} /> : null}
+        </div>
     </div>
   );
 }
