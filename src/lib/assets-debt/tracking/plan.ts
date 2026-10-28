@@ -173,10 +173,19 @@ export function contractSchedule(model: LoanModelSnapshot, until: string): { ok:
   return { ok: true, dues };
 }
 
-/** Index every bank row and split line by id, keeping each line's parent. */
+/**
+ * Index every bank row and split line by id, keeping each line's parent. A read can return a split's lines both inside
+ * the parent and as rows of their own; a line always resolves to its parent, whatever order they came in.
+ */
 function indexRows(rows: readonly SyncSourceTransaction[]) {
   const byId = new Map<string, { row: SyncSourceTransaction; parent: SyncSourceTransaction | null }>();
+  const parents = new Map(rows.filter((r) => r.isParent).map((r) => [r.id, r]));
   for (const row of rows) {
+    if (row.isChild) {
+      const parent = row.parentId ? parents.get(row.parentId) ?? null : null;
+      if (!byId.has(row.id) || parent) byId.set(row.id, { row, parent });
+      continue;
+    }
     byId.set(row.id, { row, parent: null });
     for (const line of row.splitLines) {
       if (!line.id) continue;
@@ -420,7 +429,9 @@ export function planTracking(input: TrackingInput): TrackingResult {
     }
     const allocated = calc.repayment(due, payment.date, payment.amountMinor);
     if (!allocated) return { ...base, status: "check", checkKind: "cannot-split", principalMinor: 0, interestMinor: 0, calculatedInterestMinor: 0, balanceAfterMinor: calc.balanceMinor, note: "Bench could not work out this payment's interest. Check the loan's terms." };
-    actualPrincipal -= payment.kind === "transfer" ? payment.amountMinor : 0;
+    // For drift, an installment still to record counts as its planned principal: its own write will set Actual right,
+    // so only splits already in Actual can part Actual from the calculation.
+    actualPrincipal -= allocated.principalMinor;
     const figures = { principalMinor: allocated.principalMinor, interestMinor: allocated.interestMinor, calculatedInterestMinor: allocated.interestMinor, balanceAfterMinor: allocated.balanceAfterMinor };
     const check = (checkKind: NonNullable<Installment["checkKind"]>, note: string): Installment => ({ ...base, ...figures, status: "check", checkKind, note });
     if (competing && !pins.some((p) => p.key === due.date)) {

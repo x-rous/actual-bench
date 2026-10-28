@@ -159,7 +159,7 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
         {outcomes ? <Outcomes outcomes={outcomes} onDismiss={onDismissOutcomes} counts={f.counts} agrees={Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100)} /> : null}
         {writesLocked ? <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">A write to Actual ended with an uncertain outcome. Refresh and check the payment in Actual before applying anything else.</p> : null}
         <div ref={tableRef} className="flex min-h-0 flex-1 flex-col">
-          <DataTable label="Repayments" columns={columns} rows={all} rowKey={(r) => r.key} rowLabel={rowName} activeKey={active} onOpen={(r) => r.kind !== "before" && setActive(r.key)} sort={sort} onSort={setSort} dense
+          <DataTable label="Repayments" columns={activeRow ? columns.filter((c) => c.key !== "notes") : columns} rows={all} rowKey={(r) => r.key} rowLabel={rowName} activeKey={active} onOpen={(r) => r.kind !== "before" && setActive(r.key)} sort={sort} onSort={setSort} dense
             rowClassName={(r) => cn(r.kind === "installment" && r.inst.status === "upcoming" && "text-muted-foreground", r.kind === "before" && "bg-muted/40", selected.has(r.key) && "bg-accent/40")}
             onRowKeys={(e, r) => {
               if (e.key === " " && proposalOf(r)) { toggle(r.key); return true; }
@@ -200,7 +200,7 @@ function Outcomes({ outcomes, onDismiss, counts, agrees }: { outcomes: { list: W
   return (
     <div role="status" className={cn("flex shrink-0 flex-col gap-1 border-b px-4 py-2 text-xs", problem ? "bg-destructive/5" : "bg-emerald-500/5")}>
       <div className="flex items-center gap-2">
-        <strong>{applied} recorded</strong>
+        <strong>{applied} written to Actual</strong>
         {failed.length ? <span className="text-destructive">· {failed.length} failed</span> : null}
         {uncertain.length ? <span className="text-destructive">· {uncertain.length} uncertain</span> : null}
         {skipped ? <span className="text-muted-foreground">· {skipped} not started</span> : null}

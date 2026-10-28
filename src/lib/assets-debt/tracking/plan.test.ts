@@ -221,3 +221,36 @@ describe("drift", () => {
     expect(accepted.installments[1].balanceAfterMinor).toBe(owedAfter);
   });
 });
+
+describe("drift ignores what is still to record", () => {
+  it("a whole transfer before a recorded split doesn't make the split drift", () => {
+    const r = received();
+    const whole = transfer("2024-02-15", 3_411_26);
+    const plain = planTracking(input({ loan: [r.loan, whole.loan], bank: [r.bank, whole.bank] }, { today: "2024-03-20" }));
+    if (!plain.ok) throw new Error(plain.message);
+    const interest = plain.installments[1].interestMinor;
+    const parent = tx({ accountId: "checking", date: "2024-03-15", amount: -3_411_26, isParent: true });
+    const loanSide = tx({ accountId: "loan", date: "2024-03-15", amount: 3_411_26 - interest, transferId: `${parent.id}-p` });
+    parent.splitLines = [
+      { id: `${parent.id}-p`, amount: -(3_411_26 - interest), payeeId: "p-loan", payeeName: null, categoryId: "cat-loan", categoryName: null, notes: null, transferId: loanSide.id },
+      { id: `${parent.id}-i`, amount: -interest, payeeId: null, payeeName: null, categoryId: "cat-interest", categoryName: null, notes: null, transferId: null },
+    ];
+    const result = planTracking(input({ loan: [r.loan, whole.loan, loanSide], bank: [r.bank, whole.bank, parent] }, { today: "2024-03-20" }));
+    if (!result.ok) throw new Error(result.message);
+    expect(result.installments.slice(0, 2).map((i) => i.status)).toEqual(["unrecorded", "recorded"]);
+  });
+});
+
+it("a split's line returned as its own row still resolves to the split", () => {
+  const r = received();
+  const parent = tx({ accountId: "checking", date: "2024-02-15", amount: -3_411_26, isParent: true });
+  const loanSide = tx({ accountId: "loan", date: "2024-02-15", amount: 1_200_00, transferId: `${parent.id}-p` });
+  parent.splitLines = [
+    { id: `${parent.id}-p`, amount: -1_200_00, payeeId: "p-loan", payeeName: null, categoryId: "cat-loan", categoryName: null, notes: null, transferId: loanSide.id },
+    { id: `${parent.id}-i`, amount: -2_211_26, payeeId: null, payeeName: null, categoryId: "cat-interest", categoryName: null, notes: null, transferId: null },
+  ];
+  const childRow = tx({ id: `${parent.id}-p`, accountId: "checking", date: "2024-02-15", amount: -1_200_00, isChild: true, parentId: parent.id, transferId: loanSide.id });
+  const result = planTracking(input({ loan: [r.loan, loanSide], bank: [r.bank, parent, childRow] }, { today: "2024-02-20" }));
+  if (!result.ok) throw new Error(result.message);
+  expect(result.installments[0].payment).toMatchObject({ kind: "split", id: parent.id });
+});
