@@ -146,8 +146,7 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
   };
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <SummaryStrip label="Repayments summary" items={[
           { label: "Owed in Actual", value: money(f.owedInActualMinor), detail: tracking.reads?.complete === false ? "The loan account didn't read completely: refresh" : "Loan account today", wrap: true },
           { label: "Bench expects", value: money(f.calculatedMinor), detail: Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "By today · agrees with Actual" : `By today · differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
@@ -178,7 +177,9 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
             <Button size="xs" variant="outline" onClick={() => onResolve?.(w.id, false)}>It isn&apos;t</Button>
           </div>
         ))}
-        <div ref={tableRef} className="flex min-h-0 flex-1 flex-col">
+        {/* The details panel opens beside the table only: the figures and the toolbar keep the full width. */}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div ref={tableRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
           <DataTable label="Repayments" columns={activeRow ? columns.filter((c) => !PANEL_HIDDEN.has(c.key)) : columns} rows={all} rowKey={(r) => r.key} rowLabel={rowName} activeKey={active} onOpen={(r) => r.kind !== "before" && setActive(r.key)} sort={sort} onSort={setSort} dense
             rowClassName={(r) => cn(r.kind === "installment" && r.inst.status === "upcoming" && "text-muted-foreground", r.kind === "before" && "bg-muted/40", selected.has(r.key) && "bg-accent/40")}
             onRowKeys={(e, r) => {
@@ -188,10 +189,10 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
             }}
             empty={rows.length ? "No repayments match your filters." : "No installments are due yet."} />
         </div>
-      </div>
       {activeRow && activeRow.kind !== "before" ? <InstallmentInspector key={activeRow.key} row={activeRow.kind === "installment" ? { kind: "installment", inst: activeRow.inst } : activeRow.kind === "event" ? { kind: "event", ledger: activeRow.ledger } : { kind: "opening", proposal: activeRow.proposal, amountMinor: activeRow.amountMinor, date: activeRow.date }}
         tracking={tracking} directory={directory} digits={digits} busy={busy} writesLocked={writesLocked} onApply={(p) => apply([p])} actions={actions} onClose={() => setActive(null)}
         onPrev={stepTo(-1)} onNext={stepTo(1)} /> : null}
+        </div>
     </div>
   );
 }

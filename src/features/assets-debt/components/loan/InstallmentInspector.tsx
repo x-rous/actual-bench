@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import { proposalContext, type Installment, type LedgerRow, type Payment } from "@/lib/assets-debt/tracking/plan";
 import { adjustSplitProposal, splitProposal, undoSplitProposal, type Proposal } from "@/lib/assets-debt/tracking/proposals";
@@ -10,7 +11,7 @@ import type { RowSnapshot } from "@/lib/assets-debt/services/snapshot";
 import { cn } from "@/lib/utils";
 import { formatAmount } from "../../lib/money";
 import type { LoanTracking } from "../../lib/useLoanTracking";
-import { MoneyField, TextField } from "../fields";
+import { MoneyField } from "../fields";
 import { ENTRY_LABELS, StatusBadge, dt } from "./presentation";
 
 /**
@@ -46,38 +47,46 @@ function Sec({ title, aside, children }: { title?: string; aside?: string; child
 const LINE_DOT = { principal: "bg-chart-1", interest: "bg-chart-5", fee: "bg-chart-3" } as const;
 type LineKind = keyof typeof LINE_DOT;
 
-/** How the payment divides, at a glance: one thin bar in the lines' colours. */
-function SplitBar({ parts }: { parts: { kind: LineKind; minor: number }[] }) {
-  const total = parts.reduce((s, p) => s + Math.max(0, p.minor), 0);
+/** How the payment divides, at a glance: one bar in the lines' colours, with each line's share beneath it. */
+function SplitBar({ parts }: { parts: { kind: LineKind; label: string; minor: number }[] }) {
+  const shown = parts.filter((p) => p.minor > 0);
+  const total = shown.reduce((s, p) => s + p.minor, 0);
   if (total <= 0) return null;
-  return <div className="mb-2 flex h-1.5 gap-px overflow-hidden rounded-full" aria-hidden>{parts.filter((p) => p.minor > 0).map((p) => <span key={p.kind} className={LINE_DOT[p.kind]} style={{ width: `${(p.minor / total) * 100}%` }} />)}</div>;
+  return (
+    <div className="mb-3">
+      <div className="flex h-2 gap-0.5 overflow-hidden rounded-full" aria-hidden>{shown.map((p) => <span key={p.kind} className={LINE_DOT[p.kind]} style={{ width: `${(p.minor / total) * 100}%` }} />)}</div>
+      <p className="mt-1 flex gap-3 text-[11px] text-muted-foreground">{shown.map((p) => <span key={p.kind} className="inline-flex items-center gap-1"><span className={cn("size-2 rounded-sm", LINE_DOT[p.kind])} aria-hidden />{p.label} {Math.round((p.minor / total) * 100)}%</span>)}</p>
+    </div>
+  );
 }
 
-type SplitLine = { kind: LineKind; label: string; goesTo: string; amount: React.ReactNode; bench?: number | null; actual?: number; sub?: string };
+type SplitLine = {
+  kind: LineKind; label: string; goesTo: string;
+  /** The amount, or its editor. */ amount: React.ReactNode;
+  /** Under the amount: Bench's figure, or the difference from it. */ sub?: React.ReactNode;
+  /** The line's Notes: editable while Apply is still to come, read-only once it is in Actual. */ notes?: { value: string; onChange?: (v: string) => void };
+};
 
-/** The split's lines: amount (or In Actual and Bench, with the difference when they part), then the total. */
-function SplitTable({ lines, total, money, compare }: { lines: SplitLine[]; total: number; money: (m: number) => string; compare: boolean }) {
-  const differs = compare && lines.some((l) => l.bench != null && l.actual !== undefined && l.actual !== l.bench);
+/** The split's lines, one block each (colour, where it goes, amount, Notes), then the total. No rules between rows. */
+function SplitLines({ lines, total, money }: { lines: SplitLine[]; total: number; money: (m: number) => string }) {
   return (
-    <table className="w-full text-xs">
-      <thead><tr className="border-b border-border/60 text-[11px] text-muted-foreground">
-        <th className="py-1 text-left font-medium">Line</th>
-        <th className="py-1 text-right font-medium">{compare ? "In Actual" : "Amount"}</th>
-        {compare ? <th className="py-1 pl-3 text-right font-medium">Bench</th> : null}
-        {differs ? <th className="py-1 pl-3 text-right font-medium">Difference</th> : null}
-      </tr></thead>
-      <tbody>
+    <div className="flex flex-col gap-1.5">
+      <ul className="flex flex-col gap-1.5">
         {lines.map((l) => (
-          <tr key={l.kind} className="border-b border-border/60">
-            <td className="py-1.5"><span className="block">{l.label}</span><span className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span className={cn("size-2 shrink-0 rounded-sm", LINE_DOT[l.kind])} aria-hidden />{l.goesTo}</span></td>
-            <td className="py-1.5 text-right tabular-nums">{l.amount}{l.sub ? <span className="block text-[11px] text-muted-foreground">{l.sub}</span> : null}</td>
-            {compare ? <td className="py-1.5 pl-3 text-right tabular-nums">{l.bench == null ? "-" : money(l.bench)}</td> : null}
-            {differs ? <td className={cn("py-1.5 pl-3 text-right tabular-nums", l.actual !== l.bench && "text-amber-700 dark:text-amber-400")}>{l.bench == null || l.actual === undefined || l.actual === l.bench ? "" : `${l.actual > l.bench ? "+" : "−"}${money(Math.abs(l.actual - l.bench))}`}</td> : null}
-          </tr>
+          <li key={l.kind} className="relative rounded-md bg-muted/50 py-2 pr-2.5 pl-4">
+            <span className={cn("absolute inset-y-2 left-1.5 w-1 rounded-full", LINE_DOT[l.kind])} aria-hidden />
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><p className="text-xs font-medium">{l.label}</p><p className="truncate text-[11px] text-muted-foreground">{l.goesTo}</p></div>
+              <div className="shrink-0 text-right text-xs tabular-nums">{l.amount}{l.sub ? <div className="text-[11px] text-muted-foreground">{l.sub}</div> : null}</div>
+            </div>
+            {l.notes ? (l.notes.onChange
+              ? <Input aria-label={`${l.label} line Notes`} value={l.notes.value} onChange={(e) => l.notes!.onChange!(e.target.value)} placeholder="Notes" className="mt-1.5 h-6 bg-background px-1.5 text-[11px]" />
+              : l.notes.value ? <p className="mt-1 text-[11px] break-words text-muted-foreground">{l.notes.value}</p> : null) : null}
+          </li>
         ))}
-        <tr className="font-semibold"><td className="py-1.5">Total</td><td className="py-1.5 text-right tabular-nums">{money(total)}</td>{compare ? <td className="py-1.5 pl-3 text-right tabular-nums">{money(total)}</td> : null}{differs ? <td /> : null}</tr>
-      </tbody>
-    </table>
+      </ul>
+      <p className="flex justify-between px-1 pt-1 text-xs font-semibold"><span>Total</span><span className="tabular-nums">{money(total)}</span></p>
+    </div>
   );
 }
 
@@ -176,11 +185,15 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
     ) : null;
     const loanSec = (balanceLabel = "Balance after") => <Sec title="Loan"><Facts items={[[balanceLabel, money(inst.balanceAfterMinor)], ["Scheduled payment", money(inst.scheduledMinor)]]} /></Sec>;
     const calcSec = <Sec title="Bench's calculation"><Facts items={[["Scheduled payment", money(inst.scheduledMinor)], ["Interest", money(benchInterest)], ["Principal", inst.status === "missing" ? "-" : money(inst.principalMinor)], ["Balance after", money(inst.balanceAfterMinor)]]} /></Sec>;
+    const lineNotesOf = (p: Payment, id: string | null | undefined) => ({ value: (id ? p.row.splitLines.find((l) => l.id === id)?.notes : null) ?? "" });
+    // Bench's figure under Actual's, with the difference, only where they part.
+    const versus = (actual: number, bench: number) => (actual === bench ? undefined : <>Bench {money(bench)} · <span className="text-amber-700 dark:text-amber-400">{actual > bench ? "+" : "−"}{money(Math.abs(actual - bench))}</span></>);
     const recordedLines = (p: Payment): SplitLine[] => p.split ? [
-      { kind: "principal", label: "Principal", goesTo: `Transfer to ${loanName}`, amount: money(p.split.principalMinor), actual: p.split.principalMinor, bench: benchPrincipal },
-      { kind: "interest", label: "Interest", goesTo: interestCategory, amount: money(p.split.interestMinor), actual: p.split.interestMinor, bench: benchInterest },
-      ...(p.split.feesMinor ? [{ kind: "fee" as const, label: "Fees", goesTo: "Fee category", amount: money(p.split.feesMinor), actual: p.split.feesMinor, bench: p.split.feesMinor }] : []),
+      { kind: "principal", label: "Principal", goesTo: `Transfer to ${loanName}`, amount: money(p.split.principalMinor), sub: versus(p.split.principalMinor, benchPrincipal), notes: lineNotesOf(p, p.split.principalLineId) },
+      { kind: "interest", label: "Interest", goesTo: interestCategory, amount: money(p.split.interestMinor), sub: versus(p.split.interestMinor, benchInterest), notes: lineNotesOf(p, p.split.interestLineId) },
+      ...(p.split.feesMinor ? [{ kind: "fee" as const, label: "Fees", goesTo: "Fee category", amount: money(p.split.feesMinor) }] : []),
     ] : [];
+    const recordedParts = (p: Payment) => p.split ? [{ kind: "principal" as const, label: "Principal", minor: p.split.principalMinor }, { kind: "interest" as const, label: "Interest", minor: p.split.interestMinor }, { kind: "fee" as const, label: "Fees", minor: p.split.feesMinor }] : [];
 
     if (inst.status === "unrecorded" && inst.proposal?.kind === "split" && payment) {
       const resetLines = () => { setPrincipal(inst.principalMinor); setPrincipalNotes(split?.operations.find((c) => c.economicKind === "principal")?.notes ?? ""); setInterestNotes(split?.operations.find((c) => c.economicKind === "interest")?.notes ?? ""); };
@@ -190,21 +203,14 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
         {paymentSec}
         <Sec title="Split this payment into" aside="Edit the principal to change both">
           <p className="mb-2 text-xs text-muted-foreground">One transaction becomes a split with {fees ? "three" : "two"} lines. The bank account total does not change.</p>
-          <SplitBar parts={[{ kind: "principal", minor: principal ?? 0 }, { kind: "interest", minor: interest ?? 0 }, { kind: "fee", minor: fees }]} />
-          <SplitTable money={money} compare={false} total={payment.amountMinor} lines={[
-            { kind: "principal", label: "Principal", goesTo: `Transfer to ${loanName}`, amount: <span className="ml-auto block w-28"><MoneyField label="Principal amount" hideLabel valueMinor={principal} minorDigits={digits} fixedDecimals onChange={setPrincipal} /></span> },
-            { kind: "interest", label: "Interest", goesTo: interestCategory, amount: interest === null ? "-" : money(interest), sub: interest === benchInterest ? "Bench's calculation" : `Bench: ${money(benchInterest)}` },
+          <SplitBar parts={[{ kind: "principal", label: "Principal", minor: principal ?? 0 }, { kind: "interest", label: "Interest", minor: interest ?? 0 }, { kind: "fee", label: "Fees", minor: fees }]} />
+          <SplitLines money={money} total={payment.amountMinor} lines={[
+            { kind: "principal", label: "Principal", goesTo: `Transfer to ${loanName}`, amount: <span className="block w-28"><MoneyField label="Principal amount" hideLabel valueMinor={principal} minorDigits={digits} fixedDecimals onChange={setPrincipal} /></span>, notes: { value: principalNotes, onChange: setPrincipalNotes } },
+            { kind: "interest", label: "Interest", goesTo: interestCategory, amount: interest === null ? "-" : money(interest), sub: interest === benchInterest ? "Bench's calculation" : `Bench: ${money(benchInterest)}`, notes: { value: interestNotes, onChange: setInterestNotes } },
             ...(fees ? [{ kind: "fee" as const, label: "Fees", goesTo: "Fee category", amount: money(fees) }] : []),
           ]} />
           {problem ? <p role="alert" className="mt-2 text-xs text-destructive">{problem}</p> : <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">✓ Adds up to the payment</p>}
           {edited ? <button type="button" className="mt-1 text-xs underline underline-offset-2" onClick={resetLines}>Reset to Bench&apos;s calculation</button> : null}
-          <details className="mt-2 text-xs">
-            <summary className="cursor-pointer text-muted-foreground">Line notes</summary>
-            <div className="mt-2 flex flex-col gap-2">
-              <TextField label="Principal line" value={principalNotes} onChange={setPrincipalNotes} />
-              <TextField label="Interest line" value={interestNotes} onChange={setInterestNotes} />
-            </div>
-          </details>
         </Sec>
         <Sec title="After Apply">
           <Facts items={[
@@ -232,7 +238,7 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
       footer = <><Button variant="outline" size="sm" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!pick} onClick={() => pick && actions.choosePayment(inst, pick)}>Use this payment</Button></>;
     } else if (inst.status === "check" && inst.checkKind === "drift" && payment) {
       body = <>{alert(inst.note)}{paymentSec}
-        <Sec title="Split in Actual"><SplitBar parts={recordedLines(payment).map((l) => ({ kind: l.kind, minor: l.actual ?? 0 }))} /><SplitTable money={money} compare total={payment.amountMinor} lines={recordedLines(payment)} /></Sec>
+        <Sec title="Split in Actual"><SplitBar parts={recordedParts(payment)} /><SplitLines money={money} total={payment.amountMinor} lines={recordedLines(payment)} /></Sec>
         <Sec><div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
           <p><strong className="text-foreground">Accept Actual:</strong> the calculation continues from Actual&apos;s loan balance after this installment. Nothing is written to Actual.</p>
           <p><strong className="text-foreground">Adjust to Bench:</strong> the split takes Bench&apos;s amounts. One write to Actual.</p>
@@ -255,21 +261,21 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
       footer = <><Button variant="outline" size="sm" onClick={onClose}>Close</Button>{nearby.length ? <Button size="sm" disabled={!pick} onClick={() => pick && actions.choosePayment(inst, { id: pick.row.id, row: pick.row, loanRows: [pick.row] })}>This is the payment</Button> : null}</>;
     } else if (inst.status === "recorded" && payment?.kind === "split" && payment.split) {
       const lines = recordedLines(payment);
-      const matches = lines.every((l) => l.actual === l.bench);
+      const matches = payment.split.principalMinor === benchPrincipal && payment.split.interestMinor === benchInterest;
       body = <>{alert(inst.note, "info")}{paymentSec}
         <Sec title={editingRecorded ? "Change the split in Actual" : "Split in Actual"}>
           {editingRecorded ? <>
-            <SplitBar parts={[{ kind: "principal", minor: principal ?? 0 }, { kind: "interest", minor: interest ?? 0 }, { kind: "fee", minor: payment.split.feesMinor }]} />
-            <SplitTable money={money} compare={false} total={payment.amountMinor} lines={[
-              { kind: "principal", label: "Principal", goesTo: `Transfer to ${loanName}`, amount: <span className="ml-auto block w-28"><MoneyField label="Principal" hideLabel valueMinor={principal} minorDigits={digits} fixedDecimals onChange={setPrincipal} /></span> },
+            <SplitBar parts={[{ kind: "principal", label: "Principal", minor: principal ?? 0 }, { kind: "interest", label: "Interest", minor: interest ?? 0 }, { kind: "fee", label: "Fees", minor: payment.split.feesMinor }]} />
+            <SplitLines money={money} total={payment.amountMinor} lines={[
+              { kind: "principal", label: "Principal", goesTo: `Transfer to ${loanName}`, amount: <span className="block w-28"><MoneyField label="Principal" hideLabel valueMinor={principal} minorDigits={digits} fixedDecimals onChange={setPrincipal} /></span> },
               { kind: "interest", label: "Interest", goesTo: interestCategory, amount: interest === null ? "-" : money(interest), sub: `Bench: ${money(benchInterest)}` },
               ...(payment.split.feesMinor ? [{ kind: "fee" as const, label: "Fees", goesTo: "Fee category", amount: money(payment.split.feesMinor) }] : []),
             ]} />
             <p className="mt-2 text-xs text-muted-foreground">Every line keeps its id; the loan-side row follows the principal.</p>
             {rebuilt && "problem" in rebuilt ? <p role="alert" className="mt-1 text-xs text-destructive">{rebuilt.problem}</p> : null}
           </> : <>
-            <SplitBar parts={lines.map((l) => ({ kind: l.kind, minor: l.actual ?? 0 }))} />
-            <SplitTable money={money} compare total={payment.amountMinor} lines={lines} />
+            <SplitBar parts={recordedParts(payment)} />
+            <SplitLines money={money} total={payment.amountMinor} lines={lines} />
             {matches ? <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">✓ Matches Bench&apos;s calculation</p> : null}
           </>}
         </Sec>

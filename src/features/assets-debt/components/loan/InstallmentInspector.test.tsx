@@ -65,6 +65,9 @@ describe("the installment panel", () => {
     expect(within(panel).getByText("✓ Adds up to the payment")).toBeInTheDocument();
     expect(within(panel).getByText("Bench's calculation")).toBeInTheDocument();
     expect(within(panel).getByText("After Apply")).toBeInTheDocument();
+    // Each line carries its own Notes, editable before Apply; the interest line has the loan's suffix.
+    expect(within(panel).getByRole("textbox", { name: "Interest line Notes" })).toHaveValue("#interest");
+    fireEvent.change(within(panel).getByRole("textbox", { name: "Principal line Notes" }), { target: { value: "Feb repayment" } });
 
     // Editing the principal moves the interest; Bench's figure stays beside it, with a way back.
     const field = within(panel).getByLabelText("Principal amount");
@@ -75,6 +78,7 @@ describe("the installment panel", () => {
     fireEvent.click(within(panel).getByRole("button", { name: "Apply split" }));
     const written = onApply.mock.calls[0][0].output.operations as { economicKind: string; amountMinor: number }[];
     expect(written.find((o) => o.economicKind === "interest")!.amountMinor).toBe(-(inst.interestMinor - 1_000));
+    expect(onApply.mock.calls[0][0].output.operations.find((o: { economicKind: string }) => o.economicKind === "principal").notes).toBe("Feb repayment");
   });
 
   it("Recorded: the split in Actual beside Bench's figures; a difference is shown line by line", () => {
@@ -95,14 +99,13 @@ describe("the installment panel", () => {
     const { unmount } = show(same.tracking, same.result.installments[0]);
     expect(screen.getByText("Split in Actual")).toBeInTheDocument();
     expect(screen.getByText("✓ Matches Bench's calculation")).toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "Difference" })).toBeNull();
+    expect(screen.queryByText(/^Bench /)).toBeNull();
     expect(screen.getByRole("button", { name: "Undo split" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit split" })).toBeInTheDocument();
     unmount();
 
     const off = recorded(calc + 37);
     show(off.tracking, off.result.installments[0]);
-    expect(screen.getByRole("columnheader", { name: "Difference" })).toBeInTheDocument();
     expect(screen.getByText("+0.37")).toBeInTheDocument();
     expect(screen.getByText("−0.37")).toBeInTheDocument();
     expect(screen.queryByText("✓ Matches Bench's calculation")).toBeNull();
