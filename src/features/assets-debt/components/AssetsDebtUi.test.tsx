@@ -328,14 +328,11 @@ describe("the simulator workspace", () => {
     const heading = within(events).getByRole("heading", { name: "Events" });
     const description = within(events).getByText("Additional payments, deposits, withdrawals, fees, rates, loan, and offset changes.");
     expect(heading.parentElement).toContainElement(description);
-    for (const action of ["Extra payment", "Redraw / Withdraw", "Rate change"]) expect(within(events).getByRole("button", { name: action })).toBeInTheDocument();
-    expect(within(events).queryByRole("button", { name: "Fee" })).toBeNull();
+    // Every kind of event has its own button; no More menu (owner decision 2026-10-28).
+    for (const action of ["Extra payment", "Redraw / Withdraw", "Rate change", "Fee", "Repayment change"]) expect(within(events).getByRole("button", { name: action })).toBeInTheDocument();
+    expect(within(events).queryByRole("button", { name: "More" })).toBeNull();
     expect(within(events).getByRole("button", { name: "Add event" })).toHaveClass("md:hidden");
     expect(within(events).getByRole("button", { name: "Extra payment" }).parentElement).toHaveClass("hidden", "md:flex");
-    fireEvent.click(within(events).getByRole("button", { name: "More" }));
-    expect(await screen.findByRole("menuitem", { name: "Fee" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Repayment change" })).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole("menuitem", { name: "Fee" }), { key: "Escape" });
     const table = await within(events).findByRole("table", { name: "Events" }, WAIT);
     const rows = within(table).getAllByRole("row");
     expect(rows[1]).toHaveTextContent(/01 Mar 2024\s*Rate change\s*6% → 7%/);

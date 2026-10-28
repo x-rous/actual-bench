@@ -152,12 +152,7 @@ export function EventsSection({ sim, current, baseline, savings, onEdit, onRemov
             <Button type="button" variant="outline" size="sm" onClick={() => onEdit("extra-repayment")}><Plus aria-hidden="true" />Extra payment</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => onEdit("draw")}>Redraw / Withdraw</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => onEditRate("new")}>Rate change</Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1")}>More <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
-              <LoanMenuContent>
-                {MORE_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
-              </LoanMenuContent>
-            </DropdownMenu>
+            {MORE_KINDS.map((kind) => <Button key={kind} type="button" variant="outline" size="sm" onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</Button>)}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1 md:hidden")}><Plus aria-hidden="true" />Add event <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
