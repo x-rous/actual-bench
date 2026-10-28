@@ -254,3 +254,16 @@ it("a split's line returned as its own row still resolves to the split", () => {
   if (!result.ok) throw new Error(result.message);
   expect(result.installments[0].payment).toMatchObject({ kind: "split", id: parent.id });
 });
+
+it("B3: a rule's other matches are neither extra principal nor already-split payments", () => {
+  const rule = { match: "all" as const, conditions: [{ field: "payee" as const, operator: "equals" as const, value: "bank" }] };
+  const pay = tx({ accountId: "checking", date: "2024-02-15", amount: -3_411_26, payeeId: "bank" });
+  const other = tx({ accountId: "checking", date: "2024-02-20", amount: -1_782_11, payeeId: "bank" });
+  const splitElsewhere = tx({ accountId: "checking", date: "2024-02-05", amount: -1_782_11, payeeId: "bank", isParent: true, splitLines: [{ id: "x1", amount: -1_000_00, payeeId: "p-car", payeeName: null, categoryId: null, categoryName: null, notes: null, transferId: "car-row" }, { id: "x2", amount: -782_11, payeeId: null, payeeName: null, categoryId: "cat-int", categoryName: null, notes: null, transferId: null }] });
+  const withOthers = planTracking(input({ loan: [], bank: [pay, other, splitElsewhere] }, { today: "2024-02-25", rules: [rule] }));
+  const alone = planTracking(input({ loan: [], bank: [pay] }, { today: "2024-02-25", rules: [rule] }));
+  if (!withOthers.ok || !alone.ok) throw new Error("not ok");
+  expect(withOthers.events).toEqual([]);
+  expect(withOthers.figures.calculatedMinor).toBe(alone.figures.calculatedMinor);
+  expect(withOthers.installments[0]).toMatchObject({ status: "unrecorded", payment: { id: pay.id } });
+});

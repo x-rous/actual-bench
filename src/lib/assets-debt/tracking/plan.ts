@@ -237,7 +237,8 @@ function findPayments(input: TrackingInput, from: string): Payment[] {
   }
   if (input.rules.length) {
     for (const row of input.bankRows) {
-      if (row.accountId === loanId || row.amount >= 0 || row.transferId || row.isChild || row.date <= from || payments.has(row.id) || excluded.has(row.id) || isPostingMarker(row.importedId)) continue;
+      // A payment already split in Actual belongs to whatever its lines say (another loan, say), never to a rule.
+      if (row.accountId === loanId || row.amount >= 0 || row.transferId || row.isChild || row.isParent || row.date <= from || payments.has(row.id) || excluded.has(row.id) || isPostingMarker(row.importedId)) continue;
       if (input.rules.some((rule) => ruleMatches(rule, ruleRow(row)))) payments.set(row.id, { id: row.id, kind: "rule", date: row.date, amountMinor: Math.abs(row.amount), row, loanRows: [] });
     }
   }
@@ -346,7 +347,9 @@ export function planTracking(input: TrackingInput): TrackingResult {
   );
   const pairOf = new Map(alignment.dues.map((d) => [d.key, d]));
   const paidBy = new Map(alignment.dues.flatMap((d) => (d.payment ? [[d.payment.id, d.key] as const] : [])));
-  const extraPayments = alignment.extras.map((e) => byId.get(e.id)!).filter(Boolean);
+  // Only money that reached the loan account is extra principal; a payment a rule found but no installment took is
+  // just something the rule matched (it never touched this loan).
+  const extraPayments = alignment.extras.map((e) => byId.get(e.id)!).filter((p) => p && p.kind !== "rule");
 
   // Ledger events in the tracked window that change the balance without being an installment.
   const userType = (r: SyncSourceTransaction) => entries.get(r.id)?.entryType;
@@ -424,7 +427,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
       return {
         ...base, status: drifting ? "check" : "recorded", principalMinor: payment.split.principalMinor, interestMinor: payment.split.interestMinor, feesMinor: payment.split.feesMinor,
         calculatedInterestMinor: calculatedInterest, balanceAfterMinor: calc.balanceMinor,
-        ...(drifting ? { checkKind: "drift" as const, note: `From here Actual's loan balance differs from the calculation by ${money(Math.abs(drift))}. Accept Actual's balance from here, or adjust this split to the calculation.` } : {}),
+        ...(drifting ? { checkKind: "drift" as const, note: `From here Actual's loan balance differs from the calculation by ${money(Math.abs(drift))}. If your lender works out interest another way (monthly rather than daily, say), set the calculation method in Terms & Schedule. Otherwise accept Actual's balance from here, or adjust this split to the calculation.` } : {}),
       };
     }
     const allocated = calc.repayment(due, payment.date, payment.amountMinor);

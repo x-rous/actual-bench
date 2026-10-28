@@ -41,7 +41,7 @@ function Preview({ draft, loanAccountId, from, today }: { draft: Draft; loanAcco
       const ids = ruleAccounts([draft], accounts.filter((a) => !a.closed && !a.offBudget).map((a) => a.id), loanAccountId);
       const ranges = ids.map((accountId) => ({ accountId, from, to: today }));
       const rows = !ranges.length ? [] : t.queryTransactionsForSync ? await t.queryTransactionsForSync({ ranges }) : (await Promise.all(ids.map((accountId) => t.listTransactionsForSync({ accountId, startDate: from, endDate: today })))).flat();
-      return rows.filter((r) => r.amount < 0 && !r.transferId && !r.isChild && ruleMatches(draft, { accountId: r.accountId, payeeId: r.payeeId, payeeName: r.payeeName, categoryId: r.categoryId, categoryName: r.categoryName, notes: r.notes, amountMinor: r.amount }))
+      return rows.filter((r) => r.amount < 0 && !r.transferId && !r.isChild && !r.isParent && ruleMatches(draft, { accountId: r.accountId, payeeId: r.payeeId, payeeName: r.payeeName, categoryId: r.categoryId, categoryName: r.categoryName, notes: r.notes, amountMinor: r.amount }))
         .sort((a, b) => b.date.localeCompare(a.date));
     },
   });
