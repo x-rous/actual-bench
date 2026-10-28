@@ -3,7 +3,9 @@
 import { ChevronDown, Plus } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import type { EventSavings } from "../../lib/useEventSavings";
+import { formatSaving } from "../../lib/eventSavings";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { formatAmount, fractionToPercent } from "../../lib/money";
 import { deltas, type Headline } from "../../lib/results";
@@ -11,6 +13,7 @@ import type { SimAssumption, SimAssumptionKind, SimRate, SimulationState } from 
 import { assumptionDetails, KIND_LABEL, listedExtraTransactions, type ExtraEditor } from "./ExtraTransactionsDialog";
 import { HelpDialogButton } from "./ConfigurationSection";
 import { formatChartDate } from "../chart/chartMeta";
+import { LoanMenuContent } from "../loan/presentation";
 
 const DIRECT_KINDS: SimAssumptionKind[] = ["extra-repayment", "draw"];
 const MORE_KINDS: SimAssumptionKind[] = ["fee", "payment-change"];
@@ -89,6 +92,16 @@ function eventRows(sim: SimulationState, tracked?: TrackedEvents): EventRow[] {
   ].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === "rate-change" ? -1 : b.kind === "rate-change" ? 1 : a.key.localeCompare(b.key)));
 }
 
+/** What one row saves, as its own cell: "…" while calculating, "–" for a row the projection leaves out. */
+function SavesCell({ savings, eventKey, included, digits }: { savings?: EventSavings; eventKey: string; included: boolean; digits: number }) {
+  if (!included || !savings || savings.status === "none") return <td className="px-3 py-2.5 text-right text-muted-foreground">-</td>;
+  if (savings.status === "calculating") return <td className="px-3 py-2.5 text-right text-muted-foreground" aria-label="Calculating">…</td>;
+  const saving = savings.byKey.get(eventKey);
+  if (!saving) return <td className="px-3 py-2.5 text-right text-muted-foreground">-</td>;
+  const tone = saving.interestMinor > 0 ? "text-emerald-700 dark:text-emerald-400" : saving.interestMinor < 0 ? "text-red-700 dark:text-red-400" : "text-muted-foreground";
+  return <td className={cn("whitespace-nowrap px-3 py-2.5 text-right tabular-nums", tone)}>{formatSaving(saving, digits)}</td>;
+}
+
 /** Where a row of the Events list comes from on a tracked loan. */
 function sourceOf(row: EventRow, tracked: TrackedEvents): "From Actual" | "What-if" | "Contract" | "Before tracking" | "Passed" {
   if (row.kind === "ledger") return "From Actual";
@@ -108,7 +121,7 @@ function rateDetails(rate: SimRate): string {
   return [repayment, rate.paymentEffectiveFrom ? `Repayment changes ${rate.paymentEffectiveFrom}` : null, rate.source, rate.note].filter(Boolean).join(" · ");
 }
 
-export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEditRate, onRemoveRate, tracked }: { sim: SimulationState; current: Headline | null; baseline: Headline | null; onEdit: (editor: ExtraEditor) => void; onRemove: (assumption: SimAssumption) => void; onEditRate: (editor: "new" | SimRate) => void; onRemoveRate: (rate: SimRate) => void; /** A loan tracked in Actual. */ tracked?: TrackedEvents }) {
+export function EventsSection({ sim, current, baseline, savings, onEdit, onRemove, onEditRate, onRemoveRate, tracked }: { sim: SimulationState; current: Headline | null; baseline: Headline | null; /** What each event saves (date order). */ savings?: EventSavings; onEdit: (editor: ExtraEditor) => void; onRemove: (assumption: SimAssumption) => void; onEditRate: (editor: "new" | SimRate) => void; onRemoveRate: (rate: SimRate) => void; /** A loan tracked in Actual. */ tracked?: TrackedEvents }) {
   const transactions = listedExtraTransactions(sim);
   const rows = eventRows(sim, tracked);
   const hasImpactEvents = transactions.length > 0 || !!tracked?.ledgerEvents.some((l) => l.kind !== "adjustment");
@@ -120,8 +133,8 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
       ]
     : [{ label: null, metrics: [interestImpact, payoffImpact] }];
   return (
-    <section aria-labelledby="events-heading" className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <section aria-labelledby="events-heading" className="flex flex-col gap-2 pt-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4">
         <h2 id="events-heading" className="text-sm font-semibold">Events</h2>
         <p className="text-xs text-muted-foreground">Additional payments, deposits, withdrawals, fees, rates, loan, and offset changes.</p>
         <HelpDialogButton
@@ -139,23 +152,18 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
             <Button type="button" variant="outline" size="sm" onClick={() => onEdit("extra-repayment")}><Plus aria-hidden="true" />Extra payment</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => onEdit("draw")}>Redraw / Withdraw</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => onEditRate("new")}>Rate change</Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1")}>More <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {MORE_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {MORE_KINDS.map((kind) => <Button key={kind} type="button" variant="outline" size="sm" onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</Button>)}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1 md:hidden")}><Plus aria-hidden="true" />Add event <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <LoanMenuContent>
               {ALL_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
               <DropdownMenuItem onClick={() => onEditRate("new")}>Rate change</DropdownMenuItem>
-            </DropdownMenuContent>
+            </LoanMenuContent>
           </DropdownMenu>
         </div>
       </div>
-      <div className="rounded-lg border border-border bg-card/40">
+      <div className="border-t border-border">
         {hasImpactEvents && groups.length ? (
           <div role="status" data-testid="events-impact" className={cn("flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3", rows.length && "border-b border-border")}>
             {groups.map((group) => (
@@ -182,6 +190,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                   <th className="px-4 py-2 font-medium">Date</th>
                   <th className="px-3 py-2 font-medium">Event type</th>
                   <th className="px-3 py-2 text-right font-medium">Value</th>
+                  <th className="px-3 py-2 text-right font-medium" title="Interest and time each event saves, in date order: each on top of the ones before it">Saves</th>
                   {tracked ? <th className="px-3 py-2 font-medium">Source</th> : null}
                   <th className="px-3 py-2 font-medium">Details</th>
                   <th className="px-4 py-2 text-right font-medium">Actions</th>
@@ -197,6 +206,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">{LEDGER_LABEL[row.ledger.kind]}</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.ledger.amountMinor, sim.minorDigits)}</td>
+                      <SavesCell savings={savings} eventKey={`ledger:${row.ledger.rowId}`} included={row.ledger.kind === "extra-principal" || row.ledger.kind === "draw" || row.ledger.kind === "fee"} digits={sim.minorDigits} />
                       {sourceCell}
                       <td className="px-3 py-2.5 text-muted-foreground">{[row.ledger.payee, row.ledger.notes].filter(Boolean).join(" · ") || "In the Loan Ledger"}</td>
                       <td className="px-4 py-2.5"><div className="flex justify-end"><Button type="button" variant="ghost" size="sm" onClick={tracked?.onOpenLedger}>Open in Loan Ledger</Button></div></td>
@@ -211,6 +221,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">{KIND_LABEL[row.assumption.kind]}</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.assumption.amountMinor, sim.minorDigits)}</td>
+                      <SavesCell savings={savings} eventKey={row.assumption.key} included={!passed && !off && source !== "Before tracking"} digits={sim.minorDigits} />
                       {sourceCell}
                       <td className="px-3 py-2.5 text-muted-foreground">{passed ? "Passed, not in the projection: what happened is in the Loan Ledger" : off ? `Off: not in the projection · ${assumptionDetails(row.assumption)}` : assumptionDetails(row.assumption)}</td>
                       <td className="px-4 py-2.5">
@@ -228,6 +239,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">Rate change</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{fractionToPercent(row.previousRate)}% → {fractionToPercent(row.rate.annualRateDecimal)}%</td>
+                      <SavesCell savings={savings} eventKey="" included={false} digits={sim.minorDigits} />
                       {sourceCell}
                       <td className="px-3 py-2.5 text-muted-foreground">{rateDetails(row.rate)}</td>
                       <td className="px-4 py-2.5">

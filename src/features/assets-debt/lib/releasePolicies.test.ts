@@ -1,7 +1,6 @@
 /** @jest-environment jsdom */
 import { localToday, previousYear } from "./calendarDate";
 import { withLoanOperation } from "./operationGate";
-import { syncIfNeeded } from "./syncFreshness";
 import { withLoanOverviewRead } from "./overviewReads";
 import { purgeLegacyLoanStorage } from "./loanStorage";
 
@@ -30,15 +29,6 @@ it("removes legacy financial storage without touching nonfinancial preferences",
     expect(storage.getItem("unrelated-ui-preference")).toBe("compact");
     storage.clear();
   }
-});
-
-it("syncs before consecutive explicit actions and propagates sync failure", async () => {
-  const sync = jest.fn().mockResolvedValue(undefined);
-  await syncIfNeeded("policy-budget", { sync }, "if-stale");
-  await syncIfNeeded("policy-budget", { sync }, "if-stale");
-  expect(sync).toHaveBeenCalledTimes(2);
-  sync.mockRejectedValueOnce(new Error("server unavailable"));
-  await expect(syncIfNeeded("policy-budget", { sync }, "always")).rejects.toThrow("server unavailable");
 });
 
 it("queues a refresh behind an apply and releases the queue after failure", async () => {

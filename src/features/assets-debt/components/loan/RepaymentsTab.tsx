@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { Landmark, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoHint } from "@/components/ui/info-hint";
 import { PillGroup } from "@/components/ui/pill-group";
 import { SearchInput } from "@/components/ui/search-input";
@@ -18,9 +18,10 @@ import type { Proposal } from "@/lib/assets-debt/tracking/proposals";
 import { cn } from "@/lib/utils";
 import { formatAmount } from "../../lib/money";
 import type { LoanTracking } from "../../lib/useLoanTracking";
-import { ENTRY_LABELS, StatusBadge, dt } from "./presentation";
+import { LoanMenuContent, ENTRY_LABELS, StatusBadge, dt } from "./presentation";
 import { InstallmentInspector, type InspectorActions } from "./InstallmentInspector";
 import type { WriteOutcome } from "../../lib/trackingWrites";
+import type { DebtWrite } from "@/lib/app-db/debtTrackingRepository";
 
 /**
  * Repayments (design spec 06 §7.2): one row per installment from the tracking start, edge to edge, with the opening
@@ -39,13 +40,17 @@ const TODO: ReadonlySet<InstallmentStatus> = new Set(["unrecorded", "check", "mi
 
 export type RunState = { done: number; total: number } | null;
 
-export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onPaymentRules, apply, run, outcomes, onDismissOutcomes, actions, writesLocked }: {
+/** Columns left out while the details panel is open, so the table fits beside it without scrolling sideways. */
+const PANEL_HIDDEN = new Set(["payee", "notes"]);
+
+export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onPaymentRules, apply, run, outcomes, onDismissOutcomes, actions, writesLocked, unresolved = [], onResolve }: {
   tracking: LoanTracking; directory: AccountDirectory | undefined; digits: number;
   onLinkToActual: () => void; onPaymentRules: () => void;
   /** Apply these writes, in order, as one run. */ apply: (proposals: Proposal[]) => void;
   run: RunState; outcomes: { list: WriteOutcome[]; clearingProblem: string | null } | null; onDismissOutcomes: () => void;
   actions: InspectorActions;
-  /** A write ended uncertain: nothing more until Actual was read again. */ writesLocked: boolean;
+  /** A write ended uncertain: nothing more until someone checked Actual. */ writesLocked: boolean;
+  unresolved?: DebtWrite[]; onResolve?: (writeId: string, inActual: boolean) => void;
 }) {
   const money = (minor: number) => formatAmount(minor, digits);
   const [filter, setFilter] = useState<Filter>("all");
@@ -125,19 +130,26 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
         {r.kind === "installment" && r.inst.status === "check" ? <Button size="xs" variant="outline" onClick={() => setActive(r.key)}>Review</Button> : null}
         {r.kind === "installment" && r.inst.status === "missing" ? <Button size="xs" variant="outline" onClick={() => setActive(r.key)}>Choose payment</Button> : null}
         {r.kind !== "before" ? <DropdownMenu><DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label={`More for ${rowName(r)}`} />}><MoreHorizontal className="size-3.5" /></DropdownMenuTrigger>
-          <DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setActive(r.key)}>Details</DropdownMenuItem>
+          <LoanMenuContent><DropdownMenuItem onClick={() => setActive(r.key)}>Details</DropdownMenuItem>
             {r.kind === "installment" && r.inst.payment ? <DropdownMenuItem onClick={() => actions.notThisPayment(r.inst)}>Not this payment</DropdownMenuItem> : null}
-          </DropdownMenuContent></DropdownMenu> : null}
+          </LoanMenuContent></DropdownMenu> : null}
       </div>;
     } },
   ];
 
+  // The panel's ‹ › step through the table's rows in the order shown, skipping the "before tracking" summary row.
+  const openable = all.filter((r) => r.kind !== "before");
+  const stepTo = (by: -1 | 1) => {
+    const at = openable.findIndex((r) => r.key === active);
+    const next = at < 0 ? undefined : openable[at + by];
+    return next ? () => setActive(next.key) : undefined;
+  };
+
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <SummaryStrip label="Repayments summary" items={[
           { label: "Owed in Actual", value: money(f.owedInActualMinor), detail: tracking.reads?.complete === false ? "The loan account didn't read completely: refresh" : "Loan account today", wrap: true },
-          { label: "Calculated", value: money(f.calculatedMinor), detail: Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "Agrees with Actual" : `Differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
+          { label: "Bench expects", value: money(f.calculatedMinor), detail: Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "By today · agrees with Actual" : `By today · differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
           { label: "Next payment", value: f.nextPayment ? money(f.nextPayment.amountMinor) : "-", detail: f.nextPayment ? `Due ${dt(f.nextPayment.dueDate)} · installment ${f.nextPayment.no}` : "No more installments", wrap: true },
           { label: "To do", value: <span className={todo + f.counts.check + f.counts.missing ? "text-amber-700 dark:text-amber-400" : undefined}>{todo} <span className="text-sm font-medium text-muted-foreground">Unrecorded</span></span>, detail: `${f.counts.check} Check · ${f.counts.missing} Missing`, wrap: true },
           { label: "Interest this year", value: money(f.interestThisYearMinor), detail: "Recorded and unrecorded installments", wrap: true },
@@ -157,9 +169,18 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
         {chosen.length > 0 && !busy ? <div role="region" aria-label="Selected repayments" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs"><strong>{chosen.length} selected</strong><span className="text-muted-foreground">Unrecorded rows only</span><Button size="xs" disabled={writesLocked} onClick={() => apply(inOrder(chosen))}>Apply {chosen.length}</Button><Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>Clear selection</Button></div> : null}
         {run ? <div role="status" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs">Applying {Math.min(run.done + 1, run.total)} of {run.total}…</div> : null}
         {outcomes ? <Outcomes outcomes={outcomes} onDismiss={onDismissOutcomes} counts={f.counts} agrees={Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100)} /> : null}
-        {writesLocked ? <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">A write to Actual ended with an uncertain outcome. Refresh and check the payment in Actual before applying anything else.</p> : null}
-        <div ref={tableRef} className="flex min-h-0 flex-1 flex-col">
-          <DataTable label="Repayments" columns={activeRow ? columns.filter((c) => c.key !== "notes") : columns} rows={all} rowKey={(r) => r.key} rowLabel={rowName} activeKey={active} onOpen={(r) => r.kind !== "before" && setActive(r.key)} sort={sort} onSort={setSort} dense
+        {unresolved.map((w) => (
+          <div key={w.id} role="alert" className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-xs">
+            <span className="text-destructive">A write to Actual {w.status === "applying" ? "was left unfinished" : "ended with an unknown outcome"}{w.installmentDueDate ? ` (installment due ${dt(w.installmentDueDate)})` : ""}. Nothing else is written until you check the payment in Actual.</span>
+            <span className="ml-auto" />
+            <Button size="xs" variant="outline" onClick={() => onResolve?.(w.id, true)}>The change is in Actual</Button>
+            <Button size="xs" variant="outline" onClick={() => onResolve?.(w.id, false)}>It isn&apos;t</Button>
+          </div>
+        ))}
+        {/* The details panel opens beside the table only: the figures and the toolbar keep the full width. */}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div ref={tableRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <DataTable label="Repayments" columns={activeRow ? columns.filter((c) => !PANEL_HIDDEN.has(c.key)) : columns} rows={all} rowKey={(r) => r.key} rowLabel={rowName} activeKey={active} onOpen={(r) => r.kind !== "before" && setActive(r.key)} sort={sort} onSort={setSort} dense
             rowClassName={(r) => cn(r.kind === "installment" && r.inst.status === "upcoming" && "text-muted-foreground", r.kind === "before" && "bg-muted/40", selected.has(r.key) && "bg-accent/40")}
             onRowKeys={(e, r) => {
               if (e.key === " " && proposalOf(r)) { toggle(r.key); return true; }
@@ -168,9 +189,10 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
             }}
             empty={rows.length ? "No repayments match your filters." : "No installments are due yet."} />
         </div>
-      </div>
       {activeRow && activeRow.kind !== "before" ? <InstallmentInspector key={activeRow.key} row={activeRow.kind === "installment" ? { kind: "installment", inst: activeRow.inst } : activeRow.kind === "event" ? { kind: "event", ledger: activeRow.ledger } : { kind: "opening", proposal: activeRow.proposal, amountMinor: activeRow.amountMinor, date: activeRow.date }}
-        tracking={tracking} directory={directory} digits={digits} busy={busy} writesLocked={writesLocked} onApply={(p) => apply([p])} actions={actions} onClose={() => setActive(null)} /> : null}
+        tracking={tracking} directory={directory} digits={digits} busy={busy} writesLocked={writesLocked} onApply={(p) => apply([p])} actions={actions} onClose={() => setActive(null)}
+        onPrev={stepTo(-1)} onNext={stepTo(1)} /> : null}
+        </div>
     </div>
   );
 }

@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, CircleHelp, MoreHorizontal } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { LOANS_PATH } from "../../lib/routes";
+import { FEATURES } from "@/lib/features/catalogue";
+import { LoanMenuContent } from "../loan/presentation";
+import { LoanGuide, guideSectionForLoanTab, type LoanGuideSection } from "../guide/LoanGuide";
 
 /**
  * The focused loan workspace frame (RD-084 P1.6b T288; FR-206a,
@@ -82,6 +85,8 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
   const [leaving, setLeaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const leave = () => router.push(BACK_HREF);
+  // The guide opens on the section for the tab you are on.
+  const [guide, setGuide] = useState<LoanGuideSection | null>(null);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -97,18 +102,19 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {actions}
+            <Button type="button" variant="outline" size="sm" onClick={() => setGuide(guideSectionForLoanTab(tab))}><CircleHelp className="size-3.5" aria-hidden />Guide</Button>
             {menu.length ? (
               <DropdownMenu>
                 <DropdownMenuTrigger aria-label="More loan actions" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                   <MoreHorizontal aria-hidden="true" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <LoanMenuContent>
                   {menu.map((item) => (
                     <DropdownMenuItem key={item.label} onClick={item.onSelect} className={item.destructive ? "text-destructive" : undefined}>
                       {item.label}
                     </DropdownMenuItem>
                   ))}
-                </DropdownMenuContent>
+                </LoanMenuContent>
               </DropdownMenu>
             ) : null}
           </div>
@@ -164,6 +170,7 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {guide ? <LoanGuide section={guide} onSection={setGuide} onClose={() => setGuide(null)} docsUrl={FEATURES.find((f) => f.id === "loans")?.docsUrl} /> : null}
     </div>
   );
 }

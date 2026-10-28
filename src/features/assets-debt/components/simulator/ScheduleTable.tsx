@@ -143,7 +143,7 @@ export function ScheduleTable({ events, profile, startDate, digits, tracked, tod
 
   return (
     <section aria-labelledby="schedule-heading" className="flex min-h-0 flex-col gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4">
         <div className="flex items-center gap-1">
           <h2 id="schedule-heading" className="text-sm font-semibold">Amortization schedule</h2>
           <HelpDialogButton
@@ -175,7 +175,7 @@ export function ScheduleTable({ events, profile, startDate, digits, tracked, tod
         </div>
         </div>
       </div>
-      <div role="table" aria-label={`Schedule, ${VIEWS.find((v) => v.id === view)!.label.toLowerCase()}`} aria-rowcount={rows.length + 1} aria-colcount={columns.length + (tracked ? 1 : 0)} className="isolate overflow-hidden rounded-md border border-border">
+      <div role="table" aria-label={`Schedule, ${VIEWS.find((v) => v.id === view)!.label.toLowerCase()}`} aria-rowcount={rows.length + 1} aria-colcount={columns.length + (tracked ? 1 : 0)} className="isolate overflow-hidden border-t border-border">
         <div ref={scrollRef} data-testid="schedule-scroll-container" className="relative max-h-[480px] overflow-auto">
           <div role="rowgroup" className="sticky top-0 z-20 bg-muted">
             <div role="row" aria-rowindex={1} className="grid gap-2 bg-muted px-3 py-1.5 text-[11px] font-medium" style={{ gridTemplateColumns: template, minWidth: tableMinWidth }}>

@@ -245,12 +245,13 @@ describe("state boundary and saving", () => {
     for (const forbidden of ["liabilityAccountId", "paymentAccountId", "categoryId", "loanPaymentCategoryId", "lenderPattern", "executionStrategy", "driftToleranceMinor", "name"]) expect(keys).not.toContain(forbidden);
   });
 
-  it("an active save needs the lender pattern answered, offsets mapped and a name; a draft only needs the name and mapping", () => {
+  it("an active save needs offsets mapped and a name; interest is split from each repayment unless changed; a draft only needs the name and mapping", () => {
     const s = { ...sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE } }), ...offsetOf(5_000_000) };
     const t = newTracking(s);
-    expect(t.lenderPattern).toBeNull();
+    expect(t.lenderPattern).toBe("embedded-interest");
     const first = statesToSaveInput(s, t, "budget-1", "bench-daily");
-    expect(first.ok ? [] : first.issues.map((i) => i.field)).toEqual(expect.arrayContaining(["name", `offset:${s.offsets[0].key}`, "lenderPattern"]));
+    expect(first.ok ? [] : first.issues.map((i) => i.field)).toEqual(expect.arrayContaining(["name", `offset:${s.offsets[0].key}`]));
+    expect(first.ok ? [] : first.issues.map((i) => i.field)).not.toContain("lenderPattern");
     const draft = statesToSaveInput(s, { ...t, name: "Home loan", status: "draft", offsetAccountMap: { [s.offsets[0].placeholderAccountId]: "acc-offset" } }, "budget-1", "bench-daily");
     expect(draft.ok).toBe(true);
   });

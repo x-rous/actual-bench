@@ -17,6 +17,7 @@ import { formatAmount } from "../../lib/money";
 import { createDebtAnchor, recordDebtObservation } from "../../lib/debtsApi";
 import { finishWrite, saveLedgerChanges, startWrite } from "../../lib/trackingApi";
 import { applyProposals, type WriteOutcome } from "../../lib/trackingWrites";
+import { isUnresolved } from "@/lib/assets-debt/tracking/writes";
 import { readWindowStart, type LoanTracking } from "../../lib/useLoanTracking";
 import { DateField, MoneyField, SelectField, TextField } from "../fields";
 import { LoanLedgerTab } from "./LoanLedgerTab";
@@ -37,9 +38,11 @@ export function useTrackingWorkspace(maybeDetail: DebtDetail | undefined, tracki
   const queryClient = useQueryClient();
   const [run, setRun] = useState<RunState>(null);
   const [outcomes, setOutcomes] = useState<{ list: WriteOutcome[]; clearingProblem: string | null } | null>(null);
-  const [lockedAt, setLockedAt] = useState<string | null>(null);
+
   const [dialog, setDialog] = useState<"rules" | "adjustment" | "statement" | null>(null);
-  const writesLocked = lockedAt !== null && lockedAt === tracking.reads?.readAt;
+  // A write whose outcome is unknown locks every other write until someone checked Actual and said what happened.
+  const unresolved = (tracking.bundle?.writes ?? []).filter((w) => isUnresolved(w));
+  const writesLocked = unresolved.length > 0;
   const debt = tracking.debt;
   const entryOf = (id: string) => tracking.bundle?.entries.find((e) => e.actualTransactionId === id);
 
@@ -58,9 +61,7 @@ export function useTrackingWorkspace(maybeDetail: DebtDetail | undefined, tracki
         transferPayeeByAccount: tracking.reads.transferPayeeByAccount, offBudgetAccountIds: new Set(directory.accounts.filter((a) => a.offBudget).map((a) => a.id)),
       }, proposals, (done, total) => setRun({ done, total }));
       setOutcomes({ list: result.outcomes, clearingProblem: result.clearingProblem });
-      if (result.outcomes.some((o) => o.status === "uncertain")) setLockedAt("pending");
       await tracking.refresh();
-      if (result.outcomes.some((o) => o.status === "uncertain")) setLockedAt((current) => (current === "pending" ? tracking.reads?.readAt ?? null : current));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The changes could not be applied");
     } finally {
@@ -116,7 +117,13 @@ export function useTrackingWorkspace(maybeDetail: DebtDetail | undefined, tracki
     await tracking.refresh();
   }
 
-  return { run, outcomes, setOutcomes, writesLocked, apply, actions, saveEntries, saveNotes, dialog, setDialog, afterChange };
+  /** The user checked Actual: the write is there (applied) or it isn't (nothing written). */
+  async function resolveWrite(writeId: string, inActual: boolean) {
+    await finishWrite(detail.debt.id, writeId, inActual ? { status: "applied" } : { status: "failed", error: { message: "Checked in Actual: not written" } });
+    await tracking.refresh();
+  }
+
+  return { run, outcomes, setOutcomes, writesLocked, unresolved, resolveWrite, apply, actions, saveEntries, saveNotes, dialog, setDialog, afterChange };
 }
 
 export type TrackingWorkspace = ReturnType<typeof useTrackingWorkspace>;
@@ -125,7 +132,7 @@ export function TrackingTab({ tab, detail, tracking, directory, digits, ws, onLi
   tab: "repayments" | "ledger"; detail: DebtDetail; tracking: LoanTracking; directory: AccountDirectory | undefined; digits: number; ws: TrackingWorkspace; onLinkToActual: () => void;
 }) {
   const content = tab === "repayments"
-    ? <RepaymentsTab tracking={tracking} directory={directory} digits={digits} onLinkToActual={onLinkToActual} onPaymentRules={() => ws.setDialog("rules")} apply={(p) => void ws.apply(p)} run={ws.run} outcomes={ws.outcomes} onDismissOutcomes={() => ws.setOutcomes(null)} actions={ws.actions} writesLocked={ws.writesLocked} />
+    ? <RepaymentsTab tracking={tracking} directory={directory} digits={digits} onLinkToActual={onLinkToActual} onPaymentRules={() => ws.setDialog("rules")} apply={(p) => void ws.apply(p)} run={ws.run} outcomes={ws.outcomes} onDismissOutcomes={() => ws.setOutcomes(null)} actions={ws.actions} writesLocked={ws.writesLocked} unresolved={ws.unresolved} onResolve={(id, inActual) => void ws.resolveWrite(id, inActual).catch((e) => toast.error(e instanceof Error ? e.message : "Could not save"))} />
     : <LoanLedgerTab tracking={tracking} digits={digits} onLinkToActual={onLinkToActual} onSaveEntries={ws.saveEntries} onSaveNotes={ws.saveNotes} onAddAdjustment={() => ws.setDialog("adjustment")} onStatement={() => ws.setDialog("statement")} writesLocked={ws.writesLocked} />;
   return <>{content}<TrackingDialogs detail={detail} tracking={tracking} directory={directory} digits={digits} ws={ws} /></>;
 }
