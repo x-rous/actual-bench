@@ -3,6 +3,8 @@
 import { ChevronDown, Plus } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import type { EventSavings } from "../../lib/useEventSavings";
+import { formatSaving } from "../../lib/eventSavings";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { formatAmount, fractionToPercent } from "../../lib/money";
@@ -90,6 +92,16 @@ function eventRows(sim: SimulationState, tracked?: TrackedEvents): EventRow[] {
   ].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === "rate-change" ? -1 : b.kind === "rate-change" ? 1 : a.key.localeCompare(b.key)));
 }
 
+/** What one row saves, as its own cell: "…" while calculating, "–" for a row the projection leaves out. */
+function SavesCell({ savings, eventKey, included, digits }: { savings?: EventSavings; eventKey: string; included: boolean; digits: number }) {
+  if (!included || !savings || savings.status === "none") return <td className="px-3 py-2.5 text-right text-muted-foreground">-</td>;
+  if (savings.status === "calculating") return <td className="px-3 py-2.5 text-right text-muted-foreground" aria-label="Calculating">…</td>;
+  const saving = savings.byKey.get(eventKey);
+  if (!saving) return <td className="px-3 py-2.5 text-right text-muted-foreground">-</td>;
+  const tone = saving.interestMinor > 0 ? "text-emerald-700 dark:text-emerald-400" : saving.interestMinor < 0 ? "text-red-700 dark:text-red-400" : "text-muted-foreground";
+  return <td className={cn("whitespace-nowrap px-3 py-2.5 text-right tabular-nums", tone)}>{formatSaving(saving, digits)}</td>;
+}
+
 /** Where a row of the Events list comes from on a tracked loan. */
 function sourceOf(row: EventRow, tracked: TrackedEvents): "From Actual" | "What-if" | "Contract" | "Before tracking" | "Passed" {
   if (row.kind === "ledger") return "From Actual";
@@ -109,7 +121,7 @@ function rateDetails(rate: SimRate): string {
   return [repayment, rate.paymentEffectiveFrom ? `Repayment changes ${rate.paymentEffectiveFrom}` : null, rate.source, rate.note].filter(Boolean).join(" · ");
 }
 
-export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEditRate, onRemoveRate, tracked }: { sim: SimulationState; current: Headline | null; baseline: Headline | null; onEdit: (editor: ExtraEditor) => void; onRemove: (assumption: SimAssumption) => void; onEditRate: (editor: "new" | SimRate) => void; onRemoveRate: (rate: SimRate) => void; /** A loan tracked in Actual. */ tracked?: TrackedEvents }) {
+export function EventsSection({ sim, current, baseline, savings, onEdit, onRemove, onEditRate, onRemoveRate, tracked }: { sim: SimulationState; current: Headline | null; baseline: Headline | null; /** What each event saves (date order). */ savings?: EventSavings; onEdit: (editor: ExtraEditor) => void; onRemove: (assumption: SimAssumption) => void; onEditRate: (editor: "new" | SimRate) => void; onRemoveRate: (rate: SimRate) => void; /** A loan tracked in Actual. */ tracked?: TrackedEvents }) {
   const transactions = listedExtraTransactions(sim);
   const rows = eventRows(sim, tracked);
   const hasImpactEvents = transactions.length > 0 || !!tracked?.ledgerEvents.some((l) => l.kind !== "adjustment");
@@ -183,6 +195,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                   <th className="px-4 py-2 font-medium">Date</th>
                   <th className="px-3 py-2 font-medium">Event type</th>
                   <th className="px-3 py-2 text-right font-medium">Value</th>
+                  <th className="px-3 py-2 text-right font-medium" title="Interest and time each event saves, in date order: each on top of the ones before it">Saves</th>
                   {tracked ? <th className="px-3 py-2 font-medium">Source</th> : null}
                   <th className="px-3 py-2 font-medium">Details</th>
                   <th className="px-4 py-2 text-right font-medium">Actions</th>
@@ -198,6 +211,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">{LEDGER_LABEL[row.ledger.kind]}</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.ledger.amountMinor, sim.minorDigits)}</td>
+                      <SavesCell savings={savings} eventKey={`ledger:${row.ledger.rowId}`} included={row.ledger.kind === "extra-principal" || row.ledger.kind === "draw" || row.ledger.kind === "fee"} digits={sim.minorDigits} />
                       {sourceCell}
                       <td className="px-3 py-2.5 text-muted-foreground">{[row.ledger.payee, row.ledger.notes].filter(Boolean).join(" · ") || "In the Loan Ledger"}</td>
                       <td className="px-4 py-2.5"><div className="flex justify-end"><Button type="button" variant="ghost" size="sm" onClick={tracked?.onOpenLedger}>Open in Loan Ledger</Button></div></td>
@@ -212,6 +226,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">{KIND_LABEL[row.assumption.kind]}</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.assumption.amountMinor, sim.minorDigits)}</td>
+                      <SavesCell savings={savings} eventKey={row.assumption.key} included={!passed && !off && source !== "Before tracking"} digits={sim.minorDigits} />
                       {sourceCell}
                       <td className="px-3 py-2.5 text-muted-foreground">{passed ? "Passed, not in the projection: what happened is in the Loan Ledger" : off ? `Off: not in the projection · ${assumptionDetails(row.assumption)}` : assumptionDetails(row.assumption)}</td>
                       <td className="px-4 py-2.5">
@@ -229,6 +244,7 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
                       <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
                       <td className="px-3 py-2.5 font-medium">Rate change</td>
                       <td className="px-3 py-2.5 text-right font-medium tabular-nums">{fractionToPercent(row.previousRate)}% → {fractionToPercent(row.rate.annualRateDecimal)}%</td>
+                      <SavesCell savings={savings} eventKey="" included={false} digits={sim.minorDigits} />
                       {sourceCell}
                       <td className="px-3 py-2.5 text-muted-foreground">{rateDetails(row.rate)}</td>
                       <td className="px-4 py-2.5">

@@ -14,6 +14,7 @@ import { formatAmount } from "../../lib/money";
 import type { TrackedHistory } from "../../lib/trackedSchedule";
 import type { DebtProjection } from "@/lib/financial-models/loan/projection";
 import { dailyEngineReason, newSimulation, switchToDayByDay, withoutExtraTransactions, type SimAssumption, type SimRate, type SimulationState } from "../../lib/simulatorModel";
+import { useEventSavings } from "../../lib/useEventSavings";
 import { useLiveProjection } from "../../lib/useLiveProjection";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import { labelOf, REPAYMENT_FREQUENCY_OPTIONS } from "../../lib/vocabulary";
@@ -146,6 +147,12 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
   const compared = useMemo(() => (live.comparison?.ok ? headline(live.comparison.events) : null), [live.comparison]);
   const impactBaseline = useMemo(() => (baseProjection?.ok ? headline(baseProjection.events) : null), [baseProjection]);
   const contractHead = useMemo(() => (live.contract?.ok ? headline(live.contract.events) : null), [live.contract]);
+  // What each event saves runs on the projections as calculated (not joined to the history), so every step of a chain
+  // is measured the same way.
+  const rawHead = useMemo(() => (live.projection?.ok ? headline(live.projection.events) : null), [live.projection]);
+  const rawBase = useMemo(() => (live.impactBaseline?.ok ? headline(live.impactBaseline.events) : null), [live.impactBaseline]);
+  const savingsTracked = useMemo(() => (tracked ? { startDate: tracked.startDate, anchor: tracked.anchor, ledgerEvents: tracked.ledgerEvents } : null), [tracked]);
+  const savings = useEventSavings(sim, { baseline: rawBase, current: rawHead, contract: contractHead, ready: live.status === "ok", tracked: savingsTracked, histories: offsetTracking?.snapshots });
   const delta = head && compared ? deltas(head, compared) : null;
   const frequency = labelOf(REPAYMENT_FREQUENCY_OPTIONS, sim.profile.repaymentFrequency).toLowerCase();
   const chart = useMemo(() => {
@@ -249,10 +256,10 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
           {chart && chart.points.length ? <div className="px-4 py-3"><LoanChartPanel data={chart} view={chartView} onViewChange={setChartView} digits={sim.minorDigits} /></div> : null}
           {events ? (
             <>
-              <EventsSection sim={sim} current={head} baseline={impactBaseline} onEdit={setExtraEditor} onRemove={removeExtra} onEditRate={setRateEditor} onRemoveRate={removeRate}
+              <EventsSection sim={sim} current={head} baseline={impactBaseline} savings={savings} onEdit={setExtraEditor} onRemove={removeExtra} onEditRate={setRateEditor} onRemoveRate={removeRate}
                 tracked={tracked ? {
                   startDate: tracked.startDate, today: tracked.today, ledgerEvents: tracked.ledgerEvents,
-                  fromActual: [impactBaseline, contractHead], whatIfs: [head, impactBaseline],
+                  fromActual: [savings.fromActualAfter, contractHead], whatIfs: [head, impactBaseline],
                   onToggle: (a) => change({ ...sim, assumptions: sim.assumptions.map((x) => (x.key === a.key ? { ...x, enabled: x.enabled === false } : x)) }),
                   onOpenLedger: tracked.onOpenLedger,
                 } : undefined} />

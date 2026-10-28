@@ -234,6 +234,22 @@ describe("Loans & Debt list", () => {
 });
 
 describe("the simulator workspace", () => {
+  it("each extra payment shows what it saves, in date order, adding up to the Events total", async () => {
+    const extra = (key: string, date: string, amountMinor: number) => ({ key, kind: "extra-repayment" as const, effectiveFrom: date, recurrence: null, amountMinor, feeTreatment: null, offsetAccountId: null, note: null });
+    wrap(<Harness initial={shortLoan({ assumptions: [extra("b", "2025-06-01", 300_000), extra("a", "2024-06-01", 300_000)] })} />);
+    const table = await screen.findByRole("table", { name: "Events" }, WAIT);
+    const header = within(table).getAllByRole("columnheader").map((c) => c.textContent);
+    const at = header.indexOf("Saves");
+    expect(at).toBeGreaterThan(0);
+    const cells = () => within(table).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[at].textContent ?? "");
+    await waitFor(() => expect(cells().every((c) => /^[\d,]+\.\d\d/.test(c))).toBe(true), WAIT);
+    const amount = (text: string) => Number(text.match(/[\d,]+\.\d\d/)![0].replace(/,/g, ""));
+    const total = amount(within(screen.getByTestId("events-impact")).getByText(/^[\d,]+\.\d\d$/).textContent!);
+    const [first, second] = cells().map(amount);
+    expect(first).toBeGreaterThan(second);
+    expect(Math.round((first + second) * 100)).toBe(Math.round(total * 100));
+  });
+
   it("the chart opens monthly for a loan of up to 10 years and yearly for a longer one", async () => {
     const { unmount } = wrap(<Harness initial={shortLoan()} />);
     const detail = await screen.findByRole("radiogroup", { name: "Chart detail" }, WAIT);

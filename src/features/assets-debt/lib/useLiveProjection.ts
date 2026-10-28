@@ -41,7 +41,7 @@ export type TrackedProjection = { startDate: string; anchor: { date: string; pri
  * One projection's input. A tracked loan's projection starts at its anchor (the last thing that really happened) with
  * only the events after it; its contract runs from the opening with only the events before the tracking start.
  */
-function inputFor(sim: SimulationState, histories?: readonly OffsetHistorySnapshot[], tracked?: { mode: "projection" | "contract"; at: TrackedProjection } | null): DebtProjectionInput | null {
+export function inputFor(sim: SimulationState, histories?: readonly OffsetHistorySnapshot[], tracked?: { mode: "projection" | "contract"; at: TrackedProjection } | null): DebtProjectionInput | null {
   const scoped = !tracked ? sim : { ...sim, assumptions: sim.assumptions.filter((a) => (tracked.mode === "contract" ? a.effectiveFrom < tracked.at.startDate : a.effectiveFrom > tracked.at.anchor.date)) };
   const built = simulationToModel(scoped);
   if (!built.ok) return null;
