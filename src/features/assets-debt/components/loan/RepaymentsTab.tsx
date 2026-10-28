@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { Landmark, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoHint } from "@/components/ui/info-hint";
 import { PillGroup } from "@/components/ui/pill-group";
 import { SearchInput } from "@/components/ui/search-input";
@@ -18,7 +18,7 @@ import type { Proposal } from "@/lib/assets-debt/tracking/proposals";
 import { cn } from "@/lib/utils";
 import { formatAmount } from "../../lib/money";
 import type { LoanTracking } from "../../lib/useLoanTracking";
-import { ENTRY_LABELS, StatusBadge, dt } from "./presentation";
+import { LoanMenuContent, ENTRY_LABELS, StatusBadge, dt } from "./presentation";
 import { InstallmentInspector, type InspectorActions } from "./InstallmentInspector";
 import type { WriteOutcome } from "../../lib/trackingWrites";
 import type { DebtWrite } from "@/lib/app-db/debtTrackingRepository";
@@ -39,6 +39,9 @@ type Filter = "all" | "todo" | "recorded" | "missing";
 const TODO: ReadonlySet<InstallmentStatus> = new Set(["unrecorded", "check", "missing"]);
 
 export type RunState = { done: number; total: number } | null;
+
+/** Columns left out while the details panel is open, so the table fits beside it without scrolling sideways. */
+const PANEL_HIDDEN = new Set(["payee", "notes"]);
 
 export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onPaymentRules, apply, run, outcomes, onDismissOutcomes, actions, writesLocked, unresolved = [], onResolve }: {
   tracking: LoanTracking; directory: AccountDirectory | undefined; digits: number;
@@ -127,9 +130,9 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
         {r.kind === "installment" && r.inst.status === "check" ? <Button size="xs" variant="outline" onClick={() => setActive(r.key)}>Review</Button> : null}
         {r.kind === "installment" && r.inst.status === "missing" ? <Button size="xs" variant="outline" onClick={() => setActive(r.key)}>Choose payment</Button> : null}
         {r.kind !== "before" ? <DropdownMenu><DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label={`More for ${rowName(r)}`} />}><MoreHorizontal className="size-3.5" /></DropdownMenuTrigger>
-          <DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setActive(r.key)}>Details</DropdownMenuItem>
+          <LoanMenuContent><DropdownMenuItem onClick={() => setActive(r.key)}>Details</DropdownMenuItem>
             {r.kind === "installment" && r.inst.payment ? <DropdownMenuItem onClick={() => actions.notThisPayment(r.inst)}>Not this payment</DropdownMenuItem> : null}
-          </DropdownMenuContent></DropdownMenu> : null}
+          </LoanMenuContent></DropdownMenu> : null}
       </div>;
     } },
   ];
@@ -168,7 +171,7 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
           </div>
         ))}
         <div ref={tableRef} className="flex min-h-0 flex-1 flex-col">
-          <DataTable label="Repayments" columns={activeRow ? columns.filter((c) => c.key !== "notes") : columns} rows={all} rowKey={(r) => r.key} rowLabel={rowName} activeKey={active} onOpen={(r) => r.kind !== "before" && setActive(r.key)} sort={sort} onSort={setSort} dense
+          <DataTable label="Repayments" columns={activeRow ? columns.filter((c) => !PANEL_HIDDEN.has(c.key)) : columns} rows={all} rowKey={(r) => r.key} rowLabel={rowName} activeKey={active} onOpen={(r) => r.kind !== "before" && setActive(r.key)} sort={sort} onSort={setSort} dense
             rowClassName={(r) => cn(r.kind === "installment" && r.inst.status === "upcoming" && "text-muted-foreground", r.kind === "before" && "bg-muted/40", selected.has(r.key) && "bg-accent/40")}
             onRowKeys={(e, r) => {
               if (e.key === " " && proposalOf(r)) { toggle(r.key); return true; }

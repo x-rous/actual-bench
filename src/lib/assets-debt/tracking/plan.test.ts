@@ -68,7 +68,7 @@ describe("planTracking", () => {
     // Owed in Actual is lower than the calculation by the interest still inside the transfers.
     const interest = result.installments.slice(0, 4).reduce((s, i) => s + i.interestMinor, 0);
     expect(result.figures.differenceMinor).toBe(-interest);
-    expect(result.figures.counts).toMatchObject({ unrecorded: 4, upcoming: 3 });
+    expect(result.figures.counts).toMatchObject({ unrecorded: 4, upcoming: 1 });
     expect(result.openingAdjustment).toBeNull();
   });
 

@@ -142,7 +142,7 @@ export type TrackingResult =
 const DAY = 86_400_000;
 const addDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY);
-const UPCOMING_SHOWN = 3;
+const UPCOMING_SHOWN = 1;
 
 function fmt(minor: number, digits: number): string {
   return (minor / 10 ** digits).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });

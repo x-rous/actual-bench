@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { LOANS_PATH } from "../../lib/routes";
+import { LoanMenuContent } from "../loan/presentation";
 
 /**
  * The focused loan workspace frame (RD-084 P1.6b T288; FR-206a,
@@ -102,13 +103,13 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
                 <DropdownMenuTrigger aria-label="More loan actions" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                   <MoreHorizontal aria-hidden="true" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <LoanMenuContent>
                   {menu.map((item) => (
                     <DropdownMenuItem key={item.label} onClick={item.onSelect} className={item.destructive ? "text-destructive" : undefined}>
                       {item.label}
                     </DropdownMenuItem>
                   ))}
-                </DropdownMenuContent>
+                </LoanMenuContent>
               </DropdownMenu>
             ) : null}
           </div>

@@ -94,9 +94,10 @@ describe("Link to Actual", () => {
     fireEvent.blur(screen.getByLabelText("First installment"));
     await waitFor(() => expect(changed.current?.trackingStartDueDate).toBeTruthy());
     const third = changed.current!.trackingStartDueDate!;
-    fireEvent.click(screen.getByRole("button", { name: "Choose by date instead" }));
+    fireEvent.click(screen.getByRole("button", { name: "Due date" }));
+    expect(screen.getByRole("button", { name: "Due date" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("First installment on or after")).toBeInTheDocument();
-    expect(screen.getByText("No. 3")).toBeInTheDocument();
+    expect(screen.getByText("No. 3 of 36")).toBeInTheDocument();
     expect(third.startsWith("2024-")).toBe(true);
   });
 

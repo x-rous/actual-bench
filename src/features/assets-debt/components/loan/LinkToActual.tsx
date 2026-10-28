@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PillGroup } from "@/components/ui/pill-group";
 import { Switch } from "@/components/ui/switch";
 import { getTransport } from "@/lib/actual";
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
@@ -183,16 +184,19 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
         <Section n="4" done={!!start} title="Tracking start" lead="The first installment Bench tracks. Earlier installments are assumed paid as contracted, and are never matched or reported missing.">
           {!dues.length ? <p className="text-xs text-muted-foreground">Complete Terms &amp; Schedule first: the installments come from the loan&apos;s terms.</p> : (
             <>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                {startMode === "number"
-                  ? <IntegerField label="First installment" min={1} value={chosen?.no ?? null} onChange={(n) => set({ trackingStartDueDate: n && dues[n - 1] ? dues[n - 1].date : null })} hint={`1 to ${dues.length}`} />
-                  : <DateField label="First installment on or after" value={chosen?.date ?? ""} onChange={(d) => set({ trackingStartDueDate: dues.find((x) => x.date >= d)?.date ?? null })} />}
-                <div className="flex flex-col justify-end gap-1 text-xs">
-                  <span className="text-muted-foreground">{startMode === "number" ? "Due on" : "Installment"}</span>
-                  <span className="flex h-8 items-center font-medium">{chosen ? (startMode === "number" ? dt(chosen.date) : `No. ${chosen.no}`) : "-"}</span>
+              <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-4">
+                <div className="flex flex-col gap-1 text-xs">
+                  <span className="text-muted-foreground">Choose the first installment by</span>
+                  <PillGroup<"number" | "date"> className="h-8 w-fit items-center" value={startMode} onChange={setStartMode} options={[{ value: "number", label: "Installment no." }, { value: "date", label: "Due date" }]} />
                 </div>
-                <div className="flex items-end gap-2 md:col-span-2">
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setStartMode(startMode === "number" ? "date" : "number")}>{startMode === "number" ? "Choose by date instead" : "Choose by number instead"}</Button>
+                {startMode === "number"
+                  ? <IntegerField label="First installment" min={1} value={chosen?.no ?? null} onChange={(n) => set({ trackingStartDueDate: n && dues[n - 1] ? dues[n - 1].date : null })} />
+                  : <DateField label="First installment on or after" value={chosen?.date ?? ""} onChange={(d) => set({ trackingStartDueDate: dues.find((x) => x.date >= d)?.date ?? null })} />}
+                <div className="flex flex-col gap-1 text-xs">
+                  <span className="text-muted-foreground">{startMode === "number" ? `Due on (installments 1 to ${dues.length})` : "Installment"}</span>
+                  <span className="flex h-8 items-center font-medium">{chosen ? (startMode === "number" ? dt(chosen.date) : `No. ${chosen.no} of ${dues.length}`) : "-"}</span>
+                </div>
+                <div className="flex h-8 items-center">
                   {suggested && (!start || start.no !== suggested.no) ? <Button type="button" size="sm" variant="outline" onClick={() => set({ trackingStartDueDate: suggested.date })}>Use installment {suggested.no}</Button> : null}
                 </div>
               </div>
@@ -229,9 +233,8 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
 
         <Section n="–" title="Advanced">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <MoneyField label="Tolerance" valueMinor={tolerance} minorDigits={digits} fixedDecimals onChange={(m) => set({ driftToleranceMinor: m })} hint="Differences up to this much are not flagged." />
-            <IntegerField label="Missing after" suffix="days" value={tracking.missingGraceDays} onChange={(n) => set({ missingGraceDays: n ?? 5 })} hint="Days past the due date before an installment counts as missing." />
-            <IntegerField label="Remind me to check a lender statement every" suffix="days" min={1} value={tracking.expectedObservationIntervalDays} onChange={(n) => set({ expectedObservationIntervalDays: n })} hint="Optional." />
+            <MoneyField label="Ignore differences up to" valueMinor={tolerance} minorDigits={digits} fixedDecimals onChange={(m) => set({ driftToleranceMinor: m })} hint="In a payment amount or the loan balance (rounding)." />
+            <IntegerField label="Mark missing after" suffix="days late" value={tracking.missingGraceDays} onChange={(n) => set({ missingGraceDays: n ?? 5 })} hint="With no payment found. A later payment is still matched." />
           </div>
         </Section>
       </div>

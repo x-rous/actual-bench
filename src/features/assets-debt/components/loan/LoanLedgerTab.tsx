@@ -19,7 +19,7 @@ import type { LedgerChange } from "@/lib/app-db/debtTrackingRepository";
 import { cn } from "@/lib/utils";
 import { formatAmount } from "../../lib/money";
 import type { LoanTracking } from "../../lib/useLoanTracking";
-import { ENTRY_LABELS, dt, entryChoices } from "./presentation";
+import { LoanMenuContent, ENTRY_LABELS, dt, entryChoices } from "./presentation";
 import { TextField } from "../fields";
 
 /**
@@ -78,10 +78,10 @@ export function LoanLedgerTab({ tracking, digits, onLinkToActual, onSaveEntries,
         className={cn("max-w-full truncate rounded border px-1.5 py-0.5 text-[11px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring", l.type === "unclassified" ? "border-dashed text-amber-700 dark:text-amber-400" : l.suggested ? "border-dashed text-foreground/70" : "bg-muted/30")} />}>
         {ENTRY_LABELS[l.type]}{l.suggested ? <span className="ml-1 text-[10px] text-muted-foreground italic">suggested</span> : null}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <LoanMenuContent align="start">
         {entryChoices(l.row.amount).map((t) => <DropdownMenuItem key={t} disabled={busy} onClick={() => void classify([l.row.id], t)}>{ENTRY_LABELS[t]}{t === l.type && !l.suggested ? " ✓" : ""}</DropdownMenuItem>)}
         {l.entryRevision ? <DropdownMenuItem disabled={busy} onClick={() => void classify([l.row.id], null)}>Back to Bench&apos;s suggestion</DropdownMenuItem> : null}
-      </DropdownMenuContent>
+      </LoanMenuContent>
     </DropdownMenu>
   );
 
@@ -104,7 +104,7 @@ export function LoanLedgerTab({ tracking, digits, onLinkToActual, onSaveEntries,
       <div className="flex min-w-0 flex-1 flex-col">
         <SummaryStrip label="Loan Ledger summary" items={[
           { label: "Account balance", value: money(balance), detail: tracking.reads?.complete === false ? "Didn't read completely: refresh" : "Loan account today · as Actual shows it", wrap: true },
-          { label: "Principal repaid", value: money(sum((l) => l.type === "principal-repayment" && l.row.date > start)), detail: "Principal repayments since the tracking start", wrap: true },
+          { label: "Repayments", value: money(sum((l) => l.type === "principal-repayment" && l.row.date > start)), detail: "Into the loan account since the tracking start", wrap: true },
           { label: "Extra principal", value: money(sum((l) => l.type === "extra-principal")), detail: `${ledger.filter((l) => l.type === "extra-principal").length} entries · counted in the calculation`, wrap: true },
           { label: "Draws and fees", value: money(sum((l) => l.type === "draw" || l.type === "fee")), detail: `${ledger.filter((l) => l.type === "draw" || l.type === "fee").length} entries`, wrap: true },
           { label: "Unclassified", value: <span className={unclassified.length ? "text-amber-700 dark:text-amber-400" : undefined}>{unclassified.length}</span>, detail: unclassified.length ? <button type="button" className="underline underline-offset-2" onClick={() => { setTypes({ ids: ["unclassified"], not: false }); setRange(ALL_TIME); setSearch(""); }}>Show them · all dates</button> : "All classified · all dates", wrap: true },
@@ -124,9 +124,9 @@ export function LoanLedgerTab({ tracking, digits, onLinkToActual, onSaveEntries,
             </DropdownMenuContent></DropdownMenu>
         </div>
         {selected.length ? <div role="region" aria-label="Selected entries" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs"><strong>{selected.length} selected</strong><span className="mr-2 text-muted-foreground">Visible rows</span>
-          <DropdownMenu><DropdownMenuTrigger render={<Button size="xs" variant="outline" disabled={busy} />}>Classify…</DropdownMenuTrigger><DropdownMenuContent>
+          <DropdownMenu><DropdownMenuTrigger render={<Button size="xs" variant="outline" disabled={busy} />}>Classify…</DropdownMenuTrigger><LoanMenuContent align="start">
             {(() => { const signs = new Set(selected.map((id) => Math.sign(ledger.find((l) => l.row.id === id)?.row.amount ?? 0))); const choices = signs.size === 1 ? entryChoices([...signs][0]) : (["adjustment"] as const); return choices.map((t) => <DropdownMenuItem key={t} onClick={() => void classify(selected, t)}>{ENTRY_LABELS[t]}</DropdownMenuItem>); })()}
-          </DropdownMenuContent></DropdownMenu>
+          </LoanMenuContent></DropdownMenu>
           <Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected([])}>Clear selection</Button></div> : null}
         {error ? <p role="alert" className="border-b p-3 text-sm text-destructive">{error}</p> : null}
         <DataTable label="Loan Ledger" columns={columns} rows={sorted} rowKey={(l) => l.row.id} rowLabel={(l) => `${l.row.payeeName ?? "Row"} · ${l.row.date} · ${money(l.row.amount)}`} activeKey={editing} onOpen={(l) => setEditing(l.row.id)} sort={sort} onSort={setSort} dense rowHeight={30}

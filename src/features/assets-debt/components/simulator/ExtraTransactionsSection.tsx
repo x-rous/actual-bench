@@ -3,7 +3,7 @@
 import { ChevronDown, Plus } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { formatAmount, fractionToPercent } from "../../lib/money";
 import { deltas, type Headline } from "../../lib/results";
@@ -11,6 +11,7 @@ import type { SimAssumption, SimAssumptionKind, SimRate, SimulationState } from 
 import { assumptionDetails, KIND_LABEL, listedExtraTransactions, type ExtraEditor } from "./ExtraTransactionsDialog";
 import { HelpDialogButton } from "./ConfigurationSection";
 import { formatChartDate } from "../chart/chartMeta";
+import { LoanMenuContent } from "../loan/presentation";
 
 const DIRECT_KINDS: SimAssumptionKind[] = ["extra-repayment", "draw"];
 const MORE_KINDS: SimAssumptionKind[] = ["fee", "payment-change"];
@@ -141,17 +142,17 @@ export function EventsSection({ sim, current, baseline, onEdit, onRemove, onEdit
             <Button type="button" variant="outline" size="sm" onClick={() => onEditRate("new")}>Rate change</Button>
             <DropdownMenu>
               <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1")}>More <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <LoanMenuContent>
                 {MORE_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
-              </DropdownMenuContent>
+              </LoanMenuContent>
             </DropdownMenu>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1 md:hidden")}><Plus aria-hidden="true" />Add event <ChevronDown aria-hidden="true" /></DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <LoanMenuContent>
               {ALL_KINDS.map((kind) => <DropdownMenuItem key={kind} onClick={() => onEdit(kind)}>{KIND_LABEL[kind]}</DropdownMenuItem>)}
               <DropdownMenuItem onClick={() => onEditRate("new")}>Rate change</DropdownMenuItem>
-            </DropdownMenuContent>
+            </LoanMenuContent>
           </DropdownMenu>
         </div>
       </div>

@@ -1,4 +1,6 @@
 import type { EntryType, InstallmentStatus } from "@/lib/assets-debt/tracking/plan";
+import type { ComponentProps } from "react";
+import { DropdownMenuContent } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 /** Shared words and marks for the loan tracking screens (design spec 06 §3). */
@@ -8,7 +10,7 @@ export const dt = (iso: string | null | undefined) => (iso ? new Date(`${iso}T00
 export const ENTRY_LABELS: Record<EntryType, string> = {
   "loan-received": "Loan received",
   "opening-balance": "Opening balance",
-  "principal-repayment": "Principal repayment",
+  "principal-repayment": "Repayment",
   "extra-principal": "Extra principal",
   "interest-charged": "Interest charged",
   fee: "Fee",
@@ -36,4 +38,12 @@ export const statusLabel = (status: InstallmentStatus) => STATUS[status].label;
 
 export function StatusBadge({ status }: { status: InstallmentStatus }) {
   return <span className={cn("inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium", STATUS[status].className)}>{STATUS[status].label}</span>;
+}
+
+const MENU = "min-w-44 border border-border py-1 shadow-xl [&_[role=menuitem]]:gap-2 [&_[role=menuitem]]:px-3 [&_[role=menuitem]]:py-1.5 "
+  + "[&_[role=menuitem]]:text-xs [&_[role=menuitem]]:whitespace-nowrap";
+
+/** Compact menu items for the loan screens' ⋯ and action menus (the same size as the credit card row menus). */
+export function LoanMenuContent({ className, ...props }: ComponentProps<typeof DropdownMenuContent>) {
+  return <DropdownMenuContent align="end" className={cn(MENU, className)} {...props} />;
 }

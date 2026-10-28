@@ -3,7 +3,7 @@
 import { useLocalToday } from "../../lib/useLocalToday";
 import { useMemo, useState } from "react";
 import { BookOpen, MoreHorizontal, RotateCcw, SlidersHorizontal } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,6 +28,7 @@ import { HowCalculatedDrawer } from "./HowCalculatedDrawer";
 import { PrimaryInputs } from "./PrimaryInputs";
 import { RateChangesDialog, type RateChangesEditor } from "./RateChangesDialog";
 import { ScheduleTable } from "./ScheduleTable";
+import { LoanMenuContent } from "../loan/presentation";
 
 /**
  * The loan simulator (RD-084 P1.3b T204; FR-216–FR-229).
@@ -183,12 +184,12 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger aria-label="More schedule actions" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "px-2")}><MoreHorizontal aria-hidden="true" /></DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <LoanMenuContent>
               <DropdownMenuItem variant="destructive" disabled={readOnly} onClick={() => (resetMeaningful ? setResetOpen(true) : change(resetValue))}>
                 <RotateCcw aria-hidden="true" />
                 Reset loan
               </DropdownMenuItem>
-            </DropdownMenuContent>
+            </LoanMenuContent>
           </DropdownMenu>
           {actions}
         </div>
