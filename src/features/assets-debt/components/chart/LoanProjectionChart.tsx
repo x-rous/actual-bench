@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CartesianGrid, ComposedChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatAmount, fractionToPercent } from "../../lib/money";
 import type { ChartData, ChartRateChangeGroup, SeriesId } from "../../lib/results";
 import { formatChartDate, formatChartPeriod, SERIES_META } from "./chartMeta";
@@ -63,17 +63,30 @@ export default function LoanProjectionChart({ data, visible, digits, height = 32
     const major = v / 10 ** digits;
     return Math.abs(major) >= 1_000_000 ? `${(major / 1_000_000).toFixed(1)}M` : Math.abs(major) >= 1_000 ? `${Math.round(major / 1_000)}k` : String(Math.round(major));
   };
-  const hasInterestAxis = visible.includes("cumulativeInterest");
+  // One shared axis when interest paid reaches 40% of the largest balance; two otherwise, so a short loan's interest line
+  // isn't flattened. The 35%–45% band keeps the current choice, so the chart doesn't flip while a figure is typed.
+  const maxBalance = data.points.reduce((m, p) => Math.max(m, p.balance ?? 0, p.actualBalance ?? 0, p.comparison ?? 0), 0);
+  const maxInterest = data.points.reduce((m, p) => Math.max(m, p.cumulativeInterest ?? 0), 0);
+  const [sharedAxis, setSharedAxis] = useState<boolean | null>(null);
+  const ratio = maxBalance > 0 ? maxInterest / maxBalance : 0;
+  const shared = sharedAxis === null ? ratio >= 0.4 : sharedAxis ? ratio >= 0.35 : ratio >= 0.45;
+  if (shared !== sharedAxis) setSharedAxis(shared);
+  const hasInterestAxis = visible.includes("cumulativeInterest") && !shared;
+  const axisOf = (id: SeriesId) => (SERIES_META[id].axis === "interest" && !hasInterestAxis ? "balance" : SERIES_META[id].axis);
   return (
     <div style={{ height }} className="w-full">
       <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 800, height }}>
         <ComposedChart data={data.points} margin={{ top: 12, right: hasInterestAxis ? 12 : 20, bottom: 4, left: 12 }} accessibilityLayer>
           <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis dataKey="period" tickFormatter={formatChartPeriod} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} minTickGap={24} />
-          <YAxis yAxisId="balance" domain={[0, "auto"]} tickFormatter={compact} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} width={56} label={{ value: "Balance", angle: -90, position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 10 }} />
+          <YAxis yAxisId="balance" domain={[0, "auto"]} tickFormatter={compact} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} width={56} label={{ value: hasInterestAxis || !visible.includes("cumulativeInterest") ? "Balance" : "Amount", angle: -90, position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 10 }} />
           {hasInterestAxis ? <YAxis yAxisId="interest" orientation="right" domain={[0, "auto"]} tickFormatter={compact} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} width={56} label={{ value: "Interest paid", angle: 90, position: "insideRight", fill: "var(--muted-foreground)", fontSize: 10 }} /> : null}
           <Tooltip content={<LoanTooltip digits={digits} rateChanges={data.rateChanges} />} cursor={{ stroke: "var(--muted-foreground)", strokeDasharray: "3 3", strokeOpacity: 0.45 }} isAnimationActive={!reducedMotion} />
           <ReferenceLine yAxisId="balance" y={0} stroke="var(--border)" />
+          {data.tracking && data.tracking.startPeriod > data.tracking.firstPeriod ? (
+            <ReferenceArea yAxisId="balance" x1={data.tracking.firstPeriod} x2={data.tracking.startPeriod} fill="var(--muted)" fillOpacity={0.6} strokeOpacity={0} label={{ value: "Before tracking", position: "insideBottomLeft", fill: "var(--muted-foreground)", fontSize: 10 }} />
+          ) : null}
+          {data.tracking ? <ReferenceLine yAxisId="balance" x={data.tracking.todayPeriod} stroke="var(--foreground)" strokeOpacity={0.5} strokeDasharray="3 3" label={{ value: "Today", position: "insideTopLeft", fill: "var(--foreground)", fontSize: 10 }} /> : null}
           {data.rateChanges.map((group) => (
             <ReferenceLine
               key={group.period}
@@ -93,12 +106,12 @@ export default function LoanProjectionChart({ data, visible, digits, height = 32
           {visible.map((id) => (
             <Line
               key={id}
-              yAxisId={SERIES_META[id].axis}
-              type="monotone"
+              yAxisId={axisOf(id)}
+              type={id === "actualBalance" ? "stepAfter" : "monotone"}
               dataKey={id}
               name={id}
               stroke={SERIES_META[id].color}
-              strokeWidth={id === "balance" ? 2.5 : 1.75}
+              strokeWidth={id === "balance" || id === "actualBalance" ? 2.5 : 1.75}
               strokeDasharray={SERIES_META[id].dash}
               strokeLinecap="round"
               dot={false}

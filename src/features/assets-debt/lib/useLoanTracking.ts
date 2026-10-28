@@ -66,7 +66,7 @@ export function useLoanTracking(detail: DebtDetail | undefined): LoanTracking {
   const directory = useAccountDirectory();
   const queryClient = useQueryClient();
   const today = localToday();
-  const debt = detail ? trackingDebtOf(detail) : null;
+  const debt = useMemo(() => (detail ? trackingDebtOf(detail) : null), [detail]);
   // Saved rules and decisions belong to any active loan (rules are set up before tracking starts).
   const bundle = useQuery({ queryKey: ["assets-debt", "tracking", detail?.debt.id], queryFn: () => getTrackingBundle(detail!.debt.id), enabled: !!detail && detail.debt.status === "active" });
   const openAccounts = useMemo(() => directory.data?.accounts.filter((a) => !a.closed && !a.offBudget).map((a) => a.id) ?? [], [directory.data]);

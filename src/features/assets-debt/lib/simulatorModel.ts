@@ -368,7 +368,8 @@ function modelComponents(sim: SimulationState): PaymentComponent[] {
 }
 
 function modelAssumptions(sim: SimulationState): FutureAssumption[] {
-  return sim.assumptions.map((a): FutureAssumption => {
+  // A what-if switched off stays saved but is left out of the projection.
+  return sim.assumptions.filter((a) => a.enabled !== false).map((a): FutureAssumption => {
     const recurrence = a.recurrence ? { recurrence: a.recurrence } : {};
     switch (a.kind) {
       case "fee":

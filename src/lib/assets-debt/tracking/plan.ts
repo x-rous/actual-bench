@@ -122,6 +122,8 @@ export type TrackingResult =
       opening: { date: string; principalMinor: number; source: "calculated" | "statement"; actualMinor: number; differenceMinor: number };
       before: { count: number; firstDueDate: string | null; lastDueDate: string | null };
       openingAdjustment: Proposal | null;
+      /** Where a projection of the rest of the loan starts: the last thing that really happened, and the payment then in force. */
+      anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number };
       installments: Installment[];
       ledger: LedgerRow[];
       /** Extra principal, draws, fees and adjustments from the tracking start on: the Loan Ledger's events for the calculation. */
@@ -466,9 +468,10 @@ export function planTracking(input: TrackingInput): TrackingResult {
     return { ...base, ...figures, feesMinor: due.feesMinor, status: "unrecorded", proposal };
   }
 
+  let anchorDate = opening.date;
   for (const step of steps) {
     step.run();
-    if (step.date <= today) calculatedToday = calc.balanceMinor;
+    if (step.date <= today) { calculatedToday = calc.balanceMinor; anchorDate = step.date; }
   }
   installments.sort((a, b) => a.no - b.no);
 
@@ -527,6 +530,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
     opening: { ...opening, source: statement ? "statement" : "calculated", actualMinor: actualAtStart, differenceMinor: openingDifference },
     before: { count: start.no - 1, firstDueDate: dues[0]?.date ?? null, lastDueDate: previous?.date ?? null },
     openingAdjustment,
+    anchor: { date: anchorDate, principalMinor: calculatedToday, scheduledPaymentMinor: (tracked.find((d) => d.date > today) ?? tracked.at(-1) ?? start).scheduledMinor },
     installments,
     ledger,
     events,

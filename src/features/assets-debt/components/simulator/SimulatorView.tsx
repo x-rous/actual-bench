@@ -9,8 +9,11 @@ import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
-import { chartSeries, deltas, headline } from "../../lib/results";
-import { dailyEngineReason, newSimulation, preserveActualExtraPayments, switchToDayByDay, withoutExtraTransactions, type SimAssumption, type SimRate, type SimulationState } from "../../lib/simulatorModel";
+import { chartSeries, deltas, headline, withTracking } from "../../lib/results";
+import { formatAmount } from "../../lib/money";
+import type { TrackedHistory } from "../../lib/trackedSchedule";
+import type { DebtProjection } from "@/lib/financial-models/loan/projection";
+import { dailyEngineReason, newSimulation, switchToDayByDay, withoutExtraTransactions, type SimAssumption, type SimRate, type SimulationState } from "../../lib/simulatorModel";
 import { useLiveProjection } from "../../lib/useLiveProjection";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import { labelOf, REPAYMENT_FREQUENCY_OPTIONS } from "../../lib/vocabulary";
@@ -65,6 +68,8 @@ export type SimulatorViewProps = {
     resetOpen: boolean;
     onResetOpenChange: (open: boolean) => void;
   };
+  /** A loan tracked in Actual (design spec 06 §7.6): the history from the Loan Ledger and where the projection starts. */
+  tracked?: (TrackedHistory & { onOpenLedger: () => void }) | null;
   offsetTracking?: {
     asOfDate: string;
     onAsOfDateChange: (date: string) => void;
@@ -74,7 +79,18 @@ export type SimulatorViewProps = {
   };
 };
 
-export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external }: SimulatorViewProps) {
+/** A tracked loan's calculation: the contract before the tracking start, what really happened, then the projection from today. */
+function composeTracked(projection: DebtProjection | null, contract: DebtProjection | null, tracked: TrackedHistory | null): DebtProjection | null {
+  if (!tracked) return projection;
+  if (!projection?.ok || !contract?.ok) return null;
+  return {
+    ...projection,
+    events: [...contract.events.filter((e) => e.date < tracked.startDate), ...tracked.events, ...projection.events.filter((e) => e.date > tracked.anchor.date)],
+    offsetStates: [...contract.offsetStates.filter((o) => o.date < tracked.startDate), ...projection.offsetStates],
+  };
+}
+
+export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external, tracked = null }: SimulatorViewProps) {
   const [comparingLocal, setComparing] = useState(false);
   const comparing = external ? external.comparing : comparingLocal;
   const [prompt, setPrompt] = useState<{ reason: string; candidate: SimulationState } | null>(null);
@@ -92,27 +108,44 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
   const hasExtras = noExtras !== sim;
   const needsActualOffsetHistory = sim.offsets.some((offset) => offset.useActualBalance);
   const offsetProblems = offsetTracking?.problems ?? (needsActualOffsetHistory ? ["Save the Actual-linked offset mapping before calculating with its history."] : undefined);
-  const live = useLiveProjection(sim, { compareWith: comparing && saved ? saved : null, impactBaseline: hasExtras ? noExtras : null, offsetHistories: offsetTracking?.snapshots, suspend: offsetTracking?.loading, externalProblems: offsetProblems });
+  const trackedAt = useMemo(() => (tracked ? { startDate: tracked.startDate, anchor: tracked.anchor } : null), [tracked]);
+  // A tracked loan always runs its projection without what-ifs too: the What-ifs impact and the From Actual impact need it.
+  const live = useLiveProjection(sim, { compareWith: comparing && saved ? saved : null, impactBaseline: hasExtras || tracked ? noExtras : null, offsetHistories: offsetTracking?.snapshots, suspend: offsetTracking?.loading, externalProblems: offsetProblems, tracked: trackedAt });
 
   const change = (next: SimulationState) => {
-    if (!readOnly) onChange(preserveActualExtraPayments(sim, next));
+    if (!readOnly) onChange(next);
   };
   /** O1: features the period-by-period calculation cannot represent ask before switching. */
   const propose = (candidate: SimulationState) => {
     if (readOnly) return;
-    const protectedCandidate = preserveActualExtraPayments(sim, candidate);
-    const reason = dailyEngineReason(protectedCandidate);
-    if (reason) setPrompt({ reason, candidate: protectedCandidate });
-    else onChange(protectedCandidate);
+    const reason = dailyEngineReason(candidate);
+    if (reason) setPrompt({ reason, candidate });
+    else onChange(candidate);
   };
 
-  const events = live.projection?.ok ? live.projection.events : null;
+  const projection = useMemo(() => composeTracked(live.projection, live.contract, tracked), [live.projection, live.contract, tracked]);
+  const baseProjection = useMemo(() => composeTracked(live.impactBaseline, live.contract, tracked), [live.impactBaseline, live.contract, tracked]);
+  const events = projection?.ok ? projection.events : null;
   const head = useMemo(() => (events ? headline(events) : null), [events]);
   const compared = useMemo(() => (live.comparison?.ok ? headline(live.comparison.events) : null), [live.comparison]);
-  const impactBaseline = useMemo(() => (live.impactBaseline?.ok ? headline(live.impactBaseline.events) : null), [live.impactBaseline]);
+  const impactBaseline = useMemo(() => (baseProjection?.ok ? headline(baseProjection.events) : null), [baseProjection]);
+  const contractHead = useMemo(() => (live.contract?.ok ? headline(live.contract.events) : null), [live.contract]);
   const delta = head && compared ? deltas(head, compared) : null;
   const frequency = labelOf(REPAYMENT_FREQUENCY_OPTIONS, sim.profile.repaymentFrequency).toLowerCase();
-  const chart = useMemo(() => (live.projection?.ok ? chartSeries(live.projection, sim, { view: chartView, comparison: live.comparison }) : null), [live.projection, live.comparison, sim, chartView]);
+  const chart = useMemo(() => {
+    if (!projection?.ok) return null;
+    const data = chartSeries(projection, sim, { view: chartView, comparison: live.comparison });
+    return tracked ? withTracking(data, tracked, chartView) : data;
+  }, [projection, live.comparison, sim, chartView, tracked]);
+  const calendarTodayForDetails = tracked?.today ?? null;
+  const details = useMemo(() => {
+    if (!events || !head) return undefined;
+    const today = calendarTodayForDetails ?? new Date().toISOString().slice(0, 10);
+    const paid = events.filter((e) => e.date <= today).reduce((sum, e) => sum + e.interestMinor, 0);
+    const months = head.payoffDate ? Math.max(0, Math.round((Date.parse(`${head.payoffDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / (86_400_000 * 30.4375))) : null;
+    const left = months === null ? null : months === 0 ? "Paid off" : `${Math.floor(months / 12) ? `${Math.floor(months / 12)} yrs ` : ""}${months % 12 ? `${months % 12} mos ` : ""}left`.trim();
+    return { interest: `Paid so far ${formatAmount(paid, sim.minorDigits)} · still to pay ${formatAmount(head.totalInterestMinor - paid, sim.minorDigits)}`, payoff: left };
+  }, [events, head, calendarTodayForDetails, sim.minorDigits]);
   const calendarToday = useLocalToday();
   const resetValue = useMemo(() => newSimulation({ currency: sim.currency, minorDigits: sim.minorDigits, today: calendarToday }), [sim.currency, sim.minorDigits, calendarToday]);
   const resetMeaningful = comparableSimulation(sim) !== comparableSimulation(resetValue);
@@ -183,6 +216,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
             frequencyLabel={frequency}
             calculating={live.status === "calculating"}
             announce={live.status === "ok" && head ? headlineSentence(head, sim.minorDigits, frequency) : null}
+            details={details}
           />
           {live.status === "incomplete" ? <p className="text-sm text-muted-foreground">Enter the {live.missing.join(", ")} to see the loan.</p> : null}
           {live.status === "calculating" && !events ? <p className="text-sm text-muted-foreground">Calculating…</p> : null}
@@ -199,9 +233,15 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
           {chart && chart.points.length ? <LoanChartPanel data={chart} view={chartView} onViewChange={setChartView} digits={sim.minorDigits} /> : null}
           {events ? (
             <>
-              <EventsSection sim={sim} current={head} baseline={impactBaseline} onEdit={setExtraEditor} onRemove={removeExtra} onEditRate={setRateEditor} onRemoveRate={removeRate} />
+              <EventsSection sim={sim} current={head} baseline={impactBaseline} onEdit={setExtraEditor} onRemove={removeExtra} onEditRate={setRateEditor} onRemoveRate={removeRate}
+                tracked={tracked ? {
+                  startDate: tracked.startDate, today: tracked.today, ledgerEvents: tracked.ledgerEvents,
+                  fromActual: [impactBaseline, contractHead], whatIfs: [head, impactBaseline],
+                  onToggle: (a) => change({ ...sim, assumptions: sim.assumptions.map((x) => (x.key === a.key ? { ...x, enabled: x.enabled === false } : x)) }),
+                  onOpenLedger: tracked.onOpenLedger,
+                } : undefined} />
               <div data-testid="schedule-region">
-                <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} digits={sim.minorDigits} />
+                <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates } : null} />
               </div>
             </>
           ) : null}

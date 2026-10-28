@@ -50,6 +50,7 @@ export function HeadlineMetrics({
   frequencyLabel,
   announce,
   calculating,
+  details,
 }: {
   headline: Headline | null;
   deltas: Deltas | null;
@@ -58,6 +59,8 @@ export function HeadlineMetrics({
   /** The settled sentence to announce, or null while inputs are incomplete or calculating. */
   announce: string | null;
   calculating: boolean;
+  /** Approved detail lines (design spec 06 §12): interest paid so far and still to pay, and the time left. */
+  details?: { interest?: string | null; payoff?: string | null };
 }) {
   const money = (m: number | null) => (m === null ? "None" : formatAmount(m, digits));
   return (
@@ -77,10 +80,10 @@ export function HeadlineMetrics({
         <Tile
           label="Total interest"
           value={headline ? money(headline.totalInterestMinor) : "–"}
-          delta={deltas && deltas.interestMinor !== 0 ? `${formatAmount(Math.abs(deltas.interestMinor), digits)} ${deltas.interestMinor < 0 ? "less" : "more"} than saved` : null}
+          delta={[details?.interest ?? null, deltas && deltas.interestMinor !== 0 ? `${formatAmount(Math.abs(deltas.interestMinor), digits)} ${deltas.interestMinor < 0 ? "less" : "more"} than saved` : null].filter(Boolean).join(" · ") || null}
           amount
         />
-        <Tile label="Payoff date" value={headline ? (headline.payoffDate ? formatChartDate(headline.payoffDate) : "Not within the term") : "–"} delta={deltas?.payoffDays != null ? payoffDelta(deltas.payoffDays) : null} />
+        <Tile label="Payoff date" value={headline ? (headline.payoffDate ? formatChartDate(headline.payoffDate) : "Not within the term") : "–"} delta={[details?.payoff ?? null, deltas?.payoffDays != null ? payoffDelta(deltas.payoffDays) : null].filter(Boolean).join(" · ") || null} />
       </div>
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {announce ?? ""}
