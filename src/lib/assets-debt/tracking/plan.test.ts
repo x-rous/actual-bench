@@ -267,3 +267,29 @@ it("B3: a rule's other matches are neither extra principal nor already-split pay
   expect(withOthers.figures.calculatedMinor).toBe(alone.figures.calculatedMinor);
   expect(withOthers.installments[0]).toMatchObject({ status: "unrecorded", payment: { id: pay.id } });
 });
+
+describe("the opening position counts each row once", () => {
+  it("a loan paid into the account days after its start date is the opening, not a second draw", () => {
+    // The contract starts on 5 Jan; the money reaches the loan account on 15 Jan.
+    const r = transfer("2024-01-15", -500_000_00);
+    const pay = transfer("2024-02-15", 3_411_26);
+    const result = planTracking(input({ loan: [r.loan, pay.loan], bank: [r.bank, pay.bank] }, { model: model({ opening: "2024-01-05" }), today: "2024-02-20" }));
+    if (!result.ok) throw new Error(result.message);
+    expect(result.opening).toMatchObject({ principalMinor: 500_000_00, actualMinor: 500_000_00, differenceMinor: 0 });
+    expect(result.openingAdjustment).toBeNull();
+    expect(result.events).toEqual([]);
+    expect(result.installments[0]).toMatchObject({ status: "unrecorded", payment: { id: pay.bank.id } });
+    expect(result.installments[0].principalMinor).toBeGreaterThan(0);
+    expect(result.figures.calculatedMinor).toBeLessThan(500_000_00);
+  });
+
+  it("an installment paid before its due date is that installment's payment, not part of the opening", () => {
+    const r = received();
+    const early = transfer("2024-02-08", 3_411_26); // installment 1 is due on 15 Feb
+    const result = planTracking(input({ loan: [r.loan, early.loan], bank: [r.bank, early.bank] }, { today: "2024-02-20" }));
+    if (!result.ok) throw new Error(result.message);
+    expect(result.opening).toMatchObject({ actualMinor: 500_000_00, differenceMinor: 0 });
+    expect(result.openingAdjustment).toBeNull();
+    expect(result.installments[0]).toMatchObject({ no: 1, status: "unrecorded", payment: { id: early.bank.id, date: "2024-02-08" } });
+  });
+});

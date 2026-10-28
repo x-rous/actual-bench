@@ -74,6 +74,20 @@ describe("Link to Actual", () => {
     expect(screen.getByText(/Actual's loan account before installment/).nextSibling).toHaveTextContent("26,000.00");
   });
 
+  it("an early first payment and a later row that adds to the debt change neither the suggestion nor the opening", async () => {
+    mockRows.current = [
+      row({ date: "2024-01-01", amount: -3_000_000, transferId: "bank-1" }), // the loan arrives by transfer
+      row({ date: "2024-01-25", amount: 90_000, transferId: "bank-2" }), // installment 1 (due 1 Feb), paid early
+      row({ date: "2025-06-29", amount: -480_000 }), // much later, the debt grows
+    ];
+    wrap(<Harness initial={{ liabilityAccountId: "loan" }} />);
+    expect(await screen.findByText(/The loan arrived as a transfer of 30,000.00 on 01 Jan 2024/)).toBeInTheDocument();
+    expect(screen.getByText(/Suggested: the first installment/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^Use installment/ }).map((b) => b.textContent)).toEqual(["Use installment 1"]);
+    expect(screen.getByText(/Actual's loan account before installment 1/).nextSibling).toHaveTextContent("30,000.00");
+    expect(screen.getByText("Within the tolerance: nothing to write.")).toBeInTheDocument();
+  });
+
   it("chooses the start by installment number or by date", async () => {
     wrap(<Harness initial={{ liabilityAccountId: "loan" }} />);
     fireEvent.change(screen.getByLabelText("First installment"), { target: { value: "3" } });

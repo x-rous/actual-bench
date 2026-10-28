@@ -51,7 +51,9 @@ export type Scan = {
 
 export function scanLoanAccount(rows: SyncSourceTransaction[], loanStart: string): Scan {
   const sorted = [...rows].filter((r) => !r.isChild).sort((a, b) => a.date.localeCompare(b.date));
-  const openingRow = sorted.find((r) => r.amount < 0 && !r.transferId) ?? null;
+  // The row that brings the loan into the account is its first: a transfer of the loan, or an opening balance.
+  // A later row that adds to the debt is a draw or a charge, never the opening.
+  const openingRow = sorted[0] && sorted[0].amount < 0 ? sorted[0] : null;
   const after = openingRow?.date ?? loanStart;
   return {
     rows: sorted, openingRow,
@@ -97,7 +99,12 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
   const chosen = start ?? suggested;
   const before = chosen ? dues[chosen.no - 2] ?? null : null;
   const calculatedOpening = chosen && built.ok ? (before ? before.balanceAfterMinor : built.model.terms.openingPrincipalMinor) : null;
-  const actualOpening = scan && chosen ? -scan.rows.filter((r) => r.date < chosen.date || (r.date === chosen.date && r === scan.openingRow)).reduce((s, r) => s + r.amount, 0) : null;
+  // Each row counts once, as in the tracking plan: a transfer into the account after the previous installment is a
+  // payment of a tracked installment (possibly made early), not part of the opening.
+  const windowFrom = before?.date ?? (built.ok ? built.model.terms.openingDate : "");
+  const actualOpening = scan && chosen
+    ? -scan.rows.filter((r) => (r.date < chosen.date || r === scan.openingRow) && !(r.amount > 0 && r.transferId && r.date > windowFrom)).reduce((s, r) => s + r.amount, 0)
+    : null;
   const statement = tracking.openingStatementDraft;
   const opening = statement ? statement.principalMinor : calculatedOpening;
   const difference = opening !== null && actualOpening !== null ? actualOpening - opening : null;
@@ -189,7 +196,7 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
                   {suggested && (!start || start.no !== suggested.no) ? <Button type="button" size="sm" variant="outline" onClick={() => set({ trackingStartDueDate: suggested.date })}>Use installment {suggested.no}</Button> : null}
                 </div>
               </div>
-              {suggested ? <p className="text-xs text-muted-foreground">{suggested.no > 1 && scan?.openingRow ? `Suggested: your loan account starts with an opening balance on ${dt(scan.openingRow.date)}, so installment ${suggested.no} (${dt(suggested.date)}) is the first one recorded there.` : "Suggested: the first installment, because the loan account holds the loan from the start."}{!start ? " Choose it to start tracking." : null}</p> : null}
+              {suggested ? <p className="text-xs text-muted-foreground">{suggested.no > 1 && scan?.openingRow ? `Suggested: your loan account starts with ${scan.openingRow.transferId ? "the loan" : "an opening balance"} on ${dt(scan.openingRow.date)}, so installment ${suggested.no} (${dt(suggested.date)}) is the first one recorded there.` : "Suggested: the first installment, because the loan account holds the loan from the start."}{!start ? " Choose it to start tracking." : null}</p> : null}
               {chosen ? (
                 <>
                   <div role="radiogroup" aria-label="Opening position" className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -237,7 +244,7 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
               : scan ? (
                 <ul className="flex list-disc flex-col gap-2 pl-4">
                   <li>{scan.rows.length} transactions in {loan.name}{scan.firstDate ? `, the first on ${dt(scan.firstDate)}` : ""}.</li>
-                  {scan.openingRow ? <li>An opening balance of {money(-scan.openingRow.amount)} on {dt(scan.openingRow.date)}.</li> : <li>No opening balance row: the loan arrives as a transfer, or the account is empty.</li>}
+                  {scan.openingRow ? <li>{scan.openingRow.transferId ? "The loan arrived as a transfer of" : "An opening balance of"} {money(-scan.openingRow.amount)} on {dt(scan.openingRow.date)}.</li> : <li>The account does not start with the loan: Bench compares from the first tracked installment.</li>}
                   <li>{scan.transfersIn ? `${scan.transfersIn} transfers into the loan account: these count as repayments by themselves.` : "No transfers into the loan account. If repayments are expenses in a bank account, add a payment rule."}</li>
                   <li>{scan.lenderCharges ? `${scan.lenderCharges} rows charged into the account after the opening: the lender may charge interest there.` : "No rows charged by the lender, so interest is split from each repayment."}</li>
                 </ul>
