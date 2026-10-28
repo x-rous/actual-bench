@@ -192,7 +192,7 @@ function NewLoanEditor() {
       ) : (
         <>
           <p className="px-4 pt-3 text-xs text-muted-foreground">{SAVE_BOUNDARY} {summarizeProfile(sim.profile)}.</p>
-          <LinkToActual sim={sim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} rules={null} onEditRules={() => {}} saved={false} />
+          <LinkToActual sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} rules={null} onEditRules={() => {}} saved={false} />
         </>
       )}
     </WorkspaceFrame>
@@ -440,7 +440,7 @@ function LoanEditor({ id }: { id: string }) {
         } : undefined} />
       ) : null}
       {tab === "setup" ? (
-        <LinkToActual sim={sim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} rules={loanTracking.bundle?.rules ?? (detail.debt.status === "active" ? [] : null)} onEditRules={() => ws.setDialog("rules")} saved />
+        <LinkToActual sim={sim} setSimulation={readOnly ? undefined : setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} rules={loanTracking.bundle?.rules ?? (detail.debt.status === "active" ? [] : null)} onEditRules={() => ws.setDialog("rules")} saved />
       ) : null}
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)} state={confirm} />
       <Dialog open={deleting} onOpenChange={(open) => !open && setDeleting(false)}>

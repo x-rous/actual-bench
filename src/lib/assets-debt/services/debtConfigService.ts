@@ -1,10 +1,4 @@
-import { hasPostingLease } from "@/lib/app-db/debtPostingLeaseRepository";
-import { canonicalJson } from "@/lib/app-db/canonicalJson";
-import { listDebtTransactionLinks } from "@/lib/app-db/debtTransactionLinkRepository";
-import { actualExtraPaymentAssumptionIds } from "./actualExtraPaymentOwnership";
-import { listSubjectPostings } from "@/lib/app-db/financialPostingRepository";
 import { deleteObservationRows } from "./observationService";
-import { paidOffState, type PaidOff } from "./payoffState";
 import { AppDbValidationError } from "@/lib/app-db/errors";
 import { listDebtAssumptions, replaceDebtAssumptions, type AssumptionInput } from "@/lib/app-db/debtAssumptionRepository";
 import { listDebtOffsetLinks, replaceDebtOffsetLinks, type OffsetLinkInput } from "@/lib/app-db/debtOffsetLinkRepository";
@@ -94,12 +88,12 @@ export type DebtDetail = {
   offsets: DebtOffsetLinkRecord[];
   assumptions: DebtAssumptionRecord[];
   /** Generated extra payments owned by Actual tracking, read-only in the ordinary loan editor. */
-  actualExtraPaymentAssumptionIds?: string[];
   revision: { number: number; hash: string | null; createdAt: string | null };
   /** Non-null: this debt is Blocked; other debts are unaffected (schema-review A-2). */
   blocked: DebtBlock | null;
   /** Non-null: an applied payoff cleared the loan (worked out from its changes, never stored). */
-  paidOff?: PaidOff | null;
+  /** A loan paid off in Actual: the Repayments tab shows it from the loan account; not stored. */
+  paidOff?: { paidDate: string } | null;
 };
 
 const NEWER_VERSION = "Configured by a newer version of Actual Bench. Update Actual Bench to use this debt.";
@@ -404,10 +398,9 @@ export function getDebtDetail(db: SqliteDatabase, id: string): DebtDetail | null
     rates,
     offsets,
     assumptions,
-    actualExtraPaymentAssumptionIds: assumptions.length ? actualExtraPaymentAssumptionIds(assumptions, listDebtTransactionLinks(db, id)) : [],
     revision: { number: debt.currentRevision, hash: latest?.configHash ?? null, createdAt: latest?.createdAt ?? null },
     blocked: blockFor(debt, config, rates, offsets, assumptions),
-    paidOff: paidOffState(db, id),
+    paidOff: null,
   };
 }
 
@@ -432,6 +425,8 @@ export type DebtSummary = {
   blocked: DebtBlock | null;
   /** Overview metadata; optional for older clients and summary fixtures. */
   paymentAccountId?: string | null;
+  /** The first tracked installment's due date; null while the loan isn't tracked in Actual. */
+  trackingStartDueDate?: string | null;
   offsetAccountLinks?: { actualAccountId: string; effectiveFrom: string; effectiveTo: string | null; useActualBalance?: boolean }[];
   repaymentFrequency?: DebtConfig["profile"]["repaymentFrequency"] | null;
   contractualTermMonths?: number | null;
@@ -463,6 +458,7 @@ export function listDebtSummaries(db: SqliteDatabase, budgetSyncId: string, incl
       blocked: detail.blocked,
       paidOffOn: detail.paidOff?.paidDate ?? null,
       paymentAccountId: debt.paymentAccountId,
+      trackingStartDueDate: debt.trackingStartDueDate,
       offsetAccountLinks: detail.offsets.map(({ actualAccountId, effectiveFrom, effectiveTo, useActualBalance }) => ({ actualAccountId, effectiveFrom, effectiveTo, useActualBalance })),
       repaymentFrequency: detail.config.ok ? detail.config.config.profile.repaymentFrequency : null,
       contractualTermMonths: detail.config.ok ? detail.config.config.terms.contractualTermMonths : null,
@@ -517,17 +513,6 @@ export function updateDebtConfiguration(db: SqliteDatabase, id: string, input: D
   const result = validateDebtSave(db, input, directory, id);
   if (!result.ok) throw new DebtConfigValidationError(result.issues);
   db.transaction(() => {
-    const assumptions = listDebtAssumptions(db, id);
-    const protectedIds = new Set(assumptions.length ? actualExtraPaymentAssumptionIds(assumptions, listDebtTransactionLinks(db, id)) : []);
-    for (const recorded of assumptions.filter((a) => protectedIds.has(a.id))) {
-      const proposed = result.value.assumptions.filter((a) => a.id === recorded.id);
-      const expected = { kind: recorded.assumptionKind, effectiveFrom: recorded.effectiveFrom, recurrence: recorded.recurrence,
-        amountMinor: recorded.amountMinor, feeTreatment: recorded.feeTreatment, offsetAccountId: recorded.offsetAccountId, note: recorded.note };
-      if (proposed.length !== 1 || canonicalJson({ kind: proposed[0].kind, effectiveFrom: proposed[0].effectiveFrom, recurrence: proposed[0].recurrence,
-        amountMinor: proposed[0].amountMinor, feeTreatment: proposed[0].feeTreatment, offsetAccountId: proposed[0].offsetAccountId, note: proposed[0].note }) !== canonicalJson(expected)) {
-        throw new DebtConfigValidationError([{ field: "assumptions", message: "Extra payments recorded from Actual cannot be edited or removed here. Manage them in Sync Repayments or change the transaction in Actual and refresh." }]);
-      }
-    }
     updateDebt(db, id, { ...result.value.fields, status: input.status, currentRevision: existing.currentRevision }, now);
     saveChildren(db, id, result.value, now);
     writeRevisionIfMaterial(db, id, input.changeSummary, now);
@@ -565,7 +550,7 @@ export function saveBaselineAssumptions(db: SqliteDatabase, id: string, assumpti
 export function archiveDebtConfiguration(db: SqliteDatabase, id: string, now = new Date().toISOString()): DebtDetail {
   const existing = getDebt(db, id);
   if (!existing) throw new AppDbValidationError("Debt not found");
-  if (listSubjectPostings(db, "debt", id).some((posting) => hasPostingLease(db, posting.id, now))) throw new AppDbValidationError("Wait for the running loan operation to finish before archiving.");
+  if (db.prepare("SELECT 1 AS x FROM debt_writes WHERE debt_id = ? AND status = 'applying'").get(id)) throw new AppDbValidationError("Wait for the running write to Actual to finish before archiving.");
   if (existing.status !== "archived") {
     db.transaction(() => {
       archiveDebt(db, id, existing.currentRevision, now);
@@ -577,8 +562,8 @@ export function archiveDebtConfiguration(db: SqliteDatabase, id: string, now = n
 
 /**
  * Delete an archived loan permanently (owner decision 2026-10-05): everything Bench stored for it
- * (settings, revisions, matching rules, proposed and applied changes with their history, lender
- * statements and restarts). Actual is not touched: transactions Bench changed stay as they are, and
+ * (settings, revisions, payment rules, Loan Ledger types, the write journal, lender statements and
+ * restarts). Actual is not touched: transactions Bench changed stay as they are, and
  * Bench can no longer undo them. Only an archived loan can be deleted, so it is never one click away.
  */
 export function deleteArchivedDebtPermanently(db: SqliteDatabase, id: string): void {
@@ -587,13 +572,10 @@ export function deleteArchivedDebtPermanently(db: SqliteDatabase, id: string): v
   if (existing.status !== "archived") throw new AppDbValidationError("Archive the loan before deleting it permanently");
   db.transaction(() => {
     if (db.prepare("SELECT 1 FROM asset_debt_links WHERE debt_id = ? LIMIT 1").get(id)) throw new AppDbValidationError("Remove this loan's asset allocations in Assets before deleting it");
-    // Links name the changes that made them, and undos name the change they reverse, so they go first.
-    db.prepare("DELETE FROM debt_transaction_links WHERE debt_id = ? OR posting_id IN (SELECT id FROM financial_postings WHERE subject_kind = 'debt' AND subject_id = ?)").run(id, id);
-    db.prepare("DELETE FROM financial_postings WHERE subject_kind = 'debt' AND subject_id = ? AND reversal_of IS NOT NULL").run(id);
-    db.prepare("DELETE FROM financial_postings WHERE subject_kind = 'debt' AND subject_id = ?").run(id);
     db.prepare("DELETE FROM debt_anchors WHERE debt_id = ?").run(id);
     deleteObservationRows(db, new Set(db.prepare("SELECT id FROM debt_observations WHERE debt_id = ?").all<{ id: string }>(id).map((r) => r.id)));
-    // Rates, offsets, assumptions and matching rules cascade; the delete trigger removes the revisions.
+    // Rates, offsets, assumptions, ledger entries, payment rules and the write journal cascade; the delete trigger
+    // removes the revisions.
     db.prepare("DELETE FROM debts WHERE id = ?").run(id);
   })();
 }

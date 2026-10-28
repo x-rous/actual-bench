@@ -21,6 +21,7 @@ import type { LoanTracking } from "../../lib/useLoanTracking";
 import { ENTRY_LABELS, StatusBadge, dt } from "./presentation";
 import { InstallmentInspector, type InspectorActions } from "./InstallmentInspector";
 import type { WriteOutcome } from "../../lib/trackingWrites";
+import type { DebtWrite } from "@/lib/app-db/debtTrackingRepository";
 
 /**
  * Repayments (design spec 06 §7.2): one row per installment from the tracking start, edge to edge, with the opening
@@ -39,13 +40,14 @@ const TODO: ReadonlySet<InstallmentStatus> = new Set(["unrecorded", "check", "mi
 
 export type RunState = { done: number; total: number } | null;
 
-export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onPaymentRules, apply, run, outcomes, onDismissOutcomes, actions, writesLocked }: {
+export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onPaymentRules, apply, run, outcomes, onDismissOutcomes, actions, writesLocked, unresolved = [], onResolve }: {
   tracking: LoanTracking; directory: AccountDirectory | undefined; digits: number;
   onLinkToActual: () => void; onPaymentRules: () => void;
   /** Apply these writes, in order, as one run. */ apply: (proposals: Proposal[]) => void;
   run: RunState; outcomes: { list: WriteOutcome[]; clearingProblem: string | null } | null; onDismissOutcomes: () => void;
   actions: InspectorActions;
-  /** A write ended uncertain: nothing more until Actual was read again. */ writesLocked: boolean;
+  /** A write ended uncertain: nothing more until someone checked Actual. */ writesLocked: boolean;
+  unresolved?: DebtWrite[]; onResolve?: (writeId: string, inActual: boolean) => void;
 }) {
   const money = (minor: number) => formatAmount(minor, digits);
   const [filter, setFilter] = useState<Filter>("all");
@@ -157,7 +159,14 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
         {chosen.length > 0 && !busy ? <div role="region" aria-label="Selected repayments" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs"><strong>{chosen.length} selected</strong><span className="text-muted-foreground">Unrecorded rows only</span><Button size="xs" disabled={writesLocked} onClick={() => apply(inOrder(chosen))}>Apply {chosen.length}</Button><Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>Clear selection</Button></div> : null}
         {run ? <div role="status" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs">Applying {Math.min(run.done + 1, run.total)} of {run.total}…</div> : null}
         {outcomes ? <Outcomes outcomes={outcomes} onDismiss={onDismissOutcomes} counts={f.counts} agrees={Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100)} /> : null}
-        {writesLocked ? <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">A write to Actual ended with an uncertain outcome. Refresh and check the payment in Actual before applying anything else.</p> : null}
+        {unresolved.map((w) => (
+          <div key={w.id} role="alert" className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-xs">
+            <span className="text-destructive">A write to Actual {w.status === "applying" ? "was left unfinished" : "ended with an unknown outcome"}{w.installmentDueDate ? ` (installment due ${dt(w.installmentDueDate)})` : ""}. Nothing else is written until you check the payment in Actual.</span>
+            <span className="ml-auto" />
+            <Button size="xs" variant="outline" onClick={() => onResolve?.(w.id, true)}>The change is in Actual</Button>
+            <Button size="xs" variant="outline" onClick={() => onResolve?.(w.id, false)}>It isn&apos;t</Button>
+          </div>
+        ))}
         <div ref={tableRef} className="flex min-h-0 flex-1 flex-col">
           <DataTable label="Repayments" columns={activeRow ? columns.filter((c) => c.key !== "notes") : columns} rows={all} rowKey={(r) => r.key} rowLabel={rowName} activeKey={active} onOpen={(r) => r.kind !== "before" && setActive(r.key)} sort={sort} onSort={setSort} dense
             rowClassName={(r) => cn(r.kind === "installment" && r.inst.status === "upcoming" && "text-muted-foreground", r.kind === "before" && "bg-muted/40", selected.has(r.key) && "bg-accent/40")}

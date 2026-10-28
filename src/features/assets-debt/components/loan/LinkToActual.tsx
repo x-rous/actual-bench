@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { getTransport } from "@/lib/actual";
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
 import type { AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
@@ -60,8 +61,9 @@ export function scanLoanAccount(rows: SyncSourceTransaction[], loanStart: string
   };
 }
 
-export function LinkToActual({ sim, tracking, setTracking, directory, issues, rules, onEditRules, saved }: {
-  sim: SimulationState; tracking: TrackingState; setTracking: (t: TrackingState) => void; directory: AccountDirectory | undefined; issues: SaveIssue[];
+export function LinkToActual({ sim, setSimulation, tracking, setTracking, directory, issues, rules, onEditRules, saved }: {
+  sim: SimulationState; /** Changes the calculation (an offset's "track from Actual"); absent when read-only. */ setSimulation?: (sim: SimulationState) => void;
+  tracking: TrackingState; setTracking: (t: TrackingState) => void; directory: AccountDirectory | undefined; issues: SaveIssue[];
   /** Payment rules (saved separately), or null for a loan not saved yet. */ rules: DebtPaymentRule[] | null; onEditRules: () => void;
   /** The loan is saved, so a lender statement can be recorded for it. */ saved: boolean;
 }) {
@@ -119,12 +121,27 @@ export function LinkToActual({ sim, tracking, setTracking, directory, issues, ru
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto xl:grid-cols-[minmax(0,1fr)_440px]">
       <div className="flex flex-col gap-6 px-6 py-5">
-        <Section n="1" done={!!loan?.offBudget && !!tracking.name.trim()} title="Loan and its account" lead="The off-budget Actual account that holds this debt. One loan per account.">
+        <Section n="1" done={!!loan?.offBudget && !!tracking.name.trim() && sim.offsets.every((o) => !!tracking.offsetAccountMap[o.placeholderAccountId])} title="Loan and its account" lead="The off-budget Actual account that holds this debt. One loan per account.">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <TextField label="Name" value={tracking.name} onChange={(v) => set({ name: v })} issue={issue("name")} placeholder="Home loan" />
             <SelectField label="Kind of loan" value={tracking.debtType} options={DEBT_TYPE_OPTIONS.filter((o) => o.value !== RECEIVABLE && o.value !== "heloc")} onChange={(v) => set({ debtType: v as TrackingState["debtType"] })} />
             <AccountField {...accountProps} label="Loan account" filter={(a: { offBudget?: boolean }) => !!a.offBudget} value={tracking.liabilityAccountId ?? ""} onChange={(v) => set({ liabilityAccountId: v || null, trackingStartDueDate: null })} issue={issue("liabilityAccountId")} hint={noOffBudget ? "There is no off-budget account yet. Create one in Accounts, then choose it here." : "Off-budget accounts only: Actual keeps a loan off the budget."} />
           </div>
+          {sim.offsets.map((o, i) => {
+            const name = sim.offsets.length > 1 ? `Offset account ${i + 1}` : "Offset account";
+            return (
+              <div key={o.key} className="grid grid-cols-1 items-end gap-3 md:grid-cols-3">
+                <AccountField {...accountProps} placeholder="Choose the offset account" label={name} value={tracking.offsetAccountMap[o.placeholderAccountId] ?? ""} exclude={[tracking.liabilityAccountId]}
+                  onChange={(v) => set({ offsetAccountMap: { ...tracking.offsetAccountMap, [o.placeholderAccountId]: v } })} issue={issue(`offset:${o.key}`)} hint="The account whose balance you simulated as the offset. Required even for a draft." />
+                <label className="flex items-center justify-between gap-3 text-xs md:col-span-2">
+                  <span><span className="font-medium">Track offset balance from Actual</span><span className="block text-muted-foreground">Terms &amp; Schedule reads this account&apos;s balances from Actual. Nothing is written.</span></span>
+                  <Switch aria-label={`Track ${name.toLowerCase()} balance from Actual`} checked={o.useActualBalance} disabled={!setSimulation}
+                    onCheckedChange={(checked) => setSimulation?.({ ...sim, offsets: sim.offsets.map((item) => (item.key === o.key ? { ...item, useActualBalance: checked } : item)) })} />
+                </label>
+                {issue(`offsets.${i}.useActualBalance`) ? <p className="text-[11px] font-medium text-destructive md:col-span-3">{issue(`offsets.${i}.useActualBalance`)}</p> : null}
+              </div>
+            );
+          })}
         </Section>
 
         <Section n="2" done={!!loan} title="Repayments" lead="Transfers into the loan account count automatically. Add a payment rule only for repayments recorded as an expense in a bank account.">

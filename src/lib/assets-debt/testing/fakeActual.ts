@@ -372,6 +372,13 @@ export function createFakeActual(options: { accounts: FakeAccountSpec[]; payees?
           remove(id);
           return "ok";
         },
+        /** Only the batch update Bench sends: each row updated as one `updateTransaction`, then deletions. */
+        send: async (name: string, args: { updated?: Array<Record<string, unknown> & { id: string }>; deleted?: Array<{ id: string }> }) => {
+          if (name !== "transactions-batch-update") throw new Error(`fake actual: unsupported send ${name}`);
+          for (const { id, ...fields } of args.updated ?? []) update(id, fields);
+          for (const { id } of args.deleted ?? []) remove(id);
+          return {};
+        },
       };
     },
   };

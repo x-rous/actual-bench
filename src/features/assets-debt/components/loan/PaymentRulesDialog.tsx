@@ -11,7 +11,8 @@ import { ConditionsEditor, newCondition } from "@/components/transactions/Condit
 import { useTransactionReference } from "@/components/transactions/useTransactionReference";
 import { getTransport } from "@/lib/actual";
 import { describeRule, ruleMatches, type RuleCondition } from "@/lib/transactions/conditions";
-import { paymentRuleInputSchema, type DebtPaymentRule } from "@/lib/app-db/debtTrackingRepository";
+import type { DebtPaymentRule } from "@/lib/app-db/debtTrackingRepository";
+import { paymentRuleInputSchema } from "@/lib/assets-debt/tracking/paymentRules";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { formatAmount } from "../../lib/money";
 import { savePaymentRule } from "../../lib/trackingApi";

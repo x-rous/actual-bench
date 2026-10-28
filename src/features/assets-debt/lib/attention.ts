@@ -11,18 +11,12 @@ const s = (n: number) => (n === 1 ? "" : "s");
 
 export function attentionText(reason: AttentionReason): string {
   switch (reason.code) {
-    case "interrupted": return `${reason.count} interrupted change${s(reason.count)}: check Actual`;
-    case "failed": return `${reason.count} failed change${s(reason.count)}`;
-    case "undo-pending": return `${reason.count} undo${s(reason.count)} to review`;
-    case "review": return `${reason.count} change${s(reason.count)} to review`;
-    case "blocked": return `${reason.count} change${s(reason.count)} blocked`;
-    case "matching-not-enabled": return "Repayment matching not enabled";
+    case "interrupted": return `${reason.count} write${s(reason.count)} to Actual not finished: check Actual`;
     case "configuration-blocked": return `Settings cannot be used: ${reason.message}`;
   }
 }
 
-/** Where a loan that needs attention opens: its filtered Transactions, or Settings for setup. */
+/** Where a loan that needs attention opens: Repayments for writes, Link to Actual for settings. */
 export function hrefOf(item: AttentionItem): string {
-  const view = item.reasons[0]?.code === "matching-not-enabled" || item.reasons[0]?.code === "configuration-blocked" ? "link" : "repayments";
-  return loanPath(item.id, `view=${view}${view === "repayments" ? `&filter=${item.filter}` : ""}`);
+  return loanPath(item.id, `view=${item.reasons[0]?.code === "configuration-blocked" ? "link" : "repayments"}`);
 }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { generateId } from "@/lib/uuid";
 import { ruleConditionSchema, type RuleCondition } from "@/lib/transactions/conditions";
+import { paymentRuleInputSchema, type PaymentRuleInput } from "@/lib/assets-debt/tracking/paymentRules";
 import { AppDbValidationError } from "./errors";
 import { getDebt } from "./debtRepository";
 import type { SqliteDatabase } from "./types";
@@ -125,13 +126,7 @@ export function saveLedgerEntries(db: SqliteDatabase, debtId: string, input: unk
 
 // ── Payment rules ──────────────────────────────────────────────────────────────
 
-export const paymentRuleInputSchema = z.object({
-  id: id.optional(),
-  name: z.string().trim().min(1, "Name the rule").max(100),
-  match: z.enum(["all", "any"]),
-  conditions: z.array(ruleConditionSchema).min(1, "Add at least one condition").max(20),
-}).strict();
-export type PaymentRuleInput = z.infer<typeof paymentRuleInputSchema>;
+export { paymentRuleInputSchema, type PaymentRuleInput };
 
 type RuleRow = { id: string; debt_id: string; name: string; match: string; conditions: string; updated_at: string };
 
