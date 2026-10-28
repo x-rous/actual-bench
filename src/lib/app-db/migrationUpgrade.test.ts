@@ -1907,14 +1907,17 @@ describe("v60 loan tracking", () => {
       restoreOldTables(db, 59);
       const rule = (id: string, items: object[]) => db.prepare("INSERT INTO debt_match_rules (id,debt_id,purpose,rule_format_version,conditions_json,actions_json,enabled,created_at,updated_at) VALUES (?,'d','repayment',1,?,'{}',1,'t','t')").run(id, JSON.stringify({ items }));
       rule("r1", [{ kind: "source-account", accountId: "checking" }, { kind: "payee", operator: "exact", payeeId: "bank" }, { kind: "amount", operator: "approximately" }]);
+      rule("r2", [{ kind: "source-account", accountId: "checking" }, { kind: "payee", operator: "exact", payeeId: "bank" }]);
+      rule("r3", [{ kind: "source-account", accountId: "savings" }, { kind: "payee", operator: "exact", payeeId: "landlord" }]);
       db.prepare("UPDATE app_meta SET value='59' WHERE key='schema_version'").run();
       expect(runMigrations(db).schemaVersion).toBe(60);
       runMigrations(db); // idempotent
       const debt = db.prepare("SELECT tracking_start_due_date AS start, principal_note_suffix AS p, interest_note_suffix AS i, missing_grace_days AS g FROM debts").get();
       expect(debt).toEqual({ start: null, p: "", i: "#interest", g: 5 });
       expect(db.prepare("SELECT id, enabled FROM debt_future_assumptions").all()).toEqual([{ id: "planned", enabled: 1 }]);
-      const rules = db.prepare("SELECT name, match, conditions FROM debt_payment_rules").all<{ name: string; match: string; conditions: string }>();
-      expect(rules).toHaveLength(1);
+      // r1 limited the amount, which a payment rule cannot, so it is not carried over; r2 and r3 each keep their own rule.
+      const rules = db.prepare("SELECT id, name, match, conditions FROM debt_payment_rules ORDER BY id").all<{ id: string; name: string; match: string; conditions: string }>();
+      expect(rules.map((r) => r.id)).toEqual(["migrated-r2", "migrated-r3"]);
       expect(JSON.parse(rules[0].conditions)).toEqual([{ field: "account", operator: "equals", value: "checking" }, { field: "payee", operator: "equals", value: "bank" }]);
       for (const t of OLD_POSTING_TABLES) expect(objectNames(db, "table")).not.toContain(t);
       expect(() => db.prepare("INSERT INTO debt_writes (id,debt_id,budget_sync_id,kind,target_ids_json,before_json,after_json,status,started_at) VALUES (?,'d','b','split','[]','{}','{}','applying','t')").run("w2")).not.toThrow();

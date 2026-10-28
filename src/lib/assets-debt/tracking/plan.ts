@@ -216,7 +216,7 @@ function findPayments(input: TrackingInput, from: string): Payment[] {
   const loanId = input.debt.liabilityAccountId;
   const loanIds = new Set(input.loanRows.map((r) => r.id));
   const bank = indexRows(input.bankRows);
-  const excluded = new Set(input.entries.filter((e) => e.entryType === "not-repayment" || (e.entryType !== "principal-repayment" && e.entryType !== "extra-principal" && e.entryType !== "adjustment" && loanIds.has(e.actualTransactionId))).map((e) => e.actualTransactionId));
+  const excluded = new Set(input.entries.filter((e) => e.entryType === "not-repayment" || (e.entryType !== "principal-repayment" && e.entryType !== "extra-principal" && loanIds.has(e.actualTransactionId))).map((e) => e.actualTransactionId));
   const payments = new Map<string, Payment>();
   for (const row of input.loanRows) {
     // A transfer into the loan account reduces the debt (the loan account is negative while it is owed).

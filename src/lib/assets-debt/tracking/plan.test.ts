@@ -97,6 +97,18 @@ describe("planTracking", () => {
     expect(saved.installments[1].interestMinor).toBe(suggested.installments[1].interestMinor);
   });
 
+  it("C1c: a positive transfer saved as Adjustment is an adjustment, not a repayment or extra principal", () => {
+    const r = received();
+    const pays = ["2024-02-15", "2024-03-15"].map((d) => transfer(d, 3_411_26));
+    const adjust = transfer("2024-02-20", 20_000_00);
+    const rows = { loan: [r.loan, adjust.loan, ...pays.map((p) => p.loan)], bank: [r.bank, adjust.bank, ...pays.map((p) => p.bank)] };
+    const saved = planTracking(input(rows, { today: "2024-03-20", entries: [{ actualTransactionId: adjust.loan.id, actualAccountId: "loan", entryType: "adjustment", installmentDueDate: null, revision: 1, updatedAt: "t" }] }));
+    if (!saved.ok) throw new Error("not ok");
+    expect(saved.events.filter((e) => e.kind === "extra-principal")).toEqual([]);
+    expect(saved.events).toEqual([expect.objectContaining({ kind: "adjustment", amountMinor: -20_000_00 })]);
+    expect(saved.installments.slice(0, 2).map((i) => i.status)).toEqual(["unrecorded", "unrecorded"]);
+  });
+
   it("B2: a payment already split in Actual is Recorded with no write; a few units of interest difference are not a task", () => {
     const r = received();
     const plain = planTracking(input({ loan: [r.loan, transfer("2024-02-15", 3_411_26).loan], bank: [r.bank] }, { today: "2024-02-20" }));

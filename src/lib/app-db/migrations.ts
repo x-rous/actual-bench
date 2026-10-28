@@ -769,6 +769,8 @@ function carryOverRepaymentRules(db: SqliteDatabase): void {
       ...items.filter((i) => i.kind === "source-account" && i.accountId).map((i) => ({ field: "account", operator: "equals", value: i.accountId })),
       ...items.filter((i) => i.kind === "payee" && i.operator === "exact" && i.payeeId).map((i) => ({ field: "payee", operator: "equals", value: i.payeeId })),
     ];
+    // A rule that also limited the amount would become wider here (the new rules have no amount condition), so it is left behind.
+    if (items.some((i) => i.kind === "amount")) continue;
     // An account alone would take every payment from it; only a rule that also names a payee is carried over.
     if (!conditions.some((c) => c.field === "payee")) continue;
     insert.run(`migrated-${rule.ruleId}`, rule.debtId, rule.budget, "Repayments", JSON.stringify(conditions), now, now);
