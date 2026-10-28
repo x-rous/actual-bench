@@ -151,10 +151,10 @@ function ruleRow(row: SyncSourceTransaction) {
   return { accountId: row.accountId, payeeId: row.payeeId, payeeName: row.payeeName, categoryId: row.categoryId, categoryName: row.categoryName, notes: row.notes, amountMinor: row.amount };
 }
 
-type Due = { no: number; date: string; scheduledMinor: number; interestMinor: number; principalMinor: number; feesMinor: number; balanceBeforeMinor: number; balanceAfterMinor: number };
+export type Due = { no: number; date: string; scheduledMinor: number; interestMinor: number; principalMinor: number; feesMinor: number; balanceBeforeMinor: number; balanceAfterMinor: number };
 
 /** The contract schedule: every installment, numbered from 1. */
-function contractSchedule(model: LoanModelSnapshot, until: string): { ok: true; dues: Due[] } | { ok: false; message: string } {
+export function contractSchedule(model: LoanModelSnapshot, until: string): { ok: true; dues: Due[] } | { ok: false; message: string } {
   const terms = model.terms;
   const run = calculatePeriod({
     model,
@@ -276,7 +276,7 @@ class Allocator {
   /** Interest accrued since the last payment up to `date` (as a payment on that day would carry). */
   accruedTo(date: string): number {
     if (!this.allocator) return 0;
-    const peek = this.allocator.preview({ dueDate: date, paidDate: date, amountMinor: Number.MAX_SAFE_INTEGER / 4 });
+    const peek = this.allocator.preview({ dueDate: date, paidDate: date, amountMinor: Math.floor(Number.MAX_SAFE_INTEGER / 4) });
     return peek.ok ? peek.row.interestMinor : 0;
   }
   /** Something that changes the balance without being a repayment (a draw, a capitalized fee, a restart): carry on from there. */
@@ -286,6 +286,15 @@ class Allocator {
 }
 
 const NOTE_OPENING = "Opening adjustment";
+
+/** What building a write needs to know about the loan. */
+export function proposalContext(debt: TrackingDebt, accounts: ProposalContext["accounts"], transferPayeeByAccount: ProposalContext["transferPayeeByAccount"]): ProposalContext {
+  return {
+    budgetSyncId: debt.budgetSyncId, debtId: debt.id, liabilityAccountId: debt.liabilityAccountId, accounts, transferPayeeByAccount,
+    loanPaymentCategoryId: debt.loanPaymentCategoryId, interestCategoryId: debt.interestCategoryId, feeCategoryId: debt.feeCategoryId,
+    principalNoteSuffix: debt.principalNoteSuffix, interestNoteSuffix: debt.interestNoteSuffix,
+  };
+}
 
 export function planTracking(input: TrackingInput): TrackingResult {
   const { debt, model, today } = input;
@@ -339,12 +348,10 @@ export function planTracking(input: TrackingInput): TrackingResult {
   const positiveAdjustments = loanRows.filter((r) => r.date > windowFrom && r.amount > 0 && r.date <= today && !r.transferId && (isPostingMarker(r.importedId) || userType(r) === "adjustment") && !paymentOfRow.has(r.id));
 
   // ── Walk the tracked window in date order ──
-  const ctx: ProposalContext = {
-    budgetSyncId: debt.budgetSyncId, debtId: debt.id, liabilityAccountId: debt.liabilityAccountId, accounts: input.accounts, transferPayeeByAccount: input.transferPayeeByAccount,
-    loanPaymentCategoryId: debt.loanPaymentCategoryId, interestCategoryId: debt.interestCategoryId, feeCategoryId: debt.feeCategoryId,
-    principalNoteSuffix: debt.principalNoteSuffix, interestNoteSuffix: debt.interestNoteSuffix,
-  };
+  const ctx = proposalContext(debt, input.accounts, input.transferPayeeByAccount);
   let calc = new Allocator(model, opening);
+  // The calculated balance today: upcoming installments are planned after it, without changing it.
+  let calculatedToday = opening.principalMinor;
   // Actual's own principal for recorded installments, to tell where Actual and the calculation part ways.
   let actualPrincipal = opening.principalMinor;
   let driftFlagged = false;
@@ -366,8 +373,11 @@ export function planTracking(input: TrackingInput): TrackingResult {
   for (const a of positiveAdjustments) {
     steps.push({ date: a.date, order: 0, run: () => { calc = calc.reset(a.date, Math.max(0, calc.balanceMinor - a.amount)); actualPrincipal -= a.amount; events.push({ date: a.date, kind: "adjustment", amountMinor: -a.amount, rowId: a.id }); } });
   }
+  // A restart on the day of a recorded installment settles that installment (Actual accepted from there).
+  const anchorOn = new Map<string, number>();
   for (const anchor of input.anchors ?? []) {
     if (anchor.date <= windowFrom || anchor.date > today) continue;
+    anchorOn.set(anchor.date, anchor.principalMinor);
     steps.push({ date: anchor.date, order: 3, run: () => { calc = calc.reset(anchor.date, anchor.principalMinor); actualPrincipal = anchor.principalMinor; driftFlagged = false; } });
   }
   for (const due of tracked) {
@@ -384,14 +394,21 @@ export function planTracking(input: TrackingInput): TrackingResult {
     if (!payment) {
       const upcoming = due.date > today;
       const missing = !upcoming && addDays(due.date, debt.missingGraceDays) < today;
+      if (upcoming) {
+        // Planned as paid on its due date for the scheduled amount, after everything that really happened.
+        const planned = calc.repayment(due, due.date, due.scheduledMinor);
+        return { ...base, status: "upcoming", principalMinor: planned?.principalMinor ?? due.principalMinor, interestMinor: planned?.interestMinor ?? due.interestMinor, calculatedInterestMinor: planned?.interestMinor ?? due.interestMinor, balanceAfterMinor: calc.balanceMinor, note: null };
+      }
       const peek = calc.daily ? calc.accruedTo(due.date) : due.interestMinor;
-      return { ...base, status: missing ? "missing" : "upcoming", principalMinor: due.principalMinor, interestMinor: peek, calculatedInterestMinor: peek, balanceAfterMinor: calc.balanceMinor, note: missing ? `No payment found by ${addDays(due.date, debt.missingGraceDays)}.` : upcoming ? null : "Due; waiting for the payment." };
+      return { ...base, status: missing ? "missing" : "upcoming", principalMinor: due.principalMinor, interestMinor: peek, calculatedInterestMinor: peek, balanceAfterMinor: calc.balanceMinor, note: missing ? `No payment found by ${addDays(due.date, debt.missingGraceDays)}.` : "Due; waiting for the payment." };
     }
     // A split already in Actual: recorded as it is, unless Actual's balance has drifted from the calculation.
     if (payment.kind === "split" && payment.split) {
       const pure = calc.repayment(due, payment.date, payment.amountMinor);
       const calculatedInterest = pure?.interestMinor ?? due.interestMinor;
       actualPrincipal -= payment.split.principalMinor;
+      const accepted = anchorOn.get(payment.date);
+      if (accepted !== undefined) { calc = calc.reset(payment.date, accepted); actualPrincipal = accepted; driftFlagged = false; }
       const drift = actualPrincipal - calc.balanceMinor;
       const drifting = !driftFlagged && Math.abs(drift) > debt.toleranceMinor;
       if (drifting) driftFlagged = true;
@@ -435,7 +452,10 @@ export function planTracking(input: TrackingInput): TrackingResult {
     return { ...base, ...figures, feesMinor: due.feesMinor, status: "unrecorded", proposal };
   }
 
-  for (const step of steps) step.run();
+  for (const step of steps) {
+    step.run();
+    if (step.date <= today) calculatedToday = calc.balanceMinor;
+  }
   installments.sort((a, b) => a.no - b.no);
 
   // A missed installment paid together with the next one is covered.
@@ -498,8 +518,8 @@ export function planTracking(input: TrackingInput): TrackingResult {
     events,
     figures: {
       owedInActualMinor: owed,
-      calculatedMinor: calc.balanceMinor,
-      differenceMinor: owed - calc.balanceMinor,
+      calculatedMinor: calculatedToday,
+      differenceMinor: owed - calculatedToday,
       nextPayment: next ? { dueDate: next.date, no: next.no, amountMinor: next.scheduledMinor } : null,
       counts,
       interestThisYearMinor: installments.filter((i) => (i.status === "recorded" || i.status === "unrecorded") && (i.payment?.date ?? i.dueDate).startsWith(year)).reduce((sum, i) => sum + i.interestMinor, 0),

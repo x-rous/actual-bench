@@ -126,3 +126,11 @@ describe("rd084.debt-revision v2 snapshot", () => {
     expect(hash(edited)).not.toBe(hash(base));
   });
 });
+
+describe("loan tracking settings", () => {
+  it("never change the revision snapshot", () => {
+    const base = input();
+    const tracked = { ...base, debt: { ...base.debt, trackingStartDueDate: "2026-01-01", openingObservationId: "obs", principalNoteSuffix: "#p", interestNoteSuffix: "#i", missingGraceDays: 9 } };
+    expect(buildDebtRevisionSnapshot(tracked)).toEqual(buildDebtRevisionSnapshot(base));
+  });
+});

@@ -36,6 +36,12 @@ const BOOKKEEPING = {
   child: ["id", "debtId", "createdAt", "updatedAt"],
 } as const;
 
+/**
+ * Loan tracking settings (v60): where tracking starts and how split lines are labelled. They decide how Bench reads and
+ * writes Actual, not the calculation, so changing them never creates a revision (and adding them changed no hash).
+ */
+export const TRACKING_FIELDS = ["trackingStartDueDate", "openingObservationId", "principalNoteSuffix", "interestNoteSuffix", "missingGraceDays"] as const;
+
 /** The cosmetic whitelist (G1 D-13). Changing only these never creates a revision. */
 export const COSMETIC_FIELDS = {
   debt: ["name"],
@@ -87,10 +93,11 @@ export function buildDebtRevisionSnapshot(input: DebtRevisionInput): DebtRevisio
   return {
     format: DEBT_REVISION_FORMAT,
     version: DEBT_REVISION_VERSION,
-    debt: without(input.debt, [...BOOKKEEPING.debt, ...COSMETIC_FIELDS.debt]),
+    debt: without(input.debt, [...BOOKKEEPING.debt, ...COSMETIC_FIELDS.debt, ...TRACKING_FIELDS]),
     config: { ...(config as unknown as Record<string, unknown>), paymentRecasts },
     rates: sortRows(input.rates.map((r) => without(r, [...BOOKKEEPING.child, ...COSMETIC_FIELDS.rate])), ["accrualEffectiveFrom"]),
     offsets: sortRows(input.offsets.map((r) => without(r, [...BOOKKEEPING.child, ...COSMETIC_FIELDS.offset])), ["effectiveFrom", "actualAccountId"]),
-    assumptions: sortRows(input.assumptions.map((r) => without(r, [...BOOKKEEPING.child, ...COSMETIC_FIELDS.assumption])), ["effectiveFrom", "assumptionKind"]),
+    // A switched-on event hashes as before the switch existed (v60); only switching one off is a change.
+    assumptions: sortRows(input.assumptions.map((r) => without(r, [...BOOKKEEPING.child, ...COSMETIC_FIELDS.assumption, ...(r.enabled === false ? [] : ["enabled"])])), ["effectiveFrom", "assumptionKind"]),
   };
 }

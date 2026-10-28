@@ -33,10 +33,22 @@ function sources(dir: string): string[] {
 const files = sources(SRC).map((path) => ({ path: relative(ROOT, path), text: readFileSync(path, "utf8") }));
 const importers = (pattern: RegExp) => files.filter((f) => pattern.test(f.text)).map((f) => f.path).sort();
 
+describe("loan tracking writes run only from the user's Apply", () => {
+  it("only the write runner calls the executor, and only the tracking tabs call the runner, never from an effect or timer", () => {
+    expect(importers(/\bexecuteOutput\(/)).toEqual(["src/features/assets-debt/lib/trackingWrites.ts", "src/lib/assets-debt/services/applyService.ts"]);
+    expect(importers(/\bapplyProposals\(/)).toEqual(["src/features/assets-debt/components/loan/TrackingTabs.tsx", "src/features/assets-debt/lib/trackingWrites.ts"]);
+    for (const path of ["src/features/assets-debt/lib/trackingWrites.ts", "src/features/assets-debt/components/loan/TrackingTabs.tsx"]) {
+      const text = files.find((f) => f.path === path)!.text;
+      expect({ path, effect: /useEffect|setInterval|setTimeout|automation/.test(text) }).toEqual({ path, effect: false });
+    }
+  });
+});
+
 describe("no auto-apply (SC-018)", () => {
   it("only the user's posting actions module runs the browser apply executor", () => {
     expect(importers(/from ["'][^"']*services\/applyService["']/).filter((p) => !p.endsWith("postingsApi.ts"))).toEqual([
       "src/features/assets-debt/lib/postingActions.ts",
+      "src/features/assets-debt/lib/trackingWrites.ts",
     ]);
     // postingsApi imports types only.
     const api = files.find((f) => f.path.endsWith("features/assets-debt/lib/postingsApi.ts"))!;

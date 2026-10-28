@@ -191,3 +191,33 @@ describe("planTracking", () => {
     expect(lineNotes("Mortgage", "")).toBe("Mortgage");
   });
 });
+
+describe("drift", () => {
+  function split(date: string, payment: number, interest: number) {
+    const parent = tx({ accountId: "checking", date, amount: -payment, isParent: true });
+    const loanSide = tx({ accountId: "loan", date, amount: payment - interest, transferId: `${parent.id}-p` });
+    parent.splitLines = [
+      { id: `${parent.id}-p`, amount: -(payment - interest), payeeId: "p-loan", payeeName: null, categoryId: "cat-loan", categoryName: null, notes: null, transferId: loanSide.id },
+      { id: `${parent.id}-i`, amount: -interest, payeeId: null, payeeName: null, categoryId: "cat-interest", categoryName: null, notes: null, transferId: null },
+    ];
+    return { parent, loanSide };
+  }
+  it("flags Check once, where Actual's balance first parts from the calculation beyond the tolerance", () => {
+    const r = received();
+    const base = planTracking(input({ loan: [r.loan], bank: [r.bank] }, { today: "2024-04-20" }));
+    if (!base.ok) throw new Error(base.message);
+    const a = split("2024-02-15", 3_411_26, base.installments[0].interestMinor);
+    const b = split("2024-03-15", 3_411_26, 2_406_51); // 280 more interest than calculated
+    const c = split("2024-04-15", 3_411_26, 2_100_00);
+    const result = planTracking(input({ loan: [r.loan, a.loanSide, b.loanSide, c.loanSide], bank: [r.bank, a.parent, b.parent, c.parent] }, { today: "2024-04-20" }));
+    if (!result.ok) throw new Error(result.message);
+    expect(result.installments.slice(0, 3).map((i) => i.status)).toEqual(["recorded", "check", "recorded"]);
+    expect(result.installments[1]).toMatchObject({ checkKind: "drift" });
+    // Accepting Actual's balance after the second installment clears it.
+    const owedAfter = 500_000_00 - (3_411_26 - base.installments[0].interestMinor) - (3_411_26 - 2_406_51);
+    const accepted = planTracking(input({ loan: [r.loan, a.loanSide, b.loanSide, c.loanSide], bank: [r.bank, a.parent, b.parent, c.parent] }, { today: "2024-04-20", anchors: [{ date: "2024-03-15", principalMinor: owedAfter }] }));
+    if (!accepted.ok) throw new Error(accepted.message);
+    expect(accepted.installments.slice(0, 2).map((i) => i.status)).toEqual(["recorded", "recorded"]);
+    expect(accepted.installments[1].balanceAfterMinor).toBe(owedAfter);
+  });
+});

@@ -141,10 +141,11 @@ export function adjustmentProposal(ctx: ProposalContext, input: { date: string; 
 }
 
 /**
- * Undo a split already in Actual: delete its lines so the payment becomes one transaction again. It goes back to what it
- * was before Bench split it when the journal kept that (`original`), otherwise to one whole transfer into the loan account.
+ * Undo a split already in Actual: delete its lines so the payment becomes one transaction again. With the journal's
+ * record of what Bench split (`original`), it goes back exactly to that row, and a transfer's loan-side row comes back.
+ * Without it (a split someone else made), it becomes one whole transfer into the loan account.
  */
-export function undoSplitProposal(ctx: ProposalContext, split: SyncSourceTransaction, input: { dueDate: string | null; original?: RowSnapshot | null; loanSide?: SyncSourceTransaction | null }): Proposal | ProposalProblem {
+export function undoSplitProposal(ctx: ProposalContext, split: SyncSourceTransaction, input: { dueDate: string | null; original?: { before: RowSnapshot; replacesCounterpart: RowSnapshot | null } | null }): Proposal | ProposalProblem {
   if (!split.isParent || !split.splitLines.length) return { ok: false, reason: "This payment is not split in Actual." };
   if (split.reconciled) return { ok: false, reason: "The payment is reconciled in Actual. Unlock it there first." };
   const parent = rowSnapshot(split);
@@ -153,17 +154,25 @@ export function undoSplitProposal(ctx: ProposalContext, split: SyncSourceTransac
     transferId: line.transferId ?? null, isParent: false, isChild: true, parentId: split.id, splitLines: [], importedId: null, importedPayee: null,
   }));
   if (children.some((c) => !c.id)) return { ok: false, reason: "This connection doesn't show the split's lines with their ids." };
-  const toLoan = ctx.transferPayeeByAccount[ctx.liabilityAccountId];
-  const counterpartAccountIds = [...new Set(split.splitLines.filter((l) => l.transferId).map(() => ctx.liabilityAccountId))];
-  const original = input.original ?? null;
-  // Without the original, the payment becomes one whole transfer into the loan account, with Actual making its loan-side row.
-  const restoreTo: RowSnapshot = original
-    ? { ...original, id: split.id, amountMinor: split.amount, isParent: false, childCount: 0 }
-    : { ...parent, payeeId: toLoan ?? null, payeeName: null, categoryId: ctx.loanPaymentCategoryId, transferId: null, isParent: false, childCount: 0 };
-  const becomesTransfer = original ? original.transferId !== null || original.payeeId === toLoan : true;
-  const recreated: RowSnapshot | null = becomesTransfer
-    ? { ...parent, id: "", accountId: ctx.liabilityAccountId, amountMinor: -split.amount, payeeId: ctx.transferPayeeByAccount[split.accountId] ?? null, payeeName: null, categoryId: null, notes: restoreTo.notes, transferId: split.id, isParent: false, isChild: false, parentId: null, childCount: 0, importedId: null, importedPayee: null, reconciled: false }
-    : null;
+  const counterpartAccountIds = split.splitLines.some((l) => l.transferId) ? [ctx.liabilityAccountId] : [];
+  let restoreTo: RowSnapshot;
+  let recreated: RowSnapshot | null;
+  if (input.original) {
+    restoreTo = input.original.before;
+    recreated = input.original.replacesCounterpart;
+  } else {
+    const toLoan = ctx.transferPayeeByAccount[ctx.liabilityAccountId];
+    const back = ctx.transferPayeeByAccount[split.accountId];
+    if (!toLoan || !back) return { ok: false, reason: "Bench cannot find the accounts' transfer payees. Refresh and try again." };
+    const paying = ctx.accounts.find((a) => a.id === split.accountId);
+    const loan = ctx.accounts.find((a) => a.id === ctx.liabilityAccountId);
+    const sameStatus = !!paying && !!loan && paying.offBudget === loan.offBudget;
+    restoreTo = { ...parent, isParent: false, childCount: 0, payeeId: toLoan, categoryId: sameStatus ? null : ctx.loanPaymentCategoryId, transferId: null };
+    recreated = {
+      id: "", accountId: ctx.liabilityAccountId, date: split.date, amountMinor: -split.amount, payeeId: back, payeeName: null, categoryId: null, notes: parent.notes,
+      cleared: false, reconciled: false, importedId: null, importedPayee: null, transferId: split.id, isParent: false, isChild: false, parentId: null, childCount: 0,
+    };
+  }
   return {
     kind: "undo-split", dueDate: input.dueDate, targetIds: [split.id, ...children.map((c) => c.id)],
     output: { format: POSTING_OUTPUT_FORMAT, version: POSTING_OUTPUT_FORMAT_VERSION, kind: "restore-split", parent, children, counterpartAccountIds, restoreTo, recreatedCounterpart: recreated, closing: null },
