@@ -224,6 +224,13 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
                     <div className="px-3 py-2"><dt className="text-xs text-muted-foreground">Actual&apos;s loan account before installment {chosen.no}</dt><dd className="text-base font-semibold tabular-nums">{actualOpening === null ? (scanQuery.isLoading ? "Reading…" : "-") : money(actualOpening)}</dd></div>
                     <div className="px-3 py-2"><dt className="text-xs text-muted-foreground">Difference</dt><dd className={cn("text-base font-semibold tabular-nums", difference !== null && Math.abs(difference) > tolerance && "text-amber-700 dark:text-amber-400")}>{difference === null ? "-" : money(difference)}</dd></div>
                   </dl>
+                  {statement && calculatedOpening !== null && Math.abs(calculatedOpening - statement.principalMinor) > tolerance ? (
+                    <p className="text-xs text-muted-foreground">
+                      The original schedule expected {money(calculatedOpening)} by then, so {calculatedOpening > statement.principalMinor
+                        ? <>you&apos;ve repaid about {money(calculatedOpening - statement.principalMinor)} more principal than scheduled before tracking.</>
+                        : <>about {money(statement.principalMinor - calculatedOpening)} less principal than scheduled was repaid before tracking.</>}
+                    </p>
+                  ) : null}
                   {difference !== null ? <p className="text-xs text-muted-foreground">{Math.abs(difference) <= tolerance ? "Within the tolerance: nothing to write." : `Above the tolerance of ${money(tolerance)}. Repayments will start with one opening adjustment of ${money(Math.abs(difference))} that you can apply or skip.`}</p> : null}
                 </>
               ) : null}

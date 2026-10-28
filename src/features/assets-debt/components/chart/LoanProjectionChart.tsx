@@ -111,7 +111,9 @@ export default function LoanProjectionChart({ data, visible, digits, height = 32
               dataKey={id}
               name={id}
               stroke={SERIES_META[id].color}
-              strokeWidth={id === "balance" || id === "actualBalance" ? 2.5 : 1.75}
+              // Actual's balance steps on payment dates; drawn lighter so it reads as a reference beside the loan's line.
+              strokeWidth={id === "balance" ? 2.5 : id === "actualBalance" ? 1.5 : 1.75}
+              strokeOpacity={id === "actualBalance" ? 0.75 : 1}
               strokeDasharray={SERIES_META[id].dash}
               strokeLinecap="round"
               dot={false}

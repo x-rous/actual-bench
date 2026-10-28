@@ -16,7 +16,7 @@ import { getTransport } from "@/lib/actual";
 import { readOffsetHistories, type OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
 import { archiveDebt, createDebt, DebtApiError, deleteDebtPermanently, getDebt, listDebts, recordDebtObservation, updateDebt } from "../lib/debtsApi";
-import { detailToStates, newSimulation, newTracking, statesToSaveInput, summarizeProfile, type SaveIssue, type SimulationState, type TrackingState } from "../lib/simulatorModel";
+import { detailToStates, simulationToModel, newSimulation, newTracking, statesToSaveInput, summarizeProfile, type SaveIssue, type SimulationState, type TrackingState } from "../lib/simulatorModel";
 import { LOANS_PATH, loanPath } from "../lib/routes";
 import { useAccountDirectory } from "../lib/useAccountDirectory";
 import { SAVE_BOUNDARY } from "./saveBoundary";
@@ -29,6 +29,9 @@ import { LinkedAssetsTab } from "./loan/LinkedAssetsTab";
 import { TrackingDialogs, TrackingTab, useTrackingWorkspace } from "./loan/TrackingTabs";
 import { useLoanTracking } from "../lib/useLoanTracking";
 import { trackedHistory } from "../lib/trackedSchedule";
+import { contractSchedule } from "@/lib/assets-debt/tracking/plan";
+import { formatAmount } from "../lib/money";
+import { dt } from "./loan/presentation";
 import { RefreshCw } from "lucide-react";
 
 /**
@@ -214,6 +217,14 @@ function LoanEditor({ id }: { id: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const saved = useMemo(() => (debt.data ? detailToStates(debt.data) : null), [debt.data]);
+  // How many installments the saved loan has in all, for "installment 34 of 240".
+  const installmentCount = useMemo(() => {
+    if (!saved) return null;
+    const built = simulationToModel(saved.simulation);
+    if (!built.ok) return null;
+    const run = contractSchedule(built.model, "2200-01-01");
+    return run.ok ? run.dues.length : null;
+  }, [saved]);
   const [sim, setSim] = useState<SimulationState | null>(null);
   const [tracking, setTracking] = useState<TrackingState | null>(null);
   const [issues, setIssues] = useState<SaveIssue[]>([]);
@@ -356,6 +367,10 @@ function LoanEditor({ id }: { id: string }) {
       : draft ? "Draft"
         : detail.paidOff ? `Paid off ${detail.paidOff.paidDate}`
           : tracked ? (startNo ? `Tracked from installment ${startNo}` : "Tracked in Actual") : "Not tracked";
+  // The next payment and how much of the loan is paid off, from Actual's loan account (a tracked loan only).
+  const next = result?.figures.nextPayment ?? null;
+  const paidOff = result && saved && saved.simulation.principalMinor ? Math.min(100, Math.max(0, Math.round((1 - result.figures.owedInActualMinor / saved.simulation.principalMinor) * 100))) : null;
+  const subtitle = next ? `Next: installment ${next.no}${installmentCount ? ` of ${installmentCount}` : ""} · ${formatAmount(next.amountMinor, sim.minorDigits)} due ${dt(next.dueDate)}${paidOff !== null ? ` · ${paidOff}% paid off` : ""}` : null;
   const toDo = result ? result.figures.counts.unrecorded + result.figures.counts.check + result.figures.counts.missing + (result.openingAdjustment ? 1 : 0) : 0;
   const unclassified = result ? result.ledger.filter((l) => l.type === "unclassified").length : 0;
   const attention = { ...(toDo ? { activity: `${toDo} to do` } : {}), ...(unclassified ? { ledger: `${unclassified} unclassified` } : {}) };
@@ -400,6 +415,7 @@ function LoanEditor({ id }: { id: string }) {
     <WorkspaceFrame
       title={tracking.name || detail.debt.name}
       state={state}
+      subtitle={subtitle}
       stateEmphasis={dirty}
       tab={tab}
       onTab={setTab}

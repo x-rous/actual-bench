@@ -88,6 +88,12 @@ describe("Link to Actual", () => {
     expect(screen.getByText("Within the tolerance: nothing to write.")).toBeInTheDocument();
   });
 
+  it("with a lender statement as the opening, says how far the principal is ahead of the original schedule", async () => {
+    // Start at installment 6 (1 Jun 2024); the lender's statement on 1 May 2024 says 25,000.00 is owed.
+    wrap(<Harness initial={{ liabilityAccountId: "loan", trackingStartDueDate: "2024-06-01", openingStatementDraft: { date: "2024-05-01", principalMinor: 2_500_000 } } as Partial<TrackingState>} />);
+    expect(await screen.findByText(/^The original schedule expected [\d,]+\.\d\d by then, so you've repaid about [\d,]+\.\d\d more principal than scheduled before tracking\.$/)).toBeInTheDocument();
+  });
+
   it("chooses the start by installment number or by date", async () => {
     wrap(<Harness initial={{ liabilityAccountId: "loan" }} />);
     fireEvent.change(screen.getByLabelText("First installment"), { target: { value: "3" } });

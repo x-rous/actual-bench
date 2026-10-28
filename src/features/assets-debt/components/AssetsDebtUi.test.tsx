@@ -930,11 +930,12 @@ describe("an existing loan page", () => {
       mockTracking.current = {
         tracked: true, debt: { trackingStartDueDate: "2024-02-01" }, bundle: { rules: [], entries: [], writes: [], openingStatement: null, anchors: [] }, reads: { transferPayeeByAccount: {} },
         result: { ok: true, installments: [], events: [], ledger: [], opening: { date: "2024-01-01", principalMinor: 3_000_000 }, anchor: { date: "2024-06-01", principalMinor: 2_950_000, scheduledPaymentMinor: 91_000 },
-          before: { count: 0 }, openingAdjustment: null, figures: { counts: { unrecorded: 0, check: 0, missing: 0, recorded: 0, upcoming: 0 } } },
+          before: { count: 0 }, openingAdjustment: null, figures: { owedInActualMinor: 2_950_000, nextPayment: { dueDate: "2024-07-01", no: 6, amountMinor: 91_000 }, counts: { unrecorded: 0, check: 0, missing: 0, recorded: 0, upcoming: 0 } } },
         today: "2024-06-15", loading: false, refreshing: false, error: null, refresh: async () => {}, reloadBundle: async () => {},
       };
       wrap(<LoanView id={detail.debt.id} />);
       await screen.findByText(/Tracked/);
+      expect(screen.getByText(/^Next: installment 6 of \d+ · 910\.00 due 01 Jul 2024 · \d+% paid off$/)).toBeInTheDocument();
       for (const [amount, date] of [["100", "03/01/2024"], ["200", "09/01/2024"], ["300", "10/01/2024"]]) {
         fireEvent.click(await screen.findByRole("button", { name: "Extra payment" }));
         const dialog = await screen.findByRole("dialog");

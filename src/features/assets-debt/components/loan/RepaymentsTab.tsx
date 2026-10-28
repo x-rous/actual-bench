@@ -150,7 +150,7 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
       <div className="flex min-w-0 flex-1 flex-col">
         <SummaryStrip label="Repayments summary" items={[
           { label: "Owed in Actual", value: money(f.owedInActualMinor), detail: tracking.reads?.complete === false ? "The loan account didn't read completely: refresh" : "Loan account today", wrap: true },
-          { label: "Calculated", value: money(f.calculatedMinor), detail: Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "Agrees with Actual" : `Differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
+          { label: "Bench expects", value: money(f.calculatedMinor), detail: Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "By today · agrees with Actual" : `By today · differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
           { label: "Next payment", value: f.nextPayment ? money(f.nextPayment.amountMinor) : "-", detail: f.nextPayment ? `Due ${dt(f.nextPayment.dueDate)} · installment ${f.nextPayment.no}` : "No more installments", wrap: true },
           { label: "To do", value: <span className={todo + f.counts.check + f.counts.missing ? "text-amber-700 dark:text-amber-400" : undefined}>{todo} <span className="text-sm font-medium text-muted-foreground">Unrecorded</span></span>, detail: `${f.counts.check} Check · ${f.counts.missing} Missing`, wrap: true },
           { label: "Interest this year", value: money(f.interestThisYearMinor), detail: "Recorded and unrecorded installments", wrap: true },

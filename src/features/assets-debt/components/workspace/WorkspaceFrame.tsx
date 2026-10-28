@@ -61,6 +61,8 @@ export type WorkspaceFrameProps = {
   /** The state chip: "Not saved yet", "Saved · revision 3", "Unsaved changes", "Archived: read-only". */
   state: string;
   stateEmphasis?: boolean;
+  /** One line beside the state, such as the next payment and how much is paid off. */
+  subtitle?: React.ReactNode;
   tab: WorkspaceTab;
   onTab: (tab: WorkspaceTab) => void;
   /** Tabs that cannot open yet, with the reason (a new loan has no Activity until it is saved). */
@@ -78,7 +80,7 @@ export type WorkspaceFrameProps = {
 
 const BACK_HREF = LOANS_PATH;
 
-export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabledTabs = {}, attention = {}, actions, menu = [], dirty, onSaveAndLeave, children }: WorkspaceFrameProps) {
+export function WorkspaceFrame({ title, state, stateEmphasis, subtitle, tab, onTab, disabledTabs = {}, attention = {}, actions, menu = [], dirty, onSaveAndLeave, children }: WorkspaceFrameProps) {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -96,6 +98,7 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
           <span role="status" className={cn("rounded-full border px-2 py-0.5 text-[11px]", stateEmphasis ? "border-primary font-medium" : "border-border text-muted-foreground")}>
             {state}
           </span>
+          {subtitle ? <span className="min-w-0 truncate text-xs text-muted-foreground">{subtitle}</span> : null}
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {actions}
             {menu.length ? (
