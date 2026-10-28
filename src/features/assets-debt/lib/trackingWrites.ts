@@ -64,7 +64,14 @@ export async function applyProposals(ctx: WriteContext, proposals: readonly Prop
       }
       const status = outcome.status === "applied" ? "applied" : outcome.status === "failed" ? "failed" : "uncertain";
       outcomes[i] = { proposal, status, message: messageOf(outcome) };
-      await finishWrite(ctx.debtId, writeId, { status, actualIds: outcome.status === "applied" ? outcome.actualIds : null, ...(outcome.status !== "applied" ? { error: outcome.error } : {}) }).catch(() => undefined);
+      let journaled = true;
+      await finishWrite(ctx.debtId, writeId, { status, actualIds: outcome.status === "applied" ? outcome.actualIds : null, ...(outcome.status !== "applied" ? { error: outcome.error } : {}) }).catch(() => { journaled = false; });
+      if (!journaled) {
+        // The journal row stays "applying", which pauses every later write to this loan until someone resolves it.
+        outcomes[i] = { proposal, status, message: `${outcomes[i].message ?? "Applied in Actual"}. The write journal could not be updated, so further writes to this loan stay paused until it is resolved.` };
+        onProgress?.(i + 1, proposals.length);
+        break;
+      }
       timing.step(`write ${i + 1}`);
       onProgress?.(i + 1, proposals.length);
       if (status !== "applied") break;

@@ -1,7 +1,7 @@
 "use client";
 
 import { localToday } from "../lib/calendarDate";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
@@ -265,6 +265,7 @@ function LoanEditor({ id }: { id: string }) {
     : null), [trackedResult, trackedStart, trackedToday, router, pathname]);
   const ws = useTrackingWorkspace(detail, loanTracking, directory.data);
 
+  const recordedOpening = useRef<{ key: string; observationId: string } | null>(null);
   const save = useMutation({
     // `leaving`: saved on the way out of the page; read in onSuccess.
     mutationFn: async (options?: { leaving?: boolean }) => {
@@ -280,8 +281,14 @@ function LoanEditor({ id }: { id: string }) {
       // A lender statement typed as the opening position is recorded first, then the loan points at it.
       if (tracking.openingStatementDraft && built.input.trackingStartDueDate) {
         setSavePhase("Recording the lender statement…");
-        const observation = await recordDebtObservation(id, { observedOn: tracking.openingStatementDraft.date, recordedAt: new Date().toISOString(), principalMinor: tracking.openingStatementDraft.principalMinor, accruedInterestMinor: null, note: "Opening position for tracking" });
-        built.input.openingObservationId = observation.id;
+        // A retry after a failed save reuses the statement already recorded for these figures, so none is duplicated.
+        const draft = tracking.openingStatementDraft;
+        const key = `${draft.date}|${draft.principalMinor}`;
+        if (recordedOpening.current?.key !== key) {
+          const observation = await recordDebtObservation(id, { observedOn: draft.date, recordedAt: new Date().toISOString(), principalMinor: draft.principalMinor, accruedInterestMinor: null, note: "Opening position for tracking" });
+          recordedOpening.current = { key, observationId: observation.id };
+        }
+        built.input.openingObservationId = recordedOpening.current.observationId;
       }
       setSavePhase("Saving loan revision…");
       const next = await updateDebt(id, built.input, directory.data);

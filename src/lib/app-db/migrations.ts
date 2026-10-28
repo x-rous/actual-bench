@@ -748,9 +748,18 @@ function applyLoanTracking(db: SqliteDatabase): void {
     db.exec("DELETE FROM debt_future_assumptions WHERE assumption_kind = 'extra-repayment' AND recurrence_json IS NULL AND note = 'Extra payment recorded from Actual'");
   }
   for (const statement of LOAN_TRACKING_TABLES_SQL) db.exec(statement);
-  if (!tableExists(db, "debt_match_rules") || !tableExists(db, "debts")) return;
+  if (tableExists(db, "debt_match_rules") && tableExists(db, "debts")) carryOverRepaymentRules(db);
+  // The old repayment workflow's tables (postings, their leases, matching rules and transaction links) are not read any
+  // more: the Loan Ledger reads Actual, and writes are journaled in debt_writes. Children first, so no foreign key fails.
+  for (const table of OLD_POSTING_TABLES) db.exec(`DROP TABLE IF EXISTS ${table}`);
+}
+
+/** Dropped by v60, in this order. */
+export const OLD_POSTING_TABLES = ["debt_transaction_links", "debt_posting_leases", "financial_postings", "debt_match_rules"] as const;
+
+function carryOverRepaymentRules(db: SqliteDatabase): void {
   // An old repayment rule named the account payments come from; that becomes a payment rule ("Account is X").
-  const rules = db.prepare("SELECT r.debt_id AS debtId, d.budget_sync_id AS budget, r.conditions_json AS json FROM debt_match_rules r JOIN debts d ON d.id = r.debt_id WHERE r.purpose = 'repayment'").all<{ debtId: string; budget: string; json: string }>();
+  const rules = db.prepare("SELECT r.id AS ruleId, r.debt_id AS debtId, d.budget_sync_id AS budget, r.conditions_json AS json FROM debt_match_rules r JOIN debts d ON d.id = r.debt_id WHERE r.purpose = 'repayment'").all<{ ruleId: string; debtId: string; budget: string; json: string }>();
   const insert = db.prepare("INSERT OR IGNORE INTO debt_payment_rules (id, debt_id, budget_sync_id, name, match, conditions, created_at, updated_at) VALUES (?, ?, ?, ?, 'all', ?, ?, ?)");
   const now = new Date().toISOString();
   for (const rule of rules) {
@@ -762,7 +771,7 @@ function applyLoanTracking(db: SqliteDatabase): void {
     ];
     // An account alone would take every payment from it; only a rule that also names a payee is carried over.
     if (!conditions.some((c) => c.field === "payee")) continue;
-    insert.run(`migrated-${rule.debtId}`, rule.debtId, rule.budget, "Repayments", JSON.stringify(conditions), now, now);
+    insert.run(`migrated-${rule.ruleId}`, rule.debtId, rule.budget, "Repayments", JSON.stringify(conditions), now, now);
   }
 }
 

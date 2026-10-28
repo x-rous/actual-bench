@@ -1,39 +1,21 @@
 import type { ActualBenchTransport, SyncSourceTransaction } from "@/lib/actual/transport";
 import type { LinkTransferInput } from "@/lib/actual/transactionStructure";
 import { adjustInspection, adjustWrite } from "./adjustSplit";
-import { PostingNotApproved } from "./postingErrors";
 import { toRowState, toTransactionPreflight, type PostingOutputSnapshot } from "./snapshot";
 import { verifyConvertOutcome, verifyCreatedRows, verifyLinkOutcome, verifyRestoreOutcome, verifyRevertOutcome, verifySplitOutcome, verifyUnlinkOutcome } from "./verify";
 
 /**
- * The browser half of applying a posting (RD-084 P1.6 T125–T127; SC-018).
- *
- * Actual is reached from the browser, through the shared transport, so the
- * writes happen here. This executor accepts only a ticket the server issued
- * after recording the user's explicit approval (`status = applying`,
- * `decided_at` set); anything else throws `PostingNotApproved` before a single
- * read. Its only caller is the preview's **Apply this change** handler.
- *
- * Outcomes are honest about what Actual holds:
+ * Writing a loan's changes to Actual, in the browser through the shared transport (design spec 06 §8). Each output
+ * document is written and then verified against Actual. Outcomes are honest about what Actual holds:
  *
  * - `applied`: written (or found by its marker) and verified;
- * - `failed`: nothing was written (preflight refused) or verification found a
- *   problem with what was written;
- * - `indeterminate`: the write may or may not have landed; only recovery or a
- *   reviewed decision resolves it, never a blind retry.
+ * - `failed`: nothing was written (preflight refused) or verification found a problem with what was written;
+ * - `indeterminate`: the write may or may not have landed; only a person who checked Actual resolves it, never a blind
+ *   retry.
+ *
+ * The only caller is the loan tracking write runner, which records each write in the journal first and runs only from
+ * the user's Apply.
  */
-
-export type ApplyTicketView = {
-  executionToken?: string;
-  posting: {
-    id: string;
-    status: unknown;
-    decidedAt: string | null;
-    idempotencyMarker: string | null;
-    output: PostingOutputSnapshot;
-  };
-  mode: "apply" | "complete-link";
-};
 
 export type ExecutorContext = {
   transport: ActualBenchTransport;
@@ -52,14 +34,6 @@ export type ExecutorOutcome =
   | { status: "applied"; actualIds: string[]; appliedAt: string; recovered?: boolean }
   | { status: "failed"; error: Record<string, unknown> }
   | { status: "indeterminate"; error: Record<string, unknown> };
-
-/** SC-018: the executor runs only for a posting the user approved and the server started applying. */
-export function assertApproved(ticket: ApplyTicketView): void {
-  const { posting } = ticket;
-  if (posting.decidedAt === null || posting.decidedAt === undefined) throw new PostingNotApproved();
-  if (ticket.mode === "apply" && posting.status !== "applying") throw new PostingNotApproved();
-  if (ticket.mode === "complete-link" && posting.status !== "indeterminate") throw new PostingNotApproved();
-}
 
 /** A readable message even when a transport throws a plain object (an HTTP error body). */
 const message = (error: unknown): string => {
@@ -89,11 +63,6 @@ function linkInput(output: Extract<PostingOutputSnapshot, { kind: "link" }>): Li
 
 async function read(transport: ActualBenchTransport, accountId: string, from: string, to?: string): Promise<SyncSourceTransaction[]> {
   return transport.listTransactionsForSync({ resolveNames: false, accountId, startDate: from, ...(to ? { endDate: to } : {}) });
-}
-
-export async function executeApprovedPosting(ticket: ApplyTicketView, ctx: ExecutorContext): Promise<ExecutorOutcome> {
-  assertApproved(ticket);
-  return executeOutput(ticket.posting.output, ctx, ticket.mode);
 }
 
 /**

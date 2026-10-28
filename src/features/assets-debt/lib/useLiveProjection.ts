@@ -85,7 +85,8 @@ export function useLiveProjection(sim: SimulationState, options: { compareWith?:
         .then((outcome) => {
           if (cancelled) return;
           if (process.env.NODE_ENV === "development") console.debug(`[assets-debt] projection ${outcome.durationMs.toFixed(0)} ms`);
-          const blocked = outcome.projection.ok ? [] : outcome.projection.blocked;
+          // A blocked contract has no results to show, so its reasons are surfaced even when the projection itself is fine.
+          const blocked = outcome.projection.ok ? (outcome.contract && !outcome.contract.ok ? outcome.contract.blocked : []) : outcome.projection.blocked;
           setSettled({ primary, comparison, impactBaseline, contract, result: { status: blocked.length ? "blocked" : "ok", projection: outcome.projection, comparison: outcome.comparison, impactBaseline: outcome.impactBaseline, contract: outcome.contract ?? null, problems: blocked.map((b) => b.message), blocked, durationMs: outcome.durationMs } });
         })
         .catch((error: unknown) => {

@@ -67,7 +67,7 @@ export function PrimaryInputs({ sim, change, onCalculationMethod, onRateChanges 
         {/* Day count beside the rate (daily interest only); the rest of the method stays in the calculation method panel. */}
         <div className={sim.profile.accrual === "per-period" ? undefined : "grid grid-cols-2 gap-2"}>
           <PercentField label="Interest rate" suffix="% p.a." valueFraction={sim.rates[0]?.annualRateDecimal ?? null} onChange={setRate} />
-          {sim.profile.accrual === "per-period" ? null : <SelectField label="Day count" value={sim.profile.dayCount} options={DAY_COUNT_OPTIONS} onChange={(v) => change({ ...sim, profile: { ...sim.profile, dayCount: v as SimulationState["profile"]["dayCount"] } })} />}
+          {sim.profile.accrual === "per-period" ? null : <SelectField label="Day count" value={sim.profile.dayCount} options={DAY_COUNT_OPTIONS} onChange={(v) => change({ ...sim, profile: { ...sim.profile, dayCount: v as SimulationState["profile"]["dayCount"], presetId: null } })} />}
         </div>
         <CalculationMethodSummary sim={sim} onOpen={onCalculationMethod} />
         <Button type="button" variant="outline" size="sm" className="justify-between" onClick={onRateChanges}>

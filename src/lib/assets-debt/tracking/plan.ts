@@ -142,7 +142,7 @@ export type TrackingResult =
 const DAY = 86_400_000;
 const addDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY);
-const UPCOMING_SHOWN = 3;
+const UPCOMING_SHOWN = 1;
 
 function fmt(minor: number, digits: number): string {
   return (minor / 10 ** digits).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -216,7 +216,7 @@ function findPayments(input: TrackingInput, from: string): Payment[] {
   const loanId = input.debt.liabilityAccountId;
   const loanIds = new Set(input.loanRows.map((r) => r.id));
   const bank = indexRows(input.bankRows);
-  const excluded = new Set(input.entries.filter((e) => e.entryType === "not-repayment" || (e.entryType !== "principal-repayment" && loanIds.has(e.actualTransactionId))).map((e) => e.actualTransactionId));
+  const excluded = new Set(input.entries.filter((e) => e.entryType === "not-repayment" || (e.entryType !== "principal-repayment" && e.entryType !== "extra-principal" && e.entryType !== "adjustment" && loanIds.has(e.actualTransactionId))).map((e) => e.actualTransactionId));
   const payments = new Map<string, Payment>();
   for (const row of input.loanRows) {
     // A transfer into the loan account reduces the debt (the loan account is negative while it is owed).
@@ -327,9 +327,22 @@ export function planTracking(input: TrackingInput): TrackingResult {
   const loanRows = [...input.loanRows].filter((r) => !r.isChild).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const entries = new Map(input.entries.map((e) => [e.actualTransactionId, e]));
 
-  // Actual's balance just before the first tracked installment: every earlier row, plus an opening balance on that day.
-  const isOpeningRow = (r: SyncSourceTransaction) => r.amount < 0 && !r.transferId && ((r.payeeName ?? "").trim().toLowerCase() === "starting balance" || entries.get(r.id)?.entryType === "opening-balance");
-  const actualAtStart = -loanRows.filter((r) => r.date < start.date || (r.date === start.date && isOpeningRow(r))).reduce((sum, r) => sum + r.amount, 0);
+  // What a row that adds to the debt is, when the user hasn't said: the loan arriving (a transfer near the loan's start),
+  // an opening balance, or a later draw or charge. The Loan Ledger shows the same suggestions.
+  const loanStart = model.terms.openingDate;
+  const firstNonTransferDebt = loanRows.find((r) => r.amount < 0 && !r.transferId && !isPostingMarker(r.importedId));
+  const isStartingBalance = (r: SyncSourceTransaction) => !r.transferId && (r.payeeName ?? "").trim().toLowerCase() === "starting balance";
+  const suggestedDebtType = (r: SyncSourceTransaction): EntryType => r.transferId
+    ? (Math.abs(daysBetween(loanStart, r.date)) <= 31 ? "loan-received" : "draw")
+    : isStartingBalance(r) || (r === firstNonTransferDebt && r.date <= start.date) ? "opening-balance"
+      : debt.representation === "lender-charged" ? "interest-charged" : "unclassified";
+  // The row that brings the loan into the account, on or before the first tracked installment: part of the opening
+  // position, never a draw in the tracked period (else the loan would be counted twice).
+  const isOpeningRow = (r: SyncSourceTransaction) => {
+    if (r.amount >= 0 || r.date > start.date || isPostingMarker(r.importedId)) return false;
+    const type = entries.get(r.id)?.entryType ?? suggestedDebtType(r);
+    return type === "loan-received" || type === "opening-balance";
+  };
 
   // ── Payments, lined up against the installments ──
   const payments = findPayments(input, windowFrom);
@@ -339,19 +352,21 @@ export function planTracking(input: TrackingInput): TrackingResult {
   const tracked = dues.filter((d) => d.no >= start.no);
   const shownUpcoming = new Set(tracked.filter((d) => d.date > today).slice(0, UPCOMING_SHOWN).map((d) => d.date));
   const aligned = tracked.filter((d) => d.date <= today || shownUpcoming.has(d.date));
+  // A payment the user marked "Extra principal" is extra principal, whatever installment it is near.
+  const markedExtra = new Set(payments.filter((p) => p.loanRows.some((r) => entries.get(r.id)?.entryType === "extra-principal")).map((p) => p.id));
   const pins: AlignPin[] = input.entries.flatMap((e) => {
     const paymentId = e.installmentDueDate ? paymentOfRow.get(e.actualTransactionId) : undefined;
-    return paymentId && aligned.some((d) => d.date === e.installmentDueDate) ? [{ key: e.installmentDueDate!, paymentId }] : [];
+    return paymentId && !markedExtra.has(paymentId) && aligned.some((d) => d.date === e.installmentDueDate) ? [{ key: e.installmentDueDate!, paymentId }] : [];
   });
   const alignment = alignPayments(
-    { dues: aligned.map((d) => ({ key: d.date, date: d.date, expectedMinor: d.scheduledMinor, upcoming: d.date > today })), payments: payments.map((p) => ({ id: p.id, date: p.date, amountMinor: p.amountMinor })), pins },
+    { dues: aligned.map((d) => ({ key: d.date, date: d.date, expectedMinor: d.scheduledMinor, upcoming: d.date > today })), payments: payments.filter((p) => !markedExtra.has(p.id)).map((p) => ({ id: p.id, date: p.date, amountMinor: p.amountMinor })), pins },
     { toleranceMinor: debt.toleranceMinor, formatMinor: money },
   );
   const pairOf = new Map(alignment.dues.map((d) => [d.key, d]));
   const paidBy = new Map(alignment.dues.flatMap((d) => (d.payment ? [[d.payment.id, d.key] as const] : [])));
   // Only money that reached the loan account is extra principal; a payment a rule found but no installment took is
   // just something the rule matched (it never touched this loan).
-  const extraPayments = alignment.extras.map((e) => byId.get(e.id)!).filter((p) => p && p.kind !== "rule");
+  const extraPayments = [...alignment.extras.map((e) => byId.get(e.id)!).filter((p) => p && p.kind !== "rule"), ...payments.filter((p) => markedExtra.has(p.id))].sort((x, y) => x.date.localeCompare(y.date) || x.id.localeCompare(y.id));
 
   // Ledger events in the tracked window that change the balance without being an installment.
   const userType = (r: SyncSourceTransaction) => entries.get(r.id)?.entryType;
@@ -359,7 +374,12 @@ export function planTracking(input: TrackingInput): TrackingResult {
     const type = userType(r) ?? (r.transferId ? "draw" : debt.representation === "lender-charged" ? "interest-charged" : isPostingMarker(r.importedId) ? "adjustment" : null);
     return type === "draw" || type === "fee" || type === "interest-charged" || type === "adjustment" || type === "loan-received" ? [{ date: r.date, amountMinor: -r.amount, kind: type, row: r }] : [];
   });
-  const positiveAdjustments = loanRows.filter((r) => r.date > windowFrom && r.amount > 0 && r.date <= today && !r.transferId && (isPostingMarker(r.importedId) || userType(r) === "adjustment") && !paymentOfRow.has(r.id));
+  const positiveAdjustments = loanRows.filter((r) => r.date > windowFrom && r.amount > 0 && r.date <= today && (!r.transferId || userType(r) === "adjustment") && (isPostingMarker(r.importedId) || userType(r) === "adjustment") && !paymentOfRow.has(r.id));
+
+  // Actual's balance before the first tracked installment. Each row counts once: in the opening position, or in the
+  // tracked period walked below (a payment for a tracked installment made before its due date, a draw, a charge).
+  const walked = new Set([...paymentOfRow.keys(), ...balanceEvents.map((b) => b.row.id), ...positiveAdjustments.map((a) => a.id)]);
+  const actualAtStart = -loanRows.filter((r) => (r.date < start.date || isOpeningRow(r)) && !walked.has(r.id)).reduce((sum, r) => sum + r.amount, 0);
 
   // ── Walk the tracked window in date order ──
   const ctx = proposalContext(debt, input.accounts, input.transferPayeeByAccount);
@@ -493,8 +513,6 @@ export function planTracking(input: TrackingInput): TrackingResult {
     : null;
 
   // ── The ledger ──
-  const loanStart = model.terms.openingDate;
-  const firstNonTransferDebt = loanRows.find((r) => r.amount < 0 && !r.transferId && !isPostingMarker(r.importedId));
   const installmentOfPayment = new Map(installments.flatMap((i) => (i.payment ? [[i.payment.id, i] as const] : [])));
   let running = 0;
   const ledger: LedgerRow[] = loanRows.map((row) => {
@@ -505,12 +523,8 @@ export function planTracking(input: TrackingInput): TrackingResult {
     const benchMade = isPostingMarker(row.importedId);
     let suggestion: EntryType;
     if (benchMade) suggestion = "adjustment";
-    else if (row.amount < 0) {
-      if (row.transferId) suggestion = Math.abs(daysBetween(loanStart, row.date)) <= 31 ? "loan-received" : "draw";
-      else if (isOpeningRow(row) || (row === firstNonTransferDebt && row.date <= start.date)) suggestion = "opening-balance";
-      else if (debt.representation === "lender-charged") suggestion = "interest-charged";
-      else suggestion = "unclassified";
-    } else if (row.amount > 0) {
+    else if (row.amount < 0) suggestion = suggestedDebtType(row);
+    else if (row.amount > 0) {
       if (row.transferId) suggestion = paymentId && paidBy.has(paymentId) ? "principal-repayment" : row.date > windowFrom ? "extra-principal" : "principal-repayment";
       else suggestion = "unclassified";
     } else suggestion = "unclassified";

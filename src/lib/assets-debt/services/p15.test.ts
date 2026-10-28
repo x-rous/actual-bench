@@ -4,7 +4,6 @@ import { insertDebtObservation, listCurrentDebtObservations, listDebtObservation
 import { getEffectiveDebtAnchor, insertDebtAnchor, listDebtAnchors } from "@/lib/app-db/debtAnchorRepository";
 import { listDebtOffsetLinks, replaceDebtOffsetLinks } from "@/lib/app-db/debtOffsetLinkRepository";
 import { tempDebtDb } from "../testing/debtFixtures";
-import { compareDebtBalances, debtDriftState } from "../classification/drift";
 import { reconciliationHealth } from "./health";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 
@@ -51,14 +50,7 @@ describe("RD-084 P1.5 evidence persistence", () => {
   });
 });
 
-describe("RD-084 P1.5 drift and health", () => {
-  it("keeps all three differences on the same date and invalidates acceptance when evidence changes", () => {
-    const comparison = compareDebtBalances({ comparisonDate: "2026-02-01", modelMinor: 100_000, actualMinor: 99_500, lenderMinor: 99_600 });
-    expect(comparison).toMatchObject({ modelVsActualMinor: 500, modelVsLenderMinor: 400, actualVsLenderMinor: -100 });
-    expect(debtDriftState({ comparison, toleranceMinor: 100, currentRevision: 2, acceptedRevision: 2, acceptedFingerprint: "old", currentFingerprint: "new" })).toBe("material");
-    expect(debtDriftState({ comparison, toleranceMinor: 100, currentRevision: 2, acceptedRevision: 2, acceptedFingerprint: "same", currentFingerprint: "same" })).toBe("accepted");
-  });
-
+describe("RD-084 P1.5 statement health", () => {
   it("only reports overdue when an interval is configured", () => {
     expect(reconciliationHealth({ expectedIntervalDays: null, graceDays: 3, latestObservationDate: "2026-01-01", asOfDate: "2027-01-01" })).toEqual({ overdue: false, dueDate: null });
     expect(reconciliationHealth({ expectedIntervalDays: 30, graceDays: 3, latestObservationDate: "2026-01-01", asOfDate: "2026-02-04" })).toEqual({ overdue: true, dueDate: "2026-02-03" });

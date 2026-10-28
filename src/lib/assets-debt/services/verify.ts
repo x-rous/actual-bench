@@ -107,7 +107,8 @@ export function verifySplitOutcome(input: {
   expected.children.forEach((want, index) => {
     const got = result.children[index];
     const payee = want.transferAccountId ? input.transferPayeeByAccount[want.transferAccountId] ?? null : want.payeeId;
-    if (got.amount !== want.amountMinor || got.categoryId !== want.categoryId || got.payeeId !== payee || got.notes !== want.notes) {
+    if (got.amount !== want.amountMinor || got.categoryId !== want.categoryId || got.payeeId !== payee || (got.notes ?? "") !== (want.notes ?? "")) {
+      // Actual reads an empty note back as none.
       issues.push({ kind: "split-mismatch", detail: `The ${want.economicKind} line does not hold the previewed values.` });
     }
     if (want.transferAccountId) {

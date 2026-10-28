@@ -160,16 +160,16 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
     const data = chartSeries(projection, sim, { view: chartView, comparison: live.comparison });
     return tracked ? withTracking(data, tracked, chartView) : data;
   }, [projection, live.comparison, sim, chartView, tracked]);
-  const calendarTodayForDetails = tracked?.today ?? null;
+  const calendarToday = useLocalToday();
+  const calendarTodayForDetails = tracked?.today ?? calendarToday;
   const details = useMemo(() => {
     if (!events || !head) return undefined;
-    const today = calendarTodayForDetails ?? new Date().toISOString().slice(0, 10);
+    const today = calendarTodayForDetails;
     const paid = events.filter((e) => e.date <= today).reduce((sum, e) => sum + e.interestMinor, 0);
     const months = head.payoffDate ? Math.max(0, Math.round((Date.parse(`${head.payoffDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / (86_400_000 * 30.4375))) : null;
-    const left = months === null ? null : months === 0 ? "Paid off" : `${Math.floor(months / 12) ? `${Math.floor(months / 12)} yrs ` : ""}${months % 12 ? `${months % 12} mos ` : ""}left`.trim();
+    const left = months === null || !head.payoffDate ? null : head.payoffDate <= today ? "Paid off" : months === 0 ? "Less than a month left" : `${Math.floor(months / 12) ? `${Math.floor(months / 12)} yrs ` : ""}${months % 12 ? `${months % 12} mos ` : ""}left`.trim();
     return { interest: `Paid so far ${formatAmount(paid, sim.minorDigits)} · still to pay ${formatAmount(head.totalInterestMinor - paid, sim.minorDigits)}`, payoff: left };
   }, [events, head, calendarTodayForDetails, sim.minorDigits]);
-  const calendarToday = useLocalToday();
   const resetValue = useMemo(() => newSimulation({ currency: sim.currency, minorDigits: sim.minorDigits, today: calendarToday }), [sim.currency, sim.minorDigits, calendarToday]);
   const resetMeaningful = comparableSimulation(sim) !== comparableSimulation(resetValue);
   const removeExtra = (assumption: SimAssumption) => propose({ ...sim, assumptions: sim.assumptions.filter((candidate) => candidate.key !== assumption.key) });
@@ -260,7 +260,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
                 tracked={tracked ? {
                   startDate: tracked.startDate, today: tracked.today, ledgerEvents: tracked.ledgerEvents,
                   fromActual: [savings.fromActualAfter, contractHead], whatIfs: [head, impactBaseline],
-                  onToggle: (a) => change({ ...sim, assumptions: sim.assumptions.map((x) => (x.key === a.key ? { ...x, enabled: x.enabled === false } : x)) }),
+                  onToggle: (a) => propose({ ...sim, assumptions: sim.assumptions.map((x) => (x.key === a.key ? { ...x, enabled: x.enabled === false } : x)) }),
                   onOpenLedger: tracked.onOpenLedger,
                 } : undefined} />
               <div data-testid="schedule-region" className="pt-3">
