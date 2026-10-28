@@ -56,6 +56,11 @@ type DebtRow = {
   loan_payment_category_id: string | null;
   draw_category_id: string | null;
   expected_observation_interval_days: number | null;
+  tracking_start_due_date: string | null;
+  opening_observation_id: string | null;
+  principal_note_suffix: string;
+  interest_note_suffix: string;
+  missing_grace_days: number;
   auto_apply_enabled: number;
   drift_accepted_revision: number | null;
   drift_accepted_fingerprint: string | null;
@@ -88,6 +93,12 @@ export type DebtFields = {
   drawCategoryId: string | null;
   expectedObservationIntervalDays: number | null;
   currentConfigJson: string;
+  /** Loan tracking settings. Left out on an update, the stored value is kept. */
+  trackingStartDueDate?: string | null;
+  openingObservationId?: string | null;
+  principalNoteSuffix?: string;
+  interestNoteSuffix?: string;
+  missingGraceDays?: number;
 };
 
 /** One major unit in minor units: 100 for two-decimal currencies, 1 for zero-decimal ones (FR-094). */
@@ -115,6 +126,11 @@ function rowToRecord(row: DebtRow): DebtRecord {
     loanPaymentCategoryId: row.loan_payment_category_id,
     drawCategoryId: row.draw_category_id,
     expectedObservationIntervalDays: row.expected_observation_interval_days,
+    trackingStartDueDate: row.tracking_start_due_date,
+    openingObservationId: row.opening_observation_id,
+    principalNoteSuffix: row.principal_note_suffix,
+    interestNoteSuffix: row.interest_note_suffix,
+    missingGraceDays: row.missing_grace_days,
     autoApplyEnabled: row.auto_apply_enabled === 1,
     driftAcceptedRevision: row.drift_accepted_revision,
     driftAcceptedFingerprint: row.drift_accepted_fingerprint,
@@ -166,6 +182,26 @@ function normalizeFields(input: DebtFields) {
   };
 }
 
+type TrackingColumns = { tracking_start_due_date: string | null; opening_observation_id: string | null; principal_note_suffix: string; interest_note_suffix: string; missing_grace_days: number };
+
+function suffix(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.length > 100) throw new AppDbValidationError(`${field} must be text of at most 100 characters`);
+  return value.trim();
+}
+
+/** The tracking columns from the input, falling back to what is stored (or the defaults for a new loan). */
+function trackingColumns(input: DebtFields, existing: DebtRecord | null): TrackingColumns {
+  const graceDays = input.missingGraceDays ?? existing?.missingGraceDays ?? 5;
+  if (!Number.isInteger(graceDays) || graceDays < 0 || graceDays > 60) throw new AppDbValidationError("missingGraceDays must be 0 to 60");
+  return {
+    tracking_start_due_date: input.trackingStartDueDate === undefined ? existing?.trackingStartDueDate ?? null : optionalIsoDate(input.trackingStartDueDate, "trackingStartDueDate"),
+    opening_observation_id: input.openingObservationId === undefined ? existing?.openingObservationId ?? null : optionalText(input.openingObservationId, "openingObservationId"),
+    principal_note_suffix: input.principalNoteSuffix === undefined ? existing?.principalNoteSuffix ?? "" : suffix(input.principalNoteSuffix, "principalNoteSuffix"),
+    interest_note_suffix: input.interestNoteSuffix === undefined ? existing?.interestNoteSuffix ?? "#interest" : suffix(input.interestNoteSuffix, "interestNoteSuffix"),
+    missing_grace_days: graceDays,
+  };
+}
+
 const CONSTRAINTS = {
   idx_debts_live_liability_account: "Another debt in this budget already uses that liability account.",
   "debts.liability_account_id": "Another debt in this budget already uses that liability account.",
@@ -202,6 +238,7 @@ export function insertDebt(
   now = new Date().toISOString()
 ): DebtRecord {
   const f = normalizeFields(input);
+  const t = trackingColumns(input, null);
   const id = input.id ?? generateId();
   const status = requireOneOf(["draft", "active"] as const, input.status, "status");
   const revision = requireInteger(input.currentRevision, "currentRevision", 1);
@@ -212,13 +249,15 @@ export function insertDebt(
         liability_account_id, payment_account_id, sign_convention, lender_pattern, execution_strategy,
         drift_tolerance_minor, lender_charge_grace_days, onboarding_date, loan_payment_category_id,
         draw_category_id, expected_observation_interval_days, auto_apply_enabled, drift_accepted_revision, drift_accepted_fingerprint,
-        current_revision, current_config_json, status, created_at, updated_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL)`
+        current_revision, current_config_json, status, created_at, updated_at, archived_at,
+        tracking_start_due_date, opening_observation_id, principal_note_suffix, interest_note_suffix, missing_grace_days
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
     ).run(
       id, f.budget_sync_id, f.name, f.debt_type, f.behavior_class, f.currency, f.currency_minor_digits,
       f.liability_account_id, f.payment_account_id, f.sign_convention, f.lender_pattern, f.execution_strategy,
       f.drift_tolerance_minor, f.lender_charge_grace_days, f.onboarding_date, f.loan_payment_category_id,
-      f.draw_category_id, f.expected_observation_interval_days, revision, f.current_config_json, status, now, now
+      f.draw_category_id, f.expected_observation_interval_days, revision, f.current_config_json, status, now, now,
+      t.tracking_start_due_date, t.opening_observation_id, t.principal_note_suffix, t.interest_note_suffix, t.missing_grace_days
     );
   } catch (error) {
     rethrowConstraint(error, CONSTRAINTS);
@@ -237,6 +276,7 @@ export function updateDebt(
   if (!existing) throw new AppDbValidationError("Debt not found");
   if (existing.status === "archived") throw new AppDbValidationError("An archived debt cannot be edited");
   const f = normalizeFields(input);
+  const t = trackingColumns(input, existing);
   if (f.budget_sync_id !== existing.budgetSyncId) throw new AppDbValidationError("A debt cannot move to another budget");
   const status = requireOneOf(["draft", "active"] as const, input.status, "status");
   const revision = requireInteger(input.currentRevision, "currentRevision", existing.currentRevision);
@@ -247,14 +287,16 @@ export function updateDebt(
         liability_account_id = ?, payment_account_id = ?, sign_convention = ?, lender_pattern = ?,
         execution_strategy = ?, drift_tolerance_minor = ?, lender_charge_grace_days = ?, onboarding_date = ?,
         loan_payment_category_id = ?, draw_category_id = ?, expected_observation_interval_days = ?,
-        current_revision = ?, current_config_json = ?, status = ?, updated_at = ?
+        current_revision = ?, current_config_json = ?, status = ?, updated_at = ?,
+        tracking_start_due_date = ?, opening_observation_id = ?, principal_note_suffix = ?, interest_note_suffix = ?, missing_grace_days = ?
       WHERE id = ?`
     ).run(
       f.name, f.debt_type, f.behavior_class, f.currency, f.currency_minor_digits,
       f.liability_account_id, f.payment_account_id, f.sign_convention, f.lender_pattern,
       f.execution_strategy, f.drift_tolerance_minor, f.lender_charge_grace_days, f.onboarding_date,
       f.loan_payment_category_id, f.draw_category_id, f.expected_observation_interval_days,
-      revision, f.current_config_json, status, now, id
+      revision, f.current_config_json, status, now,
+      t.tracking_start_due_date, t.opening_observation_id, t.principal_note_suffix, t.interest_note_suffix, t.missing_grace_days, id
     );
   } catch (error) {
     rethrowConstraint(error, CONSTRAINTS);

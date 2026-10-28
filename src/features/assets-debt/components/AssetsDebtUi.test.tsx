@@ -1004,7 +1004,7 @@ describe("an existing loan page", () => {
     await withView("calculation", async () => {
       mocked.getDebt.mockResolvedValue({ ...detail, actualExtraPaymentAssumptionIds: ["actual-extra-event"], assumptions: [{
         id: "actual-extra-event", debtId: detail.debt.id, assumptionKind: "extra-repayment", effectiveFrom: "2024-04-01", recurrence: null,
-        amountMinor: 100000, feeTreatment: null, offsetAccountId: null, note: "Extra payment recorded from Actual", createdAt: "2024-04-01", updatedAt: "2024-04-01",
+        amountMinor: 100000, feeTreatment: null, offsetAccountId: null, note: "Extra payment recorded from Actual", enabled: true, createdAt: "2024-04-01", updatedAt: "2024-04-01",
       }] });
       wrap(<LoanView id={detail.debt.id} />);
       expect(await screen.findByRole("button", { name: "Remove Extra payment on 2024-04-01" })).toBeDisabled();

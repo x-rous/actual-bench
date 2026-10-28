@@ -73,7 +73,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 59;
+export const LATEST_SCHEMA_VERSION = 60;
 
 type Migration = {
   version: number;
@@ -695,7 +695,76 @@ const MIGRATIONS: readonly Migration[] = [
     "UPDATE asset_transaction_metadata SET classification=NULL WHERE role='cashflow' AND classification IS NOT NULL AND classification NOT IN ('capital-expenditure','disposal-proceeds','other-excluded')",
     "ALTER TABLE asset_link_rules DROP COLUMN classification",
   ] },
+  // Loan tracking redesign: a tracking start, the Loan Ledger's classifications, payment rules on the shared conditions,
+  // a write journal, and an on/off switch for future events. Extra payments recorded from Actual are no longer model
+  // events (the ledger provides them), and an old repayment rule's account becomes a payment rule.
+  { version: 60, apply: applyLoanTracking },
 ];
+
+/** The tables the loan tracking redesign adds (v60). Shared with the schema tests. */
+export const LOAN_TRACKING_TABLES_SQL = [
+  `CREATE TABLE IF NOT EXISTS debt_ledger_entries (
+    budget_sync_id TEXT NOT NULL, actual_transaction_id TEXT NOT NULL CHECK(length(actual_transaction_id) BETWEEN 1 AND 200),
+    debt_id TEXT NOT NULL, actual_account_id TEXT NOT NULL CHECK(length(actual_account_id) BETWEEN 1 AND 200),
+    entry_type TEXT NOT NULL CHECK(entry_type IN ('loan-received','opening-balance','principal-repayment','extra-principal','interest-charged','fee','draw','adjustment','not-repayment')),
+    installment_due_date TEXT CHECK(installment_due_date IS NULL OR length(installment_due_date)=10),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(typeof(revision)='integer' AND revision >= 1),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(budget_sync_id, actual_transaction_id),
+    FOREIGN KEY(debt_id, budget_sync_id) REFERENCES debts(id, budget_sync_id) ON DELETE CASCADE)`,
+  "CREATE INDEX IF NOT EXISTS idx_debt_ledger_entries_debt ON debt_ledger_entries(debt_id)",
+  `CREATE TABLE IF NOT EXISTS debt_payment_rules (
+    id TEXT PRIMARY KEY NOT NULL, debt_id TEXT NOT NULL, budget_sync_id TEXT NOT NULL,
+    name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100), match TEXT NOT NULL CHECK(match IN ('all','any')),
+    conditions TEXT NOT NULL CHECK(json_valid(conditions) AND json_type(conditions)='array' AND json_array_length(conditions) BETWEEN 1 AND 20),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    FOREIGN KEY(debt_id, budget_sync_id) REFERENCES debts(id, budget_sync_id) ON DELETE CASCADE)`,
+  "CREATE INDEX IF NOT EXISTS idx_debt_payment_rules_debt ON debt_payment_rules(debt_id)",
+  `CREATE TABLE IF NOT EXISTS debt_writes (
+    id TEXT PRIMARY KEY NOT NULL, debt_id TEXT NOT NULL, budget_sync_id TEXT NOT NULL, batch_id TEXT,
+    kind TEXT NOT NULL CHECK(kind IN ('split','adjust-split','undo-split','link','create','delete','notes','convert')),
+    installment_due_date TEXT CHECK(installment_due_date IS NULL OR length(installment_due_date)=10),
+    target_ids_json TEXT NOT NULL CHECK(json_valid(target_ids_json)),
+    before_json TEXT NOT NULL CHECK(json_valid(before_json)), after_json TEXT NOT NULL CHECK(json_valid(after_json)),
+    status TEXT NOT NULL CHECK(status IN ('applying','applied','failed','uncertain')),
+    marker TEXT, actual_ids_json TEXT CHECK(actual_ids_json IS NULL OR json_valid(actual_ids_json)),
+    error_json TEXT CHECK(error_json IS NULL OR json_valid(error_json)),
+    started_at TEXT NOT NULL, finished_at TEXT,
+    FOREIGN KEY(debt_id, budget_sync_id) REFERENCES debts(id, budget_sync_id) ON DELETE CASCADE)`,
+  // One write in flight per loan: writes run one at a time, and a second tab cannot start another.
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_debt_writes_one_applying ON debt_writes(debt_id) WHERE status = 'applying'",
+  "CREATE INDEX IF NOT EXISTS idx_debt_writes_debt ON debt_writes(debt_id, started_at)",
+] as const;
+
+function applyLoanTracking(db: SqliteDatabase): void {
+  addColumnIfMissing(db, "debts", "tracking_start_due_date", "text CHECK (tracking_start_due_date IS NULL OR length(tracking_start_due_date) = 10)");
+  addColumnIfMissing(db, "debts", "opening_observation_id", "text");
+  addColumnIfMissing(db, "debts", "principal_note_suffix", "text NOT NULL DEFAULT '' CHECK (length(principal_note_suffix) <= 100)");
+  addColumnIfMissing(db, "debts", "interest_note_suffix", "text NOT NULL DEFAULT '#interest' CHECK (length(interest_note_suffix) <= 100)");
+  addColumnIfMissing(db, "debts", "missing_grace_days", "integer NOT NULL DEFAULT 5 CHECK (typeof(missing_grace_days) = 'integer' AND missing_grace_days BETWEEN 0 AND 60)");
+  if (tableExists(db, "debt_future_assumptions")) {
+    addColumnIfMissing(db, "debt_future_assumptions", "enabled", "integer NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))");
+    // Extra payments recorded from Actual were stored as events; the Loan Ledger reads them from Actual now.
+    db.exec("DELETE FROM debt_future_assumptions WHERE assumption_kind = 'extra-repayment' AND recurrence_json IS NULL AND note = 'Extra payment recorded from Actual'");
+  }
+  for (const statement of LOAN_TRACKING_TABLES_SQL) db.exec(statement);
+  if (!tableExists(db, "debt_match_rules") || !tableExists(db, "debts")) return;
+  // An old repayment rule named the account payments come from; that becomes a payment rule ("Account is X").
+  const rules = db.prepare("SELECT r.debt_id AS debtId, d.budget_sync_id AS budget, r.conditions_json AS json FROM debt_match_rules r JOIN debts d ON d.id = r.debt_id WHERE r.purpose = 'repayment'").all<{ debtId: string; budget: string; json: string }>();
+  const insert = db.prepare("INSERT OR IGNORE INTO debt_payment_rules (id, debt_id, budget_sync_id, name, match, conditions, created_at, updated_at) VALUES (?, ?, ?, ?, 'all', ?, ?, ?)");
+  const now = new Date().toISOString();
+  for (const rule of rules) {
+    let items: Array<{ kind?: string; accountId?: string; payeeId?: string; operator?: string }> = [];
+    try { items = (JSON.parse(rule.json) as { items?: typeof items }).items ?? []; } catch { continue; }
+    const conditions = [
+      ...items.filter((i) => i.kind === "source-account" && i.accountId).map((i) => ({ field: "account", operator: "equals", value: i.accountId })),
+      ...items.filter((i) => i.kind === "payee" && i.operator === "exact" && i.payeeId).map((i) => ({ field: "payee", operator: "equals", value: i.payeeId })),
+    ];
+    // An account alone would take every payment from it; only a rule that also names a payee is carried over.
+    if (!conditions.some((c) => c.field === "payee")) continue;
+    insert.run(`migrated-${rule.debtId}`, rule.debtId, rule.budget, "Repayments", JSON.stringify(conditions), now, now);
+  }
+}
 
 /**
  * Columns that were added to a migration after that migration had already run
