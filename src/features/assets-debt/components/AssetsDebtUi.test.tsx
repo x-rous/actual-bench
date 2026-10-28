@@ -41,6 +41,11 @@ jest.mock("next/navigation", () => ({ usePathname: () => "/loans", useRouter: ()
 jest.mock("next/dynamic", () => () => function ChartStub({ visible }: { visible: string[] }) {
   return <div data-testid="chart" data-series={visible.join(",")} />;
 });
+const mockTracking: { current: unknown } = { current: null };
+jest.mock("../lib/useLoanTracking", () => {
+  const actual = jest.requireActual("../lib/useLoanTracking");
+  return { ...actual, useLoanTracking: (detail: unknown) => (mockTracking.current ?? actual.useLoanTracking(detail)) };
+});
 jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() } }));
 
 const mocked = api as jest.Mocked<typeof api>;
@@ -885,7 +890,7 @@ describe("an existing loan page", () => {
     mocked.getDebt.mockResolvedValue(detail);
     mocked.updateDebt.mockImplementation(async () => ({ ...detail, debt: { ...detail.debt, currentRevision: 2 } }));
   });
-  afterEach(() => { mockDirectory.current = undefined; mockActiveBudgetSyncId = "b1"; });
+  afterEach(() => { mockDirectory.current = undefined; mockActiveBudgetSyncId = "b1"; mockTracking.current = null; });
 
   const withView = async (view: string | null, run: () => Promise<void>) => {
     const nav = jest.requireMock("next/navigation") as { useSearchParams: () => URLSearchParams };
@@ -897,6 +902,35 @@ describe("an existing loan page", () => {
       nav.useSearchParams = original;
     }
   };
+
+  it("a tracked loan keeps every event added: a passed one is shown but not projected, later ones have a switch", async () => {
+    await withView("calculation", async () => {
+      mockTracking.current = {
+        tracked: true, debt: { trackingStartDueDate: "2024-02-01" }, bundle: { rules: [], entries: [], writes: [], openingStatement: null, anchors: [] }, reads: { transferPayeeByAccount: {} },
+        result: { ok: true, installments: [], events: [], ledger: [], opening: { date: "2024-01-01", principalMinor: 3_000_000 }, anchor: { date: "2024-06-01", principalMinor: 2_950_000, scheduledPaymentMinor: 91_000 },
+          before: { count: 0 }, openingAdjustment: null, figures: { counts: { unrecorded: 0, check: 0, missing: 0, recorded: 0, upcoming: 0 } } },
+        today: "2024-06-15", loading: false, refreshing: false, error: null, refresh: async () => {}, reloadBundle: async () => {},
+      };
+      wrap(<LoanView id={detail.debt.id} />);
+      await screen.findByText(/Tracked/);
+      for (const [amount, date] of [["100", "03/01/2024"], ["200", "09/01/2024"], ["300", "10/01/2024"]]) {
+        fireEvent.click(await screen.findByRole("button", { name: "Extra payment" }));
+        const dialog = await screen.findByRole("dialog");
+        fireEvent.change(within(dialog).getByLabelText("Amount"), { target: { value: amount } });
+        fireEvent.blur(within(dialog).getByLabelText("Amount"));
+        fireEvent.change(within(dialog).getByLabelText("Date"), { target: { value: date } });
+        fireEvent.blur(within(dialog).getByLabelText("Date"));
+        fireEvent.click(within(dialog).getByRole("button", { name: "Save event" }));
+        await act(async () => {});
+      }
+      const rows = within(screen.getByRole("table", { name: "Events" })).getAllByRole("row").slice(1);
+      expect(rows.map((r) => within(r).getAllByRole("cell")[1].textContent)).toEqual(["01 Mar 2024", "01 Sep 2024", "01 Oct 2024"]);
+      expect(rows[0]).toHaveTextContent("Passed, not in the projection");
+      expect(within(rows[0]).queryByRole("switch")).toBeNull();
+      for (const row of rows.slice(1)) expect(within(row).getByRole("switch")).toBeChecked();
+      mockTracking.current = null;
+    });
+  });
 
   it("Calculation: loads the saved loan, marks edits unsaved, discards them, and saves only on Save changes", async () => {
     await withView("calculation", async () => {
