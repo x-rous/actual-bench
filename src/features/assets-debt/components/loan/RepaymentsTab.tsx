@@ -137,6 +137,14 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
     } },
   ];
 
+  // The panel's ‹ › step through the table's rows in the order shown, skipping the "before tracking" summary row.
+  const openable = all.filter((r) => r.kind !== "before");
+  const stepTo = (by: -1 | 1) => {
+    const at = openable.findIndex((r) => r.key === active);
+    const next = at < 0 ? undefined : openable[at + by];
+    return next ? () => setActive(next.key) : undefined;
+  };
+
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -182,7 +190,8 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
         </div>
       </div>
       {activeRow && activeRow.kind !== "before" ? <InstallmentInspector key={activeRow.key} row={activeRow.kind === "installment" ? { kind: "installment", inst: activeRow.inst } : activeRow.kind === "event" ? { kind: "event", ledger: activeRow.ledger } : { kind: "opening", proposal: activeRow.proposal, amountMinor: activeRow.amountMinor, date: activeRow.date }}
-        tracking={tracking} directory={directory} digits={digits} busy={busy} writesLocked={writesLocked} onApply={(p) => apply([p])} actions={actions} onClose={() => setActive(null)} /> : null}
+        tracking={tracking} directory={directory} digits={digits} busy={busy} writesLocked={writesLocked} onApply={(p) => apply([p])} actions={actions} onClose={() => setActive(null)}
+        onPrev={stepTo(-1)} onNext={stepTo(1)} /> : null}
     </div>
   );
 }
