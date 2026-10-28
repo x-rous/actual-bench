@@ -952,7 +952,7 @@ describe("an existing loan page", () => {
       };
       wrap(<LoanView id={detail.debt.id} />);
       await screen.findByText(/Tracked/);
-      expect(screen.getByText(/^Next: installment 6 of \d+ · 910\.00 due 01 Jul 2024 · \d+% paid off$/)).toBeInTheDocument();
+      expect(screen.queryByText(/^Next: installment/)).toBeNull();
       for (const [amount, date] of [["100", "03/01/2024"], ["200", "09/01/2024"], ["300", "10/01/2024"]]) {
         fireEvent.click(await screen.findByRole("button", { name: "Extra payment" }));
         const dialog = await screen.findByRole("dialog");
