@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { CircleHelp, Plus } from "lucide-react";
+import { CircleHelp, HandCoins, Plus } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FEATURES } from "@/lib/features/catalogue";
@@ -101,7 +101,21 @@ export function DebtListView() {
           </div>
           {debts.isLoading ? <p className="px-4 py-3 text-xs text-muted-foreground">Loading…</p> : null}
           {debts.isError ? <p role="alert" className="px-4 py-3 text-xs text-destructive">{(debts.error as Error).message}</p> : null}
-          {debts.data && debts.data.length === 0 ? <p className="px-4 py-3 text-sm text-muted-foreground">No loans yet. Add one to start: until it is saved it works as a loan calculator. <button type="button" className="font-medium text-primary hover:underline" onClick={() => setGuide("start")}>How loans work</button></p> : null}
+          {debts.data && debts.data.length === 0 ? (
+            <section className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center" aria-label="No loans yet">
+              <span className="flex size-11 items-center justify-center rounded-full border border-border text-muted-foreground">
+                <HandCoins className="size-5" aria-hidden />
+              </span>
+              <div className="max-w-md space-y-1">
+                <h2 className="text-base font-semibold">No loans yet</h2>
+                <p className="text-sm leading-5 text-muted-foreground">Add a loan to explore repayment options, then save it when you are ready to track it against Actual.</p>
+              </div>
+              <Link href={NEW_LOAN_PATH} className={buttonVariants({ size: "sm" })}>
+                <Plus className="mr-1 h-3.5 w-3.5" aria-hidden /> Add loan
+              </Link>
+              <button type="button" className="text-sm text-primary underline-offset-2 hover:underline" onClick={() => setGuide("start")}>How loans work</button>
+            </section>
+          ) : null}
           {debts.data && debts.data.length > 0 && shown.length === 0 ? <p className="px-3 py-6 text-center text-sm text-muted-foreground">{query ? "No loans match these filters." : "Nothing needs your attention."}</p> : null}
           {shown.length > 0 ? <DebtList debts={shown} attention={attentionById} hrefs={hrefById} /> : null}
         </div>

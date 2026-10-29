@@ -128,6 +128,18 @@ it("describes extra-transaction impact without negative saved values", () => {
 
 describe("the Loans & Debt page (rev 4)", () => {
   withViewport();
+  it("centers a first-loan prompt while keeping the list toolbar available", async () => {
+    mocked.listDebts.mockResolvedValue([]);
+    mocked.listNeedsAttention.mockResolvedValue([]);
+    wrap(<DebtListView />);
+
+    expect(await screen.findByRole("region", { name: "No loans yet" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "No loans yet" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Add loan" })).toHaveAttribute("href", "/loans/new");
+    expect(screen.getByRole("button", { name: "How loans work" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Search loans")).toBeInTheDocument();
+  });
+
   it("has no Assets & Debt tabs; a Needs attention filter counts the loans that need something, and such a row opens where it can be acted on", async () => {
     mocked.listDebts.mockResolvedValue([summary(1, { name: "HSBC" }), summary(2, { name: "Car" })]);
     mocked.listNeedsAttention.mockResolvedValue([{ subjectKind: "debt", id: "d1", name: "HSBC", reasons: [{ code: "interrupted", count: 3 }] }]);

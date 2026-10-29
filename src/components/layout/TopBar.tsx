@@ -30,7 +30,6 @@ import { connectFailureMessage } from "@/features/connect/savedBudgets";
 import { refreshFromServer } from "@/lib/refreshFromServer";
 import { useConnectionHealthContext } from "@/hooks/useConnectionHealth";
 import { ConnectionSwitcher } from "./ConnectionSwitcher";
-import { useAuthStatus } from "@/hooks/useAuthStatus";
 import type { SavedBudget } from "@/features/connect/savedBudgets";
 import { useSavedBudgetSwitcher } from "@/features/connect/useSavedBudgetSwitcher";
 import { useSavedServersStore } from "@/store/savedServers";
@@ -64,7 +63,7 @@ import { getFeatureForPath } from "@/lib/features/catalogue";
 import { getFeatureEntryState } from "@/lib/features/pendingChanges";
 import { HelpMenu } from "./HelpMenu";
 import { ThemeToggle } from "./ThemeToggle";
-import { FeatureInformation, FeatureMaturity } from "./FeatureInformation";
+import { FeatureInformation } from "./FeatureInformation";
 
 type PendingAction =
   | { kind: "switch"; id: string }
@@ -125,7 +124,6 @@ export function TopBar() {
   const pathname = usePathname();
   const feature = getFeatureForPath(pathname);
   const queryClient = useQueryClient();
-  const { data: authStatus } = useAuthStatus();
   const [isRefreshing, setIsRefreshing] = useState(false);
   // A connected Direct budget being opened before it becomes active.
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
@@ -522,27 +520,23 @@ export function TopBar() {
               </kbd>
             </Button>
           )}
-          {activeInstance && feature && (
-            <>
-              <FeatureMaturity feature={feature} />
-              <FeatureInformation key={feature.id} feature={feature} />
-            </>
-          )}
-          {activeInstance && <TopBarSeparator />}
           <Button
             variant="ghost"
             size="icon"
             className="h-7 w-7"
             disabled={isRefreshing}
             onClick={handleRefresh}
-            title="Refresh data from server"
-            aria-label="Refresh data from server"
+            title="Refresh budget from Actual"
+            aria-label="Refresh budget from Actual"
           >
             <RefreshCw className={`h-3.5 w-3.5${isRefreshing ? " animate-spin" : ""}`} />
           </Button>
+          {activeInstance && feature && (
+            <FeatureInformation key={feature.id} feature={feature} />
+          )}
+          <TopBarSeparator />
           <HelpMenu />
           <ThemeToggle />
-          {authStatus?.authMode === "password" && <TopBarSeparator />}
           <AccountMenu
             onSignOut={() => requestAction({ kind: "signOut" })}
             onClearAllData={() => requestAction({ kind: "clearAllData" })}

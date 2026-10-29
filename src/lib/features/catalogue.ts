@@ -202,7 +202,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
     id: "fx-rates",
     label: "FX Rates",
     href: "/fx-rates",
-    groupId: "financial-management",
+    groupId: "sync-automations",
     icon: Banknote,
     description: "Check exchange rates, fill missing dates or set your own rates for syncing budgets in different currencies.",
     accessSummary: "No direct changes to Actual. Rates are used by Budget File Sync.",
