@@ -180,6 +180,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
     description: "Register off-budget assets, reconcile shared accounts, link income and expenses, track returns, depreciation and loan equity, and adjust their Actual book transactions.",
     accessSummary: "Create, edit and delete supported asset-ledger entries, payments and disposal adjustments, and post depreciation months, after confirmation.",
     maturity: "experimental", docsUrl: `${DOCS_BASE_URL}user-guide/asset-registry/`,
+    feedbackUrl: `${ISSUE_BASE_URL}417`,
     usesStagedActions: false, pendingChangesPanel: "none", requiresSavedData: true,
   },
   {
