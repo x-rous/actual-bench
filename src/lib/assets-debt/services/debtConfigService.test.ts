@@ -251,6 +251,22 @@ describe("baseline assumptions and projection", () => {
     expect(saveBaselineAssumptions(db, d.debt.id, extra("2025-02-01"), "Extra payment").assumptions).toHaveLength(1);
   });
 
+  it("refuses to create a once-per-period loan with an extra repayment between repayment dates, and saves nothing", () => {
+    const offDate = [{ kind: "extra-repayment" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    expect(() => createDebtConfiguration(db, saveInput({ assumptions: offDate }), directory())).toThrow(/between repayment dates.*day-by-day interest/);
+    expect(listDebtSummaries(db, BUDGET, true)).toEqual([]);
+  });
+
+  it("refuses to update a once-per-period loan to an extra repayment between repayment dates, and keeps its assumptions and revision", () => {
+    const d = createDebtConfiguration(db, saveInput(), directory());
+    const offDate = [{ kind: "extra-repayment" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    expect(() => updateDebtConfiguration(db, d.debt.id, saveInput({ assumptions: offDate }), directory())).toThrow(/between repayment dates.*day-by-day interest/);
+    const unchanged = getDebtDetail(db, d.debt.id)!;
+    expect(unchanged.assumptions).toHaveLength(0);
+    expect(unchanged.debt.currentRevision).toBe(d.debt.currentRevision);
+    expect(listModelRevisions(db, "debt", d.debt.id)).toHaveLength(1);
+  });
+
   it("reports eligibility with reasons for every rejected strategy", () => {
     const d = createDebtConfiguration(db, saveInput(), directory());
     const result = storedDebtEligibility(db, d.debt.id, { formulaRules: false, splitActions: true, transferPayees: true, ruleReadback: true });
