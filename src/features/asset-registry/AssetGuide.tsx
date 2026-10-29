@@ -28,7 +28,7 @@ const TONES: Record<Tone, string> = {
 const Chip = ({ tone, children }: { tone: Tone; children: ReactNode }) => <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap", TONES[tone])}>{children}</span>;
 function Callout({ tone = "tip", title, children }: { tone?: "tip" | "warn"; title: string; children: ReactNode }) {
   const Icon = tone === "tip" ? Lightbulb : TriangleAlert;
-  return <aside className={cn("my-3 flex max-w-3xl gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
+  return <aside className={cn("my-3 flex max-w-[55rem] gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
     <Icon className={cn("mt-0.5 size-4 shrink-0", tone === "tip" ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400")} aria-hidden /><div><p className="font-semibold">{title}</p><div className="mt-0.5 leading-relaxed text-foreground/80">{children}</div></div>
   </aside>;
 }
@@ -42,7 +42,7 @@ function Lane({ icon: Icon, title, caption, tone, rows, total }: { icon: typeof 
 }
 /** A static sketch of the value timeline, to show how the markers read. */
 function MiniTimeline() {
-  return <figure className="my-3 max-w-xl rounded-lg border bg-background p-3" aria-label="Sketch of the value timeline">
+  return <figure className="my-3 max-w-[41.5rem] rounded-lg border bg-background p-3" aria-label="Sketch of the value timeline">
     <svg viewBox="0 0 400 130" className="w-full" role="img" aria-label="A stepped value line with a purchase, an improvement, a revaluation and a loan allocation change">
       <g stroke="currentColor" strokeOpacity="0.12"><line x1="30" x2="390" y1="20" y2="20" /><line x1="30" x2="390" y1="55" y2="55" /><line x1="30" x2="390" y1="90" y2="90" /></g>
       <path d="M30 70 H110 V30 H210 V26 H290 V18 H390" fill="none" stroke="#2563eb" strokeWidth="2.5" />
@@ -62,7 +62,7 @@ const Card = ({ icon: Icon, title, children, tone }: { icon: typeof Landmark; ti
 export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: AssetGuideSection; onSection: (section: AssetGuideSection) => void; onClose: () => void; docsUrl?: string }) {
   const link = (to: AssetGuideSection, text: string) => <button type="button" className="font-medium text-primary hover:underline" onClick={() => onSection(to)}>{text}</button>;
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-5xl">
+    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-[73.6rem]">
       <DialogHeader className="shrink-0 border-b px-5 py-4">
         <DialogTitle className="text-sm">Assets guide</DialogTitle>
         <DialogDescription className="text-xs">What you own, what it is worth, what it earns and what you owe on it, all read from Actual.{docsUrl && <> <a className="font-medium text-primary hover:underline" href={docsUrl} target="_blank" rel="noopener noreferrer">Full documentation</a></>}</DialogDescription>
@@ -72,11 +72,11 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
           {ASSET_GUIDE_SECTIONS.map(([id, label]) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => onSection(id)}
             className={cn("rounded px-2 py-1.5 text-left text-xs transition-colors", section === id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground")}>{label}</button>)}
         </nav>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
           <h2 className="mb-4 text-base font-semibold">{ASSET_GUIDE_SECTIONS.find(([id]) => id === section)![1]}</h2>
           {section === "start" && <>
             <Para>An asset is something you own that isn&apos;t a regular bank account: a home, a car, an investment. Bench tracks it from your Actual data, so every figure can be traced back to a transaction. Nothing is invented.</Para>
-            <div className="grid max-w-4xl gap-3 sm:grid-cols-3">
+            <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-3">
               <Card tone="value" icon={Landmark} title="What it is worth">Its own account in Actual holds the transactions that set its value: the purchase, improvements, revaluations, depreciation. See {link("account", "Asset Ledger")}.</Card>
               <Card tone="income" icon={Banknote} title="What it earns and costs">Rent, repairs and bills come from your everyday accounts and are linked to the asset. See {link("income", "Income & Expenses")}.</Card>
               <Card tone="loan" icon={Building2} title="What you owe on it">Link a loan to see debt and equity beside the value. See {link("loans", "Linked Loans")}.</Card>
@@ -91,7 +91,7 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
           </>}
           {section === "concepts" && <>
             <Para>This is the idea everything else rests on. An asset has <b>two kinds of transactions</b>, and they live in different places. Mixing them up is the most common source of confusion.</Para>
-            <div className="flex max-w-4xl flex-col items-stretch gap-3 lg:flex-row">
+            <div className="flex max-w-[64.5rem] flex-col items-stretch gap-3 lg:flex-row">
               <Lane tone="value" icon={Landmark} title="The asset's own account" caption="Off-budget · transactions here set the asset's value" rows={[["Purchase", "+2,000,000.00", "value"], ["New kitchen", "+20,000.00", "capital"], ["Revaluation", "+100,000.00", "value"], ["Depreciation", "-2,000.00", "value"]]} total={["Recorded value", "2,118,000.00"]} />
               <div className="flex items-center justify-center text-muted-foreground lg:flex-col"><ArrowLeftRight className="size-5" aria-hidden /><span className="max-w-24 text-center text-[11px]">Capital spending is added to the value</span></div>
               <Lane tone="income" icon={PiggyBank} title="Your everyday accounts" caption="On budget · linked to the asset, never change its value" rows={[["Rent from tenant", "+1,500.00", "income"], ["Boiler service", "-350.00", "expense"], ["Plumbing repair", "-200.00", "expense"]]} total={["Operating result", "+950.00"]} />
@@ -106,7 +106,7 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
           {section === "account" && <>
             <Para>This tab is the asset&apos;s own account in Actual, shown as a list. It matches that account exactly: add, edit or delete an entry here or in Actual and the other follows. Each entry has a <b>type</b> that explains it; if you have not chosen one, Bench shows a <i>suggested</i> type from what Actual says, and you can confirm or change it.</Para>
             <Heading>Types, by what they do to the value</Heading>
-            <div className="flex max-w-3xl flex-wrap gap-2">{[["Opening Balance", "value"], ["Acquisition / Purchase", "capital"], ["Added Capital", "capital"], ["Revaluation / Appreciation", "value"], ["Depreciation", "expense"], ["Impairment / Write-down", "expense"], ["Disposal", "loan"], ["Other Adjustment", "value"]].map(([label, tone]) => <Chip key={label} tone={tone as Tone}>{label}</Chip>)}</div>
+            <div className="flex max-w-[55rem] flex-wrap gap-2">{[["Opening Balance", "value"], ["Acquisition / Purchase", "capital"], ["Added Capital", "capital"], ["Revaluation / Appreciation", "value"], ["Depreciation", "expense"], ["Impairment / Write-down", "expense"], ["Disposal", "loan"], ["Other Adjustment", "value"]].map(([label, tone]) => <Chip key={label} tone={tone as Tone}>{label}</Chip>)}</div>
             <Example caption="Which one when" head={["Type", "Use it for", "Sign"]} rows={[
               ["Opening Balance", "The value the asset started with", "+"], ["Acquisition / Purchase", "The purchase itself: a transfer into the account, one of several instalments", "+"], ["Added Capital", "Money you put in afterwards, such as an improvement or an extra contribution", "+"], 
               ["Revaluation", "A new market value, up or down", "+ or −"], ["Depreciation / Impairment", "Wear and write-downs", "−"], ["Disposal", "The value leaving when you sell or write off", "−"], ["Other Adjustment", "Anything else, such as a correction or a change in your share", "+ or −"],
@@ -118,23 +118,23 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
           {section === "income" && <>
             <Para>These are transactions from your <b>other</b> accounts that belong to the asset. Linking only adds a label inside Bench: the transaction&apos;s category, payee, amount, Notes and date never change, and it never changes the asset&apos;s value.</Para>
             <Heading>Three ways to link</Heading>
-            <div className="grid max-w-4xl gap-3 sm:grid-cols-3">
+            <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-3">
               <Card tone="income" icon={ArrowRight} title="Pick">Open <b>Link existing transactions</b>, filter by date, account, category, payee or text, and tick what belongs.</Card>
               <Card tone="value" icon={ArrowRight} title="Rule">Save conditions such as <i>payee is Tenant and notes have tag #unit-4</i>. <b>Apply</b> shows every match, already ticked, for you to review.</Card>
               <Card tone="capital" icon={ArrowRight} title="Add to value">Turn an expense into the transfer into the asset with <b>Add Entry → Add a payment</b>, for example a new roof.</Card>
             </div>
             <Heading>Income or expense?</Heading>
-            <div className="grid max-w-4xl gap-2 sm:grid-cols-2">
+            <div className="grid max-w-[64.5rem] gap-2 sm:grid-cols-2">
               <div className={cn("rounded-lg border p-2.5 text-xs", TONES.income)}><b>Income</b> · a positive amount<div className="mt-1 text-foreground/80">Counts toward the operating result. Actual&apos;s category says what it was: rent, dividends, interest…</div></div>
               <div className={cn("rounded-lg border p-2.5 text-xs", TONES.expense)}><b>Expense</b> · a negative amount<div className="mt-1 text-foreground/80">Counts toward the operating result. Repairs, taxes, insurance, financing interest…</div></div>
             </div>
             <Heading>Adding an expense to the asset&apos;s value</Heading>
-            <div className="flex max-w-3xl flex-wrap items-center gap-3 text-xs"><div className={cn("rounded-lg border px-3 py-2", TONES.expense)}>Your account<div className="font-semibold tabular-nums">Roof repair −20,000.00</div><div className="text-[11px] opacity-80">stays exactly as it is</div></div><ArrowRight className="size-4 text-muted-foreground" aria-hidden /><div className={cn("rounded-lg border px-3 py-2", TONES.value)}>Asset account<div className="font-semibold tabular-nums">+20,000.00 added</div><div className="text-[11px] opacity-80">one new adjustment, matched to the expense</div></div></div>
+            <div className="flex max-w-[55rem] flex-wrap items-center gap-3 text-xs"><div className={cn("rounded-lg border px-3 py-2", TONES.expense)}>Your account<div className="font-semibold tabular-nums">Roof repair −20,000.00</div><div className="text-[11px] opacity-80">stays exactly as it is</div></div><ArrowRight className="size-4 text-muted-foreground" aria-hidden /><div className={cn("rounded-lg border px-3 py-2", TONES.value)}>Asset account<div className="font-semibold tabular-nums">+20,000.00 added</div><div className="text-[11px] opacity-80">one new adjustment, matched to the expense</div></div></div>
             <Callout title="Is it still an expense?">No. Once converted it is a transfer into the asset, so it leaves Income &amp; Expenses and shows in the Asset Ledger as a purchase. Its category stays on your bank side.</Callout>
           </>}
           {section === "overview" && <>
             <Para>The strip at the top is the asset&apos;s whole life. The charts show how it got there. The tables show how it did in a period.</Para>
-            <div className="grid max-w-4xl gap-2 sm:grid-cols-3">
+            <div className="grid max-w-[64.5rem] gap-2 sm:grid-cols-3">
               <Tile tone="value" label="Current value" value="2,118,000.00" detail="What Actual says it is worth" />
               <Tile tone="capital" label="Capital invested" value="+2,020,000.00" detail="Purchases" />
               <Tile tone="value" label="Value gain" value="+98,000.00" detail="Revaluation +100,000 · Depreciation −2,000" />
@@ -152,14 +152,14 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
           </>}
           {section === "depreciation" && <>
             <Para>For things that lose value steadily, like a car. A schedule is a personal plan, not tax depreciation. Saving it writes nothing to Actual; you post each ended month yourself.</Para>
-            <div className="grid max-w-4xl gap-2 sm:grid-cols-4"><Tile label="Basis" value="600,000.00" detail="Where the schedule starts" /><Tile label="Residual" value="100,000.00" detail="The forecast floor" /><Tile label="Life" value="60 months" detail="Straight-line" /><Tile tone="expense" label="Each month" value="−8,333.33" detail="(basis − residual) ÷ life" /></div>
+            <div className="grid max-w-[64.5rem] gap-2 sm:grid-cols-4"><Tile label="Basis" value="600,000.00" detail="Where the schedule starts" /><Tile label="Residual" value="100,000.00" detail="The forecast floor" /><Tile label="Life" value="60 months" detail="Straight-line" /><Tile tone="expense" label="Each month" value="−8,333.33" detail="(basis − residual) ÷ life" /></div>
             <Heading>How it works</Heading>
             <Steps items={[["Save the schedule", "Method, basis, residual and start date."], ["Post ended months", "Select the months due and confirm. Each one becomes a negative adjustment dated at its month end."], ["Follow along", <>Posted months carry <Tag>{BOOK_TYPE_TAGS.depreciation}</Tag> and show as Posted. A month whose row you delete in Actual is simply due again.</>]]} />
             <Callout title="Revaluations don't change the plan">If you revalue the asset, the schedule keeps its own numbers. Edit the schedule if you want it to change from now on. The Overview&apos;s dashed line shows where the value is heading if the unposted months post.</Callout>
           </>}
           {section === "loans" && <>
             <Para>Link a loan you already track in Loans &amp; Debt, and say what share of it belongs to this asset. Bench then plots the debt beside the value and works out your equity.</Para>
-            <div className="grid max-w-4xl gap-2 sm:grid-cols-3"><Tile tone="value" label="Recorded value" value="252,000.00" detail="On 25 Oct" /><Tile tone="loan" label="Debt allocated" value="118,800.00" detail="Your share of the loan" /><Tile tone="income" label="Equity" value="133,200.00" detail="Value − allocated debt" /></div>
+            <div className="grid max-w-[64.5rem] gap-2 sm:grid-cols-3"><Tile tone="value" label="Recorded value" value="252,000.00" detail="On 25 Oct" /><Tile tone="loan" label="Debt allocated" value="118,800.00" detail="Your share of the loan" /><Tile tone="income" label="Equity" value="133,200.00" detail="Value − allocated debt" /></div>
             <Heading>Shares can change</Heading>
             <Example caption="One loan, two periods" head={["From", "Your share", "What it means"]} rows={[["1 Jan 2026", "100%", "The whole loan is yours"], ["1 Jul 2026", "60%", "Someone else took on 40%; earlier months keep their share"]]} />
             <Callout title="A share change isn't a repayment">When your share drops, the allocated debt drops too, even though the loan itself is unchanged. The timeline marks the change so the line isn&apos;t misread. Equity is only shown when the loan&apos;s balance on that date is known.</Callout>

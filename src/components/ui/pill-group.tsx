@@ -70,6 +70,11 @@ export function MultiPillGroup<T extends string>({
   );
 }
 
+/** The one look for a segmented selector: PillGroup, and any radio group that must read the same. */
+export const PILL_GROUP_CLASS = "flex gap-px rounded border border-border bg-muted/40 p-px";
+export const pillClass = (selected: boolean) =>
+  cn("rounded px-2 py-1 text-xs whitespace-nowrap transition-colors", selected ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground");
+
 export function PillGroup<T extends string>({
   options,
   value,
@@ -83,19 +88,14 @@ export function PillGroup<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn("flex gap-px rounded border border-border bg-muted/40 p-px", className)}>
+    <div className={cn(PILL_GROUP_CLASS, className)}>
       {options.map((opt) => (
         <button
           key={opt.value}
           type="button"
           aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
-          className={cn(
-            "rounded px-2 py-1 text-xs whitespace-nowrap transition-colors",
-            value === opt.value
-              ? "bg-background font-medium shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
+          className={pillClass(value === opt.value)}
         >
           {opt.label}
           {opt.count !== undefined && (

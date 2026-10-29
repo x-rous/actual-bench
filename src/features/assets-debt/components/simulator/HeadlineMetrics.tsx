@@ -60,7 +60,8 @@ export function HeadlineMetrics({
   announce: string | null;
   calculating: boolean;
   /** Approved detail lines (design spec 06 §12): interest paid so far and still to pay, and the time left. */
-  details?: { interest?: string | null; payoff?: string | null };
+  /** Grey sub-lines. `repayment` and `repaid` are for a tracked loan: how many installments are paid, and how much has been repaid. */
+  details?: { interest?: string | null; payoff?: string | null; repayment?: string | null; repaid?: string | null };
 }) {
   const money = (m: number | null) => (m === null ? "None" : formatAmount(m, digits));
   return (
@@ -73,10 +74,10 @@ export function HeadlineMetrics({
           label={/^[a-z]+ly$/.test(frequencyLabel) ? `${frequencyLabel.charAt(0).toUpperCase()}${frequencyLabel.slice(1)} repayment` : "Repayment"}
           labelDetail={/^[a-z]+ly$/.test(frequencyLabel) ? undefined : frequencyLabel}
           value={headline ? `${money(headline.regularRepaymentMinor)}` : "–"}
-          delta={headline ? [headline.repaymentChanges ? "Changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
+          delta={headline ? [details?.repayment ?? null, headline.repaymentChanges ? "Changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
           amount
         />
-        <Tile label="Total repayments" value={headline ? money(headline.totalRepaidMinor) : "–"} amount />
+        <Tile label="Total repayments" value={headline ? money(headline.totalRepaidMinor) : "–"} delta={details?.repaid ?? null} amount />
         <Tile
           label="Total interest"
           value={headline ? money(headline.totalInterestMinor) : "–"}

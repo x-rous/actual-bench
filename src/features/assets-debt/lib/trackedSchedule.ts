@@ -13,11 +13,13 @@ export type TrackedHistory = {
   startDate: string;
   today: string;
   /** Where the projection of the rest of the loan starts. */
-  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number };
+  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number };
   /** What really happened, as dated engine events (repayments as paid, extra principal, draws, fees). */
   events: DebtProjectionEvent[];
   /** The loan account's own balance (the debt), from the tracking start to today. */
   actual: { date: string; owedMinor: number }[];
+  /** How many installments come before the tracking start (they are assumed paid as contracted). 0 when tracking starts at installment 1. */
+  installmentsBefore: number;
   /** Installments due by today with no payment found. */
   missingDueDates: string[];
   /** Ledger rows that are events (extra principal, draws, fees), for the Events list. */
@@ -68,6 +70,7 @@ export function trackedHistory(result: Extract<TrackingResult, { ok: true }>, st
   const rows = new Map(result.ledger.map((l) => [l.row.id, l.row]));
   return {
     startDate, today, anchor: result.anchor, events, actual,
+    installmentsBefore: result.before.count,
     missingDueDates: result.installments.filter((i) => i.status === "missing").map((i) => i.dueDate),
     ledgerEvents: result.events.map((e) => ({ ...e, payee: rows.get(e.rowId)?.payeeName ?? null, notes: rows.get(e.rowId)?.notes ?? null })),
   };

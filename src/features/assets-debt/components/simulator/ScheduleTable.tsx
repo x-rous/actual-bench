@@ -37,16 +37,18 @@ const VIEWS: { id: ScheduleView; label: string }[] = [
 ];
 
 /** A row's source on a loan tracked in Actual (design spec 06 §7.6): before tracking, from Actual, or not found there. */
-export function scheduleSource(period: string, tracked: { startDate: string; today: string; missingDueDates: readonly string[] }): string {
+export function scheduleSource(period: string, tracked: { startDate: string; today: string; missingDueDates: readonly string[]; /** The last real event: later rows are the projection. Defaults to today. */ anchorDate?: string }): string {
   const length = period.length;
   if (period < tracked.startDate.slice(0, length)) return "Before tracking";
   if (period > tracked.today.slice(0, length)) return "";
-  return tracked.missingDueDates.some((d) => d.slice(0, length) === period) ? "Not found in Actual" : "From Actual";
+  if (tracked.missingDueDates.some((d) => d.slice(0, length) === period)) return "Not found in Actual";
+  // A month that has only projected payments (today's month, before that payment is made) is not from Actual yet.
+  return period > (tracked.anchorDate ?? tracked.today).slice(0, length) ? "" : "From Actual";
 }
 
 export function ScheduleTable({ events, profile, startDate, digits, tracked, today }: { events: readonly DebtProjectionEvent[]; profile: Pick<CalculationProfile, "chargeFrequency">; startDate: string; digits: number;
   /** For Jump to today. */ today?: string;
-  /** A loan tracked in Actual: a Source column, and the table opens at today. */ tracked?: { startDate: string; today: string; missingDueDates: readonly string[] } | null }) {
+  /** A loan tracked in Actual: a Source column, and the table opens at today. */ tracked?: { startDate: string; today: string; missingDueDates: readonly string[]; anchorDate?: string } | null }) {
   "use no memo";
   const [view, setView] = useState<ScheduleView>("month");
   const rows = useMemo(() => aggregateSchedule(events, view), [events, view]);
@@ -184,7 +186,7 @@ export function ScheduleTable({ events, profile, startDate, digits, tracked, tod
                   {heading[c]}
                 </span>
               ))}
-              {tracked ? <span role="columnheader" className="min-w-0 text-left">Source</span> : null}
+              {tracked ? <span role="columnheader" className="min-w-0 pl-3 text-left">Source</span> : null}
             </div>
           </div>
           <div role="rowgroup" style={{ height: virtualizer.getTotalSize(), minWidth: tableMinWidth, position: "relative" }}>
@@ -205,7 +207,7 @@ export function ScheduleTable({ events, profile, startDate, digits, tracked, tod
                   ))}
                   {tracked ? (() => {
                     const source = scheduleSource(r.period, tracked);
-                    return <span role="cell" className="truncate text-left">{source === "From Actual" ? <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[11px]">From Actual</span> : source === "Not found in Actual" ? <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] text-destructive">Not found in Actual</span> : <span className="text-muted-foreground">{source}</span>}</span>;
+                    return <span role="cell" className="pl-3 text-left whitespace-nowrap">{source === "From Actual" ? <span className="inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[11px]">From Actual</span> : source === "Not found in Actual" ? <span className="inline-block rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] text-destructive">Not found in Actual</span> : <span className="text-muted-foreground">{source}</span>}</span>;
                   })() : null}
                 </div>
               );

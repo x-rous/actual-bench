@@ -36,7 +36,7 @@ const TONES: Record<Tone, string> = {
 
 function Callout({ tone = "tip", title, children }: { tone?: "tip" | "warn"; title: string; children: ReactNode }) {
   const Icon = tone === "tip" ? Lightbulb : TriangleAlert;
-  return <aside className={cn("my-3 flex max-w-3xl gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
+  return <aside className={cn("my-3 flex max-w-[55rem] gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
     <Icon className={cn("mt-0.5 size-4 shrink-0", tone === "tip" ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400")} aria-hidden />
     <div><p className="font-semibold">{title}</p><div className="mt-0.5 leading-relaxed text-foreground/80">{children}</div></div>
   </aside>;
@@ -58,7 +58,7 @@ const Row = ({ account, text, amount, tone = "bank", note }: { account: string; 
 
 /** A sketch of the Terms & Schedule chart on a tracked loan. */
 function ChartSketch() {
-  return <figure className="my-3 max-w-2xl rounded-lg border bg-background p-3" aria-label="Sketch of the balance chart">
+  return <figure className="my-3 max-w-[48.5rem] rounded-lg border bg-background p-3" aria-label="Sketch of the balance chart">
     <svg viewBox="0 0 420 150" className="w-full" role="img" aria-label="The loan balance falls to zero; Actual's balance steps down beside it until today; interest paid rises; the time before tracking is shaded">
       <rect x="30" y="10" width="40" height="115" fill="currentColor" opacity="0.06" />
       <text x="33" y="121" fontSize="8" fill="currentColor" opacity="0.6">Before tracking</text>
@@ -79,7 +79,7 @@ function ChartSketch() {
 
 /** Before and after one Apply: the payment becomes a split. */
 function SplitPicture() {
-  return <div className="my-3 grid max-w-4xl items-center gap-3 lg:grid-cols-[1fr_auto_1fr]">
+  return <div className="my-3 grid max-w-[64.5rem] items-center gap-3 lg:grid-cols-[1fr_auto_1fr]">
     <div className="flex flex-col gap-2">
       <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Before: one whole transfer</p>
       <Row account="Bank account" text="Transfer to Loan account" amount="−8,379.57" note="#2026-07 TRANSFER REPAY" />
@@ -105,7 +105,7 @@ function SplitPicture() {
 export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: LoanGuideSection; onSection: (section: LoanGuideSection) => void; onClose: () => void; docsUrl?: string }) {
   const link = (to: LoanGuideSection, text: string) => <button type="button" className="font-medium text-primary hover:underline" onClick={() => onSection(to)}>{text}</button>;
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-5xl">
+    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-[73.6rem]">
       <DialogHeader className="shrink-0 border-b px-5 py-4">
         <DialogTitle className="text-sm">Loans &amp; Debt guide</DialogTitle>
         <DialogDescription className="text-xs">Work out a loan, then keep it in step with Actual: each repayment split into principal and interest, with the history in one place.{docsUrl && <> <a className="font-medium text-primary hover:underline" href={docsUrl} target="_blank" rel="noopener noreferrer">Full documentation</a></>}</DialogDescription>
@@ -115,12 +115,12 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
           {LOAN_GUIDE_SECTIONS.map(([id, label]) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => onSection(id)}
             className={cn("rounded px-2 py-1.5 text-left text-xs transition-colors", section === id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground")}>{label}</button>)}
         </nav>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
           <h2 className="mb-4 text-base font-semibold">{LOAN_GUIDE_SECTIONS.find(([id]) => id === section)![1]}</h2>
 
           {section === "start" && <>
             <Para>A loan in Bench can be two things. Until it is saved it is a <b>loan calculator</b>: change the amount, rate or term and see the repayment, the interest and the payoff date at once. Once it is saved and linked to its account in Actual, it is <b>tracked</b>: Bench lines each installment up with the payment you made, and splits it into principal and interest when you say so.</Para>
-            <div className="grid max-w-4xl gap-3 sm:grid-cols-2">
+            <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-2">
               <Card tone="calc" icon={Calculator} title="A calculator, while it is not saved">Every figure updates as you type: repayment, total interest, payoff date, the chart and the full schedule. Try extra payments, rate changes or a shorter term. Nothing is stored and nothing reads or writes Actual. See {link("calculator", "Terms & Schedule")}.</Card>
               <Card tone="loan" icon={Link2} title="Tracked, once it is saved and linked">The loan reads its off-budget account in Actual. Repayments shows each installment and whether it is recorded; one Apply turns a whole payment into a principal and interest split. See {link("link", "Link to Actual")}.</Card>
             </div>
@@ -138,7 +138,7 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
 
           {section === "calculator" && <>
             <Para>The left panel holds the contract; everything on the right is worked out from it. For a loan not saved yet this page is the whole calculator. For a tracked loan it also shows what really happened, from the Loan Ledger.</Para>
-            <div className="grid max-w-4xl gap-2 sm:grid-cols-4">
+            <div className="grid max-w-[64.5rem] gap-2 sm:grid-cols-4">
               <Tile label="Monthly repayment" value="8,379.57" detail="Level payment" />
               <Tile label="Total repayments" value="401,978.64" detail="Over the whole loan" />
               <Tile tone="interest" label="Total interest" value="51,978.64" detail="Paid so far 48,284.91 · still to pay 3,693.73" />
@@ -205,7 +205,7 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
               ["Advanced", "Ignore differences up to (rounding, 1.00 by default), and Mark missing after (5 days late by default)."],
             ]} />
             <Heading>Where to start tracking</Heading>
-            <div className="grid max-w-4xl gap-3 sm:grid-cols-2">
+            <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-2">
               <Card tone="loan" icon={Landmark} title="The account holds the whole loan">It starts with the money received, then every repayment. Start at installment 1. Bench suggests it.</Card>
               <Card tone="bank" icon={Wallet} title="The account starts later">It starts with an opening balance part-way through. Start at the first installment after it; Bench suggests that one, and you can use a lender statement for the balance.</Card>
             </div>
@@ -219,11 +219,11 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
               [<StatusBadge key="r" status="recorded" />, "Actual already holds this installment as principal and interest", "Nothing"],
               [<StatusBadge key="u" status="unrecorded" />, "Paid, but still one whole payment in Actual", "Apply: one write splits it"],
               [<StatusBadge key="c" status="check" />, "Something needs a look: two payments could be it, a short payment, Actual's balance has parted from the calculation", "Open it (Review) and choose"],
-              [<StatusBadge key="m" status="missing" />, "Due more than the Mark missing days ago, and no payment found", "Pay it, or choose the payment if Bench missed it"],
+              [<StatusBadge key="m" status="missing" />, "Due more than the number of days in Mark missing after (Link to Actual, Advanced) ago, and no payment found", "Pay it, or choose the payment if Bench missed it"],
               [<StatusBadge key="p" status="upcoming" />, "Not due yet", "Nothing"],
             ]} />
             <Heading>The figures above the list</Heading>
-            <div className="grid max-w-4xl gap-2 sm:grid-cols-4">
+            <div className="grid max-w-[64.5rem] gap-2 sm:grid-cols-4">
               <Tile tone="loan" label="Owed in Actual" value="109,738.24" detail="Loan account today" />
               <Tile tone="calc" label="Bench expects" value="104,879.45" detail="By today · differs by 4,858.79 · 33 to apply" />
               <Tile label="Next payment" value="8,379.57" detail="Due 02 Nov 2026 · installment 36" />
@@ -273,7 +273,7 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
 
           {section === "assets" && <>
             <Para>Linked Assets shows the assets this loan financed, such as a home or a car, with your share of the loan for each. Links are made from the asset, in Assets → Linked Loans; Bench then shows the asset&apos;s value, your allocated debt and your equity side by side.</Para>
-            <div className="grid max-w-4xl gap-2 sm:grid-cols-3"><Tile label="Recorded value" value="252,000.00" detail="From the asset's account" /><Tile tone="loan" label="Debt allocated" value="109,738.24" detail="Your share of this loan" /><Tile tone="principal" label="Equity" value="142,261.76" detail="Value − allocated debt" /></div>
+            <div className="grid max-w-[64.5rem] gap-2 sm:grid-cols-3"><Tile label="Recorded value" value="252,000.00" detail="From the asset's account" /><Tile tone="loan" label="Debt allocated" value="109,738.24" detail="Your share of this loan" /><Tile tone="principal" label="Equity" value="142,261.76" detail="Value − allocated debt" /></div>
           </>}
 
           {section === "scenarios" && <>
@@ -293,7 +293,7 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
           </>}
 
           {section === "safety" && <>
-            <div className="grid max-w-4xl gap-3 sm:grid-cols-3">
+            <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-3">
               <Card tone="calc" icon={ShieldCheck} title="Nothing automatic">Bench writes only when you press Apply, Undo split, Edit split or Save Notes. Saving the loan never writes to Actual.</Card>
               <Card tone="bank" icon={ListChecks} title="One write at a time">Each Apply is recorded in Bench first, written, then checked against Actual. If the check fails, nothing else runs.</Card>
               <Card tone="loan" icon={Scale} title="Actual is the truth">Bench reads the loan account each time. If you change or delete a transaction in Actual, Bench follows on the next Refresh.</Card>

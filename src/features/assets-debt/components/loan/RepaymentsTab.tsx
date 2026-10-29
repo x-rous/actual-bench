@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Landmark, MoreHorizontal } from "lucide-react";
+import { Download, Landmark, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -16,12 +16,14 @@ import type { AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import type { Installment, InstallmentStatus, LedgerRow } from "@/lib/assets-debt/tracking/plan";
 import type { Proposal } from "@/lib/assets-debt/tracking/proposals";
 import { cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import { formatAmount } from "../../lib/money";
 import type { LoanTracking } from "../../lib/useLoanTracking";
 import { LoanMenuContent, ENTRY_LABELS, StatusBadge, dt } from "./presentation";
 import { InstallmentInspector, type InspectorActions } from "./InstallmentInspector";
 import type { WriteOutcome } from "../../lib/trackingWrites";
 import type { DebtWrite } from "@/lib/app-db/debtTrackingRepository";
+import { repaymentsCsvFilename, repaymentsCsvRows, type ExportRow } from "./repaymentsExport";
 
 /**
  * Repayments (design spec 06 §7.2): one row per installment from the tracking start, edge to edge, with the opening
@@ -35,16 +37,17 @@ type Row =
   | { key: string; kind: "opening"; date: string; proposal: Proposal; amountMinor: number }
   | { key: string; kind: "before"; date: string; count: number; first: string | null; last: string | null; openingMinor: number };
 
-type Filter = "all" | "todo" | "recorded" | "missing";
-const TODO: ReadonlySet<InstallmentStatus> = new Set(["unrecorded", "check", "missing"]);
+/** One pill per status, as the badges read; the opening adjustment is an Unrecorded row. */
+type Filter = "all" | "unrecorded" | "check" | "missing" | "recorded";
 
 export type RunState = { done: number; total: number } | null;
 
 /** Columns left out while the details panel is open, so the table fits beside it without scrolling sideways. */
 const PANEL_HIDDEN = new Set(["payee", "notes"]);
 
-export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onPaymentRules, apply, run, outcomes, onDismissOutcomes, actions, writesLocked, unresolved = [], onResolve }: {
+export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToActual, onPaymentRules, apply, run, outcomes, onDismissOutcomes, actions, writesLocked, unresolved = [], onResolve }: {
   tracking: LoanTracking; directory: AccountDirectory | undefined; digits: number;
+  /** Names the exported file. */ loanName?: string;
   onLinkToActual: () => void; onPaymentRules: () => void;
   /** Apply these writes, in order, as one run. */ apply: (proposals: Proposal[]) => void;
   run: RunState; outcomes: { list: WriteOutcome[]; clearingProblem: string | null } | null; onDismissOutcomes: () => void;
@@ -79,15 +82,19 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
   const needle = search.trim().toLowerCase();
   const visible = rows.filter((r) => {
     if (!inRange(range, tracking.today, r.date)) return false;
-    if (filter === "todo" && !(r.kind === "opening" || (r.kind === "installment" && TODO.has(r.inst.status)))) return false;
-    if (filter === "recorded" && !(r.kind === "installment" && r.inst.status === "recorded")) return false;
-    if (filter === "missing" && !(r.kind === "installment" && r.inst.status === "missing")) return false;
+    if (filter === "unrecorded" && !(r.kind === "opening" || (r.kind === "installment" && r.inst.status === "unrecorded"))) return false;
+    if ((filter === "check" || filter === "missing" || filter === "recorded") && !(r.kind === "installment" && r.inst.status === filter)) return false;
     if (!needle) return true;
     const text = r.kind === "installment" ? `${r.inst.no} ${r.inst.payment?.row.payeeName ?? ""} ${r.inst.payment?.row.notes ?? ""} ${r.inst.note ?? ""}` : r.kind === "event" ? `${r.ledger.row.payeeName ?? ""} ${r.ledger.row.notes ?? ""} ${ENTRY_LABELS[r.ledger.type]}` : "opening adjustment";
     return text.toLowerCase().includes(needle);
   });
   const dir = sort?.direction === "asc" ? 1 : -1;
   const sorted = [...visible].sort((a, b) => dir * (a.date.localeCompare(b.date) || (a.kind === "installment" && b.kind === "installment" ? a.inst.no - b.inst.no : 0)));
+  /** What the table shows now (filter, search and dates applied), as a CSV. */
+  const exportCsv = () => {
+    const rowsToExport = sorted.flatMap((r): ExportRow[] => (r.kind === "installment" ? [{ kind: "installment", inst: r.inst }] : r.kind === "event" ? [{ kind: "event", ledger: r.ledger }] : r.kind === "opening" ? [{ kind: "opening", date: r.date, amountMinor: r.amountMinor }] : []));
+    downloadCsv(repaymentsCsvFilename(loanName, tracking.today), repaymentsCsvRows(rowsToExport, { digits, accountName }));
+  };
   const all: Row[] = result && result.before.count > 0 && filter === "all" && !needle
     ? [...sorted, { key: "before", kind: "before", date: "", count: result.before.count, first: result.before.firstDueDate, last: result.before.lastDueDate, openingMinor: result.opening.principalMinor }]
     : sorted;
@@ -115,14 +122,19 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
     { key: "no", header: "No.", width: 52, align: "right", cell: (r) => r.kind === "installment" ? <span className="tabular-nums">{r.inst.no}</span> : r.kind === "before" ? <span className="tabular-nums text-muted-foreground">1–{r.count}</span> : null },
     { key: "date", header: "Due", width: 104, sortable: true, cell: (r) => r.kind === "installment" ? <Text>{dt(r.inst.dueDate)}</Text> : r.kind === "before" ? <Text className="text-muted-foreground italic">{r.first ? `${dt(r.first)} to ${dt(r.last ?? r.first)}` : ""}</Text> : <span className="text-muted-foreground">-</span> },
     { key: "paid", header: "Paid", width: 104, cell: (r) => <Text>{r.kind === "installment" ? (r.inst.payment ? dt(r.inst.payment.date) : "-") : r.kind === "event" ? dt(r.ledger.row.date) : r.kind === "opening" ? dt(r.date) : ""}</Text> },
-    { key: "from", header: "From", width: 128, cell: (r) => <Text>{r.kind === "installment" ? (r.inst.payment ? accountName(r.inst.payment.row.accountId) : "-") : r.kind === "event" ? (r.ledger.row.transferId ? r.ledger.row.payeeName ?? "-" : "-") : ""}</Text> },
+    { key: "from", header: "From", width: 184, cell: (r) => <Text>{r.kind === "installment" ? (r.inst.payment ? accountName(r.inst.payment.row.accountId) : "-") : r.kind === "event" ? (r.ledger.row.transferId ? r.ledger.row.payeeName ?? "-" : "-") : ""}</Text> },
     { key: "payee", header: "Payee", width: 150, cell: (r) => <Text>{r.kind === "installment" ? (r.inst.payment ? (r.inst.payment.kind === "rule" ? r.inst.payment.row.payeeName ?? "-" : "Transfer") : "-") : r.kind === "event" ? (r.ledger.row.transferId ? "Transfer" : r.ledger.row.payeeName ?? "-") : r.kind === "opening" ? "Loan adjustment" : r.kind === "before" ? <span className="text-muted-foreground italic">Before tracking · assumed paid as contracted</span> : ""}</Text> },
     { key: "payment", header: "Payment", width: 112, align: "right", cell: (r) => <span className="tabular-nums">{r.kind === "installment" ? (r.inst.payment ? money(r.inst.payment.amountMinor) : r.inst.status === "upcoming" ? money(r.inst.scheduledMinor) : "-") : r.kind === "event" ? money(Math.abs(r.ledger.row.amount)) : r.kind === "opening" ? money(Math.abs(r.amountMinor)) : ""}</span> },
     { key: "principal", header: "Principal", width: 112, align: "right", cell: (r) => <span className="tabular-nums">{r.kind === "installment" ? (r.inst.status === "missing" ? "-" : money(r.inst.principalMinor)) : r.kind === "event" && r.ledger.type === "extra-principal" ? money(r.ledger.row.amount) : "-"}</span> },
-    { key: "interest", header: "Interest", width: 112, align: "right", cell: (r) => r.kind === "installment" && r.inst.status !== "missing" ? <span className="inline-flex items-center gap-1 tabular-nums">{money(r.inst.interestMinor)}{r.inst.interestMinor !== r.inst.calculatedInterestMinor ? <InfoHint label={`Calculated interest ${money(r.inst.calculatedInterestMinor)}`}>Actual holds {money(r.inst.interestMinor)}; Bench calculates {money(r.inst.calculatedInterestMinor)} ({money(r.inst.interestMinor - r.inst.calculatedInterestMinor)}). Within the tolerance this is information only.</InfoHint> : null}</span> : <span className="text-muted-foreground">-</span> },
+    { key: "interest", header: "Interest", width: 112, align: "right", cell: (r) => {
+      if (!(r.kind === "installment" && r.inst.status !== "missing")) return <span className="text-muted-foreground">-</span>;
+      const { interestMinor, calculatedInterestMinor } = r.inst;
+      const gap = Math.abs(interestMinor - calculatedInterestMinor);
+      return <span className="inline-flex items-center gap-1 tabular-nums">{money(interestMinor)}{gap !== 0 ? <InfoHint label={`Calculated interest ${money(calculatedInterestMinor)}`}>Actual has {money(gap)} {interestMinor < calculatedInterestMinor ? "less" : "more"} interest than Bench calculates ({money(interestMinor)} against {money(calculatedInterestMinor)}). Within the tolerance this is information only.</InfoHint> : null}</span>;
+    } },
     { key: "balance", header: "Balance after", width: 124, align: "right", cell: (r) => <span className="tabular-nums">{r.kind === "installment" ? money(r.inst.balanceAfterMinor) : r.kind === "before" ? money(r.openingMinor) : "-"}</span> },
     { key: "notes", header: "Notes", width: 160, grow: true, cell: (r) => <Text className="text-foreground/70" title={notesOf(r) ?? undefined}>{notesOf(r) ?? ""}</Text> },
-    { key: "status", header: "Status", width: 132, cell: (r) => r.kind === "installment" ? <StatusBadge status={r.inst.status} /> : r.kind === "opening" ? <StatusBadge status="unrecorded" /> : r.kind === "event" ? <span className={cn("rounded border px-1.5 py-0.5 text-[11px]", r.ledger.suggested ? "border-dashed text-foreground/70" : "bg-muted/30")} title={r.ledger.suggested ? "Suggested from Actual" : undefined}>{ENTRY_LABELS[r.ledger.type]}</span> : null },
+    { key: "status", header: "Status", width: 100, cell: (r) => r.kind === "installment" ? <StatusBadge status={r.inst.status} /> : r.kind === "opening" ? <StatusBadge status="unrecorded" /> : r.kind === "event" ? <span className={cn("rounded border px-1.5 py-0.5 text-[11px]", r.ledger.suggested ? "border-dashed text-foreground/70" : "bg-muted/30")} title={r.ledger.suggested ? "Suggested from Actual" : undefined}>{ENTRY_LABELS[r.ledger.type]}</span> : null },
     { key: "actions", header: "Actions", hiddenHeader: true, width: 150, align: "right", sticky: "end", cell: (r) => {
       const proposal = proposalOf(r);
       return <div className="flex items-center justify-end gap-1">
@@ -152,16 +164,19 @@ export function RepaymentsTab({ tracking, directory, digits, onLinkToActual, onP
           { label: "Bench expects", value: money(f.calculatedMinor), detail: Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "By today · agrees with Actual" : `By today · differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
           { label: "Next payment", value: f.nextPayment ? money(f.nextPayment.amountMinor) : "-", detail: f.nextPayment ? `Due ${dt(f.nextPayment.dueDate)} · installment ${f.nextPayment.no}` : "No more installments", wrap: true },
           { label: "To do", value: <span className={todo + f.counts.check + f.counts.missing ? "text-amber-700 dark:text-amber-400" : undefined}>{todo} <span className="text-sm font-medium text-muted-foreground">Unrecorded</span></span>, detail: `${f.counts.check} Check · ${f.counts.missing} Missing`, wrap: true },
-          { label: "Interest this year", value: money(f.interestThisYearMinor), detail: "Recorded and unrecorded installments", wrap: true },
+          { label: "Interest paid", value: money(f.interestPaidMinor), detail: `This year ${money(f.interestThisYearMinor)} · recorded and unrecorded installments`, wrap: true },
         ]} />
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
           <SearchInput size="sm" aria-label="Search repayments" className="w-48" value={search} onValueChange={setSearch} />
           <DateChip value={range} onChange={setRange} />
           <PillGroup<Filter> value={filter} onChange={(v) => { setFilter(v); setSelected(new Set()); }} options={[
-            { value: "all", label: "All", count: rows.length }, { value: "todo", label: "To do", count: rows.filter((r) => r.kind === "opening" || (r.kind === "installment" && TODO.has(r.inst.status))).length },
-            { value: "recorded", label: "Recorded", count: f.counts.recorded }, { value: "missing", label: "Missing", count: f.counts.missing },
+            { value: "all", label: "All", count: rows.length },
+            { value: "unrecorded", label: "Unrecorded", count: rows.filter((r) => r.kind === "opening" || (r.kind === "installment" && r.inst.status === "unrecorded")).length },
+            { value: "check", label: "Check", count: f.counts.check }, { value: "missing", label: "Missing", count: f.counts.missing },
+            { value: "recorded", label: "Recorded", count: f.counts.recorded },
           ]} />
-          <Button size="sm" variant="ghost" onClick={onPaymentRules}>Payment rules{tracking.bundle?.rules.length ? ` (${tracking.bundle.rules.length})` : ""}</Button>
+          <Button size="sm" variant="outline" onClick={onPaymentRules}>Payment rules{tracking.bundle?.rules.length ? ` (${tracking.bundle.rules.length})` : ""}</Button>
+          <Button size="sm" variant="outline" disabled={!sorted.length} onClick={exportCsv}><Download className="size-3.5" aria-hidden />Export CSV</Button>
           <span className="ml-auto" />
           {tracking.refreshing ? <span role="status" className="text-xs text-muted-foreground">Refreshing…</span> : null}
           <Button size="sm" disabled={!applicable.length || busy || writesLocked} onClick={() => apply(inOrder(applicable))}>Apply all Unrecorded ({applicable.length})</Button>

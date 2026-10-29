@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatAmount, fractionToPercent } from "../../lib/money";
-import type { ChartData, ChartRateChangeGroup, SeriesId } from "../../lib/results";
-import { formatChartDate, formatChartPeriod, SERIES_META } from "./chartMeta";
+import type { ChartData, ChartPoint, ChartRateChangeGroup, SeriesId } from "../../lib/results";
+import { formatChartDate, formatChartPeriod, formatElapsed, SERIES_META } from "./chartMeta";
 
 /**
  * The loan chart (P1.3b T223; FR-223). Loaded lazily alongside the other financial charts,
@@ -27,15 +27,33 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
-type TooltipEntry = { dataKey?: string | number; value?: string | number; color?: string };
+const SOURCE_LABEL = { contract: "Contract", actual: "Actual", projected: "Projected" } as const;
+
+type TooltipEntry = { dataKey?: string | number; value?: string | number; color?: string; payload?: ChartPoint };
 
 function LoanTooltip({ active, payload, label, digits, rateChanges }: { active?: boolean; payload?: readonly TooltipEntry[]; label?: string | number; digits: number; rateChanges: ChartRateChangeGroup[] }) {
   const period = String(label ?? "");
   const rateChange = rateChanges.find((group) => group.period === period);
+  const point = payload?.[0]?.payload;
   if (!active || (!payload?.length && !rateChange)) return null;
   return (
     <div className="min-w-48 rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">
       <p className="mb-1.5 font-medium">{formatChartPeriod(period)}</p>
+      {point && (point.installment !== undefined || point.elapsedMonths !== undefined || point.repaidPercent !== undefined) ? (
+        <dl className="mb-1.5 flex flex-col gap-1 border-b border-border pb-1.5">
+          {point.installment !== undefined ? <div className="flex items-center justify-between gap-4"><dt className="text-muted-foreground">Installment</dt><dd className="font-medium tabular-nums">{point.installment}</dd></div> : null}
+          {point.elapsedMonths !== undefined ? <div className="flex items-center justify-between gap-4"><dt className="text-muted-foreground">Elapsed</dt><dd className="font-medium">{formatElapsed(point.elapsedMonths)}</dd></div> : null}
+          {point.repaidPercent !== undefined ? <div className="flex items-center justify-between gap-4"><dt className="text-muted-foreground">Repaid</dt><dd className="font-medium tabular-nums">{point.repaidPercent}%</dd></div> : null}
+        </dl>
+      ) : null}
+      {point && (point.paymentMinor !== undefined || point.extraMinor !== undefined || point.source) ? (
+        <dl className="mb-1.5 flex flex-col gap-1 border-b border-border pb-1.5">
+          {point.paymentMinor !== undefined ? <div className="flex items-center justify-between gap-4"><dt className="text-muted-foreground">Payment</dt><dd className="font-medium tabular-nums">{formatAmount(point.paymentMinor, digits)}</dd></div> : null}
+          {point.paymentMinor !== undefined && point.paymentInterestMinor ? <div className="flex items-center justify-between gap-4"><dt className="pl-3 text-muted-foreground">of which interest</dt><dd className="tabular-nums text-muted-foreground">{formatAmount(point.paymentInterestMinor, digits)}</dd></div> : null}
+          {point.extraMinor ? <div className="flex items-center justify-between gap-4"><dt className="text-muted-foreground">Extra payment</dt><dd className="font-medium tabular-nums">{formatAmount(point.extraMinor, digits)}</dd></div> : null}
+          {point.source ? <div className="flex items-center justify-between gap-4"><dt className="text-muted-foreground">Source</dt><dd className="font-medium">{SOURCE_LABEL[point.source]}</dd></div> : null}
+        </dl>
+      ) : null}
       <dl className="flex flex-col gap-1">
         {payload?.map((entry) => {
           const id = String(entry.dataKey) as SeriesId;
@@ -83,8 +101,8 @@ export default function LoanProjectionChart({ data, visible, digits, height = 32
           {hasInterestAxis ? <YAxis yAxisId="interest" orientation="right" domain={[0, "auto"]} tickFormatter={compact} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} width={56} label={{ value: "Interest paid", angle: 90, position: "insideRight", fill: "var(--muted-foreground)", fontSize: 10 }} /> : null}
           <Tooltip content={<LoanTooltip digits={digits} rateChanges={data.rateChanges} />} cursor={{ stroke: "var(--muted-foreground)", strokeDasharray: "3 3", strokeOpacity: 0.45 }} isAnimationActive={!reducedMotion} />
           <ReferenceLine yAxisId="balance" y={0} stroke="var(--border)" />
-          {data.tracking && data.tracking.startPeriod > data.tracking.firstPeriod ? (
-            <ReferenceArea yAxisId="balance" x1={data.tracking.firstPeriod} x2={data.tracking.startPeriod} fill="var(--muted)" fillOpacity={0.6} strokeOpacity={0} label={{ value: "Before tracking", position: "insideBottomLeft", fill: "var(--muted-foreground)", fontSize: 10 }} />
+          {data.tracking && data.tracking.untrackedBefore && data.tracking.startPeriod > data.tracking.firstPeriod ? (
+            <ReferenceArea yAxisId="balance" x1={data.tracking.firstPeriod} x2={data.tracking.startPeriod} fill="var(--muted)" fillOpacity={0.6} strokeOpacity={0} label={{ value: "Before tracking", position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 10 }} />
           ) : null}
           {data.tracking ? <ReferenceLine yAxisId="balance" x={data.tracking.todayPeriod} stroke="var(--foreground)" strokeOpacity={0.5} strokeDasharray="3 3" label={{ value: "Today", position: "insideTopLeft", fill: "var(--foreground)", fontSize: 10 }} /> : null}
           {data.rateChanges.map((group) => (

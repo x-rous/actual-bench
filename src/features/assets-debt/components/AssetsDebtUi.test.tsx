@@ -250,12 +250,22 @@ describe("the simulator workspace", () => {
     expect(Math.round((first + second) * 100)).toBe(Math.round(total * 100));
   });
 
+  it("greys out the unavailable day count without its reason, and its (i) opens the guide on Calculation method", async () => {
+    wrap(<Harness initial={shortLoan()} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Day count method" }));
+    const unavailable = await screen.findByRole("option", { name: "Monthly 30/360 with actual-day allocation" });
+    expect(unavailable).toHaveAttribute("aria-disabled", "true");
+    fireEvent.keyDown(unavailable, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "About the day count method in the guide" }));
+    expect(await screen.findByRole("button", { name: "Calculation method", current: "page" })).toBeInTheDocument();
+  });
+
   it("sets the day count beside the interest rate, and a different day count changes the interest", async () => {
     wrap(<Harness initial={shortLoan()} />);
     const interest = () => screen.getByText("Total interest").nextSibling?.textContent ?? "";
     await waitFor(() => expect(interest()).not.toBe("–"), WAIT);
     const before = interest();
-    const dayCount = screen.getByRole("combobox", { name: "Day count" });
+    const dayCount = screen.getByRole("combobox", { name: "Day count method" });
     expect(dayCount).toHaveTextContent("Actual/365 Fixed");
     fireEvent.click(dayCount);
     const option = await screen.findByRole("option", { name: "Actual/360" });

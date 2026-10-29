@@ -1,5 +1,6 @@
 "use client";
 
+import { addDays } from "@/lib/financial-models/calendar/dates";
 import { explainBlocks } from "@/lib/financial-models/loan/blockMessages";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { BlockReason } from "@/lib/financial-models/loan/model";
@@ -36,14 +37,22 @@ export type LiveProjection = {
 };
 
 /** A loan tracked in Actual: its calculation restarts from what really happened (design spec 06 §5.7). */
-export type TrackedProjection = { startDate: string; anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number } };
+export type TrackedProjection = {
+  startDate: string;
+  /** `restartDate` (default `date`) is where the engine restarts when an early payment already covers the next due date; `accruedInterestMinor` is the interest accrued up to it. */
+  anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate?: string; accruedInterestMinor?: number };
+};
 
 /**
  * One projection's input. A tracked loan's projection starts at its anchor (the last thing that really happened) with
  * only the events after it; its contract runs from the opening with only the events before the tracking start.
  */
 export function inputFor(sim: SimulationState, histories?: readonly OffsetHistorySnapshot[], tracked?: { mode: "projection" | "contract"; at: TrackedProjection } | null): DebtProjectionInput | null {
-  const scoped = !tracked ? sim : { ...sim, assumptions: sim.assumptions.filter((a) => (tracked.mode === "contract" ? a.effectiveFrom < tracked.at.startDate : a.effectiveFrom > tracked.at.anchor.date)) };
+  const restartDate = tracked?.at.anchor.restartDate ?? tracked?.at.anchor.date;
+  const scoped = !tracked ? sim : { ...sim, assumptions: sim.assumptions
+    .filter((a) => (tracked.mode === "contract" ? a.effectiveFrom < tracked.at.startDate : a.effectiveFrom > tracked.at.anchor.date))
+    // The engine ignores anything dated up to its restart; a what-if in that gap counts from the next day instead of vanishing.
+    .map((a) => (tracked.mode === "projection" && restartDate && a.effectiveFrom <= restartDate ? { ...a, effectiveFrom: addDays(restartDate, 1) } : a)) };
   const built = simulationToModel(scoped);
   if (!built.ok) return null;
   const merged = histories ? mergeOffsetHistories(built.model, histories) : { model: built.model, events: [] };
@@ -51,7 +60,8 @@ export function inputFor(sim: SimulationState, histories?: readonly OffsetHistor
   const window = projectionWindow(sim);
   if (tracked?.mode === "projection") {
     const { anchor } = tracked.at;
-    return { model, anchor: { date: anchor.date, principalMinor: anchor.principalMinor, accruedInterestMinor: 0, scheduledPaymentMinor: anchor.scheduledPaymentMinor, source: "tracked" }, events: merged.events.filter((e) => e.date > anchor.date), from: anchor.date, to: window.to };
+    const restart = anchor.restartDate ?? anchor.date;
+    return { model, anchor: { date: restart, principalMinor: anchor.principalMinor, accruedInterestMinor: anchor.accruedInterestMinor ?? 0, scheduledPaymentMinor: anchor.scheduledPaymentMinor, source: "tracked" }, events: merged.events.filter((e) => e.date > restart), from: restart, to: window.to };
   }
   return { model, anchor: { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" }, events: merged.events, from: window.from, to: window.to };
 }

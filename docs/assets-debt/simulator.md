@@ -110,12 +110,12 @@ repayment totals in the amortization schedule.
 - **Dialogs:** rate changes, individual extra repayments/redraws/fees/repayment changes/offset
   balance changes, recurring fees and costs, and interest-only periods.
 - **Step 1 toolbar:** read-only calculation explanation, calculation-method editing and reset appear
-  in that order before the primary Set up tracking in Actual action. Existing-loan save/discard/
+  in that order before the primary **Next: Link to Actual** action. Existing-loan save/discard/
   archive actions remain separate, and only the new-loan workflow displays the three-step marker.
 - **Calculation method drawer:** every profile convention, including timing, same-day placements and
   precision, in a responsive two-column layout. It opens from the left at up to 820px, keeps the
   workspace visible without backdrop blur, and scrolls vertically without horizontal overflow.
-- **Tracking setup:** everything Actual-specific.
+- **Link to Actual:** everything Actual-specific (loan account, payment rules, interest recording, tracking start).
 
 `lib/fieldCoverage.test.ts` pins this: every config path and every saved column has a named
 control or a stated reason, and the test fails when one loses its home.

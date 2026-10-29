@@ -132,7 +132,7 @@ export function TrackingTab({ tab, detail, tracking, directory, digits, ws, onLi
   tab: "repayments" | "ledger"; detail: DebtDetail; tracking: LoanTracking; directory: AccountDirectory | undefined; digits: number; ws: TrackingWorkspace; onLinkToActual: () => void;
 }) {
   const content = tab === "repayments"
-    ? <RepaymentsTab tracking={tracking} directory={directory} digits={digits} onLinkToActual={onLinkToActual} onPaymentRules={() => ws.setDialog("rules")} apply={(p) => void ws.apply(p)} run={ws.run} outcomes={ws.outcomes} onDismissOutcomes={() => ws.setOutcomes(null)} actions={ws.actions} writesLocked={ws.writesLocked} unresolved={ws.unresolved} onResolve={(id, inActual) => void ws.resolveWrite(id, inActual).catch((e) => toast.error(e instanceof Error ? e.message : "Could not save"))} />
+    ? <RepaymentsTab tracking={tracking} directory={directory} digits={digits} loanName={detail.debt.name} onLinkToActual={onLinkToActual} onPaymentRules={() => ws.setDialog("rules")} apply={(p) => void ws.apply(p)} run={ws.run} outcomes={ws.outcomes} onDismissOutcomes={() => ws.setOutcomes(null)} actions={ws.actions} writesLocked={ws.writesLocked} unresolved={ws.unresolved} onResolve={(id, inActual) => void ws.resolveWrite(id, inActual).catch((e) => toast.error(e instanceof Error ? e.message : "Could not save"))} />
     : <LoanLedgerTab tracking={tracking} digits={digits} onLinkToActual={onLinkToActual} onSaveEntries={ws.saveEntries} onSaveNotes={ws.saveNotes} onAddAdjustment={() => ws.setDialog("adjustment")} onStatement={() => ws.setDialog("statement")} writesLocked={ws.writesLocked} />;
   return <>{content}<TrackingDialogs detail={detail} tracking={tracking} directory={directory} digits={digits} ws={ws} /></>;
 }

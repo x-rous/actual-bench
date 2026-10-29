@@ -94,12 +94,12 @@ function eventRows(sim: SimulationState, tracked?: TrackedEvents): EventRow[] {
 
 /** What one row saves, as its own cell: "…" while calculating, "–" for a row the projection leaves out. */
 function SavesCell({ savings, eventKey, included, digits }: { savings?: EventSavings; eventKey: string; included: boolean; digits: number }) {
-  if (!included || !savings || savings.status === "none") return <td className="px-3 py-2.5 text-right text-muted-foreground">-</td>;
-  if (savings.status === "calculating") return <td className="px-3 py-2.5 text-right text-muted-foreground" aria-label="Calculating">…</td>;
+  if (!included || !savings || savings.status === "none") return <td className="px-3 py-1.5 text-right text-muted-foreground">-</td>;
+  if (savings.status === "calculating") return <td className="px-3 py-1.5 text-right text-muted-foreground" aria-label="Calculating">…</td>;
   const saving = savings.byKey.get(eventKey);
-  if (!saving) return <td className="px-3 py-2.5 text-right text-muted-foreground">-</td>;
+  if (!saving) return <td className="px-3 py-1.5 text-right text-muted-foreground">-</td>;
   const tone = saving.interestMinor > 0 ? "text-emerald-700 dark:text-emerald-400" : saving.interestMinor < 0 ? "text-red-700 dark:text-red-400" : "text-muted-foreground";
-  return <td className={cn("whitespace-nowrap px-3 py-2.5 text-right tabular-nums", tone)}>{formatSaving(saving, digits)}</td>;
+  return <td className={cn("whitespace-nowrap px-3 py-1.5 text-right tabular-nums", tone)}>{formatSaving(saving, digits)}</td>;
 }
 
 /** Where a row of the Events list comes from on a tracked loan. */
@@ -199,17 +199,17 @@ export function EventsSection({ sim, current, baseline, savings, onEdit, onRemov
               <tbody className="divide-y divide-border">
                 {rows.map((row) => {
                   const source = tracked ? sourceOf(row, tracked) : null;
-                  const sourceCell = tracked ? <td className="px-3 py-2.5">{source === "From Actual" ? <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[11px]">From Actual</span> : <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">{source === "Passed" ? "What-if" : source}</span>}</td> : null;
+                  const sourceCell = tracked ? <td className="px-3 py-1.5">{source === "From Actual" ? <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[11px]">From Actual</span> : <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">{source === "Passed" ? "What-if" : source}</span>}</td> : null;
                   if (row.kind === "ledger") return (
                     <tr key={row.key} className="bg-muted/20">
-                      {tracked ? <td className="px-4 py-2.5 text-center text-muted-foreground" title="From Actual: always included">-</td> : null}
-                      <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
-                      <td className="px-3 py-2.5 font-medium">{LEDGER_LABEL[row.ledger.kind]}</td>
-                      <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.ledger.amountMinor, sim.minorDigits)}</td>
+                      {tracked ? <td className="px-4 py-1.5 text-center text-muted-foreground" title="From Actual: always included">-</td> : null}
+                      <td className="whitespace-nowrap px-4 py-1.5 tabular-nums">{formatChartDate(row.date)}</td>
+                      <td className="px-3 py-1.5 font-medium">{LEDGER_LABEL[row.ledger.kind]}</td>
+                      <td className="px-3 py-1.5 text-right font-medium tabular-nums">{formatAmount(row.ledger.amountMinor, sim.minorDigits)}</td>
                       <SavesCell savings={savings} eventKey={`ledger:${row.ledger.rowId}`} included={row.ledger.kind === "extra-principal" || row.ledger.kind === "draw" || row.ledger.kind === "fee"} digits={sim.minorDigits} />
                       {sourceCell}
-                      <td className="px-3 py-2.5 text-muted-foreground">{[row.ledger.payee, row.ledger.notes].filter(Boolean).join(" · ") || "In the Loan Ledger"}</td>
-                      <td className="px-4 py-2.5"><div className="flex justify-end"><Button type="button" variant="ghost" size="sm" onClick={tracked?.onOpenLedger}>Open in Loan Ledger</Button></div></td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{[row.ledger.payee, row.ledger.notes].filter(Boolean).join(" · ") || "In the Loan Ledger"}</td>
+                      <td className="px-4 py-1.5"><div className="flex justify-end"><Button type="button" variant="ghost" size="xs" onClick={tracked?.onOpenLedger}>Open in Loan Ledger</Button></div></td>
                     </tr>
                   );
                   if (row.kind === "assumption") {
@@ -217,17 +217,17 @@ export function EventsSection({ sim, current, baseline, savings, onEdit, onRemov
                     const off = row.assumption.enabled === false;
                     return (
                     <tr key={row.key} className={cn((passed || off) && "text-muted-foreground")}>
-                      {tracked ? <td className="px-4 py-2.5 text-center">{source === "What-if" ? <Switch aria-label={`Include ${KIND_LABEL[row.assumption.kind]} on ${row.date} in the projection`} checked={!off} onCheckedChange={() => tracked.onToggle(row.assumption)} /> : <span className="text-muted-foreground">-</span>}</td> : null}
-                      <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
-                      <td className="px-3 py-2.5 font-medium">{KIND_LABEL[row.assumption.kind]}</td>
-                      <td className="px-3 py-2.5 text-right font-medium tabular-nums">{formatAmount(row.assumption.amountMinor, sim.minorDigits)}</td>
+                      {tracked ? <td className="px-4 py-1.5 text-center">{source === "What-if" ? <Switch aria-label={`Include ${KIND_LABEL[row.assumption.kind]} on ${row.date} in the projection`} checked={!off} onCheckedChange={() => tracked.onToggle(row.assumption)} /> : <span className="text-muted-foreground">-</span>}</td> : null}
+                      <td className="whitespace-nowrap px-4 py-1.5 tabular-nums">{formatChartDate(row.date)}</td>
+                      <td className="px-3 py-1.5 font-medium">{KIND_LABEL[row.assumption.kind]}</td>
+                      <td className="px-3 py-1.5 text-right font-medium tabular-nums">{formatAmount(row.assumption.amountMinor, sim.minorDigits)}</td>
                       <SavesCell savings={savings} eventKey={row.assumption.key} included={!passed && !off && source !== "Before tracking"} digits={sim.minorDigits} />
                       {sourceCell}
-                      <td className="px-3 py-2.5 text-muted-foreground">{passed ? "Passed, not in the projection: what happened is in the Loan Ledger" : off ? `Off: not in the projection · ${assumptionDetails(row.assumption)}` : assumptionDetails(row.assumption)}</td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-1.5 text-muted-foreground">{passed ? "Passed, not in the projection: what happened is in the Loan Ledger" : off ? `Off: not in the projection · ${assumptionDetails(row.assumption)}` : assumptionDetails(row.assumption)}</td>
+                      <td className="px-4 py-1.5">
                         <div className="flex justify-end gap-1">
-                          {!passed ? <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(row.assumption)} aria-label={`Edit ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Edit</Button> : null}
-                          <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(row.assumption)} aria-label={`Remove ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Remove</Button>
+                          {!passed ? <Button type="button" variant="ghost" size="xs" onClick={() => onEdit(row.assumption)} aria-label={`Edit ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Edit</Button> : null}
+                          <Button type="button" variant="ghost" size="xs" onClick={() => onRemove(row.assumption)} aria-label={`Remove ${KIND_LABEL[row.assumption.kind]} on ${row.date}`}>Remove</Button>
                         </div>
                       </td>
                     </tr>
@@ -235,17 +235,17 @@ export function EventsSection({ sim, current, baseline, savings, onEdit, onRemov
                   }
                   return (
                     <tr key={row.key}>
-                      {tracked ? <td className="px-4 py-2.5 text-center text-muted-foreground">-</td> : null}
-                      <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{formatChartDate(row.date)}</td>
-                      <td className="px-3 py-2.5 font-medium">Rate change</td>
-                      <td className="px-3 py-2.5 text-right font-medium tabular-nums">{fractionToPercent(row.previousRate)}% → {fractionToPercent(row.rate.annualRateDecimal)}%</td>
+                      {tracked ? <td className="px-4 py-1.5 text-center text-muted-foreground">-</td> : null}
+                      <td className="whitespace-nowrap px-4 py-1.5 tabular-nums">{formatChartDate(row.date)}</td>
+                      <td className="px-3 py-1.5 font-medium">Rate change</td>
+                      <td className="px-3 py-1.5 text-right font-medium tabular-nums">{fractionToPercent(row.previousRate)}% → {fractionToPercent(row.rate.annualRateDecimal)}%</td>
                       <SavesCell savings={savings} eventKey="" included={false} digits={sim.minorDigits} />
                       {sourceCell}
-                      <td className="px-3 py-2.5 text-muted-foreground">{rateDetails(row.rate)}</td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-1.5 text-muted-foreground">{rateDetails(row.rate)}</td>
+                      <td className="px-4 py-1.5">
                         <div className="flex justify-end gap-1">
-                          <Button type="button" variant="ghost" size="sm" onClick={() => onEditRate(row.rate)} aria-label={`Edit rate change on ${row.date}`}>Edit</Button>
-                          <Button type="button" variant="ghost" size="sm" onClick={() => onRemoveRate(row.rate)} aria-label={`Remove rate change on ${row.date}`}>Remove</Button>
+                          <Button type="button" variant="ghost" size="xs" onClick={() => onEditRate(row.rate)} aria-label={`Edit rate change on ${row.date}`}>Edit</Button>
+                          <Button type="button" variant="ghost" size="xs" onClick={() => onRemoveRate(row.rate)} aria-label={`Remove rate change on ${row.date}`}>Remove</Button>
                         </div>
                       </td>
                     </tr>

@@ -6,6 +6,8 @@ import { BookOpen, MoreHorizontal, RotateCcw, SlidersHorizontal } from "lucide-r
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { explainBlock } from "@/lib/financial-models/loan/blockMessages";
+import { FEATURES } from "@/lib/features/catalogue";
+import { LoanGuide, type LoanGuideSection } from "../guide/LoanGuide";
 import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -107,6 +109,7 @@ function composeTracked(projection: DebtProjection | null, contract: DebtProject
 export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external, tracked = null, chartViewKey }: SimulatorViewProps) {
   const [comparingLocal, setComparing] = useState(false);
   const comparing = external ? external.comparing : comparingLocal;
+  const [guide, setGuide] = useState<LoanGuideSection | null>(null);
   const [prompt, setPrompt] = useState<{ reason: string; candidate: SimulationState } | null>(null);
   const [dialogLocal, setDialogLocal] = useState<"method" | "how" | null>(null);
   const dialog = external ? external.dialog : dialogLocal;
@@ -171,9 +174,19 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
     const today = calendarTodayForDetails;
     const paid = events.filter((e) => e.date <= today).reduce((sum, e) => sum + e.interestMinor, 0);
     const months = head.payoffDate ? Math.max(0, Math.round((Date.parse(`${head.payoffDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / (86_400_000 * 30.4375))) : null;
-    const left = months === null || !head.payoffDate ? null : head.payoffDate <= today ? "Paid off" : months === 0 ? "Less than a month left" : `${Math.floor(months / 12) ? `${Math.floor(months / 12)} yrs ` : ""}${months % 12 ? `${months % 12} mos ` : ""}left`.trim();
-    return { interest: `Paid so far ${formatAmount(paid, sim.minorDigits)} · still to pay ${formatAmount(head.totalInterestMinor - paid, sim.minorDigits)}`, payoff: left };
-  }, [events, head, calendarTodayForDetails, sim.minorDigits]);
+    const left = months === null || !head.payoffDate ? null : head.payoffDate <= today ? "Paid off" : months === 0 ? "Less than a month left" : `${Math.floor(months / 12) ? `${Math.floor(months / 12)} ${Math.floor(months / 12) === 1 ? "yr" : "yrs"} ` : ""}${months % 12 ? `${months % 12} ${months % 12 === 1 ? "mo" : "mos"} ` : ""}left`.trim();
+    // A tracked loan also says how far along it is: installments paid of all, and what has been repaid of the total.
+    const isRepayment = (e: { eventType: string }) => e.eventType === "repayment" || e.eventType === "final-payment";
+    const made = tracked ? events.filter((e) => isRepayment(e) && e.date <= today).length : 0;
+    const total = tracked ? events.filter(isRepayment).length : 0;
+    const repaidSoFar = tracked ? headline(events.filter((e) => e.date <= today)).totalRepaidMinor : 0;
+    return {
+      interest: `Paid so far ${formatAmount(paid, sim.minorDigits)} · still to pay ${formatAmount(head.totalInterestMinor - paid, sim.minorDigits)}`,
+      payoff: left,
+      repayment: tracked && total > 0 ? `${made} of ${total} installment${total === 1 ? "" : "s"} paid · ${total - made} left` : null,
+      repaid: tracked ? `Paid so far ${formatAmount(repaidSoFar, sim.minorDigits)} · still to pay ${formatAmount(head.totalRepaidMinor - repaidSoFar, sim.minorDigits)}` : null,
+    };
+  }, [events, head, calendarTodayForDetails, sim.minorDigits, tracked]);
   const resetValue = useMemo(() => newSimulation({ currency: sim.currency, minorDigits: sim.minorDigits, today: calendarToday }), [sim.currency, sim.minorDigits, calendarToday]);
   const resetMeaningful = comparableSimulation(sim) !== comparableSimulation(resetValue);
   const removeExtra = (assumption: SimAssumption) => propose({ ...sim, assumptions: sim.assumptions.filter((candidate) => candidate.key !== assumption.key) });
@@ -224,7 +237,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
       <div className="flex flex-1 flex-col lg:flex-row lg:items-stretch">
         {/* The inputs fill their column edge to edge (no rounding), with the same padding on every side. */}
         <aside aria-label="Loan inputs" className="flex w-full shrink-0 flex-col gap-3 bg-muted/40 p-4 lg:w-[396px]" data-testid="control-rail">
-          <PrimaryInputs sim={sim} change={change} onCalculationMethod={() => setDialog("method")} onRateChanges={() => setRateEditor("list")} />
+          <PrimaryInputs sim={sim} change={change} onCalculationMethod={() => setDialog("method")} onRateChanges={() => setRateEditor("list")} onDayCountGuide={() => setGuide("method")} />
           <FeatureControls sim={sim} change={change} propose={propose} />
         </aside>
 
@@ -273,7 +286,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
                   onOpenLedger: tracked.onOpenLedger,
                 } : undefined} />
               <div data-testid="schedule-region" className="pt-3">
-                <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates } : null} />
+                <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date } : null} />
               </div>
             </>
           ) : null}
@@ -293,8 +306,9 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
       />
       {rateEditor !== null ? <RateChangesDialog onClose={() => setRateEditor(null)} sim={sim} propose={propose} initialEditor={rateEditor} /> : null}
       <ExtraTransactionsDialog open={extraEditor !== null} onClose={() => setExtraEditor(null)} sim={sim} propose={propose} editor={extraEditor} />
+      {guide ? <LoanGuide section={guide} onSection={setGuide} onClose={() => setGuide(null)} docsUrl={FEATURES.find((f) => f.id === "loans")?.docsUrl} /> : null}
       <CalculationMethodDrawer open={dialog === "method"} onClose={() => setDialog(null)} sim={sim} change={change} />
-      <HowCalculatedDrawer open={dialog === "how"} onClose={() => setDialog(null)} sim={sim} projection={live.projection} revision={revision} unsaved={unsaved} />
+      <HowCalculatedDrawer open={dialog === "how"} onClose={() => setDialog(null)} sim={sim} projection={projection} revision={revision} unsaved={unsaved} tracked={tracked} />
       <ConfirmDialog
         open={resetOpen}
         onOpenChange={setResetOpen}

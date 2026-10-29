@@ -77,6 +77,8 @@ export type Payment = {
   split?: { principalMinor: number; interestMinor: number; feesMinor: number; principalLineId: string; interestLineId: string | null };
   /** The paying side is not in what was read (only the loan-side row is known). */
   sideUnknown?: boolean;
+  /** Some of this payment's loan-side rows are classified differently (for example one is an Adjustment): it is a Check, never extra principal. */
+  mixed?: boolean;
 };
 
 export type InstallmentStatus = "recorded" | "unrecorded" | "check" | "missing" | "upcoming";
@@ -96,7 +98,7 @@ export type Installment = {
   balanceAfterMinor: number;
   /** One sentence: why it needs a decision, or something worth knowing. */
   note: string | null;
-  checkKind?: "drift" | "competing" | "reconciled" | "short" | "interest-only" | "loan-side-changed" | "side-unknown" | "cannot-split";
+  checkKind?: "drift" | "competing" | "reconciled" | "short" | "interest-only" | "loan-side-changed" | "side-unknown" | "cannot-split" | "mixed-split";
   /** Other payments that could be this installment (competing). */
   alternatives?: Payment[];
   proposal: Proposal | null;
@@ -122,8 +124,13 @@ export type TrackingResult =
       opening: { date: string; principalMinor: number; source: "calculated" | "statement"; actualMinor: number; differenceMinor: number };
       before: { count: number; firstDueDate: string | null; lastDueDate: string | null };
       openingAdjustment: Proposal | null;
-      /** Where a projection of the rest of the loan starts: the last thing that really happened, and the payment then in force. */
-      anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number };
+      /**
+       * Where a projection of the rest of the loan starts: the last thing that really happened, and the payment then in
+       * force. An installment paid before its due date is already covered, so the engine restarts from that due date
+       * (`restartDate`) with the interest accrued since the payment (`accruedInterestMinor`, minor units); otherwise
+       * `restartDate` is `date` and nothing is carried.
+       */
+      anchor: { date: string; principalMinor: number; scheduledPaymentMinor: number; restartDate: string; accruedInterestMinor: number };
       installments: Installment[];
       ledger: LedgerRow[];
       /** Extra principal, draws, fees and adjustments from the tracking start on: the Loan Ledger's events for the calculation. */
@@ -134,6 +141,9 @@ export type TrackingResult =
         differenceMinor: number;
         nextPayment: { dueDate: string; no: number; amountMinor: number } | null;
         counts: Record<InstallmentStatus, number>;
+        /** Interest in the recorded and unrecorded installments since the tracking start, in minor units. */
+        interestPaidMinor: number;
+        /** The part of it paid this calendar year, in minor units. */
         interestThisYearMinor: number;
       };
     }
@@ -218,6 +228,15 @@ function findPayments(input: TrackingInput, from: string): Payment[] {
   const bank = indexRows(input.bankRows);
   const excluded = new Set(input.entries.filter((e) => e.entryType === "not-repayment" || (e.entryType !== "principal-repayment" && e.entryType !== "extra-principal" && loanIds.has(e.actualTransactionId))).map((e) => e.actualTransactionId));
   const payments = new Map<string, Payment>();
+  // A payment whose loan-side rows are not all counted as repayments (one saved as an Adjustment, say) cannot be taken as the
+  // whole parent amount: the part left would be counted again. It is flagged and left for the person to classify.
+  const mixedOwners = new Set<string>();
+  for (const row of input.loanRows) {
+    if (row.amount <= 0 || !row.transferId || row.date <= from || !excluded.has(row.id)) continue;
+    const other = bank.get(row.transferId);
+    const owner = other?.parent ?? other?.row ?? null;
+    if (owner) mixedOwners.add(owner.id);
+  }
   for (const row of input.loanRows) {
     // A transfer into the loan account reduces the debt (the loan account is negative while it is owed).
     if (row.amount <= 0 || !row.transferId || row.date <= from || isPostingMarker(row.importedId) || excluded.has(row.id)) continue;
@@ -232,9 +251,9 @@ function findPayments(input: TrackingInput, from: string): Payment[] {
     if (existing) { existing.loanRows.push(row); continue; }
     if (other?.parent) {
       const split = readSplit(other.parent, loanIds);
-      payments.set(owner.id, { id: owner.id, kind: split ? "split" : "transfer", date: owner.date, amountMinor: Math.abs(owner.amount), row: owner, loanRows: [row], ...(split ? { split } : {}) });
+      payments.set(owner.id, { id: owner.id, kind: split ? "split" : "transfer", date: owner.date, amountMinor: Math.abs(owner.amount), row: owner, loanRows: [row], ...(split ? { split } : {}), ...(mixedOwners.has(owner.id) ? { mixed: true } : {}) });
     } else {
-      payments.set(owner.id, { id: owner.id, kind: "transfer", date: owner.date, amountMinor: Math.abs(owner.amount), row: owner, loanRows: [row] });
+      payments.set(owner.id, { id: owner.id, kind: "transfer", date: owner.date, amountMinor: Math.abs(owner.amount), row: owner, loanRows: [row], ...(mixedOwners.has(owner.id) ? { mixed: true } : {}) });
     }
   }
   if (input.rules.length) {
@@ -311,6 +330,8 @@ export function proposalContext(debt: TrackingDebt, accounts: ProposalContext["a
 export function planTracking(input: TrackingInput): TrackingResult {
   const { debt, model, today } = input;
   const digits = model.currency.minorDigits;
+  // Actual keeps amounts in hundredths; until Bench converts at that boundary, tracking is for 2-decimal currencies only.
+  if (digits !== 2) return { ok: false, message: `Tracking in Actual works with 2-decimal currencies for now; this loan uses ${digits}. The calculation in Terms & Schedule is not affected.` };
   const money = (minor: number) => fmt(minor, digits);
   const schedule = contractSchedule(model, addDays(today, 800));
   if (!schedule.ok) return { ok: false, message: `The loan cannot be calculated: ${schedule.message}` };
@@ -350,10 +371,12 @@ export function planTracking(input: TrackingInput): TrackingResult {
   const paymentOfRow = new Map<string, string>();
   for (const p of payments) { paymentOfRow.set(p.id, p.id); for (const r of p.loanRows) paymentOfRow.set(r.id, p.id); }
   const tracked = dues.filter((d) => d.no >= start.no);
-  const shownUpcoming = new Set(tracked.filter((d) => d.date > today).slice(0, UPCOMING_SHOWN).map((d) => d.date));
-  const aligned = tracked.filter((d) => d.date <= today || shownUpcoming.has(d.date));
+  // One more upcoming installment is lined up than is shown: a payment made early may already cover the next one, and
+  // then the one after it is the Upcoming row.
+  const upcomingCandidates = tracked.filter((d) => d.date > today).slice(0, UPCOMING_SHOWN + 1).map((d) => d.date);
+  const aligned = tracked.filter((d) => d.date <= today || upcomingCandidates.includes(d.date));
   // A payment the user marked "Extra principal" is extra principal, whatever installment it is near.
-  const markedExtra = new Set(payments.filter((p) => p.loanRows.some((r) => entries.get(r.id)?.entryType === "extra-principal")).map((p) => p.id));
+  const markedExtra = new Set(payments.filter((p) => !p.mixed && p.loanRows.some((r) => entries.get(r.id)?.entryType === "extra-principal")).map((p) => p.id));
   const pins: AlignPin[] = input.entries.flatMap((e) => {
     const paymentId = e.installmentDueDate ? paymentOfRow.get(e.actualTransactionId) : undefined;
     return paymentId && !markedExtra.has(paymentId) && aligned.some((d) => d.date === e.installmentDueDate) ? [{ key: e.installmentDueDate!, paymentId }] : [];
@@ -363,10 +386,13 @@ export function planTracking(input: TrackingInput): TrackingResult {
     { toleranceMinor: debt.toleranceMinor, formatMinor: money },
   );
   const pairOf = new Map(alignment.dues.map((d) => [d.key, d]));
+  // Shown: the covered upcoming installments, and the first one nothing has paid.
+  const firstOpenUpcoming = upcomingCandidates.findIndex((date) => !pairOf.get(date)?.payment);
+  const shownUpcoming = new Set(firstOpenUpcoming === -1 ? upcomingCandidates : upcomingCandidates.slice(0, firstOpenUpcoming + 1));
   const paidBy = new Map(alignment.dues.flatMap((d) => (d.payment ? [[d.payment.id, d.key] as const] : [])));
   // Only money that reached the loan account is extra principal; a payment a rule found but no installment took is
   // just something the rule matched (it never touched this loan).
-  const extraPayments = [...alignment.extras.map((e) => byId.get(e.id)!).filter((p) => p && p.kind !== "rule"), ...payments.filter((p) => markedExtra.has(p.id))].sort((x, y) => x.date.localeCompare(y.date) || x.id.localeCompare(y.id));
+  const extraPayments = [...alignment.extras.map((e) => byId.get(e.id)!).filter((p) => p && p.kind !== "rule" && !p.mixed), ...payments.filter((p) => markedExtra.has(p.id) && !p.mixed)].sort((x, y) => x.date.localeCompare(y.date) || x.id.localeCompare(y.id));
 
   // Ledger events in the tracked window that change the balance without being an installment.
   const userType = (r: SyncSourceTransaction) => entries.get(r.id)?.entryType;
@@ -459,6 +485,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
     actualPrincipal -= allocated.principalMinor;
     const figures = { principalMinor: allocated.principalMinor, interestMinor: allocated.interestMinor, calculatedInterestMinor: allocated.interestMinor, balanceAfterMinor: allocated.balanceAfterMinor };
     const check = (checkKind: NonNullable<Installment["checkKind"]>, note: string): Installment => ({ ...base, ...figures, status: "check", checkKind, note });
+    if (payment.mixed) return check("mixed-split", "The loan-side lines of this payment are classified differently (for example one is an Adjustment). Classify them the same way in the Loan Ledger, then refresh.");
     if (competing && !pins.some((p) => p.key === due.date)) {
       const alternatives = extraPayments.filter((e) => Math.abs(daysBetween(e.date, due.date)) <= 20 && Math.abs(e.amountMinor - due.scheduledMinor) <= Math.max(debt.toleranceMinor, due.scheduledMinor / 20));
       if (alternatives.length) return { ...check("competing", `${alternatives.length + 1} payments could be this installment. Choose the one that pays it.`), alternatives };
@@ -489,9 +516,19 @@ export function planTracking(input: TrackingInput): TrackingResult {
   }
 
   let anchorDate = opening.date;
+  // The engine schedules every contract date after its anchor, so an installment paid before its due date would be
+  // scheduled (and paid) again. Restart from the last covered due date and carry the interest accrued since the
+  // payment. Read at the last real event, before a later (upcoming) step moves the calculator on.
+  const coveredThrough = alignment.dues.filter((d) => d.payment).map((d) => d.key).sort().at(-1) ?? null;
+  let restartDate = anchorDate;
+  let restartAccruedMinor = 0;
   for (const step of steps) {
     step.run();
-    if (step.date <= today) { calculatedToday = calc.balanceMinor; anchorDate = step.date; }
+    if (step.date <= today) {
+      calculatedToday = calc.balanceMinor; anchorDate = step.date;
+      restartDate = coveredThrough !== null && coveredThrough > step.date ? coveredThrough : step.date;
+      restartAccruedMinor = restartDate > step.date && calc.daily ? calc.accruedTo(restartDate) : 0;
+    }
   }
   installments.sort((a, b) => a.no - b.no);
 
@@ -538,13 +575,14 @@ export function planTracking(input: TrackingInput): TrackingResult {
   const counts: Record<InstallmentStatus, number> = { recorded: 0, unrecorded: 0, check: 0, missing: 0, upcoming: 0 };
   for (const i of installments) counts[i.status]++;
   const year = today.slice(0, 4);
-  const next = tracked.find((d) => d.date > today) ?? null;
+  // The next installment still to pay: one already covered by an early payment is not "next".
+  const next = tracked.find((d) => d.date > today && !pairOf.get(d.date)?.payment) ?? null;
   return {
     ok: true,
     opening: { ...opening, source: statement ? "statement" : "calculated", actualMinor: actualAtStart, differenceMinor: openingDifference },
     before: { count: start.no - 1, firstDueDate: dues[0]?.date ?? null, lastDueDate: previous?.date ?? null },
     openingAdjustment,
-    anchor: { date: anchorDate, principalMinor: calculatedToday, scheduledPaymentMinor: (tracked.find((d) => d.date > today) ?? tracked.at(-1) ?? start).scheduledMinor },
+    anchor: { date: anchorDate, principalMinor: calculatedToday, scheduledPaymentMinor: (next ?? tracked.at(-1) ?? start).scheduledMinor, restartDate, accruedInterestMinor: restartAccruedMinor },
     installments,
     ledger,
     events,
@@ -554,6 +592,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
       differenceMinor: owed - calculatedToday,
       nextPayment: next ? { dueDate: next.date, no: next.no, amountMinor: next.scheduledMinor } : null,
       counts,
+      interestPaidMinor: installments.filter((i) => i.status === "recorded" || i.status === "unrecorded").reduce((sum, i) => sum + i.interestMinor, 0),
       interestThisYearMinor: installments.filter((i) => (i.status === "recorded" || i.status === "unrecorded") && (i.payment?.date ?? i.dueDate).startsWith(year)).reduce((sum, i) => sum + i.interestMinor, 0),
     },
   };

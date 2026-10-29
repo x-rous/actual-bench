@@ -131,7 +131,7 @@ export function CalculationMethodDrawer({ open, onClose, sim, change }: { open: 
             </legend>
             <SelectField label="Rate quoted as" value={p.rateQuote} options={RATE_QUOTE_OPTIONS} onChange={(v) => set({ rateQuote: v as Profile["rateQuote"] })} />
             <SelectField label="Interest accrues" value={p.accrual} options={ACCRUAL_OPTIONS} onChange={(v) => set({ accrual: v as Profile["accrual"], capitalization: v === "daily-compounded" ? "daily" : "at-charge" })} />
-            {daily ? <SelectField label="Day count" value={p.dayCount} options={DAY_COUNT_OPTIONS} onChange={(v) => set({ dayCount: v as Profile["dayCount"] })} /> : null}
+            {daily ? <SelectField label="Day count method" value={p.dayCount} options={DAY_COUNT_OPTIONS} onChange={(v) => set({ dayCount: v as Profile["dayCount"] })} /> : null}
             <SelectField label="Interest is charged" value={p.chargeFrequency} options={CHARGE_FREQUENCY_OPTIONS} onChange={(v) => set({ chargeFrequency: v as Profile["chargeFrequency"], chargeDay: v === "at-repayment" ? null : (p.chargeDay ?? 1) })} />
             {p.chargeFrequency !== "at-repayment" ? (
               <>

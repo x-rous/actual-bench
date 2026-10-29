@@ -109,6 +109,63 @@ describe("planTracking", () => {
     expect(saved.installments.slice(0, 2).map((i) => i.status)).toEqual(["unrecorded", "unrecorded"]);
   });
 
+  it("C1d: an installment paid before its due date is covered: it is not the next payment, and the projection restarts from its due date", () => {
+    const r = received();
+    // Installment 2 is due 2024-03-15 but was paid on 2024-03-05; today is still before that due date.
+    const pays = [transfer("2024-02-15", 3_411_26), transfer("2024-03-05", 3_411_26)];
+    const out = planTracking(input({ loan: [r.loan, ...pays.map((p) => p.loan)], bank: [r.bank, ...pays.map((p) => p.bank)] }, { today: "2024-03-10" }));
+    if (!out.ok) throw new Error(out.message);
+    expect(out.installments.find((i) => i.no === 2)).toMatchObject({ dueDate: "2024-03-15", status: "unrecorded" });
+    expect(out.figures.nextPayment).toMatchObject({ no: 3, dueDate: "2024-04-15" });
+    // The covered installment is Recorded-or-Unrecorded, and the next one still to pay is the Upcoming row.
+    expect(out.installments.find((i) => i.no === 3)).toMatchObject({ status: "upcoming", dueDate: "2024-04-15" });
+    expect(out.installments.filter((i) => i.status === "upcoming")).toHaveLength(1);
+    expect(out.anchor.date).toBe("2024-03-05");
+    expect(out.anchor.restartDate).toBe("2024-03-15");
+    // Ten days of interest (6 to 15 March) on the balance after the payment, carried to the restart.
+    const days = 10;
+    const expected = Math.round((out.anchor.principalMinor * 0.054 * days) / 365);
+    expect(Math.abs(out.anchor.accruedInterestMinor - expected)).toBeLessThanOrEqual(2);
+  });
+
+  it("C1e: with nothing paid early the projection restarts from the last real event and carries nothing", () => {
+    const r = received();
+    const pays = ["2024-02-15", "2024-03-15"].map((d) => transfer(d, 3_411_26));
+    const out = planTracking(input({ loan: [r.loan, ...pays.map((p) => p.loan)], bank: [r.bank, ...pays.map((p) => p.bank)] }, { today: "2024-03-20" }));
+    if (!out.ok) throw new Error(out.message);
+    expect(out.anchor).toMatchObject({ date: "2024-03-15", restartDate: "2024-03-15", accruedInterestMinor: 0 });
+    // The Interest figure is everything paid since the tracking start; this year is the part of it paid in 2024.
+    const interest = out.installments.filter((i) => i.status === "recorded" || i.status === "unrecorded").reduce((sum, i) => sum + i.interestMinor, 0);
+    expect(out.figures.interestPaidMinor).toBe(interest);
+    expect(out.figures.interestPaidMinor).toBeGreaterThan(0);
+    expect(out.figures.interestThisYearMinor).toBe(interest);
+    expect(out.figures.nextPayment).toMatchObject({ no: 3, dueDate: "2024-04-15" });
+  });
+
+  it("C1f: a split whose loan-side lines are classified differently is a Check, and is never counted again as extra principal", () => {
+    const r = received();
+    // One bank payment of 3,411.26 split into two transfers to the loan: 3,000.00 and 411.26. The second is saved as an Adjustment.
+    const loanA = tx({ accountId: "loan", date: "2024-02-14", amount: 3_000_00 });
+    const loanB = tx({ accountId: "loan", date: "2024-02-14", amount: 411_26 });
+    const line = (id: string, amount: number, transferId: string) => ({ id, amount: -amount, payeeId: "p-loan", payeeName: "LS Mortgage", categoryId: null, categoryName: null, notes: null, transferId });
+    const parent = tx({ accountId: "checking", date: "2024-02-14", amount: -3_411_26, isParent: true, splitLines: [line("lineA", 3_000_00, loanA.id), line("lineB", 411_26, loanB.id)] });
+    loanA.transferId = "lineA"; loanB.transferId = "lineB";
+    const entries = [{ actualTransactionId: loanB.id, actualAccountId: "loan", entryType: "adjustment" as const, installmentDueDate: null, revision: 1, updatedAt: "t" }];
+    const out = planTracking(input({ loan: [r.loan, loanA, loanB], bank: [r.bank, parent] }, { today: "2024-02-20", entries }));
+    if (!out.ok) throw new Error(out.message);
+    expect(out.installments[0]).toMatchObject({ no: 1, status: "check", checkKind: "mixed-split" });
+    expect(out.events.filter((e) => e.kind === "extra-principal")).toEqual([]);
+    // The adjustment line is counted once, as an adjustment, and the rest is not taken as the whole 3,411.26 again.
+    expect(out.events.filter((e) => e.kind === "adjustment")).toHaveLength(1);
+  });
+
+  it("C1g: tracking is for 2-decimal currencies for now, and says so instead of mixing units", () => {
+    const r = received();
+    const base = input({ loan: [r.loan], bank: [r.bank] });
+    const out = planTracking({ ...base, model: { ...base.model, currency: { code: "JPY", minorDigits: 0 } } as typeof base.model });
+    expect(out).toMatchObject({ ok: false, message: expect.stringMatching(/2-decimal currencies/) });
+  });
+
   it("B2: a payment already split in Actual is Recorded with no write; a few units of interest difference are not a task", () => {
     const r = received();
     const plain = planTracking(input({ loan: [r.loan, transfer("2024-02-15", 3_411_26).loan], bank: [r.bank] }, { today: "2024-02-20" }));

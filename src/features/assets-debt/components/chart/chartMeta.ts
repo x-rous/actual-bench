@@ -24,3 +24,12 @@ export function formatChartDate(date: string): string {
   const month = SHORT_MONTHS[Number(match[2]) - 1];
   return month ? `${match[3]} ${month} ${match[1]}` : date;
 }
+
+/** "3 years, 2 months", "1 year", "5 months": time elapsed since the loan started. */
+export function formatElapsed(months: number): string {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const part = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (years === 0 && rest === 0) return "Less than a month";
+  return [years ? part(years, "year") : "", rest ? part(rest, "month") : ""].filter(Boolean).join(", ");
+}

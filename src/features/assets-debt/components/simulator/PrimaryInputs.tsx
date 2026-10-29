@@ -1,5 +1,6 @@
 "use client";
 
+import { Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SimulationState } from "../../lib/simulatorModel";
 import { DateField, IntegerField, MoneyField, PercentField, SelectField } from "../fields";
@@ -12,10 +13,12 @@ type Props = {
   change: (next: SimulationState) => void;
   onCalculationMethod: () => void;
   onRateChanges: () => void;
+  /** Opens the Loans & Debt guide on its Calculation method section. */
+  onDayCountGuide: () => void;
 };
 
 /** The ordinary modelling path, grouped by contract concept instead of one long field list. */
-export function PrimaryInputs({ sim, change, onCalculationMethod, onRateChanges }: Props) {
+export function PrimaryInputs({ sim, change, onCalculationMethod, onRateChanges, onDayCountGuide }: Props) {
   const years = sim.termMonths === null ? null : Math.floor(sim.termMonths / 12);
   const months = sim.termMonths === null ? null : sim.termMonths % 12;
   const setTerm = (y: number | null, m: number | null) => {
@@ -59,7 +62,7 @@ export function PrimaryInputs({ sim, change, onCalculationMethod, onRateChanges 
         helpDescription="The opening rate and the calculation conventions applied to it."
         help={[{ items: [
           { term: "Interest rate", description: "The opening annual rate. A new simulator starts at 5.4% p.a.; it applies until a later rate change takes effect." },
-          { term: "Day count", description: "How a year is counted for daily interest. Actual/365 Fixed (the default) suits most mortgages and personal loans; some lenders use Actual/360. Your loan contract or statement says which." },
+          { term: "Day count method", description: "How a year is counted for daily interest. Actual/365 Fixed (the default) suits most mortgages and personal loans; some lenders use Actual/360. Your loan contract or statement says which." },
           { term: "Calculation method", description: "Summarizes the configured accrual, charging and repayment conventions (the day count is set beside the rate). Use Set calculation method in the top bar to edit them." },
           { term: "Rate changes", description: "Defaults to none. Effective-dated later rates use the same rate-change editor available from Events." },
         ] }]}
@@ -67,7 +70,7 @@ export function PrimaryInputs({ sim, change, onCalculationMethod, onRateChanges 
         {/* Day count beside the rate (daily interest only); the rest of the method stays in the calculation method panel. */}
         <div className={sim.profile.accrual === "per-period" ? undefined : "grid grid-cols-2 gap-2"}>
           <PercentField label="Interest rate" suffix="% p.a." valueFraction={sim.rates[0]?.annualRateDecimal ?? null} onChange={setRate} />
-          {sim.profile.accrual === "per-period" ? null : <SelectField label="Day count" value={sim.profile.dayCount} options={DAY_COUNT_OPTIONS} onChange={(v) => change({ ...sim, profile: { ...sim.profile, dayCount: v as SimulationState["profile"]["dayCount"], presetId: null } })} />}
+          {sim.profile.accrual === "per-period" ? null : <SelectField label="Day count method" labelIcon={<Button type="button" variant="ghost" size="icon-sm" className="size-5 text-muted-foreground hover:text-foreground" aria-label="About the day count method in the guide" onClick={onDayCountGuide}><Info className="size-3.5" aria-hidden="true" /></Button>} value={sim.profile.dayCount} options={DAY_COUNT_OPTIONS} onChange={(v) => change({ ...sim, profile: { ...sim.profile, dayCount: v as SimulationState["profile"]["dayCount"], presetId: null } })} />}
         </div>
         <CalculationMethodSummary sim={sim} onOpen={onCalculationMethod} />
         <Button type="button" variant="outline" size="sm" className="justify-between" onClick={onRateChanges}>

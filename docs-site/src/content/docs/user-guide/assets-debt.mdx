@@ -1,9 +1,12 @@
 ---
 title: Loans & Debt
-description: Compare loans, review their progress, and recognize existing repayment splits.
+description: Work out a loan, track it against the payments in Actual, and keep each repayment split into principal and interest.
 ---
 
-Open your loan in **Financial Management → Loans & Debt**, then use **Sync Repayments** to review payments held in Actual.
+Open your loan in **Financial Management → Loans & Debt**. A loan is a **calculator** until you save it and link it to its
+account in Actual; after that it is **tracked**: Bench lines each installment up with the payment you made and, when you
+say so, splits it into principal and interest. The **Guide** button on every loan page opens an in-app guide with the
+same material as this page.
 
 Loans & Debt normally uses the full workspace width without the global **Changes** panel.
 
@@ -22,170 +25,226 @@ in each cell. Its search, filters, and table header follow the reconciliation li
 
 Compare outstanding balance, next payment and date, payments left, principal paid, payment
 counts of recorded repayments, recorded interest and projected interest remaining, and the projected end date. The progress
-bar shows the share of the opening principal paid. A calculated balance is labelled when an
-loan has no live Actual balance. Failed balance reads show **Unavailable**. Scheduled payments are not counted as paid; recorded history may cover only part of the loan’s lifetime. Forecasts identify their starting date, including lender restarts. Payment counts appear only under **Principal paid**; **Next payment** shows the amount and date. A confirmed payoff stops future payment and interest forecasts until it is undone or changed in Actual.
+bar shows the share of the opening principal paid. A calculated balance is labelled when a
+loan has no live Actual balance. Failed balance reads show **Unavailable**. Scheduled payments are not counted as paid; recorded history may cover only part of the loan’s lifetime. Forecasts identify their starting date, including lender restarts. Payment counts appear only under **Principal paid**; **Next payment** shows the amount and date. A confirmed payoff stops future payment and interest forecasts.
 
-The **Accounts** column shows only configured loan and repayment accounts and currently active
-offset accounts. Unused account roles are omitted.
-The loan summary sits on the right of the same bar as the filters. Columns read from left to
-right: Loan, Terms, Outstanding, Next payment, Principal paid, Interest, Ends / Paid off, Accounts,
-and Status. Outstanding has a compact fixed width. The narrower Loan column gives accounts,
-interest and payment figures more room; account and interest columns share available space.
-
-The **Terms** column shows the current rate, repayment frequency, contractual term, and the next
-scheduled rate change when one exists. The opening date stays beside the loan identity.
+A loan row says **Tracked from installment N** when it is linked to its account in Actual, and
+**Not tracked in Actual** when it is only a calculation. The **Accounts** column shows only configured loan and
+repayment accounts and currently active offset accounts. The loan summary sits on the right of the same bar as the
+filters. Columns read from left to right: Loan, Terms, Outstanding, Next payment, Principal paid, Interest,
+Ends / Paid off, Accounts, and Status. The **Terms** column shows the current rate, repayment frequency,
+contractual term, and the next scheduled rate change when one exists.
 
 Statuses use both color and words: active and paid-off loans are green, attention warnings are
-amber, blocked loans are red, drafts are blue, and archived loans are muted. A repayment-matching
-warning sits beneath the loan name, separate from the compact loan-status column.
-After a successful repayment refresh, returning to the list reloads its attention counts so
-resolved failures do not leave an old amber warning. Unresolved changes still need review even
-when the loan balances are in sync.
-Refresh also moves a failed Undo or Unsplit attempt into history once the same action succeeds
-for the same original change. A replacement repayment can resolve an old failed attempt even
-if its scheduled due date changed, provided it identifies the same Actual payment. Bench retains
-the original error details and does not clear failures simply because the balances agree.
+amber, blocked loans are red, drafts are blue, and archived loans are muted.
 
-Select a row or focus its loan link and press Enter to open it. A loan that needs attention opens
-at the relevant review step. Search by loan name, use **Needs attention** to focus the list, or
-**Show archived loans** to include archived records. On smaller screens, scroll the table
-horizontally to keep rows compact. Hover truncated text to see its full label.
+**Needs attention** lists loans with a write to Actual that did not finish, or settings that cannot be
+used. A loan with an unfinished write opens on **Repayments**; a loan whose settings cannot be used opens on
+**Terms & Schedule**, where the calculation method lives. Select a row or focus its loan link and press Enter to open
+it. Search by loan name, or use **Show archived loans** to include archived records. On smaller screens, scroll the
+table horizontally to keep rows compact. Hover truncated text to see its full label.
 
-## Repayments already split in Actual
+## The five tabs
 
-For a loan whose payments include interest, a repayment can already have a parent payment with
-one principal child transferred to the configured loan account and an interest child assigned to
-the configured interest category. Bench recognizes the parent as one repayment and uses Actual's
-principal and interest amounts. Figures that need review remain available for your approval.
+A loan page has five tabs, in the order a loan is set up:
 
-The principal transfer's counterpart in the loan account belongs to that same repayment. It does
-not appear under **Payments not in the schedule** and is not counted as an extra payment. This
-works for splits entered before tracking was set up and for splits created by Bench. You do not
-need to change your matching rule to exclude the principal child.
+| Tab | What it is for |
+|---|---|
+| **Terms & Schedule** | The contract and the calculation: balance chart, events and the full schedule. |
+| **Link to Actual** | Connects the loan to its account in Actual and sets how interest reaches Actual. |
+| **Repayments** | One row per installment, matched to the payment that paid it, with **Apply** on each. |
+| **Loan Ledger** | The loan account in Actual, row for row, with what each row is. |
+| **Linked Assets** | The assets this loan financed, with your allocated debt and equity. |
 
-Independent transfers into the loan account that do not belong to scheduled repayments or the
-payoff appear as extra-payment suggestions. Choose **Record extra payment** and confirm before Bench changes **Terms & Schedule** or the forecast. Refunds, credits and mistaken transfers can be marked **Not an extra payment**.
+A loan that is not saved yet can use **Terms & Schedule** and **Link to Actual**; **Repayments**, **Loan Ledger** and **Linked Assets** open once it is saved.
 
-## Correcting an older extra-payment entry
+## Terms & Schedule
 
-On refresh, Bench checks the split and its linked loan-side row before calculating again. If that
-row was previously recorded as an extra payment, Bench removes its link and identifiable generated
-event from **Terms & Schedule**, saving a new revision. It does not change any Actual transaction
-or matching setting. Manually entered events remain yours to review.
+The left panel holds the contract: loan type, amount, term, start date, the interest rate and **Day count method**,
+repayment frequency, and optional features (interest-only periods, a balloon payment, an offset account, fees and
+other costs). Everything on the right is worked out from it: the monthly repayment, total repayments and interest,
+the payoff date, a balance chart, the **Events** list and the amortization schedule. Edits on a saved loan stay
+unsaved until **Save changes**; tick **Compare with saved** to see the difference an edit makes first.
 
-Save or discard pending **Terms & Schedule** edits before refreshing to allow this correction.
-When older links share a date and Bench cannot identify their generated events safely, it leaves
-them in place and shows a notice to review **Terms & Schedule**. Incomplete or inconsistent
-transfer evidence is not enough to remove an event automatically.
+**Events** change a loan between its regular repayments: **Extra payment**, **Redraw / Withdraw**, **Rate change**,
+**Fee** and **Repayment change**. Each can happen once or repeat. The **Saves** column shows the interest and time each
+event saves (or adds), worked out in date order with each on top of the ones before it, so the rows add up to the
+totals above the list.
+
+For a tracked loan the first two figures also say how many installments are paid and how much has been repaid. The
+calculation has three parts: the contract before the tracking start, what really happened
+from the Loan Ledger, and a projection from today's balance with the what-ifs you have switched on.
+
+- The chart shows **Balance in Actual** as steps on payment dates and a **Today** line. Light shading marks the
+  time before tracking started, and only appears when installments come before the tracking start.
+- **Events** lists extra principal, draws and fees from the Loan Ledger as **From Actual**; they cannot be switched
+  off. Events dated after today are **What-if** rows with an **On** switch.
+- The schedule has a **Source** column: **From Actual** up to the last real payment, blank for projected rows, and
+  **Not found in Actual** for an installment with no payment. It opens at today; **Jump to today** returns there.
+- A payment made before its due date covers that installment. It is not shown as the next payment, and the
+  projection continues from that due date, carrying the interest accrued since the payment.
+
+Hover the chart for the installment, the time elapsed since the loan started, the share repaid, the payment in that
+period (with the interest in it, and any extra payment), and, for a tracked loan, whether the figures are the contract's,
+Actual's or the projection.
+
+The chart opens **Monthly** for a loan of up to 10 years and **Yearly** for a longer one; the choice is remembered
+in this browser for a saved loan.
+
+### How this loan is calculated
+
+The **How this loan is calculated** button in the top bar opens a plain explanation of the figures: the method
+and its version, the saved revision, the results (repayment, number of repayments, total repaid, total interest and
+payoff date), the rates, term, events, due-date and lender-statement settings, and, for a tracked loan, where the
+history from Actual ends and the projection continues. A loan that cannot be calculated says why, in plain words.
+
+If the figures differ from your lender's, press **Copy diagnostics** at the bottom and paste the result into your
+report. It holds the settings, events, results and the start of the schedule, with amounts and dates, but no loan or
+account names, no payees, no Notes and no ids. **Show what will be copied** lets you read it first.
+
+### Calculation method and day count
+
+Lenders work out interest in slightly different ways, and a small difference adds up over years. The defaults suit
+most loans: daily interest, a level payment and the **Actual/365 Fixed** day count. Set the **Day count method**
+beside the interest rate (the **i** beside it opens the guide's Calculation method section); every other convention
+is under **Set calculation method**.
+
+| Day count | A year is | Common for |
+|---|---|---|
+| Actual/365 Fixed | 365 days, every year | Most mortgages and personal loans (the default) |
+| Actual/360 | 360 days, so slightly more interest | Some bank and Islamic finance products |
+| Actual/Actual (calendar year) | 365 or 366 days, by the year | Some lenders |
+
+If your lender's figures differ, compare the interest on one recent statement against the schedule, try the other
+day counts, check the first repayment date and business-day due dates, and, if they still part, record a lender
+statement (**⋯** menu → **Check against lender statement**) so Bench continues from the lender's balance.
+
+### When a loan cannot be calculated
+
+A loan whose interest is worked out **once per repayment period** cannot follow a transaction between repayment
+dates, a rate change inside a period, or an offset. Bench explains the reason in plain words wherever it appears:
+Terms & Schedule, the loans list and Needs attention, and the Repayments tab. Each reason is one of three kinds:
+
+| Kind | What to do |
+|---|---|
+| Day-by-day interest would lift it | Press **Calculate interest day by day…** in the alert (it asks first). Interest is then worked out each day and still charged with each repayment. If your lender works interest out per period, the figures may differ slightly from its statements. Nothing is saved until you save the loan. |
+| Something in the loan needs changing | Change the date, rate or repayment the message names, for example a repayment that does not cover the interest, or a date with no interest rate. |
+| Not supported yet | The kind of schedule cannot be calculated yet, for example repayments that are not on a regular schedule. |
+
+A loan linked to Actual with once-per-period interest shows the same offer on **Link to Actual**, because payments between
+repayment dates are normal when tracking real transactions. Saving a loan, or its assumptions, is refused with the same
+explanation when once-per-period interest cannot follow them.
+
+## Link to Actual
+
+Create the loan's account in Actual first: it must be **off budget** and hold only this loan. Then, on **Link to Actual**:
+
+1. **Loan and its account:** the name, the kind of loan and the off-budget account. If the loan has an offset account,
+   choose that account too.
+2. **Repayments:** transfers into the loan account count by themselves. If you record repayments as an expense in a
+   bank account instead, add a **payment rule** that finds them (up to 10 rules).
+3. **Interest:** **Split each repayment** (the usual choice) or **Lender charges interest** when the lender's own
+   interest rows arrive in the loan account. Choose the interest category, the loan payment category, and what to
+   add to each line's Notes (`#interest` on the interest line by default).
+4. **Tracking start:** the first installment Bench tracks, by installment number or due date. Earlier installments
+   count as paid as contracted and are never matched or reported missing.
+5. **Opening position:** the balance owed at the tracking start, from the calculation or from a lender statement.
+6. **Advanced:** **Ignore differences up to** (rounding) and **Mark missing after** (days late; 5 by default).
+
+Start at installment 1 when the loan account begins with the money received. When it begins with an opening balance
+part-way through the loan, start at the first installment after it. Bench compares the opening position with Actual's
+loan account just before that installment; if they differ by more than the tolerance, **Repayments** starts with one
+**Opening adjustment** you can apply or skip.
+
+Tracking is for term loans you owe, in a 2-decimal currency for now. A line of credit, a loan you made to someone
+else, or a loan in a currency with another number of decimals stays a calculation in **Terms & Schedule**.
+
+## Repayments
+
+**Repayments** lists every installment from the tracking start, newest first, matched to the payment that paid it,
+with what Bench would write. The figures above the list show **Owed in Actual**, **Bench expects** (and whether it agrees),
+the **Next payment** (the next installment nothing has paid) and what is **To do**.
+
+| Status | Means | What to do |
+|---|---|---|
+| Recorded | Actual already holds this installment as principal and interest | Nothing |
+| Unrecorded | Paid, but still one whole payment in Actual | **Apply**: one write splits it |
+| Check | Something needs a look: two payments could be it, a short payment, or Actual's balance has parted from the calculation | Open it and choose |
+| Missing | Due more than the **Mark missing after** days ago, and no payment found | Pay it, or choose the payment if Bench missed it |
+| Upcoming | Not due yet | Nothing |
+
+A payment already split in Actual, with one principal transfer to the loan account and an interest line, is
+recognized as Recorded using Actual's own amounts. Click a row, or press **Enter**, to open the details panel: it shows
+the payment in Actual, the split Bench calculated (change the principal and the interest follows), each line's Notes,
+and what the loan looks like after **Apply**. Step through rows with the arrows or **↑ ↓**. Where the interest recorded in
+Actual differs from Bench's calculation, the interest is marked with an **i** that says by how much, and the panel shows both figures.
+
+- **Apply** on a row splits that payment. Tick rows and apply the selection, or use **Apply all Unrecorded**: they run
+  in date order and stop at the first that does not apply.
+- **Undo split** puts a payment back to exactly what it was; **Edit split** changes the amounts of a split already in
+  Actual. Each is one write, like Apply.
+- **Not this payment** (the row's **⋯** menu) ignores a payment Bench matched that is not this loan's.
+- **Export CSV** (above the table) saves the rows you see, with the payment, principal, interest in Actual, interest
+  calculated by Bench, the difference between them, the balance and the status.
+- **Refresh** after you import from your bank; new payments appear as Unrecorded.
+- The pills above the list filter by status (**Unrecorded**, **Check**, **Missing**, **Recorded**), with a count beside each.
+
+## Loan Ledger
+
+The **Loan Ledger** is the loan account in Actual, row for row, with what each row is. Its balance is the debt
+Actual shows, and the calculation in Terms & Schedule follows it up to today.
+
+| Type | What it is | Effect on the calculation |
+|---|---|---|
+| Loan received | The money paid out at the start | The opening balance |
+| Opening balance | A starting balance part-way through the loan | The opening balance |
+| Repayment | The loan side of an installment (the whole payment until it is split) | Pays an installment |
+| Extra principal | Money paid in on top of the installments | Lowers the balance from its date |
+| Draw | Money taken out again, such as a redraw or top-up | Raises the balance |
+| Fee | A charge added to the loan | Raises the balance |
+| Interest charged | The lender's own interest row (**Lender charges interest**) | Paid by the repayments |
+| Adjustment | A correction, such as the opening adjustment | Sets the balance right |
+| Unclassified | Bench cannot tell | Left out until you choose a type |
+
+A type in *italics, suggested* is Bench's guess; choose one to confirm it. Types are saved in Bench only. **Add entry**
+adds an adjustment row or records a lender statement; the pencil edits a row's Notes, which is written to Actual. An
+unclassified row that adds to the debt is left out of the calculation, so Bench and Actual drift apart: make a top-up
+a Draw and a correction an Adjustment.
+
+## Linked Assets
+
+**Linked Assets** shows the assets this loan financed, such as a home or a car, with your share of the loan for each.
+Links are made from the asset, in **Assets → Linked Loans**; Bench then shows the asset's value, your allocated debt
+and your equity side by side.
+
+## What Bench writes
+
+Bench writes to Actual only when you press **Apply**, **Undo split**, **Edit split** or **Save Notes**. Saving the
+loan, its types, payment rules and lender statements never writes to Actual.
+
+| Action | In Actual |
+|---|---|
+| Apply (a split) | The payment becomes a split: a principal transfer plus an interest line. The loan-side row follows the principal. |
+| Apply (opening adjustment) | One row in the loan account, with the Notes "Opening adjustment". |
+| Undo split | The payment goes back to exactly what it was before. |
+| Edit split | The split's line amounts change. |
+| Save Notes (Loan Ledger) | That transaction's Notes. |
+
+Bench syncs with Actual before every Apply, writes one change at a time, and checks each one against Actual
+afterwards. If a check fails, nothing else runs. If the connection drops during an Apply, a
+red banner names the installment and stops further writes: check that payment in Actual, then press **The change is in
+Actual** or **It isn't**. Bench never repeats an interrupted write by itself, and never changes a reconciled
+transaction; unlock it in Actual first if it needs to be split. Archived loans are read-only.
 
 ## Deleting and recreating a loan
 
-Archiving a loan retains its repayment claims and history. To remove those claims, use
-**Delete permanently** on the archived loan and confirm its name. This deletes the loan's Bench
-records while leaving its Actual transactions as they are. A recreated loan can recognize the
-existing splits and claim those repayments again. A claim held by another existing loan still
-prevents the same transaction from being claimed twice in that role.
-If Apply reports a claim conflict, the warning names the loan holding that claim and its status.
+Archiving a loan keeps its history. **Delete permanently** on an archived loan, after you confirm its name, deletes the
+loan's Bench records and leaves its Actual transactions as they are. A recreated loan reads its loan account again.
 
-## Refresh, recovery and write safety
+## Your edits and today's date
 
-Refresh syncs Actual first and reads current offset history before calculating. It can recognize
-unambiguous existing scheduled repayments and repair stale principal-counterpart classifications
-without changing Actual. Confirmed extra payments follow changed amounts or dates with a notice;
-deleted payments or amounts that no longer reduce debt lose their identifiable generated assumption.
-Ambiguous generated events remain for review. Save or discard pending terms edits first.
+Edits to a loan that is not saved yet stay in this browser tab only, and are lost if you reload the page. Save
+the loan to keep it. If a saved loan changes while you are editing it, Bench keeps your edits and asks you to
+reload the saved version before saving over it.
 
-Select multiple applied repayments and choose **Undo selected** or **Unsplit selected** to prepare
-proposals, newest first. Review those proposals under **Needs action**, then explicitly Apply them.
-Undo restores Bench's changes, or only releases Bench's match when the split already existed in Actual.
-Unsplit is available only for recorded existing splits: it removes the split children and turns the
-whole payment, including interest, into one transfer to the loan. Bench can then propose a new split.
-Select applied changes separately from pending proposals. Preparation stops on the first refusal
-and retains proposals already prepared. A failed reversal explicitly confirmed to have written nothing
-can be selected to prepare a new proposal; interrupted or potentially written changes require review.
-Split-child ordering alone does not indicate a transaction change; changed identities or contents
-still block Apply. Bulk Apply keeps successful changes if a later step fails.
-
-Extra payments recorded from Actual are read-only in **Terms & Schedule**: their Events rows
-identify their source, and Edit and Remove are disabled. Ordinary loan saves also reject changes
-to these tracked events. To change the classification, use **Not an extra payment** in
-**Sync Repayments**. To correct the date or amount, edit the transaction in Actual and refresh.
-Manual extra-payment assumptions remain editable and removable. Resetting the simulation keeps
-tracked Actual extra payments.
-
-Each explicit **Apply**, **Undo** and interrupted-link completion requires a successful sync.
-Bulk Apply syncs once before the batch. A failed sync blocks the operation. Refresh waits for a
-running loan operation in this tab; archived loans retain history and do not allow new changes.
-
-Split and Unsplit reuse complete account/date snapshots only within the current operation, clearing
-them before every mutation. Direct read-back can use the final snapshot that passed settling;
-when that snapshot is unavailable or covers a different range, verification reads Actual again.
-Preflight, sequential writes, verification and the existing settling interval remain in place.
-
-An interrupted write stays under review. If an operation stops reporting progress for five minutes,
-Bench makes it checkable. Recovery verifies the transaction’s contents as well as its marker.
-Changed, duplicated or partially completed writes remain for review; an absent write can be proposed
-again for a new approval. Bench does not automatically repeat an interrupted Actual write.
-
-Changes to a repayment’s account, transfer destination, category or date invalidate the old tracked
-allocation. Stable transaction IDs distinguish a moved date from a deletion. Missing rows in a narrow
-date window alone do not prove deletion.
-
-## Browser drafts and calendar dates
-
-Unsaved financial drafts and status caches exist only in this tab’s memory. They survive navigation
-within the tab, but a full reload closes that memory session. Save a draft loan to retain it in
-Bench’s database. Legacy financial entries in browser storage are removed when opened. A currency
-preference may persist because it contains no loan amounts or account identifiers.
-
-The local calendar defines financial **today**, including after midnight. Audit timestamps remain
-UTC instants. When a saved loan changes while you edit, Bench preserves your edits and asks you to
-reload the saved version before saving over it. A matching-setup failure after Save leaves the loan
-saved and reports how to retry setup.
-
-## Optional Direct-mode performance diagnostics
-
-Direct Split and Unsplit read the watched accounts together using flat ActualQL queries, then
-assemble complete split groups locally in Actual’s split-line order. Children are read by parent identity, including lines moved
-outside the parent’s date or account. This reduces repeated grouped-query work while preserving
-fresh preflight reads, transfer verification, sequential writes and the settling intervals. Older
-Direct API builds without query support use the original grouped reader; HTTP reads are unchanged.
-The resulting speed depends on the budget and Actual’s query implementation.
-
-To investigate slow Split or Unsplit operations, enable these flags in the browser console before
-reloading Bench and reconnecting to the budget:
-
-```js
-localStorage.setItem("ab:debug-timing", "1");
-localStorage.setItem("ab:debug-sqlite-files", "1");
-```
-
-Reload Bench and reconnect to create the traced worker. Confirm the console says
-`Connection and VFS tracing installed`. A read-only Refresh from Actual is enough to investigate
-file opens; apply a small selection only when collecting split timings. The console reports real budget
-opens, structural-query and snapshot durations, mutation-return time, visibility polls and quiet-check
-counts. Beside Actual’s `Opened!` messages, `[actual-bench sqlite file-open]` reports only a file
-category and sequence number. `[actual-bench sqlite connection]` separately reports calls to
-`sqlite3_open` and `sqlite3_close_v2`; filesystem opens alone do not imply new connections.
-No paths, account/transaction identifiers, credentials or amounts are
-logged by these diagnostics. Categories come from the VFS filename. In the supported worker,
-`unnamed file` corresponds to SQLite’s anonymous temporary-file opens; `other named file` remains
-unclassified. Actual’s `Opened!` messages can therefore also appear during reads without a budget
-connection being reopened. The trace does not identify every temporary file’s query purpose.
-
-The optional file trace recognizes the bundled Actual API 26.10.0 worker callbacks.
-It loads a diagnostic copy of the installed vendor worker from a public asset route, then temporarily
-observes URL creation during initialization, including when the API module was already imported.
-The route reads dependency code only and never accesses budget files, credentials or the app database.
-Diagnostic asset preparation failures retain the original worker; startup explicitly reports disabled,
-unavailable or selected tracing. An unsupported
-layout runs the original worker and reports tracing unavailable. Timing remains available. Diagnostics
-keep the existing preflight, verification, serialized writes and settling intervals. Console logging
-adds overhead, so diagnostic runs are investigative rather than baseline benchmarks.
-
-To disable, remove both flags, reload Bench, and reconnect to discard the traced worker:
-
-```js
-localStorage.removeItem("ab:debug-timing");
-localStorage.removeItem("ab:debug-sqlite-files");
-```
+Bench works out **today** from your computer's calendar, including just after midnight.

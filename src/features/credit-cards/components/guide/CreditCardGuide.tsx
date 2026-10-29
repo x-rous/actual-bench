@@ -52,7 +52,7 @@ export function GuideLink({ section, children, className }: { section: GuideSect
 
 export function CreditCardGuide({ section, onSection, onClose }: { section: GuideSection; onSection: (section: GuideSection) => void; onClose: () => void }) {
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-5xl">
+    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-[73.6rem]">
       <DialogHeader className="shrink-0 border-b px-5 py-4">
         <DialogTitle className="text-sm">Credit cards guide</DialogTitle>
         <DialogDescription className="text-xs">How the workflow fits together, what every figure means, and how to record instalment plans.</DialogDescription>
@@ -68,7 +68,7 @@ export function CreditCardGuide({ section, onSection, onClose }: { section: Guid
               section === id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground")}
           >{label}</button>)}
         </nav>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
           <h2 className="mb-4 text-base font-semibold">{SECTIONS.find(([id]) => id === section)![1]}</h2>
           {section === "start" && <Start onSection={onSection} />}
           {section === "monthly" && <Monthly />}
@@ -92,11 +92,11 @@ export function Heading({ children }: { children: ReactNode }) {
 }
 
 export function Para({ children }: { children: ReactNode }) {
-  return <p className="mb-3 max-w-3xl text-xs leading-relaxed text-foreground/80">{children}</p>;
+  return <p className="mb-3 max-w-[55rem] text-xs leading-relaxed text-foreground/80">{children}</p>;
 }
 
 export function Steps({ items }: { items: [string, ReactNode][] }) {
-  return <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{items.map(([title, body], index) => <li key={title} className="flex gap-3 rounded-lg border p-3">
+  return <ol className={cn("grid gap-2 sm:grid-cols-2", items.length !== 4 && "xl:grid-cols-3")}>{items.map(([title, body], index) => <li key={title} className="flex gap-3 rounded-lg border p-3">
     <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">{index + 1}</span>
     <div className="min-w-0 text-xs">
       <p className="font-medium">{title}</p>
@@ -117,12 +117,16 @@ const Op = ({ children }: { children: ReactNode }) => <span className="text-sm f
 /** A small example table; only an Amount column is right-aligned, descriptions read left to right. */
 export function Example({ caption, head, rows }: { caption: string; head: string[]; rows: (string | ReactNode)[][] }) {
   const numeric = (index: number) => head[index] === "Amount";
-  return <table className="mb-3 w-full max-w-3xl border-collapse text-xs">
+  // A column of sentences wraps; only short cells (labels, amounts, badges) are kept on one line. Forcing a long
+  // sentence onto one line made the table wider than the dialog and squeezed the last column into a sliver.
+  const SHORT_CELL = 32;
+  const oneLine = (column: number) => column < head.length - 1 && rows.every((row) => { const cell = row[column]; return typeof cell !== "string" || cell.length <= SHORT_CELL; });
+  return <table className="mb-3 w-full max-w-[55rem] border-collapse text-xs">
     <caption className="mb-1 text-left text-[11px] text-muted-foreground">{caption}</caption>
     <thead><tr>{head.map((cell, index) => <th key={cell} scope="col"
       className={cn("border-b px-2 py-1 text-left font-medium whitespace-nowrap text-muted-foreground", numeric(index) && "text-right")}>{cell}</th>)}</tr></thead>
     <tbody>{rows.map((row, index) => <tr key={index} className="border-b border-border/60 last:border-b-0">{row.map((cell, column) => <td key={column}
-      className={cn("px-2 py-1 align-top", column < row.length - 1 && "whitespace-nowrap", numeric(column) && "text-right tabular-nums")}>{cell}</td>)}</tr>)}</tbody>
+      className={cn("px-2 py-1 align-top", oneLine(column) && "whitespace-nowrap", numeric(column) && "text-right tabular-nums")}>{cell}</td>)}</tr>)}</tbody>
   </table>;
 }
 
@@ -229,7 +233,7 @@ function Bills() {
     </Para>
     <Heading>Which bill a payment pays</Heading>
     <div role="img" aria-label="A payment pays the bill whose window contains it: from the day after the closing date until the later of the due date and the next closing date"
-      className="mb-3 max-w-3xl">
+      className="mb-3 max-w-[55rem]">
       <div className="relative h-14">
         <div className="absolute inset-x-0 top-6 h-px bg-border" />
         <div className="absolute top-4 left-[10%] h-5 w-px bg-foreground" /><span className="absolute top-0 left-[6%] text-[11px]">Closes 07 Nov</span>
@@ -328,7 +332,7 @@ function Plans() {
       </>}
       {(scenario === "own" || scenario === "shared") && <>
         <div role="img" aria-label="A booking moves the plan balance from the card to the plan account; each instalment moves it back"
-          className="mb-3 flex max-w-3xl items-center gap-3">
+          className="mb-3 flex max-w-[55rem] items-center gap-3">
           <Box label="Card (on budget)" value="Your card" />
           <div className="flex flex-1 flex-col items-center gap-1 text-[11px] text-muted-foreground">
             <span>booking: the plan balance moves out →</span>
@@ -435,7 +439,7 @@ function Glossary({ onSection }: { onSection: (section: GuideSection) => void })
   const sectionName = (id: GuideSection) => SECTIONS.find(([key]) => key === id)![1];
   return <>
     <SearchInput size="sm" className="mb-4 w-72" aria-label="Search the glossary" value={search} onValueChange={setSearch} />
-    {terms.length ? <dl className="max-w-3xl divide-y">{terms.map(({ term, definition, section }) => <div key={term} className="grid gap-1 py-2 sm:grid-cols-[220px_1fr]">
+    {terms.length ? <dl className="max-w-[55rem] divide-y">{terms.map(({ term, definition, section }) => <div key={term} className="grid gap-1 py-2 sm:grid-cols-[220px_1fr]">
       <dt className="text-xs font-medium">{term}</dt>
       <dd className="text-xs leading-relaxed text-foreground/80">
         {definition}{" "}

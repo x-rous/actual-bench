@@ -54,6 +54,19 @@ function wrap(ui: React.ReactElement) {
 beforeEach(() => { mockRows.current = []; changed.current = null; });
 
 describe("Link to Actual", () => {
+  it("sets each step off with a thin line (none above the first), and marks Advanced as optional", () => {
+    wrap(<Harness initial={{ liabilityAccountId: "loan" }} />);
+    const sections = Array.from(document.querySelectorAll("section")).filter((el) => el.querySelector("h2"));
+    expect(sections.length).toBeGreaterThanOrEqual(5);
+    // Siblings, so "first of its type" is the first step; the line above it is switched off by that variant.
+    expect(new Set(sections.map((el) => el.parentElement)).size).toBe(1);
+    for (const section of sections) expect(section).toHaveClass("border-t", "first-of-type:border-t-0");
+    const advanced = screen.getByRole("heading", { name: "Advanced" });
+    expect(advanced.parentElement).toHaveTextContent("Optional");
+    // The tag sits beside the title, not inside it, so the heading's own name stays "Advanced".
+    expect(advanced).not.toHaveTextContent("Optional");
+  });
+
   it("splits each repayment by default; lender-charged interest needs the lender's own rows in the loan account", async () => {
     wrap(<Harness initial={{ liabilityAccountId: "loan" }} />);
     const interest = screen.getByRole("radiogroup", { name: "How interest is recorded" });

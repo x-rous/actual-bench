@@ -37,6 +37,15 @@ describe("the Loans & Debt guide", () => {
     expect(screen.getByText("After: one split, two lines")).toBeInTheDocument();
   });
 
+  it("lets a long description wrap instead of widening the table past the dialog", () => {
+    render(<Harness initial="repayments" />);
+    const long = screen.getByText(/Something needs a look: two payments could be it/);
+    expect(long.closest("td")).not.toHaveClass("whitespace-nowrap");
+    // A short label column still stays on one line.
+    expect(screen.getByText("Recorded").closest("td")).toHaveClass("whitespace-nowrap");
+    expect(screen.getByRole("heading", { level: 2, name: "Repayments" }).parentElement).toHaveClass("min-w-0");
+  });
+
   it("opens on the section for the tab you are on", () => {
     expect(guideSectionForLoanTab("calculation")).toBe("calculator");
     expect(guideSectionForLoanTab("setup")).toBe("link");

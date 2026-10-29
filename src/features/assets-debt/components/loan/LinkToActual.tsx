@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PillGroup } from "@/components/ui/pill-group";
+import { PILL_GROUP_CLASS, PillGroup, pillClass } from "@/components/ui/pill-group";
 import { Switch } from "@/components/ui/switch";
 import { getTransport } from "@/lib/actual";
 import type { SyncSourceTransaction } from "@/lib/actual/transport";
@@ -29,12 +29,13 @@ import { AccountField, CategoryField, DateField, IntegerField, MoneyField, Selec
 const dt = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 const RECEIVABLE = "loan-receivable";
 
-function Section({ n, done, title, lead, children }: { n: string; done?: boolean; title: string; lead?: string; children: React.ReactNode }) {
+/** One step of the page. Every step after the first is set off by a thin line above it. */
+function Section({ n, done, title, lead, optional, children }: { n: string; done?: boolean; title: string; lead?: string; /** Shown as a small "Optional" tag beside the title. */ optional?: boolean; children: React.ReactNode }) {
   return (
-    <section className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3">
+    <section className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 border-t border-border pt-5 first-of-type:border-t-0 first-of-type:pt-0">
       <span aria-hidden className={cn("mt-0.5 flex size-6 items-center justify-center rounded-full border text-xs font-semibold", done && "border-transparent bg-emerald-600 text-white dark:bg-emerald-500")}>{done ? <Check className="size-3.5" /> : n}</span>
       <div className="flex min-w-0 flex-col gap-2">
-        <div><h2 className="text-sm font-semibold">{title}</h2>{lead ? <p className="text-xs text-muted-foreground">{lead}</p> : null}</div>
+        <div><div className="flex items-baseline gap-2"><h2 className="text-sm font-semibold">{title}</h2>{optional ? <span className="text-[11px] text-muted-foreground">Optional</span> : null}</div>{lead ? <p className="text-xs text-muted-foreground">{lead}</p> : null}</div>
         {children}
       </div>
     </section>
@@ -128,13 +129,14 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto xl:grid-cols-[minmax(0,1fr)_440px]">
-      <div className="flex flex-col gap-6 px-6 py-5">
+      <div className="flex flex-col gap-5 px-6 py-5">
         <Section n="1" done={!!loan?.offBudget && !!tracking.name.trim() && sim.offsets.every((o) => !!tracking.offsetAccountMap[o.placeholderAccountId])} title="Loan and its account" lead="The off-budget Actual account that holds this debt. One loan per account.">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <TextField label="Name" value={tracking.name} onChange={(v) => set({ name: v })} issue={issue("name")} placeholder="Home loan" />
             <SelectField label="Kind of loan" value={tracking.debtType} options={DEBT_TYPE_OPTIONS.filter((o) => o.value !== RECEIVABLE && o.value !== "heloc")} onChange={(v) => set({ debtType: v as TrackingState["debtType"] })} />
             <AccountField {...accountProps} label="Loan account" filter={(a: { offBudget?: boolean }) => !!a.offBudget} value={tracking.liabilityAccountId ?? ""} onChange={(v) => set({ liabilityAccountId: v || null, trackingStartDueDate: null })} issue={issue("liabilityAccountId")} hint={noOffBudget ? "There is no off-budget account yet. Create one in Accounts, then choose it here." : "Off-budget accounts only: Actual keeps a loan off the budget."} />
           </div>
+          {sim.minorDigits !== 2 ? <p role="note" className="rounded-md border border-amber-300 bg-amber-50/60 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">Tracking in Actual works with 2-decimal currencies for now; this loan uses {sim.minorDigits}. Its calculation in Terms &amp; Schedule is not affected.</p> : null}
           {sim.profile.accrual === "per-period" && tracking.liabilityAccountId && setSimulation ? (
             <div role="note" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
               <p className="min-w-0 flex-1">
@@ -171,11 +173,11 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
         </Section>
 
         <Section n="3" done={!!interest?.categoryId} title="Interest" lead="How interest reaches Actual.">
-          <div role="radiogroup" aria-label="How interest is recorded" className="flex w-fit flex-wrap gap-1 rounded-lg border p-1">
+          <div role="radiogroup" aria-label="How interest is recorded" className={cn(PILL_GROUP_CLASS, "h-8 w-fit flex-wrap items-center")}>
             {([["embedded-interest", "Split each repayment"], ["separate-interest", "Lender charges interest into the loan account"]] as const).map(([value, label]) => {
               const disabled = value === "separate-interest" && !lenderCharged && !(scan && scan.lenderCharges > 0);
               return <button key={value} type="button" role="radio" aria-checked={tracking.lenderPattern === value} disabled={disabled} title={disabled ? "Needs the lender's own interest rows in the loan account" : undefined}
-                onClick={() => set({ lenderPattern: value })} className={cn("rounded-md px-3 py-1.5 text-xs", tracking.lenderPattern === value ? "bg-primary text-primary-foreground" : "text-muted-foreground disabled:opacity-50")}>{label}</button>;
+                onClick={() => set({ lenderPattern: value })} className={cn(pillClass(tracking.lenderPattern === value), "disabled:pointer-events-none disabled:opacity-50")}>{label}</button>;
             })}
           </div>
           <p className="text-xs text-muted-foreground">{lenderCharged ? "Repayments stay whole transfers; the lender's interest rows in the loan account carry the interest." : "Bench splits each repayment into a principal transfer to the loan account and an interest line."}</p>
@@ -247,7 +249,7 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
           )}
         </Section>
 
-        <Section n="–" title="Advanced">
+        <Section n="–" title="Advanced" optional>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
             <MoneyField label="Ignore differences up to" valueMinor={tolerance} minorDigits={digits} fixedDecimals onChange={(m) => set({ driftToleranceMinor: m })} hint="In a payment amount or the loan balance (rounding)." />
             <IntegerField label="Mark missing after" suffix="days late" value={tracking.missingGraceDays} onChange={(n) => set({ missingGraceDays: n ?? 5 })} hint="With no payment found. A later payment is still matched." />
