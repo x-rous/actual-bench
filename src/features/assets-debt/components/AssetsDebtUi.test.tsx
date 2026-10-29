@@ -128,6 +128,18 @@ it("describes extra-transaction impact without negative saved values", () => {
 
 describe("the Loans & Debt page (rev 4)", () => {
   withViewport();
+  it("centers a first-loan prompt while keeping the list toolbar available", async () => {
+    mocked.listDebts.mockResolvedValue([]);
+    mocked.listNeedsAttention.mockResolvedValue([]);
+    wrap(<DebtListView />);
+
+    expect(await screen.findByRole("region", { name: "No loans yet" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "No loans yet" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Add loan" })).toHaveAttribute("href", "/loans/new");
+    expect(screen.getByRole("button", { name: "How loans work" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Search loans")).toBeInTheDocument();
+  });
+
   it("has no Assets & Debt tabs; a Needs attention filter counts the loans that need something, and such a row opens where it can be acted on", async () => {
     mocked.listDebts.mockResolvedValue([summary(1, { name: "HSBC" }), summary(2, { name: "Car" })]);
     mocked.listNeedsAttention.mockResolvedValue([{ subjectKind: "debt", id: "d1", name: "HSBC", reasons: [{ code: "interrupted", count: 3 }] }]);
@@ -961,7 +973,7 @@ describe("an existing loan page", () => {
         today: "2024-06-15", loading: false, refreshing: false, error: null, refresh: async () => {}, reloadBundle: async () => {},
       };
       wrap(<LoanView id={detail.debt.id} />);
-      await screen.findByText(/Tracked/);
+      await screen.findAllByRole("columnheader", { name: "Source" });
       expect(screen.queryByText(/^Next: installment/)).toBeNull();
       for (const [amount, date] of [["100", "03/01/2024"], ["200", "09/01/2024"], ["300", "10/01/2024"]]) {
         fireEvent.click(await screen.findByRole("button", { name: "Extra payment" }));
@@ -985,14 +997,14 @@ describe("an existing loan page", () => {
   it("Calculation: loads the saved loan, marks edits unsaved, discards them, and saves only on Save changes", async () => {
     await withView("calculation", async () => {
       wrap(<LoanView id={detail.debt.id} />);
-      expect(await screen.findByText("Not tracked")).toBeInTheDocument();
+      expect(await screen.findByText(/^Revision \d+$/)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
       await waitFor(() => expect(screen.getByText("Payoff date").nextSibling).toHaveTextContent("01 Jan 2027"), WAIT);
 
       type("Interest rate", "5");
       expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
-      expect(await screen.findByText("Not tracked")).toBeInTheDocument();
+      expect(await screen.findByText(/^Revision \d+$/)).toBeInTheDocument();
       expect(screen.getByLabelText("Interest rate")).toHaveValue("6");
       expect(mocked.updateDebt).not.toHaveBeenCalled();
 
@@ -1010,7 +1022,7 @@ describe("an existing loan page", () => {
   it("preserves unsaved edits when the saved loan changes and allows explicit reload", async () => {
     await withView("calculation", async () => {
       const { client } = wrap(<LoanView id={detail.debt.id} />);
-      await screen.findByText("Not tracked");
+      await screen.findByText(/^Revision \d+$/);
       type("Interest rate", "5");
       await act(async () => {
         client.setQueryData(["assets-debt", "debt", detail.debt.id], { ...detail, debt: { ...detail.debt, name: "Updated elsewhere", currentRevision: detail.debt.currentRevision + 1 } });
@@ -1029,12 +1041,31 @@ describe("an existing loan page", () => {
       let finish!: (next: typeof detail) => void;
       mocked.updateDebt.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
       wrap(<LoanView id={detail.debt.id} />);
-      await screen.findByText("Not tracked");
+      await screen.findByText(/^Revision \d+$/);
       type("Interest rate", "5");
       fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
       expect(await screen.findByRole("button", { name: "Saving loan revision…" })).toBeDisabled();
       await act(async () => { finish(detail); });
       await screen.findByRole("button", { name: "Save changes" });
+    });
+  });
+
+  it("a tracked loan cannot be reset, and its chip shows the revision", async () => {
+    await withView("calculation", async () => {
+      mockTracking.current = {
+        tracked: true, debt: { trackingStartDueDate: "2024-02-01" }, bundle: { rules: [], entries: [], writes: [], openingStatement: null, anchors: [] }, reads: { transferPayeeByAccount: {} },
+        result: { ok: true, installments: [], events: [], ledger: [], opening: { date: "2024-01-01", principalMinor: 3_000_000 }, anchor: { date: "2024-06-01", principalMinor: 2_950_000, scheduledPaymentMinor: 91_000 },
+          before: { count: 0 }, openingAdjustment: null, figures: { owedInActualMinor: 2_950_000, nextPayment: { dueDate: "2024-07-01", no: 6, amountMinor: 91_000 }, counts: { unrecorded: 0, check: 0, missing: 0, recorded: 0, upcoming: 0 } } },
+        today: "2024-06-15", loading: false, refreshing: false, error: null, refresh: async () => {}, reloadBundle: async () => {},
+      };
+      wrap(<LoanView id={detail.debt.id} />);
+      await screen.findAllByRole("columnheader", { name: "Source" });
+      expect(screen.getByText(/^Revision \d+$/)).toBeInTheDocument();
+      expect(screen.queryByText(/Tracked from installment/)).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "More loan actions" }));
+      expect(await screen.findByRole("menuitem", { name: "Archive loan" })).toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: "Reset loan" })).toBeNull();
+      mockTracking.current = null;
     });
   });
 

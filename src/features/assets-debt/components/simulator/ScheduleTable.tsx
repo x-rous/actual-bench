@@ -37,9 +37,13 @@ const VIEWS: { id: ScheduleView; label: string }[] = [
 ];
 
 /** A row's source on a loan tracked in Actual (design spec 06 §7.6): before tracking, from Actual, or not found there. */
-export function scheduleSource(period: string, tracked: { startDate: string; today: string; missingDueDates: readonly string[]; /** The last real event: later rows are the projection. Defaults to today. */ anchorDate?: string }): string {
+export function scheduleSource(period: string, tracked: { startDate: string; today: string; missingDueDates: readonly string[]; /** The last real event: later rows are the projection. Defaults to today. */ anchorDate?: string; /** How many installments precede the tracking start. */ installmentsBefore?: number }, paymentNumberTo?: number | null): string {
   const length = period.length;
-  if (period < tracked.startDate.slice(0, length)) return "Before tracking";
+  const before = tracked.installmentsBefore;
+  // An installment paid early lands in the month before its due date, so the installment number decides, not the month.
+  if (before === 0) { /* tracked from the first installment: nothing is before tracking */ }
+  else if (before !== undefined && paymentNumberTo != null) { if (paymentNumberTo <= before) return "Before tracking"; }
+  else if (period < tracked.startDate.slice(0, length)) return "Before tracking";
   if (period > tracked.today.slice(0, length)) return "";
   if (tracked.missingDueDates.some((d) => d.slice(0, length) === period)) return "Not found in Actual";
   // A month that has only projected payments (today's month, before that payment is made) is not from Actual yet.
@@ -48,7 +52,7 @@ export function scheduleSource(period: string, tracked: { startDate: string; tod
 
 export function ScheduleTable({ events, profile, startDate, digits, tracked, today }: { events: readonly DebtProjectionEvent[]; profile: Pick<CalculationProfile, "chargeFrequency">; startDate: string; digits: number;
   /** For Jump to today. */ today?: string;
-  /** A loan tracked in Actual: a Source column, and the table opens at today. */ tracked?: { startDate: string; today: string; missingDueDates: readonly string[]; anchorDate?: string } | null }) {
+  /** A loan tracked in Actual: a Source column, and the table opens at today. */ tracked?: { startDate: string; today: string; missingDueDates: readonly string[]; anchorDate?: string; installmentsBefore?: number } | null }) {
   "use no memo";
   const [view, setView] = useState<ScheduleView>("month");
   const rows = useMemo(() => aggregateSchedule(events, view), [events, view]);
@@ -206,7 +210,7 @@ export function ScheduleTable({ events, profile, startDate, digits, tracked, tod
                     </span>
                   ))}
                   {tracked ? (() => {
-                    const source = scheduleSource(r.period, tracked);
+                    const source = scheduleSource(r.period, tracked, r.paymentNumberTo);
                     return <span role="cell" className="pl-3 text-left whitespace-nowrap">{source === "From Actual" ? <span className="inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[11px]">From Actual</span> : source === "Not found in Actual" ? <span className="inline-block rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] text-destructive">Not found in Actual</span> : <span className="text-muted-foreground">{source}</span>}</span>;
                   })() : null}
                 </div>

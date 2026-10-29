@@ -356,13 +356,12 @@ function LoanEditor({ id }: { id: string }) {
   const setTab = (next: WorkspaceTab) => router.replace(`${pathname}?view=${workspaceTabSlug(next)}`);
   const draft = detail.debt.status === "draft";
   const result = loanTracking.result?.ok ? loanTracking.result : null;
-  const startNo = result ? result.before.count + 1 : null;
   const state = readOnly
     ? "Archived: read-only"
     : dirty ? "Unsaved changes"
       : draft ? "Draft"
         : detail.paidOff ? `Paid off ${detail.paidOff.paidDate}`
-          : tracked ? (startNo ? `Tracked from installment ${startNo}` : "Tracked in Actual") : "Not tracked";
+          : `Revision ${detail.debt.currentRevision}`;
   const toDo = result ? result.figures.counts.unrecorded + result.figures.counts.check + result.figures.counts.missing + (result.openingAdjustment ? 1 : 0) : 0;
   const unclassified = result ? result.ledger.filter((l) => l.type === "unclassified").length : 0;
   const attention = { ...(toDo ? { activity: `${toDo} to do` } : {}), ...(unclassified ? { ledger: `${unclassified} unclassified` } : {}) };
@@ -389,7 +388,8 @@ function LoanEditor({ id }: { id: string }) {
       ) : null}
     </>
   );
-  const resetItem = tab === "calculation" && !readOnly ? [{ label: "Reset loan", destructive: true, onSelect: () => setResetOpen(true) }] : [];
+  // A tracked loan cannot be reset: saving the sample loan over its terms would break the link to its history in Actual.
+  const resetItem = tab === "calculation" && !readOnly && !tracked ? [{ label: "Reset loan", destructive: true, onSelect: () => setResetOpen(true) }] : [];
   const statementItem = tracked && !readOnly ? [{ label: "Check against lender statement", onSelect: () => ws.setDialog("statement") }] : [];
   const menu = readOnly ? [{ label: "Delete permanently", destructive: true, onSelect: () => { setTyped(""); setDeleting(true); } }] : [...resetItem, ...statementItem, {
     label: detail.debt.status === "draft" ? "Delete draft loan" : "Archive loan",

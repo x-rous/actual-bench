@@ -86,7 +86,7 @@ it.each([
     if (visible) expect(button).toBeInTheDocument();
     else expect(button).not.toBeInTheDocument();
   }
-  expect(screen.getByRole("button", { name: "Refresh data from server" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Refresh budget from Actual" })).toBeInTheDocument();
   view.unmount();
 });
 
@@ -134,6 +134,13 @@ it("exposes app help and theme in the top bar", async () => {
   expect(within(menu).getByRole("menuitem", { name: "Documentation" })).toBeInTheDocument();
   fireEvent.click(within(menu).getByRole("menuitem", { name: "Keyboard shortcuts" }));
   expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  view.unmount();
+});
+
+it("keeps experimental status inside the page-information popover", () => {
+  const view = setup();
+  expect(screen.queryByText("Experimental")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "About Credit Cards (Experimental)" })).toBeInTheDocument();
   view.unmount();
 });
 

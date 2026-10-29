@@ -224,7 +224,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
           <DropdownMenu>
             <DropdownMenuTrigger aria-label="More schedule actions" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "px-2")}><MoreHorizontal aria-hidden="true" /></DropdownMenuTrigger>
             <LoanMenuContent>
-              <DropdownMenuItem variant="destructive" disabled={readOnly} onClick={() => (resetMeaningful ? setResetOpen(true) : change(resetValue))}>
+              <DropdownMenuItem variant="destructive" disabled={readOnly || !!tracked} onClick={() => (resetMeaningful ? setResetOpen(true) : change(resetValue))}>
                 <RotateCcw aria-hidden="true" />
                 Reset loan
               </DropdownMenuItem>
@@ -280,13 +280,13 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
             <>
               <EventsSection sim={sim} current={head} baseline={impactBaseline} savings={savings} onEdit={setExtraEditor} onRemove={removeExtra} onEditRate={setRateEditor} onRemoveRate={removeRate}
                 tracked={tracked ? {
-                  startDate: tracked.startDate, today: tracked.today, ledgerEvents: tracked.ledgerEvents,
+                  startDate: tracked.startDate, installmentsBefore: tracked.installmentsBefore, today: tracked.today, ledgerEvents: tracked.ledgerEvents,
                   fromActual: [savings.fromActualAfter, contractHead], whatIfs: [head, impactBaseline],
                   onToggle: (a) => propose({ ...sim, assumptions: sim.assumptions.map((x) => (x.key === a.key ? { ...x, enabled: x.enabled === false } : x)) }),
                   onOpenLedger: tracked.onOpenLedger,
                 } : undefined} />
               <div data-testid="schedule-region" className="pt-3">
-                <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date } : null} />
+                <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore } : null} />
               </div>
             </>
           ) : null}
