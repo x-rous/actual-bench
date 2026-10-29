@@ -6,7 +6,7 @@ import { createDebtConfiguration, getDebtDetail, type DebtSummary } from "@/lib/
 import { directory as fixtureDirectory, tempDebtDb } from "@/lib/assets-debt/testing/debtFixtures";
 import * as api from "../lib/debtsApi";
 import { createSyncRunner } from "../lib/projectionRunner";
-import { newSimulation, newTracking, statesToSaveInput, type SimulationState, type TrackingState } from "../lib/simulatorModel";
+import { newSimulation, newTracking, statesToSaveInput, type SimulationState } from "../lib/simulatorModel";
 import { DAILY_MONTHLY_CHARGE, offsetOf, project, sim } from "../lib/simulatorTestKit";
 import { ProjectionRunnerContext } from "../lib/useLiveProjection";
 import { DebtListView } from "./AssetsDebtViews";
@@ -16,8 +16,6 @@ import { SAVE_BOUNDARY } from "./saveBoundary";
 import { ScheduleTable } from "./simulator/ScheduleTable";
 import { NOT_ADVICE, SimulatorView } from "./simulator/SimulatorView";
 import { extraImpact } from "./simulator/ExtraTransactionsSection";
-import { TrackingSetup } from "./tracking/TrackingSetup";
-import { engineLine } from "../lib/strategyAdvice";
 
 /**
  * The Assets & Debt workspace UI (RD-084 P1.3, P1.3b T204–T216, T219, T220).
@@ -43,8 +41,12 @@ jest.mock("next/navigation", () => ({ usePathname: () => "/loans", useRouter: ()
 jest.mock("next/dynamic", () => () => function ChartStub({ visible }: { visible: string[] }) {
   return <div data-testid="chart" data-series={visible.join(",")} />;
 });
+const mockTracking: { current: unknown } = { current: null };
+jest.mock("../lib/useLoanTracking", () => {
+  const actual = jest.requireActual("../lib/useLoanTracking");
+  return { ...actual, useLoanTracking: (detail: unknown) => (mockTracking.current ?? actual.useLoanTracking(detail)) };
+});
 jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() } }));
-jest.mock("../lib/postingsApi", () => ({ listPostings: jest.fn(async () => []), previewPostings: jest.fn(async () => ({ ok: true, postings: [], notices: [], driftMaterial: false })), declinePosting: jest.fn(), proposeReversal: jest.fn(), overrideSplit: jest.fn(), reproducePosting: jest.fn() }));
 
 const mocked = api as jest.Mocked<typeof api>;
 const WAIT = { timeout: 8000 };
@@ -128,13 +130,13 @@ describe("the Loans & Debt page (rev 4)", () => {
   withViewport();
   it("has no Assets & Debt tabs; a Needs attention filter counts the loans that need something, and such a row opens where it can be acted on", async () => {
     mocked.listDebts.mockResolvedValue([summary(1, { name: "HSBC" }), summary(2, { name: "Car" })]);
-    mocked.listNeedsAttention.mockResolvedValue([{ subjectKind: "debt", id: "d1", name: "HSBC", filter: "action", reasons: [{ code: "review", count: 3 }] }]);
+    mocked.listNeedsAttention.mockResolvedValue([{ subjectKind: "debt", id: "d1", name: "HSBC", reasons: [{ code: "interrupted", count: 3 }] }]);
     wrap(<DebtListView />);
     expect(await screen.findByRole("button", { name: "Needs attention 1" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByRole("navigation", { name: "Assets & Debt sections" })).toBeNull();
     const hsbc = await screen.findByRole("link", { name: /HSBC/ });
-    expect(hsbc.closest('[role="row"]')).toHaveTextContent("3 changes to review");
-    expect(hsbc).toHaveAttribute("href", "/loans/d1?view=repayments&filter=action");
+    expect(hsbc.closest('[role="row"]')).toHaveTextContent("3 writes to Actual not finished");
+    expect(hsbc).toHaveAttribute("href", "/loans/d1?view=repayments");
     expect(screen.getByRole("link", { name: /Car/ })).toHaveAttribute("href", "/loans/d2");
   });
 });
@@ -186,14 +188,14 @@ describe("Loans & Debt list", () => {
     mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 2, totalPayments: 3, next: { date: "2999-04-01", amountMinor: 50_000 }, interestToDateMinor: 18_000, totalInterestMinor: 20_000, calculatedBalanceMinor: 20_000, payoffDate: "2999-04-01", regularRepaymentMinor: 50_000, dueSoonMinor: 0, dueSoonCount: 0 } });
     wrap(<DebtList debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null })]} />);
     const row = screen.getAllByRole("row")[1];
-    await waitFor(() => expect(row).toHaveTextContent("2 recorded · 1 scheduled left"));
+    await waitFor(() => expect(row).toHaveTextContent("2 due so far · 1 left"));
     const cells = within(row).getAllByRole("cell");
     expect(cells[3]).toHaveTextContent("500.00");
-    expect(cells[3]).not.toHaveTextContent(/left|recorded|payments/);
-    expect(cells[4]).toHaveTextContent("2 recorded · 1 scheduled left");
+    expect(cells[3]).not.toHaveTextContent(/left|so far|payments/);
+    expect(cells[4]).toHaveTextContent("2 due so far · 1 left");
     expect(row).toHaveTextContent("200.00");
     expect(row).toHaveTextContent("(calculated)");
-    expect(row).toHaveTextContent("180.00 recorded");
+    expect(row).toHaveTextContent("180.00 to date");
     expect(row).toHaveTextContent("Forecast from");
     expect(within(row).getByRole("progressbar", { name: "Principal paid for Loan 1" })).toBeInTheDocument();
   });
@@ -224,14 +226,66 @@ describe("Loans & Debt list", () => {
   });
 
   it("says what each loan needs, in words, next to its status", () => {
-    wrap(<DebtList debts={[summary(1), summary(2)]} attention={{ d1: "31 changes to review" }} />);
+    wrap(<DebtList debts={[summary(1), summary(2)]} attention={{ d1: "2 writes to Actual not finished: check Actual" }} />);
     const [first, second] = screen.getAllByRole("row").slice(1);
-    expect(first).toHaveTextContent("31 changes to review");
-    expect(second).not.toHaveTextContent("to review");
+    expect(first).toHaveTextContent("2 writes to Actual not finished");
+    expect(second).not.toHaveTextContent("not finished");
   });
 });
 
 describe("the simulator workspace", () => {
+  it("each extra payment shows what it saves, in date order, adding up to the Events total", async () => {
+    const extra = (key: string, date: string, amountMinor: number) => ({ key, kind: "extra-repayment" as const, effectiveFrom: date, recurrence: null, amountMinor, feeTreatment: null, offsetAccountId: null, note: null });
+    wrap(<Harness initial={shortLoan({ assumptions: [extra("b", "2025-06-01", 300_000), extra("a", "2024-06-01", 300_000)] })} />);
+    const table = await screen.findByRole("table", { name: "Events" }, WAIT);
+    const header = within(table).getAllByRole("columnheader").map((c) => c.textContent);
+    const at = header.indexOf("Saves");
+    expect(at).toBeGreaterThan(0);
+    const cells = () => within(table).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[at].textContent ?? "");
+    await waitFor(() => expect(cells().every((c) => /^[\d,]+\.\d\d/.test(c))).toBe(true), WAIT);
+    const amount = (text: string) => Number(text.match(/[\d,]+\.\d\d/)![0].replace(/,/g, ""));
+    const total = amount(within(screen.getByTestId("events-impact")).getByText(/^[\d,]+\.\d\d$/).textContent!);
+    const [first, second] = cells().map(amount);
+    expect(first).toBeGreaterThan(second);
+    expect(Math.round((first + second) * 100)).toBe(Math.round(total * 100));
+  });
+
+  it("greys out the unavailable day count without its reason, and its (i) opens the guide on Calculation method", async () => {
+    wrap(<Harness initial={shortLoan()} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Day count method" }));
+    const unavailable = await screen.findByRole("option", { name: "Monthly 30/360 with actual-day allocation" });
+    expect(unavailable).toHaveAttribute("aria-disabled", "true");
+    fireEvent.keyDown(unavailable, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "About the day count method in the guide" }));
+    expect(await screen.findByRole("button", { name: "Calculation method", current: "page" })).toBeInTheDocument();
+  });
+
+  it("sets the day count beside the interest rate, and a different day count changes the interest", async () => {
+    wrap(<Harness initial={shortLoan()} />);
+    const interest = () => screen.getByText("Total interest").nextSibling?.textContent ?? "";
+    await waitFor(() => expect(interest()).not.toBe("–"), WAIT);
+    const before = interest();
+    const dayCount = screen.getByRole("combobox", { name: "Day count method" });
+    expect(dayCount).toHaveTextContent("Actual/365 Fixed");
+    fireEvent.click(dayCount);
+    const option = await screen.findByRole("option", { name: "Actual/360" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.pointerUp(option, { pointerType: "mouse" });
+    fireEvent.mouseUp(option, { button: 0 });
+    fireEvent.click(option);
+    await waitFor(() => expect(interest()).not.toBe(before), WAIT);
+    expect(screen.getByRole("button", { name: "Open calculation method settings" })).not.toHaveTextContent("Actual/360");
+  });
+
+  it("the chart opens monthly for a loan of up to 10 years and yearly for a longer one", async () => {
+    const { unmount } = wrap(<Harness initial={shortLoan()} />);
+    const detail = await screen.findByRole("radiogroup", { name: "Chart detail" }, WAIT);
+    expect(within(detail).getByRole("radio", { name: "Monthly" })).toHaveAttribute("aria-checked", "true");
+    unmount();
+    wrap(<Harness initial={shortLoan({ termMonths: 300 })} />);
+    expect(within(await screen.findByRole("radiogroup", { name: "Chart detail" }, WAIT)).getByRole("radio", { name: "Yearly" })).toHaveAttribute("aria-checked", "true");
+  });
+
   withViewport();
   beforeEach(() => jest.clearAllMocks());
 
@@ -301,14 +355,11 @@ describe("the simulator workspace", () => {
     const heading = within(events).getByRole("heading", { name: "Events" });
     const description = within(events).getByText("Additional payments, deposits, withdrawals, fees, rates, loan, and offset changes.");
     expect(heading.parentElement).toContainElement(description);
-    for (const action of ["Extra payment", "Redraw / Withdraw", "Rate change"]) expect(within(events).getByRole("button", { name: action })).toBeInTheDocument();
-    expect(within(events).queryByRole("button", { name: "Fee" })).toBeNull();
+    // Every kind of event has its own button; no More menu (owner decision 2026-10-28).
+    for (const action of ["Extra payment", "Redraw / Withdraw", "Rate change", "Fee", "Repayment change"]) expect(within(events).getByRole("button", { name: action })).toBeInTheDocument();
+    expect(within(events).queryByRole("button", { name: "More" })).toBeNull();
     expect(within(events).getByRole("button", { name: "Add event" })).toHaveClass("md:hidden");
     expect(within(events).getByRole("button", { name: "Extra payment" }).parentElement).toHaveClass("hidden", "md:flex");
-    fireEvent.click(within(events).getByRole("button", { name: "More" }));
-    expect(await screen.findByRole("menuitem", { name: "Fee" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Repayment change" })).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole("menuitem", { name: "Fee" }), { key: "Escape" });
     const table = await within(events).findByRole("table", { name: "Events" }, WAIT);
     const rows = within(table).getAllByRole("row");
     expect(rows[1]).toHaveTextContent(/01 Mar 2024\s*Rate change\s*6% → 7%/);
@@ -812,49 +863,6 @@ describe("the schedule (O2 rate column, O5 labels)", () => {
   });
 });
 
-describe("tracking setup", () => {
-  function Tracking({ initial }: { initial: TrackingState }) {
-    const [t, setT] = useState(initial);
-    return <TrackingSetup sim={shortLoan()} tracking={t} setTracking={setT} directory={DIRECTORY} issues={[]} />;
-  }
-
-  it("asks how the lender records interest in plain words, with nothing chosen for the person", () => {
-    render(<Tracking initial={newTracking(shortLoan())} />);
-    const group = screen.getByRole("group", { name: "Your lender statement shows interest" });
-    const choices = within(group).getAllByRole("button");
-    expect(choices.map((b) => b.textContent)).toEqual(["Inside each repayment", "As its own transaction"]);
-    expect(choices.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "false"]);
-    fireEvent.click(choices[0]);
-    expect(within(group).getByRole("button", { name: "Inside each repayment" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByText(/Pattern [AB]/)).toBeNull();
-  });
-
-  it("is two columns of loan settings, edited in place: no dialog, and who owes the money comes from the kind of loan", () => {
-    render(<Tracking initial={{ ...newTracking(shortLoan()), liabilityAccountId: "loan", paymentAccountId: "sav" }} />);
-    expect(screen.queryByRole("button", { name: /Edit how repayments are recorded/ })).toBeNull();
-    expect(screen.queryByText("Who owes the money?")).toBeNull();
-    expect(screen.queryByText(/Calculation engine/)).toBeNull();
-    const table = screen.getByRole("table", { name: "How each part of a repayment is recorded" });
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Part", "Goes to", "Category", "Note on the line"]);
-    expect(within(table).getAllByRole("rowheader").map((h) => h.textContent)).toEqual(["Principal", "Interest"]);
-    expect(within(table).getByText(/^Transfer to /)).toBeInTheDocument();
-    expect(screen.getByText(/The loan payment category is used whenever a repayment, or its principal part, leaves your budget/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Loan account")).toBeInTheDocument();
-  });
-
-  it("asks for an existing category only when the accounts cross the budget boundary, and never offers to create one", () => {
-    render(<Tracking initial={{ ...newTracking(shortLoan()), liabilityAccountId: "loan", paymentAccountId: "sav" }} />);
-    expect(screen.getByText("Loan payment category")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /create|new category/i })).toBeNull();
-  });
-
-  it("does not offer a calculation engine choice: the engine follows the calculation method", () => {
-    render(<Tracking initial={newTracking(shortLoan())} />);
-    expect(screen.queryByText(/An Actual formula rule/)).toBeNull();
-    expect(engineLine(shortLoan())).toMatch(/^Kept in Actual by Actual Bench, /);
-  });
-});
-
 describe("the new-loan flow", () => {
   withViewport();
   beforeEach(() => {
@@ -866,9 +874,9 @@ describe("the new-loan flow", () => {
     wrap(<NewLoanView />);
     await screen.findByLabelText("Loan amount");
     const sections = screen.getByRole("navigation", { name: "Loan sections" });
-    expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Terms & Schedule", "Link to Actual", "Sync Repayments"]);
+    expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Terms & Schedule", "Link to Actual", "Repayments", "Loan Ledger", "Linked Assets"]);
     expect(within(sections).getByRole("button", { name: "Terms & Schedule" })).toHaveAttribute("aria-current", "page");
-    expect(within(sections).getByRole("button", { name: "Sync Repayments" })).toBeDisabled();
+    for (const name of ["Repayments", "Loan Ledger", "Linked Assets"]) expect(within(sections).getByRole("button", { name })).toBeDisabled();
     expect(screen.getByText("Not saved yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Loans & Debt/ })).toBeInTheDocument();
     const how = screen.getByRole("button", { name: "How this loan is calculated" });
@@ -888,10 +896,10 @@ describe("the new-loan flow", () => {
     expect(next.querySelector(".lucide-arrow-right")).not.toBeNull();
     await waitFor(() => expect(next).toBeEnabled(), WAIT);
     fireEvent.click(next);
-    expect(await screen.findByLabelText("Setup checklist")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Loan and its account" })).toBeInTheDocument();
     expect(screen.getByText(new RegExp(SAVE_BOUNDARY.replace(/[.]/g, "\\.")))).toBeInTheDocument();
     expect(SAVE_BOUNDARY).toBe("Saving this loan does not create or modify financial transactions in Actual.");
-    expect(screen.getByText(/Required once the loan is saved/)).toBeInTheDocument();
+    expect(screen.getByText("Payment rules can be added once the loan is saved.")).toBeInTheDocument();
     // The loan settings are not complete yet, so the save keeps it as a draft to finish later.
     expect(screen.getByRole("button", { name: "Save as draft" })).toBeInTheDocument();
     expect(mocked.createDebt).not.toHaveBeenCalled();
@@ -931,7 +939,7 @@ describe("an existing loan page", () => {
     mocked.getDebt.mockResolvedValue(detail);
     mocked.updateDebt.mockImplementation(async () => ({ ...detail, debt: { ...detail.debt, currentRevision: 2 } }));
   });
-  afterEach(() => { mockDirectory.current = undefined; mockActiveBudgetSyncId = "b1"; });
+  afterEach(() => { mockDirectory.current = undefined; mockActiveBudgetSyncId = "b1"; mockTracking.current = null; });
 
   const withView = async (view: string | null, run: () => Promise<void>) => {
     const nav = jest.requireMock("next/navigation") as { useSearchParams: () => URLSearchParams };
@@ -944,17 +952,47 @@ describe("an existing loan page", () => {
     }
   };
 
+  it("a tracked loan keeps every event added: a passed one is shown but not projected, later ones have a switch", async () => {
+    await withView("calculation", async () => {
+      mockTracking.current = {
+        tracked: true, debt: { trackingStartDueDate: "2024-02-01" }, bundle: { rules: [], entries: [], writes: [], openingStatement: null, anchors: [] }, reads: { transferPayeeByAccount: {} },
+        result: { ok: true, installments: [], events: [], ledger: [], opening: { date: "2024-01-01", principalMinor: 3_000_000 }, anchor: { date: "2024-06-01", principalMinor: 2_950_000, scheduledPaymentMinor: 91_000 },
+          before: { count: 0 }, openingAdjustment: null, figures: { owedInActualMinor: 2_950_000, nextPayment: { dueDate: "2024-07-01", no: 6, amountMinor: 91_000 }, counts: { unrecorded: 0, check: 0, missing: 0, recorded: 0, upcoming: 0 } } },
+        today: "2024-06-15", loading: false, refreshing: false, error: null, refresh: async () => {}, reloadBundle: async () => {},
+      };
+      wrap(<LoanView id={detail.debt.id} />);
+      await screen.findByText(/Tracked/);
+      expect(screen.queryByText(/^Next: installment/)).toBeNull();
+      for (const [amount, date] of [["100", "03/01/2024"], ["200", "09/01/2024"], ["300", "10/01/2024"]]) {
+        fireEvent.click(await screen.findByRole("button", { name: "Extra payment" }));
+        const dialog = await screen.findByRole("dialog");
+        fireEvent.change(within(dialog).getByLabelText("Amount"), { target: { value: amount } });
+        fireEvent.blur(within(dialog).getByLabelText("Amount"));
+        fireEvent.change(within(dialog).getByLabelText("Date"), { target: { value: date } });
+        fireEvent.blur(within(dialog).getByLabelText("Date"));
+        fireEvent.click(within(dialog).getByRole("button", { name: "Save event" }));
+        await act(async () => {});
+      }
+      const rows = within(screen.getByRole("table", { name: "Events" })).getAllByRole("row").slice(1);
+      expect(rows.map((r) => within(r).getAllByRole("cell")[1].textContent)).toEqual(["01 Mar 2024", "01 Sep 2024", "01 Oct 2024"]);
+      expect(rows[0]).toHaveTextContent("Passed, not in the projection");
+      expect(within(rows[0]).queryByRole("switch")).toBeNull();
+      for (const row of rows.slice(1)) expect(within(row).getByRole("switch")).toBeChecked();
+      mockTracking.current = null;
+    });
+  });
+
   it("Calculation: loads the saved loan, marks edits unsaved, discards them, and saves only on Save changes", async () => {
     await withView("calculation", async () => {
       wrap(<LoanView id={detail.debt.id} />);
-      expect(await screen.findByText(/^Active · setup \d of \d$/)).toBeInTheDocument();
+      expect(await screen.findByText("Not tracked")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
       await waitFor(() => expect(screen.getByText("Payoff date").nextSibling).toHaveTextContent("01 Jan 2027"), WAIT);
 
       type("Interest rate", "5");
       expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
-      expect(await screen.findByText(/^Active · setup \d of \d$/)).toBeInTheDocument();
+      expect(await screen.findByText("Not tracked")).toBeInTheDocument();
       expect(screen.getByLabelText("Interest rate")).toHaveValue("6");
       expect(mocked.updateDebt).not.toHaveBeenCalled();
 
@@ -972,7 +1010,7 @@ describe("an existing loan page", () => {
   it("preserves unsaved edits when the saved loan changes and allows explicit reload", async () => {
     await withView("calculation", async () => {
       const { client } = wrap(<LoanView id={detail.debt.id} />);
-      await screen.findByText(/^Active · setup \d of \d$/);
+      await screen.findByText("Not tracked");
       type("Interest rate", "5");
       await act(async () => {
         client.setQueryData(["assets-debt", "debt", detail.debt.id], { ...detail, debt: { ...detail.debt, name: "Updated elsewhere", currentRevision: detail.debt.currentRevision + 1 } });
@@ -991,26 +1029,12 @@ describe("an existing loan page", () => {
       let finish!: (next: typeof detail) => void;
       mocked.updateDebt.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
       wrap(<LoanView id={detail.debt.id} />);
-      await screen.findByText(/^Active · setup \d of \d$/);
+      await screen.findByText("Not tracked");
       type("Interest rate", "5");
       fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
       expect(await screen.findByRole("button", { name: "Saving loan revision…" })).toBeDisabled();
       await act(async () => { finish(detail); });
       await screen.findByRole("button", { name: "Save changes" });
-    });
-  });
-
-  it("makes a tracked Actual extra read-only in the Events table", async () => {
-    await withView("calculation", async () => {
-      mocked.getDebt.mockResolvedValue({ ...detail, actualExtraPaymentAssumptionIds: ["actual-extra-event"], assumptions: [{
-        id: "actual-extra-event", debtId: detail.debt.id, assumptionKind: "extra-repayment", effectiveFrom: "2024-04-01", recurrence: null,
-        amountMinor: 100000, feeTreatment: null, offsetAccountId: null, note: "Extra payment recorded from Actual", createdAt: "2024-04-01", updatedAt: "2024-04-01",
-      }] });
-      wrap(<LoanView id={detail.debt.id} />);
-      expect(await screen.findByRole("button", { name: "Remove Extra payment on 2024-04-01" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Edit Extra payment on 2024-04-01" })).toBeDisabled();
-      expect(screen.getByText("Recorded from Actual · manage in Sync Repayments")).toBeInTheDocument();
-      expect(mocked.updateDebt).not.toHaveBeenCalled();
     });
   });
 
@@ -1026,30 +1050,14 @@ describe("an existing loan page", () => {
     });
   });
 
-  it("the workspace has exactly Schedule, Settings and Transactions; old links open the tab that now holds their content", async () => {
+  it("the workspace has the five tabs in order; old links open the tab that now holds their content", async () => {
     await withView("matching", async () => {
       wrap(<LoanView id={detail.debt.id} />);
       const sections = await screen.findByRole("navigation", { name: "Loan sections" });
-      expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Terms & Schedule", "Link to Actual", "Sync Repayments"]);
+      expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Terms & Schedule", "Link to Actual", "Repayments", "Loan Ledger", "Linked Assets"]);
       expect(within(sections).getByRole("button", { name: "Link to Actual" })).toHaveAttribute("aria-current", "page");
-      expect(await screen.findByRole("heading", { name: /Repayment matching/ })).toBeInTheDocument();
-      expect(screen.getByText("Saved separately")).toBeInTheDocument();
-      expect(screen.getByLabelText("Setup checklist")).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Loan and its account" })).toBeInTheDocument();
       expect(screen.queryByRole("navigation", { name: "Assets & Debt sections" })).toBeNull();
-    });
-  });
-
-  it("an existing loan opens on Transactions: the status strip, and lender statements in a drawer", async () => {
-    await withView(null, async () => {
-      wrap(<LoanView id={detail.debt.id} />);
-      const sections = await screen.findByRole("navigation", { name: "Loan sections" });
-      expect(within(sections).getByRole("button", { name: "Sync Repayments" })).toHaveAttribute("aria-current", "page");
-      expect(await screen.findByRole("region", { name: "Loan status" })).toBeInTheDocument();
-      expect(screen.getByRole("group", { name: "Filter changes" })).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Check against lender statement" }));
-      expect(await screen.findByText(/to see which side is off/)).toBeInTheDocument();
-      expect(await screen.findByText(/No statements yet/)).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Add a statement" })).toBeInTheDocument();
     });
   });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { localToday } from "../lib/calendarDate";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
@@ -15,20 +15,21 @@ import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { getTransport } from "@/lib/actual";
 import { readOffsetHistories, type OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
 import type { DebtDetail } from "@/lib/assets-debt/services/debtConfigService";
-import { archiveDebt, createDebt, DebtApiError, deleteDebtPermanently, getDebt, listDebts, listMatchRules, updateDebt } from "../lib/debtsApi";
+import { archiveDebt, createDebt, DebtApiError, deleteDebtPermanently, getDebt, listDebts, recordDebtObservation, updateDebt } from "../lib/debtsApi";
 import { detailToStates, newSimulation, newTracking, statesToSaveInput, summarizeProfile, type SaveIssue, type SimulationState, type TrackingState } from "../lib/simulatorModel";
 import { LOANS_PATH, loanPath } from "../lib/routes";
-import { afterMatchingSetup, setUpRepaymentMatching, type AutoMatchingResult } from "../lib/autoMatching";
 import { useAccountDirectory } from "../lib/useAccountDirectory";
 import { SAVE_BOUNDARY } from "./saveBoundary";
 import { ScheduleControls, SimulatorView } from "./simulator/SimulatorView";
 import { strategyAdvice } from "../lib/strategyAdvice";
 import { purgeLegacyLoanStorage } from "../lib/loanStorage";
-import { LoanActivity } from "./workspace/LoanActivity";
-import { MatchingEditor } from "./rules/MatchingEditor";
-import { LoanSetup, loanSettingsComplete, setupChecklist } from "./workspace/LoanSetup";
-import { LinkedAssetsNote } from "@/features/asset-registry/LinkedAssetsNote";
 import { WorkspaceFrame, workspaceTabFor, workspaceTabSlug, type WorkspaceTab } from "./workspace/WorkspaceFrame";
+import { LinkToActual } from "./loan/LinkToActual";
+import { LinkedAssetsTab } from "./loan/LinkedAssetsTab";
+import { TrackingDialogs, TrackingTab, useTrackingWorkspace } from "./loan/TrackingTabs";
+import { useLoanTracking } from "../lib/useLoanTracking";
+import { trackedHistory } from "../lib/trackedSchedule";
+import { RefreshCw } from "lucide-react";
 
 /**
  * The loan workspace pages (RD-084 P1.3b T204, T214, T216; P1.6b T288).
@@ -49,16 +50,6 @@ const today = () => localToday();
 const storageKey = (connectionId: string, budget: string) => `assets-debt:new-loan:${connectionId}:${budget}`;
 const currencyKey = "assets-debt:currency-preference";
 const drafts = new Map<string, { sim: SimulationState; tracking: TrackingState }>();
-
-/** The automatic matching setup never stops a save: a failure leaves the usual required step. */
-async function autoMatch(detail: DebtDetail, transport: ReturnType<typeof getTransport>): Promise<AutoMatchingResult | null> {
-  try {
-    return await setUpRepaymentMatching(detail, transport);
-  } catch (error) {
-    toast.warning(`The loan was saved, but repayment matching was not set up: ${error instanceof Error ? error.message : "setup failed"}. Open Link to Actual to retry.`);
-    return null;
-  }
-}
 
 function readSession<T>(key: string): T | null {
   purgeLegacyLoanStorage();
@@ -145,10 +136,9 @@ function NewLoanEditor() {
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
       setSavePhase("Saving loan…");
       const detail = await createDebt(built.input, directory.data);
-      setSavePhase("Setting up repayment matching…");
-      return { detail, matching: connection ? await autoMatch(detail, getTransport(connection)) : null };
+      return { detail };
     },
-    onSuccess: ({ detail, matching }: { detail: DebtDetail; matching: AutoMatchingResult | null }) => {
+    onSuccess: ({ detail }: { detail: DebtDetail }) => {
       setSavePhase(null);
       try {
         if (key) drafts.delete(key);
@@ -157,10 +147,9 @@ function NewLoanEditor() {
         // storage unavailable
       }
       void queryClient.invalidateQueries({ queryKey: ["assets-debt"] });
-      toast.success(detail.debt.status === "active" ? "Loan added to Assets & Debt" : "Draft saved");
-      const landing = matching ? afterMatchingSetup(matching, detail.debt.id, loanPath) : null;
-      if (landing?.message) (landing.tone === "success" ? toast.success : toast.warning)(landing.message);
-      router.push(landing?.href ?? loanPath(detail.debt.id));
+      toast.success(detail.debt.status === "active" ? (detail.debt.trackingStartDueDate ? "Loan saved and tracked in Actual" : "Loan saved") : "Draft saved");
+      // A tracked loan opens on Repayments; a calculator stays on Terms & Schedule.
+      router.push(`${loanPath(detail.debt.id)}?view=${detail.debt.trackingStartDueDate ? "repayments" : "schedule"}`);
     },
     onError: (error) => setIssues(error instanceof DebtApiError && error.issues.length ? error.issues : [{ field: "(save)", message: error instanceof Error ? error.message : "The loan could not be saved" }]),
   });
@@ -170,7 +159,7 @@ function NewLoanEditor() {
   const complete = statesToSaveInput(sim, { ...tracking, name: "x", status: "draft", offsetAccountMap: Object.fromEntries(sim.offsets.map((o) => [o.placeholderAccountId, "x"])) }, budget, "bench-daily").ok;
 
   const toSetup = () => setTab("setup");
-  const newComplete = loanSettingsComplete(setupChecklist({ sim, tracking, directory: directory.data, matchingEnabled: null }));
+  const newComplete = !!tracking.name.trim();
   const actions = tab === "calculation" ? (
     <>
       <ScheduleControls onDialog={setScheduleDialog} />
@@ -191,7 +180,7 @@ function NewLoanEditor() {
       state="Not saved yet"
       tab={tab}
       onTab={setTab}
-      disabledTabs={{ activity: "Available after the loan is saved", ...(complete ? {} : { setup: "Complete the calculation first" }) }}
+      disabledTabs={{ activity: "Save the loan first", ledger: "Save the loan first", assets: "Save the loan first", ...(complete ? {} : { setup: "Complete the calculation first" }) }}
       actions={actions}
       menu={tab === "setup" && newComplete ? [{ label: "Save as draft", onSelect: () => save.mutate("draft") }] : tab === "calculation" ? [{ label: "Reset loan", destructive: true, onSelect: () => setResetOpen(true) }] : []}
       dirty={dirty}
@@ -203,7 +192,7 @@ function NewLoanEditor() {
       ) : (
         <>
           <p className="px-4 pt-3 text-xs text-muted-foreground">{SAVE_BOUNDARY} {summarizeProfile(sim.profile)}.</p>
-          <LoanSetup debtId={null} sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} />
+          <LinkToActual sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} rules={null} onEditRules={() => {}} saved={false} />
         </>
       )}
     </WorkspaceFrame>
@@ -266,10 +255,17 @@ function LoanEditor({ id }: { id: string }) {
   useLeaveGuard(dirty);
   const detail = debt.data;
   const readOnly = detail?.debt.status === "archived";
-  const rules = useQuery({ queryKey: ["assets-debt", "match-rules", id], queryFn: () => listMatchRules(id), enabled: !!id });
-  const checklist = sim && tracking ? setupChecklist({ sim, tracking, directory: directory.data, matchingEnabled: rules.data ? rules.data.some((r) => r.record.enabled && r.record.purpose === "repayment") : null }) : [];
-  const activatable = checklist.length > 0 && loanSettingsComplete(checklist);
+  const activatable = !!tracking?.name.trim();
+  const loanTracking = useLoanTracking(detail);
+  const trackedStart = loanTracking.debt?.trackingStartDueDate ?? null;
+  const trackedResult = loanTracking.result;
+  const trackedToday = loanTracking.today;
+  const scheduleTracked = useMemo(() => (trackedResult?.ok && trackedStart
+    ? { ...trackedHistory(trackedResult, trackedStart, trackedToday), onOpenLedger: () => router.replace(`${pathname}?view=${workspaceTabSlug("ledger")}`) }
+    : null), [trackedResult, trackedStart, trackedToday, router, pathname]);
+  const ws = useTrackingWorkspace(detail, loanTracking, directory.data);
 
+  const recordedOpening = useRef<{ key: string; observationId: string } | null>(null);
   const save = useMutation({
     // `leaving`: saved on the way out of the page; read in onSuccess.
     mutationFn: async (options?: { leaving?: boolean }) => {
@@ -282,14 +278,23 @@ function LoanEditor({ id }: { id: string }) {
       const built = statesToSaveInput(sim, { ...tracking, status }, detail.debt.budgetSyncId, strategyAdvice(sim).recommended);
       if (!built.ok) throw new DebtApiError("invalid", 400, built.issues);
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
+      // A lender statement typed as the opening position is recorded first, then the loan points at it.
+      if (tracking.openingStatementDraft && built.input.trackingStartDueDate) {
+        setSavePhase("Recording the lender statement…");
+        // A retry after a failed save reuses the statement already recorded for these figures, so none is duplicated.
+        const draft = tracking.openingStatementDraft;
+        const key = `${draft.date}|${draft.principalMinor}`;
+        if (recordedOpening.current?.key !== key) {
+          const observation = await recordDebtObservation(id, { observedOn: draft.date, recordedAt: new Date().toISOString(), principalMinor: draft.principalMinor, accruedInterestMinor: null, note: "Opening position for tracking" });
+          recordedOpening.current = { key, observationId: observation.id };
+        }
+        built.input.openingObservationId = recordedOpening.current.observationId;
+      }
       setSavePhase("Saving loan revision…");
       const next = await updateDebt(id, built.input, directory.data);
-      // A loan saved active with its accounts and no matching rule yet gets the suggested one (owner decision 2026-10-06).
-      setSavePhase("Checking repayment matching…");
-      const matching = connection && next.debt.status === "active" && rules.data?.length === 0 ? await autoMatch(next, getTransport(connection)) : null;
-      return { next, matching };
+      return { next };
     },
-    onSuccess: ({ next, matching }, options) => {
+    onSuccess: ({ next }, options) => {
       setSavePhase(null);
       const states = detailToStates(next);
       setEditingBase(states); setSim(states?.simulation ?? null); setTracking(states?.tracking ?? null);
@@ -299,13 +304,9 @@ function LoanEditor({ id }: { id: string }) {
         : next.debt.currentRevision === detail?.debt.currentRevision ? "Saved: no change to the calculation" : `Saved as revision ${next.debt.currentRevision}`);
       queryClient.setQueryData(["assets-debt", "debt", id], next);
       void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
-      const landing = matching ? afterMatchingSetup(matching, id, loanPath) : null;
-      if (landing?.href) {
-        void queryClient.invalidateQueries({ queryKey: ["assets-debt", "match-rules", id] });
-        if (landing.message) (landing.tone === "success" ? toast.success : toast.warning)(landing.message);
-        // Saving on the way out of the page: the rule is set up, but the user's navigation wins.
-        if (!options?.leaving) router.replace(landing.href);
-      }
+      void queryClient.invalidateQueries({ queryKey: ["assets-debt", "tracking", id] });
+      // Tracking just turned on: show what it found.
+      if (!options?.leaving && !detail?.debt.trackingStartDueDate && next.debt.trackingStartDueDate) router.replace(`${pathname}?view=${workspaceTabSlug("activity")}`);
     },
     onError: (error) => setIssues(error instanceof DebtApiError && error.issues.length ? error.issues : [{ field: "(save)", message: error instanceof Error ? error.message : "The loan could not be saved" }]),
     onSettled: () => setSavePhase(null),
@@ -349,19 +350,30 @@ function LoanEditor({ id }: { id: string }) {
     return line && !line.available ? `The saved engine (${line.label}) no longer fits these settings; saving will use ${advice.lines.find((l) => l.strategy === advice.recommended)?.label ?? "no engine"}.` : null;
   })();
 
-  const tab = workspaceTabFor(params?.get("view"), "activity");
+  const tracked = loanTracking.tracked;
+  // A tracked loan opens on Repayments; every other loan on Terms & Schedule (design spec 06 §4.1).
+  const tab = workspaceTabFor(params?.get("view"), tracked ? "activity" : "calculation");
   const setTab = (next: WorkspaceTab) => router.replace(`${pathname}?view=${workspaceTabSlug(next)}`);
-  const done = checklist.filter((c) => c.done).length;
   const draft = detail.debt.status === "draft";
+  const result = loanTracking.result?.ok ? loanTracking.result : null;
+  const startNo = result ? result.before.count + 1 : null;
   const state = readOnly
     ? "Archived: read-only"
     : dirty ? "Unsaved changes"
-      : draft ? (activatable ? "Setup complete · not active yet" : `Setup incomplete · ${done} of ${checklist.length}`)
-        : detail.paidOff ? `Paid off ${detail.paidOff.paidDate} · revision ${detail.debt.currentRevision}`
-          : done < checklist.length ? `Active · setup ${done} of ${checklist.length}` : `Active · revision ${detail.debt.currentRevision}`;
+      : draft ? "Draft"
+        : detail.paidOff ? `Paid off ${detail.paidOff.paidDate}`
+          : tracked ? (startNo ? `Tracked from installment ${startNo}` : "Tracked in Actual") : "Not tracked";
+  const toDo = result ? result.figures.counts.unrecorded + result.figures.counts.check + result.figures.counts.missing + (result.openingAdjustment ? 1 : 0) : 0;
+  const unclassified = result ? result.ledger.filter((l) => l.type === "unclassified").length : 0;
+  const attention = { ...(toDo ? { activity: `${toDo} to do` } : {}), ...(unclassified ? { ledger: `${unclassified} unclassified` } : {}) };
   const actions = (
     <>
       {tab === "calculation" ? <ScheduleControls comparing={comparing} onComparingChange={setComparing} onDialog={setScheduleDialog} /> : null}
+      {tracked && (tab === "activity" || tab === "ledger" || tab === "assets") ? (
+        <Button type="button" size="sm" variant="outline" disabled={loanTracking.refreshing || ws.run !== null} onClick={() => void loanTracking.refresh()}>
+          <RefreshCw className="size-3.5" aria-hidden />{loanTracking.refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      ) : null}
       {dirty && !readOnly ? (
         <Input aria-label="What changed (optional)" placeholder="What changed (optional)" value={tracking.changeSummary} onChange={(e) => setTracking({ ...tracking, changeSummary: e.target.value })} className="h-7 w-52 text-xs" />
       ) : null}
@@ -370,7 +382,7 @@ function LoanEditor({ id }: { id: string }) {
           Discard changes
         </Button>
       ) : null}
-      {!readOnly && (dirty || tab !== "activity" || (draft && activatable)) ? (
+      {!readOnly && (dirty || tab === "calculation" || tab === "setup" || (draft && activatable)) ? (
         <Button type="button" size="sm" disabled={(!dirty && !(draft && activatable)) || save.isPending} onClick={() => save.mutate(undefined)}>
           {save.isPending ? savePhase ?? "Saving…" : draft && activatable ? "Save and activate" : "Save changes"}
         </Button>
@@ -378,7 +390,8 @@ function LoanEditor({ id }: { id: string }) {
     </>
   );
   const resetItem = tab === "calculation" && !readOnly ? [{ label: "Reset loan", destructive: true, onSelect: () => setResetOpen(true) }] : [];
-  const menu = readOnly ? [{ label: "Delete permanently", destructive: true, onSelect: () => { setTyped(""); setDeleting(true); } }] : [...resetItem, {
+  const statementItem = tracked && !readOnly ? [{ label: "Check against lender statement", onSelect: () => ws.setDialog("statement") }] : [];
+  const menu = readOnly ? [{ label: "Delete permanently", destructive: true, onSelect: () => { setTyped(""); setDeleting(true); } }] : [...resetItem, ...statementItem, {
     label: detail.debt.status === "draft" ? "Delete draft loan" : "Archive loan",
     destructive: true,
     onSelect: () =>
@@ -397,6 +410,7 @@ function LoanEditor({ id }: { id: string }) {
       stateEmphasis={dirty}
       tab={tab}
       onTab={setTab}
+      attention={attention}
       actions={actions}
       menu={menu}
       dirty={dirty}
@@ -409,15 +423,17 @@ function LoanEditor({ id }: { id: string }) {
         }
       }}
     >
-      <LinkedAssetsNote debtId={detail.debt.id} budgetSyncId={detail.debt.budgetSyncId} />
       <IssueList issues={issues} />
       {remoteChanged ? <div role="alert" className="mx-4 my-2 text-sm">The saved loan changed. Your edits are preserved. <Button variant="outline" size="sm" onClick={() => { setEditingBase(saved); setSim(saved?.simulation ?? null); setTracking(saved?.tracking ?? null); }}>Discard edits and reload</Button></div> : null}
       {staleStrategy && !readOnly ? <p className="mx-4 mt-2 text-xs text-muted-foreground">{staleStrategy}</p> : null}
-      {tab === "activity" ? (
-        <LoanActivity debt={detail} directory={directory.data} offsetHistories={offsetHistory.data?.ok ? offsetHistory.data.snapshots : undefined} initialFilter={(["action", "waiting", "applied", "undone", "all"] as const).find((f) => f === params?.get("filter")) ?? "action"} scheduleDirty={dirty} />
-      ) : null}
+      {tab === "activity" || tab === "ledger" ? (
+        <TrackingTab tab={tab === "activity" ? "repayments" : "ledger"} detail={detail} tracking={loanTracking} directory={directory.data} digits={sim.minorDigits} ws={ws} onLinkToActual={() => setTab("setup")} />
+      ) : (
+        <TrackingDialogs detail={detail} tracking={loanTracking} directory={directory.data} digits={sim.minorDigits} ws={ws} />
+      )}
+      {tab === "assets" ? <LinkedAssetsTab detail={detail} digits={sim.minorDigits} today={loanTracking.today} owedMinor={result ? result.figures.owedInActualMinor : null} /> : null}
       {tab === "calculation" ? (
-        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} title="Schedule" badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null}
+        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} chartViewKey={`assets-debt:chart-view:${id}`} title="Schedule" badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null} tracked={scheduleTracked}
           external={{ comparing, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen }} offsetTracking={trackedOffsetAccounts.length ? {
           asOfDate: offsetAsOfDate,
           onAsOfDateChange: setOffsetAsOfDate,
@@ -430,12 +446,8 @@ function LoanEditor({ id }: { id: string }) {
               : [],
         } : undefined} />
       ) : null}
-      {tab === "setup" && params?.get("rule") ? (
-        <MatchingEditor debtId={detail.debt.id} ruleId={params.get("rule")!} onClose={() => router.replace(`${pathname}?view=${workspaceTabSlug("setup")}`)} />
-      ) : null}
-      {tab === "setup" && !params?.get("rule") ? (
-        <LoanSetup debtId={detail.debt.id} sim={sim} setSimulation={setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} active={!draft}
-          onEditRule={(ruleId) => router.replace(`${pathname}?view=${workspaceTabSlug("setup")}&rule=${encodeURIComponent(ruleId)}`)} />
+      {tab === "setup" ? (
+        <LinkToActual sim={sim} setSimulation={readOnly ? undefined : setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} rules={loanTracking.bundle?.rules ?? (detail.debt.status === "active" ? [] : null)} onEditRules={() => ws.setDialog("rules")} saved />
       ) : null}
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)} state={confirm} />
       <Dialog open={deleting} onOpenChange={(open) => !open && setDeleting(false)}>

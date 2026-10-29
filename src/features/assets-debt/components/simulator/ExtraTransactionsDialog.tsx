@@ -51,17 +51,22 @@ export function assumptionDetails(assumption: SimAssumption): string {
 
 export type ExtraEditor = SimAssumptionKind | SimAssumption;
 
+/** The key of an event not saved yet. */
+const NEW_EVENT = "new-event";
+
 export function ExtraTransactionsDialog({ open, onClose, sim, propose, editor }: { open: boolean; onClose: () => void; sim: SimulationState; propose: (next: SimulationState) => void; editor: ExtraEditor | null }) {
   const offset = sim.offsets[0] ?? null;
   const draft = useMemo(() => {
     if (!open || !editor) return null;
     if (typeof editor !== "string") return editor;
-    return { key: simKey("extra"), kind: editor, effectiveFrom: sim.startDate, recurrence: null, amountMinor: 0, feeTreatment: editor === "fee" ? "cash-paid" as const : null, offsetAccountId: editor === "offset-balance" ? offset?.placeholderAccountId ?? null : null, note: null } satisfies SimAssumption;
+    // A new event gets its key when it is saved, never during render: the React Compiler may hand back a cached
+    // draft, and a reused key would make the save replace the event added before it.
+    return { key: NEW_EVENT, kind: editor, effectiveFrom: sim.startDate, recurrence: null, amountMinor: 0, feeTreatment: editor === "fee" ? "cash-paid" as const : null, offsetAccountId: editor === "offset-balance" ? offset?.placeholderAccountId ?? null : null, note: null } satisfies SimAssumption;
   }, [open, editor, offset?.placeholderAccountId, sim.startDate]);
 
   const save = (assumption: SimAssumption) => {
-    const exists = sim.assumptions.some((candidate) => candidate.key === assumption.key);
-    propose({ ...sim, assumptions: exists ? sim.assumptions.map((candidate) => (candidate.key === assumption.key ? assumption : candidate)) : [...sim.assumptions, assumption] });
+    const exists = assumption.key !== NEW_EVENT && sim.assumptions.some((candidate) => candidate.key === assumption.key);
+    propose({ ...sim, assumptions: exists ? sim.assumptions.map((candidate) => (candidate.key === assumption.key ? assumption : candidate)) : [...sim.assumptions, { ...assumption, key: simKey("extra") }] });
     onClose();
   };
 

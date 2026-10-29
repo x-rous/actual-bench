@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
@@ -36,7 +36,19 @@ const VIEWS: { id: ScheduleView; label: string }[] = [
   { id: "year", label: "Yearly" },
 ];
 
-export function ScheduleTable({ events, profile, startDate, digits }: { events: readonly DebtProjectionEvent[]; profile: Pick<CalculationProfile, "chargeFrequency">; startDate: string; digits: number }) {
+/** A row's source on a loan tracked in Actual (design spec 06 §7.6): before tracking, from Actual, or not found there. */
+export function scheduleSource(period: string, tracked: { startDate: string; today: string; missingDueDates: readonly string[]; /** The last real event: later rows are the projection. Defaults to today. */ anchorDate?: string }): string {
+  const length = period.length;
+  if (period < tracked.startDate.slice(0, length)) return "Before tracking";
+  if (period > tracked.today.slice(0, length)) return "";
+  if (tracked.missingDueDates.some((d) => d.slice(0, length) === period)) return "Not found in Actual";
+  // A month that has only projected payments (today's month, before that payment is made) is not from Actual yet.
+  return period > (tracked.anchorDate ?? tracked.today).slice(0, length) ? "" : "From Actual";
+}
+
+export function ScheduleTable({ events, profile, startDate, digits, tracked, today }: { events: readonly DebtProjectionEvent[]; profile: Pick<CalculationProfile, "chargeFrequency">; startDate: string; digits: number;
+  /** For Jump to today. */ today?: string;
+  /** A loan tracked in Actual: a Source column, and the table opens at today. */ tracked?: { startDate: string; today: string; missingDueDates: readonly string[]; anchorDate?: string } | null }) {
   "use no memo";
   const [view, setView] = useState<ScheduleView>("month");
   const rows = useMemo(() => aggregateSchedule(events, view), [events, view]);
@@ -109,8 +121,20 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
   const scrollRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual; the compiler skips this component, which is what it needs.
   const virtualizer = useVirtualizer({ count: rows.length, getScrollElement: () => scrollRef.current, estimateSize: () => 30, overscan: 12, initialRect: { width: 1000, height: 480 } });
-  const template = columns.map((column) => (column === "paymentNumber" ? "minmax(5rem,.55fr)" : column === "period" ? "minmax(12rem,1.4fr)" : "minmax(7rem,1fr)")).join(" ");
-  const tableMinWidth = 80 + 192 + Math.max(0, columns.length - 2) * 112;
+  const template = [...columns.map((column) => (column === "paymentNumber" ? "minmax(5rem,.55fr)" : column === "period" ? "minmax(12rem,1.4fr)" : "minmax(7rem,1fr)")), ...(tracked ? ["minmax(9rem,1fr)"] : [])].join(" ");
+  const tableMinWidth = 80 + 192 + Math.max(0, columns.length - 2) * 112 + (tracked ? 144 : 0);
+  // The row of the next installment: a tracked loan's schedule opens there, and Jump to today returns to it.
+  const now = tracked?.today ?? today;
+  const todayIndex = now ? rows.findIndex((r) => r.period > now.slice(0, r.period.length)) : -1;
+  const jumpToToday = () => { if (todayIndex >= 0) virtualizer.scrollToIndex(Math.max(0, todayIndex - 2), { align: "start" }); };
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (!tracked || todayIndex < 0 || opened.current === view) return;
+    // After the table has measured itself: a scroll before that is lost. Marked done only once it ran, since a new
+    // result can cancel it first.
+    const timer = window.setTimeout(() => { virtualizer.scrollToIndex(Math.max(0, todayIndex - 2), { align: "start" }); opened.current = view; }, 50);
+    return () => window.clearTimeout(timer);
+  }, [tracked, todayIndex, view, virtualizer]);
   const alignment = (column: ColumnId) => (column === "paymentNumber" || column === "period" || column === "event" ? "text-left" : "text-right");
   const emphasis = (column: ColumnId) => {
     if (column === "principal") return "text-emerald-700 dark:text-emerald-400";
@@ -121,7 +145,7 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
 
   return (
     <section aria-labelledby="schedule-heading" className="flex min-h-0 flex-col gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4">
         <div className="flex items-center gap-1">
           <h2 id="schedule-heading" className="text-sm font-semibold">Amortization schedule</h2>
           <HelpDialogButton
@@ -135,6 +159,8 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
             ] }]}
           />
         </div>
+        <div className="flex items-center gap-2">
+        {todayIndex > 2 ? <button type="button" onClick={jumpToToday} className="rounded border border-border px-2 py-1 text-xs">Jump to today</button> : null}
         <div role="radiogroup" aria-label="Schedule view" className="flex gap-1">
           {VIEWS.map((v) => (
             <button
@@ -149,8 +175,9 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
             </button>
           ))}
         </div>
+        </div>
       </div>
-      <div role="table" aria-label={`Schedule, ${VIEWS.find((v) => v.id === view)!.label.toLowerCase()}`} aria-rowcount={rows.length + 1} aria-colcount={columns.length} className="isolate overflow-hidden rounded-md border border-border">
+      <div role="table" aria-label={`Schedule, ${VIEWS.find((v) => v.id === view)!.label.toLowerCase()}`} aria-rowcount={rows.length + 1} aria-colcount={columns.length + (tracked ? 1 : 0)} className="isolate overflow-hidden border-t border-border">
         <div ref={scrollRef} data-testid="schedule-scroll-container" className="relative max-h-[480px] overflow-auto">
           <div role="rowgroup" className="sticky top-0 z-20 bg-muted">
             <div role="row" aria-rowindex={1} className="grid gap-2 bg-muted px-3 py-1.5 text-[11px] font-medium" style={{ gridTemplateColumns: template, minWidth: tableMinWidth }}>
@@ -159,6 +186,7 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
                   {heading[c]}
                 </span>
               ))}
+              {tracked ? <span role="columnheader" className="min-w-0 pl-3 text-left">Source</span> : null}
             </div>
           </div>
           <div role="rowgroup" style={{ height: virtualizer.getTotalSize(), minWidth: tableMinWidth, position: "relative" }}>
@@ -177,6 +205,10 @@ export function ScheduleTable({ events, profile, startDate, digits }: { events: 
                       {cell(r, c)}
                     </span>
                   ))}
+                  {tracked ? (() => {
+                    const source = scheduleSource(r.period, tracked);
+                    return <span role="cell" className="pl-3 text-left whitespace-nowrap">{source === "From Actual" ? <span className="inline-block rounded border border-border bg-muted px-1.5 py-0.5 text-[11px]">From Actual</span> : source === "Not found in Actual" ? <span className="inline-block rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] text-destructive">Not found in Actual</span> : <span className="text-muted-foreground">{source}</span>}</span>;
+                  })() : null}
                 </div>
               );
             })}

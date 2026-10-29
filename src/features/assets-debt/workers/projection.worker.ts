@@ -8,16 +8,17 @@ import { projectDebt, type DebtProjectionInput } from "@/lib/financial-models/lo
  * nothing but the engine: no Actual, no app database.
  */
 
-export type ProjectionJob = { id: number; primary: DebtProjectionInput; comparison: DebtProjectionInput | null; impactBaseline?: DebtProjectionInput | null };
+export type ProjectionJob = { id: number; primary: DebtProjectionInput; comparison: DebtProjectionInput | null; impactBaseline?: DebtProjectionInput | null; contract?: DebtProjectionInput | null };
 
 self.onmessage = (event: MessageEvent<ProjectionJob>) => {
-  const { id, primary, comparison, impactBaseline = null } = event.data;
+  const { id, primary, comparison, impactBaseline = null, contract = null } = event.data;
   const started = performance.now();
   try {
     const projection = projectDebt(primary);
     const compared = comparison ? projectDebt(comparison) : null;
     const impact = impactBaseline ? projectDebt(impactBaseline) : null;
-    self.postMessage({ id, ok: true, projection, comparison: compared, impactBaseline: impact, durationMs: performance.now() - started });
+    const contracted = contract ? projectDebt(contract) : null;
+    self.postMessage({ id, ok: true, projection, comparison: compared, impactBaseline: impact, contract: contracted, durationMs: performance.now() - started });
   } catch (error) {
     self.postMessage({ id, ok: false, error: error instanceof Error ? error.message : String(error) });
   }

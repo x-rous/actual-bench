@@ -160,19 +160,22 @@ export function IntegerField({ label, hint, issue, value, onChange, min = 0, cla
             onChange(/^\d+$/.test(t) && Number(t) >= min ? Number(t) : null);
           }}
         />
-        {suffix ? <span className="text-xs text-muted-foreground">{suffix}</span> : null}
+        {suffix ? <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground">{suffix}</span> : null}
       </div>
       <Described id={id} hint={hint} issue={problem} />
     </div>
   );
 }
 
-export function SelectField({ label, labelAccessory, hint, issue, value, onChange, options, placeholder, className, hideLabel }: Common & { labelAccessory?: ReactNode; value: string; onChange: (value: string) => void; options: SelectOption[]; placeholder?: string }) {
+export function SelectField({ label, labelIcon, labelAccessory, hint, issue, value, onChange, options, placeholder, className, hideLabel }: Common & { /** Shown right after the label, e.g. a help button. */ labelIcon?: ReactNode; labelAccessory?: ReactNode; value: string; onChange: (value: string) => void; options: SelectOption[]; placeholder?: string }) {
   const id = useId();
   return (
     <div className={`flex flex-col gap-1 ${className ?? ""}`}>
       <div className="flex min-w-0 items-baseline justify-between gap-3">
-        <Label className={labelClass(hideLabel)} id={`${id}-label`}>{label}</Label>
+        <span className="flex items-center gap-0.5">
+          <Label className={labelClass(hideLabel)} id={`${id}-label`}>{label}</Label>
+          {labelIcon}
+        </span>
         {labelAccessory ? <span className="text-right text-[11px] text-muted-foreground">{labelAccessory}</span> : null}
       </div>
       <Select className="text-[13px]" value={value} onValueChange={onChange} options={options} placeholder={placeholder ?? "Choose…"} aria-labelledby={`${id}-label`} id={id} />

@@ -5,16 +5,16 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
-import { directory, saveInput } from "@/lib/assets-debt/testing/debtFixtures";
+import { debtConfig, directory, saveInput } from "@/lib/assets-debt/testing/debtFixtures";
 import { DELETE, GET as getOne, PATCH } from "./[id]/route";
 import { PUT as putAssumptions } from "./[id]/assumptions/route";
-import { GET as eligibility } from "./[id]/eligibility/route";
-import { POST as schedule } from "./[id]/schedule/route";
-import { POST as backtest } from "./[id]/backtest/route";
-import { DELETE as deleteRule, GET as getRules, PATCH as patchRule, POST as postRule } from "./[id]/match-rules/route";
+import { GET as getTracking } from "./[id]/tracking/route";
+import { PATCH as patchLedger } from "./[id]/tracking/ledger/route";
+import { PUT as putRule } from "./[id]/tracking/rules/route";
+import { POST as startWrite } from "./[id]/tracking/writes/route";
+import { PATCH as finishWrite } from "./[id]/tracking/writes/[writeId]/route";
 import { GET as getObservations, POST as postObservation } from "./[id]/observations/route";
 import { GET as getAnchors, POST as postAnchor } from "./[id]/anchors/route";
-import { POST as reconcile } from "./[id]/reconciliation/route";
 import { POST as diagnose } from "./[id]/diagnostics/conventions/route";
 import { GET, POST } from "./route";
 
@@ -33,19 +33,6 @@ afterEach(() => {
 
 const json = (body: unknown, method = "POST") => new Request("http://bench/api", { method, body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
-const conditions = {
-  format: "rd084.debt-match-conditions",
-  version: 1,
-  operator: "all",
-  items: [
-    { kind: "source-account", accountId: "acc-checking" },
-    { kind: "expected-date", daysBefore: 3, daysAfter: 3 },
-    { kind: "bench-marker", value: "exclude" },
-    { kind: "posting-link", value: "exclude" },
-  ],
-};
-const actions = { format: "rd084.debt-match-actions", version: 1, items: [{ kind: "link-repayment" }] };
-
 async function create(patch = {}) {
   const response = await POST(json({ debt: saveInput(patch), accountDirectory: directory() }));
   expect(response.status).toBe(201);
@@ -88,31 +75,21 @@ describe("/api/assets-debt/debts", () => {
     expect((await GET(new Request("http://bench/api"))).status).toBe(400);
   });
 
-  it("projects with temporary overrides, reports eligibility, and saves baseline assumptions", async () => {
+  it("saves baseline assumptions with a new revision", async () => {
     const debt = await create();
-    const projected = await schedule(json({ from: "2024-01-01", to: "2024-12-31", overrides: { assumptions: [{ kind: "extra-repayment", date: "2024-06-01", amountMinor: 100000 }] } }), ctx(debt.id));
-    const body = (await projected.json()) as { projection: { ok: boolean; events: unknown[] } };
-    expect(body.projection.ok).toBe(true);
-    expect(body.projection.events.length).toBeGreaterThan(0);
-    // The override was not stored.
-    expect(((await (await getOne(new Request("http://bench/api"), ctx(debt.id))).json()) as { debt: { assumptions: unknown[] } }).debt.assumptions).toEqual([]);
-
-    const elig = (await (await eligibility(new Request("http://bench/api?formulaRules=1&splitActions=1&transferPayees=1&ruleReadback=1"), ctx(debt.id))).json()) as { eligibility: { recommended: string } };
-    expect(elig.eligibility.recommended).toBe("actual-formula-rule");
-    const noCaps = (await (await eligibility(new Request("http://bench/api"), ctx(debt.id))).json()) as { eligibility: { recommended: string } };
-    expect(noCaps.eligibility.recommended).toBe("bench-periodic");
-
     const applied = await putAssumptions(
       json({ assumptions: [{ kind: "extra-repayment", effectiveFrom: "2024-06-01", recurrence: null, amountMinor: 100000, feeTreatment: null, offsetAccountId: null, note: null }], changeSummary: "Calculator: lump sum" }, "PUT"),
       ctx(debt.id)
     );
     expect(((await applied.json()) as { debt: { debt: { currentRevision: number } } }).debt.debt.currentRevision).toBe(2);
-    expect((await schedule(json({ from: "2024-01-01", to: "2024-12-31" }), ctx("missing"))).status).toBe(404);
   });
 
   it("round-trips one-off and recurring offset deltas through the API without relabelling them", async () => {
     const offset = { actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10_000, balanceBasis: "total" as const, capMinor: null };
+    // Offsets change interest day by day, so the loan accrues daily.
     const debt = await create({
+      executionStrategy: "bench-daily",
+      config: debtConfig({ profile: { ...(debtConfig().profile as Record<string, unknown>), accrual: "daily-simple" } }),
       offsets: [offset],
       assumptions: [
         { kind: "offset-balance", effectiveFrom: "2024-01-01", recurrence: null, amountMinor: 50_000, feeTreatment: null, offsetAccountId: "acc-offset", note: "Opening snapshot" },
@@ -133,40 +110,28 @@ describe("/api/assets-debt/debts", () => {
     });
   });
 
-  it("creates, backtests, edits, lists and deletes a read-only matching rule", async () => {
+  it("keeps a loan's payment rules, Loan Ledger types and write journal, and returns them in one read", async () => {
     const debt = await create();
-    const createdResponse = await postRule(json({ rule: { purpose: "repayment", conditions, actions, enabled: false } }), ctx(debt.id));
-    expect(createdResponse.status).toBe(201);
-    const created = ((await createdResponse.json()) as { rule: { record: { id: string }; blocked: string | null } }).rule;
-    expect(created.blocked).toBeNull();
+    const rule = { name: "Mortgage", match: "all", conditions: [{ field: "account", operator: "equals", value: "acc-checking" }] };
+    const rules = (await (await putRule(json({ kind: "save", rule }, "PUT"), ctx(debt.id))).json()) as { rules: Array<{ id: string }> };
+    expect(rules.rules).toHaveLength(1);
+    expect((await patchLedger(json({ changes: [{ actualTransactionId: "t1", actualAccountId: "acc-mortgage", entryType: "draw", revision: 0 }] }, "PATCH"), ctx(debt.id))).status).toBe(200);
+    const stale = await patchLedger(json({ changes: [{ actualTransactionId: "t1", actualAccountId: "acc-mortgage", entryType: "fee", revision: 0 }] }, "PATCH"), ctx(debt.id));
+    expect(stale.status).toBe(400);
 
-    const listed = (await (await getRules(new Request("http://bench/api"), ctx(debt.id))).json()) as { rules: unknown[] };
-    expect(listed.rules).toHaveLength(1);
+    const started = (await (await startWrite(json({ kind: "split", installmentDueDate: "2024-02-01", targetIds: ["p1"], before: {}, after: {} }), ctx(debt.id))).json()) as { write: { id: string } };
+    const second = await startWrite(json({ kind: "split", targetIds: ["p2"], before: {}, after: {} }), ctx(debt.id));
+    expect(second.status).toBe(400);
+    const finished = await finishWrite(json({ status: "applied", actualIds: ["p1"] }, "PATCH"), { params: Promise.resolve({ id: debt.id, writeId: started.write.id }) });
+    expect(((await finished.json()) as { write: { status: string } }).write.status).toBe("applied");
 
-    const tested = await backtest(json({
-      ruleId: created.record.id,
-      from: "2024-02-01",
-      to: "2024-02-01",
-      snapshots: [{ accountId: "acc-checking", transactions: [{
-        id: "tx-1", accountId: "acc-checking", date: "2024-02-01", amount: -500_000,
-        payeeId: "bank", payeeName: "Bank", categoryId: null, categoryName: null, notes: null,
-        cleared: true, reconciled: false, importedId: null, transferId: null, scheduleId: null,
-        isParent: false, isChild: false, parentId: null, splitLines: [],
-      }] }],
-    }), ctx(debt.id));
-    const testedBody = (await tested.json()) as { backtest?: { summary: { unique: number } }; error?: string };
-    expect({ status: tested.status, error: testedBody.error }).toEqual({ status: 200, error: undefined });
-    expect(testedBody.backtest?.summary.unique).toBe(1);
-
-    const edited = await patchRule(json({ ruleId: created.record.id, rule: { purpose: "interest-charge", conditions, actions, enabled: false } }, "PATCH"), ctx(debt.id));
-    expect(((await edited.json()) as { rule: { record: { purpose: string } } }).rule.record.purpose).toBe("interest-charge");
-
-    const deleted = await deleteRule(new Request(`http://bench/api/assets-debt/debts/${debt.id}/match-rules?ruleId=${created.record.id}`, { method: "DELETE" }), ctx(debt.id));
-    expect(deleted.status).toBe(204);
-    expect(((await (await getRules(new Request("http://bench/api"), ctx(debt.id))).json()) as { rules: unknown[] }).rules).toHaveLength(0);
+    const bundle = (await (await getTracking(new Request("http://bench/api"), ctx(debt.id))).json()) as { entries: unknown[]; rules: unknown[]; writes: unknown[]; openingStatement: unknown };
+    expect({ entries: bundle.entries.length, rules: bundle.rules.length, writes: bundle.writes.length, openingStatement: bundle.openingStatement }).toEqual({ entries: 1, rules: 1, writes: 1, openingStatement: null });
+    expect((await getTracking(new Request("http://bench/api"), ctx("missing"))).status).toBe(404);
+    expect((await putRule(json({ kind: "save", rule }, "PUT"), ctx("missing"))).status).toBe(404);
   });
 
-  it("records immutable observations, diagnoses without changing config, reconciles and appends an anchor", async () => {
+  it("records immutable observations, diagnoses without changing config and appends an anchor", async () => {
     const debt = await create();
     const before = (await (await getOne(new Request("http://bench/api"), ctx(debt.id))).json()) as { debt: { revision: { hash: string } } };
     const observed = await postObservation(json({ observedOn: "2024-06-01", recordedAt: "2024-06-02T00:00:00Z", principalMinor: 39_000_000, accruedInterestMinor: 12_345, supersedesObservationId: null, note: "Statement" }), ctx(debt.id));
@@ -179,10 +144,6 @@ describe("/api/assets-debt/debts", () => {
     expect(((await diagnostic.json()) as { candidates: unknown[] }).candidates.length).toBeGreaterThan(0);
     const after = (await (await getOne(new Request("http://bench/api"), ctx(debt.id))).json()) as { debt: { revision: { hash: string } } };
     expect(after.debt.revision.hash).toBe(before.debt.revision.hash);
-
-    const reconciled = await reconcile(json({ comparisonDate: "2024-06-01", actualBalanceMinor: 39_100_000 }), ctx(debt.id));
-    expect(reconciled.status).toBe(200);
-    expect(await reconciled.json()).toMatchObject({ reconciliation: { comparison: { comparisonDate: "2024-06-01", actualMinor: 39_100_000 } } });
 
     expect((await postAnchor(json({ observationId: observation.id, carriedRemainderDecimal: null }), ctx(debt.id))).status).toBe(201);
     expect(((await (await getAnchors(new Request("http://bench/api"), ctx(debt.id))).json()) as { anchors: unknown[] }).anchors).toHaveLength(1);

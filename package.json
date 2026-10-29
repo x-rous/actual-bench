@@ -1,6 +1,6 @@
 {
   "name": "actual-bench",
-  "version": "1.3.8",
+  "version": "1.3.9",
   "description": "Web-based admin panel for Actual Budget — manage accounts, payees, categories, and rules via actual-http-api",
   "repository": {
     "type": "git",
@@ -52,6 +52,8 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

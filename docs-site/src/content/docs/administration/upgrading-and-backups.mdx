@@ -72,6 +72,19 @@ volume and everything comes with you.
 - If a migration fails, stop. Do not keep writing to a half-migrated database. Restore the backup you
   took and work out what happened before trying again.
 
+### Loans & Debt: tracking replaces Sync Repayments
+
+An upgrade from a version that still had **Sync Repayments** moves Loans & Debt to loan tracking
+(database schema version 60). Take the `/data` backup first: this migration cannot be undone.
+
+- The old posting history, matching rules, backtests and transaction links are removed.
+- A repayment rule that named both a source account and an exact payee becomes a **payment rule** on
+  the loan. A rule that also limited the amount is not carried over, because a payment rule has no
+  amount condition and would match more payments than the old rule did.
+- Extra payments that were recorded from Actual as events are no longer events. They are read from the
+  **Loan Ledger** as **Extra principal**.
+- Loans keep their terms. Open each loan, check **Link to Actual**, and use **Refresh** on **Repayments**.
+
 ## Verify after upgrade
 
 1. The app loads and shows the new version in the sidebar footer.

@@ -7,7 +7,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Ban, CircleCheck, CircleDashed, Archive, House, CarFront, GraduationCap, Landmark, CreditCard, ArrowUpRight, CircleAlert } from "lucide-react";
 import { getTransport } from "@/lib/actual";
-import { readDatedBalance, toDebtMagnitude } from "@/lib/assets-debt/actual/ledgerPort";
+import { actualUnitsToMinor, toDebtMagnitude } from "@/lib/assets-debt/actual/ledgerPort";
 import type { DebtSummary } from "@/lib/assets-debt/services/debtConfigService";
 import { cn } from "@/lib/utils";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
@@ -85,6 +85,17 @@ function Line({ children, title, className }: { children: React.ReactNode; title
 
 type Connection = ReturnType<typeof selectActiveInstance>;
 
+/** One balances call per connection, shared by every row for a minute. */
+const balanceCalls = new Map<string, { at: number; read: Promise<Map<string, number>> }>();
+function allBalances(connection: NonNullable<Connection>): Promise<Map<string, number>> {
+  const cached = balanceCalls.get(connection.id);
+  if (cached && Date.now() - cached.at < 60_000) return cached.read;
+  const read = getTransport(connection).getAccountBalances();
+  balanceCalls.set(connection.id, { at: Date.now(), read });
+  read.catch(() => balanceCalls.delete(connection.id));
+  return read;
+}
+
 /** The stored schedule a row (and the summary) reads; the same key, so it is fetched once. */
 function scheduleQuery(debt: DebtSummary, today: string, connection: Connection) {
   const usable = !debt.blocked && debt.openingPrincipalMinor !== null && !!debt.openingDate;
@@ -102,16 +113,20 @@ function scheduleQuery(debt: DebtSummary, today: string, connection: Connection)
   };
 }
 
-/** The loan account's balance in Actual today, as a debt magnitude. */
+/**
+ * The loan account's balance in Actual today, as a debt magnitude. Every loan reads the same one balances call (design
+ * spec 06 §7.7), instead of reading its whole account.
+ */
 function balanceQuery(debt: DebtSummary, connection: Connection, today: string) {
   const usable = !debt.blocked && debt.openingPrincipalMinor !== null && !!debt.openingDate;
   return {
     queryKey: ["assets-debt", "card-balance", connection?.id, debt.liabilityAccountId, today, debt.signConvention],
-    queryFn: async () => withLoanOverviewRead(connection?.id ?? debt.budgetSyncId ?? "stored-summary", async () => {
-      const read = await readDatedBalance(getTransport(connection!), { accountId: debt.liabilityAccountId!, date: today });
-      if (!read.ok) throw new Error(read.message);
-      return toDebtMagnitude(read.balanceMinor, debt.signConvention === "positive-is-debt" ? "positive-is-debt" : "negative-is-debt");
-    }),
+    queryFn: async () => {
+      const balances = await allBalances(connection!);
+      const whole = balances.get(debt.liabilityAccountId!);
+      if (typeof whole !== "number") return toDebtMagnitude(0, "negative-is-debt");
+      return toDebtMagnitude(actualUnitsToMinor(whole), debt.signConvention === "positive-is-debt" ? "positive-is-debt" : "negative-is-debt");
+    },
     enabled: usable && !!connection && (!debt.budgetSyncId || connection.budgetSyncId === debt.budgetSyncId) && !!debt.liabilityAccountId && debt.status !== "archived",
     staleTime: 60_000,
   };
@@ -227,18 +242,18 @@ function DebtRow({ debt, attention, href, index, start }: { debt: DebtSummary; a
       </Cell>
       <Cell>
         {hasBalance ? <>
-          <Line className="tabular-nums"><span className="font-medium">{Math.round(paid)}% recorded</span><span className="text-muted-foreground"> · {money(Math.max(0, opening! - remaining))}</span></Line>
+          <Line className="tabular-nums"><span className="font-medium">{Math.round(paid)}% repaid</span><span className="text-muted-foreground"> · {money(Math.max(0, opening! - remaining))}</span></Line>
           <div role="progressbar" aria-label={`Principal paid for ${debt.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(paid)} className="my-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-chart-1" style={{ width: `${paid}%` }} />
           </div>
         </> : <Line className="text-muted-foreground">-</Line>}
-        {progress ? <Line className="tabular-nums text-muted-foreground">{progress.paymentsMade} recorded · {progress.totalPayments - progress.paymentsMade} scheduled left</Line> : null}
+        {progress ? <Line className="tabular-nums text-muted-foreground">{progress.paymentsMade} due so far · {progress.totalPayments - progress.paymentsMade} left</Line> : null}
       </Cell>
       <Cell>
-        <Line className="font-medium tabular-nums">{progress ? money(progress.interestToDateMinor) : placeholder}{progress ? <span className="font-normal text-muted-foreground"> recorded</span> : null}</Line>
+        <Line className="font-medium tabular-nums">{progress ? money(progress.interestToDateMinor) : placeholder}{progress ? <span className="font-normal text-muted-foreground"> to date</span> : null}</Line>
         {progress ? <>
           <Line title="Projected interest remaining" className="tabular-nums text-muted-foreground">{money(Math.max(0, progress.totalInterestMinor - progress.interestToDateMinor))} left (projected)</Line>
-          <Line title={`Forecast restarted from ${progress.forecastFrom}; recorded interest may cover only part of the loan history`} className="tabular-nums text-muted-foreground">Forecast from {shortDay(progress.forecastFrom)}</Line>
+          <Line title={`Calculated from ${progress.forecastFrom}`} className="tabular-nums text-muted-foreground">Forecast from {shortDay(progress.forecastFrom)}</Line>
         </> : null}
       </Cell>
       <Cell>
@@ -247,7 +262,7 @@ function DebtRow({ debt, attention, href, index, start }: { debt: DebtSummary; a
       </Cell>
       <Cell>
         {debt.liabilityAccountId ? <Line title={`Loan account: ${accountName(debt.liabilityAccountId)}`}><span className="text-muted-foreground">Loan · </span>{accountName(debt.liabilityAccountId)}</Line> : null}
-        {debt.paymentAccountId ? <Line title={`Repayment account: ${accountName(debt.paymentAccountId)}`}><span className="text-muted-foreground">Repayments · </span>{accountName(debt.paymentAccountId)}</Line> : null}
+        <Line className="text-muted-foreground">{debt.trackingStartDueDate ? `Tracked from ${shortDay(debt.trackingStartDueDate)}` : "Not tracked in Actual"}</Line>
         {activeOffsets.length ? <Line title={`Active offsets: ${offsetNames}`}><span className="text-muted-foreground">Offset · </span>{offsetNames}</Line> : null}
       </Cell>
       <Cell>

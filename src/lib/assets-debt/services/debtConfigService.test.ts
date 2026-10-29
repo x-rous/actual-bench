@@ -18,7 +18,6 @@ import {
   type DebtSaveInput,
 } from "./debtConfigService";
 import { projectStoredDebt, storedDebtEligibility } from "./projectionService";
-import { recordExtraPayment, removeExtraPayment } from "./extraPaymentService";
 
 let db: SqliteDatabase;
 beforeEach(() => {
@@ -33,24 +32,16 @@ function issuesOf(input: DebtSaveInput, dir = directory()): string[] {
 }
 
 describe("saving a debt configuration", () => {
-  it("protects Actual-recorded extras during ordinary saves while keeping the tracking removal workflow available", () => {
-    const original = createDebtConfiguration(db, saveInput(), directory());
-    const recorded = recordExtraPayment(db, original.debt.id, { actualTransactionId: "actual-extra", date: "2024-02-10", amountMinor: 100000 });
-    const event = recorded.assumptions[0];
-    expect(recorded.actualExtraPaymentAssumptionIds).toEqual([event.id]);
-    const assumption = { id: event.id, kind: "extra-repayment" as const, effectiveFrom: event.effectiveFrom, recurrence: null,
-      amountMinor: event.amountMinor!, feeTreatment: null, offsetAccountId: null, note: event.note };
-    for (const assumptions of [[], [{ ...assumption, amountMinor: assumption.amountMinor + 1 }], [{ ...assumption, effectiveFrom: "2024-02-11" }], [{ ...assumption, note: "manual" }]]) {
-      expect(() => updateDebtConfiguration(db, original.debt.id, saveInput({ name: "Must not save", assumptions }), directory())).toThrow("cannot be edited or removed here");
-      expect(getDebtDetail(db, original.debt.id)!.debt.currentRevision).toBe(recorded.debt.currentRevision);
-      expect(getDebtDetail(db, original.debt.id)!.debt.name).toBe(original.debt.name);
-    }
-    const manual = { ...assumption, id: null, effectiveFrom: "2024-03-01", note: "Manual extra" };
-    updateDebtConfiguration(db, original.debt.id, saveInput({ assumptions: [assumption, manual] }), directory());
-    updateDebtConfiguration(db, original.debt.id, saveInput({ assumptions: [assumption] }), directory());
-    expect(getDebtDetail(db, original.debt.id)!.assumptions).toHaveLength(1);
-    removeExtraPayment(db, original.debt.id, "actual-extra");
-    expect(getDebtDetail(db, original.debt.id)!.assumptions).toEqual([]);
+  it("tracks a loan in Actual only in an off-budget account; tracking settings never write a new revision", () => {
+    expect(issuesOf(saveInput({ liabilityAccountId: "acc-offset", trackingStartDueDate: "2024-02-01" }))).toEqual([
+      expect.stringMatching(/^liabilityAccountId: must be an off-budget account/),
+    ]);
+    expect(issuesOf(saveInput({ trackingStartDueDate: "Feb" }))).toEqual(["trackingStartDueDate: must be a date"]);
+    // A loan used as a calculator may name any account.
+    expect(issuesOf(saveInput({ liabilityAccountId: "acc-offset" }))).toEqual([]);
+    const created = createDebtConfiguration(db, saveInput(), directory());
+    const tracked = updateDebtConfiguration(db, created.debt.id, saveInput({ trackingStartDueDate: "2024-02-01", interestNoteSuffix: "#int" }), directory());
+    expect(tracked.debt).toMatchObject({ trackingStartDueDate: "2024-02-01", interestNoteSuffix: "#int", currentRevision: created.debt.currentRevision });
   });
   it("creates the debt, its rows and revision 1 in one save, with canonical decimals and the default drift tolerance", () => {
     const detail = createDebtConfiguration(db, saveInput({ rates: [{ ...saveInput().rates[0], annualRateDecimal: "0.06120" }] }), directory());
@@ -95,7 +86,7 @@ describe("saving a debt configuration", () => {
     expect(issuesOf(saveInput({ offsets: [{ ...other, actualAccountId: "acc-car" }] }))[0]).toMatch(/another debt's liability account/);
     // An account list read from another budget is refused outright.
     expect(issuesOf(saveInput(), directory({ budgetSyncId: "budget-2" }))[0]).toMatch(/different budget/);
-    const ok = createDebtConfiguration(db, saveInput({ offsets: [{ ...other, actualAccountId: "acc-offset" }] }), directory());
+    const ok = createDebtConfiguration(db, saveInput({ executionStrategy: "bench-daily", config: debtConfig({ profile: { ...(debtConfig().profile as Record<string, unknown>), accrual: "daily-simple" } }), offsets: [{ ...other, actualAccountId: "acc-offset" }] }), directory());
     expect(ok.offsets[0].actualAccountId).toBe("acc-offset");
   });
 
@@ -250,6 +241,32 @@ describe("baseline assumptions and projection", () => {
     expect(closing(projectStoredDebt(db, d.debt.id, { from: "2024-01-01", to: "2026-12-31" }))).toBe(closing(lump));
   });
 
+  it("refuses an extra repayment between repayment dates on a once-per-period loan and leaves the saved loan as it was", () => {
+    const d = createDebtConfiguration(db, saveInput(), directory());
+    const extra = (effectiveFrom: string) => [{ kind: "extra-repayment" as const, effectiveFrom, recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    expect(() => saveBaselineAssumptions(db, d.debt.id, extra("2025-02-10"), "Extra payment")).toThrow(/between repayment dates.*day-by-day interest/);
+    const unchanged = getDebtDetail(db, d.debt.id)!;
+    expect(unchanged.assumptions).toHaveLength(0);
+    expect(unchanged.debt.currentRevision).toBe(d.debt.currentRevision);
+    expect(saveBaselineAssumptions(db, d.debt.id, extra("2025-02-01"), "Extra payment").assumptions).toHaveLength(1);
+  });
+
+  it("refuses to create a once-per-period loan with an extra repayment between repayment dates, and saves nothing", () => {
+    const offDate = [{ kind: "extra-repayment" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    expect(() => createDebtConfiguration(db, saveInput({ assumptions: offDate }), directory())).toThrow(/between repayment dates.*day-by-day interest/);
+    expect(listDebtSummaries(db, BUDGET, true)).toEqual([]);
+  });
+
+  it("refuses to update a once-per-period loan to an extra repayment between repayment dates, and keeps its assumptions and revision", () => {
+    const d = createDebtConfiguration(db, saveInput(), directory());
+    const offDate = [{ kind: "extra-repayment" as const, effectiveFrom: "2025-02-10", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    expect(() => updateDebtConfiguration(db, d.debt.id, saveInput({ assumptions: offDate }), directory())).toThrow(/between repayment dates.*day-by-day interest/);
+    const unchanged = getDebtDetail(db, d.debt.id)!;
+    expect(unchanged.assumptions).toHaveLength(0);
+    expect(unchanged.debt.currentRevision).toBe(d.debt.currentRevision);
+    expect(listModelRevisions(db, "debt", d.debt.id)).toHaveLength(1);
+  });
+
   it("reports eligibility with reasons for every rejected strategy", () => {
     const d = createDebtConfiguration(db, saveInput(), directory());
     const result = storedDebtEligibility(db, d.debt.id, { formulaRules: false, splitActions: true, transferPayees: true, ruleReadback: true });
@@ -280,7 +297,7 @@ describe("zero Actual writes (T079, FR-002, SC-001)", () => {
   it("every configuration operation calls only transport read methods", async () => {
     const { transport, calls } = spyTransport();
     const dir = await readAccountDirectory(transport, BUDGET);
-    const created = createDebtConfiguration(db, saveInput({ offsets: [{ actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10000, balanceBasis: "total", capMinor: null }] }), dir);
+    const created = createDebtConfiguration(db, saveInput({ executionStrategy: "bench-daily", config: debtConfig({ profile: { ...(debtConfig().profile as Record<string, unknown>), accrual: "daily-simple" } }), offsets: [{ actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10000, balanceBasis: "total", capMinor: null }] }), dir);
     updateDebtConfiguration(db, created.debt.id, saveInput({ name: "Renamed" }), dir);
     updateDebtConfiguration(db, created.debt.id, saveInput({ rates: [{ ...saveInput().rates[0], annualRateDecimal: "0.05" }] }), dir);
     saveBaselineAssumptions(db, created.debt.id, [], "cleared");

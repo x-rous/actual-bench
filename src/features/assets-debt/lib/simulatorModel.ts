@@ -86,6 +86,8 @@ export type SimAssumption = {
   /** Offset state assumptions only: the simulated offset's placeholder id. */
   offsetAccountId: string | null;
   note: string | null;
+  /** A future event the user switched off: kept, but left out of the projection. Absent: on. */
+  enabled?: boolean;
 };
 
 export type SimulationState = {
@@ -168,6 +170,14 @@ export type TrackingState = {
   driftToleranceMinor: number | null;
   lenderChargeGraceDays: number;
   expectedObservationIntervalDays: number | null;
+  /** The first tracked installment's due date; null while the loan isn't tracked in Actual. */
+  trackingStartDueDate: string | null;
+  /** A lender statement used as the opening position: a saved one, or one typed now (saved with the loan). */
+  openingObservationId: string | null;
+  openingStatementDraft: { date: string; principalMinor: number } | null;
+  principalNoteSuffix: string;
+  interestNoteSuffix: string;
+  missingGraceDays: number;
   status: "draft" | "active";
   changeSummary: string;
 };
@@ -248,7 +258,8 @@ export function newTracking(sim: SimulationState): TrackingState {
     liabilityAccountId: null,
     paymentAccountId: null,
     signConvention: "negative-is-debt",
-    lenderPattern: null,
+    // Split each repayment is the default (owner decision 2026-10-28).
+    lenderPattern: "embedded-interest",
     executionStrategy: null,
     offsetAccountMap: {},
     components: [
@@ -260,6 +271,12 @@ export function newTracking(sim: SimulationState): TrackingState {
     driftToleranceMinor: null,
     lenderChargeGraceDays: 3,
     expectedObservationIntervalDays: null,
+    trackingStartDueDate: null,
+    openingObservationId: null,
+    openingStatementDraft: null,
+    principalNoteSuffix: "",
+    interestNoteSuffix: "#interest",
+    missingGraceDays: 5,
     status: "active",
     changeSummary: "",
   };
@@ -351,7 +368,8 @@ function modelComponents(sim: SimulationState): PaymentComponent[] {
 }
 
 function modelAssumptions(sim: SimulationState): FutureAssumption[] {
-  return sim.assumptions.map((a): FutureAssumption => {
+  // A what-if switched off stays saved but is left out of the projection.
+  return sim.assumptions.filter((a) => a.enabled !== false).map((a): FutureAssumption => {
     const recurrence = a.recurrence ? { recurrence: a.recurrence } : {};
     switch (a.kind) {
       case "fee":
@@ -561,8 +579,8 @@ export function detailToStates(detail: DebtDetail): { simulation: SimulationStat
     assumptions: detail.assumptions.map((a) => ({
       key: simKey("assumption"),
       id: a.id,
-      ...(detail.actualExtraPaymentAssumptionIds?.includes(a.id) ? { actualLinked: true } : {}),
       kind: a.assumptionKind as SimAssumptionKind,
+      ...(a.enabled === false ? { enabled: false } : {}),
       effectiveFrom: a.effectiveFrom,
       recurrence: a.recurrence && !("unknown" in a.recurrence) ? (a.recurrence as SimAssumption["recurrence"]) : null,
       amountMinor: a.amountMinor ?? 0,
@@ -579,7 +597,7 @@ export function detailToStates(detail: DebtDetail): { simulation: SimulationStat
     liabilityAccountId: d.liabilityAccountId,
     paymentAccountId: d.paymentAccountId,
     signConvention: typeof d.signConvention === "string" ? d.signConvention : "negative-is-debt",
-    lenderPattern: typeof d.lenderPattern === "string" ? d.lenderPattern : null,
+    lenderPattern: typeof d.lenderPattern === "string" ? d.lenderPattern : "embedded-interest",
     executionStrategy: typeof d.executionStrategy === "string" ? d.executionStrategy : null,
     offsetAccountMap: Object.fromEntries(detail.offsets.map((o) => [`offset:${o.id}`, o.actualAccountId])),
     components: trackingComponents,
@@ -588,6 +606,12 @@ export function detailToStates(detail: DebtDetail): { simulation: SimulationStat
     driftToleranceMinor: d.driftToleranceMinor,
     lenderChargeGraceDays: d.lenderChargeGraceDays,
     expectedObservationIntervalDays: d.expectedObservationIntervalDays,
+    trackingStartDueDate: d.trackingStartDueDate,
+    openingObservationId: d.openingObservationId,
+    openingStatementDraft: null,
+    principalNoteSuffix: d.principalNoteSuffix,
+    interestNoteSuffix: d.interestNoteSuffix,
+    missingGraceDays: d.missingGraceDays,
     status: d.status === "draft" ? "draft" : "active",
     changeSummary: "",
   };
@@ -624,7 +648,6 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
   const strategy = tracking.executionStrategy ?? recommendedStrategy;
   if (!strategy) issues.push({ field: "executionStrategy", message: "No Actual Bench calculation engine fits this loan yet" });
   const isTerm = sim.shape === "term-loan" && tracking.direction === "owed-by-me";
-  if (tracking.status === "active" && isTerm && !tracking.lenderPattern) issues.push({ field: "lenderPattern", message: "Answer how your lender records interest" });
   if (issues.length) return { ok: false, issues };
 
   const mapAccount = (id: string | null) => (id ? (tracking.offsetAccountMap[id] ?? id) : null);
@@ -675,6 +698,11 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
       loanPaymentCategoryId: tracking.loanPaymentCategoryId,
       drawCategoryId: tracking.drawCategoryId,
       expectedObservationIntervalDays: tracking.expectedObservationIntervalDays,
+      trackingStartDueDate: isTerm ? tracking.trackingStartDueDate : null,
+      openingObservationId: tracking.openingObservationId,
+      principalNoteSuffix: tracking.principalNoteSuffix,
+      interestNoteSuffix: tracking.interestNoteSuffix,
+      missingGraceDays: tracking.missingGraceDays,
       status: tracking.status,
       config,
       rates: sim.rates
@@ -693,7 +721,7 @@ export function statesToSaveInput(sim: SimulationState, tracking: TrackingState,
           note: r.note,
         })),
       offsets: sim.offsets.map((o) => ({ id: o.key.startsWith("offset:") ? o.key.slice("offset:".length) : null, actualAccountId: mapAccount(o.placeholderAccountId)!, effectiveFrom: o.effectiveFrom, effectiveTo: o.effectiveTo, offsetPercentageBps: o.percentageBps, balanceBasis: o.basis, capMinor: o.capMinor, fundScheduledRepayments: o.fundScheduledRepayments, fundScheduledRepaymentsFrom: o.fundScheduledRepaymentsFrom, useActualBalance: o.useActualBalance })),
-      assumptions: sim.assumptions.map((a) => ({ id: a.id ?? null, kind: a.kind, effectiveFrom: a.effectiveFrom, recurrence: a.recurrence, amountMinor: a.amountMinor, feeTreatment: a.kind === "fee" ? (a.feeTreatment ?? "cash-paid") : null, offsetAccountId: isOffsetAssumptionKind(a.kind) ? mapAccount(a.offsetAccountId) : null, note: a.note })),
+      assumptions: sim.assumptions.map((a) => ({ id: a.id ?? null, kind: a.kind, effectiveFrom: a.effectiveFrom, recurrence: a.recurrence, amountMinor: a.amountMinor, feeTreatment: a.kind === "fee" ? (a.feeTreatment ?? "cash-paid") : null, offsetAccountId: isOffsetAssumptionKind(a.kind) ? mapAccount(a.offsetAccountId) : null, note: a.note, ...(a.enabled === false ? { enabled: false } : {}) })),
       ...(tracking.changeSummary.trim() ? { changeSummary: tracking.changeSummary.trim() } : {}),
     },
   };

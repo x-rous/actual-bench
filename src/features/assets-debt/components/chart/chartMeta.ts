@@ -2,6 +2,7 @@ import type { SeriesId } from "../../lib/results";
 
 export const SERIES_META: Record<SeriesId, { label: string; color: string; dash?: string; axis: "balance" | "interest" }> = {
   balance: { label: "Loan balance", color: "var(--chart-1)", axis: "balance" },
+  actualBalance: { label: "Balance in Actual", color: "var(--chart-2)", axis: "balance" },
   comparison: { label: "Saved loan balance", color: "var(--chart-3)", dash: "8 4", axis: "balance" },
   offsetBalance: { label: "Offset balance", color: "var(--chart-2)", dash: "2 3", axis: "balance" },
   interestBearing: { label: "Interest-bearing balance", color: "var(--chart-4)", dash: "10 3 2 3", axis: "balance" },
@@ -22,4 +23,13 @@ export function formatChartDate(date: string): string {
   if (!match) return date;
   const month = SHORT_MONTHS[Number(match[2]) - 1];
   return month ? `${match[3]} ${month} ${match[1]}` : date;
+}
+
+/** "3 years, 2 months", "1 year", "5 months": time elapsed since the loan started. */
+export function formatElapsed(months: number): string {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const part = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (years === 0 && rest === 0) return "Less than a month";
+  return [years ? part(years, "year") : "", rest ? part(rest, "month") : ""].filter(Boolean).join(", ");
 }

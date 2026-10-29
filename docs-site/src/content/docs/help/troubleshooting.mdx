@@ -107,6 +107,28 @@ Slowness is nearly always size:
 - Big sync previews and diagnostics over a large rule set do real work.
 - A very large snapshot is limited by your browser's memory.
 
+### Loan Apply or Undo split is slow on a Direct connection
+
+To see where the time goes, turn on the console timing flags, reload, reconnect and repeat the action. Paste
+this in the browser console:
+
+```js
+localStorage.setItem("ab:debug-timing", "1");
+localStorage.setItem("ab:debug-sqlite-files", "1");
+```
+
+The console then reports how long the budget open, each read, the write and the checks after it take. It
+logs no paths, account or transaction identifiers, credentials or amounts. Logging adds overhead, so treat
+a traced run as an investigation, not a benchmark. If the console says tracing is unavailable, your Actual
+API build is not one the trace supports; the timings still work.
+
+To turn it off, remove both flags, reload and reconnect:
+
+```js
+localStorage.removeItem("ab:debug-timing");
+localStorage.removeItem("ab:debug-sqlite-files");
+```
+
 ## Reporting a bug
 
 Open an issue on [GitHub](https://github.com/x-rous/actual-bench/issues). Include:

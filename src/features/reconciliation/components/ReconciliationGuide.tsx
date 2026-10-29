@@ -35,7 +35,7 @@ const Chip = ({ tone, children }: { tone: Tone; children: ReactNode }) => <span 
 
 function Callout({ tone = "tip", title, children }: { tone?: "tip" | "warn"; title: string; children: ReactNode }) {
   const Icon = tone === "tip" ? Lightbulb : TriangleAlert;
-  return <aside className={cn("my-3 flex max-w-3xl gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
+  return <aside className={cn("my-3 flex max-w-[55rem] gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
     <Icon className={cn("mt-0.5 size-4 shrink-0", tone === "tip" ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400")} aria-hidden />
     <div><p className="font-semibold">{title}</p><div className="mt-0.5 leading-relaxed text-foreground/80">{children}</div></div>
   </aside>;
@@ -54,7 +54,7 @@ function Journey({ active }: { active?: number }) {
     ["Import", "Read the statement", Upload], ["Reconcile", "Match and decide", GitCompareArrows],
     ["Review", "Check the plan", ListChecks], ["Apply", "Write to Actual", PlayCircle],
   ];
-  return <ol aria-label="The four steps" className="my-3 flex max-w-4xl flex-col gap-2 sm:flex-row sm:items-stretch">
+  return <ol aria-label="The four steps" className="my-3 flex max-w-[64.5rem] flex-col gap-2 sm:flex-row sm:items-stretch">
     {steps.map(([title, caption, Icon], index) => <li key={title} className="flex flex-1 items-stretch gap-2">
       <div aria-current={active === index ? "step" : undefined} className={cn("flex h-full flex-1 items-center gap-3 rounded-lg border px-3 py-2", active === index ? "border-foreground bg-accent" : "bg-background")}>
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background"><Icon className="size-3.5" aria-hidden /></span>
@@ -72,7 +72,7 @@ function Pairing() {
     <span className="flex flex-col items-center"><Chip tone={tone}>{label}</Chip><span className="text-muted-foreground" aria-hidden>↔</span></span>
     <span className={cn("truncate rounded border px-2 py-1", right ? "bg-background" : "border-dashed text-muted-foreground")}>{right || "nothing in Actual"}</span>
   </li>;
-  return <figure className="my-3 max-w-3xl rounded-lg border bg-background p-3" aria-label="Statement rows paired with Actual transactions">
+  return <figure className="my-3 max-w-[55rem] rounded-lg border bg-background p-3" aria-label="Statement rows paired with Actual transactions">
     <div className="mb-2 flex justify-between text-[11px] font-semibold text-muted-foreground uppercase"><span>Bank statement</span><span>Actual</span></div>
     <ul className="space-y-2">
       {pair("04 Aug · COFFEE HOUSE · -18.50", "04 Aug · Coffee House · -18.50", "match", "Matched")}
@@ -89,7 +89,7 @@ function Pairing() {
 function PdfSketch() {
   const cols: [number, number, string, string][] = [[14, 52, "#2563eb", "Trans. date"], [58, 96, "#9333ea", "Posting date"], [102, 190, "#0d9488", "Description"], [196, 236, "#dc2626", "Money out"], [242, 282, "#16a34a", "Money in"]];
   const rows = [58, 70, 82, 94, 106];
-  return <figure className="my-3 max-w-xl rounded-lg border bg-background p-3" aria-label="Sketch of a PDF statement with its columns mapped">
+  return <figure className="my-3 max-w-[41.5rem] rounded-lg border bg-background p-3" aria-label="Sketch of a PDF statement with its columns mapped">
     <svg viewBox="0 0 300 130" className="w-full" role="img" aria-label="A statement page: a table area with five coloured columns and five transaction rows">
       <rect x="4" y="4" width="292" height="122" rx="3" fill="none" stroke="currentColor" strokeOpacity="0.25" />
       <rect x="10" y="10" width="140" height="8" rx="2" fill="currentColor" opacity="0.15" /><rect x="10" y="22" width="90" height="5" rx="2" fill="currentColor" opacity="0.1" />
@@ -110,7 +110,7 @@ function PdfSketch() {
 /** The write-before-and-after of a Review row, with the changing values in amber. */
 function BeforeAfter() {
   const cell = "px-2 py-1.5 align-top";
-  return <div className="my-3 max-w-3xl overflow-x-auto rounded-lg border">
+  return <div className="my-3 max-w-[55rem] overflow-x-auto rounded-lg border">
     <table className="w-full min-w-[34rem] border-collapse text-xs">
       <caption className="sr-only">One statement row and the transaction it becomes in Actual</caption>
       <thead className="bg-muted/50 text-[11px] text-muted-foreground"><tr>
@@ -141,7 +141,7 @@ function ApplyFlow() {
     ["Conflicts are held back", "A row that cannot be combined safely is reported, never overwritten.", "warn"],
     ["The account is read again", "The result is verified, then listed as applied, skipped or failed.", "muted"],
   ];
-  return <ol className="my-3 max-w-3xl space-y-1.5" aria-label="What Apply does, in order">
+  return <ol className="my-3 max-w-[55rem] space-y-1.5" aria-label="What Apply does, in order">
     {steps.map(([title, body, tone], index) => <li key={title} className={cn("flex items-start gap-3 rounded-lg border px-3 py-2 text-xs", TONES[tone])}>
       <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground text-[11px] font-semibold text-background">{index + 1}</span>
       <div><p className="font-semibold">{title}</p><p className="text-foreground/80">{body}</p></div>
@@ -162,7 +162,7 @@ const SESSION_STATES: [string, Tone, string][] = [
 export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { section: ReconciliationGuideSection; onSection: (section: ReconciliationGuideSection) => void; onClose: () => void; docsUrl?: string }) {
   const link = (to: ReconciliationGuideSection, text: string) => <button type="button" className="font-medium text-primary hover:underline" onClick={() => onSection(to)}>{text}</button>;
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-5xl">
+    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-[73.6rem]">
       <DialogHeader className="shrink-0 border-b px-5 py-4">
         <DialogTitle className="text-sm">Bank Reconciliation guide</DialogTitle>
         <DialogDescription className="text-xs">Check a bank statement against one Actual account, decide every difference, and write only what you approved.{docsUrl && <> <a className="font-medium text-primary hover:underline" href={docsUrl} target="_blank" rel="noopener noreferrer">Full documentation</a></>}</DialogDescription>
@@ -172,12 +172,12 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
           {RECONCILIATION_GUIDE_SECTIONS.map(([id, label]) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => onSection(id)}
             className={cn("rounded px-2 py-1.5 text-left text-xs transition-colors", section === id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground")}>{label}</button>)}
         </nav>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
           <h2 className="mb-4 text-base font-semibold">{RECONCILIATION_GUIDE_SECTIONS.find(([id]) => id === section)![1]}</h2>
 
           {section === "start" && <>
             <Para>Bank Reconciliation compares a statement you downloaded from your bank with <b>one account</b> in Actual. It shows what agrees, what is missing on either side, and what disagrees, lets you decide each difference, and writes only what you approved. It is for auditing a period or fixing it, not for everyday entry or bank sync.</Para>
-            <div className="grid max-w-4xl gap-3 sm:grid-cols-3">
+            <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-3">
               <Card tone="bank" icon={FileText} title="The statement">A CSV, TSV, OFX, QFX, QIF or text-based PDF from your bank. It is read in this session; no bank connection or credentials are needed. See {link("import", "Importing a statement")}.</Card>
               <Card tone="actual" icon={Landmark} title="The Actual account">The account&apos;s transactions are read from Actual, and every row is compared against them. See {link("matching", "How rows are matched")}.</Card>
               <Card tone="match" icon={ShieldCheck} title="The plan">Your decisions build a plan. <b>Nothing is written until you Apply</b>, and Apply re-checks everything first. See {link("apply", "Applying safely")}.</Card>
@@ -191,7 +191,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
 
           {section === "import" && <>
             <Para>Upload a file or paste its text. The import screen shows the rows it read <b>before</b> you continue, so mistakes are cheap to catch.</Para>
-            <div className="flex max-w-3xl flex-wrap gap-2">{["CSV", "TSV", "OFX", "QFX", "QIF", "PDF (text-based)"].map((format) => <Chip key={format} tone="bank">{format}</Chip>)}</div>
+            <div className="flex max-w-[55rem] flex-wrap gap-2">{["CSV", "TSV", "OFX", "QFX", "QIF", "PDF (text-based)"].map((format) => <Chip key={format} tone="bank">{format}</Chip>)}</div>
             <Para>OFX and QIF are recognised from their contents, so an OFX export saved as <Tag>.txt</Tag> still imports as OFX.</Para>
             <Heading>Check three things before matching</Heading>
             <Steps items={[
@@ -200,7 +200,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
               ["Sign convention", "Money out must be negative. If the bank prints spending as positive, correct it here."],
             ]} />
             <Heading>Two kinds of text from the bank</Heading>
-            <div className="grid max-w-3xl grid-cols-[1fr_auto_1fr] items-stretch gap-x-2 gap-y-2">
+            <div className="grid max-w-[55rem] grid-cols-[1fr_auto_1fr] items-stretch gap-x-2 gap-y-2">
               <div className={cn("rounded-lg border p-3 text-xs", TONES.bank)}><p className="font-semibold">Merchant / payee</p><p className="mt-0.5 text-foreground/80">“GROCER 0183 DUBAI”</p></div>
               <ArrowRight className="size-4 self-center text-muted-foreground" aria-hidden />
               <div className={cn("rounded-lg border p-3 text-xs", TONES.actual)}><p className="font-semibold">Imported payee</p><p className="mt-0.5 text-foreground/80">What the bank called it. Never replaces your own payee.</p></div>
@@ -218,7 +218,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
             <Para>A PDF is read <b>in your browser</b>: it is not uploaded or stored, and a password is kept in memory only. Because a PDF has no columns of its own, the reader first works out where the transactions are, then lets you check it.</Para>
             <PdfSketch />
             <Heading>Two screens</Heading>
-            <div className="grid max-w-4xl gap-3 sm:grid-cols-2">
+            <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-2">
               <Card tone="bank" icon={ListChecks} title="1 · Check detection">Where the transaction areas and columns are, how dates, signs and amounts are read, and the statement period and currency. Change anything, <b>Preview</b> the effect, then <b>Apply changes and review</b>. The actions are at the top of the settings column.</Card>
               <Card tone="match" icon={CheckCircle2} title="2 · Review transactions">Every row read, each <Chip tone="match">Ready</Chip> <Chip tone="warn">Review</Chip> or <Chip tone="bad">Fix</Chip>. Edit a date, description or amount in place; the eye icon shows where on the page a value came from.</Card>
             </div>
@@ -228,7 +228,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
               [<Chip key="v" tone="warn">Review</Chip>, "Read, but worth a look", "Check it against the statement, then Mark reviewed"],
               [<Chip key="f" tone="bad">Fix</Chip>, "A required value is missing or invalid", "Correct it, or ignore the row"],
             ]} />
-            <ul className="mb-3 max-w-3xl list-disc space-y-1 pl-5 text-xs leading-relaxed text-foreground/80">
+            <ul className="mb-3 max-w-[55rem] list-disc space-y-1 pl-5 text-xs leading-relaxed text-foreground/80">
               <li><b>Possible duplicate</b> is a hint, not an error: the same charge twice on one day is normal. Mark each reviewed, or ignore the repeat.</li>
               <li><b>Add transaction</b> adds a row the statement does not show. It goes at the end, stays <Chip tone="bad">Fix</Chip> until its date, description and amount are filled in, and counts in the totals.</li>
               <li>Select several rows to set their direction, merge, ignore, or mark them reviewed together. <Key>Ctrl</Key> + <Key>Enter</Key> marks the current row reviewed.</li>
@@ -267,7 +267,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
             ]} />
             <Heading>Several rows, several candidates</Heading>
             <Para>When bank rows share the same merchant and date, open one and choose <b>Resolve group</b>. Bank rows run down a grid and Actual transactions across it; pick a cell, read the comparison, and select <b>Use this match</b>. Each pair you confirm frees the others, and <b>Undo last pairing</b> takes it back during this visit.</Para>
-            <div className="my-3 max-w-md overflow-hidden rounded-lg border text-xs" role="img" aria-label="A grid pairing two bank rows with two Actual transactions">
+            <div className="my-3 max-w-[32rem] overflow-hidden rounded-lg border text-xs" role="img" aria-label="A grid pairing two bank rows with two Actual transactions">
               <div className="grid grid-cols-3 bg-muted/50 text-[11px] text-muted-foreground"><span className="p-2" /><span className="p-2 font-medium">Taxi · 09 Aug<br />-12.00</span><span className="p-2 font-medium">Taxi · 09 Aug<br />-12.00</span></div>
               {[["Bank: TAXI -12.00", true, false], ["Bank: TAXI -12.00", false, true]].map(([label, a, b], index) => <div key={index} className="grid grid-cols-3 border-t">
                 <span className="p-2 font-medium">{label as string}</span>
@@ -287,7 +287,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
             <Journey active={2} />
             <BeforeAfter />
             <Heading>Reading the summary</Heading>
-            <div className="grid max-w-3xl grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid max-w-[55rem] grid-cols-2 gap-2 sm:grid-cols-4">
               {([["Create", "new transactions", "new"], ["Update", "changes you staged", "warn"], ["Delete", "duplicates removed", "bad"], ["No change needed", "already correct", "muted"]] as [string, string, Tone][]).map(([label, detail, tone]) => <div key={label} className={cn("rounded-lg border px-3 py-2", TONES[tone])}><p className="text-xs font-semibold">{label}</p><p className="text-[11px] opacity-80">{detail}</p></div>)}
             </div>
             <Heading>Imported payee, in plain words</Heading>
@@ -317,7 +317,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
               ["Failed", "The write did not go through", "Retry what failed (only unfinished work is attempted)"],
               ["Interrupted", "The tab closed during a write", "Recover interrupted Apply, once the original tab has stopped. It reads Actual and repeats no write"],
             ]} />
-            <div className="my-3 flex max-w-3xl items-start gap-3 rounded-lg border bg-muted/30 p-3 text-xs">
+            <div className="my-3 flex max-w-[55rem] items-start gap-3 rounded-lg border bg-muted/30 p-3 text-xs">
               <RefreshCw className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
               <p className="leading-relaxed text-foreground/80">Created transactions carry a deterministic marker, so retrying after a partial run never creates the same one twice, even if the session lost track of the run.</p>
             </div>
@@ -327,7 +327,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
           {section === "sessions" && <>
             <Para>The main page lists one row per reconciliation: account, tag, statement format and file, period, row count and status. Open a session to continue where its work is at: a draft opens on Import, an applied one on its result, anything else on the workbench.</Para>
             <Heading>Status</Heading>
-            <ul className="max-w-3xl space-y-1.5">{SESSION_STATES.map(([label, tone, body]) => <li key={label} className="flex items-start gap-3 text-xs"><span className="w-40 shrink-0"><Chip tone={tone}>{label}</Chip></span><span className="leading-relaxed text-foreground/80">{body}</span></li>)}</ul>
+            <ul className="max-w-[55rem] space-y-1.5">{SESSION_STATES.map(([label, tone, body]) => <li key={label} className="flex items-start gap-3 text-xs"><span className="w-40 shrink-0"><Chip tone={tone}>{label}</Chip></span><span className="leading-relaxed text-foreground/80">{body}</span></li>)}</ul>
             <Heading>Finding a session</Heading>
             <Example caption="The filters above the table" head={["Filter", "How it behaves"]} rows={[
               ["Search", "Account, statement name, tag and period start"],
@@ -338,7 +338,7 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
             ]} />
             <Callout title="Where sessions are kept">Sessions live in Actual Bench&apos;s own database on the server, not in the budget file. They hold the imported rows, your decisions and the apply result, so statement contents stay there until you delete the session. Deleting a session never changes your budget, and applied changes stay applied.</Callout>
             <Heading>Limits</Heading>
-            <ul className="mb-3 max-w-3xl list-disc space-y-1 pl-5 text-xs leading-relaxed text-foreground/80">
+            <ul className="mb-3 max-w-[55rem] list-disc space-y-1 pl-5 text-xs leading-relaxed text-foreground/80">
               <li>One account per session.</li>
               <li>Split children are read-only; a split transaction can be matched but its lines cannot be edited here.</li>
               <li>A manual pairing is limited to transactions loaded for the session&apos;s date range.</li>

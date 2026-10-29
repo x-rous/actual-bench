@@ -692,14 +692,22 @@ export async function adjustSplitAmounts(primitives: StructurePrimitives, input:
   if (!Number.isSafeInteger(sum) || sum !== total) throw new TransactionStructureRefusedError("The new amounts do not add up to the transaction amount.");
   if ([...amounts.values()].some((a) => a === 0 || Math.sign(a) !== Math.sign(total))) throw new TransactionStructureRefusedError("Every split line must keep an amount with the transaction's sign.");
 
-  await primitives.update(
-    input.parent.id,
-    { subtransactions: raw.map((c) => ({ id: c.id, amount: amounts.get(c.id)!, category: str(c.category), payee: str(c.payee), notes: str(c.notes) })) },
-    { accountIds: [...new Set([input.parent.accountId, ...(input.counterpart ? [input.counterpart.accountId] : [])])], sinceDate: input.parent.date }
-  );
+  // Each line's amount is changed on the line itself. Actual's split update (`makeChild`) gives a line the parent's payee
+  // and category whenever the update leaves those fields out, and drops a null payee; a split that was a transfer keeps the
+  // loan's transfer payee on its parent, so a line without a payee would become a second transfer (seen live on Actual
+  // 26.10). Every write therefore names the line's own payee and category, even when they are empty. Only lines whose
+  // amount changes are written; the transfer line's loan-side row follows it.
+  const transfersBefore = raw.filter((c) => str(c.transfer_id)).length;
+  const watch = { accountIds: [...new Set([input.parent.accountId, ...(input.counterpart ? [input.counterpart.accountId] : [])])], sinceDate: input.parent.date };
+  for (const c of raw) {
+    const amount = amounts.get(c.id)!;
+    if (amount !== minor(c.amount)) await primitives.update(c.id, { amount, payee: str(c.payee), category: str(c.category) }, watch);
+  }
 
   const after = await findRaw(primitives, input.parent.accountId, input.parent.id, input.parent.date);
   if (!after) throw new TransactionStructureRefusedError("The split could not be read back.");
+  // Written, but not as asked: never report success when Actual made another line a transfer.
+  if ((after.row.subtransactions ?? []).filter((c) => str(c.transfer_id)).length !== transfersBefore) throw new Error("Actual changed which lines of the split are transfers. Check this payment in Actual.");
   const counterpart = input.counterpart ? await findRaw(primitives, input.counterpart.accountId, input.counterpart.id, input.counterpart.date) : null;
   return { parentAmount: minor(after.row.amount), children: (after.row.subtransactions ?? []).map(childOf), counterpart: counterpart ? { id: counterpart.row.id, amount: minor(counterpart.row.amount) } : null };
 }

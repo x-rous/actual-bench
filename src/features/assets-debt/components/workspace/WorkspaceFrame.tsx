@@ -2,31 +2,36 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, CircleHelp, MoreHorizontal } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { LOANS_PATH } from "../../lib/routes";
+import { FEATURES } from "@/lib/features/catalogue";
+import { LoanMenuContent } from "../loan/presentation";
+import { LoanGuide, guideSectionForLoanTab, type LoanGuideSection } from "../guide/LoanGuide";
 
 /**
  * The focused loan workspace frame (RD-084 P1.6b T288; FR-206a,
  * `ux-loan-workspace.md` §1–§2). Inside a loan, the Assets & Debt title and
  * section tabs are replaced by this header: a back link that names where it
- * goes, the loan's name and state, one primary action, a ⋯ menu, and exactly
- * three tabs in build order: Terms & Schedule, Link to Actual, Sync Repayments. Leaving with
- * unsaved changes asks first.
+ * goes, the loan's name and state, one primary action, a ⋯ menu, and five tabs in the order a loan is set up:
+ * Terms & Schedule, Link to Actual, Repayments, Loan Ledger, Linked Assets (design spec 06 §4.1). A dot on a tab
+ * means it needs the user. Leaving with unsaved changes asks first.
  */
 
 export const WORKSPACE_TABS = [
   { id: "calculation", label: "Terms & Schedule", slug: "schedule" },
   { id: "setup", label: "Link to Actual", slug: "link" },
-  { id: "activity", label: "Sync Repayments", slug: "repayments" },
+  { id: "activity", label: "Repayments", slug: "repayments" },
+  { id: "ledger", label: "Loan Ledger", slug: "ledger" },
+  { id: "assets", label: "Linked Assets", slug: "assets" },
 ] as const;
 
 export type WorkspaceTab = (typeof WORKSPACE_TABS)[number]["id"];
 
-/** The `?view=` value of a tab, in the words the tab shows (rev 4: Terms & Schedule · Link to Actual · Sync Repayments). */
+/** The `?view=` value of a tab, in the words the tab shows. */
 export function workspaceTabSlug(tab: WorkspaceTab): string {
   return WORKSPACE_TABS.find((t) => t.id === tab)!.slug;
 }
@@ -45,6 +50,8 @@ export function workspaceTabFor(view: string | null | undefined, fallback: Works
     case "setup":
     case "tracking":
     case "matching": return "setup";
+    case "ledger": return "ledger";
+    case "assets": return "assets";
     default: return fallback;
   }
 }
@@ -60,6 +67,8 @@ export type WorkspaceFrameProps = {
   onTab: (tab: WorkspaceTab) => void;
   /** Tabs that cannot open yet, with the reason (a new loan has no Activity until it is saved). */
   disabledTabs?: Partial<Record<WorkspaceTab, string>>;
+  /** Tabs that need the user (shown as a dot), with what for. */
+  attention?: Partial<Record<WorkspaceTab, string>>;
   /** The one primary action and anything that belongs beside it (the change summary field). */
   actions?: React.ReactNode;
   menu?: WorkspaceMenuItem[];
@@ -71,11 +80,13 @@ export type WorkspaceFrameProps = {
 
 const BACK_HREF = LOANS_PATH;
 
-export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabledTabs = {}, actions, menu = [], dirty, onSaveAndLeave, children }: WorkspaceFrameProps) {
+export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabledTabs = {}, attention = {}, actions, menu = [], dirty, onSaveAndLeave, children }: WorkspaceFrameProps) {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const leave = () => router.push(BACK_HREF);
+  // The guide opens on the section for the tab you are on.
+  const [guide, setGuide] = useState<LoanGuideSection | null>(null);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
@@ -91,18 +102,19 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {actions}
+            <Button type="button" variant="outline" size="sm" onClick={() => setGuide(guideSectionForLoanTab(tab))}><CircleHelp className="size-3.5" aria-hidden />Guide</Button>
             {menu.length ? (
               <DropdownMenu>
                 <DropdownMenuTrigger aria-label="More loan actions" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                   <MoreHorizontal aria-hidden="true" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <LoanMenuContent>
                   {menu.map((item) => (
                     <DropdownMenuItem key={item.label} onClick={item.onSelect} className={item.destructive ? "text-destructive" : undefined}>
                       {item.label}
                     </DropdownMenuItem>
                   ))}
-                </DropdownMenuContent>
+                </LoanMenuContent>
               </DropdownMenu>
             ) : null}
           </div>
@@ -119,11 +131,12 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
                 title={disabled}
                 onClick={() => onTab(t.id)}
                 className={cn(
-                  "border-b-2 border-transparent px-3 py-2 text-xs font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+                  "relative border-b-2 border-transparent px-3 py-2 text-xs font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
                   tab === t.id && "border-primary text-foreground"
                 )}
               >
                 {t.label}
+                {attention[t.id] && !disabled ? <span className="absolute top-1.5 right-1 size-1.5 rounded-full bg-staged-updated" role="img" aria-label={attention[t.id]} /> : null}
               </button>
             );
           })}
@@ -157,6 +170,7 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {guide ? <LoanGuide section={guide} onSection={setGuide} onClose={() => setGuide(null)} docsUrl={FEATURES.find((f) => f.id === "loans")?.docsUrl} /> : null}
     </div>
   );
 }

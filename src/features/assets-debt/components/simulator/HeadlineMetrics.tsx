@@ -33,7 +33,7 @@ function AmountValue({ value }: { value: string }) {
 
 function Tile({ label, labelDetail, value, delta, amount = false }: { label: string; labelDetail?: string; value: string; delta?: string | null; amount?: boolean }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-card px-3 py-2">
+    <div className="flex min-w-0 flex-col gap-0.5 px-4 py-3">
       <span className="text-xs text-muted-foreground">
         {label}{labelDetail ? ` (${labelDetail})` : null}
       </span>
@@ -50,6 +50,7 @@ export function HeadlineMetrics({
   frequencyLabel,
   announce,
   calculating,
+  details,
 }: {
   headline: Headline | null;
   deltas: Deltas | null;
@@ -58,29 +59,32 @@ export function HeadlineMetrics({
   /** The settled sentence to announce, or null while inputs are incomplete or calculating. */
   announce: string | null;
   calculating: boolean;
+  /** Approved detail lines (design spec 06 §12): interest paid so far and still to pay, and the time left. */
+  /** Grey sub-lines. `repayment` and `repaid` are for a tracked loan: how many installments are paid, and how much has been repaid. */
+  details?: { interest?: string | null; payoff?: string | null; repayment?: string | null; repaid?: string | null };
 }) {
   const money = (m: number | null) => (m === null ? "None" : formatAmount(m, digits));
   return (
-    <section aria-labelledby="headline-heading" className="flex flex-col gap-2">
+    <section aria-labelledby="headline-heading">
       <h2 id="headline-heading" className="sr-only">
         Results
       </h2>
-      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4" aria-busy={calculating || undefined}>
+      <div className="grid grid-cols-2 divide-x divide-border xl:grid-cols-4" aria-busy={calculating || undefined}>
         <Tile
           label={/^[a-z]+ly$/.test(frequencyLabel) ? `${frequencyLabel.charAt(0).toUpperCase()}${frequencyLabel.slice(1)} repayment` : "Repayment"}
           labelDetail={/^[a-z]+ly$/.test(frequencyLabel) ? undefined : frequencyLabel}
           value={headline ? `${money(headline.regularRepaymentMinor)}` : "–"}
-          delta={headline ? [headline.repaymentChanges ? "Changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
+          delta={headline ? [details?.repayment ?? null, headline.repaymentChanges ? "Changes over the loan" : null, deltas?.repaymentMinor ? `${deltas.repaymentMinor > 0 ? "+" : "−"}${formatAmount(Math.abs(deltas.repaymentMinor), digits)} vs saved` : null].filter(Boolean).join(" · ") : null}
           amount
         />
-        <Tile label="Total repayments" value={headline ? money(headline.totalRepaidMinor) : "–"} amount />
+        <Tile label="Total repayments" value={headline ? money(headline.totalRepaidMinor) : "–"} delta={details?.repaid ?? null} amount />
         <Tile
           label="Total interest"
           value={headline ? money(headline.totalInterestMinor) : "–"}
-          delta={deltas && deltas.interestMinor !== 0 ? `${formatAmount(Math.abs(deltas.interestMinor), digits)} ${deltas.interestMinor < 0 ? "less" : "more"} than saved` : null}
+          delta={[details?.interest ?? null, deltas && deltas.interestMinor !== 0 ? `${formatAmount(Math.abs(deltas.interestMinor), digits)} ${deltas.interestMinor < 0 ? "less" : "more"} than saved` : null].filter(Boolean).join(" · ") || null}
           amount
         />
-        <Tile label="Payoff date" value={headline ? (headline.payoffDate ? formatChartDate(headline.payoffDate) : "Not within the term") : "–"} delta={deltas?.payoffDays != null ? payoffDelta(deltas.payoffDays) : null} />
+        <Tile label="Payoff date" value={headline ? (headline.payoffDate ? formatChartDate(headline.payoffDate) : "Not within the term") : "–"} delta={[details?.payoff ?? null, deltas?.payoffDays != null ? payoffDelta(deltas.payoffDays) : null].filter(Boolean).join(" · ") || null} />
       </div>
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {announce ?? ""}

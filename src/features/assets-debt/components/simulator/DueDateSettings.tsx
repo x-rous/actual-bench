@@ -19,7 +19,7 @@ import { SelectField } from "../fields";
  * is looked up online.
  */
 
-const ADJUSTMENT_OPTIONS: { value: BusinessDayAdjustment; label: string }[] = [
+export const ADJUSTMENT_OPTIONS: { value: BusinessDayAdjustment; label: string }[] = [
   { value: "none", label: "Stays on its date" },
   { value: "following", label: "Moves to the next business day" },
   { value: "modified-following", label: "Next business day, unless that is next month" },
@@ -27,12 +27,12 @@ const ADJUSTMENT_OPTIONS: { value: BusinessDayAdjustment; label: string }[] = [
   { value: "modified-preceding", label: "Previous business day, unless that is last month" },
 ];
 
-const ALLOCATION_OPTIONS: { value: InterestAllocation; label: string }[] = [
+export const ALLOCATION_OPTIONS: { value: InterestAllocation; label: string }[] = [
   { value: "as-calculated", label: "Interest up to each payment's actual date" },
   { value: "accrued-to-due-date", label: "Interest up to each due date; early-payment benefit next time" },
 ];
 
-const WEEKDAY_LABELS: Record<IsoWeekday, string> = { 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun" };
+export const WEEKDAY_LABELS: Record<IsoWeekday, string> = { 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun" };
 
 const DEFAULT_CONVENTION: Omit<BusinessDayConvention, "adjustment"> = { nonBusinessWeekdays: [6, 7], holidays: [] };
 

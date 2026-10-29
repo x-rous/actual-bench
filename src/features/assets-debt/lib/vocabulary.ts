@@ -11,10 +11,10 @@ import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
  * shown. Interest-only is a phase, not an amortization method.
  */
 
-type Option<T extends string> = { value: T; label: string; description?: string; unavailable?: string };
+type Option<T extends string> = { value: T; label: string; description?: string; unavailable?: string; /** False: the option is greyed out without the reason after its name. */ showReason?: boolean };
 
 const toSelect = <T extends string>(options: Option<T>[]): SelectOption[] =>
-  options.map((o) => ({ value: o.value, label: o.unavailable ? `${o.label} (not available: ${o.unavailable})` : o.label, disabled: !!o.unavailable }));
+  options.map((o) => ({ value: o.value, label: o.unavailable && o.showReason !== false ? `${o.label} (not available: ${o.unavailable})` : o.label, disabled: !!o.unavailable }));
 
 export const DEBT_TYPE_OPTIONS: SelectOption[] = toSelect([
   { value: "mortgage", label: "Mortgage" },
@@ -57,6 +57,7 @@ export const DAY_COUNT_OPTIONS: SelectOption[] = toSelect([
     value: "monthly-30-360-actual-day-allocation",
     label: "Monthly 30/360 with actual-day allocation",
     unavailable: DAY_COUNT_CATALOG["monthly-30-360-actual-day-allocation"].selectable ? undefined : "no verified published source yet",
+    showReason: false,
   },
 ]);
 
