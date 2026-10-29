@@ -6,9 +6,10 @@
 
 **A companion app for Actual Budget.**
 
-Full-year budget editing, bulk data management, rule diagnostics, payee cleanup, bank
-reconciliation, scheduled bank sync, multi-currency sync between budget files, ActualQL queries,
-budget file health checks, verified backups, and automations that run with Bench closed.
+Full-year planning, bulk data management, reconciliation, financial tools, sync, backups and
+diagnostics for your Actual Budget.
+
+**[Try the demo](https://actual-bench-demo.vercel.app) · [Install Actual Bench](#quick-start) · [Read the docs](https://x-rous.github.io/actual-bench/)**
 
 [![Latest version](https://img.shields.io/github/v/tag/x-rous/actual-bench?label=version&style=flat-square)](https://github.com/x-rous/actual-bench/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/x-rous/actual-bench/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/x-rous/actual-bench/actions/workflows/ci.yml)
@@ -29,45 +30,39 @@ budget file health checks, verified backups, and automations that run with Bench
 ## What is Actual Bench?
 
 Actual Bench is a web app that connects to your [Actual Budget](https://github.com/actualbudget/actual)
-server and adds tools Actual Budget does not have:
-
-- **Assets** - register off-budget assets, reconcile dedicated/shared account values and classify or adjust supported Actual book rows after confirmation. Settings and ownership are Bench metadata. See the [Asset Registry guide](https://x-rous.github.io/actual-bench/user-guide/asset-registry/).
-- **Credit Cards** - link Actual card accounts, record and verify bank statements, track repayments and instalment plans, and explore debt history. Card setup and review decisions are saved in Actual Bench's metadata database; Actual is never written.
-- **Bank reconciliation** - match a downloaded statement (CSV/TSV, OFX/QFX, QIF, or text-based PDF)
-  against your transactions line by line, and fix the differences.
-- **Rule diagnostics** - find rules that duplicate each other, contradict each other, or never run.
-- **Payee cleanup** - find duplicate payees, see the evidence for each match, and create the rules
-  that stop them coming back.
-- **Budget file sync** - copy transactions, payees or categories between budget files, converting
-  currency where they differ.
-- **Verified backups** - on a schedule, to a destination you choose, and every copy is opened and
-  checked.
-- **Automations** - run backups and syncs on a schedule, with Bench closed.
-- **ActualQL queries** - ask your budget data a question and export the answer.
-- **Budget file health** - open a budget file and check it for problems.
-
-It also does what Actual Budget already does, at scale: a full year of budget amounts in one table
-with copy, paste and fill, and bulk editing with CSV import and export for accounts, payees,
-categories, schedules, tags and rules.
-
-You still use Actual Budget for day-to-day transactions.
-
-Most changes are stored in your browser until you click **Save**, so nothing reaches your budget
-until you say so. [A couple of things save straight away](#nothing-is-written-until-you-say-so), and
-they tell you where you use them.
+server and gives you a workbench for planning, managing and understanding your budgets. Use it when
+you want to see more at once, make changes in bulk, or investigate the details. Actual Budget remains
+your home for day-to-day transaction entry.
 
 **[Try the live demo →](https://actual-bench-demo.vercel.app)**
-No setup, no account. A year of household Envelope and Tracking budgets to poke at.
-*(Shared sandbox; resets periodically.)*
+No setup, no account: explore sample household Envelope and Tracking budgets. This is a shared
+sandbox, so use sample data only; other visitors may see your changes. The demo resets when its
+backend restarts.
 
 ## What it does
 
-**Plan and edit**
+**Advanced data management**
 
-- **[Budget Cockpit](https://x-rous.github.io/actual-bench/user-guide/budget-management/)** - twelve months on one screen, with range selection, copy/paste from a spreadsheet, fill actions, undo/redo, and a draft panel that shows every pending change before you save.
-- **[Rules](https://x-rous.github.io/actual-bench/user-guide/rules/)** - the whole rule set on one page, with every reference shown as the payee, category or account it names instead of an id. Split rules across categories, use templates and formulas, merge duplicates, and round-trip the lot through CSV.
-- **[Entity admin](https://x-rous.github.io/actual-bench/user-guide/accounts/)** - accounts, payees, categories, schedules and tags, with inline editing, filters, bulk actions, CSV import/export, and delete dialogs that tell you what a deletion would take with it.
-- **[Bundle export / import](https://x-rous.github.io/actual-bench/getting-started/bundle-export-import/)** - a budget's whole structure in one ZIP. Build a reusable template, seed a new budget from an old one, or take a snapshot before a cleanup you might regret.
+Manage [accounts](https://x-rous.github.io/actual-bench/user-guide/accounts/),
+[categories](https://x-rous.github.io/actual-bench/user-guide/categories/),
+[payees](https://x-rous.github.io/actual-bench/user-guide/payees/),
+[tags](https://x-rous.github.io/actual-bench/user-guide/tags/),
+[rules](https://x-rous.github.io/actual-bench/user-guide/rules/) and
+[schedules](https://x-rous.github.io/actual-bench/user-guide/schedules/) in one place. Search and
+filter your data, edit rows, work in bulk, and import or export CSV files. Check dependencies before
+deleting, merge duplicate payees and rules, and build rules with splits, templates and formulas.
+Review your changes together before saving.
+
+Move a budget's whole structure in one ZIP with **[Bundle export / import](https://x-rous.github.io/actual-bench/getting-started/bundle-export-import/)**:
+build a reusable template, seed a new budget, or keep a snapshot before a cleanup.
+
+**Financial management**
+
+- **[Budget Cockpit](https://x-rous.github.io/actual-bench/user-guide/budget-management/)** - see twelve months of budget, actuals or balances in one grid. Edit across months with spreadsheet-style selection, copy/paste and fill. The details panel follows your selection, showing the story behind a month, group or category; explore the drivers behind a variance and open the underlying transactions without leaving the workspace.
+- **[Bank Reconciliation](https://x-rous.github.io/actual-bench/user-guide/bank-reconciliation/)** - compare a bank statement with an Actual account to find missing, duplicate or incorrect transactions. Import CSV, TSV, OFX, QFX, QIF or text-based PDF statements, review suggested matches and decide how to resolve differences. Your session is saved so you can return later, and you review the planned changes before applying them.
+- **[Credit Cards](https://x-rous.github.io/actual-bench/user-guide/credit-cards/)** *(Experimental)* - see what you owe, what is due and how much credit is available across your cards. Check bank statements against your Actual transactions, follow payments and interest, and track instalment plans alongside your card history. Bench saves your card settings and review decisions without changing Actual transactions.
+- **[Assets](https://x-rous.github.io/actual-bench/user-guide/asset-registry/)** *(Experimental)* - bring property, investments, vehicles and other assets into one view, using your Actual accounts as the ledger. Follow value, capital invested, income, expenses and returns over time; account for shared ownership and depreciation; and link loans to see your equity. Explore the transactions behind the figures and review financial changes before confirming them.
+- **[Loans & Debt](https://x-rous.github.io/actual-bench/user-guide/assets-debt/)** *(Experimental)* - explore your loan before making a decision: model rate changes, extra payments, offsets and fees, and see how they affect interest and payoff in the chart and repayment schedule. Link the loan to Actual to compare the forecast with real payments, review principal and interest splits, and see the equity in linked assets. Start with the calculator and connect it to your budget when you're ready.
 
 **Clean up and audit**
 
@@ -76,32 +71,17 @@ No setup, no account. A year of household Envelope and Tracking budgets to poke 
 - **[Budget File Health](https://x-rous.github.io/actual-bench/user-guide/budget-file-health/)** and **[Data Browser](https://x-rous.github.io/actual-bench/user-guide/data-browser/)** - open a budget snapshot in your browser, run health checks, and browse its tables directly.
 - **[ActualQL](https://x-rous.github.io/actual-bench/user-guide/actualql/)** - a query console with saved queries, plain-English explain, and table, JSON, scalar and tree result views.
 
-**Money in and out**
+**Sync, backups and automation**
 
-- **[Bank Reconciliation](https://x-rous.github.io/actual-bench/user-guide/bank-reconciliation/)** - import a statement (CSV/TSV, OFX/QFX, QIF, or text-based PDF), settle it row by row, and apply once. Re-reads every row before writing, so it will not overwrite an edit you made in Actual meanwhile.
-- **[Bank sync](https://x-rous.github.io/actual-bench/user-guide/bank-sync/)** - trigger Actual's own SimpleFIN/GoCardless import and get a per-account answer, instead of one number for everything.
-- **[Budget File Sync](https://x-rous.github.io/actual-bench/user-guide/budget-sync/)** - copy transactions, payees or categories between budget files. Preview first, apply only what you picked, never create a duplicate twice. Converts currency where budgets differ, using [locked FX rates](https://x-rous.github.io/actual-bench/user-guide/fx-rates/).
-- **[Backups](https://x-rous.github.io/actual-bench/user-guide/backups/)** - scheduled or on demand, to a destination you choose, and every copy is opened and verified rather than assumed.
-- **[Automations](https://x-rous.github.io/actual-bench/user-guide/automations/)** - one place for everything that runs on a schedule, which always says whether it runs on the server or only while a tab is open.
-
-## Screenshots
-
-| Rules audited as a set | Duplicate payees, with the evidence |
-|:---:|:---:|
-| ![Rule Diagnostics](docs/readme-images/rule-diagnostics.png) | ![Payee Cleanup](docs/readme-images/payee-cleanup.png) |
-
-| A statement reconciled row by row | Backups that are opened and checked |
-|:---:|:---:|
-| ![Bank Reconciliation](docs/readme-images/bank-reconciliation.png) | ![Backups](docs/readme-images/backups.png) |
-
-| Ask your data a question | Work that runs with the app closed |
-|:---:|:---:|
-| ![ActualQL](docs/readme-images/actualql.png) | ![Automations](docs/readme-images/automations.png) |
+- **[Bank sync](https://x-rous.github.io/actual-bench/user-guide/bank-sync/)** - schedule Actual's SimpleFIN or GoCardless sync to run automatically in the background, even when your browser is closed. See the result for each linked account when you return.
+- **[Budget File Sync](https://x-rous.github.io/actual-bench/user-guide/budget-sync/)** *(Experimental)* - copy transactions, payees or categories between budget files, with a preview and duplicate protection. Convert currencies using [locked FX rates](https://x-rous.github.io/actual-bench/user-guide/fx-rates/).
+- **[Backups](https://x-rous.github.io/actual-bench/user-guide/backups/)** - take checked copies on demand or on a schedule, to destinations you choose.
+- **[Automations](https://x-rous.github.io/actual-bench/user-guide/automations/)** *(Experimental)* - schedule backups and syncs, and see what ran and whether it succeeded, even with Bench closed.
 
 ## Quick start
 
-You need a running [Actual Budget](https://github.com/actualbudget/actual) server. Nothing else is
-required - every environment variable is optional.
+You need Docker and a running [Actual Budget](https://github.com/actualbudget/actual) server. No
+environment variables are required for a basic setup.
 
 ```yaml
 # docker-compose.yml
@@ -145,16 +125,17 @@ Running behind a reverse proxy, want the edge build, or need to change a setting
 Prefer not to run your own Docker host?
 
 - **Fly.io** - deploy your own instance with the included `fly.toml` template: see [Deploy on Fly.io](https://x-rous.github.io/actual-bench/administration/fly-io/) for step-by-step instructions. It keeps a single always-on Machine with persistent storage, since Actual Bench's automation scheduler needs one running instance.
-- **PikaPods** - available once the official listing is approved.
 
-See **[Deployment](https://x-rous.github.io/actual-bench/administration/deployment/)** for the full walkthrough of either.
+See **[Deployment](https://x-rous.github.io/actual-bench/administration/deployment/)** for more options.
 
 ### Connecting
 
 Bench talks to Actual two ways, and you pick one on the connection screen:
 
 - **Direct Actual Server** - your browser talks to Actual directly, using Actual's own browser API. This is the target architecture.
-- **HTTP API Server** - through [actual-http-api](https://github.com/jhonderson/actual-http-api). Fully maintained, and required for unattended server-side work.
+- **HTTP API Server** - through [actual-http-api](https://github.com/jhonderson/actual-http-api), for installations that use the HTTP API bridge.
+
+Both modes support unattended server-side work after you enrol the budget for automation.
 
 <p align="center">
   <img src="docs/readme-images/connect.png" alt="The connection screen, with the choice between a Direct Actual Server and an HTTP API Server" width="420" />
@@ -162,20 +143,21 @@ Bench talks to Actual two ways, and you pick one on the connection screen:
 
 **[How to connect →](https://x-rous.github.io/actual-bench/getting-started/connecting/)**
 
-## Nothing is written until you say so
+## You're in control
 
-This is the one thing to know before you use it.
+Review your work before it changes your Actual budget. Most edits are staged in your browser until
+you choose **Save**; workflows such as reconciliation and budget file sync let you review changes
+before you **Apply** them. Scheduled changes run only when you opt into an automation.
 
-Creates, edits, deletes, merges, imports and budget-cell changes are staged in your browser. The top
-bar counts what is pending, rows are marked as new, changed or invalid, undo and redo work across the
-whole set, and leaving the page warns you first. Nothing reaches Actual until you press **Save**.
+## Screenshots
 
-Reconciliation and Budget File Sync go further: both show you a full preview, and both re-read the
-rows they are about to touch so a change you made in Actual meanwhile is never silently overwritten.
-Diagnostics and ActualQL never write at all.
+| Rules audited as a set | Duplicate payees, with the evidence |
+|:---:|:---:|
+| ![Rule Diagnostics](docs/readme-images/rule-diagnostics.png) | ![Payee Cleanup](docs/readme-images/payee-cleanup.png) |
 
-The exceptions are deliberate and small: notes save immediately, and the envelope carryover toggle
-applies directly. Both say so where you use them.
+| A statement reconciled row by row | Work that runs with the app closed |
+|:---:|:---:|
+| ![Bank Reconciliation](docs/readme-images/bank-reconciliation.png) | ![Automations](docs/readme-images/automations.png) |
 
 ## Documentation
 
