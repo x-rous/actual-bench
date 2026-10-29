@@ -16,7 +16,7 @@ import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { useTransactionReference } from "@/components/transactions/useTransactionReference";
 import { cn } from "@/lib/utils";
 import { formatAmount } from "../../lib/money";
-import { reconcileTrackingComponents, simulationToModel, type SaveIssue, type SimulationState, type TrackingComponent, type TrackingState } from "../../lib/simulatorModel";
+import { reconcileTrackingComponents, simulationToModel, switchToDayByDay, type SaveIssue, type SimulationState, type TrackingComponent, type TrackingState } from "../../lib/simulatorModel";
 import { DEBT_TYPE_OPTIONS } from "../../lib/vocabulary";
 import { AccountField, CategoryField, DateField, IntegerField, MoneyField, SelectField, TextField } from "../fields";
 
@@ -135,6 +135,15 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
             <SelectField label="Kind of loan" value={tracking.debtType} options={DEBT_TYPE_OPTIONS.filter((o) => o.value !== RECEIVABLE && o.value !== "heloc")} onChange={(v) => set({ debtType: v as TrackingState["debtType"] })} />
             <AccountField {...accountProps} label="Loan account" filter={(a: { offBudget?: boolean }) => !!a.offBudget} value={tracking.liabilityAccountId ?? ""} onChange={(v) => set({ liabilityAccountId: v || null, trackingStartDueDate: null })} issue={issue("liabilityAccountId")} hint={noOffBudget ? "There is no off-budget account yet. Create one in Accounts, then choose it here." : "Off-budget accounts only: Actual keeps a loan off the budget."} />
           </div>
+          {sim.profile.accrual === "per-period" && tracking.liabilityAccountId && setSimulation ? (
+            <div role="note" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+              <p className="min-w-0 flex-1">
+                This loan works out interest once per repayment period. Payments made between repayment dates, which are normal when a loan is tracked from Actual, cannot be followed that way.
+                Calculating day by day can; if your lender works interest out per period, the figures may differ slightly from its statements. Nothing is saved until you save the loan.
+              </p>
+              <Button type="button" size="sm" variant="outline" onClick={() => setSimulation(switchToDayByDay(sim))}>Calculate interest day by day</Button>
+            </div>
+          ) : null}
           {sim.offsets.map((o, i) => {
             const name = sim.offsets.length > 1 ? `Offset account ${i + 1}` : "Offset account";
             return (

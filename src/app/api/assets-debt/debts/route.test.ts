@@ -5,7 +5,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetAppDbForTests } from "@/lib/app-db/connection";
-import { directory, saveInput } from "@/lib/assets-debt/testing/debtFixtures";
+import { debtConfig, directory, saveInput } from "@/lib/assets-debt/testing/debtFixtures";
 import { DELETE, GET as getOne, PATCH } from "./[id]/route";
 import { PUT as putAssumptions } from "./[id]/assumptions/route";
 import { GET as getTracking } from "./[id]/tracking/route";
@@ -86,7 +86,10 @@ describe("/api/assets-debt/debts", () => {
 
   it("round-trips one-off and recurring offset deltas through the API without relabelling them", async () => {
     const offset = { actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10_000, balanceBasis: "total" as const, capMinor: null };
+    // Offsets change interest day by day, so the loan accrues daily.
     const debt = await create({
+      executionStrategy: "bench-daily",
+      config: debtConfig({ profile: { ...(debtConfig().profile as Record<string, unknown>), accrual: "daily-simple" } }),
       offsets: [offset],
       assumptions: [
         { kind: "offset-balance", effectiveFrom: "2024-01-01", recurrence: null, amountMinor: 50_000, feeTreatment: null, offsetAccountId: "acc-offset", note: "Opening snapshot" },

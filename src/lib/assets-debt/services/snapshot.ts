@@ -1,3 +1,4 @@
+import { explainBlocks } from "@/lib/financial-models/loan/blockMessages";
 import type { Anchor, LoanModelSnapshot } from "@/lib/financial-models/loan/model";
 import { projectDebt, type DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
 import { allocateObservedRepayments, type AllocatedRepayment, type InterestAllocation, type ObservedRepayment } from "@/lib/financial-models/loan/statementAllocation";
@@ -413,7 +414,7 @@ export function calculatePeriod(input: {
     to: input.to,
     resolution: "events",
   });
-  if (!projection.ok) return { ok: false, message: projection.blocked.map((b) => b.message).join(" ") };
+  if (!projection.ok) return { ok: false, message: explainBlocks(projection.blocked).texts.join(" ") };
   const events = projection.events.filter((e) => e.date >= input.from && e.date <= input.to);
   const last = projection.events.filter((e) => e.date <= input.to).at(-1);
   const engineVersions: Record<string, string> = {};

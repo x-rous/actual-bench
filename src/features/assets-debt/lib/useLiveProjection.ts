@@ -1,5 +1,6 @@
 "use client";
 
+import { explainBlocks } from "@/lib/financial-models/loan/blockMessages";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { BlockReason } from "@/lib/financial-models/loan/model";
 import type { DebtProjection, DebtProjectionInput } from "@/lib/financial-models/loan/projection";
@@ -87,7 +88,7 @@ export function useLiveProjection(sim: SimulationState, options: { compareWith?:
           if (process.env.NODE_ENV === "development") console.debug(`[assets-debt] projection ${outcome.durationMs.toFixed(0)} ms`);
           // A blocked contract has no results to show, so its reasons are surfaced even when the projection itself is fine.
           const blocked = outcome.projection.ok ? (outcome.contract && !outcome.contract.ok ? outcome.contract.blocked : []) : outcome.projection.blocked;
-          setSettled({ primary, comparison, impactBaseline, contract, result: { status: blocked.length ? "blocked" : "ok", projection: outcome.projection, comparison: outcome.comparison, impactBaseline: outcome.impactBaseline, contract: outcome.contract ?? null, problems: blocked.map((b) => b.message), blocked, durationMs: outcome.durationMs } });
+          setSettled({ primary, comparison, impactBaseline, contract, result: { status: blocked.length ? "blocked" : "ok", projection: outcome.projection, comparison: outcome.comparison, impactBaseline: outcome.impactBaseline, contract: outcome.contract ?? null, problems: explainBlocks(blocked).texts, blocked, durationMs: outcome.durationMs } });
         })
         .catch((error: unknown) => {
           if (cancelled || error instanceof SupersededError) return;

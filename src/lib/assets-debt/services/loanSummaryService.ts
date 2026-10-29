@@ -1,3 +1,4 @@
+import { explainBlocks } from "@/lib/financial-models/loan/blockMessages";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { getEffectiveDebtAnchor } from "@/lib/app-db/debtAnchorRepository";
 import { getDebtDetail } from "./debtConfigService";
@@ -26,7 +27,7 @@ export function summarizeStoredLoan(db: SqliteDatabase, id: string, input: { tod
   const anchor = getEffectiveDebtAnchor(db, id);
   const projected = projectStoredDebt(db, id, { from: "0001-01-01", to: `${Number(input.today.slice(0, 4)) + 60}-12-31`, resolution: "events", offsetHistories: input.offsetHistories }, detail);
   if (!projected.ok) return projected;
-  if (!projected.projection.ok) return { ok: false as const, blocked: { code: "invalid-config", message: projected.projection.blocked.map((item) => item.message).join(" ") } };
+  if (!projected.projection.ok) return { ok: false as const, blocked: { code: "invalid-config", message: explainBlocks(projected.projection.blocked).texts.join(" ") } };
   const events = projected.projection.events;
   const paidOff = detail.paidOff && detail.paidOff.paidDate <= input.today ? detail.paidOff : null;
   const remaining = paidOff ? [] : events.filter((event) => event.date > input.today);

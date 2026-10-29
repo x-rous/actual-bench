@@ -86,7 +86,7 @@ describe("saving a debt configuration", () => {
     expect(issuesOf(saveInput({ offsets: [{ ...other, actualAccountId: "acc-car" }] }))[0]).toMatch(/another debt's liability account/);
     // An account list read from another budget is refused outright.
     expect(issuesOf(saveInput(), directory({ budgetSyncId: "budget-2" }))[0]).toMatch(/different budget/);
-    const ok = createDebtConfiguration(db, saveInput({ offsets: [{ ...other, actualAccountId: "acc-offset" }] }), directory());
+    const ok = createDebtConfiguration(db, saveInput({ executionStrategy: "bench-daily", config: debtConfig({ profile: { ...(debtConfig().profile as Record<string, unknown>), accrual: "daily-simple" } }), offsets: [{ ...other, actualAccountId: "acc-offset" }] }), directory());
     expect(ok.offsets[0].actualAccountId).toBe("acc-offset");
   });
 
@@ -241,6 +241,16 @@ describe("baseline assumptions and projection", () => {
     expect(closing(projectStoredDebt(db, d.debt.id, { from: "2024-01-01", to: "2026-12-31" }))).toBe(closing(lump));
   });
 
+  it("refuses an extra repayment between repayment dates on a once-per-period loan and leaves the saved loan as it was", () => {
+    const d = createDebtConfiguration(db, saveInput(), directory());
+    const extra = (effectiveFrom: string) => [{ kind: "extra-repayment" as const, effectiveFrom, recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }];
+    expect(() => saveBaselineAssumptions(db, d.debt.id, extra("2025-02-10"), "Extra payment")).toThrow(/between repayment dates.*day-by-day interest/);
+    const unchanged = getDebtDetail(db, d.debt.id)!;
+    expect(unchanged.assumptions).toHaveLength(0);
+    expect(unchanged.debt.currentRevision).toBe(d.debt.currentRevision);
+    expect(saveBaselineAssumptions(db, d.debt.id, extra("2025-02-01"), "Extra payment").assumptions).toHaveLength(1);
+  });
+
   it("reports eligibility with reasons for every rejected strategy", () => {
     const d = createDebtConfiguration(db, saveInput(), directory());
     const result = storedDebtEligibility(db, d.debt.id, { formulaRules: false, splitActions: true, transferPayees: true, ruleReadback: true });
@@ -271,7 +281,7 @@ describe("zero Actual writes (T079, FR-002, SC-001)", () => {
   it("every configuration operation calls only transport read methods", async () => {
     const { transport, calls } = spyTransport();
     const dir = await readAccountDirectory(transport, BUDGET);
-    const created = createDebtConfiguration(db, saveInput({ offsets: [{ actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10000, balanceBasis: "total", capMinor: null }] }), dir);
+    const created = createDebtConfiguration(db, saveInput({ executionStrategy: "bench-daily", config: debtConfig({ profile: { ...(debtConfig().profile as Record<string, unknown>), accrual: "daily-simple" } }), offsets: [{ actualAccountId: "acc-offset", effectiveFrom: "2024-01-01", effectiveTo: null, offsetPercentageBps: 10000, balanceBasis: "total", capMinor: null }] }), dir);
     updateDebtConfiguration(db, created.debt.id, saveInput({ name: "Renamed" }), dir);
     updateDebtConfiguration(db, created.debt.id, saveInput({ rates: [{ ...saveInput().rates[0], annualRateDecimal: "0.05" }] }), dir);
     saveBaselineAssumptions(db, created.debt.id, [], "cleared");

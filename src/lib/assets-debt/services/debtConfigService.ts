@@ -40,6 +40,9 @@ import { recastPolicyFor } from "@/lib/financial-models/loan/recast";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { crossesBudgetBoundary, type AccountDirectory } from "../actual/ledgerPort";
 import { buildDebtRevisionSnapshot, DEBT_REVISION_FORMAT, DEBT_REVISION_VERSION } from "./materialChange";
+import { modelFromDetail } from "../model/buildModel";
+import { explainBlock, SWITCHABLE_BLOCK_CODES } from "@/lib/financial-models/loan/blockMessages";
+import { simulate } from "@/lib/financial-models/loan/projection";
 
 /**
  * Debt configuration (RD-084 P1.3; FR-001, FR-002, FR-010, FR-011a, FR-020–FR-025,
@@ -481,6 +484,23 @@ function writeRevisionIfMaterial(db: SqliteDatabase, id: string, changeSummary: 
   return revision;
 }
 
+/**
+ * A loan whose interest is worked out once per repayment period cannot follow a transaction between repayment dates,
+ * a mid-period rate change or an offset. The simulator asks before switching to day by day; this is the same rule on
+ * the server, so no client can store a loan that then cannot be calculated. Runs inside the save's transaction, so a
+ * refusal rolls the save back.
+ */
+function assertCalculable(db: SqliteDatabase, id: string): void {
+  const built = modelFromDetail(getDebtDetail(db, id)!);
+  if (!built.ok || built.model.profile.accrual !== "per-period") return;
+  const { model } = built;
+  const result = simulate({ model, anchor: { date: model.terms.openingDate, principalMinor: model.terms.openingPrincipalMinor, accruedInterestMinor: 0, source: "opening" }, events: [], to: `${Number(model.terms.openingDate.slice(0, 4)) + 60}-12-31` });
+  if (result.ok) return;
+  const refusal = result.blocked.find((b) => SWITCHABLE_BLOCK_CODES.has(b.code));
+  if (!refusal) return;
+  throw new DebtConfigValidationError([{ field: "profile.accrual", message: `${explainBlock(refusal).text} Switch the loan to day-by-day interest first.` }]);
+}
+
 function saveChildren(db: SqliteDatabase, id: string, value: Normalized, now: string) {
   replaceDebtRates(db, id, value.rates, now);
   replaceDebtOffsetLinks(db, id, value.offsets, now);
@@ -494,6 +514,7 @@ export function createDebtConfiguration(db: SqliteDatabase, input: DebtSaveInput
   const id = db.transaction(() => {
     const debt = insertDebt(db, { ...value.fields, status: input.status, currentRevision: 1 }, now);
     saveChildren(db, debt.id, value, now);
+    assertCalculable(db, debt.id);
     writeRevisionIfMaterial(db, debt.id, input.changeSummary ?? "Created", now);
     return debt.id;
   })() as string;
@@ -515,6 +536,7 @@ export function updateDebtConfiguration(db: SqliteDatabase, id: string, input: D
   db.transaction(() => {
     updateDebt(db, id, { ...result.value.fields, status: input.status, currentRevision: existing.currentRevision }, now);
     saveChildren(db, id, result.value, now);
+    assertCalculable(db, id);
     writeRevisionIfMaterial(db, id, input.changeSummary, now);
   })();
   return getDebtDetail(db, id)!;
@@ -541,6 +563,7 @@ export function saveBaselineAssumptions(db: SqliteDatabase, id: string, assumpti
   if (issues.length) throw new DebtConfigValidationError(issues);
   db.transaction(() => {
     replaceDebtAssumptions(db, id, assumptions, now);
+    assertCalculable(db, id);
     writeRevisionIfMaterial(db, id, changeSummary, now);
   })();
   return getDebtDetail(db, id)!;

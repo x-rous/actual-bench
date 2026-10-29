@@ -16,7 +16,7 @@ export function attentionText(reason: AttentionReason): string {
   }
 }
 
-/** Where a loan that needs attention opens: Repayments for writes, Link to Actual for settings. */
+/** Where a loan that needs attention opens: Repayments for writes, Terms & Schedule for settings (the calculation method lives there). */
 export function hrefOf(item: AttentionItem): string {
-  return loanPath(item.id, `view=${item.reasons[0]?.code === "configuration-blocked" ? "link" : "repayments"}`);
+  return loanPath(item.id, `view=${item.reasons[0]?.code === "configuration-blocked" ? "schedule" : "repayments"}`);
 }

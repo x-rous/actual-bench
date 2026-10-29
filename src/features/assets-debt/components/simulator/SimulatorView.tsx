@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { BookOpen, MoreHorizontal, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { explainBlock } from "@/lib/financial-models/loan/blockMessages";
 import { DateInput } from "@/components/ui/date-input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -140,6 +141,9 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
     else onChange(candidate);
   };
 
+  // A refusal that calculating day by day would lift gets a button that asks first, whatever caused it (an edit, an
+  // offset, or a payment from Actual part-way through a period on a tracked loan).
+  const switchReason = !readOnly && sim.profile.accrual === "per-period" ? live.blocked.map(explainBlock).find((e) => e.category === "switch")?.text ?? null : null;
   const projection = useMemo(() => composeTracked(live.projection, live.contract, tracked), [live.projection, live.contract, tracked]);
   const baseProjection = useMemo(() => composeTracked(live.impactBaseline, live.contract, tracked), [live.impactBaseline, live.contract, tracked]);
   const events = projection?.ok ? projection.events : null;
@@ -251,6 +255,11 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
                   <li key={p}>{p}</li>
                 ))}
               </ul>
+              {switchReason ? (
+                <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => setPrompt({ reason: switchReason, candidate: sim })}>
+                  Calculate interest day by day…
+                </Button>
+              ) : null}
             </div>
           ) : null}
           {chart && chart.points.length ? <div className="px-4 py-3"><LoanChartPanel data={chart} view={chartView} onViewChange={setChartView} digits={sim.minorDigits} /></div> : null}
