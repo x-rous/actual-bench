@@ -63,6 +63,8 @@ export type ChartPoint = {
   paymentInterestMinor?: number;
   /** Extra repayments in the period (minor units). */
   extraMinor?: number;
+  /** The period holds an event that really happened (a payment in Actual), even if it falls before the tracking start month. */
+  fromActual?: boolean;
   /** A tracked loan: where the period's figures come from. */
   source?: "contract" | "actual" | "projected";
 } & Partial<Record<SeriesId, number>>;
@@ -100,13 +102,15 @@ export function withTracking(data: ChartData, tracked: { startDate: string; toda
     const period = keyOf(a.date);
     const point = byPeriod.get(period) ?? { period };
     point.actualBalance = a.owedMinor;
+    point.fromActual = true;
     byPeriod.set(period, point);
   }
   const points = [...byPeriod.values()].sort((a, b) => a.period.localeCompare(b.period));
   // Before the tracking start the figures are the contract's; up to the last real event they are Actual's; after it, the projection.
-  // A loan tracked from its first installment has no contract part, even if that installment was paid in an earlier month.
+  // A period that holds something that really happened is Actual's, even before the start month: the start installment
+  // may have been paid in the month before it was due. A loan tracked from its first installment has no contract part.
   const hasContractPart = tracked.installmentsBefore === undefined || tracked.installmentsBefore > 0;
-  for (const point of points) point.source = hasContractPart && point.period < keyOf(tracked.startDate) ? "contract" : tracked.anchor && point.period > keyOf(tracked.anchor.date) ? "projected" : "actual";
+  for (const point of points) point.source = hasContractPart && !point.fromActual && point.period < keyOf(tracked.startDate) ? "contract" : tracked.anchor && point.period > keyOf(tracked.anchor.date) ? "projected" : "actual";
   const series: SeriesId[] = tracked.actual.length ? [data.series[0] ?? "balance", "actualBalance", ...data.series.slice(1)] : data.series;
   return { ...data, points, series: [...new Set(series)], tracking: points.length ? { firstPeriod: points[0].period, startPeriod: keyOf(tracked.startDate), todayPeriod: keyOf(tracked.today), untrackedBefore: (tracked.installmentsBefore ?? 0) > 0 } : null };
 }
@@ -135,6 +139,7 @@ export function chartSeries(projection: DebtProjection, sim: SimulationState, op
     }
     if (e.eventType === "extra-repayment") point.extraMinor = (point.extraMinor ?? 0) - e.cashMovementMinor;
     if (installments > 0) point.installment = installments;
+    if (e.diagnostics.fromActual === true) point.fromActual = true;
     cumulative += e.interestMinor;
     point.balance = e.balanceAfterMinor;
     point.cumulativeInterest = cumulative;

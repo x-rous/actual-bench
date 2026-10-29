@@ -49,4 +49,14 @@ describe("the loan chart's installment and elapsed time", () => {
     const points = withTracking(data, { startDate: "2023-12-01", today: "2026-10-29", actual: [], anchor: { date: "2026-10-22" } }, "month").points;
     expect(points.map((p) => p.source)).toEqual(["contract", "actual", "actual", "projected"]);
   });
+
+  it("marks the periods that hold an event from Actual, so a point is labelled by its own content", () => {
+    const s = sim();
+    const projection = project(s);
+    if (!projection.ok) throw new Error("blocked");
+    const events = projection.events.map((e) => (e.date.startsWith("2024-03") ? { ...e, diagnostics: { ...e.diagnostics, fromActual: true } } : e));
+    const points = chartSeries({ ...projection, events }, s, { view: "month" }).points;
+    expect(points.find((p) => p.period === "2024-03")?.fromActual).toBe(true);
+    expect(points.find((p) => p.period === "2024-02")?.fromActual).toBeUndefined();
+  });
 });

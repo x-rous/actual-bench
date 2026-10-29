@@ -26,9 +26,11 @@ export type TrackedHistory = {
   ledgerEvents: { date: string; kind: "extra-principal" | "draw" | "fee" | "interest-charged" | "adjustment"; amountMinor: number; rowId: string; payee: string | null; notes: string | null }[];
 };
 
+/** One event of what really happened. `diagnostics.fromActual` lets the chart mark the periods that hold one, in whatever month they fall. */
 const event = (date: string, eventType: DebtProjectionEvent["eventType"], fields: Partial<DebtProjectionEvent>): DebtProjectionEvent => ({
   date, eventType, cashMovementMinor: 0, principalMovementMinor: 0, interestMinor: 0, feesMinor: 0, balanceBeforeMinor: 0, balanceAfterMinor: 0,
-  certainty: "observed", sourceAccountId: null, debtAccountId: null, categoryAllocations: [], modelRevision: 0, engineVersions: {}, diagnostics: {}, ...fields,
+  certainty: "observed", sourceAccountId: null, debtAccountId: null, categoryAllocations: [], modelRevision: 0, engineVersions: {}, ...fields,
+  diagnostics: { ...fields.diagnostics, fromActual: true },
 } as DebtProjectionEvent);
 
 export function trackedHistory(result: Extract<TrackingResult, { ok: true }>, startDate: string, today: string): TrackedHistory {

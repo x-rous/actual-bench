@@ -38,6 +38,13 @@ describe("the Before tracking shading on the chart", () => {
     expect(withTracking(early, { ...base, installmentsBefore: 3 }, "month").points.map((p) => p.source)).toEqual(["contract", "actual"]);
   });
 
+  it("labels a period by what it holds: an early payment before the start month is Actual's, even when installments precede tracking", () => {
+    const data = { points: [{ period: "2024-10" }, { period: "2024-12", fromActual: true }, { period: "2025-02" }], series: ["balance"], rateChanges: [], payoff: null } as unknown as ChartData;
+    // Tracked from installment 13, due 2025-01-01, which was paid in December.
+    const points = withTracking(data, { startDate: "2025-01-01", today: "2025-03-10", actual: [], installmentsBefore: 12, anchor: { date: "2025-03-01" } }, "month").points;
+    expect(points.map((p) => p.source)).toEqual(["contract", "actual", "actual"]);
+  });
+
   it("is only drawn when installments come before the tracking start", () => {
     expect(withTracking(data, { ...tracked, installmentsBefore: 0 }, "month").tracking?.untrackedBefore).toBe(false);
     expect(withTracking(data, { ...tracked, installmentsBefore: 12 }, "month").tracking?.untrackedBefore).toBe(true);
