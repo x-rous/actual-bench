@@ -69,7 +69,7 @@ export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState
       aria-label="Open calculation method settings"
     >
       <div className="min-w-0">
-        <span className="block text-xs font-medium text-muted-foreground">Calculation method</span>
+        <span className="block text-xs font-medium text-muted-foreground">Set calculation method</span>
         <span className="block truncate text-xs text-foreground">
           {/* The day count is set beside the interest rate, so the summary leaves it out. */}
           {profile.accrual === "per-period" ? `${labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote)} · ` : null}{labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency)}

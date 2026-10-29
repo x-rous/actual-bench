@@ -66,6 +66,8 @@ export type LedgerEventRow = { date: string; kind: "extra-principal" | "draw" | 
 
 export type TrackedEvents = {
   startDate: string;
+  /** How many installments precede the tracking start; 0 when it starts at installment 1. */
+  installmentsBefore?: number;
   today: string;
   ledgerEvents: readonly LedgerEventRow[];
   /** What happened, against the contract without it; the switched-on what-ifs, against the history plus the contract. */
@@ -106,7 +108,7 @@ function SavesCell({ savings, eventKey, included, digits }: { savings?: EventSav
 function sourceOf(row: EventRow, tracked: TrackedEvents): "From Actual" | "What-if" | "Contract" | "Before tracking" | "Passed" {
   if (row.kind === "ledger") return "From Actual";
   if (row.kind === "rate-change") return "Contract";
-  if (row.date < tracked.startDate) return "Before tracking";
+  if (tracked.installmentsBefore !== 0 && row.date < tracked.startDate) return "Before tracking";
   return row.date > tracked.today ? "What-if" : "Passed";
 }
 

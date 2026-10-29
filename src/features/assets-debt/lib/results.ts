@@ -104,7 +104,9 @@ export function withTracking(data: ChartData, tracked: { startDate: string; toda
   }
   const points = [...byPeriod.values()].sort((a, b) => a.period.localeCompare(b.period));
   // Before the tracking start the figures are the contract's; up to the last real event they are Actual's; after it, the projection.
-  for (const point of points) point.source = point.period < keyOf(tracked.startDate) ? "contract" : tracked.anchor && point.period > keyOf(tracked.anchor.date) ? "projected" : "actual";
+  // A loan tracked from its first installment has no contract part, even if that installment was paid in an earlier month.
+  const hasContractPart = tracked.installmentsBefore === undefined || tracked.installmentsBefore > 0;
+  for (const point of points) point.source = hasContractPart && point.period < keyOf(tracked.startDate) ? "contract" : tracked.anchor && point.period > keyOf(tracked.anchor.date) ? "projected" : "actual";
   const series: SeriesId[] = tracked.actual.length ? [data.series[0] ?? "balance", "actualBalance", ...data.series.slice(1)] : data.series;
   return { ...data, points, series: [...new Set(series)], tracking: points.length ? { firstPeriod: points[0].period, startPeriod: keyOf(tracked.startDate), todayPeriod: keyOf(tracked.today), untrackedBefore: (tracked.installmentsBefore ?? 0) > 0 } : null };
 }
