@@ -37,6 +37,17 @@ for (const budget of demo.budgets) {
   for (const item of detail.items) {
     if (item.actualTransactionIds.some((txId) => byId.get(txId)?.account !== session.accountId)) fail(`${budget.label}: reconciliation transaction missing`);
   }
+  for (const asset of registry.assets) {
+    const book = registry.metadata.filter((entry) => entry.assetId === asset.id).reduce((sum, entry) => sum + byId.get(entry.actualTransactionId).amount, 0);
+    const actual = transactions.filter((row) => row.account === asset.actualAccountId && !row.is_child).reduce((sum, row) => sum + row.amount, 0);
+    if (book !== actual) fail(`${budget.label}: asset book does not match Actual`);
+  }
+  for (const debt of debts) {
+    const { effective } = await read(`/api/assets-debt/debts/${encodeURIComponent(debt.id)}/anchors`);
+    if (!effective) fail(`${budget.label}: loan anchor missing`);
+    const actual = -transactions.filter((row) => row.account === debt.liabilityAccountId && !row.is_child && row.date <= effective.anchorDate).reduce((sum, row) => sum + row.amount, 0);
+    if (!effective || effective.principalMinor !== actual) fail(`${budget.label}: loan anchor does not match Actual`);
+  }
   const card = workspace.cards[0];
   for (const statement of workspace.statements) {
     const balance = -transactions.filter((row) => row.account === card.accountId && !row.is_child && row.date <= statement.closingDate).reduce((sum, row) => sum + row.amount, 0);
