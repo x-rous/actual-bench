@@ -32,6 +32,7 @@ check() {
   node demo/check-metadata.mjs http://127.0.0.1:17860
 }
 check
+if [ "${DEMO_BROWSER_SMOKE:-0}" = 1 ]; then node demo/browser-smoke.cjs; fi
 # Mark both stores, including a committed SQLite change, then restart the same
 # container. The markers must disappear and both budgets must still open.
 docker exec "$name" sh -c 'touch /data/actual/reset-marker && cd /bench && /opt/bench-node/node -e "const D=require(\"better-sqlite3\"); const d=new D(process.env.ACTUAL_BENCH_DB_PATH); d.exec(\"CREATE TABLE poc_reset_marker (id INTEGER)\"); d.close()"'
