@@ -95,11 +95,12 @@ export function toCsv(rows: readonly (readonly unknown[])[]): string {
  */
 export function downloadCsv(
   filename: string,
-  rows: readonly (readonly unknown[])[]
+  rows: readonly (readonly unknown[])[],
+  options?: { includeBom?: boolean }
 ): void {
   if (typeof document === "undefined") return;
   const url = URL.createObjectURL(
-    new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" })
+    new Blob([options?.includeBom ? "\uFEFF" : "", toCsv(rows)], { type: "text/csv;charset=utf-8" })
   );
   const anchor = document.createElement("a");
   anchor.href = url;

@@ -57,8 +57,13 @@ A loan page has five tabs, in the order a loan is set up:
 | **Linked Assets** | The assets this loan financed, with your allocated debt and equity. |
 
 A loan that is not saved yet can use **Terms & Schedule** and **Link to Actual**; **Repayments**, **Loan Ledger** and **Linked Assets** open once it is saved.
+Discarding an unsaved loan clears its in-memory settings before you start another loan.
 
 ## Terms & Schedule
+
+The in-app **Guide** has section navigation for loan workflows and concepts. Its **Settings** section explains every calculation-method field and its available choices, including
+rounding, business-day adjustments and lender-statement allocation. It marks new-loan defaults; a preset or saved loan
+may use different values. The **Calculation method** section remains an overview.
 
 The left panel holds the contract: loan type, amount, term, start date, the interest rate and **Day count method**,
 repayment frequency, and optional features (interest-only periods, a balloon payment, an offset account, fees and
@@ -66,12 +71,23 @@ other costs). Everything on the right is worked out from it: the monthly repayme
 the payoff date, a balance chart, the **Events** list and the amortization schedule. Edits on a saved loan stay
 unsaved until **Save changes**; tick **Compare with saved** to see the difference an edit makes first.
 
+The schedule's Year and Month labels count calendar months from one repayment interval before the first repayment,
+with Month 1 as the minimum. **Payment #** counts repayments separately; monthly and yearly rows aggregate calendar periods.
+
+**Export CSV** above the schedule downloads the current loan inputs, terms, calculation settings, four headline results,
+events and all rows of the All Events, Monthly and Yearly schedules. It includes the local generation date and time, identifies unsaved edits and, for a tracked loan,
+includes tracking context and the events read from Actual. The export reflects the current calculation, including what-ifs.
+
 **Events** change a loan between its regular repayments: **Extra payment**, **Redraw / Withdraw**, **Rate change**,
-**Fee** and **Repayment change**. Each can happen once or repeat. The **Saves** column shows the interest and time each
+**Fee** and **Repayment change**. Extra payments, redraws or withdrawals, and fees can repeat weekly, fortnightly,
+monthly, quarterly or annually from a first date through an inclusive **Until** date. Rate and repayment changes are
+entered one at a time. An extra payment or withdrawal can instead target an enabled offset account; fees can be paid
+in cash or added to the loan. The in-app guide's **Events and what-ifs** section explains each event and its options.
+The **Saves** column shows the interest and time each
 event saves (or adds), worked out in date order with each on top of the ones before it, so the rows add up to the
 totals above the list.
 
-For a tracked loan the first two figures also say how many installments are paid and how much has been repaid. The
+For a tracked loan the figures also show installments paid, amount repaid, interest paid and time remaining. The
 calculation has three parts: the contract before the tracking start, what really happened
 from the Loan Ledger, and a projection from today's balance with the what-ifs you have switched on.
 

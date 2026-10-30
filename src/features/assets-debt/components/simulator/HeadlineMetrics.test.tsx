@@ -14,8 +14,9 @@ describe("the headline figures of a tracked loan", () => {
   });
 
   it("show nothing extra for a loan that is only a calculation", () => {
-    render(<HeadlineMetrics headline={headline} deltas={null} digits={2} frequencyLabel="monthly" announce={null} calculating={false} details={{ interest: "Paid so far 0.00 · still to pay 5,211.27", payoff: "2 yrs left" }} />);
+    render(<HeadlineMetrics headline={headline} deltas={null} digits={2} frequencyLabel="monthly" announce={null} calculating={false} />);
     expect(screen.queryByText(/installments? paid/)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Paid so far/)).toHaveLength(1);
+    expect(screen.queryByText(/Paid so far/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/yrs left/)).not.toBeInTheDocument();
   });
 });

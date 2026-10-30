@@ -11,7 +11,7 @@ describe("feature presentation contracts", () => {
       "budget-management", "reconciliation", "credit-cards", "assets", "loans",
     ]);
     expect(FEATURES.filter((feature) => feature.groupId === "sync-automations").map((feature) => feature.id)).toEqual([
-      "fx-rates", "sync", "backups", "automations",
+      "sync", "fx-rates", "backups", "automations",
     ]);
     expect(getFeatureForPath("/reconciliation")?.maturity).toBe("stable");
     expect(getFeatureForPath("/assets")?.id).toBe("assets");

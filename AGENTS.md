@@ -184,7 +184,7 @@ Update in the same change:
 - Never work on `main`; PRs target `main`. Branches: `feat/`, `fix/`, `refactor/`, `docs/`; with a PR-spec: `<type>/pr-NNN-<slug>`.
 - Commit, push, open a PR, merge, tag or release only when explicitly instructed. An instruction covers only the named action and branch. Otherwise show the diff and the proposed message, then wait.
 - Never amend, rebase, force-push, delete branches or rewrite history without approval.
-- Commits are authored as Manaf Abu Rous (GitHub `x-rous`). Never change git config.
+- Commits are authored as Manaf (GitHub `x-rous`). Never change git config.
 - Never commit secrets, `secrets/`, `.env*` files with real values, vault keys or app DB files.
 - Commit messages and PR titles (PR titles become changelog entries): `<type>(<scope>): <summary>`, type `feat|fix|refactor|docs|chore|test`, imperative, lowercase start, no trailing period.
   ✅ `fix(ui): prevent double submission on submit button click` · ❌ `fix(ui): fix button bug`

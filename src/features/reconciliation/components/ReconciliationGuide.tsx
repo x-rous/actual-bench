@@ -1,10 +1,10 @@
 "use client";
 import type { ReactNode } from "react";
 import {
-  ArrowRight, Check, CheckCircle2, FileText, GitCompareArrows, Landmark, Lightbulb, ListChecks, PlayCircle, RefreshCw,
-  ShieldCheck, TriangleAlert, Upload,
+  ArrowRight, BookOpen, Check, CheckCircle2, CircleHelp, FileText, GitCompareArrows, Landmark, Lightbulb, ListChecks, PlayCircle, RefreshCw,
+  ShieldCheck, TriangleAlert, Upload, type LucideIcon,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { GuideFrame } from "@/components/ui/guide-frame";
 import { cn } from "@/lib/utils";
 import { Example, Heading, Key, Para, Steps, Tag } from "@/features/credit-cards/components/guide/CreditCardGuide";
 
@@ -21,6 +21,11 @@ export const RECONCILIATION_GUIDE_SECTIONS: [ReconciliationGuideSection, string]
   ["glossary", "Glossary"],
 ];
 
+const SECTION_ICONS: Record<ReconciliationGuideSection, LucideIcon> = {
+  start: BookOpen, import: Upload, pdf: FileText, matching: GitCompareArrows, decisions: CheckCircle2,
+  review: ListChecks, apply: ShieldCheck, sessions: RefreshCw, glossary: CircleHelp,
+};
+
 type Tone = "bank" | "actual" | "match" | "new" | "warn" | "muted" | "bad";
 const TONES: Record<Tone, string> = {
   bank: "border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300",
@@ -35,13 +40,13 @@ const Chip = ({ tone, children }: { tone: Tone; children: ReactNode }) => <span 
 
 function Callout({ tone = "tip", title, children }: { tone?: "tip" | "warn"; title: string; children: ReactNode }) {
   const Icon = tone === "tip" ? Lightbulb : TriangleAlert;
-  return <aside className={cn("my-3 flex max-w-[55rem] gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
+  return <aside className={cn("my-4 flex max-w-[55rem] gap-3 rounded-xl border px-4 py-3.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
     <Icon className={cn("mt-0.5 size-4 shrink-0", tone === "tip" ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400")} aria-hidden />
-    <div><p className="font-semibold">{title}</p><div className="mt-0.5 leading-relaxed text-foreground/80">{children}</div></div>
+    <div><p className="font-semibold">{title}</p><div className="mt-1 leading-relaxed text-foreground/80">{children}</div></div>
   </aside>;
 }
 
-const Card = ({ icon: Icon, title, tone, children }: { icon: typeof Landmark; title: string; tone: Tone; children: ReactNode }) => <div className={cn("h-full rounded-lg border p-3", TONES[tone])}>
+const Card = ({ icon: Icon, title, tone, children }: { icon: typeof Landmark; title: string; tone: Tone; children: ReactNode }) => <div className={cn("h-full rounded-xl border p-4 shadow-sm", TONES[tone])}>
   <div className="flex items-center gap-2 text-xs font-semibold"><Icon className="size-4" aria-hidden />{title}</div>
   <div className="mt-1.5 text-xs leading-relaxed text-foreground/80">{children}</div>
 </div>;
@@ -161,20 +166,7 @@ const SESSION_STATES: [string, Tone, string][] = [
 
 export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { section: ReconciliationGuideSection; onSection: (section: ReconciliationGuideSection) => void; onClose: () => void; docsUrl?: string }) {
   const link = (to: ReconciliationGuideSection, text: string) => <button type="button" className="font-medium text-primary hover:underline" onClick={() => onSection(to)}>{text}</button>;
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-[73.6rem]">
-      <DialogHeader className="shrink-0 border-b px-5 py-4">
-        <DialogTitle className="text-sm">Bank Reconciliation guide</DialogTitle>
-        <DialogDescription className="text-xs">Check a bank statement against one Actual account, decide every difference, and write only what you approved.{docsUrl && <> <a className="font-medium text-primary hover:underline" href={docsUrl} target="_blank" rel="noopener noreferrer">Full documentation</a></>}</DialogDescription>
-      </DialogHeader>
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <nav aria-label="Guide sections" className="flex w-52 shrink-0 flex-col gap-0.5 border-r p-2 pt-3">
-          {RECONCILIATION_GUIDE_SECTIONS.map(([id, label]) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => onSection(id)}
-            className={cn("rounded px-2 py-1.5 text-left text-xs transition-colors", section === id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground")}>{label}</button>)}
-        </nav>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
-          <h2 className="mb-4 text-base font-semibold">{RECONCILIATION_GUIDE_SECTIONS.find(([id]) => id === section)![1]}</h2>
-
+  return <GuideFrame title="Bank Reconciliation guide" description="Check a bank statement against one Actual account, decide every difference, and write only what you approved." docsUrl={docsUrl} sections={RECONCILIATION_GUIDE_SECTIONS} icons={SECTION_ICONS} section={section} onSection={onSection} onClose={onClose}>
           {section === "start" && <>
             <Para>Bank Reconciliation compares a statement you downloaded from your bank with <b>one account</b> in Actual. It shows what agrees, what is missing on either side, and what disagrees, lets you decide each difference, and writes only what you approved. It is for auditing a period or fixing it, not for everyday entry or bank sync.</Para>
             <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-3">
@@ -362,8 +354,5 @@ export function ReconciliationGuide({ section, onSection, onClose, docsUrl }: { 
               ["Marker", "An id on a created transaction that stops a retry creating it twice"],
             ]} />
           </>}
-        </div>
-      </div>
-    </DialogContent>
-  </Dialog>;
+  </GuideFrame>;
 }
