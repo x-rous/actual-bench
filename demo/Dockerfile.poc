@@ -1,0 +1,33 @@
+# Proof of concept only. Build from the repository root.
+FROM node:24.22.1-alpine AS bench-build
+WORKDIR /app
+RUN apk add --no-cache python3 make g++
+COPY package*.json ./
+COPY scripts/copy-sqlite-wasm.mjs scripts/copy-pdfjs-assets.mjs ./scripts/
+RUN npm ci --no-audit --no-fund
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM jhonderson/actual-http-api:26.10.0
+USER root
+RUN apk add --no-cache python3 make g++ \
+ && npm install -g @actual-app/sync-server@26.10.0
+# The API image uses Node 22. Bench and its native modules are built with Node
+# 24, so keep the two runtimes separate rather than mixing their ABIs.
+COPY --from=bench-build /usr/local/bin/node /opt/bench-node/node
+COPY --from=bench-build /app/.next-build/standalone /bench
+COPY --from=bench-build /app/.next-build/static /bench/.next-build/static
+COPY --from=bench-build /app/public /bench/public
+COPY demo/seed-data /seed-data/actual
+COPY demo/start-poc.sh /start-poc.sh
+COPY demo/check-budgets.mjs /check-budgets.mjs
+RUN chmod +x /start-poc.sh
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
+    ACTUAL_SERVER_URL=http://127.0.0.1:5006 \
+    ACTUAL_BENCH_DB_PATH=/data/bench/actual-bench.sqlite \
+    DEMO_MODE=1 DEMO_BASE_URL=http://127.0.0.1:5007 \
+    DEMO_BUDGET_SYNC_ID=7d243b3e-d2dc-4863-be75-b1fd85b77c2b \
+    DEMO_TRACKING_BUDGET_SYNC_ID=5e48dea9-96ef-4f5e-ba26-10a5af1e4da2
+EXPOSE 7860
+ENTRYPOINT ["/start-poc.sh"]
