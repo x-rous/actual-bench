@@ -25,6 +25,7 @@ import { createServer } from "node:net";
 globalThis.navigator ??= { platform: "", userAgent: "node" };
 
 const require = createRequire(import.meta.url);
+const { recoverPreviousSeed } = require("./seed-publication.cjs");
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const {
   CATEGORY_GROUPS,
@@ -41,6 +42,7 @@ const PORT = Number(process.env.SEED_PORT || 5006);
 const SERVER_URL = `http://localhost:${PORT}`;
 const SEED_DATA_DIR = join(__dirname, "seed-data.next");
 const FINAL_SEED_DATA_DIR = join(__dirname, "seed-data");
+const PREVIOUS_SEED_DATA_DIR = join(__dirname, "seed-data.previous");
 
 function createSeededRandom(seed = 0x1a2b3c4d) {
   return () => {
@@ -1110,11 +1112,12 @@ async function stabilizeGeneratedSyncIds(generatedBudgets) {
 }
 
 async function main() {
+  await recoverPreviousSeed(FINAL_SEED_DATA_DIR, PREVIOUS_SEED_DATA_DIR);
   // Refuse an occupied port before bootstrapping; it could be a real server.
   await new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once("error", reject);
-    probe.listen({ port: PORT, host: "::", exclusive: true }, () => probe.close(resolve));
+    probe.listen({ port: PORT, exclusive: true }, () => probe.close(resolve));
   });
   await rm(SEED_DATA_DIR, { recursive: true, force: true });
   await mkdir(SEED_DATA_DIR, { recursive: true });
@@ -1240,8 +1243,7 @@ async function main() {
     const metadata = spawnSync(process.execPath, [join(__dirname, "generate-metadata.cjs"), manifestPath, nextDb], { stdio: "inherit" });
     if (metadata.status !== 0) throw new Error("Bench metadata generation failed");
     // Publish only after both budgets and their matching metadata have validated.
-    const previous = join(__dirname, "seed-data.previous");
-    await rm(previous, { recursive: true, force: true });
+    const previous = PREVIOUS_SEED_DATA_DIR;
     await rename(FINAL_SEED_DATA_DIR, previous);
     try {
       await rename(SEED_DATA_DIR, FINAL_SEED_DATA_DIR);

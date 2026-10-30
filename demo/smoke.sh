@@ -37,10 +37,12 @@ check() {
 }
 check
 if [ "${DEMO_BROWSER_SMOKE:-0}" = 1 ]; then node demo/browser-smoke.cjs; fi
-# Mark both stores, including a committed SQLite change, then restart the same
-# container. The markers must disappear and both budgets must still open.
-docker exec "$name" sh -c 'touch /data/actual/reset-marker && cd /bench && /opt/bench-node/node -e "const D=require(\"better-sqlite3\"); const d=new D(process.env.ACTUAL_BENCH_DB_PATH); d.exec(\"CREATE TABLE poc_reset_marker (id INTEGER)\"); d.close()"'
+# Write a real transaction and a committed SQLite marker before restarting.
+reset_marker="demo-reset-$(date +%s)-$$"
+node demo/check-reset.mjs write "$reset_marker"
+docker exec "$name" sh -c 'cd /bench && /opt/bench-node/node -e "const D=require(\"better-sqlite3\"); const d=new D(process.env.ACTUAL_BENCH_DB_PATH); d.exec(\"CREATE TABLE poc_reset_marker (id INTEGER)\"); d.close()"'
 docker restart -t 20 "$name" >/dev/null
 check
-docker exec "$name" sh -c 'test ! -e /data/actual/reset-marker && cd /bench && /opt/bench-node/node -e "const D=require(\"better-sqlite3\"); const d=new D(process.env.ACTUAL_BENCH_DB_PATH); if(d.prepare(\"SELECT name FROM sqlite_master WHERE name = ?\").get(\"poc_reset_marker\")) process.exit(1); d.close()"'
+node demo/check-reset.mjs verify "$reset_marker"
+docker exec "$name" sh -c 'cd /bench && /opt/bench-node/node -e "const D=require(\"better-sqlite3\"); const d=new D(process.env.ACTUAL_BENCH_DB_PATH); if(d.prepare(\"SELECT name FROM sqlite_master WHERE name = ?\").get(\"poc_reset_marker\")) process.exit(1); d.close()"'
 docker stats --no-stream "$name"
