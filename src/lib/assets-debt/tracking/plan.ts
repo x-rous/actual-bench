@@ -282,15 +282,21 @@ class Allocator {
     this.balanceMinor = row.balanceAfterMinor;
     return { interestMinor: row.interestMinor, principalMinor: row.principalMinor, balanceAfterMinor: row.balanceAfterMinor, unpaidInterestMinor: row.unpaidInterestMinor ?? 0 };
   }
-  repayment(due: Due, paidDate: string, amountMinor: number, appliedInterestMinor?: number): Allocation | null {
+  preview(due: Due, paidDate: string, amountMinor: number, feesMinor: number): number | null {
+    if (!this.allocator) return due.interestMinor;
+    const result = this.allocator.preview({ dueDate: due.date, paidDate, amountMinor, feesMinor });
+    return result.ok ? result.row.interestMinor : null;
+  }
+  repayment(due: Due, paidDate: string, amountMinor: number, appliedInterestMinor?: number, appliedFeesMinor?: number): Allocation | null {
+    const fees = appliedFeesMinor ?? due.feesMinor;
     if (!this.allocator) {
       // Per-period interest: the schedule's interest, the rest is principal.
       const interest = appliedInterestMinor ?? due.interestMinor;
-      const principal = Math.max(0, Math.min(this.balanceMinor, amountMinor - interest - due.feesMinor));
+      const principal = Math.max(0, Math.min(this.balanceMinor, amountMinor - interest - fees));
       this.balanceMinor -= principal;
       return { interestMinor: interest, principalMinor: principal, balanceAfterMinor: this.balanceMinor, unpaidInterestMinor: Math.max(0, interest - amountMinor) };
     }
-    const pushed = this.allocator.push({ dueDate: due.date, paidDate, amountMinor, feesMinor: due.feesMinor <= amountMinor ? due.feesMinor : 0, ...(appliedInterestMinor !== undefined ? { appliedInterestMinor } : {}) });
+    const pushed = this.allocator.push({ dueDate: due.date, paidDate, amountMinor, feesMinor: fees <= amountMinor ? fees : 0, ...(appliedInterestMinor !== undefined ? { appliedInterestMinor } : {}) });
     if (!pushed.ok) return null;
     // A payment beyond what is owed pays the loan off: its principal stops at the balance and the rest is interest.
     if (pushed.row.balanceAfterMinor < 0) {
@@ -411,6 +417,8 @@ export function planTracking(input: TrackingInput): TrackingResult {
   // ── Walk the tracked window in date order ──
   const ctx = proposalContext(debt, input.accounts, input.transferPayeeByAccount);
   let calc = new Allocator(model, opening);
+  // Keep an independent calculation for cumulative drift checks. The working calculation follows recorded splits.
+  let comparison = new Allocator(model, opening);
   // The calculated balance today: upcoming installments are planned after it, without changing it.
   let calculatedToday = opening.principalMinor;
   // Actual's own principal for recorded installments, to tell where Actual and the calculation part ways.
@@ -422,24 +430,25 @@ export function planTracking(input: TrackingInput): TrackingResult {
   const events: Extract<TrackingResult, { ok: true }>["events"] = [];
   for (const e of extraPayments) {
     if (e.date > today) continue;
-    steps.push({ date: e.date, order: 1, run: () => { calc.extra(e.date, e.amountMinor); actualPrincipal -= e.amountMinor; events.push({ date: e.date, kind: "extra-principal", amountMinor: e.amountMinor, rowId: e.loanRows[0]?.id ?? e.id }); } });
+    steps.push({ date: e.date, order: 1, run: () => { calc.extra(e.date, e.amountMinor); comparison.extra(e.date, e.amountMinor); actualPrincipal -= e.amountMinor; events.push({ date: e.date, kind: "extra-principal", amountMinor: e.amountMinor, rowId: e.loanRows[0]?.id ?? e.id }); } });
   }
   for (const b of balanceEvents) {
     steps.push({ date: b.date, order: 0, run: () => {
       const increase = b.kind === "interest-charged" ? 0 : b.amountMinor; // charged interest is paid by the repayments, not principal
       calc = calc.reset(b.date, calc.balanceMinor + increase); actualPrincipal += increase;
+      comparison = comparison.reset(b.date, comparison.balanceMinor + increase);
       events.push({ date: b.date, kind: b.kind === "loan-received" ? "draw" : b.kind, amountMinor: b.amountMinor, rowId: b.row.id });
     } });
   }
   for (const a of positiveAdjustments) {
-    steps.push({ date: a.date, order: 0, run: () => { calc = calc.reset(a.date, Math.max(0, calc.balanceMinor - a.amount)); actualPrincipal -= a.amount; events.push({ date: a.date, kind: "adjustment", amountMinor: -a.amount, rowId: a.id }); } });
+    steps.push({ date: a.date, order: 0, run: () => { calc = calc.reset(a.date, Math.max(0, calc.balanceMinor - a.amount)); comparison = comparison.reset(a.date, Math.max(0, comparison.balanceMinor - a.amount)); actualPrincipal -= a.amount; events.push({ date: a.date, kind: "adjustment", amountMinor: -a.amount, rowId: a.id }); } });
   }
   // A restart on the day of a recorded installment settles that installment (Actual accepted from there).
   const anchorOn = new Map<string, number>();
   for (const anchor of input.anchors ?? []) {
     if (anchor.date <= windowFrom || anchor.date > today) continue;
     anchorOn.set(anchor.date, anchor.principalMinor);
-    steps.push({ date: anchor.date, order: 3, run: () => { calc = calc.reset(anchor.date, anchor.principalMinor); actualPrincipal = anchor.principalMinor; driftFlagged = false; } });
+    steps.push({ date: anchor.date, order: 3, run: () => { calc = calc.reset(anchor.date, anchor.principalMinor); comparison = comparison.reset(anchor.date, anchor.principalMinor); actualPrincipal = anchor.principalMinor; driftFlagged = false; } });
   }
   for (const due of tracked) {
     if (due.date > today && !shownUpcoming.has(due.date)) break;
@@ -465,12 +474,14 @@ export function planTracking(input: TrackingInput): TrackingResult {
     }
     // A split already in Actual: recorded as it is, unless Actual's balance has drifted from the calculation.
     if (payment.kind === "split" && payment.split) {
-      const pure = calc.repayment(due, payment.date, payment.amountMinor);
-      const calculatedInterest = pure?.interestMinor ?? due.interestMinor;
+      const calculatedInterest = calc.preview(due, payment.date, payment.amountMinor, payment.split.feesMinor) ?? due.interestMinor;
+      const recorded = calc.repayment(due, payment.date, payment.amountMinor, payment.split.interestMinor, payment.split.feesMinor);
+      if (!recorded) return { ...base, status: "check", checkKind: "cannot-split", principalMinor: payment.split.principalMinor, interestMinor: payment.split.interestMinor, feesMinor: payment.split.feesMinor, calculatedInterestMinor: calculatedInterest, balanceAfterMinor: calc.balanceMinor, note: "Bench could not work out this payment's interest. Check the loan's terms and recorded split." };
+      comparison.repayment(due, payment.date, payment.amountMinor);
       actualPrincipal -= payment.split.principalMinor;
       const accepted = anchorOn.get(payment.date);
-      if (accepted !== undefined) { calc = calc.reset(payment.date, accepted); actualPrincipal = accepted; driftFlagged = false; }
-      const drift = actualPrincipal - calc.balanceMinor;
+      if (accepted !== undefined) { calc = calc.reset(payment.date, accepted); comparison = comparison.reset(payment.date, accepted); actualPrincipal = accepted; driftFlagged = false; }
+      const drift = actualPrincipal - comparison.balanceMinor;
       const drifting = !driftFlagged && Math.abs(drift) > debt.toleranceMinor;
       if (drifting) driftFlagged = true;
       return {
@@ -481,6 +492,7 @@ export function planTracking(input: TrackingInput): TrackingResult {
     }
     const allocated = calc.repayment(due, payment.date, payment.amountMinor);
     if (!allocated) return { ...base, status: "check", checkKind: "cannot-split", principalMinor: 0, interestMinor: 0, calculatedInterestMinor: 0, balanceAfterMinor: calc.balanceMinor, note: "Bench could not work out this payment's interest. Check the loan's terms." };
+    comparison.repayment(due, payment.date, payment.amountMinor, allocated.interestMinor);
     // For drift, an installment still to record counts as its planned principal: its own write will set Actual right,
     // so only splits already in Actual can part Actual from the calculation.
     actualPrincipal -= allocated.principalMinor;

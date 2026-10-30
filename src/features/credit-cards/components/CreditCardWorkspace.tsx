@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStore } from "zustand";
-import { ArrowLeft, CircleHelp, CreditCard as CardIcon, Plus, RefreshCw, Settings, Undo2 } from "lucide-react";
+import { ArrowLeft, BookOpen, CreditCard as CardIcon, Plus, RefreshCw, Settings, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog, type ConfirmState } from "@/components/ui/confirm-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -234,7 +234,7 @@ function ConnectedWorkspace({ connection }: { connection: ConnectionInstance }) 
     <RefreshCw className="size-3.5" aria-hidden />Refresh
   </Button>;
   const helpButton = <Button variant="outline" size="sm" onClick={() => guide?.open(guideSection)}>
-    <CircleHelp className="size-3.5" aria-hidden />Guide
+    <BookOpen className="size-3.5" aria-hidden />Guide
   </Button>;
   // While reviewing, the review's own title row carries these tools, so the screen keeps three header lines.
   const header = reviewing ? <></> : <header aria-label="Credit card workspace" className="shrink-0 border-b border-border">

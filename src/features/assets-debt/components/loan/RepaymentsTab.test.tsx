@@ -23,12 +23,12 @@ const model = { debtId: "d1", revision: 1, currency: { code: "USD", minorDigits:
   terms: { openingDate: "2024-01-15", openingPrincipalMinor: 500_000_00, maturityDate: "2044-01-15", contractualTermMonths: 240, amortizationTermMonths: 240, contractualPaymentMinor: null, creditLimitMinor: null, firstPaymentDate: "2024-02-15", firstInterestChargeDate: "2024-02-15" },
   profile: SIMULATOR_DEFAULT_PROFILE, rates: [{ accrualEffectiveFrom: "2024-01-15", annualRateDecimal: "0.054" }], phases: [], offsets: [], components: [], paymentRecasts: [], assumptions: [], revolving: null } as unknown as LoanModelSnapshot;
 
-function plan() {
+function plan(toleranceMinor = 100_00) {
   const received = transfer("2024-01-15", -500_000_00);
   // Installment 1 is already split in Actual with interest 37.00 above the calculation, so it shows a difference.
   const first = transfer("2024-02-15", 3_411_26);
   const base: TrackingInput = {
-    debt: { id: "d1", budgetSyncId: "b1", liabilityAccountId: "loan", trackingStartDueDate: "2024-02-15", representation: "split", loanPaymentCategoryId: "cat-loan", interestCategoryId: "cat-interest", feeCategoryId: null, principalNoteSuffix: "", interestNoteSuffix: "#interest", toleranceMinor: 100_00, missingGraceDays: 5 },
+    debt: { id: "d1", budgetSyncId: "b1", liabilityAccountId: "loan", trackingStartDueDate: "2024-02-15", representation: "split", loanPaymentCategoryId: "cat-loan", interestCategoryId: "cat-interest", feeCategoryId: null, principalNoteSuffix: "", interestNoteSuffix: "#interest", toleranceMinor, missingGraceDays: 5 },
     model, today: "2024-03-20", accounts: [{ id: "loan", name: "LS Mortgage", offBudget: true, closed: false }, { id: "checking", name: "LS Checking", offBudget: false, closed: false }],
     transferPayeeByAccount: { loan: "p-loan", checking: "p-checking" }, loanRows: [received.loan, first.loan], bankRows: [received.bank, first.bank], entries: [], rules: [],
   };
@@ -45,15 +45,35 @@ function plan() {
   return planTracking({ ...base, loanRows: [received.loan, loanSide, second.loan], bankRows: [received.bank, parent, second.bank] });
 }
 
-function renderTab() {
-  const result = plan();
+function renderTab(toleranceMinor = 100_00) {
+  const result = plan(toleranceMinor);
   if (!result.ok) throw new Error(result.message);
-  const tracking = { tracked: true, debt: { toleranceMinor: 100_00 }, bundle: { writes: [], rules: [], entries: [] }, reads: undefined, result, loading: false, refreshing: false, error: null, today: "2024-03-20", refresh: jest.fn(), reloadBundle: jest.fn() };
+  const tracking = { tracked: true, debt: { toleranceMinor }, bundle: { writes: [], rules: [], entries: [] }, reads: undefined, result, loading: false, refreshing: false, error: null, today: "2024-03-20", refresh: jest.fn(), reloadBundle: jest.fn() };
   render(<RepaymentsTab tracking={tracking as never} directory={undefined} digits={2} onLinkToActual={jest.fn()} onPaymentRules={jest.fn()} apply={jest.fn()} run={null} outcomes={null} onDismissOutcomes={jest.fn()} actions={{} as never} writesLocked={false} />);
   return result;
 }
 
 describe("the Repayments table", () => {
+  it("offers a loan-wide way to restore an ignored payment even when it is far from the displayed installments", () => {
+    const result = plan();
+    if (!result.ok) throw new Error(result.message);
+    const payment = tx({ accountId: "checking", date: "2020-01-01", amount: -12345, payeeName: "Bank" });
+    const entry = { actualTransactionId: payment.id, actualAccountId: payment.accountId, entryType: "not-repayment", installmentDueDate: null, revision: 1, updatedAt: "t" };
+    const restorePayment = jest.fn();
+    const tracking = { tracked: true, debt: { toleranceMinor: 100_00 }, bundle: { writes: [], rules: [], entries: [entry] }, reads: { bankRows: [payment], loanRows: [] }, result, loading: false, refreshing: false, error: null, today: "2024-03-20", refresh: jest.fn(), reloadBundle: jest.fn() };
+    render(<RepaymentsTab tracking={tracking as never} directory={undefined} digits={2} onLinkToActual={jest.fn()} onPaymentRules={jest.fn()} apply={jest.fn()} run={null} outcomes={null} onDismissOutcomes={jest.fn()} actions={{ restorePayment } as never} writesLocked={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ignored payments (1)" }));
+    const dialog = screen.getByRole("dialog", { name: "Ignored payments" });
+    expect(within(dialog).getByText(/01 Jan 2020 · 123.45/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Restore payment/ }));
+    expect(restorePayment).toHaveBeenCalledWith(payment.id);
+  });
+  it("does not report agreement while a recorded split needs drift review", () => {
+    const result = renderTab(100);
+    expect(result.installments.some((i) => i.checkKind === "drift")).toBe(true);
+    expect(screen.getByText("By today · recorded splits need review")).toBeInTheDocument();
+    expect(screen.queryByText("By today · agrees with Actual")).not.toBeInTheDocument();
+  });
   it("filters by one pill per status, as the badges read, with the counts beside them", () => {
     renderTab();
     const pills = screen.getByRole("button", { name: /^All/ }).parentElement!;

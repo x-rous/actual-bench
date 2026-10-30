@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Download, Landmark, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -24,6 +25,7 @@ import { InstallmentInspector, type InspectorActions } from "./InstallmentInspec
 import type { WriteOutcome } from "../../lib/trackingWrites";
 import type { DebtWrite } from "@/lib/app-db/debtTrackingRepository";
 import { repaymentsCsvFilename, repaymentsCsvRows, type ExportRow } from "./repaymentsExport";
+import { IgnoredPaymentCard } from "./IgnoredPaymentCard";
 
 /**
  * Repayments (design spec 06 §7.2): one row per installment from the tracking start, edge to edge, with the opening
@@ -61,11 +63,21 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
   const [range, setRange] = useState<AssetRange>(ALL_TIME);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [active, setActive] = useState<string | null>(null);
+  const [ignoredOpen, setIgnoredOpen] = useState(false);
   const [sort, setSort] = useState<SortState | null>({ key: "date", direction: "desc" });
   const tableRef = useRef<HTMLDivElement>(null);
   const result = tracking.result?.ok ? tracking.result : null;
   const accountName = (id: string) => directory?.accounts.find((a) => a.id === id)?.name ?? "-";
   const busy = run !== null;
+  const ignoredEntries = (tracking.bundle?.entries ?? []).filter((entry) => entry.entryType === "not-repayment");
+  const rowById = useMemo(() => {
+    const rows = [...(tracking.reads?.bankRows ?? []), ...(tracking.reads?.loanRows ?? [])];
+    const byId = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    }
+    return byId;
+  }, [tracking.reads?.bankRows, tracking.reads?.loanRows]);
 
   const rows = useMemo((): Row[] => {
     if (!result) return [];
@@ -157,11 +169,12 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
     return next ? () => setActive(next.key) : undefined;
   };
 
+  const driftNeedsReview = tracking.result.installments.some((inst) => inst.checkKind === "drift" && inst.status === "check");
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <SummaryStrip label="Repayments summary" items={[
           { label: "Owed in Actual", value: money(f.owedInActualMinor), detail: tracking.reads?.complete === false ? "The loan account didn't read completely: refresh" : "Loan account today", wrap: true },
-          { label: "Bench expects", value: money(f.calculatedMinor), detail: Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "By today · agrees with Actual" : `By today · differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
+          { label: "Bench expects", value: money(f.calculatedMinor), detail: driftNeedsReview ? "By today · recorded splits need review" : Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "By today · agrees with Actual" : `By today · differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
           { label: "Next payment", value: f.nextPayment ? money(f.nextPayment.amountMinor) : "-", detail: f.nextPayment ? `Due ${dt(f.nextPayment.dueDate)} · installment ${f.nextPayment.no}` : "No more installments", wrap: true },
           { label: "To do", value: <span className={todo + f.counts.check + f.counts.missing ? "text-amber-700 dark:text-amber-400" : undefined}>{todo} <span className="text-sm font-medium text-muted-foreground">Unrecorded</span></span>, detail: `${f.counts.check} Check · ${f.counts.missing} Missing`, wrap: true },
           { label: "Interest paid", value: money(f.interestPaidMinor), detail: `This year ${money(f.interestThisYearMinor)} · recorded and unrecorded installments`, wrap: true },
@@ -177,13 +190,14 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
           ]} />
           <Button size="sm" variant="outline" onClick={onPaymentRules}>Payment rules{tracking.bundle?.rules.length ? ` (${tracking.bundle.rules.length})` : ""}</Button>
           <Button size="sm" variant="outline" disabled={!sorted.length} onClick={exportCsv}><Download className="size-3.5" aria-hidden />Export CSV</Button>
+          {ignoredEntries.length ? <Button size="sm" variant="outline" onClick={() => setIgnoredOpen(true)}>Ignored payments ({ignoredEntries.length})</Button> : null}
           <span className="ml-auto" />
           {tracking.refreshing ? <span role="status" className="text-xs text-muted-foreground">Refreshing…</span> : null}
           <Button size="sm" disabled={!applicable.length || busy || writesLocked} onClick={() => apply(inOrder(applicable))}>Apply all Unrecorded ({applicable.length})</Button>
         </div>
         {chosen.length > 0 && !busy ? <div role="region" aria-label="Selected repayments" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs"><strong>{chosen.length} selected</strong><span className="text-muted-foreground">Unrecorded rows only</span><Button size="xs" disabled={writesLocked} onClick={() => apply(inOrder(chosen))}>Apply {chosen.length}</Button><Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>Clear selection</Button></div> : null}
         {run ? <div role="status" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs">Applying {Math.min(run.done + 1, run.total)} of {run.total}…</div> : null}
-        {outcomes ? <Outcomes outcomes={outcomes} onDismiss={onDismissOutcomes} counts={f.counts} agrees={Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100)} /> : null}
+        {outcomes ? <Outcomes outcomes={outcomes} onDismiss={onDismissOutcomes} counts={f.counts} agrees={!driftNeedsReview && Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100)} /> : null}
         {unresolved.map((w) => (
           <div key={w.id} role="alert" className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-xs">
             <span className="text-destructive">A write to Actual {w.status === "applying" ? "was left unfinished" : "ended with an unknown outcome"}{w.installmentDueDate ? ` (installment due ${dt(w.installmentDueDate)})` : ""}. Nothing else is written until you check the payment in Actual.</span>
@@ -208,6 +222,17 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
         tracking={tracking} directory={directory} digits={digits} busy={busy} writesLocked={writesLocked} onApply={(p) => apply([p])} actions={actions} onClose={() => setActive(null)}
         onPrev={stepTo(-1)} onNext={stepTo(1)} /> : null}
         </div>
+      <Dialog open={ignoredOpen} onOpenChange={setIgnoredOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Ignored payments</DialogTitle><DialogDescription>These payments were marked not this payment and are excluded from matching any installment in this loan. Restore one to let Bench match it again. Nothing changes in Actual.</DialogDescription></DialogHeader>
+          <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
+            {ignoredEntries.length === 0 ? <p className="text-sm text-muted-foreground">No ignored payments.</p> : ignoredEntries.map((entry) => {
+              const row = rowById.get(entry.actualTransactionId) ?? null;
+              return <IgnoredPaymentCard key={entry.actualTransactionId} row={row} accountName={accountName} money={money} onRestore={() => actions.restorePayment(entry.actualTransactionId)} />;
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

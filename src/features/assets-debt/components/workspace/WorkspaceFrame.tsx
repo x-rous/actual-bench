@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CircleHelp, MoreHorizontal } from "lucide-react";
+import { ArrowLeft, BookOpen, MoreHorizontal } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -71,6 +71,7 @@ export type WorkspaceFrameProps = {
   attention?: Partial<Record<WorkspaceTab, string>>;
   /** The one primary action and anything that belongs beside it (the change summary field). */
   actions?: React.ReactNode;
+  beforeGuide?: React.ReactNode;
   menu?: WorkspaceMenuItem[];
   dirty: boolean;
   /** Clear any unsaved new-loan state when leaving without saving. */
@@ -82,7 +83,7 @@ export type WorkspaceFrameProps = {
 
 const BACK_HREF = LOANS_PATH;
 
-export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabledTabs = {}, attention = {}, actions, menu = [], dirty, onDiscard, onSaveAndLeave, children }: WorkspaceFrameProps) {
+export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabledTabs = {}, attention = {}, actions, beforeGuide, menu = [], dirty, onDiscard, onSaveAndLeave, children }: WorkspaceFrameProps) {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -104,8 +105,9 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
             {state}
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {beforeGuide}
+            <Button type="button" variant="outline" size="sm" onClick={() => setGuide(guideSectionForLoanTab(tab))}><BookOpen className="size-3.5" aria-hidden />Guide</Button>
             {actions}
-            <Button type="button" variant="outline" size="sm" onClick={() => setGuide(guideSectionForLoanTab(tab))}><CircleHelp className="size-3.5" aria-hidden />Guide</Button>
             {menu.length ? (
               <DropdownMenu>
                 <DropdownMenuTrigger aria-label="More loan actions" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>

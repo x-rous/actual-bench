@@ -3,6 +3,7 @@ import type { LoanModelSnapshot } from "@/lib/financial-models/loan/model";
 import { SIMULATOR_DEFAULT_PROFILE } from "@/features/assets-debt/lib/simulatorModel";
 import { planTracking, type TrackingInput } from "./plan";
 import { lineNotes } from "./proposals";
+import { createObservedRepaymentAllocator } from "@/lib/financial-models/loan/statementAllocation";
 
 /** LS Full Mortgage: 500,000 at 5.4% over 20 years from 15 Jan 2024, repaid on the 15th. */
 function model(overrides: Partial<{ principal: number; rate: string; opening: string; first: string; months: number }> = {}): LoanModelSnapshot {
@@ -181,6 +182,11 @@ describe("planTracking", () => {
     const result = planTracking(input({ loan: [r.loan, loanSide], bank: [r.bank, parent] }, { today: "2024-02-20" }));
     if (!result.ok) throw new Error(result.message);
     expect(result.installments[0]).toMatchObject({ status: "recorded", interestMinor: actualInterest, calculatedInterestMinor: calcInterest, proposal: null });
+    expect(result.installments[0].balanceAfterMinor).toBe(500_000_00 - loanSide.amount);
+    expect(result.figures.calculatedMinor).toBe(result.figures.owedInActualMinor);
+    const anchored = planTracking(input({ loan: [r.loan, loanSide], bank: [r.bank, parent] }, { today: "2024-02-20", anchors: [{ date: parent.date, principalMinor: 500_000_00 - loanSide.amount }] }));
+    if (!anchored.ok) throw new Error(anchored.message);
+    expect(anchored.anchor.principalMinor).toBe(result.anchor.principalMinor);
     expect(result.figures.counts.check).toBe(0);
   });
 
@@ -283,6 +289,31 @@ describe("drift", () => {
     ];
     return { parent, loanSide };
   }
+  it("carries recorded interest and fees into a later proposed due-date split", () => {
+    const r = received();
+    const firstWhole = transfer("2024-02-15", 3_411_26);
+    const second = transfer("2024-03-15", 3_411_26);
+    const trackedModel = { ...model(), lenderStatement: { interestAllocation: "accrued-to-due-date" as const } };
+    const initial = planTracking(input({ loan: [r.loan, firstWhole.loan, second.loan], bank: [r.bank, firstWhole.bank, second.bank] }, { model: trackedModel, today: "2024-03-20" }));
+    if (!initial.ok) throw new Error(initial.message);
+    const recordedInterest = initial.installments[0].interestMinor + 100;
+    const first = split("2024-02-15", 3_411_26, recordedInterest);
+    const fee = 50;
+    first.parent.splitLines[0].amount += fee;
+    first.loanSide.amount -= fee;
+    first.parent.splitLines.push({ id: "fee", amount: -fee, payeeId: null, payeeName: null, categoryId: "fee", categoryName: null, notes: null, transferId: null });
+    const result = planTracking(input({ loan: [r.loan, first.loanSide, second.loan], bank: [r.bank, first.parent, second.bank] }, { model: trackedModel, today: "2024-03-20" }));
+    if (!result.ok) throw new Error(result.message);
+    const created = createObservedRepaymentAllocator({ model: trackedModel, opening: { date: "2024-01-15", principalMinor: 500_000_00 } });
+    if (!created.ok) throw new Error(created.message);
+    const actual = created.allocator.push({ dueDate: result.installments[0].dueDate, paidDate: "2024-02-15", amountMinor: 3_411_26, appliedInterestMinor: recordedInterest, feesMinor: fee });
+    const expected = created.allocator.push({ dueDate: result.installments[1].dueDate, paidDate: "2024-03-15", amountMinor: 3_411_26 });
+    if (!actual.ok || !expected.ok) throw new Error("allocation failed");
+    expect(result.installments[0]).toMatchObject({ principalMinor: actual.row.principalMinor, balanceAfterMinor: actual.row.balanceAfterMinor });
+    expect(result.installments[1]).toMatchObject({ status: "unrecorded", interestMinor: expected.row.interestMinor, principalMinor: expected.row.principalMinor });
+    expect(result.installments[1].interestMinor).not.toBe(initial.installments[1].interestMinor);
+    expect(result.installments[1].proposal).not.toBeNull();
+  });
   it("flags Check once, where Actual's balance first parts from the calculation beyond the tolerance", () => {
     const r = received();
     const base = planTracking(input({ loan: [r.loan], bank: [r.bank] }, { today: "2024-04-20" }));

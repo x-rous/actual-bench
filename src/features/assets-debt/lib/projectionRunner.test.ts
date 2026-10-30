@@ -49,9 +49,10 @@ describe("projection runner impact baseline", () => {
     const primary = {} as DebtProjectionInput;
     const impact = {} as DebtProjectionInput;
     const projection = { ok: true, events: [], monthly: [] } as unknown as DebtProjection;
-    const promise = runner.run(primary, null, impact);
-    expect(posted).toEqual([{ id: 1, primary, comparison: null, impactBaseline: impact, contract: null }]);
-    fake!.onmessage!({ data: { id: 1, ok: true, projection, comparison: null, impactBaseline: projection, durationMs: 2 } } as MessageEvent);
-    await expect(promise).resolves.toMatchObject({ projection, impactBaseline: projection, durationMs: 2 });
+    const comparisonContract = {} as DebtProjectionInput;
+    const promise = runner.run(primary, null, impact, null, comparisonContract);
+    expect(posted).toEqual([{ id: 1, primary, comparison: null, impactBaseline: impact, contract: null, comparisonContract }]);
+    fake!.onmessage!({ data: { id: 1, ok: true, projection, comparison: null, impactBaseline: projection, comparisonContract: projection, durationMs: 2 } } as MessageEvent);
+    await expect(promise).resolves.toMatchObject({ projection, impactBaseline: projection, comparisonContract: projection, durationMs: 2 });
   });
 });

@@ -2,7 +2,8 @@
 
 import { useLocalToday } from "../../lib/useLocalToday";
 import { useMemo, useState } from "react";
-import { BookOpen, MoreHorizontal, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { createPortal } from "react-dom";
+import { BookOpen, Download, MoreHorizontal, RotateCcw } from "lucide-react";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { explainBlock } from "@/lib/financial-models/loan/blockMessages";
@@ -78,6 +79,7 @@ export type SimulatorViewProps = {
     onDialogChange: (dialog: "method" | "how" | null) => void;
     resetOpen: boolean;
     onResetOpenChange: (open: boolean) => void;
+    exportTarget?: HTMLElement | null;
   };
   /** A loan tracked in Actual (design spec 06 §7.6): the history from the Loan Ledger and where the projection starts. */
   tracked?: (TrackedHistory & { onOpenLedger: () => void }) | null;
@@ -141,7 +143,7 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
   const offsetProblems = offsetTracking?.problems ?? (needsActualOffsetHistory ? ["Save the Actual-linked offset mapping before calculating with its history."] : undefined);
   const trackedAt = useMemo(() => (tracked ? { startDate: tracked.startDate, anchor: tracked.anchor } : null), [tracked]);
   // A tracked loan always runs its projection without what-ifs too: the What-ifs impact and the From Actual impact need it.
-  const live = useLiveProjection(sim, { compareWith: comparing && saved ? saved : null, impactBaseline: hasExtras || tracked ? noExtras : null, offsetHistories: offsetTracking?.snapshots, suspend: offsetTracking?.loading, externalProblems: offsetProblems, tracked: trackedAt });
+  const live = useLiveProjection(sim, { compareWith: comparing && saved && (external || unsaved) ? saved : null, impactBaseline: hasExtras || tracked ? noExtras : null, offsetHistories: offsetTracking?.snapshots, suspend: offsetTracking?.loading, externalProblems: offsetProblems, tracked: trackedAt });
 
   const change = (next: SimulationState) => {
     if (!readOnly) onChange(next);
@@ -161,7 +163,8 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
   const baseProjection = useMemo(() => composeTracked(live.impactBaseline, live.contract, tracked), [live.impactBaseline, live.contract, tracked]);
   const events = projection?.ok ? projection.events : null;
   const head = useMemo(() => (events ? headline(events) : null), [events]);
-  const compared = useMemo(() => (live.comparison?.ok ? headline(live.comparison.events) : null), [live.comparison]);
+  const comparisonProjection = useMemo(() => composeTracked(live.comparison, live.comparisonContract, tracked), [live.comparison, live.comparisonContract, tracked]);
+  const compared = useMemo(() => (comparisonProjection?.ok ? headline(comparisonProjection.events) : null), [comparisonProjection]);
   const impactBaseline = useMemo(() => (baseProjection?.ok ? headline(baseProjection.events) : null), [baseProjection]);
   const contractHead = useMemo(() => (live.contract?.ok ? headline(live.contract.events) : null), [live.contract]);
   // What each event saves runs on the projections as calculated (not joined to the history), so every step of a chain
@@ -174,9 +177,9 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
   const frequency = labelOf(REPAYMENT_FREQUENCY_OPTIONS, sim.profile.repaymentFrequency).toLowerCase();
   const chart = useMemo(() => {
     if (!projection?.ok) return null;
-    const data = chartSeries(projection, sim, { view: chartView, comparison: live.comparison, baseline: hasExtras ? baseProjection : null, trackedAnchor: tracked?.anchor });
+    const data = chartSeries(projection, sim, { view: chartView, comparison: comparisonProjection, baseline: hasExtras ? baseProjection : null, trackedAnchor: tracked?.anchor });
     return tracked ? withTracking(data, tracked, chartView) : data;
-  }, [projection, live.comparison, sim, chartView, tracked, hasExtras, baseProjection]);
+  }, [projection, comparisonProjection, sim, chartView, tracked, hasExtras, baseProjection]);
   const calendarToday = useLocalToday();
   const calendarTodayForDetails = tracked?.today ?? calendarToday;
   const details = useMemo(() => {
@@ -201,6 +204,10 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
   const resetMeaningful = comparableSimulation(sim) !== comparableSimulation(resetValue);
   const removeExtra = (assumption: SimAssumption) => propose({ ...sim, assumptions: sim.assumptions.filter((candidate) => candidate.key !== assumption.key) });
   const removeRate = (rate: SimRate) => propose({ ...sim, rates: sim.rates.filter((candidate) => candidate.key !== rate.key) });
+  const exportLoan = () => {
+    if (!events || live.status !== "ok") return;
+    downloadCsv(loanExportFilename(loanName, calendarToday), loanExportRows({ sim, events, name: loanName, today: calendarToday, generatedAt: new Date().toLocaleString(), revision, unsaved: saved === null || unsaved || editorDirty, tracked, ...(tracked ? { source: (period, paymentNumber) => scheduleSource(period, { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore }, paymentNumber) } : {}) }), { includeBom: true });
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -216,7 +223,7 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
           </>
         )}
         {stepLabel ? <span className="text-xs font-medium text-muted-foreground">{stepLabel}</span> : null}
-        {saved ? (
+        {saved && unsaved ? (
           <label className="flex items-center gap-1 text-xs">
             <Checkbox checked={comparing} onCheckedChange={setComparing} />
             Compare with saved
@@ -227,10 +234,7 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
           How this loan is calculated
         </Button>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setDialog("method")}>
-            <SlidersHorizontal aria-hidden="true" />
-            Set calculation method
-          </Button>
+          {events ? <Button type="button" variant="outline" size="sm" disabled={live.status !== "ok"} onClick={() => exportLoan()}><Download aria-hidden="true" />Export CSV</Button> : null}
           <DropdownMenu>
             <DropdownMenuTrigger aria-label="More schedule actions" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "px-2")}><MoreHorizontal aria-hidden="true" /></DropdownMenuTrigger>
             <LoanMenuContent>
@@ -297,7 +301,7 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
                 } : undefined} />
               <div data-testid="schedule-region" className="pt-3">
                 <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} firstPaymentDate={isIsoDate(sim.startDate) && (!sim.firstPaymentDate || isIsoDate(sim.firstPaymentDate)) ? derivedFirstPaymentDate(sim) : undefined} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore } : null}
-                  exportDisabled={live.status !== "ok"} onExport={() => downloadCsv(loanExportFilename(loanName, calendarToday), loanExportRows({ sim, events, name: loanName, today: calendarToday, generatedAt: new Date().toLocaleString(), revision, unsaved: saved === null || unsaved || editorDirty, tracked, ...(tracked ? { source: (period, paymentNumber) => scheduleSource(period, { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore }, paymentNumber) } : {}) }), { includeBom: true })} />
+                />
               </div>
             </>
           ) : null}
@@ -306,6 +310,8 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
           </p>
         </main>
       </div>
+
+      {external?.exportTarget && events ? createPortal(<Button type="button" variant="outline" size="sm" disabled={live.status !== "ok"} onClick={exportLoan}><Download aria-hidden="true" />Export CSV</Button>, external.exportTarget) : null}
 
       <DayByDayPrompt
         reason={prompt?.reason ?? null}
@@ -342,10 +348,6 @@ export function ScheduleControls({ comparing, onComparingChange, onDialog }: { c
       <Button type="button" variant="link" size="sm" className="h-auto gap-1 px-1 text-xs" onClick={() => onDialog("how")}>
         <BookOpen aria-hidden="true" />
         How this loan is calculated
-      </Button>
-      <Button type="button" variant="outline" size="sm" onClick={() => onDialog("method")}>
-        <SlidersHorizontal aria-hidden="true" />
-        Set calculation method
       </Button>
     </>
   );

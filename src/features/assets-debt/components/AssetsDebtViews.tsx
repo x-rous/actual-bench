@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { CircleHelp, HandCoins, Plus } from "lucide-react";
+import { BookOpen, HandCoins, Plus } from "lucide-react";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FEATURES } from "@/lib/features/catalogue";
@@ -74,7 +74,7 @@ export function DebtListView() {
       title="Loans & Debt"
       scrollManaged
       actions={<>
-        <Button type="button" variant="outline" size="sm" onClick={() => setGuide("start")}><CircleHelp className="size-3.5" aria-hidden />Guide</Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setGuide("start")}><BookOpen className="size-3.5" aria-hidden />Guide</Button>
         <Link href={NEW_LOAN_PATH} className={buttonVariants({ size: "sm" })}>
           <Plus className="mr-1 h-3.5 w-3.5" aria-hidden /> New loan
         </Link>

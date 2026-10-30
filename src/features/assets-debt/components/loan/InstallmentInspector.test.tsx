@@ -44,13 +44,38 @@ function plan(loanRows: SyncSourceTransaction[], bankRows: SyncSourceTransaction
   return { result, tracking };
 }
 const received = () => transfer("2024-01-15", -500_000_00);
-const actions = { notThisPayment: jest.fn(), choosePayment: jest.fn(), acceptActual: jest.fn() };
+const actions = { restorePayment: jest.fn(), notThisPayment: jest.fn(), choosePayment: jest.fn(), acceptActual: jest.fn() };
 
 function show(tracking: LoanTracking, inst: ReturnType<typeof plan>["result"]["installments"][number], extra: { onApply?: jest.Mock; onPrev?: () => void; onNext?: () => void } = {}) {
   return render(<InstallmentInspector row={{ kind: "installment", inst }} tracking={tracking} directory={directory} digits={2} busy={false} writesLocked={false} onApply={extra.onApply ?? jest.fn()} actions={actions} onClose={jest.fn()} onPrev={extra.onPrev} onNext={extra.onNext} />);
 }
 
 describe("the installment panel", () => {
+  it("offers to restore an excluded early split on its upcoming installment without listing its principal as another payment", () => {
+    const r = received();
+    const first = transfer("2024-02-15", 3_411_26);
+    const loanSide = tx({ accountId: "loan", date: "2024-02-19", amount: 120_000, transferId: "principal-line" });
+    const parent = tx({ accountId: "checking", date: "2024-02-19", amount: -3_411_26, isParent: true, splitLines: [
+      { id: "principal-line", amount: -120_000, transferId: loanSide.id, payeeId: null, payeeName: null, categoryId: null, categoryName: null, notes: null },
+      { id: "interest-line", amount: -221_126, transferId: null, payeeId: null, payeeName: null, categoryId: "cat-interest", categoryName: null, notes: null },
+    ] });
+    const entry = { actualTransactionId: parent.id, actualAccountId: "checking", entryType: "not-repayment" as const, installmentDueDate: null, revision: 1, updatedAt: "t" };
+    const loanRows = [r.loan, first.loan, loanSide];
+    const bankRows = [r.bank, first.bank, parent];
+    const result = planTracking({ debt, model, today: "2024-02-20", accounts: directory.accounts, transferPayeeByAccount, loanRows, bankRows, entries: [entry], rules: [] });
+    if (!result.ok) throw new Error(result.message);
+    const { tracking } = plan(loanRows, bankRows);
+    tracking.result = result;
+    tracking.bundle!.entries = [entry];
+    actions.restorePayment.mockClear();
+    const upcoming = result.installments.find((inst) => inst.status === "upcoming")!;
+    show(tracking, upcoming);
+    expect(screen.getByText("Previously marked not this payment")).toBeInTheDocument();
+    expect(screen.getByText(/No unmatched payment into the loan account/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "This is the payment" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Restore payment/ }));
+    expect(actions.restorePayment).toHaveBeenCalledWith(parent.id);
+  });
   it("Unrecorded: shows the payment, the split it would write adding up to the payment, and what Apply changes", () => {
     const r = received();
     const pay = transfer("2024-02-15", 3_411_26);

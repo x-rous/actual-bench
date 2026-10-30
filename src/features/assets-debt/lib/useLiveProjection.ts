@@ -27,6 +27,7 @@ export type LiveProjection = {
   impactBaseline: DebtProjection | null;
   /** A tracked loan: the contract from its opening, for the time before the tracking start and the impact of what happened. */
   contract: DebtProjection | null;
+  comparisonContract: DebtProjection | null;
   /** The inputs still needed before anything can be calculated. */
   missing: string[];
   /** Why the engine could not calculate (Blocked reasons), or an error. */
@@ -72,12 +73,13 @@ export function useLiveProjection(sim: SimulationState, options: { compareWith?:
   const debounceMs = options.debounceMs ?? 200;
   const tracked = options.tracked ?? null;
   const primary = useMemo(() => inputFor(sim, options.offsetHistories, tracked && { mode: "projection", at: tracked }), [sim, options.offsetHistories, tracked]);
-  const comparison = useMemo(() => (options.compareWith ? inputFor(options.compareWith, options.offsetHistories) : null), [options.compareWith, options.offsetHistories]);
+  const comparison = useMemo(() => (options.compareWith ? inputFor(options.compareWith, options.offsetHistories, tracked && { mode: "projection", at: tracked }) : null), [options.compareWith, options.offsetHistories, tracked]);
+  const comparisonContract = useMemo(() => (tracked && options.compareWith ? inputFor(options.compareWith, options.offsetHistories, { mode: "contract", at: tracked }) : null), [options.compareWith, options.offsetHistories, tracked]);
   const impactBaseline = useMemo(() => (options.impactBaseline ? inputFor(options.impactBaseline, options.offsetHistories, tracked && { mode: "projection", at: tracked }) : null), [options.impactBaseline, options.offsetHistories, tracked]);
   const contract = useMemo(() => (tracked ? inputFor(sim, options.offsetHistories, { mode: "contract", at: tracked }) : null), [sim, options.offsetHistories, tracked]);
   const missing = useMemo(() => missingInputs(sim), [sim]);
   /** The last settled result, with the inputs it answers. Status is derived from it during render. */
-  const [settled, setSettled] = useState<{ primary: DebtProjectionInput; comparison: DebtProjectionInput | null; impactBaseline: DebtProjectionInput | null; contract: DebtProjectionInput | null; result: Omit<LiveProjection, "missing" | "status"> & { status: "ok" | "blocked" | "error" } } | null>(null);
+  const [settled, setSettled] = useState<{ primary: DebtProjectionInput; comparison: DebtProjectionInput | null; impactBaseline: DebtProjectionInput | null; contract: DebtProjectionInput | null; comparisonContract: DebtProjectionInput | null; result: Omit<LiveProjection, "missing" | "status"> & { status: "ok" | "blocked" | "error" } } | null>(null);
 
   useEffect(() => {
     if (injected) return;
@@ -92,31 +94,31 @@ export function useLiveProjection(sim: SimulationState, options: { compareWith?:
       const runner = injected ?? own.current;
       if (!runner) return;
       runner
-        .run(primary, comparison, impactBaseline, contract)
+        .run(primary, comparison, impactBaseline, contract, comparisonContract)
         .then((outcome) => {
           if (cancelled) return;
           if (process.env.NODE_ENV === "development") console.debug(`[assets-debt] projection ${outcome.durationMs.toFixed(0)} ms`);
           // A blocked contract has no results to show, so its reasons are surfaced even when the projection itself is fine.
           const blocked = outcome.projection.ok ? (outcome.contract && !outcome.contract.ok ? outcome.contract.blocked : []) : outcome.projection.blocked;
-          setSettled({ primary, comparison, impactBaseline, contract, result: { status: blocked.length ? "blocked" : "ok", projection: outcome.projection, comparison: outcome.comparison, impactBaseline: outcome.impactBaseline, contract: outcome.contract ?? null, problems: explainBlocks(blocked).texts, blocked, durationMs: outcome.durationMs } });
+          setSettled({ primary, comparison, impactBaseline, contract, comparisonContract, result: { status: blocked.length ? "blocked" : "ok", projection: outcome.projection, comparison: outcome.comparison, impactBaseline: outcome.impactBaseline, contract: outcome.contract ?? null, comparisonContract: outcome.comparisonContract ?? null, problems: explainBlocks(blocked).texts, blocked, durationMs: outcome.durationMs } });
         })
         .catch((error: unknown) => {
           if (cancelled || error instanceof SupersededError) return;
-          setSettled((s) => ({ primary, comparison, impactBaseline, contract, result: { ...(s?.result ?? { projection: null, comparison: null, impactBaseline: null, contract: null, durationMs: null }), status: "error", problems: [error instanceof Error ? error.message : String(error)], blocked: [] } }));
+          setSettled((s) => ({ primary, comparison, impactBaseline, contract, comparisonContract, result: { ...(s?.result ?? { projection: null, comparison: null, impactBaseline: null, contract: null, comparisonContract: null, durationMs: null }), status: "error", problems: [error instanceof Error ? error.message : String(error)], blocked: [] } }));
         });
     }, debounceMs);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [primary, comparison, impactBaseline, contract, injected, debounceMs, options.suspend, options.externalProblems]);
+  }, [primary, comparison, impactBaseline, contract, comparisonContract, injected, debounceMs, options.suspend, options.externalProblems]);
 
-  if (options.externalProblems?.length) return { status: "blocked", projection: null, comparison: null, impactBaseline: null, contract: null, problems: options.externalProblems, blocked: [], durationMs: null, missing };
-  if (options.suspend) return { status: "calculating", projection: null, comparison: null, impactBaseline: null, contract: null, problems: [], blocked: [], durationMs: null, missing };
-  if (!primary) return { status: "incomplete", projection: null, comparison: null, impactBaseline: null, contract: null, problems: [], blocked: [], durationMs: null, missing };
+  if (options.externalProblems?.length) return { status: "blocked", projection: null, comparison: null, impactBaseline: null, contract: null, comparisonContract: null, problems: options.externalProblems, blocked: [], durationMs: null, missing };
+  if (options.suspend) return { status: "calculating", projection: null, comparison: null, impactBaseline: null, contract: null, comparisonContract: null, problems: [], blocked: [], durationMs: null, missing };
+  if (!primary) return { status: "incomplete", projection: null, comparison: null, impactBaseline: null, contract: null, comparisonContract: null, problems: [], blocked: [], durationMs: null, missing };
   // Until the current inputs settle, the previous results stay on screen, marked as calculating.
-  if (!settled || settled.primary !== primary || settled.comparison !== comparison || settled.impactBaseline !== impactBaseline || settled.contract !== contract) {
-    return { ...(settled?.result ?? { projection: null, comparison: null, impactBaseline: null, contract: null, problems: [], blocked: [], durationMs: null }), status: "calculating", missing };
+  if (!settled || settled.primary !== primary || settled.comparison !== comparison || settled.impactBaseline !== impactBaseline || settled.contract !== contract || settled.comparisonContract !== comparisonContract) {
+    return { ...(settled?.result ?? { projection: null, comparison: null, impactBaseline: null, contract: null, comparisonContract: null, problems: [], blocked: [], durationMs: null }), status: "calculating", missing };
   }
   return { ...settled.result, missing };
 }

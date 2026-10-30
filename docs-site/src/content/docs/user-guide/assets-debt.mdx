@@ -87,7 +87,7 @@ marks the current date.
 The schedule's Year and Month labels count calendar months from one repayment interval before the first repayment,
 with Month 1 as the minimum. **Payment #** counts repayments separately; monthly and yearly rows aggregate calendar periods.
 
-**Export CSV** above the schedule downloads the current loan inputs, terms, calculation settings, four headline results,
+**Export CSV** in the top bar downloads the current loan inputs, terms, calculation settings, four headline results,
 events and all rows of the All Events, Monthly and Yearly schedules. It includes the local generation date and time, identifies unsaved edits and, for a tracked loan,
 includes tracking context and the events read from Actual. The export reflects the current calculation, including what-ifs.
 
@@ -177,11 +177,12 @@ Create the loan's account in Actual first: it must be **off budget** and hold on
    add to each line's Notes (`#interest` on the interest line by default).
 4. **Tracking start:** the first installment Bench tracks, by installment number or due date. Earlier installments
    count as paid as contracted and are never matched or reported missing.
-5. **Opening position:** the balance owed at the tracking start, from the calculation or from a lender statement.
+5. **Starting balance:** the balance owed at the tracking start, from the calculation or from a lender statement.
 6. **Advanced:** **Ignore differences up to** (rounding) and **Mark missing after** (days late; 5 by default).
 
-Start at installment 1 when the loan account begins with the money received. When it begins with an opening balance
-part-way through the loan, start at the first installment after it. Bench compares the opening position with Actual's
+Tracking starts at installment 1 by default. When the account begins with an opening balance part-way through the loan,
+Bench suggests the first installment after that opening; choose the suggestion or enter a different installment. The
+account scan never changes your choice. Bench compares the starting balance with Actual's
 loan account just before that installment; if they differ by more than the tolerance, **Repayments** starts with one
 **Opening adjustment** you can apply or skip.
 
@@ -207,12 +208,15 @@ recognized as Recorded using Actual's own amounts. Click a row, or press **Enter
 the payment in Actual, the split Bench calculated (change the principal and the interest follows), each line's Notes,
 and what the loan looks like after **Apply**. Step through rows with the arrows or **↑ ↓**. Where the interest recorded in
 Actual differs from Bench's calculation, the interest is marked with an **i** that says by how much, and the panel shows both figures.
+Bench uses the recorded principal, interest and fees for later repayments, while checking cumulative differences
+against a separate calculation. A recorded rounding difference therefore does not leave the working balance a few cents
+away from the recorded loan history. If a recorded split needs a drift review, the summary says so.
 
 - **Apply** on a row splits that payment. Tick rows and apply the selection, or use **Apply all Unrecorded**: they run
   in date order and stop at the first that does not apply.
 - **Undo split** puts a payment back to exactly what it was; **Edit split** changes the amounts of a split already in
   Actual. Each is one write, like Apply.
-- **Not this payment** (the row's **⋯** menu) ignores a payment Bench matched that is not this loan's.
+- **Not this payment** (the row's **⋯** menu) excludes a payment from matching any installment of this loan. To reverse it, open **Ignored payments** above the table and select **Restore**. A nearby ignored payment can also be restored in a missing or upcoming installment's details. Bench can then match it again; no transaction is changed in Actual.
 - **Export CSV** (above the table) saves the rows you see, with the payment, principal, interest in Actual, interest
   calculated by Bench, the difference between them, the balance and the status.
 - **Refresh** after you import from your bank; new payments appear as Unrecorded.

@@ -24,7 +24,7 @@ import { ScheduleControls, SimulatorView } from "./simulator/SimulatorView";
 import { strategyAdvice } from "../lib/strategyAdvice";
 import { purgeLegacyLoanStorage } from "../lib/loanStorage";
 import { WorkspaceFrame, workspaceTabFor, workspaceTabSlug, type WorkspaceTab } from "./workspace/WorkspaceFrame";
-import { LinkToActual } from "./loan/LinkToActual";
+import { LinkToActual, resolveTrackingStart } from "./loan/LinkToActual";
 import { LinkedAssetsTab } from "./loan/LinkedAssetsTab";
 import { TrackingDialogs, TrackingTab, useTrackingWorkspace } from "./loan/TrackingTabs";
 import { useLoanTracking } from "../lib/useLoanTracking";
@@ -101,6 +101,7 @@ function NewLoanEditor() {
   const [issues, setIssues] = useState<SaveIssue[]>([]);
   const [savePhase, setSavePhase] = useState<string | null>(null);
   const [scheduleDialog, setScheduleDialog] = useState<"method" | "how" | null>(null);
+  const [exportTarget, setExportTarget] = useState<HTMLSpanElement | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const directory = useAccountDirectory();
   const router = useRouter();
@@ -132,7 +133,9 @@ function NewLoanEditor() {
   const save = useMutation({
     mutationFn: async (status: "active" | "draft") => {
       if (!sim || !tracking || !budget) throw new Error("Not ready");
-      const built = statesToSaveInput(sim, { ...tracking, status }, budget, strategyAdvice(sim).recommended);
+      const resolved = resolveTrackingStart(sim, tracking, true);
+      if (!resolved) throw new DebtApiError("invalid", 400, [{ field: "trackingStartDueDate", message: "Choose an installment in the current schedule" }]);
+      const built = statesToSaveInput(sim, { ...resolved, status }, budget, strategyAdvice(sim).recommended);
       if (!built.ok) throw new DebtApiError("invalid", 400, built.issues);
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
       setSavePhase("Saving loan…");
@@ -163,7 +166,7 @@ function NewLoanEditor() {
   const newComplete = !!tracking.name.trim();
   const actions = tab === "calculation" ? (
     <>
-      <ScheduleControls onDialog={setScheduleDialog} />
+      <span ref={setExportTarget} />
       <Button type="button" size="sm" disabled={!complete} title={complete ? undefined : "Complete the loan amount, term, rate and start date first"} onClick={toSetup}>
         Next: Link to Actual
         <ArrowRight data-icon="inline-end" aria-hidden="true" />
@@ -182,6 +185,7 @@ function NewLoanEditor() {
       tab={tab}
       onTab={setTab}
       disabledTabs={{ activity: "Save the loan first", ledger: "Save the loan first", assets: "Save the loan first", ...(complete ? {} : { setup: "Complete the calculation first" }) }}
+      beforeGuide={tab === "calculation" ? <ScheduleControls onDialog={setScheduleDialog} /> : null}
       actions={actions}
       menu={tab === "setup" && newComplete ? [{ label: "Save as draft", onSelect: () => save.mutate("draft") }] : tab === "calculation" ? [{ label: "Reset loan", destructive: true, onSelect: () => setResetOpen(true) }] : []}
       dirty={dirty}
@@ -190,7 +194,7 @@ function NewLoanEditor() {
       <IssueList issues={issues} />
       {tab === "calculation" ? (
         <SimulatorView embedded sim={sim} onChange={setSim} title="Schedule" loanName={tracking.name} badge="Not saved yet" revision={null} actions={null}
-          external={{ comparing: false, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen }} />
+          external={{ comparing: false, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen, exportTarget }} />
       ) : (
         <>
           <p className="px-4 pt-3 text-xs text-muted-foreground">{SAVE_BOUNDARY} {summarizeProfile(sim.profile)}.</p>
@@ -224,6 +228,7 @@ function LoanEditor({ id }: { id: string }) {
   const [offsetAsOfDate, setOffsetAsOfDate] = useState(today());
   const [comparing, setComparing] = useState(false);
   const [scheduleDialog, setScheduleDialog] = useState<"method" | "how" | null>(null);
+  const [exportTarget, setExportTarget] = useState<HTMLSpanElement | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const trackedOffsetAccounts = useMemo(
     () => debt.data?.offsets.filter((offset) => offset.useActualBalance === true).map((offset) => offset.actualAccountId) ?? [],
@@ -277,7 +282,9 @@ function LoanEditor({ id }: { id: string }) {
       if (connection?.budgetSyncId !== detail.debt.budgetSyncId) throw new Error("Connect to this loan’s budget before saving.");
       // A draft becomes active on the first save with its loan settings complete (owner decision 2026-10-05).
       const status = tracking.status === "draft" && activatable ? "active" : tracking.status;
-      const built = statesToSaveInput(sim, { ...tracking, status }, detail.debt.budgetSyncId, strategyAdvice(sim).recommended);
+      const resolved = resolveTrackingStart(sim, tracking, workspaceTabFor(params?.get("view"), loanTracking.tracked ? "activity" : "calculation") === "setup");
+      if (!resolved) throw new DebtApiError("invalid", 400, [{ field: "trackingStartDueDate", message: "Choose an installment in the current schedule" }]);
+      const built = statesToSaveInput(sim, { ...resolved, status }, detail.debt.budgetSyncId, strategyAdvice(sim).recommended);
       if (!built.ok) throw new DebtApiError("invalid", 400, built.issues);
       if (!directory.data) throw new DebtApiError("The budget's accounts have not loaded yet.", 400);
       // A lender statement typed as the opening position is recorded first, then the loan points at it.
@@ -300,6 +307,7 @@ function LoanEditor({ id }: { id: string }) {
       setSavePhase(null);
       const states = detailToStates(next);
       setEditingBase(states); setSim(states?.simulation ?? null); setTracking(states?.tracking ?? null);
+      setComparing(false);
       setIssues([]);
       toast.success(detail?.debt.status === "draft" && next.debt.status === "active"
         ? "Saved. The loan is now active."
@@ -367,19 +375,19 @@ function LoanEditor({ id }: { id: string }) {
   const toDo = result ? result.figures.counts.unrecorded + result.figures.counts.check + result.figures.counts.missing + (result.openingAdjustment ? 1 : 0) : 0;
   const unclassified = result ? result.ledger.filter((l) => l.type === "unclassified").length : 0;
   const attention = { ...(toDo ? { activity: `${toDo} to do` } : {}), ...(unclassified ? { ledger: `${unclassified} unclassified` } : {}) };
+  const beforeGuide = tab === "calculation" ? <ScheduleControls comparing={dirty && comparing} onComparingChange={dirty ? setComparing : undefined} onDialog={setScheduleDialog} /> : tracked && (tab === "activity" || tab === "ledger" || tab === "assets") ? (
+    <Button type="button" size="sm" variant="outline" disabled={loanTracking.refreshing || ws.run !== null} onClick={() => void loanTracking.refresh()}>
+      <RefreshCw className="size-3.5" aria-hidden />{loanTracking.refreshing ? "Refreshing…" : "Refresh"}
+    </Button>
+  ) : null;
   const actions = (
     <>
-      {tab === "calculation" ? <ScheduleControls comparing={comparing} onComparingChange={setComparing} onDialog={setScheduleDialog} /> : null}
-      {tracked && (tab === "activity" || tab === "ledger" || tab === "assets") ? (
-        <Button type="button" size="sm" variant="outline" disabled={loanTracking.refreshing || ws.run !== null} onClick={() => void loanTracking.refresh()}>
-          <RefreshCw className="size-3.5" aria-hidden />{loanTracking.refreshing ? "Refreshing…" : "Refresh"}
-        </Button>
-      ) : null}
+      {tab === "calculation" ? <span ref={setExportTarget} /> : null}
       {dirty && !readOnly ? (
         <Input aria-label="What changed (optional)" placeholder="What changed (optional)" value={tracking.changeSummary} onChange={(e) => setTracking({ ...tracking, changeSummary: e.target.value })} className="h-7 w-52 text-xs" />
       ) : null}
       {dirty ? (
-        <Button type="button" size="sm" variant="outline" onClick={() => { setEditingBase(saved); setSim(saved.simulation); setTracking(saved.tracking); setIssues([]); }}>
+        <Button type="button" size="sm" variant="outline" onClick={() => { setEditingBase(saved); setSim(saved.simulation); setTracking(saved.tracking); setComparing(false); setIssues([]); }}>
           Discard changes
         </Button>
       ) : null}
@@ -413,6 +421,7 @@ function LoanEditor({ id }: { id: string }) {
       tab={tab}
       onTab={setTab}
       attention={attention}
+      beforeGuide={beforeGuide}
       actions={actions}
       menu={menu}
       dirty={dirty}
@@ -436,7 +445,7 @@ function LoanEditor({ id }: { id: string }) {
       {tab === "assets" ? <LinkedAssetsTab detail={detail} digits={sim.minorDigits} today={loanTracking.today} owedMinor={result ? result.figures.owedInActualMinor : null} /> : null}
       {tab === "calculation" ? (
         <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} editorDirty={dirty} chartViewKey={`assets-debt:chart-view:${id}`} title="Schedule" loanName={tracking.name || detail.debt.name} badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null} tracked={scheduleTracked}
-          external={{ comparing, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen }} offsetTracking={trackedOffsetAccounts.length ? {
+          external={{ comparing: dirty && comparing, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen, exportTarget }} offsetTracking={trackedOffsetAccounts.length ? {
           asOfDate: offsetAsOfDate,
           onAsOfDateChange: setOffsetAsOfDate,
           snapshots: offsetSnapshots,
@@ -449,7 +458,7 @@ function LoanEditor({ id }: { id: string }) {
         } : undefined} />
       ) : null}
       {tab === "setup" ? (
-        <LinkToActual sim={sim} setSimulation={readOnly ? undefined : setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} rules={loanTracking.bundle?.rules ?? (detail.debt.status === "active" ? [] : null)} onEditRules={() => ws.setDialog("rules")} saved />
+        <LinkToActual sim={sim} setSimulation={readOnly ? undefined : setSim} tracking={tracking} setTracking={setTracking} directory={directory.data} issues={issues} rules={loanTracking.bundle?.rules ?? (detail.debt.status === "active" ? [] : null)} onEditRules={() => ws.setDialog("rules")} saved readOnly={readOnly} />
       ) : null}
       <ConfirmDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)} state={confirm} />
       <Dialog open={deleting} onOpenChange={(open) => !open && setDeleting(false)}>

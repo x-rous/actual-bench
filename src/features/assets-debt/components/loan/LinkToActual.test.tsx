@@ -5,7 +5,7 @@ import type { SyncSourceTransaction } from "@/lib/actual/transport";
 import type { AccountDirectory } from "@/lib/assets-debt/actual/ledgerPort";
 import { newTracking, type SimulationState, type TrackingState } from "../../lib/simulatorModel";
 import { offsetOf, sim } from "../../lib/simulatorTestKit";
-import { LinkToActual, scanLoanAccount } from "./LinkToActual";
+import { LinkToActual, resolveTrackingStart, scanLoanAccount } from "./LinkToActual";
 
 const mockRows: { current: SyncSourceTransaction[] } = { current: [] };
 jest.mock("@/store/connection", () => ({
@@ -80,11 +80,16 @@ describe("Link to Actual", () => {
     // The account starts with an opening balance on 10 Jun 2024, after the fifth installment.
     mockRows.current = [row({ date: "2024-06-10", amount: -2_600_000 })];
     wrap(<Harness initial={{ liabilityAccountId: "loan" }} />);
-    expect(await screen.findByText(/opening balance on 10 Jun 2024, so installment 6 \(01 Jul 2024\) is the first one recorded there/)).toBeInTheDocument();
+    expect(await screen.findByText(/opening balance on 10 Jun 2024\. Suggested start: installment 6 \(01 Jul 2024\)/)).toBeInTheDocument();
+    expect(screen.getByLabelText("First installment")).toHaveValue("1");
     fireEvent.click(screen.getByRole("button", { name: "Use installment 6" }));
     await waitFor(() => expect(changed.current?.trackingStartDueDate).toBe("2024-07-01"));
-    expect(screen.getByRole("radio", { name: /Opening position from the calculation/ })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByText(/Actual's loan account before installment/).nextSibling).toHaveTextContent("26,000.00");
+    expect(screen.getByText(/Suggested start selected/)).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Use calculated balance/ })).toBeChecked();
+    expect(screen.getByText(/Actual account balance before installment/).nextSibling).toHaveTextContent("26,000.00");
+    fireEvent.change(screen.getByLabelText("First installment"), { target: { value: "3" } });
+    expect(screen.getByRole("button", { name: "Use installment 6" })).toBeInTheDocument();
+    expect(changed.current?.trackingStartDueDate).toBe("2024-04-01");
   });
 
   it("an early first payment and a later row that adds to the debt change neither the suggestion nor the opening", async () => {
@@ -95,10 +100,12 @@ describe("Link to Actual", () => {
     ];
     wrap(<Harness initial={{ liabilityAccountId: "loan" }} />);
     expect(await screen.findByText(/The loan arrived as a transfer of 30,000.00 on 01 Jan 2024/)).toBeInTheDocument();
-    expect(screen.getByText(/Suggested: the first installment/)).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /^Use installment/ }).map((b) => b.textContent)).toEqual(["Use installment 1"]);
-    expect(screen.getByText(/Actual's loan account before installment 1/).nextSibling).toHaveTextContent("30,000.00");
-    expect(screen.getByText("Within the tolerance: nothing to write.")).toBeInTheDocument();
+    expect(screen.getByLabelText("First installment")).toHaveValue("1");
+    expect(screen.queryByRole("button", { name: "Use installment 1" })).not.toBeInTheDocument();
+    await waitFor(() => expect(changed.current?.trackingStartDueDate).toBe("2024-02-01"));
+    expect(screen.getByText(/Actual account balance before installment 1/).nextSibling).toHaveTextContent("30,000.00");
+    expect(screen.getByText("Balances match.")).toBeInTheDocument();
+    expect(screen.getByText("The original loan amount.")).toBeInTheDocument();
   });
 
   it("with a lender statement as the opening, says how far the principal is ahead of the original schedule", async () => {
@@ -118,6 +125,15 @@ describe("Link to Actual", () => {
     expect(screen.getByLabelText("First installment on or after")).toBeInTheDocument();
     expect(screen.getByText("No. 3 of 36")).toBeInTheDocument();
     expect(third.startsWith("2024-")).toBe(true);
+  });
+
+  it("saves the displayed default and rejects a start absent from the current schedule", () => {
+    const simulation = loan();
+    const tracking = { ...newTracking(simulation), liabilityAccountId: "loan" };
+    expect(resolveTrackingStart(simulation, tracking, true)?.trackingStartDueDate).toBe("2024-02-01");
+    expect(resolveTrackingStart(simulation, { ...tracking, trackingStartDueDate: "2024-02-02" }, true)).toBeNull();
+    expect(resolveTrackingStart(simulation, { ...tracking, trackingStartDueDate: "" }, true)).toBeNull();
+    expect(resolveTrackingStart(simulation, tracking, false)?.trackingStartDueDate).toBeNull();
   });
 
   it("asks for each offset account in Actual, needed even for a draft, with tracking its balance as a switch", () => {
