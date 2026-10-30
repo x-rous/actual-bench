@@ -5,7 +5,9 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 COPY scripts/copy-sqlite-wasm.mjs scripts/copy-pdfjs-assets.mjs ./scripts/
 RUN npm ci --no-audit --no-fund
-COPY . .
+COPY next.config.ts tsconfig.json postcss.config.mjs ./
+COPY src ./src
+COPY public ./public
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
