@@ -48,12 +48,22 @@ visitors so they can use the shared sample; never reuse a real API key.
 
 ## Preserve the old demo link
 
-After validating the new Space, configure the existing Vercel demo project to
-redirect requests to `https://x-rous-actual-bench-demo.hf.space`, preserving
-paths where practical. Vercel supports external redirects in its project
-configuration. Keep the Vercel project and its `actual-bench-demo.vercel.app`
-domain active for the link to continue working. Review and deploy that redirect
-separately; changing this repository does not configure the Vercel project.
+After validating the new Space, link the Vercel CLI to the existing demo project
+and stage the two project-level redirects:
+
+```bash
+vercel link
+vercel redirects add / https://x-rous-actual-bench-demo.hf.space/ --status 307 --preserve-query-params
+vercel redirects add '/*' 'https://x-rous-actual-bench-demo.hf.space/:splat' --status 307 --preserve-query-params
+vercel redirects list --staging
+vercel redirects list-versions
+# After reviewing the staged version ID shown above:
+vercel redirects promote <version-id>
+```
+
+Select the project that owns `actual-bench-demo.vercel.app` when linking. Keep
+the project and domain active. Promoting changes the public link immediately;
+changing this repository alone does not configure the Vercel project.
 
 ## Verify and reset
 

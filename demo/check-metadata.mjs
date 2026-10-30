@@ -25,5 +25,22 @@ for (const budget of demo.budgets) {
   if (!session) fail(`${budget.label}: completed reconciliation missing`);
   const detail = await read(`/api/reconciliation/sessions/${encodeURIComponent(session.id)}`);
   if (!detail.items.length || detail.items.some((item) => !item.actualTransactionIds.length)) fail(`${budget.label}: reconciliation has no matched transactions`);
+  const query = await read('/api/proxy', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+    connection: { baseUrl: demo.baseUrl, apiKey: demo.apiKey, budgetSyncId: id }, path: '/run-query', method: 'POST',
+    body: { ActualQLquery: { table: 'transactions', select: ['id', 'account', 'date', 'amount', 'is_child'], options: { splits: 'grouped' } } },
+  }) });
+  const transactions = query.data;
+  const byId = new Map(transactions.map((row) => [row.id, row]));
+  for (const entry of registry.metadata) {
+    if (byId.get(entry.actualTransactionId)?.account !== entry.actualAccountId) fail(`${budget.label}: asset transaction missing`);
+  }
+  for (const item of detail.items) {
+    if (item.actualTransactionIds.some((txId) => byId.get(txId)?.account !== session.accountId)) fail(`${budget.label}: reconciliation transaction missing`);
+  }
+  const card = workspace.cards[0];
+  for (const statement of workspace.statements) {
+    const balance = -transactions.filter((row) => row.account === card.accountId && !row.is_child && row.date <= statement.closingDate).reduce((sum, row) => sum + row.amount, 0);
+    if (balance !== statement.balanceMinor) fail(`${budget.label}: statement balance does not match Actual`);
+  }
   console.log(`demo metadata: OK ${budget.label} — ${debts.length} loans, ${workspace.statements.length} statements, ${registry.assets.length} assets, ${detail.items.length} reconciled rows`);
 }

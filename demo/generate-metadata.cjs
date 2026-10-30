@@ -35,8 +35,8 @@ const { decisionSignature } = require('../src/lib/reconciliation/session/signatu
 const { DEFAULT_APPLY_CONFIG } = require('../src/lib/reconciliation/session/plan.ts');
 const manifest = JSON.parse(fs.readFileSync(process.argv[2] || path.join(__dirname, 'seed-manifest.json'), 'utf8'));
 const output = path.resolve(process.argv[3] || path.join(__dirname, 'seed-bench.sqlite'));
-if (!output.startsWith(path.resolve(__dirname) + path.sep)) throw new Error('Demo database output must be inside demo/');
-fs.rmSync(output, { force: true });
+if (![path.join(__dirname, 'seed-bench.sqlite'), path.join(__dirname, 'seed-bench.next.sqlite')].includes(output)) throw new Error('Use a demo seed database path');
+for (const suffix of ['', '-wal', '-shm']) fs.rmSync(output + suffix, { force: true });
 const db = getAppDb(output);
 function loanConfig(openingDate, firstPaymentDate, openingPrincipalMinor, contractualPaymentMinor, termMonths) {
   return {
@@ -120,7 +120,9 @@ for (const demo of manifest) {
   const statementRows = rows.map((row, i) => ({ id: `${budgetSyncId}-statement-row-${i}`, sourceRowNumber: i+2, postedDate: row.date, amount: row.amount, importedPayee: row.imported_payee || 'Household transaction', fingerprint: `demo-${row.id}`, raw: { date: row.date, amount: row.amount } }));
   replaceStatementRows(db, session.id, statementRows);
   replaceReconciliationItems(db, session.id, rows.map((row,i) => ({ id: `${budgetSyncId}-reconciliation-item-${i}`, statementRowIds: [statementRows[i].id], actualTransactionIds: [row.id], disposition: 'matched' })));
-  updateReconciliationSession(db, session.id, { status: 'needs_review', statementFormat: 'delimited', statementStart: `${lastMonth.key}-01`, statementEnd: `${lastMonth.key}-28`, totals: { rowCount: rows.length, net: rows.reduce((sum,row) => sum + row.amount, 0) }, applyConfig: DEFAULT_APPLY_CONFIG });
+  const openingBalanceMinor = demo.transactions.checking.filter((row) => !row.is_child && row.date < `${lastMonth.key}-01`).reduce((sum, row) => sum + row.amount, 0);
+  const net = rows.reduce((sum, row) => sum + row.amount, 0);
+  updateReconciliationSession(db, session.id, { status: 'needs_review', statementFormat: 'delimited', statementStart: `${lastMonth.key}-01`, statementEnd: `${lastMonth.key}-28`, totals: { rowCount: rows.length, net, openingBalanceMinor, closingBalanceMinor: openingBalanceMinor + net }, applyConfig: DEFAULT_APPLY_CONFIG });
   completeReconciliationWithoutWrites(db, session.id, decisionSignature(listReconciliationItems(db, session.id), DEFAULT_APPLY_CONFIG));
 }
 db.pragma('wal_checkpoint(TRUNCATE)');

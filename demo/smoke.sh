@@ -2,9 +2,13 @@
 set -euo pipefail
 image=actual-bench-demo
 name=actual-bench-demo
-cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
+cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then docker logs "$name" 2>&1 || true; fi
+  docker rm -f "$name" >/dev/null 2>&1 || true
+}
 trap cleanup EXIT
-cleanup
+docker rm -f "$name" >/dev/null 2>&1 || true
 docker run -d --name "$name" --cpus=2 --memory=16g -p 127.0.0.1:17860:7860 \
   -e API_KEY=ci-demo-key -e ACTUAL_SERVER_PASSWORD=demo-budget-public "$image"
 wait_ready() {

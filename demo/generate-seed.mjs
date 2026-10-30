@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { rm, mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
+import { createServer } from "node:net";
 
 globalThis.navigator ??= { platform: "", userAgent: "node" };
 
@@ -1078,6 +1079,12 @@ async function stabilizeGeneratedSyncIds(generatedBudgets) {
 }
 
 async function main() {
+  // Refuse an occupied port before bootstrapping; it could be a real server.
+  await new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen({ port: PORT, host: "::", exclusive: true }, () => probe.close(resolve));
+  });
   await rm(SEED_DATA_DIR, { recursive: true, force: true });
   await mkdir(SEED_DATA_DIR, { recursive: true });
 
@@ -1102,6 +1109,7 @@ async function main() {
 
   try {
     await waitForServer();
+    if (server.exitCode !== null || server.signalCode !== null) throw new Error("seed sync server exited during startup");
     console.log("• sync server is up");
 
     const bootstrap = await fetch(`${SERVER_URL}/account/bootstrap`, {
