@@ -360,7 +360,7 @@ describe("headline, deltas and chart series", () => {
     const plainData = chartSeries(p, plain, { view: "year" });
     expect(plainData.series).toEqual(["balance", "cumulativeInterest"]);
     expect(plainData.rateChanges).toEqual([]);
-    expect(plainData.payoff).toEqual({ period: "2054", date: "2054-01-01" });
+    expect(plainData.payoff).toEqual({ period: "2054", date: "2054-01-01", recorded: false });
     const withOffset = { ...sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE } }), ...offsetOf(5_000_000) };
     const po = project(withOffset);
     const data = chartSeries(po, withOffset, { view: "month", comparison: p });

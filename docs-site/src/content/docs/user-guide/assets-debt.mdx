@@ -71,6 +71,19 @@ other costs). Everything on the right is worked out from it: the monthly repayme
 the payoff date, a balance chart, the **Events** list and the amortization schedule. Edits on a saved loan stay
 unsaved until **Save changes**; tick **Compare with saved** to see the difference an edit makes first.
 
+The balance chart starts at the opening position and uses one amount scale and a date-based time axis. Monthly and yearly points show the
+balance after the latest event in each period; hover or use the keyboard for details. **Interest paid** includes projected future charges and capitalized interest.
+The grid marks each year and evenly spaced amounts; the vertical scale adjusts to the visible lines.
+Turn on **Interest axis** to plot interest against a separate scale on the right. When scales differ, crossing lines do not mean the amounts are equal.
+**Interest-bearing balance** is the balance used to calculate interest on the event date; depending on the configured event order, it can be before the repayment.
+The tooltip breaks repayments into principal, interest and any other included components when the allocation is available;
+separately charged interest and fees are shown separately. Principal and interest remain visible when they are zero.
+Component percentages are shares of the period's repayments.
+Use the legend to hide lines, show **Events** markers, or show
+**Without what-ifs** when available. That comparison removes optional events but keeps the opening offset and
+contractual rate changes. On tracked loans, a period can include both Actual and projected events; the Today line
+marks the current date.
+
 The schedule's Year and Month labels count calendar months from one repayment interval before the first repayment,
 with Month 1 as the minimum. **Payment #** counts repayments separately; monthly and yearly rows aggregate calendar periods.
 
