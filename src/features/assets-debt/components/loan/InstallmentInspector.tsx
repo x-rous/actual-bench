@@ -22,6 +22,8 @@ import { ENTRY_LABELS, StatusBadge, dt } from "./presentation";
 export type InspectorActions = {
   /** This payment isn't this loan's repayment: Bench ignores it from now on (saved in Bench only). */
   notThisPayment: (inst: Installment) => void;
+  /** Remove a saved exclusion so Bench can match the payment again. */
+  restorePayment: (id: string) => void;
   /** This payment pays this installment (saved in Bench only). */
   choosePayment: (inst: Installment, payment: Pick<Payment, "id" | "row" | "loanRows">) => void;
   /** Actual's balance is right from this installment: the calculation continues from it. */
@@ -143,6 +145,10 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
 
   const result = tracking.result?.ok ? tracking.result : null;
   const nearby = inst && result ? result.ledger.filter((l) => l.type === "extra-principal" && Math.abs(Date.parse(l.row.date) - Date.parse(inst.dueDate)) <= 45 * 86_400_000) : [];
+  const ignored = inst ? (tracking.bundle?.entries ?? []).filter((e) => e.entryType === "not-repayment").flatMap((entry) => {
+    const row = [...(tracking.reads?.bankRows ?? []), ...(tracking.reads?.loanRows ?? [])].find((r) => r.id === entry.actualTransactionId);
+    return row && Math.abs(Date.parse(row.date) - Date.parse(inst.dueDate)) <= 45 * 86_400_000 ? [row] : [];
+  }) : [];
   const [chosen, setChosen] = useState<string | null>(payment?.id ?? null);
   const disabled = busy || writesLocked;
 
@@ -255,7 +261,11 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
         <Sec title="Payments near this date">
           {nearby.length === 0 ? <p className="text-xs text-muted-foreground">No unmatched payment into the loan account near {dt(inst.dueDate)}. If it was paid as an expense from a bank account, add a payment rule that finds it.</p>
             : <div role="radiogroup" aria-label="Payments near this date" className="flex flex-col gap-1.5">{nearby.map((l) => <button key={l.row.id} type="button" role="radio" aria-checked={chosen === l.row.id} onClick={() => setChosen(l.row.id)} className={cn("rounded border px-3 py-2 text-left text-xs", chosen === l.row.id && "border-primary bg-accent/40")}><span className="block font-medium">{dt(l.row.date)} · {money(l.row.amount)}</span><span className="text-muted-foreground">{l.row.payeeName ?? "Transfer"}{l.row.notes ? ` · ${l.row.notes}` : ""}</span></button>)}</div>}
-        </Sec>{calcSec}
+        </Sec>
+        {ignored.length ? <Sec title="Previously marked not this payment">
+          <p className="mb-2 text-xs text-muted-foreground">Restore a payment to let Bench match it again. This only changes Bench&apos;s saved decision.</p>
+          <div className="flex flex-col gap-2">{ignored.map((r) => <div key={r.id} className="flex items-center gap-2 rounded border p-2 text-xs"><div className="min-w-0 flex-1"><span className="block font-medium">{dt(r.date)} · {money(Math.abs(r.amount))}</span><span className="break-words text-muted-foreground">{accountName(r.accountId)} · {r.payeeName ?? "Transfer"}{r.notes ? ` · ${r.notes}` : ""}</span></div><Button size="xs" variant="outline" onClick={() => actions.restorePayment(r.id)}>Restore</Button></div>)}</div>
+        </Sec> : null}{calcSec}
       </>;
       const pick = nearby.find((l) => l.row.id === chosen);
       footer = <><Button variant="outline" size="sm" onClick={onClose}>Close</Button>{nearby.length ? <Button size="sm" disabled={!pick} onClick={() => pick && actions.choosePayment(inst, { id: pick.row.id, row: pick.row, loanRows: [pick.row] })}>This is the payment</Button> : null}</>;

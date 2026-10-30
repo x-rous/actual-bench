@@ -91,9 +91,16 @@ describe("HSBC reconciliation", () => {
     if (!result.ok) throw new Error(result.message);
     // Before the fix these were 248001, 250411, 265251 and 228455 minor units.
     rows.forEach((row, i) => {
-      expect(Math.abs(result.installments[i].calculatedInterestMinor - row.interestMinor)).toBeLessThanOrEqual(RESIDUAL);
+      // The previous recorded interest's rounding difference carries into this due-date allocation,
+      // so two adjacent lender rounding residuals can differ by up to two minor units.
+      expect(Math.abs(result.installments[i].calculatedInterestMinor - row.interestMinor)).toBeLessThanOrEqual(2 * RESIDUAL);
       expect(result.installments[i].balanceAfterMinor).toBe(row.balanceMinor);
     });
+    // Recreating the loan loses its local anchors; the recorded splits still determine the same history.
+    const recreated = planTracking({ ...input, anchors: [] });
+    if (!recreated.ok) throw new Error(recreated.message);
+    expect(recreated.installments.map((i) => [i.calculatedInterestMinor, i.balanceAfterMinor])).toEqual(result.installments.map((i) => [i.calculatedInterestMinor, i.balanceAfterMinor]));
+    expect(recreated.anchor.principalMinor).toBe(result.anchor.principalMinor);
     // An accepted balance can also differ from the calculated one. Interest after that anchor
     // must use the changed principal, while retaining what the prior repayment reported.
     const anchors = [...input.anchors];

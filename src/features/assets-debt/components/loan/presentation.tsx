@@ -40,7 +40,7 @@ export function StatusBadge({ status }: { status: InstallmentStatus }) {
   return <span className={cn("inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium", STATUS[status].className)}>{STATUS[status].label}</span>;
 }
 
-const MENU = "min-w-44 border border-border py-1 shadow-xl [&_[role=menuitem]]:gap-2 [&_[role=menuitem]]:px-3 [&_[role=menuitem]]:py-1.5 "
+const MENU = "w-max max-w-[min(24rem,var(--available-width))] min-w-44 border border-border py-1 shadow-xl [&_[role=menuitem]]:gap-2 [&_[role=menuitem]]:px-3 [&_[role=menuitem]]:py-1.5 "
   + "[&_[role=menuitem]]:text-xs [&_[role=menuitem]]:whitespace-nowrap";
 
 /** Compact menu items for the loan screens' ⋯ and action menus (the same size as the credit card row menus). */

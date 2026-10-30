@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleHelp, Plus } from "lucide-react";
+import { BookOpen, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
@@ -2253,7 +2253,7 @@ function ReconciliationSessionView() {
         actions={
           <>
             <Button size="sm" variant="outline" onClick={() => setGuide("start")}>
-              <CircleHelp className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+              <BookOpen className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
               Guide
             </Button>
             <Button size="sm" onClick={() => setNewSessionOpen(true)}>

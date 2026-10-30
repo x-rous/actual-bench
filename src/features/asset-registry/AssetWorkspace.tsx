@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CircleHelp, Landmark, RefreshCw, Settings2, Plus } from "lucide-react";
+import { ArrowLeft, BookOpen, Landmark, RefreshCw, Settings2, Plus } from "lucide-react";
 import { FEATURES } from "@/lib/features/catalogue";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -345,7 +345,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
       <div className="flex shrink-0 items-center gap-2">
         <span role="status" className="text-xs text-muted-foreground">{refreshing ? "Refreshing…" : lastRead ? `Read from Actual ${readTime(lastRead)}` : "Reading Actual…"}</span>
         <Button size="sm" variant="outline" disabled={refreshing} onClick={() => void refresh(undefined, true)}><RefreshCw className={refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh</Button>
-        <Button variant="outline" size="sm" onClick={() => setGuide(guideSectionForTab(asset ? tab : null))}><CircleHelp className="size-3.5" aria-hidden />Guide</Button>
+        <Button variant="outline" size="sm" onClick={() => setGuide(guideSectionForTab(asset ? tab : null))}><BookOpen className="size-3.5" aria-hidden />Guide</Button>
         {!assetId && <Button size="sm" variant="outline" onClick={() => setLinkedAccountsOpen(true)}>Linked accounts</Button>}
         <Button size="sm" variant={assetId ? "outline" : "default"} disabled={!available || (assetId ? !asset : false)} onClick={() => { if (asset) setEditorAsset(asset); else setCreating(true); }}>{assetId ? <Settings2 className="size-3.5" aria-hidden /> : <Plus className="size-3.5" aria-hidden />}{assetId ? "Settings" : "Add Asset"}</Button>
       </div>

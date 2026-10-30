@@ -44,7 +44,7 @@ function plan(loanRows: SyncSourceTransaction[], bankRows: SyncSourceTransaction
   return { result, tracking };
 }
 const received = () => transfer("2024-01-15", -500_000_00);
-const actions = { notThisPayment: jest.fn(), choosePayment: jest.fn(), acceptActual: jest.fn() };
+const actions = { restorePayment: jest.fn(), notThisPayment: jest.fn(), choosePayment: jest.fn(), acceptActual: jest.fn() };
 
 function show(tracking: LoanTracking, inst: ReturnType<typeof plan>["result"]["installments"][number], extra: { onApply?: jest.Mock; onPrev?: () => void; onNext?: () => void } = {}) {
   return render(<InstallmentInspector row={{ kind: "installment", inst }} tracking={tracking} directory={directory} digits={2} busy={false} writesLocked={false} onApply={extra.onApply ?? jest.fn()} actions={actions} onClose={jest.fn()} onPrev={extra.onPrev} onNext={extra.onNext} />);

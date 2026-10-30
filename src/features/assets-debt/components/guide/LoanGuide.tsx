@@ -238,7 +238,7 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
               ["One at a time", "Press Apply on a row, or open it to see the split first and change it."],
               ["Many at once", "Tick rows (or Space) and apply the selection, or Apply all Unrecorded. They run in date order and stop at the first that doesn't apply."],
               ["The details panel", <>Click a row or press <Key>Enter</Key>. Step with ‹ › or <Key>↑</Key> <Key>↓</Key>; <Key>A</Key> applies, <Key>Esc</Key> closes.</>],
-              ["Not this payment", "From a row's ⋯ menu, when Bench matched a payment that isn't this loan's. It is ignored from then on."],
+              ["Not this payment", "From a row's ⋯ menu, when Bench matched a payment that isn't this loan's. To reverse this, open Choose payment on a missing installment and restore it under Previously marked not this payment."],
             ]} />
             <Callout tone="warn" title="A write that may not have finished">If the connection drops during an Apply, a red banner names the installment and stops further writes. Check that payment in Actual, then press <b>The change is in Actual</b> or <b>It isn&apos;t</b>.</Callout>
           </>}

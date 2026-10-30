@@ -157,11 +157,12 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
     return next ? () => setActive(next.key) : undefined;
   };
 
+  const driftNeedsReview = tracking.result.installments.some((inst) => inst.checkKind === "drift" && inst.status === "check");
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <SummaryStrip label="Repayments summary" items={[
           { label: "Owed in Actual", value: money(f.owedInActualMinor), detail: tracking.reads?.complete === false ? "The loan account didn't read completely: refresh" : "Loan account today", wrap: true },
-          { label: "Bench expects", value: money(f.calculatedMinor), detail: Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "By today · agrees with Actual" : `By today · differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
+          { label: "Bench expects", value: money(f.calculatedMinor), detail: driftNeedsReview ? "By today · recorded splits need review" : Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100) ? "By today · agrees with Actual" : `By today · differs by ${money(Math.abs(f.differenceMinor))}${todo ? ` · ${todo} to apply` : ""}`, wrap: true },
           { label: "Next payment", value: f.nextPayment ? money(f.nextPayment.amountMinor) : "-", detail: f.nextPayment ? `Due ${dt(f.nextPayment.dueDate)} · installment ${f.nextPayment.no}` : "No more installments", wrap: true },
           { label: "To do", value: <span className={todo + f.counts.check + f.counts.missing ? "text-amber-700 dark:text-amber-400" : undefined}>{todo} <span className="text-sm font-medium text-muted-foreground">Unrecorded</span></span>, detail: `${f.counts.check} Check · ${f.counts.missing} Missing`, wrap: true },
           { label: "Interest paid", value: money(f.interestPaidMinor), detail: `This year ${money(f.interestThisYearMinor)} · recorded and unrecorded installments`, wrap: true },
@@ -183,7 +184,7 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
         </div>
         {chosen.length > 0 && !busy ? <div role="region" aria-label="Selected repayments" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs"><strong>{chosen.length} selected</strong><span className="text-muted-foreground">Unrecorded rows only</span><Button size="xs" disabled={writesLocked} onClick={() => apply(inOrder(chosen))}>Apply {chosen.length}</Button><Button size="xs" variant="ghost" className="ml-auto" onClick={() => setSelected(new Set())}>Clear selection</Button></div> : null}
         {run ? <div role="status" className="flex shrink-0 items-center gap-2 border-b bg-accent/40 px-4 py-1.5 text-xs">Applying {Math.min(run.done + 1, run.total)} of {run.total}…</div> : null}
-        {outcomes ? <Outcomes outcomes={outcomes} onDismiss={onDismissOutcomes} counts={f.counts} agrees={Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100)} /> : null}
+        {outcomes ? <Outcomes outcomes={outcomes} onDismiss={onDismissOutcomes} counts={f.counts} agrees={!driftNeedsReview && Math.abs(f.differenceMinor) <= (tracking.debt?.toleranceMinor ?? 100)} /> : null}
         {unresolved.map((w) => (
           <div key={w.id} role="alert" className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-xs">
             <span className="text-destructive">A write to Actual {w.status === "applying" ? "was left unfinished" : "ended with an unknown outcome"}{w.installmentDueDate ? ` (installment due ${dt(w.installmentDueDate)})` : ""}. Nothing else is written until you check the payment in Actual.</span>

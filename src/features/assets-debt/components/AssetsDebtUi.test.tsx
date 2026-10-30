@@ -913,11 +913,11 @@ describe("the new-loan flow", () => {
     expect(screen.getByText("Not saved yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Loans & Debt/ })).toBeInTheDocument();
     const how = screen.getByRole("button", { name: "How this loan is calculated" });
-    const method = screen.getByRole("button", { name: "Set calculation method" });
+    const method = screen.getByRole("button", { name: "Open calculation method settings" });
     const reset = screen.getByRole("button", { name: "More loan actions" });
-    expect(how.compareDocumentPosition(method) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(method.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    for (const button of [how, method, reset]) expect(button.querySelector("svg")).not.toBeNull();
+    expect(how.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const button of [how, reset]) expect(button.querySelector("svg")).not.toBeNull();
+    expect(method).toBeInTheDocument();
     type("Loan amount", "30000");
     const discardedAmount = (screen.getByLabelText("Loan amount") as HTMLInputElement).value;
     type("Years", "3");
@@ -1102,12 +1102,18 @@ describe("an existing loan page", () => {
     });
   });
 
-  it("Terms & Schedule uses the loan's top bar: Compare, How and Set calculation method there, one ⋯ menu with Reset loan", async () => {
+  it("Terms & Schedule shows comparison only after edits and puts export in the top bar", async () => {
     await withView("schedule", async () => {
       wrap(<LoanView id={detail.debt.id} />);
-      expect(await screen.findByRole("button", { name: "Set calculation method" })).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "Open calculation method settings" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "How this loan is calculated" })).toBeInTheDocument();
+      expect(screen.queryByText("Compare with saved")).not.toBeInTheDocument();
+      expect((await screen.findByRole("button", { name: "Export CSV" }, WAIT)).closest("header")).not.toBeNull();
+      type("Interest rate", "5");
       expect(screen.getByText("Compare with saved")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("checkbox", { name: "Compare with saved" }));
+      fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+      expect(screen.queryByText("Compare with saved")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "More schedule actions" })).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "More loan actions" }));
       expect(await screen.findByRole("menuitem", { name: "Reset loan" })).toBeInTheDocument();

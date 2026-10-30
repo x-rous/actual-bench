@@ -3,9 +3,10 @@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { InfoHint } from "@/components/ui/info-hint";
+import { SlidersHorizontal } from "lucide-react";
 import { validateProfile, type CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { activeBusinessDays, activeLenderStatement, summarizeProfile, type SimulationState } from "../../lib/simulatorModel";
-import { engineLine } from "../../lib/strategyAdvice";
+import { strategyAdvice } from "../../lib/strategyAdvice";
 import {
   ACCRUAL_OPTIONS,
   AMORTIZATION_OPTIONS,
@@ -61,21 +62,21 @@ export function CalculationMethodSummary({ sim, onOpen }: { sim: SimulationState
   const derivation = profile.repaymentDerivation === "annuity-at-payment-frequency" ? null : labelOf(REPAYMENT_DERIVATION_OPTIONS, profile.repaymentDerivation);
   const businessDays = activeBusinessDays(sim) ? "Business-day due dates" : null;
   const statement = activeLenderStatement(sim) ? "Interest to due date" : null;
+  const strategy = strategyAdvice(sim).recommended;
+  const frequency = strategy === "bench-daily" ? "Calculated day by day" : strategy === "bench-periodic" ? "Calculated per period" : null;
   return (
-    <button
-      type="button"
-      className="w-full rounded-md bg-muted/50 px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      onClick={onOpen}
-      aria-label="Open calculation method settings"
-    >
+    <button type="button" onClick={onOpen} aria-label="Open calculation method settings"
+      className="group w-full rounded-md bg-muted/50 px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Set calculation method</span>
+        <SlidersHorizontal className="size-3.5 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden="true" />
+      </div>
       <div className="min-w-0">
-        <span className="block text-xs font-medium text-muted-foreground">Set calculation method</span>
-        <span className="block truncate text-xs text-foreground">
+        <span className="block text-xs text-foreground">
           {/* The day count is set beside the interest rate, so the summary leaves it out. */}
-          {profile.accrual === "per-period" ? `${labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote)} · ` : null}{labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency)}
+          Interest charged {labelOf(CHARGE_FREQUENCY_OPTIONS, profile.chargeFrequency).toLowerCase()}
         </span>
-        <span className="block truncate text-[11px] text-muted-foreground">{[accrual, labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation, businessDays, statement].filter(Boolean).join(" · ")}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">{engineLine(sim)}</span>
+        <span className="block text-[11px] text-muted-foreground">{[frequency, profile.accrual === "per-period" ? labelOf(RATE_QUOTE_OPTIONS, profile.rateQuote) : null, accrual, labelOf(AMORTIZATION_OPTIONS, profile.amortization), derivation, businessDays, statement].filter(Boolean).join(" · ")}</span>
       </div>
     </button>
   );

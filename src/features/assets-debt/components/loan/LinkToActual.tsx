@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -65,11 +65,24 @@ export function scanLoanAccount(rows: SyncSourceTransaction[], loanStart: string
   };
 }
 
-export function LinkToActual({ sim, setSimulation, tracking, setTracking, directory, issues, rules, onEditRules, saved }: {
+/** Resolve the displayed default and reject a start that no longer belongs to the schedule. */
+export function resolveTrackingStart(sim: SimulationState, tracking: TrackingState, useDefault: boolean): TrackingState | null {
+  if (!tracking.liabilityAccountId || sim.shape !== "term-loan" || tracking.direction !== "owed-by-me") return tracking;
+  if (tracking.trackingStartDueDate === null && !useDefault) return tracking;
+  const built = simulationToModel(sim);
+  if (!built.ok) return null;
+  const schedule = contractSchedule(built.model, "2200-01-01");
+  if (!schedule.ok || !schedule.dues.length) return null;
+  const date = tracking.trackingStartDueDate === null ? schedule.dues[0].date : tracking.trackingStartDueDate;
+  return schedule.dues.some((due) => due.date === date) ? { ...tracking, trackingStartDueDate: date } : null;
+}
+
+export function LinkToActual({ sim, setSimulation, tracking, setTracking, directory, issues, rules, onEditRules, saved, readOnly = false }: {
   sim: SimulationState; /** Changes the calculation (an offset's "track from Actual"); absent when read-only. */ setSimulation?: (sim: SimulationState) => void;
   tracking: TrackingState; setTracking: (t: TrackingState) => void; directory: AccountDirectory | undefined; issues: SaveIssue[];
   /** Payment rules (saved separately), or null for a loan not saved yet. */ rules: DebtPaymentRule[] | null; onEditRules: () => void;
   /** The loan is saved, so a lender statement can be recorded for it. */ saved: boolean;
+  readOnly?: boolean;
 }) {
   const connection = useConnectionStore(selectActiveInstance);
   const set = (patch: Partial<TrackingState>) => setTracking({ ...tracking, ...patch });
@@ -98,7 +111,12 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
     return late ? dues.find((d) => d.date >= opening) ?? dues[0] : dues[0];
   }, [dues, scan, built]);
   const start = dues.find((d) => d.date === tracking.trackingStartDueDate) ?? null;
-  const chosen = start ?? suggested;
+  const chosen = start ?? (!readOnly && tracking.trackingStartDueDate === null && tracking.liabilityAccountId ? dues[0] : null);
+  useEffect(() => {
+    if (!readOnly && tracking.liabilityAccountId && tracking.trackingStartDueDate === null && dues[0] && sim.shape === "term-loan" && tracking.direction === "owed-by-me") {
+      setTracking({ ...tracking, trackingStartDueDate: dues[0].date });
+    }
+  }, [tracking, setTracking, dues, sim.shape, readOnly]);
   const before = chosen ? dues[chosen.no - 2] ?? null : null;
   const calculatedOpening = chosen && built.ok ? (before ? before.balanceAfterMinor : built.model.terms.openingPrincipalMinor) : null;
   // Each row counts once, as in the tracking plan: a transfer into the account after the previous installment is a
@@ -134,7 +152,7 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <TextField label="Name" value={tracking.name} onChange={(v) => set({ name: v })} issue={issue("name")} placeholder="Home loan" />
             <SelectField label="Kind of loan" value={tracking.debtType} options={DEBT_TYPE_OPTIONS.filter((o) => o.value !== RECEIVABLE && o.value !== "heloc")} onChange={(v) => set({ debtType: v as TrackingState["debtType"] })} />
-            <AccountField {...accountProps} label="Loan account" filter={(a: { offBudget?: boolean }) => !!a.offBudget} value={tracking.liabilityAccountId ?? ""} onChange={(v) => set({ liabilityAccountId: v || null, trackingStartDueDate: null })} issue={issue("liabilityAccountId")} hint={noOffBudget ? "There is no off-budget account yet. Create one in Accounts, then choose it here." : "Off-budget accounts only: Actual keeps a loan off the budget."} />
+            <AccountField {...accountProps} label="Loan account" filter={(a: { offBudget?: boolean }) => !!a.offBudget} value={tracking.liabilityAccountId ?? ""} onChange={(v) => set({ liabilityAccountId: v || null, trackingStartDueDate: v ? dues[0]?.date ?? null : null })} issue={issue("liabilityAccountId")} hint={noOffBudget ? "There is no off-budget account yet. Create one in Accounts, then choose it here." : "Off-budget accounts only: Actual keeps a loan off the budget."} />
           </div>
           {sim.minorDigits !== 2 ? <p role="note" className="rounded-md border border-amber-300 bg-amber-50/60 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">Tracking in Actual works with 2-decimal currencies for now; this loan uses {sim.minorDigits}. Its calculation in Terms &amp; Schedule is not affected.</p> : null}
           {sim.profile.accrual === "per-period" && tracking.liabilityAccountId && setSimulation ? (
@@ -172,7 +190,7 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
           </div>
         </Section>
 
-        <Section n="3" done={!!interest?.categoryId} title="Interest" lead="How interest reaches Actual.">
+        <Section n="3" done={!!interest?.categoryId} title="Interest" lead="How repayment interest is recorded in Actual.">
           <div role="radiogroup" aria-label="How interest is recorded" className={cn(PILL_GROUP_CLASS, "h-8 w-fit flex-wrap items-center")}>
             {([["embedded-interest", "Split each repayment"], ["separate-interest", "Lender charges interest into the loan account"]] as const).map(([value, label]) => {
               const disabled = value === "separate-interest" && !lenderCharged && !(scan && scan.lenderCharges > 0);
@@ -180,7 +198,7 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
                 onClick={() => set({ lenderPattern: value })} className={cn(pillClass(tracking.lenderPattern === value), "disabled:pointer-events-none disabled:opacity-50")}>{label}</button>;
             })}
           </div>
-          <p className="text-xs text-muted-foreground">{lenderCharged ? "Repayments stay whole transfers; the lender's interest rows in the loan account carry the interest." : "Bench splits each repayment into a principal transfer to the loan account and an interest line."}</p>
+          <p className="text-xs text-muted-foreground">{lenderCharged ? "Repayments stay whole transfers; the lender's interest rows in the loan account carry the interest." : "Bench finds existing splits in Actual for you to review, edit and compare with its calculation. You can also review and split unsplit repayments."}</p>
           {!lenderCharged ? (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <CategoryField {...categoryProps} label="Interest category" value={interest?.categoryId ?? ""} onChange={(v) => interest && setComponent(interest.key, { categoryId: v || null })} issue={issue("config.components.1.categoryId")} />
@@ -192,7 +210,7 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
           ) : null}
         </Section>
 
-        <Section n="4" done={!!start} title="Tracking start" lead="The first installment Bench tracks. Earlier installments are assumed paid as contracted, and are never matched or reported missing.">
+        <Section n="4" done={!!start} title="Tracking start" lead="Choose the first repayment Bench should track. Earlier repayments are assumed paid as scheduled and are not matched or reported missing.">
           {!dues.length ? <p className="text-xs text-muted-foreground">Complete Terms &amp; Schedule first: the installments come from the loan&apos;s terms.</p> : (
             <>
               <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-4">
@@ -201,38 +219,42 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
                   <PillGroup<"number" | "date"> className="h-8 w-fit items-center" value={startMode} onChange={setStartMode} options={[{ value: "number", label: "Installment no." }, { value: "date", label: "Due date" }]} />
                 </div>
                 {startMode === "number"
-                  ? <IntegerField label="First installment" min={1} value={chosen?.no ?? null} onChange={(n) => set({ trackingStartDueDate: n && dues[n - 1] ? dues[n - 1].date : null })} />
-                  : <DateField label="First installment on or after" value={chosen?.date ?? ""} onChange={(d) => set({ trackingStartDueDate: dues.find((x) => x.date >= d)?.date ?? null })} />}
+                  ? <IntegerField label="First installment" min={1} suffix={`of ${dues.length}`} issue={issue("trackingStartDueDate") ?? (tracking.trackingStartDueDate !== null && !start ? "Choose an installment in the current schedule" : undefined)} value={chosen?.no ?? null} onChange={(n) => set({ trackingStartDueDate: n && dues[n - 1] ? dues[n - 1].date : "" })} />
+                  : <DateField label="First installment on or after" issue={issue("trackingStartDueDate") ?? (tracking.trackingStartDueDate !== null && !start ? "Choose an installment in the current schedule" : undefined)} value={chosen?.date ?? ""} onChange={(d) => set({ trackingStartDueDate: dues.find((x) => x.date >= d)?.date ?? "" })} />}
                 <div className="flex flex-col gap-1 text-xs">
                   <span className="text-muted-foreground">{startMode === "number" ? `Due on (installments 1 to ${dues.length})` : "Installment"}</span>
                   <span className="flex h-8 items-center font-medium">{chosen ? (startMode === "number" ? dt(chosen.date) : `No. ${chosen.no} of ${dues.length}`) : "-"}</span>
                 </div>
                 <div className="flex h-8 items-center">
-                  {suggested && (!start || start.no !== suggested.no) ? <Button type="button" size="sm" variant="outline" onClick={() => set({ trackingStartDueDate: suggested.date })}>Use installment {suggested.no}</Button> : null}
+                  {suggested && suggested.no > 1 && chosen?.no !== suggested.no ? <Button type="button" size="sm" variant="outline" onClick={() => set({ trackingStartDueDate: suggested.date })}>Use installment {suggested.no}</Button> : null}
                 </div>
               </div>
-              {suggested ? <p className="text-xs text-muted-foreground">{suggested.no > 1 && scan?.openingRow ? `Suggested: your loan account starts with ${scan.openingRow.transferId ? "the loan" : "an opening balance"} on ${dt(scan.openingRow.date)}, so installment ${suggested.no} (${dt(suggested.date)}) is the first one recorded there.` : "Suggested: the first installment, because the loan account holds the loan from the start."}{!start ? " Choose it to start tracking." : null}</p> : null}
+              {suggested && suggested.no > 1 && scan?.openingRow ? <p className="text-xs text-muted-foreground">{`Your loan account starts with ${scan.openingRow.transferId ? "the loan" : "an opening balance"} on ${dt(scan.openingRow.date)}. Suggested start: installment ${suggested.no} (${dt(suggested.date)}).`}{chosen?.no === suggested.no ? " Suggested start selected." : ""}</p> : null}
               {chosen ? (
                 <>
-                  <div role="radiogroup" aria-label="Opening position" className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <button type="button" role="radio" aria-checked={!statement} onClick={() => set({ openingStatementDraft: null, openingObservationId: null })} className={cn("rounded-lg border px-3 py-2 text-left text-xs", !statement && "border-primary bg-accent/40")}>
-                      <span className="block text-sm font-medium">Opening position from the calculation</span>
-                      <span className="text-muted-foreground">The principal owed after installment {chosen.no - 1 || "0"}, if every earlier installment was paid on time.</span>
-                    </button>
-                    <button type="button" role="radio" aria-checked={!!statement} disabled={!saved} title={saved ? undefined : "Save the loan first"} onClick={() => set({ openingStatementDraft: statement ?? { date: before?.date ?? chosen.date, principalMinor: calculatedOpening ?? 0 } })} className={cn("rounded-lg border px-3 py-2 text-left text-xs disabled:opacity-60", statement && "border-primary bg-accent/40")}>
-                      <span className="block text-sm font-medium">Use a lender statement</span>
-                      <span className="text-muted-foreground">The balance and date from your lender. It&apos;s kept as a lender statement.</span>
-                    </button>
-                  </div>
-                  {statement ? (
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                      <DateField label="Statement date" value={statement.date} onChange={(d) => set({ openingStatementDraft: { ...statement, date: d } })} issue={statement.date > chosen.date ? "The statement must be on or before the first tracked installment" : undefined} />
-                      <MoneyField label="Principal owed on that date" valueMinor={statement.principalMinor} minorDigits={digits} fixedDecimals onChange={(m) => set({ openingStatementDraft: { ...statement, principalMinor: m ?? 0 } })} />
+                  <fieldset className="flex flex-col gap-2">
+                    <legend className="text-sm font-medium">Starting balance</legend>
+                    <p className="text-xs text-muted-foreground">Choose the balance owed before tracking begins.</p>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <label className={cn("flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-xs", !statement && "border-primary bg-accent/40")}>
+                        <input type="radio" name="starting-balance" checked={!statement} onChange={() => set({ openingStatementDraft: null, openingObservationId: null })} className="mt-1 accent-primary" />
+                        <span><span className="block text-sm font-medium">Use calculated balance{calculatedOpening !== null ? ` · ${money(calculatedOpening)}` : ""}</span><span className="text-muted-foreground">{chosen.no === 1 ? "The original loan amount." : "Based on the loan terms and earlier repayments paid as scheduled."}</span></span>
+                      </label>
+                      <div className={cn("rounded-lg border px-3 py-2 text-xs", statement && "border-primary bg-accent/40", !saved && "opacity-60")}>
+                        <label className={cn("flex items-start gap-2", saved ? "cursor-pointer" : "cursor-not-allowed")}>
+                          <input type="radio" name="starting-balance" checked={!!statement} disabled={!saved} onChange={() => set({ openingStatementDraft: statement ?? { date: before?.date ?? chosen.date, principalMinor: calculatedOpening ?? 0 } })} className="mt-1 accent-primary" />
+                          <span><span className="block text-sm font-medium">Use a lender statement</span><span className="text-muted-foreground">{saved ? "Enter the date and balance from your statement." : "Save the loan first to enter a statement."}</span></span>
+                        </label>
+                        {statement ? <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <DateField label="Statement date" value={statement.date} onChange={(d) => set({ openingStatementDraft: { ...statement, date: d } })} issue={statement.date > chosen.date ? "The statement must be on or before the first tracked installment" : undefined} />
+                          <MoneyField label="Principal owed on that date" valueMinor={statement.principalMinor} minorDigits={digits} fixedDecimals onChange={(m) => set({ openingStatementDraft: { ...statement, principalMinor: m ?? 0 } })} />
+                        </div> : null}
+                      </div>
                     </div>
-                  ) : null}
+                  </fieldset>
                   <dl className="grid grid-cols-3 divide-x rounded-lg border text-sm">
-                    <div className="px-3 py-2"><dt className="text-xs text-muted-foreground">Opening position</dt><dd className="text-base font-semibold tabular-nums">{opening === null ? "-" : money(opening)}</dd></div>
-                    <div className="px-3 py-2"><dt className="text-xs text-muted-foreground">Actual&apos;s loan account before installment {chosen.no}</dt><dd className="text-base font-semibold tabular-nums">{actualOpening === null ? (scanQuery.isLoading ? "Reading…" : "-") : money(actualOpening)}</dd></div>
+                    <div className="px-3 py-2"><dt className="text-xs text-muted-foreground">Starting balance</dt><dd className="text-base font-semibold tabular-nums">{opening === null ? "-" : money(opening)}</dd></div>
+                    <div className="px-3 py-2"><dt className="text-xs text-muted-foreground">Actual account balance before installment {chosen.no}</dt><dd className="text-base font-semibold tabular-nums">{actualOpening === null ? (scanQuery.isLoading ? "Reading…" : "-") : money(actualOpening)}</dd></div>
                     <div className="px-3 py-2"><dt className="text-xs text-muted-foreground">Difference</dt><dd className={cn("text-base font-semibold tabular-nums", difference !== null && Math.abs(difference) > tolerance && "text-amber-700 dark:text-amber-400")}>{difference === null ? "-" : money(difference)}</dd></div>
                   </dl>
                   {statement && calculatedOpening !== null && Math.abs(calculatedOpening - statement.principalMinor) > tolerance ? (
@@ -242,7 +264,7 @@ export function LinkToActual({ sim, setSimulation, tracking, setTracking, direct
                         : <>about {money(statement.principalMinor - calculatedOpening)} less principal than scheduled was repaid before tracking.</>}
                     </p>
                   ) : null}
-                  {difference !== null ? <p className="text-xs text-muted-foreground">{Math.abs(difference) <= tolerance ? "Within the tolerance: nothing to write." : `Above the tolerance of ${money(tolerance)}. Repayments will start with one opening adjustment of ${money(Math.abs(difference))} that you can apply or skip.`}</p> : null}
+                  {difference !== null ? <p className="text-xs text-muted-foreground">{difference === 0 ? "Balances match." : Math.abs(difference) <= tolerance ? "Within your tolerance: no adjustment needed." : `Above the tolerance of ${money(tolerance)}. Repayments will offer an opening adjustment of ${money(Math.abs(difference))} to review and apply or skip.`}</p> : null}
                 </>
               ) : null}
             </>

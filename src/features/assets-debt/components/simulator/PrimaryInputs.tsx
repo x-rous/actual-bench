@@ -63,7 +63,7 @@ export function PrimaryInputs({ sim, change, onCalculationMethod, onRateChanges,
         help={[{ items: [
           { term: "Interest rate", description: "The opening annual rate. A new simulator starts at 5.4% p.a.; it applies until a later rate change takes effect." },
           { term: "Day count method", description: "How a year is counted for daily interest. Actual/365 Fixed (the default) suits most mortgages and personal loans; some lenders use Actual/360. Your loan contract or statement says which." },
-          { term: "Calculation method", description: "Summarizes the configured accrual, charging and repayment conventions (the day count is set beside the rate). Use Set calculation method in the top bar to edit them." },
+          { term: "Calculation method", description: "Summarizes the configured accrual, charging and repayment conventions (the day count is set beside the rate). Select Set calculation method below to edit them." },
           { term: "Rate changes", description: "Defaults to none. Effective-dated later rates use the same rate-change editor available from Events." },
         ] }]}
       >

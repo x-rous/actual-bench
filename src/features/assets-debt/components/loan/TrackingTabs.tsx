@@ -81,6 +81,12 @@ export function useTrackingWorkspace(maybeDetail: DebtDetail | undefined, tracki
       void saveEntries([{ actualTransactionId: p.id, actualAccountId: p.row.accountId, entryType: "not-repayment", revision: entryOf(p.id)?.revision ?? 0 }])
         .then(() => toast.success("Bench no longer counts that payment as a repayment of this loan."), (e) => toast.error(e instanceof Error ? e.message : "Could not save"));
     },
+    restorePayment: (id) => {
+      const entry = entryOf(id);
+      if (!entry || entry.entryType !== "not-repayment") return;
+      void saveEntries([{ actualTransactionId: id, actualAccountId: entry.actualAccountId, entryType: null, revision: entry.revision }])
+        .then(() => toast.success("Payment restored. Bench can match it again."), (e) => toast.error(e instanceof Error ? e.message : "Could not restore payment"));
+    },
     choosePayment: (inst, payment) => {
       const target = payment.loanRows[0] ?? payment.row;
       void saveEntries([{ actualTransactionId: target.id, actualAccountId: target.accountId, entryType: "principal-repayment", installmentDueDate: inst.dueDate, revision: entryOf(target.id)?.revision ?? 0 }])
