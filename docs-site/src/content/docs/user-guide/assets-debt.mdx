@@ -216,7 +216,7 @@ away from the recorded loan history. If a recorded split needs a drift review, t
   in date order and stop at the first that does not apply.
 - **Undo split** puts a payment back to exactly what it was; **Edit split** changes the amounts of a split already in
   Actual. Each is one write, like Apply.
-- **Not this payment** (the row's **⋯** menu) ignores a payment Bench matched that is not this loan's. To reverse the decision, open **Choose payment** on the missing installment and select **Restore** under **Previously marked not this payment**. Bench can then match it again; no transaction is changed in Actual.
+- **Not this payment** (the row's **⋯** menu) excludes a payment from matching any installment of this loan. To reverse it, open **Ignored payments** above the table and select **Restore**. A nearby ignored payment can also be restored in a missing or upcoming installment's details. Bench can then match it again; no transaction is changed in Actual.
 - **Export CSV** (above the table) saves the rows you see, with the payment, principal, interest in Actual, interest
   calculated by Bench, the difference between them, the balance and the status.
 - **Refresh** after you import from your bank; new payments appear as Unrecorded.

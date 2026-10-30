@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Download, Landmark, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -24,6 +25,7 @@ import { InstallmentInspector, type InspectorActions } from "./InstallmentInspec
 import type { WriteOutcome } from "../../lib/trackingWrites";
 import type { DebtWrite } from "@/lib/app-db/debtTrackingRepository";
 import { repaymentsCsvFilename, repaymentsCsvRows, type ExportRow } from "./repaymentsExport";
+import { IgnoredPaymentCard } from "./IgnoredPaymentCard";
 
 /**
  * Repayments (design spec 06 §7.2): one row per installment from the tracking start, edge to edge, with the opening
@@ -61,11 +63,13 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
   const [range, setRange] = useState<AssetRange>(ALL_TIME);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [active, setActive] = useState<string | null>(null);
+  const [ignoredOpen, setIgnoredOpen] = useState(false);
   const [sort, setSort] = useState<SortState | null>({ key: "date", direction: "desc" });
   const tableRef = useRef<HTMLDivElement>(null);
   const result = tracking.result?.ok ? tracking.result : null;
   const accountName = (id: string) => directory?.accounts.find((a) => a.id === id)?.name ?? "-";
   const busy = run !== null;
+  const ignoredEntries = (tracking.bundle?.entries ?? []).filter((entry) => entry.entryType === "not-repayment");
 
   const rows = useMemo((): Row[] => {
     if (!result) return [];
@@ -178,6 +182,7 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
           ]} />
           <Button size="sm" variant="outline" onClick={onPaymentRules}>Payment rules{tracking.bundle?.rules.length ? ` (${tracking.bundle.rules.length})` : ""}</Button>
           <Button size="sm" variant="outline" disabled={!sorted.length} onClick={exportCsv}><Download className="size-3.5" aria-hidden />Export CSV</Button>
+          {ignoredEntries.length ? <Button size="sm" variant="outline" onClick={() => setIgnoredOpen(true)}>Ignored payments ({ignoredEntries.length})</Button> : null}
           <span className="ml-auto" />
           {tracking.refreshing ? <span role="status" className="text-xs text-muted-foreground">Refreshing…</span> : null}
           <Button size="sm" disabled={!applicable.length || busy || writesLocked} onClick={() => apply(inOrder(applicable))}>Apply all Unrecorded ({applicable.length})</Button>
@@ -209,6 +214,17 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
         tracking={tracking} directory={directory} digits={digits} busy={busy} writesLocked={writesLocked} onApply={(p) => apply([p])} actions={actions} onClose={() => setActive(null)}
         onPrev={stepTo(-1)} onNext={stepTo(1)} /> : null}
         </div>
+      <Dialog open={ignoredOpen} onOpenChange={setIgnoredOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Ignored payments</DialogTitle><DialogDescription>These payments were marked not this payment and are excluded from matching any installment in this loan. Restore one to let Bench match it again. Nothing changes in Actual.</DialogDescription></DialogHeader>
+          <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
+            {ignoredEntries.length === 0 ? <p className="text-sm text-muted-foreground">No ignored payments.</p> : ignoredEntries.map((entry) => {
+              const row = [...(tracking.reads?.bankRows ?? []), ...(tracking.reads?.loanRows ?? [])].find((item) => item.id === entry.actualTransactionId);
+              return <IgnoredPaymentCard key={entry.actualTransactionId} row={row ?? null} accountName={accountName} money={money} onRestore={() => actions.restorePayment(entry.actualTransactionId)} />;
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

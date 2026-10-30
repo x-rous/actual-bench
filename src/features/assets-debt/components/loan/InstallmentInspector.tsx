@@ -13,6 +13,7 @@ import { formatAmount } from "../../lib/money";
 import type { LoanTracking } from "../../lib/useLoanTracking";
 import { MoneyField } from "../fields";
 import { ENTRY_LABELS, StatusBadge, dt } from "./presentation";
+import { IgnoredPaymentCard } from "./IgnoredPaymentCard";
 
 /**
  * The docked panel beside Repayments (design spec 06 §7.2): what Bench calculated, what Actual holds now, and what Apply
@@ -144,7 +145,9 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
   }, [inst, payment, ctx, tracking.bundle]);
 
   const result = tracking.result?.ok ? tracking.result : null;
-  const nearby = inst && result ? result.ledger.filter((l) => l.type === "extra-principal" && Math.abs(Date.parse(l.row.date) - Date.parse(inst.dueDate)) <= 45 * 86_400_000) : [];
+  const excludedIds = new Set((tracking.bundle?.entries ?? []).filter((e) => e.entryType === "not-repayment").map((e) => e.actualTransactionId));
+  const excludedLines = new Set((tracking.reads?.bankRows ?? []).filter((row) => excludedIds.has(row.id)).flatMap((row) => row.splitLines.map((line) => line.id)));
+  const nearby = inst && result ? result.ledger.filter((l) => l.type === "extra-principal" && !excludedIds.has(l.row.id) && !excludedIds.has(l.row.transferId ?? "") && !excludedLines.has(l.row.transferId ?? "") && Math.abs(Date.parse(l.row.date) - Date.parse(inst.dueDate)) <= 45 * 86_400_000) : [];
   const ignored = inst ? (tracking.bundle?.entries ?? []).filter((e) => e.entryType === "not-repayment").flatMap((entry) => {
     const row = [...(tracking.reads?.bankRows ?? []), ...(tracking.reads?.loanRows ?? [])].find((r) => r.id === entry.actualTransactionId);
     return row && Math.abs(Date.parse(row.date) - Date.parse(inst.dueDate)) <= 45 * 86_400_000 ? [row] : [];
@@ -256,15 +259,15 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
         <Button variant="outline" size="sm" onClick={() => actions.acceptActual(inst)}>Accept Actual</Button>
         <Button size="sm" disabled={disabled || !rebuilt || "problem" in rebuilt} onClick={() => rebuilt && "proposal" in rebuilt && onApply(rebuilt.proposal)}>Adjust to Bench</Button>
       </>;
-    } else if (inst.status === "missing") {
+    } else if ((inst.status === "missing" || inst.status === "upcoming") && !payment) {
       body = <>{alert(inst.note)}
         <Sec title="Payments near this date">
           {nearby.length === 0 ? <p className="text-xs text-muted-foreground">No unmatched payment into the loan account near {dt(inst.dueDate)}. If it was paid as an expense from a bank account, add a payment rule that finds it.</p>
             : <div role="radiogroup" aria-label="Payments near this date" className="flex flex-col gap-1.5">{nearby.map((l) => <button key={l.row.id} type="button" role="radio" aria-checked={chosen === l.row.id} onClick={() => setChosen(l.row.id)} className={cn("rounded border px-3 py-2 text-left text-xs", chosen === l.row.id && "border-primary bg-accent/40")}><span className="block font-medium">{dt(l.row.date)} · {money(l.row.amount)}</span><span className="text-muted-foreground">{l.row.payeeName ?? "Transfer"}{l.row.notes ? ` · ${l.row.notes}` : ""}</span></button>)}</div>}
         </Sec>
         {ignored.length ? <Sec title="Previously marked not this payment">
-          <p className="mb-2 text-xs text-muted-foreground">Restore a payment to let Bench match it again. This only changes Bench&apos;s saved decision.</p>
-          <div className="flex flex-col gap-2">{ignored.map((r) => <div key={r.id} className="flex items-center gap-2 rounded border p-2 text-xs"><div className="min-w-0 flex-1"><span className="block font-medium">{dt(r.date)} · {money(Math.abs(r.amount))}</span><span className="break-words text-muted-foreground">{accountName(r.accountId)} · {r.payeeName ?? "Transfer"}{r.notes ? ` · ${r.notes}` : ""}</span></div><Button size="xs" variant="outline" onClick={() => actions.restorePayment(r.id)}>Restore</Button></div>)}</div>
+          <p className="mb-2 text-xs text-muted-foreground">These nearby payments are excluded from matching any installment. Restore one to let Bench match it again; nothing changes in Actual.</p>
+          <div className="flex flex-col gap-2">{ignored.map((r) => <IgnoredPaymentCard key={r.id} row={r} accountName={accountName} money={money} onRestore={() => actions.restorePayment(r.id)} />)}</div>
         </Sec> : null}{calcSec}
       </>;
       const pick = nearby.find((l) => l.row.id === chosen);

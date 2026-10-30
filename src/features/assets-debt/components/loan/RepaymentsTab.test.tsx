@@ -54,6 +54,20 @@ function renderTab(toleranceMinor = 100_00) {
 }
 
 describe("the Repayments table", () => {
+  it("offers a loan-wide way to restore an ignored payment even when it is far from the displayed installments", () => {
+    const result = plan();
+    if (!result.ok) throw new Error(result.message);
+    const payment = tx({ accountId: "checking", date: "2020-01-01", amount: -12345, payeeName: "Bank" });
+    const entry = { actualTransactionId: payment.id, actualAccountId: payment.accountId, entryType: "not-repayment", installmentDueDate: null, revision: 1, updatedAt: "t" };
+    const restorePayment = jest.fn();
+    const tracking = { tracked: true, debt: { toleranceMinor: 100_00 }, bundle: { writes: [], rules: [], entries: [entry] }, reads: { bankRows: [payment], loanRows: [] }, result, loading: false, refreshing: false, error: null, today: "2024-03-20", refresh: jest.fn(), reloadBundle: jest.fn() };
+    render(<RepaymentsTab tracking={tracking as never} directory={undefined} digits={2} onLinkToActual={jest.fn()} onPaymentRules={jest.fn()} apply={jest.fn()} run={null} outcomes={null} onDismissOutcomes={jest.fn()} actions={{ restorePayment } as never} writesLocked={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Ignored payments (1)" }));
+    const dialog = screen.getByRole("dialog", { name: "Ignored payments" });
+    expect(within(dialog).getByText(/01 Jan 2020 · 123.45/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Restore payment/ }));
+    expect(restorePayment).toHaveBeenCalledWith(payment.id);
+  });
   it("does not report agreement while a recorded split needs drift review", () => {
     const result = renderTab(100);
     expect(result.installments.some((i) => i.checkKind === "drift")).toBe(true);
