@@ -13,7 +13,7 @@
 //
 // Env overrides: SEED_PASSWORD (server password), SEED_PORT (default 5006).
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -38,7 +38,8 @@ const {
 const PASSWORD = process.env.SEED_PASSWORD || "demo-budget-public";
 const PORT = Number(process.env.SEED_PORT || 5006);
 const SERVER_URL = `http://localhost:${PORT}`;
-const SEED_DATA_DIR = join(__dirname, "seed-data");
+const SEED_DATA_DIR = join(__dirname, "seed-data.next");
+const FINAL_SEED_DATA_DIR = join(__dirname, "seed-data");
 
 function createSeededRandom(seed = 0x1a2b3c4d) {
   return () => {
@@ -219,6 +220,10 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     { name: "Brokerage", type: "investment", offbudget: true },
     0
   );
+  account.property = await api.createAccount({ name: "Family Home", type: "other", offbudget: true }, 0);
+  account.vehicle = await api.createAccount({ name: "Family Car", type: "other", offbudget: true }, 0);
+  account.mortgage = await api.createAccount({ name: "Home Mortgage", type: "other", offbudget: true }, 0);
+  account.carLoan = await api.createAccount({ name: "Car Loan", type: "other", offbudget: true }, 0);
   account.closed = await api.createAccount(
     { name: "Old Checking (Closed)", type: "checking" },
     0
@@ -503,6 +508,10 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     ["credit", -118000, "Opening credit card balance"],
     ["cash", 20000, "Opening cash balance"],
     ["brokerage", 8500000, "Opening off-budget investment balance"],
+    ["property", 42000000, "Opening property value"],
+    ["vehicle", 3200000, "Opening vehicle value"],
+    ["mortgage", -28000000, "Opening mortgage principal"],
+    ["carLoan", -2200000, "Opening car loan principal"],
   ];
   for (const [accountKey, amount, notes] of openingBalances) {
     await push(accountKey, [
@@ -518,6 +527,9 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
   const coffeePayees = ["starbucks", "starbucksCoffee", "blueBottle"];
   const fuelPayees = ["shell", "shellOil", "chevron"];
 
+  // Balances and payments are integer cents. Interest is rounded once per monthly posting.
+  let mortgagePrincipal = 28000000;
+  let carPrincipal = 2200000;
   for (let monthIndex = 0; monthIndex < months.length; monthIndex++) {
     const month = months[monthIndex];
     const scenario = scenarioForMonth(month, monthIndex);
@@ -530,12 +542,14 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         transaction(month, 1, "primaryEmployer", 570000 + scenario.incomeAdjustment, "primarySalary", {
           notes: scenario.label === "lower-income" ? "Reduced hours this month" : "Monthly payroll",
         }),
-        transaction(month, 1, "mortgage", -185000, "mortgage"),
+        transaction(month, 1, "mortgage", -Math.round(mortgagePrincipal * 5 / 1200), "mortgage", { notes: "Mortgage interest" }),
         transaction(month, 2, "healthInsurance", -46000, "healthInsurance"),
         transaction(month, 3, "childcare", -78000, "childcare"),
-        transaction(month, 4, "studentLoan", -28000, "studentLoan"),
-        transaction(month, 5, "carLoan", -38000, "carPayment")
+        transaction(month, 4, "studentLoan", -28000, "studentLoan")
       );
+    }
+    if (canPost(month, 5)) {
+      checkingTransactions.push(transaction(month, 5, "carLoan", -Math.round(carPrincipal * 6 / 1200), "carPayment", { notes: "Car loan interest" }));
     }
     if (canPost(month, 6)) {
       checkingTransactions.push(
@@ -570,10 +584,25 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         _payeeKey: `transfer:${targetAccount}`,
       });
     };
+    if (canPost(month, 1)) {
+      const principal = 185000 - Math.round(mortgagePrincipal * 5 / 1200);
+      addTransfer(1, "mortgage", principal, "mortgage", "Mortgage principal");
+      mortgagePrincipal -= principal;
+    }
+    if (canPost(month, 5)) {
+      const principal = 38000 - Math.round(carPrincipal * 6 / 1200);
+      addTransfer(5, "carLoan", principal, "carPayment", "Car loan principal");
+      carPrincipal -= principal;
+    }
+    if (monthIndex === 6 && canPost(month, 15)) {
+      addTransfer(15, "mortgage", 50000, "mortgage", "Additional mortgage principal");
+      mortgagePrincipal -= 50000;
+    }
     addTransfer(16, "savings", 25000, "emergencyFund", "Automatic emergency-fund contribution");
     addTransfer(17, "savings", 18000, "vacationFund", "Vacation sinking fund");
     addTransfer(20, "savings", 12000, "homeImprovement", "Home-project sinking fund");
     addTransfer(21, "savings", 15000, "annualBills", "Annual bills sinking fund #annual");
+    addTransfer(22, "cash", 8000, null, "Cash withdrawal");
     addTransfer(24, "credit", 210000, null, "Monthly credit card payment");
     await push("checking", transferTransactions, { transfers: true });
 
@@ -737,6 +766,15 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       );
     }
     await push("cash", cashTransactions);
+
+    if (monthIndex === 4 && canPost(month, 15)) {
+      await push("property", [transaction(month, 15, null, 1250000, null, { notes: "Property valuation update" })]);
+      await push("vehicle", [transaction(month, 15, null, -180000, null, { notes: "Vehicle valuation update" })]);
+    }
+    if (monthIndex === 10 && canPost(month, 15)) {
+      await push("property", [transaction(month, 15, null, 850000, null, { notes: "Property valuation update" })]);
+      await push("vehicle", [transaction(month, 15, null, -120000, null, { notes: "Vehicle valuation update" })]);
+    }
 
     const savingsTransactions = [];
     if (canPost(month, 15)) {
@@ -933,6 +971,16 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       mode: actualMode,
       ...intendedRuleShowcase,
     },
+    seed: {
+      accounts: account,
+      categories: category,
+      months,
+      transactions: Object.fromEntries(await Promise.all(
+        ["checking", "credit", "property", "vehicle", "mortgage", "carLoan"].map(async (key) => [
+          key, (await api.getTransactions(account[key], `${months[0].key}-01`, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, reconciled, is_child, starting_balance_flag, imported_payee }) => ({ id, date, amount, notes, reconciled, is_child, starting_balance_flag, imported_payee })),
+        ])
+      )),
+    },
     logicalSignature: JSON.stringify(logicalTransactions),
     budgetSignature: JSON.stringify(budgetSignature),
     sinkingFundCategoryIds: {
@@ -1050,6 +1098,7 @@ async function main() {
     stdio: ["ignore", "inherit", "inherit"],
   });
   let generatedBudgets;
+  let resultsForMetadata;
 
   try {
     await waitForServer();
@@ -1104,6 +1153,7 @@ async function main() {
       throw new Error("Envelope and Tracking source datasets are not equivalent");
     }
     console.log("• verified equivalent transactions and expense plans across both modes");
+    resultsForMetadata = results.map((result) => result.seed);
     await api.shutdown();
 
     const login = await fetch(`${SERVER_URL}/account/login`, {
@@ -1141,6 +1191,33 @@ async function main() {
 
   if (!generatedBudgets) throw new Error("generated budget metadata was not captured");
   const stableBudgets = await stabilizeGeneratedSyncIds(generatedBudgets);
+  const manifestPath = join(__dirname, "seed-manifest.next.json");
+  const nextDb = join(__dirname, "seed-bench.next.sqlite");
+  await writeFile(manifestPath, JSON.stringify(stableBudgets.map((budget, index) => ({
+    budgetSyncId: budget.groupId,
+    ...resultsForMetadata[index],
+  }))));
+  try {
+    const metadata = spawnSync(process.execPath, [join(__dirname, "generate-metadata.cjs"), manifestPath, nextDb], { stdio: "inherit" });
+    if (metadata.status !== 0) throw new Error("Bench metadata generation failed");
+    // Publish only after both budgets and their matching metadata have validated.
+    const previous = join(__dirname, "seed-data.previous");
+    await rm(previous, { recursive: true, force: true });
+    await rename(FINAL_SEED_DATA_DIR, previous);
+    try {
+      await rename(SEED_DATA_DIR, FINAL_SEED_DATA_DIR);
+      await rename(nextDb, join(__dirname, "seed-bench.sqlite"));
+      await rename(manifestPath, join(__dirname, "seed-manifest.json"));
+    } catch (error) {
+      await rm(FINAL_SEED_DATA_DIR, { recursive: true, force: true });
+      await rename(previous, FINAL_SEED_DATA_DIR);
+      throw error;
+    }
+    await rm(previous, { recursive: true, force: true });
+  } finally {
+    await rm(manifestPath, { force: true });
+    await rm(nextDb, { force: true });
+  }
 
   console.log("\n────────────────────────────────────────────────────");
   console.log("✅ Seed budgets generated → demo/seed-data/");

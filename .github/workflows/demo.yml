@@ -1,4 +1,4 @@
-name: Demo container proof of concept
+name: Demo container
 on:
   push:
     branches: [feat/demo-launch-refresh]
@@ -14,9 +14,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Build demo image
-        run: docker build -f demo/Dockerfile.poc -t actual-bench-demo-poc .
+        run: docker build -f demo/Dockerfile -t actual-bench-demo .
       - name: Smoke test and restart under Space limits
-        run: bash demo/smoke-poc.sh
+        run: bash demo/smoke.sh
       - name: Show logs on failure
         if: failure()
-        run: docker logs actual-bench-demo-poc || true
+        run: docker logs actual-bench-demo || true

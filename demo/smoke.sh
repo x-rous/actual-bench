@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-image=actual-bench-demo-poc
-name=actual-bench-demo-poc
+image=actual-bench-demo
+name=actual-bench-demo
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 cleanup
@@ -29,6 +29,7 @@ check() {
       --data "{\"connection\":{\"baseUrl\":\"http://127.0.0.1:5007\",\"apiKey\":\"ci-demo-key\",\"budgetSyncId\":\"$id\"},\"path\":\"/accounts\"}" |
       node -e 'let s=""; process.stdin.on("data",c=>s+=c).on("end",()=>{if(!JSON.parse(s).data?.length) process.exit(1)})'
   done
+  node demo/check-metadata.mjs http://127.0.0.1:17860
 }
 check
 # Mark both stores, including a committed SQLite change, then restart the same

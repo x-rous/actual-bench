@@ -1,38 +1,58 @@
 #!/bin/sh
-set -e
+set -eu
 
-# Reset to the baked seed on every boot → clean demo each restart.
+: "${API_KEY:?API_KEY is required}"
+: "${ACTUAL_SERVER_PASSWORD:?ACTUAL_SERVER_PASSWORD is required}"
+export DEMO_API_KEY="$API_KEY"
+
+# The demo only uses image-owned data; never point this at a real data mount.
 rm -rf /data
-cp -r /seed-data /data
+mkdir -p /data/actual /data/bench
+cp -R /seed-data/actual/. /data/actual/
+# The database and Actual files are generated as one matching seed set.
+cp /seed-data/bench.sqlite "$ACTUAL_BENCH_DB_PATH"
 
-# Sync server (holds both demo budgets) in the background. Paths are set
-# explicitly to match how the seed was generated (generate-seed.mjs), so the
-# baked budget is found regardless of default-path derivation.
-echo "seed contents:" && ls -R /data 2>/dev/null | head -40
-export ACTUAL_PORT=5006
-export ACTUAL_DATA_DIR=/data
-export ACTUAL_SERVER_FILES=/data/server-files
-export ACTUAL_USER_FILES=/data/user-files
+pids=""
+cleanup() {
+  trap - EXIT TERM INT
+  [ -z "$pids" ] || kill $pids 2>/dev/null || true
+  wait 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 143' TERM INT
+
+export ACTUAL_PORT=5006 ACTUAL_DATA_DIR=/data/actual
+export ACTUAL_SERVER_FILES=/data/actual/server-files ACTUAL_USER_FILES=/data/actual/user-files
 actual-server &
+pids="$pids $!"
 
-# Wait until it accepts connections (IPv4, matching ACTUAL_SERVER_URL).
-until wget -qO- http://127.0.0.1:5006/ >/dev/null 2>&1; do
-  echo "waiting for actual-server..."
-  sleep 1
+wait_http() {
+  url="$1"
+  i=0
+  until wget -qO /dev/null "$url"; do
+    for pid in $pids; do
+      kill -0 "$pid" 2>/dev/null || { echo "service exited during startup" >&2; exit 1; }
+    done
+    i=$((i + 1))
+    [ "$i" -lt 120 ] || { echo "timed out waiting for $url" >&2; exit 1; }
+    sleep 1
+  done
+}
+wait_http http://127.0.0.1:5006/
+
+(cd /usr/src/app && PORT=5007 exec ./entrypoint.sh) &
+pids="$pids $!"
+# This performs a real authenticated open of each budget, serially.
+node /check-budgets.mjs --url http://127.0.0.1:5007 --timeout 120000
+
+(cd /bench && PORT=7860 HOSTNAME=0.0.0.0 exec /opt/bench-node/node server.js) &
+pids="$pids $!"
+wait_http http://127.0.0.1:7860/api/health
+printf '%s\n' 'Demo services ready'
+# Fail the container if any child dies; the platform can then restart all three.
+while :; do
+  for pid in $pids; do
+    kill -0 "$pid" 2>/dev/null || { echo "demo service exited" >&2; exit 1; }
+  done
+  sleep 2
 done
-echo "actual-server is up"
-
-# Open every budget once the REST wrapper is answering. Two reasons, and the
-# second is why it exists: it warms the API's budget cache so the first visitor
-# does not pay for the download, and it puts "can this budget actually be
-# opened?" in the boot log. A backend can list a budget it cannot serve - that is
-# precisely how the Tracking demo stayed broken from one deploy to the next while
-# the Envelope demo worked - and nothing said so until someone clicked it.
-#
-# Never blocks the boot: it runs in the background and --warm always exits 0, so
-# a budget that fails cannot stop the ones that work from being served.
-(node /check-budgets.mjs --warm || true) &
-
-# REST wrapper in the foreground, exposed on 7860.
-cd /usr/src/app
-exec ./entrypoint.sh
