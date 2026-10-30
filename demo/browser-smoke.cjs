@@ -22,6 +22,12 @@ const { chromium } = require('playwright');
         for (const label of labels) await page.getByText(label, { exact: false }).first().waitFor({ state: 'visible' });
         console.log(`browser: OK ${mode} ${href}`);
       }
+      const other = mode === 'Envelope' ? 'Tracking' : 'Envelope';
+      await page.getByRole('button', { name: new RegExp(`Live Demo - ${mode}`) }).click();
+      await page.getByRole('menuitem', { name: new RegExp(`Live Demo - ${other}`) }).click();
+      await page.getByRole('button', { name: new RegExp(`Live Demo - ${other}`) }).waitFor({ state: 'visible' });
+      await page.getByText('Household Checking', { exact: false }).first().waitFor({ state: 'visible' });
+      console.log(`browser: OK ${mode} to ${other} budget switch`);
       await context.close();
     }
   } finally { await browser.close(); }
