@@ -38,10 +38,20 @@ cd /tmp/actual-bench-demo-space
 git status --short
 ```
 
-Remove obsolete top-level files from the old backend-only Space after reviewing
-`git status`; the new image reads `demo/seed-data/` and `demo/seed-manifest.json`.
-Review the complete staged diff, then commit and push the Space repository to
-build and deploy it. In Space settings, keep `app_port: 7860` and configure
+The new image reads `demo/seed-data/` and `demo/seed-manifest.json`. After
+reviewing the status, remove the old backend-only files and stage the new tree:
+
+```bash
+git rm -r --ignore-unmatch seed-data generate-seed.mjs seed-scenario.cjs start.sh check-budgets.mjs
+git add -A
+git diff --cached --stat
+# After reviewing the complete staged diff:
+git diff --cached
+git commit -m "chore(demo): deploy combined demo"
+git push
+```
+
+The push builds and deploys the Space. In Space settings, keep `app_port: 7860` and configure
 `API_KEY` and `ACTUAL_SERVER_PASSWORD` as secrets. The password must match the
 one used for seed generation. The demo API key is intentionally supplied to
 visitors so they can use the shared sample; never reuse a real API key.
