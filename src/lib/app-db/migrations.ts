@@ -1378,6 +1378,12 @@ export function runMigrations(db: SqliteDatabase): AppDbMigrationMeta {
 
   const migrate = db.transaction(() => {
     for (const migration of pending) {
+      // v60 drops this obsolete table, but SQLite's RESTRICT self-reference can
+      // prevent the drop. Clear it only while v60 is pending, in its transaction.
+      if (migration.version === 60 && tableExists(db, "financial_postings")) {
+        db.exec("DROP TRIGGER IF EXISTS financial_postings_identity_immutable");
+        db.exec("UPDATE financial_postings SET reversal_of = NULL WHERE reversal_of IS NOT NULL");
+      }
       if (migration.apply) {
         migration.apply(db);
       } else {

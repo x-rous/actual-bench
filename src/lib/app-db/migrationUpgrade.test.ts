@@ -1905,6 +1905,13 @@ describe("v60 loan tracking", () => {
       const assumption = (id: string, note: string | null) => db.prepare("INSERT INTO debt_future_assumptions (id,debt_id,assumption_kind,effective_from,amount_minor,note,created_at,updated_at) VALUES (?,'d','extra-repayment','2025-06-20',2000000,?,'t','t')").run(id, note);
       assumption("from-actual", "Extra payment recorded from Actual"); assumption("planned", "Bonus");
       restoreOldTables(db, 59);
+      const posting = db.prepare(`INSERT INTO financial_postings
+        (id,budget_sync_id,subject_kind,subject_id,posting_kind,period_key,generation,config_revision,input_format_version,input_snapshot_json,input_hash,engine_versions_json,output_snapshot_json,classification,classification_reasons_json,status,reversal_of,created_at,updated_at)
+        VALUES (?,'b','debt','d','repayment',?,1,1,1,'{}',?,'{}','{}','safe','[]','proposed',?,'t','t')`);
+      posting.run("original", "2025-01", "hash-original", null);
+      posting.run("reversal", "2025-02", "hash-reversal", "original");
+      db.prepare("INSERT INTO debt_posting_leases (posting_id,token,expires_at) VALUES ('original','lease','t')").run();
+      db.prepare("INSERT INTO saved_queries (id,name,query,is_favorite,created_at,updated_at) VALUES ('keep','Keep','{}',0,'t','t')").run();
       const rule = (id: string, items: object[]) => db.prepare("INSERT INTO debt_match_rules (id,debt_id,purpose,rule_format_version,conditions_json,actions_json,enabled,created_at,updated_at) VALUES (?,'d','repayment',1,?,'{}',1,'t','t')").run(id, JSON.stringify({ items }));
       rule("r1", [{ kind: "source-account", accountId: "checking" }, { kind: "payee", operator: "exact", payeeId: "bank" }, { kind: "amount", operator: "approximately" }]);
       rule("r2", [{ kind: "source-account", accountId: "checking" }, { kind: "payee", operator: "exact", payeeId: "bank" }]);
@@ -1920,6 +1927,8 @@ describe("v60 loan tracking", () => {
       expect(rules.map((r) => r.id)).toEqual(["migrated-r2", "migrated-r3"]);
       expect(JSON.parse(rules[0].conditions)).toEqual([{ field: "account", operator: "equals", value: "checking" }, { field: "payee", operator: "equals", value: "bank" }]);
       for (const t of OLD_POSTING_TABLES) expect(objectNames(db, "table")).not.toContain(t);
+      expect(db.prepare("SELECT name FROM saved_queries WHERE id = 'keep'").get()).toEqual({ name: "Keep" });
+      expect(db.pragma("foreign_key_check")).toEqual([]);
       expect(() => db.prepare("INSERT INTO debt_writes (id,debt_id,budget_sync_id,kind,target_ids_json,before_json,after_json,status,started_at) VALUES (?,'d','b','split','[]','{}','{}','applying','t')").run("w2")).not.toThrow();
       expect(() => db.prepare("INSERT INTO debt_writes (id,debt_id,budget_sync_id,kind,target_ids_json,before_json,after_json,status,started_at) VALUES (?,'d','b','split','[]','{}','{}','applying','t')").run("w3")).toThrow(/UNIQUE/);
     } finally { rmSync(root, { recursive: true, force: true }); }
