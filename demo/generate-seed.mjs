@@ -503,6 +503,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
   const scaled = (amount, factor) => Math.max(100, Math.round(amount * factor));
 
   const oldest = months[0];
+  const loanOpeningMonth = new Date(Date.UTC(oldest.y, oldest.mIdx - 1, 1)).toISOString().slice(0, 7);
   const openingBalances = [
     ["checking", 640000, "Opening household checking balance"],
     ["savings", 2800000, "Opening emergency and sinking-fund balance"],
@@ -518,6 +519,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     await push(accountKey, [
       {
         ...transaction(oldest, 1, null, amount, null, { notes }),
+        ...(accountKey === "mortgage" ? { date: `${loanOpeningMonth}-01` } : {}),
+        ...(accountKey === "carLoan" ? { date: `${loanOpeningMonth}-05` } : {}),
         starting_balance_flag: true,
       },
     ]);
@@ -1006,7 +1009,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       months,
       transactions: Object.fromEntries(await Promise.all(
         ["checking", "credit", "property", "vehicle", "mortgage", "carLoan"].map(async (key) => [
-          key, (await api.getTransactions(account[key], `${months[0].key}-01`, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee }) => ({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee })),
+          key, (await api.getTransactions(account[key], `${loanOpeningMonth}-01`, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee }) => ({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee })),
         ])
       )),
     },
