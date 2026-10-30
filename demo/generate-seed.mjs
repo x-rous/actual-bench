@@ -538,18 +538,20 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     const historical = !month.isCurrent;
 
     const checkingTransactions = [];
+    const mortgageInterest = Math.round(mortgagePrincipal * 5 / 1200);
+    const carInterest = Math.round(carPrincipal * 6 / 1200);
     if (canPost(month, 1)) {
       checkingTransactions.push(
         transaction(month, 1, "primaryEmployer", 570000 + scenario.incomeAdjustment, "primarySalary", {
           notes: scenario.label === "lower-income" ? "Reduced hours this month" : "Monthly payroll",
         }),
-        transaction(month, 1, "mortgage", -Math.round(mortgagePrincipal * 5 / 1200), "mortgage", { notes: "Mortgage interest" })
+        transaction(month, 1, "mortgage", -185000, "mortgage", { notes: "Mortgage payment", reconciled: false })
       );
     }
     if (canPost(month, 2)) checkingTransactions.push(transaction(month, 2, "healthInsurance", -46000, "healthInsurance"));
     if (canPost(month, 3)) checkingTransactions.push(transaction(month, 3, "childcare", -78000, "childcare"));
     if (canPost(month, 4)) checkingTransactions.push(transaction(month, 4, "studentLoan", -28000, "studentLoan"));
-    if (canPost(month, 5)) checkingTransactions.push(transaction(month, 5, "carLoan", -Math.round(carPrincipal * 6 / 1200), "carPayment", { notes: "Car loan interest" }));
+    if (canPost(month, 5)) checkingTransactions.push(transaction(month, 5, "carLoan", -38000, "carPayment", { notes: "Car loan payment", reconciled: false }));
     if (canPost(month, 6)) checkingTransactions.push(transaction(month, 6, "electric", -rint(8500, [6, 7, 8].includes(month.monthNumber) ? 17500 : 13500), "electric"));
     if (canPost(month, 7)) checkingTransactions.push(transaction(month, 7, "internet", -7500, "internet"));
     if (canPost(month, 8)) checkingTransactions.push(transaction(month, 8, "gasUtility", -rint(3000, [12, 1, 2].includes(month.monthNumber) ? 14500 : 7500), "naturalGas"));
@@ -569,6 +571,36 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       );
     }
     await push("checking", checkingTransactions);
+    // Use Actual's supported structural update to split each payment into a
+    // liability transfer and an interest expense, then verify the result.
+    for (const loan of [
+      { day: 1, key: "mortgage", amount: 185000, interest: mortgageInterest, category: "mortgage", label: "Mortgage" },
+      { day: 5, key: "carLoan", amount: 38000, interest: carInterest, category: "carPayment", label: "Car loan" },
+    ]) {
+      if (!canPost(month, loan.day)) continue;
+      const date = dateString(month, loan.day);
+      const rows = await api.getTransactions(account.checking, date, date);
+      const payment = rows.find((row) => row.notes === `${loan.label} payment`);
+      if (!payment) throw new Error(`Missing ${loan.label} payment on ${date}`);
+      await api.updateTransaction(payment.id, { subtransactions: [
+        { amount: -(loan.amount - loan.interest), category: category[loan.category], payee: transferPayee[account[loan.key]], notes: `${loan.label} principal` },
+        { amount: -loan.interest, category: category[loan.category], payee: payee[loan.key], notes: `${loan.label} interest` },
+      ] });
+      let reread;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await sleep(200);
+        reread = (await api.getTransactions(account.checking, date, date)).find((row) => row.id === payment.id);
+        if (reread?.is_parent && reread.subtransactions?.length === 2 && reread.subtransactions.some((row) => row.transfer_id)) break;
+      }
+      if (!reread?.is_parent || reread.subtransactions?.length !== 2 || !reread.subtransactions.some((row) => row.transfer_id)) throw new Error(`${loan.label} split did not settle on ${date}`);
+      await sleep(400);
+      if (historical) {
+        await api.updateTransaction(payment.id, { reconciled: true });
+        await sleep(400);
+      }
+      if (loan.key === "mortgage") mortgagePrincipal -= loan.amount - loan.interest;
+      else carPrincipal -= loan.amount - loan.interest;
+    }
 
     const transferTransactions = [];
     const addTransfer = (day, targetAccount, amount, categoryKey, note) => {
@@ -579,16 +611,6 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         _payeeKey: `transfer:${targetAccount}`,
       });
     };
-    if (canPost(month, 1)) {
-      const principal = 185000 - Math.round(mortgagePrincipal * 5 / 1200);
-      addTransfer(1, "mortgage", principal, "mortgage", "Mortgage principal");
-      mortgagePrincipal -= principal;
-    }
-    if (canPost(month, 5)) {
-      const principal = 38000 - Math.round(carPrincipal * 6 / 1200);
-      addTransfer(5, "carLoan", principal, "carPayment", "Car loan principal");
-      carPrincipal -= principal;
-    }
     if (monthIndex === 6 && canPost(month, 1)) {
       addTransfer(1, "mortgage", 50000, "mortgage", "Additional mortgage principal");
       mortgagePrincipal -= 50000;

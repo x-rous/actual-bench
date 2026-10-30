@@ -20,12 +20,21 @@ const { chromium } = require('playwright');
         await page.locator(`aside a[href="${href}"]`).click();
         await page.waitForURL(`**${href}`);
         for (const label of labels) await page.getByText(label, { exact: false }).first().waitFor({ state: 'visible' });
+        if (href === '/loans') {
+          for (const loan of ['Home Mortgage', 'Car Loan']) {
+            await page.getByRole('link', { name: loan, exact: true }).click();
+            await page.getByRole('navigation', { name: 'Loan sections' }).getByRole('button', { name: 'Repayments', exact: true }).click();
+            await page.getByRole('table', { name: 'Repayments' }).getByText('Recorded', { exact: true }).first().waitFor({ state: 'visible' });
+            await page.locator('aside a[href="/loans"]').click();
+            await page.getByRole('link', { name: loan, exact: true }).waitFor({ state: 'visible' });
+          }
+        }
         console.log(`browser: OK ${mode} ${href}`);
       }
       const other = mode === 'Envelope' ? 'Tracking' : 'Envelope';
-      await page.getByRole('button', { name: new RegExp(`Live Demo - ${mode}`) }).click();
+      await page.locator(`button[title^="Live Demo - ${mode} -"]`).click();
       await page.getByRole('menuitem', { name: new RegExp(`Live Demo - ${other}`) }).click();
-      await page.getByRole('button', { name: new RegExp(`Live Demo - ${other}`) }).waitFor({ state: 'visible' });
+      await page.locator(`button[title^="Live Demo - ${other} -"]`).waitFor({ state: 'visible' });
       await page.getByText('Household Checking', { exact: false }).first().waitFor({ state: 'visible' });
       console.log(`browser: OK ${mode} to ${other} budget switch`);
       await context.close();

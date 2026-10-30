@@ -38,14 +38,14 @@ const output = path.resolve(process.argv[3] || path.join(__dirname, 'seed-bench.
 if (![path.join(__dirname, 'seed-bench.sqlite'), path.join(__dirname, 'seed-bench.next.sqlite')].includes(output)) throw new Error('Use a demo seed database path');
 for (const suffix of ['', '-wal', '-shm']) fs.rmSync(output + suffix, { force: true });
 const db = getAppDb(output);
-function loanConfig(openingDate, firstPaymentDate, openingPrincipalMinor, contractualPaymentMinor, termMonths) {
+function loanConfig(openingDate, firstPaymentDate, openingPrincipalMinor, contractualPaymentMinor, termMonths, interestCategoryId) {
   return {
     format: 'rd084.debt-config', version: 1,
     terms: { openingDate, openingPrincipalMinor, maturityDate: null, contractualTermMonths: termMonths, amortizationTermMonths: termMonths, contractualPaymentMinor, creditLimitMinor: null, firstPaymentDate, firstInterestChargeDate: null },
     profile: { amortization: 'level-payment', rateQuote: 'nominal-simple-periodic', dayCount: 'actual-365-fixed', accrual: 'per-period', chargeFrequency: 'at-repayment', chargeDay: null, capitalization: 'at-charge', repaymentFrequency: 'monthly', repaymentDerivation: 'contractual-fixed', recast: 'never', rateEffectiveTiming: 'on-accrual-effective-date', repaymentEffectiveTiming: 'transaction-date', rounding: { paymentRounding: 'half-up', interestPostingRounding: 'half-up', intermediateScale: { mode: 'full' }, intermediateRounding: 'half-even', balancePrecision: 'round-each-posting' }, eventOrder: { timing: 'start-of-day' }, finalPayment: 'continue-until-paid', shortMonth: 'clamp-to-last-calendar-day', negativeAmortizationAllowed: false, interestOnlyRepayment: 'charged-interest-outstanding', presetId: null },
     phases: [], components: [
       { economicKind: 'principal', label: 'Principal', destination: 'transfer', categoryId: null, amountRule: 'calculated', fixedAmountMinor: null, treatment: null, order: 0 },
-      { economicKind: 'interest', label: 'Interest', destination: 'category', categoryId: null, amountRule: 'calculated', fixedAmountMinor: null, treatment: null, order: 1 },
+      { economicKind: 'interest', label: 'Interest', destination: 'category', categoryId: interestCategoryId, amountRule: 'calculated', fixedAmountMinor: null, treatment: null, order: 1 },
     ], paymentRecasts: [], revolving: null,
   };
 }
@@ -73,7 +73,7 @@ for (const demo of manifest) {
       budgetSyncId, name: spec.name, debtType: spec.type, behaviorClass: 'term-loan', currency: 'USD', currencyMinorDigits: 2,
       liabilityAccountId: a[spec.key], paymentAccountId: a.checking, signConvention: 'negative-is-debt', lenderPattern: 'separate-interest', executionStrategy: 'bench-periodic', lenderChargeGraceDays: 3, onboardingDate: null,
       loanPaymentCategoryId: spec.category, drawCategoryId: null, expectedObservationIntervalDays: null, status: 'active', trackingStartDueDate: `${first.key}-${spec.day}`,
-      config: loanConfig(loanOpening, `${first.key}-${spec.day}`, spec.amount, spec.payment, spec.term),
+      config: loanConfig(loanOpening, `${first.key}-${spec.day}`, spec.amount, spec.payment, spec.term, spec.category),
       rates: [{ announcedAt: null, accrualEffectiveFrom: loanOpening, annualRateDecimal: spec.rate, paymentRecalcPolicy: null, paymentEffectiveFrom: null, rateCapDecimal: null, rateFloorDecimal: null, paymentCap: null, source: 'Fictional loan agreement', note: null }], offsets: [], assumptions: [],
     }, directory);
     const debtId = detail.debt.id;
