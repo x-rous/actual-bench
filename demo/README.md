@@ -44,7 +44,7 @@ for validation. The image independently regenerates that SQLite file from the
 manifest. Commit the seed-data and manifest together when reviewing a refresh.
 
 The household has a property and car with valuation history, linked mortgage and
-car loans with principal transfers and interest expenses, a card with two saved
+car loans with principal transfers and interest expenses, a card with saved
 statements, and a completed checking reconciliation. Dates advance when seeds
 are regenerated. Visitors may change the shared sample until reset.
 

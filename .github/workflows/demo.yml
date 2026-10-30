@@ -2,6 +2,10 @@ name: Demo container
 on:
   push:
     branches: [feat/demo-launch-refresh]
+  pull_request:
+    paths:
+      - "demo/**"
+      - ".github/workflows/demo.yml"
   workflow_dispatch:
 permissions:
   contents: read

@@ -103,16 +103,18 @@ for (const demo of manifest) {
     saveAssetDebtAllocation(db, { budgetSyncId, assetId: id, debtId: debts[spec.debt], expectedFingerprint: loanFingerprint(links, debts[spec.debt]), operation: { kind: 'set', effectiveFrom: `${first.key}-01`, allocationBps: 10000 } });
   }
   const cardId = `${budgetSyncId}-card`;
-  const card = { id: cardId, budgetSyncId, accountId: a.credit, revision: 1, bankTimeZone: 'UTC', closingDay: 28, dueRule: { kind: 'day-of-month', value: 20 }, billingDaysSource: 'user', creditLimitMinor: 1500000 };
-  const statements = demo.months.slice(-3, -1).map((month, index) => {
+  const card = { id: cardId, budgetSyncId, accountId: a.credit, revision: 1, bankTimeZone: 'UTC', closingDay: 28, dueRule: { kind: 'day-of-month', value: 26 }, billingDaysSource: 'user', creditLimitMinor: 1500000 };
+  const statements = demo.months.slice(-4, -1).map((month, index) => {
     const closingDate = `${month.key}-28`;
     const previous = demo.months[demo.months.indexOf(month) - 1];
     const periodStart = new Date(Date.UTC(previous.y, previous.mIdx, 29)).toISOString().slice(0, 10);
     const next = demo.months[demo.months.indexOf(month) + 1];
     const balanceMinor = -demo.transactions.credit.filter((row) => !row.is_child && row.date <= closingDate).reduce((sum, row) => sum + row.amount, 0);
     if (balanceMinor < 0) throw new Error('Card has credit at statement close');
-    return { id: `${cardId}-statement-${index}`, cardId, revision: 1, periodStart, closingDate, dueDate: `${next.key}-20`, balanceMinor, minimumDueMinor: Math.min(balanceMinor, 5000), previousBalanceMinor: index === 0 ? -demo.transactions.credit.filter((row) => !row.is_child && row.date < periodStart).reduce((sum, row) => sum + row.amount, 0) : null };
+    return { id: `${cardId}-statement-${index}`, cardId, revision: 1, periodStart, closingDate, dueDate: `${next.key}-26`, balanceMinor, minimumDueMinor: Math.min(balanceMinor, 5000), previousBalanceMinor: index === 0 ? -demo.transactions.credit.filter((row) => !row.is_child && row.date < periodStart).reduce((sum, row) => sum + row.amount, 0) : null };
   });
+  const paid = (statement) => demo.transactions.credit.filter((row) => row.notes === 'Monthly credit card payment' && row.cleared && row.date > statement.closingDate && row.date <= statement.dueDate).reduce((sum, row) => sum + row.amount, 0);
+  if (paid(statements[1]) < statements[1].balanceMinor || paid(statements[2]) >= statements[2].balanceMinor) throw new Error('Card payment examples do not match their statements');
   applyCreditCardChanges(db, { budgetSyncId, changes: { ...EMPTY_CHANGES, cards: { put: [card], remove: [] }, statements: { put: statements, remove: [] } } });
   const lastMonth = demo.months.at(-2);
   const session = createReconciliationSession(db, { budgetSyncId, accountId: a.checking, accountName: 'Household Checking', statementName: `Checking ${lastMonth.key}.csv` });

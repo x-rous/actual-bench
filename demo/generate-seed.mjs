@@ -543,24 +543,18 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         transaction(month, 1, "primaryEmployer", 570000 + scenario.incomeAdjustment, "primarySalary", {
           notes: scenario.label === "lower-income" ? "Reduced hours this month" : "Monthly payroll",
         }),
-        transaction(month, 1, "mortgage", -Math.round(mortgagePrincipal * 5 / 1200), "mortgage", { notes: "Mortgage interest" }),
-        transaction(month, 2, "healthInsurance", -46000, "healthInsurance"),
-        transaction(month, 3, "childcare", -78000, "childcare"),
-        transaction(month, 4, "studentLoan", -28000, "studentLoan")
+        transaction(month, 1, "mortgage", -Math.round(mortgagePrincipal * 5 / 1200), "mortgage", { notes: "Mortgage interest" })
       );
     }
-    if (canPost(month, 5)) {
-      checkingTransactions.push(transaction(month, 5, "carLoan", -Math.round(carPrincipal * 6 / 1200), "carPayment", { notes: "Car loan interest" }));
-    }
-    if (canPost(month, 6)) {
-      checkingTransactions.push(
-        transaction(month, 6, "electric", -rint(8500, [6, 7, 8].includes(month.monthNumber) ? 17500 : 13500), "electric"),
-        transaction(month, 7, "internet", -7500, "internet"),
-        transaction(month, 8, "gasUtility", -rint(3000, [12, 1, 2].includes(month.monthNumber) ? 14500 : 7500), "naturalGas"),
-        transaction(month, 9, "water", -rint(5400, 7600), "water"),
-        transaction(month, 10, "mobile", -9500, "mobile")
-      );
-    }
+    if (canPost(month, 2)) checkingTransactions.push(transaction(month, 2, "healthInsurance", -46000, "healthInsurance"));
+    if (canPost(month, 3)) checkingTransactions.push(transaction(month, 3, "childcare", -78000, "childcare"));
+    if (canPost(month, 4)) checkingTransactions.push(transaction(month, 4, "studentLoan", -28000, "studentLoan"));
+    if (canPost(month, 5)) checkingTransactions.push(transaction(month, 5, "carLoan", -Math.round(carPrincipal * 6 / 1200), "carPayment", { notes: "Car loan interest" }));
+    if (canPost(month, 6)) checkingTransactions.push(transaction(month, 6, "electric", -rint(8500, [6, 7, 8].includes(month.monthNumber) ? 17500 : 13500), "electric"));
+    if (canPost(month, 7)) checkingTransactions.push(transaction(month, 7, "internet", -7500, "internet"));
+    if (canPost(month, 8)) checkingTransactions.push(transaction(month, 8, "gasUtility", -rint(3000, [12, 1, 2].includes(month.monthNumber) ? 14500 : 7500), "naturalGas"));
+    if (canPost(month, 9)) checkingTransactions.push(transaction(month, 9, "water", -rint(5400, 7600), "water"));
+    if (canPost(month, 10)) checkingTransactions.push(transaction(month, 10, "mobile", -9500, "mobile"));
     if (canPost(month, 15)) {
       checkingTransactions.push(
         transaction(month, 15, "secondaryEmployer", 340000, "secondarySalary", {
@@ -604,8 +598,20 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     addTransfer(20, "savings", 12000, "homeImprovement", "Home-project sinking fund");
     addTransfer(21, "savings", 15000, "annualBills", "Annual bills sinking fund #annual");
     addTransfer(22, "cash", 8000, null, "Cash withdrawal");
-    addTransfer(24, "credit", 210000, null, "Monthly credit card payment");
+    // Pay the August-style statement in full, then make a smaller payment on
+    // the following statement so visitors can see both payment states.
+    const prior = months[monthIndex - 1];
+    const fullCardPayment = monthIndex === 11 && prior
+      ? Math.max(0, -(await api.getAccountBalance(account.credit, new Date(`${prior.key}-28T12:00:00Z`))))
+      : null;
+    addTransfer(24, "credit", fullCardPayment ?? (monthIndex === 12 ? 50000 : 210000), null, "Monthly credit card payment");
     await push("checking", transferTransactions, { transfers: true });
+    if (canPost(month, 24)) {
+      const posted = await api.getTransactions(account.credit, dateString(month, 24), dateString(month, 24));
+      const payment = posted.find((row) => row.notes === "Monthly credit card payment" && row.amount > 0);
+      if (!payment) throw new Error(`Missing card payment for ${month.key}`);
+      await api.updateTransaction(payment.id, { cleared: true, reconciled: historical });
+    }
 
     const creditTransactions = [];
     for (const day of [2, 7, 12, 17, 22, 27]) {
@@ -978,7 +984,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       months,
       transactions: Object.fromEntries(await Promise.all(
         ["checking", "credit", "property", "vehicle", "mortgage", "carLoan"].map(async (key) => [
-          key, (await api.getTransactions(account[key], `${months[0].key}-01`, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, reconciled, is_child, starting_balance_flag, imported_payee }) => ({ id, date, amount, notes, reconciled, is_child, starting_balance_flag, imported_payee })),
+          key, (await api.getTransactions(account[key], `${months[0].key}-01`, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee }) => ({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee })),
         ])
       )),
     },

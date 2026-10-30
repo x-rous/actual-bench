@@ -27,7 +27,7 @@ for (const budget of demo.budgets) {
   if (!detail.items.length || detail.items.some((item) => !item.actualTransactionIds.length)) fail(`${budget.label}: reconciliation has no matched transactions`);
   const query = await read('/api/proxy', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
     connection: { baseUrl: demo.baseUrl, apiKey: demo.apiKey, budgetSyncId: id }, path: '/run-query', method: 'POST',
-    body: { ActualQLquery: { table: 'transactions', select: ['id', 'account', 'date', 'amount', 'is_child'], options: { splits: 'grouped' } } },
+    body: { ActualQLquery: { table: 'transactions', select: ['id', 'account', 'date', 'amount', 'notes', 'cleared', 'is_child'], options: { splits: 'grouped' } } },
   }) });
   const transactions = query.data;
   const byId = new Map(transactions.map((row) => [row.id, row]));
@@ -42,5 +42,8 @@ for (const budget of demo.budgets) {
     const balance = -transactions.filter((row) => row.account === card.accountId && !row.is_child && row.date <= statement.closingDate).reduce((sum, row) => sum + row.amount, 0);
     if (balance !== statement.balanceMinor) fail(`${budget.label}: statement balance does not match Actual`);
   }
+  const statements = [...workspace.statements].sort((a, b) => a.closingDate.localeCompare(b.closingDate));
+  const paymentFor = (statement) => transactions.filter((row) => row.account === card.accountId && row.notes === 'Monthly credit card payment' && row.cleared && row.date > statement.closingDate && row.date <= statement.dueDate).reduce((sum, row) => sum + row.amount, 0);
+  if (statements.length < 3 || paymentFor(statements.at(-2)) < statements.at(-2).balanceMinor || paymentFor(statements.at(-1)) >= statements.at(-1).balanceMinor) fail(`${budget.label}: paid and outstanding card examples are missing`);
   console.log(`demo metadata: OK ${budget.label} — ${debts.length} loans, ${workspace.statements.length} statements, ${registry.assets.length} assets, ${detail.items.length} reconciled rows`);
 }
