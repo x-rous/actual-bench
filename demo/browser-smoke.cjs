@@ -8,6 +8,7 @@ const { chromium } = require('playwright');
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const page = await context.newPage();
       page.setDefaultTimeout(60000);
+      try {
       await page.goto('http://127.0.0.1:17860/connect');
       await page.getByRole('button', { name: `${mode} demo` }).click();
       await page.waitForURL('**/overview');
@@ -37,6 +38,10 @@ const { chromium } = require('playwright');
       await page.locator(`button[title^="Live Demo - ${other} -"]`).waitFor({ state: 'visible' });
       await page.getByText('Household Checking', { exact: false }).first().waitFor({ state: 'visible' });
       console.log(`browser: OK ${mode} to ${other} budget switch`);
+      } catch (error) {
+        console.error(`browser failure at ${page.url()}: ${(await page.locator('body').innerText()).slice(0, 4000)}`);
+        throw error;
+      }
       await context.close();
     }
   } finally { await browser.close(); }
