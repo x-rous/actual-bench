@@ -70,6 +70,14 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
   const accountName = (id: string) => directory?.accounts.find((a) => a.id === id)?.name ?? "-";
   const busy = run !== null;
   const ignoredEntries = (tracking.bundle?.entries ?? []).filter((entry) => entry.entryType === "not-repayment");
+  const rowById = useMemo(() => {
+    const rows = [...(tracking.reads?.bankRows ?? []), ...(tracking.reads?.loanRows ?? [])];
+    const byId = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    }
+    return byId;
+  }, [tracking.reads?.bankRows, tracking.reads?.loanRows]);
 
   const rows = useMemo((): Row[] => {
     if (!result) return [];
@@ -219,8 +227,8 @@ export function RepaymentsTab({ tracking, directory, digits, loanName, onLinkToA
           <DialogHeader><DialogTitle>Ignored payments</DialogTitle><DialogDescription>These payments were marked not this payment and are excluded from matching any installment in this loan. Restore one to let Bench match it again. Nothing changes in Actual.</DialogDescription></DialogHeader>
           <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
             {ignoredEntries.length === 0 ? <p className="text-sm text-muted-foreground">No ignored payments.</p> : ignoredEntries.map((entry) => {
-              const row = [...(tracking.reads?.bankRows ?? []), ...(tracking.reads?.loanRows ?? [])].find((item) => item.id === entry.actualTransactionId);
-              return <IgnoredPaymentCard key={entry.actualTransactionId} row={row ?? null} accountName={accountName} money={money} onRestore={() => actions.restorePayment(entry.actualTransactionId)} />;
+              const row = rowById.get(entry.actualTransactionId) ?? null;
+              return <IgnoredPaymentCard key={entry.actualTransactionId} row={row} accountName={accountName} money={money} onRestore={() => actions.restorePayment(entry.actualTransactionId)} />;
             })}
           </div>
         </DialogContent>

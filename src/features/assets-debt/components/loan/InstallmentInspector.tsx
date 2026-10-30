@@ -150,7 +150,7 @@ export function InstallmentInspector({ row, tracking, directory, digits, busy, w
   const nearby = inst && result ? result.ledger.filter((l) => l.type === "extra-principal" && !excludedIds.has(l.row.id) && !excludedIds.has(l.row.transferId ?? "") && !excludedLines.has(l.row.transferId ?? "") && Math.abs(Date.parse(l.row.date) - Date.parse(inst.dueDate)) <= 45 * 86_400_000) : [];
   const ignored = inst ? (tracking.bundle?.entries ?? []).filter((e) => e.entryType === "not-repayment").flatMap((entry) => {
     const row = [...(tracking.reads?.bankRows ?? []), ...(tracking.reads?.loanRows ?? [])].find((r) => r.id === entry.actualTransactionId);
-    return row && Math.abs(Date.parse(row.date) - Date.parse(inst.dueDate)) <= 45 * 86_400_000 ? [row] : [];
+    return row ? [row] : [];
   }) : [];
   const [chosen, setChosen] = useState<string | null>(payment?.id ?? null);
   const disabled = busy || writesLocked;
