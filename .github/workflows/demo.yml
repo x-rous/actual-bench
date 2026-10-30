@@ -1,11 +1,23 @@
 name: Demo container
 on:
   push:
-    branches: [feat/demo-launch-refresh]
-  pull_request:
-    paths:
+    branches: [main, feat/demo-launch-refresh]
+    paths: &demo_paths
       - "demo/**"
+      - "src/**"
+      - "public/**"
+      - "scripts/copy-sqlite-wasm.mjs"
+      - "scripts/copy-pdfjs-assets.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.ts"
+      - "tsconfig.json"
+      - "postcss.config.mjs"
+      - "jest.setup.ts"
+      - ".dockerignore"
       - ".github/workflows/demo.yml"
+  pull_request:
+    paths: *demo_paths
   workflow_dispatch:
 permissions:
   contents: read

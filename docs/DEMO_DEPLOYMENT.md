@@ -23,6 +23,24 @@ The smoke script assumes the default seed password `demo-budget-public`; if you
 use `SEED_PASSWORD`, supply the matching value when starting a container by
 hand. Do not run the reset script against a container holding real data.
 
+## Prepare the Vercel redirect before the cutover
+
+Before updating the Space, link the Vercel CLI to the existing demo project and
+stage the two project-level redirects. Do not promote them yet:
+
+```bash
+vercel link
+vercel redirects add / https://x-rous-actual-bench-demo.hf.space/ --status 307 --preserve-query-params
+vercel redirects add '/*' 'https://x-rous-actual-bench-demo.hf.space/:splat' --status 307 --preserve-query-params
+vercel redirects list --staging
+vercel redirects list-versions
+```
+
+Select the project that owns `actual-bench-demo.vercel.app` when linking. Review
+the staged redirects and record their version ID. Keep the project and domain
+active; staging alone does not change the public link.
+
+
 ## Prepare the Space repository
 
 After the changes and seeds have been reviewed and committed, prepare a clean
@@ -39,7 +57,9 @@ git status --short
 ```
 
 The new image reads `demo/seed-data/` and `demo/seed-manifest.json`. After
-reviewing the status, remove the old backend-only files and stage the new tree:
+reviewing the status, remove the old backend-only files and stage the new tree.
+**Do not run `git push` until the redirect is staged and the outage window has
+begun:**
 
 ```bash
 git rm -r --ignore-unmatch seed-data generate-seed.mjs seed-scenario.cjs start.sh check-budgets.mjs
@@ -51,29 +71,19 @@ git commit -m "chore(demo): deploy combined demo"
 git push
 ```
 
-The push builds and deploys the Space. In Space settings, keep `app_port: 7860` and configure
-`API_KEY` and `ACTUAL_SERVER_PASSWORD` as secrets. The password must match the
-one used for seed generation. The demo API key is intentionally supplied to
-visitors so they can use the shared sample; never reuse a real API key.
+**Planned outage:** pushing this update replaces the HTTP API currently exposed
+on the Space's public port 7860 with Next.js. The existing Vercel demo still
+expects an HTTP API at that address, so its budget connections will fail once
+the Space switches over. The outage lasts until the staged Vercel redirect is
+promoted after the hosted checks below. Prepare the redirect first, then push
+the Space update during the agreed outage window.
 
-## Preserve the old demo link
-
-After validating the new Space, link the Vercel CLI to the existing demo project
-and stage the two project-level redirects:
-
-```bash
-vercel link
-vercel redirects add / https://x-rous-actual-bench-demo.hf.space/ --status 307 --preserve-query-params
-vercel redirects add '/*' 'https://x-rous-actual-bench-demo.hf.space/:splat' --status 307 --preserve-query-params
-vercel redirects list --staging
-vercel redirects list-versions
-# After reviewing the staged version ID shown above:
-vercel redirects promote <version-id>
-```
-
-Select the project that owns `actual-bench-demo.vercel.app` when linking. Keep
-the project and domain active. Promoting changes the public link immediately;
-changing this repository alone does not configure the Vercel project.
+In Space settings, keep `app_port: 7860` and configure `API_KEY` and
+`ACTUAL_SERVER_PASSWORD` as secrets. The password must match the one used for
+seed generation. Changing a secret used by the current backend can also affect
+the old demo, so make any necessary secret changes during the outage. The demo
+API key is intentionally supplied to visitors so they can use the shared
+sample; never reuse a real API key.
 
 ## Verify and reset
 
@@ -92,3 +102,15 @@ The app and metadata checks can be run against a local test container with
 `node demo/check-metadata.mjs http://127.0.0.1:17860`; it is read-only. A
 restart is the reset mechanism, with no separate scheduler. If the Space is
 asleep, the first request may wait for it to wake.
+
+## Activate the redirect
+
+Only after both hosted budgets and all four modules pass verification, and a
+Space restart restores both data stores, promote the reviewed staged version:
+
+```bash
+vercel redirects promote <version-id>
+```
+
+Confirm `https://actual-bench-demo.vercel.app` redirects to the Space and both
+budget modes open. Promoting changes the public link immediately.

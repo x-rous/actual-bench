@@ -67,6 +67,8 @@ runs `demo/browser-smoke.cjs` in Chromium against the container.
 ## Deploy and reset
 
 See `docs/DEMO_DEPLOYMENT.md` in the repository for the full preparation,
-Space settings, Vercel redirect, and verification instructions. A Space restart
-restores both seeds. Do not change the existing public Space until the reviewed
-image has passed the checks.
+Space settings, Vercel redirect, and verification instructions. Prepare the
+redirect before updating the Space, but promote it only after hosted checks and
+a restart. Updating the Space changes its public port from HTTP API to Next.js,
+so the current Vercel demo will be unavailable until the redirect is promoted.
+A Space restart restores both seeds.
