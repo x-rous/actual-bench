@@ -272,7 +272,7 @@ type Allocation = { interestMinor: number; principalMinor: number; balanceAfterM
 class Allocator {
   private allocator: ObservedRepaymentAllocator | null;
   balanceMinor: number;
-  constructor(private model: LoanModelSnapshot, opening: { date: string; principalMinor: number; accruedInterestMinor?: number }) {
+  constructor(model: LoanModelSnapshot, opening: { date: string; principalMinor: number; accruedInterestMinor?: number }) {
     this.balanceMinor = opening.principalMinor;
     const created = createObservedRepaymentAllocator({ model, opening });
     this.allocator = created.ok ? created.allocator : null;
@@ -312,7 +312,8 @@ class Allocator {
   }
   /** Something that changes the balance without being a repayment (a draw, a capitalized fee, a restart): carry on from there. */
   reset(date: string, principalMinor: number): Allocator {
-    return new Allocator(this.model, { date, principalMinor, accruedInterestMinor: this.accruedTo(date) });
+    if (!this.allocator || this.allocator.setBalance(date, principalMinor).ok) this.balanceMinor = principalMinor;
+    return this;
   }
 }
 

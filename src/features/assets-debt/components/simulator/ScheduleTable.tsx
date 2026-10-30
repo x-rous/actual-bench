@@ -6,7 +6,7 @@ import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { cn } from "@/lib/utils";
 import { formatAmount, fractionToPercent } from "../../lib/money";
-import { aggregateSchedule, paymentNumberCell, principalLabel, rateCell, scheduleColumns, schedulePeriodLabel, type ColumnId, type ScheduleRow, type ScheduleView } from "../../lib/schedule";
+import { aggregateSchedule, paymentNumberCell, principalLabel, rateCell, scheduleColumns, scheduleEventLabel, schedulePeriodLabel, type ColumnId, type ScheduleRow, type ScheduleView } from "../../lib/schedule";
 import { HelpDialogButton } from "./ConfigurationSection";
 
 /**
@@ -15,20 +15,6 @@ import { HelpDialogButton } from "./ConfigurationSection";
  * straight from engine fields (lib/schedule.ts). Virtualized, with sticky
  * headers and table semantics for assistive technology.
  */
-
-const EVENT_LABELS: Record<string, string> = {
-  repayment: "Repayment",
-  "final-payment": "Final payment",
-  "extra-repayment": "Extra repayment",
-  draw: "Draw",
-  fee: "Fee",
-  "interest-charge": "Interest charged",
-  "negative-amortization": "Unpaid interest added",
-  "rate-change": "Rate change",
-  recast: "Payment recalculated",
-  balloon: "Balloon",
-  residual: "Residual",
-};
 
 const VIEWS: { id: ScheduleView; label: string }[] = [
   { id: "events", label: "All events" },
@@ -50,7 +36,7 @@ export function scheduleSource(period: string, tracked: { startDate: string; tod
   return period > (tracked.anchorDate ?? tracked.today).slice(0, length) ? "" : "From Actual";
 }
 
-export function ScheduleTable({ events, profile, startDate, digits, tracked, today }: { events: readonly DebtProjectionEvent[]; profile: Pick<CalculationProfile, "chargeFrequency">; startDate: string; digits: number;
+export function ScheduleTable({ events, profile, startDate, firstPaymentDate, digits, tracked, today, onExport, exportDisabled }: { events: readonly DebtProjectionEvent[]; profile: Pick<CalculationProfile, "chargeFrequency" | "repaymentFrequency">; startDate: string; firstPaymentDate?: string; digits: number; onExport?: () => void; exportDisabled?: boolean;
   /** For Jump to today. */ today?: string;
   /** A loan tracked in Actual: a Source column, and the table opens at today. */ tracked?: { startDate: string; today: string; missingDueDates: readonly string[]; anchorDate?: string; installmentsBefore?: number } | null }) {
   "use no memo";
@@ -84,9 +70,9 @@ export function ScheduleTable({ events, profile, startDate, digits, tracked, tod
       case "paymentNumber":
         return paymentNumberCell(r);
       case "period":
-        return schedulePeriodLabel(r.period, view, startDate);
+        return schedulePeriodLabel(r.period, view, startDate, firstPaymentDate, profile.repaymentFrequency);
       case "event":
-        return EVENT_LABELS[r.eventType ?? ""] ?? r.eventType ?? "";
+        return scheduleEventLabel(r.eventType);
       case "payment":
         return money(r.paymentMinor);
       case "principal":
@@ -164,6 +150,7 @@ export function ScheduleTable({ events, profile, startDate, digits, tracked, tod
           />
         </div>
         <div className="flex items-center gap-2">
+        {onExport ? <button type="button" onClick={onExport} disabled={exportDisabled} className="rounded border border-border px-2 py-1 text-xs disabled:opacity-50">Export CSV</button> : null}
         {todayIndex > 2 ? <button type="button" onClick={jumpToToday} className="rounded border border-border px-2 py-1 text-xs">Jump to today</button> : null}
         <div role="radiogroup" aria-label="Schedule view" className="flex gap-1">
           {VIEWS.map((v) => (

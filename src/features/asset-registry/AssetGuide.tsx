@@ -1,7 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
-import { ArrowLeftRight, ArrowRight, Banknote, Building2, Landmark, Lightbulb, PiggyBank, TriangleAlert } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeftRight, ArrowRight, Banknote, BookOpen, Building2, CircleHelp, FileText, Landmark, Lightbulb, PiggyBank, Tag as TagIcon, TrendingDown, TriangleAlert, type LucideIcon } from "lucide-react";
+import { GuideFrame } from "@/components/ui/guide-frame";
 import { cn } from "@/lib/utils";
 import { Example, Heading, Para, Steps, Tag } from "@/features/credit-cards/components/guide/CreditCardGuide";
 import { StatusBadge } from "@/features/credit-cards/components/primitives/StatusBadge";
@@ -13,6 +13,10 @@ export const ASSET_GUIDE_SECTIONS: [AssetGuideSection, string][] = [
   ["start", "Getting started"], ["concepts", "Two kinds of transactions"], ["account", "Asset Ledger"], ["income", "Income & Expenses"],
   ["overview", "Reading the Overview"], ["loans", "Linked Loans"], ["depreciation", "Depreciation Schedule"], ["tags", "Tags in Actual"], ["glossary", "Glossary"],
 ];
+const SECTION_ICONS: Record<AssetGuideSection, LucideIcon> = {
+  start: BookOpen, concepts: ArrowLeftRight, account: FileText, income: Banknote, overview: Landmark,
+  depreciation: TrendingDown, loans: Building2, tags: TagIcon, glossary: CircleHelp,
+};
 /** The guide section that explains the workspace tab you are on. */
 export const guideSectionForTab = (tab: string | null): AssetGuideSection => (
   tab === "Asset Ledger" ? "account" : tab === "Income & Expenses" ? "income" : tab === "Depreciation Schedule" ? "depreciation" : tab === "Linked Loans" ? "loans" : tab === "Overview" ? "overview" : "start");
@@ -28,8 +32,8 @@ const TONES: Record<Tone, string> = {
 const Chip = ({ tone, children }: { tone: Tone; children: ReactNode }) => <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap", TONES[tone])}>{children}</span>;
 function Callout({ tone = "tip", title, children }: { tone?: "tip" | "warn"; title: string; children: ReactNode }) {
   const Icon = tone === "tip" ? Lightbulb : TriangleAlert;
-  return <aside className={cn("my-3 flex max-w-[55rem] gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
-    <Icon className={cn("mt-0.5 size-4 shrink-0", tone === "tip" ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400")} aria-hidden /><div><p className="font-semibold">{title}</p><div className="mt-0.5 leading-relaxed text-foreground/80">{children}</div></div>
+  return <aside className={cn("my-4 flex max-w-[55rem] gap-3 rounded-xl border px-4 py-3.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
+    <Icon className={cn("mt-0.5 size-4 shrink-0", tone === "tip" ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400")} aria-hidden /><div><p className="font-semibold">{title}</p><div className="mt-1 leading-relaxed text-foreground/80">{children}</div></div>
   </aside>;
 }
 const Money = ({ children, tone }: { children: ReactNode; tone?: "plus" | "minus" }) => <span className={cn("tabular-nums", tone === "plus" && "text-green-700 dark:text-green-400", tone === "minus" && "text-red-700 dark:text-red-400")}>{children}</span>;
@@ -57,23 +61,11 @@ function MiniTimeline() {
   </figure>;
 }
 const Tile = ({ label, value, detail, tone }: { label: string; value: string; detail: string; tone?: Tone }) => <div className={cn("rounded-lg border px-3 py-2", tone ? TONES[tone] : "bg-background")}><p className="text-[11px] opacity-80">{label}</p><p className="text-base font-semibold tabular-nums">{value}</p><p className="text-[11px] opacity-80">{detail}</p></div>;
-const Card = ({ icon: Icon, title, children, tone }: { icon: typeof Landmark; title: string; children: ReactNode; tone: Tone }) => <div className={cn("rounded-lg border p-3", TONES[tone])}><div className="flex items-center gap-2 text-xs font-semibold"><Icon className="size-4" aria-hidden />{title}</div><div className="mt-1.5 text-xs leading-relaxed text-foreground/80">{children}</div></div>;
+const Card = ({ icon: Icon, title, children, tone }: { icon: typeof Landmark; title: string; children: ReactNode; tone: Tone }) => <div className={cn("rounded-xl border p-4 shadow-sm", TONES[tone])}><div className="flex items-center gap-2 text-xs font-semibold"><Icon className="size-4" aria-hidden />{title}</div><div className="mt-1.5 text-xs leading-relaxed text-foreground/80">{children}</div></div>;
 
 export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: AssetGuideSection; onSection: (section: AssetGuideSection) => void; onClose: () => void; docsUrl?: string }) {
   const link = (to: AssetGuideSection, text: string) => <button type="button" className="font-medium text-primary hover:underline" onClick={() => onSection(to)}>{text}</button>;
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-[73.6rem]">
-      <DialogHeader className="shrink-0 border-b px-5 py-4">
-        <DialogTitle className="text-sm">Assets guide</DialogTitle>
-        <DialogDescription className="text-xs">What you own, what it is worth, what it earns and what you owe on it, all read from Actual.{docsUrl && <> <a className="font-medium text-primary hover:underline" href={docsUrl} target="_blank" rel="noopener noreferrer">Full documentation</a></>}</DialogDescription>
-      </DialogHeader>
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <nav aria-label="Guide sections" className="flex w-52 shrink-0 flex-col gap-0.5 border-r p-2 pt-3">
-          {ASSET_GUIDE_SECTIONS.map(([id, label]) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => onSection(id)}
-            className={cn("rounded px-2 py-1.5 text-left text-xs transition-colors", section === id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground")}>{label}</button>)}
-        </nav>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
-          <h2 className="mb-4 text-base font-semibold">{ASSET_GUIDE_SECTIONS.find(([id]) => id === section)![1]}</h2>
+  return <GuideFrame title="Assets guide" description="What you own, what it is worth, what it earns and what you owe on it, all read from Actual." docsUrl={docsUrl} sections={ASSET_GUIDE_SECTIONS} icons={SECTION_ICONS} section={section} onSection={onSection} onClose={onClose}>
           {section === "start" && <>
             <Para>An asset is something you own that isn&apos;t a regular bank account: a home, a car, an investment. Bench tracks it from your Actual data, so every figure can be traced back to a transaction. Nothing is invented.</Para>
             <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-3">
@@ -175,8 +167,5 @@ export function AssetGuide({ section, onSection, onClose, docsUrl }: { section: 
             [<Chip key="f" tone="income">Net cash flow</Chip>, "Linked income minus linked expenses."],
             [<StatusBadge key="g" label="Unassigned" tone="attention" />, "A transaction in a shared account that no asset claims yet."], [<StatusBadge key="h" label="Projected" tone="muted" />, "A forecast, not yet posted to Actual."],
           ]} />}
-        </div>
-      </div>
-    </DialogContent>
-  </Dialog>;
+  </GuideFrame>;
 }

@@ -1,8 +1,10 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { ArrowLeftRight, CircleHelp } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowLeftRight, BookOpen, CalendarDays, CircleHelp, CreditCard, FileText, Keyboard as KeyboardIcon, Receipt, Layers, type LucideIcon } from "lucide-react";
+import { GuideFrame } from "@/components/ui/guide-frame";
+import { Example, Heading, Para, Steps } from "@/components/ui/guide-primitives";
+export { Example, Heading, Para, Steps } from "@/components/ui/guide-primitives";
 import { SearchInput } from "@/components/ui/search-input";
 import { cn } from "@/lib/utils";
 import { GLOSSARY, INSTALMENT_PLANS_DESCRIPTION, type GuideSection } from "../../lib/vocabulary";
@@ -50,26 +52,13 @@ export function GuideLink({ section, children, className }: { section: GuideSect
   </button>;
 }
 
+const SECTION_ICONS: Record<GuideSection, LucideIcon> = {
+  start: BookOpen, monthly: CalendarDays, statements: FileText, bills: Receipt, types: ArrowLeftRight,
+  plans: Layers, figures: CreditCard, keyboard: KeyboardIcon, glossary: CircleHelp,
+};
+
 export function CreditCardGuide({ section, onSection, onClose }: { section: GuideSection; onSection: (section: GuideSection) => void; onClose: () => void }) {
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-[73.6rem]">
-      <DialogHeader className="shrink-0 border-b px-5 py-4">
-        <DialogTitle className="text-sm">Credit cards guide</DialogTitle>
-        <DialogDescription className="text-xs">How the workflow fits together, what every figure means, and how to record instalment plans.</DialogDescription>
-      </DialogHeader>
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <nav aria-label="Guide sections" className="flex w-44 shrink-0 flex-col gap-0.5 border-r p-2 pt-3">
-          {SECTIONS.map(([id, label]) => <button
-            key={id}
-            type="button"
-            aria-current={section === id ? "page" : undefined}
-            onClick={() => onSection(id)}
-            className={cn("rounded px-2 py-1.5 text-left text-xs transition-colors",
-              section === id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground")}
-          >{label}</button>)}
-        </nav>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
-          <h2 className="mb-4 text-base font-semibold">{SECTIONS.find(([id]) => id === section)![1]}</h2>
+  return <GuideFrame title="Credit cards guide" description="How the workflow fits together, what every figure means, and how to record instalment plans." sections={SECTIONS} icons={SECTION_ICONS} section={section} onSection={onSection} onClose={onClose}>
           {section === "start" && <Start onSection={onSection} />}
           {section === "monthly" && <Monthly />}
           {section === "statements" && <Statements />}
@@ -79,31 +68,10 @@ export function CreditCardGuide({ section, onSection, onClose }: { section: Guid
           {section === "figures" && <Figures />}
           {section === "keyboard" && <Keyboard />}
           {section === "glossary" && <Glossary onSection={onSection} />}
-        </div>
-      </div>
-    </DialogContent>
-  </Dialog>;
+  </GuideFrame>;
 }
 
 // ─── Building blocks ─────────────────────────────────────────────────────────
-
-export function Heading({ children }: { children: ReactNode }) {
-  return <h3 className="mt-5 mb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase first:mt-0">{children}</h3>;
-}
-
-export function Para({ children }: { children: ReactNode }) {
-  return <p className="mb-3 max-w-[55rem] text-xs leading-relaxed text-foreground/80">{children}</p>;
-}
-
-export function Steps({ items }: { items: [string, ReactNode][] }) {
-  return <ol className={cn("grid gap-2 sm:grid-cols-2", items.length !== 4 && "xl:grid-cols-3")}>{items.map(([title, body], index) => <li key={title} className="flex gap-3 rounded-lg border p-3">
-    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">{index + 1}</span>
-    <div className="min-w-0 text-xs">
-      <p className="font-medium">{title}</p>
-      <p className="mt-0.5 leading-relaxed text-muted-foreground">{body}</p>
-    </div>
-  </li>)}</ol>;
-}
 
 function Box({ label, value, tone }: { label: string; value: string; tone?: "result" | "bank" }) {
   return <div className={cn("min-w-28 rounded-md border px-3 py-2 text-center", tone === "result" && "border-foreground", tone === "bank" && "bg-muted/50")}>
@@ -113,22 +81,6 @@ function Box({ label, value, tone }: { label: string; value: string; tone?: "res
 }
 
 const Op = ({ children }: { children: ReactNode }) => <span className="text-sm font-semibold text-muted-foreground" aria-hidden>{children}</span>;
-
-/** A small example table; only an Amount column is right-aligned, descriptions read left to right. */
-export function Example({ caption, head, rows }: { caption: string; head: string[]; rows: (string | ReactNode)[][] }) {
-  const numeric = (index: number) => head[index] === "Amount";
-  // A column of sentences wraps; only short cells (labels, amounts, badges) are kept on one line. Forcing a long
-  // sentence onto one line made the table wider than the dialog and squeezed the last column into a sliver.
-  const SHORT_CELL = 32;
-  const oneLine = (column: number) => column < head.length - 1 && rows.every((row) => { const cell = row[column]; return typeof cell !== "string" || cell.length <= SHORT_CELL; });
-  return <table className="mb-3 w-full max-w-[55rem] border-collapse text-xs">
-    <caption className="mb-1 text-left text-[11px] text-muted-foreground">{caption}</caption>
-    <thead><tr>{head.map((cell, index) => <th key={cell} scope="col"
-      className={cn("border-b px-2 py-1 text-left font-medium whitespace-nowrap text-muted-foreground", numeric(index) && "text-right")}>{cell}</th>)}</tr></thead>
-    <tbody>{rows.map((row, index) => <tr key={index} className="border-b border-border/60 last:border-b-0">{row.map((cell, column) => <td key={column}
-      className={cn("px-2 py-1 align-top", oneLine(column) && "whitespace-nowrap", numeric(column) && "text-right tabular-nums")}>{cell}</td>)}</tr>)}</tbody>
-  </table>;
-}
 
 export const Tag = ({ children }: { children: ReactNode }) => <code className="rounded bg-muted/70 px-1 font-mono text-[11px]">{children}</code>;
 export const Key = ({ children }: { children: ReactNode }) => <kbd className="rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">{children}</kbd>;

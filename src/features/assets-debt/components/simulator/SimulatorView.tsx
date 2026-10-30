@@ -6,6 +6,7 @@ import { BookOpen, MoreHorizontal, RotateCcw, SlidersHorizontal } from "lucide-r
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { explainBlock } from "@/lib/financial-models/loan/blockMessages";
+import { isIsoDate } from "@/lib/financial-models/calendar/dates";
 import { FEATURES } from "@/lib/features/catalogue";
 import { LoanGuide, type LoanGuideSection } from "../guide/LoanGuide";
 import { DateInput } from "@/components/ui/date-input";
@@ -14,9 +15,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { chartSeries, deltas, headline, withTracking } from "../../lib/results";
 import { formatAmount } from "../../lib/money";
+import { downloadCsv } from "@/lib/csv";
+import { loanExportFilename, loanExportRows } from "../../lib/loanExport";
 import type { TrackedHistory } from "../../lib/trackedSchedule";
 import type { DebtProjection } from "@/lib/financial-models/loan/projection";
-import { dailyEngineReason, newSimulation, switchToDayByDay, withoutExtraTransactions, type SimAssumption, type SimRate, type SimulationState } from "../../lib/simulatorModel";
+import { dailyEngineReason, derivedFirstPaymentDate, newSimulation, switchToDayByDay, withoutExtraTransactions, type SimAssumption, type SimRate, type SimulationState } from "../../lib/simulatorModel";
 import { useEventSavings } from "../../lib/useEventSavings";
 import { useLiveProjection } from "../../lib/useLiveProjection";
 import type { OffsetHistorySnapshot } from "@/lib/assets-debt/services/offsetHistoryService";
@@ -31,7 +34,7 @@ import { HeadlineMetrics, headlineSentence } from "./HeadlineMetrics";
 import { HowCalculatedDrawer } from "./HowCalculatedDrawer";
 import { PrimaryInputs } from "./PrimaryInputs";
 import { RateChangesDialog, type RateChangesEditor } from "./RateChangesDialog";
-import { ScheduleTable } from "./ScheduleTable";
+import { ScheduleTable, scheduleSource } from "./ScheduleTable";
 import { LoanMenuContent } from "../loan/presentation";
 
 /**
@@ -54,7 +57,10 @@ export type SimulatorViewProps = {
   onChange: (next: SimulationState) => void;
   /** The saved simulation, for "Compare with saved" (existing loans only). */
   saved?: SimulationState | null;
+  /** Includes edits to loan tracking details such as its name. */
+  editorDirty?: boolean;
   title: string;
+  loanName?: string;
   badge: string;
   stepLabel?: string;
   readOnly?: boolean;
@@ -106,7 +112,7 @@ function composeTracked(projection: DebtProjection | null, contract: DebtProject
   };
 }
 
-export function SimulatorView({ sim, onChange, saved = null, title, badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external, tracked = null, chartViewKey }: SimulatorViewProps) {
+export function SimulatorView({ sim, onChange, saved = null, editorDirty = false, title, loanName = "", badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external, tracked = null, chartViewKey }: SimulatorViewProps) {
   const [comparingLocal, setComparing] = useState(false);
   const comparing = external ? external.comparing : comparingLocal;
   const [guide, setGuide] = useState<LoanGuideSection | null>(null);
@@ -170,7 +176,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
   const calendarToday = useLocalToday();
   const calendarTodayForDetails = tracked?.today ?? calendarToday;
   const details = useMemo(() => {
-    if (!events || !head) return undefined;
+    if (!tracked || !events || !head) return undefined;
     const today = calendarTodayForDetails;
     const paid = events.filter((e) => e.date <= today).reduce((sum, e) => sum + e.interestMinor, 0);
     const months = head.payoffDate ? Math.max(0, Math.round((Date.parse(`${head.payoffDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / (86_400_000 * 30.4375))) : null;
@@ -286,7 +292,8 @@ export function SimulatorView({ sim, onChange, saved = null, title, badge, stepL
                   onOpenLedger: tracked.onOpenLedger,
                 } : undefined} />
               <div data-testid="schedule-region" className="pt-3">
-                <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore } : null} />
+                <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} firstPaymentDate={isIsoDate(sim.startDate) && (!sim.firstPaymentDate || isIsoDate(sim.firstPaymentDate)) ? derivedFirstPaymentDate(sim) : undefined} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore } : null}
+                  exportDisabled={live.status !== "ok"} onExport={() => downloadCsv(loanExportFilename(loanName, calendarToday), loanExportRows({ sim, events, name: loanName, today: calendarToday, generatedAt: new Date().toLocaleString(), revision, unsaved: saved === null || unsaved || editorDirty, tracked, ...(tracked ? { source: (period, paymentNumber) => scheduleSource(period, { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore }, paymentNumber) } : {}) }), { includeBom: true })} />
               </div>
             </>
           ) : null}

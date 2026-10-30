@@ -1,5 +1,5 @@
 import type { LoanModelSnapshot } from "./model";
-import { allocateObservedRepayments, compareLenderStatement } from "./statementAllocation";
+import { allocateObservedRepayments, compareLenderStatement, createObservedRepaymentAllocator } from "./statementAllocation";
 
 // AED 36,500 at 10% Act/365: exactly 10.00 a day, so expectations are readable.
 const MODEL = {
@@ -100,5 +100,49 @@ describe("extra payments in the allocation (owner decision 2026-10-07)", () => {
       expect(repayment.interestMinor).toBeLessThan(without.rows[0].interestMinor);
       expect(repayment.interestMinor).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("balance changes during allocation", () => {
+  it.each(["as-calculated", "accrued-to-due-date"] as const)("preserves accrual and applies a changed balance under %s", (allocation) => {
+    const create = () => {
+      const result = createObservedRepaymentAllocator({ model: MODEL, opening, allocation });
+      if (!result.ok) throw new Error(result.message);
+      return result.allocator;
+    };
+    const changed = create();
+    const unchanged = create();
+    const first = { dueDate: "2024-02-01", paidDate: "2024-01-21", amountMinor: 500_000 };
+    const second = { dueDate: "2024-03-01", paidDate: "2024-02-20", amountMinor: 500_000 };
+    const a = changed.push(first);
+    const b = unchanged.push(first);
+    if (!a.ok || !b.ok) throw new Error("first repayment failed");
+    // On Feb 10 the balance increases by 3,650.00: 1.00 per day for the ten days to payment,
+    // plus ten days to the due date under the lender's reporting convention.
+    expect(changed.setBalance("2024-02-10", a.row.balanceAfterMinor + 365_000).ok).toBe(true);
+    const c = changed.push(second);
+    const d = unchanged.push(second);
+    if (!c.ok || !d.ok) throw new Error("second repayment failed");
+    expect(c.row.interestMinor - d.row.interestMinor).toBe(allocation === "as-calculated" ? 1_000 : 2_000);
+    expect(c.row.balanceBeforeMinor).toBe(d.row.balanceBeforeMinor + 365_000);
+
+    // A decrease has the same economics as an extra principal payment on that date.
+    const decrease = create();
+    const extra = create();
+    const firstDecrease = decrease.push(first);
+    if (!firstDecrease.ok || !extra.push(first).ok) throw new Error("first repayment failed");
+    expect(decrease.setBalance("2024-02-10", firstDecrease.row.balanceAfterMinor - 365_000).ok).toBe(true);
+    expect(extra.push({ dueDate: "2024-02-10", paidDate: "2024-02-10", amountMinor: 365_000, extra: true }).ok).toBe(true);
+    expect(decrease.push(second)).toEqual(extra.push(second));
+  });
+
+  it("allows an anchor on the payment date when repayment takes effect the next day", () => {
+    const model = { ...MODEL, profile: { ...MODEL.profile, repaymentEffectiveTiming: "next-calendar-day" as const } };
+    const result = createObservedRepaymentAllocator({ model, opening, allocation: "accrued-to-due-date" });
+    if (!result.ok) throw new Error(result.message);
+    const first = result.allocator.push({ dueDate: "2024-02-01", paidDate: "2024-01-21", amountMinor: 500_000 });
+    if (!first.ok) throw new Error(first.message);
+    expect(result.allocator.setBalance("2024-01-21", first.row.balanceAfterMinor + 100).ok).toBe(true);
+    expect(result.allocator.push({ dueDate: "2024-03-01", paidDate: "2024-02-20", amountMinor: 500_000 }).ok).toBe(true);
   });
 });

@@ -1,5 +1,7 @@
 import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
+import { addDays, addMonths, isIsoDate } from "@/lib/financial-models/calendar/dates";
+import type { ScheduleFrequency } from "@/lib/financial-models/calendar/schedule";
 
 /**
  * The simulator's schedule (RD-084 P1.3b T212; ux-simulator.md §12, O2, O5).
@@ -11,6 +13,16 @@ import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
  */
 
 export type ScheduleView = "events" | "month" | "year";
+
+const EVENT_LABELS: Record<string, string> = {
+  repayment: "Repayment", "final-payment": "Final payment", "extra-repayment": "Extra repayment", draw: "Draw", fee: "Fee",
+  "interest-charge": "Interest charged", "negative-amortization": "Unpaid interest added", "rate-change": "Rate change",
+  recast: "Payment recalculated", balloon: "Balloon", residual: "Residual",
+};
+
+export function scheduleEventLabel(eventType: string | null): string {
+  return EVENT_LABELS[eventType ?? ""] ?? eventType ?? "";
+}
 
 export type ScheduleRow = {
   key: string;
@@ -152,13 +164,23 @@ export function paymentNumberCell(row: Pick<ScheduleRow, "paymentNumberFrom" | "
 function elapsed(date: string, startDate: string): { year: number; month: number } {
   const [sy, sm] = startDate.split("-").map(Number);
   const [y, m] = date.split("-").map(Number);
-  const ordinal = Math.max(1, (y - sy) * 12 + (m - sm) + 1);
+  const ordinal = Math.max(1, (y - sy) * 12 + (m - sm));
   return { year: Math.floor((ordinal - 1) / 12) + 1, month: ((ordinal - 1) % 12) + 1 };
 }
 
 const monthName = (date: string, includeDay: boolean) => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", month: "short", year: "numeric", ...(includeDay ? { day: "numeric" as const } : {}) }).format(new Date(`${includeDay ? date : `${date}-01`}T00:00:00Z`));
 
-export function schedulePeriodLabel(period: string, view: ScheduleView, startDate: string): string {
+export function schedulePeriodLabel(period: string, view: ScheduleView, startDate: string, firstPaymentDate?: string, frequency?: ScheduleFrequency): string {
+  // Presentation reference only: the date one repayment interval before the first repayment.
+  if (firstPaymentDate && isIsoDate(firstPaymentDate)) {
+    switch (frequency) {
+      case "weekly": startDate = addDays(firstPaymentDate, -7); break;
+      case "fortnightly": startDate = addDays(firstPaymentDate, -14); break;
+      case "monthly": startDate = addMonths(firstPaymentDate, -1); break;
+      case "quarterly": startDate = addMonths(firstPaymentDate, -3); break;
+      case "annual": startDate = addMonths(firstPaymentDate, -12); break;
+    }
+  }
   if (view === "year") {
     const year = Number(period);
     const start = elapsed(`${period}-${year === Number(startDate.slice(0, 4)) ? startDate.slice(5, 7) : "01"}-01`, startDate).year;

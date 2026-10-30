@@ -112,8 +112,27 @@ describe("schedule labels", () => {
     if (!projection.ok) throw new Error(projection.blocked[0].message);
     const rows = aggregateSchedule(projection.events, "month");
     expect(rows.map(paymentNumberCell).filter(Boolean)).toEqual(["1", "2", "3"]);
-    expect(schedulePeriodLabel("2024-02", "month", "2024-01-01")).toBe("Yr 1, Mo 2 · Feb 2024");
-    expect(schedulePeriodLabel("2025-01", "month", "2024-01-01")).toBe("Yr 2, Mo 1 · Jan 2025");
+    expect(schedulePeriodLabel("2024-02", "month", "2024-01-01", "2024-02-01", "monthly")).toBe("Yr 1, Mo 1 · Feb 2024");
+    expect(schedulePeriodLabel("2025-01", "month", "2024-01-01", "2024-02-01", "monthly")).toBe("Yr 1, Mo 12 · Jan 2025");
+  });
+
+  it.each([
+    ["weekly", "2026-11-05", "Yr 1, Mo 1 · Nov 2026"],
+    ["fortnightly", "2026-11-12", "Yr 1, Mo 1 · Nov 2026"],
+    ["monthly", "2026-11-29", "Yr 1, Mo 1 · Nov 2026"],
+    ["quarterly", "2027-01-29", "Yr 1, Mo 3 · Jan 2027"],
+    ["annual", "2027-10-29", "Yr 1, Mo 12 · Oct 2027"],
+    ["monthly", "2024-02-29", "Yr 1, Mo 1 · Feb 2024"],
+    ["monthly", "2023-02-28", "Yr 1, Mo 1 · Feb 2023"],
+    ["annual", "2025-02-28", "Yr 1, Mo 12 · Feb 2025"],
+  ] as const)("labels the first %s repayment on %s", (frequency, first, expected) => {
+    expect(schedulePeriodLabel(first.slice(0, 7), "month", "2026-10-29", first, frequency)).toBe(expected);
+  });
+
+  it("uses the same reference for event and calendar-year views, with a safe fallback", () => {
+    expect(schedulePeriodLabel("2026-11-29", "events", "2026-10-29", "2026-11-29", "monthly")).toBe("Yr 1, Mo 1 · 29 Nov 2026");
+    expect(schedulePeriodLabel("2027", "year", "2026-10-29", "2026-11-29", "monthly")).toBe("Yr 1–2 · 2027");
+    expect(schedulePeriodLabel("2027-01", "month", "2026-10-29", "2026-11-29", "custom-dated")).toBe("Yr 1, Mo 3 · Jan 2027");
   });
 });
 

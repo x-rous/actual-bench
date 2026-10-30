@@ -73,6 +73,8 @@ export type WorkspaceFrameProps = {
   actions?: React.ReactNode;
   menu?: WorkspaceMenuItem[];
   dirty: boolean;
+  /** Clear any unsaved new-loan state when leaving without saving. */
+  onDiscard?: () => void;
   /** Save from the leave dialog; absent when the work cannot be saved yet. */
   onSaveAndLeave?: () => Promise<boolean>;
   children: React.ReactNode;
@@ -80,11 +82,12 @@ export type WorkspaceFrameProps = {
 
 const BACK_HREF = LOANS_PATH;
 
-export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabledTabs = {}, attention = {}, actions, menu = [], dirty, onSaveAndLeave, children }: WorkspaceFrameProps) {
+export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabledTabs = {}, attention = {}, actions, menu = [], dirty, onDiscard, onSaveAndLeave, children }: WorkspaceFrameProps) {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const leave = () => router.push(BACK_HREF);
+  const discardAndLeave = () => { onDiscard?.(); leave(); };
   // The guide opens on the section for the tab you are on.
   const [guide, setGuide] = useState<LoanGuideSection | null>(null);
 
@@ -92,7 +95,7 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <header className="flex flex-col gap-1 border-b border-border px-4 pt-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="ghost" size="sm" className="-ml-2 gap-1 text-muted-foreground" onClick={() => (dirty ? setLeaving(true) : leave())}>
+          <Button type="button" variant="ghost" size="sm" className="-ml-2 gap-1 text-muted-foreground" onClick={() => (dirty ? setLeaving(true) : discardAndLeave())}>
             <ArrowLeft aria-hidden="true" className="size-3.5" />
             Loans &amp; Debt
           </Button>
@@ -152,7 +155,7 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
           </DialogHeader>
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={() => setLeaving(false)}>Stay</Button>
-            <Button type="button" variant="outline" className="text-destructive" onClick={leave}>Discard changes</Button>
+            <Button type="button" variant="outline" className="text-destructive" onClick={discardAndLeave}>Discard changes</Button>
             {onSaveAndLeave ? (
               <Button
                 type="button"

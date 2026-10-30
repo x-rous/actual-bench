@@ -98,6 +98,8 @@ export type ObservedRepaymentAllocator = {
   push(repayment: ObservedRepayment): { ok: true; row: AllocatedRepayment } | { ok: false; message: string };
   /** What `push` would allocate for the next repayment, without recording it. */
   preview(repayment: ObservedRepayment): { ok: true; row: AllocatedRepayment } | { ok: false; message: string };
+  /** Change principal (minor units) on this date without settling or discarding interest. */
+  setBalance(date: IsoDate, principalMinor: number): { ok: true } | { ok: false; message: string };
 };
 
 /**
@@ -235,7 +237,22 @@ export function createObservedRepaymentAllocator(input: {
     return result;
   };
 
-  return { ok: true, allocator: { allocation, engineVersions: statementAllocationVersions(model), push, preview } };
+  const setBalance: ObservedRepaymentAllocator["setBalance"] = (date, principalMinor) => {
+    if (failure !== null) return { ok: false, message: failure };
+    if (!Number.isSafeInteger(principalMinor) || principalMinor < 0) return fail("The balance must be a non-negative amount.");
+    // A same-day anchor can follow a repayment effective the next calendar day.
+    const effective = shift === 1 && date === addDays(effectivePrevious, -1) ? effectivePrevious : date;
+    if (compareDates(effective, effectivePrevious) < 0) return fail("The balance change is earlier than the previous event.");
+    const economic = accrue(fromMinor(balanceMinor, digits), effectivePrevious, effective);
+    if (typeof economic === "string") return fail(economic);
+    actualToPrevious = add(actualToPrevious, economic);
+    if (allocation === "as-calculated") carriedIn = add(carriedIn, economic);
+    balanceMinor = principalMinor;
+    effectivePrevious = effective;
+    return { ok: true };
+  };
+
+  return { ok: true, allocator: { allocation, engineVersions: statementAllocationVersions(model), push, preview, setBalance } };
 }
 
 /**

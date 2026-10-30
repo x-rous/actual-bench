@@ -95,6 +95,7 @@ function NewLoanEditor() {
   const existing = useQuery({ queryKey: ["assets-debt", "debts", budget], queryFn: () => listDebts(budget!), enabled: !!budget });
   const [sim, setSim] = useState<SimulationState | null>(null);
   const [tracking, setTracking] = useState<TrackingState | null>(null);
+  const discarded = useRef(false);
   // New loans open on Calculation (owner decision); Activity exists once the loan is saved.
   const [tab, setTab] = useState<WorkspaceTab>("calculation");
   const [issues, setIssues] = useState<SaveIssue[]>([]);
@@ -121,7 +122,7 @@ function NewLoanEditor() {
   }, [key, budget, sim, existing.isLoading, existing.data]);
 
   useEffect(() => {
-    if (!key || !sim || !tracking) return;
+    if (!key || !sim || !tracking || discarded.current) return;
     drafts.set(key, { sim, tracking });
   }, [key, sim, tracking]);
 
@@ -184,10 +185,11 @@ function NewLoanEditor() {
       actions={actions}
       menu={tab === "setup" && newComplete ? [{ label: "Save as draft", onSelect: () => save.mutate("draft") }] : tab === "calculation" ? [{ label: "Reset loan", destructive: true, onSelect: () => setResetOpen(true) }] : []}
       dirty={dirty}
+      onDiscard={() => { discarded.current = true; if (key) drafts.delete(key); }}
     >
       <IssueList issues={issues} />
       {tab === "calculation" ? (
-        <SimulatorView embedded sim={sim} onChange={setSim} title="Schedule" badge="Not saved yet" revision={null} actions={null}
+        <SimulatorView embedded sim={sim} onChange={setSim} title="Schedule" loanName={tracking.name} badge="Not saved yet" revision={null} actions={null}
           external={{ comparing: false, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen }} />
       ) : (
         <>
@@ -433,7 +435,7 @@ function LoanEditor({ id }: { id: string }) {
       )}
       {tab === "assets" ? <LinkedAssetsTab detail={detail} digits={sim.minorDigits} today={loanTracking.today} owedMinor={result ? result.figures.owedInActualMinor : null} /> : null}
       {tab === "calculation" ? (
-        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} chartViewKey={`assets-debt:chart-view:${id}`} title="Schedule" badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null} tracked={scheduleTracked}
+        <SimulatorView embedded sim={sim} onChange={setSim} saved={saved.simulation} editorDirty={dirty} chartViewKey={`assets-debt:chart-view:${id}`} title="Schedule" loanName={tracking.name || detail.debt.name} badge={state} readOnly={readOnly} revision={detail.debt.currentRevision} actions={null} tracked={scheduleTracked}
           external={{ comparing, dialog: scheduleDialog, onDialogChange: setScheduleDialog, resetOpen, onResetOpenChange: setResetOpen }} offsetTracking={trackedOffsetAccounts.length ? {
           asOfDate: offsetAsOfDate,
           onAsOfDateChange: setOffsetAsOfDate,

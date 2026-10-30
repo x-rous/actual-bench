@@ -1,24 +1,31 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowRight, Calculator, Landmark, Lightbulb, Link2, ListChecks, Scale, ShieldCheck, TriangleAlert, Wallet } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ArrowDown, ArrowRight, BookOpen, Calculator, CalendarDays, CircleHelp, FileText, Landmark, Lightbulb, Link2, ListChecks, PanelTop, Scale, Settings2, ShieldCheck, Split, TriangleAlert, Wallet, type LucideIcon } from "lucide-react";
+import { GuideFrame } from "@/components/ui/guide-frame";
 import { cn } from "@/lib/utils";
-import { Example, Heading, Key, Para, Steps, Tag } from "@/features/credit-cards/components/guide/CreditCardGuide";
+import { Key, Tag } from "@/features/credit-cards/components/guide/CreditCardGuide";
+import { Example, Heading, Para, Steps } from "@/components/ui/guide-primitives";
 import { StatusBadge } from "../loan/presentation";
 import type { WorkspaceTab } from "../workspace/WorkspaceFrame";
+import { LoanSettingsGuide } from "./LoanSettingsGuide";
 
 /**
  * The Loans & Debt guide: one dialog, the picture first and the words second, with one example loan throughout
  * (a 350,000 loan over 4 years, repaid monthly from a bank account into an off-budget loan account).
  */
 
-export type LoanGuideSection = "start" | "calculator" | "events" | "method" | "link" | "repayments" | "split" | "ledger" | "assets" | "scenarios" | "safety" | "glossary";
+export type LoanGuideSection = "start" | "calculator" | "events" | "method" | "link" | "repayments" | "split" | "ledger" | "assets" | "scenarios" | "safety" | "settings" | "glossary";
 export const LOAN_GUIDE_SECTIONS: [LoanGuideSection, string][] = [
   ["start", "Getting started"], ["calculator", "Terms & Schedule"], ["events", "Events and what-ifs"], ["method", "Calculation method"],
   ["link", "Link to Actual"], ["repayments", "Repayments"], ["split", "How a split works"], ["ledger", "Loan Ledger"], ["assets", "Linked Assets"],
-  ["scenarios", "Common situations"], ["safety", "What Bench writes"], ["glossary", "Glossary"],
+  ["scenarios", "Common situations"], ["safety", "What Bench writes"], ["settings", "Settings"], ["glossary", "Glossary"],
 ];
+const SECTION_ICONS: Record<LoanGuideSection, LucideIcon> = {
+  start: BookOpen, calculator: Calculator, events: CalendarDays, method: Settings2, link: Link2,
+  repayments: ListChecks, split: Split, ledger: FileText, assets: Landmark, scenarios: Lightbulb,
+  safety: ShieldCheck, settings: PanelTop, glossary: CircleHelp,
+};
 
 /** The guide section that explains the loan tab you are on. */
 export const guideSectionForLoanTab = (tab: WorkspaceTab | null): LoanGuideSection => (
@@ -36,16 +43,16 @@ const TONES: Record<Tone, string> = {
 
 function Callout({ tone = "tip", title, children }: { tone?: "tip" | "warn"; title: string; children: ReactNode }) {
   const Icon = tone === "tip" ? Lightbulb : TriangleAlert;
-  return <aside className={cn("my-3 flex max-w-[55rem] gap-3 rounded-lg border px-3 py-2.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
+  return <aside className={cn("my-4 flex max-w-[55rem] gap-3 rounded-xl border px-4 py-3.5 text-xs", tone === "tip" ? "border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20" : "border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20")}>
     <Icon className={cn("mt-0.5 size-4 shrink-0", tone === "tip" ? "text-blue-600 dark:text-blue-400" : "text-amber-600 dark:text-amber-400")} aria-hidden />
-    <div><p className="font-semibold">{title}</p><div className="mt-0.5 leading-relaxed text-foreground/80">{children}</div></div>
+    <div><p className="font-semibold">{title}</p><div className="mt-1 leading-relaxed text-foreground/80">{children}</div></div>
   </aside>;
 }
 const Card = ({ icon: Icon, title, children, tone }: { icon: typeof Landmark; title: string; children: ReactNode; tone: Tone }) => (
-  <div className={cn("rounded-lg border p-3", TONES[tone])}><div className="flex items-center gap-2 text-xs font-semibold"><Icon className="size-4" aria-hidden />{title}</div><div className="mt-1.5 text-xs leading-relaxed text-foreground/80">{children}</div></div>
+  <div className={cn("rounded-xl border p-4 shadow-sm", TONES[tone])}><div className="flex items-center gap-2 text-xs font-semibold"><Icon className="size-4" aria-hidden />{title}</div><div className="mt-2 text-xs leading-relaxed text-foreground/80">{children}</div></div>
 );
 const Tile = ({ label, value, detail, tone }: { label: string; value: string; detail: string; tone?: Tone }) => (
-  <div className={cn("rounded-lg border px-3 py-2", tone ? TONES[tone] : "bg-background")}><p className="text-[11px] opacity-80">{label}</p><p className="text-base font-semibold tabular-nums">{value}</p><p className="text-[11px] opacity-80">{detail}</p></div>
+  <div className={cn("rounded-xl border px-4 py-3 shadow-sm", tone ? TONES[tone] : "bg-card")}><p className="text-[11px] opacity-80">{label}</p><p className="mt-1 text-base font-semibold tabular-nums">{value}</p><p className="mt-1 text-[11px] opacity-80">{detail}</p></div>
 );
 /** A transaction as Actual shows it, drawn small. */
 const Row = ({ account, text, amount, tone = "bank", note }: { account: string; text: ReactNode; amount: string; tone?: Tone; note?: string }) => (
@@ -104,20 +111,7 @@ function SplitPicture() {
 
 export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: LoanGuideSection; onSection: (section: LoanGuideSection) => void; onClose: () => void; docsUrl?: string }) {
   const link = (to: LoanGuideSection, text: string) => <button type="button" className="font-medium text-primary hover:underline" onClick={() => onSection(to)}>{text}</button>;
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="flex h-[85vh] flex-col gap-0 p-0 sm:max-w-[73.6rem]">
-      <DialogHeader className="shrink-0 border-b px-5 py-4">
-        <DialogTitle className="text-sm">Loans &amp; Debt guide</DialogTitle>
-        <DialogDescription className="text-xs">Work out a loan, then keep it in step with Actual: each repayment split into principal and interest, with the history in one place.{docsUrl && <> <a className="font-medium text-primary hover:underline" href={docsUrl} target="_blank" rel="noopener noreferrer">Full documentation</a></>}</DialogDescription>
-      </DialogHeader>
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <nav aria-label="Guide sections" className="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r p-2 pt-3">
-          {LOAN_GUIDE_SECTIONS.map(([id, label]) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => onSection(id)}
-            className={cn("rounded px-2 py-1.5 text-left text-xs transition-colors", section === id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground")}>{label}</button>)}
-        </nav>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5" aria-live="polite">
-          <h2 className="mb-4 text-base font-semibold">{LOAN_GUIDE_SECTIONS.find(([id]) => id === section)![1]}</h2>
-
+  return <GuideFrame title="Loans & Debt guide" description="Work out a loan, then keep it in step with Actual: each repayment split into principal and interest, with the history in one place." docsUrl={docsUrl} sections={LOAN_GUIDE_SECTIONS} icons={SECTION_ICONS} section={section} onSection={onSection} onClose={onClose}>
           {section === "start" && <>
             <Para>A loan in Bench can be two things. Until it is saved it is a <b>loan calculator</b>: change the amount, rate or term and see the repayment, the interest and the payoff date at once. Once it is saved and linked to its account in Actual, it is <b>tracked</b>: Bench lines each installment up with the payment you made, and splits it into principal and interest when you say so.</Para>
             <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-2">
@@ -160,7 +154,15 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
           </>}
 
           {section === "events" && <>
-            <Para>Events are things that change the loan between its regular repayments. Add them with the buttons above the Events list: <b>Extra payment</b>, <b>Redraw / Withdraw</b>, <b>Rate change</b>, <b>Fee</b> and <b>Repayment change</b>. Each can happen once or repeat.</Para>
+            <Para>Events are things that change the loan between its regular repayments. Add them with the buttons above the Events list. They affect the calculation; adding an event does not create a transaction in Actual.</Para>
+            <Heading>Choose an event</Heading>
+            <Example caption="Event types and what you can set" head={["Event", "How it works"]} rows={[
+              ["Extra payment", "Pay extra toward the loan or deposit into an enabled offset account. Set an amount and date; optionally repeat weekly, fortnightly, monthly, quarterly or annually through an end date."],
+              ["Redraw / Withdraw", "Borrow more from the loan or withdraw from an enabled offset account. Set an amount and date; optionally repeat through an end date."],
+              ["Fee", "Add a cost paid in cash or added to the loan. Set an amount and date; optionally repeat through an end date."],
+              ["Rate change", "Set a new rate and start date, with optional repayment and rate limits. Each change is entered separately."],
+              ["Repayment change", "Set a new scheduled repayment amount from a chosen date. Each change is entered separately."],
+            ]} />
             <Example caption="Where events come from on a tracked loan" head={["Source", "What it is", "Can you switch it off?"]} rows={[
               ["From Actual", "Extra principal, draws and fees in the Loan Ledger: what really happened", "No: it happened. Change its type in the Loan Ledger"],
               ["What-if", "An event after today that you are trying out", "Yes, with its On switch, to compare with and without"],
@@ -192,6 +194,7 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
               ["Still apart?", "Record a lender statement (⋯ menu → Check against lender statement) and let Bench continue from your lender's balance."],
             ]} />
             <Callout title="Rate changes">A rate change applies from its date; the repayment is recalculated by default, as most variable-rate loans do. In the rate change you can keep the repayment instead, so the loan runs longer or shorter.</Callout>
+            <Para>For each calculation setting and its choices, see {link("settings", "Settings")}.</Para>
           </>}
 
           {section === "link" && <>
@@ -309,6 +312,8 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
             <Callout title="Reconciled transactions">Bench never changes a reconciled transaction. Unlock it in Actual first if it needs to be split.</Callout>
           </>}
 
+          {section === "settings" && <LoanSettingsGuide />}
+
           {section === "glossary" && <Example caption="Terms" head={["Term", "Meaning"]} rows={[
             ["Installment", "One scheduled repayment, numbered from the start of the loan."],
             ["Tracking start", "The first installment Bench matches to payments; earlier ones count as paid."],
@@ -323,8 +328,5 @@ export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: L
             ["Payment rule", "Conditions that find repayments recorded as an expense, not a transfer."],
             ["Off budget", "An account Actual keeps outside your budget, as loan accounts are."],
           ]} />}
-        </div>
-      </div>
-    </DialogContent>
-  </Dialog>;
+  </GuideFrame>;
 }

@@ -49,7 +49,7 @@ export function explainBlock(reason: Pick<BlockReason, "code" | "message" | "dat
         ? { category: "switch", text: `The loan's real history includes a transaction${on(date)}, part-way through a repayment period. Interest worked out once per period cannot restart from the middle of one.` }
         : { category: "switch", text: "The first repayment period is not a full period, so interest has to be worked out day by day." };
     case "negative-amortization":
-      return { category: "fix", text: `The repayment${on(date)} does not cover the interest charged for its period, so the balance would grow. Raise the repayment or review the loan's terms.` };
+      return { category: "fix", text: `The repayment${on(date)} does not cover the interest charged for its period, so the balance would grow. Check your lender's terms: if interest is charged and added to the balance before repayment, select the lender's charging frequency under Set calculation method → Interest → Interest is charged, and check the dates. If the contract permits unpaid interest to be added to the balance when a repayment falls short, enable “The contract allows negative amortization” under Set calculation method → Repayment. Also check that the Contract repayment amount matches your lender's terms.` };
     case "negative-repayment":
       return { category: "fix", text: `A repayment${on(date)} has a negative amount. Check the amounts you entered.` };
     case "rate-gap":

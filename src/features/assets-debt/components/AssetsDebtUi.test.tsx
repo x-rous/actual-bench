@@ -16,6 +16,7 @@ import { SAVE_BOUNDARY } from "./saveBoundary";
 import { ScheduleTable } from "./simulator/ScheduleTable";
 import { NOT_ADVICE, SimulatorView } from "./simulator/SimulatorView";
 import { extraImpact } from "./simulator/ExtraTransactionsSection";
+import * as csv from "@/lib/csv";
 
 /**
  * The Assets & Debt workspace UI (RD-084 P1.3, P1.3b T204–T216, T219, T220).
@@ -47,6 +48,7 @@ jest.mock("../lib/useLoanTracking", () => {
   return { ...actual, useLoanTracking: (detail: unknown) => (mockTracking.current ?? actual.useLoanTracking(detail)) };
 });
 jest.mock("sonner", () => ({ toast: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() } }));
+jest.mock("@/lib/csv", () => ({ ...jest.requireActual("@/lib/csv"), downloadCsv: jest.fn() }));
 
 const mocked = api as jest.Mocked<typeof api>;
 const WAIT = { timeout: 8000 };
@@ -805,8 +807,26 @@ describe("the schedule (O2 rate column, O5 labels)", () => {
     render(<ScheduleTable events={eventsOf(s)} profile={s.profile} startDate={s.startDate} digits={2} />);
     expect(headers()).toEqual(["Payment #", "Period", "Payment", "Principal", "Interest", "Balance"]);
     expect(screen.getAllByRole("cell").some((cell) => cell.textContent === "1")).toBe(true);
-    expect(screen.getByText("Yr 1, Mo 2 · Feb 2024")).toBeInTheDocument();
+    expect(screen.getByText("Yr 1, Mo 1 · Feb 2024")).toBeInTheDocument();
     expect(screen.queryByText(/Interest is charged separately/)).toBeNull();
+  });
+
+  it("uses an explicitly delayed first repayment as the schedule label reference", async () => {
+    wrap(<Harness initial={shortLoan({ firstPaymentDate: "2024-04-01" })} />);
+    expect(await screen.findByText("Yr 1, Mo 1 · Apr 2024", {}, WAIT)).toBeInTheDocument();
+  });
+
+  it("exports the full calculation from the schedule", async () => {
+    const download = csv.downloadCsv as jest.MockedFunction<typeof csv.downloadCsv>;
+    download.mockClear();
+    wrap(<Harness initial={shortLoan()} />);
+    const button = await screen.findByRole("button", { name: "Export CSV" }, WAIT);
+    await waitFor(() => expect(button).toBeEnabled(), WAIT);
+    fireEvent.click(button);
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(download.mock.calls[0][2]).toEqual({ includeBom: true });
+    const rows = download.mock.calls[0][1];
+    expect(rows).toEqual(expect.arrayContaining([["Headline results"], ["Amortization schedule - all events"], ["Amortization schedule - monthly"], ["Amortization schedule - yearly"]]));
   });
 
   it("says Debt reduction, with help, when interest is charged separately; interest charges are their own events", () => {
@@ -883,7 +903,7 @@ describe("the new-loan flow", () => {
   });
 
   it("opens on Schedule in the workspace, keeps the unsaved simulation per connection and budget, and saves only from Settings", async () => {
-    wrap(<NewLoanView />);
+    const view = wrap(<NewLoanView />);
     await screen.findByLabelText("Loan amount");
     const sections = screen.getByRole("navigation", { name: "Loan sections" });
     expect(within(sections).getAllByRole("button").map((b) => b.textContent)).toEqual(["Terms & Schedule", "Link to Actual", "Repayments", "Loan Ledger", "Linked Assets"]);
@@ -898,6 +918,7 @@ describe("the new-loan flow", () => {
     expect(method.compareDocumentPosition(reset) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     for (const button of [how, method, reset]) expect(button.querySelector("svg")).not.toBeNull();
     type("Loan amount", "30000");
+    const discardedAmount = (screen.getByLabelText("Loan amount") as HTMLInputElement).value;
     type("Years", "3");
     type("Interest rate", "6");
     expect(sessionStorage.getItem("assets-debt:new-loan:c1:b1")).toBeNull();
@@ -907,6 +928,8 @@ describe("the new-loan flow", () => {
     const next = screen.getByRole("button", { name: "Next: Link to Actual" });
     expect(next.querySelector(".lucide-arrow-right")).not.toBeNull();
     await waitFor(() => expect(next).toBeEnabled(), WAIT);
+    expect(screen.queryByText(/Paid so far/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\b(?:yrs?|mos?) left/)).not.toBeInTheDocument();
     fireEvent.click(next);
     expect(await screen.findByRole("heading", { name: "Loan and its account" })).toBeInTheDocument();
     expect(screen.getByText(new RegExp(SAVE_BOUNDARY.replace(/[.]/g, "\\.")))).toBeInTheDocument();
@@ -915,6 +938,15 @@ describe("the new-loan flow", () => {
     // The loan settings are not complete yet, so the save keeps it as a draft to finish later.
     expect(screen.getByRole("button", { name: "Save as draft" })).toBeInTheDocument();
     expect(mocked.createDebt).not.toHaveBeenCalled();
+    type("Name", "Discarded loan");
+    fireEvent.click(within(sections).getByRole("button", { name: "Terms & Schedule" }));
+    fireEvent.click(screen.getByRole("button", { name: /Loans & Debt/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard changes" }));
+    view.unmount();
+    wrap(<NewLoanView />);
+    await screen.findByLabelText("Loan amount");
+    expect(screen.queryByRole("heading", { name: "Discarded loan" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Loan amount")).not.toHaveValue(discardedAmount);
   });
 });
 
