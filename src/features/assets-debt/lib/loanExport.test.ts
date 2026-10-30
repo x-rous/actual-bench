@@ -29,3 +29,17 @@ it("exports the current loan details, events and every schedule row in all three
   expect(toCsv(rows)).toContain("'=example");
   expect(loanExportFilename("Home loan", "2026-10-30")).toBe("home-loan-calculation-2026-10-30.csv");
 });
+
+it("exports revolving payment terms and the same event names shown in the schedule", () => {
+  const loan = sim({ shape: "revolving-credit", revolving: { paymentModel: "percent-of-balance", percentOfBalanceBps: 250, minimumFloorMinor: 5000 } });
+  const projection = project(sim());
+  if (!projection.ok) throw new Error("projection blocked");
+  const template = projection.events[0];
+  const events = [{ ...template, eventType: "interest-charge" as const }, { ...template, eventType: "negative-amortization" as const }];
+  const rows = loanExportRows({ sim: loan, events, name: "Credit", today: "2026-10-30", generatedAt: "now", revision: null, unsaved: true });
+  expect(rows).toContainEqual(["Minimum payment model", "Percent of balance"]);
+  expect(rows).toContainEqual(["Share of balance (%)", 2.5]);
+  expect(rows).toContainEqual(["Minimum amount", "50.00"]);
+  expect(rows.some((row) => row[3] === "Interest charged")).toBe(true);
+  expect(rows.some((row) => row[3] === "Unpaid interest added")).toBe(true);
+});

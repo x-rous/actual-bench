@@ -57,6 +57,8 @@ export type SimulatorViewProps = {
   onChange: (next: SimulationState) => void;
   /** The saved simulation, for "Compare with saved" (existing loans only). */
   saved?: SimulationState | null;
+  /** Includes edits to loan tracking details such as its name. */
+  editorDirty?: boolean;
   title: string;
   loanName?: string;
   badge: string;
@@ -110,7 +112,7 @@ function composeTracked(projection: DebtProjection | null, contract: DebtProject
   };
 }
 
-export function SimulatorView({ sim, onChange, saved = null, title, loanName = "", badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external, tracked = null, chartViewKey }: SimulatorViewProps) {
+export function SimulatorView({ sim, onChange, saved = null, editorDirty = false, title, loanName = "", badge, stepLabel, readOnly = false, revision, actions, offsetTracking, embedded = false, external, tracked = null, chartViewKey }: SimulatorViewProps) {
   const [comparingLocal, setComparing] = useState(false);
   const comparing = external ? external.comparing : comparingLocal;
   const [guide, setGuide] = useState<LoanGuideSection | null>(null);
@@ -291,7 +293,7 @@ export function SimulatorView({ sim, onChange, saved = null, title, loanName = "
                 } : undefined} />
               <div data-testid="schedule-region" className="pt-3">
                 <ScheduleTable events={events} profile={sim.profile} startDate={sim.startDate} firstPaymentDate={isIsoDate(sim.startDate) && (!sim.firstPaymentDate || isIsoDate(sim.firstPaymentDate)) ? derivedFirstPaymentDate(sim) : undefined} digits={sim.minorDigits} today={calendarToday} tracked={tracked ? { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore } : null}
-                  exportDisabled={live.status !== "ok"} onExport={() => downloadCsv(loanExportFilename(loanName, calendarToday), loanExportRows({ sim, events, name: loanName, today: calendarToday, generatedAt: new Date().toLocaleString(), revision, unsaved: saved === null || unsaved, tracked, ...(tracked ? { source: (period, paymentNumber) => scheduleSource(period, { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore }, paymentNumber) } : {}) }), { includeBom: true })} />
+                  exportDisabled={live.status !== "ok"} onExport={() => downloadCsv(loanExportFilename(loanName, calendarToday), loanExportRows({ sim, events, name: loanName, today: calendarToday, generatedAt: new Date().toLocaleString(), revision, unsaved: saved === null || unsaved || editorDirty, tracked, ...(tracked ? { source: (period, paymentNumber) => scheduleSource(period, { startDate: tracked.startDate, today: tracked.today, missingDueDates: tracked.missingDueDates, anchorDate: tracked.anchor.date, installmentsBefore: tracked.installmentsBefore }, paymentNumber) } : {}) }), { includeBom: true })} />
               </div>
             </>
           ) : null}

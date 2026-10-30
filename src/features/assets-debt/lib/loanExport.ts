@@ -1,5 +1,5 @@
 import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection";
-import { aggregateSchedule, paymentNumberCell, schedulePeriodLabel, type ScheduleView } from "./schedule";
+import { aggregateSchedule, paymentNumberCell, scheduleEventLabel, schedulePeriodLabel, type ScheduleView } from "./schedule";
 import { headline } from "./results";
 import { derivedFirstPaymentDate, type SimulationState } from "./simulatorModel";
 import type { TrackedHistory } from "./trackedSchedule";
@@ -31,6 +31,7 @@ export function loanExportRows({ sim, events, name, today, generatedAt, revision
   rows.push(["Repayment frequency", label(sim.profile.repaymentFrequency)], ["Regular repayment", amount(metric.regularRepaymentMinor)], ["Total repayments", amount(metric.totalRepaidMinor)], ["Total interest", amount(metric.totalInterestMinor)], ["Payoff date", metric.payoffDate ?? "Not within the term"]);
   section("Loan inputs and terms");
   rows.push(["Loan type", label(sim.shape)], ["Loan amount", amount(sim.principalMinor)], ["Start date", sim.startDate], ["Amortization term (months)", sim.termMonths], ["Contract term (months)", sim.contractTermMonths], ["Contract maturity date", sim.maturityDate], ["First repayment date (entered)", sim.firstPaymentDate], ["First repayment date (effective)", derivedFirstPaymentDate(sim)], ["First interest charge", sim.firstInterestChargeDate], ["Contract repayment amount", amount(sim.contractualPaymentMinor)], ["Credit limit", amount(sim.creditLimitMinor)], ["Interest-only enabled", value(sim.interestOnly)]);
+  if (sim.shape === "revolving-credit" && sim.revolving) rows.push(["Minimum payment model", label(sim.revolving.paymentModel)], ["Share of balance (%)", sim.revolving.percentOfBalanceBps == null ? "" : sim.revolving.percentOfBalanceBps / 100], ["Minimum amount", amount(sim.revolving.minimumFloorMinor)]);
   section("Calculation settings", ["Setting", "Value"]);
   for (const [key, item] of Object.entries(sim.profile)) {
     if ((key === "rounding" || key === "eventOrder") && typeof item === "object" && item !== null) {
@@ -64,7 +65,7 @@ export function loanExportRows({ sim, events, name, today, generatedAt, revision
     section(title, ["Payment #", view === "events" ? "Date" : "Period", "Loan period", ...(view === "events" ? ["Event"] : []), ...(source ? ["Source"] : []), "Payment", "Principal / debt reduction", "Interest", "Extra repayment", "Fees", "From offset", "Other funds", "Offset applied", "Interest-bearing balance", "Rates (%)", "Draw / redraw", "Unpaid interest added", "Balloon", "Residual", "Balance"]);
     for (const row of aggregateSchedule(events, view)) rows.push([
       paymentNumberCell(row), row.period, schedulePeriodLabel(row.period, view, sim.startDate, derivedFirstPaymentDate(sim), sim.profile.repaymentFrequency),
-      ...(view === "events" ? [label(row.eventType ?? "")] : []), ...(source ? [source(row.period, row.paymentNumberTo)] : []),
+      ...(view === "events" ? [scheduleEventLabel(row.eventType)] : []), ...(source ? [source(row.period, row.paymentNumberTo)] : []),
       amount(row.paymentMinor), amount(row.principalMinor), amount(row.interestMinor), amount(row.extraRepaymentMinor), amount(row.feesMinor),
       row.hasRepaymentFunding ? amount(row.offsetFundedMinor) : "", row.hasRepaymentFunding ? amount(row.otherFundsMinor) : "", amount(row.offsetAppliedMinor), amount(row.interestBearingMinor), row.rates.map(fractionToPercent).join("; "), amount(row.drawMinor), amount(row.unpaidInterestMinor), amount(row.balloonMinor), amount(row.residualMinor), amount(row.closingBalanceMinor),
     ]);

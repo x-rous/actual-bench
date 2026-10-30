@@ -14,6 +14,16 @@ import type { ScheduleFrequency } from "@/lib/financial-models/calendar/schedule
 
 export type ScheduleView = "events" | "month" | "year";
 
+const EVENT_LABELS: Record<string, string> = {
+  repayment: "Repayment", "final-payment": "Final payment", "extra-repayment": "Extra repayment", draw: "Draw", fee: "Fee",
+  "interest-charge": "Interest charged", "negative-amortization": "Unpaid interest added", "rate-change": "Rate change",
+  recast: "Payment recalculated", balloon: "Balloon", residual: "Residual",
+};
+
+export function scheduleEventLabel(eventType: string | null): string {
+  return EVENT_LABELS[eventType ?? ""] ?? eventType ?? "";
+}
+
 export type ScheduleRow = {
   key: string;
   paymentNumberFrom: number | null;

@@ -6,7 +6,7 @@ import type { DebtProjectionEvent } from "@/lib/financial-models/loan/projection
 import type { CalculationProfile } from "@/lib/financial-models/loan/profile";
 import { cn } from "@/lib/utils";
 import { formatAmount, fractionToPercent } from "../../lib/money";
-import { aggregateSchedule, paymentNumberCell, principalLabel, rateCell, scheduleColumns, schedulePeriodLabel, type ColumnId, type ScheduleRow, type ScheduleView } from "../../lib/schedule";
+import { aggregateSchedule, paymentNumberCell, principalLabel, rateCell, scheduleColumns, scheduleEventLabel, schedulePeriodLabel, type ColumnId, type ScheduleRow, type ScheduleView } from "../../lib/schedule";
 import { HelpDialogButton } from "./ConfigurationSection";
 
 /**
@@ -15,20 +15,6 @@ import { HelpDialogButton } from "./ConfigurationSection";
  * straight from engine fields (lib/schedule.ts). Virtualized, with sticky
  * headers and table semantics for assistive technology.
  */
-
-const EVENT_LABELS: Record<string, string> = {
-  repayment: "Repayment",
-  "final-payment": "Final payment",
-  "extra-repayment": "Extra repayment",
-  draw: "Draw",
-  fee: "Fee",
-  "interest-charge": "Interest charged",
-  "negative-amortization": "Unpaid interest added",
-  "rate-change": "Rate change",
-  recast: "Payment recalculated",
-  balloon: "Balloon",
-  residual: "Residual",
-};
 
 const VIEWS: { id: ScheduleView; label: string }[] = [
   { id: "events", label: "All events" },
@@ -86,7 +72,7 @@ export function ScheduleTable({ events, profile, startDate, firstPaymentDate, di
       case "period":
         return schedulePeriodLabel(r.period, view, startDate, firstPaymentDate, profile.repaymentFrequency);
       case "event":
-        return EVENT_LABELS[r.eventType ?? ""] ?? r.eventType ?? "";
+        return scheduleEventLabel(r.eventType);
       case "payment":
         return money(r.paymentMinor);
       case "principal":
