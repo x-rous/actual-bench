@@ -107,7 +107,11 @@ function composeTracked(projection: DebtProjection | null, contract: DebtProject
   if (!projection?.ok || !contract?.ok) return null;
   return {
     ...projection,
-    events: [...contract.events.filter((e) => e.date < tracked.startDate), ...tracked.events, ...projection.events.filter((e) => e.date > tracked.anchor.date)],
+    events: [
+      ...contract.events.filter((e) => e.date < tracked.startDate).map((e) => ({ ...e, diagnostics: { ...e.diagnostics, chartSource: "contract" } })),
+      ...tracked.events.map((e) => ({ ...e, diagnostics: { ...e.diagnostics, chartSource: "actual" } })),
+      ...projection.events.filter((e) => e.date > tracked.anchor.date).map((e) => ({ ...e, diagnostics: { ...e.diagnostics, chartSource: "projected" } })),
+    ],
     offsetStates: [...contract.offsetStates.filter((o) => o.date < tracked.startDate), ...projection.offsetStates],
   };
 }
@@ -170,9 +174,9 @@ export function SimulatorView({ sim, onChange, saved = null, editorDirty = false
   const frequency = labelOf(REPAYMENT_FREQUENCY_OPTIONS, sim.profile.repaymentFrequency).toLowerCase();
   const chart = useMemo(() => {
     if (!projection?.ok) return null;
-    const data = chartSeries(projection, sim, { view: chartView, comparison: live.comparison });
+    const data = chartSeries(projection, sim, { view: chartView, comparison: live.comparison, baseline: hasExtras ? baseProjection : null, trackedAnchor: tracked?.anchor });
     return tracked ? withTracking(data, tracked, chartView) : data;
-  }, [projection, live.comparison, sim, chartView, tracked]);
+  }, [projection, live.comparison, sim, chartView, tracked, hasExtras, baseProjection]);
   const calendarToday = useLocalToday();
   const calendarTodayForDetails = tracked?.today ?? calendarToday;
   const details = useMemo(() => {

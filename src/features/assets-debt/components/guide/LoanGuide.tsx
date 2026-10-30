@@ -79,7 +79,7 @@ function ChartSketch() {
     </svg>
     <figcaption className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
       <span><b className="text-blue-600">━</b> Loan balance (the calculation)</span><span><b className="text-green-600">━</b> Balance in Actual (steps on payment dates)</span>
-      <span><b className="text-orange-600">┅</b> Interest paid so far</span><span><b>┆</b> Today</span><span><b className="opacity-40">▮</b> Before tracking</span>
+      <span><b className="text-orange-600">┅</b> Interest paid</span><span><b>┆</b> Today</span><span><b className="opacity-40">▮</b> Before tracking</span>
     </figcaption>
   </figure>;
 }

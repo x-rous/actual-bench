@@ -48,6 +48,8 @@ export type DebtProjectionEvent = {
   principalMovementMinor: number;
   interestMinor: number;
   feesMinor: number;
+  /** Original economic allocation lines; amounts are in minor units. */
+  lines?: ModelEvent["lines"];
   balanceBeforeMinor: number;
   balanceAfterMinor: number;
   certainty: Certainty;
@@ -132,6 +134,7 @@ function projectDebtImpl(input: DebtProjectionInput, version: typeof PROJECTION_
         principalMovementMinor: e.principalMovementMinor,
         interestMinor: e.interestMinor,
         feesMinor: e.feesMinor,
+        lines: e.lines,
         balanceBeforeMinor: e.balanceBeforeMinor,
         balanceAfterMinor: e.balanceAfterMinor,
         certainty: e.certainty,

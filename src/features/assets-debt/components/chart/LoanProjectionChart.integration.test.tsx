@@ -25,5 +25,7 @@ it("renders a persistent vertical SVG line for a rate change", async () => {
     expect(line).not.toBeNull();
     expect(line?.getAttribute("x1")).toBe(line?.getAttribute("x2"));
     expect(line?.getAttribute("y1")).not.toBe(line?.getAttribute("y2"));
+    expect(container.querySelectorAll(".recharts-cartesian-grid-horizontal line").length).toBeGreaterThan(2);
+    expect(container.querySelectorAll(".recharts-cartesian-grid-vertical line").length).toBe(1);
   });
 });
