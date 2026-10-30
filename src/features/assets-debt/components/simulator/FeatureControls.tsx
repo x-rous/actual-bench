@@ -175,7 +175,8 @@ export function FeatureControls({ sim, change, propose }: Props) {
         {offset ? (
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-2">
-            <MoneyField className="col-span-2" label="Offset account starting balance" valueMinor={startingBalance?.amountMinor ?? 0} minorDigits={sim.minorDigits} onChange={setStartingBalance} />
+            <MoneyField label="Offset starting balance" valueMinor={startingBalance?.amountMinor ?? 0} minorDigits={sim.minorDigits} onChange={setStartingBalance} />
+            <DateField label="Offset start date" value={offset.effectiveFrom} onChange={setOffsetFrom} />
             <PercentField label="Offset share" valueFraction={bpsToFraction(offset.percentageBps)} onChange={(fraction) => { const bps = fractionToBps(fraction); if (bps && bps >= 1 && bps <= 10_000) setOffset({ percentageBps: bps }); }} />
             <SelectField label="Balance used" value={offset.basis} options={OFFSET_BASIS_OPTIONS} onChange={(basis) => setOffset({ basis: basis as SimOffset["basis"] })} />
             </div>
@@ -186,8 +187,7 @@ export function FeatureControls({ sim, change, propose }: Props) {
               </button>
               {offsetAdvancedOpen ? (
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <MoneyField className="col-span-2" label="Offset cap (optional)" valueMinor={offset.capMinor} minorDigits={sim.minorDigits} onChange={(capMinor) => setOffset({ capMinor: capMinor && capMinor > 0 ? capMinor : null })} />
-                  <DateField label="Offset start date" value={offset.effectiveFrom} onChange={setOffsetFrom} />
+                  <MoneyField label="Offset cap (optional)" valueMinor={offset.capMinor} minorDigits={sim.minorDigits} onChange={(capMinor) => setOffset({ capMinor: capMinor && capMinor > 0 ? capMinor : null })} />
                   <DateField label="Offset end date (optional)" value={offset.effectiveTo ?? ""} onChange={(effectiveTo) => setOffset({ effectiveTo: effectiveTo || null })} />
                 </div>
               ) : null}

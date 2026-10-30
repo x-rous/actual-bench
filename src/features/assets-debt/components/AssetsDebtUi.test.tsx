@@ -651,7 +651,7 @@ describe("O1: features that need day-by-day interest", () => {
     await waitFor(() => expect(prompt()).toBeNull());
     expect(states).toEqual([]);
     expect(screen.getByRole("switch", { name: /Offset account/ })).not.toBeChecked();
-    expect(screen.queryByLabelText("Offset account starting balance")).toBeNull();
+    expect(screen.queryByLabelText("Offset starting balance")).toBeNull();
   });
 
   it("Escape also cancels the prompt", async () => {
@@ -676,7 +676,7 @@ describe("O1: features that need day-by-day interest", () => {
     expect(next.offsets).toHaveLength(1);
     expect({ ...next, profile: null, offsets: [], assumptions: [] }).toEqual({ ...initial, profile: null, offsets: [], assumptions: [] });
     expect(project(next).ok).toBe(true);
-    expect(await screen.findByLabelText("Offset account starting balance")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Offset starting balance")).toBeInTheDocument();
     expect(screen.queryByText("Enter the starting balance of your offset account.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "About Offset account help" }));
     expect(await screen.findByRole("dialog", { name: "Offset account help" })).toHaveTextContent(/opening simulated offset balance/);
@@ -695,7 +695,8 @@ describe("O1: features that need day-by-day interest", () => {
     const funding = screen.getByRole("switch", { name: /Draw scheduled repayments from offset/ });
     expect(funding).not.toBeChecked();
     expect(screen.queryByText(/Simulation only.*does not create, move, or match transactions in Actual/)).toBeNull();
-    expect(screen.queryByLabelText("Offset start date")).toBeNull();
+    expect(screen.getByLabelText("Offset start date")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Offset end date (optional)")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Advanced offset settings" }));
     expect(screen.getByLabelText("Offset start date")).toBeInTheDocument();
     expect(screen.getByLabelText("Offset end date (optional)")).toBeInTheDocument();

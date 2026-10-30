@@ -39,7 +39,7 @@ export function trackedHistory(result: Extract<TrackingResult, { ok: true }>, st
   for (const inst of result.installments) {
     const p = inst.payment;
     if (!p || p.date > today || inst.status === "missing" || inst.status === "upcoming") continue;
-    steps.push({ date: p.date, order: 2, apply: (before) => event(p.date, "repayment", { cashMovementMinor: -p.amountMinor, principalMovementMinor: -inst.principalMinor, interestMinor: inst.interestMinor, feesMinor: inst.feesMinor, balanceBeforeMinor: before, balanceAfterMinor: before - inst.principalMinor }) });
+    steps.push({ date: p.date, order: 2, apply: (before) => event(p.date, "repayment", { cashMovementMinor: -p.amountMinor, principalMovementMinor: -inst.principalMinor, interestMinor: inst.interestMinor, feesMinor: inst.feesMinor, ...(inst.principalMinor + inst.interestMinor + inst.feesMinor === p.amountMinor ? { lines: [{ kind: "principal", amountMinor: inst.principalMinor }, { kind: "interest", amountMinor: inst.interestMinor }, { kind: "fee", amountMinor: inst.feesMinor }] } : {}), balanceBeforeMinor: before, balanceAfterMinor: before - inst.principalMinor }) });
   }
   for (const e of result.events) {
     if (e.date > today) continue;

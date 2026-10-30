@@ -101,7 +101,7 @@ describe("projection (T067)", () => {
     expect(p.offsetStates).toEqual([]);
     const e = p.events[0];
     expect(Object.keys(e).sort()).toEqual(
-      ["balanceAfterMinor", "balanceBeforeMinor", "cashMovementMinor", "categoryAllocations", "certainty", "date", "debtAccountId", "diagnostics", "engineVersions", "eventType", "feesMinor", "interestMinor", "modelRevision", "principalMovementMinor", "sourceAccountId"].sort()
+      ["balanceAfterMinor", "balanceBeforeMinor", "cashMovementMinor", "categoryAllocations", "certainty", "date", "debtAccountId", "diagnostics", "engineVersions", "eventType", "feesMinor", "interestMinor", "lines", "modelRevision", "principalMovementMinor", "sourceAccountId"].sort()
     );
     expect(e.modelRevision).toBe(3);
     expect(e.engineVersions).toMatchObject({ engine: "loan-daily@8", projection: "projection@2" });
