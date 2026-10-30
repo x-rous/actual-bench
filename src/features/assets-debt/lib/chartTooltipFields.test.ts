@@ -89,6 +89,40 @@ describe("the loan chart's installment and elapsed time", () => {
     expect(points.find((point) => point.period === "2024-03")?.events).toEqual(expect.arrayContaining([{ date: "2024-03-15", type: "payment-change" }]));
   });
 
+  it("marks repayment changes before the first repayment and keeps the opening baseline", () => {
+    const s = sim({ profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE }, assumptions: [
+      { key: "early", kind: "extra-repayment", effectiveFrom: "2024-01-15", recurrence: null, amountMinor: 100_000, feeTreatment: null, offsetAccountId: null, note: null },
+      { key: "payment", kind: "payment-change", effectiveFrom: "2024-01-20", recurrence: null, amountMinor: 300_000, feeTreatment: null, offsetAccountId: null, note: null },
+    ] });
+    const projection = project(s);
+    if (!projection.ok) throw new Error("blocked");
+    const points = chartSeries(projection, s, { view: "month", baseline: project(sim()) }).points;
+    expect(points.find((p) => p.openingDate)?.baseline).toBe(s.principalMinor);
+    expect(points.find((p) => p.period === "2024-01")?.events).toEqual(expect.arrayContaining([{ date: "2024-01-20", type: "payment-change" }]));
+    const tracked = chartSeries(projection, s, { view: "month", baseline: project(sim()), trackedAnchor: { date: "2024-01-10", restartDate: "2024-01-10" } });
+    expect(tracked.points.find((p) => p.openingDate)?.baseline).toBeUndefined();
+  });
+
+  it("does not move current balance dates to later baseline dates", () => {
+    const s = sim();
+    const projection = project(s);
+    if (!projection.ok) throw new Error("blocked");
+    const event = projection.events[0];
+    const points = chartSeries({ ...projection, events: [{ ...event, date: "2024-02-01" }] }, s, { view: "month", baseline: { ...projection, events: [{ ...event, date: "2024-02-20" }] } }).points;
+    expect(points.find((p) => p.period === "2024-02")?.date).toBe("2024-02-01");
+  });
+
+  it("marks offset changes only when the total changes", () => {
+    const s = sim({ ...offsetOf(5_000_000), profile: { ...sim().profile, ...DAILY_MONTHLY_CHARGE } });
+    const projection = project(s);
+    if (!projection.ok || !projection.offsetStates[0]) throw new Error("missing offset state");
+    const opening = projection.offsetStates[0];
+    const offsetStates = [opening, { ...opening, date: "2024-02-10" }, { ...opening, date: "2024-03-10", totalBalanceMinor: opening.totalBalanceMinor + 100 }];
+    const points = chartSeries({ ...projection, offsetStates }, s, { view: "month" }).points;
+    expect(points.find((p) => p.period === "2024-02")?.events?.some((e) => e.type === "offset-change")).not.toBe(true);
+    expect(points.find((p) => p.period === "2024-03")?.events).toEqual(expect.arrayContaining([{ date: "2024-03-10", type: "offset-change" }]));
+  });
+
   it("gives the payment in the period, the interest in it, extra payments and how much is repaid", () => {
     const s = sim({ assumptions: [{ key: "x", kind: "extra-repayment", effectiveFrom: "2024-03-01", recurrence: null, amountMinor: 1_000_000, feeTreatment: null, offsetAccountId: null, note: null }] });
     const points = chartSeries(project(s), s, { view: "month" }).points;

@@ -186,13 +186,16 @@ export function chartSeries(projection: DebtProjection, sim: SimulationState, op
     if (typeof e.diagnostics.interestBearingMinor === "number") point.interestBearing = e.diagnostics.interestBearingMinor;
     byPeriod.set(period, point);
   }
+  let previousOffset: number | undefined;
   for (const state of projection.offsetStates) {
+    const changed = previousOffset !== undefined && previousOffset !== state.totalBalanceMinor;
+    previousOffset = state.totalBalanceMinor;
     if (state.date <= sim.startDate) continue;
     const period = keyOf(state.date);
     const point = byPeriod.get(period) ?? { period };
     if (!point.date || state.date > point.date) point.date = state.date;
     point.offsetBalance = state.totalBalanceMinor;
-    if (state.date > sim.startDate && !point.events?.some((event) => event.date === state.date && event.type === "offset-change")) (point.events ??= []).push({ date: state.date, type: "offset-change" });
+    if (changed && !point.events?.some((event) => event.date === state.date && event.type === "offset-change")) (point.events ??= []).push({ date: state.date, type: "offset-change" });
     byPeriod.set(period, point);
   }
   if (options.comparison?.ok) {
@@ -208,7 +211,7 @@ export function chartSeries(projection: DebtProjection, sim: SimulationState, op
     for (const e of options.baseline.events) {
       const period = keyOf(e.date);
       const point = byPeriod.get(period) ?? { period };
-      if (!point.date || e.date > point.date) point.date = e.date;
+      if (!point.date || (point.balance === undefined && e.date > point.date)) point.date = e.date;
       point.baseline = e.balanceAfterMinor;
       byPeriod.set(period, point);
     }
@@ -216,7 +219,7 @@ export function chartSeries(projection: DebtProjection, sim: SimulationState, op
   for (const assumption of sim.assumptions) {
     if (assumption.kind !== "payment-change" || assumption.enabled === false || (options.trackedAnchor && assumption.effectiveFrom <= options.trackedAnchor.date)) continue;
     const date = options.trackedAnchor && assumption.effectiveFrom <= options.trackedAnchor.restartDate ? addDays(options.trackedAnchor.restartDate, 1) : assumption.effectiveFrom;
-    if (!projection.events[0] || date < projection.events[0].date || date > projection.events.at(-1)!.date) continue;
+    if (!projection.events[0] || date < sim.startDate || date > projection.events.at(-1)!.date) continue;
     const period = keyOf(date);
     const point = byPeriod.get(period) ?? { period };
     if (!point.date || date > point.date) point.date = date;
@@ -252,7 +255,7 @@ export function chartSeries(projection: DebtProjection, sim: SimulationState, op
       }
     }
     if (options.comparison?.ok && options.comparison.events[0]?.date === firstEvent.date) opening.comparison = options.comparison.events[0].balanceBeforeMinor;
-    if (options.baseline?.ok && options.baseline.events[0]?.date === firstEvent.date) opening.baseline = options.baseline.events[0].balanceBeforeMinor;
+    if (options.baseline?.ok && (options.baseline.events[0]?.date === firstEvent.date || (!options.trackedAnchor && firstEvent.balanceBeforeMinor === sim.principalMinor && options.baseline.events[0]?.balanceBeforeMinor === sim.principalMinor))) opening.baseline = options.baseline.events[0]!.balanceBeforeMinor;
     byPeriod.set(opening.period, opening);
   }
   const points = [...byPeriod.values()].sort((a, b) => a.openingDate ? -1 : b.openingDate ? 1 : a.period.localeCompare(b.period));

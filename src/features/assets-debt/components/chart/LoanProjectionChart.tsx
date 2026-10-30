@@ -34,7 +34,7 @@ type TooltipEntry = { dataKey?: string | number; value?: string | number; color?
 
 function LoanTooltip({ active, payload, label, digits, rateChanges, showEvents }: { active?: boolean; payload?: readonly TooltipEntry[]; label?: string | number; digits: number; rateChanges: ChartRateChangeGroup[]; showEvents?: boolean }) {
   const point = payload?.[0]?.payload;
-  const period = point?.period ?? String(label ?? "");
+  const period = point?.period ?? (typeof label === "number" && Number.isFinite(label) ? new Date(label).toISOString().slice(0, 7) : String(label ?? ""));
   const rateChange = rateChanges.find((group) => group.period === period);
   const percentage = (amount: number, total: number | undefined, description: string) => {
     if (total === undefined || total <= 0 || amount < 0 || amount > total) return null;
@@ -69,7 +69,7 @@ function LoanTooltip({ active, payload, label, digits, rateChanges, showEvents }
       ) : null}
       {payload?.length ? <p className="mb-1 text-[10px] font-medium text-muted-foreground">At this point</p> : null}
       <dl className="flex flex-col gap-1">
-        {payload?.map((entry) => {
+        {payload?.filter((entry) => entry.value != null).map((entry) => {
           const id = String(entry.dataKey) as SeriesId;
           return (
             <div key={id} className="flex items-center justify-between gap-4">
@@ -101,12 +101,20 @@ export default function LoanProjectionChart({ data, visible, digits, showEvents 
   const points = data.points.map((point) => ({ ...point, x: timestamp(point.date ?? point.openingDate ?? point.period) })).filter((point) => Number.isFinite(point.x)).sort((a, b) => a.x - b.x);
   const firstX = points[0]?.x;
   const lastX = points.at(-1)?.x;
+  const shortMonthly = firstX !== undefined && lastX !== undefined && lastX - firstX <= 366 * 86_400_000 && data.points.some((point) => /^\d{4}-\d{2}$/.test(point.period));
   const tickValues: number[] = [];
   if (firstX !== undefined && lastX !== undefined) {
     tickValues.push(firstX);
-    for (let year = new Date(firstX).getUTCFullYear() + 1; Date.UTC(year, 0, 1) <= lastX; year++) tickValues.push(Date.UTC(year, 0, 1));
+    if (shortMonthly) {
+      const start = new Date(firstX);
+      for (let month = 1; ; month++) {
+        const tick = Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + month, 1);
+        if (tick > lastX) break;
+        tickValues.push(tick);
+      }
+    } else for (let year = new Date(firstX).getUTCFullYear() + 1; Date.UTC(year, 0, 1) <= lastX; year++) tickValues.push(Date.UTC(year, 0, 1));
   }
-  const tickDate = (value: number) => String(new Date(value).getUTCFullYear());
+  const tickDate = (value: number) => shortMonthly ? formatChartPeriod(new Date(value).toISOString().slice(0, 7)) : String(new Date(value).getUTCFullYear());
   const interestAxis = separateInterest && visible.includes("cumulativeInterest");
   const maxAmount = points.reduce((max, point) => visible.reduce((m, id) => Math.max(m, interestAxis && id === "cumulativeInterest" ? 0 : point[id] ?? 0), max), 0);
   const amounts = amountGrid(maxAmount);
@@ -119,7 +127,7 @@ export default function LoanProjectionChart({ data, visible, digits, showEvents 
           <XAxis dataKey="x" type="number" domain={["dataMin", "dataMax"]} ticks={tickValues} tickFormatter={tickDate} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} axisLine={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.4 }} tickLine={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.4 }} minTickGap={4} />
           <YAxis yAxisId="balance" domain={[0, amounts.grid.at(-1)!]} ticks={amounts.labels} tickFormatter={compact} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} axisLine={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.4 }} tickLine={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.4 }} width={48} />
           {interestAxis ? <YAxis yAxisId="interest" orientation="right" domain={[0, interestAmounts.grid.at(-1)!]} ticks={interestAmounts.labels} tickFormatter={compact} tick={{ fontSize: 11, fill: "var(--chart-5)" }} axisLine={{ stroke: "var(--chart-5)", strokeOpacity: 0.5 }} tickLine={{ stroke: "var(--chart-5)", strokeOpacity: 0.5 }} width={48} label={{ value: "Interest", angle: 90, position: "insideRight", fill: "var(--chart-5)", fontSize: 10 }} /> : null}
-          <Tooltip content={<LoanTooltip digits={digits} rateChanges={data.rateChanges} showEvents={showEvents} />} cursor={{ stroke: "var(--muted-foreground)", strokeDasharray: "3 3", strokeOpacity: 0.45 }} isAnimationActive={!reducedMotion} />
+          <Tooltip filterNull={false} content={<LoanTooltip digits={digits} rateChanges={data.rateChanges} showEvents={showEvents} />} cursor={{ stroke: "var(--muted-foreground)", strokeDasharray: "3 3", strokeOpacity: 0.45 }} isAnimationActive={!reducedMotion} />
           <ReferenceLine yAxisId="balance" y={0} stroke="var(--border)" strokeOpacity={0.5} />
           {data.tracking && data.tracking.untrackedBefore && data.tracking.startPeriod > data.tracking.firstPeriod ? (
             <ReferenceArea yAxisId="balance" x1={points[0]?.x} x2={timestamp(data.tracking.startDate ?? data.tracking.startPeriod)} fill="var(--muted)" fillOpacity={0.6} strokeOpacity={0} label={{ value: "Before tracking", position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 10 }} />
@@ -141,7 +149,7 @@ export default function LoanProjectionChart({ data, visible, digits, showEvents 
               }}
             />
           ))}
-          {showEvents ? points.filter((point) => point.events?.length).map((point) => <ReferenceLine key={`events-${point.period}`} x={point.x} yAxisId="balance" stroke="var(--muted-foreground)" strokeDasharray="2 4" strokeOpacity={0.5} />) : null}
+          {showEvents ? [...new Set(points.flatMap((point) => point.events?.map((event) => event.date) ?? []))].map((date) => <ReferenceLine key={`events-${date}`} x={timestamp(date)} yAxisId="balance" stroke="var(--muted-foreground)" strokeDasharray="2 4" strokeOpacity={0.5} />) : null}
           {visible.map((id) => (
             <Line
               key={id}

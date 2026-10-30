@@ -76,7 +76,7 @@ it("draws an accessible, distinctly encoded chart with rate and payoff annotatio
   expect(calls.chart.at(-1)).toMatchObject({ accessibilityLayer: true });
   expect(calls.grids.at(-1)).toMatchObject({ yAxisId: "balance", stroke: "var(--border)", strokeOpacity: 0.45 });
   expect(calls.xAxes.at(-1)?.tickFormatter).toEqual(expect.any(Function));
-  expect((calls.xAxes.at(-1)?.tickFormatter as (time: number) => string)(Date.parse("2026-11-01T00:00:00Z"))).toBe("2026");
+  expect((calls.xAxes.at(-1)?.tickFormatter as (time: number) => string)(Date.parse("2026-11-01T00:00:00Z"))).toBe("Nov ’26");
   expect(calls.yAxes[0]).toMatchObject({ yAxisId: "balance", domain: [0, 100_000] });
   const last = calls.lines.slice(-2);
   expect(last.map((l) => l.dataKey)).toEqual(["balance", "offsetBalance"]);
@@ -99,6 +99,15 @@ it("draws an accessible, distinctly encoded chart with rate and payoff annotatio
   expect(screen.getByText("Rate changed · 15 Nov 2026")).toBeInTheDocument();
   expect(screen.getByText("6.12%")).toBeInTheDocument();
   expect(document.body).not.toHaveTextContent(/AUD|\$/);
+});
+
+it("shows a rate-only period and places event markers on their actual dates", () => {
+  render(<LoanProjectionChart data={{ ...data, points: [{ period: "2026-10", balance: 100_000 }, { period: "2026-11", events: [{ date: "2026-11-05", type: "extra-repayment" }, { date: "2026-11-20", type: "fee" }] }, { period: "2026-12", balance: 0 }] }} visible={["balance"]} digits={2} showEvents />);
+  expect(calls.tooltip.at(-1)?.filterNull).toBe(false);
+  const content = calls.tooltip.at(-1)?.content as ReactElement<{ active?: boolean; label?: number; payload?: unknown[] }>;
+  render(cloneElement(content, { active: true, label: Date.parse("2026-11-01T00:00:00Z"), payload: [{ dataKey: "balance", value: null, payload: { period: "2026-11" } }] }));
+  expect(screen.getByText("Rate changed · 15 Nov 2026")).toBeInTheDocument();
+  expect(calls.referenceLines).toEqual(expect.arrayContaining([expect.objectContaining({ x: Date.parse("2026-11-05T00:00:00Z") }), expect.objectContaining({ x: Date.parse("2026-11-20T00:00:00Z") })]));
 });
 
 it("uses 50,000 grid increments and 100,000 labels for a 550,000 loan", () => {
