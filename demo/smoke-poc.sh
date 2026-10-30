@@ -23,6 +23,12 @@ check() {
       const d=JSON.parse(s); if(d.budgets?.length !== 2 || d.baseUrl !== "http://127.0.0.1:5007") process.exit(1);
     });'
   docker exec "$name" node /check-budgets.mjs --url http://127.0.0.1:5007 --timeout 120000
+  # Exercise the same Bench proxy and queue used by the browser for each budget.
+  for id in 7d243b3e-d2dc-4863-be75-b1fd85b77c2b 5e48dea9-96ef-4f5e-ba26-10a5af1e4da2; do
+    curl -fsS http://127.0.0.1:17860/api/proxy -H 'content-type: application/json' \
+      --data "{\"connection\":{\"baseUrl\":\"http://127.0.0.1:5007\",\"apiKey\":\"ci-demo-key\",\"budgetSyncId\":\"$id\"},\"path\":\"/accounts\"}" |
+      node -e 'let s=""; process.stdin.on("data",c=>s+=c).on("end",()=>{if(!JSON.parse(s).data?.length) process.exit(1)})'
+  done
 }
 check
 # Mark both stores, including a committed SQLite change, then restart the same
