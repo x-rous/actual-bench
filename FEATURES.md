@@ -4,7 +4,7 @@
 
 - Two-step connect flow: validate server credentials (URL + API key), then pick from the list of budgets returned by the server
 - Add multiple in-memory budget connections and switch between them with one click from the top bar
-- The hosted **Try the live demo** entry point registers equivalent `Live Demo - Envelope` and `Live Demo - Tracking` files so both budgeting models can be compared from the same switcher; each contains 13 months of deterministic household history, seasonal budgets, good and difficult months, rich rules and diagnostics examples, schedules, transfers, split transactions, and tagged activity
+- The hosted **Try the live demo** entry point registers equivalent `Live Demo - Envelope` and `Live Demo - Tracking` files so both budgeting models can be compared from the same switcher; each contains 13 months of deterministic household history, seasonal budgets, good and difficult months, rich rules and diagnostics examples, schedules, transfers, split transactions, and tagged activity; the shared demo also includes linked loans, assets, card statements, and a completed bank reconciliation
 - **Sign-in:** one password protects Actual Bench and also encrypts saved connections, so signing in opens them. The first visitor to a new install sets it (or `ACTUAL_BENCH_PASSWORD` does); stay signed in for 8 hours to 30 days; change it or sign out from the account menu. `ACTUAL_BENCH_AUTH=none` turns sign-in off for installs already behind their own authentication, with a warning on App Health. Requests to Actual Bench's API from other websites are refused
 - Saved server presets keep non-secret URLs/labels for reconnecting without retyping the server URL
 - Optional encryption password for end-to-end encrypted budgets

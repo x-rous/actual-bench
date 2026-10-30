@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable @typescript-eslint/no-require-imports -- These Node scripts load CommonJS modules. */
 /* Build the demo-only Bench database through the same repositories as the app. */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -24,6 +25,8 @@ const { createDebtConfiguration } = require('../src/lib/assets-debt/services/deb
 const { recordManualDebtObservation } = require('../src/lib/assets-debt/services/observationService.ts');
 const { anchorDebtAtObservation } = require('../src/lib/assets-debt/services/anchorService.ts');
 const { projectStoredDebt } = require('../src/lib/assets-debt/services/projectionService.ts');
+const { simulate } = require('../src/lib/financial-models/loan/projection.ts');
+const { modelFromDetail } = require('../src/lib/assets-debt/model/buildModel.ts');
 const { saveLedgerEntries } = require('../src/lib/app-db/debtTrackingRepository.ts');
 const { applyCreditCardChanges } = require('../src/lib/app-db/creditCardRepository.ts');
 const { EMPTY_CHANGES } = require('../src/lib/credit-cards/changes.ts');
@@ -80,6 +83,11 @@ for (const demo of manifest) {
     saveLedgerEntries(db, debtId, changes);
     const principalMinor = -rows.reduce((sum, row) => sum + row.amount, 0);
     const last = rows.filter((row) => row.amount > 0).map((row) => row.date).sort().at(-1);
+    const model = modelFromDetail(detail);
+    if (!model.ok) throw new Error(`${spec.name} model is blocked`);
+    const extras = rows.filter((row) => row.notes?.startsWith('Additional')).map((row) => ({ kind: 'extra-repayment', date: row.date, amountMinor: row.amount, ref: { source: 'actual', id: row.id } }));
+    const history = simulate({ model: model.model, anchor: { date: model.model.terms.openingDate, principalMinor: spec.amount, accruedInterestMinor: 0, source: 'opening' }, events: extras, to: last });
+    if (!history.ok || history.closing.principalMinor !== principalMinor) throw new Error(`${spec.name} history does not match its Actual balance`);
     const observed = recordManualDebtObservation(db, { debtId, observedOn: last, recordedAt: `${last}T12:00:00.000Z`, principalMinor, accruedInterestMinor: 0, note: 'Fictional lender statement' });
     anchorDebtAtObservation(db, debtId, observed.id);
     const toYear = current.y + 2;

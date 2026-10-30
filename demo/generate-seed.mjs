@@ -594,8 +594,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       addTransfer(5, "carLoan", principal, "carPayment", "Car loan principal");
       carPrincipal -= principal;
     }
-    if (monthIndex === 6 && canPost(month, 15)) {
-      addTransfer(15, "mortgage", 50000, "mortgage", "Additional mortgage principal");
+    if (monthIndex === 6 && canPost(month, 1)) {
+      addTransfer(1, "mortgage", 50000, "mortgage", "Additional mortgage principal");
       mortgagePrincipal -= 50000;
     }
     addTransfer(16, "savings", 25000, "emergencyFund", "Automatic emergency-fund contribution");

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable @typescript-eslint/no-require-imports -- These Node scripts load CommonJS modules. */
 const { chromium } = require('playwright');
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
