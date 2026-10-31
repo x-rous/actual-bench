@@ -72,9 +72,9 @@ volume and everything comes with you.
 - If a migration fails, stop. Do not keep writing to a half-migrated database. Restore the backup you
   took and work out what happened before trying again.
 
-### Loans & Debt: tracking replaces Sync Repayments
+### Loans: tracking replaces Sync Repayments
 
-An upgrade from a version that still had **Sync Repayments** moves Loans & Debt to loan tracking
+An upgrade from a version that still had **Sync Repayments** moves Loans to loan tracking
 (database schema version 60). Take the `/data` backup first: this migration cannot be undone.
 
 - The old posting history, matching rules, backtests and transaction links are removed.

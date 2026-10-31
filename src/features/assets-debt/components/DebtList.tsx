@@ -160,17 +160,15 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
     const schedule = schedules[i]?.data;
     const balance = balances[i]?.data;
     const progress = schedule?.ok ? schedule.summary : null;
-    // The balance is read from the budget's ledger, so it is already in the budget's precision; only
-    // the schedule's amounts follow the digits the loan was saved with.
-    const rescale = (minor: number) => Math.round(minor * 10 ** (total.digits - debt.currencyMinorDigits));
-    total.owed += typeof balance === "number" ? balance : 0;
+    // Actual balances always use hundredths; schedules use the precision saved with each loan.
+    const rescaleFrom = (minor: number, digits: number) => Math.round(minor * 10 ** (total.digits - digits));
+    const rescale = (minor: number) => rescaleFrom(minor, debt.currencyMinorDigits);
+    const actualBalance = typeof balance === "number" ? rescaleFrom(balance, 2) : null;
+    total.owed += actualBalance ?? 0;
     total.due += rescale(progress?.dueSoonMinor ?? 0);
     total.dueCount += progress?.dueSoonCount ?? 0;
-    const remaining = typeof balance === "number"
-      ? balance
-      : !debt.liabilityAccountId
-        ? progress?.calculatedBalanceMinor ?? null
-        : null;
+    const scheduledBalance = progress ? rescale(progress.calculatedBalanceMinor) : null;
+    const remaining = actualBalance ?? (!debt.liabilityAccountId ? scheduledBalance : null);
     if (debt.openingPrincipalMinor === null || !debt.openingDate) {
       principalUnavailable = true;
     } else if (remaining === null || remaining === undefined) {
@@ -185,7 +183,7 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
         principalLoading = true;
       }
     } else {
-      total.principalRepaid += Math.max(0, debt.openingPrincipalMinor - remaining);
+      total.principalRepaid += Math.max(0, rescale(debt.openingPrincipalMinor) - remaining);
     }
     total.interestToDate += rescale(progress?.interestToDateMinor ?? 0);
     total.interestNext12Months += rescale(progress?.interestNext12MonthsMinor ?? 0);

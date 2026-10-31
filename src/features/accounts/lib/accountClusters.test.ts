@@ -1,8 +1,9 @@
 import type { EffectiveAccountClass } from "@/lib/account-class";
 import { NO_CLUSTER, buildClusters, formatCents, sumBalancesCents } from "./accountClusters";
 
-const row = (id: string, groupId: string | null = null, isDeleted = false, offBudget = false, sortOrder?: number) => ({
+const row = (id: string, groupId: string | null = null, isDeleted = false, offBudget = false, sortOrder?: number, isNew = false) => ({
   entity: { id, groupId, offBudget, sortOrder },
+  isNew,
   isDeleted,
 });
 const groups = [
@@ -40,6 +41,16 @@ describe("buildClusters by group", () => {
 
   it("keeps the incoming row order inside a cluster", () => {
     expect(clusters[1].rows.map((r) => r.entity.id)).toEqual(["a1", "a4"]);
+  });
+
+  it("places unsaved accounts in a leading cluster", () => {
+    const grouped = buildClusters(
+      [row("saved", "g2"), row("draft", null, false, false, undefined, true)],
+      "group",
+      { groups, effective: new Map(), balances: undefined }
+    );
+    expect(grouped.map((cluster) => cluster.label)).toEqual(["Unsaved accounts", "Savings"]);
+    expect(grouped[0].rows.map((r) => r.entity.id)).toEqual(["draft"]);
   });
 
   it("subtotals each cluster, null where there are no balances", () => {

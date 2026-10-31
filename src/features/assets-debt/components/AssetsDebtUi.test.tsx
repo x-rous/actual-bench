@@ -236,11 +236,38 @@ describe("Loans list", () => {
     expect(totals).not.toHaveTextContent(/USD|AUD/);
   });
 
-  it("rescales a schedule saved with other minor digits, leaving ledger balances alone", async () => {
+  it("rescales schedules saved with other minor digits in portfolio totals", async () => {
     mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, interestNext12MonthsMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
     wrap(<LoansSummary debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(2, { currencyMinorDigits: 0, openingDate: "2020-01-01", liabilityAccountId: null })]} />);
     // 500.00 at two digits plus 50,000 whole units scaled to two digits.
     await waitFor(() => expect(screen.getByLabelText("Loans overview")).toHaveTextContent("Upcoming Repayments50,500.00"));
+  });
+
+  it("rescales opening principal and scheduled balances before totaling principal repaid", async () => {
+    mocked.getLoanSummary.mockImplementation(async (id) => ({
+      ok: true,
+      summary: {
+        forecastFrom: "2020-01-01",
+        paymentsMade: 0,
+        totalPayments: 2,
+        next: null,
+        interestToDateMinor: 0,
+        interestNext12MonthsMinor: 0,
+        totalInterestMinor: 0,
+        calculatedBalanceMinor: id === "d1" ? 50_000 : 5_000,
+        payoffDate: null,
+        regularRepaymentMinor: 50_000,
+        dueSoonMinor: 0,
+        dueSoonCount: 0,
+      },
+    }));
+    wrap(<LoansSummary debts={[
+      summary(1, { openingPrincipalMinor: 100_000, openingDate: "2020-01-01", liabilityAccountId: null }),
+      summary(2, { currency: "USD", currencyMinorDigits: 0, openingPrincipalMinor: 10_000, openingDate: "2020-01-01", liabilityAccountId: null }),
+    ]} />);
+    const totals = screen.getByLabelText("Loans overview");
+
+    await waitFor(() => expect(within(totals).getByText("Principal Repaid").nextElementSibling).toHaveTextContent("5,500.00"));
   });
 
   it("says what each loan needs, in words, next to its status", () => {
@@ -915,7 +942,7 @@ describe("the new-loan flow", () => {
     expect(within(sections).getByRole("button", { name: "Terms & Schedule" })).toHaveAttribute("aria-current", "page");
     for (const name of ["Repayments", "Loan Ledger", "Linked Assets"]) expect(within(sections).getByRole("button", { name })).toBeDisabled();
     expect(screen.getByText("Not saved yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Loans/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Loans" })).toBeInTheDocument();
     const how = screen.getByRole("button", { name: "How this loan is calculated" });
     const method = screen.getByRole("button", { name: "Open calculation method settings" });
     const reset = screen.getByRole("button", { name: "More loan actions" });
@@ -945,7 +972,7 @@ describe("the new-loan flow", () => {
     expect(mocked.createDebt).not.toHaveBeenCalled();
     type("Name", "Discarded loan");
     fireEvent.click(within(sections).getByRole("button", { name: "Terms & Schedule" }));
-    fireEvent.click(screen.getByRole("button", { name: /Loans/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Loans" }));
     fireEvent.click(await screen.findByRole("button", { name: "Discard changes" }));
     view.unmount();
     wrap(<NewLoanView />);

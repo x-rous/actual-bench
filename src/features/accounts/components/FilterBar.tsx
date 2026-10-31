@@ -192,8 +192,8 @@ export function FilterBar({
         </div>
       )}
       {classFilter !== undefined && (
-        <div className="flex items-center gap-2">
-          <div className="w-40">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="w-40 shrink-0">
             <Select
               size="sm"
               value={classFilter}

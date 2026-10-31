@@ -41,7 +41,7 @@ instances.
 Every run starts a worker thread of its own inside the server process, with its
 own memory limit. Three things follow:
 
-- **A run that hangs can be stopped.** Each job type has a deadline (Budget File
+- **A run that hangs can be stopped.** Each job type has a deadline (Cross Budget
   Sync 20 minutes, bank sync 10, backup 60, backup scrub 30). At the deadline, or
   when you press **Cancel**, the run is asked to stop. If it has not stopped 10
   seconds later, its thread is ended.

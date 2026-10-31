@@ -1,18 +1,18 @@
 ---
-title: Budget File Sync
+title: Cross Budget Sync
 description: Create one-way flows that preview and copy selected transactions, payees, or categories between budget files.
 sidebar:
   order: 12
 ---
 
-Use Budget File Sync when you need to copy selected transactions, payees, or categories from one
+Use Cross Budget Sync when you need to copy selected transactions, payees, or categories from one
 budget file to another. Each saved one-way flow previews its changes before it writes.
 
 It copies between independent budget files; it does not merge them into one live database.
 
 Flows keep mappings and run history. Items that need a decision remain in the review queue.
 
-Open it from **Sync & Automations → Budget File Sync** (`/sync`).
+Open it from **Sync & Automations → Cross Budget Sync** (`/sync`).
 
 **Budget impact:** Preview never writes. Only an explicit **Apply**, or an opted-in safe-only automation
 policy, writes classified safe items. Uncertain rows remain for review.
@@ -67,7 +67,7 @@ Every data type syncs in **both Direct and HTTP API Server mode**, in any combin
 
 ## Create a flow
 
-1. On the Budget File Sync page, create a flow.
+1. On the Cross Budget Sync page, create a flow.
 2. Give it a **name** and choose the **data type**.
 3. Choose the **source** and **target** connections (and accounts, for transaction flows).
 4. Configure filters and transforms (below).
@@ -94,7 +94,7 @@ blocked.
   default.
 - **Split handling** - eligible split lines are exploded into separate target transactions by default,
   or kept **grouped as one target split** when you enable *Keep splits grouped on the target*.
-- **Convert currency** - for multi-currency consolidation; see [FX Rates](../fx-rates/).
+- **Convert currency** - for multi-currency consolidation; see [Exchange Rates](../fx-rates/).
 
 ## Payee and category flows
 
@@ -118,7 +118,7 @@ Select **Preview** to produce a dry-run. Each row is classified. The exact label
 | **Source deleted** | The mapped source was deleted. |
 | **Marker match** / **Name match** | The target already carries this item's marker or matches by name. |
 | **Blocked** | Can't be applied safely (for example, ambiguous category group placement). |
-| **FX pending** | A converting row has no available rate yet (see [FX Rates](../fx-rates/)). |
+| **FX pending** | A converting row has no available rate yet (see [Exchange Rates](../fx-rates/)). |
 
 The preview shows source and transformed target amounts side by side, with no writes to Actual.
 Currency-converting flows also label amounts with their currency and show the applied rate.
@@ -236,6 +236,6 @@ created group. See
 
 ## Related pages
 
-- [FX Rates](../fx-rates/) - multi-currency conversion
+- [Exchange Rates](../fx-rates/) - multi-currency conversion
 - [Connect to Actual Budget](../../getting-started/connecting/)
 - [Known Limitations](../../help/known-limitations/)

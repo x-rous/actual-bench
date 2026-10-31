@@ -733,15 +733,16 @@ export function AccountsTable({
                   {groups && (
                     <th
                       className="w-44 px-2 py-1.5 text-left"
-                      aria-sort={sortCol === "group" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                      aria-sort={activeGroupBy === "group" ? "none" : sortCol === "group" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                     >
                       <button
                         type="button"
                         onClick={() => toggleSort("group")}
-                        className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30"
+                        disabled={activeGroupBy === "group"}
+                        className="flex w-full items-center text-xs font-medium text-muted-foreground cursor-pointer select-none hover:bg-muted/30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       >
                         Group
-                        <SortIndicator col="group" sortCol={sortCol} sortDir={sortDir} />
+                        {activeGroupBy !== "group" && <SortIndicator col="group" sortCol={sortCol} sortDir={sortDir} />}
                       </button>
                     </th>
                   )}

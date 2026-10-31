@@ -412,8 +412,8 @@ export function TopVarianceDriversDialog({
           options={categoryOptions}
           selectedKeys={selectedKeys}
           placeholder={
-            target && target.categoryIds.length > 1
-              ? `${target.categoryIds.length.toLocaleString()} categories`
+            fullModel.categories.length > 1
+              ? `${fullModel.categories.length.toLocaleString()} categories`
               : target?.title ?? "Select categories"
           }
           selectionFallbackTitle={target?.title}

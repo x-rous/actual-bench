@@ -165,7 +165,7 @@ describe("accounts table and Groups dialog share account classes", () => {
     expect(order()).toEqual(["a2", "a1", "a3"]);
   });
 
-  it("defaults to on-budget accounts first, then account group, with ungrouped last", async () => {
+  it("keeps Actual's default row order when No grouping is selected", async () => {
     useStagedStore.getState().loadAccountGroups([
       { id: "g-alpha", name: "Alpha", sortOrder: 20 },
       { id: "g-zulu", name: "Zulu", sortOrder: 10 },
@@ -311,6 +311,7 @@ describe("accounts table and Groups dialog share account classes", () => {
       const byGroup = await screen.findByRole("button", { name: "By group" });
       expect(byGroup).toHaveAttribute("aria-pressed", "true");
       await screen.findByRole("button", { name: /Collapse No group/ });
+      expect(screen.getByRole("button", { name: "Group" })).toBeDisabled();
 
       const groupFilter = screen.getByRole("combobox", { name: "Filter by account group" });
       expect(byGroup.compareDocumentPosition(groupFilter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -318,6 +319,27 @@ describe("accounts table and Groups dialog share account classes", () => {
       const unclassified = screen.getByRole("button", { name: "1 needs a class" });
       const classFilter = screen.getByRole("combobox", { name: "Filter by account class" });
       expect(classFilter.compareDocumentPosition(unclassified) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("keeps account-group order in the default By group view", async () => {
+      useStagedStore.getState().loadAccountGroups([
+        { id: "g-alpha", name: "Alpha", sortOrder: 20 },
+        { id: "g-zulu", name: "Zulu", sortOrder: 10 },
+      ]);
+      useStagedStore.getState().loadAccounts([
+        { id: "alpha", name: "Alpha account", offBudget: false, closed: false, groupId: "g-alpha" },
+        { id: "zulu", name: "Zulu account", offBudget: false, closed: false, groupId: "g-zulu" },
+        { id: "ungrouped", name: "Ungrouped account", offBudget: false, closed: false, groupId: null },
+      ]);
+      renderTable();
+
+      expect(await screen.findByRole("button", { name: "By group" })).toHaveAttribute("aria-pressed", "true");
+      await screen.findByRole("button", { name: /Collapse Alpha/ });
+      const clusterOrder = screen.getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label"))
+        .filter((label): label is string => !!label && label.startsWith("Collapse "));
+      expect(clusterOrder).toEqual(["Collapse Zulu, 1 account", "Collapse Alpha, 1 account", "Collapse No group, 1 account"]);
+      expect(screen.getAllByRole("row").map((row) => row.getAttribute("data-row-id")).filter(Boolean)).toEqual(["zulu", "alpha", "ungrouped"]);
     });
 
     async function groupByClass() {

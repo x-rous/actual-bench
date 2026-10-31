@@ -98,7 +98,7 @@ export function WorkspaceFrame({ title, state, stateEmphasis, tab, onTab, disabl
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="ghost" size="sm" className="-ml-2 gap-1 text-muted-foreground" onClick={() => (dirty ? setLeaving(true) : discardAndLeave())}>
             <ArrowLeft aria-hidden="true" className="size-3.5" />
-            Loans &amp; Debt
+            Loans
           </Button>
           <h1 className="text-base font-semibold">{title}</h1>
           <span role="status" className={cn("rounded-full border px-2 py-0.5 text-[11px]", stateEmphasis ? "border-primary font-medium" : "border-border text-muted-foreground")}>
