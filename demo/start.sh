@@ -48,6 +48,8 @@ node /check-budgets.mjs --url http://127.0.0.1:5007 --timeout 120000
 (cd /bench && PORT=7860 HOSTNAME=0.0.0.0 exec /opt/bench-node/node server.js) &
 pids="$pids $!"
 wait_http http://127.0.0.1:7860/api/health
+# An initial real run establishes the baseline for the monthly schedule.
+node /initialize-backup.mjs
 printf '%s\n' 'Demo services ready'
 # Fail the container if any child dies; the platform can then restart all three.
 while :; do

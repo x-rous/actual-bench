@@ -50,7 +50,8 @@ describe("demo seed scenario", () => {
     expect(Object.keys(scenario.BASE_BUDGETS).sort()).toEqual(
       [...expenseCategoryKeys].sort()
     );
-    expect(scenario.TAGS).toHaveLength(10);
+    expect(scenario.TAGS.length).toBeGreaterThanOrEqual(13);
+    expect(scenario.TAGS.map(([tag]) => tag)).toEqual(expect.arrayContaining(["family-holiday", "rental-property", "loan-interest"]));
     expect(scenario.TAGS.every(([, color, description]) => color && description)).toBe(true);
   });
 

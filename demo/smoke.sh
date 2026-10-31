@@ -34,15 +34,18 @@ check() {
       node -e 'let s=""; process.stdin.on("data",c=>s+=c).on("end",()=>{if(!JSON.parse(s).data?.length) process.exit(1)})'
   done
   node demo/check-metadata.mjs http://127.0.0.1:17860
+  docker exec "$name" sh -c 'test -n "$(find /data/backups -type f -name "*.sqlite" -print -quit)"'
 }
 check
 if [ "${DEMO_BROWSER_SMOKE:-0}" = 1 ]; then node demo/browser-smoke.cjs; fi
 # Write a real transaction and a committed SQLite marker before restarting.
 reset_marker="demo-reset-$(date +%s)-$$"
 node demo/check-reset.mjs write "$reset_marker"
+docker exec "$name" sh -c 'touch /data/backups/demo-reset-marker'
 docker exec "$name" sh -c 'cd /bench && /opt/bench-node/node -e "const D=require(\"better-sqlite3\"); const d=new D(process.env.ACTUAL_BENCH_DB_PATH); d.exec(\"CREATE TABLE poc_reset_marker (id INTEGER)\"); d.close()"'
 docker restart -t 20 "$name" >/dev/null
 check
 node demo/check-reset.mjs verify "$reset_marker"
+docker exec "$name" sh -c 'test ! -e /data/backups/demo-reset-marker'
 docker exec "$name" sh -c 'cd /bench && /opt/bench-node/node -e "const D=require(\"better-sqlite3\"); const d=new D(process.env.ACTUAL_BENCH_DB_PATH); if(d.prepare(\"SELECT name FROM sqlite_master WHERE name = ?\").get(\"poc_reset_marker\")) process.exit(1); d.close()"'
 docker stats --no-stream "$name"

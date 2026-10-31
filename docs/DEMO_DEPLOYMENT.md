@@ -16,6 +16,8 @@ Bench SQLite database through the application repositories. The image build
 rebuilds the database from that manifest. Keep the manifest and `seed-data/`
 from the same run: their Actual account and transaction IDs must agree. The
 stable Sync IDs are already configured in `demo/Dockerfile`.
+The demo Dockerfile limits build parallelism because unconstrained workers can
+exhaust the Hugging Face builder and cause its build job to time out.
 
 Run `docker build -f demo/Dockerfile -t actual-bench-demo .` followed by
 `bash demo/smoke.sh`. CI additionally checks the four workspaces in Chromium.
@@ -25,49 +27,64 @@ hand. Do not run the reset script against a container holding real data.
 
 ## Prepare the Vercel redirect before the cutover
 
-Before updating the Space, link the Vercel CLI to the existing demo project and
-stage the two project-level redirects. Do not promote them yet:
+The `actual-bench-demo` Vercel project uses a project routing rule to redirect
+the existing public URL to the Space. Its regex source is `^/(?<path>.*)$`, its
+destination is `https://x-rous-actual-bench-demo.hf.space/$path`, and its status
+is 307. It preserves the path and query string. Once this rule is live, routine
+Space updates do not need a new redirect.
 
-```bash
-vercel link
-vercel redirects add / https://x-rous-actual-bench-demo.hf.space/ --status 307 --preserve-query-params
-vercel redirects add '/*' 'https://x-rous-actual-bench-demo.hf.space/:splat' --status 307 --preserve-query-params
-vercel redirects list --staging
-vercel redirects list-versions
-```
-
-Select the project that owns `actual-bench-demo.vercel.app` when linking. Review
-the staged redirects and record their version ID. Keep the project and domain
-active; staging alone does not change the public link.
+If preparing a new cutover, stage and review the rule before updating the Space;
+do not promote it yet. Vercel's [project routes API](https://vercel.com/docs/rest-api/project-routes)
+supports staging and promotion. The separate bulk-redirect CLI commands require
+a paid plan and are not available on the demo project's Hobby plan. Keep the
+project and domain active; staging alone does not change the public link.
 
 
 ## Prepare the Space repository
 
-After the changes and seeds have been reviewed and committed, prepare a clean
-clone of the existing Space from the repository root. The Space Docker build
-needs the application source, not only the old `demo/` directory:
+After the changes and seeds have been reviewed and committed, install Git LFS
+and [Git Xet](https://huggingface.co/docs/hub/xet/using-xet-storage#git).
+Git Xet uses Git LFS pointers and uploads their contents to Xet. Git LFS alone
+is a supported fallback. Prepare a fresh clone from the application repository
+root; the Space Docker build needs the application source, not only `demo/`.
+Skip downloading the old LFS files: the legacy backend seed directory and the
+previous demo seed directory are removed from the Space checkout before the
+current application files are copied. This leaves their remote LFS objects
+untouched.
 
 ```bash
-git clone https://huggingface.co/spaces/x-rous/actual-bench-demo /tmp/actual-bench-demo-space
+GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/x-rous/actual-bench-demo /tmp/actual-bench-demo-space
+git -C /tmp/actual-bench-demo-space lfs install --local
+git -C /tmp/actual-bench-demo-space xet install --local
+git -C /tmp/actual-bench-demo-space rm -r --ignore-unmatch seed-data demo/seed-data generate-seed.mjs seed-scenario.cjs start.sh check-budgets.mjs
 git archive HEAD | tar -x -C /tmp/actual-bench-demo-space
 cp demo/Dockerfile /tmp/actual-bench-demo-space/Dockerfile
 cp demo/README.md /tmp/actual-bench-demo-space/README.md
-cd /tmp/actual-bench-demo-space
-git status --short
+python3 demo/track-space-binaries.py /tmp/actual-bench-demo-space
+git -C /tmp/actual-bench-demo-space add -A
+git -C /tmp/actual-bench-demo-space diff --cached --stat
+git -C /tmp/actual-bench-demo-space lfs ls-files
 ```
 
-The new image reads `demo/seed-data/` and `demo/seed-manifest.json`. After
-reviewing the status, remove the old backend-only files and stage the new tree.
+The helper scans the files being added for Git's binary marker and tracks them
+in the Space clone's `.gitattributes` before staging. This includes the seed
+databases and images, as well as binary files without common binary extensions.
+Review the LFS list and staged changes before committing. Never commit raw
+binary files and add tracking afterward: the rejected objects would remain in
+the push history. The new image reads `demo/seed-data/` and
+`demo/seed-manifest.json`. If Git Xet is unavailable, omit `xet install` and use
+Git LFS's normal transfer instead. Keep Git LFS (and Git Xet, when used) on
+`PATH` for the push; do not disable the LFS pre-push hook.
+
 **Do not run `git push` until the redirect is staged and the outage window has
 begun:**
 
 ```bash
-git rm -r --ignore-unmatch seed-data generate-seed.mjs seed-scenario.cjs start.sh check-budgets.mjs
-git add -A
-git diff --cached --stat
+cd /tmp/actual-bench-demo-space
 # After reviewing the complete staged diff:
 git diff --cached
 git commit -m "chore(demo): deploy combined demo"
+git lfs fsck --pointers --objects
 git push
 ```
 
@@ -91,10 +108,12 @@ Open the Space's direct `hf.space` URL, choose each budget mode, and use the
 connection switcher to move between them. Check:
 
 - Budget Cockpit: household transactions, rules and schedules.
-- Loans & Debt: Home Mortgage and Car Loan, their history and projections.
-- Credit Cards: Everyday Rewards Card and its saved statements.
-- Assets: Family Home and Family Car, their valuation history and linked loans.
-- Bank Reconciliation: the completed Household Checking session.
+- Loans & Debt: the home mortgage, car loan, personal loan and investment-property loan, including their history and projections.
+- Credit Cards: two cards, including a missed payment, interest and an instalment plan.
+- Assets: Family Home, Family Car and Investment Property, their history and linked loans; check the rental income and expenses.
+- Bank Reconciliation: completed, in-review and ready-to-apply checking sessions.
+- FX Rates: the illustrative USD/AUD rate.
+- Backups and Automations: the local demo destination and monthly Bench-metadata backup rule. An initial verified backup runs at startup to establish the schedule. This container-local destination and run history reset on restart; Space sleep can prevent scheduled runs.
 
 Verify amounts and linked rows in both modes. Restart the Space, repeat the
 checks, and confirm visitor changes disappeared from both Actual and Bench.
@@ -105,12 +124,13 @@ asleep, the first request may wait for it to wake.
 
 ## Activate the redirect
 
-Only after both hosted budgets and all four modules pass verification, and a
-Space restart restores both data stores, promote the reviewed staged version:
-
-```bash
-vercel redirects promote <version-id>
-```
+If this is a new cutover with a staged project routing rule, promote its reviewed
+version through the [project routes API](https://vercel.com/docs/rest-api/project-routes/promote-restore-or-discard-a-routing-rule-version)
+only after both hosted budget modes and every check under "Verify and reset"
+pass, including confirming that a Space restart restores both data stores.
+The API's `promote` action changes the public link immediately. For routine
+updates the existing live rule already redirects traffic and does not need to
+be promoted again.
 
 Confirm `https://actual-bench-demo.vercel.app` redirects to the Space and both
 budget modes open. Promoting changes the public link immediately.

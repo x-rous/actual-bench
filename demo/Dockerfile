@@ -9,7 +9,9 @@ COPY next.config.ts tsconfig.json postcss.config.mjs jest.setup.ts ./
 COPY src ./src
 COPY public ./public
 COPY demo/generate-metadata.cjs demo/seed-manifest.json ./demo/
-ENV NEXT_TELEMETRY_DISABLED=1
+# Keep the build within the Space builder's CPU and memory allocation.
+ENV NEXT_TELEMETRY_DISABLED=1 CIRCLE_NODE_TOTAL=3 \
+    TURBO_TASKS_AVAILABLE_PARALLELISM=2 RAYON_NUM_THREADS=2
 RUN node demo/generate-metadata.cjs && npm run build
 
 FROM jhonderson/actual-http-api:26.10.0
@@ -26,6 +28,7 @@ COPY demo/seed-data /seed-data/actual
 COPY --from=bench-build /app/demo/seed-bench.sqlite /seed-data/bench.sqlite
 COPY demo/start.sh /start.sh
 COPY demo/check-budgets.mjs /check-budgets.mjs
+COPY demo/initialize-backup.mjs /initialize-backup.mjs
 RUN chmod +x /start.sh
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
     ACTUAL_SERVER_URL=http://127.0.0.1:5006 \

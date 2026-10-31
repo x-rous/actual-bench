@@ -24,6 +24,7 @@ const CATEGORY_GROUPS = [
       ["bonus", "Bonus"],
       ["interest", "Interest"],
       ["reimbursements", "Reimbursements"],
+      ["rentalIncome", "Rental Income"],
     ],
   },
   {
@@ -38,6 +39,8 @@ const CATEGORY_GROUPS = [
       ["mobile", "Mobile Phones"],
       ["homeMaintenance", "Home Maintenance"],
       ["homeInsurance", "Home Insurance"],
+      ["rentalMortgage", "Rental Mortgage"],
+      ["rentalExpenses", "Rental Property Expenses"],
     ],
   },
   {
@@ -123,6 +126,7 @@ const CATEGORY_GROUPS = [
     categories: [
       ["studentLoan", "Student Loan"],
       ["creditInterest", "Credit Card Interest"],
+      ["personalPayment", "Personal Loan Payment"],
     ],
   },
 ];
@@ -172,7 +176,10 @@ const BASE_BUDGETS = {
   homeImprovement: 12000,
   annualBills: 15000,
   studentLoan: 28000,
-  creditInterest: 0,
+  creditInterest: 4000,
+  rentalMortgage: 100000,
+  rentalExpenses: 25000,
+  personalPayment: 25000,
 };
 
 const TAGS = [
@@ -185,6 +192,9 @@ const TAGS = [
   ["gift", "#db2777", "Birthday, holiday, and celebration gifts."],
   ["review", "#ea580c", "Imported transactions that still need human review."],
   ["annual", "#16a34a", "Annual or infrequent bills funded throughout the year."],
+  ["family-holiday", "#0e7490", "Costs from the family summer holiday."],
+  ["rental-property", "#7c3aed", "Income and expenses for the rental property."],
+  ["loan-interest", "#b45309", "Interest charged by lenders."],
   ["shared", "#64748b", "Expenses shared with friends or extended family."],
 ];
 
