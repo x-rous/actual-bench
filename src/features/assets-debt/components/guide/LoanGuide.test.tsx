@@ -7,7 +7,7 @@ function Harness({ initial = "start" as LoanGuideSection }) {
   return <LoanGuide section={section} onSection={setSection} onClose={jest.fn()} docsUrl="https://example.test/docs/" />;
 }
 
-describe("the Loans & Debt guide", () => {
+describe("the Loans guide", () => {
   it("opens every section from the side list, each with its own heading and content", () => {
     render(<Harness />);
     const nav = screen.getByRole("navigation", { name: "Guide sections" });

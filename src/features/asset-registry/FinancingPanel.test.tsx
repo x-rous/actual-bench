@@ -63,6 +63,7 @@ it("shows the loan-to-value and offers End on an open allocation", () => {
 it("shows an empty state, not five empty tiles, while no loan is linked", () => {
   render(<FinancingPanel asset={asset} registry={{ ...registry, debtLinks: [] }} loans={loans} loansReady accounts={accounts} asOf="2026-07-31" onAsOf={jest.fn()} today="2026-10-24" valueAt={() => 500000} debtsAt={debts(100000, 80000)} onSaved={jest.fn(async () => {})} />);
   expect(screen.getByText("No loan linked")).toBeInTheDocument();
+  expect(screen.getByText(/Link a loan from Loans to see this asset/)).toBeInTheDocument();
   expect(screen.queryByLabelText("Asset financing summary")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Link loan" }));
   expect(screen.getByLabelText(/^Share of the loan/)).toBeInTheDocument();

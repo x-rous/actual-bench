@@ -19,7 +19,7 @@ import type { ConnectionInstance } from "@/store/connection";
  * so the server needs that budget's credentials stored: an API key for an HTTP
  * API connection, the Actual server's password for a Direct one (RD-095 M4).
  * That has always been true; what was wrong was where you could do it. The
- * only path ran through a Budget File Sync flow editor, so someone setting up a
+ * only path ran through a Cross Budget Sync flow editor, so someone setting up a
  * backup was sent to a feature they may never use, losing the dialog they were
  * filling in.
  *

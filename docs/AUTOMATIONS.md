@@ -1,6 +1,6 @@
 # Automations
 
-Actual Bench runs scheduled work — Budget File Sync, scheduled bank sync, and backups — through one
+Actual Bench runs scheduled work — Cross Budget Sync, scheduled bank sync, and backups — through one
 **automation engine**. The Automations page (Tools → Automations) is where you
 see what runs, when it last ran, what it did, and what needs your attention.
 
@@ -41,7 +41,7 @@ instances.
 Every run starts a worker thread of its own inside the server process, with its
 own memory limit. Three things follow:
 
-- **A run that hangs can be stopped.** Each job type has a deadline (Budget File
+- **A run that hangs can be stopped.** Each job type has a deadline (Cross Budget
   Sync 20 minutes, bank sync 10, backup 60, backup scrub 30). At the deadline, or
   when you press **Cancel**, the run is asked to stop. If it has not stopped 10
   seconds later, its thread is ended.
@@ -111,7 +111,7 @@ Run logs and stored errors are redacted. Any credential an automation opens is r
 redaction at that moment, so a provider error that echoes an API key back cannot reach the log,
 the run history, or the UI.
 
-## Budget File Sync as an automation
+## Cross Budget Sync as an automation
 
 A sync flow set to **"Auto-sync on a server schedule (unattended)"** appears here automatically —
 you do not create it twice. Its schedule and enabled state carry over from the flow, and a flow you
@@ -121,7 +121,7 @@ the next restart. (The engine also sweeps once a minute, so it is picked up even
 A flow set to manual review, or to sync while Bench is open, is deliberately **not** listed here:
 those are not unattended, and showing them would imply the server runs them.
 
-Full sync history stays in Budget File Sync, which is where the detail belongs (previews, items,
+Full sync history stays in Cross Budget Sync, which is where the detail belongs (previews, items,
 the review queue). Each automation run links to the sync run it produced.
 
 Items the sync could not decide on are never applied automatically. They show up on the Automations
@@ -167,7 +167,7 @@ fails closed and pauses each with the reason - so the confirmation names them fi
 
 Enrolment is **per budget, not per server**: three budgets on one server are three
 entries. It can be done from the Connections tab, from a bank sync or backup dialog, or
-from a Budget File Sync flow editor; all four write the same store.
+from a Cross Budget Sync flow editor; all four write the same store.
 
 Bench can enrol any budget connected in this browser session, HTTP API or Direct: the
 browser holds each one's API key or password for the session. Enrolling checks it with

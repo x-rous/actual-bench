@@ -50,7 +50,7 @@ describe("bank sync job type", () => {
     );
 
     expect(rollup.outcome).toBe("partial");
-    // Budget File Sync makes the opposite choice, because a partial *apply*
+    // Cross Budget Sync makes the opposite choice, because a partial *apply*
     // there means writes failed. Here it means a bank was unreachable, and
     // pausing the automation would stop the accounts that do work.
     expect(rollup.countsAsFailure).toBeUndefined();
@@ -130,7 +130,7 @@ describe("bank sync job type", () => {
       message: "consent expired",
       observedNewTransactions: null,
     });
-    // Nothing here borrows Budget File Sync's vocabulary.
+    // Nothing here borrows Cross Budget Sync's vocabulary.
     expect(Object.keys(serialized.data)).not.toContain("applied");
   });
 

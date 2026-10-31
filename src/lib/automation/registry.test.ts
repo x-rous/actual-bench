@@ -18,7 +18,7 @@ type SyncResult = { applied: number; review: number };
 
 const writingType: AutomationJobType<SyncConfig, SyncResult> = {
   type: "test-budget-file-sync",
-  label: "Test Budget File Sync",
+  label: "Test Cross Budget Sync",
   validateConfig(raw: JsonEnvelope): SyncConfig {
     const flowId = raw.data.flowId;
     if (typeof flowId !== "string") throw new Error("flowId is required");
@@ -70,7 +70,7 @@ describe("automation job-type registry", () => {
   it("registers and resolves a job type", () => {
     registerAutomationJobType(writingType);
 
-    expect(getAutomationJobType("test-budget-file-sync")?.label).toBe("Test Budget File Sync");
+    expect(getAutomationJobType("test-budget-file-sync")?.label).toBe("Test Cross Budget Sync");
     expect(getAutomationJobType("nope")).toBeUndefined();
     expect(listAutomationJobTypes()).toHaveLength(1);
   });

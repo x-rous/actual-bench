@@ -49,7 +49,7 @@ const inFlight = new Set<string>();
 export const RUN_RETENTION_PER_AUTOMATION = 100;
 
 /**
- * Runs left to keep per Budget File Sync flow when pruning history.
+ * Runs left to keep per Cross Budget Sync flow when pruning history.
  *
  * A separate table from `automation_runs` (`sync_flow_runs`/
  * `sync_flow_run_items` — see persistPlan.ts) with its own retention, for the

@@ -1,6 +1,6 @@
 import { getBudgetFileSyncCapabilities, hasSyncCapabilities, missingSyncCapabilities } from "./capabilities";
 
-describe("budget file sync capabilities", () => {
+describe("Cross Budget Sync capabilities", () => {
   it("supports both master-data and transaction sync over HTTP API mode", () => {
     const report = getBudgetFileSyncCapabilities({ mode: "http-api" });
 

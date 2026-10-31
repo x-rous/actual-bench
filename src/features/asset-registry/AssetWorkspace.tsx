@@ -28,6 +28,7 @@ import { percent } from "./ReportControls";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
+import { ListToolbar } from "@/components/ui/list-toolbar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { DataTable, Stack, Text, type Column, type SortState } from "@/features/credit-cards/components/primitives/DataTable";
@@ -110,7 +111,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     return { queryKey: ["assetLoanLedger", connection.id, connection.budgetSyncId, accountId], enabled: loansQuery.isSuccess && !!accountId,
       queryFn: async () => { const read = await readAccountLedger(getTransport(connection), { accountId: accountId! }); if (!read.ok) throw new Error(read.message); return read.transactions; } };
   }) });
-  /** Each linked loan's regular repayment, from Loans & Debt, for the Linked Loans tab. */
+  /** Each linked loan's regular repayment, from Loans, for the Linked Loans tab. */
   const summaryQueries = useQueries({ queries: linkedDebtIds.map((debtId) => ({
     queryKey: ["assetLoanSummary", connection.id, connection.budgetSyncId, debtId, date],
     queryFn: async () => (await getLoanSummary(debtId, { today: date })).summary, enabled: loansQuery.isSuccess && !!assetId, retry: false,
@@ -365,13 +366,13 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
         { label: "Net cash flow", value: cashAssets.length === 0 ? NA : reading ? "…" : assetMoney(portfolioCashflow), detail: cashAssets.length === 0 ? "No income or expenses linked" : `Linked income and expenses on ${cashAssets.length} ${cashAssets.length === 1 ? "asset" : "assets"}, all time`, wrap: true },
         { label: "Needs attention", value: status === "archived" ? NA : <span className={reviewCount > 0 ? "text-amber-600 dark:text-amber-500" : undefined}>{reviewCount}</span>, detail: status === "archived" ? "Archived assets are not checked" : `${reviewCount === 1 ? "asset" : "assets"} to review · ${assetMoney(unassigned)} Unassigned`, wrap: true },
       ]} />
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
+      <ListToolbar>
         <SearchInput size="sm" aria-label="Search assets" className="w-56" value={search} onValueChange={setSearch} />
         <Select size="sm" className="w-44" aria-label="Asset status" value={status} onValueChange={setStatus} options={[{ value: "active", label: `Active assets (${registry.assets.filter((a) => a.status === "active").length})` }, { value: "archived", label: `Archived assets (${registry.assets.filter((a) => a.status === "archived").length})` }, { value: "all", label: "All assets" }]} />
         <Select size="sm" aria-label="Filter asset type" className="w-40" value={type} onValueChange={setType} options={[{ value: "", label: "All types" }, ...Object.entries(ASSET_TYPES).map(([value, info]) => ({ value, label: info.label }))]} />
         {(search || type || status !== "active") && <Button size="sm" variant="ghost" onClick={() => { setSearch(""); setType(""); setStatus("active"); }}>Clear filters</Button>}
         <p role="status" className="ml-auto text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "asset" : "assets"}</p>
-      </div>
+      </ListToolbar>
       <div className="flex min-h-0 flex-1"><DataTable label="Asset Registry" rows={filtered} columns={columns} sort={sort} onSort={setSort} rowKey={(a) => a.id} rowLabel={(a) => a.name} onOpen={open} stacked empty={registry.assets.length ? <EmptyState icon={Landmark} title="No results match your filters" action={<Button size="sm" variant="outline" onClick={() => { setSearch(""); setType(""); setStatus("active"); }}>Clear filters</Button>}>Try a different search, status or type.</EmptyState> : <EmptyState icon={Landmark} title="No assets yet" action={<Button size="sm" disabled={!available} onClick={() => setCreating(true)}><Plus className="size-3.5" aria-hidden />Add Asset</Button>}>Register an off-budget Actual account as an asset to track its value, returns and loans. Create the account in Accounts if it does not exist yet.</EmptyState>} /></div>
     </div> : asset ? <div className="flex min-h-0 flex-1 overflow-hidden"><div className="flex min-w-0 flex-1 flex-col">
         {Boolean(reason || book?.issues.length) && <div role="alert" className="border-b px-4 py-2 text-xs text-destructive">{reason ?? book?.issues[0]}<Button size="xs" variant="ghost" onClick={() => setEditorAsset(asset)}>Details</Button></div>}

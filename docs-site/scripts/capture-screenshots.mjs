@@ -623,7 +623,7 @@ const SHOTS = [
   { name: "automations", nav: "Automations", url: /\/automations/, budget: "Envelope", instance: true },
   {
     name: "budget-file-sync",
-    nav: "Budget File Sync",
+    nav: "Cross Budget Sync",
     url: /\/sync/,
     budget: "Envelope",
     // A flow moves data between two budgets and cannot reach either without a
@@ -646,7 +646,7 @@ const SHOTS = [
   },
   {
     name: "fx-rates",
-    nav: "FX Rates",
+    nav: "Exchange Rates",
     url: /\/fx-rates/,
     budget: "Envelope",
     instance: true,
@@ -882,7 +882,7 @@ const SHOTS = [
   {
     name: "dialog-flow-editor",
     area: "dialogs",
-    nav: "Budget File Sync",
+    nav: "Cross Budget Sync",
     url: /\/sync/,
     budget: "Envelope",
     alsoConnect: "Tracking",

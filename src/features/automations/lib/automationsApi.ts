@@ -9,7 +9,7 @@ export type AutomationListItem = AutomationDefinition & {
   scheduleLabel: string;
   running: boolean;
   lastRun: AutomationRun | null;
-  /** Human name of the job type — "Budget File Sync", "Bank sync". */
+  /** Human name of the job type — "Cross Budget Sync", "Bank sync". */
   typeLabel: string;
   status: "ok" | "warning" | "failing" | "paused" | "idle";
   /** One sentence a person can act on, from the health module. */

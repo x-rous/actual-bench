@@ -11,7 +11,7 @@ import type {
  * A feature becomes an automation by registering `{ type, validateConfig, run,
  * summarize }` and inheriting scheduling, locking, retries, history and health.
  * This module is the contract only — the engine that calls it is PR-043b, and
- * the first real registration (Budget File Sync) is PR-043c.
+ * the first real registration (Cross Budget Sync) is PR-043c.
  *
  * The acceptance criterion this shape exists to satisfy: *a second job type can
  * be registered without touching scheduler internals.* Two consequences follow,
@@ -150,7 +150,7 @@ export type AutomationJobType<TConfig = unknown, TResult = unknown> = {
    *
    * Called on every engine tick, before anything is selected to run. It exists
    * because a feature's configuration lives outside the engine and changes
-   * while the server is up: Budget File Sync flows are created and switched to
+   * while the server is up: Cross Budget Sync flows are created and switched to
    * unattended from the Sync UI at any time, and running the reconciliation
    * only at boot meant a flow enrolled after startup silently never ran until
    * the next restart.

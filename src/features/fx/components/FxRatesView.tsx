@@ -86,10 +86,10 @@ export function FxRatesView() {
   const selected = pairs.find((p) => pairKey(p) === selectedKey) ?? pairs[0] ?? null;
 
   return (
-    <PageLayout title="FX Rates">
+    <PageLayout title="Exchange Rates">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-4 lg:p-5">
         <p className="text-sm text-muted-foreground">
-          Exchange rates used when a Budget File Sync flow converts amounts between budgets in different currencies
+          Exchange rates used when a Cross Budget Sync flow converts amounts between budgets in different currencies
           (the flow&apos;s <span className="font-medium">Convert currency</span> option). They fill in automatically as
           you sync - review, override a date, or import your own.
         </p>
@@ -134,7 +134,7 @@ function EmptyState() {
     <div className="rounded-md border border-dashed border-border bg-muted/20 px-6 py-10 text-center">
       <p className="text-sm font-medium">No currency conversion set up yet</p>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        Turn on <span className="font-medium">Convert currency</span> on a Budget File Sync flow to consolidate a
+        Turn on <span className="font-medium">Convert currency</span> on a Cross Budget Sync flow to consolidate a
         local-currency budget into a master currency. Its pair will appear here - or add one above to manage rates
         ahead of time.
       </p>

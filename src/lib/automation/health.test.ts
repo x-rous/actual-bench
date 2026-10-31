@@ -27,7 +27,7 @@ function tempDb(): { root: string; db: SqliteDatabase } {
 function jobType(type: string, withClassification: boolean): AutomationJobType<unknown, unknown> {
   return {
     type,
-    label: type === "budget-file-sync" ? "Budget File Sync" : "Bank Sync",
+    label: type === "budget-file-sync" ? "Cross Budget Sync" : "Bank Sync",
     validateConfig: () => ({}),
     run: async () => ({}),
     summarize: (): AutomationRunRollup => ({ outcome: "ok", itemCount: 0 }),
@@ -262,7 +262,7 @@ describe("automation health", () => {
 
       expect(health.status).toBe("paused");
       expect(health.summary).toBe("Vault key missing");
-      expect(health.typeLabel).toBe("Budget File Sync");
+      expect(health.typeLabel).toBe("Cross Budget Sync");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

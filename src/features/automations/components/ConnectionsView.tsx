@@ -34,7 +34,7 @@ import { EnrolServerBudgetsDialog } from "./EnrolServerBudgetsDialog";
  * why, but nobody should discover that by doing it.
  *
  * It lives beside Automations and Run history because this is the prerequisite
- * for everything those two pages show. Budget File Sync keeps its own in-context
+ * for everything those two pages show. Cross Budget Sync keeps its own in-context
  * enrolment: someone switching a flow to unattended should not be sent here
  * mid-task, which is the exact problem this page exists to fix elsewhere.
  */

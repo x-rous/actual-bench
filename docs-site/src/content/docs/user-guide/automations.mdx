@@ -28,7 +28,7 @@ thing: Bench's own scheduled jobs, which Bench runs. It does not drive Actual's 
 |---|---|---|
 | **Bank sync** | Asks Actual to pull new transactions from the banks you connected to it | [Bank Sync](../bank-sync/) |
 | **Backup** | Takes a verified copy of your budget and of Bench's own settings | [Backups](../backups/) |
-| **Budget file sync** | Runs a saved sync flow, safe items only | [Budget File Sync](../budget-sync/) |
+| **Cross Budget Sync** | Runs a saved sync flow, safe items only | [Cross Budget Sync](../budget-sync/) |
 | **Verify backups** | Re-reads stored copies to check they are still readable | created with your first backup rule |
 
 **New automation** on the Automations page lists all of them and takes you to where each is
@@ -93,7 +93,7 @@ refreshes it once a week for budgets it runs automations on. If enrolling a budg
 open it once in Actual's own app, then enrol it again.
 :::
 
-You can enrol from Connections, from the bank sync or backup dialogs, or from a Budget File Sync
+You can enrol from Connections, from the bank sync or backup dialogs, or from a Cross Budget Sync
 flow - all four write the same list. This works the same for HTTP API and Direct connections.
 
 :::caution[What gets saved]
@@ -139,7 +139,7 @@ hangs can be stopped, and a run that reaches its memory limit is normally ended 
 (If your operator set Bench to run automations in the server's own thread, time limits can only ask a
 run to stop. See [Configuration](../../administration/configuration/#automation-workers).)
 
-- **Every kind of automation has a time limit:** budget file sync 20 minutes, bank sync 10, backup 60,
+- **Every kind of automation has a time limit:** Cross Budget Sync 20 minutes, bank sync 10, backup 60,
   verify backups 30. At the limit the run is asked to stop. If it has not stopped 10 seconds later,
   its thread is ended.
 - **Cancel** appears on an automation's row while it is running, and stops it the same way.

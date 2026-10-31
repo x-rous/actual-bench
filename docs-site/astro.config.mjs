@@ -102,7 +102,7 @@ export default defineConfig({
 						{ label: 'Budget Cockpit', link: '/user-guide/budget-management/' },
 						{ label: 'Credit Cards', link: '/user-guide/credit-cards/' },
 						{ label: 'Assets', link: '/user-guide/asset-registry/' },
-						{ label: 'Loans & Debt', link: '/user-guide/assets-debt/' },
+						{ label: 'Loans', link: '/user-guide/assets-debt/' },
 						{ label: 'Bank Reconciliation', link: '/user-guide/bank-reconciliation/' },
 						{ label: 'How Matching Works', link: '/user-guide/reconciliation-matching/' },
 					],
@@ -110,10 +110,10 @@ export default defineConfig({
 				{
 					label: 'Sync & Automations',
 					items: [
-						{ label: 'Budget File Sync', link: '/user-guide/budget-sync/' },
+						{ label: 'Cross Budget Sync', link: '/user-guide/budget-sync/' },
 						{ label: 'Backups', link: '/user-guide/backups/' },
 						{ label: 'Automations', link: '/user-guide/automations/' },
-						{ label: 'FX Rates', link: '/user-guide/fx-rates/' },
+						{ label: 'Exchange Rates', link: '/user-guide/fx-rates/' },
 						{ label: 'Bank Sync', link: '/user-guide/bank-sync/' },
 					],
 				},

@@ -3,7 +3,7 @@
  * Give the screenshot instance something worth photographing.
  *
  * Most pages draw the connected budget, so the public demo supplies their
- * content. Four do not: Backups, Automations, Budget File Sync and FX Rates
+ * content. Four do not: Backups, Automations, Cross Budget Sync and Exchange Rates
  * read the *instance's own* metadata - its destinations, rules, flows and
  * rates - which on a fresh instance is empty, and on anybody's real instance is
  * private. Photographing a real one leaks their backup destinations and their
@@ -348,7 +348,7 @@ export async function connectSecondBudget(page, mode = "Tracking", given) {
 
 /** A transactions flow between the two demo budgets, previewed but not applied. */
 async function seedSyncFlow(page) {
-  await openTool(page, "Budget File Sync", /\/sync/);
+  await openTool(page, "Cross Budget Sync", /\/sync/);
   if (!(await page.getByText("No sync flows yet").count())) {
     console.log("seed: a sync flow already exists, leaving it alone");
     return;

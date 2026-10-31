@@ -464,7 +464,7 @@ describe("automation engine", () => {
             return { ok: true };
           },
           summarize(): AutomationRunRollup {
-            // Budget File Sync's rule (RD-058): a partial apply means writes
+            // Cross Budget Sync's rule (RD-058): a partial apply means writes
             // failed, and repeated partials should still auto-pause.
             return { outcome: "partial", itemCount: 2, message: "1 item failed", countsAsFailure: true };
           },

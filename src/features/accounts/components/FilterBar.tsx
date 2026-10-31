@@ -177,6 +177,9 @@ export function FilterBar({
       <PillGroup options={STATUS_OPTIONS} value={statusFilter} onChange={onStatusChange} />
       <PillGroup options={BUDGET_OPTIONS} value={budgetFilter} onChange={onBudgetChange} />
       <PillGroup options={RULES_OPTIONS} value={rulesFilter} onChange={onRulesFilterChange} />
+      {groupByOptions && groupBy !== undefined && onGroupByChange && (
+        <PillGroup options={groupByOptions} value={groupBy} onChange={onGroupByChange} />
+      )}
       {groupFilterOptions && (
         <div className="w-40">
           <Select
@@ -189,29 +192,27 @@ export function FilterBar({
         </div>
       )}
       {classFilter !== undefined && (
-        <div className="w-40">
-          <Select
-            size="sm"
-            value={classFilter}
-            aria-label="Filter by account class"
-            options={CLASS_FILTER_OPTIONS}
-            groups={CLASS_FILTER_GROUPS}
-            onValueChange={onClassFilterChange}
-          />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="w-40 shrink-0">
+            <Select
+              size="sm"
+              value={classFilter}
+              aria-label="Filter by account class"
+              options={CLASS_FILTER_OPTIONS}
+              groups={CLASS_FILTER_GROUPS}
+              onValueChange={onClassFilterChange}
+            />
+          </div>
+          {unclassifiedCount !== undefined && unclassifiedCount > 0 && classFilter !== UNCLASSIFIED && (
+            <button
+              type="button"
+              onClick={() => onClassFilterChange(UNCLASSIFIED)}
+              className="whitespace-nowrap text-xs text-amber-700 underline hover:text-foreground dark:text-amber-400"
+            >
+              {unclassifiedCount} need{unclassifiedCount === 1 ? "s" : ""} a class
+            </button>
+          )}
         </div>
-      )}
-      {unclassifiedCount !== undefined && unclassifiedCount > 0 && classFilter !== UNCLASSIFIED && (
-        <button
-          type="button"
-          onClick={() => onClassFilterChange(UNCLASSIFIED)}
-          className="text-xs text-amber-700 underline hover:text-foreground dark:text-amber-400"
-        >
-          {unclassifiedCount} need{unclassifiedCount === 1 ? "s" : ""} a class
-        </button>
-      )}
-
-      {groupByOptions && groupBy !== undefined && onGroupByChange && (
-        <PillGroup options={groupByOptions} value={groupBy} onChange={onGroupByChange} />
       )}
 
       {hasFilters && (
@@ -230,9 +231,11 @@ export function FilterBar({
         </button>
       )}
 
-      <span className="ml-auto text-xs text-muted-foreground">
-        {filteredCount === totalCount ? `${totalCount} rows` : `${filteredCount} of ${totalCount}`}
-      </span>
+      <div className="ml-auto flex items-center gap-2 whitespace-nowrap">
+        <span className="text-xs text-muted-foreground">
+          {filteredCount === totalCount ? `${totalCount} rows` : `${filteredCount} of ${totalCount}`}
+        </span>
+      </div>
     </div>
   );
 }

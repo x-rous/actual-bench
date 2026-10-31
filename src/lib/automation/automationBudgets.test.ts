@@ -36,7 +36,7 @@ describe("automationBudgets", () => {
     expect(automationBudgets(db, backup, enrolments)).toEqual(["sync-joint"]);
   });
 
-  it("names a Budget File Sync's source then target", () => {
+  it("names a Cross Budget Sync's source then target", () => {
     flows["flow-1"] = {
       sourceRef: { version: 1, data: { budgetName: "Household", connectionFingerprint: "fp-home" } },
       targetRef: { version: 1, data: { connectionFingerprint: "fp-joint" } },

@@ -494,7 +494,7 @@ export type AutomationRunRollup = {
    * eventually auto-pauses the automation.
    *
    * This is the job type's call, not the engine's, because the same word means
-   * different things: for Budget File Sync a partial apply means writes failed
+   * different things: for Cross Budget Sync a partial apply means writes failed
    * and RD-058 rightly counted it as a failure; for a bank sync one unreachable
    * account out of twelve is a normal Tuesday, and pausing the whole automation
    * over it would be wrong. Defaults to false — reported honestly as partial,

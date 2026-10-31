@@ -1,6 +1,6 @@
 # Unattended Server-Side Scheduled Sync
 
-Budget File Sync can run **safe-only** syncs on a server schedule with **no browser open**.
+Cross Budget Sync can run **safe-only** syncs on a server schedule with **no browser open**.
 This is opt-in, **off by default**, and available for **HTTP API Server** and **Direct**
 flows alike. Unattended runs happen on the Node server: an HTTP API budget through
 `actual-http-api`, a Direct budget with Actual's own engine in a worker thread (so the

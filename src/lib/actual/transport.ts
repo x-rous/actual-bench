@@ -101,7 +101,7 @@ export type BudgetTransferInput = {
 };
 
 // ---------------------------------------------------------------------------
-// Budget File Sync transaction primitives (RD-053 / PR-019).
+// Cross Budget Sync transaction primitives (RD-053 / PR-019).
 //
 // These are app-level shapes for the sync engine. They intentionally do NOT
 // leak `@actual-app/api` concepts (`addTransactions`, `importTransactions`,
@@ -141,7 +141,7 @@ export type SyncSourceSplitLine = {
   parentId?: string | null;
 };
 
-/** A source transaction with the fields Budget File Sync needs. */
+/** A source transaction with the fields Cross Budget Sync needs. */
 export type SyncSourceTransaction = {
   id: string;
   accountId: string;
@@ -270,7 +270,7 @@ export type UpdateTransactionForSyncInput = {
   /**
    * Read the row back after writing and return its persisted fields.
    *
-   * Defaults to true, which Budget File Sync relies on to refresh its mapping
+   * Defaults to true, which Cross Budget Sync relies on to refresh its mapping
    * fingerprint. A caller that ignores the result should pass false: the
    * read-back is a range query per update, and doing it for a discarded value
    * is the difference between a fast reconciliation and a ten-minute one.
@@ -411,8 +411,8 @@ export interface ActualBenchTransport {
   holdBudgetForNextMonth(month: string, amount: MinorUnitAmount): Promise<void>;
   resetBudgetHold(month: string): Promise<void>;
 
-  // --- Budget File Sync (RD-053 / PR-019) ---------------------------------
-  /** Report which Budget File Sync operations this transport can perform. */
+  // --- Cross Budget Sync (RD-053 / PR-019) ---------------------------------
+  /** Report which Cross Budget Sync operations this transport can perform. */
   getSyncCapabilities(): SyncCapabilityReport;
   /**
    * Ask Actual to pull from the connected banks (RD-080).

@@ -57,7 +57,7 @@ function manualFlow(db: SqliteDatabase, name: string): string {
   return flow.id;
 }
 
-describe("budget file sync job type", () => {
+describe("Cross Budget Sync job type", () => {
   afterEach(() => {
     resetAppDbForTests();
   });

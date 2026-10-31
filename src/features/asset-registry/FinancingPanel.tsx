@@ -38,7 +38,7 @@ export function FinancingPanel({ asset, registry, loans, loansReady, accounts, a
   const debtOf = (debtId: string) => debts.find((d) => d.debtId === debtId)?.magnitudeMinor ?? null;
   const full = (l: AssetDebtLink["effectiveFrom"] | null) => l ? shortDate(l) : "open-ended";
   const repaid = (l: AssetDebtLink) => { const d = loan(l.debtId); const bal = debtOf(l.debtId); return d?.openingPrincipalMinor && bal !== null ? `${Math.max(0, Math.min(100, Math.round((1 - bal / d.openingPrincipalMinor) * 100)))}% repaid` : undefined; };
-  const money = (_l: AssetDebtLink, minor: number) => assetMoney(minor); // one currency across Loans & Debt: never shown
+  const money = (_l: AssetDebtLink, minor: number) => assetMoney(minor); // one currency across Loans: never shown
   const value = valid ? valueAt(asOf) : null;
   const ltv = result?.allocatedDebtMinor != null && value !== null && value > 0 ? (result.allocatedDebtMinor / value) * 100 : null;
   const columns: Column<AssetDebtLink>[] = [
@@ -80,7 +80,7 @@ export function FinancingPanel({ asset, registry, loans, loansReady, accounts, a
   const monthly = live.length > 0 && live.every((l) => loan(l.debtId)?.repaymentFrequency === "monthly");
   const terms = live.length === 1 && loan(live[0].debtId) ? loanTerms(loan(live[0].debtId)!).join(" · ") : live.length > 1 ? `${live.length} loans` : "";
   return <div className="flex min-h-0 flex-1"><div className="flex min-w-0 flex-1 flex-col overflow-auto">
-    {mine.length === 0 ? <EmptyState icon={Landmark} title="No loan linked" action={<Button size="sm" disabled={asset.status !== "active" || !loansReady} onClick={() => setEditing({})}><Plus className="size-3.5" aria-hidden />Link loan</Button>}>Link a loan from Loans &amp; Debt to see this asset&apos;s debt, equity and loan-to-value.</EmptyState> : <>
+    {mine.length === 0 ? <EmptyState icon={Landmark} title="No loan linked" action={<Button size="sm" disabled={asset.status !== "active" || !loansReady} onClick={() => setEditing({})}><Plus className="size-3.5" aria-hidden />Link loan</Button>}>Link a loan from Loans to see this asset&apos;s debt, equity and loan-to-value.</EmptyState> : <>
     <SummaryStrip label="Asset financing summary" items={[
       { label: "Debt allocated", value: assetMoney(result?.allocatedDebtMinor), detail: ownership !== null && ownership < 10000 ? `Your ownership is ${ownership / 100}%` : live.length ? "Same-date Actual liability balance" : "No loan applies on this date", wrap: true },
       { label: "Equity", value: assetMoney(result?.equityMinor), detail: "Owned value − allocated debt", wrap: true },
@@ -88,12 +88,12 @@ export function FinancingPanel({ asset, registry, loans, loansReady, accounts, a
       { label: "Equity built", value: built === null ? NA : assetMoney(built), detail: built === null ? "Needs the loan balance on the day it was linked" : `Principal repaid since ${shortDate(firstLink!)}, on your current share`, wrap: true },
       { label: monthly ? "Monthly payment" : "Regular payment", value: repaymentReading ? "…" : payment === null ? NA : assetMoney(payment), detail: payment === null ? (live.length ? "The loan has no regular repayment" : "No loan applies on this date") : terms || "Your share of the loan's regular repayment", wrap: true },
     ]} />
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">Linked Loans &amp; Debt</h2><p className="flex items-center gap-1 text-xs text-muted-foreground">Effective allocation history · same-date equity<InfoHint label="allocation history">Allocation changes preserve earlier periods. Use the report date to inspect past equity. No current balance, loan forecast or share is substituted for missing historical evidence.</InfoHint></p></div>
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-1.5"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">Linked Loans</h2><p className="flex items-center gap-1 text-xs text-muted-foreground">Effective allocation history · same-date equity<InfoHint label="allocation history">Allocation changes preserve earlier periods. Use the report date to inspect past equity. No current balance, loan forecast or share is substituted for missing historical evidence.</InfoHint></p></div>
       <Label htmlFor="fin-asof" className="ml-auto">As of</Label><DateInput id="fin-asof" className="w-40" value={asOf} onValueChange={onAsOf} />
       <Button size="sm" disabled={asset.status !== "active" || !loansReady} onClick={() => setEditing({})}><Plus className="size-3.5" aria-hidden />Link loan</Button></div>
     {!valid && <p role="alert" className="border-b p-3 text-xs text-destructive">Choose a report date no later than today.</p>}
     {result && result.gaps.length > 0 && <ul role="status" className="list-disc border-b px-8 py-2 text-xs">{[...new Set(result.gaps)].map((g) => <li key={g}>{g}; nothing is substituted from today&apos;s data.</li>)}</ul>}
-    <div className="flex min-h-40 flex-1 flex-col"><DataTable label="Asset loan allocations" rows={mine} columns={columns} rowKey={(l) => `${l.debtId}:${l.effectiveFrom}`} rowLabel={(l) => `${loan(l.debtId)?.name ?? "Loan"} from ${l.effectiveFrom}`} dense={32} sort={sort} onSort={setSort} empty="No loan linked yet. Link a loan from Loans & Debt to see the debt, equity and loan-to-value of this asset." stacked /></div></>}
+    <div className="flex min-h-40 flex-1 flex-col"><DataTable label="Asset loan allocations" rows={mine} columns={columns} rowKey={(l) => `${l.debtId}:${l.effectiveFrom}`} rowLabel={(l) => `${loan(l.debtId)?.name ?? "Loan"} from ${l.effectiveFrom}`} dense={32} sort={sort} onSort={setSort} empty="No loan linked yet. Link a loan from Loans to see the debt, equity and loan-to-value of this asset." stacked /></div></>}
   </div>
   {editing && <FinancingEditor key={editing.preset ? `${editing.preset.debtId}:${editing.preset.effectiveFrom}:${editing.mode ?? "set"}` : "new"} asset={asset} registry={registry} loans={loans} preset={editing.preset} initialMode={editing.mode} today={today} firstDate={firstDate} valueAt={valueAt} debtsAt={debtsAt} balanceAt={balanceAt} onSaved={async (next) => { await onSaved(next); }} onClose={() => setEditing(null)} />}
   </div>;

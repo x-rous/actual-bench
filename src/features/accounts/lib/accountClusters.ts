@@ -4,7 +4,7 @@ import type { AccountGroup } from "@/types/entities";
 export type GroupBy = "none" | "group" | "class";
 
 export type AccountCluster<R> = {
-  /** Unique within one grouping: a group id or class value, or NO_CLUSTER for the leftover. */
+  /** Unique within one grouping: a group id or class value, or a reserved cluster key. */
   key: string;
   label: string;
   /** Set for a group cluster; null for "No group". */
@@ -18,9 +18,11 @@ export type AccountCluster<R> = {
 
 /** Key of the cluster that holds accounts with no group, or no class. */
 export const NO_CLUSTER = "__none__";
+const NEW_ACCOUNTS_CLUSTER = "__new_accounts__";
 
 type ClusterRow = {
   entity: { id: string; groupId?: string | null; offBudget?: boolean; sortOrder?: number };
+  isNew: boolean;
   isDeleted: boolean;
 };
 
@@ -40,10 +42,10 @@ export function sumBalancesCents(ids: readonly string[], balances: ReadonlyMap<s
 
 /**
  * Splits already filtered and sorted rows into clusters, keeping the row order
- * inside each cluster. Group clusters with on-budget accounts come first, then
- * use Actual's group sort order; the "none" cluster is always last. Classes are
- * ordered in list order (assets, then liabilities). A deleted group counts as
- * no group.
+ * inside each cluster. Unsaved accounts come first. Group clusters with
+ * on-budget accounts come next, then use Actual's group sort order; the "none"
+ * cluster is always last. Classes are ordered in list order (assets, then
+ * liabilities). A deleted group counts as no group.
  */
 export function buildClusters<R extends ClusterRow>(
   rows: readonly R[],
@@ -58,7 +60,9 @@ export function buildClusters<R extends ClusterRow>(
   const buckets = new Map<string, R[]>();
   for (const row of rows) {
     let key = NO_CLUSTER;
-    if (by === "group") {
+    if (row.isNew) {
+      key = NEW_ACCOUNTS_CLUSTER;
+    } else if (by === "group") {
       const groupId = row.entity.groupId;
       if (groupId && groupById.has(groupId)) key = groupId;
     } else {
@@ -71,6 +75,7 @@ export function buildClusters<R extends ClusterRow>(
 
   const classOrder = new Map(ACCOUNT_CLASS_INFO.map((info, index) => [info.value as string, index]));
   const keys = [...buckets.keys()].sort((a, b) => {
+    if (a === NEW_ACCOUNTS_CLUSTER || b === NEW_ACCOUNTS_CLUSTER) return a === NEW_ACCOUNTS_CLUSTER ? -1 : 1;
     if (a === NO_CLUSTER || b === NO_CLUSTER) return a === NO_CLUSTER ? 1 : -1;
     if (by === "class") return (classOrder.get(a) ?? 0) - (classOrder.get(b) ?? 0);
     const rowsA = buckets.get(a) ?? [];
@@ -91,11 +96,12 @@ export function buildClusters<R extends ClusterRow>(
   return keys.map((key) => {
     const clusterRows = buckets.get(key) ?? [];
     const none = key === NO_CLUSTER;
+    const newAccounts = key === NEW_ACCOUNTS_CLUSTER;
     return {
       key,
-      label: none ? (by === "group" ? "No group" : "Unclassified") : by === "group" ? (groupById.get(key)?.name ?? key) : accountClassLabel(key as AccountClass),
-      groupId: by === "group" && !none ? key : null,
-      accountClass: by === "class" && !none ? (key as AccountClass) : null,
+      label: newAccounts ? "Unsaved accounts" : none ? (by === "group" ? "No group" : "Unclassified") : by === "group" ? (groupById.get(key)?.name ?? key) : accountClassLabel(key as AccountClass),
+      groupId: by === "group" && !none && !newAccounts ? key : null,
+      accountClass: by === "class" && !none && !newAccounts ? (key as AccountClass) : null,
       rows: clusterRows,
       subtotalCents: sumBalancesCents(clusterRows.filter((r) => !r.isDeleted).map((r) => r.entity.id), context.balances),
     };

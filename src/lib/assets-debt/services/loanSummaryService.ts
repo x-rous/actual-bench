@@ -1,4 +1,5 @@
 import { explainBlocks } from "@/lib/financial-models/loan/blockMessages";
+import { addMonths } from "@/lib/financial-models/calendar/dates";
 import type { SqliteDatabase } from "@/lib/app-db/types";
 import { getEffectiveDebtAnchor } from "@/lib/app-db/debtAnchorRepository";
 import { getDebtDetail } from "./debtConfigService";
@@ -10,8 +11,10 @@ export type LoanSummary = {
   paymentsMade: number;
   totalPayments: number;
   next: { date: string; amountMinor: number } | null;
-  /** Interest up to today from the calculation. Minor units. */
+  /** Schedule-calculated interest through today; it is not confirmed by recorded payments. Minor units. */
   interestToDateMinor: number;
+  /** Projected interest after today through the next 12 calendar months. Minor units. */
+  interestNext12MonthsMinor: number;
   totalInterestMinor: number;
   calculatedBalanceMinor: number;
   payoffDate: string | null;
@@ -32,20 +35,24 @@ export function summarizeStoredLoan(db: SqliteDatabase, id: string, input: { tod
   const paidOff = detail.paidOff && detail.paidOff.paidDate <= input.today ? detail.paidOff : null;
   const remaining = paidOff ? [] : events.filter((event) => event.date > input.today);
   const payments = remaining.filter((event) => event.eventType === "repayment" || event.eventType === "final-payment");
-  // Interest and repayments to date from the calculation up to today (design spec 06 §7.7); the Repayments tab, which
-  // reads Actual, shows which of them are recorded there.
+  // Interest and repayments to date come from the loan calculation, not confirmed Actual payments.
   const past = paidOff ? events : events.filter((event) => event.date <= input.today);
   const made = past.filter((event) => event.eventType === "repayment" || event.eventType === "final-payment").length;
   const interest = past.reduce((sum, event) => sum + event.interestMinor, 0);
   const soon = new Date(Date.parse(`${input.today}T00:00:00Z`) + 30 * 86_400_000).toISOString().slice(0, 10);
+  const next12Months = addMonths(input.today, 12);
   const due = payments.filter((payment) => payment.date <= soon);
   const forecastInterest = remaining.reduce((sum, event) => sum + event.interestMinor, 0);
+  const interestNext12Months = remaining
+    .filter((event) => event.date <= next12Months)
+    .reduce((sum, event) => sum + event.interestMinor, 0);
   const summary: LoanSummary = {
     forecastFrom: anchor?.anchorDate ?? projected.model.terms.openingDate,
     paymentsMade: made,
     totalPayments: made + payments.length,
     next: payments[0] ? { date: payments[0].date, amountMinor: -payments[0].cashMovementMinor } : null,
     interestToDateMinor: interest,
+    interestNext12MonthsMinor: interestNext12Months,
     totalInterestMinor: interest + forecastInterest,
     calculatedBalanceMinor: paidOff ? 0 : events.filter((event) => event.date <= input.today).at(-1)?.balanceAfterMinor ?? anchor?.principalMinor ?? projected.model.terms.openingPrincipalMinor,
     payoffDate: paidOff?.paidDate ?? events.find((event) => event.balanceBeforeMinor > 0 && event.balanceAfterMinor === 0 && event.eventType !== "interest-charge")?.date ?? null,

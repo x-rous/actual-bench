@@ -203,7 +203,7 @@ export function createHttpApiTransport(
         method: "DELETE",
       }),
 
-    // Budget File Sync over HTTP API mode (RD-060): entity primitives above,
+    // Cross Budget Sync over HTTP API mode (RD-060): entity primitives above,
     // transaction primitives via actual-http-api below.
     getSyncCapabilities: () => getBudgetFileSyncCapabilities({ mode: "http-api" }),
     // The endpoints are part of actual-http-api's contract, so there is no

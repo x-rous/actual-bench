@@ -9,7 +9,7 @@ import type { SyncSourceTransaction } from "@/lib/actual/transport";
 import type { SyncFlowPlanConfig } from "./flowConfig";
 
 /**
- * Planner-level shapes for Budget File Sync dry-run planning (RD-053 / PR-019).
+ * Planner-level shapes for Cross Budget Sync dry-run planning (RD-053 / PR-019).
  * Everything here is headless and Actual-write-free.
  */
 

@@ -1,22 +1,22 @@
 ---
-title: FX Rates
-description: Manage the dated exchange rates used by currency-converting Budget File Sync flows.
+title: Exchange Rates
+description: Manage the dated exchange rates used by currency-converting Cross Budget Sync flows.
 sidebar:
   order: 13
 ---
 
-Use FX Rates when a [Budget File Sync](../budget-sync/) transaction flow converts between currencies.
+Use Exchange Rates when a [Cross Budget Sync](../budget-sync/) transaction flow converts between currencies.
 Manage one rate per date, fill coverage gaps, import rates, or set manual overrides. Rates used by a
 synced transaction remain locked unless you use the previewed update workflow.
 
-FX Rates does not add multi-currency accounts to a single Actual budget.
+Exchange Rates does not add multi-currency accounts to a single Actual budget.
 
-Open it from **Sync & Automations → FX Rates** (`/fx-rates`), once a converting flow is configured.
+Open it from **Sync & Automations → Exchange Rates** (`/fx-rates`), once a converting flow is configured.
 
 **Budget impact:** Changing rates saves Actual Bench metadata. Budget transactions change only through
 a separately reviewed and applied sync update.
 
-![The FX Rates page for EUR to USD: the current rate, coverage for the range, and the daily table with each rate's source.](../../../assets/screenshots/user-guide/fx-rates.png)
+![The Exchange Rates page for EUR to USD: the current rate, coverage for the range, and the daily table with each rate's source.](../../../assets/screenshots/user-guide/fx-rates.png)
 
 *Both directions of the rate, how much of the range is covered, and where every day's rate came from -
 `Frankfurter` for the ones fetched, `Manual · yours` for the one that was set by hand.*
@@ -24,7 +24,7 @@ a separately reviewed and applied sync update.
 ## Get a converting flow ready
 
 1. Enable **Convert currency** on a transaction flow and choose its source and target currencies.
-2. Open **FX Rates** and inspect coverage for that pair and date range.
+2. Open **Exchange Rates** and inspect coverage for that pair and date range.
 3. Fill gaps from Frankfurter, import rates, or set a deliberate override.
 4. Preview the flow and verify the original amount, rate, and converted amount before Apply.
 
@@ -43,11 +43,11 @@ Rates come from a database-backed registry, filled automatically from the free
 - For a date with no published rate (weekends and holidays), Actual Bench falls back to the **latest
   prior rate**.
 - If the provider is briefly unavailable, a converting sync doesn't fail - affected rows go to review as
-  **FX pending** (see [Budget File Sync](../budget-sync/#preview-a-flow)).
+  **FX pending** (see [Cross Budget Sync](../budget-sync/#preview-a-flow)).
 
 You can also override any date manually or import rates from a CSV.
 
-## Open the FX Rates page
+## Open the Exchange Rates page
 
 The page is organized per **currency pair**:
 
@@ -77,12 +77,12 @@ Use **Set your rate** to enter a rate for a specific date manually.
 Setting a rate does not retroactively change already-synced transactions on its own. Past conversions
 keep their locked rate unless you explicitly update them through the previewed sync update path (the
 *Update synced transactions when the rate changes* flow option). See
-[Budget File Sync](../budget-sync/#updates-and-deletion-opt-in).
+[Cross Budget Sync](../budget-sync/#updates-and-deletion-opt-in).
 :::
 
 ## Import rates from CSV
 
-Import a CSV of rates for a pair from the FX Rates page. Uploaded rows are labeled with the
+Import a CSV of rates for a pair from the Exchange Rates page. Uploaded rows are labeled with the
 **Uploaded** source in the coverage ledger.
 
 ## Preview a converted transaction
@@ -124,5 +124,5 @@ See [Known Limitations](../../help/known-limitations/) for the full list.
 
 ## Related pages
 
-- [Budget File Sync](../budget-sync/)
+- [Cross Budget Sync](../budget-sync/)
 - [Connect to Actual Budget](../../getting-started/connecting/)

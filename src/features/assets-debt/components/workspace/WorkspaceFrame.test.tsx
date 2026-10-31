@@ -15,14 +15,14 @@ describe("Loan workspace frame", () => {
     expect(within(nav).getByRole("img", { name: "2 unresolved writes" })).toBeInTheDocument();
     fireEvent.click(within(nav).getByRole("button", { name: "Loan Ledger" }));
     expect(onTab).toHaveBeenCalledWith("ledger");
-    fireEvent.click(screen.getByRole("button", { name: /Loans & Debt/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Loans/ }));
     expect(push).toHaveBeenCalledWith("/loans");
   });
 
   it("leaving with unsaved changes asks: Stay, Discard changes, or Save and leave", async () => {
     const save = jest.fn(async () => true);
     render(<WorkspaceFrame title="HSBC" state="Unsaved changes" tab="calculation" onTab={jest.fn()} dirty onSaveAndLeave={save}><p>body</p></WorkspaceFrame>);
-    fireEvent.click(screen.getByRole("button", { name: /Loans & Debt/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Loans/ }));
     expect(await screen.findByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save and leave" }));
@@ -33,7 +33,7 @@ describe("Loan workspace frame", () => {
   it("the Guide opens on the section for the tab you are on", () => {
     render(<WorkspaceFrame title="HSBC" state="Saved" tab="ledger" onTab={jest.fn()} dirty={false}><p>body</p></WorkspaceFrame>);
     fireEvent.click(screen.getByRole("button", { name: "Guide" }));
-    expect(screen.getByRole("dialog", { name: "Loans & Debt guide" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Loans guide" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Loan Ledger" })).toBeInTheDocument();
   });
 

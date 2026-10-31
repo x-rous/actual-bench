@@ -415,7 +415,7 @@ These examples communicate **hierarchy and behavior**, not pixel-perfect mockups
 ### Example C — Loan modelling workspace
 
 ```text
- ← Loans & Debt    Home Loan   [Draft]                 [Save] [More ▾]
+ ← Loans    Home Loan   [Draft]                 [Save] [More ▾]
  [Activity] [Calculation] [Setup]
  ──────────────────────────────────────────────────────────────────────
  INPUTS (~396px current rail)    │ RESULTS

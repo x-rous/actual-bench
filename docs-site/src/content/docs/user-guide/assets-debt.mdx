@@ -1,14 +1,14 @@
 ---
-title: Loans & Debt
+title: Loans
 description: Work out a loan, track it against the payments in Actual, and keep each repayment split into principal and interest.
 ---
 
-Open your loan in **Financial Management → Loans & Debt**. A loan is a **calculator** until you save it and link it to its
+Open your loan in **Financial Management → Loans**. A loan is a **calculator** until you save it and link it to its
 account in Actual; after that it is **tracked**: Bench lines each installment up with the payment you made and, when you
 say so, splits it into principal and interest. The **Guide** button on every loan page opens an in-app guide with the
 same material as this page.
 
-Loans & Debt normally uses the full workspace width without the global **Changes** panel.
+Loans normally uses the full workspace width without the global **Changes** panel.
 
 Before opening this workspace, save or discard pending entity or budget edits from other pages.
 Bench shows an entry screen until those edits are resolved, with **Save**, **Discard**, **Undo** and
@@ -20,18 +20,22 @@ the page or switching budgets checks pending drafts again.
 
 ## Compare your loans
 
-The **Loans & Debt** overview shows one compact table row per loan, with at most three lines
+The **Loans** overview shows one compact table row per loan, with at most three lines
 in each cell. Its search, filters, and table header follow the reconciliation list design.
 
-Compare outstanding balance, next payment and date, payments left, principal paid, payment
-counts of recorded repayments, recorded interest and projected interest remaining, and the projected end date. The progress
-bar shows the share of the opening principal paid. A calculated balance is labelled when a
-loan has no live Actual balance. Failed balance reads show **Unavailable**. Scheduled payments are not counted as paid; recorded history may cover only part of the loan’s lifetime. Forecasts identify their starting date, including lender restarts. Payment counts appear only under **Principal paid**; **Next payment** shows the amount and date. A confirmed payoff stops future payment and interest forecasts.
+Five figures above the table summarize **Outstanding Balance** (current Actual liability balances),
+**Upcoming Repayments** (scheduled repayments in the next 30 days), **Principal Repaid** (opening
+principal less current balance), **Interest to Date**, and **Interest Next 12 Months**. Interest
+figures are calculated from current loan schedules, not confirmed by recorded payments; the 12-month
+figure is a forecast, not a guarantee. A calculated balance is labelled in the table when a loan has
+no live Actual balance. Failed reads show **Unavailable**. Scheduled payments are not counted as
+paid; recorded history may cover only part of the loan’s lifetime. Forecasts identify their starting
+date, including lender restarts. Payment counts appear only under **Principal paid**; **Next payment**
+shows the amount and date. A confirmed payoff stops future payment and interest forecasts.
 
 A loan row says **Tracked from installment N** when it is linked to its account in Actual, and
 **Not tracked in Actual** when it is only a calculation. The **Accounts** column shows only configured loan and
-repayment accounts and currently active offset accounts. The loan summary sits on the right of the same bar as the
-filters. Columns read from left to right: Loan, Terms, Outstanding, Next payment, Principal paid, Interest,
+repayment accounts and currently active offset accounts. Columns read from left to right: Loan, Terms, Outstanding, Next payment, Principal paid, Interest,
 Ends / Paid off, Accounts, and Status. The **Terms** column shows the current rate, repayment frequency,
 contractual term, and the next scheduled rate change when one exists.
 

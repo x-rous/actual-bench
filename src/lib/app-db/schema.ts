@@ -578,7 +578,7 @@ export const RECONCILIATION_INDEX_SQL = [
 // ── Automation engine (RD-079 / PR-043a) ─────────────────────────────────────
 //
 // Job-type-agnostic scheduling. One definition per automation, one row per run.
-// Budget File Sync becomes the first registered job type in PR-043c; nothing
+// Cross Budget Sync becomes the first registered job type in PR-043c; nothing
 // reads these tables until then.
 //
 // Two shape decisions are deliberate:

@@ -252,6 +252,8 @@ type Props = {
   selectedKeys: string[] | null;
   /** What the picker says before it has been touched. */
   placeholder: string;
+  /** Full initial selection shown in the summary badge when the picker is untouched. */
+  selectionFallbackTitle?: string;
   coveredKeys: ReadonlySet<string>;
   exclusiveKeys: ReadonlySet<string>;
   summary: string | undefined;
@@ -314,7 +316,7 @@ export function AnalysisHeader(props: Props) {
         <SelectionSummaryBadge
           count={props.categoryCount}
           selected={props.selectedOptions}
-          fallbackTitle={props.placeholder}
+          fallbackTitle={props.selectionFallbackTitle ?? props.placeholder}
         />
 
         <Field label="Period">

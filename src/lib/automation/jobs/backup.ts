@@ -201,7 +201,7 @@ export const backupJobType: AutomationJobType<BackupJobConfig, BackupJobResult> 
   /**
    * Backup rules are created and edited on the Backups page while the server is
    * up, so their automations are reconciled every tick rather than at boot —
-   * the lesson Budget File Sync learned when a flow enrolled after startup
+   * the lesson Cross Budget Sync learned when a flow enrolled after startup
    * silently never ran.
    */
   reconcile(db) {

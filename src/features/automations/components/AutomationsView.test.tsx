@@ -51,7 +51,7 @@ function automation(overrides: Partial<AutomationListItem> = {}): AutomationList
     scheduleLabel: "Every 30 minutes",
     running: false,
     lastRun: run(),
-    typeLabel: "Budget File Sync",
+    typeLabel: "Cross Budget Sync",
     status: "ok",
     statusSummary: "Last run finished successfully.",
     ...overrides,
@@ -114,7 +114,7 @@ describe("AutomationsView", () => {
     expect(screen.getByText(/Every 30 minutes/)).toBeInTheDocument();
     // The job type is named rather than inferred: "Household → Joint" says
     // nothing about what kind of automation it is once bank sync exists.
-    expect(screen.getByText("Budget File Sync")).toBeInTheDocument();
+    expect(screen.getByText("Cross Budget Sync")).toBeInTheDocument();
     expect(screen.getByText(/3 added/)).toBeInTheDocument();
   });
 
@@ -251,7 +251,7 @@ describe("AutomationsView", () => {
       "href",
       "/backups?new=rule"
     );
-    expect(screen.getByRole("link", { name: "Budget File Sync" })).toHaveAttribute("href", "/sync");
+    expect(screen.getByRole("link", { name: "Cross Budget Sync" })).toHaveAttribute("href", "/sync");
 
     // And it still explains which sync flows qualify, which is the one thing
     // people get wrong about this page.
@@ -372,7 +372,7 @@ describe("AutomationsView", () => {
     // Bench run for me", which is the question a new user actually has.
     expect(await screen.findByText("Bank sync")).toBeInTheDocument();
     expect(screen.getByText("Backup")).toBeInTheDocument();
-    expect(screen.getByText("Budget file sync")).toBeInTheDocument();
+    expect(screen.getByText("Cross Budget Sync", { selector: ".font-medium" })).toBeInTheDocument();
   });
 
   it("actually opens the bank sync dialog from the menu", async () => {
@@ -401,7 +401,7 @@ describe("AutomationsView", () => {
     );
     // The sync renderer's vocabulary, not the engine's.
     expect(await screen.findByText("Added")).toBeInTheDocument();
-    expect(screen.getByText(/Open Budget File Sync/)).toBeInTheDocument();
+    expect(screen.getByText(/Open Cross Budget Sync/)).toBeInTheDocument();
   });
 
   it("shows review work with a link into the job type's own review screen", async () => {
@@ -410,7 +410,7 @@ describe("AutomationsView", () => {
         automationId: "auto-1",
         automationName: "Household → Joint",
         type: "budget-file-sync",
-        typeLabel: "Budget File Sync",
+        typeLabel: "Cross Budget Sync",
         subjects: ["transaction"],
         pendingCount: 2,
         lastRunAt: "2026-08-25T10:00:00.000Z",
@@ -423,7 +423,7 @@ describe("AutomationsView", () => {
 
     expect(await screen.findByText("Waiting for you to decide")).toBeInTheDocument();
     expect(screen.getByText("2 items from the last run need a decision.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Review in Budget File Sync/ })).toHaveAttribute("href", "/sync");
+    expect(screen.getByRole("link", { name: /Review in Cross Budget Sync/ })).toHaveAttribute("href", "/sync");
   });
 
   it("shows no review section when nothing is waiting", async () => {

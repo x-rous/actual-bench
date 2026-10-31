@@ -24,6 +24,7 @@ import { AccountPicker } from "@/components/ui/entity-picker";
 import type { AccountItem } from "@/components/ui/entity-options";
 import { useStagedAccounts } from "@/hooks/useStagedEntities";
 import { SearchInput } from "@/components/ui/search-input";
+import { ListToolbar } from "@/components/ui/list-toolbar";
 
 /**
  * Screen 1 — the reconciliation home (UX §3).
@@ -445,8 +446,10 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
     <div className="flex min-h-0 flex-1 flex-col">
       {/* One filter row, matching the other list pages: search, then the
           filters, then the count. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
+      <ListToolbar>
         <SearchInput
+          size="sm"
+          className="w-56"
           value={search}
           onValueChange={setSearch}
           aria-label="Search reconciliation sessions"
@@ -465,7 +468,7 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
           <div className="w-48">
             <AccountPicker
               size="sm"
-              className="h-6"
+              className="h-7"
               accounts={accounts}
               groups={budgetAccountGroups}
               value={accountFilter === "all" ? "" : accountFilter}
@@ -480,7 +483,8 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
 
         {tags.length > 0 && (
           <Select
-            className="h-6 w-auto"
+            size="sm"
+            className="w-auto"
             value={tagFilter}
             onValueChange={setTagFilter}
             aria-label="Filter by tag"
@@ -494,7 +498,8 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
           <div className="flex items-center gap-1">
             <span className="text-xs text-muted-foreground">Period</span>
             <Select
-              className="h-6 w-auto"
+              size="sm"
+              className="w-auto"
               value={year}
               onValueChange={setYear}
               aria-label="Filter by statement year"
@@ -504,7 +509,7 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         )}
 
         <Button
-          size="xs"
+          size="sm"
           variant={groupByAccount ? "secondary" : "ghost"}
           aria-pressed={groupByAccount}
           onClick={() => setGroupByAccount((current) => !current)}
@@ -515,7 +520,7 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
 
         {groupByAccount && accountGroups.length > 0 && (
           <Button
-            size="xs"
+            size="sm"
             variant="ghost"
             onClick={toggleAllGroups}
             aria-label={allGroupsCollapsed ? "Expand all groups" : "Collapse all groups"}
@@ -547,7 +552,7 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
         <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-muted-foreground">
           {visible.length} of {sessions.length}
         </span>
-      </div>
+      </ListToolbar>
 
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-collapse text-xs">
@@ -555,31 +560,31 @@ export function SessionList({ sessions, onOpen, onDelete, onRetag, onNew }: Sess
           {/* Background on each cell, not on the `<thead>`: under
               `border-collapse` the latter is not painted, and the rows scroll
               through a sticky header that looks solid but is not. */}
-          <thead className="sticky top-0 z-10 text-[11px] uppercase tracking-wide text-muted-foreground">
-            <tr>
+          <thead className="sticky top-0 z-[2] bg-muted text-xs font-medium text-muted-foreground">
+            <tr className="h-8">
               {/* The account and the statement are read; the rest are
                   glanced at, so they take only what their values need. */}
               {/* Under a grouping heading the account cell is empty, so it
                   gives its width back to the statement rather than holding a
                   column of blanks. */}
-              <SortableHeader className={groupByAccount ? "w-0" : "w-[22%]"} column="account" label="Account" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
-              <th scope="col" className="w-28 border-b border-border bg-background px-3 py-2 text-left font-medium">
+              <SortableHeader className={cn("border-b border-border bg-muted px-2 py-0", groupByAccount ? "w-0" : "w-[22%]")} column="account" label="Account" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
+              <th scope="col" className="w-28 border-b border-border bg-muted px-2 py-0 text-left font-medium">
                 Tag
               </th>
-              <th scope="col" className={cn("border-b border-border bg-background px-3 py-2 text-left font-medium", groupByAccount ? "w-[48%]" : "w-[26%]")}>
+              <th scope="col" className={cn("border-b border-border bg-muted px-2 py-0 text-left font-medium", groupByAccount ? "w-[48%]" : "w-[26%]")}>
                 Statement
               </th>
-              <th scope="col" className="w-52 border-b border-border bg-background px-3 py-2 text-left font-medium">
+              <th scope="col" className="w-52 border-b border-border bg-muted px-2 py-0 text-left font-medium">
                 Period
               </th>
-              <SortableHeader className="w-20 text-right" column="rows" label="Rows" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
-              <SortableHeader className="w-28" column="status" label="Status" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
+              <SortableHeader className="w-20 border-b border-border bg-muted px-2 py-0 text-right" column="rows" label="Rows" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
+              <SortableHeader className="w-28 border-b border-border bg-muted px-2 py-0" column="status" label="Status" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
               {/* Wide enough for `24 Feb 2025, 09:15` and for the heading over it:
                   under-measured, "Last worked on" wrapped to two lines and took
                   the whole header row's height with it. */}
-              <SortableHeader className="w-36" column="created" label="Created" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
-              <SortableHeader className="w-44" column="updated" label="Last worked on" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
-              <th scope="col" className="w-16 border-b border-border bg-background px-3 py-2" />
+              <SortableHeader className="w-36 border-b border-border bg-muted px-2 py-0" column="created" label="Created" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
+              <SortableHeader className="w-44 border-b border-border bg-muted px-2 py-0" column="updated" label="Last worked on" sortKey={sortKey} ascending={ascending} onSort={sortBy} />
+              <th scope="col" className="w-16 border-b border-border bg-muted px-2 py-0" />
             </tr>
           </thead>
           {accountGroups.map((group) => {

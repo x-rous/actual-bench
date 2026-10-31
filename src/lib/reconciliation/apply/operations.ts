@@ -47,7 +47,7 @@ export type CreateOperation = OperationBase & {
    * same row always yields the same marker, so a create that already succeeded
    * is recognised rather than repeated.
    *
-   * Opaque equality key — never parsed, following the Budget File Sync rule.
+   * Opaque equality key — never parsed, following the Cross Budget Sync rule.
    */
   marker: string;
 };

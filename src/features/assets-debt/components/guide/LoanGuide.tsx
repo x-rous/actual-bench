@@ -11,7 +11,7 @@ import type { WorkspaceTab } from "../workspace/WorkspaceFrame";
 import { LoanSettingsGuide } from "./LoanSettingsGuide";
 
 /**
- * The Loans & Debt guide: one dialog, the picture first and the words second, with one example loan throughout
+ * The Loans guide: one dialog, the picture first and the words second, with one example loan throughout
  * (a 350,000 loan over 4 years, repaid monthly from a bank account into an off-budget loan account).
  */
 
@@ -111,7 +111,7 @@ function SplitPicture() {
 
 export function LoanGuide({ section, onSection, onClose, docsUrl }: { section: LoanGuideSection; onSection: (section: LoanGuideSection) => void; onClose: () => void; docsUrl?: string }) {
   const link = (to: LoanGuideSection, text: string) => <button type="button" className="font-medium text-primary hover:underline" onClick={() => onSection(to)}>{text}</button>;
-  return <GuideFrame title="Loans & Debt guide" description="Work out a loan, then keep it in step with Actual: each repayment split into principal and interest, with the history in one place." docsUrl={docsUrl} sections={LOAN_GUIDE_SECTIONS} icons={SECTION_ICONS} section={section} onSection={onSection} onClose={onClose}>
+  return <GuideFrame title="Loans guide" description="Work out a loan, then keep it in step with Actual: each repayment split into principal and interest, with the history in one place." docsUrl={docsUrl} sections={LOAN_GUIDE_SECTIONS} icons={SECTION_ICONS} section={section} onSection={onSection} onClose={onClose}>
           {section === "start" && <>
             <Para>A loan in Bench can be two things. Until it is saved it is a <b>loan calculator</b>: change the amount, rate or term and see the repayment, the interest and the payoff date at once. Once it is saved and linked to its account in Actual, it is <b>tracked</b>: Bench lines each installment up with the payment you made, and splits it into principal and interest when you say so.</Para>
             <div className="grid max-w-[64.5rem] gap-3 sm:grid-cols-2">

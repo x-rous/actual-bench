@@ -8,7 +8,7 @@ import { BUDGET_FILE_SYNC_JOB_TYPE } from "./jobs/budgetFileSyncType";
 
 /**
  * The budgets an automation works on, by name, for the Automations table:
- * a bank sync's or backup's one budget, a Budget File Sync's source then
+ * a bank sync's or backup's one budget, a Cross Budget Sync's source then
  * target. `null` marks a budget that can no longer be found (its enrolment was
  * removed), which the run will fail on too. An empty list means the
  * automation isn't about particular budgets (verifying stored backups).

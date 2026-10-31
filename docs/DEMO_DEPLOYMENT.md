@@ -108,11 +108,11 @@ Open the Space's direct `hf.space` URL, choose each budget mode, and use the
 connection switcher to move between them. Check:
 
 - Budget Cockpit: household transactions, rules and schedules.
-- Loans & Debt: the home mortgage, car loan, personal loan and investment-property loan, including their history and projections.
+- Loans: the home mortgage, car loan, personal loan and investment-property loan, including their history and projections.
 - Credit Cards: two cards, including a missed payment, interest and an instalment plan.
 - Assets: Family Home, Family Car and Investment Property, their history and linked loans; check the rental income and expenses.
 - Bank Reconciliation: completed, in-review and ready-to-apply checking sessions.
-- FX Rates: the illustrative USD/AUD rate.
+- Exchange Rates: the illustrative USD/AUD rate.
 - Backups and Automations: the local demo destination and monthly Bench-metadata backup rule. An initial verified backup runs at startup to establish the schedule. This container-local destination and run history reset on restart; Space sleep can prevent scheduled runs.
 
 Verify amounts and linked rows in both modes. Restart the Space, repeat the

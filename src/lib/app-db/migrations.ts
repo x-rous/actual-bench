@@ -263,7 +263,7 @@ const MIGRATIONS: readonly Migration[] = [
   {
     version: 18,
     // Automation engine storage (RD-079 / PR-043a). Purely additive: two new
-    // tables and their indexes. No data is moved — Budget File Sync keeps
+    // tables and their indexes. No data is moved — Cross Budget Sync keeps
     // running on its own scheduler until PR-043c migrates it — so this upgrade
     // is reversible by dropping the tables.
     statements: [

@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { PillGroup } from "@/components/ui/pill-group";
 import { SearchInput } from "@/components/ui/search-input";
+import { ListToolbar } from "@/components/ui/list-toolbar";
 import { attentionText, hrefOf } from "../lib/attention";
 import { listDebts, listNeedsAttention } from "../lib/debtsApi";
 import { LOANS_PATH, NEW_LOAN_PATH } from "../lib/routes";
@@ -47,7 +48,7 @@ function NoConnection() {
 }
 
 /**
- * The Loans & Debt page (rev 4): one visual table row per loan, with a "Needs attention" filter in place of
+ * The Loans page (rev 4): one visual table row per loan, with a "Needs attention" filter in place of
  * the former global Activity page (`?filter=attention`). A row that needs attention opens where
  * it can be acted on.
  */
@@ -71,7 +72,7 @@ export function DebtListView() {
   const [guide, setGuide] = useState<LoanGuideSection | null>(null);
   return (
     <AssetsDebtShell
-      title="Loans & Debt"
+      title="Loans"
       scrollManaged
       actions={<>
         <Button type="button" variant="outline" size="sm" onClick={() => setGuide("start")}><BookOpen className="size-3.5" aria-hidden />Guide</Button>
@@ -84,8 +85,9 @@ export function DebtListView() {
         <NoConnection />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/40 bg-muted/10 px-2 py-1.5">
-            <SearchInput value={search} onValueChange={setSearch} aria-label="Search loans" clearLabel="Clear loan search" />
+          {debts.data?.length ? <LoansSummary debts={debts.data} /> : null}
+          <ListToolbar>
+            <SearchInput size="sm" className="w-56" value={search} onValueChange={setSearch} aria-label="Search loans" clearLabel="Clear loan search" />
             <div role="group" aria-label="Show">
               <PillGroup options={[{ value: "all", label: "All loans" }, { value: "attention", label: "Needs attention", count: needing.length }]} value={onlyAttention ? "attention" : "all"} onChange={(value) => setFilter(value === "attention")} />
             </div>
@@ -95,10 +97,9 @@ export function DebtListView() {
             </span>
             {query || onlyAttention ? <button type="button" onClick={() => { setSearch(""); setFilter(false); }} className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Clear filters</button> : null}
             <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
-              {debts.data?.length ? <LoansSummary debts={debts.data} /> : null}
               <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{shown.length} of {debts.data?.length ?? 0}</span>
             </div>
-          </div>
+          </ListToolbar>
           {debts.isLoading ? <p className="px-4 py-3 text-xs text-muted-foreground">Loading…</p> : null}
           {debts.isError ? <p role="alert" className="px-4 py-3 text-xs text-destructive">{(debts.error as Error).message}</p> : null}
           {debts.data && debts.data.length === 0 ? (

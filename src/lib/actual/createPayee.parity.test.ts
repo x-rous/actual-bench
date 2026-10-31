@@ -16,7 +16,7 @@ import type { BrowserApiConnection, HttpApiConnection } from "@/store/connection
  *
  * actual-http-api answers POST /payees with the new id alone (`{ data: "<id>" }`).
  * The HTTP transport used to read that as a payee object and hand callers an
- * undefined id: Budget File Sync recorded no target, reconciliation wrote rows
+ * undefined id: Cross Budget Sync recorded no target, reconciliation wrote rows
  * with no payee, and a batch naming the same new payee twice created it twice.
  * These run each caller over one fake budget per transport and compare.
  */
@@ -100,7 +100,7 @@ describe.each<Mode>(["direct", "http"])("payee creation (%s)", (mode) => {
     expect(result.created.map((c) => c.resolvedPayeeId)).toEqual([payees[0].id, payees[0].id]);
   });
 
-  it("Budget File Sync payee create records the created payee as the target", async () => {
+  it("Cross Budget Sync payee create records the created payee as the target", async () => {
     const { transport, named } = setup(mode);
     const results = await payeeAdapter.createBatch(transport, {} as SyncFlow, [
       { itemId: "i1", payload: { entity: "payee", name: "New Vendor" } as JsonObject },

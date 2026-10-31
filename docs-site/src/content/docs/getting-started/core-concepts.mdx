@@ -13,13 +13,13 @@ uses **Save** for staged edits and **Apply** for a reviewed workflow, but both f
 | Where you work | Review step | Confirmation |
 |---|---|---|
 | Budget Setup and Budget Cockpit | Edits collect in **Changes** | **Save** |
-| Bank Reconciliation and Budget File Sync | A session or preview lists planned changes | **Apply** |
+| Bank Reconciliation and Cross Budget Sync | A session or preview lists planned changes | **Apply** |
 
 Check the active budget and review the listed changes before you confirm either action.
 
 ### Reviewed Apply workflows
 
-Budget File Sync classifies items in a preview before you apply them. Bank Reconciliation keeps your
+Cross Budget Sync classifies items in a preview before you apply them. Bank Reconciliation keeps your
 decisions in a resumable session and re-reads affected transactions immediately before it writes. Both
 workflows report partial failures and keep failed items available for retry.
 
@@ -47,7 +47,7 @@ These actions are not part of **Changes**. They write when you confirm them.
 
 Scheduled bank sync and opted-in safe sync can write later without a per-run review. They are explicit
 automation policies, not manual editing. See [Automations](../../user-guide/automations/) and
-[Budget File Sync](../../user-guide/budget-sync/#automation-opt-in).
+[Cross Budget Sync](../../user-guide/budget-sync/#automation-opt-in).
 
 ## Tools that do not change budget data
 

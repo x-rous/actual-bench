@@ -1,7 +1,7 @@
 /**
  * Adapter from the reconciliation port to the shared transport (RD-071 D1).
  *
- * The only file in the reconciliation engine that knows the Budget File Sync
+ * The only file in the reconciliation engine that knows the Cross Budget Sync
  * primitives exist. Everything else depends on `ports.ts`.
  *
  * Two boundary responsibilities live here:

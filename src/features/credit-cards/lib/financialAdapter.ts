@@ -13,7 +13,7 @@ export function cardBalance(balanceWhole: number) {
   return { signedBalanceMinor, debtMinor: Math.max(0, -signedBalanceMinor), creditMinor: Math.max(0, signedBalanceMinor) };
 }
 
-/** Existing Loans & Debt facility calculation; no second limit/debt engine. */
+/** Existing Loans facility calculation; no second limit/debt engine. */
 export function cardFacility(model: LoanModelSnapshot, signedBalanceMinor: number) {
   minorAmountSchema.parse(signedBalanceMinor);
   if (model.terms.creditLimitMinor !== null) minorAmountSchema.nonnegative().parse(model.terms.creditLimitMinor);
@@ -22,7 +22,7 @@ export function cardFacility(model: LoanModelSnapshot, signedBalanceMinor: numbe
 }
 
 /**
- * Explicit supported modelling request → the same engine as Loans & Debt.
+ * Explicit supported modelling request → the same engine as Loans.
  * Never infer issuer conventions from APR metadata or insert simulated interest into Actual.
  * Caller must provide a reviewed model/profile; no feature-local accrual/projection algorithm.
  */

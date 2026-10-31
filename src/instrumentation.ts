@@ -2,7 +2,7 @@
  * Next.js server startup hook. Boots the in-process automation engine
  * (RD-079 / PR-043c) once, in the Node runtime only (never edge / build).
  *
- * The engine replaces RD-058's sync-specific scheduler: Budget File Sync is now
+ * The engine replaces RD-058's sync-specific scheduler: Cross Budget Sync is now
  * a registered job type rather than the only thing a timer knows how to run.
  * Registration and the one-time flow migration both happen before the first
  * tick, so an upgraded install keeps syncing on its existing schedule with no
@@ -56,7 +56,7 @@ export async function register(): Promise<void> {
     );
   }
 
-  // Every job type, not just the first one. Registering only Budget File Sync
+  // Every job type, not just the first one. Registering only Cross Budget Sync
   // here meant the engine's own tick knew nothing about bank sync or backups:
   // it would find their automations due, fail to resolve a type, and auto-pause
   // them with "No job type registered". Whether that happened at all depended
