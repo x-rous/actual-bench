@@ -65,3 +65,28 @@ it.each([true, false])('rolls back every artifact when the manifest rename fails
     await expect(readFile(join(paths.previous, 'budget'))).rejects.toMatchObject({ code: 'ENOENT' });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+it('publishes all three artifacts and removes the backup after success', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'demo-seed-publish-'));
+  const paths = {
+    final: join(root, 'seed-data'), previous: join(root, 'seed-data.previous'),
+    next: join(root, 'seed-data.next'), database: join(root, 'seed-bench.sqlite'),
+    nextDatabase: join(root, 'seed-bench.next.sqlite'), manifest: join(root, 'seed-manifest.json'),
+    nextManifest: join(root, 'seed-manifest.next.json'),
+  };
+  try {
+    await mkdir(paths.final);
+    await mkdir(paths.next);
+    await writeFile(join(paths.final, 'budget'), 'old budget');
+    await writeFile(join(paths.next, 'budget'), 'new budget');
+    await writeFile(paths.database, 'old database');
+    await writeFile(paths.nextDatabase, 'new database');
+    await writeFile(paths.manifest, 'old manifest');
+    await writeFile(paths.nextManifest, 'new manifest');
+    await publishSeed(paths);
+    expect(await readFile(join(paths.final, 'budget'), 'utf8')).toBe('new budget');
+    expect(await readFile(paths.database, 'utf8')).toBe('new database');
+    expect(await readFile(paths.manifest, 'utf8')).toBe('new manifest');
+    await expect(readFile(join(paths.previous, 'budget'))).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
