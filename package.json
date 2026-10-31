@@ -52,7 +52,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.7",
+    "@babel/core": "^8.0.9",
     "@babel/preset-typescript": "^7.29.7",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
