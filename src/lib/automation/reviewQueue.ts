@@ -15,7 +15,7 @@ import type { SqliteDatabase } from "@/lib/app-db/types";
  *     "0 items to review" would imply it might one day have some.
  *
  *   * **The queue points at the type's own review surface rather than
- *     reimplementing it.** Budget File Sync already has a preview workspace
+ *     reimplementing it.** Cross Budget Sync already has a preview workspace
  *     that knows how to show a duplicate or a changed source row; a second,
  *     shallower copy of that inside Automations would be a worse version of a
  *     screen that already exists, and would drift from it.

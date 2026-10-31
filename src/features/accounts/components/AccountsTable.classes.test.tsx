@@ -41,6 +41,7 @@ function fakeServer() {
 describe("accounts table and Groups dialog share account classes", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    sessionStorage.removeItem("filters:accounts");
     mockBalances.clear();
     useStagedStore.getState().discardAll();
     useStagedStore.getState().loadAccounts([{ id: "a1", name: "Checking", offBudget: false, closed: false, groupId: "g1" }]);
@@ -156,6 +157,7 @@ describe("accounts table and Groups dialog share account classes", () => {
     renderTable();
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Account class of Wallet" })).toBeEnabled());
 
+    fireEvent.click(screen.getByRole("button", { name: "No grouping" }));
     fireEvent.click(screen.getByRole("button", { name: /^Class/ }));
     const order = () => screen.getAllByRole("row").slice(1).map((r) => r.getAttribute("data-row-id"));
     expect(order()).toEqual(["a3", "a1", "a2"]);
@@ -176,6 +178,7 @@ describe("accounts table and Groups dialog share account classes", () => {
       { id: "on-alpha", name: "On budget Alpha", offBudget: false, closed: false, groupId: "g-alpha", sortOrder: 1 },
     ]);
     renderTable();
+    fireEvent.click(await screen.findByRole("button", { name: "No grouping" }));
 
     await waitFor(() => expect(screen.getAllByRole("row")).toHaveLength(6));
     expect(screen.getAllByRole("row").slice(1).map((row) => row.getAttribute("data-row-id"))).toEqual([
@@ -301,6 +304,20 @@ describe("accounts table and Groups dialog share account classes", () => {
           ],
         }),
       }));
+    });
+
+    it("defaults to grouping by account group and keeps the view selector before dropdowns", async () => {
+      renderTable();
+      const byGroup = await screen.findByRole("button", { name: "By group" });
+      expect(byGroup).toHaveAttribute("aria-pressed", "true");
+      await screen.findByRole("button", { name: /Collapse No group/ });
+
+      const groupFilter = screen.getByRole("combobox", { name: "Filter by account group" });
+      expect(byGroup.compareDocumentPosition(groupFilter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      const unclassified = screen.getByRole("button", { name: "1 needs a class" });
+      const classFilter = screen.getByRole("combobox", { name: "Filter by account class" });
+      expect(classFilter.compareDocumentPosition(unclassified) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     async function groupByClass() {

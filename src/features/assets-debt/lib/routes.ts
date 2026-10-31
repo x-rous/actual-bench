@@ -1,5 +1,5 @@
 /**
- * Where the loan pages live (rev 4 page split, owner decision 2026-10-05): Loans & Debt and Assets
+ * Where the loan pages live (rev 4 page split, owner decision 2026-10-05): Loans and Assets
  * are separate pages. The old `/assets-debt/...` addresses redirect here.
  */
 export const LOANS_PATH = "/loans";

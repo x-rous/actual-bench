@@ -249,7 +249,7 @@ export function AutomationsView() {
               </li>
               <li>
                 <Link href="/sync" className="font-medium text-primary underline-offset-4 hover:underline">
-                  Budget File Sync
+                  Cross Budget Sync
                 </Link>
                 <span className="text-muted-foreground">
                   {" "}
@@ -332,9 +332,9 @@ export function AutomationsView() {
                     return <Icon aria-hidden />;
                   })()}
                   <span className="flex flex-col">
-                    <span className="font-medium">Budget file sync</span>
+                    <span className="font-medium">Cross Budget Sync</span>
                     <span className="text-xs text-muted-foreground">
-                      Copy data between budget files, set up in Budget File Sync.
+                      Copy data between budget files, set up in Cross Budget Sync.
                     </span>
                   </span>
                 </DropdownMenuItem>

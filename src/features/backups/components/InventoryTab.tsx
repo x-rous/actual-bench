@@ -136,7 +136,7 @@ export function InventoryTab({
               To back up a budget on a schedule, Bench needs a connection enrolled for unattended use
               - a scheduled backup runs with no browser open.{" "}
               <Link href="/sync" className="underline underline-offset-4">
-                Enrol one in Budget File Sync
+                Enrol one in Cross Budget Sync
               </Link>
               . Without that you can still back up Bench&rsquo;s own settings.
             </p>

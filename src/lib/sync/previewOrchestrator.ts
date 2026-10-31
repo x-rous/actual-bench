@@ -8,7 +8,7 @@ import type { JsonObject, SyncFlow, SyncFlowRunItem, SyncMapping, SyncRunTrigger
 import type { SyncPlanResult } from "./plannedChanges";
 
 /**
- * Live dry-run orchestration for Budget File Sync (RD-053 / PR-019 Slice 3).
+ * Live dry-run orchestration for Cross Budget Sync (RD-053 / PR-019 Slice 3).
  *
  * Connects the Slice 1 transport primitives with the Slice 2 planner to produce
  * a real, persisted `draft_preview` - with NO Actual writes. Cross-budget access

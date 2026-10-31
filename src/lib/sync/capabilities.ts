@@ -109,7 +109,7 @@ export function getBudgetFileSyncCapabilities(
     return {
       mode: connection.mode,
       supported: false,
-      reason: "Budget File Sync supports Direct and HTTP API connections.",
+      reason: "Cross Budget Sync supports Direct and HTTP API connections.",
       capabilities: { ...NO_SYNC_CAPABILITIES },
     };
   }

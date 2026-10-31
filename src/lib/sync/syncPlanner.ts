@@ -21,7 +21,7 @@ import type {
 } from "./plannedChanges";
 
 /**
- * Headless dry-run planner for Budget File Sync (RD-053 / PR-019 Slice 2).
+ * Headless dry-run planner for Cross Budget Sync (RD-053 / PR-019 Slice 2).
  *
  * Takes a flow config, a materialized source snapshot, target lookup data, and
  * existing mappings; produces classified planned items with target payloads.

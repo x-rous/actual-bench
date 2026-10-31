@@ -457,7 +457,7 @@ export function SyncView() {
               <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />
             </div>
             <div>
-              <h3 className="text-base font-semibold">Budget File Sync</h3>
+              <h3 className="text-base font-semibold">Cross Budget Sync</h3>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
                 Copy transactions, payees, or categories from one budget to another - preview first, apply what you choose. Pick a flow on the left, or create one.
               </p>

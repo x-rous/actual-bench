@@ -5,7 +5,7 @@ import type { SyncFlow } from "@/lib/app-db/types";
 import type { SyncSourceItem } from "./sourceItems";
 
 /**
- * Source filtering for Budget File Sync (RD-053 / PR-019 Slice 3).
+ * Source filtering for Cross Budget Sync (RD-053 / PR-019 Slice 3).
  *
  * Two phases so semantics stay correct for split transactions:
  *   1. transaction-level: exclude sync-generated transactions (loop prevention).

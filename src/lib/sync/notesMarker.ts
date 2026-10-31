@@ -1,5 +1,5 @@
 /**
- * Visible sync notes marker for Budget File Sync (RD-053 / PR-019).
+ * Visible sync notes marker for Cross Budget Sync (RD-053 / PR-019).
  *
  * The marker is a clean, human-readable line appended to target notes so a user
  * can see a transaction came from a sync flow. Technical source IDs are NOT put

@@ -73,7 +73,7 @@ export function AccountsTable({
     rulesFilter: "all" as RulesFilter,
     groupFilter: ALL_GROUPS as string,
     classFilter: ALL_CLASSES as string,
-    groupBy: "none" as GroupBy,
+    groupBy: "group" as GroupBy,
   });
   const { search, statusFilter, budgetFilter, rulesFilter, groupFilter, classFilter, groupBy } = filters;
   const setSearch       = (v: string)       => setFilters((f) => ({ ...f, search: v }));

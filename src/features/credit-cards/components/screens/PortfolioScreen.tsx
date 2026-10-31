@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { LineChart, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
+import { ListToolbar } from "@/components/ui/list-toolbar";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { addDays } from "@/lib/financial-models/calendar/dates";
@@ -244,19 +245,19 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
       <Figure label="Total owed" value={money(knownOwed.length ? sumMinor(knownOwed) : null)}
         detail={knownOwed.length < cards.length ? `${knownOwed.length} of ${cards.length} cards known`
           : planMinor ? `incl. ${money(planMinor)} in plan accounts` : undefined}
-        trend={<Sparkline values={owedTrend.slice(-12).map((point) => point.value)} />} onTrend={() => { setChart("owed"); setTrends(true); }} />
+        trend={<Sparkline values={owedTrend.slice(-12).map((point) => point.value)} />} onTrend={() => { setChart("owed"); setTrends(true); }} wrap />
       <Figure label="Left to pay" tone={overdue.length ? "danger" : undefined} value={money(payments.coverage ? payments.remainingMinor : null)}
-        detail={overdue.length ? `${plural(overdue.length, "card")} overdue` : partial ?? `${money(dueSoon)} due in 7 days`} />
+        detail={overdue.length ? `${plural(overdue.length, "card")} overdue` : partial ?? `${money(dueSoon)} due in 7 days`} wrap />
       <Figure label="Minimum left" value={money(payments.coverage ? payments.minimumMinor : null)}
-        detail={payments.overdueMinimumMinor > 0 ? `${money(payments.overdueMinimumMinor)} overdue` : undefined} />
+        detail={payments.overdueMinimumMinor > 0 ? `${money(payments.overdueMinimumMinor)} overdue` : undefined} wrap />
       <Figure label="Available credit" value={money(limited.length ? availableMinor : null)}
-        detail={totalLimit ? `${Math.round(used / totalLimit * 100)}% used of total limits ${money(totalLimit)}` : "No limits set"} />
+        detail={totalLimit ? `${Math.round(used / totalLimit * 100)}% used of total limits ${money(totalLimit)}` : "No limits set"} wrap />
       <Figure label="Interest & fees" value={money(costsMinor)}
         detail={coverage ? `${formatCardDate(coverage.from)} – ${formatCardDate(coverage.to)}` : "No shared history yet"}
         trend={showInterest ? <Sparkline bars values={interestTrend.slice(-12).map((point) => point.value)} /> : undefined}
-        onTrend={() => setTrends(true)} />
+        onTrend={() => setTrends(true)} wrap />
     </dl>
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">
+    <ListToolbar>
       <SearchInput size="sm" className="w-56" aria-label="Search cards" value={search} onValueChange={setSearch} />
       <Select size="sm" className="w-44" aria-label="Status" value={status} onValueChange={(value) => setStatus(value as StatusFilter)} options={[
         { value: "all", label: "All cards" }, { value: "attention", label: "Needs attention" }, { value: "due-soon", label: "Due in 7 days" },
@@ -272,7 +273,7 @@ export function PortfolioScreen({ entries, workspace, focusCardId, sort, onSort,
         {" · "}<span className="font-medium text-foreground tabular-nums">{money(knownOwed.length ? sumMinor(knownOwed) : null)}</span> owed
         {" · "}<span className="font-medium text-foreground tabular-nums">{money(dueWithin(30))}</span> due in the next 30 days
       </p>
-    </div>
+    </ListToolbar>
     <div className="flex min-h-0 flex-1">
       <DataTable<Record>
         label="Cards"

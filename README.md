@@ -64,19 +64,19 @@ Use it to create a reusable template, set up a new budget, or keep a snapshot be
 - **[Bank Reconciliation](https://x-rous.github.io/actual-bench/user-guide/bank-reconciliation/)** - compare a bank statement with an Actual account to find missing, duplicate or incorrect transactions. Import CSV, TSV, OFX, QFX, QIF or text-based PDF statements, review suggested matches and decide how to resolve differences. Your session is saved so you can return later, and you review the planned changes before applying them.
 - **[Credit Cards](https://x-rous.github.io/actual-bench/user-guide/credit-cards/)** *(Experimental)* - see what you owe, what is due and how much credit is available across your cards. Check bank statements against your Actual transactions, follow payments and interest, and track instalment plans alongside your card history. Bench saves your card settings and review decisions without changing Actual transactions.
 - **[Assets](https://x-rous.github.io/actual-bench/user-guide/asset-registry/)** *(Experimental)* - bring property, investments, vehicles and other assets into one view, using your Actual accounts as the ledger. Follow value, capital invested, income, expenses and returns over time; account for shared ownership and depreciation; and link loans to see your equity. Explore the transactions behind the figures and review financial changes before confirming them.
-- **[Loans & Debt](https://x-rous.github.io/actual-bench/user-guide/assets-debt/)** *(Experimental)* - model rate changes, extra payments, offsets and fees, and see how they affect interest and payoff. Link the loan to Actual to compare the forecast with real payments, review principal and interest splits, and see the equity in linked assets.
+- **[Loans](https://x-rous.github.io/actual-bench/user-guide/assets-debt/)** *(Experimental)* - model rate changes, extra payments, offsets and fees, and see how they affect interest and payoff. Link the loan to Actual to compare the forecast with real payments, review principal and interest splits, and see the equity in linked assets.
 
 **Clean up and audit**
 
 - **[Payee Cleanup](https://x-rous.github.io/actual-bench/user-guide/payee-cleanup/)** - reviews possible duplicate payees, finds payees whose bank text needs an assignment rule, and lets you remove unused payees through a staged cleanup plan.
 - **[Rule Diagnostics](https://x-rous.github.io/actual-bench/user-guide/rule-diagnostics/)** - reads your rules as a set: what shadows what, what can never fire, what duplicates what. Analysis does not change your budget; fixes you explicitly start use the normal staged Save.
+- **[ActualQL](https://x-rous.github.io/actual-bench/user-guide/actualql/)** - run read-only JSON queries against your open budget, starting from built-in examples or writing your own. Explain queries in plain English, inspect results as tables, raw JSON, scalar values or trees, and save useful queries to reuse.
 - **[Budget File Health](https://x-rous.github.io/actual-bench/user-guide/budget-file-health/)** and **[Data Browser](https://x-rous.github.io/actual-bench/user-guide/data-browser/)** - open a budget snapshot in your browser, run health checks, and browse its tables directly.
-- **[ActualQL](https://x-rous.github.io/actual-bench/user-guide/actualql/)** - a query console with saved queries, plain-English explain, and table, JSON, scalar and tree result views.
 
 **Sync, backups and automation**
 
 - **[Bank sync](https://x-rous.github.io/actual-bench/user-guide/bank-sync/)** - schedule Actual's existing bank sync to run automatically in the background, even when your browser is closed. See the result for each linked account when you return.
-- **[Budget File Sync](https://x-rous.github.io/actual-bench/user-guide/budget-sync/)** *(Experimental)* - create reusable flows to copy selected transactions, payees or categories between budget files. Filter and map data, convert currencies using [locked FX rates](https://x-rous.github.io/actual-bench/user-guide/fx-rates/), and preview changes with duplicate protection before applying them. Schedule safe-only syncs and review anything that needs a decision.
+- **[Cross Budget Sync](https://x-rous.github.io/actual-bench/user-guide/budget-sync/)** *(Experimental)* - create reusable flows to copy selected transactions, payees or categories between budget files. Filter and map data, convert currencies using rates managed in [Exchange Rates](https://x-rous.github.io/actual-bench/user-guide/fx-rates/), and preview changes with duplicate protection before applying them. Schedule safe-only syncs and review anything that needs a decision.
 - **[Backups](https://x-rous.github.io/actual-bench/user-guide/backups/)** - protect Actual budgets and Bench settings with on-demand or scheduled copies to server folders and S3-compatible storage. Check verification and destination health, set retention, and optionally encrypt backups.
 - **[Automations](https://x-rous.github.io/actual-bench/user-guide/automations/)** *(Experimental)* - schedule backups and syncs, and see what ran and whether it succeeded, even with Bench closed.
 
@@ -151,7 +151,7 @@ Both modes support unattended server-side work after you enrol the budget for au
 ## You're in control
 
 Review your work before it changes your Actual budget. Most edits are staged in your browser until
-you choose **Save**; workflows such as reconciliation and budget file sync let you review changes
+you choose **Save**; workflows such as reconciliation and Cross Budget Sync let you review changes
 before you **Apply** them. Scheduled changes run only when you opt into an automation.
 
 ## Documentation

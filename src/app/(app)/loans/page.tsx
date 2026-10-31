@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { DebtListView } from "@/features/assets-debt/components/AssetsDebtViews";
 
 export const metadata: Metadata = {
-  title: "Loans & Debt - Actual Bench",
+  title: "Loans - Actual Bench",
 };
 
 export default function LoansPage() {

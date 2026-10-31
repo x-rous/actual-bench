@@ -411,7 +411,12 @@ export function TopVarianceDriversDialog({
         <VarianceHeader
           options={categoryOptions}
           selectedKeys={selectedKeys}
-          placeholder={target?.title ?? "Select categories"}
+          placeholder={
+            target && target.categoryIds.length > 1
+              ? `${target.categoryIds.length.toLocaleString()} categories`
+              : target?.title ?? "Select categories"
+          }
+          selectionFallbackTitle={target?.title}
           coveredKeys={coveredKeys}
           exclusiveKeys={exclusiveKeys}
           summary={selectionSummary}

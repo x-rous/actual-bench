@@ -27,7 +27,7 @@ import type { PlannedFx, PlannedTargetPayload } from "./plannedChanges";
 import type { AdapterMutateInput } from "./syncKind";
 
 /**
- * Headless apply engine for Budget File Sync (RD-053 / PR-019 Slice 4).
+ * Headless apply engine for Cross Budget Sync (RD-053 / PR-019 Slice 4).
  *
  * Takes a persisted `draft_preview` run and applies its safe `new` create
  * candidates to the target budget in Direct mode. It re-validates target-side

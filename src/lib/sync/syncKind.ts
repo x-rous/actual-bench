@@ -4,7 +4,7 @@ import type { JsonObject, SyncCapabilitySet, SyncDomain, SyncFlow, SyncMapping }
 import type { SyncPlanResult } from "./plannedChanges";
 
 /**
- * The unified Budget File Sync engine (RD-055): ONE preview/apply/automation
+ * The unified Cross Budget Sync engine (RD-055): ONE preview/apply/automation
  * pipeline across every data type. All type-specific behavior - what to read,
  * how to match/classify, how to create - lives in a `SyncKindAdapter`, resolved
  * by `flow.flowType`. The orchestrators (preview, apply, safe-sync, scheduler,

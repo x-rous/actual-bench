@@ -27,7 +27,7 @@ it("preserves integer balance signs including card credit and refuses invalid pr
   expect(cardFacility(model, 25000).drawnMinor).toBe(0);
 });
 
-it("uses the Loans & Debt engine for supported revolving inputs without generated payments", () => {
+it("uses the Loans engine for supported revolving inputs without generated payments", () => {
   const result = calculateCardDebt(request);
   expect(result).toEqual(simulate({ ...request, options: { generateScheduledRepayments: false, applyAssumptions: false } }));
   expect(result.ok).toBe(true);

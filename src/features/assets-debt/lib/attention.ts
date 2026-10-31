@@ -2,7 +2,7 @@ import type { AttentionItem, AttentionReason } from "@/lib/assets-debt/services/
 import { loanPath } from "./routes";
 
 /**
- * What each loan needs, in words (RD-084 T293, rev 4): shown on its card in the Loans & Debt list,
+ * What each loan needs, in words (RD-084 T293, rev 4): shown on its card in the Loans list,
  * which also filters to "Needs attention" (the former global Activity page). Last-known state only:
  * no Actual read.
  */

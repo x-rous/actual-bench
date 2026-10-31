@@ -1,5 +1,5 @@
 /**
- * The Budget File Sync job type's identifier, alone in its own module.
+ * The Cross Budget Sync job type's identifier, alone in its own module.
  *
  * The job type needs its enrolment sweep and the sweep needs the identifier,
  * which is a cycle if the constant lives with either of them. Cycles like that

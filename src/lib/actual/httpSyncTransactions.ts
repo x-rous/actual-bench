@@ -21,7 +21,7 @@ import type {
 } from "./transport";
 
 /**
- * Budget File Sync transaction primitives over HTTP API Server mode (RD-060
+ * Cross Budget Sync transaction primitives over HTTP API Server mode (RD-060
  * Phase 2). Mirrors the Direct (browser) transport's sync logic but via
  * actual-http-api REST: `imported_id` round-trips through `/transactions/batch`
  * (plain insert - NOT `/import`, which reconciles/runs rules), ids are recovered
@@ -262,7 +262,7 @@ export async function updateHttpTransactionForSync(
     payeeId = (await createOrResolveHttpPayee(connection, input.payeeName)).id;
   }
   // Only fields the caller supplied are sent: `undefined` means "leave alone",
-  // and coercing it to null wipes what the transaction holds. Budget File Sync
+  // and coercing it to null wipes what the transaction holds. Cross Budget Sync
   // passes every field, so its behaviour is unchanged.
   const transaction: Record<string, unknown> = { date: input.date, amount: input.amount };
   if (payeeId !== null || input.payeeId !== undefined || input.payeeName !== undefined) {

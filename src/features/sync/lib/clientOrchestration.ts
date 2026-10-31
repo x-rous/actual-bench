@@ -19,7 +19,7 @@ import type { SyncMapping, SyncMappingInput } from "@/lib/app-db/types";
 import * as api from "./syncApi";
 
 /**
- * Client-side wiring for the Budget File Sync orchestrators (RD-053 / PR-019
+ * Client-side wiring for the Cross Budget Sync orchestrators (RD-053 / PR-019
  * Slice 5). The preview/apply orchestrators run in the browser (they need the
  * Direct transport); their DB ports are satisfied by the server routes via
  * `syncApi`. No planner/apply logic is duplicated here - this only assembles

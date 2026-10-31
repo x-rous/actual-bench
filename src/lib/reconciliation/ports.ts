@@ -3,7 +3,7 @@
  *
  * The engine never imports `@/lib/actual` directly. It talks to this narrow,
  * reconciliation-named interface, and one adapter maps it onto the existing
- * Budget File Sync primitives — which already implement transaction read,
+ * Cross Budget Sync primitives — which already implement transaction read,
  * create, update, delete, single-row re-read, and payee resolution on **both**
  * transports.
  *

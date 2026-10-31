@@ -38,7 +38,7 @@ import type { AutomationListItem } from "../lib/automationsApi";
  *     failing or paused one gets a second, carrying the reason — the only text
  *     here worth interrupting a scan for.
  *   * **Say the type.** A name like "Test 2" means nothing once bank sync sits
- *     beside budget file sync, so the job type is a column rather than
+ *     beside Cross Budget Sync, so the job type is a column rather than
  *     something you infer from the result wording.
  *
  * The execution-mode explanation is stated once for the page instead of being

@@ -21,7 +21,7 @@ import { POST } from "./route";
  * automation run in history, no health update, and nothing stopping it from
  * overlapping a scheduled run of the same flow.
  *
- * The real Budget File Sync job needs two live servers, so a stand-in is
+ * The real Cross Budget Sync job needs two live servers, so a stand-in is
  * registered under its type; the route, the engine, reconciliation and the
  * credential check are all real.
  */
@@ -38,7 +38,7 @@ describe("POST /api/sync-flows/[flowId]/run-now", () => {
     seenFlowIds = [];
     registerAutomationJobType({
       type: BUDGET_FILE_SYNC_JOB_TYPE,
-      label: "Budget File Sync",
+      label: "Cross Budget Sync",
       validateConfig: (raw) => ({ flowId: String(raw.data.flowId) }),
       run: async (ctx) => {
         seenFlowIds.push(ctx.config.flowId);

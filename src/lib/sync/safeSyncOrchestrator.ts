@@ -16,7 +16,7 @@ import {
 import type { SyncReviewPolicy, SyncRunTrigger } from "@/lib/app-db/types";
 
 /**
- * Safe-only run executor for Budget File Sync automation (RD-054 / PR-020 Slice 2).
+ * Safe-only run executor for Cross Budget Sync automation (RD-054 / PR-020 Slice 2).
  *
  * This is **not a second sync engine**. It composes the two existing RD-053
  * orchestrators - `runLiveDryRunPreview` (plan, no writes) then `applySyncRun`

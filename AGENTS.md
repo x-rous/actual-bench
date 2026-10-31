@@ -35,7 +35,7 @@ Other planning and historical docs are context only; their status text is never 
 | Budget amounts, transfers, holds | Staged in `src/store/budgetEdits.ts`; written on **Save** |
 | Carryover toggle | Immediate write (`useCarryoverToggle`), per-item results |
 | Notes | Immediate save via transport note methods |
-| Budget File Sync | Preview first; written on **Apply** or opted-in safe-only automation |
+| Cross Budget Sync | Preview first; written on **Apply** or opted-in safe-only automation |
 | Bank Reconciliation | Staged in session; written on **Apply** after a pre-flight re-read confirms rows are unchanged; never writes a category |
 | Sync flows, run history, FX registry, health metadata | App DB |
 | Credit cards | App DB; each explicit **Save** writes immediately as one guarded change set; never writes Actual |
@@ -104,7 +104,7 @@ Never claim "nothing writes until Save" in code comments or docs; the exceptions
 - Honour `ctx.signal` (deadline and cancel), or the job is killed.
 - Tasks carry secret references, never plaintext. Sole exception: an enrolment check's not-yet-stored secret, sealed with the vault key and opened only in the worker.
 
-## 7. Budget File Sync (`src/lib/sync/`)
+## 7. Cross Budget Sync (`src/lib/sync/`)
 
 - One engine. Type-specific logic lives in a registered `SyncKindAdapter`; never build a parallel preview/apply/automation path. Capability-gate; never assume transport parity.
 - Preview never writes. Apply re-checks route identity, capabilities, preview freshness and target guards.

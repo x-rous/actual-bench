@@ -128,7 +128,7 @@ it("describes extra-transaction impact without negative saved values", () => {
   expect(extraImpact({ ...baseline, payoffDate: null }, baseline, 2)).toBe("No interest change · Payoff not reached with transactions");
 });
 
-describe("the Loans & Debt page (rev 4)", () => {
+describe("the Loans page (rev 4)", () => {
   withViewport();
   it("centers a first-loan prompt while keeping the list toolbar available", async () => {
     mocked.listDebts.mockResolvedValue([]);
@@ -155,7 +155,7 @@ describe("the Loans & Debt page (rev 4)", () => {
   });
 });
 
-describe("Loans & Debt list", () => {
+describe("Loans list", () => {
   withViewport();
 
   it("renders 1,000 debts with a bounded DOM", () => {
@@ -199,7 +199,7 @@ describe("Loans & Debt list", () => {
   });
 
   it("shows recorded history separately from the remaining forecast", async () => {
-    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 2, totalPayments: 3, next: { date: "2999-04-01", amountMinor: 50_000 }, interestToDateMinor: 18_000, totalInterestMinor: 20_000, calculatedBalanceMinor: 20_000, payoffDate: "2999-04-01", regularRepaymentMinor: 50_000, dueSoonMinor: 0, dueSoonCount: 0 } });
+    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 2, totalPayments: 3, next: { date: "2999-04-01", amountMinor: 50_000 }, interestToDateMinor: 18_000, interestNext12MonthsMinor: 1_000, totalInterestMinor: 20_000, calculatedBalanceMinor: 20_000, payoffDate: "2999-04-01", regularRepaymentMinor: 50_000, dueSoonMinor: 0, dueSoonCount: 0 } });
     wrap(<DebtList debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null })]} />);
     const row = screen.getAllByRole("row")[1];
     await waitFor(() => expect(row).toHaveTextContent("2 due so far · 1 left"));
@@ -215,28 +215,32 @@ describe("Loans & Debt list", () => {
   });
 
   it("keeps unavailable outstanding totals explicit while reporting a known upcoming schedule", async () => {
-    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
+    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 18_000, interestNext12MonthsMinor: 12_000, totalInterestMinor: 20_000, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
     wrap(<LoansSummary debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(2, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(3, { paidOffOn: "2021-01-01" })]} />);
-    const totals = screen.getByLabelText("All loans");
-    expect(totals).toHaveTextContent("Active loans2");
-    await waitFor(() => expect(totals).toHaveTextContent("Due in the next 30 days1,000.00(2 repayments)"));
-    expect(totals).toHaveTextContent("OwedUnavailable");
+    const totals = screen.getByLabelText("Loans overview");
+    await waitFor(() => expect(totals).toHaveTextContent("Upcoming Repayments1,000.002 repayments in the next 30 days"));
+    expect(totals).toHaveTextContent("Outstanding BalanceUnavailable");
+    expect(totals.querySelectorAll("dt")).toHaveLength(5);
+    expect(within(totals).getByText("Principal Repaid").nextElementSibling).toHaveTextContent("800.00");
+    expect(within(totals).getByText("Interest to Date").nextElementSibling).toHaveTextContent("360.00");
+    expect(within(totals).getByText("Interest Next 12 Months").nextElementSibling).toHaveTextContent("240.00");
+    expect(totals).toHaveTextContent("Calculated from schedules, not recorded payments");
   });
 
   it("shows one owed figure and one due figure even when loans carry different currency codes", async () => {
-    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
+    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, interestNext12MonthsMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
     wrap(<LoansSummary debts={[summary(1, { currency: "USD", openingDate: "2020-01-01", liabilityAccountId: null }), summary(2, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(3, { openingDate: "2020-01-01", liabilityAccountId: null })]} />);
-    const totals = screen.getByLabelText("All loans");
-    await waitFor(() => expect(totals).toHaveTextContent("Due in the next 30 days1,500.00(3 repayments)"));
-    expect(totals.querySelectorAll("dt")).toHaveLength(3);
+    const totals = screen.getByLabelText("Loans overview");
+    await waitFor(() => expect(totals).toHaveTextContent("Upcoming Repayments1,500.003 repayments in the next 30 days"));
+    expect(totals.querySelectorAll("dt")).toHaveLength(5);
     expect(totals).not.toHaveTextContent(/USD|AUD/);
   });
 
   it("rescales a schedule saved with other minor digits, leaving ledger balances alone", async () => {
-    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
+    mocked.getLoanSummary.mockResolvedValue({ ok: true, summary: { forecastFrom: "2020-01-01", paymentsMade: 0, totalPayments: 2, next: null, interestToDateMinor: 0, interestNext12MonthsMinor: 0, totalInterestMinor: 0, calculatedBalanceMinor: 60_000, payoffDate: null, regularRepaymentMinor: 50_000, dueSoonMinor: 50_000, dueSoonCount: 1 } });
     wrap(<LoansSummary debts={[summary(1, { openingDate: "2020-01-01", liabilityAccountId: null }), summary(2, { currencyMinorDigits: 0, openingDate: "2020-01-01", liabilityAccountId: null })]} />);
     // 500.00 at two digits plus 50,000 whole units scaled to two digits.
-    await waitFor(() => expect(screen.getByLabelText("All loans")).toHaveTextContent("Due in the next 30 days50,500.00"));
+    await waitFor(() => expect(screen.getByLabelText("Loans overview")).toHaveTextContent("Upcoming Repayments50,500.00"));
   });
 
   it("says what each loan needs, in words, next to its status", () => {
@@ -911,7 +915,7 @@ describe("the new-loan flow", () => {
     expect(within(sections).getByRole("button", { name: "Terms & Schedule" })).toHaveAttribute("aria-current", "page");
     for (const name of ["Repayments", "Loan Ledger", "Linked Assets"]) expect(within(sections).getByRole("button", { name })).toBeDisabled();
     expect(screen.getByText("Not saved yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Loans & Debt/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Loans/ })).toBeInTheDocument();
     const how = screen.getByRole("button", { name: "How this loan is calculated" });
     const method = screen.getByRole("button", { name: "Open calculation method settings" });
     const reset = screen.getByRole("button", { name: "More loan actions" });
@@ -941,7 +945,7 @@ describe("the new-loan flow", () => {
     expect(mocked.createDebt).not.toHaveBeenCalled();
     type("Name", "Discarded loan");
     fireEvent.click(within(sections).getByRole("button", { name: "Terms & Schedule" }));
-    fireEvent.click(screen.getByRole("button", { name: /Loans & Debt/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Loans/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Discard changes" }));
     view.unmount();
     wrap(<NewLoanView />);

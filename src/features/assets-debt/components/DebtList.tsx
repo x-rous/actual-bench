@@ -12,6 +12,7 @@ import type { DebtSummary } from "@/lib/assets-debt/services/debtConfigService";
 import { cn } from "@/lib/utils";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { readOffsetHistories } from "@/lib/assets-debt/services/offsetHistoryService";
+import { Figure } from "@/features/credit-cards/components/primitives/Figure";
 import { useLocalToday } from "../lib/useLocalToday";
 import { withLoanOverviewRead } from "../lib/overviewReads";
 import { getLoanSummary } from "../lib/debtsApi";
@@ -57,9 +58,9 @@ export function DebtList({ debts, attention = {}, hrefs = {} }: { debts: DebtSum
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto" role="region" aria-label="Debts">
       <div role="table" aria-label={`${debts.length} debt${debts.length === 1 ? "" : "s"}`} aria-rowcount={debts.length + 1} aria-colcount={HEADERS.length} className="min-w-[1326px] text-xs">
-        <div role="rowgroup" className="sticky top-0 z-10 border-b border-border bg-background">
-          <div role="row" aria-rowindex={1} className={cn("grid text-[11px] font-medium uppercase tracking-wide text-muted-foreground", COLUMNS)}>
-            {HEADERS.map((label) => <div role="columnheader" key={label} className="whitespace-nowrap px-3 py-2">{label}</div>)}
+        <div role="rowgroup" className="sticky top-0 z-[2] border-b border-border bg-muted">
+          <div role="row" aria-rowindex={1} className={cn("grid h-8 items-center text-xs font-medium text-muted-foreground", COLUMNS)}>
+            {HEADERS.map((label) => <div role="columnheader" key={label} className="whitespace-nowrap px-2 py-0">{label}</div>)}
           </div>
         </div>
         <div role="rowgroup" style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
@@ -133,8 +134,7 @@ function balanceQuery(debt: DebtSummary, connection: Connection, today: string) 
 }
 
 /**
- * A short line of totals above the rows (owner request 2026-10-07): what is owed across the active
- * loans and what falls due in the next 30 days. Reads what the rows read.
+ * The Loans overview figures read the same Actual balances and stored schedules as the rows.
  *
  * Actual holds one currency per budget, so the totals are one figure each. If loans were saved with
  * different currency codes, that is a data slip rather than a second currency: the code most loans
@@ -146,12 +146,16 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
   const active = debts.filter((d) => d.status === "active" && !d.paidOffOn && !d.blocked);
   const schedules = useQueries({ queries: active.map((d) => scheduleQuery(d, today, connection)) });
   const balances = useQueries({ queries: active.map((d) => balanceQuery(d, connection, today)) });
-  if (!active.length) return null;
+  if (!debts.length) return null;
   const codes = new Map<string, number>();
   active.forEach((debt) => codes.set(debt.currency, (codes.get(debt.currency) ?? 0) + 1));
   // The most common code; the first loan's wins a tie.
-  const main = active.find((debt) => debt.currency === [...codes].sort((left, right) => right[1] - left[1])[0][0])!;
-  const total = { digits: main.currencyMinorDigits, owed: 0, due: 0, dueCount: 0 };
+  const main = active.length
+    ? active.find((debt) => debt.currency === [...codes].sort((left, right) => right[1] - left[1])[0][0])!
+    : debts[0];
+  const total = { digits: main.currencyMinorDigits, owed: 0, due: 0, dueCount: 0, principalRepaid: 0, interestToDate: 0, interestNext12Months: 0 };
+  let principalUnavailable = false;
+  let principalLoading = false;
   active.forEach((debt, i) => {
     const schedule = schedules[i]?.data;
     const balance = balances[i]?.data;
@@ -162,18 +166,60 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
     total.owed += typeof balance === "number" ? balance : 0;
     total.due += rescale(progress?.dueSoonMinor ?? 0);
     total.dueCount += progress?.dueSoonCount ?? 0;
+    const remaining = typeof balance === "number"
+      ? balance
+      : !debt.liabilityAccountId
+        ? progress?.calculatedBalanceMinor ?? null
+        : null;
+    if (debt.openingPrincipalMinor === null || !debt.openingDate) {
+      principalUnavailable = true;
+    } else if (remaining === null || remaining === undefined) {
+      const balanceQueryResult = balances[i];
+      const scheduleQueryResult = schedules[i];
+      if (debt.liabilityAccountId) {
+        if (balanceQueryResult?.isError) principalUnavailable = true;
+        else principalLoading = true;
+      } else if (scheduleQueryResult?.isError || (scheduleQueryResult?.data && !scheduleQueryResult.data.ok)) {
+        principalUnavailable = true;
+      } else {
+        principalLoading = true;
+      }
+    } else {
+      total.principalRepaid += Math.max(0, debt.openingPrincipalMinor - remaining);
+    }
+    total.interestToDate += rescale(progress?.interestToDateMinor ?? 0);
+    total.interestNext12Months += rescale(progress?.interestNext12MonthsMinor ?? 0);
   });
-  const incomplete = !connection || active.some((debt) => !debt.liabilityAccountId || !debt.openingDate || debt.openingPrincipalMinor === null || (debt.budgetSyncId && debt.budgetSyncId !== connection.budgetSyncId)) || balances.some((query) => query.isError);
-  const loading = balances.some((query) => query.data === undefined && !query.isError);
+  const incomplete = active.length > 0 && (!connection || active.some((debt) => !debt.liabilityAccountId || !debt.openingDate || debt.openingPrincipalMinor === null || (debt.budgetSyncId && debt.budgetSyncId !== connection.budgetSyncId)) || balances.some((query) => query.isError));
+  const loading = active.length > 0 && balances.some((query) => query.data === undefined && !query.isError);
   const unavailable = incomplete ? "Unavailable" : loading ? "Loading…" : null;
-  const dueUnavailable = active.some((debt) => !debt.openingDate || debt.openingPrincipalMinor === null) || schedules.some((query) => query.isError) ? "Unavailable" : schedules.some((query) => query.data === undefined) ? "Loading…" : null;
+  const scheduleUnavailable = active.some((debt) => !debt.openingDate || debt.openingPrincipalMinor === null)
+    || schedules.some((query) => query.isError || (query.data !== undefined && !query.data.ok))
+    ? "Unavailable"
+    : schedules.some((query) => query.data === undefined)
+      ? "Loading…"
+      : null;
+  const principalValueUnavailable = principalUnavailable ? "Unavailable" : principalLoading ? "Loading…" : null;
   return (
-    <dl aria-label="All loans" className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
-      <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Active loans</dt><dd className="font-semibold tabular-nums">{active.length}</dd></div>
-      <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Owed</dt><dd className="font-semibold tabular-nums">{unavailable ?? formatAmount(total.owed, total.digits)}</dd></div>
-      <div className="flex items-baseline gap-1.5"><dt className="text-muted-foreground">Due in the next 30 days</dt><dd className="font-semibold tabular-nums">{dueUnavailable ?? formatAmount(total.due, total.digits)}{!dueUnavailable && total.dueCount ? <span className="ml-1 font-normal text-muted-foreground">({total.dueCount} repayment{total.dueCount === 1 ? "" : "s"})</span> : null}</dd></div>
+    <dl aria-label="Loans overview" className="grid shrink-0 grid-cols-2 divide-x border-b md:grid-cols-3 xl:grid-cols-5">
+      <Figure label="Outstanding Balance" value={summaryMoney(unavailable, total.owed, total.digits)} detail="Current Actual liability balances" smallDecimals wrap />
+      <Figure
+        label="Upcoming Repayments"
+        value={summaryMoney(scheduleUnavailable, total.due, total.digits)}
+        detail={active.length ? (scheduleUnavailable ? "Scheduled in the next 30 days" : `${total.dueCount} repayment${total.dueCount === 1 ? "" : "s"} in the next 30 days`) : "No active loans"}
+        smallDecimals
+        wrap
+      />
+      <Figure label="Principal Repaid" value={summaryMoney(principalValueUnavailable, total.principalRepaid, total.digits)} detail={active.length ? "Opening principal less current balance" : "No active loans"} smallDecimals wrap />
+      <Figure label="Interest to Date" value={summaryMoney(scheduleUnavailable, total.interestToDate, total.digits)} detail={active.length ? "Calculated from schedules, not recorded payments" : "No active loans"} smallDecimals wrap />
+      <Figure label="Interest Next 12 Months" value={summaryMoney(scheduleUnavailable, total.interestNext12Months, total.digits)} detail={active.length ? "Projected from current loan schedules" : "No active loans"} smallDecimals wrap />
     </dl>
   );
+}
+
+function summaryMoney(unavailable: string | null, amount: number, digits: number): string {
+  if (unavailable) return unavailable;
+  return formatAmount(amount, digits);
 }
 
 /** The table row reads the same stored schedule and Actual balance as the totals. */

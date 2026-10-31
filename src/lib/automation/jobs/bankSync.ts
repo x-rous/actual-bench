@@ -15,7 +15,7 @@ import type { ConnectionInstance } from "@/store/connection";
  * construct the transactions and does not second-guess Actual's duplicate
  * handling — what it owns is *when* the pull happens and *what happened*.
  *
- * Two contract choices distinguish this from Budget File Sync, and they are the
+ * Two contract choices distinguish this from Cross Budget Sync, and they are the
  * reason the engine's registry has the shape it does:
  *
  *   * **No `classification`.** This type triggers Actual's own import path and
@@ -23,7 +23,7 @@ import type { ConnectionInstance } from "@/store/connection";
  *     absent from it rather than listed with a zero.
  *   * **A partial run does not count against health.** One unreachable bank out
  *     of twelve is a normal Tuesday; auto-pausing the whole automation over it
- *     would be wrong. Budget File Sync makes the opposite choice, because a
+ *     would be wrong. Cross Budget Sync makes the opposite choice, because a
  *     partial *apply* there means writes failed.
  */
 

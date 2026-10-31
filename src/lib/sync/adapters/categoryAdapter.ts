@@ -51,7 +51,7 @@ function assertEntityRoute({ flow, sourceConnection, targetConnection }: Adapter
       throw new SyncKindError("connection_mismatch", `The ${side} connection is not the budget this flow was saved for.`);
     }
     if (!getBudgetFileSyncCapabilities({ mode: conn.mode }).supported) {
-      throw new SyncKindError("unsupported_connection", `The ${side} connection does not support Budget File Sync.`);
+      throw new SyncKindError("unsupported_connection", `The ${side} connection does not support Cross Budget Sync.`);
     }
   }
 }

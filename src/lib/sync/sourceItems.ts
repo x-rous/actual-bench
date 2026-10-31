@@ -5,7 +5,7 @@ import type {
 import { fnv1aHex } from "./hash";
 
 /**
- * Source item identity and fingerprints for Budget File Sync (RD-053 / PR-019).
+ * Source item identity and fingerprints for Cross Budget Sync (RD-053 / PR-019).
  *
  * Identity answers "is this the same source item we saw before" (drives the
  * `sync_mappings` primary key). Fingerprint answers "did the source item's

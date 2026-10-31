@@ -243,7 +243,7 @@ with your passwords.
 |---|---|
 | "has no stored credentials. Re-enter its access key" | The destination's sealed credential is missing. Fails closed by design. |
 | "Could not unseal credentials … the vault key may have changed" | The vault key changed since the credential was stored. App Health shows the vault as locked, with the fix. |
-| "not enrolled for unattended use" | The source connection has no vault credential; enrol it in Budget File Sync. |
+| "not enrolled for unattended use" | The source connection has no vault credential; enrol it in Cross Budget Sync. |
 | Backup stored but "could not confirm it is readable" | Verification failed. Open the copy's detail for the findings — usually a truncated or non-Actual archive. |
 | A rule shows "paused after repeated failures" | The engine auto-paused its automation. Fix the cause, then Resume from the Automations page — editing the rule does not clear a pause. |
 | A rule shows "paused on the Automations page" | Someone paused the automation by hand. Re-enabling the rule does not undo that, on purpose. |

@@ -36,7 +36,7 @@ function renderScalar(value: JsonValue): string {
   return String(value);
 }
 
-/** Budget File Sync: counts plus a link back to the sync run it produced. */
+/** Cross Budget Sync: counts plus a link back to the sync run it produced. */
 function BudgetFileSyncResult({ result }: AutomationResultRendererProps) {
   const applied = Number(result.applied ?? 0);
   const updated = Number(result.updated ?? 0);
@@ -59,7 +59,7 @@ function BudgetFileSyncResult({ result }: AutomationResultRendererProps) {
       {flowId && (
         <p className="text-xs">
           <Link href="/sync" className="text-primary underline-offset-4 hover:underline">
-            Open Budget File Sync
+            Open Cross Budget Sync
           </Link>
           {syncRunId && (
             <span className="text-muted-foreground">

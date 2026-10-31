@@ -20,7 +20,7 @@ import { BACKUP_JOB_TYPE, BACKUP_SCRUB_JOB_TYPE } from "./backupType";
  * is the source of truth and its automation is derived — created when the rule
  * appears, rescheduled when its schedule changes, disabled when the rule is.
  *
- * Two rules carried over from Budget File Sync's migration, both learned the
+ * Two rules carried over from Cross Budget Sync's migration, both learned the
  * hard way:
  *
  *   * It runs **every tick**, not at boot, because a rule created while the

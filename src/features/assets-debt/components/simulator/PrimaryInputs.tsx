@@ -13,7 +13,7 @@ type Props = {
   change: (next: SimulationState) => void;
   onCalculationMethod: () => void;
   onRateChanges: () => void;
-  /** Opens the Loans & Debt guide on its Calculation method section. */
+  /** Opens the Loans guide on its Calculation method section. */
   onDayCountGuide: () => void;
 };
 

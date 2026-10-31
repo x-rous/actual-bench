@@ -55,7 +55,7 @@ describe("scheduling a bank sync", () => {
   });
 
   it("offers to enrol the budget instead of sending you to another feature", async () => {
-    // The old dialog dead-ended with a link to Budget File Sync, losing whatever
+    // The old dialog dead-ended with a link to Cross Budget Sync, losing whatever
     // had been filled in.
     mockedApi.listVaultConnections.mockResolvedValue({ vault: { status: "ready" as const }, credentials: [] });
 
@@ -64,7 +64,7 @@ describe("scheduling a bank sync", () => {
     expect(
       await screen.findByText(/API key or Actual server password saved on the server first/)
     ).toBeInTheDocument();
-    expect(screen.queryByText(/Enrol one from Budget File Sync/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Enrol one from Cross Budget Sync/)).not.toBeInTheDocument();
   });
 
   it("refuses to schedule work that could never import anything", async () => {

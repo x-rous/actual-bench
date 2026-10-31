@@ -121,7 +121,7 @@ export type PlanInput = {
  * Derived from stable route identity plus the statement row's own fingerprint,
  * so the same row in the same session always produces the same marker no matter
  * how many times Apply is retried. Deliberately *not* derived from anything
- * random, local, or display-shaped — the same rule Budget File Sync follows.
+ * random, local, or display-shaped — the same rule Cross Budget Sync follows.
  */
 /**
  * Read a stored `applyConfig` into the current shape.

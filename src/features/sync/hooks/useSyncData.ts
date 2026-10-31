@@ -10,7 +10,7 @@ import type { ConnectionInstance } from "@/store/connection";
 import type { SyncFlowRun } from "@/lib/app-db/types";
 
 /**
- * Connections eligible for Budget File Sync source/target selection - any mode
+ * Connections eligible for Cross Budget Sync source/target selection - any mode
  * whose capability report is `supported` (Direct and HTTP API Server today).
  */
 export function useSyncConnections(): ConnectionInstance[] {

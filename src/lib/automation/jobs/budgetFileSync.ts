@@ -9,7 +9,7 @@ import type { ServerSafeSyncResult } from "@/lib/sync/serverSafeSync";
 import type { AutomationRunRollup, JsonEnvelope } from "@/lib/app-db/types";
 
 /**
- * Budget File Sync as an automation job type (RD-079 / PR-043c).
+ * Cross Budget Sync as an automation job type (RD-079 / PR-043c).
  *
  * The first registered type, and the proof the engine is general: it adds
  * scheduling, locking, retries, health and history *around* `runServerSafeSync`
@@ -82,7 +82,7 @@ function readRunId(result: ServerSafeSyncResult): string | null {
 
 export const budgetFileSyncJobType: AutomationJobType<BudgetFileSyncConfig, BudgetFileSyncResult> = {
   type: BUDGET_FILE_SYNC_JOB_TYPE,
-  label: "Budget File Sync",
+  label: "Cross Budget Sync",
 
   validateConfig(raw: JsonEnvelope): BudgetFileSyncConfig {
     const flowId = raw.data.flowId;
@@ -148,7 +148,7 @@ export const budgetFileSyncJobType: AutomationJobType<BudgetFileSyncConfig, Budg
     }
 
     if (result.status === "partial") {
-      // RD-058's rule, preserved: for Budget File Sync a partial apply means
+      // RD-058's rule, preserved: for Cross Budget Sync a partial apply means
       // writes failed, and repeated partials should still auto-pause the flow.
       return {
         outcome: "partial",
@@ -192,7 +192,7 @@ export const budgetFileSyncJobType: AutomationJobType<BudgetFileSyncConfig, Budg
   // Generous: a large first sync previews and applies thousands of items.
   deadlineMs: 20 * 60_000,
 
-  // Budget File Sync constructs writes through Bench, so it does take part in
+  // Cross Budget Sync constructs writes through Bench, so it does take part in
   // the shared review queue — unlike a type that only triggers Actual's own
   // work (RD-080).
   classification: {

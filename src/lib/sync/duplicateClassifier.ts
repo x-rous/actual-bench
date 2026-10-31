@@ -6,7 +6,7 @@ import type {
 } from "./plannedChanges";
 
 /**
- * Heuristic duplicate detection for Budget File Sync (RD-053 / PR-019).
+ * Heuristic duplicate detection for Cross Budget Sync (RD-053 / PR-019).
  *
  * Compares the *transformed* target payload (amount is already reversed) against
  * existing target transactions. This is a safety net below the primary DB

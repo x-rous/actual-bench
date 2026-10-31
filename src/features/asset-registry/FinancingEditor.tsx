@@ -18,7 +18,7 @@ import { registryRequest } from "./api";
 
 class FieldFailure extends Error {}
 const pct = (bps: number) => `${(bps / 100).toFixed(2)}%`;
-/** One short line about a loan, from what Loans & Debt already knows. */
+/** One short line about a loan, from what Loans already knows. */
 export function loanFacts(loan: DebtSummary): string[] {
   return [loan.openingPrincipalMinor !== null ? `Original ${assetMoney(loan.openingPrincipalMinor)}` : null, loan.openingDate ? `Opened ${shortDate(loan.openingDate)}` : null, ...loanTerms(loan)].filter((x): x is string => !!x);
 }
@@ -114,7 +114,7 @@ export function FinancingEditor({ asset, registry, loans, preset, initialMode = 
     <DialogHeader><DialogTitle>{mode === "end" ? "End loan allocation" : "Link a loan"}</DialogTitle><DialogDescription>{asset.name} · choose how much of a loan&apos;s Actual debt counts against this asset. Bench only records the share: the loan, its repayments and your Actual transactions never change.</DialogDescription></DialogHeader>
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
       <fieldset disabled={busy} className="grid content-start gap-4">
-        <FormField label="Loan" htmlFor="fin-loan" help="Active loans from Loans & Debt that are bound to an Actual liability account." required error={err("loan")} errorId="fin-loan-err"><Select id="fin-loan" aria-invalid={invalid("loan") || undefined} disabled={!!preset} value={debtId} onValueChange={chooseLoan} options={[{ value: "", label: eligible.length ? "Choose a loan…" : "No eligible loans" }, ...eligible.map((d) => ({ value: d.id, label: d.name }))]} /></FormField>
+        <FormField label="Loan" htmlFor="fin-loan" help="Active loans from Loans that are bound to an Actual liability account." required error={err("loan")} errorId="fin-loan-err"><Select id="fin-loan" aria-invalid={invalid("loan") || undefined} disabled={!!preset} value={debtId} onValueChange={chooseLoan} options={[{ value: "", label: eligible.length ? "Choose a loan…" : "No eligible loans" }, ...eligible.map((d) => ({ value: d.id, label: d.name }))]} /></FormField>
         {loan && <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs"><p className="text-sm font-medium">{loan.name}</p><p className="mt-0.5 text-muted-foreground">{loanFacts(loan).join(" · ") || "No loan terms recorded"}</p>
           <p className="mt-1">Actual debt {isIsoDate(from) && from > today ? "is not known for a future date" : `on ${shortDate(previewDate)}`}: <span className="font-medium tabular-nums">{loanDebt === undefined ? "reading…" : money(loanDebt)}</span></p></div>}
         <FormField label="Change" htmlFor="fin-mode" help="Set a share from a date, or end the allocation on a date."><Select id="fin-mode" value={mode} onValueChange={(v) => setMode(v as "set" | "end")} options={[{ value: "set", label: "Set the allocation from a date" }, { value: "end", label: "End the allocation on a date" }]} /></FormField>

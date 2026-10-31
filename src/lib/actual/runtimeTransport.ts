@@ -731,7 +731,7 @@ async function getBrowserAllNotes(
   return map;
 }
 
-// --- Budget File Sync transaction primitives (RD-053 / PR-019) -------------
+// --- Cross Budget Sync transaction primitives (RD-053 / PR-019) -------------
 
 type NameLookup = {
   payeeNames: Map<string, string>;
@@ -1110,7 +1110,7 @@ async function updateBrowserTransactionForSync(
   }
   // Only fields the caller actually supplied are sent. `undefined` means
   // "leave this alone"; coercing it to null wipes whatever the transaction
-  // holds, which for a partial update is silent data loss. Budget File Sync
+  // holds, which for a partial update is silent data loss. Cross Budget Sync
   // always passes every field, so nothing changes for it.
   const fields: Record<string, unknown> = { date: input.date, amount: input.amount };
   if (payeeId !== null || input.payeeId !== undefined || input.payeeName !== undefined) {
