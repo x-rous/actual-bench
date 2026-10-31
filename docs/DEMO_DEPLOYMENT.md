@@ -111,7 +111,7 @@ connection switcher to move between them. Check:
 - Assets: Family Home, Family Car and Investment Property, their history and linked loans; check the rental income and expenses.
 - Bank Reconciliation: completed, in-review and ready-to-apply checking sessions.
 - FX Rates: the illustrative USD/AUD rate.
-- Backups and Automations: the local demo destination and monthly Bench-metadata backup rule. This container-local destination and run history reset on restart; Space sleep can prevent scheduled runs.
+- Backups and Automations: the local demo destination and monthly Bench-metadata backup rule. An initial verified backup runs at startup to establish the schedule. This container-local destination and run history reset on restart; Space sleep can prevent scheduled runs.
 
 Verify amounts and linked rows in both modes. Restart the Space, repeat the
 checks, and confirm visitor changes disappeared from both Actual and Bench.

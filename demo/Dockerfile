@@ -28,6 +28,7 @@ COPY demo/seed-data /seed-data/actual
 COPY --from=bench-build /app/demo/seed-bench.sqlite /seed-data/bench.sqlite
 COPY demo/start.sh /start.sh
 COPY demo/check-budgets.mjs /check-budgets.mjs
+COPY demo/initialize-backup.mjs /initialize-backup.mjs
 RUN chmod +x /start.sh
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
     ACTUAL_SERVER_URL=http://127.0.0.1:5006 \

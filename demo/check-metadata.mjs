@@ -88,5 +88,5 @@ const { destinations } = await read('/api/backups/destinations');
 const { policies } = await read('/api/backups/policies');
 const { automations } = await read('/api/automations');
 const monthly = policies.find((policy) => policy.name === 'Monthly demo Bench backup' && policy.cronExpression === '0 2 1 * *');
-if (!monthly || !destinations.some((destination) => monthly.destinationIds.includes(destination.id)) || !automations.some((automation) => automation.config?.data?.policyId === monthly.id && automation.enabled)) fail('Monthly demo backup setup missing');
+if (!monthly || !destinations.some((destination) => monthly.destinationIds.includes(destination.id)) || !automations.some((automation) => automation.config?.data?.policyId === monthly.id && automation.enabled && automation.lastRun?.status === 'succeeded')) fail('Monthly demo backup setup or initial verified run missing');
 console.log('demo metadata: OK USD/AUD rate and monthly backup automation');

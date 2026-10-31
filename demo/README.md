@@ -53,7 +53,8 @@ is included; it is not a live quote. Dates advance when seeds are regenerated.
 
 A local destination and monthly automation demonstrate backing up Bench metadata
 (not the Actual budget files) at 02:00 UTC on the first day of each month. The
-folder is inside the shared demo container, so its files and run history are
+first backup runs at startup so later monthly runs have a real scheduling baseline.
+The folder is inside the shared demo container, so its files and run history are
 removed on restart. The Space can sleep, so scheduled runs depend on it being
 awake; this is a demonstration, not durable backup storage. Visitors may change
 the shared sample until reset.
