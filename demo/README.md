@@ -71,8 +71,8 @@ bash demo/smoke.sh
 The smoke test uses the generated seed's default server password and a temporary
 API key. If the seed was generated with `SEED_PASSWORD`, use that password in a
 local container test instead. The test starts under 2 CPU / 16 GB limits,
-checks both budgets and all four module metadata sets, changes both stores,
-restarts the container, and checks again. It removes its test container. CI also
+checks both budgets, module metadata and the initial backup, changes both data
+stores, restarts the container, and checks the restored seeds and backup folder. It removes its test container. CI also
 runs `demo/browser-smoke.cjs` in Chromium against the container.
 The demo image limits build parallelism to fit the Hugging Face builder; normal
 self-hosted builds are unaffected.
