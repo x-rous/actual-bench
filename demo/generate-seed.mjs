@@ -25,7 +25,7 @@ import { createServer } from "node:net";
 globalThis.navigator ??= { platform: "", userAgent: "node" };
 
 const require = createRequire(import.meta.url);
-const { recoverPreviousSeed } = require("./seed-publication.cjs");
+const { publishSeed, recoverPreviousSeed } = require("./seed-publication.cjs");
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const {
   CATEGORY_GROUPS,
@@ -1243,18 +1243,15 @@ async function main() {
     const metadata = spawnSync(process.execPath, [join(__dirname, "generate-metadata.cjs"), manifestPath, nextDb], { stdio: "inherit" });
     if (metadata.status !== 0) throw new Error("Bench metadata generation failed");
     // Publish only after both budgets and their matching metadata have validated.
-    const previous = PREVIOUS_SEED_DATA_DIR;
-    await rename(FINAL_SEED_DATA_DIR, previous);
-    try {
-      await rename(SEED_DATA_DIR, FINAL_SEED_DATA_DIR);
-      await rename(nextDb, join(__dirname, "seed-bench.sqlite"));
-      await rename(manifestPath, join(__dirname, "seed-manifest.json"));
-    } catch (error) {
-      await rm(FINAL_SEED_DATA_DIR, { recursive: true, force: true });
-      await rename(previous, FINAL_SEED_DATA_DIR);
-      throw error;
-    }
-    await rm(previous, { recursive: true, force: true });
+    await publishSeed({
+      final: FINAL_SEED_DATA_DIR,
+      previous: PREVIOUS_SEED_DATA_DIR,
+      next: SEED_DATA_DIR,
+      database: join(__dirname, "seed-bench.sqlite"),
+      nextDatabase: nextDb,
+      manifest: join(__dirname, "seed-manifest.json"),
+      nextManifest: manifestPath,
+    });
   } finally {
     await rm(manifestPath, { force: true });
     await rm(nextDb, { force: true });
