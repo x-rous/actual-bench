@@ -14,7 +14,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 CIRCLE_NODE_TOTAL=3 \
     TURBO_TASKS_AVAILABLE_PARALLELISM=2 RAYON_NUM_THREADS=2
 RUN node demo/generate-metadata.cjs && npm run build
 
-FROM jhonderson/actual-http-api:26.10.0
+FROM jhonderson/actual-http-api:26.10.1
 USER root
 RUN apk add --no-cache python3 make g++ \
  && npm install -g @actual-app/sync-server@26.10.0
