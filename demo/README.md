@@ -43,10 +43,20 @@ files to `demo/seed-data/` and the matching fictional references to
 for validation. The image independently regenerates that SQLite file from the
 manifest. Commit the seed-data and manifest together when reviewing a refresh.
 
-The household has a property and car with valuation history, linked mortgage and
-car loans with principal transfers and interest expenses, a card with saved
-statements, and a completed checking reconciliation. Dates advance when seeds
-are regenerated. Visitors may change the shared sample until reset.
+The household has a family home with six years of valuations, a car, and an
+investment property with linked rental income and expenses. Four loans include
+the home and investment mortgages, a car loan, and a personal loan. Two cards
+show a missed minimum payment with interest and a fully paid instalment plan.
+The checking account has completed, in-review, and ready-to-apply reconciliation
+examples. Prior Envelope months have zero To Budget. An illustrative USD/AUD rate
+is included; it is not a live quote. Dates advance when seeds are regenerated.
+
+A local destination and monthly automation demonstrate backing up Bench metadata
+(not the Actual budget files) at 02:00 UTC on the first day of each month. The
+folder is inside the shared demo container, so its files and run history are
+removed on restart. The Space can sleep, so scheduled runs depend on it being
+awake; this is a demonstration, not durable backup storage. Visitors may change
+the shared sample until reset.
 
 ## Build and test locally
 
@@ -63,11 +73,15 @@ local container test instead. The test starts under 2 CPU / 16 GB limits,
 checks both budgets and all four module metadata sets, changes both stores,
 restarts the container, and checks again. It removes its test container. CI also
 runs `demo/browser-smoke.cjs` in Chromium against the container.
+The demo image limits build parallelism to fit the Hugging Face builder; normal
+self-hosted builds are unaffected.
 
 ## Deploy and reset
 
 See `docs/DEMO_DEPLOYMENT.md` in the repository for the full preparation,
-Space settings, Vercel redirect, and verification instructions. Prepare the
+Space settings, Vercel redirect, and verification instructions. The Space clone
+uses Git Xet (or Git LFS) to track binary files before the deployment commit.
+Prepare the
 redirect before updating the Space, but promote it only after hosted checks and
 a restart. Updating the Space changes its public port from HTTP API to Next.js,
 so the current Vercel demo will be unavailable until the redirect is promoted.

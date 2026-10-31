@@ -18,6 +18,11 @@ require.extensions['.ts'] = (mod, filename) => {
 };
 const { getAppDb } = require('../src/lib/app-db/connection.ts');
 const { applyAccountClassChanges } = require('../src/lib/app-db/accountClassRepository.ts');
+const { saveAssetCashflows } = require('../src/lib/app-db/assetCashflowRepository.ts');
+const { insertFxRate } = require('../src/lib/fx/repositories/fxRateRepository.ts');
+const { createBackupDestination, createBackupPolicy } = require('../src/lib/app-db/backupRepository.ts');
+const { reconcileBackupAutomations } = require('../src/lib/automation/jobs/backupReconcile.ts');
+const { identityHash, financialFingerprint } = require('../src/features/credit-cards/lib/evidence.ts');
 const { saveAsset, saveBookMetadata, readRegistry } = require('../src/lib/app-db/assetRepository.ts');
 const { saveAssetDebtAllocation } = require('../src/lib/app-db/assetDebtLinkRepository.ts');
 const { loanFingerprint } = require('../src/lib/asset-registry/financing.ts');
@@ -59,14 +64,20 @@ for (const demo of manifest) {
     { id: a.checking, name: 'Household Checking', offBudget: false, closed: false },
     { id: a.mortgage, name: 'Home Mortgage', offBudget: true, closed: false },
     { id: a.carLoan, name: 'Car Loan', offBudget: true, closed: false },
+    { id: a.personalLoan, name: 'Personal Loan', offBudget: true, closed: false },
+    { id: a.rentalLoan, name: 'Investment Property Loan', offBudget: true, closed: false },
   ], categories: [
     { id: c.mortgage, name: 'Mortgage', groupName: 'Housing', isIncome: false, hidden: false },
     { id: c.carPayment, name: 'Car Payment', groupName: 'Transportation', isIncome: false, hidden: false },
+    { id: c.personalPayment, name: 'Personal Loan Payment', groupName: 'Debt Payments', isIncome: false, hidden: false },
+    { id: c.rentalMortgage, name: 'Rental Mortgage', groupName: 'Housing', isIncome: false, hidden: false },
   ] };
   const debts = {};
   for (const spec of [
     { key: 'mortgage', name: 'Home Mortgage', type: 'mortgage', category: c.mortgage, amount: 28000000, payment: 185000, rate: '0.05', term: 360, day: '01' },
     { key: 'carLoan', name: 'Car Loan', type: 'other', category: c.carPayment, amount: 2200000, payment: 38000, rate: '0.06', term: 84, day: '05' },
+    { key: 'personalLoan', name: 'Personal Loan', type: 'other', category: c.personalPayment, amount: 1200000, payment: 25000, rate: '0.09', term: 60, day: '05' },
+    { key: 'rentalLoan', name: 'Investment Property Loan', type: 'mortgage', category: c.rentalMortgage, amount: 15000000, payment: 100000, rate: '0.06', term: 360, day: '01' },
   ]) {
     const loanOpening = openingDate.slice(0, 8) + spec.day;
     const detail = createDebtConfiguration(db, {
@@ -94,14 +105,20 @@ for (const demo of manifest) {
     const projection = projectStoredDebt(db, debtId, { from: last, to: `${toYear}-${String(current.monthNumber).padStart(2, '0')}-28`, resolution: 'monthly' });
     if (!projection.ok || !projection.projection.ok || projection.projection.events.length === 0) throw new Error(`${spec.name} projection is blocked: ${JSON.stringify(projection)}`);
   }
-  applyAccountClassChanges(db, { budgetSyncId, changes: [{ scope: 'account', id: a.property, accountClass: 'property' }, { scope: 'account', id: a.vehicle, accountClass: 'vehicle' }] });
-  for (const spec of [{ key: 'property', name: 'Family Home', type: 'real-estate', debt: 'mortgage' }, { key: 'vehicle', name: 'Family Car', type: 'vehicle', debt: 'carLoan' }]) {
+  applyAccountClassChanges(db, { budgetSyncId, changes: Object.entries({ checking: 'bank', savings: 'bank', cash: 'cash', credit: 'credit-card', installmentCard: 'credit-card', brokerage: 'investment', property: 'property', rentalProperty: 'property', vehicle: 'vehicle', mortgage: 'loan', carLoan: 'loan', personalLoan: 'loan', rentalLoan: 'loan' }).map(([key, accountClass]) => ({ scope: 'account', id: a[key], accountClass })) });
+  for (const spec of [{ key: 'property', name: 'Family Home', type: 'real-estate', debt: 'mortgage' }, { key: 'vehicle', name: 'Family Car', type: 'vehicle', debt: 'carLoan' }, { key: 'rentalProperty', name: 'Investment Property', type: 'real-estate', debt: 'rentalLoan' }]) {
     const id = `${budgetSyncId}-${spec.key}`;
-    saveAsset(db, { budgetSyncId, asset: { id, actualAccountId: a[spec.key], name: spec.name, assetType: spec.type, description: null, status: 'active', revision: 0, ownership: [{ effectiveFrom: `${first.key}-01`, ownershipBps: 10000 }] }, accountDirectory: [{ id: a[spec.key], name: spec.name, offBudget: true, closed: false }] });
-    saveBookMetadata(db, { budgetSyncId, changes: demo.transactions[spec.key].map((row) => ({ actualTransactionId: row.id, actualAccountId: a[spec.key], assetId: id, classification: row.starting_balance_flag ? 'opening-balance' : (spec.key === 'property' ? 'revaluation' : 'depreciation'), revision: 0 })) });
+    saveAsset(db, { budgetSyncId, asset: { id, actualAccountId: a[spec.key], name: spec.name, assetType: spec.type, description: null, status: 'active', revision: 0, ownership: [{ effectiveFrom: spec.key === 'property' ? demo.homeOpeningDate : `${first.key}-01`, ownershipBps: 10000 }] }, accountDirectory: [{ id: a[spec.key], name: spec.name, offBudget: true, closed: false }] });
+    saveBookMetadata(db, { budgetSyncId, changes: demo.transactions[spec.key].map((row) => ({ actualTransactionId: row.id, actualAccountId: a[spec.key], assetId: id, classification: row.starting_balance_flag ? 'opening-balance' : (spec.key === 'vehicle' ? 'depreciation' : 'revaluation'), revision: 0 })) });
     const links = readRegistry(db, budgetSyncId).debtLinks ?? [];
     saveAssetDebtAllocation(db, { budgetSyncId, assetId: id, debtId: debts[spec.debt], expectedFingerprint: loanFingerprint(links, debts[spec.debt]), operation: { kind: 'set', effectiveFrom: `${first.key}-01`, allocationBps: 10000 } });
   }
+  const rentalRows = demo.transactions.checking.filter((row) => row.notes?.includes('#rental-property') && !row.is_child);
+  if (rentalRows.length < 2) throw new Error('Rental income and expenses are missing');
+  saveAssetCashflows(db, { budgetSyncId,
+    changes: rentalRows.map((row) => ({ role: 'cashflow', actualTransactionId: row.id, actualAccountId: a.checking, assetId: `${budgetSyncId}-rentalProperty`, classification: null, revision: 0 })),
+    sources: rentalRows.map((row) => ({ id: row.id, accountId: a.checking, date: row.date, amountMinor: row.amount, parentId: null, transferId: row.transfer_id ?? null, categoryId: row.category ?? null, notes: row.notes ?? null })),
+  });
   const cardId = `${budgetSyncId}-card`;
   const card = { id: cardId, budgetSyncId, accountId: a.credit, revision: 1, bankTimeZone: 'UTC', closingDay: 28, dueRule: { kind: 'day-of-month', value: 26 }, billingDaysSource: 'user', creditLimitMinor: 1500000 };
   const statements = demo.months.slice(-4, -1).map((month, index) => {
@@ -116,6 +133,21 @@ for (const demo of manifest) {
   const paid = (statement) => demo.transactions.credit.filter((row) => row.notes === 'Monthly credit card payment' && row.cleared && row.date > statement.closingDate && row.date <= statement.dueDate).reduce((sum, row) => sum + row.amount, 0);
   if (paid(statements[1]) < statements[1].balanceMinor || paid(statements[2]) >= statements[2].balanceMinor) throw new Error('Card payment examples do not match their statements');
   applyCreditCardChanges(db, { budgetSyncId, changes: { ...EMPTY_CHANGES, cards: { put: [card], remove: [] }, statements: { put: statements, remove: [] } } });
+  const secondCardId = `${budgetSyncId}-installment-card`;
+  const secondCard = { id: secondCardId, budgetSyncId, accountId: a.installmentCard, revision: 1, bankTimeZone: 'UTC', closingDay: 28, dueRule: { kind: 'day-of-month', value: 26 }, billingDaysSource: 'user', creditLimitMinor: 600000, autoPay: 'full' };
+  const secondStatements = demo.months.slice(-4, -1).map((month, index) => {
+    const previous = demo.months[demo.months.indexOf(month) - 1], next = demo.months[demo.months.indexOf(month) + 1];
+    const closingDate = `${month.key}-28`, periodStart = new Date(Date.UTC(previous.y, previous.mIdx, 29)).toISOString().slice(0, 10);
+    const balanceMinor = -demo.transactions.installmentCard.filter((row) => !row.is_child && row.date <= closingDate).reduce((sum, row) => sum + row.amount, 0);
+    return { id: `${secondCardId}-statement-${index}`, cardId: secondCardId, revision: 1, periodStart, closingDate, dueDate: `${next.key}-26`, balanceMinor, minimumDueMinor: Math.min(balanceMinor, 5000), previousBalanceMinor: index === 0 ? -demo.transactions.installmentCard.filter((row) => !row.is_child && row.date < periodStart).reduce((sum, row) => sum + row.amount, 0) : null };
+  });
+  const planId = `${secondCardId}-laptop-plan`;
+  const plan = { id: planId, cardId: secondCardId, revision: 1, name: 'Laptop instalments', recordedAs: 'card-instalments', originalAmountMinor: 120000, startDate: `${first.key}-01`, scheduleKind: 'fixed', firstDueDate: `${demo.months[1].key}-12`, instalmentCount: 12, instalmentMinor: 10000 };
+  const planRows = demo.transactions.installmentCard.filter((row) => row.notes === 'Laptop installment #home-project').map((row, i) => {
+    const evidence = { id: row.id, accountId: a.installmentCard, date: row.date, amountMinor: row.amount, transferKnown: true, transferId: row.transfer_id ?? null, parentId: null };
+    return { planId, transactionId: row.id, role: 'instalment', instalmentNumber: i + 1, transferPairKey: null, identityHash: identityHash(evidence), sourceHash: financialFingerprint(evidence) };
+  });
+  applyCreditCardChanges(db, { budgetSyncId, changes: { ...EMPTY_CHANGES, cards: { put: [secondCard], remove: [] }, statements: { put: secondStatements, remove: [] }, plans: { put: [plan], remove: [] }, planEntries: [{ planId, rows: planRows }] } });
   const lastMonth = demo.months.at(-2);
   const session = createReconciliationSession(db, { budgetSyncId, accountId: a.checking, accountName: 'Household Checking', statementName: `Checking ${lastMonth.key}.csv` });
   const rows = demo.transactions.checking.filter((row) => row.date.startsWith(lastMonth.key) && row.reconciled && !row.is_child).sort((x,y) => x.date.localeCompare(y.date));
@@ -126,7 +158,22 @@ for (const demo of manifest) {
   const net = rows.reduce((sum, row) => sum + row.amount, 0);
   updateReconciliationSession(db, session.id, { status: 'needs_review', statementFormat: 'delimited', statementStart: `${lastMonth.key}-01`, statementEnd: `${lastMonth.key}-28`, totals: { rowCount: rows.length, net, openingBalanceMinor, closingBalanceMinor: openingBalanceMinor + net }, applyConfig: DEFAULT_APPLY_CONFIG });
   completeReconciliationWithoutWrites(db, session.id, decisionSignature(listReconciliationItems(db, session.id), DEFAULT_APPLY_CONFIG));
+  const pendingRows = demo.transactions.checking.filter((row) => row.date.startsWith(current.key) && !row.reconciled && !row.is_child && !row.starting_balance_flag).sort((x, y) => x.date.localeCompare(y.date));
+  for (const [index, status] of ['needs_review', 'ready'].entries()) {
+    const selected = pendingRows.slice(index, index + 1);
+    if (!selected.length) continue;
+    const pending = createReconciliationSession(db, { budgetSyncId, accountId: a.checking, accountName: 'Household Checking', statementName: `Checking ${current.key} ${status}.csv` });
+    const statement = selected.map((row, i) => ({ id: `${budgetSyncId}-${status}-row-${i}`, sourceRowNumber: i + 2, postedDate: row.date, amount: row.amount, importedPayee: row.imported_payee || 'Household transaction', fingerprint: `demo-${status}-${row.id}`, raw: { date: row.date, amount: row.amount } }));
+    replaceStatementRows(db, pending.id, statement);
+    replaceReconciliationItems(db, pending.id, selected.map((row, i) => ({ id: `${budgetSyncId}-${status}-item-${i}`, statementRowIds: [statement[i].id], actualTransactionIds: status === 'ready' ? [row.id] : [], disposition: status === 'ready' ? 'matched' : 'unresolved' })));
+    updateReconciliationSession(db, pending.id, { status, statementFormat: 'delimited', statementStart: selected[0].date, statementEnd: selected.at(-1).date, totals: { rowCount: selected.length, net: selected.reduce((sum, row) => sum + row.amount, 0) }, applyConfig: DEFAULT_APPLY_CONFIG });
+  }
+
 }
+insertFxRate(db, { baseCurrency: 'USD', quoteCurrency: 'AUD', requestedDate: manifest[0].months.at(-1).key + '-01', effectiveDate: manifest[0].months.at(-1).key + '-01', rate: '1.5000', source: 'manual', notes: 'Illustrative demo rate, not a live quote' });
+const destination = createBackupDestination(db, { name: 'Demo backup folder', kind: 'local', config: { version: 1, data: { path: '/data/backups' } } });
+const policy = createBackupPolicy(db, { name: 'Monthly demo Bench backup', contents: 'app-db', sourceRef: { version: 1, data: {} }, destinationIds: [destination.id], scheduleKind: 'cron', cronExpression: '0 2 1 * *', timezone: 'UTC', scrubEnabled: false, verificationLevel: 'data', encryption: 'none' });
+reconcileBackupAutomations(db, [policy]);
 db.pragma('wal_checkpoint(TRUNCATE)');
 db.close();
 console.log(`Generated demo Bench metadata for ${manifest.length} budgets`);

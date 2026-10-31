@@ -218,6 +218,10 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     { name: "Everyday Rewards Card", type: "credit" },
     0
   );
+  account.installmentCard = await api.createAccount({ name: "Everyday Installments Card", type: "credit" }, 0);
+  account.personalLoan = await api.createAccount({ name: "Personal Loan", type: "other", offbudget: true }, 0);
+  account.rentalProperty = await api.createAccount({ name: "Investment Property", type: "other", offbudget: true }, 0);
+  account.rentalLoan = await api.createAccount({ name: "Investment Property Loan", type: "other", offbudget: true }, 0);
   account.cash = await api.createAccount({ name: "Cash Wallet", type: "cash" }, 0);
   account.brokerage = await api.createAccount(
     { name: "Brokerage", type: "investment", offbudget: true },
@@ -232,6 +236,19 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     0
   );
   await api.closeAccount(account.closed);
+
+  const accountGroups = {};
+  for (const [name, keys] of [
+    ["Daily banking", ["checking", "savings", "cash"]],
+    ["Credit cards", ["credit", "installmentCard"]],
+    ["Property and investments", ["property", "rentalProperty", "brokerage"]],
+    ["Vehicles", ["vehicle"]],
+    ["Loans", ["mortgage", "carLoan", "personalLoan", "rentalLoan"]],
+  ]) {
+    const id = await api.createAccountGroup({ name });
+    accountGroups[name] = id;
+    for (const key of keys) await api.updateAccount(account[key], { account_group_id: id });
+  }
 
   // Account creation automatically creates transfer payees. Capture them once
   // so savings contributions and card payments become real paired transfers.
@@ -272,6 +289,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     secondaryEmployer: "Riverside Community College",
     payrollBonus: "Northstar Annual Bonus",
     bankInterest: "Savings Interest",
+    creditCardInterest: "Card Interest Charge",
     mortgage: "Oak Street Mortgage",
     electric: "Metro Electric",
     gasUtility: "County Natural Gas",
@@ -304,6 +322,10 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     dmv: "State DMV",
     parking: "ParkMobile",
     carLoan: "Community Auto Finance",
+    personalLoan: "Community Personal Lending",
+    rentalLoan: "Rental Property Mortgage",
+    tenant: "Maple Street Tenant",
+    propertyManager: "Maple Property Services",
     healthInsurance: "Evergreen Health Plan",
     clinic: "Lakeside Family Clinic",
     dentist: "Bright Smile Dental",
@@ -505,14 +527,19 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
   const scaled = (amount, factor) => Math.max(100, Math.round(amount * factor));
 
   const oldest = months[0];
+  const homeOpeningDate = `${oldest.y - 6}-${pad(oldest.monthNumber)}-01`;
   const loanOpeningMonth = new Date(Date.UTC(oldest.y, oldest.mIdx - 1, 1)).toISOString().slice(0, 7);
   const openingBalances = [
     ["checking", 640000, "Opening household checking balance"],
     ["savings", 2800000, "Opening emergency and sinking-fund balance"],
     ["credit", -118000, "Opening credit card balance"],
+    ["installmentCard", 0, "Opening installment card balance"],
+    ["personalLoan", -1200000, "Opening personal loan principal"],
+    ["rentalLoan", -15000000, "Opening investment mortgage principal"],
+    ["rentalProperty", 24000000, "Opening investment property value"],
     ["cash", 20000, "Opening cash balance"],
     ["brokerage", 8500000, "Opening off-budget investment balance"],
-    ["property", 42000000, "Opening property value"],
+    ["property", 36000000, "Opening property value"],
     ["vehicle", 3200000, "Opening vehicle value"],
     ["mortgage", -28000000, "Opening mortgage principal"],
     ["carLoan", -2200000, "Opening car loan principal"],
@@ -521,11 +548,16 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     await push(accountKey, [
       {
         ...transaction(oldest, 1, null, amount, null, { notes }),
-        ...(accountKey === "mortgage" ? { date: `${loanOpeningMonth}-01` } : {}),
+        ...(["mortgage", "personalLoan", "rentalLoan"].includes(accountKey) ? { date: `${loanOpeningMonth}-01` } : {}),
         ...(accountKey === "carLoan" ? { date: `${loanOpeningMonth}-05` } : {}),
+        ...(accountKey === "property" ? { date: homeOpeningDate } : {}),
         starting_balance_flag: true,
       },
     ]);
+  }
+
+  for (let year = 1; year <= 6; year++) {
+    await push("property", [{ ...transaction(oldest, 1, null, 1000000, null, { notes: "Annual property valuation" }), date: `${oldest.y - 6 + year}-${pad(oldest.monthNumber)}-01` }]);
   }
 
   const groceryPayees = ["wholeFoods", "wholeFoodsMarket", "traderJoes", "safeway", "safewayStore"];
@@ -536,6 +568,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
   // Balances and payments are integer cents. Interest is rounded once per monthly posting.
   let mortgagePrincipal = 28000000;
   let carPrincipal = 2200000;
+  let personalPrincipal = 1200000;
+  let rentalPrincipal = 15000000;
   for (let monthIndex = 0; monthIndex < months.length; monthIndex++) {
     const month = months[monthIndex];
     const scenario = scenarioForMonth(month, monthIndex);
@@ -545,6 +579,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     const checkingTransactions = [];
     const mortgageInterest = Math.round(mortgagePrincipal * 5 / 1200);
     const carInterest = Math.round(carPrincipal * 6 / 1200);
+    const personalInterest = Math.round(personalPrincipal * 9 / 1200);
+    const rentalInterest = Math.round(rentalPrincipal * 6 / 1200);
     if (canPost(month, 1)) {
       checkingTransactions.push(
         transaction(month, 1, "primaryEmployer", 570000 + scenario.incomeAdjustment, "primarySalary", {
@@ -557,6 +593,10 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     if (canPost(month, 3)) checkingTransactions.push(transaction(month, 3, "childcare", -78000, "childcare"));
     if (canPost(month, 4)) checkingTransactions.push(transaction(month, 4, "studentLoan", -28000, "studentLoan"));
     if (canPost(month, 5)) checkingTransactions.push(transaction(month, 5, "carLoan", -38000, "carPayment", { notes: "Car loan payment", reconciled: false }));
+    if (canPost(month, 1)) checkingTransactions.push(transaction(month, 1, "rentalLoan", -100000, "rentalMortgage", { notes: "Rental mortgage payment", reconciled: false }));
+    if (canPost(month, 5)) checkingTransactions.push(transaction(month, 5, "personalLoan", -25000, "personalPayment", { notes: "Personal loan payment", reconciled: false }));
+    if (canPost(month, 6)) checkingTransactions.push(transaction(month, 6, "tenant", 160000, "rentalIncome", { notes: "Monthly rent #rental-property" }));
+    if (canPost(month, 8)) checkingTransactions.push(transaction(month, 8, "propertyManager", -25000, "rentalExpenses", { notes: "Rental management and repairs #rental-property" }));
     if (canPost(month, 6)) checkingTransactions.push(transaction(month, 6, "electric", -rint(8500, [6, 7, 8].includes(month.monthNumber) ? 17500 : 13500), "electric"));
     if (canPost(month, 7)) checkingTransactions.push(transaction(month, 7, "internet", -7500, "internet"));
     if (canPost(month, 8)) checkingTransactions.push(transaction(month, 8, "gasUtility", -rint(3000, [12, 1, 2].includes(month.monthNumber) ? 14500 : 7500), "naturalGas"));
@@ -581,6 +621,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     for (const loan of [
       { day: 1, key: "mortgage", amount: 185000, interest: mortgageInterest, category: "mortgage", label: "Mortgage" },
       { day: 5, key: "carLoan", amount: 38000, interest: carInterest, category: "carPayment", label: "Car loan" },
+      { day: 1, key: "rentalLoan", amount: 100000, interest: rentalInterest, category: "rentalMortgage", label: "Rental mortgage" },
+      { day: 5, key: "personalLoan", amount: 25000, interest: personalInterest, category: "personalPayment", label: "Personal loan" },
     ]) {
       if (!canPost(month, loan.day)) continue;
       const date = dateString(month, loan.day);
@@ -589,7 +631,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       if (!payment) throw new Error(`Missing ${loan.label} payment on ${date}`);
       await api.updateTransaction(payment.id, { subtransactions: [
         { amount: -(loan.amount - loan.interest), category: category[loan.category], payee: transferPayee[account[loan.key]], notes: `${loan.label} principal` },
-        { amount: -loan.interest, category: category[loan.category], payee: payee[loan.key], notes: `${loan.label} interest` },
+        { amount: -loan.interest, category: category[loan.category], payee: payee[loan.key], notes: `${loan.label} interest #loan-interest` },
       ] });
       let reread;
       for (let attempt = 0; attempt < 30; attempt++) {
@@ -604,7 +646,9 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
         await sleep(400);
       }
       if (loan.key === "mortgage") mortgagePrincipal -= loan.amount - loan.interest;
-      else carPrincipal -= loan.amount - loan.interest;
+      else if (loan.key === "carLoan") carPrincipal -= loan.amount - loan.interest;
+      else if (loan.key === "personalLoan") personalPrincipal -= loan.amount - loan.interest;
+      else rentalPrincipal -= loan.amount - loan.interest;
     }
 
     const transferTransactions = [];
@@ -631,7 +675,9 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     const fullCardPayment = monthIndex === 11 && prior
       ? Math.max(0, -(await api.getAccountBalance(account.credit, new Date(`${prior.key}-28T12:00:00Z`))))
       : null;
-    addTransfer(24, "credit", fullCardPayment ?? (monthIndex === 12 ? 50000 : 210000), null, "Monthly credit card payment");
+    addTransfer(24, "credit", fullCardPayment ?? ([10, 12].includes(monthIndex) ? 1000 : 210000), null, "Monthly credit card payment");
+    const installmentPayment = prior ? Math.max(0, -(await api.getAccountBalance(account.installmentCard, new Date(`${prior.key}-28T12:00:00Z`)))) : 0;
+    if (installmentPayment > 0) addTransfer(24, "installmentCard", installmentPayment, null, "Installment card full statement payment");
     await push("checking", transferTransactions, { transfers: true });
     if (canPost(month, 24)) {
       const posted = await api.getTransactions(account.credit, dateString(month, 24), dateString(month, 24));
@@ -639,6 +685,9 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       if (!payment) throw new Error(`Missing card payment for ${month.key}`);
       await api.updateTransaction(payment.id, { cleared: true, reconciled: historical });
     }
+
+    if (monthIndex > 0 && canPost(month, 12)) await push("installmentCard", [transaction(month, 12, "amazon", -10000, "household", { notes: "Laptop installment #home-project" })]);
+    if (monthIndex >= 10 && canPost(month, 25)) await push("credit", [transaction(month, 25, "creditCardInterest", -2300, "creditInterest", { notes: "Credit card interest #loan-interest" })]);
 
     const creditTransactions = [];
     for (const day of [2, 7, 12, 17, 22, 27]) {
@@ -762,9 +811,9 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     }
     if (scenario.event === "vacation" && canPost(month, 12)) {
       creditTransactions.push(
-        transaction(month, 12, "airline", -68400, "vacationFund", { notes: "Family flights #vacation" }),
-        transaction(month, 18, "hotel", -112000, "vacationFund", { notes: "Summer trip hotel #vacation" }),
-        transaction(month, 19, "museum", -8600, "vacationFund", { notes: "Family museum day #vacation" })
+        transaction(month, 12, "airline", -68400, "vacationFund", { notes: "Family flights #vacation #family-holiday" }),
+        transaction(month, 18, "hotel", -112000, "vacationFund", { notes: "Summer trip hotel #vacation #family-holiday" }),
+        transaction(month, 19, "museum", -8600, "vacationFund", { notes: "Family museum day #vacation #family-holiday" })
       );
     }
     if (scenario.event === "holiday" && canPost(month, 10)) {
@@ -857,6 +906,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       if (demoBudget.mode === "tracking") {
         await api.setBudgetAmount(month.key, category.primarySalary, 570000);
         await api.setBudgetAmount(month.key, category.secondarySalary, 340000);
+        await api.setBudgetAmount(month.key, category.rentalIncome, 160000);
         await api.setBudgetAmount(month.key, category.interest, 950);
         await api.setBudgetAmount(month.key, category.reimbursements, 2100);
         if (scenarioForMonth(month, months.indexOf(month)).event === "bonus") {
@@ -1007,11 +1057,13 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     },
     seed: {
       accounts: account,
+      accountGroups,
+      homeOpeningDate,
       categories: category,
       months,
       transactions: Object.fromEntries(await Promise.all(
-        ["checking", "credit", "property", "vehicle", "mortgage", "carLoan"].map(async (key) => [
-          key, (await api.getTransactions(account[key], `${loanOpeningMonth}-01`, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee }) => ({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee })),
+        ["checking", "credit", "installmentCard", "property", "rentalProperty", "vehicle", "mortgage", "carLoan", "personalLoan", "rentalLoan"].map(async (key) => [
+          key, (await api.getTransactions(account[key], homeOpeningDate, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee, transfer_id, category }) => ({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee, transfer_id, category })),
         ])
       )),
     },
@@ -1032,11 +1084,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
  * an envelope budget, and a demo sitting on a few thousand unassigned reads as
  * a job half done - the opposite of what the page is for.
  *
- * Only the current month is swept. Sweeping every month zeroes the surplus each
- * one carries forward, and the months that deliberately spend more than they
- * earn then land in the red with nothing to draw on - a seed that looks broken
- * rather than one that tells a story. Clearing the current month leaves the
- * carryover chain intact and puts the headline figure where it belongs.
+ * Historical months are assigned in chronological order before this helper.
+ * This helper applies the current hold and distributes its remaining surplus.
  *
  * The surplus is split across the sinking funds rather than dropped into one,
  * which is both what a household does with a year of savings and what reads
@@ -1175,6 +1224,12 @@ async function main() {
       if (!result) throw new Error(`dataset counts were not captured for ${demoBudget.name}`);
       console.log("• dataset:", JSON.stringify(result.counts));
       if (demoBudget.mode === "envelope") {
+        for (const month of months.slice(0, -1)) {
+          const remainder = (await api.getBudgetMonth(month.key))?.toBudget ?? 0;
+          if (remainder !== 0) await api.setBudgetAmount(month.key, result.sinkingFundCategoryIds.emergencyFund, (budgetPlanForMonth(month).emergencyFund ?? 0) + remainder);
+          const remaining = (await api.getBudgetMonth(month.key))?.toBudget ?? 0;
+          if (remaining !== 0) throw new Error(`${month.key} still has ${remaining} unassigned`);
+        }
         const currentMonth = months.at(-1);
         await assignSurplusToSinkingFunds(api, currentMonth, result.sinkingFundCategoryIds);
         const remaining = (await api.getBudgetMonth(currentMonth.key))?.toBudget ?? 0;

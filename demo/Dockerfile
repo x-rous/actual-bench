@@ -9,7 +9,9 @@ COPY next.config.ts tsconfig.json postcss.config.mjs jest.setup.ts ./
 COPY src ./src
 COPY public ./public
 COPY demo/generate-metadata.cjs demo/seed-manifest.json ./demo/
-ENV NEXT_TELEMETRY_DISABLED=1
+# Keep the build within the Space builder's CPU and memory allocation.
+ENV NEXT_TELEMETRY_DISABLED=1 CIRCLE_NODE_TOTAL=3 \
+    TURBO_TASKS_AVAILABLE_PARALLELISM=2 RAYON_NUM_THREADS=2
 RUN node demo/generate-metadata.cjs && npm run build
 
 FROM jhonderson/actual-http-api:26.10.0
