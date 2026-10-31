@@ -32,6 +32,9 @@ const { chromium } = require('playwright');
         }
         console.log(`browser: OK ${mode} ${href}`);
       }
+      await page.getByRole('button', { name: /Open the reconciliation.*ready\.csv/ }).click();
+      await page.getByRole('button', { name: /^Review/ }).first().waitFor({ state: 'visible' });
+      console.log(`browser: OK ${mode} ready reconciliation opens`);
       await page.locator('aside a[href="/fx-rates"]').click();
       await page.getByRole('button', { name: 'USD → AUD' }).waitFor({ state: 'visible' });
       await page.locator('aside a[href="/backups"]').click();

@@ -585,12 +585,13 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       checkingTransactions.push(
         transaction(month, 1, "primaryEmployer", 570000 + scenario.incomeAdjustment, "primarySalary", {
           notes: scenario.label === "lower-income" ? "Reduced hours this month" : "Monthly payroll",
+          cleared: historical,
         }),
         transaction(month, 1, "mortgage", -185000, "mortgage", { notes: "Mortgage payment", reconciled: false })
       );
     }
-    if (canPost(month, 2)) checkingTransactions.push(transaction(month, 2, "healthInsurance", -46000, "healthInsurance"));
-    if (canPost(month, 3)) checkingTransactions.push(transaction(month, 3, "childcare", -78000, "childcare"));
+    if (canPost(month, 2)) checkingTransactions.push(transaction(month, 2, "healthInsurance", -46000, "healthInsurance", { cleared: historical }));
+    if (canPost(month, 3)) checkingTransactions.push(transaction(month, 3, "childcare", -78000, "childcare", { cleared: historical }));
     if (canPost(month, 4)) checkingTransactions.push(transaction(month, 4, "studentLoan", -28000, "studentLoan"));
     if (canPost(month, 5)) checkingTransactions.push(transaction(month, 5, "carLoan", -38000, "carPayment", { notes: "Car loan payment", reconciled: false }));
     if (canPost(month, 1)) checkingTransactions.push(transaction(month, 1, "rentalLoan", -100000, "rentalMortgage", { notes: "Rental mortgage payment", reconciled: false }));
@@ -688,6 +689,13 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
 
     if (monthIndex > 0 && canPost(month, 12)) await push("installmentCard", [transaction(month, 12, "amazon", -10000, "household", { notes: "Laptop installment #home-project" })]);
     if (monthIndex >= 10 && canPost(month, 25)) await push("credit", [transaction(month, 25, "creditCardInterest", -2300, "creditInterest", { notes: "Credit card interest #loan-interest" })]);
+
+    if (installmentPayment > 0 && canPost(month, 24)) {
+      const posted = await api.getTransactions(account.installmentCard, dateString(month, 24), dateString(month, 24));
+      const payment = posted.find((row) => row.notes === "Installment card full statement payment" && row.amount > 0);
+      if (!payment) throw new Error(`Missing installment card payment for ${month.key}`);
+      await api.updateTransaction(payment.id, { cleared: true, reconciled: historical });
+    }
 
     const creditTransactions = [];
     for (const day of [2, 7, 12, 17, 22, 27]) {
@@ -1048,6 +1056,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
     throw new Error(`${demoBudget.name} mode mismatch: expected ${demoBudget.mode}, got ${actualMode}`);
   }
 
+  const payeeNamesById = Object.fromEntries(Object.entries(payee).map(([key, id]) => [id, payeeDefinitions[key]]));
+  const categoryNamesById = Object.fromEntries(CATEGORY_GROUPS.flatMap((group) => group.categories.map(([key, name]) => [category[key], name])));
   return {
     counts: {
       ...actualCounts,
@@ -1063,7 +1073,7 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
       months,
       transactions: Object.fromEntries(await Promise.all(
         ["checking", "credit", "installmentCard", "property", "rentalProperty", "vehicle", "mortgage", "carLoan", "personalLoan", "rentalLoan"].map(async (key) => [
-          key, (await api.getTransactions(account[key], homeOpeningDate, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee, transfer_id, category }) => ({ id, date, amount, notes, cleared, reconciled, is_child, starting_balance_flag, imported_payee, transfer_id, category })),
+          key, (await api.getTransactions(account[key], homeOpeningDate, `${months.at(-1).key}-${pad(new Date(months.at(-1).y, months.at(-1).monthNumber, 0).getDate())}`)).map(({ id, date, amount, notes, cleared, reconciled, is_child, is_parent, parent_id, starting_balance_flag, imported_payee, imported_id, transfer_id, category, payee: payeeId, schedule }) => ({ id, date, amount, notes, cleared, reconciled, is_child, is_parent, parent_id, starting_balance_flag, imported_payee, imported_id, transfer_id, category, categoryName: categoryNamesById[category] ?? null, payeeId, payeeName: payeeNamesById[payeeId] ?? null, schedule })),
         ])
       )),
     },

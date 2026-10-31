@@ -158,15 +158,24 @@ for (const demo of manifest) {
   const net = rows.reduce((sum, row) => sum + row.amount, 0);
   updateReconciliationSession(db, session.id, { status: 'needs_review', statementFormat: 'delimited', statementStart: `${lastMonth.key}-01`, statementEnd: `${lastMonth.key}-28`, totals: { rowCount: rows.length, net, openingBalanceMinor, closingBalanceMinor: openingBalanceMinor + net }, applyConfig: DEFAULT_APPLY_CONFIG });
   completeReconciliationWithoutWrites(db, session.id, decisionSignature(listReconciliationItems(db, session.id), DEFAULT_APPLY_CONFIG));
-  const pendingRows = demo.transactions.checking.filter((row) => row.date.startsWith(current.key) && !row.reconciled && !row.is_child && !row.starting_balance_flag).sort((x, y) => x.date.localeCompare(y.date));
+  const currentRows = demo.transactions.checking.filter((row) => row.date.startsWith(current.key) && !row.is_child);
+  const pendingRows = currentRows.filter((row) => !row.reconciled && !row.is_parent && !row.starting_balance_flag).sort((x, y) => x.date.localeCompare(y.date));
+  const singletons = pendingRows.filter((row) => currentRows.filter((other) => other.date === row.date).length === 1);
   for (const [index, status] of ['needs_review', 'ready'].entries()) {
-    const selected = pendingRows.slice(index, index + 1);
-    if (!selected.length) continue;
+    const chosen = singletons[index] ?? pendingRows[index] ?? pendingRows[0];
+    if (!chosen) throw new Error('No unreconciled checking transaction for the demo');
+    const selected = [chosen];
     const pending = createReconciliationSession(db, { budgetSyncId, accountId: a.checking, accountName: 'Household Checking', statementName: `Checking ${current.key} ${status}.csv` });
     const statement = selected.map((row, i) => ({ id: `${budgetSyncId}-${status}-row-${i}`, sourceRowNumber: i + 2, postedDate: row.date, amount: row.amount, importedPayee: row.imported_payee || 'Household transaction', fingerprint: `demo-${status}-${row.id}`, raw: { date: row.date, amount: row.amount } }));
     replaceStatementRows(db, pending.id, statement);
-    replaceReconciliationItems(db, pending.id, selected.map((row, i) => ({ id: `${budgetSyncId}-${status}-item-${i}`, statementRowIds: [statement[i].id], actualTransactionIds: status === 'ready' ? [row.id] : [], disposition: status === 'ready' ? 'matched' : 'unresolved' })));
-    updateReconciliationSession(db, pending.id, { status, statementFormat: 'delimited', statementStart: selected[0].date, statementEnd: selected.at(-1).date, totals: { rowCount: selected.length, net: selected.reduce((sum, row) => sum + row.amount, 0) }, applyConfig: DEFAULT_APPLY_CONFIG });
+    const row = selected[0];
+    const snapshot = { id: row.id, accountId: a.checking, date: row.date, amount: row.amount, payeeId: row.payeeId ?? null, payeeName: row.payeeName ?? null, importedPayee: row.imported_payee ?? null, categoryId: row.category ?? null, categoryName: row.categoryName ?? null, notes: row.notes ?? null, cleared: Boolean(row.cleared), reconciled: Boolean(row.reconciled), importedId: row.imported_id ?? null, transferId: row.transfer_id ?? null, scheduleId: row.schedule ?? null, isParent: false, isChild: false, parentId: null, splitLines: [] };
+    const items = [{ id: `${budgetSyncId}-${status}-item`, statementRowIds: [statement[0].id], actualTransactionIds: status === 'ready' ? [row.id] : [], disposition: status === 'ready' ? 'matched' : 'unresolved', ...(status === 'ready' ? { actualSnapshot: snapshot, guards: { protectedReconciled: false, splitParent: false, transfer: row.transfer_id ? 'yes' : 'no' } } : {}) }];
+    // Other transactions on the same day are outside this tiny statement;
+    // retain them so reopening the session does not introduce unresolved rows.
+    if (status === 'ready') for (const other of currentRows.filter((entry) => entry.date === row.date && entry.id !== row.id)) items.push({ id: `${budgetSyncId}-${status}-keep-${other.id}`, statementRowIds: [], actualTransactionIds: [other.id], disposition: 'keep' });
+    replaceReconciliationItems(db, pending.id, items);
+    updateReconciliationSession(db, pending.id, { status, statementFormat: 'delimited', statementStart: selected[0].date, statementEnd: selected.at(-1).date, totals: { rowCount: selected.length, net: selected.reduce((sum, row) => sum + row.amount, 0) }, applyConfig: status === 'ready' ? { ...DEFAULT_APPLY_CONFIG, clearedTarget: 'reconciled' } : DEFAULT_APPLY_CONFIG });
   }
 
 }

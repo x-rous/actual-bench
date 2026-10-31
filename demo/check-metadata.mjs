@@ -23,6 +23,9 @@ for (const budget of demo.budgets) {
   const { sessions } = await read(`/api/reconciliation/sessions${q}`);
   const session = sessions.find((entry) => entry.status === 'completed' && accountIds.has(entry.accountId));
   if (!session || !sessions.some((entry) => entry.status === 'needs_review') || !sessions.some((entry) => entry.status === 'ready')) fail(`${budget.label}: reconciliation examples missing`);
+  const readySession = sessions.find((entry) => entry.status === 'ready');
+  const readyDetail = await read(`/api/reconciliation/sessions/${encodeURIComponent(readySession.id)}`);
+  if (readyDetail.session.applyConfig?.clearedTarget !== 'reconciled' || !readyDetail.items.some((item) => item.disposition === 'matched' && item.actualSnapshot?.id === item.actualTransactionIds[0] && !item.actualSnapshot.reconciled && !item.actualSnapshot.cleared)) fail(`${budget.label}: ready reconciliation lacks a safe transaction baseline`);
   const detail = await read(`/api/reconciliation/sessions/${encodeURIComponent(session.id)}`);
   if (!detail.items.length || detail.items.some((item) => !item.actualTransactionIds.length)) fail(`${budget.label}: reconciliation has no matched transactions`);
   const query = await read('/api/proxy', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
