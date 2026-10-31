@@ -143,7 +143,7 @@ for (const demo of manifest) {
   });
   const planId = `${secondCardId}-laptop-plan`;
   const plan = { id: planId, cardId: secondCardId, revision: 1, name: 'Laptop instalments', recordedAs: 'card-instalments', originalAmountMinor: 120000, startDate: `${first.key}-01`, scheduleKind: 'fixed', firstDueDate: `${demo.months[1].key}-12`, instalmentCount: 12, instalmentMinor: 10000 };
-  const planRows = demo.transactions.installmentCard.filter((row) => row.notes === 'Laptop installment #home-project').map((row, i) => {
+  const planRows = demo.transactions.installmentCard.filter((row) => row.notes === 'Laptop installment #home-project').sort((x, y) => x.date.localeCompare(y.date)).map((row, i) => {
     const evidence = { id: row.id, accountId: a.installmentCard, date: row.date, amountMinor: row.amount, transferKnown: true, transferId: row.transfer_id ?? null, parentId: null };
     return { planId, transactionId: row.id, role: 'instalment', instalmentNumber: i + 1, transferPairKey: null, identityHash: identityHash(evidence), sourceHash: financialFingerprint(evidence) };
   });

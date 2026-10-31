@@ -47,17 +47,19 @@ and [Git Xet](https://huggingface.co/docs/hub/xet/using-xet-storage#git).
 Git Xet uses Git LFS pointers and uploads their contents to Xet. Git LFS alone
 is a supported fallback. Prepare a fresh clone from the application repository
 root; the Space Docker build needs the application source, not only `demo/`.
-Skipping the old LFS downloads is safe here because the old backend seed files
-are removed below; it does not affect their existing remote objects.
+Skip downloading the old LFS files: the legacy backend seed directory and the
+previous demo seed directory are removed from the Space checkout before the
+current application files are copied. This leaves their remote LFS objects
+untouched.
 
 ```bash
 GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/x-rous/actual-bench-demo /tmp/actual-bench-demo-space
 git -C /tmp/actual-bench-demo-space lfs install --local
 git -C /tmp/actual-bench-demo-space xet install --local
+git -C /tmp/actual-bench-demo-space rm -r --ignore-unmatch seed-data demo/seed-data generate-seed.mjs seed-scenario.cjs start.sh check-budgets.mjs
 git archive HEAD | tar -x -C /tmp/actual-bench-demo-space
 cp demo/Dockerfile /tmp/actual-bench-demo-space/Dockerfile
 cp demo/README.md /tmp/actual-bench-demo-space/README.md
-git -C /tmp/actual-bench-demo-space rm -r --ignore-unmatch seed-data generate-seed.mjs seed-scenario.cjs start.sh check-budgets.mjs
 python3 demo/track-space-binaries.py /tmp/actual-bench-demo-space
 git -C /tmp/actual-bench-demo-space add -A
 git -C /tmp/actual-bench-demo-space diff --cached --stat
@@ -124,10 +126,11 @@ asleep, the first request may wait for it to wake.
 
 If this is a new cutover with a staged project routing rule, promote its reviewed
 version through the [project routes API](https://vercel.com/docs/rest-api/project-routes/promote-restore-or-discard-a-routing-rule-version)
-only after both hosted budgets and all four modules pass verification and a
-Space restart restores both data stores. The API's `promote` action changes the
-public link immediately. For routine updates the existing live rule already
-redirects traffic and does not need to be promoted again.
+only after both hosted budget modes and every check under "Verify and reset"
+pass, including confirming that a Space restart restores both data stores.
+The API's `promote` action changes the public link immediately. For routine
+updates the existing live rule already redirects traffic and does not need to
+be promoted again.
 
 Confirm `https://actual-bench-demo.vercel.app` redirects to the Space and both
 budget modes open. Promoting changes the public link immediately.
