@@ -1,28 +1,37 @@
+# Demo image. Build from the repository root.
+FROM node:24.22.1-alpine AS bench-build
+WORKDIR /app
+RUN apk add --no-cache python3 make g++
+COPY package*.json ./
+COPY scripts/copy-sqlite-wasm.mjs scripts/copy-pdfjs-assets.mjs ./scripts/
+RUN npm ci --no-audit --no-fund
+COPY next.config.ts tsconfig.json postcss.config.mjs jest.setup.ts ./
+COPY src ./src
+COPY public ./public
+COPY demo/generate-metadata.cjs demo/seed-manifest.json ./demo/
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN node demo/generate-metadata.cjs && npm run build
+
 FROM jhonderson/actual-http-api:26.10.0
-
 USER root
-
-# Build deps for better-sqlite3 + install the Actual sync server from npm.
 RUN apk add --no-cache python3 make g++ \
  && npm install -g @actual-app/sync-server@26.10.0
-
-# Pre-synced demo budgets (see generate-seed.mjs). Baked in → reset on restart.
-COPY seed-data /seed-data
-
-COPY start.sh /start.sh
-COPY check-budgets.mjs /check-budgets.mjs
+# The API image uses Node 22. Bench and its native modules are built with Node
+# 24, so keep the two runtimes separate rather than mixing their ABIs.
+COPY --from=bench-build /usr/local/bin/node /opt/bench-node/node
+COPY --from=bench-build /app/.next-build/standalone /bench
+COPY --from=bench-build /app/.next-build/static /bench/.next-build/static
+COPY --from=bench-build /app/public /bench/public
+COPY demo/seed-data /seed-data/actual
+COPY --from=bench-build /app/demo/seed-bench.sqlite /seed-data/bench.sqlite
+COPY demo/start.sh /start.sh
+COPY demo/check-budgets.mjs /check-budgets.mjs
 RUN chmod +x /start.sh
-
-# REST wrapper listens on Hugging Face's port; it talks to the sync server on
-# 127.0.0.1:5006. Use the IPv4 literal (not "localhost"): Node's fetch resolves
-# "localhost" to IPv6 ::1 first, which the sync server doesn't listen on, causing
-# "Authentication failed: network-failure". API_KEY and ACTUAL_SERVER_PASSWORD
-# come from Space secrets.
-ENV PORT=7860 \
-    ACTUAL_SERVER_URL=http://127.0.0.1:5006
-
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
+    ACTUAL_SERVER_URL=http://127.0.0.1:5006 \
+    ACTUAL_BENCH_DB_PATH=/data/bench/actual-bench.sqlite \
+    DEMO_MODE=1 DEMO_BASE_URL=http://127.0.0.1:5007 \
+    DEMO_BUDGET_SYNC_ID=7d243b3e-d2dc-4863-be75-b1fd85b77c2b \
+    DEMO_TRACKING_BUDGET_SYNC_ID=5e48dea9-96ef-4f5e-ba26-10a5af1e4da2
 EXPOSE 7860
-# Override the base image's ENTRYPOINT (./entrypoint.sh) — otherwise our script
-# would be passed as an argument to it and never run, leaving the sync server
-# unstarted. start.sh boots the sync server, then exec's the base entrypoint.
 ENTRYPOINT ["/start.sh"]

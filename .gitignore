@@ -74,3 +74,9 @@ skills-lock.json
 # Compiler over every component, so a cold lint of this repo costs minutes and a
 # cached one costs seconds. Machine-local, never shared.
 .eslintcache
+
+# Generated demo application database; the image rebuilds it from the manifest.
+/demo/seed-bench*.sqlite*
+/demo/seed-data.next/
+/demo/seed-data.previous/
+/demo/seed-manifest.next.json

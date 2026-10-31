@@ -1,160 +1,116 @@
-# Demo Architecture
+# Public demo deployment
 
-How the public **“Try the live demo”** experience is built. This is a conceptual
-overview — it is intentionally free of credentials and environment-specific
-values. None of this affects self-hosting; the demo is a separate layer.
+The demo is a shared fictional sandbox. The combined Hugging Face Docker Space
+runs Next.js on port 7860, with Actual Server and actual-http-api on internal
+ports. Its SQLite metadata database and the two Actual files live in the same
+container. They are restored from matching image seeds on every container start;
+visitor changes last only until that restart. This setup is independent of the
+normal self-hosted Docker image. Never mount real data at `/data` in this demo.
 
-## Two products, one repo
+## Regenerate and validate
 
-The same codebase serves two independent things:
+Follow `demo/README.md` from the repository root. `node demo/generate-seed.mjs`
+generates equivalent Envelope and Tracking budgets and `demo/seed-manifest.json`
+from the same run. It validates the two budgets and builds an ignored local
+Bench SQLite database through the application repositories. The image build
+rebuilds the database from that manifest. Keep the manifest and `seed-data/`
+from the same run: their Actual account and transaction IDs must agree. The
+stable Sync IDs are already configured in `demo/Dockerfile`.
 
-| | Self-hosted app | Public demo |
-|---|---|---|
-| **Who** | You, on your own server | Anyone, to try it out |
-| **Runs on** | Your infrastructure (Docker) | A managed UI host + a managed backend |
-| **Built/deployed by** | Release tags → Docker image | Git pushes → managed host |
+Run `docker build -f demo/Dockerfile -t actual-bench-demo .` followed by
+`bash demo/smoke.sh`. CI additionally checks the four workspaces in Chromium.
+The smoke script assumes the default seed password `demo-budget-public`; if you
+use `SEED_PASSWORD`, supply the matching value when starting a container by
+hand. Do not run the reset script against a container holding real data.
 
-Everything demo-specific is **gated behind environment variables**, so a
-self-hosted build contains none of it (see *Self-host safety* below).
+## Prepare the Vercel redirect before the cutover
 
-## Topology
+Before updating the Space, link the Vercel CLI to the existing demo project and
+stage the two project-level redirects. Do not promote them yet:
 
-```
-visitor ─► Demo UI (Next.js, managed host)
-              │  server-side proxy (/api/proxy)
-              ▼
-           Demo backend (single container)
-              ├─ actual-http-api   (REST, public port)
-              └─ actual-server     (sync, internal only)
-                 └─ Envelope + Tracking seed budgets (baked into the image)
-```
-
-The UI never talks to the backend from the browser — calls go through the app’s
-own server-side proxy, exactly like a self-hosted deployment.
-
-## What happens when a visitor starts the demo
-
-1. The connect screen asks the server route **`/api/demo`** whether a demo is
-   configured. It answers only when the deployment opts in via demo env vars;
-   otherwise it returns `404` and the demo panel never appears.
-2. The panel offers **one button per budget mode** — `Envelope demo` and
-   `Tracking demo`, named from the labels the route returns. A visitor already
-   budgets one way or the other, and a single button opening Envelope started
-   Tracking users in the wrong model.
-3. Whichever is chosen, the app registers **both** demo-budget connections and
-   opens the chosen one. The top-bar connection menu lists both, so the other
-   mode is one budget switch away and the two equivalent datasets can still be
-   compared.
-4. From there each behaves like any other connection: the server-side proxy
-   talks to the demo backend, which serves the selected sample budget.
-
-The normal **“bring your own actual-http-api”** form remains the default path on
-the same screen.
-
-## The seed budget & self-reset
-
-- Two rich, realistic sample budgets are generated from deterministic equivalent
-  data by **`demo/generate-seed.mjs`** and **baked into the backend image**:
-  `Live Demo - Envelope` uses Envelope mode; `Live Demo - Tracking` uses Tracking
-  mode and also plans income. Both contain twelve completed months plus the
-  current partial month, a broad household category structure, seasonal budget
-  plans, intentionally good and difficult months, duplicate payees, 30+ rules,
-  rule-diagnostic examples, 12 schedules, 10 tags with tagged activity, real
-  transfers, split purchases, imported metadata, notes, and mixed transaction
-  clearing/reconciliation states.
-- The generator validates minimum entity and transaction counts, expected mode,
-  rule-diagnostic coverage, and equivalent transactions/expense plans before it
-  publishes the seed directory.
-- The committed seed retains stable Sync IDs across regenerations, avoiding a
-  coordinated Demo UI environment update for ordinary data refreshes. If those
-  IDs are intentionally changed, update both Vercel variables before deployment.
-- On every container start the backend restores that baked copy, so the demo
-  **self-resets to a clean state** — visitor edits never persist. This is the
-  reset mechanism; there is no separate cleanup job.
-
-## When a budget lists but will not open
-
-The failure mode worth recognising: the backend answers `GET /v1/budgets` with
-both demo budgets, serves one of them perfectly, and returns
-`500 Unknown error while interacting with Actual Api` for **every** request
-against the other. In the UI that surfaces as *"Failed to load budget management
-data. Please check your connection and try again"* on one demo budget only.
-
-A listed budget is not an openable one. That listing merges the sync server's
-files (`state: "remote"`) with the API's own **local cache**, and when this
-happened the broken budget appeared in the cache with **neither a `cloudFileId`
-nor a `groupId`** - so nothing could resolve its Sync ID, and every request for
-it failed:
-
-```json
-{ "id": "…-Envelope-283b5a7", "cloudFileId": "0389217b…", "groupId": "7d243b3e…", "name": "Live Demo - Envelope" }
-{ "id": "…-Tracking-1272172", "name": "…-Tracking-1272172" }
+```bash
+vercel link
+vercel redirects add / https://x-rous-actual-bench-demo.hf.space/ --status 307 --preserve-query-params
+vercel redirects add '/*' 'https://x-rous-actual-bench-demo.hf.space/:splat' --status 307 --preserve-query-params
+vercel redirects list --staging
+vercel redirects list-versions
 ```
 
-**It was not a stale deploy.** The Space's Dockerfile, `start.sh` and seed were
-byte-identical to this repo, and the seed opens both budgets when tested against
-a local sync server. The cache is filled at *runtime*, by the first request for
-each budget, and a download that fails or is interrupted - two visitors opening
-the same budget at once is enough - leaves a half-written entry that shadows the
-real file for the life of the container. The Envelope budget, opened first and
-more often, never hit it.
+Select the project that owns `actual-bench-demo.vercel.app` when linking. Review
+the staged redirects and record their version ID. Keep the project and domain
+active; staging alone does not change the public link.
 
-Two things follow, and both are now in place:
 
-- **Restarting fixes it.** `start.sh` wipes `/data` on every boot, and the budget
-  cache lives there, so a rebuild or restart of the Space clears the bad entry.
-- **The boot check keeps it from recurring silently.** `check-budgets.mjs` opens
-  every budget once the API is up and prints the result into the Space log. It
-  runs in the background - it has to, since it needs the API it is checking to be
-  serving - so it *narrows* the window in which a visitor triggers the first
-  download rather than closing it. What it reliably does is say so afterwards.
+## Prepare the Space repository
 
-If a budget still fails after a restart, the seed itself is suspect: regenerate
-it (`node demo/generate-seed.mjs`), which validates both budgets before writing
-them, and redeploy.
+After the changes and seeds have been reviewed and committed, prepare a clean
+clone of the existing Space from the repository root. The Space Docker build
+needs the application source, not only the old `demo/` directory:
 
-## Self-host safety
+```bash
+git clone https://huggingface.co/spaces/x-rous/actual-bench-demo /tmp/actual-bench-demo-space
+git archive HEAD | tar -x -C /tmp/actual-bench-demo-space
+cp demo/Dockerfile /tmp/actual-bench-demo-space/Dockerfile
+cp demo/README.md /tmp/actual-bench-demo-space/README.md
+cd /tmp/actual-bench-demo-space
+git status --short
+```
 
-The demo layer is inert anywhere it isn’t explicitly enabled:
+The new image reads `demo/seed-data/` and `demo/seed-manifest.json`. After
+reviewing the status, remove the old backend-only files and stage the new tree.
+**Do not run `git push` until the redirect is staged and the outage window has
+begun:**
 
-- **`/api/demo`** and the **“Try the live demo”** button activate only when the
-  demo env vars are present, including both distinct budget Sync IDs. Self-hosted
-  builds → endpoint `404`s, button hidden.
-- **Analytics** is loaded through a build-flag-gated dynamic import, so it is
-  **tree-shaken out of non-demo builds** entirely — no script, no network calls.
-- The build output directory differs only on the managed UI host (it expects the
-  framework default); self-hosted/CI/Docker builds keep the project’s own dir.
+```bash
+git rm -r --ignore-unmatch seed-data generate-seed.mjs seed-scenario.cjs start.sh check-budgets.mjs
+git add -A
+git diff --cached --stat
+# After reviewing the complete staged diff:
+git diff --cached
+git commit -m "chore(demo): deploy combined demo"
+git push
+```
 
-No demo credentials live in self-hosted builds, and none are required to
-self-host.
+**Planned outage:** pushing this update replaces the HTTP API currently exposed
+on the Space's public port 7860 with Next.js. The existing Vercel demo still
+expects an HTTP API at that address, so its budget connections will fail once
+the Space switches over. The outage lasts until the staged Vercel redirect is
+promoted after the hosted checks below. Prepare the redirect first, then push
+the Space update during the agreed outage window.
 
-## How deploys happen
+In Space settings, keep `app_port: 7860` and configure `API_KEY` and
+`ACTUAL_SERVER_PASSWORD` as secrets. The password must match the one used for
+seed generation. Changing a secret used by the current backend can also affect
+the old demo, so make any necessary secret changes during the outage. The demo
+API key is intentionally supplied to visitors so they can use the shared
+sample; never reuse a real API key.
 
-- **Demo UI:** the managed host builds a **preview on every push/PR**
-  (maintainer-only, access-protected) and a **production deploy on every merge to
-  `main`**. CI and the host build run independently/in parallel.
-- **Demo backend:** deployed **manually and separately** from its own
-  `demo/` sources — editing `demo/` in a PR does **not** update the live backend
-  until a maintainer redeploys it. **Verify every backend deploy** with
-  `node demo/check-budgets.mjs --url <space-url> --key <API_KEY>`: it opens each
-  budget and exits non-zero if any cannot be served. The same script runs at
-  container boot, so the Space log answers the question too.
-- **Self-hosted app:** unaffected by either; it ships via release tags.
+## Verify and reset
 
-## Where it lives in the repo
+Open the Space's direct `hf.space` URL, choose each budget mode, and use the
+connection switcher to move between them. Check:
 
-| Path | Purpose |
-|---|---|
-| `src/app/api/demo/route.ts` | Demo connection endpoint (env-gated) |
-| `src/components/connect/DemoButton.tsx` | “Try the live demo” button |
-| `src/components/demo-analytics.tsx` | Analytics wrapper (demo-only, tree-shaken) |
-| `demo/Dockerfile`, `demo/start.sh` | Demo backend image (sync + REST in one) |
-| `demo/generate-seed.mjs` | Regenerates both seed budgets |
-| `demo/seed-data/` | The two baked seed budgets |
+- Budget Cockpit: household transactions, rules and schedules.
+- Loans & Debt: Home Mortgage and Car Loan, their history and projections.
+- Credit Cards: Everyday Rewards Card and its saved statements.
+- Assets: Family Home and Family Car, their valuation history and linked loans.
+- Bank Reconciliation: the completed Household Checking session.
 
-To regenerate the seed budgets, run `node demo/generate-seed.mjs` (see the script
-header for prerequisites). Configure the printed `DEMO_BUDGET_SYNC_ID` and
-`DEMO_TRACKING_BUDGET_SYNC_ID` values on the Demo UI deployment. The backend
-uses the pinned `jhonderson/actual-http-api:26.10.0` image and
-`@actual-app/sync-server@26.10.0` npm package so generation and runtime
-interpret the budget files with the same release line.
+Verify amounts and linked rows in both modes. Restart the Space, repeat the
+checks, and confirm visitor changes disappeared from both Actual and Bench.
+The app and metadata checks can be run against a local test container with
+`node demo/check-metadata.mjs http://127.0.0.1:17860`; it is read-only. A
+restart is the reset mechanism, with no separate scheduler. If the Space is
+asleep, the first request may wait for it to wake.
+
+## Activate the redirect
+
+Only after both hosted budgets and all four modules pass verification, and a
+Space restart restores both data stores, promote the reviewed staged version:
+
+```bash
+vercel redirects promote <version-id>
+```
+
+Confirm `https://actual-bench-demo.vercel.app` redirects to the Space and both
+budget modes open. Promoting changes the public link immediately.

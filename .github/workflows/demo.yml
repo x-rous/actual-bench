@@ -1,0 +1,48 @@
+name: Demo container
+on:
+  push:
+    branches: [main, feat/demo-launch-refresh]
+    paths: &demo_paths
+      - "demo/**"
+      - "src/**"
+      - "public/**"
+      - "scripts/copy-sqlite-wasm.mjs"
+      - "scripts/copy-pdfjs-assets.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.ts"
+      - "tsconfig.json"
+      - "postcss.config.mjs"
+      - "jest.setup.ts"
+      - ".dockerignore"
+      - ".github/workflows/demo.yml"
+  pull_request:
+    paths: *demo_paths
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+          cache: npm
+      - name: Install browser test dependencies
+        run: |
+          npm ci --prefer-offline --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Build demo image
+        run: docker build -f demo/Dockerfile -t actual-bench-demo .
+      - name: Smoke test and restart under Space limits
+        run: bash demo/smoke.sh
+        env:
+          DEMO_BROWSER_SMOKE: 1
+      - name: Show logs on failure
+        if: failure()
+        run: docker logs actual-bench-demo || true
