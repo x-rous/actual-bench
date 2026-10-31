@@ -42,7 +42,7 @@
     "react-day-picker": "^10.0.2",
     "react-dom": "19.3.1",
     "react-hook-form": "^7.91.0",
-    "react-is": "^19.3.0",
+    "react-is": "^19.3.1",
     "recharts": "^3.10.1",
     "shadcn": "^4.22.1",
     "sonner": "^2.0.8",
