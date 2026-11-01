@@ -37,15 +37,12 @@ set it outside the Vercel demo build; it has no host guard. Analytics are
 collected for visits that reach the Vercel UI; they are not collected for
 visitors who go directly to the HF Space URL.
 
-The project currently has a Vercel Project Routes rule that redirects all paths
-to the HF Space. It also catches preview URLs: the current Vercel preview
-resolves to the HF Space instead of the Vercel UI. This rule must be removed
-for Vercel to serve the UI. Keep the project and its
-`actual-bench-demo.vercel.app` domain. Before the cutover, inspect the live
-rules and save the current version for rollback. Stage a version that removes
-only the catch-all HF redirect while preserving unrelated rules. Vercel
-documents this in the [Project Routes API](https://vercel.com/docs/rest-api/project-routes).
-Promoting the staged version changes production traffic immediately.
+The Vercel project has a project-level routing rule named **Redirect demo to
+Hugging Face**. Keep this rule disabled so Vercel can serve the UI on the
+production and preview domains. If routing needs to be changed, manage the
+rule under **Project CDN → Routing Rules**. Project-level routing changes are
+published to production immediately. See Vercel's
+[project routing rules guide](https://vercel.com/docs/routing/project-routing-rules).
 
 ### Required Vercel environment variables
 
@@ -86,7 +83,7 @@ or changes an API route, app-database schema, or other server behavior, update
 the HF Space too; its server-side code does not automatically track GitHub
 merges.
 
-## Validate and cut over
+## Validate the demo container
 
 From the repository root, build and test the combined demo image:
 
@@ -100,26 +97,33 @@ CI also runs the browser smoke test. The smoke script assumes the seed password
 the matching password for local tests. Never run the reset checks against a
 container holding real data.
 
-Before promoting a route change:
+The GitHub Actions **Demo container** workflow runs this build and smoke test
+for relevant pull requests and pushes. It validates the demo Docker image; it
+does not deploy the public demo. The normal Vercel Git integration deploys UI
+changes from `main`. The release workflow also has an optional Vercel deploy
+hook for tagged releases when its deployment setting and secret are configured.
+Keep these workflows in place: the demo-container test covers the demo image,
+while the separate Docker smoke test covers the regular self-hosted image.
+
+## Routing checks
+
+For a routing configuration change:
 
 1. Confirm the Vercel preview deployment build passes and the generated
    `routes-manifest.json` contains the `/api/:path*` rewrite to the HF Space.
-   The active project-level redirect also applies to previews, so the preview
-   URL itself cannot verify the Vercel UI while that rule remains active.
+   If the project-level redirect is enabled, it also applies to previews, so
+   disable it before using a preview URL to verify the Vercel UI.
 2. Verify the HF Space health endpoint. The image smoke test checks that both
    seeded budgets open and that restart restores the budget and metadata seeds.
    Do not dump the `/api/demo` response because it contains the public API key.
-3. Inspect and save the live Project Routes version for rollback. Stage removal
-   of only the catch-all HF redirect, preserving unrelated rules. Promote only
-   when ready to test production, since promotion changes traffic immediately.
+3. Inspect and save the live Project Routes version for rollback. Stage only
+   the intended rule change, preserving unrelated rules. Publishing changes
+   traffic immediately.
 4. Immediately confirm `https://actual-bench-demo.vercel.app` serves the Vercel
    UI, `/api/health` and the demo connection work, and both budgets open. Do not
    dump the `/api/demo` response.
-5. Verify the same feature areas on both budgets: transactions, rules,
-   schedules, loans, cards, assets, reconciliation, FX, backups, and automation
-   metadata. Confirm Vercel Analytics records visits.
-6. If any hosted check fails, restore the saved Project Routes version so the
-   demo returns to Hugging Face while the issue is investigated.
+5. If the change causes problems, use the Vercel Routing Rules History to
+   restore a known-good version.
 
 For a local, read-only metadata check against a test container, run
 `node demo/check-metadata.mjs http://127.0.0.1:17860`. If the Space is asleep,
