@@ -8,13 +8,19 @@ app_port: 7860
 pinned: false
 ---
 
-# Actual Bench public demo
+# Actual Bench public demo backend
+
+The public demo UI is served by the `actual-bench-demo` Vercel project. Vercel
+deploys the UI from the GitHub `main` branch and collects Web Analytics. Its
+`/api/*` requests are proxied to this Hugging Face Space so the demo's server
+routes, Actual API, and SQLite metadata database stay together.
 
 This Space runs the demo-only Next.js server, Actual Server, and actual-http-api
 in one container. Next.js listens on port 7860; the other services listen inside
-the container. It serves two equivalent fictional household budgets, **Live Demo
-- Envelope** and **Live Demo - Tracking**. Visitors share their changes until a
-container restart; do not use real financial information.
+the container. The Space also remains directly accessible as a fallback. It
+serves two equivalent fictional household budgets, **Live Demo - Envelope** and
+**Live Demo - Tracking**. Visitors share their changes until a container
+restart; do not use real financial information.
 
 Each image contains matching Actual budget seeds and a Bench metadata seed.
 Startup replaces both working copies before starting the services. The SQLite
@@ -79,11 +85,8 @@ self-hosted builds are unaffected.
 
 ## Deploy and reset
 
-See `docs/DEMO_DEPLOYMENT.md` in the repository for the full preparation,
-Space settings, Vercel redirect, and verification instructions. The Space clone
-uses Git Xet (or Git LFS) to track binary files before the deployment commit.
-Prepare the
-redirect before updating the Space, but promote it only after hosted checks and
-a restart. Updating the Space changes its public port from HTTP API to Next.js,
-so the current Vercel demo will be unavailable until the redirect is promoted.
-A Space restart restores both seeds.
+See `docs/DEMO_DEPLOYMENT.md` in the repository for Vercel configuration,
+Space deployment, and verification instructions. Vercel automatically deploys
+UI changes merged to `main`; backend, seed, or metadata-schema changes also
+require updating this Space. Track binary files with Git Xet or Git LFS before
+publishing them. A Space restart restores both seeds.

@@ -10,8 +10,8 @@ export type AuthMode = "password" | "none";
 export const MIN_PASSWORD_LENGTH = 8;
 
 export function authMode(env: NodeJS.ProcessEnv = process.env): AuthMode {
-  // The public demo runs on Vercel with a throwaway database, where a password
-  // could not be kept. Nothing there is private.
+  // The public demo is shared and uses disposable data; it has no private user
+  // data or password to protect.
   if (env.DEMO_MODE === "1" || env.VERCEL) return "none";
   // Anything but an explicit "none" asks for the password: a typo fails closed.
   return env.ACTUAL_BENCH_AUTH?.trim().toLowerCase() === "none" ? "none" : "password";

@@ -1,136 +1,126 @@
 # Public demo deployment
 
-The demo is a shared fictional sandbox. The combined Hugging Face Docker Space
-runs Next.js on port 7860, with Actual Server and actual-http-api on internal
-ports. Its SQLite metadata database and the two Actual files live in the same
-container. They are restored from matching image seeds on every container start;
-visitor changes last only until that restart. This setup is independent of the
-normal self-hosted Docker image. Never mount real data at `/data` in this demo.
+The public demo uses Vercel for its UI and analytics, and the Hugging Face
+Space for its stateful server-side API and Actual backend:
 
-## Regenerate and validate
-
-Follow `demo/README.md` from the repository root. `node demo/generate-seed.mjs`
-generates equivalent Envelope and Tracking budgets and `demo/seed-manifest.json`
-from the same run. It validates the two budgets and builds an ignored local
-Bench SQLite database through the application repositories. The image build
-rebuilds the database from that manifest. Keep the manifest and `seed-data/`
-from the same run: their Actual account and transaction IDs must agree. The
-stable Sync IDs are already configured in `demo/Dockerfile`.
-The demo Dockerfile limits build parallelism because unconstrained workers can
-exhaust the Hugging Face builder and cause its build job to time out.
-
-Run `docker build -f demo/Dockerfile -t actual-bench-demo .` followed by
-`bash demo/smoke.sh`. CI additionally checks the four workspaces in Chromium.
-The smoke script assumes the default seed password `demo-budget-public`; if you
-use `SEED_PASSWORD`, supply the matching value when starting a container by
-hand. Do not run the reset script against a container holding real data.
-
-## Prepare the Vercel redirect before the cutover
-
-The `actual-bench-demo` Vercel project uses a project routing rule to redirect
-the existing public URL to the Space. Its regex source is `^/(?<path>.*)$`, its
-destination is `https://x-rous-actual-bench-demo.hf.space/$path`, and its status
-is 307. It preserves the path and query string. Once this rule is live, routine
-Space updates do not need a new redirect.
-
-If preparing a new cutover, stage and review the rule before updating the Space;
-do not promote it yet. Vercel's [project routes API](https://vercel.com/docs/rest-api/project-routes)
-supports staging and promotion. The separate bulk-redirect CLI commands require
-a paid plan and are not available on the demo project's Hobby plan. Keep the
-project and domain active; staging alone does not change the public link.
-
-
-## Prepare the Space repository
-
-After the changes and seeds have been reviewed and committed, install Git LFS
-and [Git Xet](https://huggingface.co/docs/hub/xet/using-xet-storage#git).
-Git Xet uses Git LFS pointers and uploads their contents to Xet. Git LFS alone
-is a supported fallback. Prepare a fresh clone from the application repository
-root; the Space Docker build needs the application source, not only `demo/`.
-Skip downloading the old LFS files: the legacy backend seed directory and the
-previous demo seed directory are removed from the Space checkout before the
-current application files are copied. This leaves their remote LFS objects
-untouched.
-
-```bash
-GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/x-rous/actual-bench-demo /tmp/actual-bench-demo-space
-git -C /tmp/actual-bench-demo-space lfs install --local
-git -C /tmp/actual-bench-demo-space xet install --local
-git -C /tmp/actual-bench-demo-space rm -r --ignore-unmatch seed-data demo/seed-data generate-seed.mjs seed-scenario.cjs start.sh check-budgets.mjs
-git archive HEAD | tar -x -C /tmp/actual-bench-demo-space
-cp demo/Dockerfile /tmp/actual-bench-demo-space/Dockerfile
-cp demo/README.md /tmp/actual-bench-demo-space/README.md
-python3 demo/track-space-binaries.py /tmp/actual-bench-demo-space
-git -C /tmp/actual-bench-demo-space add -A
-git -C /tmp/actual-bench-demo-space diff --cached --stat
-git -C /tmp/actual-bench-demo-space lfs ls-files
+```text
+visitor ─► Vercel: Next.js UI + Web Analytics
+                 └─ /api/* rewrite ─► HF Space: Next.js API + SQLite metadata
+                                         ├─ actual-http-api
+                                         └─ Actual Server + seeded budgets
 ```
 
-The helper scans the files being added for Git's binary marker and tracks them
-in the Space clone's `.gitattributes` before staging. This includes the seed
-databases and images, as well as binary files without common binary extensions.
-Review the LFS list and staged changes before committing. Never commit raw
-binary files and add tracking afterward: the rejected objects would remain in
-the push history. The new image reads `demo/seed-data/` and
-`demo/seed-manifest.json`. If Git Xet is unavailable, omit `xet install` and use
-Git LFS's normal transfer instead. Keep Git LFS (and Git Xet, when used) on
-`PATH` for the push; do not disable the LFS pre-push hook.
+The `actual-bench-demo` Vercel project is connected to this repository with
+`main` as its production branch. Vercel deploys production on pushes to `main`
+and creates preview deployments for pull requests. The HF Space remains the
+shared fictional sandbox: its SQLite metadata database and Actual budget files
+are restored from the image seeds at container startup. Visitor changes last
+until the Space restarts. Never use real financial data or mount real data at
+`/data`.
 
-**Do not run `git push` until the redirect is staged and the outage window has
-begun:**
+## Vercel UI and API proxy
+
+The Vercel build uses `DEMO_MODE=1` and `DEMO_BASE_URL` as the HTTPS origin of
+the HF Space. In `next.config.ts`, Vercel builds rewrite every `/api/*` request
+to that Space before matching the Vercel app's API routes. This keeps the UI
+code and static assets on Vercel while the HF server handles demo connections,
+the Actual API proxy, and the SQLite-backed features. Browser requests remain
+same-origin; Actual HTTP operations continue through the server queue in the HF
+application.
+
+The rewrite is limited to the Vercel demo build. Local development, CI, and
+self-hosted deployments do not use it. Keep the Vercel `DEMO_BASE_URL` set to
+the public Space origin (not the container-only `127.0.0.1:5007` URL).
+
+Vercel's `NEXT_PUBLIC_ANALYTICS=1` enables Web Analytics in the UI. Do not
+set it outside the Vercel demo build; it has no host guard. Analytics are
+collected for visits that reach the Vercel UI; they are not collected for
+visitors who go directly to the HF Space URL.
+
+The project currently has a Vercel Project Routes rule that redirects all paths
+to the HF Space. It also catches preview URLs: the current Vercel preview
+resolves to the HF Space instead of the Vercel UI. This rule must be removed
+for Vercel to serve the UI. Keep the project and its
+`actual-bench-demo.vercel.app` domain. Before the cutover, inspect the live
+rules and save the current version for rollback. Stage a version that removes
+only the catch-all HF redirect while preserving unrelated rules. Vercel
+documents this in the [Project Routes API](https://vercel.com/docs/rest-api/project-routes).
+Promoting the staged version changes production traffic immediately.
+
+### Required Vercel environment variables
+
+Keep these variables configured for Production and Preview as appropriate:
+
+| Variable | Purpose |
+|---|---|
+| `DEMO_MODE` | Enables the demo connection flow and disables sign-in on that host. Use only for the public demo; do not set on self-hosted instances. |
+| `DEMO_BASE_URL` | Public HTTPS origin of the HF Space; also the Vercel `/api/*` rewrite target. |
+| `DEMO_API_KEY` | Public demo key returned by the demo connection endpoint. It must only protect the disposable demo backend. |
+| `DEMO_BUDGET_SYNC_ID` | Stable Sync ID for the Envelope seed. |
+| `DEMO_TRACKING_BUDGET_SYNC_ID` | Stable Sync ID for the Tracking seed. |
+| `NEXT_PUBLIC_ANALYTICS` | Set to `1` in the Vercel demo build to enable Web Analytics. It has no host guard; keep it unset in self-hosted builds. |
+
+Do not print or log the API key. The demo endpoint intentionally returns it to
+visitors; never reuse a real server's API key.
+
+## Hugging Face Space
+
+The Space runs the demo-only Next.js server, Actual Server, and
+`actual-http-api` in one container. The Space's Next.js server is the backend
+for Vercel's `/api/*` rewrites; the app UI it also serves directly is a
+secondary access path.
+
+Keep `app_port: 7860` and the existing Space secrets `API_KEY` and
+`ACTUAL_SERVER_PASSWORD`. The startup script copies the matching Actual and
+Bench seeds into `/data`, starts the services, and checks that both advertised
+budgets can be opened. A restart resets the shared sample. The local backup
+destination and run history also reset; scheduled automations only run while
+the Space is awake.
+
+For a seed or backend-code change, regenerate the paired data as described in
+[`demo/README.md`](../demo/README.md), review the manifest and seed files
+together, then rebuild and update the Space repository. Use Git Xet or Git LFS
+for binary files, tracking them before committing. A UI-only change does not
+require an HF update because Vercel builds the UI from `main`. If a change adds
+or changes an API route, app-database schema, or other server behavior, update
+the HF Space too; its server-side code does not automatically track GitHub
+merges.
+
+## Validate and cut over
+
+From the repository root, build and test the combined demo image:
 
 ```bash
-cd /tmp/actual-bench-demo-space
-# After reviewing the complete staged diff:
-git diff --cached
-git commit -m "chore(demo): deploy combined demo"
-git lfs fsck --pointers --objects
-git push
+docker build -f demo/Dockerfile -t actual-bench-demo .
+bash demo/smoke.sh
 ```
 
-**Planned outage:** pushing this update replaces the HTTP API currently exposed
-on the Space's public port 7860 with Next.js. The existing Vercel demo still
-expects an HTTP API at that address, so its budget connections will fail once
-the Space switches over. The outage lasts until the staged Vercel redirect is
-promoted after the hosted checks below. Prepare the redirect first, then push
-the Space update during the agreed outage window.
+CI also runs the browser smoke test. The smoke script assumes the seed password
+`demo-budget-public`; if `SEED_PASSWORD` is used to regenerate the seeds, use
+the matching password for local tests. Never run the reset checks against a
+container holding real data.
 
-In Space settings, keep `app_port: 7860` and configure `API_KEY` and
-`ACTUAL_SERVER_PASSWORD` as secrets. The password must match the one used for
-seed generation. Changing a secret used by the current backend can also affect
-the old demo, so make any necessary secret changes during the outage. The demo
-API key is intentionally supplied to visitors so they can use the shared
-sample; never reuse a real API key.
+Before promoting a route change:
 
-## Verify and reset
+1. Confirm the Vercel preview deployment build passes and the generated
+   `routes-manifest.json` contains the `/api/:path*` rewrite to the HF Space.
+   The active project-level redirect also applies to previews, so the preview
+   URL itself cannot verify the Vercel UI while that rule remains active.
+2. Verify the HF Space health endpoint. The image smoke test checks that both
+   seeded budgets open and that restart restores the budget and metadata seeds.
+   Do not dump the `/api/demo` response because it contains the public API key.
+3. Inspect and save the live Project Routes version for rollback. Stage removal
+   of only the catch-all HF redirect, preserving unrelated rules. Promote only
+   when ready to test production, since promotion changes traffic immediately.
+4. Immediately confirm `https://actual-bench-demo.vercel.app` serves the Vercel
+   UI, `/api/health` and the demo connection work, and both budgets open. Do not
+   dump the `/api/demo` response.
+5. Verify the same feature areas on both budgets: transactions, rules,
+   schedules, loans, cards, assets, reconciliation, FX, backups, and automation
+   metadata. Confirm Vercel Analytics records visits.
+6. If any hosted check fails, restore the saved Project Routes version so the
+   demo returns to Hugging Face while the issue is investigated.
 
-Open the Space's direct `hf.space` URL, choose each budget mode, and use the
-connection switcher to move between them. Check:
-
-- Budget Cockpit: household transactions, rules and schedules.
-- Loans: the home mortgage, car loan, personal loan and investment-property loan, including their history and projections.
-- Credit Cards: two cards, including a missed payment, interest and an instalment plan.
-- Assets: Family Home, Family Car and Investment Property, their history and linked loans; check the rental income and expenses.
-- Bank Reconciliation: completed, in-review and ready-to-apply checking sessions.
-- Exchange Rates: the illustrative USD/AUD rate.
-- Backups and Automations: the local demo destination and monthly Bench-metadata backup rule. An initial verified backup runs at startup to establish the schedule. This container-local destination and run history reset on restart; Space sleep can prevent scheduled runs.
-
-Verify amounts and linked rows in both modes. Restart the Space, repeat the
-checks, and confirm visitor changes disappeared from both Actual and Bench.
-The app and metadata checks can be run against a local test container with
-`node demo/check-metadata.mjs http://127.0.0.1:17860`; it is read-only. A
-restart is the reset mechanism, with no separate scheduler. If the Space is
-asleep, the first request may wait for it to wake.
-
-## Activate the redirect
-
-If this is a new cutover with a staged project routing rule, promote its reviewed
-version through the [project routes API](https://vercel.com/docs/rest-api/project-routes/promote-restore-or-discard-a-routing-rule-version)
-only after both hosted budget modes and every check under "Verify and reset"
-pass, including confirming that a Space restart restores both data stores.
-The API's `promote` action changes the public link immediately. For routine
-updates the existing live rule already redirects traffic and does not need to
-be promoted again.
-
-Confirm `https://actual-bench-demo.vercel.app` redirects to the Space and both
-budget modes open. Promoting changes the public link immediately.
+For a local, read-only metadata check against a test container, run
+`node demo/check-metadata.mjs http://127.0.0.1:17860`. If the Space is asleep,
+its first request may take time to wake it.
