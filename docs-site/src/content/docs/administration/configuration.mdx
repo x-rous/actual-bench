@@ -36,10 +36,11 @@ The table lists every environment variable supported by the current application.
 | `LOG_LEVEL` | `info` | Server log verbosity. | No | Yes |
 | `NEXT_DEV_ALLOWED_ORIGINS` | *(unset)* | Dev-only: allow the HMR WebSocket through a reverse proxy (comma-separated hostnames). | No | Yes |
 
-The demo and analytics variables - `DEMO_MODE`, `DEMO_BASE_URL`, `DEMO_API_KEY`,
-the two budget Sync IDs, and `NEXT_PUBLIC_ANALYTICS` - belong to the public demo
-build and do nothing in a self-hosted one. The demo UI and Web Analytics run on
-Vercel; its `/api/*` requests are rewritten to the Hugging Face Space, which
+`DEMO_MODE=1` enables the demo connection flow and disables sign-in on any
+host; do not set it on a self-hosted instance. The other demo and analytics
+variables - `DEMO_BASE_URL`, `DEMO_API_KEY`, the two budget Sync IDs, and
+`NEXT_PUBLIC_ANALYTICS` - are for the public demo. Its UI and Web Analytics run
+on Vercel; `/api/*` requests are rewritten to the Hugging Face Space, which
 holds the shared Actual budgets and Bench metadata. See the
 [deployment guide](../deployment/) for general hosting guidance and the
 [public demo deployment guide](https://github.com/x-rous/actual-bench/blob/main/docs/DEMO_DEPLOYMENT.md)

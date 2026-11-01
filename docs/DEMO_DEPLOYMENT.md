@@ -52,7 +52,7 @@ Keep these variables configured for Production and Preview as appropriate:
 
 | Variable | Purpose |
 |---|---|
-| `DEMO_MODE` | Enables the demo connection flow. |
+| `DEMO_MODE` | Enables the demo connection flow and disables sign-in on that host. Use only for the public demo; do not set on self-hosted instances. |
 | `DEMO_BASE_URL` | Public HTTPS origin of the HF Space; also the Vercel `/api/*` rewrite target. |
 | `DEMO_API_KEY` | Public demo key returned by the demo connection endpoint. It must only protect the disposable demo backend. |
 | `DEMO_BUDGET_SYNC_ID` | Stable Sync ID for the Envelope seed. |
