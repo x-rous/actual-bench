@@ -33,18 +33,19 @@ self-hosted deployments do not use it. Keep the Vercel `DEMO_BASE_URL` set to
 the public Space origin (not the container-only `127.0.0.1:5007` URL).
 
 Vercel's `NEXT_PUBLIC_ANALYTICS=1` enables Web Analytics in the UI. Do not
-disable it if Vercel analytics are wanted. Analytics are collected for visits
-that reach the Vercel UI; they are not collected for visitors who go directly
-to the HF Space URL.
+set it outside the Vercel demo build; it has no host guard. Analytics are
+collected for visits that reach the Vercel UI; they are not collected for
+visitors who go directly to the HF Space URL.
 
 The project currently has a Vercel Project Routes rule that redirects all paths
-to the HF Space. That rule must be removed for Vercel to serve the UI. Keep the
-project and its `actual-bench-demo.vercel.app` domain. Before promoting a route
-change, inspect the live rules and stage a version that removes only the
-catch-all HF redirect while preserving any unrelated rules. Vercel documents
-this in the [Project Routes API](https://vercel.com/docs/rest-api/project-routes).
-Promoting the staged version changes production traffic immediately; retain the
-previous live version so the redirect can be restored if rollback is needed.
+to the HF Space. It also catches preview URLs: the current Vercel preview
+resolves to the HF Space instead of the Vercel UI. This rule must be removed
+for Vercel to serve the UI. Keep the project and its
+`actual-bench-demo.vercel.app` domain. Before the cutover, inspect the live
+rules and save the current version for rollback. Stage a version that removes
+only the catch-all HF redirect while preserving unrelated rules. Vercel
+documents this in the [Project Routes API](https://vercel.com/docs/rest-api/project-routes).
+Promoting the staged version changes production traffic immediately.
 
 ### Required Vercel environment variables
 
@@ -57,7 +58,7 @@ Keep these variables configured for Production and Preview as appropriate:
 | `DEMO_API_KEY` | Public demo key returned by the demo connection endpoint. It must only protect the disposable demo backend. |
 | `DEMO_BUDGET_SYNC_ID` | Stable Sync ID for the Envelope seed. |
 | `DEMO_TRACKING_BUDGET_SYNC_ID` | Stable Sync ID for the Tracking seed. |
-| `NEXT_PUBLIC_ANALYTICS` | Set to `1` to enable Vercel Web Analytics. |
+| `NEXT_PUBLIC_ANALYTICS` | Set to `1` in the Vercel demo build to enable Web Analytics. It has no host guard; keep it unset in self-hosted builds. |
 
 Do not print or log the API key. The demo endpoint intentionally returns it to
 visitors; never reuse a real server's API key.
@@ -85,7 +86,7 @@ or changes an API route, app-database schema, or other server behavior, update
 the HF Space too; its server-side code does not automatically track GitHub
 merges.
 
-## Validate before changing production routing
+## Validate and cut over
 
 From the repository root, build and test the combined demo image:
 
@@ -99,22 +100,26 @@ CI also runs the browser smoke test. The smoke script assumes the seed password
 the matching password for local tests. Never run the reset checks against a
 container holding real data.
 
-Before removing the Vercel redirect:
+Before promoting a route change:
 
-1. Confirm the Vercel preview deployment serves the app and that its `/api/*`
-   requests reach the HF Space. Check the health endpoint and open both demo
-   budgets; do not dump the `/api/demo` response because it contains the public
-   API key.
-2. Verify the same feature areas on both budgets: transactions, rules,
+1. Confirm the Vercel preview deployment build passes and the generated
+   `routes-manifest.json` contains the `/api/:path*` rewrite to the HF Space.
+   The active project-level redirect also applies to previews, so the preview
+   URL itself cannot verify the Vercel UI while that rule remains active.
+2. Verify the HF Space health endpoint. The image smoke test checks that both
+   seeded budgets open and that restart restores the budget and metadata seeds.
+   Do not dump the `/api/demo` response because it contains the public API key.
+3. Inspect and save the live Project Routes version for rollback. Stage removal
+   of only the catch-all HF redirect, preserving unrelated rules. Promote only
+   when ready to test production, since promotion changes traffic immediately.
+4. Immediately confirm `https://actual-bench-demo.vercel.app` serves the Vercel
+   UI, `/api/health` and the demo connection work, and both budgets open. Do not
+   dump the `/api/demo` response.
+5. Verify the same feature areas on both budgets: transactions, rules,
    schedules, loans, cards, assets, reconciliation, FX, backups, and automation
-   metadata.
-3. Confirm restarting the Space restores both Actual budgets and the Bench
-   metadata seed.
-4. Stage removal of only the catch-all Vercel redirect, preserve other project
-   routes, and promote only after the preview and hosted checks pass.
-5. Confirm `https://actual-bench-demo.vercel.app` serves the Vercel UI, the
-   demo connection works for both budgets, and Vercel Analytics continues to
-   record visits.
+   metadata. Confirm Vercel Analytics records visits.
+6. If any hosted check fails, restore the saved Project Routes version so the
+   demo returns to Hugging Face while the issue is investigated.
 
 For a local, read-only metadata check against a test container, run
 `node demo/check-metadata.mjs http://127.0.0.1:17860`. If the Space is asleep,

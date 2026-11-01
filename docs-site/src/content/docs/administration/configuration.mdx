@@ -38,10 +38,11 @@ The table lists every environment variable supported by the current application.
 
 `DEMO_MODE=1` enables the demo connection flow and disables sign-in on any
 host; do not set it on a self-hosted instance. The other demo and analytics
-variables - `DEMO_BASE_URL`, `DEMO_API_KEY`, the two budget Sync IDs, and
-`NEXT_PUBLIC_ANALYTICS` - are for the public demo. Its UI and Web Analytics run
-on Vercel; `/api/*` requests are rewritten to the Hugging Face Space, which
-holds the shared Actual budgets and Bench metadata. See the
+variables - `DEMO_BASE_URL`, `DEMO_API_KEY`, and the two budget Sync IDs - are
+for the public demo. `NEXT_PUBLIC_ANALYTICS` is a build-time flag with no host
+guard; leave it unset outside the Vercel demo, where `1` enables Web Analytics.
+The demo UI runs on Vercel; `/api/*` requests are rewritten to the Hugging Face
+Space, which holds the shared Actual budgets and Bench metadata. See the
 [deployment guide](../deployment/) for general hosting guidance and the
 [public demo deployment guide](https://github.com/x-rous/actual-bench/blob/main/docs/DEMO_DEPLOYMENT.md)
 for the architecture and cutover checks.

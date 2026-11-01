@@ -66,7 +66,8 @@ The public demo uses a split deployment: Vercel serves the UI and Web Analytics,
 budgets and Bench metadata together in its stateful container. Merges to `main` deploy the UI
 through Vercel's Git integration; backend, seed, or metadata-schema changes also require updating
 the Space. Visitors share disposable sample data, which resets when the Space restarts. Never use
-real financial data in the public demo.
+real financial data in the public demo. The current project-level redirect also catches Vercel
+preview URLs, so they continue to show the Space until that rule is changed.
 
 See the [public demo deployment guide](https://github.com/x-rous/actual-bench/blob/main/docs/DEMO_DEPLOYMENT.md)
 for environment variables, routing, and cutover checks.
