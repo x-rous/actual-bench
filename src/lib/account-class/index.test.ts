@@ -20,7 +20,7 @@ describe("account classes", () => {
     expect(ACCOUNT_CLASS_INFO.map((i) => i.value)).toEqual([...ACCOUNT_CLASSES]);
     expect(ACCOUNT_CLASSES).toEqual([
       "cash", "bank", "vehicle", "property", "investment", "retirement", "other-asset",
-      "credit-card", "loan", "other-liability",
+      "credit-card", "loan", "other-liability", "excluded",
     ]);
   });
 
@@ -43,9 +43,9 @@ describe("account classes", () => {
     expect(isLiability(undefined)).toBe(false);
   });
 
-  it("requires off-budget placement only for vehicle, property, investment, retirement and loan", () => {
+  it("requires off-budget placement only for vehicle, property, investment, retirement, loan and excluded", () => {
     expect(ACCOUNT_CLASSES.filter((t) => !isAccountClassAllowed(t, false)))
-      .toEqual(["vehicle", "property", "investment", "retirement", "loan"]);
+      .toEqual(["vehicle", "property", "investment", "retirement", "loan", "excluded"]);
     expect(ACCOUNT_CLASSES.every((t) => isAccountClassAllowed(t, true))).toBe(true);
     expect(isAccountClassAllowed(null, false)).toBe(true);
   });

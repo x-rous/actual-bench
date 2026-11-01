@@ -64,6 +64,9 @@ export function useAccountClasses() {
     enabled: Boolean(budgetSyncId),
     /** False while loading, on error, or with no budget open: class controls stay disabled. */
     available: Boolean(budgetSyncId) && query.isSuccess,
+    /** The saved values could not be loaded. */
+    failed: query.isError,
+    refetch: query.refetch,
     maps,
     apply,
     isSaving: mutation.isPending,

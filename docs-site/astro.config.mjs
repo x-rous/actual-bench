@@ -99,6 +99,7 @@ export default defineConfig({
 				{
 					label: 'Financial Management',
 					items: [
+						{ label: 'Financial Insights', link: '/user-guide/financial-insights/' },
 						{ label: 'Budget Cockpit', link: '/user-guide/budget-management/' },
 						{ label: 'Credit Cards', link: '/user-guide/credit-cards/' },
 						{ label: 'Assets', link: '/user-guide/asset-registry/' },

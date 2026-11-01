@@ -97,7 +97,7 @@ const eslintConfig = defineConfig([
             },
             {
               group: ["recharts", "recharts/**"],
-              message: "Recharts is loaded lazily from the chart modules only: src/features/assets-debt/components/chart/ and src/features/credit-cards/components/charts/ (RD-084 P1.3b chart gate).",
+              message: "Recharts is loaded lazily from the chart modules only: src/features/assets-debt/components/chart/, src/features/credit-cards/components/charts/ and src/features/financial-insights/components/ChartCanvas.tsx (RD-084 P1.3b chart gate).",
             },
           ],
         },
@@ -110,7 +110,7 @@ const eslintConfig = defineConfig([
    * Credit-card charts live in their own feature (PR-127a, owner decision 2026-10-17).
    */
   {
-    files: ["src/features/assets-debt/components/chart/**", "src/features/credit-cards/components/charts/**"],
+    files: ["src/features/assets-debt/components/chart/**", "src/features/credit-cards/components/charts/**", "src/features/financial-insights/components/ChartCanvas.tsx"],
     ignores: ["src/**/*.test.*"],
     rules: {
       "no-restricted-imports": [

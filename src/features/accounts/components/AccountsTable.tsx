@@ -20,6 +20,9 @@ import { buildGroupOptions } from "./AccountGroupCell";
 import { useAccountGroups } from "../hooks/useAccountGroups";
 import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
+import { useAccountReporting } from "../hooks/useAccountReporting";
+import { useClosedAccountActivity } from "../hooks/useClosedAccountActivity";
+import { evaluateAccountReadiness, type ReportingTreatment } from "@/lib/account-class/reporting";
 import { toast } from "sonner";
 import { ACCOUNT_CLASS_INFO, isAccountClassAllowed, type AccountClass } from "@/lib/account-class";
 import { effectiveAccountClasses } from "../lib/accountClasses";
@@ -29,7 +32,7 @@ import { UNCLASSIFIED } from "./AccountClassCell";
 import { NEW_GROUP, NO_GROUP, groupLabel, liveGroups } from "../lib/accountGroups";
 import { AccountsTableRow } from "./AccountsTableRow";
 import type { AccountDeleteIntent } from "./AccountsTableOverlays";
-import type { StatusFilter, BudgetFilter, RulesFilter } from "./FilterBar";
+import type { StatusFilter, BudgetFilter, RulesFilter, ReportingFilter } from "./FilterBar";
 import type { StagedEntity } from "@/types/staged";
 import type { Account } from "@/types/entities";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -73,15 +76,17 @@ export function AccountsTable({
     rulesFilter: "all" as RulesFilter,
     groupFilter: ALL_GROUPS as string,
     classFilter: ALL_CLASSES as string,
+    reportingFilter: "all" as ReportingFilter,
     groupBy: "group" as GroupBy,
   });
-  const { search, statusFilter, budgetFilter, rulesFilter, groupFilter, classFilter, groupBy } = filters;
+  const { search, statusFilter, budgetFilter, rulesFilter, groupFilter, classFilter, reportingFilter, groupBy } = filters;
   const setSearch       = (v: string)       => setFilters((f) => ({ ...f, search: v }));
   const setStatusFilter = (v: StatusFilter) => setFilters((f) => ({ ...f, statusFilter: v }));
   const setBudgetFilter = (v: BudgetFilter) => setFilters((f) => ({ ...f, budgetFilter: v }));
   const setRulesFilter  = (v: RulesFilter)  => setFilters((f) => ({ ...f, rulesFilter: v }));
   const setGroupFilter  = (v: string)       => setFilters((f) => ({ ...f, groupFilter: v }));
   const setClassFilter   = (v: string)       => setFilters((f) => ({ ...f, classFilter: v }));
+  const setReportingFilter = (v: ReportingFilter) => setFilters((f) => ({ ...f, reportingFilter: v }));
   const setGroupBy       = (v: GroupBy)      => setFilters((f) => ({ ...f, groupBy: v }));
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -166,6 +171,35 @@ export function AccountsTable({
   );
   const activeClassFilter = classesEnabled ? classFilter : ALL_CLASSES;
 
+  // ── Financial Reporting ──────────────────────────────────────────────────────
+  // Also Bench-owned and immediate. Investment, Other Asset and Other Liability
+  // accounts must have a choice; this finds the saved accounts that still need one.
+  // Unsaved rows have no permanent id yet, so their choice waits for the save.
+  const accountReporting = useAccountReporting();
+  const closedSavedIds = useMemo(
+    () => (Object.values(staged) as AccountRow[]).filter((r) => !r.isNew && !r.isDeleted && r.entity.closed).map((r) => r.entity.id),
+    [staged]
+  );
+  const closedActivity = useClosedAccountActivity(closedSavedIds);
+  const needsChoiceIds = useMemo(() => {
+    const classOf = new Map([...effectiveClasses].map(([id, effective]) => [id, effective.accountClass]));
+    const readiness = evaluateAccountReadiness({
+      accounts: (Object.values(staged) as AccountRow[]).filter((r) => !r.isNew && !r.isDeleted).map((r) => r.entity),
+      classOf,
+      reporting: accountReporting.byAccount,
+      closedActivity: closedActivity.data ?? new Map(),
+    });
+    return new Set(readiness.accounts.filter((a) => a.status === "needs-choice").map((a) => a.accountId));
+  }, [staged, effectiveClasses, accountReporting.byAccount, closedActivity.data]);
+  const applyAccountReporting = accountReporting.apply;
+  const handleSetReporting = useCallback(
+    (accountId: string, treatment: ReportingTreatment | null) => applyAccountReporting([{ accountId, treatment }]),
+    [applyAccountReporting]
+  );
+  // The attention list only means something once the saved choices have loaded, and it ends on its own
+  // when the last account is done, rather than leaving an empty table behind.
+  const activeReportingFilter: ReportingFilter = classesEnabled && accountReporting.available && needsChoiceIds.size > 0 ? reportingFilter : "all";
+
   // ── Account balances ─────────────────────────────────────────────────────────
   const { data: balances } = useAccountBalances();
   const { data: allNotes } = useAllNotes();
@@ -215,6 +249,7 @@ export function AccountsTable({
       if (rulesFilter === "no_rules"   &&  (accountRuleCount.get(r.entity.id) ?? 0)) continue;
       if (activeGroupFilter === NO_GROUP && r.entity.groupId && groups?.some((g) => g.id === r.entity.groupId)) continue;
       if (activeGroupFilter !== ALL_GROUPS && activeGroupFilter !== NO_GROUP && r.entity.groupId !== activeGroupFilter) continue;
+      if (activeReportingFilter === "needs-choice" && !needsChoiceIds.has(r.entity.id)) continue;
       if (activeClassFilter !== ALL_CLASSES) {
         const t = effectiveClasses.get(r.entity.id)?.accountClass ?? UNCLASSIFIED;
         if (t !== activeClassFilter) continue;
@@ -269,7 +304,7 @@ export function AccountsTable({
       return 0;
     });
     return result;
-  }, [staged, search, statusFilter, budgetFilter, rulesFilter, activeGroupFilter, activeClassFilter, effectiveClasses, groups, accountRuleCount, sortCol, sortDir]);
+  }, [staged, search, statusFilter, budgetFilter, rulesFilter, activeGroupFilter, activeClassFilter, activeReportingFilter, needsChoiceIds, effectiveClasses, groups, accountRuleCount, sortCol, sortDir]);
 
   // ── Grouped view ─────────────────────────────────────────────────────────────
   // Optional: clusters the filtered, sorted rows by account group or class, with a
@@ -318,10 +353,10 @@ export function AccountsTable({
     const parts = clusters.map((c) => c.subtotalCents).filter((c): c is number => c !== null);
     return parts.length > 0 ? parts.reduce((a, b) => a + b, 0) : null;
   }, [clusters]);
-  const leadingColSpan = 4 + (groups ? 1 : 0) + (classesEnabled ? 1 : 0);
+  const leadingColSpan = 4 + (groups ? 1 : 0) + (classesEnabled ? 2 : 0);
 
   const hasActiveFilters = Boolean(
-    search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || activeGroupFilter !== ALL_GROUPS || activeClassFilter !== ALL_CLASSES
+    search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || activeGroupFilter !== ALL_GROUPS || activeClassFilter !== ALL_CLASSES || activeReportingFilter !== "all"
   );
   // The grouping is a display choice, not a filter, so clearing filters keeps it.
   function handleClearFilters() {
@@ -638,6 +673,9 @@ export function AccountsTable({
         classGroupName={entity.groupId ? groupNames.get(entity.groupId) : undefined}
         canSetClass={row.isNew || row.pendingAccountClass !== undefined || accountClasses.available}
         onSetClass={handleSetClass}
+        savedReporting={accountReporting.byAccount.get(entity.id)}
+        canSetReporting={accountReporting.available}
+        onSetReporting={handleSetReporting}
         onToggleSelect={toggleSelectRow}
         onSelectNameCell={handleSelectNameCell}
         onStartEditingName={handleStartEditingName}
@@ -675,6 +713,8 @@ export function AccountsTable({
           selectedHasOnBudgetAccounts={selectedHasOnBudgetAccounts}
           classFilter={classesEnabled ? activeClassFilter : undefined} onClassFilterChange={setClassFilter}
           unclassifiedCount={classesEnabled ? unclassifiedCount : undefined}
+          reportingFilter={activeReportingFilter} onReportingFilterChange={setReportingFilter}
+          needsChoiceCount={classesEnabled && accountReporting.available ? needsChoiceIds.size : undefined}
           groupBy={activeGroupBy} onGroupByChange={setGroupBy} groupByOptions={groupByOptions}
           onBulkSetClass={accountClasses.available ? handleBulkSetClass : undefined}
           onBulkAssignGroup={handleBulkAssignGroup}
@@ -760,6 +800,12 @@ export function AccountsTable({
                         Class
                         <SortIndicator col="class" sortCol={sortCol} sortDir={sortDir} />
                       </button>
+                    </th>
+                  )}
+
+                  {classesEnabled && (
+                    <th className="w-56 px-2 py-1.5 text-left">
+                      <span className="text-xs font-medium text-muted-foreground">Financial Reporting</span>
                     </th>
                   )}
 

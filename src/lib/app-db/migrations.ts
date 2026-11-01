@@ -65,6 +65,7 @@ import {
   ASSETS_DEBT_V44_INDEX_SQL,
   ASSETS_DEBT_V44_TRIGGER_SQL,
   ACCOUNT_CLASS_TABLE_SQL,
+  ACCOUNT_REPORTING_TABLE_SQL,
   CREDIT_CARD_INDEX_SQL,
   CREDIT_CARD_TABLES_SQL,
   CREDIT_CARD_TRIGGER_SQL,
@@ -73,7 +74,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 60;
+export const LATEST_SCHEMA_VERSION = 61;
 
 type Migration = {
   version: number;
@@ -699,6 +700,8 @@ const MIGRATIONS: readonly Migration[] = [
   // a write journal, and an on/off switch for future events. Extra payments recorded from Actual are no longer model
   // events (the ledger provides them), and an old repayment rule's account becomes a payment rule.
   { version: 60, apply: applyLoanTracking },
+  // Financial Reporting choices per account (Financial Insights). Additive; no existing table is touched.
+  { version: 61, statements: [ACCOUNT_REPORTING_TABLE_SQL] },
 ];
 
 /** The tables the loan tracking redesign adds (v60). Shared with the schema tests. */

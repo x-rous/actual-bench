@@ -1136,6 +1136,22 @@ CREATE TABLE IF NOT EXISTS account_classes (
 );
 `;
 
+// ── Account reporting ────────────────────────────────────────────────────────
+// Bench-owned metadata: the Financial Reporting choice for one Actual account
+// (current or non-current, or a Bank account that is not cash). One row per
+// account, scoped to one budget; the class itself stays in `account_classes`.
+// `treatment` is validated by the repository and read tolerantly, so a value
+// added by a later version does not break an older reader.
+export const ACCOUNT_REPORTING_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS account_reporting (
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL,
+  treatment text NOT NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY (budget_sync_id, account_id)
+);
+`;
+
 /*
  * Credit cards (RD-098 / PR-127c, migration v48). Bench-owned metadata only: Actual ids, opaque
  * evidence hashes and the user's own statement figures and decisions. Never Actual transactions,

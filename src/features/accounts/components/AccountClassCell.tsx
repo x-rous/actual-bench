@@ -30,6 +30,7 @@ export function buildAccountClassGroups(hasOnBudgetAccounts = false) {
   return [
     { label: "Assets", options: available.filter((i) => i.side === "asset").map(toOption) },
     { label: "Liabilities", options: available.filter((i) => i.side === "liability").map(toOption) },
+    { label: "Not reported", options: available.filter((i) => i.side === "none").map(toOption) },
     { label: "Off-budget accounts only", options: unavailable.map(toOption) },
   ].filter((group) => group.options.length > 0);
 }

@@ -74,7 +74,7 @@ export type Payment = {
   /** The loan account's row(s) for this payment. */
   loanRows: SyncSourceTransaction[];
   /** For a split already in Actual: what it holds. */
-  split?: { principalMinor: number; interestMinor: number; feesMinor: number; principalLineId: string; interestLineId: string | null };
+  split?: { principalMinor: number; interestMinor: number; feesMinor: number; principalLineId: string; interestLineId: string | null; feeLineIds: string[] };
   /** The paying side is not in what was read (only the loan-side row is known). */
   sideUnknown?: boolean;
   /** Some of this payment's loan-side rows are classified differently (for example one is an Adjustment): it is a Check, never extra principal. */
@@ -217,8 +217,9 @@ function readSplit(parent: SyncSourceTransaction, loanRowIds: ReadonlySet<string
   const others = parent.splitLines.filter((l) => l !== transfers[0]);
   const interestLine = others.find((l) => !l.transferId) ?? null;
   const interest = interestLine ? Math.abs(interestLine.amount) : 0;
-  const fees = others.filter((l) => l !== interestLine).reduce((sum, l) => sum + Math.abs(l.amount), 0);
-  return { principalMinor: Math.abs(transfers[0].amount), interestMinor: interest, feesMinor: fees, principalLineId: transfers[0].id, interestLineId: interestLine?.id ?? null };
+  const feeLines = others.filter((l) => l !== interestLine);
+  const fees = feeLines.reduce((sum, l) => sum + Math.abs(l.amount), 0);
+  return { principalMinor: Math.abs(transfers[0].amount), interestMinor: interest, feesMinor: fees, principalLineId: transfers[0].id, interestLineId: interestLine?.id ?? null, feeLineIds: feeLines.flatMap((l) => (l.id ? [l.id] : [])) };
 }
 
 /** Every payment that may be the loan's, from the tracking window on. */
@@ -332,6 +333,16 @@ export function proposalContext(debt: TrackingDebt, accounts: ProposalContext["a
     loanPaymentCategoryId: debt.loanPaymentCategoryId, interestCategoryId: debt.interestCategoryId, feeCategoryId: debt.feeCategoryId,
     principalNoteSuffix: debt.principalNoteSuffix, interestNoteSuffix: debt.interestNoteSuffix,
   };
+}
+
+/**
+ * Whether Bench's calculation agrees with what Actual holds: no installment waiting on a drift decision, and the balance
+ * Bench expects by today within the loan's own tolerance of the loan account. The Repayments tab and Financial Insights
+ * both ask this one question.
+ */
+export function trackingAgrees(result: Extract<TrackingResult, { ok: true }>, toleranceMinor: number | undefined): boolean {
+  const driftNeedsReview = result.installments.some((inst) => inst.checkKind === "drift" && inst.status === "check");
+  return !driftNeedsReview && Math.abs(result.figures.differenceMinor) <= (toleranceMinor ?? 100);
 }
 
 export function planTracking(input: TrackingInput): TrackingResult {

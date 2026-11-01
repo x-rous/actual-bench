@@ -4,9 +4,9 @@ import { FEATURES } from "@/lib/features/catalogue";
 
 it("shows every feature's purpose, navigation and direct resources without search or information controls", () => {
   render(<OverviewNavigationSection />);
-  expect(screen.getAllByRole("article")).toHaveLength(20);
+  expect(screen.getAllByRole("article")).toHaveLength(21);
   expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(4);
-  expect(screen.getAllByText("Experimental")).toHaveLength(5);
+  expect(screen.getAllByText("Experimental")).toHaveLength(6);
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   expect(screen.queryByRole("button")).not.toBeInTheDocument();
   expect(screen.queryByText("All features")).not.toBeInTheDocument();

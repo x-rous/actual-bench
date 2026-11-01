@@ -11,7 +11,7 @@ const SERVER_ONLY = [/^@\/lib\/app-db(\/|$)/, /^@\/lib\/assets-debt\/services(\/
 /**
  * Service modules that are pure and client-safe, so the browser may import
  * them at runtime: the P1.5 offset-history reader and the browser half of writing a loan's changes to Actual
- * (the executor, its verifiers and the adjust-split inputs run where the transport is). The second test proves none of them imports anything
+ * (the executor, its verifiers and the adjust-split inputs run where the transport is) and the loan summary worked out from dated events. The second test proves none of them imports anything
  * server-only, so the allowance cannot hide a real server dependency.
  */
 const CLIENT_SAFE_SERVICES = [
@@ -20,6 +20,7 @@ const CLIENT_SAFE_SERVICES = [
   "@/lib/assets-debt/services/applyService",
   "@/lib/assets-debt/services/verify",
   "@/lib/assets-debt/services/adjustSplit",
+  "@/lib/assets-debt/services/loanSummaryEvents",
 ];
 
 function files(dir: string): string[] {

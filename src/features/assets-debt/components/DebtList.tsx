@@ -11,6 +11,7 @@ import { actualUnitsToMinor, toDebtMagnitude } from "@/lib/assets-debt/actual/le
 import type { DebtSummary } from "@/lib/assets-debt/services/debtConfigService";
 import { cn } from "@/lib/utils";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
+import { trackedLoanSummary } from "../lib/trackedLoan";
 import { readOffsetHistories } from "@/lib/assets-debt/services/offsetHistoryService";
 import { Figure } from "@/features/credit-cards/components/primitives/Figure";
 import { useLocalToday } from "../lib/useLocalToday";
@@ -103,6 +104,11 @@ function scheduleQuery(debt: DebtSummary, today: string, connection: Connection)
   return {
     queryKey: ["assets-debt", "card-schedule", connection?.id, debt.id, debt.currentRevision, today],
     queryFn: async () => withLoanOverviewRead(connection?.id ?? debt.budgetSyncId ?? "stored-summary", async () => {
+      // A loan tracked in Actual is summed up from what really happened, so a payment made early is not still to come.
+      if (connection && debt.trackingStartDueDate && (!debt.budgetSyncId || connection.budgetSyncId === debt.budgetSyncId)) {
+        const tracked = await trackedLoanSummary(connection, debt, today).catch(() => null);
+        if (tracked) return tracked;
+      }
       const accounts = (debt.offsetAccountLinks ?? []).filter((offset) => offset.useActualBalance).map((offset) => offset.actualAccountId);
       if (accounts.length && (!connection || (debt.budgetSyncId && connection.budgetSyncId !== debt.budgetSyncId))) throw new Error("Connect to this loan’s budget to read offsets.");
       const offsets = accounts.length ? await readOffsetHistories(getTransport(connection!), { accountIds: accounts, asOfDate: today }) : null;
@@ -209,7 +215,7 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
         wrap
       />
       <Figure label="Principal Repaid" value={summaryMoney(principalValueUnavailable, total.principalRepaid, total.digits)} detail={active.length ? "Opening principal less current balance" : "No active loans"} smallDecimals wrap />
-      <Figure label="Interest to Date" value={summaryMoney(scheduleUnavailable, total.interestToDate, total.digits)} detail={active.length ? "Calculated from schedules, not recorded payments" : "No active loans"} smallDecimals wrap />
+      <Figure label="Interest to Date" value={summaryMoney(scheduleUnavailable, total.interestToDate, total.digits)} detail={active.length ? "Recorded payments for tracked loans, otherwise calculated from schedules" : "No active loans"} smallDecimals wrap />
       <Figure label="Interest Next 12 Months" value={summaryMoney(scheduleUnavailable, total.interestNext12Months, total.digits)} detail={active.length ? "Projected from current loan schedules" : "No active loans"} smallDecimals wrap />
     </dl>
   );

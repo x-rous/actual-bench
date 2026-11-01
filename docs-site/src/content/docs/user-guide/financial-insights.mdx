@@ -1,0 +1,78 @@
+---
+title: Financial Insights
+description: See what you own and owe, what came in and went out, and why your cash and wealth changed, from your Actual accounts and transactions.
+---
+
+Open **Financial Management → Financial Insights** after connecting your Actual budget. It is an experimental, read-only page: Bench reads your accounts and transactions through Direct or HTTP API and never writes to Actual.
+
+Financial Insights answers one question at a time, using the same definitions everywhere, so the numbers on one chart always agree with the numbers on another. It starts with a **Summary** tab; more tabs will appear as they are ready.
+
+## Before any number appears
+
+Every account must be understood first. Financial Insights shows no figure until:
+
+- every account has an **account class** (its own, or its group's), and
+- every Investment, Other Asset and Other Liability account has a **current or non-current** choice.
+
+Both are set in the [Accounts](/user-guide/accounts/) table, in the **Class** and **Financial Reporting** columns. The page lists the accounts that need attention and has an **Open Accounts** button. When you come back it checks again by itself, and **Check again** re-reads without leaving the page. If a new unclassified account appears later, the page locks again and removes its figures. A closed account with no transactions and a zero balance needs nothing.
+
+A budget with no transactions up to today shows **There is nothing to show yet**, not a page of zeros.
+
+## Choose a period
+
+The period control applies to everything on the page.
+
+| Period | What it covers |
+| --- | --- |
+| This month, This year | From the start to today. They are marked **partial**. |
+| Last month, Last 6 months, Last 12 months, Last year | Complete months only, so averages and charts compare like with like. |
+| All available | From your first transaction to today. |
+| Custom range | Any run of months, up to the current one. |
+
+Nothing dated after today is counted, including later this month. Balances are measured at the end of each month, and the current month runs to today.
+
+## The Summary tab
+
+- **Your net worth** is everything you own minus everything you owe, as of the end of the period, with its change over the period. The chart beside it plots net worth and cash & bank at each month end.
+- **Your cash buffer** is how many months your cash & bank would cover. It is always *as of today*, whatever period you picked. The monthly need is your average spending over the last 12 complete months (all available complete months when there are three to eleven; "Insufficient history" below three) plus each loan you owe, in full:
+  - A loan **tracked in [Loans](/user-guide/assets-debt/)** whose schedule agrees with its loan account in Actual counts its scheduled repayment, principal and interest together. This is the schedule the Loans page shows, so a payment you have already made, even early, is not counted again, and offset accounts are read from Actual the same way. The interest and fee lines Bench recorded for that loan are taken out of your spending so they are not counted twice. Only those exact transactions are removed, never other spending that shares the same category.
+  - If a tracked loan's schedule does not agree with Actual, the buffer says **Unavailable** and names the loan. Review it in Loans; nothing is estimated in its place.
+  - Any other loan, tracked or not in a model, uses the average of the transfers recorded into its account over the last complete months (at least three). That is principal only, because its interest cannot be told from your other spending.
+  - The 0–12 month scale is only a scale, not a recommended target. Investments and fixed / restricted deposits are not cash.
+- **Money received, Money spent, Money kept** and the **savings rate**, and **Invested money**.
+- **Where your wealth sits**, from cash to property, and what you owe.
+- **Three measures that are easy to confuse:** *kept from income* (income minus spending), *change in cash* (cash & bank at the end minus the start) and *change in wealth* (net worth at the end minus the start). You can save money and still see your cash fall, if you moved it into investments or paid down a loan.
+
+## What counts as spending
+
+Each entry is read in this order, whatever kind of account it is in:
+
+1. A **transfer** is never income or spending.
+2. An entry the **Asset Registry** classifies, such as a revaluation or the proceeds of a sale, has its own line.
+3. An entry with a **category** follows its category: income in an income category, spending otherwise. The sign does not decide it, so a refund in an expense category lowers spending, and an expense from an Other Asset account is spending.
+4. An entry with **no category** in an **on-budget** account counts by its sign, and is counted separately so nothing is hidden.
+5. An entry with no category in an **off-budget** account is an **unidentified movement**. It is shown on its own, with how many there are, changes your net worth, and is not counted as income or spending. Give it a category to include it.
+6. An account you set to the **Excluded** class (off-budget accounts only) is left out completely: its balance, entries and transfers do not count. The status line shows how many accounts are included and excluded. Money moved between an included and an excluded account changes your net worth, so it appears on its own line, **Transfers with excluded accounts**, and is not income, spending or in transit.
+
+Also:
+
+- A **card purchase** counts once, in the month you buy. Paying the card later is not spending.
+- **Moving money** into investments, between your own accounts, or to pay loan principal is not spending. **Borrowing** is not income. **Interest** and fees you record are spending. **Opening balances** are never income.
+- A transfer with only one side recorded up to today, or whose other side falls outside the period, is shown as **in transit** where it matters, and the balances stay right.
+
+## When Money kept needs review
+
+Money kept and the savings rate say **Needs review**, with the entries listed, only when Bench cannot trust them:
+
+- [Assets](/user-guide/asset-registry/) classifies an entry as money put into an asset (an acquisition or added capital), but no transfer is recorded behind it. The same money may also be counted as spending. Record the purchase as a transfer in Actual, or change the classification.
+- The Asset Registry cannot be read, or an asset account holds too many entries to read.
+
+Ordinary movements in asset accounts, such as receivables, deposits or pass-through accounts, never trigger it. When no entries need attention the list is not shown. Income, spending, net worth and balances still show either way.
+
+## Charts
+
+Every chart has **Line**, **Bars** and **Table** buttons. All three show the same series and exact figures; the table is the text alternative. A month with no data is shown as unavailable, never as zero, and a partial month is marked. **CSV** exports exactly what the chart shows, with its period and as-of date.
+
+## Fresh figures
+
+Bench reads your transactions each time you open the page and when you press **Refresh**, which first pulls the latest budget from the server. Changing the period, the tab or a chart mode does not read again.

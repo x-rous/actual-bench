@@ -1392,7 +1392,7 @@ describe("v38 Assets & Debt configuration through v43 observations", () => {
     const root = mkdtempSync(join(tmpdir(), "actual-bench-fresh-v42-"));
     try {
       const db = getAppDb(join(root, "metadata.sqlite"));
-      expect(LATEST_SCHEMA_VERSION).toBe(60);
+      expect(LATEST_SCHEMA_VERSION).toBe(61);
       expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       const tables = objectNames(db, "table");
       for (const t of V43_TABLES) expect(tables).toContain(t);
@@ -1917,7 +1917,7 @@ describe("v60 loan tracking", () => {
       rule("r2", [{ kind: "source-account", accountId: "checking" }, { kind: "payee", operator: "exact", payeeId: "bank" }]);
       rule("r3", [{ kind: "source-account", accountId: "savings" }, { kind: "payee", operator: "exact", payeeId: "landlord" }]);
       db.prepare("UPDATE app_meta SET value='59' WHERE key='schema_version'").run();
-      expect(runMigrations(db).schemaVersion).toBe(60);
+      expect(runMigrations(db).schemaVersion).toBe(LATEST_SCHEMA_VERSION);
       runMigrations(db); // idempotent
       const debt = db.prepare("SELECT tracking_start_due_date AS start, principal_note_suffix AS p, interest_note_suffix AS i, missing_grace_days AS g FROM debts").get();
       expect(debt).toEqual({ start: null, p: "", i: "#interest", g: 5 });
