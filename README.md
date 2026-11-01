@@ -39,7 +39,8 @@ investigate the details. Actual Budget remains your home for day-to-day transact
 **[Try the live demo →](https://actual-bench-demo.vercel.app)**
 No setup, no account: explore sample household Envelope and Tracking budgets. This is a shared
 sandbox, so use sample data only; other visitors may see your changes. The demo resets when its
-backend restarts.
+backend restarts. Vercel serves the interface and analytics; its demo API requests use the
+Hugging Face backend, where the shared sample data lives.
 
 ## What Actual Bench adds to Actual Budget
 

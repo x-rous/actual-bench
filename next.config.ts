@@ -26,6 +26,8 @@ const SECURITY_HEADERS = [
   },
 ];
 
+const DEMO_BACKEND_HOST = "x-rous-actual-bench-demo.hf.space";
+
 const nextConfig: NextConfig = {
   // Emit a self-contained standalone server (server.js + only the traced
   // runtime node_modules) so the Docker runtime image doesn't carry the full
@@ -42,6 +44,43 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@actual-app/api"],
   outputFileTracingIncludes: {
     "/api/actual-runtime-diagnostics/worker": ["./node_modules/@actual-app/api/dist/browser.js"],
+  },
+  // The public UI and analytics run on Vercel, but the demo API and SQLite
+  // metadata live in the stateful Hugging Face Space.
+  async rewrites() {
+    if (process.env.VERCEL !== "1" || process.env.DEMO_MODE !== "1") {
+      return [];
+    }
+
+    const backendUrl = process.env.DEMO_BASE_URL?.trim();
+    if (!backendUrl) {
+      throw new Error("DEMO_BASE_URL is required for the Vercel demo backend proxy.");
+    }
+
+    const backend = new URL(backendUrl);
+    if (
+      backend.protocol !== "https:" ||
+      backend.hostname !== DEMO_BACKEND_HOST ||
+      backend.port ||
+      backend.username ||
+      backend.password ||
+      backend.pathname !== "/" ||
+      backend.search ||
+      backend.hash
+    ) {
+      throw new Error(
+        `DEMO_BASE_URL must be the HTTPS origin https://${DEMO_BACKEND_HOST} for the Vercel demo backend proxy.`
+      );
+    }
+
+    return {
+      beforeFiles: [
+        {
+          source: "/api/:path*",
+          destination: `${backend.origin}/api/:path*`,
+        },
+      ],
+    };
   },
   // Use a fresh output directory so Turbopack doesn't try to acquire a
   // lockfile on the root-owned .next/dev/cache from a prior container run.
