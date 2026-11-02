@@ -17,6 +17,8 @@ export const REPORTING_TREATMENTS = [
   "non-current-investment",
   "current-asset",
   "non-current-asset",
+  /** A tangible asset that is held and revalued or depreciated (gold, a collectible); the only Other Asset treatment the Assets module accepts. Non-current by nature. */
+  "fixed-asset",
   "current-liability",
   "non-current-liability",
   /** A Bank deposit that cannot readily be withdrawn: still an asset and in net worth, but not cash. */
@@ -34,6 +36,7 @@ export const REPORTING_LABELS: Record<ReportingTreatment | "cash-equivalent" | "
   "non-current-investment": "Non-current investment",
   "current-asset": "Current asset",
   "non-current-asset": "Non-current asset",
+  "fixed-asset": "Fixed asset",
   "current-liability": "Current liability",
   "non-current-liability": "Non-current liability",
   "fixed-deposit": "Fixed / restricted deposit",
@@ -50,15 +53,16 @@ export type ReportingRequirement =
   | { kind: "bank-default"; label: string };
 
 const NON_CURRENT_ASSET: ReportingRequirement = { kind: "automatic", label: REPORTING_LABELS["non-current-asset"] };
+const FIXED_ASSET: ReportingRequirement = { kind: "automatic", label: REPORTING_LABELS["fixed-asset"] };
 
 const REQUIREMENTS: Record<AccountClass, ReportingRequirement> = {
   cash: { kind: "automatic", label: REPORTING_LABELS["cash-equivalent"] },
   bank: { kind: "bank-default", label: REPORTING_LABELS["cash-equivalent"] },
-  vehicle: NON_CURRENT_ASSET,
-  property: NON_CURRENT_ASSET,
+  vehicle: FIXED_ASSET,
+  property: FIXED_ASSET,
   investment: { kind: "required", options: ["current-investment", "non-current-investment"] },
   retirement: NON_CURRENT_ASSET,
-  "other-asset": { kind: "required", options: ["current-asset", "non-current-asset"] },
+  "other-asset": { kind: "required", options: ["current-asset", "non-current-asset", "fixed-asset"] },
   "credit-card": { kind: "automatic", label: REPORTING_LABELS["current-liability"] },
   loan: { kind: "automatic", label: REPORTING_LABELS["loan-liability"] },
   "other-liability": { kind: "required", options: ["current-liability", "non-current-liability"] },

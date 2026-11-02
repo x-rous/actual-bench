@@ -23,7 +23,7 @@ const CAPITAL_TYPES: ReadonlySet<string> = new Set(["acquisition", "added-capita
 /** Above this many rows in a registered account, they are not read; only the measures that need them are affected. */
 export const ASSET_ROW_LIMIT = 5000;
 
-export type AssetEntry = { id: string; date: string; accountId: string; categoryId: string | null; amountMinor: number; notes: string | null };
+export type AssetEntry = { id: string; date: string; accountId: string; categoryId: string | null; amountMinor: number; notes: string | null; payeeId?: string | null };
 
 export type SavedClassification = { actualTransactionId: string; actualAccountId: string; classification: string | null };
 
@@ -42,7 +42,7 @@ export function valueChangeRows(entries: readonly AssetEntry[], saved: readonly 
   return entries.flatMap((entry) => {
     const type = classificationOf(entry, byId);
     return type && VALUE_CHANGE_TYPES.has(type)
-      ? [{ month: entry.date.slice(0, 7), accountId: entry.accountId, categoryId: entry.categoryId, amountMinor: entry.amountMinor, to: "valueChange" as const }]
+      ? [{ id: entry.id, payeeId: entry.payeeId ?? null, month: entry.date.slice(0, 7), accountId: entry.accountId, categoryId: entry.categoryId, amountMinor: entry.amountMinor, to: "valueChange" as const }]
       : [];
   });
 }

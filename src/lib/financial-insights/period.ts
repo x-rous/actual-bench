@@ -8,6 +8,7 @@ export const PERIOD_PRESETS = [
   { id: "last-month", label: "Last month" },
   { id: "last-6", label: "Last 6 months" },
   { id: "last-12", label: "Last 12 months" },
+  { id: "last-24", label: "Last 2 years" },
   { id: "this-year", label: "This year" },
   { id: "last-year", label: "Last year" },
   { id: "all", label: "All available" },
@@ -61,7 +62,7 @@ function lastDayOf(month: string): string {
 }
 
 /**
- * "Last 6 / 12 months" are the most recent complete months, ending last month, so their averages and charts
+ * "Last 6 / 12 / 24 months" (Last 2 years) are the most recent complete months, ending last month, so their averages and charts
  * compare like with like. "This month", "This year" and "All available" run to today and are partial.
  * `firstMonth` is the first month with any data; it only matters for "All available".
  */
@@ -82,6 +83,7 @@ export function resolvePeriod(choice: PeriodChoice, today: string, firstMonth: s
       case "last-month": startMonth = endMonth = addMonths(current, -1); break;
       case "last-6": startMonth = addMonths(current, -6); endMonth = addMonths(current, -1); break;
       case "last-12": startMonth = addMonths(current, -12); endMonth = addMonths(current, -1); break;
+      case "last-24": startMonth = addMonths(current, -24); endMonth = addMonths(current, -1); break;
       case "this-year": startMonth = `${year}-01`; endMonth = current; break;
       case "last-year": startMonth = `${Number(year) - 1}-01`; endMonth = `${Number(year) - 1}-12`; break;
       default: startMonth = firstMonth && firstMonth < current ? firstMonth : current; endMonth = current; break;
@@ -105,4 +107,10 @@ export function lastCompleteMonths(today: string, firstMonth: string | null, cou
   const end = addMonths(monthOf(today), -1);
   const start = addMonths(end, -(count - 1));
   return monthsBetween(firstMonth && firstMonth > start ? firstMonth : start, end);
+}
+
+/** `2026-01-01` as `01 Jan 2026`: the way every date on the page is written. Anything that is not a date is returned as it is. */
+export function formatDay(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]} ${MONTH_NAMES[Number(m[2]) - 1] ?? m[2]} ${m[1]}` : iso;
 }

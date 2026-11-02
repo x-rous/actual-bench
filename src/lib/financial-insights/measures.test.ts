@@ -24,7 +24,7 @@ const transfer = (month: string, from: string, to: string, amount: number, toMon
 ];
 
 function facts(movement: MovementRow[], extra: Partial<FinancialFacts> = {}): FinancialFacts {
-  return { accounts, incomeCategories, movement, excluded: new Set(), startingBalances: [], uncategorizedIn: [], reclassified: [], loanCosts: [], ...extra };
+  return { accounts, incomeCategories, movement, excluded: new Set(), startingBalances: [], uncategorizedIn: [], transfersIn: [], reclassified: [], loanCosts: [], ...extra };
 }
 function run(f: FinancialFacts, choice: PeriodChoice, review = none, today = "2026-11-18"): Summary {
   const ledger = buildLedger(f);
@@ -132,8 +132,8 @@ describe("financial insights: how a row is classified", () => {
   it("takes a row the registry classifies as a value change out of its category and into its own line", () => {
     const f = facts([row("2026-09", "house", 900_000, { categoryId: "misc" }), row("2026-09", "house", 100_000)], {
       reclassified: [
-        { month: "2026-09", accountId: "house", categoryId: "misc", amountMinor: 900_000, to: "valueChange" },
-        { month: "2026-09", accountId: "house", categoryId: null, amountMinor: 100_000, to: "valueChange" },
+        { id: "r", payeeId: null, month: "2026-09", accountId: "house", categoryId: "misc", amountMinor: 900_000, to: "valueChange" },
+        { id: "r", payeeId: null, month: "2026-09", accountId: "house", categoryId: null, amountMinor: 100_000, to: "valueChange" },
       ],
     });
     const s = run(f, sep);
@@ -145,8 +145,8 @@ describe("financial insights: how a row is classified", () => {
   it("takes a sale's linked proceeds out of income into their own line", () => {
     const f = facts([row("2026-09", "chk", 1_000_000, { categoryId: "salary" }), row("2026-09", "house", -900_000)], {
       reclassified: [
-        { month: "2026-09", accountId: "chk", categoryId: "salary", amountMinor: 1_000_000, to: "assetSale" },
-        { month: "2026-09", accountId: "house", categoryId: null, amountMinor: -900_000, to: "valueChange" },
+        { id: "r", payeeId: null, month: "2026-09", accountId: "chk", categoryId: "salary", amountMinor: 1_000_000, to: "assetSale" },
+        { id: "r", payeeId: null, month: "2026-09", accountId: "house", categoryId: null, amountMinor: -900_000, to: "valueChange" },
       ],
     });
     const s = run(f, sep);
@@ -333,11 +333,10 @@ describe("where a budget's data begins", () => {
     expect(ledger.balanceAt("chk", "2026-05")).toBe(50_000);
   });
 
-  it("begins at the earlier of the first movement and the first starting balance", () => {
+  it("begins with the first movement when there is one, not with an earlier month that holds only a starting balance", () => {
     const earlierBalance = buildLedger(facts([row("2026-06", "chk", 1_000)], { startingBalances: [{ month: "2026-02", accountId: "chk", amountMinor: 5_000 }] }));
-    expect(earlierBalance.firstMonth).toBe("2026-02");
-    const earlierMovement = buildLedger(facts([row("2026-01", "chk", 1_000)], { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 5_000 }] }));
-    expect(earlierMovement.firstMonth).toBe("2026-01");
+    expect(earlierBalance.firstMonth).toBe("2026-06");
+    expect(earlierBalance.balanceAt("chk", "2026-03")).toBe(5_000);
   });
 
   it("is not moved by rows of an account that is left out", () => {

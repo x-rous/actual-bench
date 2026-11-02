@@ -4,6 +4,7 @@ import type { AssetDebtLink } from "@/lib/asset-registry/financing";
 import type { LinkRule } from "@/lib/asset-registry/linkRules";
 import { accountDirectorySchema, assetInputSchema, defaultIncomeGenerating, eligibility, idSchema, metadataChangeSchema, type Asset, type BookMetadata, type CashflowMetadata, type AssetContext, type Registry } from "@/lib/asset-registry/models";
 import { listAccountClasses } from "./accountClassRepository";
+import { listAccountReporting } from "./accountReportingRepository";
 import { AppDbConflictError, AppDbValidationError } from "./errors";
 import type { SqliteDatabase } from "./types";
 
@@ -57,7 +58,8 @@ export function saveAsset(db: SqliteDatabase, input: unknown): Registry {
     if (!current && asset.assetTag && readRegistry(db, budget).assets.some((a) => a.assetTag === asset.assetTag)) throw new AppDbValidationError("This hashtag is already used, including archived assets. Choose another.");
     const records = listAccountClasses(db, budget);
     const maps = { accounts: new Map(records.filter((c) => c.scope === "account").map((c) => [c.accountId, c.accountClass])), groups: new Map(records.filter((c) => c.scope === "group").map((c) => [c.accountId, c.accountClass])) };
-    const reason = eligibility(accountDirectory.find((a) => a.id === asset.actualAccountId), asset.assetType, maps);
+    const reporting = new Map(listAccountReporting(db, budget).map((r) => [r.accountId, r.treatment]));
+    const reason = eligibility(accountDirectory.find((a) => a.id === asset.actualAccountId), asset.assetType, maps, reporting);
     // Archiving remains possible after account/class drift; it never writes Actual.
     if (reason && !(current && asset.status === "archived" && asset.assetType === current.assetType)) throw new AppDbValidationError(reason);
     if (new Set(asset.ownership.map((p) => p.effectiveFrom)).size !== asset.ownership.length) throw new AppDbValidationError("Ownership dates must be unique");

@@ -18,6 +18,16 @@ function ready(
   return Object.fromEntries(result.accounts.map((a) => [a.accountId, a.status]));
 }
 
+describe("Fixed asset treatment", () => {
+  it("is automatic for Property and Vehicle, and a third choice for Other Asset", () => {
+    expect(reportingRequirement("property")).toEqual({ kind: "automatic", label: "Fixed asset" });
+    expect(reportingRequirement("vehicle")).toEqual({ kind: "automatic", label: "Fixed asset" });
+    expect(reportingRequirement("other-asset")).toEqual({ kind: "required", options: ["current-asset", "non-current-asset", "fixed-asset"] });
+    expect(validSavedTreatment("other-asset", "fixed-asset")).toBe("fixed-asset");
+    expect(validSavedTreatment("investment", "fixed-asset")).toBeNull();
+  });
+});
+
 describe("Financial Reporting requirements", () => {
   it("asks only Investment, Other Asset and Other Liability for a choice", () => {
     const required = ACCOUNT_CLASSES.filter((c) => reportingRequirement(c).kind === "required");

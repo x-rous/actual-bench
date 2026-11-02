@@ -14,6 +14,7 @@ jest.mock("./api", () => ({ registryRequest: jest.fn() }));
 jest.mock("@/features/accounts/hooks/useAccounts", () => ({ useAccounts: () => ({ refetch: jest.fn(async () => {}) }) }));
 jest.mock("@/features/accounts/hooks/useAccountGroups", () => ({ useAccountGroups: () => ({ supported: true, data: [{ id: "group", name: "Vehicles" }] }) }));
 jest.mock("@/features/accounts/hooks/useAccountClasses", () => ({ useAccountClasses: () => ({ available: true, maps }) }));
+jest.mock("@/features/accounts/hooks/useAccountReporting", () => ({ useAccountReporting: () => ({ available: true, failed: false, byAccount: new Map() }) }));
 jest.mock("@/features/accounts/hooks/useAccountsSave", () => ({ useAccountsSave: () => ({ save: jest.fn(), isSaving: false }) }));
 const connection = { id: "test-connection", mode: "http-api", budgetSyncId: "budget" } as ConnectionInstance;
 const asset = testAsset("byd", { incomeGenerating: false, ownership: [{ effectiveFrom: "2024-01-01", ownershipBps: 10000 }, { effectiveFrom: "2026-01-01", ownershipBps: 7500 }] });

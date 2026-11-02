@@ -7,6 +7,8 @@ import { useAccounts } from "@/features/accounts/hooks/useAccounts";
 import { useAccountGroups } from "@/features/accounts/hooks/useAccountGroups";
 import { useAccountsSave } from "@/features/accounts/hooks/useAccountsSave";
 import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
+import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
+import { saveAccountReporting } from "@/features/accounts/lib/accountReportingApi";
 import type { AccountFormValues } from "@/features/accounts/schemas/account.schema";
 import { useStagedStore } from "@/store/staged";
 import { generateId } from "@/lib/uuid";
@@ -35,6 +37,7 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
   const [createUncertain, setCreateUncertain] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const classes = useAccountClasses();
+  const reporting = useAccountReporting();
   const accountsQuery = useAccounts();
   const groups = useAccountGroups();
   const saver = useAccountsSave();
@@ -43,7 +46,7 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
   const initialAccount = useMemo(() => ({ offBudget: true, accountClass: ASSET_TYPES[draft.assetType]?.accountClass, name: draft.name }), [draft.assetType, draft.name]);
   const linkedElsewhere = (id: string, mode = accountMode) => mode !== "shared" && registry.assets.some((other) => other.actualAccountId === id && other.id !== asset?.id);
   /** Why an account cannot be chosen now, or null. Ineligible accounts stay visible with this reason (spec §4). */
-  const unavailableReason = (a: Account, mode = accountMode): string | null => eligibility(a, draft.assetType, classes.maps) ?? (staged[a.id]?.isNew ? "Unsaved account" : null) ?? (linkedElsewhere(a.id, mode) ? "Already linked: choose Shared to add another asset" : null);
+  const unavailableReason = (a: Account, mode = accountMode): string | null => eligibility(a, draft.assetType, classes.maps, reporting.byAccount) ?? (staged[a.id]?.isNew ? "Unsaved account" : null) ?? (linkedElsewhere(a.id, mode) ? "Already linked: choose Shared to add another asset" : null);
   /** Only accounts this asset can actually use are offered (the saved one always stays), so the list is short and every choice works. */
   const offered = accounts.filter((a) => a.id === draft.actualAccountId || !unavailableReason(a));
   const accountOptions = buildAccountOptions(offered, [], { closed: "show" });
@@ -57,7 +60,7 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
   /** Stages a new account for the asset and returns its draft ID, or null when the account cannot serve this asset. */
   function stageAccount(values: AccountFormValues): string | null {
     const store = useStagedStore.getState();
-    const reason = eligibility({ id: "draft", name: values.name, offBudget: values.offBudget, closed: false, groupId: values.groupId }, draft.assetType, { accounts: new Map(values.accountClass ? [["draft", values.accountClass]] : []), groups: classes.maps.groups });
+    const reason = eligibility({ id: "draft", name: values.name, offBudget: values.offBudget, closed: false, groupId: values.groupId }, draft.assetType, { accounts: new Map(values.accountClass ? [["draft", values.accountClass]] : []), groups: classes.maps.groups }, new Map([["draft", "fixed-asset"]]));
     if (reason) { setError(reason); return null; }
     if (pendingId && store.accounts[pendingId]?.isNew) store.stageDelete("accounts", pendingId);
     store.pushUndo();
@@ -84,9 +87,17 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
       return (await r.json()).accountClasses as { scope: string; accountId: string; accountClass: typeof initialAccount.accountClass }[];
     } });
     const maps = { accounts: new Map(records.filter((r) => r.scope === "account").map((r) => [r.accountId, r.accountClass])), groups: new Map(records.filter((r) => r.scope === "group").map((r) => [r.accountId, r.accountClass])) };
+    // A new Other Asset account is marked Fixed asset as the asset is created: the Assets module only accepts that treatment.
+    const needsFixed = ASSET_TYPES[draft.assetType]?.accountClass === "other-asset";
+    const marked = new Map(reporting.byAccount);
+    if (realId && needsFixed) {
+      const saved = await saveAccountReporting(connection.budgetSyncId, [{ accountId: realId, treatment: "fixed-asset" }]);
+      queryClient.setQueryData(["accountReporting", connection.budgetSyncId], saved);
+      marked.set(realId, "fixed-asset");
+    }
     const saved = fresh.find((a) => a.id === realId);
     const pending = realId ? useStagedStore.getState().accounts[realId] : null;
-    if (!saved || pending?.isNew || pending?.isUpdated || pending?.saveError || eligibility(saved, draft.assetType, maps)) throw new Error("Account or class/group save is incomplete. Review Accounts errors and Save again; the asset draft is preserved.");
+    if (!saved || pending?.isNew || pending?.isUpdated || pending?.saveError || eligibility(saved, draft.assetType, maps, marked)) throw new Error("Account or class/group save is incomplete. Review Accounts errors and Save again; the asset draft is preserved.");
     await accountsQuery.refetch();
     setDraft((d) => ({ ...d, actualAccountId: saved.id })); setPendingId(null); return saved.id;
   }

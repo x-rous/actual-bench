@@ -3,14 +3,13 @@ import { FinancialInsightsWorkspace } from "./FinancialInsightsWorkspace";
 
 jest.mock("../hooks/useFinancialInsights", () => ({ useFinancialInsights: jest.fn() }));
 jest.mock("./SummaryTab", () => ({ SummaryTab: () => <div>the summary</div> }));
-jest.mock("./ChartCard", () => ({ preloadFinancialChart: () => Promise.resolve() }));
 jest.mock("@/components/layout/PageLayout", () => ({ PageLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 jest.mock("./PeriodControl", () => ({ PeriodControl: () => null }));
 const useFinancialInsights = jest.requireMock("../hooks/useFinancialInsights").useFinancialInsights as jest.Mock;
 
 const refresh = jest.fn();
 const ready = (over: Record<string, unknown> = {}) => ({
-  gate: { state: "ready", accounts: [{ id: "a", name: "Checking" }], excluded: [] }, today: "2026-11-18", period: { kind: "preset", id: "all" }, setPeriod: jest.fn(), refresh,
+  gate: { state: "ready", accounts: [{ id: "a", name: "Checking" }], excluded: [] }, today: "2026-11-18", period: { kind: "preset", id: "all" }, setPeriod: jest.fn(), refresh, tab: "summary", tabs: [{ value: "summary", label: "Summary" }], setTab: jest.fn(), budgetMode: null,
   data: { state: "ready", summary: { period: { startDate: "2026-01-01", endDate: "2026-10-31", partial: false, label: "This year" } }, firstMonth: "2026-01", readAt: "2026-11-18T10:00:00Z", refreshing: false, refreshFailed: false, review: [], ...over },
 });
 beforeEach(() => jest.clearAllMocks());

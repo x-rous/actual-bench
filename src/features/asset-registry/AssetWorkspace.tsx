@@ -35,6 +35,7 @@ import { DataTable, Stack, Text, type Column, type SortState } from "@/features/
 import { useConnectionStore, selectActiveInstance, type ConnectionInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
+import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
 import { getTransport } from "@/lib/actual";
 import { ASSET_TYPES, eligibility, ownershipAt, type Asset, type Registry } from "@/lib/asset-registry/models";
 import { attributeBook, readBook, sumMinor } from "@/lib/asset-registry/ledger";
@@ -85,6 +86,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const [error, setError] = useState("");
   const docsUrl = FEATURES.find((f) => f.id === "assets")?.docsUrl;
   const classes = useAccountClasses();
+  const reporting = useAccountReporting();
   const transport = getTransport(connection);
   const key = ["assetRegistry", connection.id, connection.budgetSyncId];
   const query = useQuery({ queryKey: key, queryFn: () => registryRequest(connection.budgetSyncId) });
@@ -121,8 +123,8 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const currentQuery = asset ? books.get(asset.actualAccountId) : undefined;
   const snapshot = currentQuery?.isSuccess ? currentQuery.data : undefined;
   const book = snapshot ? attributeBook(snapshot, registry.assets, registry.metadata) : undefined;
-  const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps) : null;
-  const available = query.isSuccess && accountsQuery.isSuccess && classes.available;
+  const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps, reporting.byAccount) : null;
+  const available = query.isSuccess && accountsQuery.isSuccess && classes.available && reporting.available;
   const value = (a: Asset): number | null => {
     const q = books.get(a.actualAccountId);
     if (!q?.isSuccess || !q.data || !available) return null;
@@ -161,7 +163,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     if (!available || !q?.isSuccess || !q.data) return { label: "Unavailable", tone: "danger", detail: "Refresh to read the account book" };
     const result = attributeBook(q.data, registry.assets, registry.metadata);
     if (report(a)?.gaps.length) return { label: "Needs review", tone: "attention", detail: report(a)!.gaps[0] };
-    const invalid = eligibility(accounts.find((row) => row.id === a.actualAccountId), a.assetType, classes.maps);
+    const invalid = eligibility(accounts.find((row) => row.id === a.actualAccountId), a.assetType, classes.maps, reporting.byAccount);
     if (invalid || result.issues.length) return { label: "Needs review", tone: "attention", detail: invalid ?? result.issues[0] };
     if (result.rows.some((r) => !r.assetId)) return { label: "Unassigned rows", tone: "attention", detail: "Some account rows need attribution" };
     const count = result.rows.filter((r) => r.assetId === a.id && bookTypeLabel(r.classification) === "Unclassified").length;
@@ -192,7 +194,10 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     if (!response.ok) throw new Error("Could not confirm current account class");
     const records = (await response.json()).accountClasses as { scope: string; accountId: string; accountClass: AccountClass }[];
     const maps = { accounts: new Map(records.filter((r) => r.scope === "account").map((r) => [r.accountId, r.accountClass])), groups: new Map(records.filter((r) => r.scope === "group").map((r) => [r.accountId, r.accountClass])) };
-    const invalid = eligibility(directory.find((a) => a.id === context.asset.actualAccountId), context.asset.assetType, maps);
+    const reportingResponse = await fetch(`/api/account-reporting?budgetSyncId=${encodeURIComponent(connection.budgetSyncId)}`);
+    if (!reportingResponse.ok) throw new Error("Could not confirm the account's Financial Reporting");
+    const treatments = new Map(((await reportingResponse.json()).accountReporting as { accountId: string; treatment: string }[]).map((r) => [r.accountId, r.treatment]));
+    const invalid = eligibility(directory.find((a) => a.id === context.asset.actualAccountId), context.asset.assetType, maps, treatments);
     if (invalid) throw new Error(invalid);
     const pending = useStagedStore.getState().accounts[context.asset.actualAccountId];
     if (pending && (pending.isNew || pending.isUpdated || pending.isDeleted || pending.pendingAccountClass !== undefined || pending.saveError)) throw new Error("Save pending changes to this account in Accounts first");

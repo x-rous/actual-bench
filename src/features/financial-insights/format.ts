@@ -20,3 +20,4 @@ export function compactMoney(minor: number): string {
 }
 
 export const percent = (value: number): string => `${value.toFixed(1)}%`;
+export { formatDay } from "@/lib/financial-insights/period";

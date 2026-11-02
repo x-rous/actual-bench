@@ -7,7 +7,7 @@ const base = { accountId: "a1", accountName: "Brokerage", saved: undefined, unsa
 describe("account reporting cell", () => {
   it("shows a fixed treatment as text, with no control", () => {
     render(<AccountReportingCell {...base} accountClass="property" />);
-    expect(screen.getByText("Non-current asset")).toBeInTheDocument();
+    expect(screen.getByText("Fixed asset")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 

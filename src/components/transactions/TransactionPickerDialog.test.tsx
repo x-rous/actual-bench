@@ -101,7 +101,7 @@ it("loads the next page when a full page came back, and says the count is so far
   renderPicker();
   await screen.findByText("Payee 3");
   expect(jest.mocked(fetchPickerPage).mock.calls.map((c) => c[4])).toEqual([0, PICKER_PAGE_SIZE]);
-  expect(screen.getByText(/3/, { selector: "span.font-medium" })).toBeInTheDocument(); // three rows over two pages; nothing more to load, so no "so far"
+  expect(screen.getByText("3", { selector: "span.font-semibold" })).toBeInTheDocument(); // three rows over two pages; nothing more to load, so no "so far"
   expect(screen.queryByText(/so far/)).not.toBeInTheDocument();
 });
 it("keeps Advanced conditions out of the way until asked for", async () => {

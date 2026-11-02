@@ -115,6 +115,16 @@
   --editor-line-highlight: oklch(0.92 0.005 250 / 0.7);
   -webkit-font-smoothing: auto !important;
   -moz-osx-font-smoothing: auto !important;
+  /* Financial Insights: one colour per entity, the same on every tab. A restrained, slightly softened version of the validated
+     categorical palette (colour-blind separation and contrast checked in both modes). Kept money is a neutral ink marker, so
+     income blue and spending orange are the only pair that ever meet. Colour is never the only signal: values, signs, glyphs and
+     dashes repeat it. */
+  --fi-income: #3f9a73; --fi-spend: #e0655a; --fi-kept: #27285c; --fi-balance: #475569; --fi-networth: #1f2a37;
+  --fi-cash: #10b981; --fi-fixed: #059669; --fi-invest: #3b82f6; --fi-property: #6366f1; --fi-vehicle: #0284c7; --fi-other-asset: #14b8a6;
+  --fi-loan: #ef4444; --fi-card: #f97316; --fi-other-liability: #dc2626; --fi-up: #3f9a73; --fi-down: #e0655a; --fi-gap: #d97706;
+  --fi-g0: #ea580c; --fi-g1: #059669; --fi-g2: #7c3aed; --fi-g3: #e11d48; --fi-g4: #0284c7; --fi-g5: #d97706; --fi-g6: #db2777; --fi-g7: #4f46e5; --fi-g8: #475569; --fi-g9: #65a30d; --fi-g10: #a3a29c;
+  --fi-below4: #94b6e3; --fi-below3: #b0cbea; --fi-below2: #cce0f3; --fi-below1: #e3eef9; --fi-mid: #f1f0ed;
+  --fi-above1: #fdf0e8; --fi-above2: #fbe0d0; --fi-above3: #f7caae; --fi-above4: #f1ae8a; --fi-cell-ink: #1f2a37; --fi-cell-ink-strong: #1f2a37;
 }
 
 .dark {
@@ -165,6 +175,12 @@
   --json-punct:   oklch(0.55 0.02 250);
   /* ── Editor overlay ──────────────────────────────────────────────────────── */
   --editor-line-highlight: oklch(0.25 0.005 250 / 0.6);
+  --fi-income: #4fb88c; --fi-spend: #e0776c; --fi-kept: #c9cdf2; --fi-balance: #94a3b8; --fi-networth: #e8e6e3;
+  --fi-cash: #10b981; --fi-fixed: #059669; --fi-invest: #3b82f6; --fi-property: #6366f1; --fi-vehicle: #0284c7; --fi-other-asset: #14b8a6;
+  --fi-loan: #ef4444; --fi-card: #f97316; --fi-other-liability: #dc2626; --fi-up: #4fb88c; --fi-down: #e0776c; --fi-gap: #fbbf24;
+  --fi-g0: #ea580c; --fi-g1: #059669; --fi-g2: #7c3aed; --fi-g3: #e11d48; --fi-g4: #0284c7; --fi-g5: #d97706; --fi-g6: #db2777; --fi-g7: #6366f1; --fi-g8: #64748b; --fi-g9: #65a30d; --fi-g10: #77766f;
+  --fi-below4: #3f6a9c; --fi-below3: #335579; --fi-below2: #2b4560; --fi-below1: #26384b; --fi-mid: #383835;
+  --fi-above1: #3e3128; --fi-above2: #54382a; --fi-above3: #6d4129; --fi-above4: #87492b; --fi-cell-ink: #e8e6e3; --fi-cell-ink-strong: #f4f2ef;
 }
 
 @layer base {

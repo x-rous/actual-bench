@@ -26,5 +26,11 @@ export function useTransactionReference(opts: { excludeAccountIds?: string[]; ex
   }, [reference.data]);
   /** Actual's defined tags: `value` is the `#name` as it appears in Notes (lower case). */
   const tags = useMemo(() => (reference.data?.tags ?? []).map((t) => ({ id: `#${t.name.replace(/^#/, "")}`.toLocaleLowerCase(), name: `#${t.name.replace(/^#/, "")}`, color: t.color })), [reference.data]);
-  return { ready: !!reference.data, accountOptions, categoryOptions, payeeOptions, tags, names };
+  /** The category group a category sits in, for the charts' Groups view. */
+  const groupOf = useMemo(() => {
+    const groups = new Map((reference.data?.groups.groups ?? []).map((g) => [g.id, g.name]));
+    const group = new Map((reference.data?.groups.categories ?? []).map((c) => [c.id, groups.get(c.groupId) ?? "Other"]));
+    return (id: string) => group.get(id) ?? "Other";
+  }, [reference.data]);
+  return { ready: !!reference.data, groupOf, accountOptions, categoryOptions, payeeOptions, tags, names };
 }

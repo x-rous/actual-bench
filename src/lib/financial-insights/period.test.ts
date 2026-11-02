@@ -1,4 +1,4 @@
-import { addMonths, lastCompleteMonths, resolvePeriod } from "./period";
+import { addMonths, formatDay, lastCompleteMonths, resolvePeriod } from "./period";
 
 describe("reporting period", () => {
   const today = "2026-11-18";
@@ -9,6 +9,8 @@ describe("reporting period", () => {
     expect(six.endDate).toBe("2026-10-31");
     const twelve = resolvePeriod({ kind: "preset", id: "last-12" }, today, null);
     expect([twelve.startMonth, twelve.endMonth, twelve.months.length]).toEqual(["2025-11", "2026-10", 12]);
+    const two = resolvePeriod({ kind: "preset", id: "last-24" }, today, null);
+    expect([two.label, two.startMonth, two.endMonth, two.months.length, two.partial]).toEqual(["Last 2 years", "2024-11", "2026-10", 24, false]);
   });
 
   it("lets This month and This year run to today and marks them partial", () => {
@@ -54,5 +56,13 @@ describe("reporting period", () => {
     const all = resolvePeriod({ kind: "preset", id: "all" }, today, "1700-01");
     expect(all.label).toBe("Dec 1826 – Nov 2026");
     expect(resolvePeriod({ kind: "preset", id: "all" }, today, "2020-03").label).toBe("All available");
+  });
+});
+
+describe("financial insights: how a date is written", () => {
+  it("writes 2026-01-01 as 01 Jan 2026 and leaves anything else alone", () => {
+    expect(formatDay("2026-01-01")).toBe("01 Jan 2026");
+    expect(formatDay("2025-12-30")).toBe("30 Dec 2025");
+    expect(formatDay("2026-11")).toBe("2026-11");
   });
 });

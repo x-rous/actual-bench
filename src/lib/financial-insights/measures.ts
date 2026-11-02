@@ -12,7 +12,8 @@ import { addMonths, lastCompleteMonths, monthOf, type ResolvedPeriod } from "./p
  *  2. a row the Asset Registry classifies (a value change, or a linked sale) goes to its own line;
  *  3. a categorized row follows its category: income in an income group, spending otherwise, never inferred from the sign;
  *  4. an uncategorized row in an on-budget account is income or spending by its sign;
- *  5. an uncategorized row in an off-budget account is an unidentified movement: shown, and not income or spending.
+ *  5. an uncategorized row in an off-budget account is not income or spending: in an Investment or Retirement account it is an
+ *     investment result (a gain, loss, dividend or fee recorded without a category), in any other it is an unidentified movement.
  */
 
 // ─── Facts ───────────────────────────────────────────────────────────────────
@@ -34,10 +35,10 @@ export type DatedAmount = { month: string; accountId: string; amountMinor: numbe
  * A row the Asset Registry classifies, so it is not income or spending: a change in an asset's value, or a linked sale
  * (proceeds or selling cost). It leaves the bucket its category, or lack of one, would give it and goes to its own line.
  */
-export type ReclassifiedRow = { month: string; accountId: string; categoryId: string | null; amountMinor: number; to: "valueChange" | "assetSale" };
+export type ReclassifiedRow = { /** The transaction, so a drilldown can leave it out of income and spending. */ id: string; payeeId: string | null; month: string; accountId: string; categoryId: string | null; amountMinor: number; to: "valueChange" | "assetSale" };
 
 /** One interest or fee line the Loans tracking recorded for a tracked loan. */
-export type LoanCostRow = { month: string; accountId: string; categoryId: string | null; amountMinor: number };
+export type LoanCostRow = { month: string; accountId: string; categoryId: string | null; amountMinor: number; /** The loan these lines belong to, and what they are, when the reader knows. */ loanAccountId?: string; kind?: "interest" | "fee" };
 
 export type AccountFact = {
   id: string;
@@ -60,6 +61,8 @@ export type FinancialFacts = {
   startingBalances: readonly DatedAmount[];
   /** The positive part of the uncategorized non-transfer rows, so an on-budget cell can be split by sign. */
   uncategorizedIn: readonly DatedAmount[];
+  /** The positive part of the transfer rows, by counterpart, so money in can be told from money out within a cell. */
+  transfersIn: readonly (DatedAmount & { transferAccountId: string })[];
   reclassified: readonly ReclassifiedRow[];
   /** The recorded interest and fee lines of tracked loans (see `cashBuffer`). */
   loanCosts: readonly LoanCostRow[];
@@ -125,12 +128,14 @@ export function buildLedger(facts: FinancialFacts): Ledger {
     add(row.accountId, row.month, row.amountMinor);
     if (account.has(row.accountId) && (!firstMonth || row.month < firstMonth)) firstMonth = row.month;
   }
-  // A starting balance is data too: a budget with nothing but starting balances still has balances to show, and the first of
-  // them marks where "All available" begins.
+  // The data begins with the first movement: a month holding only a starting balance is not a month of activity, and counting it
+  // would pull averages down. A budget with nothing but starting balances still has balances to show, so it begins with the first of those.
+  let firstStarting: string | null = null;
   for (const row of facts.startingBalances) {
     add(row.accountId, row.month, row.amountMinor);
-    if (account.has(row.accountId) && (!firstMonth || row.month < firstMonth)) firstMonth = row.month;
+    if (account.has(row.accountId) && (!firstStarting || row.month < firstStarting)) firstStarting = row.month;
   }
+  if (!firstMonth) firstMonth = firstStarting;
   const sorted = new Map([...byAccount].map(([id, months]) => [id, [...months].sort(([a], [b]) => a.localeCompare(b))]));
   return {
     facts, account, role, firstMonth,
@@ -157,6 +162,9 @@ export type Flows = {
   /** Uncategorized entries in off-budget accounts: not income or spending. */
   unidentified: number;
   unidentifiedCount: number;
+  /** Uncategorized entries in off-budget Investment and Retirement accounts: price changes, dividends, interest and fees recorded there. Not income or spending. */
+  investmentResults: number;
+  investmentResultsCount: number;
   /** Rows the Asset Registry classifies as a change in an asset's value. */
   valueChanges: number;
   /** Rows the Asset Registry links to the sale of an asset. */
@@ -169,7 +177,7 @@ export type Flows = {
 };
 
 const emptyFlows = (): Flows => ({
-  income: 0, spending: 0, uncategorizedIn: 0, uncategorizedOut: 0, unidentified: 0, unidentifiedCount: 0, valueChanges: 0, assetSales: 0,
+  income: 0, spending: 0, uncategorizedIn: 0, uncategorizedOut: 0, unidentified: 0, unidentifiedCount: 0, investmentResults: 0, investmentResultsCount: 0, valueChanges: 0, assetSales: 0,
   openingBalances: 0, excludedTransfers: 0, inTransit: 0,
 });
 
@@ -182,6 +190,11 @@ export type CashBridge = {
   card: number;
   investment: number;
   loan: number;
+  /** The same transfers by direction, seen from the cash account: money put in (negative) and money received (positive). */
+  investmentOut: number;
+  investmentIn: number;
+  loanOut: number;
+  loanIn: number;
   fixedDeposits: number;
   /** Transfers with an excluded account. */
   excluded: number;
@@ -194,15 +207,18 @@ export type CashBridge = {
 
 const inWindow = (month: string, period: ResolvedPeriod) => month >= period.startMonth && month <= period.endMonth;
 
-type Computed = { flows: Flows; cashBridge: CashBridge };
+export type Computed = { flows: Flows; cashBridge: CashBridge };
 
 /** Takes a classified row back out of the line its category (or lack of one) gave it. */
-function takeOut(flows: Flows, cash: CashBridge | null, account: AccountFact, incomeCategories: ReadonlySet<string>, row: { categoryId: string | null; amountMinor: number }) {
+function takeOut(flows: Flows, cash: CashBridge | null, account: AccountFact, investment: boolean, incomeCategories: ReadonlySet<string>, row: { categoryId: string | null; amountMinor: number }) {
   const { categoryId, amountMinor } = row;
   if (categoryId !== null) {
     if (incomeCategories.has(categoryId)) flows.income -= amountMinor;
     else flows.spending -= amountMinor;
     if (cash) cash.operating -= amountMinor;
+  } else if (account.offBudget && investment) {
+    flows.investmentResults -= amountMinor;
+    flows.investmentResultsCount -= 1;
   } else if (account.offBudget) {
     flows.unidentified -= amountMinor;
     flows.unidentifiedCount -= 1;
@@ -214,17 +230,24 @@ function takeOut(flows: Flows, cash: CashBridge | null, account: AccountFact, in
   }
 }
 
-function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
+export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
   const { facts, role, account } = ledger;
   const flows = emptyFlows();
   const cash: CashBridge = {
-    operating: 0, unidentified: 0, assetSales: 0, card: 0, investment: 0, loan: 0, fixedDeposits: 0, excluded: 0, assets: 0, liabilities: 0, inTransit: 0, openingBalances: 0,
+    operating: 0, unidentified: 0, assetSales: 0, card: 0, investment: 0, loan: 0, investmentOut: 0, investmentIn: 0, loanOut: 0, loanIn: 0, fixedDeposits: 0, excluded: 0, assets: 0, liabilities: 0, inTransit: 0, openingBalances: 0,
   };
   const uncatIn = new Map<string, number>();
   for (const row of facts.uncategorizedIn) {
     if (inWindow(row.month, period)) uncatIn.set(`${row.month}|${row.accountId}`, (uncatIn.get(`${row.month}|${row.accountId}`) ?? 0) + row.amountMinor);
   }
 
+  // Transfers between a cash account and an investment or a loan, by month, account and counterpart: the cell holds the net, the
+  // read of positive rows holds what came in, so the two directions can be told apart without netting a contribution against a withdrawal.
+  const directed = new Map<string, { role: "investment" | "loan"; net: number }>();
+  const received = new Map<string, number>();
+  for (const row of facts.transfersIn) {
+    if (inWindow(row.month, period)) received.set(`${row.month}|${row.accountId}|${row.transferAccountId}`, (received.get(`${row.month}|${row.accountId}|${row.transferAccountId}`) ?? 0) + row.amountMinor);
+  }
   for (const row of facts.movement) {
     if (!inWindow(row.month, period)) continue;
     const own = role.get(row.accountId);
@@ -240,8 +263,13 @@ function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
         const other = role.get(row.transferAccountId);
         if (other === "cash") cash.inTransit += amount;
         else if (other === "card") cash.card += amount;
-        else if (other === "investment") cash.investment += amount;
-        else if (other === "loan") cash.loan += amount;
+        else if (other === "investment" || other === "loan") {
+          if (other === "investment") cash.investment += amount; else cash.loan += amount;
+          const key = `${row.month}|${row.accountId}|${row.transferAccountId}`;
+          const cell = directed.get(key) ?? { role: other, net: 0 };
+          cell.net += amount;
+          directed.set(key, cell);
+        }
         else if (other === "fixed") cash.fixedDeposits += amount;
         else if (other === "asset") cash.assets += amount;
         else cash.liabilities += amount;
@@ -250,6 +278,9 @@ function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
       if (facts.incomeCategories.has(row.categoryId)) flows.income += amount;
       else flows.spending += amount;
       if (own === "cash") cash.operating += amount;
+    } else if (owner.offBudget && own === "investment") {
+      flows.investmentResults += amount;
+      flows.investmentResultsCount += row.count;
     } else if (owner.offBudget) {
       flows.unidentified += amount;
       flows.unidentifiedCount += row.count;
@@ -263,11 +294,17 @@ function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
     }
   }
 
+  for (const [key, cell] of directed) {
+    const into = received.get(key) ?? 0;
+    if (cell.role === "investment") { cash.investmentIn += into; cash.investmentOut += cell.net - into; }
+    else { cash.loanIn += into; cash.loanOut += cell.net - into; }
+  }
+
   for (const row of facts.reclassified) {
     const owner = account.get(row.accountId);
     if (!inWindow(row.month, period) || !owner) continue;
     const own = role.get(row.accountId);
-    takeOut(flows, own === "cash" ? cash : null, owner, facts.incomeCategories, row);
+    takeOut(flows, own === "cash" ? cash : null, owner, own === "investment", facts.incomeCategories, row);
     if (row.to === "valueChange") flows.valueChanges += row.amountMinor;
     else {
       flows.assetSales += row.amountMinor;
@@ -301,6 +338,8 @@ export type SeriesPoint = { month: string; netWorthMinor: number | null; cashMin
 
 export type Summary = {
   period: ResolvedPeriod;
+  /** Balances at the end of the month before the period starts (before its first day). */
+  opening: Positions;
   closing: Positions;
   /** Assets as a positive amount. */
   assets: number;
@@ -323,7 +362,7 @@ export type Summary = {
   series: SeriesPoint[];
 };
 
-function positionsAt(ledger: Ledger, month: string): Positions {
+export function positionsAt(ledger: Ledger, month: string): Positions {
   const p: Positions = { eligibleCash: 0, fixedDeposits: 0, investments: 0, property: 0, vehicle: 0, otherAssets: 0, loans: 0, cards: 0, otherLiabilities: 0 };
   for (const account of ledger.account.values()) {
     const balance = ledger.balanceAt(account.id, month);
@@ -370,7 +409,7 @@ export function summarize(ledger: Ledger, period: ResolvedPeriod, review: AssetR
   else if (received <= 0) savingsRate = unavailable("There was no income in this period");
   else savingsRate = ready(Math.round((moneyKept.value * 1000) / received) / 10);
 
-  const explained = flows.income + flows.spending + flows.uncategorizedIn + flows.uncategorizedOut + flows.unidentified + flows.valueChanges + flows.assetSales + flows.openingBalances + flows.excludedTransfers + flows.inTransit;
+  const explained = flows.income + flows.spending + flows.uncategorizedIn + flows.uncategorizedOut + flows.unidentified + flows.investmentResults + flows.valueChanges + flows.assetSales + flows.openingBalances + flows.excludedTransfers + flows.inTransit;
   const series: SeriesPoint[] = period.months.map((month, index) => {
     if (!ledger.firstMonth || month < ledger.firstMonth) return { month, netWorthMinor: null, cashMinor: null, partial: false };
     const at = positionsAt(ledger, month);
@@ -378,7 +417,7 @@ export function summarize(ledger: Ledger, period: ResolvedPeriod, review: AssetR
   });
 
   return {
-    period, closing, assets, liabilities, netWorth, eligibleCash, invested: closing.investments, received, spent,
+    period, opening, closing, assets, liabilities, netWorth, eligibleCash, invested: closing.investments, received, spent,
     moneyKept, savingsRate, flows, cashBridge, unexplained: netWorth.change - explained, series,
   };
 }

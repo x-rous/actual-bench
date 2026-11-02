@@ -60,8 +60,8 @@ describe("accounts table Financial Reporting", () => {
         <AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} />
       </QueryClientProvider>
     );
-    // The fixed treatment of a property account needs nothing from the user.
-    expect(await screen.findByText("Non-current asset")).toBeInTheDocument();
+    // The fixed treatment of a property account (Fixed asset) needs nothing from the user.
+    expect(await screen.findByText("Fixed asset")).toBeInTheDocument();
     const attention = await screen.findByRole("button", { name: "1 needs a reporting choice" });
 
     fireEvent.click(attention);

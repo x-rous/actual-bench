@@ -21,7 +21,11 @@ export type LoanSchedules = {
    * that shares their category, so what the loans cost is not counted twice and nothing else is taken out of spending.
    */
   costRowIds: string[];
+  /** The same rows, each with the loan it belongs to and whether it is interest or a fee. */
+  costRows: CostRowTag[];
 };
+
+export type CostRowTag = { id: string; loanAccountId: string; kind: "interest" | "fee" };
 
 const unavailable = (accountId: string, reason: string): LoanSchedule => ({ accountId, state: "unavailable", reason });
 
@@ -43,14 +47,21 @@ export function monthlyRepayment(events: readonly { eventType: string; date: str
  * own transaction, the rows of the loan account classified as interest charged or as a fee: the scheduled repayment already
  * includes them, so they must not stay in spending as well. Transfers are never cost rows.
  */
-export function recordedCostRowIds(plan: TrackedLoan["plan"]): string[] {
-  const fromSplits = plan.installments.flatMap((installment) => {
+export function recordedCostRows(plan: TrackedLoan["plan"], loanAccountId: string): CostRowTag[] {
+  const fromSplits: CostRowTag[] = plan.installments.flatMap((installment) => {
     const split = installment.payment?.split;
-    return split ? [...(split.interestLineId ? [split.interestLineId] : []), ...split.feeLineIds] : [];
+    if (!split) return [];
+    return [
+      ...(split.interestLineId ? [{ id: split.interestLineId, loanAccountId, kind: "interest" as const }] : []),
+      ...split.feeLineIds.map((id) => ({ id, loanAccountId, kind: "fee" as const })),
+    ];
   });
-  const charged = plan.ledger.filter((l) => !l.row.transferId && !l.benchMade && (l.type === "interest-charged" || l.type === "fee")).map((l) => l.row.id);
-  return [...new Set([...fromSplits, ...charged])];
+  const charged: CostRowTag[] = plan.ledger.filter((l) => !l.row.transferId && !l.benchMade && (l.type === "interest-charged" || l.type === "fee")).map((l) => ({ id: l.row.id, loanAccountId, kind: l.type === "fee" ? "fee" as const : "interest" as const }));
+  const seen = new Set<string>();
+  return [...fromSplits, ...charged].filter((tag) => !seen.has(tag.id) && !!seen.add(tag.id));
 }
+
+export const recordedCostRowIds = (plan: TrackedLoan["plan"]): string[] => recordedCostRows(plan, "").map((r) => r.id);
 
 /**
  * The schedule of a tracked loan whose plan has been read from Actual: only if it agrees with the loan account, then the
@@ -66,7 +77,7 @@ export function scheduleFromLoan(accountId: string, loan: TrackedLoan, today: st
 
 export async function readLoanSchedules(connection: ConnectionInstance, input: { budgetSyncId: string; today: string; loanAccountIds: ReadonlySet<string> }): Promise<LoanSchedules> {
   const { budgetSyncId, today, loanAccountIds } = input;
-  const result: LoanSchedules = { schedules: [], costRowIds: [] };
+  const result: LoanSchedules = { schedules: [], costRowIds: [], costRows: [] };
   if (loanAccountIds.size === 0) return result;
   const debts = (await listDebts(budgetSyncId)).filter((d) => d.status === "active" && d.liabilityAccountId && loanAccountIds.has(d.liabilityAccountId));
   for (const summary of debts) {
@@ -75,7 +86,9 @@ export async function readLoanSchedules(connection: ConnectionInstance, input: {
       const read = await readTrackedLoan(connection, await getDebt(summary.id), today);
       if (read.state === "untracked") continue; // its recorded repayments are used instead
       if (read.state === "unavailable") { result.schedules.push(unavailable(accountId, read.reason)); continue; }
-      result.costRowIds.push(...recordedCostRowIds(read.loan.plan));
+      const tagged = recordedCostRows(read.loan.plan, accountId);
+      result.costRows.push(...tagged);
+      result.costRowIds.push(...tagged.map((r) => r.id));
       result.schedules.push(scheduleFromLoan(accountId, read.loan, today));
     } catch (error) {
       result.schedules.push(unavailable(accountId, error instanceof Error ? error.message : "The loan could not be read"));
