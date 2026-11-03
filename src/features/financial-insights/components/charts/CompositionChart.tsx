@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { ASSET_CLASSES, CLASS_LABEL, LIABILITY_CLASSES, type ClassKey } from "@/lib/financial-insights/breakdowns";
-import { money, signedMoney } from "../../format";
+import { compactMoney as compactLabel, money, signedMoney } from "../../format";
 import { scaleY } from "./BarChart";
 import { tickLabel } from "./labels";
 import { TipNote, TipRow, TipTitle, useTip, useWidth } from "./Tip";
@@ -16,11 +16,13 @@ export const CLASS_COLOUR: Record<ClassKey, string> = {
  * What you own and owe at each month end: assets stacked above zero, liabilities below, net worth as a line. The classes
  * drawn are the ones the viewer has left switched on in the legend; net worth is always the true figure, whatever is hidden.
  */
-export function CompositionChart({ labels, partialIndex, months, netWorth, hidden, showNetWorth, height = 250 }: {
+export function CompositionChart({ labels, partialIndex, months, netWorth, hasData, hidden, showNetWorth, height = 250 }: {
   labels: string[];
   partialIndex: number | null;
   months: Record<ClassKey, number>[];
   netWorth: number[];
+  /** False for a month before the budget has data: nothing is drawn for it. */
+  hasData?: readonly boolean[];
   hidden: ReadonlySet<ClassKey>;
   showNetWorth: boolean;
   height?: number;
@@ -37,7 +39,9 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hidde
   const lo = Math.min(0, ...months.map(stackDown), ...(showNetWorth ? netWorth : [])) * 1.1;
   const { y, marks } = scaleY(lo, hi, height, M.t, M.b);
   const slot = (width - M.l - M.r) / Math.max(1, months.length);
-  const pad = Math.max(3, slot * 0.14);
+  // On a long period the slots are only a few pixels: the gaps shrink with them so a bar keeps a width.
+  const pad = Math.min(Math.max(3, slot * 0.14), slot * 0.25);
+  const known = (i: number) => (hasData ? hasData[i] : true);
   return (
     <div ref={host} className="w-full">
       <svg width={width} height={height} role="img" aria-label="What you own and owe at each month end">
@@ -48,10 +52,10 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hidde
           let up = 0, down = 0;
           const bars = classes.map((k) => {
             const v = m[k];
-            if (!v) return null;
+            if (!v || !known(i)) return null;
             const from = v > 0 ? up : down, to = from + v;
             if (v > 0) up = to; else down = to;
-            return <rect key={k} x={x0 + pad} y={Math.min(y(from), y(to))} width={slot - pad * 2} height={Math.max(1, Math.abs(y(from) - y(to)) - 1.5)} rx={2} fill={CLASS_COLOUR[k]} fillOpacity={i === partialIndex && v > 0 ? 0.85 : 1} />;
+            return <rect key={k} x={x0 + pad} y={Math.min(y(from), y(to))} width={Math.max(1, slot - pad * 2)} height={Math.max(1, Math.abs(y(from) - y(to)) - 1.5)} rx={2} fill={CLASS_COLOUR[k]} fillOpacity={i === partialIndex && v > 0 ? 0.85 : 1} />;
           });
           const owns = ASSET_CLASSES.reduce((a, k) => a + m[k], 0), owes = LIABILITY_CLASSES.reduce((a, k) => a + m[k], 0);
           return (
@@ -59,7 +63,7 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hidde
               {bars}
               <text x={x0 + slot / 2} y={height - 6} textAnchor="middle" className="fill-muted-foreground text-[10.5px]">{tickLabel(labels[i], i, slot)}</text>
               <rect x={x0} y={M.t} width={slot} height={height - M.t - M.b} fill="transparent" onMouseLeave={hide} onMouseMove={(e) => show(
-                <>
+                !known(i) ? <><TipTitle>{labels[i]}</TipTitle><TipNote>No data yet: the budget has no transactions up to this month.</TipNote></> : <>
                   <TipTitle>{labels[i]} · {i === partialIndex ? "balance today" : "month end"}</TipTitle>
                   {ASSET_CLASSES.filter((k) => m[k] !== 0).map((k) => <TipRow key={k} colour={CLASS_COLOUR[k]} name={CLASS_LABEL[k]} value={money(m[k])} />)}
                   {LIABILITY_CLASSES.filter((k) => m[k] !== 0).map((k) => <TipRow key={k} colour={CLASS_COLOUR[k]} name={CLASS_LABEL[k]} value={money(m[k])} />)}
@@ -74,19 +78,11 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hidde
         })}
         {showNetWorth && (
           <>
-            <polyline fill="none" stroke="var(--fi-networth)" strokeWidth={2} points={netWorth.map((v, i) => `${M.l + (i + 0.5) * slot},${y(v)}`).join(" ")} />
-            {netWorth.map((v, i) => <circle key={i} cx={M.l + (i + 0.5) * slot} cy={y(v)} r={3.5} fill="var(--card)" stroke="var(--fi-networth)" strokeWidth={2} />)}
+            <polyline fill="none" stroke="var(--fi-networth)" strokeWidth={2} points={netWorth.flatMap((v, i) => (known(i) ? [`${M.l + (i + 0.5) * slot},${y(v)}`] : [])).join(" ")} />
+            {netWorth.map((v, i) => !known(i) ? null : <circle key={i} cx={M.l + (i + 0.5) * slot} cy={y(v)} r={3.5} fill="var(--card)" stroke="var(--fi-networth)" strokeWidth={2} />)}
           </>
         )}
       </svg>
     </div>
   );
-}
-
-function compactLabel(minor: number): string {
-  const major = Math.abs(minor) / 100;
-  const sign = minor < 0 ? "-" : "";
-  if (major >= 1_000_000) return `${sign}${(major / 1_000_000).toFixed(major >= 10_000_000 ? 0 : 1)}m`;
-  if (major >= 1_000) return `${sign}${(major / 1_000).toFixed(major >= 10_000 ? 0 : 1)}k`;
-  return `${sign}${Math.round(major)}`;
 }

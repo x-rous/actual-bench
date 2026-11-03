@@ -71,8 +71,9 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
   else { hi = hi * 1.06 || 1; lo = lo * 1.06; }
   const { y, marks } = scaleY(lo, hi, height, MARGIN.t, MARGIN.b);
   const slot = (width - MARGIN.l - MARGIN.r) / Math.max(1, n);
-  const pad = Math.max(3, slot * 0.16);
-  const inner = slot - pad * 2;
+  // On a long period the slots are only a few pixels: the gaps shrink with them (never past a quarter of the slot) so a bar keeps a width.
+  const pad = Math.min(Math.max(3, slot * 0.16), slot * 0.25);
+  const inner = Math.max(1, slot - pad * 2);
   const style = (colour: string, partial: boolean) => ({ fill: colour, fillOpacity: partial ? 0.38 : 1, stroke: partial ? colour : "none", strokeDasharray: partial ? "3 2" : undefined, strokeWidth: partial ? 1.2 : 0 });
   return (
     <div ref={host} className="w-full">
@@ -96,17 +97,20 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
               bars.push(<rect key={s.key} x={x0 + pad} y={Math.min(y(a), y(b))} width={inner} height={Math.max(1, Math.abs(y(a) - y(b)) - 1.5)} rx={2} {...style(s.colour, partial)}
                 className={onSelect ? "cursor-pointer" : undefined} onClick={onSelect ? () => onSelect(i, k) : undefined} onMouseMove={(e) => show(tip(i, k), e)} onMouseLeave={hide}
                 role={onSelect ? "button" : undefined} tabIndex={onSelect ? 0 : undefined} aria-label={onSelect ? `${s.label}, ${label}` : undefined}
-                onKeyDown={onSelect ? (e) => { if (e.key === "Enter") onSelect(i, k); } : undefined} />);
+                onKeyDown={onSelect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(i, k); } } : undefined} />);
             });
             stackTop = up;
           } else {
             const w = inner / series.length;
             series.forEach((s, k) => {
-              const v = s.values[i] ?? 0;
+              // A value that is not known draws no bar, so there is nothing to focus or select for it.
+              const known = s.values[i];
+              if (known === null || known === undefined) return;
+              const v = known;
               bars.push(<rect key={s.key} x={x0 + pad + k * w + 1} y={Math.min(y(0), y(v))} width={Math.max(2, w - 3)} height={Math.max(v === 0 ? 0 : 1, Math.abs(y(0) - y(v)))} rx={3} {...style(s.colour, partial)}
                 className={onSelect ? "cursor-pointer" : undefined} onClick={onSelect ? () => onSelect(i, k) : undefined} onMouseMove={(e) => show(tip(i, k), e)} onMouseLeave={hide}
                 role={onSelect ? "button" : undefined} tabIndex={onSelect ? 0 : undefined} aria-label={onSelect ? `${s.label}, ${label}` : undefined}
-                onKeyDown={onSelect ? (e) => { if (e.key === "Enter") onSelect(i, k); } : undefined} />);
+                onKeyDown={onSelect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(i, k); } } : undefined} />);
             });
           }
           return (

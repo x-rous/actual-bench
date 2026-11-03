@@ -163,8 +163,6 @@ export type AssetValueRow =
   | { kind: "registered"; assetId: string; name: string; accountId: string; accountClass: AccountClass; state: "unavailable"; reason: string; closingMinor: number; openingMinor: number; linked: boolean }
   | { kind: "unregistered"; accountId: string; name: string; accountClass: AccountClass; openingMinor: number; closingMinor: number };
 
-const ASSET_ACCOUNT_CLASSES: readonly AccountClass[] = ["property", "vehicle", "other-asset"];
-
 /**
  * An account that is a fixed asset: Property, Vehicle, or an Other Asset marked Fixed asset. An Other Asset that is a current or
  * non-current holding (money owed to you, a long-term deposit) is not one: it has no place among the assets of the Assets module.
@@ -200,7 +198,8 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
   const registered = new Set<string>();
   for (const asset of assets) {
     const owner = ledger.account.get(asset.actualAccountId);
-    if (!owner || !ASSET_ACCOUNT_CLASSES.includes(owner.accountClass) || asset.status === "archived") continue;
+    // A fixed asset by class and treatment: an Other Asset whose treatment is now a current or non-current holding is not one.
+    if (!owner || !isFixedAssetAccount(owner) || asset.status === "archived") continue;
     registered.add(asset.actualAccountId);
     const book = books.get(asset.actualAccountId) ?? null;
     const linked = links.some((l) => l.assetId === asset.id);

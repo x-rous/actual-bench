@@ -26,7 +26,7 @@ The period control applies to everything on the page.
 | --- | --- |
 | This month, This year | From the start to today. They are marked **partial**. |
 | Last month, Last 6 months, Last 12 months, Last 2 years, Last year | Complete months only, so averages and charts compare like with like. |
-| All available | From your first transaction or starting balance to today. |
+| All available | From your first transaction to today (from your first starting balance when there are no transactions yet). |
 | Custom range | Any run of months, up to the current one. |
 
 A period never holds more than 200 years (2,400 months); if your history or a custom range is longer, the period starts 200 years back and its label shows the range it really covers. Nothing dated after today is counted, including later this month. Balances are measured at the end of each month, and the current month runs to today.
@@ -40,7 +40,7 @@ A period never holds more than 200 years (2,400 months); if your history or a cu
   - If a tracked loan's schedule does not agree with Actual, the buffer says **Unavailable** and names the loan. Nothing is estimated in its place.
   - Any other loan uses the average of the transfers recorded into its account over the last complete months (at least three), principal only.
   - The 0–12 month scale is only a scale, not a recommended target. Investments and fixed / restricted deposits are not cash.
-- **What changed your net worth** is a waterfall of the change from the balance *before the first day of the period* to the end of it. The steps are what Bench can identify: money kept, unidentified movements, changes in value and asset sales from Assets, opening balances, transfers with excluded accounts and money in transit. When they add up exactly to the change you see a **Reconciled** mark; when they do not, a dashed **Unexplained** bar shows the difference, and it is never forced to zero. Bench does not invent investment returns: an entry with no category in an investment account is an unidentified movement.
+- **What changed your net worth** is a waterfall of the change from the balance *before the first day of the period* to the end of it. The steps are what Bench can identify: money kept, unidentified movements, investment activity, changes in value and asset sales from Assets, opening balances, transfers with excluded accounts and money in transit. When they add up exactly to the change you see a **Reconciled** mark; when they do not, a dashed **Unexplained** bar shows the difference, and it is never forced to zero. Bench does not invent investment returns: an entry with no category in an investment account is shown as investment activity, on its own step, never as income, spending or a return.
 - **What you own and owe, start and end** compares the balances before the period with the balances at its end, by class. Vehicles and other assets are separate classes, and so are credit cards and other liabilities.
 - **How the three measures differ:** *money kept* is income minus spending; *change in cash* is how your cash & bank balance moved (after investments, card payments and loans); *change in net worth* is everything you own minus everything you owe, end minus start.
 

@@ -112,5 +112,9 @@ export function lastCompleteMonths(today: string, firstMonth: string | null, cou
 /** `2026-01-01` as `01 Jan 2026`: the way every date on the page is written. Anything that is not a date is returned as it is. */
 export function formatDay(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  return m ? `${m[3]} ${MONTH_NAMES[Number(m[2]) - 1] ?? m[2]} ${m[1]}` : iso;
+  if (!m) return iso;
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  // A date that is not on the calendar (2026-02-30, 2026-13-45) is not a date: it is returned as it is.
+  if (month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return iso;
+  return `${m[3]} ${MONTH_NAMES[month - 1]} ${m[1]}`;
 }

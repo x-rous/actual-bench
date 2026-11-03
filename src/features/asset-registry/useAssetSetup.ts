@@ -91,8 +91,9 @@ export function useAssetSetup({ connection, asset, accounts, registry, onDiscard
     const needsFixed = ASSET_TYPES[draft.assetType]?.accountClass === "other-asset";
     const marked = new Map(reporting.byAccount);
     if (realId && needsFixed) {
-      const saved = await saveAccountReporting(connection.budgetSyncId, [{ accountId: realId, treatment: "fixed-asset" }]);
-      queryClient.setQueryData(["accountReporting", connection.budgetSyncId], saved);
+      await saveAccountReporting(connection.budgetSyncId, [{ accountId: realId, treatment: "fixed-asset" }]);
+      // The response is the whole list as of this save; overlapping saves can answer out of order, so it is read again instead of written.
+      void queryClient.invalidateQueries({ queryKey: ["accountReporting", connection.budgetSyncId] });
       marked.set(realId, "fixed-asset");
     }
     const saved = fresh.find((a) => a.id === realId);

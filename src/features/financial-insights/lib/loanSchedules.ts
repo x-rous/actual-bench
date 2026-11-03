@@ -25,7 +25,8 @@ export type LoanSchedules = {
   costRows: CostRowTag[];
 };
 
-export type CostRowTag = { id: string; loanAccountId: string; kind: "interest" | "fee" };
+/** A cost row of a tracked loan. `kind` is set for what a payment paid (interest, fees); a charge the lender added to the loan account has none: it leaves spending, but it is not a payment, so it is not counted as paid. */
+export type CostRowTag = { id: string; loanAccountId: string; kind?: "interest" | "fee" };
 
 const unavailable = (accountId: string, reason: string): LoanSchedule => ({ accountId, state: "unavailable", reason });
 
@@ -45,7 +46,8 @@ export function monthlyRepayment(events: readonly { eventType: string; date: str
 /**
  * The interest and fee lines of the installments already recorded in Actual, and, for a loan whose lender charges interest as its
  * own transaction, the rows of the loan account classified as interest charged or as a fee: the scheduled repayment already
- * includes them, so they must not stay in spending as well. Transfers are never cost rows.
+ * includes them, so they must not stay in spending as well; they have no kind, so they are never counted as paid. Transfers are never
+ * cost rows.
  */
 export function recordedCostRows(plan: TrackedLoan["plan"], loanAccountId: string): CostRowTag[] {
   const fromSplits: CostRowTag[] = plan.installments.flatMap((installment) => {
@@ -56,7 +58,7 @@ export function recordedCostRows(plan: TrackedLoan["plan"], loanAccountId: strin
       ...split.feeLineIds.map((id) => ({ id, loanAccountId, kind: "fee" as const })),
     ];
   });
-  const charged: CostRowTag[] = plan.ledger.filter((l) => !l.row.transferId && !l.benchMade && (l.type === "interest-charged" || l.type === "fee")).map((l) => ({ id: l.row.id, loanAccountId, kind: l.type === "fee" ? "fee" as const : "interest" as const }));
+  const charged: CostRowTag[] = plan.ledger.filter((l) => !l.row.transferId && !l.benchMade && (l.type === "interest-charged" || l.type === "fee")).map((l) => ({ id: l.row.id, loanAccountId }));
   const seen = new Set<string>();
   return [...fromSplits, ...charged].filter((tag) => !seen.has(tag.id) && !!seen.add(tag.id));
 }

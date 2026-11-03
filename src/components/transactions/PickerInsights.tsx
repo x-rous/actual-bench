@@ -138,11 +138,13 @@ export function PickerInsights({ options, state, constraints, picks, onPicks, re
   const byMonth = useMemo(() => new Map((timeline.data ?? []).filter((r): r is FacetRow & { key: string } => r.key !== null).map((r) => [r.key, r])), [timeline.data]);
   const calendar = useMemo(() => {
     const dated = [...byMonth.keys()].sort();
-    if (dated.length === 0) return [];
     const wanted = resolveDateRange(state.date, today);
+    // Without entries the range the filters name still has its months; with no start named either there is nothing to count from.
+    if (dated.length === 0 && !wanted.from) return [];
     const start = wanted.from ? wanted.from.slice(0, 7) : dated[0];
     const end = wanted.to && wanted.to < today ? wanted.to.slice(0, 7) : current;
-    return monthsBetween(start, end < dated.at(-1)! ? dated.at(-1)! : end);
+    const last = dated.at(-1);
+    return monthsBetween(start, last && end < last ? last : end);
   }, [byMonth, state.date, today, current]);
   /** The months that count towards an average: complete ones, and only the selected ones when months are selected. */
   const averaged = useMemo(() => calendar.filter((m) => m !== current && (picks.months.length === 0 || picks.months.includes(m))), [calendar, current, picks.months]);

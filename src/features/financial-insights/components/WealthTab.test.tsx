@@ -24,7 +24,7 @@ function data(accounts: AccountFact[], movement: MovementRow[], over: Record<str
 }
 const show = (d: never, onDrill = jest.fn()) => render(<TipProvider><WealthTab data={d} onDrill={onDrill} /></TipProvider>);
 const funded = [row("2026-09", "chk", -50_000, { transferAccountId: "inv" }), row("2026-09", "inv", 50_000, { transferAccountId: "chk" }), row("2026-09", "inv", 4_000)];
-const ready = (rows: WealthLoad extends infer T ? T extends { state: "ready"; rows: infer R } ? R : never : never): WealthLoad => ({ state: "ready", rows });
+const ready = (rows: WealthLoad extends infer T ? T extends { state: "ready"; rows: infer R } ? R : never : never): WealthLoad => ({ state: "ready", rows, hasFailedBooks: false, retryBooks: jest.fn() });
 beforeEach(() => { jest.clearAllMocks(); sessionStorage.clear(); });
 
 describe("Wealth & investments tab states", () => {

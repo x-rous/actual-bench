@@ -331,7 +331,9 @@ export function classBalances(p: Positions): Record<ClassKey, number> {
 export function compositionSeries(ledger: Ledger, period: ResolvedPeriod, opening: Positions) {
   const months = period.months.map((month) => ({ month, ...classBalances(positionsAt(ledger, month)) }));
   const netWorth = months.map((m) => ASSET_CLASSES.concat(LIABILITY_CLASSES).reduce((a, k) => a + m[k], 0));
-  return { months, netWorth, opening: classBalances(opening) };
+  // A month before the budget has any data has balances of nothing, not balances of zero: charts and tables leave it unavailable.
+  const hasData = period.months.map((month) => ledger.firstMonth !== null && month >= ledger.firstMonth);
+  return { months, netWorth, hasData, opening: classBalances(opening) };
 }
 
 // ─── Debt repayments ─────────────────────────────────────────────────────────
@@ -340,7 +342,7 @@ export type DebtRow = {
   accountId: string;
   name: string;
   tracked: boolean;
-  /** Everything recorded as paid into the loan account in the period, from any account. */
+  /** Everything recorded as paid into the loan account in the period, from any account that is counted: a repayment sent from an account left out of Financial Insights is not in it. */
   principalMinor: number;
   /** Null when the loan is not tracked in Loans: its interest cannot be told from other spending. */
   interestMinor: number | null;

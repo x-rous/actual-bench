@@ -6,17 +6,16 @@ import { getTransport } from "@/lib/actual";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { attributeBook, readBook } from "@/lib/asset-registry/ledger";
 import { ASSET_ROW_LIMIT } from "@/lib/financial-insights/assetReview";
-import { assetValues, type AssetBook, type AssetValueRow, type LoanRef } from "@/lib/financial-insights/wealth";
+import { assetValues, isFixedAssetAccount, type AssetBook, type AssetValueRow, type LoanRef } from "@/lib/financial-insights/wealth";
 import { bankToday } from "@/features/credit-cards/lib/cycles";
 import { listDebts } from "@/features/assets-debt/lib/debtsApi";
 import type { ReadyData } from "./useFinancialInsights";
 
-const ASSET_CLASSES = ["property", "vehicle", "other-asset"];
 
 export type WealthLoad =
   | { state: "loading" }
   | { state: "error"; retry: () => void }
-  | { state: "ready"; rows: AssetValueRow[] };
+  | { state: "ready"; rows: AssetValueRow[]; /** Some asset account could not be read. */ hasFailedBooks: boolean; /** Read the accounts that failed again. */ retryBooks: () => void };
 
 /**
  * What Wealth & investments reads beyond the main read, when its tab opens: each registered asset account's book (the Asset
@@ -29,7 +28,7 @@ export function useWealth(data: ReadyData): WealthLoad {
   // The same date the Asset Registry keys its books by, so the two share the cache.
   const date = bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
-  const assets = useMemo(() => registry.assets.filter((a) => a.status !== "archived" && ASSET_CLASSES.includes(ledger.account.get(a.actualAccountId)?.accountClass ?? "")), [registry.assets, ledger]);
+  const assets = useMemo(() => registry.assets.filter((a) => { const owner = ledger.account.get(a.actualAccountId); return a.status !== "archived" && !!owner && isFixedAssetAccount(owner); }), [registry.assets, ledger]);
   const accountIds = useMemo(() => [...new Set(assets.map((a) => a.actualAccountId))].sort(), [assets]);
   const unreadable = useMemo(() => {
     const rows = new Map<string, number>();
@@ -73,5 +72,5 @@ export function useWealth(data: ReadyData): WealthLoad {
 
   if (failed) return { state: "error", retry: () => void loansQuery.refetch() };
   if (!rows) return { state: "loading" };
-  return { state: "ready", rows };
+  return { state: "ready", rows, hasFailedBooks: books.some((q) => q.isError), retryBooks: () => books.forEach((q) => { if (q.isError) void q.refetch(); }) };
 }

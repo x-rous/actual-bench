@@ -416,3 +416,14 @@ describe("financial insights: category groups, what changed net worth, debt repa
     expect(tracked).toMatchObject({ principalMinor: 80_000, interestMinor: 12_000, feesMinor: 500, complete: true, fromCashMinor: 80_000 });
   });
 });
+
+describe("financial insights: balances before the data begins", () => {
+  it("marks a month before the budget has data, so charts leave it unavailable instead of zero", () => {
+    const early = resolvePeriod({ kind: "custom", startMonth: "2026-01", endMonth: "2026-10" }, today, ledger.firstMonth);
+    const series = compositionSeries(ledger, early, summarize(ledger, early, review).opening);
+    expect(series.hasData).toHaveLength(early.months.length);
+    expect(series.hasData[0]).toBe(false);
+    expect(series.hasData[series.hasData.length - 1]).toBe(true);
+    expect(series.hasData.map((has, i) => has === (early.months[i] >= (ledger.firstMonth as string)))).toEqual(early.months.map(() => true));
+  });
+});

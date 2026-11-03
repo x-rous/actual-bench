@@ -192,3 +192,15 @@ describe("asset values, equity and loan-to-value", () => {
     expect(tooBig[0]).toMatchObject({ state: "unavailable", reason: "too many entries" });
   });
 });
+
+describe("assets held in an Other Asset account whose treatment is no longer fixed", () => {
+  it("is left out of the asset values, because it is not a fixed asset any more", () => {
+    const other = { id: "gold", name: "Gold", accountClass: "other-asset" as const, treatment: "current-asset" as const, offBudget: true };
+    const fixed = { ...other, treatment: "fixed-asset" as const };
+    const regAsset = [{ id: "g1", name: "Gold bar", actualAccountId: "gold", status: "active" }];
+    const { ledger: l1, period: p1 } = setup(facts([row("2026-09", "gold", 100_000)], { accounts: [accounts[0], other] }));
+    expect(assetValues({ ledger: l1, period: p1, assets: regAsset, books: new Map([["gold", { available: true, rows: [] }]]), links: [], loans: [] }).some((r) => r.kind === "registered")).toBe(false);
+    const { ledger: l2, period: p2 } = setup(facts([row("2026-09", "gold", 100_000)], { accounts: [accounts[0], fixed] }));
+    expect(assetValues({ ledger: l2, period: p2, assets: regAsset, books: new Map([["gold", { available: true, rows: [] }]]), links: [], loans: [] }).some((r) => r.kind === "registered")).toBe(true);
+  });
+});

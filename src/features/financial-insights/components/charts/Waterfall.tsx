@@ -80,7 +80,7 @@ export function Waterfall({ steps, height = 240, startAtZero = true, onSelect, c
               <rect x={x0} y={M.t} width={slot} height={height - M.t} fill="transparent" className={selectable ? "cursor-pointer" : undefined}
                 onMouseMove={(e) => show(content, e)} onMouseLeave={hide} onClick={selectable ? () => onSelect!(s) : undefined}
                 role={selectable ? "button" : undefined} tabIndex={selectable ? 0 : undefined} aria-label={selectable ? `${s.label}: ${label}. Show the transactions` : undefined}
-                onKeyDown={selectable ? (e) => { if (e.key === "Enter") onSelect!(s); } : undefined} />
+                onKeyDown={selectable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect!(s); } } : undefined} />
             </g>
           );
         })}

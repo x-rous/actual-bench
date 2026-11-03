@@ -107,7 +107,7 @@ export async function readLinkedSales(connection: ConnectionInstance, transactio
 }
 
 /** The interest and fee lines the Loans tracking recorded: read by id, so only those rows are ever taken out of spending. */
-export async function readLoanCostRows(connection: ConnectionInstance, tags: readonly { id: string; loanAccountId: string; kind: "interest" | "fee" }[], today: string): Promise<LoanCostRow[]> {
+export async function readLoanCostRows(connection: ConnectionInstance, tags: readonly { id: string; loanAccountId: string; kind?: "interest" | "fee" }[], today: string): Promise<LoanCostRow[]> {
   const transactionIds = tags.map((t) => t.id);
   const tagOf = new Map(tags.map((t) => [t.id, t]));
   if (transactionIds.length === 0) return [];

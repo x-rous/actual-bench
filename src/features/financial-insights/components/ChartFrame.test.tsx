@@ -82,6 +82,30 @@ describe("bar chart", () => {
     expect(screen.getByRole("button", { name: "Housing, Oct" }).getAttribute("stroke-dasharray")).toBeNull();
   });
 
+  it("opens a segment with Enter or Space from the keyboard, without scrolling the page", () => {
+    const onSelect = jest.fn();
+    render(<TipProvider><BarChart labels={["Sep", "Oct", "Nov"]} partialIndex={null} series={series} stacked ariaLabel="x" tip={() => null} onSelect={onSelect} /></TipProvider>);
+    const bar = screen.getByRole("button", { name: "Food, Sep" });
+    expect(fireEvent.keyDown(bar, { key: " " })).toBe(false);
+    expect(fireEvent.keyDown(bar, { key: "Enter" })).toBe(false);
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(fireEvent.keyDown(bar, { key: "a" })).toBe(true);
+    expect(onSelect).toHaveBeenCalledTimes(2);
+  });
+
+  it("draws no bar, and so offers nothing to select, for a value that is not known in grouped bars", () => {
+    const onSelect = jest.fn();
+    render(<TipProvider><BarChart labels={["Sep", "Oct"]} partialIndex={null} series={[{ key: "a", label: "Spent", colour: "red", values: [100, null] }]} ariaLabel="x" tip={() => null} onSelect={onSelect} /></TipProvider>);
+    expect(screen.getByRole("button", { name: "Spent, Sep" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Spent, Oct" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a width for every bar on a very long period", () => {
+    const labels = Array.from({ length: 600 }, (_, i) => `M${i}`);
+    render(<TipProvider><BarChart labels={labels} partialIndex={null} series={[{ key: "a", label: "Spent", colour: "red", values: labels.map(() => 100) }]} stacked ariaLabel="x" tip={() => null} onSelect={jest.fn()} /></TipProvider>);
+    expect(Number(screen.getByRole("button", { name: "Spent, M0" }).getAttribute("width"))).toBeGreaterThan(0);
+  });
+
   it("draws a negative value below zero", () => {
     render(<TipProvider><BarChart labels={["Sep"]} partialIndex={null} series={[{ key: "k", label: "Kept", colour: "green", values: [-100] }, { key: "j", label: "Other", colour: "red", values: [300] }]} ariaLabel="x" tip={() => null} onSelect={() => undefined} /></TipProvider>);
     const negative = screen.getByRole("button", { name: "Kept, Sep" }), positive = screen.getByRole("button", { name: "Other, Sep" });
@@ -96,5 +120,14 @@ describe("waterfall", () => {
     expect(screen.getAllByRole("button")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: /Unidentified movements: \+5\.00/ }));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ key: "unidentified" }));
+  });
+
+  it("opens a step with Enter or Space from the keyboard", () => {
+    const onSelect = jest.fn();
+    render(<TipProvider><Waterfall ariaLabel="w" steps={[{ key: "unidentified", label: "Unidentified movements", kind: "delta", amountMinor: 500 }]} canSelect={() => true} onSelect={onSelect} /></TipProvider>);
+    const step = screen.getByRole("button", { name: /Unidentified movements/ });
+    expect(fireEvent.keyDown(step, { key: " " })).toBe(false);
+    fireEvent.keyDown(step, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledTimes(2);
   });
 });

@@ -124,7 +124,10 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const snapshot = currentQuery?.isSuccess ? currentQuery.data : undefined;
   const book = snapshot ? attributeBook(snapshot, registry.assets, registry.metadata) : undefined;
   const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps, reporting.byAccount) : null;
-  const available = query.isSuccess && accountsQuery.isSuccess && classes.available && reporting.available;
+  // The saved Financial Reporting choices matter only to Other Asset accounts (a Vehicle or Property is eligible by class alone),
+  // so a failed read of them does not hide the values of a registry that holds none.
+  const reportingNeeded = registry.assets.some((a) => ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset");
+  const available = query.isSuccess && accountsQuery.isSuccess && classes.available && (reporting.available || !reportingNeeded);
   const value = (a: Asset): number | null => {
     const q = books.get(a.actualAccountId);
     if (!q?.isSuccess || !q.data || !available) return null;
@@ -176,6 +179,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
       if (next) client.setQueryData(key, next); else await query.refetch({ throwOnError: true });
       await accountsQuery.refetch({ throwOnError: true });
       await client.invalidateQueries({ queryKey: ["accountClasses", connection.budgetSyncId] });
+      await client.invalidateQueries({ queryKey: ["accountReporting", connection.budgetSyncId] });
       await externalQuery.refetch({ throwOnError: true });
       await client.invalidateQueries({ queryKey: ["assetLoans", connection.id] });
       await client.invalidateQueries({ queryKey: ["assetLoanLedger", connection.id] });

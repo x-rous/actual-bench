@@ -20,11 +20,12 @@ type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 export function useInTransitTarget(data: Ready, today: string, cashOnly: boolean, enabled: boolean) {
   const connection = useConnectionStore(selectActiveInstance);
   const { ledger, period } = data;
+  // The accounts the drill looks at are part of what it asks, so the answer is not reused after an account changes role.
+  const scope = [...ledger.account.values()].filter((a) => !cashOnly || ledger.role.get(a.id) === "cash").map((a) => a.id);
   return useQuery({
-    queryKey: ["financial-insights", "in-transit", connection?.id, connection?.budgetSyncId, today, period.startDate, period.endDate, cashOnly],
+    queryKey: ["financial-insights", "in-transit", connection?.id, connection?.budgetSyncId, today, period.startDate, period.endDate, cashOnly, scope.join(",")],
     enabled: enabled && !!connection, gcTime: 60_000,
     queryFn: async (): Promise<Extract<DrillTarget, { kind: "inTransitRows" }>> => {
-      const scope = [...ledger.account.values()].filter((a) => !cashOnly || ledger.role.get(a.id) === "cash").map((a) => a.id);
       const rows = await readTransferRows(connection!, { accountIds: scope, counterpartIds: scope, startDate: period.startDate, endDate: period.endDate, today });
       const inSet = new Set(rows.map((r) => r.id));
       const missing = [...new Set(rows.flatMap((r) => (r.transferId && !inSet.has(r.transferId) ? [r.transferId] : [])))];

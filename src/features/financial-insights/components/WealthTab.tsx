@@ -144,10 +144,10 @@ export function WealthTab({ data, onDrill }: { data: Ready; onDrill: (target: Dr
           <Tile label="Total liabilities" detail="Everything you owe">{money(summary.liabilities)}</Tile>
           {hasPortfolio && <Tile label="Investments" detail="Value at the end of the period">{money(t.closing)}</Tile>}
           {hasAssets && (
-            <Tile label="Property equity" tone={equity?.state === "unavailable" ? "warning" : undefined}
-              detail={!equity ? "Reading asset accounts…" : equity.state === "notLinked" ? "No loan is linked to an asset in Assets" : equity.state === "unavailable" ? equity.reason
+            <Tile label="Property equity" tone={equity?.state === "unavailable" || wealth.state === "error" ? "warning" : undefined}
+              detail={wealth.state === "error" ? "The loans linked to your assets could not be read" : !equity ? "Reading asset accounts…" : equity.state === "notLinked" ? "No loan is linked to an asset in Assets" : equity.state === "unavailable" ? equity.reason
                 : <>Property value less linked loans<span className="block">{equity.ltvPercent !== null ? `Loan-to-value ${percent(equity.ltvPercent)}` : "Loan-to-value unavailable"}</span></>}>
-              {!equity ? MISSING : equity.state === "notLinked" ? "Not linked" : equity.state === "unavailable" ? "Unavailable" : money(equity.endMinor)}
+              {wealth.state === "error" ? "Unavailable" : !equity ? MISSING : equity.state === "notLinked" ? "Not linked" : equity.state === "unavailable" ? "Unavailable" : money(equity.endMinor)}
             </Tile>
           )}
         </div>
@@ -245,7 +245,7 @@ function AssetValues({ rows, wealth, scope }: { rows: AssetValueRow[] | null; we
   return (
     <TableCard id="asset-values" title="Property and asset values" hint="Property, vehicles and other assets" csvScope={scope} head={assetHead} rows={csv}
       info={<><p>How each asset registered in Assets moved from its value at the start of the period to its value at the end, from the Asset Registry&apos;s own classified entries: the same figures as the Assets page for the same dates.</p><p>Equity is the recorded value less the linked loan balance in Actual on that date; loan-to-value is that debt as a share of the value. Either is Unavailable, never zero, when an input is missing. Assets with no linked loan say Not linked.</p></>}
-      note={missing.length > 0 ? <p className={WARNING}>{missing.length} {missing.length === 1 ? "account needs" : "accounts need"} review: their closing value is shown, but what depends on the Asset Registry is not. <Link href="/assets" className="underline underline-offset-2">Open Assets</Link></p> : "Registered assets only. Linked loans come from Assets; the loan balances are Actual's."}>
+      note={missing.length > 0 ? <p className={WARNING}>{missing.length} {missing.length === 1 ? "account needs" : "accounts need"} review: their closing value is shown, but what depends on the Asset Registry is not. <Link href="/assets" className="underline underline-offset-2">Open Assets</Link>{wealth.state === "ready" && wealth.hasFailedBooks && <Button size="xs" variant="outline" className="ml-2" onClick={wealth.retryBooks}>Retry</Button>}</p> : "Registered assets only. Linked loans come from Assets; the loan balances are Actual's."}>
       {wealth.state === "loading" ? <p className="py-3 text-xs text-muted-foreground" role="status">Reading asset accounts…</p>
         : wealth.state === "error" ? <div className="py-3 text-xs"><p className={WARNING}>The loans linked to your assets could not be read.</p><Button size="xs" variant="outline" className="mt-2" onClick={wealth.retry}>Retry</Button></div>
         : (
@@ -255,10 +255,10 @@ function AssetValues({ rows, wealth, scope }: { rows: AssetValueRow[] | null; we
               {(rows ?? []).map((r) => {
                 const name = <th scope="row" className="max-w-56 py-1.5 pr-2 text-left font-normal whitespace-nowrap"><span className="block truncate" title={r.name}>{r.name}</span></th>;
                 if (r.kind === "unregistered") {
-                  return <tr key={r.accountId} className="border-b border-border/40">{name}<td className={TD}>{money(r.openingMinor)}</td><td colSpan={6} className={`pr-2 text-left ${WARNING}`}>Not in the Asset Registry · Needs review</td><td className={`${TD} font-medium`}>{money(r.closingMinor)}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td></tr>;
+                  return <tr key={r.accountId} className="border-b border-border/40">{name}<td className={TD}>{money(r.openingMinor)}</td><td colSpan={5} className={`pr-2 text-left ${WARNING}`}>Not in the Asset Registry · Needs review</td><td className={`${TD} font-medium`}>{money(r.closingMinor)}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td></tr>;
                 }
                 if (r.state === "unavailable") {
-                  return <tr key={r.assetId} className="border-b border-border/40">{name}<td className={TD}>{money(r.openingMinor)}</td><td colSpan={6} className={`pr-2 text-left ${WARNING}`} title={r.reason}>Needs review · {r.reason}</td><td className={`${TD} font-medium`}>{money(r.closingMinor)}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td></tr>;
+                  return <tr key={r.assetId} className="border-b border-border/40">{name}<td className={TD}>{money(r.openingMinor)}</td><td colSpan={5} className={`pr-2 text-left ${WARNING}`} title={r.reason}>Needs review · {r.reason}</td><td className={`${TD} font-medium`}>{money(r.closingMinor)}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td></tr>;
                 }
                 const b = r.bridge, e = r.equity.end;
                 const equityCell = !r.linked ? <span className="text-muted-foreground">Not linked</span> : e.equityMinor === null ? <span className={WARNING} title={e.gaps.join(". ")}>Unavailable</span>
@@ -319,20 +319,23 @@ function WealthOverview({ data, scope }: { data: Ready; scope: [string, string][
   const shown = labels.map((l, i) => (i === partial ? todayLabel : l));
   // Months in which money was borrowed: assets and debts rise together, which is not an increase in wealth.
   const borrowed = data.monthly.flatMap((m, i) => (m.borrowed > 0 ? [{ index: i, amount: m.borrowed }] : []));
-  const owned = composition.months.map((m) => ASSET_CLASSES.reduce((a, k) => a + m[k], 0));
+  // A month before the budget has data is unavailable, never a balance of zero.
+  const known = (i: number) => composition.hasData[i];
+  const netWorth = composition.netWorth.map((v, i) => (known(i) ? v : null));
+  const owned = composition.months.map((m, i) => (known(i) ? ASSET_CLASSES.reduce((a, k) => a + m[k], 0) : null));
   // What is owed is drawn as a positive amount, as on the Summary tiles.
-  const owed = composition.months.map((m) => 0 - LIABILITY_CLASSES.reduce((a, k) => a + m[k], 0));
+  const owed = composition.months.map((m, i) => (known(i) ? 0 - LIABILITY_CLASSES.reduce((a, k) => a + m[k], 0) : null));
   const series = [
-    { key: "net", label: "Net worth", colour: "var(--fi-networth)", values: composition.netWorth as (number | null)[], primary: true },
-    { key: "owned", label: "Everything owned", colour: "var(--fi-invest)", values: owned as (number | null)[] },
-    { key: "owed", label: "Debts", colour: "var(--fi-loan)", values: owed as (number | null)[] },
+    { key: "net", label: "Net worth", colour: "var(--fi-networth)", values: netWorth, primary: true },
+    { key: "owned", label: "Everything owned", colour: "var(--fi-invest)", values: owned },
+    { key: "owed", label: "Debts", colour: "var(--fi-loan)", values: owed },
   ];
   const tip = (i: number) => monthTip({
     title: shown[i], partial: false, partialNote: "",
     rows: [...series.map((s) => ({ colour: s.colour, name: s.label, value: money(s.values[i]) })), ...(data.monthly[i]?.borrowed ? [{ name: "◆ Borrowed that month", value: money(data.monthly[i].borrowed) }] : [])],
-    compare: { values: composition.netWorth, index: i, label: "net worth" },
+    compare: { values: netWorth, index: i, label: "net worth" },
   });
-  const table = { head: ["Month", "Net worth", "Everything owned", "Debts"], rows: shown.map((l, i) => [l, composition.netWorth[i], owned[i], owed[i]]) };
+  const table = { head: ["Month", "Net worth", "Everything owned", "Debts"], rows: shown.map((l, i) => [l, netWorth[i], owned[i], owed[i]]) };
 
   const end = classBalances(summary.closing);
   const classes = ASSET_CLASSES.filter((k) => end[k] !== 0);

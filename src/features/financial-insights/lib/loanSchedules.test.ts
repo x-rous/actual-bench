@@ -5,7 +5,7 @@ import { sim } from "@/features/assets-debt/lib/simulatorTestKit";
 import { simulationToModel } from "@/features/assets-debt/lib/simulatorModel";
 import { summarizeLoanEvents } from "@/lib/assets-debt/services/loanSummaryEvents";
 import { trackedLoanEvents, type TrackedLoan } from "@/features/assets-debt/lib/trackedLoan";
-import { monthlyRepayment, recordedCostRowIds, scheduleFromLoan } from "./loanSchedules";
+import { monthlyRepayment, recordedCostRowIds, recordedCostRows, scheduleFromLoan } from "./loanSchedules";
 
 /**
  * Against the real Loans engine: a 48-month loan tracked in Actual, 36 installments paid, the 36th a day before it falls
@@ -153,5 +153,10 @@ describe("the cost rows of a loan whose lender charges interest as its own trans
 
   it("are the interest charged and fee rows of the loan account, never a transfer or a row Bench posted", () => {
     expect(recordedCostRowIds(plan).sort()).toEqual(["fee-1", "interest-1"]);
+  });
+
+  it("carry no kind, so a charge added to the loan is taken out of spending but is not counted as interest or fees paid", () => {
+    const tags = recordedCostRows(plan, "loan");
+    expect(tags.map((t) => [t.id, t.loanAccountId, t.kind])).toEqual([["interest-1", "loan", undefined], ["fee-1", "loan", undefined]]);
   });
 });

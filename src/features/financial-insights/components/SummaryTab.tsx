@@ -33,6 +33,7 @@ function statusText<T>(status: Status<T>, format: (value: T) => string): { text:
 /** The average monthly spending, with the average of each category group behind it on hover or focus. */
 function SpendingBreakdownTip({ groups, spendingMinor, months }: { groups: Ready["bufferSpending"]; spendingMinor: number; months: number }) {
   if (!groups || groups.groups.length === 0) return <>{money(spendingMinor)}</>;
+  // Each average is rounded to a cent, so the groups can differ from the total by a cent or so each: that is rounding, not a cost.
   const rest = spendingMinor - groups.groups.reduce((a, g) => a + g.avgMinor, 0);
   return (
     <Popover>
@@ -43,7 +44,7 @@ function SpendingBreakdownTip({ groups, spendingMinor, months }: { groups: Ready
         <table className="w-full border-collapse">
           <tbody>
             {groups.groups.map((g) => <tr key={g.name} className="border-b border-border/40"><th scope="row" className="max-w-52 py-1 text-left font-normal"><span className="block truncate" title={g.name}>{g.name}</span></th><td className="text-right tabular-nums">{money(g.avgMinor)}</td></tr>)}
-            {rest !== 0 && <tr className="border-b border-border/40 text-muted-foreground"><th scope="row" className="py-1 text-left font-normal">Loan interest and fees (counted in each loan&apos;s repayment)</th><td className="text-right tabular-nums">{money(rest)}</td></tr>}
+            {rest !== 0 && <tr className="border-b border-border/40 text-muted-foreground"><th scope="row" className="py-1 text-left font-normal">{Math.abs(rest) <= groups.groups.length ? "Rounding" : "Loan interest and fees (counted in each loan\u2019s repayment)"}</th><td className="text-right tabular-nums">{money(rest)}</td></tr>}
             <tr className="font-semibold"><th scope="row" className="py-1.5 text-left">Spending per month</th><td className="text-right tabular-nums">{money(spendingMinor)}</td></tr>
           </tbody>
         </table>
@@ -203,7 +204,7 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
     const step = netWorthChange.steps.find((s) => s.key === key);
     return step?.drill ? (step.drill === "inTransit" ? { kind: "inTransit", cashOnly: false } : { kind: step.drill }) : null;
   };
-  const compTable = { head: ["Month", ...ASSET_CLASSES.map((k) => CLASS_LABEL[k]), ...LIABILITY_CLASSES.map((k) => CLASS_LABEL[k]), "Net worth"], rows: composition.months.map((m, i) => [monthLabel(m.month) + (i === partialIndex ? " (today)" : ""), ...ASSET_CLASSES.map((k) => m[k]), ...LIABILITY_CLASSES.map((k) => m[k]), composition.netWorth[i]]) };
+  const compTable = { head: ["Month", ...ASSET_CLASSES.map((k) => CLASS_LABEL[k]), ...LIABILITY_CLASSES.map((k) => CLASS_LABEL[k]), "Net worth"], rows: composition.months.map((m, i) => [monthLabel(m.month) + (i === partialIndex ? " (today)" : ""), ...ASSET_CLASSES.map((k) => (composition.hasData[i] ? m[k] : null)), ...LIABILITY_CLASSES.map((k) => (composition.hasData[i] ? m[k] : null)), composition.hasData[i] ? composition.netWorth[i] : null]) };
   const legend = [
     ...[...ASSET_CLASSES, ...LIABILITY_CLASSES].map((k) => ({ label: CLASS_LABEL[k], colour: CLASS_COLOUR[k], onToggle: () => toggle(k), off: hidden.has(k) })),
     { label: "Net worth (line)", colour: "var(--fi-networth)", dot: true, onToggle: () => setHideLine((v) => !v), off: hideLine },
@@ -230,7 +231,7 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
           actions={anyHidden ? <Button size="xs" variant="ghost" onClick={() => { setHidden(new Set()); setHideLine(false); }}>Show all</Button> : undefined}
           footnote={[partialIndex !== null ? "The last bar is the balance today (a valid current balance, not a partial total)." : "", hidden.size > 0 ? "Hidden classes are left out of the bars only; the net worth line still includes them." : ""].filter(Boolean).join(" ") || undefined}
         >
-          <CompositionChart labels={labels} partialIndex={partialIndex} months={composition.months} netWorth={composition.netWorth} hidden={hidden} showNetWorth={!hideLine} />
+          <CompositionChart labels={labels} partialIndex={partialIndex} months={composition.months} netWorth={composition.netWorth} hasData={composition.hasData} hidden={hidden} showNetWorth={!hideLine} />
         </ChartFrame>
         <CashBuffer buffer={buffer} groups={bufferSpending} today={today} />
       </div>
