@@ -49,6 +49,8 @@ export function useTrackingWorkspace(maybeDetail: DebtDetail | undefined, tracki
   async function afterChange() {
     await tracking.reloadBundle();
     void queryClient.invalidateQueries({ queryKey: ["assets-debt", "debts"] });
+    // The Loans list sums a tracked loan up from what was read; a payment just recorded must not wait for that to go stale.
+    void queryClient.invalidateQueries({ queryKey: ["assets-debt", "card-schedule"] });
   }
 
   async function apply(proposals: Proposal[]) {

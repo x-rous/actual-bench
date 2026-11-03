@@ -33,8 +33,10 @@ export function useAccountReporting() {
   const mutation = useMutation({
     // The budget travels with the save so the result lands in the cache of the budget it was saved for.
     mutationFn: ({ budget, changes }: { budget: string; changes: AccountReportingChange[] }) => saveAccountReporting(budget, changes),
-    onSuccess: (records, { budget }) => {
-      queryClient.setQueryData<AccountReportingRecord[]>(["accountReporting", budget], records);
+    // Each response is the whole list as of that save, and overlapping saves can answer out of order, so no response is written to
+    // the cache: once a save settles the list is read again, and what that read returns is the truth.
+    onSettled: (_records, _error, { budget }) => {
+      void queryClient.invalidateQueries({ queryKey: ["accountReporting", budget] });
     },
     onError: (error: Error) => toast.error(error.message),
   });

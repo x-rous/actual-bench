@@ -43,7 +43,8 @@ async function payees(transport: ActualBenchTransport, refresh = false): Promise
 export function ruleAccounts(rules: readonly { conditions: readonly RuleCondition[] }[], openAccountIds: readonly string[], loanAccountId: string): string[] {
   if (!rules.length) return [];
   const named = rules.map((r) => r.conditions.filter((c) => c.field === "account" && c.operator === "equals").map((c) => c.value));
-  const accounts = named.some((ids) => ids.length === 0) ? openAccountIds : named.flat();
+  // A rule that names no account looks in every open account; the accounts other rules name are kept as well, open or not.
+  const accounts = named.some((ids) => ids.length === 0) ? [...openAccountIds, ...named.flat()] : named.flat();
   return [...new Set(accounts)].filter((id) => id !== loanAccountId);
 }
 

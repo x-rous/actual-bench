@@ -215,7 +215,7 @@ export function LoansSummary({ debts }: { debts: DebtSummary[] }) {
         wrap
       />
       <Figure label="Principal Repaid" value={summaryMoney(principalValueUnavailable, total.principalRepaid, total.digits)} detail={active.length ? "Opening principal less current balance" : "No active loans"} smallDecimals wrap />
-      <Figure label="Interest to Date" value={summaryMoney(scheduleUnavailable, total.interestToDate, total.digits)} detail={active.length ? "Recorded payments for tracked loans, otherwise calculated from schedules" : "No active loans"} smallDecimals wrap />
+      <Figure label="Interest to Date" value={summaryMoney(scheduleUnavailable, total.interestToDate, total.digits)} detail={active.length ? "Recorded payments for tracked loans when they can be read, otherwise calculated from schedules" : "No active loans"} smallDecimals wrap />
       <Figure label="Interest Next 12 Months" value={summaryMoney(scheduleUnavailable, total.interestNext12Months, total.digits)} detail={active.length ? "Projected from current loan schedules" : "No active loans"} smallDecimals wrap />
     </dl>
   );

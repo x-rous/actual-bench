@@ -38,12 +38,18 @@ export function monthlyRepayment(events: readonly { eventType: string; date: str
   return { monthlyMinor: Math.round(total / months.size), payments: due.length, totalMinor: total };
 }
 
-/** The interest and fee lines of the installments already recorded in Actual. */
+/**
+ * The interest and fee lines of the installments already recorded in Actual, and, for a loan whose lender charges interest as its
+ * own transaction, the rows of the loan account classified as interest charged or as a fee: the scheduled repayment already
+ * includes them, so they must not stay in spending as well. Transfers are never cost rows.
+ */
 export function recordedCostRowIds(plan: TrackedLoan["plan"]): string[] {
-  return plan.installments.flatMap((installment) => {
+  const fromSplits = plan.installments.flatMap((installment) => {
     const split = installment.payment?.split;
     return split ? [...(split.interestLineId ? [split.interestLineId] : []), ...split.feeLineIds] : [];
   });
+  const charged = plan.ledger.filter((l) => !l.row.transferId && !l.benchMade && (l.type === "interest-charged" || l.type === "fee")).map((l) => l.row.id);
+  return [...new Set([...fromSplits, ...charged])];
 }
 
 /**

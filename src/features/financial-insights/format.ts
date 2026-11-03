@@ -15,7 +15,8 @@ export function compactMoney(minor: number): string {
   const sign = minor < 0 ? "-" : "";
   if (major >= 1_000_000) return `${sign}${(major / 1_000_000).toFixed(major >= 10_000_000 ? 0 : 1)}m`;
   if (major >= 1_000) return `${sign}${(major / 1_000).toFixed(major >= 10_000 ? 0 : 1)}k`;
-  return `${sign}${Math.round(major)}`;
+  // Below a thousand the axis can be a few cents wide: keep the decimals it needs (0.2, 0.4) so the ticks stay apart.
+  return `${sign}${Number(major.toFixed(2))}`;
 }
 
 export const percent = (value: number): string => `${value.toFixed(1)}%`;

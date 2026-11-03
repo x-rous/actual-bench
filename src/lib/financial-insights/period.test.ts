@@ -37,4 +37,16 @@ describe("reporting period", () => {
     expect(lastCompleteMonths(today, "2026-09")).toEqual(["2026-09", "2026-10"]);
     expect(addMonths("2026-01", -1)).toBe("2025-12");
   });
+
+  it("never holds more months than a chart can, and says the range it really uses", () => {
+    const long = resolvePeriod({ kind: "custom", startMonth: "1800-01", endMonth: "2026-10" }, today, "1800-01");
+    expect(long.months).toHaveLength(2400);
+    expect(long.months[long.months.length - 1]).toBe(long.endMonth);
+    expect(long.startMonth).toBe("1826-11");
+    expect(long.startDate).toBe("1826-11-01");
+    expect(long.label).toBe("Nov 1826 – Oct 2026");
+    const all = resolvePeriod({ kind: "preset", id: "all" }, today, "1700-01");
+    expect(all.months).toHaveLength(2400);
+    expect(all.months[all.months.length - 1]).toBe(all.endMonth);
+  });
 });

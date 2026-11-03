@@ -42,9 +42,12 @@ export function addMonths(month: string, count: number): string {
   return `${String(Math.floor(index / 12)).padStart(4, "0")}-${String((index % 12) + 1).padStart(2, "0")}`;
 }
 
+/** The most months a period can hold. */
+export const MAX_PERIOD_MONTHS = 2400;
+
 export function monthsBetween(start: string, end: string): string[] {
   const months: string[] = [];
-  for (let month = start; month <= end && months.length < 2400; month = addMonths(month, 1)) months.push(month);
+  for (let month = start; month <= end && months.length < MAX_PERIOD_MONTHS; month = addMonths(month, 1)) months.push(month);
   return months;
 }
 
@@ -71,7 +74,7 @@ export function resolvePeriod(choice: PeriodChoice, today: string, firstMonth: s
   if (choice.kind === "custom") {
     endMonth = choice.endMonth > current ? current : choice.endMonth;
     startMonth = choice.startMonth > endMonth ? endMonth : choice.startMonth;
-    label = startMonth === endMonth ? monthLabel(startMonth) : `${monthLabel(startMonth)} – ${monthLabel(endMonth)}`;
+    label = "";
   } else {
     label = PERIOD_PRESETS.find((p) => p.id === choice.id)?.label ?? "";
     switch (choice.id) {
@@ -84,6 +87,10 @@ export function resolvePeriod(choice: PeriodChoice, today: string, firstMonth: s
       default: startMonth = firstMonth && firstMonth < current ? firstMonth : current; endMonth = current; break;
     }
   }
+  // However it was chosen, a period is never longer than the months a chart can hold, so what is drawn ends where the dates beside it do.
+  const earliest = addMonths(endMonth, -(MAX_PERIOD_MONTHS - 1));
+  if (startMonth < earliest) startMonth = earliest;
+  if (choice.kind === "custom") label = startMonth === endMonth ? monthLabel(startMonth) : `${monthLabel(startMonth)} – ${monthLabel(endMonth)}`;
   const partial = endMonth === current;
   return {
     startMonth, endMonth, months: monthsBetween(startMonth, endMonth),

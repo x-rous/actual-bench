@@ -141,3 +141,17 @@ describe("the monthly amount of a repayment schedule", () => {
     expect(monthlyRepayment(events, "2027-11-01").monthlyMinor).toBe(100_000);
   });
 });
+
+describe("the cost rows of a loan whose lender charges interest as its own transaction", () => {
+  const plan = { installments: [], ledger: [
+    { row: { id: "interest-1", transferId: null }, type: "interest-charged", benchMade: false },
+    { row: { id: "fee-1", transferId: null }, type: "fee", benchMade: false },
+    { row: { id: "draw-1", transferId: "other" }, type: "interest-charged", benchMade: false },
+    { row: { id: "posted", transferId: null }, type: "interest-charged", benchMade: true },
+    { row: { id: "payment", transferId: null }, type: "principal-repayment", benchMade: false },
+  ] } as never;
+
+  it("are the interest charged and fee rows of the loan account, never a transfer or a row Bench posted", () => {
+    expect(recordedCostRowIds(plan).sort()).toEqual(["fee-1", "interest-1"]);
+  });
+});

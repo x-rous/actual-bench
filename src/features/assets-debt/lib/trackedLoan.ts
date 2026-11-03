@@ -74,10 +74,11 @@ export async function readTrackedLoan(connection: ConnectionInstance, detail: De
     const offsets = detail.offsets.filter((o) => o.useActualBalance === true);
     let histories: OffsetHistorySnapshot[] | undefined;
     if (offsets.length > 0) {
-      const history = await readOffsetHistories(transport, { accountIds: offsets.map((o) => o.actualAccountId), asOfDate: today });
+      const history = await readOffsetHistories(transport, { accountIds: [...new Set(offsets.map((o) => o.actualAccountId))], asOfDate: today });
       if (!history.ok) return unavailable(history.failures.map((f) => f.message).join(" "));
-      const placeholder = new Map(offsets.map((o) => [o.actualAccountId, `offset:${o.id}`]));
-      histories = history.snapshots.map((snapshot) => ({ ...snapshot, accountId: placeholder.get(snapshot.accountId) ?? snapshot.accountId }));
+      // Two links may use the same Actual account: each gets its own copy of that account's history under its own placeholder.
+      const byAccount = new Map(history.snapshots.map((snapshot) => [snapshot.accountId, snapshot]));
+      histories = offsets.flatMap((o) => { const snapshot = byAccount.get(o.actualAccountId); return snapshot ? [{ ...snapshot, accountId: `offset:${o.id}` }] : []; });
     }
     return { state: "ready", loan: { debt, simulation: states.simulation, plan, histories, agrees: trackingAgrees(plan, debt.toleranceMinor) } };
   } catch (error) {

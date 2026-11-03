@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useMemo, useCallback } from "react";
+import { Fragment, useState, useMemo, useCallback, useEffect } from "react";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useRouter } from "next/navigation";
 import { useHighlight } from "@/hooks/useHighlight";
@@ -199,6 +199,13 @@ export function AccountsTable({
   // The attention list only means something once the saved choices have loaded, and it ends on its own
   // when the last account is done, rather than leaving an empty table behind.
   const activeReportingFilter: ReportingFilter = classesEnabled && accountReporting.available && needsChoiceIds.size > 0 ? reportingFilter : "all";
+  // The stored filter ends with the list too: otherwise an account that needs a choice later would silently bring the filter back.
+  const listEnded = classesEnabled && accountReporting.available && needsChoiceIds.size === 0;
+  useEffect(() => {
+    if (listEnded && reportingFilter !== "all") setFilters((f) => ({ ...f, reportingFilter: "all" }));
+  }, [listEnded, reportingFilter, setFilters]);
+  // Closed accounts with no transactions and a zero balance need no choice: the row must not ask for one.
+  const exemptIds = useMemo(() => new Set(closedSavedIds.filter((id) => { const activity = closedActivity.data?.get(id); return !!activity && activity.count === 0 && activity.balanceMinor === 0; })), [closedSavedIds, closedActivity.data]);
 
   // ── Account balances ─────────────────────────────────────────────────────────
   const { data: balances } = useAccountBalances();
@@ -675,6 +682,7 @@ export function AccountsTable({
         onSetClass={handleSetClass}
         savedReporting={accountReporting.byAccount.get(entity.id)}
         canSetReporting={accountReporting.available}
+        reportingExempt={exemptIds.has(entity.id)}
         onSetReporting={handleSetReporting}
         onToggleSelect={toggleSelectRow}
         onSelectNameCell={handleSelectNameCell}
@@ -726,6 +734,12 @@ export function AccountsTable({
           onDeselect={() => clearSelection()}
         />
 
+        {classesEnabled && accountReporting.failed && (
+          <div role="alert" className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-50 px-4 py-1.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+            <span>Financial Reporting choices could not be loaded, so they cannot be changed or checked here.</span>
+            <button type="button" className="rounded border border-amber-600/50 px-2 py-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40" onClick={() => void accountReporting.refetch()}>Retry</button>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">

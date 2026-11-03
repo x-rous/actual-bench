@@ -83,7 +83,8 @@ export async function readLinkedSales(connection: ConnectionInstance, transactio
   const response = await runQuery<Response<LinkedResult>>(connection, {
     ActualQLquery: {
       table: "transactions",
-      filter: { $and: [{ id: { $oneof: [...transactionIds] } }, upToToday(today)] },
+      // A row Actual has since turned into a transfer is in transit, not a sale: it is left out here so it is not taken out twice.
+      filter: { $and: [{ id: { $oneof: [...transactionIds] } }, upToToday(today), { "payee.transfer_acct": null }] },
       select: ["id", "date", "amount", "account", "category"],
     },
   });

@@ -22,7 +22,7 @@ jest.mock("../hooks/useAccountGroups", () => ({ useAccountGroups: () => ({ suppo
 jest.mock("../hooks/useClosedAccountActivity", () => ({ useClosedAccountActivity: () => ({ data: new Map() }) }));
 jest.mock("@/hooks/useAllNotes", () => ({ useAllNotes: () => ({ data: undefined }) }));
 
-function fakeServer() {
+function fakeServer(options: { failReporting?: boolean } = {}) {
   const reporting = new Map<string, AccountReportingRecord>();
   global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     if (String(url).startsWith("/api/account-classes")) {
@@ -37,6 +37,7 @@ function fakeServer() {
         else reporting.delete(c.accountId);
       }
     }
+    if (options.failReporting) return { ok: false, json: async () => ({}) };
     return { ok: true, json: async () => ({ accountReporting: [...reporting.values()] }) };
   }) as unknown as typeof fetch;
 }
@@ -71,5 +72,35 @@ describe("accounts table Financial Reporting", () => {
     await chooseSelectOption(select, "Current investment");
     await waitFor(() => expect(screen.queryByText(/needing a reporting choice/)).not.toBeInTheDocument());
     expect(screen.getByRole("combobox", { name: "Financial Reporting of Brokerage" })).toHaveTextContent("Current investment");
+  });
+
+  it("forgets the needs-a-choice filter once the list is empty, so a later account does not bring it back unasked", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} />
+      </QueryClientProvider>
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "1 needs a reporting choice" }));
+    await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").toContain("needs-choice"));
+    await chooseSelectOption(screen.getByRole("combobox", { name: "Financial Reporting of Brokerage (choice needed)" }), "Current investment");
+    await waitFor(() => expect(screen.queryByText(/needing a reporting choice/)).not.toBeInTheDocument());
+    await waitFor(() => expect(sessionStorage.getItem("filters:accounts") ?? "").not.toContain("needs-choice"));
+  });
+
+  it("says when the choices could not be loaded, does not flag a choice as missing, and retries", async () => {
+    fakeServer({ failReporting: true });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AccountsTable onCreateRule={jest.fn()} onDeleteIntentChange={jest.fn()} onInspectIdChange={jest.fn()} />
+      </QueryClientProvider>
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Financial Reporting choices could not be loaded");
+    expect(screen.queryByRole("combobox", { name: /choice needed/ })).not.toBeInTheDocument();
+    fakeServer();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(await screen.findByRole("combobox", { name: /Brokerage \(choice needed\)/ })).toBeInTheDocument();
   });
 });

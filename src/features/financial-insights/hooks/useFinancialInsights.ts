@@ -89,7 +89,8 @@ export function useFinancialInsightsGate(): Gate {
         },
       };
     }
-    if (!accounts || groupsQuery.data === undefined || !activity.data || !classes.available || !reporting.available) return { state: "loading" };
+    // The accounts are checked again every time the page opens: until that check is back, what was cached is not shown as the truth.
+    if (!accounts || !accountsQuery.isFetchedAfterMount || groupsQuery.data === undefined || !activity.data || !classes.available || !reporting.available) return { state: "loading" };
 
     const liveGroups = new Set((groupsQuery.data ?? []).map((g) => g.id));
     const classOf = new Map<string, AccountClass | null>(
@@ -143,7 +144,7 @@ export type FinancialInsightsView = {
   data:
     | { state: "loading" }
     | { state: "error"; retry: () => void }
-    | { state: "ready"; summary: ReturnType<typeof summarize>; buffer: ReturnType<typeof cashBuffer>; review: ReviewEntry[]; firstMonth: string | null; readAt: string; refreshing: boolean };
+    | { state: "ready"; summary: ReturnType<typeof summarize>; buffer: ReturnType<typeof cashBuffer>; review: ReviewEntry[]; firstMonth: string | null; readAt: string; refreshing: boolean; /** The latest read failed: the figures are from an earlier one. */ refreshFailed: boolean };
   refresh: () => void;
 };
 
@@ -160,7 +161,7 @@ export function useFinancialInsights(): FinancialInsightsView {
   // One read per budget and day, shared by every tab. It re-reads whenever the page opens and whenever the toolbar's
   // Refresh invalidates the caches; a new period, tab or chart mode never refetches.
   const query = useQuery({
-    queryKey: ["financial-insights", "data", connection?.id, connection?.budgetSyncId, today, [...loanIds].sort().join(",")],
+    queryKey: ["financial-insights", "data", connection?.id, connection?.budgetSyncId, today, [...loanIds].sort().join(","), (excluded ?? []).map((a) => a.id).sort().join(",")],
     enabled: !!connection?.budgetSyncId && gate.state === "ready",
     refetchOnMount: "always",
     queryFn: async (): Promise<RawData> => {
@@ -188,6 +189,9 @@ export function useFinancialInsights(): FinancialInsightsView {
       const linkedSales = await readLinkedSales(connection, linkedIds, today);
 
       // Only the accounts registered as assets are read: they are the only ones the registry can classify.
+      // An account left out of Financial Insights affects no figure here, so it is neither counted against the row limit nor read.
+      const leftOut = new Set((excluded ?? []).map((a) => a.id));
+      registered = registered.filter((id) => !leftOut.has(id));
       let count = 0;
       const registeredSet = new Set(registered);
       for (const row of movement) if (registeredSet.has(row.accountId) && !row.transferAccountId) count += row.count;
@@ -220,7 +224,8 @@ export function useFinancialInsights(): FinancialInsightsView {
     let review: ReviewEntry[] = [];
     let assetReview: AssetReview;
     const hasAssetAccounts = (accounts ?? []).some((a) => ["property", "vehicle", "other-asset", "investment", "retirement"].includes(a.accountClass));
-    if (!raw.registryRead && hasAssetAccounts) assetReview = { unavailableReason: "The Asset Registry could not be read, so asset entries cannot be classified", rowCount: 0 };
+    // A sale linked to an asset is taken out of income and spending whatever the class of its account, so an account left out matters too.
+    if (!raw.registryRead && (hasAssetAccounts || gate.excluded.length > 0)) assetReview = { unavailableReason: "The Asset Registry could not be read, so asset entries and linked sales cannot be classified", rowCount: 0 };
     else if (raw.assetEntries === null) assetReview = { unavailableReason: `The registered asset accounts hold ${raw.assetRowCount.toLocaleString()} entries, more than can be read to classify them`, rowCount: 0 };
     else {
       review = reviewAssetEntries(raw.assetEntries, raw.savedClassifications, resolved);
@@ -229,7 +234,7 @@ export function useFinancialInsights(): FinancialInsightsView {
     const schedules = new Map<string, LoanScheduleInput>(raw.loans.schedules.map((l) => [l.accountId, l.state === "ready" ? { state: "ready", monthlyMinor: l.monthlyMinor } : { state: "unavailable", reason: l.reason }]));
     return {
       state: "ready", summary: summarize(ledger, resolved, assetReview), buffer: cashBuffer(ledger, today, schedules),
-      review, firstMonth: ledger.firstMonth, readAt: raw.readAt, refreshing: query.isFetching,
+      review, firstMonth: ledger.firstMonth, readAt: raw.readAt, refreshing: query.isFetching, refreshFailed: query.isError,
     };
   }, [gate, query, raw, ledger, period, today]);
 
@@ -244,6 +249,9 @@ export function useFinancialInsights(): FinancialInsightsView {
         queryClient.invalidateQueries({ queryKey: ["accounts", connection?.id] }),
         queryClient.invalidateQueries({ queryKey: ["accountGroups", connection?.id] }),
         queryClient.invalidateQueries({ queryKey: ["accountActivity"] }),
+        // Saved in another tab since: the setup screen must not keep an answer that has changed.
+        queryClient.invalidateQueries({ queryKey: ["accountClasses", connection?.budgetSyncId] }),
+        queryClient.invalidateQueries({ queryKey: ["accountReporting", connection?.budgetSyncId] }),
       ]),
       onSyncFailed: () => toast.warning("Could not reach the server. Showing the data already loaded."),
     }),

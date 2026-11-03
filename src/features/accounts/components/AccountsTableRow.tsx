@@ -55,6 +55,8 @@ type AccountsTableRowProps = {
   savedReporting?: ReportingTreatment;
   /** False until the saved choices have loaded. */
   canSetReporting: boolean;
+  /** A closed account with no activity needs no Financial Reporting choice. */
+  reportingExempt?: boolean;
   onSetReporting: (accountId: string, treatment: ReportingTreatment | null) => void;
   onToggleSelect: (id: string, checked: boolean) => void;
   onSelectNameCell: (id: string) => void;
@@ -139,6 +141,7 @@ function AccountsTableRowComponent({
   onSetClass,
   savedReporting,
   canSetReporting,
+  reportingExempt = false,
   onSetReporting,
   onToggleSelect,
   onSelectNameCell,
@@ -292,6 +295,8 @@ function AccountsTableRowComponent({
             saved={savedReporting}
             unsaved={isNew}
             disabled={isDeleted || !canSetReporting}
+            choicesLoaded={canSetReporting}
+            exempt={reportingExempt}
             onChange={onSetReporting}
           />
         </td>
@@ -464,6 +469,7 @@ function areEqual(prev: AccountsTableRowProps, next: AccountsTableRowProps) {
     prev.onSetClass === next.onSetClass &&
     prev.savedReporting === next.savedReporting &&
     prev.canSetReporting === next.canSetReporting &&
+    prev.reportingExempt === next.reportingExempt &&
     prev.onSetReporting === next.onSetReporting &&
     prev.isAnotherCellEditing === next.isAnotherCellEditing
   );

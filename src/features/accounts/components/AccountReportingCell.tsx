@@ -23,6 +23,8 @@ export const AccountReportingCell = React.memo(function AccountReportingCell({
   saved,
   unsaved,
   disabled,
+  choicesLoaded = true,
+  exempt = false,
   onChange,
 }: {
   accountId: string;
@@ -32,6 +34,10 @@ export const AccountReportingCell = React.memo(function AccountReportingCell({
   /** The account has not been saved to Actual yet, so it has no permanent id to attach a choice to. */
   unsaved: boolean;
   disabled: boolean;
+  /** The saved choices have loaded: until then a missing choice is not known, so it is not flagged. */
+  choicesLoaded?: boolean;
+  /** A closed account with no activity: nothing to choose, so no warning. */
+  exempt?: boolean;
   onChange: (accountId: string, treatment: ReportingTreatment | null) => void;
 }) {
   const requirement = accountClass ? reportingRequirement(accountClass) : null;
@@ -56,7 +62,7 @@ export const AccountReportingCell = React.memo(function AccountReportingCell({
   }
 
   const value = validSavedTreatment(accountClass, saved);
-  const missing = requirement.kind === "required" && !value;
+  const missing = requirement.kind === "required" && !value && choicesLoaded && !exempt;
   return (
     <span className="flex items-center gap-1">
       {missing && <AlertTriangle className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />}

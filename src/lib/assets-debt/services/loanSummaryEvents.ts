@@ -23,6 +23,16 @@ export type LoanSummary = {
   dueSoonCount: number;
 };
 
+/** The date the balance last reached zero, only when it ends at zero: a loan drawn on again after reaching zero is not paid off. */
+function lastPayoff(events: readonly DebtProjectionEvent[]): string | null {
+  if (events.length === 0 || events[events.length - 1].balanceAfterMinor !== 0) return null;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.balanceBeforeMinor > 0 && event.balanceAfterMinor === 0 && event.eventType !== "interest-charge") return event.date;
+  }
+  return null;
+}
+
 const isRepayment = (event: DebtProjectionEvent) => event.eventType === "repayment" || event.eventType === "final-payment";
 
 export function summarizeLoanEvents(
@@ -50,7 +60,7 @@ export function summarizeLoanEvents(
     interestNext12MonthsMinor: interestNext12Months,
     totalInterestMinor: interest + forecastInterest,
     calculatedBalanceMinor: paidOff ? 0 : events.filter((event) => event.date <= today).at(-1)?.balanceAfterMinor ?? input.startingPrincipalMinor,
-    payoffDate: paidOff ?? events.find((event) => event.balanceBeforeMinor > 0 && event.balanceAfterMinor === 0 && event.eventType !== "interest-charge")?.date ?? null,
+    payoffDate: paidOff ?? lastPayoff(events),
     regularRepaymentMinor: payments[0] ? -payments[0].cashMovementMinor : null,
     dueSoonMinor: due.reduce((sum, event) => sum - event.cashMovementMinor, 0),
     dueSoonCount: due.length,

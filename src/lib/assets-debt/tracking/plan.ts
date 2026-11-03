@@ -219,7 +219,7 @@ function readSplit(parent: SyncSourceTransaction, loanRowIds: ReadonlySet<string
   const interest = interestLine ? Math.abs(interestLine.amount) : 0;
   const feeLines = others.filter((l) => l !== interestLine);
   const fees = feeLines.reduce((sum, l) => sum + Math.abs(l.amount), 0);
-  return { principalMinor: Math.abs(transfers[0].amount), interestMinor: interest, feesMinor: fees, principalLineId: transfers[0].id, interestLineId: interestLine?.id ?? null, feeLineIds: feeLines.flatMap((l) => (l.id ? [l.id] : [])) };
+  return { principalMinor: Math.abs(transfers[0].amount), interestMinor: interest, feesMinor: fees, principalLineId: transfers[0].id, interestLineId: interestLine?.id ?? null, feeLineIds: feeLines.flatMap((l) => (l.id && !l.transferId ? [l.id] : [])) };
 }
 
 /** Every payment that may be the loan's, from the tracking window on. */

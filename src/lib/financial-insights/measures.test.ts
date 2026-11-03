@@ -325,3 +325,18 @@ describe("financial insights: cash buffer", () => {
     expect(result.state === "ready" && result.value.cashMinor).toBe(1_000_000 - 600_000 - 400_000);
   });
 });
+
+describe("where a budget's data begins", () => {
+  it("counts a starting balance, so a budget with only those still has balances to show", () => {
+    const ledger = buildLedger(facts([], { startingBalances: [{ month: "2026-03", accountId: "chk", amountMinor: 50_000 }] }));
+    expect(ledger.firstMonth).toBe("2026-03");
+    expect(ledger.balanceAt("chk", "2026-05")).toBe(50_000);
+  });
+
+  it("begins at the earlier of the first movement and the first starting balance", () => {
+    const earlierBalance = buildLedger(facts([row("2026-06", "chk", 1_000)], { startingBalances: [{ month: "2026-02", accountId: "chk", amountMinor: 5_000 }] }));
+    expect(earlierBalance.firstMonth).toBe("2026-02");
+    const earlierMovement = buildLedger(facts([row("2026-01", "chk", 1_000)], { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 5_000 }] }));
+    expect(earlierMovement.firstMonth).toBe("2026-01");
+  });
+});

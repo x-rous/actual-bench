@@ -47,4 +47,17 @@ describe("account reporting cell", () => {
     await chooseSelectOption(screen.getByRole("combobox", { name: "Financial Reporting of Brokerage" }), "Cash & cash equivalents");
     expect(onChange).toHaveBeenLastCalledWith("a1", null);
   });
+
+  it("does not warn for a closed account with no activity, which needs no choice", () => {
+    render(<AccountReportingCell {...base} accountClass="investment" exempt />);
+    expect(screen.queryByRole("combobox", { name: /choice needed/ })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Financial Reporting of Brokerage" })).toBeInTheDocument();
+  });
+
+  it("does not call a choice missing before the saved choices have loaded", () => {
+    const { rerender } = render(<AccountReportingCell {...base} accountClass="investment" choicesLoaded={false} disabled />);
+    expect(screen.queryByRole("combobox", { name: /choice needed/ })).toBeNull();
+    rerender(<AccountReportingCell {...base} accountClass="investment" choicesLoaded />);
+    expect(screen.getByRole("combobox", { name: /choice needed/ })).toBeInTheDocument();
+  });
 });

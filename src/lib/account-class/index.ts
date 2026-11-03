@@ -61,7 +61,7 @@ export function accountClassRequiresOffBudget(accountClass: AccountClass | null 
     || accountClass === "investment" || accountClass === "retirement" || accountClass === "loan" || accountClass === "excluded";
 }
 
-/** Clearing a class is always allowed; the other five classes support either placement. */
+/** Clearing a class is always allowed; the other five classes (Cash, Bank, Other Asset, Credit Card and Other Liability) support either placement. */
 export function isAccountClassAllowed(accountClass: AccountClass | null | undefined, offBudget: boolean): boolean {
   return offBudget || !accountClassRequiresOffBudget(accountClass);
 }
