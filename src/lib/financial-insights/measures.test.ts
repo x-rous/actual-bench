@@ -339,4 +339,9 @@ describe("where a budget's data begins", () => {
     const earlierMovement = buildLedger(facts([row("2026-01", "chk", 1_000)], { startingBalances: [{ month: "2026-04", accountId: "chk", amountMinor: 5_000 }] }));
     expect(earlierMovement.firstMonth).toBe("2026-01");
   });
+
+  it("is not moved by rows of an account that is left out", () => {
+    const ledger = buildLedger(facts([row("2025-01", "ghost", 1_000), row("2026-04", "chk", 1_000)], { startingBalances: [{ month: "2024-06", accountId: "ghost", amountMinor: 9_000 }] }));
+    expect(ledger.firstMonth).toBe("2026-04");
+  });
 });

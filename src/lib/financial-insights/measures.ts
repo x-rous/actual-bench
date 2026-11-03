@@ -120,15 +120,16 @@ export function buildLedger(facts: FinancialFacts): Ledger {
     byAccount.set(accountId, months);
   };
   let firstMonth: string | null = null;
+  // Only the accounts counted here mark where the data begins: an account left out must not move it.
   for (const row of facts.movement) {
     add(row.accountId, row.month, row.amountMinor);
-    if (!firstMonth || row.month < firstMonth) firstMonth = row.month;
+    if (account.has(row.accountId) && (!firstMonth || row.month < firstMonth)) firstMonth = row.month;
   }
   // A starting balance is data too: a budget with nothing but starting balances still has balances to show, and the first of
   // them marks where "All available" begins.
   for (const row of facts.startingBalances) {
     add(row.accountId, row.month, row.amountMinor);
-    if (!firstMonth || row.month < firstMonth) firstMonth = row.month;
+    if (account.has(row.accountId) && (!firstMonth || row.month < firstMonth)) firstMonth = row.month;
   }
   const sorted = new Map([...byAccount].map(([id, months]) => [id, [...months].sort(([a], [b]) => a.localeCompare(b))]));
   return {

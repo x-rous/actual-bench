@@ -18,3 +18,11 @@ describe("a loan's payoff date", () => {
     expect(run(events).payoffDate).toBeNull();
   });
 });
+
+describe("a paid-off loan's past figures", () => {
+  it("count only what has happened by today, never an event scheduled after it", () => {
+    const events = [event("2026-01-01", 100_000, 50_000), event("2026-05-01", 50_000, 0, "final-payment"), event("2026-08-01", 0, 0, "repayment")];
+    const summary = summarizeLoanEvents(events, { today: "2026-06-15", forecastFrom: "2026-01-01", paidOffOn: "2026-05-01", startingPrincipalMinor: 100_000 });
+    expect(summary.paymentsMade).toBe(2);
+  });
+});

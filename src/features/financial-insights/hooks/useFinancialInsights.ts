@@ -217,15 +217,13 @@ export function useFinancialInsights(): FinancialInsightsView {
   const period = filters.period;
   const data = useMemo((): FinancialInsightsView["data"] => {
     if (gate.state !== "ready") return { state: "loading" };
-    const accounts = gate.accounts;
     if (query.isError && !raw) return { state: "error", retry: () => void query.refetch() };
     if (!raw || !ledger) return { state: "loading" };
     const resolved = resolvePeriod(period, today, ledger.firstMonth);
     let review: ReviewEntry[] = [];
     let assetReview: AssetReview;
-    const hasAssetAccounts = (accounts ?? []).some((a) => ["property", "vehicle", "other-asset", "investment", "retirement"].includes(a.accountClass));
-    // A sale linked to an asset is taken out of income and spending whatever the class of its account, so an account left out matters too.
-    if (!raw.registryRead && (hasAssetAccounts || gate.excluded.length > 0)) assetReview = { unavailableReason: "The Asset Registry could not be read, so asset entries and linked sales cannot be classified", rowCount: 0 };
+    // A sale linked to an asset is taken out of income and spending whatever the class of its account, so no failed read is let through.
+    if (!raw.registryRead) assetReview = { unavailableReason: "The Asset Registry could not be read, so asset entries and linked sales cannot be classified", rowCount: 0 };
     else if (raw.assetEntries === null) assetReview = { unavailableReason: `The registered asset accounts hold ${raw.assetRowCount.toLocaleString()} entries, more than can be read to classify them`, rowCount: 0 };
     else {
       review = reviewAssetEntries(raw.assetEntries, raw.savedClassifications, resolved);

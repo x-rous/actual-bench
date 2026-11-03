@@ -89,8 +89,10 @@ export function resolvePeriod(choice: PeriodChoice, today: string, firstMonth: s
   }
   // However it was chosen, a period is never longer than the months a chart can hold, so what is drawn ends where the dates beside it do.
   const earliest = addMonths(endMonth, -(MAX_PERIOD_MONTHS - 1));
-  if (startMonth < earliest) startMonth = earliest;
-  if (choice.kind === "custom") label = startMonth === endMonth ? monthLabel(startMonth) : `${monthLabel(startMonth)} – ${monthLabel(endMonth)}`;
+  const clamped = startMonth < earliest;
+  if (clamped) startMonth = earliest;
+  // A preset that was cut short says the range it covers, not a name that promises more.
+  if (choice.kind === "custom" || clamped) label = startMonth === endMonth ? monthLabel(startMonth) : `${monthLabel(startMonth)} – ${monthLabel(endMonth)}`;
   const partial = endMonth === current;
   return {
     startMonth, endMonth, months: monthsBetween(startMonth, endMonth),

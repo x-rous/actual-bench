@@ -49,4 +49,10 @@ describe("reporting period", () => {
     expect(all.months).toHaveLength(2400);
     expect(all.months[all.months.length - 1]).toBe(all.endMonth);
   });
+
+  it("names the range when a preset is cut short, instead of keeping a name that promises more", () => {
+    const all = resolvePeriod({ kind: "preset", id: "all" }, today, "1700-01");
+    expect(all.label).toBe("Dec 1826 – Nov 2026");
+    expect(resolvePeriod({ kind: "preset", id: "all" }, today, "2020-03").label).toBe("All available");
+  });
 });

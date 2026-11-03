@@ -43,7 +43,8 @@ export function summarizeLoanEvents(
   const paidOff = input.paidOffOn && input.paidOffOn <= today ? input.paidOffOn : null;
   const remaining = paidOff ? [] : events.filter((event) => event.date > today);
   const payments = remaining.filter(isRepayment);
-  const past = paidOff ? events : events.filter((event) => event.date <= today);
+  // Only what has happened by today: a paid-off loan's events all fall on or before its payoff, so nothing scheduled is counted as made.
+  const past = events.filter((event) => event.date <= today);
   const made = past.filter(isRepayment).length;
   const interest = past.reduce((sum, event) => sum + event.interestMinor, 0);
   const soon = new Date(Date.parse(`${today}T00:00:00Z`) + 30 * 86_400_000).toISOString().slice(0, 10);

@@ -64,6 +64,7 @@ export function useTrackingWorkspace(maybeDetail: DebtDetail | undefined, tracki
       }, proposals, (done, total) => setRun({ done, total }));
       setOutcomes({ list: result.outcomes, clearingProblem: result.clearingProblem });
       await tracking.refresh();
+      void queryClient.invalidateQueries({ queryKey: ["assets-debt", "card-schedule"] });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The changes could not be applied");
     } finally {
