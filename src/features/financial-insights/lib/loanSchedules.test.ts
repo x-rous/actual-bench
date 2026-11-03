@@ -5,7 +5,7 @@ import { sim } from "@/features/assets-debt/lib/simulatorTestKit";
 import { simulationToModel } from "@/features/assets-debt/lib/simulatorModel";
 import { summarizeLoanEvents } from "@/lib/assets-debt/services/loanSummaryEvents";
 import { trackedLoanEvents, type TrackedLoan } from "@/features/assets-debt/lib/trackedLoan";
-import { monthlyRepayment, recordedCostRowIds, recordedCostRows, scheduleFromLoan } from "./loanSchedules";
+import { monthlyRepayment, recordedCostRows, scheduleFromLoan } from "./loanSchedules";
 
 /**
  * Against the real Loans engine: a 48-month loan tracked in Actual, 36 installments paid, the 36th a day before it falls
@@ -73,8 +73,21 @@ describe("a tracked loan's repayments, from the real loan engine", () => {
     // The full cash payment, principal and interest. Nothing caps it: the principal in the whole schedule is exactly what is owed.
     expect(result.totalMinor).toBe(left.reduce((sum, d) => sum + d.scheduledMinor, 0));
     expect(remaining.reduce((sum, d) => sum + d.principalMinor, 0)).toBe(dueOf36.balanceAfterMinor);
-    expect(result.monthlyMinor).toBe(Math.round(result.totalMinor / 11));
-    expect(result.monthlyMinor).toBeGreaterThan(left[0].principalMinor);
+    // Spread over the twelve months of the window, since the loan goes on past it.
+    expect(result.monthlyMinor).toBe(Math.round(result.totalMinor / 12));
+    expect(result.monthlyMinor).toBeGreaterThan(0);
+    // The principal due is the part of those installments that lowers the debt, from the schedule the Loans page composes (it
+    // differs from the contract's by the interest the early payment changed, so it is compared with the page's own rows).
+    const composed = trackedLoanEvents(tracked, today);
+    if (!composed.ok) throw new Error(composed.reason);
+    const pageRows = composed.events.filter((e) => (e.eventType === "repayment" || e.eventType === "final-payment") && e.date > today && e.date <= addMonths(today, 12));
+    expect(pageRows).toHaveLength(11);
+    expect(result.principalNext12Minor).toBe(pageRows.reduce((sum, e) => sum - e.principalMovementMinor, 0));
+    expect(Math.abs(result.principalNext12Minor - left.reduce((sum, d) => sum + d.principalMinor, 0))).toBeLessThan(10_000);
+    expect(result.costNext12Minor).toBe(pageRows.reduce((sum, e) => sum + e.interestMinor + e.feesMinor, 0));
+    expect(result.principalNext12Minor + result.costNext12Minor).toBe(result.totalMinor);
+    expect(result.principalNext12Minor).toBeLessThan(result.totalMinor);
+    expect(result.principalNext12Minor).toBeLessThanOrEqual(dueOf36.balanceAfterMinor);
   });
 
   it("counts the installment while it lasts, not diluted over twelve months, when the loan ends sooner", () => {
@@ -117,27 +130,44 @@ describe("a tracked loan, as the Loans list shows it", () => {
   });
 
   it("identifies a loan's own recorded interest lines, and nothing else", () => {
-    const ids = recordedCostRowIds(tracked.plan);
+    const ids = recordedCostRows(tracked.plan, "loan").map((r) => r.id);
     expect(ids).toHaveLength(36);
     expect(new Set(ids)).toEqual(new Set(Array.from({ length: 36 }, (_, i) => `interest-${i}`)));
   });
 });
 
 describe("the monthly amount of a repayment schedule", () => {
-  const pay = (date: string, amount: number) => ({ eventType: "repayment", date, cashMovementMinor: -amount });
+  const pay = (date: string, amount: number, principal = amount) => ({ eventType: "repayment", date, cashMovementMinor: -amount, principalMovementMinor: -principal, interestMinor: amount - principal, feesMinor: 0 });
 
   it("spreads the cash due over the months in which a payment falls, and follows a payment that changes", () => {
-    const events = [pay("2026-12-01", 100_000), pay("2027-01-01", 100_000), pay("2027-02-01", 130_000), pay("2027-03-01", 130_000), { eventType: "interest-charge", date: "2027-03-01", cashMovementMinor: 0 }];
-    expect(monthlyRepayment(events, "2027-11-01")).toEqual({ monthlyMinor: 115_000, payments: 4, totalMinor: 460_000 });
+    const events = [pay("2026-12-01", 100_000), pay("2027-01-01", 100_000), pay("2027-02-01", 130_000), { ...pay("2027-03-01", 130_000), eventType: "final-payment" }, { eventType: "interest-charge", date: "2027-03-01", cashMovementMinor: 0, principalMovementMinor: 0 }];
+    expect(monthlyRepayment(events, "2027-11-01")).toEqual({ monthlyMinor: 115_000, payments: 4, totalMinor: 460_000, principalNext12Minor: 460_000, costNext12Minor: 0 });
+  });
+
+  it("spreads a quarterly or yearly payment over the months, not as a whole installment every month", () => {
+    const quarterly = [pay("2026-12-01", 300_000), pay("2027-03-01", 300_000), pay("2027-06-01", 300_000), pay("2027-09-01", 300_000)];
+    expect(monthlyRepayment(quarterly, "2027-11-01")).toMatchObject({ monthlyMinor: 100_000, payments: 4, totalMinor: 1_200_000 });
+    expect(monthlyRepayment([pay("2027-05-01", 1_200_000)], "2027-11-01")).toMatchObject({ monthlyMinor: 100_000 });
   });
 
   it("ignores what falls after the window, and is zero for a loan with nothing left to pay", () => {
-    expect(monthlyRepayment([pay("2026-12-01", 100_000), pay("2027-12-01", 100_000)], "2027-11-01")).toMatchObject({ monthlyMinor: 100_000, payments: 1 });
-    expect(monthlyRepayment([], "2027-11-01")).toEqual({ monthlyMinor: 0, payments: 0, totalMinor: 0 });
+    expect(monthlyRepayment([pay("2026-12-01", 100_000), pay("2027-12-01", 100_000)], "2027-11-01")).toMatchObject({ payments: 1 });
+    expect(monthlyRepayment([], "2027-11-01")).toEqual({ monthlyMinor: 0, payments: 0, totalMinor: 0, principalNext12Minor: 0, costNext12Minor: 0 });
+  });
+
+  it("counts an overdue installment the calculation still expects, as the cash buffer does", () => {
+    // Only the end of the window cuts events off: an installment dated before today is still due until Actual records it.
+    const events = [pay("2026-10-01", 100_000, 70_000), pay("2026-12-01", 100_000, 71_000)];
+    expect(monthlyRepayment(events, "2027-11-01")).toMatchObject({ payments: 2, principalNext12Minor: 141_000, costNext12Minor: 59_000 });
+  });
+
+  it("takes the principal out of each installment, and never counts a negative one", () => {
+    const events = [pay("2026-12-01", 100_000, 70_000), pay("2027-01-01", 100_000, 72_000), { ...pay("2027-02-01", 100_000), principalMovementMinor: 5_000 }];
+    expect(monthlyRepayment(events, "2027-11-01").principalNext12Minor).toBe(142_000);
   });
 
   it("counts a weekly loan by the month, not by the payment", () => {
-    const events = ["2026-12-04", "2026-12-11", "2026-12-18", "2026-12-25"].map((d) => pay(d, 25_000));
+    const events = ["2026-12-04", "2026-12-11", "2026-12-18", "2026-12-25"].map((d, i, all) => ({ ...pay(d, 25_000), eventType: i === all.length - 1 ? "final-payment" : "repayment" }));
     expect(monthlyRepayment(events, "2027-11-01").monthlyMinor).toBe(100_000);
   });
 });
@@ -152,7 +182,7 @@ describe("the cost rows of a loan whose lender charges interest as its own trans
   ] } as never;
 
   it("are the interest charged and fee rows of the loan account, never a transfer or a row Bench posted", () => {
-    expect(recordedCostRowIds(plan).sort()).toEqual(["fee-1", "interest-1"]);
+    expect(recordedCostRows(plan, "").map((r) => r.id).sort()).toEqual(["fee-1", "interest-1"]);
   });
 
   it("carry no kind, so a charge added to the loan is taken out of spending but is not counted as interest or fees paid", () => {

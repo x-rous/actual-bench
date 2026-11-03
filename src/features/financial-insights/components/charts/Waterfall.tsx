@@ -52,7 +52,7 @@ export function Waterfall({ steps, height = 240, startAtZero = true, onSelect, c
   };
   return (
     <div ref={host} className="w-full">
-      <svg width={width} height={height} role="img" aria-label={ariaLabel}>
+      <svg width={width} height={height} role="group" aria-label={ariaLabel}>
         <line x1={M.l} x2={width - M.r} y1={y(0)} y2={y(0)} stroke="var(--border)" />
         {steps.map((s, i) => {
           const [a, b] = spans[i];
@@ -73,7 +73,7 @@ export function Waterfall({ steps, height = 240, startAtZero = true, onSelect, c
           const up = s.kind === "total" || s.amountMinor >= 0;
           return (
             <g key={s.key}>
-              <rect x={x0 + pad} y={top} width={slot - pad * 2} height={h} rx={3} fill={colour} fillOpacity={s.kind === "total" ? 0.88 : s.kind === "gap" ? 0.5 : 1} stroke={s.kind === "gap" ? colour : "none"} strokeDasharray={s.kind === "gap" ? "4 3" : undefined} strokeWidth={1.5} />
+              <rect x={x0 + pad} y={top} width={Math.max(1, slot - pad * 2)} height={h} rx={3} fill={colour} fillOpacity={s.kind === "total" ? 0.88 : s.kind === "gap" ? 0.5 : 1} stroke={s.kind === "gap" ? colour : "none"} strokeDasharray={s.kind === "gap" ? "4 3" : undefined} strokeWidth={1.5} />
               {i < steps.length - 1 && <line x1={x0 + slot - pad} x2={x0 + slot + pad} y1={y(b)} y2={y(b)} stroke="var(--muted-foreground)" strokeDasharray="2 2" />}
               <text x={x0 + slot / 2} y={up ? top - 5 : top + h + 12} textAnchor="middle" className="fill-foreground text-[10.5px] font-semibold">{label}</text>
               {wrap(s.label).map((t, k) => <text key={k} x={x0 + slot / 2} y={height - M.b + 15 + k * 11.5} textAnchor="middle" className={`fill-muted-foreground text-[10.5px] ${selectable ? "underline" : ""}`}>{t}</text>)}

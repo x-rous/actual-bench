@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { refreshFromServer } from "@/lib/refreshFromServer";
@@ -22,7 +22,9 @@ import { useLocalToday } from "@/features/assets-debt/lib/useLocalToday";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import type { PlanMode } from "@/lib/financial-insights/budget";
 import { ASSET_ROW_LIMIT, reviewAssetEntries, valueChangeRows, type AssetEntry, type ReviewEntry, type SavedClassification } from "@/lib/financial-insights/assetReview";
-import { compositionSeries, debtRepayments, monthlyFlows, netWorthSteps, payeeSpending, spendingBreakdown, spendingFacts, spendingGroups, type CategoryInfo, type DebtRepayments, type MonthlyPoint, type SpendingBreakdown, type SpendingFacts } from "@/lib/financial-insights/breakdowns";
+import { compositionSeries, debtRepayments, incomeBreakdown, monthlyFlows, netWorthSteps, payeeSpending, spendingBreakdown, spendingFacts, spendingGroups, type CategoryInfo, type DebtRepayments, type MonthlyPoint, type SpendingBreakdown, type SpendingFacts } from "@/lib/financial-insights/breakdowns";
+import type { ScheduleInput } from "@/lib/financial-insights/debt";
+import { comparePeriods, type Comparison } from "@/lib/financial-insights/compare";
 import type { DrillContext } from "@/lib/financial-insights/drill";
 import { isFixedAssetAccount } from "@/lib/financial-insights/wealth";
 import { buildLedger, cashBuffer, summarize, type Ledger, type AccountFact, type AssetReview, type DatedAmount, type FinancialFacts, type LoanCostRow, type LoanScheduleInput, type MovementRow, type ReclassifiedRow } from "@/lib/financial-insights/measures";
@@ -80,29 +82,35 @@ export function useFinancialInsightsGate(): Gate {
   const accounts = accountsQuery.data;
   const closedIds = useMemo(() => (accounts ?? []).filter((a) => a.closed).map((a) => a.id), [accounts]);
   const activity = useClosedAccountActivity(closedIds);
+  // `classes` and `reporting` are new objects on every render; the gate depends on the parts it reads, so it is rebuilt only when they change.
+  const { enabled: classesEnabled, available: classesAvailable, failed: classesFailed, refetch: refetchClasses, maps: classMaps } = classes;
+  const { available: reportingAvailable, failed: reportingFailed, refetch: refetchReporting, byAccount: reportingByAccount } = reporting;
+  const { isError: accountsFailed, refetch: refetchAccounts, isFetchedAfterMount: accountsFetchedAfterMount } = accountsQuery;
+  const { isError: groupsFailed, refetch: refetchGroups, data: groupsData } = groupsQuery;
+  const { isError: activityFailed, refetch: refetchActivity, data: activityData } = activity;
 
   return useMemo((): Gate => {
-    if (!connection || !classes.enabled) return { state: "none" };
-    if (accountsQuery.isError || groupsQuery.isError || activity.isError || classes.failed || reporting.failed) {
+    if (!connection || !classesEnabled) return { state: "none" };
+    if (accountsFailed || groupsFailed || activityFailed || classesFailed || reportingFailed) {
       return {
         state: "error",
         retry: () => {
-          void accountsQuery.refetch();
-          void groupsQuery.refetch();
-          void activity.refetch();
-          void classes.refetch();
-          void reporting.refetch();
+          void refetchAccounts();
+          void refetchGroups();
+          void refetchActivity();
+          void refetchClasses();
+          void refetchReporting();
         },
       };
     }
     // The accounts are checked again every time the page opens: until that check is back, what was cached is not shown as the truth.
-    if (!accounts || !accountsQuery.isFetchedAfterMount || groupsQuery.data === undefined || !activity.data || !classes.available || !reporting.available) return { state: "loading" };
+    if (!accounts || !accountsFetchedAfterMount || groupsData === undefined || !activityData || !classesAvailable || !reportingAvailable) return { state: "loading" };
 
-    const liveGroups = new Set((groupsQuery.data ?? []).map((g) => g.id));
+    const liveGroups = new Set((groupsData ?? []).map((g) => g.id));
     const classOf = new Map<string, AccountClass | null>(
-      accounts.map((a) => [a.id, resolveAccountClass(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, classes.maps).accountClass])
+      accounts.map((a) => [a.id, resolveAccountClass(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, classMaps).accountClass])
     );
-    const readiness = evaluateAccountReadiness({ accounts, classOf, reporting: reporting.byAccount, closedActivity: activity.data });
+    const readiness = evaluateAccountReadiness({ accounts, classOf, reporting: reportingByAccount, closedActivity: activityData });
     if (!readiness.ready) {
       const names = new Map(accounts.map((a) => [a.id, a.name]));
       const rows = readiness.accounts
@@ -113,11 +121,11 @@ export function useFinancialInsightsGate(): Gate {
     // An exempt closed account (no history) has no class and nothing to count, so it is left out of every figure.
     const facts: AccountFact[] = accounts.flatMap((a) => {
       const accountClass = classOf.get(a.id);
-      return accountClass && accountClass !== "excluded" ? [{ id: a.id, name: a.name, accountClass, treatment: reporting.byAccount.get(a.id) ?? null, offBudget: a.offBudget }] : [];
+      return accountClass && accountClass !== "excluded" ? [{ id: a.id, name: a.name, accountClass, treatment: reportingByAccount.get(a.id) ?? null, offBudget: a.offBudget }] : [];
     });
     const excluded = accounts.filter((a) => classOf.get(a.id) === "excluded").map((a) => ({ id: a.id, name: a.name }));
     return { state: "ready", accounts: facts, excluded };
-  }, [connection, classes, reporting, accounts, groupsQuery, activity, accountsQuery]);
+  }, [connection, classesEnabled, classesAvailable, classesFailed, refetchClasses, classMaps, reportingAvailable, reportingFailed, refetchReporting, reportingByAccount, accounts, accountsFetchedAfterMount, accountsFailed, refetchAccounts, groupsFailed, refetchGroups, groupsData, activityFailed, refetchActivity, activityData]);
 }
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -166,11 +174,17 @@ export type ReadyData = {
   breakdown: SpendingBreakdown;
   spending: SpendingFacts;
   groups: ReturnType<typeof spendingGroups>;
+  /** Money received, by income category: the same shapes as spending, so the Income tab reads like the Spending tab. */
+  /** The period against the stretch of the same length before it (whole months only), when the budget has data that far back. */
+  comparison: Comparison | null;
+  income: { breakdown: SpendingBreakdown; facts: SpendingFacts; groups: ReturnType<typeof spendingGroups> };
   composition: ReturnType<typeof compositionSeries>;
   netWorthChange: ReturnType<typeof netWorthSteps>;
   debt: DebtRepayments;
+  /** The tracked loans' schedules (next-12-month principal), already read for the cash buffer; Loans & cards shows them. */
+  schedules: ScheduleInput[];
   drill: DrillContext;
-  /** What the Asset Registry holds, for Wealth & investments. */
+  /** What the Asset Registry holds, for Investments. */
   registry: RegistryData;
 };
 
@@ -189,18 +203,20 @@ export type RegistryData = {
 export const TABS = [
   { value: "summary", label: "Summary" },
   { value: "money", label: "Money in & out" },
+  { value: "income", label: "Income" },
   { value: "spending", label: "Spending" },
   { value: "budget", label: "My budget" },
-  { value: "wealth", label: "Wealth & investments" },
+  { value: "wealth", label: "Investments" },
+  { value: "property", label: "Property & assets" },
+  { value: "loans", label: "Loans & cards" },
 ] as const;
 
-/** Wealth & investments is offered once there is a portfolio or an asset account to show. */
-export const WEALTH_CLASSES: readonly AccountClass[] = ["investment", "retirement", "property", "vehicle", "other-asset"];
-
-/** The tabs that have something to show: My budget once its mode is known and a month was read, Wealth & investments once an account of its kind exists (an investment or retirement account, or a fixed asset account). */
+/** The tabs that have something to show: My budget once its mode is known and a month was read, Investments once an investment or retirement account exists, Property & assets once a fixed asset account exists (property, vehicle or a fixed other asset), Loans & cards once a loan, credit card or other liability account exists. */
 export function offeredTabs(accounts: readonly Pick<AccountFact, "accountClass" | "treatment">[] | null, budgetAvailable: boolean): readonly (typeof TABS)[number][] {
-  const wealth = (accounts ?? []).some((a) => a.accountClass === "investment" || a.accountClass === "retirement" || isFixedAssetAccount(a));
-  return TABS.filter((t) => (t.value !== "budget" || budgetAvailable) && (t.value !== "wealth" || wealth));
+  const wealth = (accounts ?? []).some((a) => a.accountClass === "investment" || a.accountClass === "retirement");
+  const property = (accounts ?? []).some((a) => isFixedAssetAccount(a));
+  const debt = (accounts ?? []).some((a) => a.accountClass === "loan" || a.accountClass === "credit-card" || a.accountClass === "other-liability");
+  return TABS.filter((t) => (t.value !== "budget" || budgetAvailable) && (t.value !== "wealth" || wealth) && (t.value !== "property" || property) && (t.value !== "loans" || debt));
 }
 export type TabId = (typeof TABS)[number]["value"];
 
@@ -217,7 +233,7 @@ export type FinancialInsightsView = {
   setPeriod: (period: PeriodChoice) => void;
   /** Loading, or failed, or ready; the figures exist only when ready. */
   data:
-    | { state: "loading" }
+    | { state: "loading"; /** What is being read now, so a long read says where it is. */ stage?: string }
     | { state: "error"; retry: () => void }
     | ({ state: "ready" } & ReadyData);
   refresh: () => void;
@@ -231,6 +247,7 @@ export function useFinancialInsights(): FinancialInsightsView {
   const [filters, setFilters] = usePersistedFilters("filters:financial-insights", { period: DEFAULT_PERIOD, tab: "summary" as TabId });
   const accounts = gate.state === "ready" ? gate.accounts : null;
   const excluded = gate.state === "ready" ? gate.excluded : null;
+  const [stage, setStage] = useState<string | undefined>(undefined);
   const loanIds = useMemo(() => new Set((accounts ?? []).filter((a) => a.accountClass === "loan").map((a) => a.id)), [accounts]);
 
   // One read per budget and day, shared by every tab. It re-reads whenever the page opens and whenever the toolbar's
@@ -243,10 +260,12 @@ export function useFinancialInsights(): FinancialInsightsView {
       if (!connection?.budgetSyncId) throw new Error("No active connection");
       const budget = connection.budgetSyncId;
       // One request at a time: the transport queues them anyway, and this keeps a failure easy to place.
+      setStage("Reading transactions…");
       const movement = await readMovement(connection, today);
       const startingBalances = await readStartingBalances(connection, today);
       const uncategorizedIn = await readUncategorizedIn(connection, today);
       const transfersIn = await readTransfersIn(connection, today);
+      setStage("Reading categories…");
       const groups = await getTransport(connection).getCategoryGroups();
       const groupOf = new Map(groups.groups.map((g) => [g.id, g]));
       // A category is income when its group is, as in Actual's budget; the category's own flag is only used when the group is unknown.
@@ -263,6 +282,7 @@ export function useFinancialInsights(): FinancialInsightsView {
         };
       });
 
+      setStage("Reading the Asset Registry…");
       let registryRead = true;
       let savedClassifications: SavedClassification[] = [];
       let linkedIds: string[] = [];
@@ -288,6 +308,7 @@ export function useFinancialInsights(): FinancialInsightsView {
       for (const row of movement) if (registeredSet.has(row.accountId) && !row.transferAccountId) count += row.count;
       const assetEntries = count > ASSET_ROW_LIMIT ? null : await readAssetEntries(connection, registered, today);
 
+      setStage("Reading loan schedules…");
       const loans = await readLoanSchedules(connection, { budgetSyncId: budget, today, loanAccountIds: loanIds });
       const loanCosts = await readLoanCostRows(connection, loans.costRows, today);
       return { movement, startingBalances, uncategorizedIn, transfersIn, incomeCategories, categories, linkedSales, assetEntries, assetRowCount: count, registryRead, savedClassifications, registryAssets, registryMetadata, debtLinks, loans, loanCosts, readAt: new Date().toISOString() };
@@ -309,9 +330,9 @@ export function useFinancialInsights(): FinancialInsightsView {
   const budget = useBudgetAvailability(gate.state === "ready", today);
   const tabs = useMemo(() => offeredTabs(accounts, budget.available), [accounts, budget.available]);
   const data = useMemo((): FinancialInsightsView["data"] => {
-    if (gate.state !== "ready") return { state: "loading" };
+    if (gate.state !== "ready") return { state: "loading", stage };
     if (query.isError && !raw) return { state: "error", retry: () => void query.refetch() };
-    if (!raw || !ledger) return { state: "loading" };
+    if (!raw || !ledger) return { state: "loading", stage };
     const resolved = resolvePeriod(period, today, ledger.firstMonth);
     let review: ReviewEntry[] = [];
     let assetReview: AssetReview;
@@ -328,16 +349,18 @@ export function useFinancialInsights(): FinancialInsightsView {
     const categories = new Map(raw.categories.map((c) => [c.id, c]));
     const monthly = monthlyFlows(ledger, resolved, today, summary.moneyKept.state === "ready");
     const breakdown = spendingBreakdown(ledger, resolved, categories, monthly);
+    const incomeRows = incomeBreakdown(ledger, resolved, categories, monthly);
     return {
       state: "ready", summary, buffer: cashBuffer(ledger, today, schedules), bufferSpending: bufferSpendingGroups(ledger, today, categories),
       review, firstMonth: ledger.firstMonth, readAt: raw.readAt, refreshing: query.isFetching, refreshFailed: query.isError,
       ledger, period: resolved, categories, monthly, breakdown, spending: spendingFacts(breakdown, monthly),
-      groups: spendingGroups(breakdown), composition: compositionSeries(ledger, resolved, summary.opening), netWorthChange: netWorthSteps(summary),
+      groups: spendingGroups(breakdown), comparison: comparePeriods(ledger, resolved, today), income: { breakdown: incomeRows, facts: spendingFacts(incomeRows, monthly, (m) => m.received), groups: spendingGroups(incomeRows) }, composition: compositionSeries(ledger, resolved, summary.opening), netWorthChange: netWorthSteps(summary),
       debt: debtRepayments(ledger, resolved, trackedLoans, summary.cashBridge.loanOut * -1),
+      schedules: raw.loans.schedules.map((l): ScheduleInput => (l.state === "ready" ? { accountId: l.accountId, state: "ready", principalNext12Minor: l.principalNext12Minor, costNext12Minor: l.costNext12Minor } : { accountId: l.accountId, state: "unavailable", reason: l.reason })),
       drill: { ledger, period: resolved, today, reclassifiedIds: new Set(ledger.facts.reclassified.map((r) => r.id)) },
       registry: { read: raw.registryRead, assets: raw.registryAssets, metadata: raw.registryMetadata, debtLinks: raw.debtLinks, assetEntries: raw.assetEntries, assetRowCount: raw.assetRowCount, savedClassifications: raw.savedClassifications },
     };
-  }, [gate, query, raw, ledger, period, today]);
+  }, [gate, query, raw, ledger, period, today, stage]);
 
   return {
     gate, today, period, data, tabs, budgetMode: budget.mode,
@@ -354,7 +377,7 @@ export function useFinancialInsights(): FinancialInsightsView {
         queryClient.invalidateQueries({ queryKey: ["budget-month-data", connection?.id] }),
         queryClient.invalidateQueries({ queryKey: ["budget-months", connection?.id] }),
         queryClient.invalidateQueries({ queryKey: ["budgetPreferences", connection?.id] }),
-        // Wealth & investments reads each registered asset account's book through the Asset Registry's cache.
+        // Investments reads each registered asset account's book through the Asset Registry's cache.
         queryClient.invalidateQueries({ queryKey: ["assetBook", connection?.id] }),
         queryClient.invalidateQueries({ queryKey: ["accounts", connection?.id] }),
         queryClient.invalidateQueries({ queryKey: ["accountGroups", connection?.id] }),
@@ -372,7 +395,7 @@ export function useFinancialInsights(): FinancialInsightsView {
  * Spending by payee for the selected period. It is read when the Spending tab opens and is the one read that depends on the
  * period, so it is read again when the period changes (everything else is read once and reused).
  */
-export function usePayeeSpending(data: ReadyData, today: string) {
+export function usePayeeSpending(data: ReadyData, today: string, side: "spending" | "income" = "spending") {
   const connection = useConnectionStore(selectActiveInstance);
   const { period, ledger, categories } = data;
   const query = useQuery({
@@ -387,8 +410,8 @@ export function usePayeeSpending(data: ReadyData, today: string) {
     },
   });
   const payees = useMemo(
-    () => (query.data ? payeeSpending(query.data.rows, ledger, period, categories, query.data.names) : null),
-    [query.data, ledger, period, categories],
+    () => (query.data ? payeeSpending(query.data.rows, ledger, period, categories, query.data.names, 15, side) : null),
+    [query.data, ledger, period, categories, side],
   );
   return { payees, isLoading: query.isLoading, isError: query.isError, retry: () => void query.refetch() };
 }

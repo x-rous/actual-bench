@@ -35,7 +35,7 @@ export function LineChart({ labels, partialIndex, series, height = 250, tip, ari
   const x = (i: number) => MARGIN.l + (i + 0.5) * slot;
   return (
     <div ref={host} className="w-full">
-      <svg width={width} height={height} role="img" aria-label={ariaLabel}>
+      <svg width={width} height={height} role="group" aria-label={ariaLabel}>
         {marks.map((v) => <g key={v}><line x1={MARGIN.l} x2={width - MARGIN.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={0.6} /><text x={MARGIN.l - 6} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{compactMoney(v)}</text></g>)}
         {lo < 0 && <line x1={MARGIN.l} x2={width - MARGIN.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.2} />}
         {series.map((s) => {

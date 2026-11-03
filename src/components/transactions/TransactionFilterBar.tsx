@@ -61,6 +61,6 @@ export function TransactionFilterBar({ state, onChange, onClear, offered, constr
         {active && <Button size="xs" variant="ghost" onClick={onClear}><X className="size-3" aria-hidden />Clear all</Button>}
       </span>
     </div>
-    {has("advanced") && advancedOpen && state.advanced && <div className="rounded-lg border bg-muted/20 p-3"><ConditionsEditor value={state.advanced} onChange={(advanced) => set({ advanced })} excludeAccountIds={constraints?.excludeAccountIds} excludeTransferPayees={!!constraints?.excludeTransfers} /></div>}
+    {has("advanced") && advancedOpen && state.advanced && <div className="rounded-lg border bg-muted/20 p-3"><ConditionsEditor value={state.advanced} onChange={(advanced) => set({ advanced })} excludeAccountIds={constraints?.excludeAccountIds} excludeTransferPayees={!!(constraints?.excludeTransfers || constraints?.excludeTransferPayees)} /></div>}
   </div>;
 }

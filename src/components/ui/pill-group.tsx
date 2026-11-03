@@ -81,8 +81,8 @@ export function PillGroup<T extends string>({
   onChange,
   className,
 }: {
-  /** `count` is shown beside the label, for a filter over a countable set. */
-  options: { value: T; label: string; count?: number }[];
+  /** `count` is shown beside the label, for a filter over a countable set. `title` is a tooltip and the accessible name, for a label that is an abbreviation. */
+  options: { value: T; label: string; count?: number; title?: string }[];
   value: T;
   onChange: (v: T) => void;
   className?: string;
@@ -94,6 +94,8 @@ export function PillGroup<T extends string>({
           key={opt.value}
           type="button"
           aria-pressed={value === opt.value}
+          aria-label={opt.title}
+          title={opt.title}
           onClick={() => onChange(opt.value)}
           className={pillClass(value === opt.value)}
         >

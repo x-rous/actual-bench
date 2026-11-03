@@ -6,7 +6,7 @@
 
 **A companion app for Actual Budget.**
 
-Full-year planning, bulk data management, reconciliation, assets, credit cards, loans, automatic sync & backups,
+Full-year planning, bulk data management, reconciliation, assets, credit cards, loans, financial insights, automatic sync & backups,
 and diagnostics for your Actual Budget.
 
 **[Try the demo](https://actual-bench-demo.vercel.app) · [Install Actual Bench](#quick-start) · [Read the docs](https://x-rous.github.io/actual-bench/)**
@@ -66,6 +66,7 @@ Use it to create a reusable template, set up a new budget, or keep a snapshot be
 - **[Credit Cards](https://x-rous.github.io/actual-bench/user-guide/credit-cards/)** *(Experimental)* - see what you owe, what is due and how much credit is available across your cards. Check bank statements against your Actual transactions, follow payments and interest, and track instalment plans alongside your card history. Bench saves your card settings and review decisions without changing Actual transactions.
 - **[Assets](https://x-rous.github.io/actual-bench/user-guide/asset-registry/)** *(Experimental)* - bring property, investments, vehicles and other assets into one view, using your Actual accounts as the ledger. Follow value, capital invested, income, expenses and returns over time; account for shared ownership and depreciation; and link loans to see your equity. Explore the transactions behind the figures and review financial changes before confirming them.
 - **[Loans](https://x-rous.github.io/actual-bench/user-guide/assets-debt/)** *(Experimental)* - model rate changes, extra payments, offsets and fees, and see how they affect interest and payoff. Link the loan to Actual to compare the forecast with real payments, review principal and interest splits, and see the equity in linked assets.
+- **[Financial Insights](https://x-rous.github.io/actual-bench/user-guide/financial-insights/)** *(Experimental)* - one read-only picture of what you own and owe, what came in and went out, and why your cash and wealth changed. Tabs for Summary, Money in & out, Income, Spending, My budget, Investments, Property & assets, and Loans & cards, with every figure opening the real transactions behind it. It reads Actual and never changes it.
 
 **Clean up and audit**
 

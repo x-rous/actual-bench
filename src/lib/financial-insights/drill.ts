@@ -14,16 +14,19 @@ import { portfolioBridge } from "./wealth";
 export type DrillKind =
   | "received" | "spent" | "uncategorizedIn" | "uncategorizedOut" | "unidentified" | "investmentResults" | "valueChange" | "assetSale"
   | "excludedTransfer" | "contributed" | "withdrawn" | "repaid" | "borrowed"
+  /** Loans & cards: what was paid into loan accounts (from any account), and the interest and fees the Loans tracking recorded for tracked loans. */
+  | "loanPrincipal" | "loanInterest" | "loanFees"
   /** Cash movements: everyday income and spending in cash accounts, and transfers from cash to cards, fixed deposits, other assets and other liabilities. */
-  | "cashOperating" | "cardPaid" | "fixedMoved" | "assetsMoved" | "liabilitiesMoved";
+  | "cashIncome" | "cashSpending" | "cardPaid" | "fixedMoved" | "assetsMoved" | "liabilitiesMoved";
 
 export type DrillTarget =
   | {
     kind: DrillKind; /** `YYYY-MM`; the whole period when absent. */ month?: string; /** With `month`: the range runs through this month. */ throughMonth?: string;
     /**
-     * Wealth & investments, on `contributed`, `withdrawn` and `investmentResults`: the entries of one investment or
+     * Investments, on `contributed`, `withdrawn` and `investmentResults`: the entries of one investment or
      * retirement account (`accountId`) or of all of them (`portfolio`), read from the account's side. Funding and withdrawals are then
-     * every transfer with an account outside the portfolio, not only cash accounts.
+     * every transfer with an account outside the portfolio, not only cash accounts. Loans & cards, on `loanPrincipal`,
+     * `loanInterest` and `loanFees`: the entries of one loan (`accountId`) or of every loan.
      */
     accountId?: string; portfolio?: boolean;
   }
@@ -32,13 +35,13 @@ export type DrillTarget =
    * `includeUncategorized` adds the on-budget entries with no category (a group named "Uncategorized"). `amountMinor` is the
    * (positive) figure the link sits on.
    */
-  | { kind: "category"; categoryIds: string[]; includeUncategorized?: boolean; name: string; amountMinor: number; month?: string; /** With `month`: the range runs through this month. */ throughMonth?: string }
+  | { kind: "category"; categoryIds: string[]; includeUncategorized?: boolean; /** Money received in these (income) categories, not spending: the list adds up to the amount as it is, and uncategorized means money in. */ income?: boolean; name: string; amountMinor: number; month?: string; /** With `month`: the range runs through this month. */ throughMonth?: string; /** Only the entries of these accounts in these categories, pair by pair (the interest and fees of credit cards, whose categories other accounts or cards may share). */ pairs?: { accountId: string; categoryId: string }[] }
   /** An "in transit" amount. Its rows have to be found first (see `explainInTransit`); then it opens as `inTransitRows`. */
   | { kind: "inTransit"; cashOnly: boolean }
   /** The transfers behind an "in transit" amount, found beforehand, with the reason each is there. */
   | { kind: "inTransitRows"; title: string; ids: string[]; reasons: Record<string, string>; expectedMinor: number }
   /** Spending at one payee (`payeeId` null is "No payee"). */
-  | { kind: "payee"; payeeId: string | null; name: string; amountMinor: number }
+  | { kind: "payee"; payeeId: string | null; name: string; amountMinor: number; /** Money received from this payer, in income categories, not spending. */ income?: boolean }
   /**
    * Actual's own spending for budget categories (My budget), in one month or from `month` through `throughMonth`: the entries
    * of on-budget accounts, transfers that carry the category included. `amountMinor` is Actual's spent figure (positive is money spent).
@@ -92,7 +95,11 @@ const TITLES: Record<DrillKind, string> = {
   withdrawn: "Withdrawn from investments",
   repaid: "Repaid to loans",
   borrowed: "Borrowed from loans",
-  cashOperating: "Income and spending in cash accounts",
+  loanPrincipal: "Principal repaid to loans",
+  loanInterest: "Loan interest",
+  loanFees: "Loan fees",
+  cashIncome: "Income in cash accounts",
+  cashSpending: "Spending in cash accounts",
   cardPaid: "Paid to credit cards",
   fixedMoved: "Fixed / restricted deposits",
   assetsMoved: "Moved to and from other assets",
@@ -113,7 +120,11 @@ const DESCRIPTIONS: Record<DrillKind, string> = {
   withdrawn: "Money moved from investment or retirement accounts into cash accounts.",
   repaid: "Money moved from cash accounts into loan accounts.",
   borrowed: "Money moved from loan accounts into cash accounts.",
-  cashOperating: "Entries with a category, and uncategorized entries in on-budget accounts, in your cash accounts: income and spending, refunds included. Transfers and entries the Asset Registry classifies are not included.",
+  loanPrincipal: "Money moved into loan accounts from any of your accounts, cash and cards included. It lowers what you owe and is not spending.",
+  loanInterest: "The interest lines the Loans tracking recorded for loans tracked in Loans. They are spending, already counted in Spending.",
+  loanFees: "The fee lines the Loans tracking recorded for loans tracked in Loans. They are spending, already counted in Spending.",
+  cashIncome: "Entries with an income category, and uncategorized money in on-budget accounts, in your cash accounts: income, refunds of it included. Transfers and entries the Asset Registry classifies are not in it.",
+  cashSpending: "Entries with an expense category, and uncategorized money out of on-budget accounts, in your cash accounts: spending, refunds included. Transfers and entries the Asset Registry classifies are not in it.",
   cardPaid: "Money moved between cash accounts and credit cards: payments to cards, and refunds or transfers back.",
   fixedMoved: "Money moved between cash accounts and fixed / restricted deposits.",
   assetsMoved: "Money moved between cash accounts and your other assets, such as property, vehicles or other assets.",
@@ -167,12 +178,12 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
   }
   if (target.kind === "category") {
     const ids = target.categoryIds;
-    const parts = [...(ids.length ? [{ category: { $oneof: ids } }] : []), ...(target.includeUncategorized ? [noCategory(onBudget, "out")] : [])];
+    const parts = [...(ids.length ? [{ category: { $oneof: ids } }] : []), ...(target.includeUncategorized ? [noCategory(onBudget, target.income ? "in" : "out")] : [])];
     const many = ids.length + (target.includeUncategorized ? 1 : 0) > 1;
     return {
-      title: `${target.name} · ${when}`, description: many ? "Spending in every category of this group, refunds included. Hidden categories are included." : "Spending in this category, refunds included. Hidden categories are included.",
-      constraints: { ...base.constraints, ...exclusions, excludeTransferPayees: true, where: parts.length > 1 ? { $or: parts } : parts[0] ?? { id: "-" } }, lockedLabels: { where: target.name }, filters: ["search", "amount", "tags", "payees"],
-      defaults: base.defaults, rowFilter, insights: charts("spending", many ? ["groups"] : ["categories", "groups"]), expectedMinor: 0 - target.amountMinor,
+      title: `${target.name} · ${when}`, description: target.income ? (many ? "Money received in every category of this group, refunds of it netted. Hidden categories are included." : "Money received in this category, refunds of it netted. Hidden categories are included.") : many ? "Spending in every category of this group, refunds included. Hidden categories are included." : "Spending in this category, refunds included. Hidden categories are included.",
+      constraints: { ...base.constraints, ...exclusions, excludeTransferPayees: true, where: target.pairs ? (target.pairs.length > 0 ? { $or: target.pairs.map((p) => ({ $and: [{ account: { $oneof: [p.accountId] } }, { category: { $oneof: [p.categoryId] } }] })) } : { id: "-" }) : parts.length > 1 ? { $or: parts } : parts[0] ?? { id: "-" } }, lockedLabels: { where: target.name }, filters: ["search", "amount", "tags", "payees"],
+      defaults: base.defaults, rowFilter, insights: charts(target.income ? "income" : "spending", many ? ["groups"] : ["categories", "groups"]), expectedMinor: target.income ? target.amountMinor : 0 - target.amountMinor,
     };
   }
   if (target.kind === "budgetCell" || target.kind === "budgetGap") {
@@ -211,11 +222,11 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
   }
   if (target.kind === "payee") {
     return {
-      title: `${target.name} · ${ctx.period.label}`, description: "Spending at this payee, in expense categories, refunds included.",
-      constraints: { ...base.constraints, ...exclusions, requireCategory: true, excludeTransferPayees: true, where: { $and: notIncome } }, lockedLabels: { where: target.name },
+      title: `${target.name} · ${ctx.period.label}`, description: target.income ? "Money received from this payer, in income categories, refunds of it netted." : "Spending at this payee, in expense categories, refunds included.",
+      constraints: { ...base.constraints, ...exclusions, requireCategory: true, excludeTransferPayees: true, where: target.income ? (incomeIds.length ? { category: { $oneof: incomeIds } } : { id: "-" }) : { $and: notIncome } }, lockedLabels: { where: target.name },
       filters: ["search", "amount", "tags"],
       defaults: { ...base.defaults, payees: target.payeeId === null ? { ids: [], not: false, none: true } : { ids: [target.payeeId], not: false, none: false } },
-      rowFilter, insights: charts("spending", ["payees"]), expectedMinor: 0 - target.amountMinor,
+      rowFilter, insights: charts(target.income ? "income" : "spending", ["payees"]), expectedMinor: target.income ? target.amountMinor : 0 - target.amountMinor,
     };
   }
 
@@ -226,6 +237,25 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
     constraints: { ...base.constraints, ...(own ? {} : exclusions), ...extra, ...(where ? { where } : {}) }, lockedLabels: { where: TITLES[target.kind] },
     defaults: base.defaults, filters: base.filters, rowFilter: own ? undefined : rowFilter, insights: charts(kind, undefined, more), expectedMinor,
   });
+  if (target.kind === "loanPrincipal" || target.kind === "loanInterest" || target.kind === "loanFees") {
+    const loans = withRole("loan");
+    const mine = target.accountId !== undefined ? loans.filter((id) => id === target.accountId) : loans;
+    const named = target.accountId !== undefined ? ` · ${account.get(target.accountId)?.name ?? "loan"}` : "";
+    const inWindow = (month: string) => month >= window.startMonth && month <= window.endMonth;
+    const labelled = (s: DrillScope): DrillScope => ({ ...s, title: `${TITLES[target.kind]}${named} · ${when}` });
+    if (target.kind === "loanPrincipal") {
+      // As debtRepayments reads them: positive transfer rows into a loan, from anything but an excluded account.
+      const figure = facts.transfersIn.filter((r) => inWindow(r.month) && mine.includes(r.accountId) && !facts.excluded.has(r.transferAccountId)).reduce((sum, r) => sum + r.amountMinor, 0);
+      return labelled(scope(
+        { $and: [{ account: { $oneof: mine.length ? mine : ["-"] } }, { "payee.transfer_acct": { $ne: null } }, ...[...facts.excluded].map((id) => ({ "payee.transfer_acct": { $ne: id } }))] },
+        { amountSign: "positive" }, figure, "spending", true,
+        { initialView: "accounts", noun: "repaid to loans", colours: { accent: "var(--fi-invest)", negative: "var(--fi-down)" } },
+      ));
+    }
+    const kind = target.kind === "loanInterest" ? "interest" : "fee";
+    const rows = facts.loanCosts.filter((r) => r.kind === kind && r.id && r.loanAccountId && mine.includes(r.loanAccountId) && inWindow(r.month));
+    return labelled(scope({ id: { $oneof: rows.length ? rows.map((r) => r.id!) : ["-"] } }, {}, rows.reduce((sum, r) => sum + r.amountMinor, 0), "spending", true, { initialView: "accounts" }));
+  }
   if (wealth && (target.kind === "contributed" || target.kind === "withdrawn" || target.kind === "investmentResults")) {
     const mine = target.accountId !== undefined ? wealth.accounts.filter((a) => a.accountId === target.accountId) : wealth.accounts;
     const figure = (pick: (a: (typeof mine)[number]) => number) => mine.reduce((sum, a) => sum + pick(a), 0);
@@ -268,10 +298,15 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
     }
     case "excludedTransfer":
       return scope({ "payee.transfer_acct": { $oneof: facts.excluded.size ? [...facts.excluded] : ["-"] } }, {}, flows.excludedTransfers, "mixed", true, { initialView: "accounts" });
-    case "cashOperating":
+    case "cashIncome":
       return scope(
-        { $and: [{ account: { $oneof: cash.length ? cash : ["-"] } }, { $or: [{ category: { $ne: null } }, noCategory(onBudget.filter((id) => cash.includes(id)))] }] },
-        { excludeTransferPayees: true }, cashBridge.operating, "mixed", false, { initialView: "accounts" },
+        { $and: [{ account: { $oneof: cash.length ? cash : ["-"] } }, { $or: [...(incomeIds.length ? [{ category: { $oneof: incomeIds } }] : []), noCategory(onBudget.filter((id) => cash.includes(id)), "in")] }] },
+        { excludeTransferPayees: true }, cashBridge.operatingIncome, "income", false, { initialView: "accounts" },
+      );
+    case "cashSpending":
+      return scope(
+        { $and: [{ account: { $oneof: cash.length ? cash : ["-"] } }, { $or: [{ $and: [{ category: { $ne: null } }, ...notIncome] }, noCategory(onBudget.filter((id) => cash.includes(id)), "out")] }] },
+        { excludeTransferPayees: true }, cashBridge.operatingSpending, "spending", false, { initialView: "accounts" },
       );
     case "cardPaid":
     case "fixedMoved":

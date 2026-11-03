@@ -1,4 +1,4 @@
-import { computeFlows, positionsAt, type Ledger, type Positions, type Summary } from "./measures";
+import { computeFlows, ledgersByMonth, positionsAt, type Ledger, type Positions, type Summary } from "./measures";
 import { resolvePeriod, type ResolvedPeriod } from "./period";
 
 /**
@@ -33,8 +33,9 @@ export type MonthlyPoint = {
 const oneMonth = (month: string, today: string, firstMonth: string | null) => resolvePeriod({ kind: "custom", startMonth: month, endMonth: month }, today, firstMonth);
 
 export function monthlyFlows(ledger: Ledger, period: ResolvedPeriod, today: string, keptAvailable: boolean): MonthlyPoint[] {
+  const byMonth = ledgersByMonth(ledger, period.months);
   return period.months.map((month, index) => {
-    const { flows, cashBridge } = computeFlows(ledger, oneMonth(month, today, ledger.firstMonth));
+    const { flows, cashBridge } = computeFlows(byMonth.get(month)!, oneMonth(month, today, ledger.firstMonth));
     const received = flows.income + flows.uncategorizedIn;
     const spent = 0 - (flows.spending + flows.uncategorizedOut);
     return {
@@ -104,6 +105,51 @@ export function spendingBreakdown(ledger: Ledger, period: ResolvedPeriod, catego
   return { months: [...period.months], rows: kept, totalMinor: kept.reduce((a, r) => a + r.totalMinor, 0), hasHidden: kept.some((r) => r.hidden) };
 }
 
+/**
+ * Money received by income category and month, in the same shape as spending (positive amounts), so the same charts and heatmap
+ * read it. Each category is a group of its own (income is shown by category, not by the group Actual keeps it in). The total equals the Summary's Money received exactly: entries with no category in on-budget accounts are
+ * what is left of each month's received once the income categories are taken out, and are listed as "Uncategorized".
+ */
+export function incomeBreakdown(ledger: Ledger, period: ResolvedPeriod, categories: ReadonlyMap<string, CategoryInfo>, monthly: readonly MonthlyPoint[]): SpendingBreakdown {
+  const { facts, account } = ledger;
+  const slot = new Map(period.months.map((m, i) => [m, i]));
+  const cells = new Map<string, number[]>();
+  const tally = new Map<string, number[]>();
+  const add = (categoryId: string, month: string, amount: number, entries: number) => {
+    const index = slot.get(month);
+    if (index === undefined) return;
+    const row = cells.get(categoryId) ?? period.months.map(() => 0);
+    const n = tally.get(categoryId) ?? period.months.map(() => 0);
+    row[index] += amount; n[index] += entries;
+    cells.set(categoryId, row); tally.set(categoryId, n);
+  };
+  for (const row of facts.movement) {
+    if (row.transferAccountId || row.categoryId === null || !account.has(row.accountId) || !facts.incomeCategories.has(row.categoryId)) continue;
+    add(row.categoryId, row.month, row.amountMinor, row.count);
+  }
+  // A row the Asset Registry classifies has left income; take it back out of its category.
+  for (const row of facts.reclassified) {
+    if (row.categoryId === null || !account.has(row.accountId) || !facts.incomeCategories.has(row.categoryId)) continue;
+    add(row.categoryId, row.month, 0 - row.amountMinor, -1);
+  }
+  const completeSlots = monthly.flatMap((m, i) => (m.hasData && !m.partial ? [i] : []));
+  const finish = (values: number[], counts: number[]) => ({
+    byMonth: values, counts, totalMinor: values.reduce((a, b) => a + b, 0),
+    averageMinor: completeSlots.length ? Math.round(completeSlots.reduce((a, i) => a + values[i], 0) / completeSlots.length) : null,
+  });
+  const rows: SpendingRow[] = [...cells].map(([id, values]) => {
+    const info = categories.get(id);
+    // Income is listed by category: each is its own group, so the tab never opens a group to find the one category inside it.
+    const name = info?.name ?? "Unknown category";
+    return { id, name, group: name, hidden: info?.hidden ?? false, order: info?.order, ...finish(values, tally.get(id) ?? values.map(() => 0)) };
+  });
+  const categorised = period.months.map((_, i) => rows.reduce((a, r) => a + r.byMonth[i], 0));
+  const uncategorized = monthly.map((m, i) => m.received - categorised[i]);
+  if (uncategorized.some((v) => v !== 0)) rows.push({ id: null, name: "Uncategorized", group: "Uncategorized", hidden: false, ...finish(uncategorized, uncategorized.map(() => 0)) });
+  const kept = rows.filter((r) => r.totalMinor !== 0 || r.byMonth.some((v) => v !== 0)).sort((a, b) => b.totalMinor - a.totalMinor);
+  return { months: [...period.months], rows: kept, totalMinor: kept.reduce((a, r) => a + r.totalMinor, 0), hasHidden: kept.some((r) => r.hidden) };
+}
+
 export type SpendingFacts = {
   totalMinor: number;
   /** Average over the complete months with data; the current partial month is shown elsewhere but not counted. */
@@ -114,9 +160,9 @@ export type SpendingFacts = {
 };
 
 /** The latest three complete months against the earliest three, only when there are six or more so they never overlap. */
-export function spendingFacts(breakdown: SpendingBreakdown, monthly: readonly MonthlyPoint[]): SpendingFacts {
+export function spendingFacts(breakdown: SpendingBreakdown, monthly: readonly MonthlyPoint[], pick: (m: MonthlyPoint) => number = (m) => m.spent): SpendingFacts {
   const complete = monthly.filter((m) => m.hasData && !m.partial);
-  const sum = (points: readonly MonthlyPoint[]) => points.reduce((a, p) => a + p.spent, 0);
+  const sum = (points: readonly MonthlyPoint[]) => points.reduce((a, p) => a + pick(p), 0);
   const top = breakdown.rows[0];
   let pace: SpendingFacts["pace"];
   if (complete.length < 6) pace = { state: "unavailable", reason: "Needs at least six complete months in the period" };
@@ -163,7 +209,8 @@ export type CashBridgeLines = { openingMinor: number; lines: BridgeLine[]; unatt
 export function cashBridgeLines(summary: Summary): CashBridgeLines {
   const b = summary.cashBridge;
   const lines: BridgeLine[] = [
-    { key: "operating", label: "Income and spending (cash accounts)", amountMinor: b.operating },
+    { key: "cashIncome", label: "Income (cash accounts)", amountMinor: b.operatingIncome },
+    { key: "cashSpending", label: "Spending (cash accounts)", amountMinor: b.operatingSpending },
     { key: "unidentified", label: "Unidentified movements", amountMinor: b.unidentified },
     { key: "assetSales", label: "Asset sale proceeds", amountMinor: b.assetSales },
     { key: "card", label: "Paid to credit cards", amountMinor: b.card },
@@ -197,12 +244,19 @@ export type PayeeSpending = { payeeId: string | null; name: string; totalMinor: 
 /** Payees ranked by spending, with entries that have no payee kept apart (and how many of them are parts of split transactions). */
 export type PayeeRanking = { payees: PayeeSpending[]; noPayee: (PayeeSpending & { splitParts: number }) | null };
 
-/** Spending by payee, largest first. Income categories, excluded accounts and registry-classified rows are out. */
+/**
+ * Spending by payee, largest first. Income categories, excluded accounts and registry-classified rows are out. With `side` set to
+ * "income" it is money received by payer instead: only income categories count, and the amounts are as received.
+ */
 export function payeeSpending(
   rows: readonly PayeeRow[], ledger: Ledger, period: ResolvedPeriod, categories: ReadonlyMap<string, CategoryInfo>, names: ReadonlyMap<string, string>,
-  limit = 15,
+  limit = 15, side: "spending" | "income" = "spending",
 ): PayeeRanking {
   const { facts, account } = ledger;
+  const income = side === "income";
+  // A row is on this side when its category is an income category (money in) or not (spending); `sign` turns it into a positive total.
+  const wanted = (categoryId: string) => facts.incomeCategories.has(categoryId) === income;
+  const sign = income ? 1 : -1;
   const byPayee = new Map<string | null, { total: number; count: number; splitParts: number; byCategory: Map<string, number> }>();
   const entry = (payeeId: string | null) => {
     const existing = byPayee.get(payeeId) ?? { total: 0, count: 0, splitParts: 0, byCategory: new Map() };
@@ -210,19 +264,19 @@ export function payeeSpending(
     return existing;
   };
   for (const row of rows) {
-    if (!account.has(row.accountId) || facts.incomeCategories.has(row.categoryId)) continue;
+    if (!account.has(row.accountId) || !wanted(row.categoryId)) continue;
     const e = entry(row.payeeId);
-    e.total -= row.amountMinor;
+    e.total += sign * row.amountMinor;
     e.count += row.count;
     if (row.isChild) e.splitParts += row.count;
-    e.byCategory.set(row.categoryId, (e.byCategory.get(row.categoryId) ?? 0) - row.amountMinor);
+    e.byCategory.set(row.categoryId, (e.byCategory.get(row.categoryId) ?? 0) + sign * row.amountMinor);
   }
   for (const row of facts.reclassified) {
-    if (row.categoryId === null || row.month < period.startMonth || row.month > period.endMonth || !account.has(row.accountId) || facts.incomeCategories.has(row.categoryId)) continue;
+    if (row.categoryId === null || row.month < period.startMonth || row.month > period.endMonth || !account.has(row.accountId) || !wanted(row.categoryId)) continue;
     const e = entry(row.payeeId);
-    e.total += row.amountMinor;
+    e.total -= sign * row.amountMinor;
     e.count -= 1;
-    e.byCategory.set(row.categoryId, (e.byCategory.get(row.categoryId) ?? 0) + row.amountMinor);
+    e.byCategory.set(row.categoryId, (e.byCategory.get(row.categoryId) ?? 0) - sign * row.amountMinor);
   }
   const build = (payeeId: string | null, e: { total: number; count: number; byCategory: Map<string, number> }): PayeeSpending => {
     const top = [...e.byCategory].sort((a, b) => b[1] - a[1])[0];

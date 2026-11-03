@@ -224,7 +224,7 @@ function listed(target: Exclude<DrillTarget, { kind: "inTransit" }>) {
 }
 
 describe("financial insights: drilldown scopes", () => {
-  const kinds: DrillKind[] = ["received", "spent", "uncategorizedIn", "uncategorizedOut", "unidentified", "investmentResults", "valueChange", "excludedTransfer", "contributed", "withdrawn", "repaid", "borrowed", "cashOperating", "cardPaid", "fixedMoved", "assetsMoved", "liabilitiesMoved"];
+  const kinds: DrillKind[] = ["received", "spent", "uncategorizedIn", "uncategorizedOut", "unidentified", "investmentResults", "valueChange", "excludedTransfer", "contributed", "withdrawn", "repaid", "borrowed", "cashIncome", "cashSpending", "cardPaid", "fixedMoved", "assetsMoved", "liabilitiesMoved"];
   it.each(kinds)("%s lists exactly the entries that make up its figure", (kind) => {
     const whole = listed({ kind });
     expect(whole.total).toBe(whole.scope.expectedMinor);
@@ -232,11 +232,15 @@ describe("financial insights: drilldown scopes", () => {
     expect(october.total).toBe(october.scope.expectedMinor);
   });
 
-  it("opens income and spending in cash accounts as the entries of cash accounts only", () => {
-    const whole = listed({ kind: "cashOperating" });
-    expect(whole.scope.expectedMinor).not.toBe(0);
-    expect(whole.ids).not.toContain("one-sided");
-    expect(whole.ids).not.toContain("to-inv");
+  it("opens income and spending in cash accounts as the entries of cash accounts only, each its own list", () => {
+    const income = listed({ kind: "cashIncome" }), spending = listed({ kind: "cashSpending" });
+    expect(income.scope.expectedMinor).toBeGreaterThan(0);
+    expect(spending.scope.expectedMinor).toBeLessThan(0);
+    for (const whole of [income, spending]) {
+      expect(whole.ids).not.toContain("one-sided");
+      expect(whole.ids).not.toContain("to-inv");
+    }
+    expect(income.ids.filter((id) => spending.ids.includes(id))).toEqual([]);
   });
 
   it("treats a transfer payee with no linked counterpart as a transfer in every list, so the list adds up to the figure", () => {
@@ -285,7 +289,7 @@ describe("financial insights: drilldown scopes", () => {
   });
 });
 
-describe("financial insights: Wealth & investments drilldown scopes", () => {
+describe("financial insights: Investments drilldown scopes", () => {
   it("lists the funding and withdrawals of the portfolio, and of one account, from the account's side, adding up to the bridge", () => {
     for (const month of [undefined, "2026-10"]) {
       const funding = listed({ kind: "contributed", portfolio: true, month });

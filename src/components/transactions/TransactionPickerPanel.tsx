@@ -93,7 +93,7 @@ export function TransactionPickerPanel({ constraints, lockedLabels, defaults, mu
   const baseConstraints = useMemo(() => constraints ?? {}, [constraints]);
   const searchConstraints = useMemo(() => (chartsOn ? withPicks(baseConstraints, picks) : constraints), [chartsOn, baseConstraints, constraints, picks]);
   const search = useTransactionSearch(filters, searchConstraints, today);
-  const reference = useTransactionReference({ excludeAccountIds: constraints?.excludeAccountIds, excludeTransferPayees: constraints?.excludeTransfers });
+  const reference = useTransactionReference({ excludeAccountIds: constraints?.excludeAccountIds, excludeTransferPayees: !!(constraints?.excludeTransfers || constraints?.excludeTransferPayees) });
   const loaded = useMemo(() => search.rows.filter((r) => !rowFilter || rowFilter(r)), [search.rows, rowFilter]);
   // Tags: Actual's defined ones, every #word used in any Notes in the budget, and any in the loaded rows.
   const connection = useConnectionStore(selectActiveInstance);

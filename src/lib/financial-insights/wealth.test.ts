@@ -2,7 +2,7 @@ import type { AssetDebtLink } from "@/lib/asset-registry/financing";
 import { valueBridge } from "@/lib/asset-registry/valueBridge";
 import { buildLedger, summarize, type AccountFact, type FinancialFacts, type MovementRow, type ReclassifiedRow } from "./measures";
 import { resolvePeriod, type PeriodChoice } from "./period";
-import { assetValues, bridgeLines, holdings, homeEquity, isFixedAssetAccount, otherOf, portfolioBridge, portfolioMonthly, portfolioSeries, type AssetBook, type BookRow, type LoanRef } from "./wealth";
+import { assetSeries, assetValues, holdings, homeEquity, isFixedAssetAccount, otherOf, portfolioBridge, portfolioMonthly, portfolioSeries, type AssetBook, type BookRow, type LoanRef } from "./wealth";
 
 const accounts: AccountFact[] = [
   { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false },
@@ -25,6 +25,9 @@ function facts(movement: MovementRow[], extra: Partial<FinancialFacts> = {}): Fi
 const choice = (startMonth: string, endMonth: string): PeriodChoice => ({ kind: "custom", startMonth, endMonth });
 const setup = (f: FinancialFacts, c = choice("2026-09", "2026-09")) => { const ledger = buildLedger(f); return { ledger, period: resolvePeriod(c, "2026-11-18", ledger.firstMonth) }; };
 const start = (accountId: string, amountMinor: number, month = "2026-01") => ({ month, accountId, amountMinor });
+
+/** What the lines of a bridge add up to; equal to its closing value unless something is unexplained. */
+const bridgeLines = (s: { funding: number; withdrawals: number; between: number; activity: number; openingBalances: number }) => s.funding + s.withdrawals + s.between + s.activity + s.openingBalances;
 
 describe("portfolio bridge", () => {
   it("closes with nothing unexplained over funding, a withdrawal, investment activity, a categorized fee (left in Other) and an account opened in the period", () => {
@@ -174,7 +177,32 @@ describe("asset values, equity and loan-to-value", () => {
     expect(home.bridge).toMatchObject({ openingMinor: 30_000_000, capitalMinor: 500_000, revaluationMinor: 2_000_000, closingMinor: 32_500_000 });
     expect(home.equity.end).toMatchObject({ assetValueMinor: 32_500_000, debtMinor: 20_000_000, equityMinor: 12_500_000, ltvPercent: 61.5 });
     expect(home.equity.start).toMatchObject({ equityMinor: 10_000_000 });
-    expect(homeEquity(run())).toEqual({ state: "ready", endMinor: 12_500_000, startMinor: 10_000_000, ltvPercent: 61.5 });
+    expect(homeEquity(run())).toMatchObject({ state: "ready", endMinor: 12_500_000, startMinor: 10_000_000, ltvPercent: 61.5 });
+  });
+
+  it("lists the linked loans with what is owed at the start and the end", () => {
+    const [home] = run();
+    if (home.kind !== "registered") throw new Error("expected a registered asset");
+    expect(home.loans).toEqual([{ debtId: "d1", accountId: "mortgage", name: "Mortgage", startDebtMinor: 20_000_000, endDebtMinor: 20_000_000 }]);
+  });
+
+  it("follows value, debt and equity month by month, ending on the table's own end figures", () => {
+    const series = assetSeries({ ledger, period, assets, books: book, links, loans });
+    const [home] = run();
+    if (home.kind !== "registered" || home.state !== "ready") throw new Error("expected a ready asset");
+    expect(series.assets).toBe(1);
+    expect(series.linked).toBe(1);
+    expect(series.opening).toEqual({ valueMinor: 30_000_000, debtMinor: 20_000_000, equityMinor: 10_000_000 });
+    const last = series.points[series.points.length - 1];
+    expect(last).toEqual({ valueMinor: home.equity.end.assetValueMinor, debtMinor: home.equity.end.debtMinor, equityMinor: home.equity.end.equityMinor });
+    expect(series.points).toHaveLength(period.months.length);
+  });
+
+  it("leaves debt and equity out when no loan is linked, and counts only assets that could be read", () => {
+    expect(assetSeries({ ledger, period, assets, books: book, links: [], loans }).points.every((p) => p.debtMinor === null && p.equityMinor === null)).toBe(true);
+    const none = assetSeries({ ledger, period, assets, books: new Map([["house", { available: false, rows: [] }]]), links, loans });
+    expect(none.assets).toBe(0);
+    expect(none.points.every((p) => p.valueMinor === 0 && p.equityMinor === null)).toBe(true);
   });
 
   it("is unavailable, never zero, when a loan balance is missing, and says Not linked without a link", () => {

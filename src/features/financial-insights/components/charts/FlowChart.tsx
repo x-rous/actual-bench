@@ -14,7 +14,7 @@ import { useTip, useWidth } from "./Tip";
  */
 export function FlowChart({ labels, partialIndex, received, spent, kept, height = 260, tip, onSelect }: {
   labels: string[];
-  partialIndex: number | null;
+  partialIndex: number | readonly number[] | null;
   received: (number | null)[];
   spent: (number | null)[];
   /** Null while Money kept needs review: the marker is left out, not shown as zero. */
@@ -34,7 +34,7 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
   const bar = Math.min(26, Math.max(6, slot * 0.34));
   return (
     <div ref={host} className="w-full">
-      <svg width={width} height={height} role="img" aria-label="Money received above the line, money spent below it, and money kept as a dashed line with a marker for each month">
+      <svg width={width} height={height} role="group" aria-label="Money received above the line, money spent below it, and money kept as a dashed line with a marker for each month">
         {marks.map((v) => (
           <g key={v}>
             <line x1={M.l} x2={width - M.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={v === 0 ? 0 : 0.55} />
@@ -44,7 +44,7 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
         <line x1={M.l} x2={width - M.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.25} />
         {labels.map((label, i) => {
           const cx = M.l + (i + 0.5) * slot;
-          const partial = i === partialIndex;
+          const partial = Array.isArray(partialIndex) ? partialIndex.includes(i) : i === partialIndex;
           const r = received[i], s = spent[i];
           const style = (colour: string) => ({ fill: colour, fillOpacity: partial ? 0.35 : 1, stroke: partial ? colour : "none", strokeDasharray: partial ? "3 2" : undefined, strokeWidth: 1.2 });
           const select = (series: "received" | "spent") => ({

@@ -6,8 +6,7 @@ import { getTransport } from "@/lib/actual";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { attributeBook, readBook } from "@/lib/asset-registry/ledger";
 import { ASSET_ROW_LIMIT } from "@/lib/financial-insights/assetReview";
-import { assetValues, type AssetBook, type AssetValueRow, type LoanRef } from "@/lib/financial-insights/wealth";
-import { bankToday } from "@/features/credit-cards/lib/cycles";
+import { assetSeries, assetValues, type AssetBook, type AssetSeries, type AssetValueRow, type LoanRef } from "@/lib/financial-insights/wealth";
 import { listDebts } from "@/features/assets-debt/lib/debtsApi";
 import type { ReadyData } from "./useFinancialInsights";
 
@@ -17,18 +16,19 @@ const ASSET_CLASSES = ["property", "vehicle", "other-asset"];
 export type WealthLoad =
   | { state: "loading" }
   | { state: "error"; retry: () => void }
-  | { state: "ready"; rows: AssetValueRow[]; /** Some asset account could not be read. */ hasFailedBooks: boolean; /** Read the accounts that failed again. */ retryBooks: () => void };
+  | { state: "ready"; rows: AssetValueRow[]; series: AssetSeries; /** Some asset account could not be read. */ hasFailedBooks: boolean; /** Read the accounts that failed again. */ retryBooks: () => void };
 
 /**
- * What Wealth & investments reads beyond the main read, when its tab opens: each registered asset account's book (the Asset
+ * What Property & assets reads beyond the main read, when its tab opens: each registered asset account's book (the Asset
  * Registry's own read and attribution, through its cache key, so an account already open in Assets is free) and the loans the
  * registry links to (one list read). Nothing is written. The portfolio itself needs no extra read.
  */
 export function useWealth(data: ReadyData): WealthLoad {
   const connection = useConnectionStore(selectActiveInstance);
   const { ledger, registry } = data;
-  // The same date the Asset Registry keys its books by, so the two share the cache.
-  const date = bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  // The page's own date, so the books and the ledger are read for the same day. It is the browser's calendar day, as the Asset
+  // Registry keys its books by, so an account already open in Assets is still read from the cache.
+  const date = data.drill.today;
 
   // Every active asset on a property, vehicle or other-asset account: `assetValues` decides which of them are still fixed assets.
   const assets = useMemo(() => registry.assets.filter((a) => a.status !== "archived" && ASSET_CLASSES.includes(ledger.account.get(a.actualAccountId)?.accountClass ?? "")), [registry.assets, ledger]);
@@ -60,7 +60,7 @@ export function useWealth(data: ReadyData): WealthLoad {
   const failed = linkedDebts.length > 0 && loansQuery.isError;
   // A book whose read failed is unavailable, even if an earlier read left data behind: stale figures must not look current.
   const bookData = books.map((q) => (q.isError ? undefined : q.data));
-  const rows = useMemo((): AssetValueRow[] | null => {
+  const loaded = useMemo((): { rows: AssetValueRow[]; series: AssetSeries } | null => {
     if (pending || failed) return null;
     const attributed = new Map<string, AssetBook | null>();
     accountIds.forEach((id, i) => {
@@ -70,12 +70,15 @@ export function useWealth(data: ReadyData): WealthLoad {
       attributed.set(id, { available: book.available, rows: book.rows.map((r) => ({ assetId: r.assetId, date: r.date, classification: r.classification, amountMinor: r.amountMinor })) });
     });
     const loans: LoanRef[] = (loansQuery.data ?? []).filter((d) => linkedDebts.includes(d.id)).map((d) => ({ debtId: d.id, accountId: d.liabilityAccountId ?? null, signConvention: d.signConvention as LoanRef["signConvention"] }));
-    return assetValues({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans, unreadable });
+    return {
+      rows: assetValues({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans, unreadable }),
+      series: assetSeries({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans }),
+    };
     // bookData is an array rebuilt every render; its entries only change when a query settles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending, failed, accountIds, books.map((q) => `${q.dataUpdatedAt}:${q.isError}`).join("|"), loansQuery.data, ledger, data.period, assets, registry, linkedDebts, unreadable]);
 
   if (failed) return { state: "error", retry: () => void loansQuery.refetch() };
-  if (!rows) return { state: "loading" };
-  return { state: "ready", rows, hasFailedBooks: books.some((q) => q.isError), retryBooks: () => books.forEach((q) => { if (q.isError) void q.refetch(); }) };
+  if (!loaded) return { state: "loading" };
+  return { state: "ready", ...loaded, hasFailedBooks: books.some((q) => q.isError), retryBooks: () => books.forEach((q) => { if (q.isError) void q.refetch(); }) };
 }

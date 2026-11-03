@@ -118,7 +118,7 @@ describe("financial insights: how a row is classified", () => {
     expect(value(s.moneyKept)).toBe(100_000);
     expect([s.flows.unidentified, s.flows.unidentifiedCount]).toEqual([1_393_000, 7]);
     expect(s.cashBridge.unidentified).toBe(400_000);
-    expect(s.cashBridge.operating).toBe(100_000);
+    expect([s.cashBridge.operatingIncome, s.cashBridge.operatingSpending]).toEqual([100_000, 0]);
     expect(s.eligibleCash.change).toBe(500_000);
     expect(s.netWorth.change).toBe(1_493_000);
     expect(s.unexplained).toBe(0);
@@ -153,7 +153,7 @@ describe("financial insights: how a row is classified", () => {
     expect(s.received).toBe(0);
     expect(s.flows.assetSales).toBe(1_000_000);
     expect(s.cashBridge.assetSales).toBe(1_000_000);
-    expect(s.cashBridge.operating).toBe(0);
+    expect([s.cashBridge.operatingIncome, s.cashBridge.operatingSpending]).toEqual([0, 0]);
     expect(s.flows.valueChanges).toBe(-900_000);
     expect(s.unexplained).toBe(0);
   });

@@ -90,36 +90,35 @@ export async function readAssetEntries(connection: ConnectionInstance, accountId
   return response.data.map((r) => ({ id: r.id, date: r.date, accountId: r.account, categoryId: r.category, amountMinor: r.amount, notes: r.notes, payeeId: r.payee }));
 }
 
+const ID_CHUNK = 400;
+
+/** Rows by id up to today, a few hundred ids per query so a long list never makes one oversized filter. */
+async function readByIds<T>(connection: ConnectionInstance, transactionIds: readonly string[], today: string, select: string[]): Promise<T[]> {
+  const ids = [...new Set(transactionIds)];
+  const rows: T[] = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const response = await runQuery<Response<T>>(connection, {
+      ActualQLquery: { table: "transactions", // A row Actual has since turned into a transfer is in transit, not a sale or a cost: it is left out so it is not taken out twice.
+      filter: { $and: [{ id: { $oneof: ids.slice(i, i + ID_CHUNK) } }, upToToday(today), { "payee.transfer_acct": null }] }, select },
+    });
+    rows.push(...response.data);
+  }
+  return rows;
+}
+
 type LinkedResult = { id: string; date: string; amount: number; account: string; category: string | null; payee: string | null };
 
 /** The rows the Asset Registry links to an asset sale, so they can be taken out of income and spending. */
 export async function readLinkedSales(connection: ConnectionInstance, transactionIds: readonly string[], today: string): Promise<ReclassifiedRow[]> {
-  if (transactionIds.length === 0) return [];
-  const response = await runQuery<Response<LinkedResult>>(connection, {
-    ActualQLquery: {
-      table: "transactions",
-      // A row Actual has since turned into a transfer is in transit, not a sale: it is left out here so it is not taken out twice.
-      filter: { $and: [{ id: { $oneof: [...transactionIds] } }, upToToday(today), { "payee.transfer_acct": null }] },
-      select: ["id", "date", "amount", "account", "category", "payee"],
-    },
-  });
-  return response.data.map((r) => ({ id: r.id, payeeId: r.payee, month: r.date.slice(0, 7), accountId: r.account, categoryId: r.category, amountMinor: r.amount, to: "assetSale" as const }));
+  const data = await readByIds<LinkedResult>(connection, transactionIds, today, ["id", "date", "amount", "account", "category", "payee"]);
+  return data.map((r) => ({ id: r.id, payeeId: r.payee, month: r.date.slice(0, 7), accountId: r.account, categoryId: r.category, amountMinor: r.amount, to: "assetSale" as const }));
 }
 
 /** The interest and fee lines the Loans tracking recorded: read by id, so only those rows are ever taken out of spending. */
 export async function readLoanCostRows(connection: ConnectionInstance, tags: readonly { id: string; loanAccountId: string; kind?: "interest" | "fee" }[], today: string): Promise<LoanCostRow[]> {
-  const transactionIds = tags.map((t) => t.id);
   const tagOf = new Map(tags.map((t) => [t.id, t]));
-  if (transactionIds.length === 0) return [];
-  const response = await runQuery<Response<LinkedResult>>(connection, {
-    ActualQLquery: {
-      table: "transactions",
-      // A row Actual has since turned into a transfer is not a cost: it is left out so it is not taken out of spending twice.
-      filter: { $and: [{ id: { $oneof: [...new Set(transactionIds)] } }, upToToday(today), { "payee.transfer_acct": null }] },
-      select: ["id", "date", "amount", "account", "category"],
-    },
-  });
-  return response.data.map((r) => ({ month: r.date.slice(0, 7), accountId: r.account, categoryId: r.category, amountMinor: r.amount, loanAccountId: tagOf.get(r.id)?.loanAccountId, kind: tagOf.get(r.id)?.kind }));
+  const data = await readByIds<LinkedResult>(connection, tags.map((t) => t.id), today, ["id", "date", "amount", "account", "category"]);
+  return data.map((r) => ({ id: r.id, month: r.date.slice(0, 7), accountId: r.account, categoryId: r.category, amountMinor: r.amount, loanAccountId: tagOf.get(r.id)?.loanAccountId, kind: tagOf.get(r.id)?.kind }));
 }
 
 type PayeeResult = { payee: string | null; category: string; account: string; is_child: boolean | number | null; amt: number; n: number };

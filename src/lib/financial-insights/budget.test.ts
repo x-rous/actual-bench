@@ -1,5 +1,5 @@
 import type { LoadedCategory, LoadedMonthState } from "@/features/budget-management/types";
-import { buildBudgetPlan, type MonthRead } from "./budget";
+import { buildBudgetPlan, combineCells, type MonthRead, type PlanCell } from "./budget";
 import { spendingBreakdown, type CategoryInfo } from "./breakdowns";
 import { monthlyFlows } from "./breakdowns";
 import { buildLedger, type AccountFact, type FinancialFacts, type MovementRow } from "./measures";
@@ -84,19 +84,6 @@ describe("my budget: tracking", () => {
   it("measures a streak across consecutive months", () => {
     const run = buildBudgetPlan({ mode: "tracking", today, reads: ["2026-07", "2026-08", "2026-09", "2026-10"].map((m, i) => ok(m, [expense("food", "Daily", 10_000, i === 0 ? 5_000 : 20_000)])) });
     expect(run.misses[0]).toMatchObject({ monthsMissed: 3, longestStreak: 3 });
-  });
-
-  it("omits 'how your plan has changed' below six completed months and says why", () => {
-    expect(plan.planChange).toMatchObject({ state: "omitted" });
-  });
-
-  it("compares the earliest three saved plans with the latest three, without overlap", () => {
-    const months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"];
-    const six = buildBudgetPlan({ mode: "tracking", today, reads: months.map((m, i) => ok(m, [expense("food", "Daily", i < 3 ? 30_000 : 45_000, 0), expense("rent", "Home", 100_000, 0)])) });
-    if (six.planChange.state !== "ready") throw new Error("expected a comparison");
-    expect(six.planChange.earlier).toEqual(["2026-01", "2026-02", "2026-03"]);
-    expect(six.planChange.latest).toEqual(["2026-04", "2026-05", "2026-06"]);
-    expect(six.planChange.rows.map((r) => [r.id, r.earlierMinor, r.latestMinor, r.changeMinor])).toEqual([["food", 30_000, 45_000, 15_000], ["rent", 100_000, 100_000, 0]]);
   });
 
   it("shows a month Actual does not have as unavailable, and a failed month makes the totals unavailable", () => {
@@ -277,14 +264,6 @@ describe("my budget: groups and unplanned spending", () => {
   it("splits each month's category spending into with a plan and unplanned", () => {
     expect(plan.months.map((m) => [m.categorySpentMinor, m.unplannedMinor])).toEqual([[146_000, 6_000], [126_000, 6_000], [126_000, 6_000]]);
   });
-
-  it("compares plans by group as the sum of the categories", () => {
-    const six = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"].map((m, i) => ok(m, [expense("food", "Daily", i < 3 ? 30_000 : 40_000, 0), expense("fun", "Daily", i < 3 ? 5_000 : 5_000, 0), expense("rent", "Home", 100_000, 0)]));
-    const change = buildBudgetPlan({ mode: "tracking", today, reads: six }).planChange;
-    if (change.state !== "ready") throw new Error("expected a comparison");
-    expect(change.groupRows.map((g) => [g.id, g.earlierMinor, g.latestMinor, g.changeMinor])).toEqual([["Daily", 35_000, 45_000, 10_000], ["Home", 100_000, 100_000, 0]]);
-    expect(change.groupRows.reduce((a, g) => a + g.changeMinor, 0)).toBe(change.rows.reduce((a, r) => a + r.changeMinor, 0));
-  });
 });
 
 describe("my budget: refunds and zero months are not overspending", () => {
@@ -307,5 +286,28 @@ describe("my budget: refunds and zero months are not overspending", () => {
     expect(plan.unplanned).toBeNull();
     expect(plan.groups.find((g) => g.name === "Loans")?.cells.map((c) => c?.state)).toEqual(["under", "under"]);
     expect(plan.groups.some((g) => g.name === "Quiet")).toBe(false);
+  });
+});
+
+
+describe("my budget: cells over several months", () => {
+  const cell = (spentMinor: number, planMinor: number, state: PlanCell["state"], balanceMinor = 0): PlanCell => ({ spentMinor, planMinor, balanceMinor, state, level: 1 });
+
+  it("Tracking: adds the spending and the plan, then judges the total like a month", () => {
+    const quarter = combineCells("tracking", [cell(900, 1_000, "under"), cell(1_200, 1_000, "over"), null]);
+    expect(quarter).toMatchObject({ spentMinor: 2_100, planMinor: 2_000, state: "over", level: 1 });
+    expect(combineCells("tracking", [cell(500, 1_000, "under"), cell(500, 1_000, "under")])).toMatchObject({ state: "under", level: 2 });
+    expect(combineCells("tracking", [cell(1_000, 1_000, "on"), cell(1_000, 1_000, "on")])).toMatchObject({ state: "on" });
+  });
+
+  it("Tracking: spending with no plan in any month is unplanned, and nothing at all is no cell", () => {
+    expect(combineCells("tracking", [cell(300, 0, "unplanned"), null])).toMatchObject({ state: "unplanned", planMinor: 0 });
+    expect(combineCells("tracking", [null, null])).toBeNull();
+  });
+
+  it("Envelope: takes the worst state and the last month's balance", () => {
+    const quarter = combineCells("envelope", [cell(100, 200, "covered", 300), cell(500, 100, "uncovered", -200), cell(50, 100, "covered", 40)]);
+    expect(quarter).toMatchObject({ state: "uncovered", balanceMinor: 40, spentMinor: 650, planMinor: 400 });
+    expect(combineCells("envelope", [cell(1, 1, "covered", 5), cell(1, 1, "carried", -1)])).toMatchObject({ state: "carried", balanceMinor: -1 });
   });
 });

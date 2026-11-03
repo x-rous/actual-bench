@@ -112,13 +112,6 @@ export type MissRow = {
   spentMinor: number;
 };
 
-export type PlanChangeRow = { id: string; name: string; groupName: string; /** Hidden category, or a group whose categories are all hidden. */ hidden: boolean; earlierMinor: number; latestMinor: number; changeMinor: number };
-
-/** The plans saved for the earliest three completed months against the latest three. */
-export type PlanChange =
-  | { state: "ready"; earlier: string[]; latest: string[]; rows: PlanChangeRow[]; /** The same by category group (`id` is the group name). */ groupRows: PlanChangeRow[]; earlierTotalMinor: number; latestTotalMinor: number }
-  | { state: "omitted"; reason: string };
-
 export type PlanKpis =
   | { state: "empty" }
   /** These completed months could not be read, so the figures that need them are not shown. */
@@ -195,7 +188,6 @@ export type BudgetPlan = {
   unplanned: { amountMinor: number; spendingMinor: number; categories: number } | null;
   /** Tracking: hidden categories, which Actual's totals leave out and Financial Insights spending keeps. */
   hidden: { categoryIds: string[] } | null;
-  planChange: PlanChange;
   reconciliation: Reconciliation | null;
 };
 
@@ -236,6 +228,17 @@ function groupCell(mode: PlanMode, cells: (PlanCell | null)[]): PlanCell | null 
   const ratio = spent / plan;
   const state: CellState = spent > plan ? "over" : spent === plan ? "on" : "under";
   return { spentMinor: spent, planMinor: plan, balanceMinor: balance, state, level: state === "over" ? (ratio > 1.25 ? 2 : 1) : state === "under" ? (ratio < 0.75 ? 2 : 1) : 1 };
+}
+
+/**
+ * One category's (or group's) cell over several months, such as a quarter: what was spent and planned added up, then judged
+ * the same way as a single month. In an Envelope budget the balance is the last month's, and the state the worst of the months
+ * (uncovered, then carried, then covered). A month with no cell adds nothing; with no cell at all there is none.
+ */
+export function combineCells(mode: PlanMode, cells: readonly (PlanCell | null)[]): PlanCell | null {
+  const live = cells.filter((c): c is PlanCell => c !== null);
+  const combined = groupCell(mode, live);
+  return combined && mode === "envelope" ? { ...combined, balanceMinor: live[live.length - 1].balanceMinor } : combined;
 }
 
 const missed = (mode: PlanMode, cell: PlanCell | null) => (mode === "tracking" ? cell?.state === "over" || cell?.state === "unplanned" : cell?.state === "uncovered");
@@ -398,39 +401,7 @@ export function buildBudgetPlan({ mode, reads, today, ledger, breakdown }: Build
       : { state: "empty" };
   }
 
-  return { mode, months, completed, unavailable, failed, kpis, groups, misses, groupMisses, unplanned: unplannedSummary, hidden: mode === "tracking" && hiddenIds.size > 0 ? { categoryIds: [...hiddenIds] } : null, planChange: planChanges(rows, completed, byMonth), reconciliation: ledger && breakdown ? reconcile(ledger, breakdown, completed, kpis, rows, mode === "tracking" ? hiddenIds : new Set()) : null };
-}
-
-// ─── How the plan has changed ───────────────────────────────────────────────
-
-const MIN_MONTHS_FOR_CHANGE = 6;
-
-function planChanges(rows: ReadonlyMap<string, PlanRow>, completed: readonly string[], byMonth: ReadonlyMap<string, MonthRead>): PlanChange {
-  if (completed.length < MIN_MONTHS_FOR_CHANGE) return { state: "omitted", reason: `Needs at least ${MIN_MONTHS_FOR_CHANGE} completed months; this period has ${completed.length}.` };
-  const earlier = completed.slice(0, 3);
-  const latest = completed.slice(-3);
-  const average = (id: string, list: string[]) => {
-    const sum = list.reduce((a, m) => {
-      const r = byMonth.get(m);
-      return a + (r?.status === "ok" ? (r.state.categoriesById[id]?.budgeted ?? 0) : 0);
-    }, 0);
-    return Math.round(sum / list.length);
-  };
-  const out: PlanChangeRow[] = [];
-  for (const row of rows.values()) {
-    const a = average(row.id, earlier), b = average(row.id, latest);
-    if (a !== 0 || b !== 0) out.push({ id: row.id, name: row.name, groupName: row.groupName, hidden: row.hidden, earlierMinor: a, latestMinor: b, changeMinor: b - a });
-  }
-  out.sort((x, y) => Math.abs(y.changeMinor) - Math.abs(x.changeMinor) || x.name.localeCompare(y.name));
-  const byGroup = new Map<string, PlanChangeRow>();
-  for (const r of out) {
-    const g = byGroup.get(r.groupName) ?? { id: r.groupName, name: r.groupName, groupName: r.groupName, hidden: true, earlierMinor: 0, latestMinor: 0, changeMinor: 0 };
-    g.hidden = g.hidden && r.hidden;
-    g.earlierMinor += r.earlierMinor; g.latestMinor += r.latestMinor; g.changeMinor += r.changeMinor;
-    byGroup.set(r.groupName, g);
-  }
-  const groupRows = [...byGroup.values()].sort((x, y) => Math.abs(y.changeMinor) - Math.abs(x.changeMinor) || x.name.localeCompare(y.name));
-  return { state: "ready", earlier, latest, rows: out, groupRows, earlierTotalMinor: out.reduce((a, r) => a + r.earlierMinor, 0), latestTotalMinor: out.reduce((a, r) => a + r.latestMinor, 0) };
+  return { mode, months, completed, unavailable, failed, kpis, groups, misses, groupMisses, unplanned: unplannedSummary, hidden: mode === "tracking" && hiddenIds.size > 0 ? { categoryIds: [...hiddenIds] } : null, reconciliation: ledger && breakdown ? reconcile(ledger, breakdown, completed, kpis, rows, mode === "tracking" ? hiddenIds : new Set()) : null };
 }
 
 // ─── Reconciliation to the Spending tab ─────────────────────────────────────

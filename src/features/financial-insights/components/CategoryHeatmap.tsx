@@ -26,7 +26,7 @@ const SORT_DEFAULT: Record<SortKey, boolean> = { spend: true, name: false, order
  * name or budget order (reversible), with a sticky first column and header. What a cell shows and how it is shaded belongs to the
  * caller (`renderCell` returns the `<td>`); the grid owns the layout, the sort and the expansion.
  */
-export function CategoryHeatmap<T>({ id, title, hint, info, infoLabel, switcher, legend, months, groups, renderCell, footer, totalLabel = "Total", sortLabel = "Spend", initialGroups, defaultSort = "spend", firstColumnLabel = "Category group", orderLabel = "Budget order", formatTotal = whole, initiallyOpen = false }: {
+export function CategoryHeatmap<T>({ id, title, hint, info, infoLabel, switcher, beforeSort, flat = false, legend, months, groups, renderCell, footer, totalLabel = "Total", sortLabel = "Spend", initialGroups, defaultSort = "spend", firstColumnLabel = "Category group", orderLabel = "Budget order", formatTotal = whole }: {
   id: string;
   title: string;
   hint?: ReactNode;
@@ -34,6 +34,10 @@ export function CategoryHeatmap<T>({ id, title, hint, info, infoLabel, switcher,
   infoLabel: string;
   /** Beside the title, for example the switch between this grid and another view. */
   switcher?: ReactNode;
+  /** Controls on the second line, just before Sort by. */
+  beforeSort?: ReactNode;
+  /** Every row is a single item: no group is opened into rows (income by category). */
+  flat?: boolean;
   /** The colour key, placed before the sort controls. */
   legend: ReactNode;
   months: HeatMonth[];
@@ -54,11 +58,9 @@ export function CategoryHeatmap<T>({ id, title, hint, info, infoLabel, switcher,
   orderLabel?: string;
   /** How the total column and the sort of it are written; whole units unless the caller needs exact figures. */
   formatTotal?: (minor: number) => string;
-  /** Open every group at first. */
-  initiallyOpen?: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const [open, setOpen] = useState<Set<string>>(() => new Set(initiallyOpen ? groups.map((g) => g.key) : []));
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
   const [sort, setSort] = useState<{ key: SortKey; descending: boolean }>({ key: defaultSort, descending: SORT_DEFAULT[defaultSort] });
   const compare = <U extends { name: string; totalMinor: number; order?: number }>(a: U, b: U) => {
     const d = sort.descending ? -1 : 1;
@@ -76,7 +78,8 @@ export function CategoryHeatmap<T>({ id, title, hint, info, infoLabel, switcher,
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Legend">
         {legend}
-        <span className="ml-auto flex items-center gap-2">
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {beforeSort}
           <span>Sort by</span>
           <PillGroup options={[{ value: "spend", label: sortLabel }, { value: "name", label: "Name" }, { value: "order", label: orderLabel }]} value={sort.key} onChange={(v) => setSort({ key: v as SortKey, descending: SORT_DEFAULT[v as SortKey] })} />
           <button type="button" className="inline-flex h-7 items-center gap-1 rounded-md border border-input px-2 hover:bg-muted" onClick={() => setSort((x) => ({ ...x, descending: !x.descending }))} aria-label={`Sorted ${sort.key === "spend" ? (sort.descending ? "highest spend first" : "lowest spend first") : sort.key === "name" ? (sort.descending ? "Z to A" : "A to Z") : (sort.descending ? "last to first" : "first to last")}. Reverse the order`}>
@@ -99,16 +102,23 @@ export function CategoryHeatmap<T>({ id, title, hint, info, infoLabel, switcher,
               return [
                 <tr key={g.key} className="border-t border-border/40">
                   <th scope="row" className="sticky left-0 z-10 bg-card px-2 py-0.5 text-left font-normal">
-                    <button type="button" aria-expanded={isOpen} aria-label={`${isOpen ? "Collapse" : "Expand"} ${g.name}`} className="-ml-1 flex items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted/60" onClick={() => toggle(g.key)}>
-                      <ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden />
-                      <span className="size-2.5 shrink-0 rounded-sm" style={{ background: g.colour }} aria-hidden />
-                      <span className="max-w-72 break-words" title={g.name}>{g.name}</span>{g.hidden && <HiddenMark title="Hidden group" />}
-                    </button>
+                    {flat ? (
+                      <span className="flex items-center gap-1.5 px-1 py-0.5">
+                        <span className="size-2.5 shrink-0 rounded-sm" style={{ background: g.colour }} aria-hidden />
+                        <span className="max-w-72 break-words" title={g.name}>{g.name}</span>{g.hidden && <HiddenMark title="Hidden category" />}
+                      </span>
+                    ) : (
+                      <button type="button" aria-expanded={isOpen} aria-label={`${isOpen ? "Collapse" : "Expand"} ${g.name}`} className="-ml-1 flex items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted/60" onClick={() => toggle(g.key)}>
+                        <ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-90" : ""}`} aria-hidden />
+                        <span className="size-2.5 shrink-0 rounded-sm" style={{ background: g.colour }} aria-hidden />
+                        <span className="max-w-72 break-words" title={g.name}>{g.name}</span>{g.hidden && <HiddenMark title="Hidden group" />}
+                      </button>
+                    )}
                   </th>
                   {cells(g, true)}
                   <td className="px-2 py-0.5 text-right tabular-nums">{formatTotal(g.totalMinor)}</td>
                 </tr>,
-                ...(isOpen ? [...g.rows].sort(compare).map((r) => (
+                ...(isOpen && !flat ? [...g.rows].sort(compare).map((r) => (
                   <tr key={`${g.key}/${r.key}`} className="border-t border-border/20">
                     <th scope="row" className="sticky left-0 z-10 bg-card py-0.5 pl-8 pr-2 text-left font-normal text-muted-foreground"><span className="flex max-w-64 items-center gap-1.5" title={r.name}><span className="break-words">{r.name}</span>{r.hidden && <HiddenMark />}</span></th>
                     {cells(r, false)}

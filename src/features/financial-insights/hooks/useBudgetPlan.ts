@@ -11,9 +11,6 @@ import type { LoadedMonthState } from "@/features/budget-management/types";
 import { buildBudgetPlan, type BudgetPlan, type MonthRead, type PlanMode } from "@/lib/financial-insights/budget";
 import type { ReadyData } from "./useFinancialInsights";
 
-/** My budget reads one month of Actual's budget per month of the period; at most this many, the most recent. */
-export const PLAN_MONTH_CAP = 24;
-
 /**
  * Whether My budget has anything to show: the budget's mode is known (Tracking or Envelope) and Actual returned its latest month.
  * One month read, which Budget Cockpit shares through the same cache key, so the tab can be offered without reading the period.
@@ -32,10 +29,10 @@ export function useBudgetAvailability(enabled: boolean, today: string): { mode: 
 export type BudgetPlanLoad =
   | { state: "loading"; done: number; total: number }
   | { state: "error"; retry: () => void }
-  | { state: "ready"; plan: BudgetPlan; /** The period was longer than the cap, so the oldest months are left out. */ cappedFrom: string | null; periodMonths: number };
+  | { state: "ready"; plan: BudgetPlan };
 
 /**
- * Reads the budget months of the period when My budget opens, through the same query and cache as Budget Cockpit (a month
+ * Reads every budget month of the period when My budget opens, through the same query and cache as Budget Cockpit (a month
  * already open there is not read again), one month at a time like every other read on this page. It adds nothing to the main
  * read, so the other tabs never wait for it.
  */
@@ -44,8 +41,8 @@ export function useBudgetPlan(data: ReadyData, today: string, mode: PlanMode): B
   const queryClient = useQueryClient();
   const available = useAvailableMonths();
   const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const all = data.period.months;
-  const months = useMemo(() => all.slice(-PLAN_MONTH_CAP), [all]);
+  // Every month of the period, however long: a longer period reads more months, one at a time, and says which it is on.
+  const months = data.period.months;
   const query = useQuery({
     queryKey: ["financial-insights", "budget-plan", connection?.id, connection?.budgetSyncId, today, months[0], months[months.length - 1]],
     // If the budget's month list cannot be read, every month is tried and a missing one is reported as unreadable.
@@ -73,5 +70,5 @@ export function useBudgetPlan(data: ReadyData, today: string, mode: PlanMode): B
   );
   if (query.isError) return { state: "error", retry: () => void query.refetch() };
   if (!plan) return { state: "loading", done: progress.done, total: progress.total || months.length };
-  return { state: "ready", plan, cappedFrom: all.length > months.length ? months[0] : null, periodMonths: all.length };
+  return { state: "ready", plan };
 }

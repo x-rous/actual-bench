@@ -11,17 +11,17 @@ import { projectAfterAnchor, readTrackedLoan, type TrackedLoan } from "@/feature
  */
 
 export type LoanSchedule =
-  | { accountId: string; state: "ready"; monthlyMinor: number; payments: number; totalMinor: number }
+  /** `principalNext12Minor` is the part of the next twelve months' installments that reduces the loan, and `costNext12Minor` the interest and fees in them (both positive amounts). */
+  | { accountId: string; state: "ready"; monthlyMinor: number; payments: number; totalMinor: number; principalNext12Minor: number; costNext12Minor: number }
   | { accountId: string; state: "unavailable"; reason: string };
 
 export type LoanSchedules = {
   schedules: LoanSchedule[];
   /**
-   * The ids of the interest and fee lines the Loans tracking recorded for these loans: exactly those rows, not everything
-   * that shares their category, so what the loans cost is not counted twice and nothing else is taken out of spending.
+   * The interest and fee lines the Loans tracking recorded for these loans, each with the loan it belongs to and whether it
+   * is interest or a fee: exactly those rows, not everything that shares their category, so what the loans cost is not
+   * counted twice and nothing else is taken out of spending.
    */
-  costRowIds: string[];
-  /** The same rows, each with the loan it belongs to and whether it is interest or a fee. */
   costRows: CostRowTag[];
 };
 
@@ -31,16 +31,28 @@ export type CostRowTag = { id: string; loanAccountId: string; kind?: "interest" 
 const unavailable = (accountId: string, reason: string): LoanSchedule => ({ accountId, state: "unavailable", reason });
 
 /**
- * The cash due over the coming months, spread over the months in which a payment falls: the installment while the loan
- * lasts, and the average where installments change. Only the projection's scheduled payments (including any overdue one the
+ * The cash due over the coming months, spread over the months of the window (or from the first to the last payment when the loan ends
+ * inside it): the installment of a monthly loan, and the average where installments change or fall less often than monthly. Only the projection's scheduled payments (including any overdue one the
  * calculation still expects) count.
  */
-export function monthlyRepayment(events: readonly { eventType: string; date: string; cashMovementMinor: number }[], until: string): { monthlyMinor: number; payments: number; totalMinor: number } {
+export function monthlyRepayment(events: readonly { eventType: string; date: string; cashMovementMinor: number; principalMovementMinor: number; interestMinor?: number; feesMinor?: number }[], until: string): { monthlyMinor: number; payments: number; totalMinor: number; principalNext12Minor: number; costNext12Minor: number } {
   const due = events.filter((e) => (e.eventType === "repayment" || e.eventType === "final-payment") && e.date <= until);
-  if (due.length === 0) return { monthlyMinor: 0, payments: 0, totalMinor: 0 };
+  if (due.length === 0) return { monthlyMinor: 0, payments: 0, totalMinor: 0, principalNext12Minor: 0, costNext12Minor: 0 };
   const months = new Set(due.map((e) => e.date.slice(0, 7)));
+  // The months the cash is spread over: the whole window, or up to the last payment when the loan ends inside it, so a loan that
+  // pays quarterly or yearly is not read as paying a whole installment every month.
+  const index = (month: string) => Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7));
+  const last = due[due.length - 1];
+  const ends = last.eventType === "final-payment";
+  const spanStart = ends ? index(due[0].date.slice(0, 7)) : index(until.slice(0, 7)) - 11;
+  const spanEnd = ends ? index(last.date.slice(0, 7)) : index(until.slice(0, 7));
+  const span = Math.max(months.size, spanEnd - spanStart + 1);
   const total = due.reduce((sum, e) => sum - e.cashMovementMinor, 0);
-  return { monthlyMinor: Math.round(total / months.size), payments: due.length, totalMinor: total };
+  // A repayment lowers the debt, so its principal movement is negative; this is the same reading as the Loans page's schedule rows.
+  const principal = due.reduce((sum, e) => sum + Math.max(0, -e.principalMovementMinor), 0);
+  // Interest and fees of the same installments, as the schedule rows show them.
+  const cost = due.reduce((sum, e) => sum + Math.max(0, e.interestMinor ?? 0) + Math.max(0, e.feesMinor ?? 0), 0);
+  return { monthlyMinor: Math.round(total / span), payments: due.length, totalMinor: total, principalNext12Minor: principal, costNext12Minor: cost };
 }
 
 /**
@@ -63,8 +75,6 @@ export function recordedCostRows(plan: TrackedLoan["plan"], loanAccountId: strin
   return [...fromSplits, ...charged].filter((tag) => !seen.has(tag.id) && !!seen.add(tag.id));
 }
 
-export const recordedCostRowIds = (plan: TrackedLoan["plan"]): string[] => recordedCostRows(plan, "").map((r) => r.id);
-
 /**
  * The schedule of a tracked loan whose plan has been read from Actual: only if it agrees with the loan account, then the
  * Loans page's own projection from the plan's anchor. Pure: the reads happen in `readLoanSchedules`.
@@ -79,7 +89,7 @@ export function scheduleFromLoan(accountId: string, loan: TrackedLoan, today: st
 
 export async function readLoanSchedules(connection: ConnectionInstance, input: { budgetSyncId: string; today: string; loanAccountIds: ReadonlySet<string> }): Promise<LoanSchedules> {
   const { budgetSyncId, today, loanAccountIds } = input;
-  const result: LoanSchedules = { schedules: [], costRowIds: [], costRows: [] };
+  const result: LoanSchedules = { schedules: [], costRows: [] };
   if (loanAccountIds.size === 0) return result;
   const debts = (await listDebts(budgetSyncId)).filter((d) => d.status === "active" && d.liabilityAccountId && loanAccountIds.has(d.liabilityAccountId));
   for (const summary of debts) {
@@ -90,7 +100,6 @@ export async function readLoanSchedules(connection: ConnectionInstance, input: {
       if (read.state === "unavailable") { result.schedules.push(unavailable(accountId, read.reason)); continue; }
       const tagged = recordedCostRows(read.loan.plan, accountId);
       result.costRows.push(...tagged);
-      result.costRowIds.push(...tagged.map((r) => r.id));
       result.schedules.push(scheduleFromLoan(accountId, read.loan, today));
     } catch (error) {
       result.schedules.push(unavailable(accountId, error instanceof Error ? error.message : "The loan could not be read"));

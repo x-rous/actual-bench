@@ -3,5 +3,5 @@ export function tickLabel(label: string, index: number, slot: number): string {
   if (slot >= 66) return label;
   const [month, year] = label.split(" ");
   if (!year) return label;
-  return index === 0 || month === "Jan" ? `${month} ${year.slice(-2)}` : month;
+  return index === 0 || month === "Jan" || month === "Q1" ? `${month} ${year.slice(-2)}` : month;
 }

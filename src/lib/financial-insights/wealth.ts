@@ -3,11 +3,11 @@ import { REPORTING_LABELS, isCashEquivalent, reportingRequirement } from "@/lib/
 import { trackedEquity, type AssetDebtLink } from "@/lib/asset-registry/financing";
 import { valueBridge, type ValueBridge } from "@/lib/asset-registry/valueBridge";
 import { ASSET_CLASSES, CLASS_LABEL, LIABILITY_CLASSES, type ClassKey } from "./breakdowns";
-import type { AccountFact, Ledger, Role } from "./measures";
+import { ledgersByMonth, type AccountFact, type Ledger, type Role } from "./measures";
 import { addMonths, type ResolvedPeriod } from "./period";
 
 /**
- * Wealth & investments, from the facts the page already holds. Pure: no I/O, no clock. Amounts are signed integer minor units
+ * Investments, from the facts the page already holds. Pure: no I/O, no clock. Amounts are signed integer minor units
  * (assets positive, debts negative). The portfolio bridge is a projection of the same classification as `computeFlows`:
  * every movement row goes to exactly one line, so a figure here can only differ from Money in & out by how the line is drawn.
  * Nothing here is a return: it shows what went in, what came out, what was recorded inside and what is left unexplained.
@@ -123,14 +123,13 @@ export function portfolioBridge(ledger: Ledger, period: ResolvedPeriod): Portfol
 
 /** The portfolio's lines for each month of the period, from the same bridge (a month is a period of one month), so a month's figures add up to the period's. */
 export function portfolioMonthly(ledger: Ledger, period: ResolvedPeriod): PortfolioBridge["total"][] {
-  return period.months.map((month) => portfolioBridge(ledger, { ...period, startMonth: month, endMonth: month, months: [month], startDate: `${month}-01`, endDate: month === period.endMonth ? period.endDate : `${month}-28`, partial: false }).total);
+  const byMonth = ledgersByMonth(ledger, period.months);
+  return period.months.map((month) => portfolioBridge(byMonth.get(month)!, { ...period, startMonth: month, endMonth: month, months: [month], startDate: `${month}-01`, endDate: month === period.endMonth ? period.endDate : `${month}-28`, partial: false }).total);
 }
 
 /** Everything that has no line of its own: transfers between investment accounts and what the lines do not explain. */
 export const otherOf = (s: Sums) => s.between + s.unexplained;
 
-/** What the lines of a bridge add up to; equal to its closing value unless something is unexplained. */
-export const bridgeLines = (s: Sums) => s.funding + s.withdrawals + s.between + s.activity + s.openingBalances;
 
 // ─── Portfolio value by month ────────────────────────────────────────────────
 
@@ -158,9 +157,12 @@ export type LoanRef = { debtId: string; accountId: string | null; signConvention
 
 export type EquityPoint = { assetValueMinor: number | null; debtMinor: number | null; equityMinor: number | null; /** Debt ÷ asset value, in percent with one decimal. */ ltvPercent: number | null; gaps: string[] };
 
+/** A loan linked to an asset, with what Actual says is owed on it at the start (the day before the period) and the end of the period. */
+export type AssetLoan = { debtId: string; accountId: string | null; name: string; startDebtMinor: number | null; endDebtMinor: number | null };
+
 export type AssetValueRow =
-  | { kind: "registered"; assetId: string; name: string; accountId: string; accountClass: AccountClass; state: "ready"; bridge: ValueBridge; linked: boolean; equity: { start: EquityPoint; end: EquityPoint } }
-  | { kind: "registered"; assetId: string; name: string; accountId: string; accountClass: AccountClass; state: "unavailable"; reason: string; closingMinor: number; openingMinor: number; linked: boolean }
+  | { kind: "registered"; assetId: string; name: string; accountId: string; accountClass: AccountClass; state: "ready"; bridge: ValueBridge; linked: boolean; loans: AssetLoan[]; equity: { start: EquityPoint; end: EquityPoint } }
+  | { kind: "registered"; assetId: string; name: string; accountId: string; accountClass: AccountClass; state: "unavailable"; reason: string; closingMinor: number; openingMinor: number; linked: boolean; loans: AssetLoan[] }
   | { kind: "unregistered"; accountId: string; name: string; accountClass: AccountClass; openingMinor: number; closingMinor: number };
 
 /**
@@ -203,14 +205,18 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
     // non-current holding) stays in the list as unavailable, so its linked loan and its value are not silently dropped.
     if (!isFixedAssetAccount(owner)) {
       if (owner.accountClass === "property" || owner.accountClass === "vehicle" || owner.accountClass === "other-asset") {
-        rows.push({ kind: "registered", assetId: asset.id, name: asset.name, accountId: asset.actualAccountId, accountClass: owner.accountClass, linked: links.some((l) => l.assetId === asset.id), state: "unavailable", reason: "Its account is no longer a fixed asset in Financial Reporting, so Assets and Financial Insights disagree about it; review it in Assets", openingMinor: ledger.balanceAt(asset.actualAccountId, before), closingMinor: ledger.balanceAt(asset.actualAccountId, period.endMonth) });
+        rows.push({ kind: "registered", assetId: asset.id, name: asset.name, accountId: asset.actualAccountId, accountClass: owner.accountClass, linked: links.some((l) => l.assetId === asset.id), loans: [], state: "unavailable", reason: "Its account is no longer a fixed asset in Financial Reporting, so Assets and Financial Insights disagree about it; review it in Assets", openingMinor: ledger.balanceAt(asset.actualAccountId, before), closingMinor: ledger.balanceAt(asset.actualAccountId, period.endMonth) });
       }
       continue;
     }
     registered.add(asset.actualAccountId);
     const book = books.get(asset.actualAccountId) ?? null;
     const linked = links.some((l) => l.assetId === asset.id);
-    const base = { kind: "registered" as const, assetId: asset.id, name: asset.name, accountId: asset.actualAccountId, accountClass: owner.accountClass, linked };
+    const loanRows: AssetLoan[] = [...new Set(links.filter((l) => l.assetId === asset.id).map((l) => l.debtId))].map((debtId) => {
+      const loan = loans.get(debtId);
+      return { debtId, accountId: loan?.accountId ?? null, name: (loan?.accountId ? ledger.account.get(loan.accountId)?.name : null) ?? "Linked loan", startDebtMinor: debtOn(ledger, loan, before), endDebtMinor: debtOn(ledger, loan, period.endMonth) };
+    });
+    const base = { kind: "registered" as const, assetId: asset.id, name: asset.name, accountId: asset.actualAccountId, accountClass: owner.accountClass, linked, loans: loanRows };
     if (!book || !book.available) {
       rows.push({ ...base, state: "unavailable", reason: input.unreadable?.get(asset.actualAccountId) ?? (book ? "The account does not reconcile with Actual, so its value history cannot be relied on" : "The account could not be read"), openingMinor: ledger.balanceAt(asset.actualAccountId, before), closingMinor: ledger.balanceAt(asset.actualAccountId, period.endMonth) });
       continue;
@@ -232,7 +238,7 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
 export type HomeEquity =
   | { state: "notLinked" }
   | { state: "unavailable"; reason: string }
-  | { state: "ready"; endMinor: number; startMinor: number | null; ltvPercent: number | null };
+  | { state: "ready"; endMinor: number; startMinor: number | null; ltvPercent: number | null; /** The value of the linked assets and the debt against them at the end. */ valueMinor: number; debtMinor: number };
 
 export function homeEquity(rows: readonly AssetValueRow[]): HomeEquity {
   const linked = rows.filter((r): r is Extract<AssetValueRow, { kind: "registered" }> => r.kind === "registered" && r.linked);
@@ -246,7 +252,59 @@ export function homeEquity(rows: readonly AssetValueRow[]): HomeEquity {
     if (r.equity.start.equityMinor === null) startKnown = false; else { start += r.equity.start.equityMinor; startValue += r.equity.start.assetValueMinor ?? 0; }
   }
   // An asset that had no value at the start of the period has no equity to compare with.
-  return { state: "ready", endMinor: end, startMinor: startKnown && startValue !== 0 ? start : null, ltvPercent: value > 0 ? Math.round((debt * 1000) / value) / 10 : null };
+  return { state: "ready", endMinor: end, startMinor: startKnown && startValue !== 0 ? start : null, ltvPercent: value > 0 ? Math.round((debt * 1000) / value) / 10 : null, valueMinor: value, debtMinor: debt };
+}
+
+// ─── Value, debt and equity over time ────────────────────────────────────────
+
+/** The total at one point in time: value of every asset read, and the debt and equity of the linked ones (null when one is missing). */
+export type AssetTotals = { valueMinor: number; debtMinor: number | null; equityMinor: number | null };
+export type AssetSeries = {
+  months: string[];
+  /** The point before the period starts (the day before its first day). */
+  opening: AssetTotals;
+  /** One point per month: its end, or the end date of the period for a partial month. */
+  points: AssetTotals[];
+  /** How many assets are in the totals, and how many of them have a loan linked. */
+  assets: number;
+  linked: number;
+};
+
+const monthEnd = (month: string) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
+
+/**
+ * The value of the registered assets, and the debt and equity of the ones with a loan linked, at the end of each month of the
+ * period (the same `equityAt` as the table, so the last point equals the table's end figures). Only assets whose book could be
+ * read are counted. Equity and debt cover the linked assets only, and are null where one of them is not known.
+ */
+export function assetSeries(input: { ledger: Ledger; period: ResolvedPeriod; assets: readonly RegistryAsset[]; books: ReadonlyMap<string, AssetBook | null>; links: readonly AssetDebtLink[]; loans: readonly LoanRef[] }): AssetSeries {
+  const { ledger, period, links } = input;
+  const loans = new Map(input.loans.map((l) => [l.debtId, l]));
+  const ready = input.assets.filter((asset) => {
+    const owner = ledger.account.get(asset.actualAccountId);
+    const book = input.books.get(asset.actualAccountId);
+    return !!owner && isFixedAssetAccount(owner) && asset.status !== "archived" && !!book && book.available;
+  });
+  const linkedAssets = ready.filter((a) => links.some((l) => l.assetId === a.id));
+  const at = (date: string, month: string): AssetTotals => {
+    let value = 0, debt: number | null = 0, equity: number | null = 0;
+    for (const asset of ready) {
+      const point = equityAt(asset, date, month, input.books.get(asset.actualAccountId)!.rows, links, loans, ledger);
+      value += point.assetValueMinor ?? 0;
+      if (!linkedAssets.includes(asset)) continue;
+      debt = debt === null || point.debtMinor === null ? null : debt + point.debtMinor;
+      equity = equity === null || point.equityMinor === null ? null : equity + point.equityMinor;
+    }
+    return { valueMinor: value, debtMinor: linkedAssets.length ? debt : null, equityMinor: linkedAssets.length ? equity : null };
+  };
+  const startDate = new Date(Date.parse(`${period.startDate}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  return {
+    months: period.months,
+    opening: at(startDate, addMonths(period.startMonth, -1)),
+    points: period.months.map((month, i) => at(period.partial && i === period.months.length - 1 ? period.endDate : monthEnd(month), month)),
+    assets: ready.length,
+    linked: linkedAssets.length,
+  };
 }
 
 // ─── Everything you own and owe ──────────────────────────────────────────────

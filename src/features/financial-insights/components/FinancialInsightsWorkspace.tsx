@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,26 +11,34 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { resolvePeriod } from "@/lib/financial-insights/period";
 import { useFinancialInsights } from "../hooks/useFinancialInsights";
 import { GateScreen } from "./GateScreen";
+import { LoadingState } from "./LoadingState";
 import { InTransitStatus, useInTransitTarget } from "./InTransitDialog";
 import { TipProvider } from "./charts/Tip";
 import { PeriodControl } from "./PeriodControl";
+import { LoansTab } from "./LoansTab";
 import { MoneyTab } from "./MoneyTab";
 import { MyBudgetTab } from "./MyBudgetTab";
+import { IncomeTab } from "./IncomeTab";
 import { SpendingTab } from "./SpendingTab";
 import { SummaryTab } from "./SummaryTab";
+import { AssetsTab } from "./AssetsTab";
 import { WealthTab } from "./WealthTab";
 import { formatDay } from "../format";
 
 const readTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /**
- * Financial Insights: Summary, Money in & out, Spending, My budget and Wealth & investments, with a read-only list behind any figure. Nothing
+ * Financial Insights: Summary, Money in & out, Income, Spending, My budget, Investments, Property & assets and Loans & cards, with a read-only list behind any figure. Nothing
  * is drawn until every account is understood and the data has been read.
  */
 export function FinancialInsightsWorkspace() {
   const view = useFinancialInsights();
   const { gate, data } = view;
   const [drill, setDrill] = useState<DrillTarget | null>(null);
+  // Closing the list returns focus to the figure that opened it, so keyboard users do not lose their place.
+  const opener = useRef<HTMLElement | null>(null);
+  const openDrill = (target: DrillTarget) => { opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setDrill(target); };
+  const closeDrill = () => { const el = opener.current; setDrill(null); requestAnimationFrame(() => { if (el?.isConnected) el.focus(); }); };
 
   const accountNames = useMemo(() => new Map(gate.state === "ready" ? gate.accounts.map((a) => [a.id, a.name]) : []), [gate]);
   const ready = data.state === "ready" ? data : null;
@@ -38,6 +46,7 @@ export function FinancialInsightsWorkspace() {
 
   const actions = ready ? (
     <div className="flex shrink-0 items-center gap-2">
+      <span className="text-xs text-muted-foreground" role="status">Read at {readTime(ready.readAt)}{ready.refreshing && " · Refreshing…"}</span>
       <PeriodControl choice={view.period} period={period} today={view.today} firstMonth={ready.firstMonth} onChange={view.setPeriod} />
       <Button size="xs" variant="outline" onClick={view.refresh} disabled={ready.refreshing} aria-label="Refresh Financial Insights">
         <RefreshCw className={ready.refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh
@@ -57,12 +66,12 @@ export function FinancialInsightsWorkspace() {
           <TabsList aria-label="Financial Insights views" className="gap-1 border-0 px-3">
             {view.tabs.map((t) => <TabsTrigger key={t.value} value={t.value} className="h-9 shrink-0 px-2 text-[13px] whitespace-nowrap">{t.label}</TabsTrigger>)}
           </TabsList>
-          <p className="px-4 pb-2.5 text-xs text-muted-foreground" role="status">
+          <p className="px-4 pb-2.5 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{gate.accounts.length} {gate.accounts.length === 1 ? "account" : "accounts"} included</span>
             {gate.excluded.length > 0 && (
               <>{" · "}<Link href="/accounts" className="underline underline-offset-2" title={`Excluded: ${gate.excluded.map((a) => a.name).join(", ")}`}>{gate.excluded.length} excluded</Link></>
             )}
-            {" · "}As of {formatDay(ready.summary.period.endDate)}{ready.summary.period.partial && " (partial month)"} · Read at {readTime(ready.readAt)}{ready.refreshing && " · Refreshing…"}
+            {" · "}As of {formatDay(ready.summary.period.endDate)}{ready.summary.period.partial && " (partial month)"}
           </p>
         </div>
       </Tabs>
@@ -75,7 +84,7 @@ export function FinancialInsightsWorkspace() {
       {gate.state !== "ready" ? (
         <GateScreen gate={gate} onCheckAgain={view.refresh} />
       ) : data.state === "loading" ? (
-        <div className="p-8 text-sm text-muted-foreground" role="status" aria-live="polite">Reading your accounts…</div>
+        <LoadingState title="Reading your accounts…" detail={data.stage} />
       ) : data.state === "error" ? (
         <div className="mx-auto max-w-md space-y-3 p-8 text-center">
           <h2 className="text-sm font-semibold">We could not read your transactions</h2>
@@ -96,12 +105,15 @@ export function FinancialInsightsWorkspace() {
               <Button size="xs" variant="outline" onClick={view.refresh}>Try again</Button>
             </div>
           )}
-          {view.tab === "money" ? <MoneyTab data={data} onDrill={setDrill} />
-            : view.tab === "spending" ? <SpendingTab data={data} today={view.today} onDrill={setDrill} />
-            : view.tab === "wealth" ? <WealthTab data={data} onDrill={setDrill} />
-            : view.tab === "budget" && view.budgetMode ? <MyBudgetTab data={data} today={view.today} mode={view.budgetMode} onDrill={setDrill} />
-            : <SummaryTab data={data} today={view.today} accountNames={accountNames} onDrill={setDrill} />}
-          {drill && <DrillHost key={JSON.stringify(drill)} target={drill} data={data} today={view.today} onClose={() => setDrill(null)} />}
+          {view.tab === "money" ? <MoneyTab data={data} onDrill={openDrill} />
+            : view.tab === "income" ? <IncomeTab data={data} today={view.today} onDrill={openDrill} />
+            : view.tab === "spending" ? <SpendingTab data={data} today={view.today} onDrill={openDrill} />
+            : view.tab === "wealth" ? <WealthTab data={data} onDrill={openDrill} />
+            : view.tab === "property" ? <AssetsTab data={data} today={view.today} onOpenLoans={view.tabs.some((t) => t.value === "loans") ? () => view.setTab("loans") : undefined} />
+            : view.tab === "loans" ? <LoansTab data={data} today={view.today} onDrill={openDrill} onOpenAssets={view.tabs.some((t) => t.value === "property") ? () => view.setTab("property") : undefined} />
+            : view.tab === "budget" && view.budgetMode ? <MyBudgetTab data={data} today={view.today} mode={view.budgetMode} onDrill={openDrill} />
+            : <SummaryTab data={data} today={view.today} accountNames={accountNames} onDrill={openDrill} />}
+          {drill && <DrillHost key={JSON.stringify(drill)} target={drill} data={data} today={view.today} onClose={closeDrill} />}
         </div>
       )}
     </PageLayout>

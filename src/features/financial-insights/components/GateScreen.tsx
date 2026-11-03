@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Gate, SetupRow } from "../hooks/useFinancialInsights";
+import { LoadingState } from "./LoadingState";
 
 const REASON: Record<SetupRow["status"], string> = {
   "needs-class": "Needs an account class",
@@ -20,7 +21,7 @@ export function GateScreen({ gate, onCheckAgain }: { gate: Exclude<Gate, { state
     return <Notice title="Connect to a budget" body="Financial Insights reads the budget you have open." />;
   }
   if (gate.state === "loading") {
-    return <div className="p-8 text-sm text-muted-foreground" role="status" aria-live="polite">Checking your accounts…</div>;
+    return <LoadingState title="Checking your accounts…" />;
   }
   if (gate.state === "error") {
     return <Notice title="We could not check your accounts" body="No figures are shown until every account has been checked." action={<Button size="sm" onClick={gate.retry}>Retry</Button>} />;

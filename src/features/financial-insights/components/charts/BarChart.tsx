@@ -33,7 +33,7 @@ export function scaleY(lo: number, hi: number, height: number, top: number, bott
  */
 export function BarChart({ labels, partialIndex, series, stacked = false, height = 230, tip, onSelect, ariaLabel, topLabel, overlay, base }: {
   labels: string[];
-  partialIndex: number | null;
+  partialIndex: number | readonly number[] | null;
   series: BarSeries[];
   stacked?: boolean;
   height?: number;
@@ -78,14 +78,14 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
   const style = (colour: string, partial: boolean) => ({ fill: colour, fillOpacity: partial ? 0.38 : 1, stroke: partial ? colour : "none", strokeDasharray: partial ? "3 2" : undefined, strokeWidth: partial ? 1.2 : 0 });
   return (
     <div ref={host} className="w-full">
-      <svg width={width} height={height} role="img" aria-label={ariaLabel}>
+      <svg width={width} height={height} role="group" aria-label={ariaLabel}>
         {marks.map((v) => (
           <g key={v}><line x1={MARGIN.l} x2={width - MARGIN.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={0.6} /><text x={MARGIN.l - 6} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{compactMoney(v)}</text></g>
         ))}
         {lo < 0 && <line x1={MARGIN.l} x2={width - MARGIN.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.2} />}
         {labels.map((label, i) => {
           const x0 = MARGIN.l + i * slot;
-          const partial = i === partialIndex;
+          const partial = Array.isArray(partialIndex) ? partialIndex.includes(i) : i === partialIndex;
           const bars: ReactNode[] = [];
           let stackTop = 0;
           if (stacked) {

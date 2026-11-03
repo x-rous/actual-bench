@@ -38,7 +38,7 @@ export type DatedAmount = { month: string; accountId: string; amountMinor: numbe
 export type ReclassifiedRow = { /** The transaction, so a drilldown can leave it out of income and spending. */ id: string; payeeId: string | null; month: string; accountId: string; categoryId: string | null; amountMinor: number; to: "valueChange" | "assetSale" };
 
 /** One interest or fee line the Loans tracking recorded for a tracked loan. */
-export type LoanCostRow = { month: string; accountId: string; categoryId: string | null; amountMinor: number; /** The loan these lines belong to, and what they are, when the reader knows. */ loanAccountId?: string; kind?: "interest" | "fee" };
+export type LoanCostRow = { /** The transaction, so a drilldown can list it. */ id?: string; month: string; accountId: string; categoryId: string | null; amountMinor: number; /** The loan these lines belong to, and what they are, when the reader knows. */ loanAccountId?: string; kind?: "interest" | "fee" };
 
 export type AccountFact = {
   id: string;
@@ -182,8 +182,10 @@ const emptyFlows = (): Flows => ({
 });
 
 export type CashBridge = {
-  /** Income, spending and on-budget uncategorized rows in cash accounts. */
-  operating: number;
+  /** Income categories, and the money in among the on-budget uncategorized rows, in cash accounts. */
+  operatingIncome: number;
+  /** Spending categories (refunds netted), and the money out among the on-budget uncategorized rows, in cash accounts. */
+  operatingSpending: number;
   /** Uncategorized rows in off-budget cash accounts. */
   unidentified: number;
   assetSales: number;
@@ -215,7 +217,7 @@ function takeOut(flows: Flows, cash: CashBridge | null, account: AccountFact, in
   if (categoryId !== null) {
     if (incomeCategories.has(categoryId)) flows.income -= amountMinor;
     else flows.spending -= amountMinor;
-    if (cash) cash.operating -= amountMinor;
+    if (cash) { if (incomeCategories.has(categoryId)) cash.operatingIncome -= amountMinor; else cash.operatingSpending -= amountMinor; }
   } else if (account.offBudget && investment) {
     flows.investmentResults -= amountMinor;
     flows.investmentResultsCount -= 1;
@@ -226,15 +228,45 @@ function takeOut(flows: Flows, cash: CashBridge | null, account: AccountFact, in
   } else {
     if (amountMinor > 0) flows.uncategorizedIn -= amountMinor;
     else flows.uncategorizedOut -= amountMinor;
-    if (cash) cash.operating -= amountMinor;
+    if (cash) { if (amountMinor > 0) cash.operatingIncome -= amountMinor; else cash.operatingSpending -= amountMinor; }
   }
+}
+
+/**
+ * The ledger as seen for each month on its own: the same accounts and balances, with only that month's rows. A month-by-month
+ * calculation that reads every row for every month costs months × rows; this sorts the rows into their months once.
+ */
+export function ledgersByMonth(ledger: Ledger, months: readonly string[]): Map<string, Ledger> {
+  const wanted = new Set(months);
+  const bucket = <T extends { month: string }>(rows: readonly T[]) => {
+    const byMonth = new Map<string, T[]>();
+    for (const row of rows) {
+      if (!wanted.has(row.month)) continue;
+      const list = byMonth.get(row.month);
+      if (list) list.push(row); else byMonth.set(row.month, [row]);
+    }
+    return byMonth;
+  };
+  const movement = bucket(ledger.facts.movement);
+  const startingBalances = bucket(ledger.facts.startingBalances);
+  const uncategorizedIn = bucket(ledger.facts.uncategorizedIn);
+  const transfersIn = bucket(ledger.facts.transfersIn);
+  const reclassified = bucket(ledger.facts.reclassified);
+  return new Map(months.map((month) => [month, {
+    ...ledger,
+    facts: {
+      ...ledger.facts,
+      movement: movement.get(month) ?? [], startingBalances: startingBalances.get(month) ?? [], uncategorizedIn: uncategorizedIn.get(month) ?? [],
+      transfersIn: transfersIn.get(month) ?? [], reclassified: reclassified.get(month) ?? [],
+    },
+  }]));
 }
 
 export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
   const { facts, role, account } = ledger;
   const flows = emptyFlows();
   const cash: CashBridge = {
-    operating: 0, unidentified: 0, assetSales: 0, card: 0, investment: 0, loan: 0, investmentOut: 0, investmentIn: 0, loanOut: 0, loanIn: 0, fixedDeposits: 0, excluded: 0, assets: 0, liabilities: 0, inTransit: 0, openingBalances: 0,
+    operatingIncome: 0, operatingSpending: 0, unidentified: 0, assetSales: 0, card: 0, investment: 0, loan: 0, investmentOut: 0, investmentIn: 0, loanOut: 0, loanIn: 0, fixedDeposits: 0, excluded: 0, assets: 0, liabilities: 0, inTransit: 0, openingBalances: 0,
   };
   const uncatIn = new Map<string, number>();
   for (const row of facts.uncategorizedIn) {
@@ -277,7 +309,7 @@ export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
     } else if (row.categoryId !== null) {
       if (facts.incomeCategories.has(row.categoryId)) flows.income += amount;
       else flows.spending += amount;
-      if (own === "cash") cash.operating += amount;
+      if (own === "cash") { if (facts.incomeCategories.has(row.categoryId)) cash.operatingIncome += amount; else cash.operatingSpending += amount; }
     } else if (owner.offBudget && own === "investment") {
       flows.investmentResults += amount;
       flows.investmentResultsCount += row.count;
@@ -290,7 +322,7 @@ export function computeFlows(ledger: Ledger, period: ResolvedPeriod): Computed {
       const positive = uncatIn.get(`${row.month}|${row.accountId}`) ?? 0;
       flows.uncategorizedIn += positive;
       flows.uncategorizedOut += amount - positive;
-      if (own === "cash") cash.operating += amount;
+      if (own === "cash") { cash.operatingIncome += positive; cash.operatingSpending += amount - positive; }
     }
   }
 

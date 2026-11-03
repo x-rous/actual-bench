@@ -16,7 +16,7 @@ export const CLASS_COLOUR: Record<ClassKey, string> = {
  * What you own and owe at each month end: assets stacked above zero, liabilities below, net worth as a line. The classes
  * drawn are the ones the viewer has left switched on in the legend; net worth is always the true figure, whatever is hidden.
  */
-export function CompositionChart({ labels, partialIndex, months, netWorth, hasData, hidden, showNetWorth, height = 250 }: {
+export function CompositionChart({ labels, partialIndex, months, netWorth, hasData, hidden, showNetWorth, height = 250, unitName = "month", partialText = "balance today" }: {
   labels: string[];
   partialIndex: number | null;
   months: Record<ClassKey, number>[];
@@ -26,6 +26,10 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hasDa
   hidden: ReadonlySet<ClassKey>;
   showNetWorth: boolean;
   height?: number;
+  /** What each bar stands for: a month, a quarter or a year, as in the tooltip. */
+  unitName?: string;
+  /** What the last bar is when it is not an end of its unit. */
+  partialText?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const width = useWidth(host);
@@ -44,7 +48,7 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hasDa
   const known = (i: number) => (hasData ? hasData[i] : true);
   return (
     <div ref={host} className="w-full">
-      <svg width={width} height={height} role="img" aria-label="What you own and owe at each month end">
+      <svg width={width} height={height} role="group" aria-label={`What you own and owe at each ${unitName} end`}>
         {marks.map((v) => <g key={v}><line x1={M.l} x2={width - M.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={0.6} /><text x={M.l - 6} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{compactLabel(v)}</text></g>)}
         <line x1={M.l} x2={width - M.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.2} />
         {months.map((m, i) => {
@@ -63,13 +67,13 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hasDa
               {bars}
               <text x={x0 + slot / 2} y={height - 6} textAnchor="middle" className="fill-muted-foreground text-[10.5px]">{tickLabel(labels[i], i, slot)}</text>
               <rect x={x0} y={M.t} width={slot} height={height - M.t - M.b} fill="transparent" onMouseLeave={hide} onMouseMove={(e) => show(
-                !known(i) ? <><TipTitle>{labels[i]}</TipTitle><TipNote>No data yet: the budget has no transactions up to this month.</TipNote></> : <>
-                  <TipTitle>{labels[i]} · {i === partialIndex ? "balance today" : "month end"}</TipTitle>
+                !known(i) ? <><TipTitle>{labels[i]}</TipTitle><TipNote>No data yet: the budget has no transactions up to this {unitName}.</TipNote></> : <>
+                  <TipTitle>{labels[i]} · {i === partialIndex ? partialText : `${unitName} end`}</TipTitle>
                   {ASSET_CLASSES.filter((k) => m[k] !== 0).map((k) => <TipRow key={k} colour={CLASS_COLOUR[k]} name={CLASS_LABEL[k]} value={money(m[k])} />)}
                   {LIABILITY_CLASSES.filter((k) => m[k] !== 0).map((k) => <TipRow key={k} colour={CLASS_COLOUR[k]} name={CLASS_LABEL[k]} value={money(m[k])} />)}
                   <TipNote>
                     <TipRow name="Net worth" value={money(netWorth[i])} />
-                    {i > 0 && known(i - 1) && <TipRow name="vs previous month" value={`${signedMoney(netWorth[i] - netWorth[i - 1])}${netWorth[i - 1] ? ` (${(((netWorth[i] - netWorth[i - 1]) / Math.abs(netWorth[i - 1])) * 100).toFixed(1)}%)` : ""}`} />}
+                    {i > 0 && known(i - 1) && <TipRow name={`vs previous ${unitName}`} value={`${signedMoney(netWorth[i] - netWorth[i - 1])}${netWorth[i - 1] ? ` (${(((netWorth[i] - netWorth[i - 1]) / Math.abs(netWorth[i - 1])) * 100).toFixed(1)}%)` : ""}`} />}
                     <TipRow name="Owns / owes" value={`${compactLabel(owns)} / ${compactLabel(-owes)}`} />
                   </TipNote>
                 </>, e)} />
