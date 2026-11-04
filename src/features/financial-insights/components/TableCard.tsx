@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { ChevronRight, Download } from "lucide-react";
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { Button } from "@/components/ui/button";
 import { downloadCsv } from "@/lib/csv";
 import { CardTitle } from "./InfoTip";
@@ -31,7 +32,7 @@ export function TableCard({ id, title, hint, info, head, rows, csvScope, note, c
         </div>
         <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={exportCsv} aria-label={`Export ${title} as CSV`}><Download className="size-3.5" aria-hidden />CSV</Button>
       </header>
-      {open && <div className="flex-1 overflow-x-auto px-4 py-2">{children}</div>}
+      {open && <OverlayScrollArea className="flex-1"><div className="px-4 py-2">{children}</div></OverlayScrollArea>}
       {open && note && <div className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">{note}</div>}
       {!open && <div className="pb-3" />}
     </section>

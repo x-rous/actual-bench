@@ -136,7 +136,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
     <div className="space-y-4 p-4">
       <section className="space-y-4" aria-label="What you owe">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Tile label="You owe" detail={<>{signedMoney(summary.liabilities - owedAtStart)} during the period<span className="block">Loans, cards and other liabilities</span></>}>{money(summary.liabilities)}</Tile>
+          <Tile label="You owe" info={<p>Loans, credit cards and other liabilities at the end of the period: the same figure as Total liabilities on the Summary tab.</p>} detail={<>{signedMoney(summary.liabilities - owedAtStart)} during the period</>}>{money(summary.liabilities)}</Tile>
           {DEBT_GROUPS.map(({ key, label }) => {
             const inGroup = group(key);
             const sub = debtTotals(inGroup);
@@ -147,11 +147,11 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
             );
           })}
           <Tile label="Interest & fees paid" tone={cardsUnreadable || (hasLoans && !debt.complete) ? "warning" : undefined}
+            info={<><p>What your tracked loans cost, and what your cards were charged where the interest and fee categories are set in Credit Cards.</p>{hasLoans && !debt.complete && <p>Excludes loans not tracked in Loans.</p>}{costs && costs.identified.length > 0 && costs.notIdentified.length > 0 && <p>Excludes cards with no interest or fee category set.</p>}</>}
             detail={!hasLoans && !hasCards ? "No loans or credit cards" : (
               <>
                 {hasLoans && <>Loans {money(loanCost)}</>}{hasLoans && hasCards && " · "}{hasCards && <>cards {cardsUnreadable ? "could not be read" : cardsLoading ? "are being read…" : cardCost === null ? "need categories in Credit Cards" : money(cardCost)}</>}
-                {hasLoans && !debt.complete && <span className="block">Excludes loans not tracked in Loans</span>}
-                {costs && costs.identified.length > 0 && costs.notIdentified.length > 0 && <span className="block">Excludes cards with no interest or fee category set</span>}
+                {((hasLoans && !debt.complete) || (costs && costs.identified.length > 0 && costs.notIdentified.length > 0)) && <span className="block">Some are not included (see the i)</span>}
               </>
             )}>
             {!hasLoans && !hasCards ? "None" : cardsUnreadable ? "Unavailable" : cardsLoading ? MISSING : money(loanCost + (cardCost ?? 0))}
@@ -162,7 +162,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
 
       {hasLoans && (
         <section className="space-y-4" aria-label="Your loans">
-          <div className={drawn ? "grid items-stretch gap-4 xl:grid-cols-2" : "grid gap-4"}>
+          <div className={drawn ? "grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]" : "grid gap-4"}>
             {drawn && (
               <ChartFrame
                 id="loan-payments" title="What your loan payments did" hint={`Principal, interest and fees by ${payNames.one}`}
@@ -190,7 +190,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
 
       {hasCards && (
         <section className="space-y-4" aria-label="Your credit cards">
-          <div className="grid items-stretch gap-4 xl:grid-cols-2">
+          <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
             <ChartFrame
               id="card-balances" title="What you owe on credit cards" hint={`Balance at each ${balNames.one} end, by card`}
               subtitle={<><p>What you owe on each credit card at the end of each {balNames.one}, from the same balances as the table, with the total as a line. The five largest cards have a colour of their own and the rest are &quot;Other cards&quot;.{balUnit !== "month" && ` A ${balNames.one} is a calendar ${balNames.one}, shown by its last month's balance.`}</p><p>A card balance is what Actual says is owed; it is not a statement amount.</p></>}

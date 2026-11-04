@@ -20,10 +20,12 @@ export type WaterfallStep = {
  * A waterfall: balances as dark bars, increases and decreases as blue and red steps joined by a dotted line, and an unexplained
  * difference as a dashed amber step. A step that can show its transactions is underlined and selectable.
  */
-export function Waterfall({ steps, height = 240, startAtZero = true, onSelect, canSelect, ariaLabel }: {
+export function Waterfall({ steps, height = 240, startAtZero = true, floorMinor, onSelect, canSelect, ariaLabel }: {
   steps: WaterfallStep[];
   height?: number;
   startAtZero?: boolean;
+  /** Where balance bars start instead of zero, so steps that are small beside the balances stay readable; the chart says it is not from zero. */
+  floorMinor?: number;
   onSelect?: (step: WaterfallStep) => void;
   canSelect?: (step: WaterfallStep) => boolean;
   ariaLabel: string;
@@ -34,11 +36,11 @@ export function Waterfall({ steps, height = 240, startAtZero = true, onSelect, c
   const M = { l: 8, r: 8, t: 22, b: 48 };
   const spans = steps.reduce<(readonly [number, number])[]>((acc, s) => {
     const before = acc.length ? acc[acc.length - 1][1] : 0;
-    acc.push(s.kind === "total" ? [0, s.amountMinor] : [before, before + s.amountMinor]);
+    acc.push(s.kind === "total" ? [floorMinor ?? 0, s.amountMinor] : [before, before + s.amountMinor]);
     return acc;
   }, []);
   const all = spans.flatMap((p) => [...p]);
-  let hi = Math.max(startAtZero ? 0 : -Infinity, ...all), lo = Math.min(startAtZero ? 0 : Infinity, ...all);
+  let hi = Math.max(startAtZero && floorMinor === undefined ? 0 : -Infinity, ...all), lo = Math.min(startAtZero && floorMinor === undefined ? 0 : Infinity, ...all);
   const room = (hi - lo) * 0.08 || 1; hi += room; if (lo < 0) lo -= room;
   const { y } = scaleY(lo, hi, height, M.t, M.b);
   const slot = (width - M.l - M.r) / Math.max(1, steps.length);

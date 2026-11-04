@@ -3,7 +3,8 @@ import { FinancialInsightsWorkspace } from "./FinancialInsightsWorkspace";
 
 jest.mock("../hooks/useFinancialInsights", () => ({ useFinancialInsights: jest.fn() }));
 jest.mock("./SummaryTab", () => ({ SummaryTab: () => <div>the summary</div> }));
-jest.mock("@/components/layout/PageLayout", () => ({ PageLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
+jest.mock("./MoneyTab", () => ({ MoneyTab: () => <div>the money tab</div> }));
+jest.mock("@/components/layout/PageLayout", () => ({ PageLayout: ({ children, header, actions }: { children: React.ReactNode; header?: React.ReactNode; actions?: React.ReactNode }) => <div>{header}{actions}{children}</div> }));
 jest.mock("./PeriodControl", () => ({ PeriodControl: () => null }));
 const useFinancialInsights = jest.requireMock("../hooks/useFinancialInsights").useFinancialInsights as jest.Mock;
 
@@ -32,5 +33,23 @@ describe("when a later read fails", () => {
     useFinancialInsights.mockReturnValue(ready());
     render(<FinancialInsightsWorkspace />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("the guide", () => {
+  it("opens from the top of the page at the section for the tab you are on", () => {
+    useFinancialInsights.mockReturnValue({ ...ready(), tab: "money" });
+    render(<FinancialInsightsWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    expect(screen.getByRole("heading", { name: "Money in & out", level: 2 })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("navigation", { name: "Guide sections" })).not.toBeInTheDocument();
+  });
+
+  it("is there while the page is locked, when it is what explains why", () => {
+    useFinancialInsights.mockReturnValue({ ...ready(), tab: "summary", gate: { state: "setup", rows: [] }, data: { state: "loading" } });
+    render(<FinancialInsightsWorkspace />);
+    fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+    expect(screen.getByRole("heading", { name: "Summary", level: 2 })).toBeInTheDocument();
   });
 });

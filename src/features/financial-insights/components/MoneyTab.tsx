@@ -167,19 +167,19 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
   return (
     <div className="space-y-4 p-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Tile label="Received" detail={<>Income in the period{comparison && <Delta now={comparison.current.received} before={comparison.previous.received} label={comparison.label} good="up" />}</>}><DrillLink smallDecimals label={`Received ${money(summary.received)}`} onClick={() => onDrill({ kind: "received" })}>{money(summary.received)}</DrillLink></Tile>
-        <Tile label="Spent" detail={<>Refunds lower it; transfers are not spending{comparison && <Delta now={comparison.current.spent} before={comparison.previous.spent} label={comparison.label} good="down" />}</>}><DrillLink smallDecimals label={`Spent ${money(summary.spent)}`} onClick={() => onDrill({ kind: "spent" })}>{money(summary.spent)}</DrillLink></Tile>
-        <Tile label="Kept from income" tone={keptReady ? undefined : "warning"} detail={summary.moneyKept.state === "ready" ? <>Received less spent{comparison && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}</> : summary.moneyKept.reason}>
+        <Tile label="Received" detail="Income in the period" delta={comparison && <Delta now={comparison.current.received} before={comparison.previous.received} label={comparison.label} good="up" />}><DrillLink smallDecimals label={`Received ${money(summary.received)}`} onClick={() => onDrill({ kind: "received" })}>{money(summary.received)}</DrillLink></Tile>
+        <Tile label="Spent" detail="Refunds lower it; transfers are not spending" delta={comparison && <Delta now={comparison.current.spent} before={comparison.previous.spent} label={comparison.label} good="down" />}><DrillLink smallDecimals label={`Spent ${money(summary.spent)}`} onClick={() => onDrill({ kind: "spent" })}>{money(summary.spent)}</DrillLink></Tile>
+        <Tile label="Kept from income" tone={keptReady ? undefined : "warning"} detail={summary.moneyKept.state === "ready" ? "Received less spent" : summary.moneyKept.reason} delta={summary.moneyKept.state === "ready" && comparison && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}>
           {summary.moneyKept.state === "ready" ? money(summary.moneyKept.value) : "Needs review"}
         </Tile>
         <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" ? undefined : "warning"}
+          delta={comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />}
           detail={summary.savingsRate.state === "ready" && spentShare !== null ? (
             <>
             <span className="block" role="img" aria-label={summary.spent > summary.received ? `Spent ${((summary.spent / summary.received) * 100).toFixed(1)} for every 100 received, nothing kept` : `Of every 100 received, ${spentShare.toFixed(1)} spent and ${(100 - spentShare).toFixed(1)} kept`}>
               <span className="flex h-1.5 overflow-hidden rounded-full bg-muted"><span className="h-full" style={{ width: `${spentShare}%`, background: "var(--fi-spend)" }} /><span className="h-full" style={{ width: `${100 - spentShare}%`, background: "var(--fi-income)" }} /></span>
               <span className="mt-1 block">{summary.spent > summary.received ? `Spent ${((summary.spent / summary.received) * 100).toFixed(1)} for every 100 received · nothing kept` : `Of every 100 received: ${spentShare.toFixed(1)} spent · ${(100 - spentShare).toFixed(1)} kept`}</span>
             </span>
-            {comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />}
             </>
           ) : summary.savingsRate.state === "ready" ? "Kept ÷ received" : summary.savingsRate.reason}>
           {summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}
@@ -219,12 +219,12 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
         </div>
       </ChartFrame>
 
-      <div className="grid items-stretch gap-4 xl:grid-cols-2">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <InvestmentsFlow monthly={monthly} period={period} scope={scope} onDrill={onDrill} />
         <LoanPrincipalFlow monthly={monthly} period={period} scope={scope} onDrill={onDrill} />
       </div>
 
-      <div className="grid items-stretch gap-4 xl:grid-cols-2">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <DebtRepaymentsCard data={data} csvScope={scope} />
         <section className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card p-4" aria-label="Other movements">
           <CardTitle title="Other movements" hint="Not plain income or spending" info={<p>Entries that are not plain income or spending. They are all in your net worth.</p>} infoLabel="other movements" />

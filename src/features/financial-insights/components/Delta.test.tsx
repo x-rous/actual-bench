@@ -7,20 +7,22 @@ describe("a figure against the stretch before", () => {
     expect(screen.getByText(/10\.0%/).className).toMatch(/green/);
     rerender(<Delta now={660} before={600} label="the 10 months before" good="down" />);
     expect(screen.getByText(/10\.0%/).className).toMatch(/red/);
-    expect(screen.getByText(/10\.0%/)).toHaveTextContent("▲ 10.0% vs the 10 months before");
+    expect(screen.getByText(/10\.0%/)).toHaveTextContent("▲ 10.0% vs previous");
+    expect(screen.getByText(/10\.0%/)).toHaveAttribute("title", "vs the 10 months before");
   });
 
   it("shows a fall with a down arrow, and a rate as points", () => {
     const { rerender } = render(<Delta now={450} before={600} label="the previous month" good="up" />);
-    expect(screen.getByText(/25\.0%/)).toHaveTextContent("▼ 25.0% vs the previous month");
+    expect(screen.getByText(/25\.0%/)).toHaveTextContent("▼ 25.0% vs previous");
     rerender(<Delta points now={29.2} before={26} label="the 10 months before" good="up" />);
-    expect(screen.getByText(/3\.2 pts/)).toHaveTextContent("▲ 3.2 pts vs the 10 months before");
+    expect(screen.getByText(/3\.2 pts/)).toHaveTextContent("▲ 3.2 pts vs previous");
   });
 
   it("says nothing against nothing, and says so when nothing changed", () => {
     const { container, rerender } = render(<Delta now={5} before={0} label="the previous month" good="up" />);
     expect(container).toBeEmptyDOMElement();
     rerender(<Delta now={5} before={5} label="the previous month" good="up" />);
-    expect(container).toHaveTextContent("No change vs the previous month");
+    expect(container).toHaveTextContent("No change vs previous");
+    expect(screen.getByTitle("vs the previous month")).toBeInTheDocument();
   });
 });

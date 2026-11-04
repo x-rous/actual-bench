@@ -1,5 +1,6 @@
 "use client";
 
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { useMemo, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { PillGroup } from "@/components/ui/pill-group";
@@ -46,7 +47,7 @@ function Ranking({ data, onDrill, income }: { data: Ready; onDrill: (target: Dri
     <section className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card p-4" aria-label={title}>
       <CardTitle title={title} hint={income ? (groups.length > TOP_GROUPS ? `Top ${TOP_GROUPS} of ${groups.length} categories` : "By income category") : groups.length > TOP_GROUPS ? `Top ${TOP_GROUPS} of ${groups.length} category groups` : "By category group"}
         info={<><p>By category group, net of refunds{breakdown.hasHidden ? ", hidden categories included" : ""}.</p><p>{income ? "Select a total to see all of its transactions." : "Select a total to see all of its transactions; select a group name to expand its categories."}</p>{groups.length > TOP_GROUPS && <p>The other {groups.length - TOP_GROUPS} groups are in the table below.</p>}</>} infoLabel={title.toLowerCase()} />
-      <div className="mt-2 min-h-0 flex-1 divide-y divide-border/40 overflow-y-auto">
+      <OverlayScrollArea className="mt-2 flex-1"><div className="divide-y divide-border/40">
         {shown.map((g) => {
           const isOpen = open.has(g.name);
           return (
@@ -85,7 +86,7 @@ function Ranking({ data, onDrill, income }: { data: Ready; onDrill: (target: Dri
             </div>
           );
         })}
-      </div>
+      </div></OverlayScrollArea>
       {groups.length > TOP_GROUPS && <p className="mt-1 border-t border-border/50 pt-1.5 text-center text-xs text-muted-foreground">{groups.length - TOP_GROUPS} more {groups.length - TOP_GROUPS === 1 ? "group is" : "groups are"} in the table below</p>}
     </section>
   );
@@ -249,17 +250,20 @@ export function FlowTab({ mode, data, today, onDrill }: { mode: Mode; data: Read
   const uncategorized = breakdown.rows.find((r) => r.id === null)?.totalMinor ?? 0;
   const totalDetail = (
     <>
-      {word.detail}
-      {comparison && <Delta now={income ? comparison.current.received : comparison.current.spent} before={income ? comparison.previous.received : comparison.previous.spent} label={comparison.label} good={income ? "up" : "down"} />}
-      {!income && summary.received > 0 && <span className="block">{percent((spending.totalMinor / summary.received) * 100)} of what you received</span>}
-      {uncategorized !== 0 && breakdown.totalMinor > 0 && <span className="block">{percent((uncategorized / breakdown.totalMinor) * 100)} has no category</span>}
+      {((!income && summary.received > 0) || (uncategorized !== 0 && breakdown.totalMinor > 0)) && (
+        <span className="block">
+          {!income && summary.received > 0 && <>{percent((spending.totalMinor / summary.received) * 100)} of what you received</>}
+          {!income && summary.received > 0 && uncategorized !== 0 && breakdown.totalMinor > 0 && " · "}
+          {uncategorized !== 0 && breakdown.totalMinor > 0 && <>{percent((uncategorized / breakdown.totalMinor) * 100)} has no category</>}
+        </span>
+      )}
     </>
   );
   const switcher = <PillGroup options={[{ value: "categories", label: `Category by ${GRANULARITY_NAME[tableUnit].one}` }, { value: "payees", label: word.payees }]} value={below} onChange={(v) => setBelow(v as typeof below)} />;
   return (
     <div className="space-y-4 p-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Tile label={word.total} detail={totalDetail}><DrillLink smallDecimals label={`${word.total} ${money(spending.totalMinor)}`} onClick={() => onDrill({ kind: income ? "received" : "spent" })}>{money(spending.totalMinor)}</DrillLink></Tile>
+        <Tile label={word.total} detail={totalDetail} delta={comparison && <Delta now={income ? comparison.current.received : comparison.current.spent} before={income ? comparison.previous.received : comparison.previous.spent} label={comparison.label} good={income ? "up" : "down"} />} info={<p>{word.detail}</p>}><DrillLink smallDecimals label={`${word.total} ${money(spending.totalMinor)}`} onClick={() => onDrill({ kind: income ? "received" : "spent" })}>{money(spending.totalMinor)}</DrillLink></Tile>
         <Tile label="Monthly average" detail={spending.averageMonths > 0 ? `Over ${spending.averageMonths} complete ${spending.averageMonths === 1 ? "month" : "months"}${period.partial ? "; this month is not counted" : ""}` : "No complete month in this period"}>{spending.averageMinor === null ? "Unavailable" : money(spending.averageMinor)}</Tile>
         <Tile label={word.source} detail={groups.groups[0] ? `${money(groups.groups[0].totalMinor)}${breakdown.totalMinor > 0 ? ` · ${percent((groups.groups[0].totalMinor / breakdown.totalMinor) * 100)} of ${income ? "income" : "spending"}` : ""}` : undefined}>{groups.groups[0] ? <span className="line-clamp-2 block text-base leading-snug" title={groups.groups[0].name}>{groups.groups[0].name}</span> : "-"}</Tile>
         <Tile label="Highest month" detail={highest ? monthLabels[highest.i] : "No complete month in this period"}>{highest ? money(highest.v) : "-"}</Tile>
@@ -269,7 +273,7 @@ export function FlowTab({ mode, data, today, onDrill }: { mode: Mode; data: Read
         <p className="rounded-lg border border-border bg-card px-4 py-12 text-center text-xs text-muted-foreground" role="status">No money was received in this period.</p>
       ) : (
         <>
-      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)] xl:[&>*:last-child]:max-h-[34rem]">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] xl:[&>*:last-child]:max-h-[34rem]">
         <ChartFrame
           id={`${mode}-over-time`} title={`${word.flow} each ${names.one}`} hint={income ? "By income category" : "By category group"} subtitle={<p>{`${income ? "By income category" : "By category group"}; the stack adds up to Money ${word.noun}. Select a segment for that ${income ? "category" : "group"} in that ${names.one}.`}{chartUnit !== "month" && ` A ${names.one} is a calendar ${names.one}; one the period only partly covers is marked *.`}</p>}
           legend={stacked.map((g) => ({ label: g.name, colour: groupColour(g.slot) }))}

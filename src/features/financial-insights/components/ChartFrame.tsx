@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { BarChart3, ChevronRight, Download, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { downloadCsv } from "@/lib/csv";
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { cn } from "@/lib/utils";
 import { MISSING, money } from "../format";
 import { CardTitle } from "./InfoTip";
@@ -76,15 +77,21 @@ export function ChartFrame({ id, title, subtitle, hint, legend, table, csvScope,
         </ul>
       )}
       {!dataOpen && <div className="min-h-0 flex-1 px-3 pb-2 pt-2">{children}</div>}
-      {!tableShown && (
-        <div className={dataOpen ? "mt-2 max-h-[32rem] overflow-auto border-t border-border/60 px-4 py-2" : "sr-only"}>
+      {!tableShown && (dataOpen
+        ? <OverlayScrollArea className="mt-2 max-h-[32rem] border-t border-border/60"><div className="px-4 py-2">
           <table className="w-full border-collapse text-xs">
             <caption className={dataOpen ? "pb-1 text-left text-muted-foreground" : undefined}>{label}, exact figures</caption>
             <thead><tr className="border-b border-border text-muted-foreground">{table.head.map((h, i) => <th key={h + i} scope="col" className={cn("py-1 font-medium", i === 0 ? "text-left" : "text-right")}>{h}</th>)}</tr></thead>
             <tbody>{table.rows.map((r, ri) => <tr key={ri} className="border-b border-border/40">{r.map((c, ci) => (ci === 0 ? <th key={ci} scope="row" className="py-1 text-left font-normal">{c}</th> : <td key={ci} className="text-right tabular-nums">{c === null ? MISSING : typeof c === "number" ? money(c) : c}</td>))}</tr>)}</tbody>
           </table>
-        </div>
-      )}
+        </div></OverlayScrollArea>
+        : <div className="sr-only">
+          <table className="w-full border-collapse text-xs">
+            <caption className={dataOpen ? "pb-1 text-left text-muted-foreground" : undefined}>{label}, exact figures</caption>
+            <thead><tr className="border-b border-border text-muted-foreground">{table.head.map((h, i) => <th key={h + i} scope="col" className={cn("py-1 font-medium", i === 0 ? "text-left" : "text-right")}>{h}</th>)}</tr></thead>
+            <tbody>{table.rows.map((r, ri) => <tr key={ri} className="border-b border-border/40">{r.map((c, ci) => (ci === 0 ? <th key={ci} scope="row" className="py-1 text-left font-normal">{c}</th> : <td key={ci} className="text-right tabular-nums">{c === null ? MISSING : typeof c === "number" ? money(c) : c}</td>))}</tr>)}</tbody>
+          </table>
+        </div>)}
       {detail && (
         <div className="border-t border-border/60 px-4 py-2">
           <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">

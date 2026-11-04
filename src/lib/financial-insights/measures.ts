@@ -471,6 +471,20 @@ export type CashBuffer = {
   loans: BufferLoan[];
 };
 
+/** The loans' recorded interest and fee lines in a window, only where the row is counted as spending (it is in the budget and is money out). Money out is negative. */
+export function loanCostsIn(ledger: Ledger, window: ResolvedPeriod): number {
+  return loanCostRowsIn(ledger, window).reduce((sum, row) => sum + row.amountMinor, 0);
+}
+
+/** The loan interest and fee rows of a window that are counted as spending, so a figure can say what it took out of each category. */
+export function loanCostRowsIn(ledger: Ledger, window: ResolvedPeriod): LoanCostRow[] {
+  return ledger.facts.loanCosts.filter((row) => {
+    const owner = ledger.account.get(row.accountId);
+    if (!owner || !inWindow(row.month, window)) return false;
+    return row.categoryId !== null ? !ledger.facts.incomeCategories.has(row.categoryId) : !owner.offBudget && row.amountMinor < 0;
+  });
+}
+
 /**
  * How many months eligible cash would cover, as of today and regardless of the selected period. It uses Actual's
  * recorded obligations. Need = average monthly spending over the last complete months (twelve where available, all of them
@@ -483,23 +497,16 @@ export type CashBuffer = {
  *    three), which is principal only, because its interest cannot be told from other spending.
  * An untracked model is never used. The buffer is unavailable, never zero, when any part cannot be known.
  */
-export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap<string, LoanScheduleInput>): Status<CashBuffer> {
+export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap<string, LoanScheduleInput>, options: { /** How many complete months a typical month is taken over (12 by default). */ months?: number; /** A typical month's spending worked out elsewhere (a median); the average of the months is used when it is not given. */ spendingMinor?: number } = {}): Status<CashBuffer> {
   const current = monthOf(today);
-  const months = lastCompleteMonths(today, ledger.firstMonth, 12);
+  const months = lastCompleteMonths(today, ledger.firstMonth, options.months ?? 12);
   if (months.length < 3) return unavailable("Insufficient history: at least three complete months are needed");
   const window: ResolvedPeriod = {
     startMonth: months[0], endMonth: months[months.length - 1], months, startDate: `${months[0]}-01`, endDate: `${months[months.length - 1]}-28`,
     partial: false, label: "",
   };
   const { flows } = computeFlows(ledger, window);
-  // The loans' recorded interest and fee lines, only where the row is counted as spending (it is in the budget and is money out).
-  let loanCosts = 0;
-  for (const row of ledger.facts.loanCosts) {
-    const owner = ledger.account.get(row.accountId);
-    if (!owner || !inWindow(row.month, window)) continue;
-    const spending = row.categoryId !== null ? !ledger.facts.incomeCategories.has(row.categoryId) : !owner.offBudget && row.amountMinor < 0;
-    if (spending) loanCosts += row.amountMinor;
-  }
+  const loanCosts = loanCostsIn(ledger, window);
   // `loanCosts` is money out (negative); adding it takes exactly those lines back out of spending.
   const spendingMinor = 0 - (flows.spending + flows.uncategorizedOut) + loanCosts;
 
@@ -523,7 +530,7 @@ export function cashBuffer(ledger: Ledger, today: string, schedules: ReadonlyMap
     loans.push({ accountId: account.id, name: account.name, monthlyMinor: Math.round(paid / loanMonths.length), source: "recorded" });
   }
 
-  const averageSpending = Math.round(spendingMinor / months.length);
+  const averageSpending = options.spendingMinor ?? Math.round(spendingMinor / months.length);
   const monthlyNeedMinor = averageSpending + loans.reduce((sum, l) => sum + l.monthlyMinor, 0);
   if (monthlyNeedMinor <= 0) return unavailable("There is no regular spending to measure against");
   const cashMinor = positionsAt(ledger, current).eligibleCash;

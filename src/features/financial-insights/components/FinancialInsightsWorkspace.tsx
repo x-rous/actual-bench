@@ -1,17 +1,20 @@
 "use client";
 
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { RefreshCw } from "lucide-react";
+import { BookOpen, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TransactionListDialog } from "@/components/transactions/TransactionListDialog";
-import { drillScope, type DrillTarget } from "@/lib/financial-insights/drill";
+import type { DrillTarget } from "@/lib/financial-insights/drill";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { resolvePeriod } from "@/lib/financial-insights/period";
 import { useFinancialInsights } from "../hooks/useFinancialInsights";
 import { GateScreen } from "./GateScreen";
 import { LoadingState } from "./LoadingState";
+import { FEATURES } from "@/lib/features/catalogue";
+import { FinancialInsightsGuide, guideSectionForTab, type FinancialInsightsGuideSection } from "./guide/FinancialInsightsGuide";
+import { DrillDialog } from "./DrillDialog";
 import { InTransitStatus, useInTransitTarget } from "./InTransitDialog";
 import { TipProvider } from "./charts/Tip";
 import { PeriodControl } from "./PeriodControl";
@@ -35,6 +38,7 @@ export function FinancialInsightsWorkspace() {
   const view = useFinancialInsights();
   const { gate, data } = view;
   const [drill, setDrill] = useState<DrillTarget | null>(null);
+  const [guide, setGuide] = useState<FinancialInsightsGuideSection | null>(null);
   // Closing the list returns focus to the figure that opened it, so keyboard users do not lose their place.
   const opener = useRef<HTMLElement | null>(null);
   const openDrill = (target: DrillTarget) => { opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setDrill(target); };
@@ -44,6 +48,8 @@ export function FinancialInsightsWorkspace() {
   const ready = data.state === "ready" ? data : null;
   const period = ready?.summary.period ?? resolvePeriod(view.period, view.today, null);
 
+  // The guide is at the top of every state of the page, also while it is locked or loading, when it is what explains why.
+  const guideButton = <Button size="xs" variant="outline" onClick={() => setGuide(guideSectionForTab(view.tab))}><BookOpen className="size-3.5" aria-hidden />Guide</Button>;
   const actions = ready ? (
     <div className="flex shrink-0 items-center gap-2">
       <span className="text-xs text-muted-foreground" role="status">Read at {readTime(ready.readAt)}{ready.refreshing && " · Refreshing…"}</span>
@@ -51,6 +57,7 @@ export function FinancialInsightsWorkspace() {
       <Button size="xs" variant="outline" onClick={view.refresh} disabled={ready.refreshing} aria-label="Refresh Financial Insights">
         <RefreshCw className={ready.refreshing ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />Refresh
       </Button>
+      {guideButton}
     </div>
   ) : undefined;
 
@@ -80,7 +87,8 @@ export function FinancialInsightsWorkspace() {
 
   return (
     <TipProvider>
-    <PageLayout title="Financial Insights" header={header}>
+    <PageLayout title="Financial Insights" header={header} actions={header ? undefined : guideButton} scrollManaged>
+      <OverlayScrollArea className="flex-1">
       {gate.state !== "ready" ? (
         <GateScreen gate={gate} onCheckAgain={view.refresh} />
       ) : data.state === "loading" ? (
@@ -116,6 +124,8 @@ export function FinancialInsightsWorkspace() {
           {drill && <DrillHost key={JSON.stringify(drill)} target={drill} data={data} today={view.today} onClose={closeDrill} />}
         </div>
       )}
+      </OverlayScrollArea>
+      {guide && <FinancialInsightsGuide section={guide} onSection={setGuide} onClose={() => setGuide(null)} docsUrl={FEATURES.find((f) => f.id === "financial-insights")?.docsUrl} />}
     </PageLayout>
     </TipProvider>
   );
@@ -130,14 +140,4 @@ function DrillHost({ target, data, today, onClose }: { target: DrillTarget; data
     return <InTransitStatus state={found.isError ? "error" : "loading"} onClose={onClose} retry={() => void found.refetch()} />;
   }
   return <DrillDialog target={target} data={data} today={today} onClose={onClose} />;
-}
-
-function DrillDialog({ target, data, today, onClose }: { target: Exclude<DrillTarget, { kind: "inTransit" }>; data: Extract<ReturnType<typeof useFinancialInsights>["data"], { state: "ready" }>; today: string; onClose: () => void }) {
-  const scope = useMemo(() => drillScope(target, data.drill), [target, data.drill]);
-  return (
-    <TransactionListDialog
-      title={scope.title} description={scope.description} today={today} constraints={scope.constraints} lockedLabels={scope.lockedLabels}
-      defaults={scope.defaults} filters={scope.filters} rowFilter={scope.rowFilter} insights={scope.insights ?? undefined} noteColumn={scope.noteColumn} fullDates expectedMinor={scope.expectedMinor} onClose={onClose}
-    />
-  );
 }

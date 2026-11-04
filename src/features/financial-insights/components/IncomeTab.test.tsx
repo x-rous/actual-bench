@@ -134,7 +134,7 @@ describe("the Income tiles", () => {
   it("sets the total against the stretch before, shows the largest source's share, and says how much has no category", () => {
     show();
     const total = screen.getByText("Total received").closest("div")!;
-    expect(total).toHaveTextContent("▲ 25.0% vs the 5 months before");
+    expect(total).toHaveTextContent("▲ 25.0% vs previous");
     expect(total).toHaveTextContent("1.2% has no category");
     const largest = screen.getByText("Largest source").closest("div")!;
     expect(largest).toHaveTextContent("Salary");

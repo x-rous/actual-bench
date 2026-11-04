@@ -1,5 +1,6 @@
 "use client";
 
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { Fragment, useState, type ReactNode } from "react";
 import { ArrowUpDown, ChevronRight, EyeOff } from "lucide-react";
 import { PillGroup } from "@/components/ui/pill-group";
@@ -87,7 +88,7 @@ export function CategoryHeatmap<T>({ id, title, hint, info, infoLabel, switcher,
           </button>
         </span>
       </div>
-      <div className={initialGroups ? "mt-1 overflow-x-auto" : "mt-1 max-h-[34rem] overflow-auto"}>
+      <OverlayScrollArea className={initialGroups ? "mt-1" : "mt-1 max-h-[34rem]"}>
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 z-10 bg-card">
             <tr>
@@ -129,7 +130,7 @@ export function CategoryHeatmap<T>({ id, title, hint, info, infoLabel, switcher,
             })}
           </tbody>
         </table>
-      </div>
+      </OverlayScrollArea>
       {initialGroups && groups.length > initialGroups && <button type="button" className="mt-1 w-full border-t border-border/50 pt-1.5 text-center text-xs text-muted-foreground underline" onClick={() => setShowAll((v) => !v)}>{showAll ? "Show fewer groups" : `Show all ${groups.length} groups`}</button>}
       {footer && <p className="mt-2 text-xs text-muted-foreground">{footer}</p>}
     </section>

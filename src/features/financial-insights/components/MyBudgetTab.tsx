@@ -1,5 +1,6 @@
 "use client";
 
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -71,7 +72,7 @@ function Kpis({ plan, onDrill }: PlanProps) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Tile label="Expenses budgeted" detail={`Saved budget, ${months}`}>{money(k.plannedMinor)}</Tile>
-        <Tile label="Expenses spent" detail={plan.hidden ? "Actual's own figure, refunds netted, hidden categories left out" : "Actual's own figure, refunds netted"}>{spent}</Tile>
+        <Tile label="Expenses spent" info={<p>Actual&apos;s own figure, refunds netted{plan.hidden ? ", with hidden categories left out as Actual's Tracking totals do" : ""}.</p>} detail={`${months} counted`}>{spent}</Tile>
         <Tile label="Expense variance" detail={k.varianceMinor >= 0 ? "Under by: budgeted less spent" : "Over by: budgeted less spent"}><span className={k.varianceMinor === 0 ? undefined : k.varianceMinor > 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}>{k.varianceMinor === 0 ? money(0) : signedMoney(k.varianceMinor)}</span></Tile>
         <Tile label="Months over budget" detail={`${k.monthsWithPlan === 1 ? "completed month" : "completed months"} with a budget${k.monthsWithPlan > 0 ? ` · ${percent((k.monthsOver / k.monthsWithPlan) * 100)} over` : ""}`}>{`${k.monthsOver} of ${k.monthsWithPlan}`}</Tile>
         <Tile label="Income variance" detail={`${k.incomeVarianceMinor >= 0 ? "Above" : "Below"} by: received ${money(k.incomeMinor)} of ${money(k.plannedIncomeMinor)} budgeted`}><span className={k.incomeVarianceMinor === 0 ? undefined : k.incomeVarianceMinor > 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}>{k.incomeVarianceMinor === 0 ? money(0) : signedMoney(k.incomeVarianceMinor)}</span></Tile>
@@ -82,9 +83,9 @@ function Kpis({ plan, onDrill }: PlanProps) {
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <Tile label="Budgeted" detail={`Money assigned to categories, ${months}`}>{money(k.assignedMinor)}</Tile>
       <Tile label="Expenses spent" detail="Actual's own figure, refunds netted">{spent}</Tile>
-      <Tile label="Overspent, not covered" detail="Overspending Actual deducts from the next month, added up">{money(k.uncoveredMinor)}</Tile>
+      <Tile label="Overspent, not covered" info={<p>The overspending Actual deducts from the next month, added up over the completed months.</p>} detail="Taken from the next month">{money(k.uncoveredMinor)}</Tile>
       <Tile label="Months needing adjustment" detail="completed months with overspending not covered">{`${k.monthsNeedingAdjustment} of ${k.months}`}</Tile>
-      <Tile label="Ending balance" detail={`Category balances at the end of ${monthLabel(k.leftMonth)}, not a bank balance`}>{money(k.leftMinor)}</Tile>
+      <Tile label="Ending balance" info={<p>The sum of the category balances at the end of the period: not a bank balance.</p>} detail={`At the end of ${monthLabel(k.leftMonth)}`}>{money(k.leftMinor)}</Tile>
     </div>
   );
 }
@@ -272,7 +273,7 @@ function BudgetByGroup({ plan, onDrill }: PlanProps) {
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--fi-down)" }} aria-hidden />Extra</span>
       </div>
       {groups.length === 0 ? <p className="mt-3 text-xs text-muted-foreground">No categories to show.</p> : (
-        <div className="mt-2 min-h-0 flex-1 overflow-auto">
+        <OverlayScrollArea className="mt-2 flex-1">
           <div className="min-w-[34rem]">
             <div className={`${BUDGET_ROW} sticky top-0 z-10 border-b border-border bg-card py-1 text-xs text-muted-foreground`}>
               <span>Group</span><span aria-hidden />
@@ -310,7 +311,7 @@ function BudgetByGroup({ plan, onDrill }: PlanProps) {
               })}
             </div>
           </div>
-        </div>
+        </OverlayScrollArea>
       )}
       <p className="mt-1 border-t border-border/50 pt-1.5 text-xs text-muted-foreground">Over the {plural(plan.completed.length, "completed month")}; the share is of the spending shown here.</p>
     </section>
@@ -350,7 +351,7 @@ function Misses({ plan, onDrill }: PlanProps) {
       {list.length === 0 ? (
         <p className="mt-3 text-xs text-muted-foreground">{plan.completed.length === 0 ? "No completed month to look at." : onlyUnplanned ? "Nothing was spent without a budget." : tracking ? "Nothing went over its budget in the completed months." : "Nothing was left uncovered in the completed months."}</p>
       ) : (
-        <div className={`mt-2 min-h-0 flex-1 ${all ? "overflow-y-auto" : ""}`}>
+        <OverlayScrollArea className="mt-2 flex-1">
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-border text-muted-foreground">
@@ -373,7 +374,7 @@ function Misses({ plan, onDrill }: PlanProps) {
               ))}
             </tbody>
           </table>
-        </div>
+        </OverlayScrollArea>
       )}
       {list.length > 8 && <button type="button" className="mt-1 border-t border-border/50 pt-1.5 text-center text-xs text-muted-foreground underline" onClick={() => setAll((v) => !v)}>{all ? "Show fewer" : `Show all ${list.length}`}</button>}
     </section>

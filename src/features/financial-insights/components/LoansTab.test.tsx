@@ -152,7 +152,7 @@ describe("offered tabs for debt", () => {
     expect(names([chk, visa])).toContain("loans");
     expect(names([chk, mortgage])).toContain("loans");
     expect(names([chk, { id: "tax", name: "Tax", accountClass: "other-liability", treatment: "current-liability", offBudget: true }])).toContain("loans");
-    expect(names([chk, visa]).at(-1)).toBe("loans");
+    expect(names([chk, visa]).slice(-1)).toEqual(["loans"]);
   });
 });
 
@@ -187,7 +187,7 @@ describe("the Loans & cards interest and fees tile", () => {
   it("is the fifth tile, says None without a loan or card, and flags loans not tracked", () => {
     const { unmount } = show(data([chk, mortgage], base));
     expect(screen.getByText("Interest & fees paid")).toBeInTheDocument();
-    expect(screen.getByText("Interest & fees paid").closest("div")).toHaveTextContent("Excludes loans not tracked in Loans");
+    expect(screen.getByText("Interest & fees paid").closest("div")).toHaveTextContent("Some are not included");
     unmount();
     show(data([chk], [row("2026-01", "chk", 100)]));
     expect(screen.getByText("Interest & fees paid").closest("div")).toHaveTextContent("None");

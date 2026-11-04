@@ -5,6 +5,9 @@ import { resolvePeriod } from "@/lib/financial-insights/period";
 import { SummaryTab } from "./SummaryTab";
 import { TipProvider } from "./charts/Tip";
 
+jest.mock("../hooks/useCashBufferScenarios", () => ({ useCashBufferScenarios: () => ({ scenarios: [], active: null, loading: false, failed: false, select: jest.fn(), saveScenario: jest.fn(), deleteScenario: jest.fn(), saving: false }) }));
+jest.mock("../hooks/useCashBufferSettings", () => ({ useCashBufferSettings: () => ({ settings: { goalMonths: null, averageMonths: 12, method: "average" }, save: jest.fn(), saving: false }) }));
+
 const chk: AccountFact = { id: "chk", name: "Checking", accountClass: "bank", treatment: null, offBudget: false };
 const inv: AccountFact = { id: "inv", name: "Brokerage", accountClass: "investment", treatment: "non-current-investment", offBudget: true };
 const row = (month: string, accountId: string, amountMinor: number, extra: Partial<MovementRow> = {}): MovementRow => ({ month, accountId, categoryId: null, transferAccountId: null, amountMinor, count: 1, ...extra });
@@ -18,15 +21,30 @@ function data(accounts: AccountFact[], movement: MovementRow[], over: Record<str
 }
 
 describe("the Summary's net worth change", () => {
-  it("states the start, the change and the end, and totals what is owned and owed", () => {
-    const d = data([chk, inv], [row("2026-09", "chk", 100_000), row("2026-09", "inv", 4_000)], { buffer: { state: "unavailable", reason: "none" }, bufferSpending: [] });
-    render(<TipProvider><SummaryTab data={d as never} today="2026-11-18" accountNames={new Map()} onDrill={jest.fn()} /></TipProvider>);
-    const strip = screen.getByRole("group", { name: /Net worth at the start and end of the period, and the change/ });
-    expect(strip).toHaveTextContent("Start");
-    expect(strip).toHaveTextContent("Change");
-    expect(strip).toHaveTextContent("End");
+  const show = (movement: MovementRow[]) => render(<TipProvider><SummaryTab data={data([chk, inv], movement, { buffer: { state: "unavailable", reason: "none" }, bufferSpending: [] }) as never} today="2026-11-18" accountNames={new Map()} onDrill={jest.fn()} /></TipProvider>);
+
+  it("draws a bar for net worth at the start and one at the end, with the change as its own figure, and totals what is owned and owed", () => {
+    show([row("2026-08", "chk", 50_000), row("2026-09", "chk", 100_000), row("2026-09", "inv", 4_000)]);
+    const chart = screen.getByRole("group", { name: "Components of the change in net worth" });
+    // The labels are broken over lines in the drawing, so they are compared without the breaks.
+    const text = (chart.textContent ?? "").replace(/\s/g, "");
+    expect(text).toContain("Networthatthestart");
+    expect(text).toContain("Networthattheend");
+    expect(text).toContain("500.00");
+    expect(text).toContain("1,540.00");
+    const card = chart.closest("section") as HTMLElement;
+    expect(within(card).getByText("Change").nextElementSibling).toHaveTextContent("+1,040.00");
+    expect(screen.queryByRole("group", { name: /Net worth at the start and end of the period, and the change/ })).not.toBeInTheDocument();
     for (const name of ["Total owned", "Total owed", "Net worth"]) expect(screen.getAllByRole("rowheader", { name }).length).toBeGreaterThan(0);
-    expect(within(strip).getAllByText(/\d/).length).toBeGreaterThan(2);
+  });
+
+  it("has no start bar, and no change, when the period begins in the budget's first month", () => {
+    show([row("2026-09", "chk", 100_000), row("2026-09", "inv", 4_000)]);
+    const chart = screen.getByRole("group", { name: "Components of the change in net worth" });
+    const text = (chart.textContent ?? "").replace(/\s/g, "");
+    expect(text).not.toContain("Networthatthestart");
+    expect(text).toContain("Networthattheend");
+    expect(within(chart.closest("section") as HTMLElement).getByText("Change").nextElementSibling).toHaveTextContent("-");
   });
 });
 

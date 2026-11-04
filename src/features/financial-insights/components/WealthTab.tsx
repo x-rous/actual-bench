@@ -106,16 +106,16 @@ export function WealthTab({ data, onDrill }: { data: Ready; onDrill: (target: Dr
     <div className="space-y-4 p-4">
       <section className="space-y-4" aria-label="Your wealth">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Tile label="Investments" detail={<>Value at the end of the period<span className="block">{signedMoney(t.closing - t.opening)}{pctText(t.closing - t.opening, t.opening)} during the period</span></>}>{money(t.closing)}</Tile>
-          <Tile label="Put in" detail="Moved in from accounts outside your investments">{tileLink(t.funding, portfolioDrill("contributed"), "Put into investments")}</Tile>
-          <Tile label="Withdrawn" detail="Moved out to accounts outside your investments">{tileLink(0 - t.withdrawals, portfolioDrill("withdrawn"), "Withdrawn from investments")}</Tile>
-          <Tile label="Investment activity" detail="Recorded inside your investments: not a return">{tileLink(t.activity, portfolioDrill("investmentResults"), "Investment activity", true)}</Tile>
+          <Tile label="Investments" info={<p>The value of your investment and retirement accounts at the end of the period.</p>} detail={<>{signedMoney(t.closing - t.opening)}{pctText(t.closing - t.opening, t.opening)} during the period</>}>{money(t.closing)}</Tile>
+          <Tile label="Put in" info={<p>Money moved in from accounts outside your investments.</p>} detail="From outside your investments">{tileLink(t.funding, portfolioDrill("contributed"), "Put into investments")}</Tile>
+          <Tile label="Withdrawn" info={<p>Money moved out to accounts outside your investments.</p>} detail="To outside your investments">{tileLink(0 - t.withdrawals, portfolioDrill("withdrawn"), "Withdrawn from investments")}</Tile>
+          <Tile label="Investment activity" info={<p>Entries with no category inside your investment accounts: price changes, dividends, interest and fees as recorded. This is not a return.</p>} detail="Recorded inside: not a return">{tileLink(t.activity, portfolioDrill("investmentResults"), "Investment activity", true)}</Tile>
           <Tile label="Share of your assets" detail={summary.assets > 0 ? `${money(t.closing)} of ${money(summary.assets)} owned` : "Nothing owned yet"}>{summary.assets > 0 ? percent((t.closing / summary.assets) * 100) : MISSING}</Tile>
         </div>
       </section>
 
       {/* The two timelines on the left, the bridge and the accounts on the right: each row is a pair of cards of one height. */}
-      <div className="grid items-stretch gap-4 xl:grid-cols-2">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <WealthOverview data={data} scope={scope} />
         {hasPortfolio && (
           <>

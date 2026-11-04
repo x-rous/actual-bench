@@ -66,6 +66,8 @@ import {
   ASSETS_DEBT_V44_TRIGGER_SQL,
   ACCOUNT_CLASS_TABLE_SQL,
   ACCOUNT_REPORTING_TABLE_SQL,
+  CASH_BUFFER_SCENARIOS_TABLE_SQL,
+  CASH_BUFFER_SETTINGS_TABLE_SQL,
   CREDIT_CARD_INDEX_SQL,
   CREDIT_CARD_TABLES_SQL,
   CREDIT_CARD_TRIGGER_SQL,
@@ -74,7 +76,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 62;
+export const LATEST_SCHEMA_VERSION = 64;
 
 type Migration = {
   version: number;
@@ -706,6 +708,10 @@ const MIGRATIONS: readonly Migration[] = [
   // investment, retirement and crypto assets are removed with everything Bench saved for them (Actual is not touched), and an Other
   // Asset account that already holds an asset is marked Fixed asset so it stays eligible.
   { version: 62, apply: applyFixedAssetsOnly },
+  // Cash buffer scenarios per budget (Financial Insights). Additive; no existing table is touched.
+  { version: 63, statements: [CASH_BUFFER_SCENARIOS_TABLE_SQL] },
+  // Cash buffer settings per budget: the months of cover aimed for, and how a typical month is worked out. Additive.
+  { version: 64, statements: [CASH_BUFFER_SETTINGS_TABLE_SQL] },
 ];
 
 function applyFixedAssetsOnly(db: SqliteDatabase): void {

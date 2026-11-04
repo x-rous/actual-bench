@@ -93,6 +93,6 @@ describe("the Investments tiles", () => {
     expect(screen.queryByText("Total liabilities")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Put into investments 500\.00/ }));
     expect(onDrill).toHaveBeenCalledWith({ kind: "contributed", portfolio: true });
-    expect(screen.getByText("Recorded inside your investments: not a return")).toBeInTheDocument();
+    expect(screen.getByText("Recorded inside: not a return")).toBeInTheDocument();
   });
 });

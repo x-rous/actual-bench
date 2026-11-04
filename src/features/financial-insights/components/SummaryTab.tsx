@@ -1,10 +1,9 @@
 "use client";
 
+import { OverlayScrollArea } from "@/features/budget-management/components/OverlayScrollArea";
 import { Fragment, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { withSmallDecimals } from "@/features/credit-cards/components/primitives/Figure";
 import type { Status } from "@/lib/financial-insights/measures";
 import { ASSET_CLASSES, CLASS_LABEL, LIABILITY_CLASSES, type ClassKey } from "@/lib/financial-insights/breakdowns";
 import type { DrillTarget } from "@/lib/financial-insights/drill";
@@ -19,7 +18,7 @@ import { MISSING, money, percent, signedMoney, formatDay } from "../format";
 import { ChartFrame } from "./ChartFrame";
 import { Delta } from "./Delta";
 import { DrillLink } from "./DrillLink";
-import { CardTitle } from "./InfoTip";
+import { CashBuffer } from "./CashBufferCard";
 import { Tile } from "./Tile";
 import { CLASS_COLOUR, CompositionChart } from "./charts/CompositionChart";
 import { Waterfall, type WaterfallStep } from "./charts/Waterfall";
@@ -34,88 +33,13 @@ function statusText<T>(status: Status<T>, format: (value: T) => string): { text:
   return { text: status.state === "needsReview" ? "Needs review" : "Unavailable", detail: status.reason, tone: "warning" };
 }
 
-/** The average monthly spending, with the average of each category group behind it on hover or focus. */
-function SpendingBreakdownTip({ groups, spendingMinor, months }: { groups: Ready["bufferSpending"]; spendingMinor: number; months: number }) {
-  if (!groups || groups.groups.length === 0) return <>{money(spendingMinor)}</>;
-  // Each average is rounded to a cent, so the groups can differ from the total by a cent or so each: that is rounding, not a cost.
-  const rest = spendingMinor - groups.groups.reduce((a, g) => a + g.avgMinor, 0);
-  return (
-    <Popover>
-      <PopoverTrigger openOnHover delay={150} render={<button type="button" aria-label={`Spending per month ${money(spendingMinor)}: see the average of each group`} className="cursor-help tabular-nums underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">{money(spendingMinor)}</button>} />
-      <PopoverContent align="end" className="w-80 p-3 text-xs">
-        <p className="mb-1.5 font-medium">Average per month, by group</p>
-        <p className="mb-2 text-muted-foreground">Over the last {months} complete {months === 1 ? "month" : "months"}.</p>
-        <table className="w-full border-collapse">
-          <tbody>
-            {groups.groups.map((g) => <tr key={g.name} className="border-b border-border/40"><th scope="row" className="max-w-52 py-1 text-left font-normal"><span className="block truncate" title={g.name}>{g.name}</span></th><td className="text-right tabular-nums">{money(g.avgMinor)}</td></tr>)}
-            {rest !== 0 && <tr className="border-b border-border/40 text-muted-foreground"><th scope="row" className="py-1 text-left font-normal">{Math.abs(rest) <= groups.groups.length ? "Rounding" : "Loan interest and fees (counted in each loan\u2019s repayment)"}</th><td className="text-right tabular-nums">{money(rest)}</td></tr>}
-            <tr className="font-semibold"><th scope="row" className="py-1.5 text-left">Spending per month</th><td className="text-right tabular-nums">{money(spendingMinor)}</td></tr>
-          </tbody>
-        </table>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function CashBuffer({ buffer, groups, today }: { buffer: Ready["buffer"]; groups: Ready["bufferSpending"]; today: string }) {
-  return (
-    <section className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card p-4" aria-label="Your cash buffer">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <CardTitle title="Your cash buffer" hint={`As of ${formatDay(today)}, whatever period is selected`} infoLabel="your cash buffer"
-          info={<><p>How many months your cash &amp; bank balance would cover at your usual spending, plus every loan repayment.</p><p>The all-in figure counts every recorded expense. Investments and fixed / restricted deposits are not counted as cash; card payments and loan interest are not counted twice. The 0–12 month scale is not a recommended target.</p></>} />
-              </div>
-      {buffer.state === "ready" ? (
-        <>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <p className="text-4xl font-semibold leading-none tracking-tight tabular-nums">{buffer.value.months.toFixed(1)} <span className="text-base font-normal text-muted-foreground">months</span></p>
-              <p className="text-xs text-muted-foreground">of cover: cash &amp; bank ÷ needed per month</p>
-            </div>
-            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-right">
-              <p className="text-xs text-muted-foreground">Cash &amp; bank today</p>
-              <p className="text-xl font-semibold leading-tight tabular-nums">{withSmallDecimals(money(buffer.value.cashMinor))}</p>
-            </div>
-          </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${buffer.value.months.toFixed(1)} months on a scale of 0 to 12`}>
-            <div className="h-full rounded-full bg-[var(--fi-cash)]" style={{ width: `${Math.min(100, (buffer.value.months / 12) * 100)}%` }} />
-          </div>
-          <div className="mt-1 flex justify-between text-[11px] text-muted-foreground"><span>0</span><span>12 months</span></div>
-          <p className="mt-3 text-xs font-medium">What you need each month</p>
-          <dl className="mt-1 text-xs">
-            <div className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-baseline gap-x-2 py-1">
-              <dd className="text-muted-foreground" aria-hidden />
-              <dt>Spending per month<span className="block text-muted-foreground">average of the last {buffer.value.spendingMonths} complete {buffer.value.spendingMonths === 1 ? "month" : "months"}, without loan interest</span></dt>
-              <dd className="tabular-nums"><SpendingBreakdownTip groups={groups} spendingMinor={buffer.value.spendingMinor} months={buffer.value.spendingMonths} /></dd>
-            </div>
-            {buffer.value.loans.map((loan) => (
-              <div key={loan.accountId} className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-baseline gap-x-2 border-t border-border/40 py-1">
-                <dd className="text-muted-foreground" aria-hidden>+</dd>
-                <dt className="min-w-0"><span className="block truncate" title={loan.name}>{loan.name}</span><span className="block text-muted-foreground">{loan.source === "schedule" ? "scheduled repayment, principal + interest" : "recorded repayments, principal only"}</span></dt>
-                <dd className="tabular-nums">{money(loan.monthlyMinor)}</dd>
-              </div>
-            ))}
-            <div className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-baseline gap-x-2 border-t-2 border-foreground/70 py-1.5 text-sm font-semibold">
-              <dd aria-hidden>=</dd><dt>Needed per month</dt><dd className="tabular-nums">{money(buffer.value.monthlyNeedMinor)}</dd>
-            </div>
-          </dl>
-        </>
-      ) : (
-        <>
-          <p className="mt-3 text-xl font-semibold">Unavailable</p>
-          <p className="mt-1 text-xs text-muted-foreground">{buffer.state === "unavailable" ? buffer.reason : "Needs review"}</p>
-        </>
-      )}
-    </section>
-  );
-}
-
 function ReviewList({ rows, names }: { rows: ReviewEntry[]; names: ReadonlyMap<string, string> }) {
   if (rows.length === 0) return null;
   return (
     <details className="rounded-lg border border-border bg-card px-4 py-2 text-xs">
       <summary className="cursor-pointer font-medium">Asset entries to review ({rows.length})</summary>
       <p className="mt-2 text-muted-foreground">Assets classifies these as money put into an asset, but no transfer is recorded behind them, so they may also be counted as spending. Record the purchase as a transfer in Actual, or change the classification in Assets. Until then, Money kept and the savings rate are not shown.</p>
-      <div className="mt-2 max-h-64 overflow-auto">
+      <OverlayScrollArea className="mt-2 max-h-64">
         <table className="w-full border-collapse">
           <thead className="sticky top-0 bg-card"><tr className="border-b border-border text-left text-muted-foreground"><th className="py-1 pr-3 font-medium">Date</th><th className="pr-3 font-medium">Account</th><th className="pr-3 text-right font-medium">Amount</th><th className="font-medium">Why</th></tr></thead>
           <tbody>
@@ -124,7 +48,7 @@ function ReviewList({ rows, names }: { rows: ReviewEntry[]; names: ReadonlyMap<s
             ))}
           </tbody>
         </table>
-      </div>
+      </OverlayScrollArea>
     </details>
   );
 }
@@ -174,7 +98,7 @@ function OwnAndOwe({ data }: { data: Ready }) {
     >
       {startKnown ? bar(start, "Start of period") : <p className="mb-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">Start of period</span> · no data yet: the budget has no transactions before this period</p>}
       {endKnown ? bar(end, "End") : <p className="mb-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">End</span> · no data yet: the budget has no transactions up to the end of this period</p>}
-      <div className="max-h-[26rem] overflow-auto">
+      <OverlayScrollArea className="max-h-[26rem]">
         <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 z-10 bg-card"><tr className="border-b border-border text-muted-foreground"><th className="py-1 text-left font-medium">Class</th><th className="text-right font-medium">Start</th><th className="text-right font-medium">End</th><th className="text-right font-medium">Change</th></tr></thead>
           <tbody>
@@ -199,7 +123,7 @@ function OwnAndOwe({ data }: { data: Ready }) {
                   </tr>
                   {isOpen && shown.map((r) => (
                     <tr key={r.accountId} className="border-b border-border/40 bg-muted/30">
-                      <th scope="row" className="max-w-0 py-1 pl-9 pr-2 text-left font-normal"><span className="block truncate" title={r.name}>{r.name}</span>{r.treatment && <span className="block truncate text-[11px] text-muted-foreground">{r.treatment}</span>}</th>
+                      <th scope="row" className="max-w-0 py-1 pl-9 pr-2 text-left font-normal"><span className="flex min-w-0 items-baseline gap-2"><span className="truncate" title={r.name}>{r.name}</span>{r.treatment && <span className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground">{r.treatment}</span>}</span></th>
                       <td className="text-right tabular-nums">{startKnown ? money(r.openingMinor) : MISSING}</td><td className="text-right tabular-nums">{endKnown ? money(r.closingMinor) : MISSING}</td><td className="text-right tabular-nums">{startKnown && endKnown ? signedMoney(r.changeMinor) : MISSING}</td>
                     </tr>
                   ))}
@@ -210,7 +134,7 @@ function OwnAndOwe({ data }: { data: Ready }) {
           </tbody>
           <tfoot className="sticky bottom-0 z-10 bg-card">{totals.map(([name, a, b], i) => <tr key={name} className={`${i === 0 ? "border-t-2 border-foreground/70" : "border-t border-border/40"} font-semibold`}><th scope="row" className="py-1 text-left font-semibold">{name}</th><td className="text-right tabular-nums">{money(a)}</td><td className="text-right tabular-nums">{money(b)}</td><td className="text-right tabular-nums">{a === null || b === null ? MISSING : signedMoney(b - a)}</td></tr>)}</tfoot>
         </table>
-      </div>
+      </OverlayScrollArea>
     </ChartFrame>
   );
 }
@@ -220,7 +144,6 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
   const [hidden, setHidden] = useState<ReadonlySet<ClassKey>>(new Set());
   const [hideLine, setHideLine] = useState(false);
   const kept = statusText(summary.moneyKept, money);
-  const rate = statusText(summary.savingsRate, percent);
   const months = summary.period.months.length;
   const period = `${summary.period.label}: ${formatDay(summary.period.startDate)} to ${formatDay(summary.period.endDate)}`;
   // The unit of the chart of balances: a quarter or a year is stood for by its last month's balance.
@@ -241,10 +164,15 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
   const openingKnown = data.ledger.firstMonth !== null && data.ledger.firstMonth <= addMonths(data.period.startMonth, -1);
   const growth = openingKnown && summary.netWorth.opening !== 0 ? (summary.netWorth.change / Math.abs(summary.netWorth.opening)) * 100 : null;
   const steps: WaterfallStep[] = [
+    // The balance the period opened with, when the budget has one, so the bars read from where it started to where it ended.
+    ...(openingKnown ? [{ key: "start", label: "Net worth at the start", kind: "total" as const, amountMinor: netWorthChange.openingMinor, note: `Net worth before ${formatDay(summary.period.startDate)}` }] : []),
     ...netWorthChange.steps.map((s) => ({ key: s.key, label: s.label, kind: "delta" as const, amountMinor: s.amountMinor, note: s.note })),
     ...(netWorthChange.unexplainedMinor !== 0 ? [{ key: "unexplained", label: "Unexplained", kind: "gap" as const, amountMinor: netWorthChange.unexplainedMinor, note: "What the components above do not explain. It is shown, never forced to zero." }] : []),
-    { key: "total", label: "Total change", kind: "total", amountMinor: netWorthChange.changeMinor, note: "Net worth at the end less net worth before the period" },
+    { key: "end", label: "Net worth at the end", kind: "total", amountMinor: netWorthChange.closingMinor, note: `Net worth on ${formatDay(summary.period.endDate)}` },
   ];
+  // The balances are far larger than the steps between them, so the bars do not start at zero (the footnote says so).
+  const running = steps.reduce<number[]>((acc, st) => [...acc, st.kind === "total" ? st.amountMinor : (acc[acc.length - 1] ?? 0) + st.amountMinor], []);
+  const floorMinor = openingKnown ? Math.min(...running) - Math.max(1, (Math.max(...running) - Math.min(...running)) * 1.2) : undefined;
   const stepTarget = (key: string): DrillTarget | null => {
     const step = netWorthChange.steps.find((s) => s.key === key);
     return step?.drill ? (step.drill === "inTransit" ? { kind: "inTransit", cashOnly: false } : { kind: step.drill }) : null;
@@ -258,17 +186,17 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
     <div className="space-y-4 p-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Tile label="Net worth" detail={<>Owns {money(summary.assets)} · owes {money(summary.liabilities)}</>}>{money(summary.netWorth.closing)}</Tile>
-        <Tile label="Change in net worth" detail={<>{growth !== null ? `${growth > 0 ? "+" : ""}${percent(growth)} over ` : "Over "}{months} {months === 1 ? "month" : "months"}<span className="block">Everything owned less owed</span></>}>{openingKnown ? signedMoney(summary.netWorth.change) : MISSING}</Tile>
-        <Tile label="Money kept" tone={kept.tone}
+        <Tile label="Change in net worth" info={<p>Net worth at the end of the period less net worth before it: everything you own less everything you owe, then and now.</p>} detail={<>{growth !== null ? `${growth > 0 ? "+" : ""}${percent(growth)} over ` : "Over "}{months} {months === 1 ? "month" : "months"}</>}>{openingKnown ? signedMoney(summary.netWorth.change) : MISSING}</Tile>
+        <Tile label="Money kept" tone={kept.tone} info={<p>Money received less money spent in the period. Moving money between your accounts, into investments or into loan principal is not spending. The savings rate is this figure as a share of what you received.</p>}
           detail={kept.detail ?? (
             <>
-              <DrillLink label={`Money received ${money(summary.received)}`} onClick={() => onDrill({ kind: "received" })}>{money(summary.received)}</DrillLink> received − <DrillLink label={`Money spent ${money(summary.spent)}`} onClick={() => onDrill({ kind: "spent" })}>{money(summary.spent)}</DrillLink> spent · savings rate {rate.text}
-              {comparison && summary.moneyKept.state === "ready" && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}
-            </>)}>{kept.text}</Tile>
+              <DrillLink label={`Money received ${money(summary.received)}`} onClick={() => onDrill({ kind: "received" })}>{money(summary.received)}</DrillLink> received − <DrillLink label={`Money spent ${money(summary.spent)}`} onClick={() => onDrill({ kind: "spent" })}>{money(summary.spent)}</DrillLink> spent
+            </>)}
+          delta={comparison && summary.moneyKept.state === "ready" && <Delta now={comparison.current.kept} before={comparison.previous.kept} label={comparison.label} good="up" />}>{kept.text}</Tile>
         <Tile label="Change in cash" detail="Cash & bank, end less start">{signedMoney(summary.eligibleCash.change)}</Tile>
-        <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" ? undefined : "warning"} detail={summary.savingsRate.state === "ready" ? <>Money kept ÷ money received{comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />}</> : summary.savingsRate.reason}>{summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}</Tile>
+        <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" ? undefined : "warning"} delta={comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />} detail={summary.savingsRate.state === "ready" ? "Money kept ÷ money received" : summary.savingsRate.reason}>{summary.savingsRate.state === "ready" ? percent(summary.savingsRate.value) : "Needs review"}</Tile>
       </div>
-      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <ChartFrame
           id="composition" title={`What you own and owe, ${names.one} by ${names.one}`} hint="Select a class in the legend to add or remove it"
           subtitle={<><p>Assets are stacked above zero, liabilities below it, and net worth is the line. Balances are measured at each {names.one} end.{unit !== "month" && ` A ${names.one} is a calendar ${names.one}, shown by its last month's balance.`}</p><p>Select a class in the legend to include it in or remove it from the chart. Net worth is always the true total, whatever is hidden.</p></>}
@@ -279,25 +207,21 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
         >
           <CompositionChart labels={labels} partialIndex={partialIndex} months={chartMonths} netWorth={chartNetWorth} hasData={chartKnown} hidden={hidden} showNetWorth={!hideLine} unitName={names.one} partialText={summary.period.partial ? "balance today" : "balance at the end of the period"} />
         </ChartFrame>
-        <CashBuffer buffer={buffer} groups={bufferSpending} today={today} />
+        <CashBuffer buffer={buffer} groups={bufferSpending} today={today} data={data} />
       </div>
-      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
         <ChartFrame
           id="net-worth-change"
           title={<span className="flex flex-wrap items-center gap-2">What changed your net worth {netWorthChange.unexplainedMinor === 0 ? <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"><CheckCircle2 className="size-3" aria-hidden />Reconciled</span> : <span className={`inline-flex items-center gap-1 rounded-full border border-amber-500/60 px-2 py-0.5 text-[11px] font-normal ${WARNING}`}><AlertTriangle className="size-3" aria-hidden />{money(Math.abs(netWorthChange.unexplainedMinor))} unexplained</span>}</span>}
           hint="Start to end of the period"
+          actions={<div className="text-right"><p className="text-xs text-muted-foreground">Change</p><p className="text-lg font-semibold leading-tight tabular-nums">{openingKnown ? signedMoney(netWorthChange.changeMinor) : MISSING}{openingKnown && netWorthChange.openingMinor !== 0 && <span className="ml-1.5 text-xs font-normal text-muted-foreground">({netWorthChange.changeMinor > 0 ? "+" : ""}{percent((netWorthChange.changeMinor / Math.abs(netWorthChange.openingMinor)) * 100)})</span>}</p></div>}
           subtitle={<><p>Net worth before {formatDay(summary.period.startDate)} {openingKnown ? <>was {money(netWorthChange.openingMinor)}</> : "is unavailable: the budget has no data that early"}; on {formatDay(summary.period.endDate)} it is {money(netWorthChange.closingMinor)}. Only components Bench can identify are shown.</p><p>Select a step with an underlined label to see its transactions.</p></>}
           legend={[{ label: "Raises net worth", colour: "var(--fi-up)" }, { label: "Lowers net worth", colour: "var(--fi-down)" }, { label: "Net change", colour: "var(--fi-balance)" }]}
           table={{ head: ["Step", "Amount"], rows: [["Net worth before the period", openingKnown ? netWorthChange.openingMinor : null], ...steps.filter((s) => s.kind !== "total").map((s) => [s.label, s.amountMinor] as (string | number)[]), ["Net worth at the end", netWorthChange.closingMinor]] }}
           csvScope={[["Period", period]]}
-          footnote={netWorthChange.unexplainedMinor === 0 ? "The bars start at zero, showing the change rather than net worth itself. Reconciled: the components add up exactly to the change." : "The bars start at zero, showing the change rather than net worth itself. The dashed bar is what the components do not explain."}
+          footnote={netWorthChange.unexplainedMinor === 0 ? "The first and last bars are net worth at the start and the end; the axis does not start at zero, so the steps between them stay readable. Reconciled: the components add up exactly to the change." : "The first and last bars are net worth at the start and the end; the axis does not start at zero, so the steps between them stay readable. The dashed bar is what the components do not explain."}
         >
-          <dl role="group" className="mb-3 grid grid-cols-3 gap-3 text-xs" aria-label="Net worth at the start and end of the period, and the change">
-            <div><dt className="text-muted-foreground">Start · before {formatDay(summary.period.startDate)}</dt><dd className="text-lg font-semibold tabular-nums">{openingKnown ? money(netWorthChange.openingMinor) : MISSING}</dd></div>
-            <div><dt className="text-muted-foreground">Change</dt><dd className="text-lg font-semibold tabular-nums">{openingKnown ? signedMoney(netWorthChange.changeMinor) : MISSING}{openingKnown && netWorthChange.openingMinor !== 0 && <span className="ml-1.5 text-xs font-normal text-muted-foreground">({netWorthChange.changeMinor > 0 ? "+" : ""}{percent((netWorthChange.changeMinor / Math.abs(netWorthChange.openingMinor)) * 100)})</span>}</dd></div>
-            <div><dt className="text-muted-foreground">End · {formatDay(summary.period.endDate)}</dt><dd className="text-lg font-semibold tabular-nums">{money(netWorthChange.closingMinor)}</dd></div>
-          </dl>
-          <Waterfall steps={steps} ariaLabel="Components of the change in net worth" canSelect={(s) => stepTarget(s.key) !== null} onSelect={(s) => { const t = stepTarget(s.key); if (t) onDrill(t); }} />
+          <Waterfall steps={steps} floorMinor={floorMinor} ariaLabel="Components of the change in net worth" canSelect={(s) => stepTarget(s.key) !== null} onSelect={(s) => { const t = stepTarget(s.key); if (t) onDrill(t); }} />
         </ChartFrame>
         <OwnAndOwe data={data} />
       </div>

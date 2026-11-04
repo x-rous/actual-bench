@@ -67,17 +67,17 @@ export function AssetsTab({ data, today, onOpenLoans }: { data: Ready; today: st
     <div className="space-y-4 p-4">
       <section aria-label="Property and assets">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Tile label="Asset value" detail={<>{signedMoney(closingMinor - openingMinor)}{pctText(closingMinor - openingMinor, openingMinor)} during the period<span className="block">Property, vehicles and other fixed assets</span></>}>{money(closingMinor)}</Tile>
+          <Tile label="Asset value" info={<p>The balance of your property, vehicle and other fixed asset accounts in Actual.</p>} detail={<>{signedMoney(closingMinor - openingMinor)}{pctText(closingMinor - openingMinor, openingMinor)} during the period</>}>{money(closingMinor)}</Tile>
           <Tile label="Change in value" detail={!rows ? reading : valueChange === null ? "None of your assets could be read from the Asset Registry" : <>Revaluation {signedMoney(valueChange.revaluation)} · depreciation {signedMoney(valueChange.depreciation)}</>}>
             {!rows ? waiting : valueChange === null ? "Unavailable" : signedMoney(valueChange.revaluation + valueChange.depreciation)}
           </Tile>
-          <Tile label="Debt against assets" tone={equity?.state === "unavailable" ? "warning" : undefined}
-            detail={!equity ? reading : equity.state === "notLinked" ? "No loan is linked to an asset in Assets" : equity.state === "unavailable" ? equity.reason : <>Linked loans, as Actual shows them<span className="block">{debtChange(rows!)}</span></>}>
+          <Tile label="Debt against assets" tone={equity?.state === "unavailable" ? "warning" : undefined} info={<p>The balances of the loans linked to your assets in Assets, as Actual shows them at the end of the period.</p>}
+            detail={!equity ? reading : equity.state === "notLinked" ? "No loan is linked to an asset in Assets" : equity.state === "unavailable" ? equity.reason : debtChange(rows!)}>
             {!equity ? waiting : equity.state === "notLinked" ? "Not linked" : equity.state === "unavailable" ? "Unavailable" : money(equity.debtMinor)}
           </Tile>
-          <Tile label="Equity" tone={equity?.state === "unavailable" ? "warning" : undefined}
+          <Tile label="Equity" tone={equity?.state === "unavailable" ? "warning" : undefined} info={<p>The value of the linked assets less their loans: what is left if the loans were paid from the value.</p>}
             detail={!equity ? reading : equity.state === "notLinked" ? "No loan is linked to an asset in Assets" : equity.state === "unavailable" ? equity.reason
-              : <>Value of the linked assets less their loans{equity.startMinor !== null && <span className="block">{signedMoney(equity.endMinor - equity.startMinor)}{pctText(equity.endMinor - equity.startMinor, equity.startMinor)} during the period</span>}</>}>
+              : equity.startMinor !== null ? <>{signedMoney(equity.endMinor - equity.startMinor)}{pctText(equity.endMinor - equity.startMinor, equity.startMinor)} during the period</> : undefined}>
             {!equity ? waiting : equity.state === "notLinked" ? "Not linked" : equity.state === "unavailable" ? "Unavailable" : money(equity.endMinor)}
           </Tile>
           <Tile label="Loan-to-value" tone={equity?.state === "unavailable" ? "warning" : undefined}
@@ -102,11 +102,11 @@ export function AssetsTab({ data, today, onOpenLoans }: { data: Ready; today: st
                 <Button size="xs" variant="outline" onClick={wealth.retryBooks}>Retry</Button>
               </div>
             )}
-            <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
+            <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
               <ValueOverTime series={wealth.series} data={data} scope={scope} />
               <ValueBridge rows={wealth.rows} scope={scope} />
             </div>
-            <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
+            <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]">
               <AssetValues rows={wealth.rows} scope={scope} />
               <AssetBars rows={wealth.rows} repaid={repaid} onOpenLoans={onOpenLoans} />
             </div>

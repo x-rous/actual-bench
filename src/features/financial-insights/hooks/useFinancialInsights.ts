@@ -12,6 +12,7 @@ import { evaluateAccountReadiness, type AccountReadinessStatus } from "@/lib/acc
 import type { AssetDebtLink } from "@/lib/asset-registry/financing";
 import { CASHFLOW_TYPES, type Asset, type BookMetadata } from "@/lib/asset-registry/models";
 import { useBudgetAvailability } from "./useBudgetPlan";
+import { useCashBufferSettings } from "./useCashBufferSettings";
 import { readLoanSchedules, type LoanSchedules } from "../lib/loanSchedules";
 import type { AccountGroup } from "@/types/entities";
 import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
@@ -24,10 +25,11 @@ import type { PlanMode } from "@/lib/financial-insights/budget";
 import { ASSET_ROW_LIMIT, reviewAssetEntries, valueChangeRows, type AssetEntry, type ReviewEntry, type SavedClassification } from "@/lib/financial-insights/assetReview";
 import { compositionSeries, debtRepayments, incomeBreakdown, monthlyFlows, netWorthSteps, payeeSpending, spendingBreakdown, spendingFacts, spendingGroups, type CategoryInfo, type DebtRepayments, type MonthlyPoint, type SpendingBreakdown, type SpendingFacts } from "@/lib/financial-insights/breakdowns";
 import type { ScheduleInput } from "@/lib/financial-insights/debt";
+import { UNCATEGORIZED_KEY, median, type BufferCategoryRow, type BufferSettings } from "@/lib/financial-insights/bufferScenario";
 import { comparePeriods, type Comparison } from "@/lib/financial-insights/compare";
 import type { DrillContext } from "@/lib/financial-insights/drill";
 import { isFixedAssetAccount } from "@/lib/financial-insights/wealth";
-import { buildLedger, cashBuffer, summarize, type Ledger, type AccountFact, type AssetReview, type DatedAmount, type FinancialFacts, type LoanCostRow, type LoanScheduleInput, type MovementRow, type ReclassifiedRow } from "@/lib/financial-insights/measures";
+import { buildLedger, cashBuffer, loanCostRowsIn, loanCostsIn, summarize, type Ledger, type AccountFact, type AssetReview, type DatedAmount, type FinancialFacts, type LoanCostRow, type LoanScheduleInput, type MovementRow, type ReclassifiedRow } from "@/lib/financial-insights/measures";
 import { DEFAULT_PERIOD, lastCompleteMonths, resolvePeriod, type PeriodChoice, type ResolvedPeriod } from "@/lib/financial-insights/period";
 import { readAssetEntries, readLinkedSales, readPayeeRows, readLoanCostRows, readMovement, readStartingBalances, readTransfersIn, readUncategorizedIn } from "@/lib/financial-insights/reads";
 
@@ -159,8 +161,10 @@ type RawData = {
 export type ReadyData = {
   summary: ReturnType<typeof summarize>;
   buffer: ReturnType<typeof cashBuffer>;
+  /** The goal and how a typical month is worked out, as the user chose them. */
+  bufferSettings: BufferSettings;
   /** What the cash buffer's average monthly spending is made of: the average of each category group over the same months. */
-  bufferSpending: { groups: { name: string; avgMinor: number }[] } | null;
+  bufferSpending: { groups: { name: string; avgMinor: number }[]; /** A typical month's spending as the cash buffer counts it, in the way the user chose (average or median). */ spendingMinor: number; /** What the interest and fees of tracked loans come to in a month: counted in the loan repayments, so taken out of the categories. */ loanInterestMinor: number; /** What came in in a typical month, the average or median as the user chose. */ incomeMinor: number; /** How many complete months it is taken over, and which: the first and the last. */ months: number; startMonth: string; endMonth: string; /** The same average, category by category: what a cash buffer scenario starts from. */ categories: BufferCategoryRow[] } | null;
   review: ReviewEntry[];
   firstMonth: string | null;
   readAt: string;
@@ -244,6 +248,7 @@ export function useFinancialInsights(): FinancialInsightsView {
   const queryClient = useQueryClient();
   const today = useLocalToday();
   const gate = useFinancialInsightsGate();
+  const { settings: bufferSettings } = useCashBufferSettings();
   const [filters, setFilters] = usePersistedFilters("filters:financial-insights", { period: DEFAULT_PERIOD, tab: "summary" as TabId });
   const accounts = gate.state === "ready" ? gate.accounts : null;
   const excluded = gate.state === "ready" ? gate.excluded : null;
@@ -350,8 +355,9 @@ export function useFinancialInsights(): FinancialInsightsView {
     const monthly = monthlyFlows(ledger, resolved, today, summary.moneyKept.state === "ready");
     const breakdown = spendingBreakdown(ledger, resolved, categories, monthly);
     const incomeRows = incomeBreakdown(ledger, resolved, categories, monthly);
+    const bufferSpending = bufferSpendingGroups(ledger, today, categories, bufferSettings);
     return {
-      state: "ready", summary, buffer: cashBuffer(ledger, today, schedules), bufferSpending: bufferSpendingGroups(ledger, today, categories),
+      state: "ready", summary, buffer: cashBuffer(ledger, today, schedules, { months: bufferSettings.averageMonths, spendingMinor: bufferSettings.method === "median" ? bufferSpending?.spendingMinor : undefined }), bufferSpending, bufferSettings,
       review, firstMonth: ledger.firstMonth, readAt: raw.readAt, refreshing: query.isFetching, refreshFailed: query.isError,
       ledger, period: resolved, categories, monthly, breakdown, spending: spendingFacts(breakdown, monthly),
       groups: spendingGroups(breakdown), comparison: comparePeriods(ledger, resolved, today), income: { breakdown: incomeRows, facts: spendingFacts(incomeRows, monthly, (m) => m.received), groups: spendingGroups(incomeRows) }, composition: compositionSeries(ledger, resolved, summary.opening), netWorthChange: netWorthSteps(summary),
@@ -360,7 +366,7 @@ export function useFinancialInsights(): FinancialInsightsView {
       drill: { ledger, period: resolved, today, reclassifiedIds: new Set(ledger.facts.reclassified.map((r) => r.id)) },
       registry: { read: raw.registryRead, assets: raw.registryAssets, metadata: raw.registryMetadata, debtLinks: raw.debtLinks, assetEntries: raw.assetEntries, assetRowCount: raw.assetRowCount, savedClassifications: raw.savedClassifications },
     };
-  }, [gate, query, raw, ledger, period, today, stage]);
+  }, [gate, query, raw, ledger, period, today, stage, bufferSettings]);
 
   return {
     gate, today, period, data, tabs, budgetMode: budget.mode,
@@ -417,11 +423,41 @@ export function usePayeeSpending(data: ReadyData, today: string, side: "spending
 }
 
 /** The average of each category group over the months the cash buffer averages, the buffer's own figure differs by the interest and fees of tracked loans, which it counts in their repayments. */
-function bufferSpendingGroups(ledger: Ledger, today: string, categories: ReadonlyMap<string, CategoryInfo>): ReadyData["bufferSpending"] {
-  const months = lastCompleteMonths(today, ledger.firstMonth, 12);
+export function bufferSpendingGroups(ledger: Ledger, today: string, categories: ReadonlyMap<string, CategoryInfo>, settings: BufferSettings): ReadyData["bufferSpending"] {
+  const months = lastCompleteMonths(today, ledger.firstMonth, settings.averageMonths);
   if (months.length < 3) return null;
   const window: ResolvedPeriod = { startMonth: months[0], endMonth: months[months.length - 1], months, startDate: `${months[0]}-01`, endDate: `${months[months.length - 1]}-28`, partial: false, label: "" };
-  const breakdown = spendingBreakdown(ledger, window, categories, monthlyFlows(ledger, window, today, false));
-  const groups = spendingGroups(breakdown).groups.map((g) => ({ name: g.name, avgMinor: Math.round(g.totalMinor / months.length) })).filter((g) => g.avgMinor !== 0).sort((a, b) => b.avgMinor - a.avgMinor);
-  return { groups };
+  const flows = monthlyFlows(ledger, window, today, false);
+  const breakdown = spendingBreakdown(ledger, window, categories, flows);
+  // A typical month of a category: the average of the months, or the middle one, as the user chose.
+  const typical = (values: readonly number[]) => (settings.method === "median" ? median(values) : Math.round(values.reduce((a, v) => a + v, 0) / months.length));
+  // The interest and fees of tracked loans are counted in each loan's repayment, so they are taken out of the category they were recorded
+  // in: a category's typical amount is what is left, and one that was only loan interest is not listed at all.
+  const loanCosts = new Map<string, number[]>();
+  const slot = new Map(months.map((m, i) => [m, i]));
+  for (const row of loanCostRowsIn(ledger, window)) {
+    const key = row.categoryId ?? UNCATEGORIZED_KEY;
+    const series = loanCosts.get(key) ?? months.map(() => 0);
+    series[slot.get(row.month) ?? 0] += 0 - row.amountMinor;
+    loanCosts.set(key, series);
+  }
+  const all = breakdown.rows.map((r): BufferCategoryRow => {
+    const removed = loanCosts.get(r.id ?? UNCATEGORIZED_KEY);
+    const net = removed ? r.byMonth.map((v, i) => v - removed[i]) : r.byMonth;
+    return {
+      id: r.id, name: r.name, group: r.group, hidden: r.hidden, avgMinor: typical(net), order: r.order,
+      // The transactions of the whole category are listed, so this is its whole total; `loanInterestMinor` is the part a month of it that is counted in the loan repayments.
+      totalMinor: r.totalMinor, loanInterestMinor: removed ? Math.round(removed.reduce((a, v) => a + v, 0) / months.length) : undefined,
+    };
+  });
+  const rows = all.filter((r) => r.avgMinor !== 0).sort((a, b) => b.avgMinor - a.avgMinor);
+  const byGroup = new Map<string, number>();
+  for (const r of rows) byGroup.set(r.group, (byGroup.get(r.group) ?? 0) + r.avgMinor);
+  const groups = [...byGroup].map(([name, avgMinor]) => ({ name, avgMinor })).filter((g) => g.avgMinor !== 0).sort((a, b) => b.avgMinor - a.avgMinor);
+  // The typical month's spending as the buffer counts it: the categories, already without the interest and fees of tracked loans.
+  const spendingMinor = all.reduce((sum, r) => sum + r.avgMinor, 0);
+  const loanInterestMinor = Math.round(0 - loanCostsIn(ledger, window) / months.length);
+  // What came in in a typical month, in the same way: it is what is left to save from.
+  const incomeMinor = typical(flows.map((m) => m.received));
+  return { groups, categories: rows, spendingMinor, loanInterestMinor, incomeMinor, months: months.length, startMonth: months[0], endMonth: months[months.length - 1] };
 }
