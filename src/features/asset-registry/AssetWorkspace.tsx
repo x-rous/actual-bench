@@ -201,9 +201,13 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     if (!response.ok) throw new Error("Could not confirm current account class");
     const records = (await response.json()).accountClasses as { scope: string; accountId: string; accountClass: AccountClass }[];
     const maps = { accounts: new Map(records.filter((r) => r.scope === "account").map((r) => [r.accountId, r.accountClass])), groups: new Map(records.filter((r) => r.scope === "group").map((r) => [r.accountId, r.accountClass])) };
-    const reportingResponse = await fetch(`/api/account-reporting?budgetSyncId=${encodeURIComponent(connection.budgetSyncId)}`);
-    if (!reportingResponse.ok) throw new Error("Could not confirm the account's Financial Reporting");
-    const treatments = new Map(((await reportingResponse.json()).accountReporting as { accountId: string; treatment: string }[]).map((r) => [r.accountId, r.treatment]));
+    // Only an Other Asset reads the saved Financial Reporting treatment; a Vehicle or Property must not fail on it.
+    let treatments = new Map<string, string>();
+    if (ASSET_TYPES[context.asset.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset") {
+      const reportingResponse = await fetch(`/api/account-reporting?budgetSyncId=${encodeURIComponent(connection.budgetSyncId)}`);
+      if (!reportingResponse.ok) throw new Error("Could not confirm the account's Financial Reporting");
+      treatments = new Map(((await reportingResponse.json()).accountReporting as { accountId: string; treatment: string }[]).map((r) => [r.accountId, r.treatment]));
+    }
     const invalid = eligibility(directory.find((a) => a.id === context.asset.actualAccountId), context.asset.assetType, maps, treatments);
     if (invalid) throw new Error(invalid);
     const pending = useStagedStore.getState().accounts[context.asset.actualAccountId];
