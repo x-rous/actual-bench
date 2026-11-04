@@ -173,7 +173,7 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
           {summary.moneyKept.state === "ready" ? money(summary.moneyKept.value) : "Needs review"}
         </Tile>
         <Tile label="Savings rate" tone={summary.savingsRate.state === "ready" ? undefined : "warning"}
-          delta={comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />}
+          delta={summary.savingsRate.state === "ready" && comparison && comparison.current.received > 0 && comparison.previous.received > 0 && <Delta points now={(comparison.current.kept / comparison.current.received) * 100} before={(comparison.previous.kept / comparison.previous.received) * 100} label={comparison.label} good="up" />}
           detail={summary.savingsRate.state === "ready" && spentShare !== null ? (
             <>
             <span className="block" role="img" aria-label={summary.spent > summary.received ? `Spent ${((summary.spent / summary.received) * 100).toFixed(1)} for every 100 received, nothing kept` : `Of every 100 received, ${spentShare.toFixed(1)} spent and ${(100 - spentShare).toFixed(1)} kept`}>
