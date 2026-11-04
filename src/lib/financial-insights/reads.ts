@@ -114,7 +114,8 @@ export async function readLoanCostRows(connection: ConnectionInstance, tags: rea
   const response = await runQuery<Response<LinkedResult>>(connection, {
     ActualQLquery: {
       table: "transactions",
-      filter: { $and: [{ id: { $oneof: [...new Set(transactionIds)] } }, upToToday(today)] },
+      // A row Actual has since turned into a transfer is not a cost: it is left out so it is not taken out of spending twice.
+      filter: { $and: [{ id: { $oneof: [...new Set(transactionIds)] } }, upToToday(today), { "payee.transfer_acct": null }] },
       select: ["id", "date", "amount", "account", "category"],
     },
   });

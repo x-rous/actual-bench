@@ -198,8 +198,15 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
   const registered = new Set<string>();
   for (const asset of assets) {
     const owner = ledger.account.get(asset.actualAccountId);
-    // A fixed asset by class and treatment: an Other Asset whose treatment is now a current or non-current holding is not one.
-    if (!owner || !isFixedAssetAccount(owner) || asset.status === "archived") continue;
+    if (!owner || asset.status === "archived") continue;
+    // A fixed asset by class and treatment. An asset whose account has lost that (an Other Asset now marked as a current or
+    // non-current holding) stays in the list as unavailable, so its linked loan and its value are not silently dropped.
+    if (!isFixedAssetAccount(owner)) {
+      if (owner.accountClass === "property" || owner.accountClass === "vehicle" || owner.accountClass === "other-asset") {
+        rows.push({ kind: "registered", assetId: asset.id, name: asset.name, accountId: asset.actualAccountId, accountClass: owner.accountClass, linked: links.some((l) => l.assetId === asset.id), state: "unavailable", reason: "Its account is no longer a fixed asset in Financial Reporting, so Assets and Financial Insights disagree about it; review it in Assets", openingMinor: ledger.balanceAt(asset.actualAccountId, before), closingMinor: ledger.balanceAt(asset.actualAccountId, period.endMonth) });
+      }
+      continue;
+    }
     registered.add(asset.actualAccountId);
     const book = books.get(asset.actualAccountId) ?? null;
     const linked = links.some((l) => l.assetId === asset.id);

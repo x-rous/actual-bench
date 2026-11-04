@@ -115,6 +115,8 @@ export function formatDay(iso: string): string {
   if (!m) return iso;
   const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
   // A date that is not on the calendar (2026-02-30, 2026-13-45) is not a date: it is returned as it is.
-  if (month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return iso;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const length = month === 2 ? (leap ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31;
+  if (month < 1 || month > 12 || day < 1 || day > length) return iso;
   return `${m[3]} ${MONTH_NAMES[month - 1]} ${m[1]}`;
 }

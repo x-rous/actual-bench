@@ -68,5 +68,8 @@ describe("financial insights: how a date is written", () => {
     expect(formatDay("2026-13-45")).toBe("2026-13-45");
     expect(formatDay("2025-02-29")).toBe("2025-02-29");
     expect(formatDay("2024-02-29")).toBe("29 Feb 2024");
+    expect(formatDay("0000-02-29")).toBe("29 Feb 0000");
+    expect(formatDay("1900-02-29")).toBe("1900-02-29");
+    expect(formatDay("2000-02-29")).toBe("29 Feb 2000");
   });
 });

@@ -12,7 +12,7 @@ import type { DrillTarget } from "@/lib/financial-insights/drill";
 import type { ReviewEntry } from "@/lib/financial-insights/assetReview";
 import { monthLabel } from "@/lib/financial-insights/period";
 import type { FinancialInsightsView } from "../hooks/useFinancialInsights";
-import { money, percent, signedMoney, formatDay } from "../format";
+import { MISSING, money, percent, signedMoney, formatDay } from "../format";
 import { ChartFrame } from "./ChartFrame";
 import { DrillLink } from "./DrillLink";
 import { CardTitle } from "./InfoTip";
@@ -164,7 +164,9 @@ function OwnAndOwe({ data }: { data: Ready }) {
     );
   };
   const classes = [...ASSET_CLASSES, ...LIABILITY_CLASSES];
-  const table = { head: ["Class", "Start of period", "End", "Change"], rows: classes.map((k) => [CLASS_LABEL[k], classRow(start, k), classRow(end, k), classRow(end, k) - classRow(start, k)]) };
+  // A period that begins or ends before the budget has any data has no balance there to show: it is unavailable, not zero.
+  const startKnown = composition.hasData[0] ?? true, endKnown = composition.hasData[composition.hasData.length - 1] ?? true;
+  const table = { head: ["Class", "Start of period", "End", "Change"], rows: classes.map((k) => [CLASS_LABEL[k], startKnown ? classRow(start, k) : null, endKnown ? classRow(end, k) : null, startKnown && endKnown ? classRow(end, k) - classRow(start, k) : null]) };
   return (
     <ChartFrame
       id="own-and-owe" title="What you own and owe, start and end" hint="Balances before the period and at its end"
@@ -172,11 +174,11 @@ function OwnAndOwe({ data }: { data: Ready }) {
       legend={classes.map((k) => ({ label: CLASS_LABEL[k], colour: CLASS_COLOUR[k] }))} table={table} tableShown
       csvScope={[["Period", `${summary.period.label}: ${formatDay(summary.period.startDate)} to ${formatDay(summary.period.endDate)}`]]}
     >
-      {bar(start, "Start of period")}
-      {bar(end, "End")}
+      {startKnown ? bar(start, "Start of period") : <p className="mb-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">Start of period</span> · no data yet: the budget has no transactions before this period</p>}
+      {endKnown ? bar(end, "End") : <p className="mb-3 text-xs text-muted-foreground"><span className="font-medium text-foreground">End</span> · no data yet: the budget has no transactions up to the end of this period</p>}
       <table className="w-full border-collapse text-xs">
         <thead><tr className="border-b border-border text-muted-foreground"><th className="py-1 text-left font-medium">Class</th><th className="text-right font-medium">Start</th><th className="text-right font-medium">End</th><th className="text-right font-medium">Change</th></tr></thead>
-        <tbody>{classes.map((k, i) => <tr key={k} className="border-b border-border/40"><th scope="row" className="py-1 text-left font-normal"><span className="inline-flex items-center gap-1.5"><span className="size-2.5 shrink-0 rounded-sm" style={{ background: CLASS_COLOUR[k] }} aria-hidden />{table.rows[i][0]}</span></th><td className="text-right tabular-nums">{money(table.rows[i][1] as number)}</td><td className="text-right tabular-nums">{money(table.rows[i][2] as number)}</td><td className="text-right tabular-nums">{signedMoney(table.rows[i][3] as number)}</td></tr>)}</tbody>
+        <tbody>{classes.map((k, i) => <tr key={k} className="border-b border-border/40"><th scope="row" className="py-1 text-left font-normal"><span className="inline-flex items-center gap-1.5"><span className="size-2.5 shrink-0 rounded-sm" style={{ background: CLASS_COLOUR[k] }} aria-hidden />{table.rows[i][0]}</span></th><td className="text-right tabular-nums">{money(table.rows[i][1] as number | null)}</td><td className="text-right tabular-nums">{money(table.rows[i][2] as number | null)}</td><td className="text-right tabular-nums">{table.rows[i][3] === null ? MISSING : signedMoney(table.rows[i][3] as number)}</td></tr>)}</tbody>
       </table>
     </ChartFrame>
   );

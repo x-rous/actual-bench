@@ -276,7 +276,9 @@ export async function fetchAllRows(connection: ConnectionInstance, state: Picker
   }
   // The last page was full: it is the cap only if one more row exists, so one more page is asked for before saying there are more.
   const probe = await fetchPickerPage(connection, state, constraints, today, EXACT_ROW_CAP);
-  return { rows, truncated: probe.fetched > 0 };
+  // More rows exist past the cap only if that page matched something, or was full (and so may be followed by more); a short page whose rows
+  // all fail the exact tests ends the data with nothing beyond the cap.
+  return { rows, truncated: probe.rows.length > 0 || probe.fetched >= PICKER_PAGE_SIZE };
 }
 
 /** The same totals `fetchFacet` returns, computed from rows, with the chart selections applied except those of `dim`. */

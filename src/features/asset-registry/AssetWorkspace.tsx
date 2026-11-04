@@ -126,7 +126,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps, reporting.byAccount) : null;
   // The saved Financial Reporting choices matter only to Other Asset accounts (a Vehicle or Property is eligible by class alone),
   // so a failed read of them does not hide the values of a registry that holds none.
-  const reportingNeeded = registry.assets.some((a) => ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset");
+  const reportingNeeded = registry.assets.some((a) => a.status !== "archived" && ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset");
   const available = query.isSuccess && accountsQuery.isSuccess && classes.available && (reporting.available || !reportingNeeded);
   const value = (a: Asset): number | null => {
     const q = books.get(a.actualAccountId);

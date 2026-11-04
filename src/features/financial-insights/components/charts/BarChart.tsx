@@ -73,7 +73,8 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
   const slot = (width - MARGIN.l - MARGIN.r) / Math.max(1, n);
   // On a long period the slots are only a few pixels: the gaps shrink with them (never past a quarter of the slot) so a bar keeps a width.
   const pad = Math.min(Math.max(3, slot * 0.16), slot * 0.25);
-  const inner = Math.max(1, slot - pad * 2);
+  // A bar keeps a pixel where it can, but never more than its own slot, so neighbouring months never overlap.
+  const inner = Math.min(slot, Math.max(1, slot - pad * 2));
   const style = (colour: string, partial: boolean) => ({ fill: colour, fillOpacity: partial ? 0.38 : 1, stroke: partial ? colour : "none", strokeDasharray: partial ? "3 2" : undefined, strokeWidth: partial ? 1.2 : 0 });
   return (
     <div ref={host} className="w-full">

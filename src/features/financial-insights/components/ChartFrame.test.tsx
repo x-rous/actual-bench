@@ -103,7 +103,9 @@ describe("bar chart", () => {
   it("keeps a width for every bar on a very long period", () => {
     const labels = Array.from({ length: 600 }, (_, i) => `M${i}`);
     render(<TipProvider><BarChart labels={labels} partialIndex={null} series={[{ key: "a", label: "Spent", colour: "red", values: labels.map(() => 100) }]} stacked ariaLabel="x" tip={() => null} onSelect={jest.fn()} /></TipProvider>);
-    expect(Number(screen.getByRole("button", { name: "Spent, M0" }).getAttribute("width"))).toBeGreaterThan(0);
+    const bars = screen.getAllByRole("button");
+    expect(bars).toHaveLength(600);
+    for (const bar of bars) expect(Number(bar.getAttribute("width"))).toBeGreaterThan(0);
   });
 
   it("draws a negative value below zero", () => {

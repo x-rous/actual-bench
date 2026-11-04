@@ -55,7 +55,7 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hasDa
             if (!v || !known(i)) return null;
             const from = v > 0 ? up : down, to = from + v;
             if (v > 0) up = to; else down = to;
-            return <rect key={k} x={x0 + pad} y={Math.min(y(from), y(to))} width={Math.max(1, slot - pad * 2)} height={Math.max(1, Math.abs(y(from) - y(to)) - 1.5)} rx={2} fill={CLASS_COLOUR[k]} fillOpacity={i === partialIndex && v > 0 ? 0.85 : 1} />;
+            return <rect key={k} x={x0 + pad} y={Math.min(y(from), y(to))} width={Math.min(slot, Math.max(1, slot - pad * 2))} height={Math.max(1, Math.abs(y(from) - y(to)) - 1.5)} rx={2} fill={CLASS_COLOUR[k]} fillOpacity={i === partialIndex && v > 0 ? 0.85 : 1} />;
           });
           const owns = ASSET_CLASSES.reduce((a, k) => a + m[k], 0), owes = LIABILITY_CLASSES.reduce((a, k) => a + m[k], 0);
           return (
@@ -69,7 +69,7 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hasDa
                   {LIABILITY_CLASSES.filter((k) => m[k] !== 0).map((k) => <TipRow key={k} colour={CLASS_COLOUR[k]} name={CLASS_LABEL[k]} value={money(m[k])} />)}
                   <TipNote>
                     <TipRow name="Net worth" value={money(netWorth[i])} />
-                    {i > 0 && <TipRow name="vs previous month" value={`${signedMoney(netWorth[i] - netWorth[i - 1])}${netWorth[i - 1] ? ` (${(((netWorth[i] - netWorth[i - 1]) / Math.abs(netWorth[i - 1])) * 100).toFixed(1)}%)` : ""}`} />}
+                    {i > 0 && known(i - 1) && <TipRow name="vs previous month" value={`${signedMoney(netWorth[i] - netWorth[i - 1])}${netWorth[i - 1] ? ` (${(((netWorth[i] - netWorth[i - 1]) / Math.abs(netWorth[i - 1])) * 100).toFixed(1)}%)` : ""}`} />}
                     <TipRow name="Owns / owes" value={`${compactLabel(owns)} / ${compactLabel(-owes)}`} />
                   </TipNote>
                 </>, e)} />

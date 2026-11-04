@@ -194,12 +194,15 @@ describe("asset values, equity and loan-to-value", () => {
 });
 
 describe("assets held in an Other Asset account whose treatment is no longer fixed", () => {
-  it("is left out of the asset values, because it is not a fixed asset any more", () => {
+  it("is listed as unavailable, not dropped, because it is not a fixed asset any more", () => {
     const other = { id: "gold", name: "Gold", accountClass: "other-asset" as const, treatment: "current-asset" as const, offBudget: true };
     const fixed = { ...other, treatment: "fixed-asset" as const };
     const regAsset = [{ id: "g1", name: "Gold bar", actualAccountId: "gold", status: "active" }];
     const { ledger: l1, period: p1 } = setup(facts([row("2026-09", "gold", 100_000)], { accounts: [accounts[0], other] }));
-    expect(assetValues({ ledger: l1, period: p1, assets: regAsset, books: new Map([["gold", { available: true, rows: [] }]]), links: [], loans: [] }).some((r) => r.kind === "registered")).toBe(false);
+    const dropped = assetValues({ ledger: l1, period: p1, assets: regAsset, books: new Map([["gold", { available: true, rows: [] }]]), links: [{ assetId: "g1", debtId: "d1", allocationBps: 10000, effectiveFrom: "2026-01-01", effectiveTo: null, note: null }], loans: [] }).filter((r) => r.kind === "registered");
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]).toMatchObject({ state: "unavailable", linked: true, closingMinor: 100_000 });
+    expect(homeEquity(assetValues({ ledger: l1, period: p1, assets: regAsset, books: new Map(), links: [{ assetId: "g1", debtId: "d1", allocationBps: 10000, effectiveFrom: "2026-01-01", effectiveTo: null, note: null }], loans: [] }))).toMatchObject({ state: "unavailable" });
     const { ledger: l2, period: p2 } = setup(facts([row("2026-09", "gold", 100_000)], { accounts: [accounts[0], fixed] }));
     expect(assetValues({ ledger: l2, period: p2, assets: regAsset, books: new Map([["gold", { available: true, rows: [] }]]), links: [], loans: [] }).some((r) => r.kind === "registered")).toBe(true);
   });

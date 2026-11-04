@@ -30,3 +30,19 @@ describe("reading every row for exact charts", () => {
     expect(result.rows).toHaveLength(EXACT_ROW_CAP);
   });
 });
+
+describe("the page read past the cap", () => {
+  it("does not make the charts truncated when its few rows all fail the exact tests", async () => {
+    let calls = 0;
+    runQuery.mockImplementation(async () => (++calls <= EXACT_ROW_CAP / PICKER_PAGE_SIZE ? page(PICKER_PAGE_SIZE) : page(3)));
+    const result = await fetchAllRows({ id: "c" } as never, emptyFilterState({ search: "%nothing%" }), {}, "2026-10-26");
+    expect(result.truncated).toBe(false);
+  });
+
+  it("makes them truncated when it matches a row", async () => {
+    let calls = 0;
+    runQuery.mockImplementation(async () => (++calls <= EXACT_ROW_CAP / PICKER_PAGE_SIZE ? page(PICKER_PAGE_SIZE) : page(3)));
+    const result = await fetchAllRows({ id: "c" } as never, emptyFilterState(), {}, "2026-10-26");
+    expect(result.truncated).toBe(true);
+  });
+});

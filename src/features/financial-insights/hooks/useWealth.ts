@@ -6,11 +6,13 @@ import { getTransport } from "@/lib/actual";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { attributeBook, readBook } from "@/lib/asset-registry/ledger";
 import { ASSET_ROW_LIMIT } from "@/lib/financial-insights/assetReview";
-import { assetValues, isFixedAssetAccount, type AssetBook, type AssetValueRow, type LoanRef } from "@/lib/financial-insights/wealth";
+import { assetValues, type AssetBook, type AssetValueRow, type LoanRef } from "@/lib/financial-insights/wealth";
 import { bankToday } from "@/features/credit-cards/lib/cycles";
 import { listDebts } from "@/features/assets-debt/lib/debtsApi";
 import type { ReadyData } from "./useFinancialInsights";
 
+
+const ASSET_CLASSES = ["property", "vehicle", "other-asset"];
 
 export type WealthLoad =
   | { state: "loading" }
@@ -28,7 +30,8 @@ export function useWealth(data: ReadyData): WealthLoad {
   // The same date the Asset Registry keys its books by, so the two share the cache.
   const date = bankToday(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
-  const assets = useMemo(() => registry.assets.filter((a) => { const owner = ledger.account.get(a.actualAccountId); return a.status !== "archived" && !!owner && isFixedAssetAccount(owner); }), [registry.assets, ledger]);
+  // Every active asset on a property, vehicle or other-asset account: `assetValues` decides which of them are still fixed assets.
+  const assets = useMemo(() => registry.assets.filter((a) => a.status !== "archived" && ASSET_CLASSES.includes(ledger.account.get(a.actualAccountId)?.accountClass ?? "")), [registry.assets, ledger]);
   const accountIds = useMemo(() => [...new Set(assets.map((a) => a.actualAccountId))].sort(), [assets]);
   const unreadable = useMemo(() => {
     const rows = new Map<string, number>();
@@ -43,7 +46,8 @@ export function useWealth(data: ReadyData): WealthLoad {
       enabled: !!connection && !unreadable.has(accountId),
     })),
   });
-  const linkedDebts = useMemo(() => [...new Set(registry.debtLinks.map((l) => l.debtId))], [registry.debtLinks]);
+  // Only the loans of the assets that are listed: an archived asset keeps its links, and its loan must not decide whether the rest can be shown.
+  const linkedDebts = useMemo(() => { const listed = new Set(assets.map((a) => a.id)); return [...new Set(registry.debtLinks.filter((l) => listed.has(l.assetId)).map((l) => l.debtId))]; }, [registry.debtLinks, assets]);
   const loansQuery = useQuery({
     queryKey: ["financial-insights", "wealth-loans", connection?.id, connection?.budgetSyncId],
     enabled: !!connection?.budgetSyncId && linkedDebts.length > 0,
@@ -54,7 +58,8 @@ export function useWealth(data: ReadyData): WealthLoad {
   // An account that is not read at all (too many entries) has a disabled query that never settles: it must not hold the tab on loading.
   const pending = accountIds.some((id, i) => !unreadable.has(id) && books[i].isPending && !books[i].isError) || (linkedDebts.length > 0 && loansQuery.isPending && !loansQuery.isError);
   const failed = loansQuery.isError;
-  const bookData = books.map((q) => q.data);
+  // A book whose read failed is unavailable, even if an earlier read left data behind: stale figures must not look current.
+  const bookData = books.map((q) => (q.isError ? undefined : q.data));
   const rows = useMemo((): AssetValueRow[] | null => {
     if (pending || failed) return null;
     const attributed = new Map<string, AssetBook | null>();
