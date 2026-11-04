@@ -108,7 +108,7 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
               const known = s.values[i];
               if (known === null || known === undefined) return;
               const v = known;
-              bars.push(<rect key={s.key} x={x0 + pad + k * w + 1} y={Math.min(y(0), y(v))} width={Math.max(2, w - 3)} height={Math.max(v === 0 ? 0 : 1, Math.abs(y(0) - y(v)))} rx={3} {...style(s.colour, partial)}
+              bars.push(<rect key={s.key} x={x0 + pad + k * w + (w > 4 ? 1 : 0)} y={Math.min(y(0), y(v))} width={w > 4 ? Math.max(2, w - 3) : w} height={Math.max(v === 0 ? 0 : 1, Math.abs(y(0) - y(v)))} rx={3} {...style(s.colour, partial)}
                 className={onSelect ? "cursor-pointer" : undefined} onClick={onSelect ? () => onSelect(i, k) : undefined} onMouseMove={(e) => show(tip(i, k), e)} onMouseLeave={hide}
                 role={onSelect ? "button" : undefined} tabIndex={onSelect ? 0 : undefined} aria-label={onSelect ? `${s.label}, ${label}` : undefined}
                 onKeyDown={onSelect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(i, k); } } : undefined} />);

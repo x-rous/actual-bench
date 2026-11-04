@@ -57,7 +57,7 @@ export function useWealth(data: ReadyData): WealthLoad {
 
   // An account that is not read at all (too many entries) has a disabled query that never settles: it must not hold the tab on loading.
   const pending = accountIds.some((id, i) => !unreadable.has(id) && books[i].isPending && !books[i].isError) || (linkedDebts.length > 0 && loansQuery.isPending && !loansQuery.isError);
-  const failed = loansQuery.isError;
+  const failed = linkedDebts.length > 0 && loansQuery.isError;
   // A book whose read failed is unavailable, even if an earlier read left data behind: stale figures must not look current.
   const bookData = books.map((q) => (q.isError ? undefined : q.data));
   const rows = useMemo((): AssetValueRow[] | null => {
@@ -73,7 +73,7 @@ export function useWealth(data: ReadyData): WealthLoad {
     return assetValues({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans, unreadable });
     // bookData is an array rebuilt every render; its entries only change when a query settles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending, failed, accountIds, books.map((q) => q.dataUpdatedAt).join("|"), loansQuery.data, ledger, data.period, assets, registry, linkedDebts, unreadable]);
+  }, [pending, failed, accountIds, books.map((q) => `${q.dataUpdatedAt}:${q.isError}`).join("|"), loansQuery.data, ledger, data.period, assets, registry, linkedDebts, unreadable]);
 
   if (failed) return { state: "error", retry: () => void loansQuery.refetch() };
   if (!rows) return { state: "loading" };

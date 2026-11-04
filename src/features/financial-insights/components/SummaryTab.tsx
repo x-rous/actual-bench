@@ -10,7 +10,7 @@ import type { Status } from "@/lib/financial-insights/measures";
 import { ASSET_CLASSES, CLASS_LABEL, LIABILITY_CLASSES, type ClassKey } from "@/lib/financial-insights/breakdowns";
 import type { DrillTarget } from "@/lib/financial-insights/drill";
 import type { ReviewEntry } from "@/lib/financial-insights/assetReview";
-import { monthLabel } from "@/lib/financial-insights/period";
+import { addMonths, monthLabel } from "@/lib/financial-insights/period";
 import type { FinancialInsightsView } from "../hooks/useFinancialInsights";
 import { MISSING, money, percent, signedMoney, formatDay } from "../format";
 import { ChartFrame } from "./ChartFrame";
@@ -146,6 +146,7 @@ const classRow = (c: Record<ClassKey, number>, k: ClassKey) => c[k];
 /** Two stacked bars, what you owned and owed before the period started and at its end, with the change per class. */
 function OwnAndOwe({ data }: { data: Ready }) {
   const { composition, summary } = data;
+  // The opening is known only when the budget has data before the period starts, as on the Investments tab.
   const start = composition.opening, end = composition.months.length ? composition.months[composition.months.length - 1] : composition.opening;
   const bar = (c: Record<ClassKey, number>, title: string) => {
     const own = ASSET_CLASSES.reduce((a, k) => a + c[k], 0), owe = -LIABILITY_CLASSES.reduce((a, k) => a + c[k], 0);
@@ -165,7 +166,7 @@ function OwnAndOwe({ data }: { data: Ready }) {
   };
   const classes = [...ASSET_CLASSES, ...LIABILITY_CLASSES];
   // A period that begins or ends before the budget has any data has no balance there to show: it is unavailable, not zero.
-  const startKnown = composition.hasData[0] ?? true, endKnown = composition.hasData[composition.hasData.length - 1] ?? true;
+  const startKnown = data.ledger.firstMonth !== null && data.ledger.firstMonth <= addMonths(data.period.startMonth, -1), endKnown = composition.hasData[composition.hasData.length - 1] ?? true;
   const table = { head: ["Class", "Start of period", "End", "Change"], rows: classes.map((k) => [CLASS_LABEL[k], startKnown ? classRow(start, k) : null, endKnown ? classRow(end, k) : null, startKnown && endKnown ? classRow(end, k) - classRow(start, k) : null]) };
   return (
     <ChartFrame

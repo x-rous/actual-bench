@@ -127,17 +127,20 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   // The saved Financial Reporting choices matter only to Other Asset accounts (a Vehicle or Property is eligible by class alone),
   // so a failed read of them does not hide the values of a registry that holds none.
   const reportingNeeded = registry.assets.some((a) => a.status !== "archived" && ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset");
-  const available = query.isSuccess && accountsQuery.isSuccess && classes.available && (reporting.available || !reportingNeeded);
+  const dataReady = query.isSuccess && accountsQuery.isSuccess && classes.available;
+  const available = dataReady && (reporting.available || !reportingNeeded);
+  // The choices matter to an asset only when its account is an Other Asset: a Vehicle or Property keeps its value and state without them.
+  const availableFor = (a: Asset) => dataReady && (reporting.available || ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass !== "other-asset");
   const value = (a: Asset): number | null => {
     const q = books.get(a.actualAccountId);
-    if (!q?.isSuccess || !q.data || !available) return null;
+    if (!q?.isSuccess || !q.data || !availableFor(a)) return null;
     const result = attributeBook(q.data, registry.assets, registry.metadata);
     return result.available ? result.totals.get(a.id) ?? null : null;
   };
   /** Recorded owned value from this asset's Actual book rows on or before a date; null when unavailable. */
   const valueAt = (a: Asset, on: string): number | null => {
     const q = books.get(a.actualAccountId);
-    if (!q?.isSuccess || !q.data || !available) return null;
+    if (!q?.isSuccess || !q.data || !availableFor(a)) return null;
     const result = attributeBook({ ...q.data, rows: q.data.rows.filter((r) => r.date <= on) }, registry.assets, registry.metadata);
     return result.available ? result.totals.get(a.id) ?? null : null;
   };
@@ -163,7 +166,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const computeAttention = (a: Asset): AssetAttention => {
     if (a.status === "archived") return { label: "Archived", tone: "neutral", detail: "Archived assets are not checked for attention" };
     const q = books.get(a.actualAccountId);
-    if (!available || !q?.isSuccess || !q.data) return { label: "Unavailable", tone: "danger", detail: "Refresh to read the account book" };
+    if (!availableFor(a) || !q?.isSuccess || !q.data) return { label: "Unavailable", tone: "danger", detail: "Refresh to read the account book" };
     const result = attributeBook(q.data, registry.assets, registry.metadata);
     if (report(a)?.gaps.length) return { label: "Needs review", tone: "attention", detail: report(a)!.gaps[0] };
     const invalid = eligibility(accounts.find((row) => row.id === a.actualAccountId), a.assetType, classes.maps, reporting.byAccount);
@@ -229,7 +232,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const firstDateOf = (a: Asset): string => {
     const known = firstDates.get(a.id); if (known) return known;
     const q = books.get(a.actualAccountId);
-    const ledger = q?.isSuccess && q.data && available ? attributeBook(q.data, registry.assets, registry.metadata).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
+    const ledger = q?.isSuccess && q.data && availableFor(a) ? attributeBook(q.data, registry.assets, registry.metadata).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
     const first = earliestDate(ledger, firstCashDate(a)) ?? date;
     firstDates.set(a.id, first); return first;
   };
@@ -243,7 +246,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const gainOf = (a: Asset) => {
     if (gains.has(a.id)) return gains.get(a.id)!;
     const q = books.get(a.actualAccountId); let result: { gainMinor: number; capitalMinor: number } | null = null;
-    if (q?.isSuccess && q.data && available) {
+    if (q?.isSuccess && q.data && availableFor(a)) {
       const book = attributeBook(q.data, registry.assets, registry.metadata);
       if (book.available) { const b = valueBridge(book.rows.filter((r) => r.assetId === a.id), null, date); result = { gainMinor: b.revaluationMinor + b.depreciationMinor, capitalMinor: b.capitalMinor }; }
     }

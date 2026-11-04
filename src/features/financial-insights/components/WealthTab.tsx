@@ -88,7 +88,9 @@ export function WealthTab({ data, onDrill }: { data: Ready; onDrill: (target: Dr
   const lines = useMemo(() => CHANGE_LINES.filter((l) => l.always || monthly.some((m) => l.of(m) !== 0)), [monthly]);
   const assetRows = wealth.state === "ready" ? wealth.rows : null;
   const hasPortfolio = bridge.accounts.length > 0;
-  const hasAssets = [...ledger.account.values()].some(isFixedAssetAccount);
+  // A registered Other Asset on an account that is no longer fixed stays listed (as unavailable), so the section must not vanish with it.
+  const registered = data.registry.assets.some((a) => a.status !== "archived" && ["property", "vehicle", "other-asset"].includes(ledger.account.get(a.actualAccountId)?.accountClass ?? ""));
+  const hasAssets = [...ledger.account.values()].some(isFixedAssetAccount) || registered;
   const t = bridge.total;
   const equity = assetRows ? homeEquity(assetRows) : null;
   const labels = series.months.map((m) => monthLabel(m));
