@@ -258,7 +258,7 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
     <div className="space-y-4 p-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Tile label="Net worth" detail={<>Owns {money(summary.assets)} · owes {money(summary.liabilities)}</>}>{money(summary.netWorth.closing)}</Tile>
-        <Tile label="Change in net worth" detail={<>{growth !== null ? `${growth > 0 ? "+" : ""}${percent(growth)} over ` : "Over "}{months} {months === 1 ? "month" : "months"}<span className="block">Everything owned less owed</span></>}>{signedMoney(summary.netWorth.change)}</Tile>
+        <Tile label="Change in net worth" detail={<>{growth !== null ? `${growth > 0 ? "+" : ""}${percent(growth)} over ` : "Over "}{months} {months === 1 ? "month" : "months"}<span className="block">Everything owned less owed</span></>}>{openingKnown ? signedMoney(summary.netWorth.change) : MISSING}</Tile>
         <Tile label="Money kept" tone={kept.tone}
           detail={kept.detail ?? (
             <>

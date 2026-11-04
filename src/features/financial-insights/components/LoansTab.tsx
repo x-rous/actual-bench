@@ -53,6 +53,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
   const hasCards = rows.some((r) => r.group === "cards");
   // If the card settings cannot be read, what the cards were charged is unknown, not zero.
   const cardsUnreadable = hasCards && costSettings.state === "unavailable";
+  const cardsLoading = hasCards && costSettings.state === "loading";
   const owedAtStart = 0 - (summary.opening.loans + summary.opening.cards + summary.opening.otherLiabilities);
   const untracked = debt.rows.filter((r) => !r.tracked);
   const upcoming: UpcomingLoans = { loans: totals.loans, scheduled: totals.scheduledLoans, toReview: loans.filter((r) => r.next12?.state === "review").length, principalMinor: totals.principalNext12Minor, costMinor: totals.costNext12Minor };
@@ -148,11 +149,12 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
           <Tile label="Interest & fees paid" tone={cardsUnreadable || (hasLoans && !debt.complete) ? "warning" : undefined}
             detail={!hasLoans && !hasCards ? "No loans or credit cards" : (
               <>
-                {hasLoans && <>Loans {money(loanCost)}</>}{hasLoans && hasCards && " · "}{hasCards && <>cards {cardsUnreadable ? "could not be read" : cardCost === null ? "need categories in Credit Cards" : money(cardCost)}</>}
+                {hasLoans && <>Loans {money(loanCost)}</>}{hasLoans && hasCards && " · "}{hasCards && <>cards {cardsUnreadable ? "could not be read" : cardsLoading ? "are being read…" : cardCost === null ? "need categories in Credit Cards" : money(cardCost)}</>}
                 {hasLoans && !debt.complete && <span className="block">Excludes loans not tracked in Loans</span>}
+                {costs && costs.identified.length > 0 && costs.notIdentified.length > 0 && <span className="block">Excludes cards with no interest or fee category set</span>}
               </>
             )}>
-            {!hasLoans && !hasCards ? "None" : cardsUnreadable ? "Unavailable" : money(loanCost + (cardCost ?? 0))}
+            {!hasLoans && !hasCards ? "None" : cardsUnreadable ? "Unavailable" : cardsLoading ? MISSING : money(loanCost + (cardCost ?? 0))}
           </Tile>
         </div>
 

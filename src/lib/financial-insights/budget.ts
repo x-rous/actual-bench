@@ -207,7 +207,8 @@ function cellOf(mode: PlanMode, c: LoadedCategory): PlanCell | null {
   const spent = spentOf(c);
   const plan = c.budgeted;
   if (mode === "envelope") {
-    if (spent === 0 && c.balance >= 0) return null;
+    // Nothing spent and nothing assigned: no cell. An assignment that was not spent is still part of the plan.
+    if (spent === 0 && c.balance >= 0 && plan === 0) return null;
     return { spentMinor: spent, planMinor: plan, balanceMinor: c.balance, state: c.balance >= 0 ? "covered" : c.carryover ? "carried" : "uncovered", level: 1 };
   }
   // Spending with no plan is unplanned; a month with nothing spent, or a net refund, is not overspending.

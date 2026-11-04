@@ -114,7 +114,9 @@ describe("my budget: envelope", () => {
   it("classifies coverage as covered, carried or uncovered, never calling an earlier-covered spend overspending", () => {
     const row = (id: string) => plan.groups.flatMap((g) => g.rows).find((r) => r.id === id)!;
     expect(row("groceries").cells.map((c) => c?.state)).toEqual(["uncovered", "covered", "uncovered"]);
-    expect(row("dining").cells.map((c) => c?.state ?? null)).toEqual(["carried", "carried", null]);
+    // October: dining was assigned 10,000 and spent nothing; the assignment still counts in the plan, so the cell exists.
+    expect(row("dining").cells.map((c) => c?.state ?? null)).toEqual(["carried", "carried", "covered"]);
+    expect(row("dining").cells[2]).toMatchObject({ spentMinor: 0, planMinor: 10_000 });
     // Travel spent 20,000 against an assignment of 0 in September, but the balance stays positive: covered.
     expect(row("travel").cells[1]).toMatchObject({ state: "covered", spentMinor: 20_000, planMinor: 0 });
   });

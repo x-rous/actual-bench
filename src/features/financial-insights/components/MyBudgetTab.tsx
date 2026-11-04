@@ -157,6 +157,9 @@ function planBuckets(plan: BudgetPlan, unit: Granularity): Bucket[] {
   return bucketMonths(plan.months.map((m) => m.month), plan.months.map((m) => m.status === "ok"), plan.months.map((m) => m.partial), unit);
 }
 
+/** Every month of the bucket was read: only then does its transaction list match what the figure adds up. */
+const allRead = (plan: BudgetPlan, b: Bucket) => b.indexes.every((i) => plan.months[i].status === "ok");
+
 /** Why a bucket has no figure: a month Actual could not read, or one that is not in the budget. */
 const gapReason = (plan: BudgetPlan, b: Bucket): "failed" | "unavailable" => (b.indexes.some((i) => plan.months[i].status === "failed") ? "failed" : "unavailable");
 
@@ -194,7 +197,7 @@ function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, stri
   };
   const select = (i: number, k: number) => {
     const t = totals[i], b = buckets[i];
-    if (k !== 1 || !t) return;
+    if (k !== 1 || !t || !allRead(plan, b)) return;
     onDrill({ kind: "budgetCell", categoryIds: allCategories(plan), name: "All categories", amountMinor: t.spentMinor, month: b.first, throughMonth: b.last !== b.first ? b.last : undefined });
   };
   const footnote = partials.length === 0 ? undefined
@@ -405,6 +408,8 @@ function BudgetHeatmap({ plan, onDrill }: PlanProps) {
     if (!c) return <td />;
     const partial = b.partial;
     const diff = c.planMinor - c.spentMinor;
+    // A quarter or year with a month that is not in the budget or could not be read adds up only the months that were read, so its transactions would not match.
+    if (!allRead(plan, b)) return <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground" title="Some months of this period are not in your budget or could not be read, so the transactions are not listed">{whole(c.spentMinor)}</td>;
     const text = partial ? `partial ${names.one}, not compared` : STATE_TEXT[c.state];
     const unplanned = c.state === "unplanned" && !partial;
     return (
@@ -528,6 +533,7 @@ function UnplannedChart({ plan, scope, onDrill }: { plan: BudgetPlan; scope: [st
   // A segment opens Actual's own transactions for the categories it is made of: those with no budget saved, or those with one.
   const select = (i: number, k: number) => {
     const x = sums[i], b = buckets[i];
+    if (!allRead(plan, b)) return;
     const amount = k === 1 ? unplanned[i] : planned[i];
     if (!x || amount === null || amount === undefined || behind[i].mixed) return;
     onDrill({ kind: "budgetCell", categoryIds: k === 1 ? behind[i].unplannedIds : behind[i].plannedIds, name: k === 1 ? "Unplanned spending" : "Spending with a budget", amountMinor: amount, month: b.first, throughMonth: b.last !== b.first ? b.last : undefined });

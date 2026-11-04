@@ -32,7 +32,7 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
   const { y, marks } = scaleY(lo, hi, height, M.t, M.b, 5);
   const slot = (width - M.l - M.r) / Math.max(1, labels.length);
   // Never wider than its own slot, so neighbouring months (and their click targets) cannot overlap on a very long period.
-  const bar = Math.min(Math.max(1, slot - 1), 26, Math.max(6, slot * 0.34));
+  const bar = Math.min(slot > 1 ? slot - 1 : slot, 26, Math.max(6, slot * 0.34));
   const isPartial = (i: number) => (Array.isArray(partialIndex) ? partialIndex.includes(i) : i === partialIndex);
   return (
     <div ref={host} className="w-full">
