@@ -70,6 +70,8 @@ export type PlanRow = {
   order: number;
   /** One per entry of `months`; null when nothing happened or the month is not read. */
   cells: (PlanCell | null)[];
+  /** The category's balance at the end of each month, also in a month with no cell (nothing spent); null when the month is not read. */
+  balances: (number | null)[];
   /** Over the completed months that were read. */
   spentMinor: number;
   planMinor: number;
@@ -82,6 +84,8 @@ export type PlanGroup = {
   order: number;
   categoryIds: string[];
   cells: (PlanCell | null)[];
+  /** The sum of its categories' balances at each month's end; null when the month is not read. */
+  balances: (number | null)[];
   rows: PlanRow[];
   spentMinor: number;
   planMinor: number;
@@ -235,10 +239,11 @@ function groupCell(mode: PlanMode, cells: (PlanCell | null)[]): PlanCell | null 
  * the same way as a single month. In an Envelope budget the balance is the last month's, and the state the worst of the months
  * (uncovered, then carried, then covered). A month with no cell adds nothing; with no cell at all there is none.
  */
-export function combineCells(mode: PlanMode, cells: readonly (PlanCell | null)[]): PlanCell | null {
+export function combineCells(mode: PlanMode, cells: readonly (PlanCell | null)[], lastBalance?: number | null): PlanCell | null {
   const live = cells.filter((c): c is PlanCell => c !== null);
   const combined = groupCell(mode, live);
-  return combined && mode === "envelope" ? { ...combined, balanceMinor: live[live.length - 1].balanceMinor } : combined;
+  // The balance is the final month's even when that month has no cell (nothing was spent in it); `lastBalance` carries it.
+  return combined && mode === "envelope" ? { ...combined, balanceMinor: lastBalance ?? live[live.length - 1].balanceMinor } : combined;
 }
 
 const missed = (mode: PlanMode, cell: PlanCell | null) => (mode === "tracking" ? cell?.state === "over" || cell?.state === "unplanned" : cell?.state === "uncovered");
@@ -313,7 +318,8 @@ export function buildBudgetPlan({ mode, reads, today, ledger, breakdown }: Build
     let spent = 0, plan = 0;
     cells.forEach((cell, i) => { if (cell && completedIndex.has(i)) { spent += cell.spentMinor; plan += cell.planMinor; } });
     if (cells.every((cell) => cell === null)) continue;
-    rows.set(id, { id, name: c.name, groupName: c.groupName, hidden: hiddenIds.has(id), order: order.get(id) ?? Number.MAX_SAFE_INTEGER, cells, spentMinor: spent, planMinor: plan });
+    const balances = reads.map((r) => (r.status === "ok" ? r.state.categoriesById[id]?.balance ?? null : null));
+    rows.set(id, { id, name: c.name, groupName: c.groupName, hidden: hiddenIds.has(id), order: order.get(id) ?? Number.MAX_SAFE_INTEGER, cells, balances, spentMinor: spent, planMinor: plan });
   }
   if (mode === "tracking") {
     months.forEach((m, i) => {
@@ -333,8 +339,9 @@ export function buildBudgetPlan({ mode, reads, today, ledger, breakdown }: Build
   const groups: PlanGroup[] = [...groupMap].map(([name, list]) => {
     const sorted = [...list].sort((a, b) => a.order - b.order);
     const cells = reads.map((_, i) => groupCell(mode, sorted.map((r) => r.cells[i])));
+    const balances = reads.map((_, i) => { const known = sorted.flatMap((r) => (r.balances[i] === null ? [] : [r.balances[i] as number])); return known.length ? known.reduce((a, v) => a + v, 0) : null; });
     return {
-      name, hidden: sorted.every((r) => r.hidden), order: sorted[0]?.order ?? Number.MAX_SAFE_INTEGER, categoryIds: sorted.map((r) => r.id), cells, rows: sorted,
+      name, hidden: sorted.every((r) => r.hidden), order: sorted[0]?.order ?? Number.MAX_SAFE_INTEGER, categoryIds: sorted.map((r) => r.id), cells, balances, rows: sorted,
       spentMinor: sorted.reduce((a, r) => a + r.spentMinor, 0), planMinor: sorted.reduce((a, r) => a + r.planMinor, 0),
     };
   }).sort((a, b) => a.order - b.order);

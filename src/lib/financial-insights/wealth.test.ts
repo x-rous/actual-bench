@@ -117,6 +117,14 @@ describe("fixed asset accounts", () => {
     const rows = assetValues({ ledger, period, assets: [], books: new Map(), links: [], loans: [] });
     expect(rows.filter((r) => r.kind === "unregistered").map((r) => r.name).sort()).toEqual(["Car", "Gold", "House"]);
   });
+
+  it("says the registry could not be read, rather than that an account is missing from it", () => {
+    const { ledger, period } = setup(facts([row("2026-09", "house", 100_000)]));
+    const failed = assetValues({ ledger, period, assets: [], books: new Map(), links: [], loans: [], registryRead: false });
+    expect(failed.filter((r) => r.kind === "unregistered").every((r) => r.kind === "unregistered" && r.reason === "The Asset Registry could not be read")).toBe(true);
+    const read = assetValues({ ledger, period, assets: [], books: new Map(), links: [], loans: [], registryRead: true });
+    expect(read.filter((r) => r.kind === "unregistered").every((r) => r.kind === "unregistered" && r.reason === undefined)).toBe(true);
+  });
 });
 
 describe("portfolio value by month", () => {

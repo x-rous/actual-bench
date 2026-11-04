@@ -163,7 +163,7 @@ export type AssetLoan = { debtId: string; accountId: string | null; name: string
 export type AssetValueRow =
   | { kind: "registered"; assetId: string; name: string; accountId: string; accountClass: AccountClass; state: "ready"; bridge: ValueBridge; linked: boolean; loans: AssetLoan[]; equity: { start: EquityPoint; end: EquityPoint } }
   | { kind: "registered"; assetId: string; name: string; accountId: string; accountClass: AccountClass; state: "unavailable"; reason: string; closingMinor: number; openingMinor: number; linked: boolean; loans: AssetLoan[] }
-  | { kind: "unregistered"; accountId: string; name: string; accountClass: AccountClass; openingMinor: number; closingMinor: number };
+  | { kind: "unregistered"; accountId: string; name: string; accountClass: AccountClass; openingMinor: number; closingMinor: number; /** Set when the registry could not be read: the account is not known to be missing from it. */ reason?: string };
 
 /**
  * An account that is a fixed asset: Property, Vehicle, or an Other Asset marked Fixed asset. An Other Asset that is a current or
@@ -191,7 +191,7 @@ function equityAt(asset: RegistryAsset, date: string, month: string, rows: reado
  * the asset), with equity and loan-to-value at the end of the period and the day before it starts (`trackedEquity`, with the
  * loan accounts' balances). An asset account that is not registered shows opening and closing only.
  */
-export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; assets: readonly RegistryAsset[]; books: ReadonlyMap<string, AssetBook | null>; links: readonly AssetDebtLink[]; loans: readonly LoanRef[]; /** Why an account was not read at all (for example, too many entries). */ unreadable?: ReadonlyMap<string, string> }): AssetValueRow[] {
+export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; assets: readonly RegistryAsset[]; books: ReadonlyMap<string, AssetBook | null>; links: readonly AssetDebtLink[]; loans: readonly LoanRef[]; /** Why an account was not read at all (for example, too many entries). */ unreadable?: ReadonlyMap<string, string>; /** False when the Asset Registry itself could not be read: an unlisted account is then unknown, not unregistered. */ registryRead?: boolean }): AssetValueRow[] {
   const { ledger, period, assets, books, links } = input;
   const loans = new Map(input.loans.map((l) => [l.debtId, l]));
   const before = addMonths(period.startMonth, -1);
@@ -229,7 +229,7 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
   }
   for (const a of ledger.account.values()) {
     if (!isFixedAssetAccount(a) || registered.has(a.id)) continue;
-    rows.push({ kind: "unregistered", accountId: a.id, name: a.name, accountClass: a.accountClass, openingMinor: ledger.balanceAt(a.id, before), closingMinor: ledger.balanceAt(a.id, period.endMonth) });
+    rows.push({ kind: "unregistered", accountId: a.id, name: a.name, accountClass: a.accountClass, openingMinor: ledger.balanceAt(a.id, before), closingMinor: ledger.balanceAt(a.id, period.endMonth), ...(input.registryRead === false ? { reason: "The Asset Registry could not be read" } : {}) });
   }
   return rows;
 }

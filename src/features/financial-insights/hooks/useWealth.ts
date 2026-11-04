@@ -16,7 +16,7 @@ const ASSET_CLASSES = ["property", "vehicle", "other-asset"];
 export type WealthLoad =
   | { state: "loading" }
   | { state: "error"; retry: () => void }
-  | { state: "ready"; rows: AssetValueRow[]; series: AssetSeries; /** Some asset account could not be read. */ hasFailedBooks: boolean; /** Read the accounts that failed again. */ retryBooks: () => void };
+  | { state: "ready"; rows: AssetValueRow[]; series: AssetSeries; /** Asset books are being read again after a refresh: the rows may still be the earlier ones. */ refreshing: boolean; /** Some asset account could not be read. */ hasFailedBooks: boolean; /** Read the accounts that failed again. */ retryBooks: () => void };
 
 /**
  * What Property & assets reads beyond the main read, when its tab opens: each registered asset account's book (the Asset
@@ -71,7 +71,7 @@ export function useWealth(data: ReadyData): WealthLoad {
     });
     const loans: LoanRef[] = (loansQuery.data ?? []).filter((d) => linkedDebts.includes(d.id)).map((d) => ({ debtId: d.id, accountId: d.liabilityAccountId ?? null, signConvention: d.signConvention as LoanRef["signConvention"] }));
     return {
-      rows: assetValues({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans, unreadable }),
+      rows: assetValues({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans, unreadable, registryRead: data.registry.read }),
       series: assetSeries({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans }),
     };
     // bookData is an array rebuilt every render; its entries only change when a query settles.
@@ -80,5 +80,5 @@ export function useWealth(data: ReadyData): WealthLoad {
 
   if (failed) return { state: "error", retry: () => void loansQuery.refetch() };
   if (!loaded) return { state: "loading" };
-  return { state: "ready", ...loaded, hasFailedBooks: books.some((q) => q.isError), retryBooks: () => books.forEach((q) => { if (q.isError) void q.refetch(); }) };
+  return { state: "ready", ...loaded, refreshing: books.some((q) => q.isFetching), hasFailedBooks: books.some((q) => q.isError), retryBooks: () => books.forEach((q) => { if (q.isError) void q.refetch(); }) };
 }

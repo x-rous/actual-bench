@@ -1,4 +1,4 @@
-import { classBalances, compositionSeries, debtRepayments, netWorthSteps, spendingGroups, cashBridgeLines, heatBand, monthlyFlows, payeeSpending, spendingBreakdown, spendingFacts, type CategoryInfo } from "./breakdowns";
+import { classBalances, compositionSeries, debtRepayments, incomeBreakdown, netWorthSteps, spendingGroups, cashBridgeLines, heatBand, monthlyFlows, payeeSpending, spendingBreakdown, spendingFacts, type CategoryInfo } from "./breakdowns";
 import { drillScope, type DrillKind, type DrillTarget } from "./drill";
 import { buildLedger, summarize, type AccountFact, type FinancialFacts, type MovementRow, type ReclassifiedRow } from "./measures";
 import { resolvePeriod } from "./period";
@@ -429,5 +429,25 @@ describe("financial insights: balances before the data begins", () => {
     expect(series.hasData[0]).toBe(false);
     expect(series.hasData[series.hasData.length - 1]).toBe(true);
     expect(series.hasData.map((has, i) => has === (early.months[i] >= (ledger.firstMonth as string)))).toEqual(early.months.map(() => true));
+  });
+});
+
+describe("financial insights: income categories with the same name", () => {
+  it("keep a group each, so spendingGroups does not merge them", () => {
+    const dup = new Map<string, CategoryInfo>([
+      ["a", { id: "a", name: "Bonus", groupName: "Work", hidden: false, isIncome: true }],
+      ["b", { id: "b", name: "Bonus", groupName: "Side jobs", hidden: false, isIncome: true }],
+    ]);
+    const movement: MovementRow[] = [
+      { month: "2026-10", accountId: "chk", categoryId: "a", transferAccountId: null, amountMinor: 1_000, count: 1 },
+      { month: "2026-10", accountId: "chk", categoryId: "b", transferAccountId: null, amountMinor: 2_000, count: 1 },
+    ];
+    const f: FinancialFacts = { accounts, excluded: new Set(), incomeCategories: new Set(["a", "b"]), movement, startingBalances: [], uncategorizedIn: [], transfersIn: [], reclassified: [], loanCosts: [] };
+    const l = buildLedger(f);
+    const p = resolvePeriod({ kind: "custom", startMonth: "2026-10", endMonth: "2026-10" }, today, l.firstMonth);
+    const rows = incomeBreakdown(l, p, dup, monthlyFlows(l, p, today, true));
+    expect(rows.rows.map((r) => r.name)).toEqual(["Bonus", "Bonus"]);
+    expect(new Set(rows.rows.map((r) => r.group)).size).toBe(2);
+    expect(spendingGroups(rows).groups).toHaveLength(2);
   });
 });

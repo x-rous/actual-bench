@@ -43,7 +43,8 @@ export function monthlyRepayment(events: readonly { eventType: string; date: str
   // pays quarterly or yearly is not read as paying a whole installment every month.
   const index = (month: string) => Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7));
   const last = due[due.length - 1];
-  const ends = last.eventType === "final-payment";
+  // A lone final payment still spreads over the usual twelve months; the loan only "ends inside the window" with several payments.
+  const ends = last.eventType === "final-payment" && due.length > 1;
   const spanStart = ends ? index(due[0].date.slice(0, 7)) : index(until.slice(0, 7)) - 11;
   const spanEnd = ends ? index(last.date.slice(0, 7)) : index(until.slice(0, 7));
   const span = Math.max(months.size, spanEnd - spanStart + 1);

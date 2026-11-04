@@ -161,7 +161,7 @@ function planBuckets(plan: BudgetPlan, unit: Granularity): Bucket[] {
 const gapReason = (plan: BudgetPlan, b: Bucket): "failed" | "unavailable" => (b.indexes.some((i) => plan.months[i].status === "failed") ? "failed" : "unavailable");
 
 function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, string][] }) {
-  const [unit, setUnit] = useGranularity(plan.months.length);
+  const [unit, setUnit] = useGranularity(plan.months.map((m) => m.month));
   const names = GRANULARITY_NAME[unit];
   const tracking = plan.mode === "tracking";
   const planName = "Budgeted";
@@ -228,7 +228,7 @@ function BudgetLine({ planMinor, spentMinor, scale, thin = false }: { planMinor:
   const pct = (v: number) => `${(v / scale) * 100}%`;
   return (
     <div className={`overflow-hidden rounded-full bg-muted ${thin ? "h-1.5" : "h-2"}`} aria-hidden>
-      <div className="flex h-full" style={{ width: pct(Math.max(planMinor, spentMinor, 0)) }}>
+      <div className="flex h-full">
         <div className="h-full" style={{ width: pct(within), background: "var(--fi-balance)" }} />
         <div className="h-full" style={{ width: pct(saved), background: "var(--fi-up)" }} />
         <div className="h-full" style={{ width: pct(extra), background: "var(--fi-down)" }} />
@@ -382,16 +382,19 @@ function Misses({ plan, onDrill }: PlanProps) {
 type Source = { name: string; ids: string[]; cells: (PlanCell | null)[] };
 
 function BudgetHeatmap({ plan, onDrill }: PlanProps) {
-  const [unit, setUnit] = useGranularity(plan.months.length);
+  const [unit, setUnit] = useGranularity(plan.months.map((m) => m.month));
   const names = GRANULARITY_NAME[unit];
   const tracking = plan.mode === "tracking";
   const { show, hide } = useTip();
   const buckets = useMemo(() => planBuckets(plan, unit), [plan, unit]);
   if (plan.groups.length === 0) return null;
   // A category's cells over the months of each bucket, judged like a month; months not in the budget add nothing.
-  const over = (cells: (PlanCell | null)[]) => buckets.map((b) => combineCells(plan.mode, b.indexes.filter((i) => plan.months[i].status === "ok").map((i) => cells[i])));
-  const rowItem = (r: BudgetPlan["groups"][number]["rows"][number]): HeatItem<Source> => ({ key: r.id, name: r.name, totalMinor: r.spentMinor, order: r.order, hidden: r.hidden, data: { name: r.name, ids: [r.id], cells: over(r.cells) } });
-  const groups: HeatGroupItem<Source>[] = plan.groups.map((g, i) => ({ key: g.name, name: g.name, hidden: g.hidden, totalMinor: g.spentMinor, order: g.order, colour: groupColour(i), data: { name: g.name, ids: g.categoryIds, cells: over(g.cells) }, rows: g.rows.map(rowItem) }));
+  const over = (cells: (PlanCell | null)[], balances: (number | null)[]) => buckets.map((b) => {
+    const ok = b.indexes.filter((i) => plan.months[i].status === "ok");
+    return combineCells(plan.mode, ok.map((i) => cells[i]), ok.length ? balances[ok[ok.length - 1]] : null);
+  });
+  const rowItem = (r: BudgetPlan["groups"][number]["rows"][number]): HeatItem<Source> => ({ key: r.id, name: r.name, totalMinor: r.spentMinor, order: r.order, hidden: r.hidden, data: { name: r.name, ids: [r.id], cells: over(r.cells, r.balances) } });
+  const groups: HeatGroupItem<Source>[] = plan.groups.map((g, i) => ({ key: g.name, name: g.name, hidden: g.hidden, totalMinor: g.spentMinor, order: g.order, colour: groupColour(i), data: { name: g.name, ids: g.categoryIds, cells: over(g.cells, g.balances) }, rows: g.rows.map(rowItem) }));
   const cell = (src: Source, i: number) => {
     const b = buckets[i];
     if (!b.hasData) {
@@ -490,7 +493,7 @@ function RoomToSave({ kpis }: { kpis: PlanKpis }) {
 
 /** Tracking: how much of each month's category spending had no budget saved. Compact, beside the surplus; one stacked bar per month. */
 function UnplannedChart({ plan, scope, onDrill }: { plan: BudgetPlan; scope: [string, string][]; onDrill: (target: DrillTarget) => void }) {
-  const [unit, setUnit] = useGranularity(plan.months.length);
+  const [unit, setUnit] = useGranularity(plan.months.map((m) => m.month));
   const names = GRANULARITY_NAME[unit];
   const buckets = useMemo(() => planBuckets(plan, unit), [plan, unit]);
   const labels = buckets.map((b) => b.label);

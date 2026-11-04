@@ -137,11 +137,19 @@ export function incomeBreakdown(ledger: Ledger, period: ResolvedPeriod, categori
     byMonth: values, counts, totalMinor: values.reduce((a, b) => a + b, 0),
     averageMinor: completeSlots.length ? Math.round(completeSlots.reduce((a, i) => a + values[i], 0) / completeSlots.length) : null,
   });
+  // Two income categories can share a name (in different groups): each keeps a group of its own, told apart by its Actual group.
+  const nameCount = new Map<string, number>();
+  const taken = new Set<string>();
+  for (const id of cells.keys()) { const n = categories.get(id)?.name ?? "Unknown category"; nameCount.set(n, (nameCount.get(n) ?? 0) + 1); }
   const rows: SpendingRow[] = [...cells].map(([id, values]) => {
     const info = categories.get(id);
     // Income is listed by category: each is its own group, so the tab never opens a group to find the one category inside it.
     const name = info?.name ?? "Unknown category";
-    return { id, name, group: name, hidden: info?.hidden ?? false, order: info?.order, ...finish(values, tally.get(id) ?? values.map(() => 0)) };
+    let group = (nameCount.get(name) ?? 0) > 1 ? `${name} (${info?.groupName ?? id})` : name;
+    // Same name in the same group: the id is all that tells them apart.
+    if (taken.has(group)) group = `${group} (${id.slice(0, 6)})`;
+    taken.add(group);
+    return { id, name, group, hidden: info?.hidden ?? false, order: info?.order, ...finish(values, tally.get(id) ?? values.map(() => 0)) };
   });
   const categorised = period.months.map((_, i) => rows.reduce((a, r) => a + r.byMonth[i], 0));
   const uncategorized = monthly.map((m, i) => m.received - categorised[i]);

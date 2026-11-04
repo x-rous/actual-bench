@@ -32,7 +32,7 @@ type Monthly = Ready["monthly"];
 
 /** A flow card's unit: months, calendar quarters or calendar years (opening by the length of the period), and what each adds up to. */
 function useFlowUnit(monthly: Monthly) {
-  const [unit, setUnit] = useGranularity(monthly.length);
+  const [unit, setUnit] = useGranularity(monthly.map((m) => m.month));
   const buckets = useMemo(() => bucketMonths(monthly.map((m) => m.month), monthly.map((m) => m.hasData), monthly.map((m) => m.partial), unit), [monthly, unit]);
   const sum = (pick: (m: Monthly[number]) => number) => buckets.map((b) => (b.hasData ? b.indexes.reduce((total, i) => total + (monthly[i].hasData ? pick(monthly[i]) : 0), 0) : null));
   return { unit, setUnit, names: GRANULARITY_NAME[unit], buckets, labels: buckets.map((b) => b.label), partials: buckets.flatMap((b, i) => (b.partial ? [i] : [])), sum };
@@ -94,7 +94,7 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
   const scope: [string, string][] = [["Period", `${period.label}: ${formatDay(period.startDate)} to ${formatDay(period.endDate)}`], ["As of", formatDay(period.endDate)]];
   const partialNote = `Partial month: it runs to ${formatDay(period.endDate)}.`;
   // Money in, money out by month, quarter or year (it opens by the length of the period): a quarter or year adds up its months.
-  const [unit, setUnit] = useGranularity(monthly.length);
+  const [unit, setUnit] = useGranularity(monthly.map((m) => m.month));
   const names = GRANULARITY_NAME[unit];
   const buckets = useMemo(() => bucketMonths(monthly.map((m) => m.month), monthly.map((m) => m.hasData), monthly.map((m) => m.partial), unit), [monthly, unit]);
   const unitLabels = buckets.map((b) => b.label);

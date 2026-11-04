@@ -212,8 +212,8 @@ export function FlowTab({ mode, data, today, onDrill }: { mode: Mode; data: Read
   const amountOf = (m: (typeof monthly)[number]) => (income ? m.received : m.spent);
   const word = income ? { total: "Total received", flow: "Income", noun: "received", of: "the period's income", compare: "income", source: "Largest source", detail: "Net of refunds of income; transfers are not income", payees: "Frequent payers" } : { total: "Total spent", flow: "Spending", noun: "spent", of: "the period's spending", compare: "spending", source: "Largest group", detail: "Net of refunds, including hidden categories", payees: "Frequent payees" };
   const [below, setBelow] = useState<"categories" | "payees">("categories");
-  const [chartUnit, setChartUnit] = useGranularity(monthly.length);
-  const [tableUnit, setTableUnit] = useGranularity(monthly.length);
+  const [chartUnit, setChartUnit] = useGranularity(monthly.map((m) => m.month));
+  const [tableUnit, setTableUnit] = useGranularity(monthly.map((m) => m.month));
   const scope: [string, string][] = [["Period", `${period.label}: ${formatDay(period.startDate)} to ${formatDay(period.endDate)}`], ["As of", formatDay(period.endDate)]];
   const names = GRANULARITY_NAME[chartUnit];
   const hasData = useMemo(() => monthly.map((m) => m.hasData), [monthly]);

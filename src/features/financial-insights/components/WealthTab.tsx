@@ -71,9 +71,10 @@ export function WealthTab({ data, onDrill }: { data: Ready; onDrill: (target: Dr
   const some = (pick: (a: AccountBridge) => number) => bridge.accounts.some((a) => pick(a) !== 0);
   const showOpened = some((a) => a.openingBalances), showOther = some((a) => otherOf(a));
   // A picture of the End column: only with more than one account, and only a share of positive values.
-  const showShare = bridge.accounts.length > 1 && bridge.total.closing > 0;
+  const positiveClosing = bridge.accounts.reduce((sum, a) => sum + Math.max(0, a.closing), 0);
+  const showShare = bridge.accounts.length > 1 && positiveClosing > 0;
   const shareCell = (value: number) => {
-    const part = Math.max(0, value) / bridge.total.closing;
+    const part = Math.max(0, value) / positiveClosing;
     return (
       <td className="py-1.5 pr-2 text-right whitespace-nowrap">
         {part > 0 ? <span className="inline-flex items-center justify-end gap-1.5 tabular-nums"><span className="h-1.5 w-20 overflow-hidden rounded-full bg-muted" aria-hidden><span className="block h-full rounded-full bg-muted-foreground/50" style={{ width: `${Math.max(2, part * 100)}%` }} /></span><span className="w-9 text-muted-foreground">{percent(part * 100)}</span></span> : ""}
@@ -174,7 +175,7 @@ type PortfolioProps = {
 
 /** The value of the portfolio and what moved it, by month, quarter or year: a quarter or year adds up its months' changes and ends on its last month's value. */
 function PortfolioValueCard({ bridge, series, monthly, lines, hasOpening, period, scope, onDrill }: PortfolioProps) {
-  const [unit, setUnit] = useGranularity(series.months.length);
+  const [unit, setUnit] = useGranularity(series.months);
   const names = GRANULARITY_NAME[unit];
   const hasValue = useMemo(() => series.totals.map((v) => v !== null), [series.totals]);
   const buckets = useMemo(() => bucketMonths(series.months, hasValue, series.months.map((_, i) => period.partial && i === series.months.length - 1), unit), [series.months, hasValue, unit, period.partial]);
@@ -236,7 +237,7 @@ function PortfolioValueCard({ bridge, series, monthly, lines, hasOpening, period
 function WealthOverview({ data, scope }: { data: Ready; scope: [string, string][] }) {
   const { composition, period } = data;
   // A quarter or a year is stood for by its last month's balance; the unit opens by the length of the period.
-  const [unit, setUnit] = useGranularity(period.months.length);
+  const [unit, setUnit] = useGranularity(period.months);
   const names = GRANULARITY_NAME[unit];
   const buckets = useMemo(() => balanceBuckets(composition.months.map((m) => m.month), unit), [composition.months, unit]);
   const labels = buckets.map((b) => b.label);
@@ -244,7 +245,9 @@ function WealthOverview({ data, scope }: { data: Ready; scope: [string, string][
   const partial = period.partial ? labels.length - 1 : null;
   // The period ends before its last quarter or year does: that bar is marked, and says which month it stops at.
   const early = !period.partial && stopsEarly ? labels.length - 1 : null;
-  const netWorth = buckets.map((b) => composition.netWorth[lastIndex(b)]);
+  // A month before the budget has data is unavailable, never a balance of zero.
+  const known = buckets.map((b) => composition.hasData[lastIndex(b)] ?? true);
+  const netWorth = buckets.map((b, i) => (known[i] ? composition.netWorth[lastIndex(b)] : null));
   // Today's balance is a valid balance, only not a month-end one, so it is labelled as today and drawn like any other.
   const [, endMonthNo, endDay] = period.endDate.split("-");
   const todayLabel = `Today (${Number(endDay)} ${monthLabel(`${period.endDate.slice(0, 4)}-${endMonthNo}`).slice(0, 3)})`;
@@ -253,9 +256,9 @@ function WealthOverview({ data, scope }: { data: Ready; scope: [string, string][
   // Months in which money was borrowed: assets and debts rise together, which is not an increase in wealth.
   const borrowedBy = buckets.map((b) => b.indexes.reduce((sum, i) => sum + data.monthly[i].borrowed, 0));
   const borrowed = borrowedBy.flatMap((amount, i) => (amount > 0 ? [{ index: i, amount }] : []));
-  const owned = buckets.map((b) => ASSET_CLASSES.reduce((a, k) => a + composition.months[lastIndex(b)][k], 0));
+  const owned = buckets.map((b, i) => (known[i] ? ASSET_CLASSES.reduce((a, k) => a + composition.months[lastIndex(b)][k], 0) : null));
   // What is owed is drawn as a positive amount, as on the Summary tiles.
-  const owed = buckets.map((b) => 0 - LIABILITY_CLASSES.reduce((a, k) => a + composition.months[lastIndex(b)][k], 0));
+  const owed = buckets.map((b, i) => (known[i] ? 0 - LIABILITY_CLASSES.reduce((a, k) => a + composition.months[lastIndex(b)][k], 0) : null));
   const series = [
     { key: "net", label: "Net worth", colour: "var(--fi-networth)", values: netWorth as (number | null)[], primary: true },
     { key: "owned", label: "Everything owned", colour: "var(--fi-invest)", values: owned as (number | null)[] },

@@ -31,7 +31,9 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
   const lo = Math.min(-1, ...spent.map((v) => -(v ?? 0)), ...kept.map((v) => v ?? 0)) * 1.08;
   const { y, marks } = scaleY(lo, hi, height, M.t, M.b, 5);
   const slot = (width - M.l - M.r) / Math.max(1, labels.length);
-  const bar = Math.min(26, Math.max(6, slot * 0.34));
+  // Never wider than its own slot, so neighbouring months (and their click targets) cannot overlap on a very long period.
+  const bar = Math.min(Math.max(1, slot - 1), 26, Math.max(6, slot * 0.34));
+  const isPartial = (i: number) => (Array.isArray(partialIndex) ? partialIndex.includes(i) : i === partialIndex);
   return (
     <div ref={host} className="w-full">
       <svg width={width} height={height} role="group" aria-label="Money received above the line, money spent below it, and money kept as a dashed line with a marker for each month">
@@ -44,7 +46,7 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
         <line x1={M.l} x2={width - M.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.25} />
         {labels.map((label, i) => {
           const cx = M.l + (i + 0.5) * slot;
-          const partial = Array.isArray(partialIndex) ? partialIndex.includes(i) : i === partialIndex;
+          const partial = isPartial(i);
           const r = received[i], s = spent[i];
           const style = (colour: string) => ({ fill: colour, fillOpacity: partial ? 0.35 : 1, stroke: partial ? colour : "none", strokeDasharray: partial ? "3 2" : undefined, strokeWidth: 1.2 });
           const select = (series: "received" | "spent") => ({
@@ -63,9 +65,9 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
         {labels.slice(1).map((_, j) => {
           const i = j + 1, a = kept[i - 1], b = kept[i];
           if (a == null || b == null) return null;
-          return <line key={`k${i}`} x1={M.l + (i - 0.5) * slot} x2={M.l + (i + 0.5) * slot} y1={y(a)} y2={y(b)} stroke="var(--fi-kept)" strokeWidth={1.75} strokeDasharray="5 4" strokeOpacity={i === partialIndex ? 0.5 : 1} pointerEvents="none" />;
+          return <line key={`k${i}`} x1={M.l + (i - 0.5) * slot} x2={M.l + (i + 0.5) * slot} y1={y(a)} y2={y(b)} stroke="var(--fi-kept)" strokeWidth={1.75} strokeDasharray="5 4" strokeOpacity={isPartial(i) ? 0.5 : 1} pointerEvents="none" />;
         })}
-        {labels.map((label, i) => (kept[i] == null ? null : <circle key={`m${i}`} cx={M.l + (i + 0.5) * slot} cy={y(kept[i] as number)} r={4.5} fill="var(--card)" stroke="var(--fi-kept)" strokeWidth={2} strokeDasharray={i === partialIndex ? "2 1.5" : undefined} pointerEvents="none" />))}
+        {labels.map((label, i) => (kept[i] == null ? null : <circle key={`m${i}`} cx={M.l + (i + 0.5) * slot} cy={y(kept[i] as number)} r={4.5} fill="var(--card)" stroke="var(--fi-kept)" strokeWidth={2} strokeDasharray={isPartial(i) ? "2 1.5" : undefined} pointerEvents="none" />))}
       </svg>
     </div>
   );

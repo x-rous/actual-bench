@@ -53,11 +53,16 @@ export function useBudgetPlan(data: ReadyData, today: string, mode: PlanMode): B
         setProgress({ done: i, total: months.length });
         const key = budgetMonthDataQueryOptions(connection, month).queryKey;
         // A month marked out of date (Refresh) is read again; one that is merely cached is used as it is.
-        if (queryClient.getQueryState(key)?.isInvalidated) await queryClient.refetchQueries({ queryKey: key, exact: true });
+        let refreshFailed = false;
+        if (queryClient.getQueryState(key)?.isInvalidated) {
+          await queryClient.refetchQueries({ queryKey: key, exact: true });
+          // The refresh did not work: the month is not read, whatever an earlier read left in the cache.
+          refreshFailed = queryClient.getQueryState(key)?.status === "error";
+        }
         const result = await ensureMonthsData(queryClient, connection, [month], available.data);
         const state = queryClient.getQueryData<LoadedMonthState>(key);
         if (result.unavailable.length > 0) reads.push({ month, status: "unavailable" });
-        else if (result.failed.length > 0 || !state) reads.push({ month, status: "failed" });
+        else if (refreshFailed || result.failed.length > 0 || !state) reads.push({ month, status: "failed" });
         else reads.push({ month, status: "ok", state });
       }
       setProgress({ done: months.length, total: months.length });

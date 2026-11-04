@@ -224,7 +224,7 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
   const months = summary.period.months.length;
   const period = `${summary.period.label}: ${formatDay(summary.period.startDate)} to ${formatDay(summary.period.endDate)}`;
   // The unit of the chart of balances: a quarter or a year is stood for by its last month's balance.
-  const [unit, setUnit] = useGranularity(months);
+  const [unit, setUnit] = useGranularity(summary.period.months);
   const names = GRANULARITY_NAME[unit];
   const buckets = useMemo(() => balanceBuckets(composition.months.map((m) => m.month), unit), [composition.months, unit]);
   const chartMonths = buckets.map((b) => composition.months[lastIndex(b)]);
@@ -237,7 +237,9 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
   const partialIndex = summary.period.partial || stopsEarly ? buckets.length - 1 : null;
   const toggle = (k: ClassKey) => setHidden((h) => { const n = new Set(h); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const anyHidden = hidden.size > 0 || hideLine;
-  const growth = summary.netWorth.opening !== 0 ? (summary.netWorth.change / Math.abs(summary.netWorth.opening)) * 100 : null;
+  // The budget has no data before its first month: a period that starts there has no opening balance to show, not a zero.
+  const openingKnown = data.ledger.firstMonth !== null && data.ledger.firstMonth <= addMonths(data.period.startMonth, -1);
+  const growth = openingKnown && summary.netWorth.opening !== 0 ? (summary.netWorth.change / Math.abs(summary.netWorth.opening)) * 100 : null;
   const steps: WaterfallStep[] = [
     ...netWorthChange.steps.map((s) => ({ key: s.key, label: s.label, kind: "delta" as const, amountMinor: s.amountMinor, note: s.note })),
     ...(netWorthChange.unexplainedMinor !== 0 ? [{ key: "unexplained", label: "Unexplained", kind: "gap" as const, amountMinor: netWorthChange.unexplainedMinor, note: "What the components above do not explain. It is shown, never forced to zero." }] : []),
@@ -284,15 +286,15 @@ export function SummaryTab({ data, today, accountNames, onDrill }: { data: Ready
           id="net-worth-change"
           title={<span className="flex flex-wrap items-center gap-2">What changed your net worth {netWorthChange.unexplainedMinor === 0 ? <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"><CheckCircle2 className="size-3" aria-hidden />Reconciled</span> : <span className={`inline-flex items-center gap-1 rounded-full border border-amber-500/60 px-2 py-0.5 text-[11px] font-normal ${WARNING}`}><AlertTriangle className="size-3" aria-hidden />{money(Math.abs(netWorthChange.unexplainedMinor))} unexplained</span>}</span>}
           hint="Start to end of the period"
-          subtitle={<><p>Net worth before {formatDay(summary.period.startDate)} was {money(netWorthChange.openingMinor)}; on {formatDay(summary.period.endDate)} it is {money(netWorthChange.closingMinor)}. Only components Bench can identify are shown.</p><p>Select a step with an underlined label to see its transactions.</p></>}
+          subtitle={<><p>Net worth before {formatDay(summary.period.startDate)} {openingKnown ? <>was {money(netWorthChange.openingMinor)}</> : "is unavailable: the budget has no data that early"}; on {formatDay(summary.period.endDate)} it is {money(netWorthChange.closingMinor)}. Only components Bench can identify are shown.</p><p>Select a step with an underlined label to see its transactions.</p></>}
           legend={[{ label: "Raises net worth", colour: "var(--fi-up)" }, { label: "Lowers net worth", colour: "var(--fi-down)" }, { label: "Net change", colour: "var(--fi-balance)" }]}
-          table={{ head: ["Step", "Amount"], rows: [["Net worth before the period", netWorthChange.openingMinor], ...steps.filter((s) => s.kind !== "total").map((s) => [s.label, s.amountMinor] as (string | number)[]), ["Net worth at the end", netWorthChange.closingMinor]] }}
+          table={{ head: ["Step", "Amount"], rows: [["Net worth before the period", openingKnown ? netWorthChange.openingMinor : null], ...steps.filter((s) => s.kind !== "total").map((s) => [s.label, s.amountMinor] as (string | number)[]), ["Net worth at the end", netWorthChange.closingMinor]] }}
           csvScope={[["Period", period]]}
           footnote={netWorthChange.unexplainedMinor === 0 ? "The bars start at zero, showing the change rather than net worth itself. Reconciled: the components add up exactly to the change." : "The bars start at zero, showing the change rather than net worth itself. The dashed bar is what the components do not explain."}
         >
           <dl role="group" className="mb-3 grid grid-cols-3 gap-3 text-xs" aria-label="Net worth at the start and end of the period, and the change">
-            <div><dt className="text-muted-foreground">Start · before {formatDay(summary.period.startDate)}</dt><dd className="text-lg font-semibold tabular-nums">{money(netWorthChange.openingMinor)}</dd></div>
-            <div><dt className="text-muted-foreground">Change</dt><dd className="text-lg font-semibold tabular-nums">{signedMoney(netWorthChange.changeMinor)}{netWorthChange.openingMinor !== 0 && <span className="ml-1.5 text-xs font-normal text-muted-foreground">({netWorthChange.changeMinor > 0 ? "+" : ""}{percent((netWorthChange.changeMinor / Math.abs(netWorthChange.openingMinor)) * 100)})</span>}</dd></div>
+            <div><dt className="text-muted-foreground">Start · before {formatDay(summary.period.startDate)}</dt><dd className="text-lg font-semibold tabular-nums">{openingKnown ? money(netWorthChange.openingMinor) : MISSING}</dd></div>
+            <div><dt className="text-muted-foreground">Change</dt><dd className="text-lg font-semibold tabular-nums">{openingKnown ? signedMoney(netWorthChange.changeMinor) : MISSING}{openingKnown && netWorthChange.openingMinor !== 0 && <span className="ml-1.5 text-xs font-normal text-muted-foreground">({netWorthChange.changeMinor > 0 ? "+" : ""}{percent((netWorthChange.changeMinor / Math.abs(netWorthChange.openingMinor)) * 100)})</span>}</dd></div>
             <div><dt className="text-muted-foreground">End · {formatDay(summary.period.endDate)}</dt><dd className="text-lg font-semibold tabular-nums">{money(netWorthChange.closingMinor)}</dd></div>
           </dl>
           <Waterfall steps={steps} ariaLabel="Components of the change in net worth" canSelect={(s) => stepTarget(s.key) !== null} onSelect={(s) => { const t = stepTarget(s.key); if (t) onDrill(t); }} />

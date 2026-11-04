@@ -310,4 +310,9 @@ describe("my budget: cells over several months", () => {
     expect(quarter).toMatchObject({ state: "uncovered", balanceMinor: 40, spentMinor: 650, planMinor: 400 });
     expect(combineCells("envelope", [cell(1, 1, "covered", 5), cell(1, 1, "carried", -1)])).toMatchObject({ state: "carried", balanceMinor: -1 });
   });
+
+  it("Envelope: the balance is the final month's, also when that month has no cell", () => {
+    expect(combineCells("envelope", [cell(100, 200, "covered", 300), null], 250)).toMatchObject({ balanceMinor: 250 });
+    expect(combineCells("envelope", [cell(100, 200, "covered", 300), null], null)).toMatchObject({ balanceMinor: 300 });
+  });
 });

@@ -150,6 +150,10 @@ describe("the monthly amount of a repayment schedule", () => {
     expect(monthlyRepayment([pay("2027-05-01", 1_200_000)], "2027-11-01")).toMatchObject({ monthlyMinor: 100_000 });
   });
 
+  it("spreads a lone final payment over the same twelve months as any other payment", () => {
+    expect(monthlyRepayment([{ ...pay("2027-05-01", 1_200_000), eventType: "final-payment" }], "2027-11-01")).toMatchObject({ monthlyMinor: 100_000 });
+  });
+
   it("ignores what falls after the window, and is zero for a loan with nothing left to pay", () => {
     expect(monthlyRepayment([pay("2026-12-01", 100_000), pay("2027-12-01", 100_000)], "2027-11-01")).toMatchObject({ payments: 1 });
     expect(monthlyRepayment([], "2027-11-01")).toEqual({ monthlyMinor: 0, payments: 0, totalMinor: 0, principalNext12Minor: 0, costNext12Minor: 0 });

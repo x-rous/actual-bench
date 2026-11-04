@@ -51,13 +51,15 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
   const loans = rows.filter((r) => r.group === "loans");
   const hasLoans = loans.length > 0;
   const hasCards = rows.some((r) => r.group === "cards");
+  // If the card settings cannot be read, what the cards were charged is unknown, not zero.
+  const cardsUnreadable = hasCards && costSettings.state === "unavailable";
   const owedAtStart = 0 - (summary.opening.loans + summary.opening.cards + summary.opening.otherLiabilities);
   const untracked = debt.rows.filter((r) => !r.tracked);
   const upcoming: UpcomingLoans = { loans: totals.loans, scheduled: totals.scheduledLoans, toReview: loans.filter((r) => r.next12?.state === "review").length, principalMinor: totals.principalNext12Minor, costMinor: totals.costNext12Minor };
   const link = (amount: number, target: DrillTarget, label: string, signed = false) => (amount === 0 ? <>{money(0)}</> : <DrillLink label={`${label} ${signed ? signedMoney(amount) : money(amount)}`} onClick={() => onDrill(target)}>{signed ? signedMoney(amount) : money(amount)}</DrillLink>);
 
   // ── The months: principal, interest and fees (a quarter or year adds up its months) ──
-  const [payUnit, setPayUnit] = useGranularity(months.length);
+  const [payUnit, setPayUnit] = useGranularity(months.map((m) => m.month));
   const payNames = GRANULARITY_NAME[payUnit];
   const payBuckets = useMemo(() => bucketMonths(months.map((m) => m.month), months.map((m) => m.hasData), months.map((m) => m.partial), payUnit), [months, payUnit]);
   const labels = payBuckets.map((b) => b.label);
@@ -72,7 +74,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
 
   // ── Credit cards: balances by month, and the interest and fees charged ──
   // Balances: a quarter or year is stood for by its last month's balance. Interest and fees add up their months.
-  const [balUnit, setBalUnit] = useGranularity(cardMonths.months.length);
+  const [balUnit, setBalUnit] = useGranularity(cardMonths.months);
   const balNames = GRANULARITY_NAME[balUnit];
   const balBuckets = useMemo(() => balanceBuckets(cardMonths.months, balUnit), [cardMonths.months, balUnit]);
   const cardLabels = balBuckets.map((b) => b.label);
@@ -87,7 +89,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
   ];
   const cardTotals = atBucketEnd(cardMonths.totals);
   const cardTable = cardMonths.cards.map((c) => atBucketEnd(c.values));
-  const [costUnit, setCostUnit] = useGranularity(cardMonths.months.length);
+  const [costUnit, setCostUnit] = useGranularity(cardMonths.months);
   const costNames = GRANULARITY_NAME[costUnit];
   const costBuckets = useMemo(() => bucketMonths(cardMonths.months, cardMonths.hasData, cardMonths.months.map((_, i) => cardMonths.partial === i), costUnit), [cardMonths, costUnit]);
   const costLabels = costBuckets.map((b) => b.label);
@@ -143,14 +145,14 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
               </Tile>
             );
           })}
-          <Tile label="Interest & fees paid" tone={hasLoans && !debt.complete ? "warning" : undefined}
+          <Tile label="Interest & fees paid" tone={cardsUnreadable || (hasLoans && !debt.complete) ? "warning" : undefined}
             detail={!hasLoans && !hasCards ? "No loans or credit cards" : (
               <>
-                {hasLoans && <>Loans {money(loanCost)}</>}{hasLoans && hasCards && " · "}{hasCards && <>cards {cardCost === null ? "need categories in Credit Cards" : money(cardCost)}</>}
+                {hasLoans && <>Loans {money(loanCost)}</>}{hasLoans && hasCards && " · "}{hasCards && <>cards {cardsUnreadable ? "could not be read" : cardCost === null ? "need categories in Credit Cards" : money(cardCost)}</>}
                 {hasLoans && !debt.complete && <span className="block">Excludes loans not tracked in Loans</span>}
               </>
             )}>
-            {!hasLoans && !hasCards ? "None" : money(loanCost + (cardCost ?? 0))}
+            {!hasLoans && !hasCards ? "None" : cardsUnreadable ? "Unavailable" : money(loanCost + (cardCost ?? 0))}
           </Tile>
         </div>
 

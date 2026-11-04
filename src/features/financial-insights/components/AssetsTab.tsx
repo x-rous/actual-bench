@@ -95,6 +95,7 @@ export function AssetsTab({ data, today, onOpenLoans }: { data: Ready; today: st
           </div>
         ) : (
           <>
+            {wealth.refreshing && <p className="text-xs text-muted-foreground" role="status">Refreshing asset accounts… the values below may be from the earlier read.</p>}
             {wealth.hasFailedBooks && (
               <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                 <span>Some asset accounts could not be read, so their values are shown as unavailable.</span>
@@ -130,7 +131,7 @@ function ValueOverTime({ series, data, scope }: { series: AssetSeries; data: Rea
   const { period, ledger } = data;
   const hasOpening = ledger.firstMonth !== null && ledger.firstMonth <= addMonths(period.startMonth, -1);
   // A quarter or a year is stood for by its last month's position; the unit opens by the length of the period.
-  const [unit, setUnit] = useGranularity(series.months.length);
+  const [unit, setUnit] = useGranularity(series.months);
   const names = GRANULARITY_NAME[unit];
   const buckets = useMemo(() => balanceBuckets(series.months, unit), [series.months, unit]);
   const months = buckets.map((b) => b.label);
@@ -167,7 +168,7 @@ function ValueOverTime({ series, data, scope }: { series: AssetSeries; data: Rea
 /** From what the assets were worth at the start to what they are worth now: capital added, revaluation, depreciation and disposals. */
 function ValueBridge({ rows, scope }: { rows: readonly AssetValueRow[]; scope: [string, string][] }) {
   const ready = rows.filter((r): r is Extract<Registered, { state: "ready" }> => r.kind === "registered" && r.state === "ready");
-  const left = rows.length - ready.length;
+  const left = new Set(rows.filter((r) => !(r.kind === "registered" && r.state === "ready")).map((r) => r.accountId)).size;
   const sum = (pick: (b: Extract<Registered, { state: "ready" }>["bridge"]) => number) => ready.reduce((a, r) => a + pick(r.bridge), 0);
   const lines = [
     { key: "capital", label: "Capital added", value: sum((b) => b.capitalMinor), note: "Money put into the assets: a purchase, improvements, a loan paid into them." },
@@ -276,17 +277,18 @@ function AssetValues({ rows, scope }: { rows: readonly AssetValueRow[]; scope: [
   const heads = assetHead.slice(1).filter((h) => (h !== "Depreciation" || show.depreciation) && (h !== "Disposal" || show.disposal) && (h !== "Other" || show.other));
   const middle = 2 + Number(show.depreciation) + Number(show.disposal) + Number(show.other);
   const missing = rows.filter((r) => r.kind === "unregistered" || r.state === "unavailable");
+  const missingAccounts = new Set(missing.map((r) => r.accountId)).size;
   return (
     <TableCard id="asset-values" title="Property and asset values" hint="Property, vehicles and other assets" csvScope={scope} head={assetHead} rows={csv}
       info={<><p>How each asset registered in Assets moved from its value at the start of the period to its value at the end, from the Asset Registry&apos;s own classified entries: the same figures as the Assets page for the same dates.</p><p>Equity is the recorded value less the linked loan balance in Actual on that date; loan-to-value is that debt as a share of the value. Either is Unavailable, never zero, when an input is missing.</p></>}
-      note={missing.length > 0 ? <p className={WARNING}>{missing.length} {missing.length === 1 ? "account needs" : "accounts need"} review: their closing value is shown, but what depends on the Asset Registry is not. <Link href="/assets" className="underline underline-offset-2">Open Assets</Link></p> : "Registered assets only. Linked loans come from Assets; the loan balances are Actual's."}>
+      note={missing.length > 0 ? <p className={WARNING}>{missingAccounts} {missingAccounts === 1 ? "account needs" : "accounts need"} review: their closing value is shown, but what depends on the Asset Registry is not. <Link href="/assets" className="underline underline-offset-2">Open Assets</Link></p> : "Registered assets only. Linked loans come from Assets; the loan balances are Actual's."}>
       <table className="w-full border-collapse text-xs">
         <thead><tr className="border-b border-border text-muted-foreground"><th scope="col" className="py-1.5 pr-2 text-left font-medium">Asset</th>{heads.map((h) => <th key={h} scope="col" className={TH}>{h}</th>)}</tr></thead>
         <tbody>
           {rows.map((r) => {
             const name = <th scope="row" className="max-w-56 py-1.5 pr-2 text-left font-normal whitespace-nowrap"><span className="block truncate" title={r.name}>{r.name}</span></th>;
             if (r.kind === "unregistered") {
-              return <tr key={r.accountId} className="border-b border-border/40">{name}<td className={TD}>{money(r.openingMinor)}</td><td colSpan={middle} className={`pr-2 text-left ${WARNING}`}>Not in the Asset Registry · Needs review</td><td className={`${TD} font-medium`}>{money(r.closingMinor)}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td></tr>;
+              return <tr key={r.accountId} className="border-b border-border/40">{name}<td className={TD}>{money(r.openingMinor)}</td><td colSpan={middle} className={`pr-2 text-left ${WARNING}`} title={r.reason}>{r.reason ? `Needs review · ${r.reason}` : "Not in the Asset Registry · Needs review"}</td><td className={`${TD} font-medium`}>{money(r.closingMinor)}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td></tr>;
             }
             if (r.state === "unavailable") {
               return <tr key={r.assetId} className="border-b border-border/40">{name}<td className={TD}>{money(r.openingMinor)}</td><td colSpan={middle} className={`pr-2 text-left ${WARNING}`} title={r.reason}>Needs review · {r.reason}</td><td className={`${TD} font-medium`}>{money(r.closingMinor)}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td><td className="pr-2 text-right text-muted-foreground">{MISSING}</td></tr>;
