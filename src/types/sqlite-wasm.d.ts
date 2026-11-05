@@ -1,6 +1,10 @@
 declare module "@sqlite.org/sqlite-wasm" {
   export type SqliteWasmDb = {
     close: () => void;
+    /** The C `sqlite3*` of an open database; undefined once it is closed. */
+    pointer: number | undefined;
+    /** Throws if `resultCode` is an error, otherwise returns the database. */
+    checkRc: (resultCode: number) => SqliteWasmDb;
     exec: (sqlOrOptions: string | { sql: string; rowMode?: string; resultRows?: unknown[] }) => unknown;
     selectValue: (sql: string) => unknown;
   };
@@ -9,14 +13,17 @@ declare module "@sqlite.org/sqlite-wasm" {
     oo1: {
       DB: new (filename?: string, flags?: string, vfs?: string | null) => SqliteWasmDb;
     };
+    wasm: {
+      /** Copies the bytes into memory SQLite can own, and returns its pointer; free it with `dealloc` unless SQLite owns it. */
+      allocFromTypedArray: (source: Uint8Array) => number;
+      dealloc: (pointer: number) => void;
+    };
     capi: {
-      sqlite3_js_vfs_create_file: (
-        vfs: string | number | null,
-        filename: string,
-        data: Uint8Array,
-        dataLen?: number
-      ) => void;
-      sqlite3_vfs_find: (name: string | null) => number;
+      /** Replaces the database `schema` of `db` with the one serialized in the memory at `data`. */
+      sqlite3_deserialize: (db: number, schema: string, data: number, dbSize: number, bufferSize: number, flags: number) => number;
+      /** SQLite frees the memory when the database closes. */
+      SQLITE_DESERIALIZE_FREEONCLOSE: number;
+      SQLITE_DESERIALIZE_READONLY: number;
     };
   };
 

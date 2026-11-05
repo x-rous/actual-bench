@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import type { OverviewRefreshResult } from "../types";
 
 type UseOverviewHeaderStateParams = {
-  hasStats: boolean;
+  /** When the statistics shown were first read, in milliseconds; null while there are none. */
+  loadedAt: number | null;
   refresh: () => Promise<OverviewRefreshResult>;
 };
 
@@ -29,7 +30,7 @@ function getRelativeRefreshLabel(date: Date | null, now: number): string | null 
 const ELLIPSIS_FRAMES = [".", "..", "..."] as const;
 
 export function useOverviewHeaderState({
-  hasStats,
+  loadedAt,
   refresh,
 }: UseOverviewHeaderStateParams) {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -37,11 +38,11 @@ export function useOverviewHeaderState({
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    if (hasStats && !lastRefreshedAt) {
-      setLastRefreshedAt(new Date());
-    }
-  }, [hasStats, lastRefreshedAt]);
+  // The first time the statistics were read is when they were last refreshed, until a refresh here says otherwise. It is taken
+  // as the data arrives, from the time the read finished, rather than stamped from an effect afterwards.
+  if (loadedAt !== null && !lastRefreshedAt) {
+    setLastRefreshedAt(new Date(loadedAt));
+  }
 
   useEffect(() => {
     if (!isRefreshing) return;

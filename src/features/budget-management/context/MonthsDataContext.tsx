@@ -1,7 +1,7 @@
 "use client";
 
-import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
+import { useQueries, type UseQueryResult } from "@tanstack/react-query";
 import { useConnectionStore, selectActiveInstance } from "@/store/connection";
 import { useBudgetEditsStore } from "@/store/budgetEdits";
 import {
@@ -75,34 +75,31 @@ export function MonthsDataProvider({
     [loadableMonths]
   );
 
-  const queries = useQueries({
+  // Snapshot only loadable month results. Disabled TanStack Query entries can
+  // still expose cached data, so unavailable months must be filtered here. The
+  // combined value is shared structurally by TanStack Query, so its arrays keep
+  // their identity until a query result really changes, and the memo below can
+  // depend on them directly.
+  const combine = useCallback(
+    (results: UseQueryResult<LoadedMonthState>[]) => ({
+      data: results.map((q, i) => (loadableMonthSet.has(months[i]!) ? q.data : undefined)),
+      errors: results.map((q, i) => (loadableMonthSet.has(months[i]!) ? q.error : null)),
+      isLoading: results.some((q, i) => loadableMonthSet.has(months[i]!) && q.isLoading),
+    }),
+    [months, loadableMonthSet]
+  );
+  const { data: dataArr, errors: errorArr, isLoading } = useQueries({
     queries: months.map((m) => ({
       ...budgetMonthDataQueryOptions(connection, m),
       enabled: !!connection && !!m && loadableMonthSet.has(m),
     })),
+    combine,
   });
-
-  // Snapshot only loadable month results. Disabled TanStack Query entries can
-  // still expose cached data, so unavailable months must be filtered here.
-  const dataArr = queries.map((q, i) =>
-    loadableMonthSet.has(months[i]!) ? q.data : undefined
-  );
-  const errorArr = queries.map((q, i) =>
-    loadableMonthSet.has(months[i]!) ? q.error : null
-  );
-  const isLoading = queries.some(
-    (q, i) => loadableMonthSet.has(months[i]!) && q.isLoading
-  );
 
   // BM-09: only income categories whose monthly `budgeted` was absent need the
   // reflect_budgets fallback. On 26.8+ this is empty, so useIncomeBudgets stays
   // disabled and the canonical monthly value is used without a second fetch.
-  const incomeCategoryIds = useMemo(() => {
-    return incomeCategoryIdsNeedingBudgetFallback(dataArr);
-    // dataArr is a fresh array each render but its element identities are stable
-    // when underlying TanStack Query data is unchanged. Spread is intentional.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, dataArr);
+  const incomeCategoryIds = useMemo(() => incomeCategoryIdsNeedingBudgetFallback(dataArr), [dataArr]);
 
   const { data: incomeBudgets } = useIncomeBudgets(incomeCategoryIds, isTracking);
 
@@ -139,10 +136,7 @@ export function MonthsDataProvider({
     const merged = mergeMonthStates(dataArr);
 
     return { raw, effective, errors, isLoading, merged };
-    // Spread data and error arrays so the memo recomputes only when an
-    // underlying query result reference changes, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [months, loadableMonthSet, allEdits, allHolds, isTracking, incomeBudgets, isLoading, ...dataArr, ...errorArr]);
+  }, [months, loadableMonthSet, allEdits, allHolds, isTracking, incomeBudgets, isLoading, dataArr, errorArr]);
 
   return (
     <MonthsDataContext.Provider value={value}>

@@ -27,5 +27,7 @@ export type UseBudgetOverviewResult = {
   isLoading: boolean;
   isError: boolean;
   hasPartialFailure: boolean;
+  /** When the snapshot was last read, in milliseconds; null before anything has been read. */
+  dataUpdatedAt: number | null;
   refresh: () => Promise<OverviewRefreshResult>;
 };

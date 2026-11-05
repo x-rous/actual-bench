@@ -1,5 +1,5 @@
 # Demo image. Build from the repository root.
-FROM node:24.22.1-alpine AS bench-build
+FROM node:24.22.2-alpine AS bench-build
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
 COPY package*.json ./
@@ -14,10 +14,10 @@ ENV NEXT_TELEMETRY_DISABLED=1 CIRCLE_NODE_TOTAL=3 \
     TURBO_TASKS_AVAILABLE_PARALLELISM=2 RAYON_NUM_THREADS=2
 RUN node demo/generate-metadata.cjs && npm run build
 
-FROM jhonderson/actual-http-api:26.10.0
+FROM jhonderson/actual-http-api:26.11.0
 USER root
 RUN apk add --no-cache python3 make g++ \
- && npm install -g @actual-app/sync-server@26.10.0
+ && npm install -g @actual-app/sync-server@26.11.0
 # The API image uses Node 22. Bench and its native modules are built with Node
 # 24, so keep the two runtimes separate rather than mixing their ABIs.
 COPY --from=bench-build /usr/local/bin/node /opt/bench-node/node

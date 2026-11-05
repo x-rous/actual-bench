@@ -931,18 +931,21 @@ export function Workbench({
    * to check. Bulk actions here write to a budget; the set being acted on has
    * to be the set in front of the person pressing the button.
    */
-  useEffect(() => {
+  const [seenView, setSeenView] = useState({ filter, decisionFilter, attributeFilters, search });
+  if (
+    seenView.filter !== filter ||
+    seenView.decisionFilter !== decisionFilter ||
+    seenView.attributeFilters !== attributeFilters ||
+    seenView.search !== search
+  ) {
+    setSeenView({ filter, decisionFilter, attributeFilters, search });
     clearSelection();
     // The inspector goes too. It is an editing surface, so leaving it open on a
     // row the filter has just hidden allows a change to be staged against
     // something the user can no longer see - the same reason the checkbox
     // selection is dropped.
     setSelectedId(null);
-    // Deliberately not depending on `clearSelection` itself: it is a stable
-    // callback, and listing it invites a lint fix that re-runs this on renders
-    // that changed nothing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, decisionFilter, attributeFilters, search]);
+  }
 
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));

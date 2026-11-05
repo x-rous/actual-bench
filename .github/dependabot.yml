@@ -31,46 +31,24 @@ updates:
           - "jest-environment-*"
           - "@types/jest"
     ignore:
-      # Held back by a reproducible failure, not by policy. Jest 30.5 takes
-      # AutomationsView's suite from seven seconds to nearly three minutes and
-      # times out one test in it at five seconds. Confirmed on CI from a clean
-      # branch: the grouped 30.5.0 update fails exactly that test, while the
-      # grouped React update to 19.2.8 on the same day is green.
-      #
-      # Everything above 30.3.0, which is the last version known to work. The
-      # hold started at 30.5 and had to be widened: 30.4.2 with
-      # jest-environment-jsdom 30.4.1 fails the same test the same way, so the
-      # regression begins earlier in the line than the first failing release
-      # suggested. Pinned to the last good version rather than a guess at the
-      # first bad one, because that guess has already been wrong once.
-      - dependency-name: "jest"
-        versions: [">30.3.0"]
-      - dependency-name: "jest-environment-jsdom"
-        versions: [">30.3.0"]
-      # Held back by a reproducible failure, not by policy. eslint-config-next
-      # 16.4.0 turns on stricter React Compiler rules and reports 39 errors in
-      # code that lints clean on 16.3.8 (react-hooks/set-state-in-effect,
-      # preserve-manual-memoization, refs, purity, ...). ESLint 10 is held with
-      # it: its bundled eslint-plugin-react crashes on 10 under 16.3.8, and
-      # only loads once 16.4.0 is in. Revisit when the new rules are fixed
-      # in code, then move eslint-config-next and eslint together.
-      - dependency-name: "eslint-config-next"
-        versions: [">16.3.8"]
-      - dependency-name: "eslint"
+      # Babel 8 installs, and the tests pass on it, but npm reports peer
+      # conflicts: Jest's own Babel plugins still declare @babel/core ^7, so
+      # the tree is only working by being overridden. Revisit when Jest's
+      # Babel packages declare 8. @babel/core is only used by one test.
+      - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@babel/preset-typescript"
         update-types: ["version-update:semver-major"]
       # Must describe the Node actually in use, or the type checker starts
       # accepting code the runtime cannot run. Moves when Node does.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-      # typescript-eslint cannot parse TypeScript 7, so the bump fails lint
-      # outright. Revisit when the parser ships support.
+      # typescript-eslint supports TypeScript up to 6.0 (checked November 2026:
+      # its range is >=4.8.4 <6.1.0), and eslint-config-next fails to load with 7
+      # installed, so the bump breaks lint outright. Revisit when the parser
+      # ships support.
       - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
-      # v9 is a real release, but it changes the generics and both of our
-      # tables want checking by eye afterwards. Scheduled work, not a weekly
-      # pull request.
-      - dependency-name: "@tanstack/react-table"
-        update-types: ["version-update:semver-major"]
+        versions: [">=7"]
 
   # The base images were watched by nothing at all, so an image pinned to an
   # exact Node patch never picked up an Alpine security refresh - which is how a

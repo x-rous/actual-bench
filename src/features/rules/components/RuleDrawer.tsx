@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Code, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EditableDrawer } from "@/components/ui/editable-drawer";
@@ -186,13 +186,14 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
   const [saveAttempted, setSaveAttempted] = useState(false);
   const [touchedConditionIds, setTouchedConditionIds] = useState<Set<string>>(new Set());
   const [touchedActionIds, setTouchedActionIds] = useState<Set<string>>(new Set());
-  const initialSignatureRef = useRef("");
+  // What the drawer opened with, to tell whether anything has been changed since.
+  const [initialSignature, setInitialSignature] = useState("");
 
   const currentSignature = useMemo(
     () => serializeRuleDraft({ stage, conditionsOp, conditions, actions }),
     [stage, conditionsOp, conditions, actions]
   );
-  const isDirty = open && currentSignature !== initialSignatureRef.current;
+  const isDirty = open && currentSignature !== initialSignature;
   const validation = useMemo(
     () => validateRuleDraft({ stage, conditionsOp, conditions, actions }),
     [stage, conditionsOp, conditions, actions]
@@ -218,48 +219,48 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
     message: "Your unsaved edits in this rule drawer will be lost.",
   });
 
-  useEffect(() => {
+  // The form starts again whenever the drawer opens for a different rule or a fresh create flow (existingRule and seed follow
+  // from ruleId), and is cleared as it closes. It is set up as that happens, so the first frame already shows the right rule.
+  const [openedFor, setOpenedFor] = useState<{ open: boolean; ruleId: string | null } | null>(null);
+  if (!openedFor || openedFor.open !== open || openedFor.ruleId !== ruleId) {
+    setOpenedFor({ open, ruleId });
     setShowJson(false);
     setConfirmDialog(null);
     setSaveAttempted(false);
     setTouchedConditionIds(new Set());
     setTouchedActionIds(new Set());
-    if (!open) return;
-
-    if (existingRule) {
-      const linkedScheduleId = getLinkedScheduleId(existingRule.actions);
-      const initialConditions = linkedScheduleId
-        ? normalizeScheduleLinkedConditions(existingRule.conditions)
-        : structuredClone(existingRule.conditions);
-      const initialActions = structuredClone(existingRule.actions);
-      setStage(existingRule.stage);
-      setConditionsOp(existingRule.conditionsOp);
-      setConditions(createEditorParts(initialConditions));
-      setActions(createEditorParts(initialActions));
-      initialSignatureRef.current = serializeRule({
-        ...existingRule,
-        conditions: initialConditions,
-        actions: initialActions,
-      });
-      return;
+    if (open) {
+      if (existingRule) {
+        const linkedScheduleId = getLinkedScheduleId(existingRule.actions);
+        const initialConditions = linkedScheduleId
+          ? normalizeScheduleLinkedConditions(existingRule.conditions)
+          : structuredClone(existingRule.conditions);
+        const initialActions = structuredClone(existingRule.actions);
+        setStage(existingRule.stage);
+        setConditionsOp(existingRule.conditionsOp);
+        setConditions(createEditorParts(initialConditions));
+        setActions(createEditorParts(initialActions));
+        setInitialSignature(serializeRule({
+          ...existingRule,
+          conditions: initialConditions,
+          actions: initialActions,
+        }));
+      } else {
+        const seededConditions = structuredClone(seed?.conditions ?? [DEFAULT_CONDITION]);
+        const seededActions = structuredClone(seed?.actions ?? [DEFAULT_ACTION]);
+        setStage("default");
+        setConditionsOp("and");
+        setConditions(createEditorParts(seededConditions));
+        setActions(createEditorParts(seededActions));
+        setInitialSignature(serializeRule({
+          stage: "default",
+          conditionsOp: "and",
+          conditions: seededConditions,
+          actions: seededActions,
+        }));
+      }
     }
-
-    const seededConditions = structuredClone(seed?.conditions ?? [DEFAULT_CONDITION]);
-    const seededActions = structuredClone(seed?.actions ?? [DEFAULT_ACTION]);
-    setStage("default");
-    setConditionsOp("and");
-    setConditions(createEditorParts(seededConditions));
-    setActions(createEditorParts(seededActions));
-    initialSignatureRef.current = serializeRule({
-      stage: "default",
-      conditionsOp: "and",
-      conditions: seededConditions,
-      actions: seededActions,
-    });
-  // existingRule and seed are derived from ruleId; only reinitialize when the
-  // drawer opens for a different rule or a fresh create flow.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, ruleId]);
+  }
 
   function addCondition() {
     if (isScheduleLinked) return;
@@ -377,7 +378,7 @@ export function RuleDrawer({ open, onOpenChange, ruleId, seed }: Props) {
     };
 
     if (ruleId && existingRule) {
-      if (initialSignatureRef.current === serializeRule(nextRule)) {
+      if (initialSignature === serializeRule(nextRule)) {
         closeNow();
         return;
       }

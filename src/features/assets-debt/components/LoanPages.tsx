@@ -107,9 +107,9 @@ function NewLoanEditor() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  // Restore only this tab’s memory draft; browser storage never holds loan financial data.
-  useEffect(() => {
-    if (!key || !budget || sim || existing.isLoading) return;
+  // Restore only this tab’s memory draft; browser storage never holds loan financial data. The draft is set up once, as soon as
+  // what it starts from has been read: while `sim` is still empty, so it cannot run twice.
+  if (key && budget && !sim && !existing.isLoading) {
     const restored = readSession<{ sim: SimulationState; tracking: TrackingState }>(key);
     let currency = existing.data?.[0]?.currency ?? null;
     try {
@@ -120,7 +120,7 @@ function NewLoanEditor() {
     const fresh = restored?.sim ?? newSimulation({ currency: currency ?? "USD", today: today() });
     setSim(fresh);
     setTracking(restored?.tracking ?? newTracking(fresh));
-  }, [key, budget, sim, existing.isLoading, existing.data]);
+  }
 
   useEffect(() => {
     if (!key || !sim || !tracking || discarded.current) return;

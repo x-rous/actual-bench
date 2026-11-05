@@ -1,5 +1,4 @@
-import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
-import type { SqliteWasmApi, SqliteWasmDb } from "@sqlite.org/sqlite-wasm";
+import type { SqliteWasmApi, SqliteWasmConfig, SqliteWasmDb } from "@sqlite.org/sqlite-wasm";
 import {
   runDiagnosticChecks,
   runIntegrityCheck,
@@ -17,6 +16,7 @@ import {
   type ExportRowsCursor,
   type SchemaDb,
 } from "../lib/schemaObjects";
+import { openSnapshotDb } from "../lib/openSnapshotDb";
 import { unzipSnapshot } from "../lib/zipReader";
 import type {
   DiagnosticsPayload,
@@ -31,7 +31,6 @@ import type {
 
 let sqlite3: SqliteWasmApi | null = null;
 let db: SqliteWasmDb | null = null;
-let snapshotCounter = 0;
 let exportCursorCounter = 0;
 const EXPORT_CURSOR_TTL_MS = 120_000;
 const exportCursors = new Map<string, ExportRowsCursor>();
@@ -69,9 +68,22 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown worker error";
 }
 
-async function initSqlite(wasmUrl: string): Promise<{ initialized: true }> {
+type SqliteInit = (config?: SqliteWasmConfig) => Promise<SqliteWasmApi>;
+
+/**
+ * SQLite's starter is loaded from the static file the app serves it as, not bundled with the worker: the package starts its OPFS
+ * support with a worker whose address is worked out at run time, which the bundler cannot follow (and OPFS is not used here). The
+ * comments keep the bundler from trying to resolve the address.
+ */
+async function loadSqliteInit(moduleUrl: string): Promise<SqliteInit> {
+  const loaded = (await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ moduleUrl)) as { default: SqliteInit };
+  return loaded.default;
+}
+
+async function initSqlite(wasmUrl: string, moduleUrl: string): Promise<{ initialized: true }> {
   if (sqlite3) return { initialized: true };
 
+  const sqlite3InitModule = await loadSqliteInit(moduleUrl);
   sqlite3 = await sqlite3InitModule({
     locateFile: (file) => (file.endsWith(".wasm") ? wasmUrl : file),
     print: () => undefined,
@@ -274,14 +286,7 @@ function loadSnapshot(request: Extract<WorkerRequest, { kind: "loadSnapshot" }>)
   progress(id, "opening");
   closeCurrentDb();
 
-  const filename = `budget-diagnostics-${++snapshotCounter}.sqlite`;
-  sqlite3.capi.sqlite3_js_vfs_create_file(
-    null,
-    filename,
-    snapshot.dbBytes,
-    snapshot.dbBytes.byteLength
-  );
-  db = new sqlite3.oo1.DB(filename, "r");
+  db = openSnapshotDb(sqlite3, snapshot.dbBytes);
 
   progress(id, "readingSchema");
   const tableCount = countSchemaObjects(db, "table");
@@ -312,7 +317,7 @@ function loadSnapshot(request: Extract<WorkerRequest, { kind: "loadSnapshot" }>)
 function handleRequest(request: WorkerRequest): Promise<unknown> | unknown {
   switch (request.kind) {
     case "init":
-      return initSqlite(request.wasmUrl);
+      return initSqlite(request.wasmUrl, request.moduleUrl);
     case "loadSnapshot":
       return loadSnapshot(request);
     case "overview":

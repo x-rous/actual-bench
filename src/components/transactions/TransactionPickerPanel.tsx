@@ -84,15 +84,14 @@ export function TransactionPickerPanel({ constraints, lockedLabels, defaults, mu
   const [sort, setSort] = useState<SortState | null>({ key: "date", direction: "desc" });
   const searchRef = useRef<HTMLInputElement | null>(null);
   const lastIndex = useRef<number | null>(null); const shiftHeld = useRef(false);
-  // The search hook waits for typing to settle, so the typed text goes straight into the filters.
-  useEffect(() => { setFilters((f) => (f.search === searchDraft ? f : { ...f, search: searchDraft })); }, [searchDraft]);
   const [picks, setPicks] = useState<InsightPicks>(emptyPicks);
   const [showCharts, setShowCharts] = useState(true);
   const chartsOn = !!insights && !rowFilter;
   const insightsState = useMemo(() => ({ ...filters, search: searchDraft }), [filters, searchDraft]);
   const baseConstraints = useMemo(() => constraints ?? {}, [constraints]);
   const searchConstraints = useMemo(() => (chartsOn ? withPicks(baseConstraints, picks) : constraints), [chartsOn, baseConstraints, constraints, picks]);
-  const search = useTransactionSearch(filters, searchConstraints, today);
+  // The search hook waits for typing to settle, so the typed text goes straight into the filters it is given.
+  const search = useTransactionSearch(insightsState, searchConstraints, today);
   const reference = useTransactionReference({ excludeAccountIds: constraints?.excludeAccountIds, excludeTransferPayees: !!(constraints?.excludeTransfers || constraints?.excludeTransferPayees) });
   const loaded = useMemo(() => search.rows.filter((r) => !rowFilter || rowFilter(r)), [search.rows, rowFilter]);
   // Tags: Actual's defined ones, every #word used in any Notes in the budget, and any in the loaded rows.

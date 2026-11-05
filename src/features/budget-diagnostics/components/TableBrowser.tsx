@@ -228,9 +228,13 @@ export function TableBrowser({
   const canBrowseRows = object.type === "table" || object.type === "view";
   const isExporting = exportState.status === "exporting";
 
-  useEffect(() => {
+  // A different table, page, size or order shows different rows, so the selected row is dropped as the view changes.
+  const viewKey = `${object.name}|${pageParam}|${pageSizeParam}|${sortParam}|${directionParam}`;
+  const [seenViewKey, setSeenViewKey] = useState(viewKey);
+  if (viewKey !== seenViewKey) {
+    setSeenViewKey(viewKey);
     setSelectedRowKey(null);
-  }, [object.name, pageParam, pageSizeParam, sortParam, directionParam]);
+  }
 
   const replaceParams = (mutate: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());

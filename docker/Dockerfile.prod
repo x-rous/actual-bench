@@ -1,5 +1,5 @@
 # ── Stage 1: full build ────────────────────────────────────────────────────────
-FROM node:24.22.1-alpine AS builder
+FROM node:24.22.2-alpine AS builder
 WORKDIR /app
 # Native modules such as better-sqlite3 may fall back to node-gyp on Alpine.
 # Upgraded first: see the note in the runtime stage for why the base tag alone
@@ -14,7 +14,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ── Stage 2: lean runtime image (Next.js standalone output) ───────────────────
-FROM node:24.22.1-alpine AS runner
+FROM node:24.22.2-alpine AS runner
 WORKDIR /app
 
 # Alpine's own packages, refreshed from the repositories at build time.
@@ -55,8 +55,8 @@ RUN addgroup --system --gid 1001 nodejs \
  && mkdir -p /data \
  && chown -R nextjs:nodejs /data
 
-# Public static assets (includes public/sqlite/sqlite3.wasm for in-browser
-# Budget Diagnostics).
+# Public static assets (includes public/sqlite/, the SQLite WASM and the
+# JavaScript that starts it, for in-browser Budget Diagnostics).
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Standalone server bundle: server.js + traced node_modules + package.json +

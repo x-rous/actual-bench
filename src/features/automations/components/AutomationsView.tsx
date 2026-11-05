@@ -39,6 +39,11 @@ import { AutomationsTable, type AutomationSortKey } from "./AutomationsTable";
 import { NewBankSyncDialog } from "./NewBankSyncDialog";
 import { describeAutomationsSummary, jobTypeIcon, sortAutomations } from "../lib/presentation";
 
+// The icons of the "New automation" menu: looked up once, so they are the same components on every render.
+const BankSyncIcon = jobTypeIcon("bank-sync");
+const BackupIcon = jobTypeIcon("backup");
+const BudgetFileSyncIcon = jobTypeIcon("budget-file-sync");
+
 /**
  * The Automations workspace (RD-079 / PR-043d).
  *
@@ -301,10 +306,7 @@ export function AutomationsView() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-96">
                 <DropdownMenuItem onClick={() => setCreating(true)}>
-                  {(() => {
-                    const Icon = jobTypeIcon("bank-sync");
-                    return <Icon aria-hidden />;
-                  })()}
+                  <BankSyncIcon aria-hidden />
                   <span className="flex flex-col">
                     <span className="font-medium">Bank sync</span>
                     <span className="text-xs text-muted-foreground">
@@ -315,10 +317,7 @@ export function AutomationsView() {
                 {/* ?new=rule rather than /backups: this is a create action,
                     and Backups otherwise opens on the copies you already have. */}
                 <DropdownMenuItem nativeButton={false} render={<Link href="/backups?new=rule" />}>
-                  {(() => {
-                    const Icon = jobTypeIcon("backup");
-                    return <Icon aria-hidden />;
-                  })()}
+                  <BackupIcon aria-hidden />
                   <span className="flex flex-col">
                     <span className="font-medium">Backup</span>
                     <span className="text-xs text-muted-foreground">
@@ -327,10 +326,7 @@ export function AutomationsView() {
                   </span>
                 </DropdownMenuItem>
                 <DropdownMenuItem nativeButton={false} render={<Link href="/sync" />}>
-                  {(() => {
-                    const Icon = jobTypeIcon("budget-file-sync");
-                    return <Icon aria-hidden />;
-                  })()}
+                  <BudgetFileSyncIcon aria-hidden />
                   <span className="flex flex-col">
                     <span className="font-medium">Cross Budget Sync</span>
                     <span className="text-xs text-muted-foreground">

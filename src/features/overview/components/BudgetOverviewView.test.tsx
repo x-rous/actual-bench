@@ -64,6 +64,7 @@ function buildHookResult(overrides: Partial<UseBudgetOverviewResult> = {}): UseB
     isLoading: false,
     isError: false,
     hasPartialFailure: false,
+    dataUpdatedAt: Date.now(),
     refresh: jest.fn().mockResolvedValue({
       ok: true,
       hasPartialFailure: false,

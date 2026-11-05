@@ -56,8 +56,19 @@ const node = createJestConfig({
   testPathIgnorePatterns: [...ignore, ...TS_TESTS_NEEDING_DOM],
 })
 
+// TanStack Table 9 ships as ES modules only. `next/jest` always leaves `node_modules` untransformed (and keeps that default whatever is
+// passed in), so the pattern is replaced once the config is built, letting just the table packages through the transform.
+const TRANSFORMED_PACKAGES = ['@tanstack/react-table', '@tanstack/table-core', '@tanstack/react-store', '@tanstack/store']
+const withEsmPackages = (config) => ({
+  ...config,
+  transformIgnorePatterns: [
+    `/node_modules/(?!(${TRANSFORMED_PACKAGES.map((name) => name.replace('/', '[/+]')).join('|')})/)`,
+    '^.+\\.module\\.(css|sass|scss)$',
+  ],
+})
+
 module.exports = async () => {
-  const [browserConfig, nodeConfig] = await Promise.all([browser(), node()])
+  const [browserConfig, nodeConfig] = (await Promise.all([browser(), node()])).map(withEsmPackages)
   return {
     projects: [browserConfig, nodeConfig],
     // Jest reads the timeout from the root config, not individual project configs.

@@ -134,7 +134,6 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
     if (previousConnectionIdRef.current !== activeConnectionId) {
       previousConnectionIdRef.current = activeConnectionId;
       awaitingPostSwitchRefreshRef.current = true;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setReport(null);
       setRunning(true);
       setError(null);
@@ -155,7 +154,6 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
     if (wasLoading && !isLoadingEntities) {
       // Normal path: load just completed.
       awaitingPostSwitchRefreshRef.current = false;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRunToken((t) => t + 1);
     } else if (!wasLoading && !isLoadingEntities && rulesAlreadyCached) {
       // Edge case: rules already cached for this connection — no fetch will
@@ -180,7 +178,6 @@ export function useRuleDiagnostics(): UseRuleDiagnosticsResult {
     if (awaitingPostSwitchRefreshRef.current) return;
     cancelledRef.current = false;
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRunning(true);
     setError(null);
 

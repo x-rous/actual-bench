@@ -35,7 +35,7 @@ From the repository root, with Node 24 and npm:
 
 ```bash
 npm ci
-npm install --no-save --no-package-lock @actual-app/sync-server@26.10.0
+npm install --no-save --no-package-lock @actual-app/sync-server@26.11.0
 node demo/generate-seed.mjs
 ```
 
