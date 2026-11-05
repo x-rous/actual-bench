@@ -20,6 +20,7 @@ import { Tile } from "./Tile";
 import { useGranularity } from "../hooks/useGranularity";
 import { UnitPills } from "./UnitPills";
 import { BarChart } from "./charts/BarChart";
+import { BUDGET_TINT, BudgetBars } from "./charts/BudgetBars";
 import { monthTip } from "./charts/monthTip";
 import { TipNote, TipRow, TipTitle, useTip } from "./charts/Tip";
 
@@ -179,10 +180,6 @@ function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, stri
     const sum = (pick: (m: PlanMonth) => number | null) => ok.reduce((a, m) => a + (pick(m) ?? 0), 0);
     return { plannedMinor: sum((m) => m.plannedMinor), spentMinor: sum((m) => m.spentMinor), uncoveredMinor: sum((m) => m.uncoveredMinor) };
   });
-  const series = [
-    { key: "plan", label: planName, colour: "var(--fi-balance)", values: totals.map((t) => t?.plannedMinor ?? null) },
-    { key: "spent", label: "Spent", colour: "var(--fi-spend)", values: totals.map((t) => t?.spentMinor ?? null) },
-  ];
   const gap = (t: (typeof totals)[number]) => (!t ? null : tracking ? t.plannedMinor - t.spentMinor : t.uncoveredMinor);
   const tip = (i: number) => {
     const t = totals[i], b = buckets[i];
@@ -191,14 +188,14 @@ function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, stri
     const rows = [
       { colour: "var(--fi-balance)", name: planName, value: money(t.plannedMinor) },
       { colour: "var(--fi-spend)", name: "Spent", value: money(t.spentMinor) },
-      ...(tracking && g !== null ? [{ name: g >= 0 ? "Under budget by" : "Over budget by", value: money(Math.abs(g)) }] : []),
+      ...(tracking && g !== null ? [{ name: g >= 0 ? "Under budget by" : "Over budget by", value: money(Math.abs(g)), strong: true }] : []),
       ...(!tracking && t.uncoveredMinor ? [{ name: unit === "month" ? "Overspent last month" : "Overspent, taken from the next month", value: money(t.uncoveredMinor) }] : []),
     ];
     return monthTip({ title: labels[i], partial: b.partial, partialNote: unit === "month" ? "Partial month: it runs to today." : `Partial ${names.one}: only part of it is in the period, or it includes the month still running.`, rows });
   };
-  const select = (i: number, k: number) => {
+  const select = (i: number) => {
     const t = totals[i], b = buckets[i];
-    if (k !== 1 || !t || !allRead(plan, b)) return;
+    if (!t || !allRead(plan, b)) return;
     onDrill({ kind: "budgetCell", categoryIds: allCategories(plan), name: "All categories", amountMinor: t.spentMinor, month: b.first, throughMonth: b.last !== b.first ? b.last : undefined });
   };
   const footnote = partials.length === 0 ? undefined
@@ -207,14 +204,16 @@ function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, stri
   return (
     <ChartFrame
       id="my-budget-months" title={`${planName} vs spent, ${names.one} by ${names.one}`} hint={tracking ? "Saved budget against Actual's spending" : "Money assigned against Actual's spending"}
-      subtitle={<><p>{tracking ? `Each ${names.one}'s saved budget for spending beside what Actual recorded as spent.` : `Each ${names.one}'s assignments to categories beside what Actual recorded as spent.`} A month Actual does not have, or that could not be read, is left as a gap, never drawn as zero.{unit !== "month" && ` A ${names.one} adds up its months that are in the budget; it is a calendar ${names.one}, and one the period only partly covers is marked *.`}</p><p>Select a Spent bar to see that {names.one}&apos;s transactions.</p></>}
-      legend={[{ label: planName, colour: "var(--fi-balance)" }, { label: "Spent", colour: "var(--fi-spend)" }]}
+      subtitle={<><p>{tracking ? `Each ${names.one}'s saved budget for spending is the pale block, and what Actual recorded as spent is the bar in front of it.` : `Each ${names.one}'s assignments to categories are the pale block, and what Actual recorded as spent is the bar in front of it.`} A bar that rises above its block is over budget. The row under the months says by how much (−) or how much was left (+). A month Actual does not have, or that could not be read, is left as a gap, never drawn as zero.{unit !== "month" && ` A ${names.one} adds up its months that are in the budget; it is a calendar ${names.one}, and one the period only partly covers is marked *.`}</p><p>Select a bar to see that {names.one}&apos;s transactions.</p></>}
+      legend={[{ label: planName, colour: "var(--fi-balance)" }, { label: "Spent, within it", colour: "var(--fi-up)" }, { label: "Spent, over it", colour: "var(--fi-other-liability)" }]}
       actions={<UnitPills value={unit} onChange={setUnit} label="Show the budget by" />}
       table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), planName, "Spent", tracking ? "Under (+) / over (−) budget" : unit === "month" ? "Overspent last month" : "Overspent, taken from the next month"], rows: buckets.map((b, i) => [labels[i] + (b.partial ? " (partial)" : ""), totals[i]?.plannedMinor ?? null, totals[i]?.spentMinor ?? null, gap(totals[i])]) }}
       csvScope={scope}
       footnote={footnote}
     >
-      <BarChart labels={labels} partialIndex={partials.length ? partials : null} height={300} ariaLabel={`${planName} and spent each ${names.one}`} series={series} tip={tip} onSelect={select} />
+      <BudgetBars labels={labels} partialIndex={partials.length ? partials : null} height={320} ariaLabel={`Spent each ${names.one} against ${planName.toLowerCase()}`}
+        spent={totals.map((t) => t?.spentMinor ?? null)} budget={totals.map((t) => t?.plannedMinor ?? null)}
+        within="var(--fi-up)" over="var(--fi-other-liability)" block="var(--fi-balance)" tip={tip} onSelect={select} />
     </ChartFrame>
   );
 }
@@ -222,8 +221,9 @@ function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, stri
 // ─── Budget against spending, by group ──────────────────────────────────────
 
 /**
- * One combined line per group or category: what was spent within its budget in a dark stretch, the budget not spent in green
- * (savings), and what was spent beyond it in red (extra). Every line shares one scale, so a larger amount is a longer line.
+ * One combined line per group or category, in the colours of the monthly chart above: what was spent within its budget in green,
+ * the budget not spent in the pale tint of the budget block, and what was spent beyond it in red. Every line shares one scale,
+ * so a larger amount is a longer line.
  */
 function BudgetLine({ planMinor, spentMinor, scale, thin = false }: { planMinor: number; spentMinor: number; scale: number; thin?: boolean }) {
   const within = Math.max(0, Math.min(spentMinor, planMinor));
@@ -233,9 +233,9 @@ function BudgetLine({ planMinor, spentMinor, scale, thin = false }: { planMinor:
   return (
     <div className={`overflow-hidden rounded-full bg-muted ${thin ? "h-1.5" : "h-2"}`} aria-hidden>
       <div className="flex h-full">
-        <div className="h-full" style={{ width: pct(within), background: "var(--fi-balance)" }} />
-        <div className="h-full" style={{ width: pct(saved), background: "var(--fi-up)" }} />
-        <div className="h-full" style={{ width: pct(extra), background: "var(--fi-down)" }} />
+        <div className="h-full" style={{ width: pct(within), background: "var(--fi-up)" }} />
+        <div className="h-full" style={{ width: pct(saved), background: BUDGET_TINT }} />
+        <div className="h-full" style={{ width: pct(extra), background: "var(--fi-other-liability)" }} />
       </div>
     </div>
   );
@@ -266,11 +266,11 @@ function BudgetByGroup({ plan, onDrill }: PlanProps) {
   return (
     <section className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card p-4" aria-label={title}>
       <CardTitle title={title} hint={`${money(totalPlan)} ${tracking ? "budgeted" : "assigned"} · ${money(totalSpent)} spent`} infoLabel={title.toLowerCase()}
-        info={<><p>Each category group over the completed months: {tracking ? "its saved budget" : "what was assigned to it"}, what was spent, the variance and its share of all the spending shown here.</p><p>The line is one scale for every row: <strong>dark</strong> is spending within the {tracking ? "budget" : "assignment"}, <strong>green</strong> is {tracking ? "budget" : "assigned money"} not spent (savings), and <strong>red</strong> is spending beyond it (extra). Variance is {tracking ? "budgeted" : "assigned"} less spent: <strong>+</strong> is under, <strong>−</strong> is over. Spending with no budget saved is all red.</p><p>Select a group name to expand its categories, or a spent total to see its transactions.</p></>} />
+        info={<><p>Each category group over the completed months: {tracking ? "its saved budget" : "what was assigned to it"}, what was spent, the variance and its share of all the spending shown here.</p><p>The line is one scale for every row: <strong>green</strong> is spending within the {tracking ? "budget" : "assignment"}, the <strong>pale</strong> stretch is {tracking ? "budget" : "assigned money"} not spent, and <strong>red</strong> is spending beyond it, as in the monthly chart. Variance is {tracking ? "budgeted" : "assigned"} less spent: <strong>+</strong> is under, <strong>−</strong> is over. Spending with no budget saved is all red.</p><p>Select a group name to expand its categories, or a spent total to see its transactions.</p></>} />
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--fi-balance)" }} aria-hidden />Spent within budget</span>
-        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--fi-up)" }} aria-hidden />Savings</span>
-        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--fi-down)" }} aria-hidden />Extra</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--fi-up)" }} aria-hidden />Spent within {tracking ? "budget" : "assigned"}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm border border-border" style={{ background: BUDGET_TINT }} aria-hidden />{tracking ? "Budget" : "Assigned"} left</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--fi-other-liability)" }} aria-hidden />Over {tracking ? "budget" : "assigned"}</span>
       </div>
       {groups.length === 0 ? <p className="mt-3 text-xs text-muted-foreground">No categories to show.</p> : (
         <OverlayScrollArea className="mt-2 flex-1">
@@ -423,8 +423,8 @@ function BudgetHeatmap({ plan, onDrill }: PlanProps) {
             <>
               <TipTitle>{src.name} · {b.label}{partial ? " (partial)" : ""}</TipTitle>
               <TipRow name="Spent" value={money(c.spentMinor)} />
-              {tracking ? <TipRow name="Plan" value={c.state === "unplanned" ? "None saved (unplanned)" : money(c.planMinor)} /> : <><TipRow name="Assigned" value={money(c.planMinor)} /><TipRow name="Balance" value={money(c.balanceMinor)} /></>}
-              {tracking && c.planMinor > 0 && !partial && <TipRow name={diff >= 0 ? "Under budget by" : "Over budget by"} value={money(Math.abs(diff))} />}
+              {tracking ? <TipRow name="Plan" value={c.state === "unplanned" ? "None saved (unplanned)" : money(c.planMinor)} /> : <><TipRow name="Assigned" value={money(c.planMinor)} /><TipRow name="Balance" value={money(c.balanceMinor)} strong /></>}
+              {tracking && c.planMinor > 0 && !partial && <TipRow name={diff >= 0 ? "Under budget by" : "Over budget by"} value={money(Math.abs(diff))} strong />}
               <TipNote>{partial ? `Partial ${names.one}: not compared with the budget.` : c.state === "unplanned" ? "Spending with no budget saved (Actual returns 0 for no budget and for a budget of 0) is unplanned spending; it counts as over budget." : c.state === "carried" ? `Overspent, and this category carries the overspending into next month${unit === "month" ? "" : " (in at least one month of the " + names.one + ")"}.` : c.state === "uncovered" ? `Overspent: Actual takes the amount from next month's money${unit === "month" ? "" : " (in at least one month of the " + names.one + ")"}.` : tracking ? `Colour shows spending against the plan, ${STATE_TEXT[c.state]}.` : "Covered: the balance is at or above zero."}</TipNote>
             </>, e)}>
           {partial ? "" : GLYPH[c.state]}{whole(c.spentMinor)}

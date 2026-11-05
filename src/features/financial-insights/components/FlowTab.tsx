@@ -239,7 +239,7 @@ export function FlowTab({ mode, data, today, onDrill }: { mode: Mode; data: Read
     const b = buckets[i];
     const spent = spentBy[i];
     const entries = stackedBy.every((x) => x.counts) ? stackedBy.reduce((a, x) => a + (x.counts?.[i] ?? 0), 0) : null;
-    const total = { name: <span className="font-semibold text-foreground">{word.total}</span>, value: <span className="font-semibold">{money(spent)}</span> };
+    const total = { name: word.total, value: money(spent), strong: true };
     const rows = [total, ...stackedBy.map((x) => ({ g: x.g, v: x.byUnit[i] })).filter((r) => r.v !== 0).sort((x, y) => y.v - x.v).map(({ g, v }) => ({ colour: groupColour(g.slot), name: <span className={k !== null && stackedBy[k]?.g === g ? "font-semibold text-foreground" : undefined}>{g.name}</span>, value: `${money(v)} · ${spent ? ((v / spent) * 100).toFixed(0) : 0}%` }))];
     return monthTip({ title: b.label, partial: b.partial, partialNote, rows, compare: { values: totals, index: i, label: word.compare }, share: { part: spent, whole: breakdown.totalMinor, of: word.of }, entries });
   };
@@ -281,7 +281,7 @@ export function FlowTab({ mode, data, today, onDrill }: { mode: Mode; data: Read
           table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), ...stacked.map((g) => g.name), "Total"], rows: buckets.map((b, i) => [labels[i] + (b.partial ? " (partial)" : ""), ...stackedBy.map((x) => (b.hasData ? x.byUnit[i] : null)), totals[i]]) }} csvScope={scope}
           footnote={partialFootnote}
         >
-          <BarChart labels={labels} partialIndex={chartUnit === "month" ? (partials[0] ?? null) : partials.length ? partials : null} height={340} stacked ariaLabel={`${word.flow} each ${names.one}`} series={series} tip={tip} onSelect={select} />
+          <BarChart labels={labels} partialIndex={chartUnit === "month" ? (partials[0] ?? null) : partials.length ? partials : null} height={340} stacked totals ariaLabel={`${word.flow} each ${names.one}`} series={series} tip={tip} onSelect={select} />
         </ChartFrame>
         <Ranking data={data} onDrill={onDrill} income={income} />
       </div>

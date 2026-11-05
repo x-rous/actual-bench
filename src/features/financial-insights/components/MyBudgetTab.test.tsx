@@ -49,6 +49,28 @@ describe("My budget tab states", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
+  it("opens the transactions behind a month's bar, and shows how far over or under budget each month was", () => {
+    useBudgetPlan.mockReturnValue(ready([month("2026-09", [expense("food", 30_000, 40_000)]), month("2026-10", [expense("food", 30_000, 20_000)])]));
+    show();
+    fireEvent.click(screen.getByRole("button", { name: "Spent, Sep 2026" }));
+    expect(onDrill).toHaveBeenCalledWith(expect.objectContaining({ kind: "budgetCell", name: "All categories", month: "2026-09", amountMinor: 40_000 }));
+    // September spent 100.00 more than its 300.00 budget; October spent 100.00 less.
+    const chart = screen.getByRole("group", { name: /Spent each month against budgeted/ });
+    expect(chart).toHaveTextContent("−100");
+    expect(chart).toHaveTextContent("+100");
+  });
+
+  it("names the colours of the groups' lines as the monthly chart does: green within budget, pale left, red over", () => {
+    useBudgetPlan.mockReturnValue(ready([month("2026-09", [expense("food", 30_000, 40_000)]), month("2026-10", [expense("food", 30_000, 20_000)])]));
+    show();
+    const card = screen.getByRole("region", { name: "Budgeted vs spent by group" });
+    expect(card).toHaveTextContent("Spent within budget");
+    expect(card).toHaveTextContent("Budget left");
+    expect(card).toHaveTextContent("Over budget");
+    expect(card).not.toHaveTextContent("Savings");
+    expect(card).not.toHaveTextContent("Extra");
+  });
+
   it("opens the transactions behind a heatmap cell and a ranked row", () => {
     useBudgetPlan.mockReturnValue(ready([month("2026-09", [expense("food", 30_000, 40_000)]), month("2026-10", [expense("food", 30_000, 20_000)])]));
     show();

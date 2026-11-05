@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { compactMoney } from "../../format";
+import { compactAxis } from "../../format";
 import { scaleY } from "./BarChart";
 import { tickLabel } from "./labels";
 import { useTip, useWidth } from "./Tip";
@@ -33,14 +33,15 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
   const slot = (width - M.l - M.r) / Math.max(1, labels.length);
   // Never wider than its own slot, so neighbouring months (and their click targets) cannot overlap on a very long period.
   const bar = Math.min(slot > 1 ? slot - 1 : slot, 26, Math.max(6, slot * 0.34));
+  const axis = compactAxis(marks);
   const isPartial = (i: number) => (Array.isArray(partialIndex) ? partialIndex.includes(i) : i === partialIndex);
   return (
     <div ref={host} className="w-full">
       <svg width={width} height={height} role="group" aria-label="Money received above the line, money spent below it, and money kept as a dashed line with a marker for each month">
-        {marks.map((v) => (
+        {marks.map((v, k) => (
           <g key={v}>
             <line x1={M.l} x2={width - M.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={v === 0 ? 0 : 0.55} />
-            <text x={M.l - 8} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{compactMoney(v)}</text>
+            <text x={M.l - 8} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{axis[k]}</text>
           </g>
         ))}
         <line x1={M.l} x2={width - M.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.25} />

@@ -11,7 +11,8 @@ export function monthTip({ title, partial, partialNote, rows, compare, share, en
   title: string;
   partial: boolean;
   partialNote: string;
-  rows: { colour?: string; name: ReactNode; value: ReactNode }[];
+  /** `strong` marks the row that is the total or the net, so it stands out from the parts. */
+  rows: { colour?: string; name: ReactNode; value: ReactNode; strong?: boolean }[];
   /** The series the change is measured on, and the month's position in it. */
   compare?: { values: (number | null)[]; index: number; label: string };
   /** This month's part of a total, as a fraction of that total. */
@@ -23,7 +24,7 @@ export function monthTip({ title, partial, partialNote, rows, compare, share, en
   return (
     <>
       <TipTitle>{title}{partial ? " (partial)" : ""}</TipTitle>
-      {rows.map((r, i) => <TipRow key={i} colour={r.colour} name={r.name} value={r.value} />)}
+      {rows.map((r, i) => <TipRow key={i} colour={r.colour} name={r.name} value={r.value} strong={r.strong} />)}
       {(compare || share || entries != null || partial) && (
         <TipNote>
           {partial ? <span>{partialNote} Not compared with full months.</span> : (

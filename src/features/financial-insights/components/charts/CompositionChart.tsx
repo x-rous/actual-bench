@@ -72,7 +72,7 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hasDa
                   {ASSET_CLASSES.filter((k) => m[k] !== 0).map((k) => <TipRow key={k} colour={CLASS_COLOUR[k]} name={CLASS_LABEL[k]} value={money(m[k])} />)}
                   {LIABILITY_CLASSES.filter((k) => m[k] !== 0).map((k) => <TipRow key={k} colour={CLASS_COLOUR[k]} name={CLASS_LABEL[k]} value={money(m[k])} />)}
                   <TipNote>
-                    <TipRow name="Net worth" value={money(netWorth[i])} />
+                    <TipRow name="Net worth" value={money(netWorth[i])} strong />
                     {i > 0 && known(i - 1) && <TipRow name={`vs previous ${unitName}`} value={`${signedMoney(netWorth[i] - netWorth[i - 1])}${netWorth[i - 1] ? ` (${(((netWorth[i] - netWorth[i - 1]) / Math.abs(netWorth[i - 1])) * 100).toFixed(1)}%)` : ""}`} />}
                     <TipRow name="Owns / owes" value={`${compactLabel(owns)} / ${compactLabel(-owes)}`} />
                   </TipNote>

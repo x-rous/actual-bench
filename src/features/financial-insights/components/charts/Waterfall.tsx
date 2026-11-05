@@ -3,7 +3,7 @@
 import { useRef, type ReactNode } from "react";
 import { money, signedMoney } from "../../format";
 import { scaleY } from "./BarChart";
-import { useTip, useWidth } from "./Tip";
+import { TipRow, useTip, useWidth } from "./Tip";
 
 export type WaterfallStep = {
   key: string;
@@ -65,8 +65,8 @@ export function Waterfall({ steps, height = 240, startAtZero = true, floorMinor,
           const content: ReactNode = (
             <>
               <p className="mb-1 font-semibold">{s.label}</p>
-              <div className="flex justify-between gap-4 py-0.5"><span className="text-muted-foreground">{s.kind === "total" ? "Balance" : "Amount"}</span><span className="font-medium tabular-nums">{s.kind === "total" ? money(s.amountMinor) : signedMoney(s.amountMinor)}</span></div>
-              {s.kind !== "total" && <div className="flex justify-between gap-4 py-0.5"><span className="text-muted-foreground">Running total</span><span className="tabular-nums">{money(b)}</span></div>}
+              <TipRow name={s.kind === "total" ? "Balance" : "Amount"} value={s.kind === "total" ? money(s.amountMinor) : signedMoney(s.amountMinor)} strong={s.kind === "total"} />
+              {s.kind !== "total" && <TipRow name="Running total" value={money(b)} />}
               {s.note && <p className="mt-1 border-t border-border pt-1 text-muted-foreground">{s.note}</p>}
               {selectable && <p className="mt-1 text-muted-foreground">Select to see the transactions</p>}
             </>

@@ -1,20 +1,22 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { compactMoney } from "../../format";
+import { compactAxis, labelMoney } from "../../format";
 import { scaleY } from "./BarChart";
-import { tickLabel } from "./labels";
+import { spreadLabels, tickLabel } from "./labels";
 import { useTip, useWidth } from "./Tip";
 
 export type LineSeries = { key: string; label: string; colour: string; values: (number | null)[]; /** The thicker, leading line. */ primary?: boolean };
 
 const MARGIN = { l: 48, r: 12, t: 10, b: 22 };
+/** Room to the right of the last month for a line's closing value. */
+const END_LABEL_ROOM = 46;
 
 /**
  * Lines by month with a marker at each month end. A missing value breaks the line, never drops to zero. The last marker is
  * hollow and dashed when that month is partial. Hovering a month shows its tooltip.
  */
-export function LineChart({ labels, partialIndex, series, height = 250, tip, ariaLabel, annotations }: {
+export function LineChart({ labels, partialIndex, series, height = 250, tip, ariaLabel, annotations, endLabels = false }: {
   labels: string[];
   partialIndex: number | null;
   series: LineSeries[];
@@ -23,6 +25,8 @@ export function LineChart({ labels, partialIndex, series, height = 250, tip, ari
   ariaLabel: string;
   /** Events worth explaining, marked with a diamond at the top of their month. */
   annotations?: { index: number; text: string }[];
+  /** Each line's last value, beside its last point: where the lines end up. */
+  endLabels?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const width = useWidth(host);
@@ -31,13 +35,18 @@ export function LineChart({ labels, partialIndex, series, height = 250, tip, ari
   const span = (Math.max(0, ...all) - Math.min(0, ...all)) || 1;
   const hi = Math.max(0, ...all) + span * 0.06, lo = Math.min(0, ...all) < 0 ? Math.min(0, ...all) - span * 0.06 : 0;
   const { y, marks } = scaleY(lo, hi, height, MARGIN.t, MARGIN.b);
-  const slot = (width - MARGIN.l - MARGIN.r) / Math.max(1, labels.length);
+  const right = endLabels ? END_LABEL_ROOM : MARGIN.r;
+  const slot = (width - MARGIN.l - right) / Math.max(1, labels.length);
+  const axis = compactAxis(marks);
   const x = (i: number) => MARGIN.l + (i + 0.5) * slot;
+  // Each line's closing value, nudged apart where lines finish close together.
+  const ends = endLabels ? series.flatMap((s) => { const index = s.values.findLastIndex((v) => v !== null); return index < 0 ? [] : [{ key: s.key, label: s.label, index, value: s.values[index] as number }]; }) : [];
+  const placed = spreadLabels(ends.map((e) => y(e.value)), 13, MARGIN.t + 4, height - MARGIN.b - 4);
   return (
     <div ref={host} className="w-full">
       <svg width={width} height={height} role="group" aria-label={ariaLabel}>
-        {marks.map((v) => <g key={v}><line x1={MARGIN.l} x2={width - MARGIN.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={0.6} /><text x={MARGIN.l - 6} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{compactMoney(v)}</text></g>)}
-        {lo < 0 && <line x1={MARGIN.l} x2={width - MARGIN.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.2} />}
+        {marks.map((v, k) => <g key={v}><line x1={MARGIN.l} x2={width - right} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={0.6} /><text x={MARGIN.l - 6} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{axis[k]}</text></g>)}
+        {lo < 0 && <line x1={MARGIN.l} x2={width - right} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.2} />}
         {series.map((s) => {
           // One polyline per run of months that have a value.
           const runs: string[][] = [];
@@ -55,6 +64,7 @@ export function LineChart({ labels, partialIndex, series, height = 250, tip, ari
             <text x={x(a.index)} y={MARGIN.t + 8} textAnchor="middle" className="fill-foreground text-[11px]"><title>{a.text}</title>◆</text>
           </g>
         ))}
+        {ends.map((e, k) => <text key={e.key} x={x(e.index) + 8} y={placed[k] + 3.5} className="fill-foreground text-[10.5px] font-semibold"><title>{e.label}</title>{labelMoney(e.value)}</text>)}
         {labels.map((label, i) => (
           <g key={label + i}>
             <text x={x(i)} y={height - 6} textAnchor="middle" className="fill-muted-foreground text-[10.5px]">{tickLabel(label, i, slot)}{i === partialIndex ? "*" : ""}</text>
