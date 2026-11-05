@@ -97,7 +97,7 @@ const eslintConfig = defineConfig([
             },
             {
               group: ["recharts", "recharts/**"],
-              message: "Recharts is loaded lazily from the chart modules only: src/features/assets-debt/components/chart/ and src/features/credit-cards/components/charts/ (RD-084 P1.3b chart gate).",
+              message: "Recharts is loaded lazily from the chart modules only: src/features/assets-debt/components/chart/, src/features/credit-cards/components/charts/ (RD-084 P1.3b chart gate; Financial Insights draws its own SVG charts).",
             },
           ],
         },

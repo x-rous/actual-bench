@@ -64,8 +64,9 @@ Each account can be given a class, so Bench features know what kind of account i
 
 - **Assets:** Cash, Bank, Vehicle, Property, Investment, Retirement, Other Asset.
 - **Liabilities:** Credit Card, Loan, Other Liability.
+- **Not reported:** Excluded, for off-budget accounts you use for tracking, clearing or experiments that should not count in Financial Insights. Nothing changes in Actual.
 
-Vehicle, Property, Investment, Retirement and Loan require an **off-budget** account. For an on-budget account,
+Vehicle, Property, Investment, Retirement, Loan and Excluded require an **off-budget** account. For an on-budget account,
 these choices remain visible but gray and unselectable under one **Off-budget accounts only** heading. Cash, Bank, Other Asset, Credit Card and Other Liability allow either placement
 without warnings. Savings uses Bank, and mortgages use Loan; there is one classification level.
 Retirement covers retirement accounts, pension funds and superannuation, separately from general
@@ -84,7 +85,7 @@ that class as **Inherited** and cannot change it; change the group instead. If s
 have their own class, Bench lists them and asks you to confirm, because the group class replaces theirs.
 Moving an account out of the group does not bring a cleared class back.
 
-A group containing any live on-budget account cannot be given Vehicle, Property, Investment, Retirement or Loan.
+A group containing any live on-budget account cannot be given Vehicle, Property, Investment, Retirement, Loan or Excluded.
 An empty group can take any class. Groups with one of these restricted classes are visible but
 unselectable when moving on-budget accounts, including a mixed bulk selection. A new account
 inheriting a restricted class cannot be switched on-budget. CSV imports that would put an on-budget
@@ -96,9 +97,36 @@ before **Save**; new groups must be saved before they can be given a class. Use 
 **Classify several at once.** Select the accounts and choose **Set class…** in the selection bar. Accounts that
 inherit a group class are left unchanged; Bench tells you how many. New accounts’ choices stay staged
 until creation succeeds; existing-account choices save immediately to Bench. If any
-selected live account is on-budget, the five off-budget-only choices are disabled for the selection.
+selected live account is on-budget, the six off-budget-only choices (Vehicle, Property, Investment, Retirement, Loan and Excluded) are disabled for the selection.
 
 Click the **Class** header to sort: assets first, then liabilities, then unclassified accounts.
+
+## The guide
+
+The **Guide** button at the top of the page opens a guide inside Bench: what each class and each Financial Reporting treatment means, why they matter (the same balance reads differently as cash, a fixed deposit, an investment or a debt), where Bench uses them (Financial Insights, Assets, Credit Cards and Bank Reconciliation), and how to get every account ready quickly with groups.
+
+## Financial Reporting
+
+The **Financial Reporting** column says how each account counts in [Financial Insights](/user-guide/financial-insights/). It sits next to **Class**, and it is the only place to set it.
+
+| Class | Treatment | Your input |
+| --- | --- | --- |
+| Cash | Cash & cash equivalents | None |
+| Bank | Cash & cash equivalents (default), on or off budget | Optional: mark **Fixed / restricted deposit** |
+| Vehicle, Property | Fixed asset | None |
+| Retirement | Non-current asset | None |
+| Investment | Current or non-current investment | **Choose** |
+| Other Asset | Current asset, non-current asset or **Fixed asset** (a tangible asset you hold and revalue, such as gold or a collectible; non-current by nature) | **Choose** |
+| Credit Card | Current liability | None |
+| Loan | Loan liability | None |
+| Other Liability | Current or non-current liability | **Choose** |
+| Excluded | Excluded from Financial Insights (off-budget accounts only) | None |
+
+A Bank account stays a Bank. By default it is **Cash & cash equivalents**: checking, savings and other balances you can readily withdraw, on or off budget. Mark one as a **Fixed / restricted deposit** when the money cannot readily be withdrawn, such as a term deposit. It remains an asset and counts toward your net worth, but it is left out of cash and the cash buffer. There is nothing else to configure for it.
+
+Until you choose, the cell shows a warning icon and **Choose…**. A shortcut beside the class filter counts the accounts that still need a choice and filters the table to them. A new account is chosen for after you save it. If you later change an account's class so the saved choice no longer fits, Bench asks again. A closed account with no transactions and a zero balance needs nothing.
+
+Choices are saved in Bench, per budget, and apply at once. They are never written to Actual and do not change balances, transactions, budget placement or transfers.
 
 ## Grouped view
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, Download, Upload, RefreshCw, Landmark, FolderTree } from "lucide-react";
+import { Plus, Download, Upload, RefreshCw, Landmark, FolderTree, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
@@ -26,6 +26,8 @@ import { useAccountGroupActions } from "../hooks/useAccountGroupActions";
 import { useAccountClasses } from "../hooks/useAccountClasses";
 import { effectiveAccountClasses } from "../lib/accountClasses";
 import { accountClassLabel, isAccountClassAllowed } from "@/lib/account-class";
+import { FEATURES } from "@/lib/features/catalogue";
+import { AccountsGuide, type AccountsGuideSection } from "./guide/AccountsGuide";
 import { exportAccountsToCsv } from "../csv/accountsCsvExport";
 import { importAccountsFromCsv } from "../csv/accountsCsvImport";
 
@@ -43,6 +45,7 @@ export function AccountsView() {
   const [deleteIntent, setDeleteIntent] = useState<AccountDeleteIntent | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
+  const [guide, setGuide] = useState<AccountsGuideSection | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoading, isError, error, refetch } = useAccounts();
@@ -264,6 +267,10 @@ export function AccountsView() {
             <Upload />
             Export
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setGuide("start")} title="What account classes and Financial Reporting are, and why they matter">
+            <BookOpen />
+            Guide
+          </Button>
           <Button size="sm" onClick={handleAddAccount}>
             <Plus />
             Add Account
@@ -294,6 +301,8 @@ export function AccountsView() {
       />
 
       <AccountGroupsDialog open={groupsDialogOpen} onOpenChange={setGroupsDialogOpen} />
+
+      {guide && <AccountsGuide section={guide} onSection={setGuide} onClose={() => setGuide(null)} docsUrl={FEATURES.find((f) => f.id === "accounts")?.docsUrl} />}
 
       <AccountsTableOverlays
         deleteIntent={deleteIntent}

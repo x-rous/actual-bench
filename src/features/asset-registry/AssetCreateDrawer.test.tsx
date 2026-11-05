@@ -18,6 +18,7 @@ jest.mock("./startingValue", () => ({ recordStartingValue: jest.fn() }));
 jest.mock("@/features/accounts/hooks/useAccounts", () => ({ useAccounts: () => ({ refetch: jest.fn(async () => {}) }) }));
 jest.mock("@/features/accounts/hooks/useAccountGroups", () => ({ useAccountGroups: () => ({ supported: true, data: [{ id: "group", name: "Vehicles" }] }) }));
 jest.mock("@/features/accounts/hooks/useAccountClasses", () => ({ useAccountClasses: () => ({ available: true, maps }) }));
+jest.mock("@/features/accounts/hooks/useAccountReporting", () => ({ useAccountReporting: () => ({ available: true, failed: false, byAccount: new Map() }) }));
 jest.mock("@/features/accounts/hooks/useAccountsSave", () => ({ useAccountsSave: () => ({ save: saveAccounts, isSaving: false }) }));
 const connection = { id: "test-connection", mode: "http-api", budgetSyncId: "budget" } as ConnectionInstance;
 

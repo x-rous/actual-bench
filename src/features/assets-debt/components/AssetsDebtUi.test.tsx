@@ -224,7 +224,7 @@ describe("Loans list", () => {
     expect(within(totals).getByText("Principal Repaid").nextElementSibling).toHaveTextContent("800.00");
     expect(within(totals).getByText("Interest to Date").nextElementSibling).toHaveTextContent("360.00");
     expect(within(totals).getByText("Interest Next 12 Months").nextElementSibling).toHaveTextContent("240.00");
-    expect(totals).toHaveTextContent("Calculated from schedules, not recorded payments");
+    expect(totals).toHaveTextContent("Recorded payments for tracked loans when they can be read, otherwise calculated from schedules");
   });
 
   it("shows one owed figure and one due figure even when loans carry different currency codes", async () => {

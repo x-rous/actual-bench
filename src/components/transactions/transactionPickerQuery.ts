@@ -20,6 +20,12 @@ export type PickerConstraints = {
   requireCategory?: boolean;
   /** An extra ActualQL condition ANDed with everything else (for example a saved rule's conditions). */
   where?: object;
+  /** Leave out every transaction whose payee is a transfer payee, even one with no linked counterpart (`excludeTransfers` only leaves out linked pairs). */
+  excludeTransferPayees?: boolean;
+  /** Leave out Actual's "Starting Balance" rows. */
+  excludeStartingBalance?: boolean;
+  /** Transactions that never appear (a few, each becomes a condition). */
+  excludeIds?: string[];
 };
 
 export type DatePreset = "30d" | "90d" | "this-year" | "last-year" | "all" | "custom";
@@ -129,6 +135,9 @@ export function buildSearchFilter(state: PickerFilterState, constraints: PickerC
   const advanced = validConditions(state.advanced);
   const where = advanced ? ruleWhere(advanced) : undefined;
   if (where) and.push(where);
+  if (constraints.excludeTransferPayees) and.push({ "payee.transfer_acct": null });
+  if (constraints.excludeStartingBalance) and.push({ $or: [{ payee: null }, { "payee.name": { $ne: "Starting Balance" } }] });
+  for (const id of constraints.excludeIds ?? []) and.push({ id: { $ne: id } });
   if (constraints.where) and.push(constraints.where);
   const term = state.search.trim();
   if (term) {
@@ -181,4 +190,112 @@ export async function fetchNoteTags(connection: ConnectionInstance): Promise<str
   const tags = new Set<string>();
   for (const raw of response.data as { notes?: unknown }[]) for (const tag of tagsOf(typeof raw.notes === "string" ? raw.notes : null)) tags.add(tag);
   return [...tags].sort();
+}
+
+// ─── Charts: aggregates over the same filter ─────────────────────────────────
+
+/** What the user picked in the charts above the list. It narrows the list and the other charts, on top of the filters. */
+export type InsightPicks = { categories: string[]; uncategorized: boolean; accounts: string[]; payees: string[]; noPayee: boolean; months: string[]; /** Weeks, by their Monday (`2026-07-27`). */ weeks: string[] };
+export const emptyPicks = (): InsightPicks => ({ categories: [], uncategorized: false, accounts: [], payees: [], noPayee: false, months: [], weeks: [] });
+export const hasPicks = (p: InsightPicks) => !!(p.categories.length || p.uncategorized || p.accounts.length || p.payees.length || p.noPayee || p.months.length || p.weeks.length);
+export type FacetDim = "category" | "account" | "payee" | "month" | "day";
+
+/** `YYYY-MM-DD` plus a number of days, in UTC so a daylight-saving change never moves a date. */
+export function addDays(day: string, days: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+/** The Monday of the week a day falls in. */
+export function weekStart(day: string): string {
+  const back = (new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7;
+  return addDays(day, 0 - back);
+}
+const weekMatch = (monday: string): object => ({ $and: [{ date: { $gte: monday } }, { date: { $lte: addDays(monday, 6) } }] });
+
+/** The picks as one ActualQL condition. A chart leaves out its own dimension (`skip`), so its other rows stay visible to pick. */
+export function picksWhere(picks: InsightPicks, skip?: FacetDim): object | undefined {
+  const and: object[] = [];
+  if (skip !== "category" && (picks.categories.length || picks.uncategorized)) {
+    and.push(!picks.uncategorized ? { category: { $oneof: picks.categories } } : picks.categories.length ? { $or: [{ category: { $oneof: picks.categories } }, { category: null }] } : { category: null });
+  }
+  if (skip !== "account" && picks.accounts.length) and.push({ account: { $oneof: picks.accounts } });
+  if (skip !== "payee" && (picks.payees.length || picks.noPayee)) {
+    and.push(!picks.noPayee ? { payee: { $oneof: picks.payees } } : picks.payees.length ? { $or: [{ payee: { $oneof: picks.payees } }, { payee: null }] } : { payee: null });
+  }
+  if (skip !== "month" && picks.months.length) and.push({ $or: picks.months.map(dateMatch) });
+  if (skip !== "day" && picks.weeks.length) and.push({ $or: picks.weeks.map(weekMatch) });
+  return and.length ? { $and: and } : undefined;
+}
+/** The caller's constraints with the picks added as one more fixed condition. */
+export function withPicks(constraints: PickerConstraints, picks: InsightPicks, skip?: FacetDim): PickerConstraints {
+  const extra = picksWhere(picks, skip);
+  return extra ? { ...constraints, where: constraints.where ? { $and: [constraints.where, extra] } : extra } : constraints;
+}
+
+/** One total. For category, account and payee the totals are by month too (`month`), so averages can leave out a partial month. */
+export type FacetRow = { key: string | null; amountMinor: number; count: number; month?: string };
+/** Total and number of matches by category, account, payee or month, for the same filter the list uses. */
+export async function fetchFacet(connection: ConnectionInstance, state: PickerFilterState, constraints: PickerConstraints, today: string, dim: FacetDim): Promise<FacetRow[]> {
+  const month = { $month: "$date" };
+  const response = await runQuery<{ data: unknown }>(connection, { ActualQLquery: {
+    table: "transactions", filter: buildSearchFilter(state, constraints, today),
+    groupBy: dim === "month" ? [month] : dim === "day" ? ["date"] : [dim, month],
+    select: [dim === "month" ? { month } : dim === "day" ? "date" : dim, ...(dim === "month" || dim === "day" ? [] : [{ month }]), { amt: { $sum: "$amount" } }, { n: { $count: "$id" } }],
+  } });
+  if (!response || !Array.isArray(response.data)) throw new Error("The chart query returned an invalid response");
+  const rows: FacetRow[] = [];
+  for (const raw of response.data as Record<string, unknown>[]) {
+    const key = raw[dim === "month" ? "month" : dim === "day" ? "date" : dim];
+    if (typeof raw.amt !== "number" || typeof raw.n !== "number") continue;
+    rows.push({ key: typeof key === "string" && key ? key : null, amountMinor: raw.amt, count: raw.n, ...(dim !== "month" && dim !== "day" && typeof raw.month === "string" ? { month: raw.month } : {}) });
+  }
+  return rows;
+}
+
+// ─── Charts that must be exact ───────────────────────────────────────────────
+
+/**
+ * Tags, a search containing % or _, and Advanced conditions cannot be tested exactly inside ActualQL (the query only gets close),
+ * so the list checks them again on the rows. The charts must then be built from those same rows to add up to the list.
+ */
+export function needsExactRows(state: PickerFilterState): boolean {
+  return !!(state.tags.names.length || state.tags.none || /[%_]/.test(state.search) || validConditions(state.advanced));
+}
+
+/** The most entries read to build exact charts. Beyond it the charts are not shown, because they could not be exact. */
+export const EXACT_ROW_CAP = 40 * PICKER_PAGE_SIZE;
+
+/** Every row matching the filter (after the exact tests), or `truncated` when there are more than the cap. */
+export async function fetchAllRows(connection: ConnectionInstance, state: PickerFilterState, constraints: PickerConstraints, today: string): Promise<{ rows: PickedTransaction[]; truncated: boolean }> {
+  const rows: PickedTransaction[] = [];
+  for (let offset = 0; offset < EXACT_ROW_CAP; offset += PICKER_PAGE_SIZE) {
+    const page = await fetchPickerPage(connection, state, constraints, today, offset);
+    rows.push(...page.rows);
+    if (page.fetched < PICKER_PAGE_SIZE) return { rows, truncated: false };
+  }
+  // The last page was full: it is the cap only if one more row exists, so one more page is asked for before saying there are more.
+  const probe = await fetchPickerPage(connection, state, constraints, today, EXACT_ROW_CAP);
+  // More rows exist past the cap only if that page matched something, or was full (and so may be followed by more); a short page whose rows
+  // all fail the exact tests ends the data with nothing beyond the cap.
+  return { rows, truncated: probe.rows.length > 0 || probe.fetched >= PICKER_PAGE_SIZE };
+}
+
+/** The same totals `fetchFacet` returns, computed from rows, with the chart selections applied except those of `dim`. */
+export function facetFromRows(rows: readonly PickedTransaction[], picks: InsightPicks, dim: FacetDim): FacetRow[] {
+  const cats = new Set(picks.categories), accs = new Set(picks.accounts), payees = new Set(picks.payees), months = new Set(picks.months), weeks = new Set(picks.weeks);
+  const out = new Map<string | null, FacetRow>();
+  for (const r of rows) {
+    if (dim !== "category" && (cats.size || picks.uncategorized) && !(r.categoryId === null ? picks.uncategorized : cats.has(r.categoryId))) continue;
+    if (dim !== "account" && accs.size && !accs.has(r.accountId)) continue;
+    if (dim !== "payee" && (payees.size || picks.noPayee) && !(r.payeeId === null ? picks.noPayee : payees.has(r.payeeId))) continue;
+    if (dim !== "month" && months.size && !months.has(r.date.slice(0, 7))) continue;
+    if (dim !== "day" && weeks.size && !weeks.has(weekStart(r.date))) continue;
+    const key = dim === "category" ? r.categoryId : dim === "account" ? r.accountId : dim === "payee" ? r.payeeId : dim === "day" ? r.date : r.date.slice(0, 7);
+    const month = r.date.slice(0, 7);
+    const id = dim === "month" || dim === "day" ? key : `${key}|${month}`;
+    const row = out.get(id) ?? { key, amountMinor: 0, count: 0, ...(dim === "month" || dim === "day" ? {} : { month }) };
+    row.amountMinor += r.amountMinor; row.count += 1; out.set(id, row);
+  }
+  return [...out.values()];
 }

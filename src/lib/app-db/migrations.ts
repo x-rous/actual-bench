@@ -65,6 +65,9 @@ import {
   ASSETS_DEBT_V44_INDEX_SQL,
   ASSETS_DEBT_V44_TRIGGER_SQL,
   ACCOUNT_CLASS_TABLE_SQL,
+  ACCOUNT_REPORTING_TABLE_SQL,
+  CASH_BUFFER_SCENARIOS_TABLE_SQL,
+  CASH_BUFFER_SETTINGS_TABLE_SQL,
   CREDIT_CARD_INDEX_SQL,
   CREDIT_CARD_TABLES_SQL,
   CREDIT_CARD_TRIGGER_SQL,
@@ -73,7 +76,7 @@ import {
 import { KDF_VERSION_META_KEY, SALT_META_KEY, VERIFIER_META_KEY } from "./vaultMetaKeys";
 import { AppDbUnavailableError } from "./errors";
 
-export const LATEST_SCHEMA_VERSION = 60;
+export const LATEST_SCHEMA_VERSION = 64;
 
 type Migration = {
   version: number;
@@ -699,7 +702,36 @@ const MIGRATIONS: readonly Migration[] = [
   // a write journal, and an on/off switch for future events. Extra payments recorded from Actual are no longer model
   // events (the ledger provides them), and an old repayment rule's account becomes a payment rule.
   { version: 60, apply: applyLoanTracking },
+  // Financial Reporting choices per account (Financial Insights). Additive; no existing table is touched.
+  { version: 61, statements: [ACCOUNT_REPORTING_TABLE_SQL] },
+  // The Assets module holds fixed assets only (property, vehicles, precious metal, collectibles, other tangible assets). Registered
+  // investment, retirement and crypto assets are removed with everything Bench saved for them (Actual is not touched), and an Other
+  // Asset account that already holds an asset is marked Fixed asset so it stays eligible.
+  { version: 62, apply: applyFixedAssetsOnly },
+  // Cash buffer scenarios per budget (Financial Insights). Additive; no existing table is touched.
+  { version: 63, statements: [CASH_BUFFER_SCENARIOS_TABLE_SQL] },
+  // Cash buffer settings per budget: the months of cover aimed for, and how a typical month is worked out. Additive.
+  { version: 64, statements: [CASH_BUFFER_SETTINGS_TABLE_SQL] },
 ];
+
+function applyFixedAssetsOnly(db: SqliteDatabase): void {
+  const doomed = db.prepare("SELECT id, budget_sync_id AS budget, actual_account_id AS account FROM assets WHERE asset_type IN ('investment','retirement','crypto')").all<{ id: string; budget: string; account: string }>();
+  for (const asset of doomed) {
+    db.prepare("DELETE FROM asset_transaction_metadata WHERE budget_sync_id=? AND asset_id=?").run(asset.budget, asset.id);
+    db.prepare("DELETE FROM asset_debt_links WHERE budget_sync_id=? AND asset_id=?").run(asset.budget, asset.id);
+    db.prepare("DELETE FROM asset_link_rules WHERE budget_sync_id=? AND asset_id=?").run(asset.budget, asset.id);
+    db.prepare("DELETE FROM asset_depreciation_settings WHERE asset_id=?").run(asset.id);
+    db.prepare("DELETE FROM asset_ownership_periods WHERE asset_id=?").run(asset.id);
+    db.prepare("DELETE FROM assets WHERE id=? AND budget_sync_id=?").run(asset.id, asset.budget);
+    // Rows saved for the account with no asset go with the last asset that used the account.
+    const left = db.prepare("SELECT 1 AS found FROM assets WHERE budget_sync_id=? AND actual_account_id=? LIMIT 1").get(asset.budget, asset.account);
+    if (!left) db.prepare("DELETE FROM asset_transaction_metadata WHERE budget_sync_id=? AND actual_account_id=?").run(asset.budget, asset.account);
+  }
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO account_reporting (budget_sync_id, account_id, treatment, updated_at)
+    SELECT DISTINCT budget_sync_id, actual_account_id, 'fixed-asset', ? FROM assets WHERE asset_type IN ('precious-metal','collectible','other')
+    ON CONFLICT(budget_sync_id, account_id) DO UPDATE SET treatment = 'fixed-asset', updated_at = excluded.updated_at`).run(now);
+}
 
 /** The tables the loan tracking redesign adds (v60). Shared with the schema tests. */
 export const LOAN_TRACKING_TABLES_SQL = [

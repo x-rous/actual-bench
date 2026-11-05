@@ -13,6 +13,7 @@ jest.mock("./api", () => ({ registryRequest: jest.fn() }));
 jest.mock("./AssetEditor", () => ({ AssetEditor: () => <div role="dialog" aria-label="Asset Settings" /> }));
 jest.mock("@/features/credit-cards/components/HistoryChart", () => ({ HistoryChart: ({ title }: { title: string }) => <figure><figcaption>{title}</figcaption></figure> }));
 jest.mock("@/features/accounts/hooks/useAccountClasses", () => ({ useAccountClasses: () => ({ available: true, maps: { accounts: new Map([["vehicles", "vehicle"]]), groups: new Map() } }) }));
+jest.mock("@/features/accounts/hooks/useAccountReporting", () => ({ useAccountReporting: () => ({ available: true, failed: false, byAccount: new Map() }) }));
 jest.mock("@/features/credit-cards/lib/cycles", () => ({ ...jest.requireActual("@/features/credit-cards/lib/cycles"), bankToday: () => "2026-10-24" }));
 const assets = [testAsset("byd", { name: "BYD Seal" }), testAsset("toyota", { name: "Toyota Corolla" })];
 function mount(assetId?: string) {

@@ -1,4 +1,4 @@
-import { buildPickerQuery, dateMatch, buildSearchFilter, emptyFilterState, parsePickerRows, parseSearchTerm, resolveDateRange, rowMatchesState, tagsOf, type PickedTransaction } from "./transactionPickerQuery";
+import { addDays, weekStart, facetFromRows, needsExactRows, emptyPicks, picksWhere, withPicks, buildPickerQuery, dateMatch, buildSearchFilter, emptyFilterState, parsePickerRows, parseSearchTerm, resolveDateRange, rowMatchesState, tagsOf, type PickedTransaction } from "./transactionPickerQuery";
 
 const TODAY = "2026-10-26";
 const filter = (state = emptyFilterState(), constraints = {}) => buildSearchFilter(state, constraints, TODAY) as { $and: unknown[] };
@@ -99,4 +99,61 @@ it("checks a search containing % or _ against the text, since LIKE would treat t
   expect(rowMatchesState(row("Fee 50% off"), state("50%"))).toBe(true);
   expect(rowMatchesState(row("Fee 500"), state("50%"))).toBe(false);
   expect(rowMatchesState(row("Anything"), state("rent"))).toBe(true); // no wildcard characters: the query alone decides
+});
+
+it("names starting balances and a few left-out transactions in the query, so aggregates and the list agree", () => {
+  const and = filter(emptyFilterState(), { excludeStartingBalance: true, excludeIds: ["x1", "x2"] }).$and;
+  expect(and).toEqual(expect.arrayContaining([{ $or: [{ payee: null }, { "payee.name": { $ne: "Starting Balance" } }] }, { id: { $ne: "x1" } }, { id: { $ne: "x2" } }]));
+});
+it("turns the chart selections into one condition, and a chart leaves out its own dimension", () => {
+  expect(picksWhere(emptyPicks())).toBeUndefined();
+  const picks = { categories: ["c1"], uncategorized: true, accounts: ["a1"], payees: [], noPayee: true, months: ["2026-03", "2026-05"], weeks: [] };
+  expect(picksWhere(picks)).toEqual({ $and: [
+    { $or: [{ category: { $oneof: ["c1"] } }, { category: null }] },
+    { account: { $oneof: ["a1"] } },
+    { payee: null },
+    { $or: [dateMatch("2026-03"), dateMatch("2026-05")] },
+  ] });
+  expect(picksWhere(picks, "category")).toEqual({ $and: [{ account: { $oneof: ["a1"] } }, { payee: null }, { $or: [dateMatch("2026-03"), dateMatch("2026-05")] }] });
+  expect(picksWhere(picks, "month")).not.toEqual(picksWhere(picks));
+  expect(withPicks({ where: { notes: "x" } }, { ...emptyPicks(), accounts: ["a1"] }).where).toEqual({ $and: [{ notes: "x" }, { $and: [{ account: { $oneof: ["a1"] } }] }] });
+});
+
+it("picks a week by its Monday, and a chart leaves out its own dimension", () => {
+  expect(weekStart("2026-07-27")).toBe("2026-07-27");
+  expect(weekStart("2026-07-26")).toBe("2026-07-20");
+  expect(weekStart("2026-08-02")).toBe("2026-07-27");
+  expect(addDays("2026-07-27", 6)).toBe("2026-08-02");
+  const week = { $and: [{ date: { $gte: "2026-07-27" } }, { date: { $lte: "2026-08-02" } }] };
+  expect(picksWhere({ ...emptyPicks(), weeks: ["2026-07-27"] })).toEqual({ $and: [{ $or: [week] }] });
+  expect(picksWhere({ ...emptyPicks(), weeks: ["2026-07-27"] }, "day")).toBeUndefined();
+  const rows = [
+    { date: "2026-07-27", categoryId: "c", accountId: "a", payeeId: null, amountMinor: -100 },
+    { date: "2026-07-28", categoryId: "c", accountId: "a", payeeId: null, amountMinor: -50 },
+    { date: "2026-08-03", categoryId: "c", accountId: "a", payeeId: null, amountMinor: -10 },
+  ] as never[];
+  expect(facetFromRows(rows, { ...emptyPicks(), weeks: ["2026-07-27"] }, "category").map((r) => r.amountMinor)).toEqual([-150]);
+  expect(facetFromRows(rows, { ...emptyPicks(), weeks: ["2026-07-27"] }, "day").map((r) => [r.key, r.amountMinor])).toEqual([["2026-07-27", -100], ["2026-07-28", -50], ["2026-08-03", -10]]);
+});
+
+it("knows which filters the query cannot test exactly", () => {
+  expect(needsExactRows(emptyFilterState())).toBe(false);
+  expect(needsExactRows(emptyFilterState({ search: "rent" }))).toBe(false);
+  expect(needsExactRows(emptyFilterState({ search: "50%" }))).toBe(true);
+  expect(needsExactRows(emptyFilterState({ search: "a_b" }))).toBe(true);
+  expect(needsExactRows(emptyFilterState({ tags: { names: ["#rent"], match: "any", none: false, not: false } }))).toBe(true);
+  expect(needsExactRows(emptyFilterState({ tags: { names: [], match: "any", none: true, not: false } }))).toBe(true);
+});
+it("totals rows the way the aggregate query does, applying every selection except the chart's own", () => {
+  const rows = [
+    row({ id: "1", categoryId: "c1", accountId: "a1", payeeId: "p1", date: "2026-01-05", amountMinor: -100 }),
+    row({ id: "2", categoryId: "c1", accountId: "a2", payeeId: null, date: "2026-02-05", amountMinor: -200 }),
+    row({ id: "3", categoryId: null, accountId: "a1", payeeId: "p1", date: "2026-02-06", amountMinor: -400 }),
+  ];
+  expect(facetFromRows(rows, emptyPicks(), "category").map((r) => [r.key, r.month, r.amountMinor])).toEqual([["c1", "2026-01", -100], ["c1", "2026-02", -200], [null, "2026-02", -400]]);
+  expect(facetFromRows(rows, { ...emptyPicks(), categories: ["c1"] }, "month")).toEqual([{ key: "2026-01", amountMinor: -100, count: 1 }, { key: "2026-02", amountMinor: -200, count: 1 }]);
+  // The category chart ignores the category selection (its other rows stay available) but honours the account selection.
+  expect(facetFromRows(rows, { ...emptyPicks(), categories: ["c1"], accounts: ["a1"] }, "category").map((r) => [r.key, r.amountMinor])).toEqual([["c1", -100], [null, -400]]);
+  expect(facetFromRows(rows, { ...emptyPicks(), noPayee: true }, "month").reduce((a, r) => a + r.amountMinor, 0)).toBe(-200);
+  expect(facetFromRows(rows, { ...emptyPicks(), months: ["2026-02"], uncategorized: true }, "account").map((r) => [r.key, r.amountMinor])).toEqual([["a1", -400]]);
 });

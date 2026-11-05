@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 import type { Account, AccountGroup } from "@/types/entities";
 import { AccountGroupCell } from "./AccountGroupCell";
 import { AccountClassCell } from "./AccountClassCell";
+import { AccountReportingCell } from "./AccountReportingCell";
+import type { ReportingTreatment } from "@/lib/account-class/reporting";
 import { isAccountClassAllowed, type AccountClass, type EffectiveAccountClass } from "@/lib/account-class";
 import type { StagedEntity } from "@/types/staged";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -49,6 +51,13 @@ type AccountsTableRowProps = {
   /** False until the saved classes have loaded, and for accounts not yet saved to Actual. */
   canSetClass: boolean;
   onSetClass: (accountId: string, accountClass: AccountClass | null) => void;
+  /** The saved Financial Reporting choice, if any. */
+  savedReporting?: ReportingTreatment;
+  /** False until the saved choices have loaded. */
+  canSetReporting: boolean;
+  /** A closed account with no activity needs no Financial Reporting choice. */
+  reportingExempt?: boolean;
+  onSetReporting: (accountId: string, treatment: ReportingTreatment | null) => void;
   onToggleSelect: (id: string, checked: boolean) => void;
   onSelectNameCell: (id: string) => void;
   onStartEditingName: (id: string) => void;
@@ -130,6 +139,10 @@ function AccountsTableRowComponent({
   classGroupName,
   canSetClass,
   onSetClass,
+  savedReporting,
+  canSetReporting,
+  reportingExempt = false,
+  onSetReporting,
   onToggleSelect,
   onSelectNameCell,
   onStartEditingName,
@@ -269,6 +282,22 @@ function AccountsTableRowComponent({
             groupName={classGroupName}
             disabled={isDeleted || !canSetClass}
             onChange={onSetClass}
+          />
+        </td>
+      )}
+
+      {effective && (
+        <td className="w-56 px-2 py-0.5">
+          <AccountReportingCell
+            accountId={entity.id}
+            accountName={entity.name}
+            accountClass={effective.accountClass}
+            saved={savedReporting}
+            unsaved={isNew}
+            disabled={isDeleted || !canSetReporting}
+            choicesLoaded={canSetReporting}
+            exempt={reportingExempt}
+            onChange={onSetReporting}
           />
         </td>
       )}
@@ -438,6 +467,10 @@ function areEqual(prev: AccountsTableRowProps, next: AccountsTableRowProps) {
     prev.classGroupName === next.classGroupName &&
     prev.canSetClass === next.canSetClass &&
     prev.onSetClass === next.onSetClass &&
+    prev.savedReporting === next.savedReporting &&
+    prev.canSetReporting === next.canSetReporting &&
+    prev.reportingExempt === next.reportingExempt &&
+    prev.onSetReporting === next.onSetReporting &&
     prev.isAnotherCellEditing === next.isAnotherCellEditing
   );
 }

@@ -60,6 +60,7 @@ export function OverlayScrollArea({ children, className = "", onClick }: Props) 
     if (!el) return;
     // Content changes as often as the viewport does - expanding a group, or
     // switching months - so watch both rather than only the window.
+    if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     if (el.firstElementChild) observer.observe(el.firstElementChild);
@@ -132,7 +133,7 @@ export function OverlayScrollArea({ children, className = "", onClick }: Props) 
 
   return (
     <div
-      className={`relative min-h-0 ${className}`}
+      className={`relative flex min-h-0 flex-col ${className}`}
       onMouseEnter={() => setActive(true)}
       // Hovering reveals the thumbs, so leaving has to hide them again -
       // otherwise a pointer that crosses the grid without scrolling leaves them
@@ -149,7 +150,7 @@ export function OverlayScrollArea({ children, className = "", onClick }: Props) 
         onClick={onClick}
         // The native bars are hidden, not removed: this is still the element
         // that scrolls, so sticky offsets and scrollIntoView are unaffected.
-        className="h-full w-full overflow-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        className="min-h-0 w-full max-h-[inherit] flex-1 overflow-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>

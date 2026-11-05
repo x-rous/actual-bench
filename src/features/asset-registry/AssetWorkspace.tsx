@@ -35,6 +35,7 @@ import { DataTable, Stack, Text, type Column, type SortState } from "@/features/
 import { useConnectionStore, selectActiveInstance, type ConnectionInstance } from "@/store/connection";
 import { useStagedStore } from "@/store/staged";
 import { useAccountClasses } from "@/features/accounts/hooks/useAccountClasses";
+import { useAccountReporting } from "@/features/accounts/hooks/useAccountReporting";
 import { getTransport } from "@/lib/actual";
 import { ASSET_TYPES, eligibility, ownershipAt, type Asset, type Registry } from "@/lib/asset-registry/models";
 import { attributeBook, readBook, sumMinor } from "@/lib/asset-registry/ledger";
@@ -85,6 +86,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const [error, setError] = useState("");
   const docsUrl = FEATURES.find((f) => f.id === "assets")?.docsUrl;
   const classes = useAccountClasses();
+  const reporting = useAccountReporting();
   const transport = getTransport(connection);
   const key = ["assetRegistry", connection.id, connection.budgetSyncId];
   const query = useQuery({ queryKey: key, queryFn: () => registryRequest(connection.budgetSyncId) });
@@ -121,18 +123,24 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const currentQuery = asset ? books.get(asset.actualAccountId) : undefined;
   const snapshot = currentQuery?.isSuccess ? currentQuery.data : undefined;
   const book = snapshot ? attributeBook(snapshot, registry.assets, registry.metadata) : undefined;
-  const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps) : null;
-  const available = query.isSuccess && accountsQuery.isSuccess && classes.available;
+  const reason = asset ? eligibility(accounts.find((a) => a.id === asset.actualAccountId), asset.assetType, classes.maps, reporting.byAccount) : null;
+  // The saved Financial Reporting choices matter only to Other Asset accounts (a Vehicle or Property is eligible by class alone),
+  // so a failed read of them does not hide the values of a registry that holds none.
+  const reportingNeeded = registry.assets.some((a) => a.status !== "archived" && ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset");
+  const dataReady = query.isSuccess && accountsQuery.isSuccess && classes.available;
+  const available = dataReady && (reporting.available || !reportingNeeded);
+  // The choices matter to an asset only when its account is an Other Asset: a Vehicle or Property keeps its value and state without them.
+  const availableFor = (a: Asset) => dataReady && (reporting.available || ASSET_TYPES[a.assetType as keyof typeof ASSET_TYPES]?.accountClass !== "other-asset");
   const value = (a: Asset): number | null => {
     const q = books.get(a.actualAccountId);
-    if (!q?.isSuccess || !q.data || !available) return null;
+    if (!q?.isSuccess || !q.data || !availableFor(a)) return null;
     const result = attributeBook(q.data, registry.assets, registry.metadata);
     return result.available ? result.totals.get(a.id) ?? null : null;
   };
   /** Recorded owned value from this asset's Actual book rows on or before a date; null when unavailable. */
   const valueAt = (a: Asset, on: string): number | null => {
     const q = books.get(a.actualAccountId);
-    if (!q?.isSuccess || !q.data || !available) return null;
+    if (!q?.isSuccess || !q.data || !availableFor(a)) return null;
     const result = attributeBook({ ...q.data, rows: q.data.rows.filter((r) => r.date <= on) }, registry.assets, registry.metadata);
     return result.available ? result.totals.get(a.id) ?? null : null;
   };
@@ -158,10 +166,10 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const computeAttention = (a: Asset): AssetAttention => {
     if (a.status === "archived") return { label: "Archived", tone: "neutral", detail: "Archived assets are not checked for attention" };
     const q = books.get(a.actualAccountId);
-    if (!available || !q?.isSuccess || !q.data) return { label: "Unavailable", tone: "danger", detail: "Refresh to read the account book" };
+    if (!availableFor(a) || !q?.isSuccess || !q.data) return { label: "Unavailable", tone: "danger", detail: "Refresh to read the account book" };
     const result = attributeBook(q.data, registry.assets, registry.metadata);
     if (report(a)?.gaps.length) return { label: "Needs review", tone: "attention", detail: report(a)!.gaps[0] };
-    const invalid = eligibility(accounts.find((row) => row.id === a.actualAccountId), a.assetType, classes.maps);
+    const invalid = eligibility(accounts.find((row) => row.id === a.actualAccountId), a.assetType, classes.maps, reporting.byAccount);
     if (invalid || result.issues.length) return { label: "Needs review", tone: "attention", detail: invalid ?? result.issues[0] };
     if (result.rows.some((r) => !r.assetId)) return { label: "Unassigned rows", tone: "attention", detail: "Some account rows need attribution" };
     const count = result.rows.filter((r) => r.assetId === a.id && bookTypeLabel(r.classification) === "Unclassified").length;
@@ -174,6 +182,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
       if (next) client.setQueryData(key, next); else await query.refetch({ throwOnError: true });
       await accountsQuery.refetch({ throwOnError: true });
       await client.invalidateQueries({ queryKey: ["accountClasses", connection.budgetSyncId] });
+      await client.invalidateQueries({ queryKey: ["accountReporting", connection.budgetSyncId] });
       await externalQuery.refetch({ throwOnError: true });
       await client.invalidateQueries({ queryKey: ["assetLoans", connection.id] });
       await client.invalidateQueries({ queryKey: ["assetLoanLedger", connection.id] });
@@ -192,7 +201,14 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
     if (!response.ok) throw new Error("Could not confirm current account class");
     const records = (await response.json()).accountClasses as { scope: string; accountId: string; accountClass: AccountClass }[];
     const maps = { accounts: new Map(records.filter((r) => r.scope === "account").map((r) => [r.accountId, r.accountClass])), groups: new Map(records.filter((r) => r.scope === "group").map((r) => [r.accountId, r.accountClass])) };
-    const invalid = eligibility(directory.find((a) => a.id === context.asset.actualAccountId), context.asset.assetType, maps);
+    // Only an Other Asset reads the saved Financial Reporting treatment; a Vehicle or Property must not fail on it.
+    let treatments = new Map<string, string>();
+    if (ASSET_TYPES[context.asset.assetType as keyof typeof ASSET_TYPES]?.accountClass === "other-asset") {
+      const reportingResponse = await fetch(`/api/account-reporting?budgetSyncId=${encodeURIComponent(connection.budgetSyncId)}`);
+      if (!reportingResponse.ok) throw new Error("Could not confirm the account's Financial Reporting");
+      treatments = new Map(((await reportingResponse.json()).accountReporting as { accountId: string; treatment: string }[]).map((r) => [r.accountId, r.treatment]));
+    }
+    const invalid = eligibility(directory.find((a) => a.id === context.asset.actualAccountId), context.asset.assetType, maps, treatments);
     if (invalid) throw new Error(invalid);
     const pending = useStagedStore.getState().accounts[context.asset.actualAccountId];
     if (pending && (pending.isNew || pending.isUpdated || pending.isDeleted || pending.pendingAccountClass !== undefined || pending.saveError)) throw new Error("Save pending changes to this account in Accounts first");
@@ -220,7 +236,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const firstDateOf = (a: Asset): string => {
     const known = firstDates.get(a.id); if (known) return known;
     const q = books.get(a.actualAccountId);
-    const ledger = q?.isSuccess && q.data && available ? attributeBook(q.data, registry.assets, registry.metadata).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
+    const ledger = q?.isSuccess && q.data && availableFor(a) ? attributeBook(q.data, registry.assets, registry.metadata).rows.filter((r) => r.assetId === a.id).map((r) => r.date).sort()[0] : undefined;
     const first = earliestDate(ledger, firstCashDate(a)) ?? date;
     firstDates.set(a.id, first); return first;
   };
@@ -234,7 +250,7 @@ function ConnectedAssets({ connection, assetId }: { connection: ConnectionInstan
   const gainOf = (a: Asset) => {
     if (gains.has(a.id)) return gains.get(a.id)!;
     const q = books.get(a.actualAccountId); let result: { gainMinor: number; capitalMinor: number } | null = null;
-    if (q?.isSuccess && q.data && available) {
+    if (q?.isSuccess && q.data && availableFor(a)) {
       const book = attributeBook(q.data, registry.assets, registry.metadata);
       if (book.available) { const b = valueBridge(book.rows.filter((r) => r.assetId === a.id), null, date); result = { gainMinor: b.revaluationMinor + b.depreciationMinor, capitalMinor: b.capitalMinor }; }
     }

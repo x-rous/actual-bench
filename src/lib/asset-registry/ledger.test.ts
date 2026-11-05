@@ -38,13 +38,19 @@ it("never treats missing balance, mismatched sums or dangling associations as ve
   const snapshot = await readBook(transport(), "vehicles", "2026-10-24");
   expect(attributeBook(snapshot, assets, [{ actualTransactionId: "missing", actualAccountId: "vehicles", assetId: "byd", classification: null, revision: 1 }]).issues).toEqual([]); // a saved link to a transaction Actual no longer has is ignored, not an issue
 });
-it("honors all eight classes, group inheritance, budget placement and effective ownership", () => {
+it("offers only fixed asset types: no investment, retirement or crypto", () => {
+  expect(Object.keys(ASSET_TYPES).sort()).toEqual(["collectible", "other", "precious-metal", "real-estate", "vehicle"]);
+});
+it("honors the asset classes, group inheritance, budget placement and effective ownership", () => {
   for (const [key, type] of Object.entries(ASSET_TYPES)) {
     const maps = { accounts: new Map([["a", "bank" as const]]), groups: new Map([["g", type.accountClass]]) };
     const account = { id: "a", name: "A", offBudget: true, closed: false, groupId: "g" };
-    expect(eligibility(account, key, maps)).toBeNull();
-    expect(eligibility({ ...account, offBudget: false }, key, maps)).toMatch(/off-budget/);
-    expect(eligibility({ ...account, closed: true }, key, maps)).toMatch(/closed/);
+    const fixed = new Map([["a", "fixed-asset"]]);
+    expect(eligibility(account, key, maps, fixed)).toBeNull();
+    expect(eligibility({ ...account, offBudget: false }, key, maps, fixed)).toMatch(/off-budget/);
+    expect(eligibility({ ...account, closed: true }, key, maps, fixed)).toMatch(/closed/);
+    // An Other Asset account must be marked Fixed asset; Property and Vehicle need nothing more than their class.
+    expect(eligibility(account, key, maps, new Map([["a", "current-asset"]]))).toBe(type.accountClass === "other-asset" ? "Mark this account as a Fixed asset in Accounts (Financial Reporting) first" : null);
   }
   expect(ownershipAt(assets[0], "2024-01-01")).toBeNull(); expect(ownershipAt(assets[0], "2026-01-01")).toBe(10000);
 });

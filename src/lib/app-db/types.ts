@@ -855,3 +855,23 @@ export type AccountClassRecord = {
   accountClass: import("@/lib/account-class").AccountClass;
   updatedAt: string;
 };
+
+/** A saved cash buffer scenario for one budget: Bench-owned, never written to Actual. */
+export type CashBufferScenarioRecord = {
+  budgetSyncId: string;
+  id: string;
+  name: string;
+  adjustments: import("@/lib/financial-insights/bufferScenario").BufferAdjustments;
+  /** What it came to when it was last saved. */
+  result: import("@/lib/financial-insights/bufferScenario").ScenarioResult | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** A Bench-owned Financial Reporting choice for one Actual account (scoped to one budget). */
+export type AccountReportingRecord = {
+  budgetSyncId: string;
+  accountId: string;
+  treatment: import("@/lib/account-class/reporting").ReportingTreatment;
+  updatedAt: string;
+};

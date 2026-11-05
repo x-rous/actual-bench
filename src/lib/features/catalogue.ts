@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import {
-  ArrowLeftRight, Banknote, Calendar, ClipboardCheck, CreditCard, Database,
+  ArrowLeftRight, Banknote, Calendar, ChartNoAxesCombined, ClipboardCheck, CreditCard, Database,
   DatabaseBackup, HandCoins, Landmark, LayoutList, ScrollText, ShieldCheck,
   Sparkles, Stethoscope, Tag, Terminal, Timer, Users, Wallet,
 } from "lucide-react";
@@ -130,6 +130,22 @@ export const FEATURES: readonly FeatureDefinition[] = [
     pendingChangesPanel: "entities",
     requiresSavedData: false,
   },
+  {
+    id: "financial-insights",
+    label: "Financial Insights",
+    href: "/financial-insights",
+    groupId: "financial-management",
+    icon: ChartNoAxesCombined,
+    description: "See what you own and owe, what came in and went out, and why your cash and wealth changed, with charts you can switch to exact tables.",
+    accessSummary: "Read-only accounts and transactions.",
+    maturity: "experimental",
+    docsUrl: `${DOCS_BASE_URL}user-guide/financial-insights/`,
+    feedbackUrl: `${ISSUE_BASE_URL}446`,
+    usesStagedActions: false,
+    pendingChangesPanel: "none",
+    requiresSavedData: true,
+  },
+
   {
     id: "budget-management",
     label: "Budget Cockpit",

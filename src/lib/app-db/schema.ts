@@ -1136,6 +1136,50 @@ CREATE TABLE IF NOT EXISTS account_classes (
 );
 `;
 
+// ── Account reporting ────────────────────────────────────────────────────────
+// Bench-owned metadata: the Financial Reporting choice for one Actual account
+// (current or non-current, or a Bank account that is not cash). One row per
+// account, scoped to one budget; the class itself stays in `account_classes`.
+// `treatment` is validated by the repository and read tolerantly, so a value
+// added by a later version does not break an older reader.
+export const ACCOUNT_REPORTING_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS account_reporting (
+  budget_sync_id text NOT NULL,
+  account_id text NOT NULL,
+  treatment text NOT NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY (budget_sync_id, account_id)
+);
+`;
+
+/*
+ * Cash buffer scenarios (Financial Insights, migration v63; the settings table is migration v64). The user's own "what if" views of the cash buffer for one budget: the
+ * categories and loans left out of the monthly need and the amounts that replace the typical ones (JSON, validated in code), and
+ * what the scenario came to when it was saved. Actual ids and the user's own figures only; nothing is read from or written to Actual.
+ */
+export const CASH_BUFFER_SETTINGS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS cash_buffer_settings (
+  budget_sync_id text PRIMARY KEY,
+  goal_months integer,
+  average_months integer NOT NULL,
+  method text NOT NULL,
+  updated_at text NOT NULL
+);
+`;
+
+export const CASH_BUFFER_SCENARIOS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS cash_buffer_scenarios (
+  budget_sync_id text NOT NULL,
+  id text NOT NULL,
+  name text NOT NULL,
+  adjustments text NOT NULL,
+  result text,
+  created_at text NOT NULL,
+  updated_at text NOT NULL,
+  PRIMARY KEY (budget_sync_id, id)
+);
+`;
+
 /*
  * Credit cards (RD-098 / PR-127c, migration v48). Bench-owned metadata only: Actual ids, opaque
  * evidence hashes and the user's own statement figures and decisions. Never Actual transactions,

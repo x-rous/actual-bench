@@ -13,6 +13,8 @@ import type { GroupBy } from "../lib/accountClusters";
 export type StatusFilter = "all" | "open" | "closed";
 export type BudgetFilter = "all" | "on" | "off";
 export type RulesFilter = "all" | "with_rules" | "no_rules";
+/** "needs-choice" keeps only the accounts that still need a Financial Reporting choice. */
+export type ReportingFilter = "all" | "needs-choice";
 
 /** Group filter value for "any group"; NO_GROUP and group ids are the other values. */
 export const ALL_GROUPS = "all";
@@ -62,6 +64,9 @@ export function FilterBar({
   classFilter,
   onClassFilterChange,
   unclassifiedCount,
+  reportingFilter,
+  onReportingFilterChange,
+  needsChoiceCount,
   groupBy,
   onGroupByChange,
   groupByOptions,
@@ -101,6 +106,11 @@ export function FilterBar({
   onBulkSetClass?: (accountClass: AccountClass | null) => void;
   /** Open accounts with no class; shown as a shortcut to the Unclassified filter. */
   unclassifiedCount?: number;
+  /** Shown with the class filter when `needsChoiceCount` is provided (saved choices loaded). */
+  reportingFilter?: ReportingFilter;
+  onReportingFilterChange?: (v: ReportingFilter) => void;
+  /** Accounts whose Financial Reporting choice is still missing. */
+  needsChoiceCount?: number;
   /** `groupId` is a group id, NO_GROUP-resolved `null`, or NEW_GROUP to open the new-group dialog. */
   onBulkAssignGroup: (groupId: string | null | typeof NEW_GROUP) => void;
   filteredCount: number;
@@ -112,7 +122,7 @@ export function FilterBar({
   onDeselect: () => void;
 }) {
   const hasFilters =
-    search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || groupFilter !== ALL_GROUPS || (classFilter !== undefined && classFilter !== ALL_CLASSES);
+    search || statusFilter !== "all" || budgetFilter !== "all" || rulesFilter !== "all" || groupFilter !== ALL_GROUPS || (classFilter !== undefined && classFilter !== ALL_CLASSES) || reportingFilter === "needs-choice";
 
   if (selectedCount > 0) {
     return (
@@ -212,6 +222,17 @@ export function FilterBar({
               {unclassifiedCount} need{unclassifiedCount === 1 ? "s" : ""} a class
             </button>
           )}
+          {onReportingFilterChange && needsChoiceCount !== undefined && (reportingFilter === "needs-choice" || needsChoiceCount > 0) && (
+            <button
+              type="button"
+              onClick={() => onReportingFilterChange(reportingFilter === "needs-choice" ? "all" : "needs-choice")}
+              className="whitespace-nowrap text-xs text-amber-700 underline hover:text-foreground dark:text-amber-400"
+            >
+              {reportingFilter === "needs-choice"
+                ? `Showing ${needsChoiceCount} needing a reporting choice · show all`
+                : `${needsChoiceCount} need${needsChoiceCount === 1 ? "s" : ""} a reporting choice`}
+            </button>
+          )}
         </div>
       )}
 
@@ -224,6 +245,7 @@ export function FilterBar({
             onRulesFilterChange("all");
             onGroupFilterChange(ALL_GROUPS);
             onClassFilterChange(ALL_CLASSES);
+            onReportingFilterChange?.("all");
           }}
           className="text-xs text-muted-foreground underline hover:text-foreground"
         >

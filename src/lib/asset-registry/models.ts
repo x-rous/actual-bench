@@ -9,9 +9,6 @@ import type { LinkRule } from "./linkRules";
 export const ASSET_TYPES = {
   "real-estate": { label: "Property", accountClass: "property" },
   vehicle: { label: "Vehicle", accountClass: "vehicle" },
-  investment: { label: "Investment", accountClass: "investment" },
-  retirement: { label: "Retirement", accountClass: "retirement" },
-  crypto: { label: "Crypto", accountClass: "investment" },
   "precious-metal": { label: "Precious Metal", accountClass: "other-asset" },
   collectible: { label: "Collectible / Valuable", accountClass: "other-asset" },
   other: { label: "Other Asset", accountClass: "other-asset" },
@@ -53,7 +50,7 @@ export const assetInputSchema = z.object({
 }).strict();
 export type AssetInput = z.infer<typeof assetInputSchema>;
 /** Whether an asset of this type is normally expected to produce income; the owner can override it per asset. */
-export const defaultIncomeGenerating = (assetType: string): boolean => ["real-estate", "investment", "retirement", "crypto"].includes(assetType);
+export const defaultIncomeGenerating = (assetType: string): boolean => assetType === "real-estate";
 export type Asset = Omit<AssetInput, "assetType" | "status" | "incomeGenerating"> & {
   incomeGenerating: boolean;
   budgetSyncId: string; assetType: string; status: string; assetTag: string | null;
@@ -76,13 +73,19 @@ export type MetadataChange = z.infer<typeof metadataChangeSchema>;
 export const accountDirectorySchema = z.array(z.object({
   id: idSchema, name: z.string(), offBudget: z.boolean(), closed: z.boolean(), groupId: idSchema.nullish(),
 })).max(10000);
-export function eligibility(account: Account | undefined, assetType: string, maps: AccountClassMaps): string | null {
+/**
+ * Whether an Actual account can hold an asset of this type: open, off budget, of the type's account class, and (Other Asset only)
+ * marked **Fixed asset** in Financial Reporting, because an Other Asset can also be a current or non-current holding (money owed
+ * to you, a long-term deposit) that has no place in the Assets module. `reporting` maps an account to its saved treatment.
+ */
+export function eligibility(account: Account | undefined, assetType: string, maps: AccountClassMaps, reporting: ReadonlyMap<string, string | null | undefined>): string | null {
   if (!account) return "The saved Actual account is unavailable";
   if (account.closed) return "The account is closed";
   if (!account.offBudget) return "Assets require an off-budget account";
   const type = ASSET_TYPES[assetType as AssetType];
   if (!type) return "Unknown asset type; settings are read-only";
   if (resolveAccountClass(account.id, account.groupId, maps).accountClass !== type.accountClass) return `Requires the ${type.accountClass} account class (including group inheritance)`;
+  if (type.accountClass === "other-asset" && reporting.get(account.id) !== "fixed-asset") return "Mark this account as a Fixed asset in Accounts (Financial Reporting) first";
   return null;
 }
 export function ownershipAt(asset: Asset, date: string): number | null {
