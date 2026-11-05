@@ -140,6 +140,7 @@ export const FEATURES: readonly FeatureDefinition[] = [
     accessSummary: "Read-only accounts and transactions.",
     maturity: "experimental",
     docsUrl: `${DOCS_BASE_URL}user-guide/financial-insights/`,
+    feedbackUrl: `${ISSUE_BASE_URL}446`,
     usesStagedActions: false,
     pendingChangesPanel: "none",
     requiresSavedData: true,

@@ -26,12 +26,18 @@ export function useCashBufferSettings() {
     },
     enabled: Boolean(budgetSyncId),
   });
-  // The same id from every place that mounts this hook, so one failure is one message.
-  useEffect(() => { if (query.isError) toast.error("Could not load your cash buffer settings, so the defaults are used", { id: "cash-buffer-settings-load" }); }, [query.isError]);
+  // The same id from every place that mounts this hook, so one failure is one message. A failed refresh leaves the settings read
+  // earlier in use, and the message says so rather than claiming the defaults apply.
+  const loaded = query.data !== undefined;
+  useEffect(() => {
+    if (query.isError) toast.error(loaded ? "Could not refresh your cash buffer settings, so the ones already loaded are used" : "Could not load your cash buffer settings, so the defaults are used", { id: "cash-buffer-settings-load" });
+  }, [query.isError, loaded]);
 
-  // The screen follows the latest choice at once. Whatever order the responses arrive in, the settings are read again once a save
-  // settles, so the screen ends on what the database holds, never on an older response that arrived last.
+  // The screen follows the latest choice at once. Saves for one budget run one after another, in the order they were made, so the
+  // database ends on the latest choice; and the settings are read again once a save settles, so the screen ends on what the
+  // database holds. Saves for different budgets do not wait for each other.
   const mutation = useMutation({
+    scope: { id: `cash-buffer-settings:${budgetSyncId ?? ""}` },
     mutationFn: async ({ budget, settings }: { budget: string; settings: BufferSettings }): Promise<BufferSettings> => {
       const response = await fetch("/api/cash-buffer-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ budgetSyncId: budget, settings }) });
       if (!response.ok) throw new Error("Could not save the cash buffer settings");

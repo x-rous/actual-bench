@@ -23,7 +23,7 @@ describe("the cash buffer settings", () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  it("ends on what the database holds when the responses to two quick saves arrive in the wrong order", async () => {
+  it("shows the latest choice at once and ends on what the database holds after two quick saves", async () => {
     let stored: BufferSettings = DEFAULT_BUFFER_SETTINGS;
     const releases: (() => void)[] = [];
     global.fetch = jest.fn((_url: RequestInfo | URL, init?: RequestInit) => {
@@ -39,10 +39,46 @@ describe("the cash buffer settings", () => {
     act(() => { result.current.save(goal(6)); });
     // The screen already shows the latest choice.
     await waitFor(() => expect(result.current.settings.goalMonths).toBe(6));
-    // The database applies them in order, but the first response arrives last.
-    await act(async () => { releases[1](); releases[0](); });
+    // The second save waits for the first, so the database applies them in the order they were made.
+    await act(async () => { releases[0](); });
+    await waitFor(() => expect(releases).toHaveLength(2));
+    await act(async () => { releases[1](); });
+    await waitFor(() => expect(result.current.saving).toBe(false));
     await waitFor(() => expect(result.current.settings.goalMonths).toBe(6));
     expect(stored.goalMonths).toBe(6);
+  });
+
+  it("sends two quick saves one after the other, so the database ends on the later choice", async () => {
+    const order: string[] = [];
+    let running = 0, overlapped = false;
+    global.fetch = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== "PUT") return json({ settings: DEFAULT_BUFFER_SETTINGS });
+      running += 1; overlapped ||= running > 1;
+      order.push(String((JSON.parse(String(init.body)) as { settings: BufferSettings }).settings.goalMonths));
+      await new Promise((r) => setTimeout(r, 20));
+      running -= 1;
+      return json({ settings: DEFAULT_BUFFER_SETTINGS });
+    }) as jest.Mock;
+    const { result } = renderHook(() => useCashBufferSettings(), { wrapper });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    act(() => { result.current.save(goal(3)); result.current.save(goal(6)); });
+    await waitFor(() => expect(order).toEqual(["3", "6"]));
+    await waitFor(() => expect(result.current.saving).toBe(false));
+    expect(overlapped).toBe(false);
+  });
+
+  it("says the settings already loaded stay in use when only a later refresh fails", async () => {
+    let fail = false;
+    global.fetch = jest.fn(async () => (fail ? json({}, false) : json({ settings: goal(6) }))) as jest.Mock;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const shared = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useCashBufferSettings(), { wrapper: shared });
+    await waitFor(() => expect(result.current.settings.goalMonths).toBe(6));
+    expect(toast.error).not.toHaveBeenCalled();
+    fail = true;
+    await act(async () => { await client.refetchQueries({ queryKey: ["cashBufferSettings", "budget-1"] }); });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("already loaded"), expect.objectContaining({ id: "cash-buffer-settings-load" })));
+    expect(result.current.settings.goalMonths).toBe(6);
   });
 
   it("says the defaults are in use when the saved settings cannot be read", async () => {
