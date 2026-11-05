@@ -9,9 +9,11 @@ COPY next.config.ts tsconfig.json postcss.config.mjs jest.setup.ts ./
 COPY src ./src
 COPY public ./public
 COPY demo/generate-metadata.cjs demo/seed-manifest.json ./demo/
-# Keep the build within the Space builder's CPU and memory allocation.
+# Keep the build within the Space builder's CPU and memory allocation. CI
+# already type-checks every change, so skip Next's memory-heavy type check here.
 ENV NEXT_TELEMETRY_DISABLED=1 CIRCLE_NODE_TOTAL=3 \
-    TURBO_TASKS_AVAILABLE_PARALLELISM=2 RAYON_NUM_THREADS=2
+    TURBO_TASKS_AVAILABLE_PARALLELISM=2 RAYON_NUM_THREADS=2 \
+    DEMO_SKIP_TYPECHECK=1
 RUN node demo/generate-metadata.cjs && npm run build
 
 FROM jhonderson/actual-http-api:26.11.0

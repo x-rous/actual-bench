@@ -37,6 +37,11 @@ const nextConfig: NextConfig = {
   // Next.js 16 - promoted out of experimental).
   // babel-plugin-react-compiler remains in devDependencies for Jest only.
   reactCompiler: true,
+  // The hosted demo image build runs inside a small memory allowance, and Next's
+  // own type check is what exhausts it. CI already runs `npm run typecheck` on
+  // every change, so the demo Dockerfile opts out with DEMO_SKIP_TYPECHECK=1.
+  // Every other build keeps the full check.
+  typescript: { ignoreBuildErrors: process.env.DEMO_SKIP_TYPECHECK === "1" },
   // Server-side, `@actual-app/api` (the Node build, used by automation workers
   // for Direct budgets) is loaded from node_modules rather than bundled: its
   // `dist/` reads `migrations/` and `default-db.sqlite` from beside itself, and
