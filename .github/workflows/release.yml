@@ -12,7 +12,8 @@ permissions:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a release part-way through publishing images.
+  cancel-in-progress: false
 
 env:
   IMAGE_GHCR: ghcr.io/x-rous/actual-bench
@@ -23,6 +24,7 @@ jobs:
   validate-and-test:
     name: validate-and-test
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -33,7 +35,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24.22.2
+          node-version-file: .nvmrc
           cache: "npm"
 
       - name: Install dependencies
@@ -76,6 +78,7 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -130,6 +133,7 @@ jobs:
     name: merge
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Extract version from tag
         id: version
@@ -187,6 +191,7 @@ jobs:
     needs: merge
     runs-on: ubuntu-latest
     if: ${{ vars.DEMO_DEPLOY_ENABLED == 'true' }}
+    timeout-minutes: 5
     steps:
       - name: Trigger Vercel demo redeploy
         run: curl -fsSL -X POST "$VERCEL_DEPLOY_HOOK"
@@ -198,15 +203,23 @@ jobs:
     name: deploy
     needs: merge
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: VPS_DEPLOY_PATH
+          # `set -e` stops at the first failing command, so a failed pull or
+          # `up` fails the job instead of being hidden by the prune after it.
+          # The action's own `script_stop` input no longer exists in v1.
           script: |
-            cd ${{ secrets.VPS_DEPLOY_PATH }}
+            set -e
+            cd "$VPS_DEPLOY_PATH"
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
@@ -216,6 +229,7 @@ jobs:
     name: publish-release
     needs: deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Publish GitHub Release
         uses: release-drafter/release-drafter@v7

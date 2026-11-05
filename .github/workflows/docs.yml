@@ -19,8 +19,10 @@ on:
 permissions:
   contents: read
 
+# Deploys queue behind each other and are never cancelled. Pull-request builds
+# get a group per ref, so they neither wait behind a deploy nor block one.
 concurrency:
-  group: docs-pages
+  group: docs-pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
   cancel-in-progress: false
 
 defaults:
@@ -30,8 +32,11 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -40,6 +45,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
           path: docs-site/dist
@@ -49,6 +55,8 @@ jobs:
     needs: build
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # Longer than deploy-pages' own 10-minute timeout, so the action reports first.
+    timeout-minutes: 15
     permissions:
       pages: write
       id-token: write

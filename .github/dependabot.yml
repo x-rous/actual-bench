@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   # Raised from 5. The cap was being reached, and a saturated queue is silent:
   # `next` sat on published criticals for weeks without a pull request, because
@@ -30,6 +35,13 @@ updates:
           - "jest"
           - "jest-environment-*"
           - "@types/jest"
+      # Everything else that is a minor or patch bump, in one pull request. A
+      # dependency lands in the first group it matches, so the two above keep
+      # their members. Majors still arrive one at a time.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
       # Babel 8 installs, and the tests pass on it, but npm reports peer
       # conflicts: Jest's own Babel plugins still declare @babel/core ^7, so
@@ -49,6 +61,18 @@ updates:
       # ships support.
       - dependency-name: "typescript"
         versions: [">=7"]
+
+  # The documentation site has its own lockfile and was watched by nothing.
+  - package-ecosystem: npm
+    directory: "/docs-site"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docs-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   # The base images were watched by nothing at all, so an image pinned to an
   # exact Node patch never picked up an Alpine security refresh - which is how a

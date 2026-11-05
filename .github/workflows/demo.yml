@@ -1,7 +1,7 @@
 name: Demo container
 on:
   push:
-    branches: [main, feat/demo-launch-refresh]
+    branches: [main]
     paths: &demo_paths
       - "demo/**"
       - "src/**"
@@ -21,6 +21,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: demo-container-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -31,14 +34,28 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 24.22.2
+          node-version-file: .nvmrc
           cache: npm
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Install browser test dependencies
         run: |
           npm ci --prefer-offline --no-audit --no-fund
           npx playwright install --with-deps chromium
+      - uses: docker/setup-buildx-action@v4
       - name: Build demo image
-        run: docker build -f demo/Dockerfile -t actual-bench-demo .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: demo/Dockerfile
+          load: true
+          push: false
+          tags: actual-bench-demo
+          cache-from: type=gha,scope=demo
+          cache-to: type=gha,mode=max,scope=demo
       - name: Smoke test and restart under Space limits
         run: bash demo/smoke.sh
         env:
