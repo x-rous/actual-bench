@@ -4,7 +4,7 @@ import { trackedEquity, type AssetDebtLink } from "@/lib/asset-registry/financin
 import { valueBridge, type ValueBridge } from "@/lib/asset-registry/valueBridge";
 import { ASSET_CLASSES, CLASS_LABEL, LIABILITY_CLASSES, type ClassKey } from "./breakdowns";
 import { ledgersByMonth, type AccountFact, type Ledger, type Role } from "./measures";
-import { addMonths, type ResolvedPeriod } from "./period";
+import { addMonths, dayBefore, lastDayOf, type ResolvedPeriod } from "./period";
 
 /**
  * Investments, from the facts the page already holds. Pure: no I/O, no clock. Amounts are signed integer minor units
@@ -178,12 +178,29 @@ function debtOn(ledger: Ledger, loan: LoanRef | undefined, month: string): numbe
   return loan.signConvention === "negative-is-debt" ? -balance : balance;
 }
 
-function equityAt(asset: RegistryAsset, date: string, month: string, rows: readonly BookRow[], links: readonly AssetDebtLink[], loans: ReadonlyMap<string, LoanRef>, ledger: Ledger): EquityPoint {
-  const value = rows.filter((r) => r.assetId === asset.id && r.date <= date).reduce((sum, r) => sum + r.amountMinor, 0);
+/**
+ * The value, debt and equity of one asset at a date (and the month whose loan balances apply), from the asset's own book rows. The
+ * rows are put in order once with their running total, and the linked loans found once, so asking for many dates (a chart asks for
+ * one per month) does not read the whole book each time.
+ */
+function assetEquity(asset: RegistryAsset, rows: readonly BookRow[], links: readonly AssetDebtLink[], loans: ReadonlyMap<string, LoanRef>, ledger: Ledger): (date: string, month: string) => EquityPoint {
+  const own = rows.filter((r) => r.assetId === asset.id).sort((a, b) => a.date.localeCompare(b.date));
+  let total = 0;
+  const running = own.map((r) => (total += r.amountMinor));
+  const allLinks = [...links];
   const debtIds = [...new Set(links.filter((l) => l.assetId === asset.id).map((l) => l.debtId))];
-  const result = trackedEquity(asset.id, date, [...links], value, debtIds.map((debtId) => ({ debtId, magnitudeMinor: debtOn(ledger, loans.get(debtId), month) })));
-  const ltv = result.allocatedDebtMinor !== null && value !== null && value > 0 ? Math.round((result.allocatedDebtMinor * 1000) / value) / 10 : null;
-  return { assetValueMinor: value, debtMinor: result.allocatedDebtMinor, equityMinor: result.equityMinor, ltvPercent: ltv, gaps: result.gaps };
+  return (date, month) => {
+    // The rows dated on or before `date`.
+    let low = 0, high = own.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (own[mid].date <= date) low = mid + 1; else high = mid;
+    }
+    const value = low === 0 ? 0 : running[low - 1];
+    const result = trackedEquity(asset.id, date, allLinks, value, debtIds.map((debtId) => ({ debtId, magnitudeMinor: debtOn(ledger, loans.get(debtId), month) })));
+    const ltv = result.allocatedDebtMinor !== null && value > 0 ? Math.round((result.allocatedDebtMinor * 1000) / value) / 10 : null;
+    return { assetValueMinor: value, debtMinor: result.allocatedDebtMinor, equityMinor: result.equityMinor, ltvPercent: ltv, gaps: result.gaps };
+  };
 }
 
 /**
@@ -195,7 +212,7 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
   const { ledger, period, assets, books, links } = input;
   const loans = new Map(input.loans.map((l) => [l.debtId, l]));
   const before = addMonths(period.startMonth, -1);
-  const startDate = new Date(Date.parse(`${period.startDate}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  const startDate = dayBefore(period.startDate);
   const rows: AssetValueRow[] = [];
   const registered = new Set<string>();
   for (const asset of assets) {
@@ -222,9 +239,10 @@ export function assetValues(input: { ledger: Ledger; period: ResolvedPeriod; ass
       continue;
     }
     const own = book.rows.filter((r) => r.assetId === asset.id);
+    const equityOf = assetEquity(asset, book.rows, links, loans, ledger);
     rows.push({
       ...base, state: "ready", bridge: valueBridge([...own], period.startDate, period.endDate),
-      equity: { start: equityAt(asset, startDate, before, book.rows, links, loans, ledger), end: equityAt(asset, period.endDate, period.endMonth, book.rows, links, loans, ledger) },
+      equity: { start: equityOf(startDate, before), end: equityOf(period.endDate, period.endMonth) },
     });
   }
   for (const a of ledger.account.values()) {
@@ -270,11 +288,10 @@ export type AssetSeries = {
   linked: number;
 };
 
-const monthEnd = (month: string) => new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10);
 
 /**
  * The value of the registered assets, and the debt and equity of the ones with a loan linked, at the end of each month of the
- * period (the same `equityAt` as the table, so the last point equals the table's end figures). Only assets whose book could be
+ * period (the same `assetEquity` as the table, so the last point equals the table's end figures). Only assets whose book could be
  * read are counted. Equity and debt cover the linked assets only, and are null where one of them is not known.
  */
 export function assetSeries(input: { ledger: Ledger; period: ResolvedPeriod; assets: readonly RegistryAsset[]; books: ReadonlyMap<string, AssetBook | null>; links: readonly AssetDebtLink[]; loans: readonly LoanRef[] }): AssetSeries {
@@ -286,10 +303,11 @@ export function assetSeries(input: { ledger: Ledger; period: ResolvedPeriod; ass
     return !!owner && isFixedAssetAccount(owner) && asset.status !== "archived" && !!book && book.available;
   });
   const linkedAssets = ready.filter((a) => links.some((l) => l.assetId === a.id));
+  const equityOf = new Map(ready.map((asset) => [asset, assetEquity(asset, input.books.get(asset.actualAccountId)!.rows, links, loans, ledger)]));
   const at = (date: string, month: string): AssetTotals => {
     let value = 0, debt: number | null = 0, equity: number | null = 0;
     for (const asset of ready) {
-      const point = equityAt(asset, date, month, input.books.get(asset.actualAccountId)!.rows, links, loans, ledger);
+      const point = equityOf.get(asset)!(date, month);
       value += point.assetValueMinor ?? 0;
       if (!linkedAssets.includes(asset)) continue;
       debt = debt === null || point.debtMinor === null ? null : debt + point.debtMinor;
@@ -297,11 +315,11 @@ export function assetSeries(input: { ledger: Ledger; period: ResolvedPeriod; ass
     }
     return { valueMinor: value, debtMinor: linkedAssets.length ? debt : null, equityMinor: linkedAssets.length ? equity : null };
   };
-  const startDate = new Date(Date.parse(`${period.startDate}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  const startDate = dayBefore(period.startDate);
   return {
     months: period.months,
     opening: at(startDate, addMonths(period.startMonth, -1)),
-    points: period.months.map((month, i) => at(period.partial && i === period.months.length - 1 ? period.endDate : monthEnd(month), month)),
+    points: period.months.map((month, i) => at(period.partial && i === period.months.length - 1 ? period.endDate : lastDayOf(month), month)),
     assets: ready.length,
     linked: linkedAssets.length,
   };

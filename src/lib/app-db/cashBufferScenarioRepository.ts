@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { generateId } from "@/lib/uuid";
 import { parseAdjustments, parseScenarioResult } from "@/lib/financial-insights/bufferScenario";
 import { AppDbValidationError } from "./errors";
 import type { CashBufferScenarioRecord, SqliteDatabase } from "./types";
@@ -57,7 +57,7 @@ export function saveCashBufferScenario(db: SqliteDatabase, input: unknown): Cash
     result = parseScenarioResult(body.result);
     if (!result) throw new AppDbValidationError("The scenario's result is not valid");
   }
-  const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : randomUUID();
+  const id = typeof body.id === "string" && body.id.trim() ? body.id.trim() : generateId();
   if (id.length > ID_MAX) throw new AppDbValidationError("The scenario id is too long");
   const now = new Date().toISOString();
 

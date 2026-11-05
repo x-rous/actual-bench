@@ -203,6 +203,18 @@ const phaseOf = (month: string, today: string): Phase => {
 /** Spent is positive for money spent. */
 const spentOf = (c: LoadedCategory) => 0 - c.actuals;
 
+/**
+ * How a Tracking month is judged, for one category and for a group alike: spending with no plan is unplanned (a month with nothing
+ * spent, or a net refund, is not overspending); otherwise it is over, on or under the plan, and beyond a quarter of it (over by more
+ * than 25%, under by more than 25%) is the stronger level.
+ */
+function trackingCell(spent: number, plan: number, balance: number): PlanCell | null {
+  if (plan === 0) return spent === 0 ? null : { spentMinor: spent, planMinor: 0, balanceMinor: balance, state: spent > 0 ? "unplanned" : "under", level: 1 };
+  const ratio = spent / plan;
+  const state: CellState = spent > plan ? "over" : spent === plan ? "on" : "under";
+  return { spentMinor: spent, planMinor: plan, balanceMinor: balance, state, level: state === "over" ? (ratio > 1.25 ? 2 : 1) : state === "under" ? (ratio < 0.75 ? 2 : 1) : 1 };
+}
+
 function cellOf(mode: PlanMode, c: LoadedCategory): PlanCell | null {
   const spent = spentOf(c);
   const plan = c.budgeted;
@@ -211,11 +223,7 @@ function cellOf(mode: PlanMode, c: LoadedCategory): PlanCell | null {
     if (spent === 0 && c.balance >= 0 && plan === 0) return null;
     return { spentMinor: spent, planMinor: plan, balanceMinor: c.balance, state: c.balance >= 0 ? "covered" : c.carryover ? "carried" : "uncovered", level: 1 };
   }
-  // Spending with no plan is unplanned; a month with nothing spent, or a net refund, is not overspending.
-  if (plan === 0) return spent === 0 ? null : { spentMinor: spent, planMinor: 0, balanceMinor: c.balance, state: spent > 0 ? "unplanned" : "under", level: 1 };
-  const ratio = spent / plan;
-  const state: CellState = spent > plan ? "over" : spent === plan ? "on" : "under";
-  return { spentMinor: spent, planMinor: plan, balanceMinor: c.balance, state, level: state === "over" ? (ratio > 1.25 ? 2 : 1) : state === "under" ? (ratio < 0.75 ? 2 : 1) : 1 };
+  return trackingCell(spent, plan, c.balance);
 }
 
 /** A group's cell from its categories' cells in one month. */
@@ -229,10 +237,7 @@ function groupCell(mode: PlanMode, cells: (PlanCell | null)[]): PlanCell | null 
     const state: CellState = live.some((c) => c.state === "uncovered") ? "uncovered" : live.some((c) => c.state === "carried") ? "carried" : "covered";
     return { spentMinor: spent, planMinor: plan, balanceMinor: balance, state, level: 1 };
   }
-  if (plan === 0) return spent === 0 ? null : { spentMinor: spent, planMinor: 0, balanceMinor: balance, state: spent > 0 ? "unplanned" : "under", level: 1 };
-  const ratio = spent / plan;
-  const state: CellState = spent > plan ? "over" : spent === plan ? "on" : "under";
-  return { spentMinor: spent, planMinor: plan, balanceMinor: balance, state, level: state === "over" ? (ratio > 1.25 ? 2 : 1) : state === "under" ? (ratio < 0.75 ? 2 : 1) : 1 };
+  return trackingCell(spent, plan, balance);
 }
 
 /**

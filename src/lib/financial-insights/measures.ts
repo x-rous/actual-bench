@@ -136,16 +136,25 @@ export function buildLedger(facts: FinancialFacts): Ledger {
     if (account.has(row.accountId) && (!firstStarting || row.month < firstStarting)) firstStarting = row.month;
   }
   if (!firstMonth) firstMonth = firstStarting;
-  const sorted = new Map([...byAccount].map(([id, months]) => [id, [...months].sort(([a], [b]) => a.localeCompare(b))]));
+  // Each account's months in order with the running balance at the end of each, so a balance at any month is one search, not a sum
+  // over its whole history (it is asked for every account at every month of a chart).
+  const running = new Map([...byAccount].map(([id, months]) => {
+    const ordered = [...months].sort(([a], [b]) => a.localeCompare(b));
+    let total = 0;
+    return [id, { months: ordered.map(([m]) => m), balances: ordered.map(([, amount]) => (total += amount)) }] as const;
+  }));
   return {
     facts, account, role, firstMonth,
     balanceAt: (accountId, month) => {
-      let total = 0;
-      for (const [m, amount] of sorted.get(accountId) ?? []) {
-        if (m > month) break;
-        total += amount;
+      const history = running.get(accountId);
+      if (!history) return 0;
+      // The last month at or before `month`.
+      let low = 0, high = history.months.length;
+      while (low < high) {
+        const mid = (low + high) >> 1;
+        if (history.months[mid] <= month) low = mid + 1; else high = mid;
       }
-      return total;
+      return low === 0 ? 0 : history.balances[low - 1];
     },
   };
 }

@@ -334,9 +334,11 @@ export function useFinancialInsights(): FinancialInsightsView {
   const period = filters.period;
   const budget = useBudgetAvailability(gate.state === "ready", today);
   const tabs = useMemo(() => offeredTabs(accounts, budget.available), [accounts, budget.available]);
+  // The query result is a new object on every render, so the memo below depends on the few values it reads from it.
+  const { isError, isFetching, refetch } = query;
   const data = useMemo((): FinancialInsightsView["data"] => {
     if (gate.state !== "ready") return { state: "loading", stage };
-    if (query.isError && !raw) return { state: "error", retry: () => void query.refetch() };
+    if (isError && !raw) return { state: "error", retry: () => void refetch() };
     if (!raw || !ledger) return { state: "loading", stage };
     const resolved = resolvePeriod(period, today, ledger.firstMonth);
     let review: ReviewEntry[] = [];
@@ -358,7 +360,7 @@ export function useFinancialInsights(): FinancialInsightsView {
     const bufferSpending = bufferSpendingGroups(ledger, today, categories, bufferSettings);
     return {
       state: "ready", summary, buffer: cashBuffer(ledger, today, schedules, { months: bufferSettings.averageMonths, spendingMinor: bufferSettings.method === "median" ? bufferSpending?.spendingMinor : undefined }), bufferSpending, bufferSettings,
-      review, firstMonth: ledger.firstMonth, readAt: raw.readAt, refreshing: query.isFetching, refreshFailed: query.isError,
+      review, firstMonth: ledger.firstMonth, readAt: raw.readAt, refreshing: isFetching, refreshFailed: isError,
       ledger, period: resolved, categories, monthly, breakdown, spending: spendingFacts(breakdown, monthly),
       groups: spendingGroups(breakdown), comparison: comparePeriods(ledger, resolved, today), income: { breakdown: incomeRows, facts: spendingFacts(incomeRows, monthly, (m) => m.received), groups: spendingGroups(incomeRows) }, composition: compositionSeries(ledger, resolved, summary.opening), netWorthChange: netWorthSteps(summary),
       debt: debtRepayments(ledger, resolved, trackedLoans, summary.cashBridge.loanOut * -1),
@@ -366,7 +368,7 @@ export function useFinancialInsights(): FinancialInsightsView {
       drill: { ledger, period: resolved, today, reclassifiedIds: new Set(ledger.facts.reclassified.map((r) => r.id)) },
       registry: { read: raw.registryRead, assets: raw.registryAssets, metadata: raw.registryMetadata, debtLinks: raw.debtLinks, assetEntries: raw.assetEntries, assetRowCount: raw.assetRowCount, savedClassifications: raw.savedClassifications },
     };
-  }, [gate, query, raw, ledger, period, today, stage, bufferSettings]);
+  }, [gate, isError, isFetching, refetch, raw, ledger, period, today, stage, bufferSettings]);
 
   return {
     gate, today, period, data, tabs, budgetMode: budget.mode,

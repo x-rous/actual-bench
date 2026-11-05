@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import type { CashBufferScenarioRecord } from "@/lib/app-db/types";
 import { usePersistedFilters } from "@/hooks/usePersistedFilters";
+import { generateId } from "@/lib/uuid";
 import { deleteCashBufferScenario, saveCashBufferScenario } from "../lib/cashBufferScenariosApi";
 
 /**
@@ -51,8 +52,10 @@ export function useCashBufferScenarios() {
     saveScenario: async (input: Omit<Parameters<typeof saveCashBufferScenario>[0], "budgetSyncId">): Promise<CashBufferScenarioRecord | null> => {
       if (!budgetSyncId) return null;
       try {
-        const list = await save.mutateAsync({ ...input, budgetSyncId });
-        const saved = input.id ? list.find((s) => s.id === input.id) : [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+        // A new scenario gets its id here, so the saved one is found by id and never guessed from the list.
+        const id = input.id ?? generateId();
+        const list = await save.mutateAsync({ ...input, id, budgetSyncId });
+        const saved = list.find((s) => s.id === id);
         if (saved) setView({ activeId: saved.id });
         return saved ?? null;
       } catch { return null; }

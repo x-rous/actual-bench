@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { cn } from "@/lib/utils";
+import { monthsBetween } from "@/lib/financial-insights/period";
 import { Segmented } from "./filterChips";
 import {
   addDays, facetFromRows, fetchAllRows, fetchFacet, needsExactRows, resolveDateRange, weekStart, withPicks,
@@ -48,12 +49,6 @@ const monthText = (month: string) => new Date(Date.UTC(Number(month.slice(0, 4))
 /** `2026-07-27` as `27 Jul`. */
 const dayText = (day: string) => `${Number(day.slice(8, 10))} ${monthText(day.slice(0, 7))}`;
 const monthLong = (month: string) => `${monthText(month)} ${month.slice(0, 4)}`;
-const nextMonth = (month: string) => { const y = Number(month.slice(0, 4)), m = Number(month.slice(5, 7)); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`; };
-function monthsBetween(from: string, to: string): string[] {
-  const out: string[] = [];
-  for (let m = from; m <= to && out.length < 1200; m = nextMonth(m)) out.push(m);
-  return out;
-}
 
 /** Changes a list of ids by one click: plain click selects only that one (or clears it), Ctrl/Cmd adds or removes it. */
 function toggled(current: readonly string[], id: string, multi: boolean): string[] {

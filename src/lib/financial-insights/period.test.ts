@@ -1,4 +1,4 @@
-import { addMonths, formatDay, lastCompleteMonths, resolvePeriod } from "./period";
+import { addMonths, dayBefore, formatDay, lastCompleteMonths, lastDayOf, resolvePeriod } from "./period";
 
 describe("reporting period", () => {
   const today = "2026-11-18";
@@ -71,5 +71,12 @@ describe("financial insights: how a date is written", () => {
     expect(formatDay("0000-02-29")).toBe("29 Feb 0000");
     expect(formatDay("1900-02-29")).toBe("1900-02-29");
     expect(formatDay("2000-02-29")).toBe("29 Feb 2000");
+  });
+});
+
+describe("date helpers", () => {
+  it("finds the last day of a month, leap years included, and the day before a date across a month and a year", () => {
+    expect([lastDayOf("2026-02"), lastDayOf("2028-02"), lastDayOf("2026-12")]).toEqual(["2026-02-28", "2028-02-29", "2026-12-31"]);
+    expect([dayBefore("2026-03-01"), dayBefore("2026-01-01"), dayBefore("2026-06-15")]).toEqual(["2026-02-28", "2025-12-31", "2026-06-14"]);
   });
 });

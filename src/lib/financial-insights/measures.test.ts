@@ -339,6 +339,12 @@ describe("where a budget's data begins", () => {
     expect(earlierBalance.balanceAt("chk", "2026-03")).toBe(5_000);
   });
 
+  it("reads a balance at any month: nothing before the first, the running total between months, and the last total after", () => {
+    const ledger = buildLedger(facts([row("2026-02", "chk", 1_000), row("2026-02", "chk", 500), row("2026-05", "chk", -300), row("2026-09", "chk", 200)]));
+    expect(["2026-01", "2026-02", "2026-04", "2026-05", "2026-08", "2026-09", "2030-01"].map((m) => ledger.balanceAt("chk", m))).toEqual([0, 1_500, 1_500, 1_200, 1_200, 1_400, 1_400]);
+    expect(ledger.balanceAt("unknown", "2026-09")).toBe(0);
+  });
+
   it("is not moved by rows of an account that is left out", () => {
     const ledger = buildLedger(facts([row("2025-01", "ghost", 1_000), row("2026-04", "chk", 1_000)], { startingBalances: [{ month: "2024-06", accountId: "ghost", amountMinor: 9_000 }] }));
     expect(ledger.firstMonth).toBe("2026-04");

@@ -46,6 +46,12 @@ export function addMonths(month: string, count: number): string {
 /** The most months a period can hold. */
 export const MAX_PERIOD_MONTHS = 2400;
 
+/** The day before `date`, `YYYY-MM-DD`. */
+export function dayBefore(date: string): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Every month from `start` to `end`, both included, up to `MAX_PERIOD_MONTHS`. */
 export function monthsBetween(start: string, end: string): string[] {
   const months: string[] = [];
   for (let month = start; month <= end && months.length < MAX_PERIOD_MONTHS; month = addMonths(month, 1)) months.push(month);
@@ -56,7 +62,8 @@ export function monthLabel(month: string): string {
   return `${MONTH_NAMES[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
 }
 
-function lastDayOf(month: string): string {
+/** The last day of a month, `YYYY-MM-DD`. */
+export function lastDayOf(month: string): string {
   const day = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
   return `${month}-${String(day).padStart(2, "0")}`;
 }
