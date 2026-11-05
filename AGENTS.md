@@ -115,7 +115,7 @@ Never claim "nothing writes until Save" in code comments or docs; the exceptions
 ## 8. Stack and UI
 
 - npm only (`package-lock.json`). Never use yarn/pnpm or add other lockfiles.
-- Versions live in `package.json`; the Node version is pinned by `.github/workflows/` and `docker/Dockerfile.prod`. A local difference is not a bug.
+- Versions live in `package.json`; the Node version is pinned by `.nvmrc` (read by the workflows) and the Dockerfiles in `docker/` and `demo/`. A local difference is not a bug.
 - Next.js has breaking changes vs. your training data; see the managed block at the end. Never add `--webpack`.
 - React Compiler is on. The `react-hooks/incompatible-library` warning is expected; leave it.
 - Build output: `.next-build` (default, overridable via `ACTUAL_BENCH_DIST_DIR`), `.next` on Vercel, `output: "standalone"` for Docker. Preserve all of these in CI/Docker changes.
