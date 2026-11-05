@@ -18,6 +18,7 @@ require.extensions['.ts'] = (mod, filename) => {
 };
 const { getAppDb } = require('../src/lib/app-db/connection.ts');
 const { applyAccountClassChanges } = require('../src/lib/app-db/accountClassRepository.ts');
+const { applyAccountReportingChanges } = require('../src/lib/app-db/accountReportingRepository.ts');
 const { saveAssetCashflows } = require('../src/lib/app-db/assetCashflowRepository.ts');
 const { insertFxRate } = require('../src/lib/fx/repositories/fxRateRepository.ts');
 const { createBackupDestination, createBackupPolicy } = require('../src/lib/app-db/backupRepository.ts');
@@ -74,7 +75,11 @@ for (const demo of manifest) {
   ] };
   const debts = {};
   for (const spec of [
-    { key: 'mortgage', name: 'Home Mortgage', type: 'mortgage', category: c.mortgage, amount: 28000000, payment: 185000, rate: '0.05', term: 360, day: '01' },
+    // The seed pays 500.00 of extra principal in April 2026. A per-period loan takes each installment's interest from the
+    // contract, so every later installment differs from Actual by the interest that extra saved (about 2 a month, 12.50 by
+    // October). Bench would flag it as a mismatch and the cash buffer would be unavailable; the loan's own "ignore
+    // differences up to" setting is the way a user accepts that, so the demo sets it.
+    { key: 'mortgage', name: 'Home Mortgage', type: 'mortgage', category: c.mortgage, amount: 28000000, payment: 185000, rate: '0.05', term: 360, day: '01', tolerance: 2000 },
     { key: 'carLoan', name: 'Car Loan', type: 'other', category: c.carPayment, amount: 2200000, payment: 38000, rate: '0.06', term: 84, day: '05' },
     { key: 'personalLoan', name: 'Personal Loan', type: 'other', category: c.personalPayment, amount: 1200000, payment: 25000, rate: '0.09', term: 60, day: '05' },
     { key: 'rentalLoan', name: 'Investment Property Loan', type: 'mortgage', category: c.rentalMortgage, amount: 15000000, payment: 100000, rate: '0.06', term: 360, day: '01' },
@@ -82,7 +87,7 @@ for (const demo of manifest) {
     const loanOpening = openingDate.slice(0, 8) + spec.day;
     const detail = createDebtConfiguration(db, {
       budgetSyncId, name: spec.name, debtType: spec.type, behaviorClass: 'term-loan', currency: 'USD', currencyMinorDigits: 2,
-      liabilityAccountId: a[spec.key], paymentAccountId: a.checking, signConvention: 'negative-is-debt', lenderPattern: 'separate-interest', executionStrategy: 'bench-periodic', lenderChargeGraceDays: 3, onboardingDate: null,
+      liabilityAccountId: a[spec.key], paymentAccountId: a.checking, signConvention: 'negative-is-debt', lenderPattern: 'separate-interest', executionStrategy: 'bench-periodic', lenderChargeGraceDays: 3, driftToleranceMinor: spec.tolerance ?? null, onboardingDate: null,
       loanPaymentCategoryId: spec.category, drawCategoryId: null, expectedObservationIntervalDays: null, status: 'active', trackingStartDueDate: `${first.key}-${spec.day}`,
       config: loanConfig(loanOpening, `${first.key}-${spec.day}`, spec.amount, spec.payment, spec.term, spec.category),
       rates: [{ announcedAt: null, accrualEffectiveFrom: loanOpening, annualRateDecimal: spec.rate, paymentRecalcPolicy: null, paymentEffectiveFrom: null, rateCapDecimal: null, rateFloorDecimal: null, paymentCap: null, source: 'Fictional loan agreement', note: null }], offsets: [], assumptions: [],
@@ -106,6 +111,8 @@ for (const demo of manifest) {
     if (!projection.ok || !projection.projection.ok || projection.projection.events.length === 0) throw new Error(`${spec.name} projection is blocked: ${JSON.stringify(projection)}`);
   }
   applyAccountClassChanges(db, { budgetSyncId, changes: Object.entries({ checking: 'bank', savings: 'bank', cash: 'cash', credit: 'credit-card', installmentCard: 'credit-card', brokerage: 'investment', property: 'property', rentalProperty: 'property', vehicle: 'vehicle', mortgage: 'loan', carLoan: 'loan', personalLoan: 'loan', rentalLoan: 'loan' }).map(([key, accountClass]) => ({ scope: 'account', id: a[key], accountClass })) });
+  // An Investment account must say whether it is current or non-current before Financial Insights counts it. The brokerage can be sold at any time.
+  applyAccountReportingChanges(db, { budgetSyncId, changes: [{ accountId: a.brokerage, treatment: 'current-investment' }] });
   for (const spec of [{ key: 'property', name: 'Family Home', type: 'real-estate', debt: 'mortgage' }, { key: 'vehicle', name: 'Family Car', type: 'vehicle', debt: 'carLoan' }, { key: 'rentalProperty', name: 'Investment Property', type: 'real-estate', debt: 'rentalLoan' }]) {
     const id = `${budgetSyncId}-${spec.key}`;
     saveAsset(db, { budgetSyncId, asset: { id, actualAccountId: a[spec.key], name: spec.name, assetType: spec.type, description: null, status: 'active', revision: 0, ownership: [{ effectiveFrom: spec.key === 'property' ? demo.homeOpeningDate : `${first.key}-01`, ownershipBps: 10000 }] }, accountDirectory: [{ id: a[spec.key], name: spec.name, offBudget: true, closed: false }] });

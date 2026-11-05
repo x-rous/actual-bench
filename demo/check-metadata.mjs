@@ -79,6 +79,10 @@ for (const budget of demo.budgets) {
   if (homeRows.length < 7 || Number(homeRows.at(-1).date.slice(0, 4)) - Number(homeRows[0].date.slice(0, 4)) < 6) fail(`${budget.label}: home valuation history missing`);
   const { accountClasses } = await read(`/api/account-classes${q}`);
   if (accountClasses.length < 13) fail(`${budget.label}: account classifications missing`);
+  // An Investment account needs a Financial Reporting choice, or Financial Insights asks for one on the Accounts page.
+  const { accountReporting } = await read(`/api/account-reporting${q}`);
+  const investmentIds = new Set(accountClasses.filter((entry) => entry.scope === 'account' && entry.accountClass === 'investment').map((entry) => entry.accountId));
+  if (investmentIds.size === 0 || ![...investmentIds].every((id) => accountReporting.some((entry) => entry.accountId === id))) fail(`${budget.label}: investment account has no Financial Reporting choice`);
   console.log(`demo metadata: OK ${budget.label} — ${debts.length} loans, ${workspace.statements.length} statements, ${registry.assets.length} assets, ${detail.items.length} reconciled rows`);
 }
 
