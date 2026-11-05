@@ -255,6 +255,8 @@ const eslintConfig = defineConfig([
     "docs-site/**",
     // PDF.js support files, copied from pdfjs-dist at install time.
     "public/pdfjs/**",
+    // SQLite WASM and the JavaScript that starts it, copied from @sqlite.org/sqlite-wasm at install time.
+    "public/sqlite/**",
   ]),
 ]);
 
