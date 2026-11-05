@@ -67,7 +67,7 @@ export function OverlayScrollArea({ children, className = "", onClick }: Props) 
     return () => observer.disconnect();
   }, [measure, children]);
 
-  const beginDrag = (axis: "y" | "x") => (e: React.PointerEvent<HTMLDivElement>) => {
+  const startDrag = (axis: "y" | "x", e: React.PointerEvent<HTMLDivElement>) => {
     const el = scrollRef.current;
     if (!el) return;
     e.preventDefault();
@@ -79,6 +79,8 @@ export function OverlayScrollArea({ children, className = "", onClick }: Props) 
     };
     setActive(true);
   };
+  const beginDragY = (e: React.PointerEvent<HTMLDivElement>) => startDrag("y", e);
+  const beginDragX = (e: React.PointerEvent<HTMLDivElement>) => startDrag("x", e);
 
   const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -160,7 +162,7 @@ export function OverlayScrollArea({ children, className = "", onClick }: Props) 
           aria-hidden="true"
           className={`${thumbClass} right-0.5 w-1.5 ${active ? "opacity-100" : "opacity-0"}`}
           style={{ top: vertical.offset, height: vertical.size }}
-          onPointerDown={beginDrag("y")}
+          onPointerDown={beginDragY}
           onPointerMove={onDragMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
@@ -171,7 +173,7 @@ export function OverlayScrollArea({ children, className = "", onClick }: Props) 
           aria-hidden="true"
           className={`${thumbClass} bottom-0.5 h-1.5 ${active ? "opacity-100" : "opacity-0"}`}
           style={{ left: horizontal.offset, width: horizontal.size }}
-          onPointerDown={beginDrag("x")}
+          onPointerDown={beginDragX}
           onPointerMove={onDragMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}

@@ -107,7 +107,7 @@ describe("exportSnapshot", () => {
     expect(mockExportBrowserApiBudgetZip).not.toHaveBeenCalled();
     expect(result.download.filename).toBe("http-budget.zip");
     expect(result.summary).toBe(summary);
-    expect(calls[0]?.request).toEqual({ kind: "init", wasmUrl: "/sqlite/sqlite3.wasm" });
+    expect(calls[0]?.request).toEqual({ kind: "init", wasmUrl: "/sqlite/sqlite3.wasm", moduleUrl: "/sqlite/sqlite3.mjs" });
     expect(calls[1]?.request).toMatchObject({
       kind: "loadSnapshot",
       zipFilename: "http-budget.zip",

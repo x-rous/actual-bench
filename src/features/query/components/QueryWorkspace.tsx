@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -202,11 +202,21 @@ export function QueryWorkspace() {
   const [result, setResult] = useState<unknown | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [lintWarnings, setLintWarnings] = useState<LintWarning[]>([]);
+  // Whether the text parses, and what linting says about it, follow the text itself: they are worked out from it, not stored.
+  const { parseError, lintWarnings } = useMemo((): { parseError: string | null; lintWarnings: LintWarning[] } => {
+    const parsed = parseQuery(editorValue);
+    return parsed instanceof Error ? { parseError: parsed.message, lintWarnings: [] } : { parseError: null, lintWarnings: lintQuery(parsed.inner) };
+  }, [editorValue]);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveDefaultName, setSaveDefaultName] = useState("");
-  const [history, setHistory] = useState<QueryHistoryEntry[]>([]);
+  // The history belongs to the budget it was read for: when the budget changes, the new one's is read as it arrives.
+  const budgetId = connection?.budgetSyncId ?? null;
+  const [historyState, setHistoryState] = useState<{ budget: string | null; entries: QueryHistoryEntry[] }>({ budget: null, entries: [] });
+  if (historyState.budget !== budgetId) {
+    setHistoryState({ budget: budgetId, entries: budgetId ? getHistory(budgetId) : [] });
+  }
+  const history = historyState.entries;
+  const setHistory = useCallback((entries: QueryHistoryEntry[]) => setHistoryState({ budget: budgetId, entries }), [budgetId]);
   // Saved/favorite queries are global and DB-backed (RD-064), owned by the hook.
   const {
     savedQueries,
@@ -295,29 +305,16 @@ export function QueryWorkspace() {
 
   // ─── Init ─────────────────────────────────────────────────────────────────────
 
-  // When the connection changes, clear any result/error state that belongs to
-  // the previous budget, then load the new budget's history and saved queries.
-  useEffect(() => {
+  // When the connection changes, the result and error that belong to the previous budget are cleared as the new one arrives.
+  const [seenConnection, setSeenConnection] = useState(connection);
+  if (connection !== seenConnection) {
+    setSeenConnection(connection);
     setResult(null);
     setRunError(null);
     setLastExecutedRequest(null);
     setExecTime(null);
     setPayloadBytes(null);
-    if (!connection) return;
-    setHistory(getHistory(connection.budgetSyncId));
-  }, [connection]);
-
-  // Lint as the user types; also keeps the inline parse-error banner in sync.
-  useEffect(() => {
-    const parsed = parseQuery(editorValue);
-    if (parsed instanceof Error) {
-      setParseError(parsed.message);
-      setLintWarnings([]);
-      return;
-    }
-    setParseError(null);
-    setLintWarnings(lintQuery(parsed.inner));
-  }, [editorValue]);
+  }
 
   // ─── Core execution ──────────────────────────────────────────────────────────
 
@@ -331,11 +328,7 @@ export function QueryWorkspace() {
       if (isRunningRef.current) return;
 
       const parsed = parseQuery(queryString);
-      if (parsed instanceof Error) {
-        setParseError(parsed.message);
-        return;
-      }
-      setParseError(null);
+      if (parsed instanceof Error) return;
       isRunningRef.current = true;
       setIsRunning(true);
       setRunError(null);
@@ -405,7 +398,7 @@ export function QueryWorkspace() {
         setIsRunning(false);
       }
     },
-    [connection]
+    [connection, setHistory]
   );
 
   // ─── Editor actions ──────────────────────────────────────────────────────────
@@ -451,7 +444,6 @@ export function QueryWorkspace() {
     if (!prev) return false;
     prevEditorValueRef.current = "";
     setEditorValue(prev);
-    setParseError(null);
     toast.dismiss();
     return true;
   }, []);
@@ -485,7 +477,6 @@ export function QueryWorkspace() {
 
     loadedValueRef.current = query;
     setEditorValue(query);
-    setParseError(null);
     setShowExplanation(false);
   }
 

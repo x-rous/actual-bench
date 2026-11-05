@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, Upload, Plus, Sparkles, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
@@ -19,7 +19,7 @@ import { GeneraliseRuleDialog } from "./GeneraliseRuleDialog";
 import { RulesImportResultDialog } from "./RulesImportResultDialog";
 
 export function RulesView() {
-  const { isLoading, isError, error, refetch } = useRules();
+  const { data: loadedRules, isLoading, isError, error, refetch } = useRules();
   // Accounts, payees, and categories are prefetched by AppShell via
   // usePreloadEntities — no need to subscribe here.
 
@@ -39,13 +39,15 @@ export function RulesView() {
   const pushUndo             = useStagedStore((s) => s.pushUndo);
   const stageNew             = useStagedStore((s) => s.stageNew);
 
-  const [drawerOpen, setDrawerOpen]       = useState(false);
+  // Opened from the start when navigated here with ?new=1 (the parameter itself is removed below).
+  const [drawerOpen, setDrawerOpen]       = useState(() => searchParams.get("new") === "1");
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [mergeRuleIds, setMergeRuleIds]   = useState<string[]>([]);
   const [mergeDefaultDeleteOriginals, setMergeDefaultDeleteOriginals] = useState(false);
   const [mergeReturnTo, setMergeReturnTo] = useState<string | null>(null);
   const [importResult, setImportResult]   = useState<{ imported: number; skipped: number; skipReasons: SkipReason[] } | null>(null);
-  const mergeIntentHandledRef            = useRef(false);
+  const mergeReportedRef                 = useRef<string | null>(null);
+  const [mergeHandled, setMergeHandled]  = useState<string | null>(null);
   const mergeConfirmedRef                = useRef(false);
   const generaliseReportedRef            = useRef(false);
   const generaliseConfirmedRef           = useRef(false);
@@ -55,46 +57,56 @@ export function RulesView() {
   function openNewRule()            { setEditingRuleId(null); setDrawerOpen(true); }
   function openEditRule(id: string) { setEditingRuleId(id);   setDrawerOpen(true); }
 
-  // Auto-open the new rule drawer when navigated here with ?new=1
+  // ?new=1 only asks for the drawer to open, which it already did; the parameter is taken off the address.
   useEffect(() => {
-    if (searchParams.get("new") === "1") {
-      openNewRule();
-      router.replace("/rules");
-    }
+    if (searchParams.get("new") === "1") router.replace("/rules");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-open the merge dialog when navigated here with ?merge=id1,id2&from=...&intent=...
-  // (e.g. from a Merge button on a Rule Diagnostics finding). Wait for the
-  // staged store to be populated before validating the ids — otherwise a cold
-  // load would falsely report the rules as missing.
-  useEffect(() => {
-    if (mergeIntentHandledRef.current) return;
-    if (isLoading) return;
-    const mergeParam = searchParams.get("merge");
-    if (!mergeParam) return;
-    mergeIntentHandledRef.current = true;
-
+  // ?merge=id1,id2&from=...&intent=... (e.g. from a Merge button on a Rule Diagnostics finding) asks for the merge dialog. What the
+  // address asks for is worked out here, once the staged store is populated: validating the ids earlier would falsely report the
+  // rules as missing on a cold load.
+  const mergeParam = searchParams.get("merge");
+  const mergeFrom = searchParams.get("from");
+  // The rules are read by a query and then copied into the staged store, so "loaded" is not "in the store". The store has caught up
+  // when the rules it holds from the server (not those only staged here) are exactly the ones that were read: a rule that is simply not
+  // copied yet would be reported missing, and rules still held from the previous budget would be offered for a merge, which an empty
+  // result would otherwise hide.
+  const hydrated = useMemo(() => {
+    if (isLoading || loadedRules === undefined) return false;
+    const held = Object.entries(stagedRules).filter(([, entry]) => !entry.isNew);
+    return held.length === loadedRules.length && loadedRules.every((rule) => Object.hasOwn(stagedRules, rule.id));
+  }, [isLoading, loadedRules, stagedRules]);
+  const mergeIntent = useMemo((): { status: "invalid" | "missing" } | { status: "ready"; ids: string[] } | null => {
+    if (!hydrated || !mergeParam) return null;
     const ids = mergeParam.split(",").filter((s) => s.length > 0);
-    if (ids.length < 2) {
-      router.replace("/rules");
-      return;
-    }
-    const rulesMap = useStagedStore.getState().rules;
-    const missing = ids.find((id) => !rulesMap[id] || rulesMap[id].isDeleted);
-    if (missing) {
-      toast.error("One of the rules to merge no longer exists in the current working set.");
-      router.replace("/rules");
-      return;
-    }
-    const from = searchParams.get("from");
-    setMergeRuleIds(ids);
+    if (ids.length < 2) return { status: "invalid" };
+    // Own properties only: an id in the address such as "constructor" must not find something on the object's prototype.
+    if (ids.some((id) => !Object.hasOwn(stagedRules, id) || stagedRules[id].isDeleted)) return { status: "missing" };
+    return { status: "ready", ids };
+  }, [hydrated, mergeParam, stagedRules]);
+
+  // A valid request opens the dialog once, as it becomes valid. Later changes to the rules do not open it again, and the dialog
+  // can be closed while the address still carries the request.
+  if (mergeIntent?.status === "ready" && mergeHandled !== mergeParam) {
+    setMergeHandled(mergeParam);
+    setMergeRuleIds(mergeIntent.ids);
     // Pre-tick "Delete originals" whenever the merge was kicked off from
     // diagnostics — clicking Merge on either a duplicate-group or a
     // near-duplicate finding is a clear "I want to consolidate these" intent.
-    setMergeDefaultDeleteOriginals(from === "diagnostics");
-    setMergeReturnTo(from === "diagnostics" ? "/rules/diagnostics" : null);
-  }, [isLoading, searchParams, router]);
+    setMergeDefaultDeleteOriginals(mergeFrom === "diagnostics");
+    setMergeReturnTo(mergeFrom === "diagnostics" ? "/rules/diagnostics" : null);
+  }
+
+  // Only the complaint about a request that cannot be honoured is a side effect. A request that has opened the dialog is settled: what
+  // the merge does to the rules afterwards (deleting the originals, say) must not turn it into a complaint, or send the page away
+  // from where the merge was meant to leave it.
+  useEffect(() => {
+    if (!mergeIntent || mergeIntent.status === "ready" || mergeHandled === mergeParam || mergeReportedRef.current === mergeParam) return;
+    mergeReportedRef.current = mergeParam;
+    if (mergeIntent.status === "missing") toast.error("One of the rules to merge no longer exists in the current working set.");
+    router.replace("/rules");
+  }, [mergeIntent, mergeParam, mergeHandled, router]);
 
   // The generalise dialog is opened by the URL rather than mirrored into state:
   // `?generalise=<id>&from=...`, which is what the Generalise button on a Rule

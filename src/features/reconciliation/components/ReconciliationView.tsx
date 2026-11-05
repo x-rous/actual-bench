@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
+import { attempt } from "@/lib/attempt";
 import { generateId } from "@/lib/uuid";
 import {
   DEFAULT_MATCH_CONFIG,
@@ -160,6 +161,11 @@ function screenForSession(session: ReconciliationSessionRecord): Screen {
   return { name: "workbench", sessionId: session.id };
 }
 
+/** What the user is told when a new session could not be created. Kept out of the component, where a conditional inside a `catch` cannot be compiled. */
+function startFailureMessage(error: unknown): string {
+  return error instanceof Error ? `Could not start the reconciliation: ${error.message}` : "Could not start the reconciliation";
+}
+
 type Screen =
   | { name: "home" }
   | { name: "import"; sessionId: string; accountId: string; accountName: string }
@@ -227,12 +233,15 @@ function ReconciliationSessionView() {
   const [baselines, setBaselines] = useState<Map<string, ActualTransactionSnapshot>>(new Map());
   const [parsedRows, setParsedRows] = useState<StatementRow[]>([]);
   const [items, setItemsState] = useState<ReconciliationItem[]>([]);
-  const itemsRef = useRef(items);
+  // Starts as the empty list the state starts as, rather than as `items` itself, so the ref does not alias the state it mirrors.
+  const itemsRef = useRef<ReconciliationItem[]>([]);
   const setItems = useCallback((next: ReconciliationItem[] | ((previous: ReconciliationItem[]) => ReconciliationItem[])) => {
     const value = typeof next === "function" ? next(itemsRef.current) : next;
     itemsRef.current = value;
     setItemsState(value);
   }, []);
+  // The items are also set from state directly while a stored session is loaded; the ref follows whichever way they were set.
+  useLayoutEffect(() => { itemsRef.current = items; }, [items]);
   const [resumeAttempt, setResumeAttempt] = useState(0);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -272,7 +281,7 @@ function ReconciliationSessionView() {
    * explicit second press proceeds with the rest.
    */
   const [checkedPlan, setCheckedPlan] = useState<ApplyPlan | null>(null);
-  const acknowledgedDrift = useRef<string | null>(null);
+  const [acknowledgedDrift, setAcknowledgedDrift] = useState<string | null>(null);
   const applyRunning = useRef(false);
   const [driftReport, setDriftReport] = useState<DriftReport | null>(null);
   const [isCheckingDrift, setIsCheckingDrift] = useState(false);
@@ -354,152 +363,93 @@ function ReconciliationSessionView() {
    * A failed current read leaves editing and Apply disabled. Stored snapshots
    * remain available only for conflict checks and historical results.
    */
-  const hydratedSessionId = sessionQuery.data?.session.id;
-  useEffect(() => {
-    const data = sessionQuery.data;
-    // Any screen that names a session, not the workbench alone: opening an
-    // applied session lands on the apply screen, and hydrating only on the
-    // workbench left it blank until the user walked back through match.
-    if (!data || data.session.id !== sessionId) return;
-    // Hydrate whenever the loaded state belongs to a different session — or to
-    // none. Keying on emptiness instead would leave another session's decisions
-    // on screen, and skipping when it already matches keeps a fresh match result
-    // from being overwritten by the persisted copy behind it.
-    if (loadedSessionId === data.session.id) return;
+  // Any screen that names a session, not the workbench alone: opening an applied session lands on the apply screen, and hydrating only
+  // on the workbench left it blank until the user walked back through match. The stored session is hydrated whenever the loaded
+  // state belongs to a different session - or to none. Keying on emptiness instead would leave another session's decisions on
+  // screen, and skipping when it already matches keeps a fresh match result from being overwritten by the persisted copy behind it.
+  // It is done as the session arrives, so the first frame already shows it, not from an effect after an empty one.
+  const storedSession = sessionQuery.data;
+  if (storedSession && storedSession.session.id === sessionId && loadedSessionId !== storedSession.session.id) {
+    const data = storedSession;
+  setParsedRows(
+    data.statementRows.map((row) => ({
+      id: row.id,
+      sourceRowNumber: row.sourceRowNumber,
+      postedDate: row.postedDate,
+      amount: row.amount,
+      importedPayee: row.importedPayee,
+      bankNotes: row.bankNotes ?? undefined,
+      bankReference: row.bankReference ?? undefined,
+      externalId: row.externalId ?? undefined,
+      transactionDate: row.transactionDate ?? undefined,
+      // Without these a resumed session silently stops matching foreign
+      // purchases on their original amount.
+      originalAmount: row.originalAmount ?? undefined,
+      originalCurrency: row.originalCurrency ?? undefined,
+      raw: row.raw,
+      fingerprint: row.fingerprint,
+    }))
+  );
+  setItemsState(
+    data.items.map((item) => ({
+      id: item.id,
+      statementRowIds: item.statementRowIds,
+      actualTransactionIds: item.actualTransactionIds,
+      disposition: item.disposition as ReconciliationItem["disposition"],
+      reasonCode: item.reasonCode ?? undefined,
+      match: (item.match ?? undefined) as ReconciliationItem["match"],
+      guards: (item.guards ?? {
+        protectedReconciled: false,
+        splitParent: false,
+        transfer: "unknown",
+      }) as ReconciliationItem["guards"],
+      stagedChanges: (item.stagedChanges ?? undefined) as ReconciliationItem["stagedChanges"],
+    }))
+  );
+  // The rows this would have reversed are gone, and `updateItem` would find
+  // none of their ids - so the control would sit there offering to undo
+  // nothing. Cleared wherever the item set is replaced, which is here and at
+  // the end of a match.
+  setLastBulk(null);
+  const stored = data.items
+    .map((item) => item.actualSnapshot as ActualTransactionSnapshot | null)
+    .filter((snapshot): snapshot is ActualTransactionSnapshot => snapshot != null);
+  setSnapshot([]);
+  // The stored copies are the baselines by definition: each is what its item
+  // was decided against.
+  setBaselines(new Map(stored.map((transaction) => [transaction.id, transaction])));
+  // Pessimistic until the re-read says otherwise: `false` means "unknown" to
+  // `transferStatusOf`, and a session whose transfer data has not been
+  // confirmed must not authorise a delete on an assumption.
+  setTransfersReported(false);
+  setSnapshotIsStored(true);
 
-    setParsedRows(
-      data.statementRows.map((row) => ({
-        id: row.id,
-        sourceRowNumber: row.sourceRowNumber,
-        postedDate: row.postedDate,
-        amount: row.amount,
-        importedPayee: row.importedPayee,
-        bankNotes: row.bankNotes ?? undefined,
-        bankReference: row.bankReference ?? undefined,
-        externalId: row.externalId ?? undefined,
-        transactionDate: row.transactionDate ?? undefined,
-        // Without these a resumed session silently stops matching foreign
-        // purchases on their original amount.
-        originalAmount: row.originalAmount ?? undefined,
-        originalCurrency: row.originalCurrency ?? undefined,
-        raw: row.raw,
-        fingerprint: row.fingerprint,
-      }))
-    );
-    setItems(
-      data.items.map((item) => ({
-        id: item.id,
-        statementRowIds: item.statementRowIds,
-        actualTransactionIds: item.actualTransactionIds,
-        disposition: item.disposition as ReconciliationItem["disposition"],
-        reasonCode: item.reasonCode ?? undefined,
-        match: (item.match ?? undefined) as ReconciliationItem["match"],
-        guards: (item.guards ?? {
-          protectedReconciled: false,
-          splitParent: false,
-          transfer: "unknown",
-        }) as ReconciliationItem["guards"],
-        stagedChanges: (item.stagedChanges ?? undefined) as ReconciliationItem["stagedChanges"],
-      }))
-    );
-    // The rows this would have reversed are gone, and `updateItem` would find
-    // none of their ids - so the control would sit there offering to undo
-    // nothing. Cleared wherever the item set is replaced, which is here and at
-    // the end of a match.
-    setLastBulk(null);
-    const stored = data.items
-      .map((item) => item.actualSnapshot as ActualTransactionSnapshot | null)
-      .filter((snapshot): snapshot is ActualTransactionSnapshot => snapshot != null);
-    setSnapshot([]);
-    // The stored copies are the baselines by definition: each is what its item
-    // was decided against.
-    setBaselines(new Map(stored.map((transaction) => [transaction.id, transaction])));
-    // Pessimistic until the re-read says otherwise: `false` means "unknown" to
-    // `transferStatusOf`, and a session whose transfer data has not been
-    // confirmed must not authorise a delete on an assumption.
-    setTransfersReported(false);
-    setSnapshotIsStored(true);
-
-    // Rebuild what the last apply did, from the record kept as it happened.
-    // Without this the outcome is written faithfully to the database and then
-    // unreachable: reopening an applied session landed on the grid with no way
-    // to see what was written, or what failed and could be retried.
-    const persisted = Array.isArray(data.session.applyResults)
-      ? (data.session.applyResults as OperationResult[])
-      : data.session.status === "completed" ? [] : null;
-    setApplyResult(
-      persisted && (persisted.length > 0 || data.session.status === "completed")
-        ? { results: persisted, ...summarizeResults(persisted) }
-        : null
-    );
-    setPeriod(data.session.statementStart && data.session.statementEnd
-      ? { start: data.session.statementStart, end: data.session.statementEnd } : null);
-    setStatementName(data.session.statementName);
-    const savedMatch = data.session.matchConfig as Partial<MatchConfig> | null;
-    setMatchConfig({ ...DEFAULT_MATCH_CONFIG, ...savedMatch,
-      text: { ...DEFAULT_MATCH_CONFIG.text, ...savedMatch?.text } });
-    setMatchPreset(DEFAULT_TEXT_PRESET);
-    setAccountId(data.session.accountId);
-    setVerification(null);
-    setDriftReport(null);
-    // Read through the normaliser: a session saved before the notes model
-    // changed still carries the old three-way `notesStrategy`.
-    setApplyConfig(normalizeApplyConfig(data.session.applyConfig));
-    setLoadedSessionId(data.session.id);
-  }, [sessionQuery.data, hydratedSessionId, sessionId, loadedSessionId, setItems]);
-
-  /**
-   * Pair a statement row with a transaction the matcher never related.
-   *
-   * At component scope rather than inside the screen, because the possible-pairs
-   * dialog offers the same action from outside any one screen's render.
-   *
-   * Rows are removed as well as changed - the transaction's own row is
-   * absorbed into the pair - so the whole set is rewritten rather than
-   * patched, the same as resolving a candidate.
-   */
-  function handleManualMatch(statementItemId: string, actualItemId: string) {
-    if (snapshotIsStored || applyRunning.current || sessionStatus === "applying" || sessionStatus === "completed" ||
-        appliedItemIds.has(statementItemId) || appliedItemIds.has(actualItemId)) return;
-    const next = linkManually({
-      items: itemsRef.current,
-      statementItemId,
-      actualItemId,
-      statementRows: statementRowsById,
-      transactions: transactionsById,
-      transfersReported,
-    });
-    // Null when the two rows are not a statement row and a transaction. The
-    // toolbar only offers the action for that shape, so this is defence in
-    // depth rather than a path the UI can reach.
-    if (!next) return;
-
-    // The link absorbs the Actual-only row into the statement row, so a bulk
-    // undo can no longer put things back: `updateItem` restores fields on ids
-    // that still exist and silently skips the one that does not. The statement
-    // row would return to "create" while still holding the transaction - and
-    // then create a second copy of it. Same rule as hydration and re-matching:
-    // when the rows change, the undo that referred to them is spent.
-    setLastBulk(null);
-    setItems(next);
-    void mutations.replaceItems
-      .mutateAsync({
-        sessionId: sessionId ?? "",
-        items: next.map((entry) => ({
-          id: entry.id,
-          statementRowIds: entry.statementRowIds,
-          actualTransactionIds: entry.actualTransactionIds,
-          disposition: entry.disposition,
-          reasonCode: entry.reasonCode ?? null,
-          match: entry.match,
-          guards: entry.guards,
-          actualSnapshot: baselineFor(entry),
-          stagedChanges: entry.stagedChanges ?? null,
-        })),
-      })
-      .catch((error: unknown) => {
-        setMatchError(error instanceof Error ? error.message : "Could not link those rows");
-      });
+  // Rebuild what the last apply did, from the record kept as it happened.
+  // Without this the outcome is written faithfully to the database and then
+  // unreachable: reopening an applied session landed on the grid with no way
+  // to see what was written, or what failed and could be retried.
+  const persisted = Array.isArray(data.session.applyResults)
+    ? (data.session.applyResults as OperationResult[])
+    : data.session.status === "completed" ? [] : null;
+  setApplyResult(
+    persisted && (persisted.length > 0 || data.session.status === "completed")
+      ? { results: persisted, ...summarizeResults(persisted) }
+      : null
+  );
+  setPeriod(data.session.statementStart && data.session.statementEnd
+    ? { start: data.session.statementStart, end: data.session.statementEnd } : null);
+  setStatementName(data.session.statementName);
+  const savedMatch = data.session.matchConfig as Partial<MatchConfig> | null;
+  setMatchConfig({ ...DEFAULT_MATCH_CONFIG, ...savedMatch,
+    text: { ...DEFAULT_MATCH_CONFIG.text, ...savedMatch?.text } });
+  setMatchPreset(DEFAULT_TEXT_PRESET);
+  setAccountId(data.session.accountId);
+  setVerification(null);
+  setDriftReport(null);
+  // Read through the normaliser: a session saved before the notes model
+  // changed still carries the old three-way `notesStrategy`.
+  setApplyConfig(normalizeApplyConfig(data.session.applyConfig));
+  setLoadedSessionId(data.session.id);
   }
 
   /**
@@ -714,10 +664,14 @@ function ReconciliationSessionView() {
     ]
   );
 
-  useEffect(() => {
+  // A different set of decisions, apply settings or session starts the pre-flight check again: the plan that was checked, and the
+  // conflicts already acknowledged, belonged to the old ones.
+  const [planInputs, setPlanInputs] = useState({ items, applyConfig, sessionId });
+  if (planInputs.items !== items || planInputs.applyConfig !== applyConfig || planInputs.sessionId !== sessionId) {
+    setPlanInputs({ items, applyConfig, sessionId });
     setCheckedPlan(null);
-    acknowledgedDrift.current = null;
-  }, [items, applyConfig, sessionId]);
+    setAcknowledgedDrift(null);
+  }
 
   /*
    * Statement rows and transactions that look like the same thing.
@@ -830,6 +784,8 @@ function ReconciliationSessionView() {
     return items.some((item) => item.disposition === "unresolved") ? "needs_review" : "ready";
   }, [items]);
 
+  // `mutations` is a new object each render, but the function that sends the update keeps its identity, so that is what is depended on.
+  const updateSession = mutations.updateSession.mutateAsync;
   useEffect(() => {
     if (!sessionId || !derivedStatus || loadedSessionId !== sessionId) return;
     // Terminal and in-flight states describe an apply, not the decisions, and
@@ -838,13 +794,66 @@ function ReconciliationSessionView() {
     if (sessionStatus === derivedStatus) return;
     // Through the mutation so the list refreshes with it. It converges: the
     // refetched status then equals the derived one and this stops.
-    void mutations.updateSession.mutateAsync({
+    void updateSession({
       id: sessionId,
       payload: { status: derivedStatus },
     }).catch(() => undefined);
-    // `mutations` is recreated each render; depending on it would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, derivedStatus, sessionStatus, loadedSessionId]);
+  }, [sessionId, derivedStatus, sessionStatus, loadedSessionId, updateSession]);
+
+  /**
+   * Pair a statement row with a transaction the matcher never related.
+   *
+   * At component scope rather than inside the screen, because the possible-pairs
+   * dialog offers the same action from outside any one screen's render.
+   *
+   * Rows are removed as well as changed - the transaction's own row is
+   * absorbed into the pair - so the whole set is rewritten rather than
+   * patched, the same as resolving a candidate.
+   */
+  function handleManualMatch(statementItemId: string, actualItemId: string) {
+    if (snapshotIsStored || applyRunning.current || sessionStatus === "applying" || sessionStatus === "completed" ||
+        appliedItemIds.has(statementItemId) || appliedItemIds.has(actualItemId)) return;
+    const next = linkManually({
+      items: itemsRef.current,
+      statementItemId,
+      actualItemId,
+      statementRows: statementRowsById,
+      transactions: transactionsById,
+      transfersReported,
+    });
+    // Null when the two rows are not a statement row and a transaction. The
+    // toolbar only offers the action for that shape, so this is defence in
+    // depth rather than a path the UI can reach.
+    if (!next) return;
+
+    // The link absorbs the Actual-only row into the statement row, so a bulk
+    // undo can no longer put things back: `updateItem` restores fields on ids
+    // that still exist and silently skips the one that does not. The statement
+    // row would return to "create" while still holding the transaction - and
+    // then create a second copy of it. Same rule as hydration and re-matching:
+    // when the rows change, the undo that referred to them is spent.
+    setLastBulk(null);
+    setItems(next);
+    void mutations.replaceItems
+      .mutateAsync({
+        sessionId: sessionId ?? "",
+        items: next.map((entry) => ({
+          id: entry.id,
+          statementRowIds: entry.statementRowIds,
+          actualTransactionIds: entry.actualTransactionIds,
+          disposition: entry.disposition,
+          reasonCode: entry.reasonCode ?? null,
+          match: entry.match,
+          guards: entry.guards,
+          actualSnapshot: baselineFor(entry),
+          stagedChanges: entry.stagedChanges ?? null,
+        })),
+      })
+      .catch((error: unknown) => {
+        setMatchError(error instanceof Error ? error.message : "Could not link those rows");
+      });
+  }
+
 
   /**
    * Which screen to show.
@@ -893,18 +902,15 @@ function ReconciliationSessionView() {
       // failed write is an unhandled rejection: the dialog has already closed,
       // so the user lands back on the list with no session and no explanation.
       let session: ReconciliationSessionRecord;
+      const sessionTag = tag ?? null;
       try {
         ({ session } = await mutations.createSession.mutateAsync({
           accountId: account.id,
           accountName: account.name,
-          tag: tag ?? null,
+          tag: sessionTag,
         }));
       } catch (error) {
-        setMatchError(
-          error instanceof Error
-            ? `Could not start the reconciliation: ${error.message}`
-            : "Could not start the reconciliation"
-        );
+        setMatchError(startFailureMessage(error));
         return;
       }
 
@@ -1026,7 +1032,7 @@ function ReconciliationSessionView() {
       if (applyRunning.current) return;
       applyRunning.current = true;
       setIsCheckingDrift(true);
-      try {
+      await attempt(async () => {
         await mutations.flushSaves();
         ensureConnection();
         const session = sessionQuery.data?.session;
@@ -1043,8 +1049,10 @@ function ReconciliationSessionView() {
         await sessionQuery.refetch();
         setApplyResult({ results: history, ...summarizeResults(history) });
         setScreen({ name: "result", sessionId: id });
-      } catch (error) { setMatchError(error instanceof Error ? error.message : "Could not finish the session"); }
-      finally { applyRunning.current = false; setIsCheckingDrift(false); }
+      }, {
+        onError: (error) => setMatchError(error instanceof Error ? error.message : "Could not finish the session"),
+        onDone: () => { applyRunning.current = false; setIsCheckingDrift(false); },
+      });
     }
 
     function enterReview(id: string) {
@@ -1123,7 +1131,7 @@ function ReconciliationSessionView() {
        */
       setMatchStage("Bringing the budget up to date…");
 
-      try {
+      await attempt(async () => {
         if (!await refreshBudget(connection)) throw new Error("Could not refresh Actual. Retry matching after the connection recovers.");
         ensureConnection();
 
@@ -1207,12 +1215,10 @@ function ReconciliationSessionView() {
 
         ensureConnection();
         setScreen({ name: "workbench", sessionId: input.sessionId });
-      } catch (error) {
-        setMatchError(error instanceof Error ? error.message : "Could not match the statement");
-      } finally {
-        setIsMatching(false);
-        setMatchStage(null);
-      }
+      }, {
+        onError: (error) => setMatchError(error instanceof Error ? error.message : "Could not match the statement"),
+        onDone: () => { setIsMatching(false); setMatchStage(null); },
+      });
     }
 
     /**
@@ -1549,7 +1555,7 @@ function ReconciliationSessionView() {
       const previousResults = (Array.isArray(session.applyResults) ? session.applyResults as OperationResult[] : [])
         .filter((entry) => entry.status === "applied" || entry.status === "skipped" || activeOperations.has(entry.operationId));
       const collected: OperationResult[] = [];
-      try {
+      await attempt(async () => {
         await mutations.flushSaves();
         ensureConnection();
         if (session.budgetSyncId !== connection.budgetSyncId) throw new Error("This session belongs to a different budget.");
@@ -1569,8 +1575,8 @@ function ReconciliationSessionView() {
         setCheckedPlan(checked.plan);
         setDriftReport(checked.report);
         const conflictKey = JSON.stringify(checked.report.withheld);
-        if (checked.report.withheld.length > 0 && acknowledgedDrift.current !== conflictKey) {
-          acknowledgedDrift.current = conflictKey;
+        if (checked.report.withheld.length > 0 && acknowledgedDrift !== conflictKey) {
+          setAcknowledgedDrift(conflictKey);
           setScreen({ name: "review", sessionId: session.id });
           return;
         }
@@ -1653,7 +1659,7 @@ function ReconciliationSessionView() {
         const result = await executeApplyPlan({ plan, transport, previousResults,
           existingMarkers: new Set(markerRows.flatMap((row) => row.importedId ? [row.importedId] : [])),
           onResult: async (entry) => {
-            wrote ||= entry.status === "applied" || entry.status === "skipped";
+            wrote = wrote || entry.status === "applied" || entry.status === "skipped";
             collected.push(entry);
             if (Date.now() - lastFlush >= PROGRESS_FLUSH_MS) {
               lastFlush = Date.now();
@@ -1679,7 +1685,7 @@ function ReconciliationSessionView() {
         await getTransport(connection).sync();
         ensureConnection();
         setIsVerifying(true);
-        try {
+        await attempt(async () => {
           const writtenDates = plan.operations.flatMap((op) => op.kind === "update"
             ? [op.date, op.patch.date?.staged ?? op.date] : [op.date]).sort();
           const fresh = await transport.loadTransactions({ accountId: session.accountId,
@@ -1690,22 +1696,25 @@ function ReconciliationSessionView() {
             if (row) fresh.transactions.push(row);
           }
           setVerification(verifyApply({ plan, results: result.results, latest: fresh.transactions, snapshots: historicalTransactions }));
-        } catch { setMatchError("Changes were applied, but the read-back check could not finish. Check Actual before retrying."); }
-        finally { setIsVerifying(false); }
-        acknowledgedDrift.current = null;
+        }, {
+          onError: () => setMatchError("Changes were applied, but the read-back check could not finish. Check Actual before retrying."),
+          onDone: () => setIsVerifying(false),
+        });
+        setAcknowledgedDrift(null);
         setScreen({ name: "result", sessionId: session.id });
-      } catch (error) {
-        // Keep an interrupted claim when results might be uncertain. Recovery
-        // explicitly reads Actual; an exception is never permission to retry blindly.
-        if (claimed) {
-          try { await updateSessionQuietly(session.id, { applyResults: mergeOperationResults(previousResults, collected) }); }
-          catch { /* The stored applying state still prevents another writer. */ }
-          await sessionQuery.refetch();
-        }
-        setMatchError(error instanceof Error ? error.message : wrote ? "Apply was interrupted. Check Actual before recovering." : "Could not apply changes");
-      } finally {
-        applyRunning.current = false; setIsApplying(false); setIsCheckingDrift(false); setApplyProgress(null);
-      }
+      }, {
+        onError: async (error) => {
+          // Keep an interrupted claim when results might be uncertain. Recovery
+          // explicitly reads Actual; an exception is never permission to retry blindly.
+          if (claimed) {
+            try { await updateSessionQuietly(session.id, { applyResults: mergeOperationResults(previousResults, collected) }); }
+            catch { /* The stored applying state still prevents another writer. */ }
+            await sessionQuery.refetch();
+          }
+          setMatchError(error instanceof Error ? error.message : wrote ? "Apply was interrupted. Check Actual before recovering." : "Could not apply changes");
+        },
+        onDone: () => { applyRunning.current = false; setIsApplying(false); setIsCheckingDrift(false); setApplyProgress(null); },
+      });
     }
 
     async function handleRecover() {
@@ -1713,7 +1722,7 @@ function ReconciliationSessionView() {
       if (!session || session.status !== "applying" || applyRunning.current || snapshotIsStored || loadedSessionId !== session.id) return;
       applyRunning.current = true;
       setIsCheckingDrift(true); setMatchError(null);
-      try {
+      await attempt(async () => {
         await mutations.flushSaves();
         ensureConnection();
         if (!await refreshBudget(connection!)) throw new Error("Could not refresh Actual. The session remains locked.");
@@ -1738,15 +1747,22 @@ function ReconciliationSessionView() {
           plan: { ...fullPlan, operations: fullPlan.operations.filter((op) => !confirmed.has(op.id)) },
           latest: [...rows.values()], snapshots: historicalTransactions }));
         const totals = summarizeResults(results);
-        await sessionCommand(session.id, { action: "recover", patch: { applyResults: results,
+        const { session: recovered } = await sessionCommand(session.id, { action: "recover", patch: { applyResults: results,
           status: !totals.complete ? "partial" : fullPlan.blocked.length > 0 || itemsRef.current.some((item) => item.disposition === "unresolved") ? "needs_review" : "completed",
           appliedAt: session.appliedAt ?? new Date().toISOString() } });
         ensureConnection();
-        setApplyResult({ results, ...totals }); setLoadedSessionId(null);
-        await sessionQuery.refetch();
+        // The server has recovered the session, and its reply is the recovered record. It goes into the cache first, so letting the loaded
+        // session go hydrates that, not the stale "applying" copy, over the result; and a failed read-back afterwards cannot leave
+        // the screen offering Recover again for a session that is no longer applying (the server would refuse it).
+        mutations.cacheSession(recovered);
+        setApplyResult({ results, ...totals });
+        setLoadedSessionId(null);
+        void sessionQuery.refetch();
         setScreen({ name: "result", sessionId: session.id });
-      } catch (error) { setMatchError(error instanceof Error ? error.message : "Could not recover Apply. The session remains locked."); }
-      finally { applyRunning.current = false; setIsCheckingDrift(false); }
+      }, {
+        onError: (error) => setMatchError(error instanceof Error ? error.message : "Could not recover Apply. The session remains locked."),
+        onDone: () => { applyRunning.current = false; setIsCheckingDrift(false); },
+      });
     }
 
     const recoveryNotice = sessionStatus === "applying" && !isApplying && !isCheckingDrift ? (

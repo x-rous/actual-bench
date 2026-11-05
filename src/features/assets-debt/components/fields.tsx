@@ -59,7 +59,6 @@ function useSyncedText(external: string) {
   const focused = useRef(false);
   useEffect(() => {
     // Reflect outside changes (a preset, a reload) unless the person is typing here.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing an external value into an editable text buffer
     if (!focused.current) setText(external);
   }, [external]);
   return { text, setText, onFocus: () => (focused.current = true), onBlur: () => (focused.current = false) };

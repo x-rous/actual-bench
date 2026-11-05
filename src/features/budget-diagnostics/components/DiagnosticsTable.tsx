@@ -2,10 +2,15 @@
 
 import { useMemo, useState } from "react";
 import {
+  createSortedRowModel,
   flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
+  rowSortingFeature,
+  sortFn_alphanumeric,
+  sortFn_basic,
+  sortFn_datetime,
+  sortFn_text,
+  tableFeatures,
+  useTable,
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
@@ -13,6 +18,14 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { BudgetDiagnostic, DiagnosticSeverity } from "../types";
+
+// Sorting is the only table feature used. The built-in sort functions registered are the ones a column picks between on its own
+// (text, numbers, dates), so a column without a sort function of its own sorts as it always has.
+const features = tableFeatures({
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns: { alphanumeric: sortFn_alphanumeric, basic: sortFn_basic, datetime: sortFn_datetime, text: sortFn_text },
+});
 
 type SeverityFilter = "all" | DiagnosticSeverity;
 
@@ -44,6 +57,9 @@ export function DiagnosticsTable({
 }: {
   findings: BudgetDiagnostic[];
 }) {
+  // Not compiled. The table object stays the same while its rows and sort order change, so the React Compiler would cache what is
+  // read from it (the rows, the header sort state) against that unchanging object, and the table would stop following the sorting.
+  "use no memo";
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
   const [sorting, setSorting] = useState<SortingState>([
     { id: "severity", desc: false },
@@ -54,13 +70,13 @@ export function DiagnosticsTable({
     return findings.filter((finding) => finding.severity === severityFilter);
   }, [findings, severityFilter]);
 
-  const columns = useMemo<ColumnDef<BudgetDiagnostic>[]>(
+  const columns = useMemo<ColumnDef<typeof features, BudgetDiagnostic>[]>(
     () => [
       {
         accessorKey: "severity",
         header: "Severity",
         cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
-        sortingFn: (a, b) => {
+        sortFn: (a, b) => {
           const rank: Record<DiagnosticSeverity, number> = {
             error: 0,
             warning: 1,
@@ -130,13 +146,12 @@ export function DiagnosticsTable({
     []
   );
 
-  const table = useReactTable({
+  const table = useTable({
+    features,
     data: filteredFindings,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
   });
 
   return (
@@ -199,7 +214,7 @@ export function DiagnosticsTable({
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id} className="border-b border-border/60 last:border-0">
-                    {row.getVisibleCells().map((cell) => (
+                    {row.getAllCells().map((cell) => (
                       <td key={cell.id} className="align-top px-3 py-2">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>

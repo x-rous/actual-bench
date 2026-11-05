@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { getTransport } from "@/lib/actual";
 import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { attributeBook, readBook } from "@/lib/asset-registry/ledger";
@@ -12,6 +12,23 @@ import type { ReadyData } from "./useFinancialInsights";
 
 
 const ASSET_CLASSES = ["property", "vehicle", "other-asset"];
+
+type BookSnapshot = Awaited<ReturnType<typeof readBook>>;
+
+/**
+ * What the hook needs from the book reads, as one value TanStack Query shares structurally: `data` keeps its identity until a
+ * book really changes, so the figures are worked out again only then. A book whose read failed is unavailable, even if an earlier
+ * read left data behind: stale figures must not look current.
+ */
+function combineBooks(results: UseQueryResult<BookSnapshot>[]) {
+  return {
+    data: results.map((q) => (q.isError ? undefined : q.data)),
+    unsettled: results.map((q) => q.isPending && !q.isError),
+    fetching: results.some((q) => q.isFetching),
+    failed: results.some((q) => q.isError),
+    retries: results.map((q) => (q.isError ? () => void q.refetch() : null)),
+  };
+}
 
 export type WealthLoad =
   | { state: "loading" }
@@ -45,7 +62,9 @@ export function useWealth(data: ReadyData): WealthLoad {
       queryFn: () => readBook(getTransport(connection!), accountId, date),
       enabled: !!connection && !unreadable.has(accountId),
     })),
+    combine: combineBooks,
   });
+  const bookData = books.data;
   // Only the loans of the assets that are listed: an archived asset keeps its links, and its loan must not decide whether the rest can be shown.
   const linkedDebts = useMemo(() => { const listed = new Set(assets.map((a) => a.id)); return [...new Set(registry.debtLinks.filter((l) => listed.has(l.assetId)).map((l) => l.debtId))]; }, [registry.debtLinks, assets]);
   const loansQuery = useQuery({
@@ -56,10 +75,8 @@ export function useWealth(data: ReadyData): WealthLoad {
   });
 
   // An account that is not read at all (too many entries) has a disabled query that never settles: it must not hold the tab on loading.
-  const pending = accountIds.some((id, i) => !unreadable.has(id) && books[i].isPending && !books[i].isError) || (linkedDebts.length > 0 && loansQuery.isPending && !loansQuery.isError);
+  const pending = accountIds.some((id, i) => !unreadable.has(id) && books.unsettled[i]) || (linkedDebts.length > 0 && loansQuery.isPending && !loansQuery.isError);
   const failed = linkedDebts.length > 0 && loansQuery.isError;
-  // A book whose read failed is unavailable, even if an earlier read left data behind: stale figures must not look current.
-  const bookData = books.map((q) => (q.isError ? undefined : q.data));
   const loaded = useMemo((): { rows: AssetValueRow[]; series: AssetSeries } | null => {
     if (pending || failed) return null;
     const attributed = new Map<string, AssetBook | null>();
@@ -74,11 +91,9 @@ export function useWealth(data: ReadyData): WealthLoad {
       rows: assetValues({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans, unreadable, registryRead: data.registry.read }),
       series: assetSeries({ ledger, period: data.period, assets, books: attributed, links: registry.debtLinks, loans }),
     };
-    // bookData is an array rebuilt every render; its entries only change when a query settles.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending, failed, accountIds, books.map((q) => `${q.dataUpdatedAt}:${q.isError}`).join("|"), loansQuery.data, ledger, data.period, assets, registry, linkedDebts, unreadable]);
+  }, [pending, failed, accountIds, bookData, loansQuery.data, ledger, data.period, data.registry.read, assets, registry, linkedDebts, unreadable]);
 
   if (failed) return { state: "error", retry: () => void loansQuery.refetch() };
   if (!loaded) return { state: "loading" };
-  return { state: "ready", ...loaded, refreshing: books.some((q) => q.isFetching), hasFailedBooks: books.some((q) => q.isError), retryBooks: () => books.forEach((q) => { if (q.isError) void q.refetch(); }) };
+  return { state: "ready", ...loaded, refreshing: books.fetching, hasFailedBooks: books.failed, retryBooks: () => books.retries.forEach((retry) => retry?.()) };
 }

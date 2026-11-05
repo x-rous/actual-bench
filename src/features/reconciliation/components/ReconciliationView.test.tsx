@@ -71,7 +71,8 @@ const mockRead = jest.fn();
 const mockUpdate = jest.fn();
 const mockCommand = jest.fn();
 const mockCreate = jest.fn();
-jest.mock("@/lib/actual", () => ({ getTransport: () => ({ mode: "browser-api", sync: mockSync, listTransactionsForSync: mockRead, updateTransactionForSync: mockUpdate, createTransactionsForSync: mockCreate }) }));
+const mockReadTarget = jest.fn();
+jest.mock("@/lib/actual", () => ({ getTransport: () => ({ mode: "browser-api", sync: mockSync, listTransactionsForSync: mockRead, updateTransactionForSync: mockUpdate, createTransactionsForSync: mockCreate, readTargetTransactionForSync: mockReadTarget }) }));
 jest.mock("../lib/reconciliationApi", () => ({
   sessionCommand: (...args: unknown[]) => mockCommand(...args),
   updateSession: jest.fn().mockResolvedValue({}), saveWork: jest.fn().mockResolvedValue({}),
@@ -95,7 +96,9 @@ const mockData: { session: ReconciliationSessionRecord; statementRows: Statement
   items: [{ id: "i1", statementRowIds: ["s1"], actualTransactionIds: ["t1"], disposition: "unresolved", reasonCode: undefined,
     actualSnapshot: { ...current, importedPayee: null, scheduleId: null, transferId: null, amount: -9999 }, guards: { protectedReconciled: false, splitParent: false, transfer: "no" } }],
 };
-const mockMutations = { flushSaves: jest.fn(), loadSession: jest.fn(), retrySaves: jest.fn(),
+// The cache takes the session the server returned, as the real one does: here the record the hook hands out is the shared one.
+const mockCacheSession = jest.fn((session: ReconciliationSessionRecord) => { Object.assign(mockSession, session); });
+const mockMutations = { flushSaves: jest.fn(), loadSession: jest.fn(), retrySaves: jest.fn(), cacheSession: mockCacheSession,
   patchItems: { mutateAsync: jest.fn().mockResolvedValue({}) },
   replaceItems: { mutateAsync: jest.fn().mockResolvedValue({}) },
   updateSession: { mutateAsync: jest.fn().mockResolvedValue({}) }, createSession: { isPending: false } };
@@ -107,7 +110,7 @@ jest.mock("../hooks/useReconciliation", () => ({
 }));
 beforeEach(() => {
   jest.clearAllMocks();
-  mockCommand.mockReset(); mockCreate.mockReset();
+  mockCommand.mockReset(); mockCreate.mockReset(); mockReadTarget.mockReset(); mockReadTarget.mockResolvedValue(null);
   mockSession.applyConfig = null;
   mockSession.status = "needs_review"; mockSession.appliedAt = null; mockSession.applyResults = null;
   mockData.items = [{ id: "i1", statementRowIds: ["s1"], actualTransactionIds: ["t1"], disposition: "unresolved", reasonCode: undefined,
@@ -184,6 +187,24 @@ it("waits for saved decisions, claims Apply, then writes and verifies the approv
   expect(mockRead.mock.calls.length).toBeGreaterThanOrEqual(3);
 });
 
+it("holds back a change to a row that has gone from Actual, shows why, and writes nothing", async () => {
+  mockSession.status = "ready";
+  Object.assign(mockData.items[0], { disposition: "matched", actualSnapshot: { ...current, importedPayee: null, transferId: null, scheduleId: null },
+    stagedChanges: { notes: { original: null, staged: "Reviewed", source: "manual" } } });
+  // The row is there when the session opens, and has been deleted in Actual by the time Apply checks it.
+  let deleted = false;
+  mockRead.mockImplementation(async () => (deleted ? [] : [current]));
+  render(<ReconciliationView />);
+  fireEvent.click(screen.getByRole("button", { name: "Open saved session" }));
+  await screen.findByText("Decisions enabled");
+  fireEvent.click(screen.getByRole("button", { name: /^Review/ }));
+  const apply = await screen.findByRole("button", { name: /^Apply / });
+  deleted = true;
+  fireEvent.click(apply);
+  expect(await screen.findByText(/1 change is being held back/)).toBeInTheDocument();
+  expect(mockCommand).not.toHaveBeenCalled();
+  expect(mockUpdate).not.toHaveBeenCalled();
+});
 it("recovers an interrupted update from its saved plan even if Actual subsequently reconciled the row", async () => {
   mockSession.status = "applying";
   Object.assign(mockData.items[0], { disposition: "matched", actualSnapshot: { ...current, importedPayee: null, scheduleId: null },
@@ -201,6 +222,9 @@ it("recovers an interrupted update from its saved plan even if Actual subsequent
   await waitFor(() => expect(mockCommand).toHaveBeenCalledWith("session", expect.objectContaining({
     action: "recover", patch: expect.objectContaining({ status: "completed", applyResults: [expect.objectContaining({ operationId: "update:i1", status: "skipped" })] }),
   })));
+  // The recovered record from the server's reply goes into the cache, and the result shows what was recovered.
+  await waitFor(() => expect(mockCacheSession).toHaveBeenCalledWith(expect.objectContaining({ status: "completed" })));
+  await screen.findByRole("heading", { name: /^Applied$/ });
   expect(mockUpdate).not.toHaveBeenCalled();
 });
 

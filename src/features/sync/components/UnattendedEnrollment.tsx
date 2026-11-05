@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Loader2, PlayCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useNowMs } from "@/hooks/useNowMs";
 import { VaultLockedNotice } from "@/components/VaultLockedNotice";
 import type { VaultSummary } from "@/lib/credentials/vaultSummary";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
@@ -57,32 +59,28 @@ export function UnattendedEnrollment({
   lastRunAtMs?: number | null;
   onRan?: () => void;
 }) {
-  const [vault, setVault] = useState<VaultSummary | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [enrolled, setEnrolled] = useState<EnrolledIndex>(NO_ENROLMENTS);
+  const nowMs = useNowMs();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<{ status: string; message: string | null } | null>(null);
   const enginePauses = useFlowAutomations();
 
+  // What the vault holds and which budgets are enrolled, read every time the panel opens (the cache otherwise never goes stale, and
+  // credentials can be withdrawn from the Connections page) and again after each change. A read that fails forgets the last answer:
+  // stale "ready" and enrolments would still show the flow as armed and offer Run now.
+  const vaultQuery = useQuery({ queryKey: ["sync", "vault-status"], queryFn: getVaultStatus, retry: false, refetchOnWindowFocus: false, refetchOnMount: "always" });
+  const vault: VaultSummary | null = vaultQuery.isSuccess ? vaultQuery.data.vault : null;
+  const loadFailed = vaultQuery.isError;
+  const credentials = vaultQuery.isSuccess ? vaultQuery.data.credentials : null;
+  const enrolled: EnrolledIndex = useMemo(() => (credentials ? enrolledIndex(credentials) : NO_ENROLMENTS), [credentials]);
+  // Cached answers are shown at once, but not acted on until the read made as the panel opened has finished: another session may have
+  // enrolled or withdrawn a budget meanwhile, and enrolling over that would replace what is stored.
+  const reading = vaultQuery.isFetching;
+  const { refetch } = vaultQuery;
   const refresh = useCallback(async () => {
-    try {
-      const res = await getVaultStatus();
-      setVault(res.vault);
-      setLoadFailed(false);
-      setEnrolled(enrolledIndex(res.credentials));
-    } catch {
-      // Forget the last answer: stale "ready" and enrolments would still show
-      // the flow as armed and offer Run now.
-      setVault(null);
-      setEnrolled(NO_ENROLMENTS);
-      setLoadFailed(true);
-    }
-  }, []);
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    await refetch();
+  }, [refetch]);
 
   // Either mode can run on the server (RD-095): an HTTP API budget with its
   // API key, a Direct one with the Actual server's password. The flow's saved
@@ -212,11 +210,11 @@ export function UnattendedEnrollment({
       </span>
       <div className="flex items-center gap-2 pt-1">
         {bothEnrolled ? (
-          <Button size="sm" variant="outline" onClick={withdrawAll} disabled={busy}>
+          <Button size="sm" variant="outline" onClick={withdrawAll} disabled={busy || reading}>
             {busy ? "Removing…" : "Remove stored credentials"}
           </Button>
         ) : (
-          <Button size="sm" onClick={enrollAll} disabled={busy}>
+          <Button size="sm" onClick={enrollAll} disabled={busy || reading}>
             {busy ? "Checking…" : "Store credentials for unattended sync"}
           </Button>
         )}
@@ -239,7 +237,7 @@ export function UnattendedEnrollment({
           bothEnrolled,
           lastRunAtMs,
           intervalMinutes,
-          nowMs: Date.now(),
+          nowMs,
         });
         return (
           <div className="mt-1 flex flex-col gap-2 border-t border-border/60 pt-2">
@@ -250,7 +248,7 @@ export function UnattendedEnrollment({
               />
               <span className="font-medium">{status.armed ? "Armed - runs unattended" : "Not armed"}</span>
             </div>
-            <span className="text-muted-foreground">{nextRunPhrase(status, Date.now())}</span>
+            <span className="text-muted-foreground">{nextRunPhrase(status, nowMs)}</span>
             <div className="flex flex-wrap items-center gap-2 pt-0.5">
               <Button
                 size="sm"

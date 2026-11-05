@@ -47,7 +47,7 @@ yarn-error.log*
 .vercel
 
 # ── Generated SQLite WASM asset ───────────────────────────────────────────────
-public/sqlite/sqlite3.wasm
+public/sqlite/
 public/pdfjs/
 
 # ── Local Claude Code settings (user-specific, not project config) ─────────────

@@ -11,9 +11,9 @@ import { OverviewNavigationSection } from "./OverviewNavigationSection";
 import { OverviewStatsSection } from "./OverviewStatsSection";
 
 export function BudgetOverviewView() {
-  const { snapshot, isLoading, refresh } = useBudgetOverview();
+  const { snapshot, isLoading, dataUpdatedAt, refresh } = useBudgetOverview();
   const headerState = useOverviewHeaderState({
-    hasStats: !!snapshot,
+    loadedAt: snapshot ? dataUpdatedAt : null,
     refresh,
   });
   const [exportOpen, setExportOpen] = useState(false);

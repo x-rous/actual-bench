@@ -43,7 +43,7 @@ export async function exportSnapshot(
   const bytesForWorker = download.bytes.slice(0);
   const client = getSqliteWorkerClient();
 
-  await client.call({ kind: "init", wasmUrl: "/sqlite/sqlite3.wasm" }, { onProgress });
+  await client.call({ kind: "init", wasmUrl: "/sqlite/sqlite3.wasm", moduleUrl: "/sqlite/sqlite3.mjs" }, { onProgress });
   const summary = await client.call(
     {
       kind: "loadSnapshot",

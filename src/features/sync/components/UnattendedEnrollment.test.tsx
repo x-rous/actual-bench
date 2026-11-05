@@ -66,6 +66,24 @@ describe("enrolling a flow's budgets for unattended sync", () => {
     });
   });
 
+  it("shows the cached answer at once but does not act on it until the read made on opening has finished", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // What an earlier visit left in the cache: nothing enrolled. Another session has since enrolled the target.
+    client.setQueryData(["sync", "vault-status"], { vault: { status: "ready" as const }, credentials: [] });
+    let finish!: (value: Awaited<ReturnType<typeof syncApi.getVaultStatus>>) => void;
+    mockedSync.getVaultStatus.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    render(
+      <QueryClientProvider client={client}>
+        <UnattendedEnrollment sourceConnection={source} targetConnection={target} intervalMinutes={60} flowEnabled autoPaused={false} />
+      </QueryClientProvider>
+    );
+
+    const store = await screen.findByRole("button", { name: /store credentials/i });
+    expect(store).toBeDisabled();
+    finish({ vault: { status: "ready" as const }, credentials: [{ connectionFingerprint: connectionFingerprint(target) } as never] });
+    await waitFor(() => expect(screen.getByRole("button", { name: /store credentials/i })).toBeEnabled());
+  });
+
   it("removes a budget's enrolment through the other mode, which the panel counts as enrolled", async () => {
     // The source is connected Direct here but enrolled through HTTP API.
     const sourceViaHttp = connectionFingerprint({ mode: "http-api", baseUrl: "https://api.example.com", budgetSyncId: "budget-1" });

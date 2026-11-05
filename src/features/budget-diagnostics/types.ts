@@ -180,7 +180,7 @@ export type LookupRowPayload = {
 };
 
 export type WorkerRequest =
-  | { id: string; kind: "init"; wasmUrl: string }
+  | { id: string; kind: "init"; /** Where the SQLite WASM file is served from. */ wasmUrl: string; /** Where the JavaScript that starts it is served from. */ moduleUrl: string }
   | {
       id: string;
       kind: "loadSnapshot";

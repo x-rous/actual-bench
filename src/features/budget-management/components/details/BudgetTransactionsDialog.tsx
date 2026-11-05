@@ -2,14 +2,21 @@
 
 import { useMemo, useState, useEffect } from "react";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  flexRender,
+  columnFilteringFeature,
   createColumnHelper,
-  type SortingState,
+  createFilteredRowModel,
+  createSortedRowModel,
+  flexRender,
+  globalFilteringFeature,
+  rowSortingFeature,
+  sortFn_alphanumeric,
+  sortFn_basic,
+  sortFn_datetime,
+  sortFn_text,
+  tableFeatures,
+  useTable,
   type FilterFn,
+  type SortingState,
 } from "@tanstack/react-table";
 import {
   ArrowDown,
@@ -127,16 +134,30 @@ const COLUMN_WIDTHS: Record<string, string> = {
 /** Row height the virtualiser assumes before it measures the real thing. */
 const TABLE_ROW_HEIGHT = 33;
 
-const columnHelper = createColumnHelper<BudgetTransactionRow>();
+/**
+ * The table features in use: sorting, and one global search filter (a column does not filter on its own). The built-in sort
+ * functions registered are the ones a column picks between on its own (text, numbers, dates), so a column without a sort
+ * function of its own sorts as it always has.
+ */
+const features = tableFeatures({
+  columnFilteringFeature,
+  globalFilteringFeature,
+  rowSortingFeature,
+  filteredRowModel: createFilteredRowModel(),
+  sortedRowModel: createSortedRowModel(),
+  sortFns: { alphanumeric: sortFn_alphanumeric, basic: sortFn_basic, datetime: sortFn_datetime, text: sortFn_text },
+});
+
+const columnHelper = createColumnHelper<typeof features, BudgetTransactionRow>();
 
 
-const columns = [
+const columns = columnHelper.columns([
   columnHelper.accessor("date", {
     header: "Date",
     cell: ({ getValue }) => (
       <span title={getValue()}>{formatTransactionDateLabel(getValue())}</span>
     ),
-    sortingFn: "alphanumeric",
+    sortFn: "alphanumeric",
   }),
   // Sort by magnitude so the biggest movements lead regardless of side — the
   // largest outflow for expenses, the largest inflow for income.
@@ -148,7 +169,7 @@ const columns = [
         {formatDelta(row.original.amount)}
       </span>
     ),
-    sortingFn: "basic",
+    sortFn: "basic",
   }),
   columnHelper.accessor((row) => row.payeeName ?? "", {
     id: "payee",
@@ -164,7 +185,7 @@ const columns = [
         {row.original.payeeName ?? "No payee"}
       </span>
     ),
-    sortingFn: "text",
+    sortFn: "text",
   }),
   columnHelper.accessor((row) => row.categoryName ?? "", {
     id: "category",
@@ -177,7 +198,7 @@ const columns = [
         {row.original.categoryName ?? "Uncategorized"}
       </span>
     ),
-    sortingFn: "text",
+    sortFn: "text",
   }),
   columnHelper.accessor((row) => row.notes ?? "", {
     id: "notes",
@@ -190,9 +211,9 @@ const columns = [
         {row.original.notes ?? ""}
       </span>
     ),
-    sortingFn: "text",
+    sortFn: "text",
   }),
-];
+]);
 
 /**
  * Substring test against the prebuilt index, not a fresh format of every row.
@@ -203,7 +224,7 @@ const columns = [
  */
 type TransactionSearchFilter = { query: string; index: Map<string, string> };
 
-const transactionSearchFilter: FilterFn<BudgetTransactionRow> = (
+const transactionSearchFilter: FilterFn<typeof features, BudgetTransactionRow> = (
   row,
   _columnId,
   filterValue: TransactionSearchFilter
@@ -489,6 +510,9 @@ function EmptyState({ message }: { message: string }) {
 // ─── dialog ───────────────────────────────────────────────────────────────────
 
 export function BudgetTransactionsDialog({ target, browserOptions, onClose, varianceLink }: Props) {
+  // Not compiled. The table object stays the same while its rows and sort order change, so the React Compiler would cache what is
+  // read from it (the rows, the header sort state) against that unchanging object, and the table would stop following the sorting.
+  "use no memo";
   /*
    * The breakdown and chart selections, each a set rather than a single id.
    *
@@ -1011,15 +1035,13 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose, vari
     [globalFilter, searchIndex]
   );
 
-  const table = useReactTable({
+  const table = useTable({
+    features,
     data: visuallyFilteredRows,
     columns,
     state: { sorting, globalFilter: searchFilterValue },
     onSortingChange: setSorting,
     globalFilterFn: transactionSearchFilter,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
   });
 
   const tableRows = table.getRowModel().rows;
@@ -1671,7 +1693,7 @@ export function BudgetTransactionsDialog({ target, browserOptions, onClose, vari
                               style={{ height: TABLE_ROW_HEIGHT }}
                               className="border-b border-border/60 hover:bg-muted/30"
                             >
-                              {row.getVisibleCells().map((cell) => (
+                              {row.getAllCells().map((cell) => (
                                 <td
                                   key={cell.id}
                                   className={cn(

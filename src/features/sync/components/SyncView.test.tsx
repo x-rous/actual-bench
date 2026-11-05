@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { connectionFingerprint } from "@/lib/sync/connectionRef";
 import { SyncView } from "./SyncView";
 import * as flowsHook from "../hooks/useSyncFlows";
@@ -82,25 +83,30 @@ function setup(connections: ConnectionInstance[]) {
   (orchestrationHook.useSafeSyncMutation as jest.Mock).mockReturnValue({ mutate: jest.fn(), isPending: false });
 }
 
+// The page is always inside a query client; the unattended panel reads the vault through it.
+function renderView() {
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SyncView /></QueryClientProvider>);
+}
+
 beforeEach(() => jest.clearAllMocks());
 
 describe("SyncView", () => {
   it("shows the needs-connections notice only when there are no connections", () => {
     setup([]);
-    render(<SyncView />);
+    renderView();
     expect(screen.getByText(/needs a connection/i)).toBeInTheDocument();
   });
 
   it("opens the workspace with a single connection (same-budget sync needs only one)", () => {
     setup([conn1]);
-    render(<SyncView />);
+    renderView();
     expect(screen.queryByText(/needs a connection/i)).not.toBeInTheDocument();
   });
 
   it("opens the workspace with an HTTP API Server connection", () => {
     const httpConn: ConnectionInstance = { id: "c3", label: "Cloud", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "b-http" };
     setup([conn1, httpConn]);
-    render(<SyncView />);
+    renderView();
     expect(screen.queryByText(/needs a connection/i)).not.toBeInTheDocument();
   });
 
@@ -109,7 +115,7 @@ describe("SyncView", () => {
     const httpTarget: ConnectionInstance = { id: "http-tgt", label: "Family", mode: "http-api", baseUrl: "https://api.example.com", apiKey: "k", budgetSyncId: "b-tgt" };
     setup([httpSource, httpTarget]);
 
-    render(<SyncView />);
+    renderView();
 
     expect(screen.queryByText("Needs connection")).not.toBeInTheDocument();
   });
@@ -117,7 +123,7 @@ describe("SyncView", () => {
   it("still flags a flow when one of its budgets is not open", () => {
     setup([conn1]);
 
-    render(<SyncView />);
+    renderView();
 
     expect(screen.getByText("Needs connection")).toBeInTheDocument();
   });
@@ -139,7 +145,7 @@ describe("SyncView", () => {
       },
     });
 
-    render(<SyncView />);
+    renderView();
 
     // Its target budget is not open in this tab, and that is fine: it runs on the server.
     expect(screen.queryByText("Needs connection")).not.toBeInTheDocument();
@@ -163,7 +169,7 @@ describe("SyncView", () => {
     savedConnector.saved = [saved];
     savedConnector.connect.mockResolvedValue({ ...conn2, id: "c2-new" });
     try {
-      render(<SyncView />);
+      renderView();
       fireEvent.click(screen.getByText("Card sync"));
       fireEvent.click(screen.getByRole("button", { name: "Edit flow" }));
       fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -193,7 +199,7 @@ describe("SyncView", () => {
       },
     });
 
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByText("Card sync"));
 
     expect(screen.getByRole("button", { name: /run safe sync/i })).toBeDisabled();
@@ -201,15 +207,27 @@ describe("SyncView", () => {
 
   it("opens the editor dialog with default transform (same sign, create payee)", async () => {
     setup([conn1, conn2]);
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByRole("button", { name: /create sync flow/i }));
     expect(await screen.findByLabelText("Amount direction")).toHaveTextContent("Same sign (default)");
     expect(screen.getByLabelText("Missing payee policy")).toHaveTextContent("Create payee (default)");
   });
 
+  it("loads a flow again when it is selected again after the selection was cleared", async () => {
+    setup([conn1, conn2]);
+    renderView();
+    fireEvent.click(screen.getByText("Card sync"));
+    // Starting a new flow clears the selection and empties the form.
+    fireEvent.click(screen.getByRole("button", { name: /create sync flow/i }));
+    expect(await screen.findByLabelText("Amount direction")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Card sync")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Card sync"));
+    expect(await screen.findByDisplayValue("Card sync")).toBeInTheDocument();
+  });
+
   it("runs a preview from the top section and renders classified rows", async () => {
     setup([conn1, conn2]);
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByText("Card sync"));
 
     const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
@@ -228,7 +246,7 @@ describe("SyncView", () => {
 
   it("applies selected changes and renders the apply result", async () => {
     setup([conn1, conn2]);
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByText("Card sync"));
     const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
     await waitFor(() => expect(previewButtons[0]).toBeEnabled());
@@ -244,7 +262,7 @@ describe("SyncView", () => {
 
   it("shows run history when Run history is clicked", async () => {
     setup([conn1, conn2]);
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByText("Card sync"));
     fireEvent.click(await screen.findByRole("button", { name: /history/i }));
     expect(await screen.findByRole("button", { name: /back to flow/i })).toBeInTheDocument();
@@ -255,7 +273,7 @@ describe("SyncView", () => {
 
   it("makes a run opened from history read-only (no apply)", async () => {
     setup([conn1, conn2]);
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByText("Card sync"));
     fireEvent.click(await screen.findByRole("button", { name: /history/i }));
     // click the historical run row
@@ -288,7 +306,7 @@ describe("SyncView", () => {
       refetch: jest.fn(),
     }));
 
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByText("Card sync"));
 
     const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
@@ -323,7 +341,7 @@ describe("SyncView", () => {
       })
     );
 
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByText("Card sync"));
     const previewButtons = await screen.findAllByRole("button", { name: /^sync preview$/i });
     await waitFor(() => expect(previewButtons[0]).toBeEnabled());
@@ -342,7 +360,7 @@ describe("SyncView", () => {
 
   it("creates a reverse flow with source and target swapped from the header", async () => {
     setup([conn1, conn2]);
-    render(<SyncView />);
+    renderView();
     fireEvent.click(screen.getByText("Card sync"));
 
     const reverseButton = await screen.findByRole("button", { name: /create reverse flow/i });

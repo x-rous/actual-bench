@@ -36,6 +36,7 @@ export function useBudgetOverview(): UseBudgetOverviewResult {
     isLoading: query.isLoading,
     isError: query.isError,
     hasPartialFailure: snapshotHasPartialFailure,
+    dataUpdatedAt: query.dataUpdatedAt || null,
     refresh: async (): Promise<OverviewRefreshResult> => {
       const result = await query.refetch();
       const refreshedSnapshot = result.data ?? null;

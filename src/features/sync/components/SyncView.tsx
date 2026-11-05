@@ -132,15 +132,19 @@ export function SyncView() {
     isEnrolled(enrolled, selectedConfig.targetConnectionFingerprint, selectedConfig.targetBudgetId);
   const [serverRunning, setServerRunning] = useState(false);
   const kind = syncKindOf(selectedFlow?.flowType ?? "transaction_sync");
-  useEffect(() => {
-    if (!selectedFlowId) return;
-    const flow = flows.find((f) => f.id === selectedFlowId);
-    if (!flow) return;
-    const next = flowToFormState(flow, connections);
-    setForm(next);
-    setSavedSnapshot(JSON.stringify(next));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFlowId, flowsQuery.data]);
+  // The form shows the selected flow as it was last read: it is loaded as a different flow is selected, and again whenever the flows
+  // are read afresh (after a save, which is also what makes the saved copy the one to compare against).
+  const [formSource, setFormSource] = useState<{ flowId: string | null; flows: typeof flowsQuery.data }>({ flowId: null, flows: undefined });
+  // Clearing the selection is remembered too, so selecting the same flow again loads it again.
+  if (formSource.flowId !== selectedFlowId || (selectedFlowId !== null && formSource.flows !== flowsQuery.data)) {
+    setFormSource({ flowId: selectedFlowId, flows: flowsQuery.data });
+    const flow = selectedFlowId ? flows.find((f) => f.id === selectedFlowId) : undefined;
+    if (flow) {
+      const next = flowToFormState(flow, connections);
+      setForm(next);
+      setSavedSnapshot(JSON.stringify(next));
+    }
+  }
 
   // The live preview response carries items the database never persisted
   // (already_synced) - prefer it over the DB read for the run we just

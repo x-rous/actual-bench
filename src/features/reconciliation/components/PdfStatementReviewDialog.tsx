@@ -198,7 +198,7 @@ export function PdfStatementReviewDialog({
 
   const [mode, setMode] = useState<WorkbenchMode>(() => initialModeForResult(result, Boolean(profileNotice)));
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
-  const [filter, setFilter] = useState<PdfReviewCategory>(() => initialReviewFilter(result));
+  const [chosenFilter, setFilter] = useState<PdfReviewCategory>(() => initialReviewFilter(result));
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<PdfSortState>(null);
   const [scopedCorrectionOffer, setScopedCorrectionOffer] = useState<ScopedCorrectionOffer | null>(null);
@@ -220,6 +220,8 @@ export function PdfStatementReviewDialog({
   const [acknowledgedPages, setAcknowledgedPages] = useState<string | null>(null);
 
   const rows = useMemo(() => parsed?.transactions ?? [], [parsed]);
+  // A category with no rows left in it shows everything, rather than an empty list the user has to find their way out of.
+  const filter: PdfReviewCategory = chosenFilter !== "all" && !rows.some((row) => matchesCategory(row, chosenFilter)) ? "all" : chosenFilter;
   const visibleRows = useMemo(
     () => rows.filter((row) => matchesCategory(row, filter) && matchesSearch(row, search)),
     [filter, rows, search]
@@ -352,14 +354,13 @@ export function PdfStatementReviewDialog({
     [draftGuidance, pagesChecked, parsed, preview, unreadablePages]
   );
 
-  useEffect(() => {
-    if (filter !== "all" && !rows.some((row) => matchesCategory(row, filter))) setFilter("all");
-  }, [filter, rows]);
-
-  useEffect(() => {
+  // A different file or document starts at the default zoom, with no column asked for.
+  const [seenDocument, setSeenDocument] = useState({ fileName, document: result?.document });
+  if (seenDocument.fileName !== fileName || seenDocument.document !== result?.document) {
+    setSeenDocument({ fileName, document: result?.document });
     setPdfZoom(PDF_DEFAULT_ZOOM);
     setColumnFocusRequest(null);
-  }, [fileName, result?.document]);
+  }
 
   // Handed to the table's memoised rows, so they keep their identity.
   const toggleRow = useStableCallback((id: string, checked: boolean) => {

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useNowMs } from "@/hooks/useNowMs";
 import { connectionFingerprint, connectionMatchesBudget } from "@/lib/sync/connectionRef";
 import { decodeFlowPlanConfig } from "@/lib/sync/flowConfig";
 import { latestRunLabel, runNeedsAttention, runQueuedCount } from "../lib/runsView";
@@ -57,6 +58,7 @@ export function FlowList({
   onCreate,
 }: FlowListProps) {
   const [search, setSearch] = useState("");
+  const nowMs = useNowMs();
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -137,7 +139,7 @@ export function FlowList({
                 bothEnrolled,
                 lastRunAtMs: lastRunMs && !Number.isNaN(lastRunMs) ? lastRunMs : null,
                 intervalMinutes: config.intervalMinutes,
-                nowMs: Date.now(),
+                nowMs,
               });
               const attentionBadge = autoPaused
                 ? "Auto-paused"
@@ -196,7 +198,7 @@ export function FlowList({
                         aria-hidden
                       />
                       <span className="truncate text-muted-foreground">
-                        {unattended.armed ? nextRunPhrase(unattended, Date.now()) : unattended.reason}
+                        {unattended.armed ? nextRunPhrase(unattended, nowMs) : unattended.reason}
                       </span>
                     </div>
                   )}

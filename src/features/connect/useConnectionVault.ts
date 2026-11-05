@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RememberedBudget, ServerCredentialMeta } from "@/lib/app-db/types";
 import type { VaultUnlockDuration } from "@/lib/connectionVault/unlockDuration";
 import {
@@ -25,7 +25,7 @@ import {
   type VaultStatus,
 } from "./vaultApi";
 import { AUTH_STATUS_QUERY_KEY } from "@/hooks/useAuthStatus";
-import { REMEMBERED_SERVERS_QUERY_KEY, fetchVault } from "./vaultQueries";
+import { REMEMBERED_SERVERS_QUERY_KEY, VAULT_VIEW_QUERY_KEY, fetchVault } from "./vaultQueries";
 
 const CLOSED: VaultStatus = {
   supported: false,
@@ -57,38 +57,33 @@ function viewOf(status: VaultStatus, list: RememberedList | null | undefined): V
  */
 export function useConnectionVault() {
   const queryClient = useQueryClient();
-  const [cached] = useState<VaultView | null>(() => {
-    const status = queryClient.getQueryData<VaultStatus>(AUTH_STATUS_QUERY_KEY);
-    const list = queryClient.getQueryData<RememberedList>(REMEMBERED_SERVERS_QUERY_KEY);
-    return status && list ? viewOf(status, list) : null;
+  const vault = useQuery({
+    queryKey: VAULT_VIEW_QUERY_KEY,
+    queryFn: async (): Promise<VaultView> => {
+      try {
+        // Both at once, through the shared cache: the account menu's own
+        // request for the status is the same one, so it shows with the page.
+        const [s, list] = await fetchVault(queryClient);
+        return viewOf(s, list);
+      } catch {
+        // Vault route unavailable → treat as unsupported rather than surface an error.
+        return { status: CLOSED, servers: [], budgets: [] };
+      }
+    },
+    // What the shared cache already holds is shown at once, and read again in the background.
+    initialData: () => {
+      const status = queryClient.getQueryData<VaultStatus>(AUTH_STATUS_QUERY_KEY);
+      const list = queryClient.getQueryData<RememberedList>(REMEMBERED_SERVERS_QUERY_KEY);
+      return status && list ? viewOf(status, list) : undefined;
+    },
+    refetchOnWindowFocus: false,
   });
-  const [status, setStatus] = useState<VaultStatus>(cached?.status ?? CLOSED);
-  const [servers, setServers] = useState<ServerCredentialMeta[]>(cached?.servers ?? []);
-  const [budgets, setBudgets] = useState<RememberedBudget[]>(cached?.budgets ?? []);
-  const [loading, setLoading] = useState(cached === null);
-
+  const { status, servers, budgets } = vault.data ?? { status: CLOSED, servers: [] as ServerCredentialMeta[], budgets: [] as RememberedBudget[] };
+  const loading = vault.isPending;
+  const { refetch } = vault;
   const refresh = useCallback(async () => {
-    try {
-      // Both at once, through the shared cache: the account menu's own
-      // request for the status is the same one, so it shows with the page.
-      const [s, list] = await fetchVault(queryClient);
-      const view = viewOf(s, list);
-      setStatus(view.status);
-      setServers(view.servers);
-      setBudgets(view.budgets);
-    } catch {
-      // Vault route unavailable → treat as unsupported rather than surface an error.
-      setStatus(CLOSED);
-      setServers([]);
-      setBudgets([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [queryClient]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    await refetch();
+  }, [refetch]);
 
   const setPassphrase = useCallback(
     async (passphrase: string, duration: VaultUnlockDuration) => {

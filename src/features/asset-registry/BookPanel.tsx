@@ -30,6 +30,8 @@ import { registryRequest } from "./api";
 /** The entries that set what the asset is worth by hand; scheduled depreciation does not count as someone looking at the value. */
 const VALUE_UPDATES = ["opening-balance", "revaluation", "impairment", "other-adjustment"];
 export type BookView = "asset" | "unclassified" | "unassigned" | "all";
+/** Every other filter cleared, and only the entries that have no type. */
+const unclassifiedOnly = () => ({ ...emptyRowFilters(), types: { ids: ["unclassified"], not: false } });
 export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onViewChange, accountName, financialBlocked = false, onUncertain, focus, onClearFocus, onCapitalAction, recordDisabled = false, payeeOptions }: {
   /** Opens a financial entry from the Add Entry menu: a payment into the asset, or a sale or write-off. */ onCapitalAction?: (kind: "dispose" | "payment") => void; recordDisabled?: boolean;
   /** Payees loaded by the workspace for the entry editor's payee picker. */ payeeOptions?: { id: string; name: string; transferAccountId?: string | null }[];
@@ -46,7 +48,7 @@ export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onV
   /** In a shared account, whether the list also shows the other assets' transactions (off by default). */
   const [showOthers, setShowOthers] = useState(false);
   /** The picker's Type, Payee and Amount chips. A type is a book type, or "unclassified" for an entry without one. */
-  const [filters, setFilters] = useState(emptyRowFilters);
+  const [filters, setFilters] = useState(() => (filter === "unclassified" ? unclassifiedOnly() : emptyRowFilters()));
   /** The dates the list and the KPI strip cover: the whole history until the user picks another range. */
   const [range, setRange] = useState<AssetRange>(ALL_TIME);
   const [typeMenu, setTypeMenu] = useState<{ row: AttributedRow; anchor: Element } | null>(null);
@@ -80,8 +82,15 @@ export function BookPanel({ asset, registry, snapshot, fresh, onSaved, view, onV
   const taggable = (r: AttributedRow) => !reasonFor(r) && isBenchCreated(snapshot.source.find((s) => s.id === r.id)?.importedId);
   const selectRow = (id: string) => setSelected((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
   function changeView(value: BookView) { (onViewChange ?? setLocalView)(value); setSelected([]); }
-  // A link that asks for the unclassified entries (the Overview, the KPI tile) becomes a Type filter, then the view goes back to normal.
-  useEffect(() => { if (filter === "unclassified") { setFilters({ ...emptyRowFilters(), types: { ids: ["unclassified"], not: false } }); setRange(ALL_TIME); setSearch(""); changeView("asset"); } }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A link that asks for the unclassified entries (the Overview, the KPI tile) becomes a Type filter on a clean slate, then the view goes
+  // back to normal. The filter is set as the view arrives (and from the start when the panel opens on it), not from an effect that
+  // would paint the unfiltered list first; only asking the parent to go back to the normal view is left to an effect.
+  const [seenView, setSeenView] = useState(filter);
+  if (filter !== seenView) {
+    setSeenView(filter);
+    if (filter === "unclassified") { setFilters(unclassifiedOnly()); setRange(ALL_TIME); setSearch(""); setSelected([]); }
+  }
+  useEffect(() => { if (filter === "unclassified") onViewChange?.("asset"); }, [filter, onViewChange]);
   function openBulk(anchor: Element, ids = selected) { setSelected(ids); setError(""); setBulkAnchor(anchor); }
   const columns: Column<AttributedRow>[] = [
     { key: "selected", header: "Select", width: 34, align: "center", headerIcon: <Checkbox aria-label="Select all visible entries" checked={rows.length > 0 && rows.every((r) => selected.includes(r.id))} indeterminate={rows.some((r) => selected.includes(r.id)) && !rows.every((r) => selected.includes(r.id))} onCheckedChange={(checked) => setSelected(checked ? rows.map((r) => r.id) : [])} />, cell: (r) => <Checkbox aria-label={`Select ${r.label} ${r.date}`} checked={selected.includes(r.id)} onCheckedChange={() => selectRow(r.id)} /> },
