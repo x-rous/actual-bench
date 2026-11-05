@@ -23,7 +23,9 @@ env:
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Only pushes to main: a fork's pull request from a branch named `main` also
+    # reports head_branch `main`, and this job holds the Space token.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -44,6 +46,7 @@ jobs:
       # The Space records the commit it was last built from. Compare against it
       # so changes skipped earlier (docs-only merges) never hide a later,
       # relevant one. A manual run, or a missing/unknown marker, always deploys.
+      # A re-run of an older CI run is skipped when the Space is already ahead.
       - name: Decide whether the Space needs an update
         id: changes
         run: |
@@ -53,9 +56,11 @@ jobs:
           if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ -f "$marker" ]; then
             last="$(tr -d '[:space:]' < "$marker")"
             if git cat-file -e "${last}^{commit}" 2>/dev/null; then
-              if git diff --name-only "$last" "$head" -- \
+              if [ "$head" != "$last" ] && git merge-base --is-ancestor "$head" "$last"; then
+                deploy=false
+              elif git diff --name-only "$last" "$head" -- \
                   src public demo scripts package.json package-lock.json next.config.ts \
-                  tsconfig.json postcss.config.mjs jest.setup.ts \
+                  tsconfig.json postcss.config.mjs jest.setup.ts .dockerignore \
                   .github/workflows/demo-deploy.yml \
                   ':(exclude)*.md' ':(exclude)*.test.ts' ':(exclude)*.test.tsx' \
                   | grep -q .; then
@@ -90,20 +95,21 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "Space already up to date."
-            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -m "chore(demo): deploy combined demo"
           git push
-          echo "pushed=true" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # The old container keeps answering while the new image builds, so wait
       # on the Space's own build state rather than on the demo's health check.
+      # Runs even when nothing was pushed, so a rerun after a failed build
+      # reports that failure instead of succeeding.
       - name: Wait for the Space build
-        if: steps.push.outputs.pushed == 'true'
+        if: steps.changes.outputs.deploy == 'true'
         run: |
           sha="${{ steps.push.outputs.sha }}"
           for _ in $(seq 1 90); do
