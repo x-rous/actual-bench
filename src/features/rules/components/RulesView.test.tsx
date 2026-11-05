@@ -28,7 +28,7 @@ jest.mock("./MergeRulesDialog", () => ({
   ),
 }));
 
-const rule = (id: string, isDeleted = false) => ({ entity: { id }, saved: undefined, isNew: false, isUpdated: false, isDeleted });
+const rule = (id: string, isDeleted = false, isNew = false) => ({ entity: { id }, saved: undefined, isNew, isUpdated: false, isDeleted });
 const seed = (rules: Record<string, ReturnType<typeof rule>>) => useStagedStore.setState({ rules: rules as never });
 const merge = () => screen.getByTestId("merge");
 
@@ -95,6 +95,23 @@ describe("the rules page, when the address asks for something", () => {
     rerender(<RulesView />);
     expect(merge()).toHaveAttribute("data-open", "true");
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("does not offer rules still held from the previous budget when the new budget has none", () => {
+    query = "merge=r1,r2";
+    readRules = [];
+    seed({ r1: rule("r1"), r2: rule("r2") });
+    render(<RulesView />);
+    expect(merge()).toHaveAttribute("data-open", "false");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("is not held up by rules that are only staged here and were never read", () => {
+    query = "merge=r1,r2";
+    seed({ r1: rule("r1"), r2: rule("r2"), fresh: rule("fresh", false, true) });
+    render(<RulesView />);
+    expect(merge()).toHaveAttribute("data-open", "true");
   });
 
   it("does not take an id such as constructor for a rule", () => {

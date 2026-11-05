@@ -74,6 +74,9 @@ export function UnattendedEnrollment({
   const loadFailed = vaultQuery.isError;
   const credentials = vaultQuery.isSuccess ? vaultQuery.data.credentials : null;
   const enrolled: EnrolledIndex = useMemo(() => (credentials ? enrolledIndex(credentials) : NO_ENROLMENTS), [credentials]);
+  // Cached answers are shown at once, but not acted on until the read made as the panel opened has finished: another session may have
+  // enrolled or withdrawn a budget meanwhile, and enrolling over that would replace what is stored.
+  const reading = vaultQuery.isFetching;
   const { refetch } = vaultQuery;
   const refresh = useCallback(async () => {
     await refetch();
@@ -207,11 +210,11 @@ export function UnattendedEnrollment({
       </span>
       <div className="flex items-center gap-2 pt-1">
         {bothEnrolled ? (
-          <Button size="sm" variant="outline" onClick={withdrawAll} disabled={busy}>
+          <Button size="sm" variant="outline" onClick={withdrawAll} disabled={busy || reading}>
             {busy ? "Removing…" : "Remove stored credentials"}
           </Button>
         ) : (
-          <Button size="sm" onClick={enrollAll} disabled={busy}>
+          <Button size="sm" onClick={enrollAll} disabled={busy || reading}>
             {busy ? "Checking…" : "Store credentials for unattended sync"}
           </Button>
         )}

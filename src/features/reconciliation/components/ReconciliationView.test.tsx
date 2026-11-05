@@ -96,7 +96,9 @@ const mockData: { session: ReconciliationSessionRecord; statementRows: Statement
   items: [{ id: "i1", statementRowIds: ["s1"], actualTransactionIds: ["t1"], disposition: "unresolved", reasonCode: undefined,
     actualSnapshot: { ...current, importedPayee: null, scheduleId: null, transferId: null, amount: -9999 }, guards: { protectedReconciled: false, splitParent: false, transfer: "no" } }],
 };
-const mockMutations = { flushSaves: jest.fn(), loadSession: jest.fn(), retrySaves: jest.fn(),
+// The cache takes the session the server returned, as the real one does: here the record the hook hands out is the shared one.
+const mockCacheSession = jest.fn((session: ReconciliationSessionRecord) => { Object.assign(mockSession, session); });
+const mockMutations = { flushSaves: jest.fn(), loadSession: jest.fn(), retrySaves: jest.fn(), cacheSession: mockCacheSession,
   patchItems: { mutateAsync: jest.fn().mockResolvedValue({}) },
   replaceItems: { mutateAsync: jest.fn().mockResolvedValue({}) },
   updateSession: { mutateAsync: jest.fn().mockResolvedValue({}) }, createSession: { isPending: false } };
@@ -220,6 +222,9 @@ it("recovers an interrupted update from its saved plan even if Actual subsequent
   await waitFor(() => expect(mockCommand).toHaveBeenCalledWith("session", expect.objectContaining({
     action: "recover", patch: expect.objectContaining({ status: "completed", applyResults: [expect.objectContaining({ operationId: "update:i1", status: "skipped" })] }),
   })));
+  // The recovered record from the server's reply goes into the cache, and the result shows what was recovered.
+  await waitFor(() => expect(mockCacheSession).toHaveBeenCalledWith(expect.objectContaining({ status: "completed" })));
+  await screen.findByRole("heading", { name: /^Applied$/ });
   expect(mockUpdate).not.toHaveBeenCalled();
 });
 

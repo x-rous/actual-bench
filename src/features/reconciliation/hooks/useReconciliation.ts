@@ -180,6 +180,9 @@ export function useReconciliationMutations() {
 
   return {
     loadSession: (id: string) => queryClient.fetchQuery({ queryKey: sessionKey(id), queryFn: () => api.getSession(id), staleTime: 0 }),
+    /** Puts a session the server has just returned into the cache, so the screen follows it without waiting for a read. */
+    cacheSession: (session: Awaited<ReturnType<typeof api.getSession>>["session"]) =>
+      queryClient.setQueryData<Awaited<ReturnType<typeof api.getSession>>>(sessionKey(session.id), (current) => (current ? { ...current, session } : current)),
     hasFailedSaves: queue.hasFailures,
     flushSaves: () => queue.flush(),
     retrySaves: async (id?: string | null) => {

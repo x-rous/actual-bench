@@ -1747,15 +1747,17 @@ function ReconciliationSessionView() {
           plan: { ...fullPlan, operations: fullPlan.operations.filter((op) => !confirmed.has(op.id)) },
           latest: [...rows.values()], snapshots: historicalTransactions }));
         const totals = summarizeResults(results);
-        await sessionCommand(session.id, { action: "recover", patch: { applyResults: results,
+        const { session: recovered } = await sessionCommand(session.id, { action: "recover", patch: { applyResults: results,
           status: !totals.complete ? "partial" : fullPlan.blocked.length > 0 || itemsRef.current.some((item) => item.disposition === "unresolved") ? "needs_review" : "completed",
           appliedAt: session.appliedAt ?? new Date().toISOString() } });
         ensureConnection();
+        // The server has recovered the session, and its reply is the recovered record. It goes into the cache first, so letting the loaded
+        // session go hydrates that, not the stale "applying" copy, over the result; and a failed read-back afterwards cannot leave
+        // the screen offering Recover again for a session that is no longer applying (the server would refuse it).
+        mutations.cacheSession(recovered);
         setApplyResult({ results, ...totals });
-        // Read the recovered session before the loaded one is let go: clearing it first lets the stored copy still in the cache be
-        // hydrated over the result above. If the read fails, the loaded session stays, and the error is shown.
-        await sessionQuery.refetch({ throwOnError: true });
         setLoadedSessionId(null);
+        void sessionQuery.refetch();
         setScreen({ name: "result", sessionId: session.id });
       }, {
         onError: (error) => setMatchError(error instanceof Error ? error.message : "Could not recover Apply. The session remains locked."),

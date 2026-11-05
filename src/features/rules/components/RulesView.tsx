@@ -68,9 +68,15 @@ export function RulesView() {
   // rules as missing on a cold load.
   const mergeParam = searchParams.get("merge");
   const mergeFrom = searchParams.get("from");
-  // The rules are read by a query and then copied into the staged store, so "loaded" is not "in the store": until every rule that was
-  // read is there, a rule would be reported missing that is simply not copied yet (or still the previous budget's).
-  const hydrated = useMemo(() => !isLoading && loadedRules !== undefined && loadedRules.every((rule) => Object.hasOwn(stagedRules, rule.id)), [isLoading, loadedRules, stagedRules]);
+  // The rules are read by a query and then copied into the staged store, so "loaded" is not "in the store". The store has caught up
+  // when the rules it holds from the server (not those only staged here) are exactly the ones that were read: a rule that is simply not
+  // copied yet would be reported missing, and rules still held from the previous budget would be offered for a merge, which an empty
+  // result would otherwise hide.
+  const hydrated = useMemo(() => {
+    if (isLoading || loadedRules === undefined) return false;
+    const held = Object.entries(stagedRules).filter(([, entry]) => !entry.isNew);
+    return held.length === loadedRules.length && loadedRules.every((rule) => Object.hasOwn(stagedRules, rule.id));
+  }, [isLoading, loadedRules, stagedRules]);
   const mergeIntent = useMemo((): { status: "invalid" | "missing" } | { status: "ready"; ids: string[] } | null => {
     if (!hydrated || !mergeParam) return null;
     const ids = mergeParam.split(",").filter((s) => s.length > 0);
