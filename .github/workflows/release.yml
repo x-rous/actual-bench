@@ -213,11 +213,12 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          # Stop at the first failing command so a failed pull or `up` fails
-          # the job instead of being hidden by the prune that follows it.
-          script_stop: true
           envs: VPS_DEPLOY_PATH
+          # `set -e` stops at the first failing command, so a failed pull or
+          # `up` fails the job instead of being hidden by the prune after it.
+          # The action's own `script_stop` input no longer exists in v1.
           script: |
+            set -e
             cd "$VPS_DEPLOY_PATH"
             docker compose pull
             docker compose up -d --remove-orphans

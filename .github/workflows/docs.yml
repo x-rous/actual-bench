@@ -55,7 +55,8 @@ jobs:
     needs: build
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Longer than deploy-pages' own 10-minute timeout, so the action reports first.
+    timeout-minutes: 15
     permissions:
       pages: write
       id-token: write
