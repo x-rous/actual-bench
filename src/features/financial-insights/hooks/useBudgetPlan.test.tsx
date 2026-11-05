@@ -20,10 +20,14 @@ const { ensureMonthsData } = jest.requireMock("@/features/budget-management/lib/
 
 const monthsOf = (count: number) => Array.from({ length: count }, (_, i) => `2026-${String(i + 1).padStart(2, "0")}`);
 const dataFor = (months: string[]) => ({ period: { months }, ledger: {}, breakdown: {} }) as unknown as ReadyData;
-const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
-);
-type Reads = { plan: { reads: { month: string; status: string }[] } };
+const clientWith = (cached: Record<string, unknown> = {}) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  for (const [month, state] of Object.entries(cached)) client.setQueryData(["budget-month-data", "conn-1", month], state);
+  return client;
+};
+const wrapperFor = (client: QueryClient) => function Wrapper({ children }: { children: React.ReactNode }) { return <QueryClientProvider client={client}>{children}</QueryClientProvider>; };
+const wrapper = wrapperFor(clientWith());
+type Reads = { plan: { reads: { month: string; status: string; state?: unknown }[] } };
 
 describe("useBudgetPlan", () => {
   afterEach(() => jest.clearAllMocks());
@@ -53,6 +57,16 @@ describe("useBudgetPlan", () => {
     await waitFor(() => expect(result.current.state).toBe("ready"));
     // Nothing is in the cache here, so the months that did not fail or go missing report "failed" too.
     expect((result.current as unknown as Reads).plan.reads.map((r) => `${r.month}:${r.status}`)).toEqual(["2026-01:failed", "2026-02:unavailable", "2026-03:failed", "2026-04:failed"]);
+  });
+
+  it("reads a month that is in the cache as it is, keeping its state, in its place among the others", async () => {
+    const state = { summary: { month: "2026-02" } };
+    ensureMonthsData.mockImplementation(async (_client, _connection, [month]: string[]) => ({ monthDataMap: {}, unavailable: [], failed: month === "2026-03" ? [month] : [] }));
+    const { result } = renderHook(() => useBudgetPlan(dataFor(monthsOf(3)), "2026-12-15", "envelope"), { wrapper: wrapperFor(clientWith({ "2026-02": state })) });
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    const reads = (result.current as unknown as Reads).plan.reads;
+    expect(reads.map((r) => `${r.month}:${r.status}`)).toEqual(["2026-01:failed", "2026-02:ok", "2026-03:failed"]);
+    expect(reads[1].state).toBe(state);
   });
 
   it("counts months as they are read, so the progress reaches the total", async () => {

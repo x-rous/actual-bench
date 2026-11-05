@@ -47,11 +47,12 @@ function compactFixed(minor: number, digits: number): string {
 export function compactAxis(marks: readonly number[]): string[] {
   const plain = marks.map(compactMoney);
   if (new Set(plain).size === plain.length) return plain;
-  for (const digits of [1, 2]) {
+  // Ticks are whole minor units, so two different ones differ by at least 0.00001k: five decimals always tell them apart.
+  for (const digits of [1, 2, 3, 4, 5]) {
     const labels = marks.map((v) => compactFixed(v, digits));
     if (new Set(labels).size === labels.length) return labels;
   }
-  return marks.map((v) => compactFixed(v, 2));
+  return marks.map((v) => (v / 100).toFixed(2));
 }
 
 export const percent = (value: number): string => `${value.toFixed(1)}%`;

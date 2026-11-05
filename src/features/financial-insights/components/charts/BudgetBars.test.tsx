@@ -79,6 +79,32 @@ describe("BudgetBars", () => {
     expect(onSelect).toHaveBeenLastCalledWith(2);
   });
 
+  it("draws the partial month neither green nor red, since it is not compared with a full budget", () => {
+    const { container } = chart({ partialIndex: 0 });
+    // Jan is partial and over its budget: it takes the block's colour, not the over colour. Feb stays green.
+    expect(bars(container).filter((f) => f === colours.over)).toHaveLength(0);
+    expect(container.querySelectorAll(`rect[fill='${colours.block}'][fill-opacity='0.45']`)).toHaveLength(1);
+    expect(bars(container).filter((f) => f === colours.within)).toHaveLength(2);
+  });
+
+  it("gives a month of no spending something to point at and select, though its bar has no height", () => {
+    const onSelect = jest.fn();
+    const { getAllByRole } = chart({ onSelect, spent: [0, 40_000, 50_000, null] });
+    const buttons = getAllByRole("button");
+    expect(buttons).toHaveLength(3);
+    expect(Number(buttons[0].getAttribute("height"))).toBeGreaterThanOrEqual(12);
+    expect(Number(buttons[0].getAttribute("width"))).toBeGreaterThanOrEqual(20);
+    fireEvent.click(buttons[0]);
+    expect(onSelect).toHaveBeenCalledWith(0);
+  });
+
+  it("takes which months are over, and what the row says, from the caller when it knows better (an overspend that earlier money covered)", () => {
+    // Jan spent more than budgeted but it was covered: green, and the row says nothing was left uncovered.
+    const { container } = chart({ exceeded: [false, false, true, null], variance: [0, 100_000, -20_000, null] });
+    expect(bars(container).filter((f) => f === colours.over)).toHaveLength(1);
+    expect(decorative(container)).toEqual(["800", "0", "400", "+1.0k", "500", "−200"]);
+  });
+
   it("hangs a month of refunds below zero and still compares it with its budget", () => {
     const { container } = chart({ spent: [-10_000, 0, 0, null], budget: [50_000, 0, null, null] });
     expect(container.querySelector("line[stroke='var(--muted-foreground)']")).not.toBeNull();

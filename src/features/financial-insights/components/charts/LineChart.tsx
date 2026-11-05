@@ -64,13 +64,14 @@ export function LineChart({ labels, partialIndex, series, height = 250, tip, ari
             <text x={x(a.index)} y={MARGIN.t + 8} textAnchor="middle" className="fill-foreground text-[11px]"><title>{a.text}</title>◆</text>
           </g>
         ))}
-        {ends.map((e, k) => <text key={e.key} x={x(e.index) + 8} y={placed[k] + 3.5} className="fill-foreground text-[10.5px] font-semibold"><title>{e.label}</title>{labelMoney(e.value)}</text>)}
         {labels.map((label, i) => (
           <g key={label + i}>
             <text x={x(i)} y={height - 6} textAnchor="middle" className="fill-muted-foreground text-[10.5px]">{tickLabel(label, i, slot)}{i === partialIndex ? "*" : ""}</text>
             <rect x={MARGIN.l + i * slot} y={MARGIN.t} width={slot} height={height - MARGIN.t - MARGIN.b} fill="transparent" onMouseMove={(e) => show(tip(i), e)} onMouseLeave={hide} />
           </g>
         ))}
+        {/* After the month rectangles, so the pointer reaches the label and its tooltip. */}
+        {ends.map((e, k) => <text key={e.key} x={x(e.index) + 8} y={placed[k] + 3.5} className="fill-foreground text-[10.5px] font-semibold"><title>{e.label}</title>{labelMoney(e.value)}</text>)}
       </svg>
     </div>
   );

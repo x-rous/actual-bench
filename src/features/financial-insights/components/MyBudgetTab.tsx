@@ -180,6 +180,10 @@ function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, stri
     const sum = (pick: (m: PlanMonth) => number | null) => ok.reduce((a, m) => a + (pick(m) ?? 0), 0);
     return { plannedMinor: sum((m) => m.plannedMinor), spentMinor: sum((m) => m.spentMinor), uncoveredMinor: sum((m) => m.uncoveredMinor) };
   });
+  // Over its budget: in a Tracking budget, spent above what was budgeted; in an Envelope budget only the overspending that earlier
+  // money did not cover, which is what Actual takes from the next month. The row under the months says by how much.
+  const exceeded = totals.map((t) => (!t ? null : tracking ? t.spentMinor > t.plannedMinor : t.uncoveredMinor > 0));
+  const variance = totals.map((t) => (!t ? null : tracking ? t.plannedMinor - t.spentMinor : t.uncoveredMinor > 0 ? 0 - t.uncoveredMinor : Math.max(0, t.plannedMinor - t.spentMinor)));
   const gap = (t: (typeof totals)[number]) => (!t ? null : tracking ? t.plannedMinor - t.spentMinor : t.uncoveredMinor);
   const tip = (i: number) => {
     const t = totals[i], b = buckets[i];
@@ -204,7 +208,7 @@ function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, stri
   return (
     <ChartFrame
       id="my-budget-months" title={`${planName} vs spent, ${names.one} by ${names.one}`} hint={tracking ? "Saved budget against Actual's spending" : "Money assigned against Actual's spending"}
-      subtitle={<><p>{tracking ? `Each ${names.one}'s saved budget for spending is the pale block, and what Actual recorded as spent is the bar in front of it.` : `Each ${names.one}'s assignments to categories are the pale block, and what Actual recorded as spent is the bar in front of it.`} A bar that rises above its block is over budget. The row under the months says by how much (−) or how much was left (+). A month Actual does not have, or that could not be read, is left as a gap, never drawn as zero.{unit !== "month" && ` A ${names.one} adds up its months that are in the budget; it is a calendar ${names.one}, and one the period only partly covers is marked *.`}</p><p>Select a bar to see that {names.one}&apos;s transactions.</p></>}
+      subtitle={<><p>{tracking ? `Each ${names.one}'s saved budget for spending is the pale block, and what Actual recorded as spent is the bar in front of it.` : `Each ${names.one}'s assignments to categories are the pale block, and what Actual recorded as spent is the bar in front of it.`} {tracking ? "A bar that rises above its block is over budget." : "A bar is red when the overspending was not covered by earlier money; one that rises above its block but was covered stays green."} The row under the months says by how much it was over (−) or how much was left (+). A month Actual does not have, or that could not be read, is left as a gap, never drawn as zero.{unit !== "month" && ` A ${names.one} adds up its months that are in the budget; it is a calendar ${names.one}, and one the period only partly covers is marked *.`}</p><p>Select a bar to see that {names.one}&apos;s transactions.</p></>}
       legend={[{ label: planName, colour: "var(--fi-balance)" }, { label: "Spent, within it", colour: "var(--fi-up)" }, { label: "Spent, over it", colour: "var(--fi-other-liability)" }]}
       actions={<UnitPills value={unit} onChange={setUnit} label="Show the budget by" />}
       table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), planName, "Spent", tracking ? "Under (+) / over (−) budget" : unit === "month" ? "Overspent last month" : "Overspent, taken from the next month"], rows: buckets.map((b, i) => [labels[i] + (b.partial ? " (partial)" : ""), totals[i]?.plannedMinor ?? null, totals[i]?.spentMinor ?? null, gap(totals[i])]) }}
@@ -212,7 +216,7 @@ function MonthChart({ plan, onDrill, scope }: PlanProps & { scope: [string, stri
       footnote={footnote}
     >
       <BudgetBars labels={labels} partialIndex={partials.length ? partials : null} height={320} ariaLabel={`Spent each ${names.one} against ${planName.toLowerCase()}`}
-        spent={totals.map((t) => t?.spentMinor ?? null)} budget={totals.map((t) => t?.plannedMinor ?? null)}
+        spent={totals.map((t) => t?.spentMinor ?? null)} budget={totals.map((t) => t?.plannedMinor ?? null)} variance={variance} exceeded={exceeded}
         within="var(--fi-up)" over="var(--fi-other-liability)" block="var(--fi-balance)" tip={tip} onSelect={select} />
     </ChartFrame>
   );

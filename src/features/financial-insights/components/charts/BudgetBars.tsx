@@ -26,13 +26,20 @@ export function signedCompact(minor: number): string {
  * colours are never the only cue: the sign and the bar's position against the block say the same. A month with no value draws
  * nothing, never a zero. The partial month is lighter, dashed, starred and not compared. Selecting a bar reports the month.
  */
-export function BudgetBars({ labels, partialIndex, spent, budget, height = 300, tip, onSelect, ariaLabel, within, over, block }: {
+export function BudgetBars({ labels, partialIndex, spent, budget, variance, exceeded, height = 300, tip, onSelect, ariaLabel, within, over, block }: {
   labels: string[];
   partialIndex: number | readonly number[] | null;
   /** What was spent, per month; null where there is nothing to draw. */
   spent: (number | null)[];
   /** What was budgeted, per month; null where there is no budget to draw. */
   budget: (number | null)[];
+  /**
+   * What the row under the months says, per month: positive for how much was left, negative for how far over. By default budget
+   * less spent. A budget whose overspending can be covered by earlier money (Envelope) says what was not covered instead.
+   */
+  variance?: (number | null)[];
+  /** Whether a month counts as over its budget, which colours its bar and its figure. By default spent is above the budget. */
+  exceeded?: (boolean | null)[];
   height?: number;
   tip: (index: number) => ReactNode;
   onSelect?: (index: number) => void;
@@ -71,8 +78,10 @@ export function BudgetBars({ labels, partialIndex, spent, budget, height = 300, 
           const partial = isPartial(i);
           const s = spent[i];
           const b = budget[i];
-          const beyond = s !== null && b !== null && s > b;
-          const colour = beyond ? over : within;
+          // A partial month is not compared with a full budget, so its bar is neither green nor red.
+          const beyond = !partial && (exceeded ? exceeded[i] === true : s !== null && b !== null && s > b);
+          const colour = partial ? block : beyond ? over : within;
+          const delta = variance ? variance[i] : s !== null && b !== null ? b - s : null;
           const press = onSelect && s !== null ? { className: "cursor-pointer", role: "button", tabIndex: 0, "aria-label": `Spent, ${label}`, onClick: () => onSelect(i),
             onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(i); } } } : {};
           const figureY = s === null ? 0 : s >= 0 ? Math.min(y(s), b !== null && b >= 0 ? y(b) : Infinity) - 6 : y(s) + 12;
@@ -82,13 +91,15 @@ export function BudgetBars({ labels, partialIndex, spent, budget, height = 300, 
               {b !== null && b !== 0 && <rect x={cx - blockWidth / 2} y={Math.min(y(0), y(b))} width={blockWidth} height={Math.max(1, Math.abs(y(0) - y(b)))} rx={3} fill={block} fillOpacity={partial ? 0.1 : 0.22}
                 stroke={block} strokeOpacity={0.55} strokeWidth={1} strokeDasharray={partial ? "3 2" : undefined} pointerEvents="none" />}
               {s !== null && <rect x={cx - barWidth / 2} y={Math.min(y(0), y(s))} width={barWidth} height={Math.max(s === 0 ? 0 : 1, Math.abs(y(0) - y(s)))} rx={2.5}
-                fill={colour} fillOpacity={partial ? 0.45 : 1} stroke={partial ? colour : "none"} strokeDasharray={partial ? "3 2" : undefined} strokeWidth={partial ? 1.2 : 0}
+                fill={colour} fillOpacity={partial ? 0.45 : 1} stroke={partial ? colour : "none"} strokeDasharray={partial ? "3 2" : undefined} strokeWidth={partial ? 1.2 : 0} pointerEvents="none" />}
+              {/* The target to point at or touch: at least a finger wide, and a band around the zero line for a month of nothing. */}
+              {s !== null && <rect x={cx - Math.max(barWidth, 20) / 2} y={Math.min(y(0), y(s)) - 6} width={Math.max(barWidth, 20)} height={Math.abs(y(0) - y(s)) + 12} fill="transparent"
                 {...press} onMouseMove={(e) => show(tip(i), e)} onMouseLeave={hide} />}
               {s !== null && s !== 0 && figures && <text x={cx} y={figureY} textAnchor="middle" className="fill-foreground text-[10.5px] font-medium" aria-hidden pointerEvents="none">{labelMoney(s)}</text>}
               <text x={cx} y={height - 24} textAnchor="middle" className="fill-muted-foreground text-[10.5px]">{tickLabel(label, i, slot)}{partial ? "*" : ""}</text>
-              {s !== null && b !== null && figures && (partial
+              {s !== null && b !== null && delta !== null && figures && (partial
                 ? <text x={cx} y={height - 6} textAnchor="middle" className="fill-muted-foreground text-[10.5px]" aria-hidden>–</text>
-                : <text x={cx} y={height - 6} textAnchor="middle" className="text-[10.5px] font-semibold" style={{ fill: beyond ? over : within }} aria-hidden>{signedCompact(b - s)}</text>)}
+                : <text x={cx} y={height - 6} textAnchor="middle" className="text-[10.5px] font-semibold" style={{ fill: beyond ? over : within }} aria-hidden>{signedCompact(delta)}</text>)}
             </g>
           );
         })}

@@ -60,6 +60,28 @@ describe("My budget tab states", () => {
     expect(chart).toHaveTextContent("+100");
   });
 
+  it("fills the groups' lines green within budget, pale where the budget was left and red beyond it", () => {
+    // Daily spent 400 of 300 (100 over); Home spent 200 of 500 (300 left).
+    const cat = (id: string, group: string, budgeted: number, spent: number): LoadedCategory => ({ ...expense(id, budgeted, spent), groupId: group, groupName: group });
+    const read = (m: string): MonthRead => ({
+      month: m, status: "ok",
+      state: {
+        ...(month(m, []) as { state: LoadedMonthState }).state,
+        groupsById: { Daily: { id: "Daily", name: "Daily", isIncome: false, hidden: false, categoryIds: ["food"], budgeted: 0, actuals: 0, balance: 0 }, Home: { id: "Home", name: "Home", isIncome: false, hidden: false, categoryIds: ["rent"], budgeted: 0, actuals: 0, balance: 0 } },
+        categoriesById: Object.fromEntries([cat("food", "Daily", 30_000, 40_000), cat("rent", "Home", 50_000, 20_000)].map((c) => [c.id, c])),
+        groupOrder: ["Daily", "Home"],
+      } as LoadedMonthState,
+    });
+    useBudgetPlan.mockReturnValue(ready([read("2026-09"), read("2026-10")]));
+    show();
+    const card = screen.getByRole("region", { name: "Budgeted vs spent by group" });
+    const segments = (background: string) => [...card.querySelectorAll<HTMLElement>("div[style]")].filter((d) => d.style.background.includes(background) && parseFloat(d.style.width) > 0);
+    // Daily: green up to its budget, then red; Home: green for what was spent, then the pale tint for what was left.
+    expect(segments("var(--fi-up)")).toHaveLength(2);
+    expect(segments("var(--fi-other-liability)")).toHaveLength(1);
+    expect(segments("color-mix")).toHaveLength(1);
+  });
+
   it("names the colours of the groups' lines as the monthly chart does: green within budget, pale left, red over", () => {
     useBudgetPlan.mockReturnValue(ready([month("2026-09", [expense("food", 30_000, 40_000)]), month("2026-10", [expense("food", 30_000, 20_000)])]));
     show();
@@ -69,6 +91,21 @@ describe("My budget tab states", () => {
     expect(card).toHaveTextContent("Over budget");
     expect(card).not.toHaveTextContent("Savings");
     expect(card).not.toHaveTextContent("Extra");
+  });
+
+  it("in an Envelope budget colours a month red only when its overspending was not covered by earlier money", () => {
+    // September overspent 100 but its balance stayed above zero (earlier money covered it); October's balance went negative and was not carried.
+    const covered = month("2026-09", [{ ...expense("food", 30_000, 40_000), balance: 5_000 }]);
+    const uncovered = month("2026-10", [{ ...expense("food", 30_000, 40_000), balance: -10_000 }]);
+    useBudgetPlan.mockReturnValue({ state: "ready", plan: buildBudgetPlan({ mode: "envelope", reads: [covered, uncovered], today }) });
+    show();
+    const chart = screen.getByRole("group", { name: /Spent each month against budgeted/ });
+    const fills = [...chart.querySelectorAll("rect[fill]")].map((r) => r.getAttribute("fill"));
+    expect(fills.filter((f) => f === "var(--fi-up)")).toHaveLength(1);
+    expect(fills.filter((f) => f === "var(--fi-other-liability)")).toHaveLength(1);
+    const row = [...chart.querySelectorAll("text[aria-hidden='true']")].map((t) => t.textContent);
+    // Spent figure then the row, month by month: September 0 not covered; October −100 not covered.
+    expect(row).toEqual(["400", "0", "400", "−100"]);
   });
 
   it("opens the transactions behind a heatmap cell and a ranked row", () => {

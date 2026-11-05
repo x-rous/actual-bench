@@ -93,6 +93,8 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
   const inner = Math.min(slot, Math.max(1, slot - pad * 2));
   // Where each month's stack reaches above its start, so a label can clear it.
   const stackTops = labels.map((_, i) => (stacked ? series.reduce((top, s) => top + Math.max(0, s.values[i] ?? 0), base?.[i] ?? 0) : 0));
+  // A label that would fall outside the drawing (a stack that reaches the very top or bottom) stays inside it.
+  const inside = (labelY: number) => Math.min(height - MARGIN.b - 2, Math.max(MARGIN.t + 2, labelY));
   const style = (colour: string, partial: boolean) => ({ fill: colour, fillOpacity: partial ? 0.38 : 1, stroke: partial ? colour : "none", strokeDasharray: partial ? "3 2" : undefined, strokeWidth: partial ? 1.2 : 0 });
   return (
     <div ref={host} className="w-full">
@@ -106,6 +108,7 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
           const partial = Array.isArray(partialIndex) ? partialIndex.includes(i) : i === partialIndex;
           const bars: ReactNode[] = [];
           let stackTop = 0;
+          let stackBottom = 0;
           let stackTotal = 0;
           if (stacked) {
             let up = base?.[i] ?? 0, down = base?.[i] ?? 0;
@@ -120,6 +123,7 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
                 onKeyDown={onSelect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(i, k); } } : undefined} />);
             });
             stackTop = up;
+            stackBottom = down;
             stackTotal = series.reduce((sum, s) => sum + (s.values[i] ?? 0), 0);
           } else {
             const w = inner / series.length;
@@ -139,7 +143,7 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
             <g key={label + i}>
               <rect x={x0} y={MARGIN.t} width={slot} height={height - MARGIN.t - MARGIN.b} fill="transparent" onMouseMove={(e) => show(tip(i, null), e)} onMouseLeave={hide} />
               {bars}
-              {stacked && totals && slot >= TOTAL_MIN_SLOT && stackTotal > 0 && <text x={x0 + slot / 2} y={y(stackTop) - 4} textAnchor="middle" className="fill-foreground text-[10.5px] font-semibold" aria-hidden>{labelMoney(stackTotal)}</text>}
+              {stacked && totals && slot >= TOTAL_MIN_SLOT && stackTotal !== 0 && <text x={x0 + slot / 2} y={inside(stackTotal > 0 ? y(stackTop) - 4 : y(stackBottom) + 12)} textAnchor="middle" className="fill-foreground text-[10.5px] font-semibold" aria-hidden>{labelMoney(stackTotal)}</text>}
               {stacked && topLabel?.(i) && <text x={x0 + slot / 2} y={y(stackTop) - 4} textAnchor="middle" className="text-[10.5px] font-semibold" style={{ fill: topLabel(i)?.colour ?? "var(--foreground)" }} aria-hidden>{topLabel(i)?.text}</text>}
               <text x={x0 + slot / 2} y={height - 6} textAnchor="middle" className="fill-muted-foreground text-[10.5px]">{tickLabel(label, i, slot)}{partial ? "*" : ""}</text>
             </g>
@@ -152,7 +156,7 @@ export function BarChart({ labels, partialIndex, series, stacked = false, height
           return (
             <g pointerEvents="none">
               {runs.filter((r) => r.length > 1).map((r, k) => <polyline key={k} fill="none" stroke={overlay.colour} strokeWidth={2.25} strokeLinejoin="round" points={r.join(" ")} />)}
-              {overlayLabels && slot >= TOTAL_MIN_SLOT && overlay.values.map((v, i) => v === null ? null : <text key={`label-${i}`} x={cx(i)} y={Math.min(y(v) - 9, stacked ? y(stackTops[i]) - 4 : Infinity)} textAnchor="middle" className="fill-foreground text-[10.5px] font-semibold" aria-hidden>{labelMoney(v)}</text>)}
+              {overlayLabels && slot >= TOTAL_MIN_SLOT && overlay.values.map((v, i) => v === null ? null : <text key={`label-${i}`} x={cx(i)} y={inside(Math.min(y(v) - 9, stacked ? y(stackTops[i]) - 4 : Infinity))} textAnchor="middle" className="fill-foreground text-[10.5px] font-semibold" aria-hidden>{labelMoney(v)}</text>)}
               {overlay.values.map((v, i) => v === null ? null : <circle key={i} cx={cx(i)} cy={y(v)} r={3.5} fill="var(--card)" stroke={overlay.colour} strokeWidth={2} strokeDasharray={i === partialIndex ? "2 1.5" : undefined} />)}
             </g>
           );
