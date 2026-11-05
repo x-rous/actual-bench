@@ -28,7 +28,18 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # Ignored on purpose, so the check fails only on new problems:
+      #  - YAML anchors (demo.yml): GitHub supports them, actionlint 1.7.7 does not.
+      #  - SC2046 (edge.yml, release.yml): the unquoted $(...) is deliberate word
+      #    splitting of the tag list passed to `docker buildx imagetools create`.
+      #  - SC2016 (ci.yml) and SC2034 (docker-smoke.yml): style notes in scripts
+      #    that behave as intended.
       - name: Lint workflows
         uses: docker://rhysd/actionlint:1.7.7
         with:
-          args: -color
+          args: >-
+            -color
+            -ignore sequence.node.but.got.alias.node
+            -ignore SC2046
+            -ignore SC2016
+            -ignore SC2034
