@@ -141,6 +141,15 @@ describe("BudgetOverviewView", () => {
     expect(screen.getByText("Updated just now")).toBeInTheDocument();
   });
 
+  it("labels cached statistics with the time they were read, not the time they are shown", () => {
+    mockUseBudgetOverview.mockReturnValue(buildHookResult({ dataUpdatedAt: Date.now() - 5 * 60_000 }));
+
+    render(<BudgetOverviewView />);
+
+    expect(screen.getByText("Last refreshed 5m ago")).toBeInTheDocument();
+    expect(screen.queryByText("Updated just now")).not.toBeInTheDocument();
+  });
+
   it("keeps the previous refresh timestamp when refresh completes with partial failures", async () => {
     const refresh = jest.fn().mockResolvedValue({
       ok: false,

@@ -1751,8 +1751,11 @@ function ReconciliationSessionView() {
           status: !totals.complete ? "partial" : fullPlan.blocked.length > 0 || itemsRef.current.some((item) => item.disposition === "unresolved") ? "needs_review" : "completed",
           appliedAt: session.appliedAt ?? new Date().toISOString() } });
         ensureConnection();
-        setApplyResult({ results, ...totals }); setLoadedSessionId(null);
-        await sessionQuery.refetch();
+        setApplyResult({ results, ...totals });
+        // Read the recovered session before the loaded one is let go: clearing it first lets the stored copy still in the cache be
+        // hydrated over the result above. If the read fails, the loaded session stays, and the error is shown.
+        await sessionQuery.refetch({ throwOnError: true });
+        setLoadedSessionId(null);
         setScreen({ name: "result", sessionId: session.id });
       }, {
         onError: (error) => setMatchError(error instanceof Error ? error.message : "Could not recover Apply. The session remains locked."),

@@ -25,7 +25,7 @@ import {
   type VaultStatus,
 } from "./vaultApi";
 import { AUTH_STATUS_QUERY_KEY } from "@/hooks/useAuthStatus";
-import { REMEMBERED_SERVERS_QUERY_KEY, fetchVault } from "./vaultQueries";
+import { REMEMBERED_SERVERS_QUERY_KEY, VAULT_VIEW_QUERY_KEY, fetchVault } from "./vaultQueries";
 
 const CLOSED: VaultStatus = {
   supported: false,
@@ -38,8 +38,6 @@ const CLOSED: VaultStatus = {
 type RememberedList = Awaited<ReturnType<typeof listRememberedServers>>;
 
 type VaultView = { status: VaultStatus; servers: ServerCredentialMeta[]; budgets: RememberedBudget[] };
-
-const VAULT_VIEW_QUERY_KEY = ["connection-vault", "view"] as const;
 
 function viewOf(status: VaultStatus, list: RememberedList | null | undefined): VaultView {
   const usable = status.supported && list;

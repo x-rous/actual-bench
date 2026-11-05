@@ -2,7 +2,7 @@ import React from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AUTH_STATUS_QUERY_KEY } from "@/hooks/useAuthStatus";
-import { REMEMBERED_SERVERS_QUERY_KEY } from "./vaultQueries";
+import { REMEMBERED_SERVERS_QUERY_KEY, invalidateVault } from "./vaultQueries";
 import { useConnectionVault } from "./useConnectionVault";
 
 const mockFetchVault = jest.fn();
@@ -48,6 +48,15 @@ describe("the connection vault state", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.status.supported).toBe(false);
     expect(result.current.servers).toEqual([]);
+  });
+
+  it("reads the vault again when something else changes it and invalidates the vault, so the screen follows that too", async () => {
+    const c = client();
+    mockFetchVault.mockResolvedValueOnce([status({ unlocked: true }), list([])]).mockResolvedValueOnce([status({ unlocked: false }), list([])]);
+    const { result } = renderHook(() => useConnectionVault(), { wrapper: wrap(c) });
+    await waitFor(() => expect(result.current.status.unlocked).toBe(true));
+    await act(async () => { await invalidateVault(c); });
+    await waitFor(() => expect(result.current.status.unlocked).toBe(false));
   });
 
   it("reads the vault again once an action finishes, so the screen follows it", async () => {

@@ -9,6 +9,8 @@ import { getVaultStatus, listRememberedServers } from "./vaultApi";
  */
 
 export const REMEMBERED_SERVERS_QUERY_KEY = ["remembered-servers"] as const;
+/** The connect page's combined view of the two answers (see `useConnectionVault`). */
+export const VAULT_VIEW_QUERY_KEY = ["connection-vault", "view"] as const;
 
 export const vaultStatusQuery = { queryKey: AUTH_STATUS_QUERY_KEY, queryFn: getVaultStatus };
 export const rememberedServersQuery = { queryKey: REMEMBERED_SERVERS_QUERY_KEY, queryFn: listRememberedServers };
@@ -34,5 +36,6 @@ export function invalidateVault(queryClient: QueryClient): Promise<void> {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: AUTH_STATUS_QUERY_KEY }),
     queryClient.invalidateQueries({ queryKey: REMEMBERED_SERVERS_QUERY_KEY }),
+    queryClient.invalidateQueries({ queryKey: VAULT_VIEW_QUERY_KEY }),
   ]).then(() => undefined);
 }

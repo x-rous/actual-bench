@@ -13,6 +13,12 @@ it("decodes worker source as data, including raw tabs, without executing it", ()
   expect(extractSqliteWorker("unsupported layout")).toBeNull();
 });
 
+it("keeps a $ in the worker's own names as it is, instead of reading it as a replacement pattern", () => {
+  const worker = "i.register_for_idb=e=>{let r=w(function(e,t){e=$1(e),$$.set(t,e)},`vii`)};"
+    + "var o=a(`sqlite3_open`,`number`,[`string`,`number`]),s=a(`sqlite3_close_v2`,`number`,[`number`]);";
+  expect(instrumentSqliteWorker(worker)).toContain("e=$1(e),globalThis.__abTraceSqliteOpen(e),$$.set(t,e)");
+});
+
 it("finds the worker whatever the bundler called the variable, and only when its Blob follows the declaration", () => {
   const prefix = "(self.URL || self.webkitURL).revokeObjectURL(self.location.href);";
   const bundle = (name: string) => `var ${name} = ${JSON.stringify("worker();")}, L = new Blob([${JSON.stringify(prefix)}, ${name}], {});`;

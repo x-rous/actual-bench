@@ -135,9 +135,10 @@ export function SyncView() {
   // The form shows the selected flow as it was last read: it is loaded as a different flow is selected, and again whenever the flows
   // are read afresh (after a save, which is also what makes the saved copy the one to compare against).
   const [formSource, setFormSource] = useState<{ flowId: string | null; flows: typeof flowsQuery.data }>({ flowId: null, flows: undefined });
-  if (selectedFlowId && (formSource.flowId !== selectedFlowId || formSource.flows !== flowsQuery.data)) {
+  // Clearing the selection is remembered too, so selecting the same flow again loads it again.
+  if (formSource.flowId !== selectedFlowId || (selectedFlowId !== null && formSource.flows !== flowsQuery.data)) {
     setFormSource({ flowId: selectedFlowId, flows: flowsQuery.data });
-    const flow = flows.find((f) => f.id === selectedFlowId);
+    const flow = selectedFlowId ? flows.find((f) => f.id === selectedFlowId) : undefined;
     if (flow) {
       const next = flowToFormState(flow, connections);
       setForm(next);

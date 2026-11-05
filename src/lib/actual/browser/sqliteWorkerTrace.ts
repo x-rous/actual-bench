@@ -37,7 +37,8 @@ export function instrumentSqliteWorker(source: string): string | null {
   const callback = callbacks[0].index;
   if (callback < registration || callback > registration + 600) return null;
   return TRACE + source
-    .replace(text, `r=w(function(e,t){e=${decode}(e),globalThis.__abTraceSqliteOpen(e),${files}.set(t,e)},\`vii\`)`)
+    // A function, so a `$` in the captured names is never read as a replacement pattern.
+    .replace(text, () => `r=w(function(e,t){e=${decode}(e),globalThis.__abTraceSqliteOpen(e),${files}.set(t,e)},\`vii\`)`)
     .replace(CONNECTION_OPEN, "o=globalThis.__abTraceSqliteCall(a(`sqlite3_open`,`number`,[`string`,`number`]),\"open\")")
     .replace(CONNECTION_CLOSE, "s=globalThis.__abTraceSqliteCall(a(`sqlite3_close_v2`,`number`,[`number`]),\"close\")");
 }

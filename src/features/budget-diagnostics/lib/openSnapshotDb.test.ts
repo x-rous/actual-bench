@@ -24,6 +24,7 @@ describe("opening a budget snapshot", () => {
   it("deserializes the bytes read-only into a new connection and hands the copy to SQLite", () => {
     const { sqlite3, database, events, deserialize } = fake();
     expect(openSnapshotDb(sqlite3, bytes)).toBe(database);
+    expect(sqlite3.wasm.allocFromTypedArray).toHaveBeenCalledWith(bytes);
     expect(events).toEqual(["alloc", "deserialize 5 5 5"]);
     expect(deserialize).toHaveBeenCalledWith(4242, "main", 7000, 5, 5, FREEONCLOSE | READONLY);
     expect(sqlite3.wasm.dealloc).not.toHaveBeenCalled();

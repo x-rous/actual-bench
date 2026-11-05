@@ -17,8 +17,8 @@ describe("useNowMs", () => {
 
   it("stops refreshing when the component goes away", () => {
     const { unmount } = renderHook(() => useNowMs(1_000));
-    const clear = jest.spyOn(global, "clearInterval");
+    expect(jest.getTimerCount()).toBe(1);
     unmount();
-    expect(clear).toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

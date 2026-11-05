@@ -19,7 +19,7 @@ import { GeneraliseRuleDialog } from "./GeneraliseRuleDialog";
 import { RulesImportResultDialog } from "./RulesImportResultDialog";
 
 export function RulesView() {
-  const { isLoading, isError, error, refetch } = useRules();
+  const { data: loadedRules, isLoading, isError, error, refetch } = useRules();
   // Accounts, payees, and categories are prefetched by AppShell via
   // usePreloadEntities — no need to subscribe here.
 
@@ -68,13 +68,17 @@ export function RulesView() {
   // rules as missing on a cold load.
   const mergeParam = searchParams.get("merge");
   const mergeFrom = searchParams.get("from");
+  // The rules are read by a query and then copied into the staged store, so "loaded" is not "in the store": until every rule that was
+  // read is there, a rule would be reported missing that is simply not copied yet (or still the previous budget's).
+  const hydrated = useMemo(() => !isLoading && loadedRules !== undefined && loadedRules.every((rule) => Object.hasOwn(stagedRules, rule.id)), [isLoading, loadedRules, stagedRules]);
   const mergeIntent = useMemo((): { status: "invalid" | "missing" } | { status: "ready"; ids: string[] } | null => {
-    if (isLoading || !mergeParam) return null;
+    if (!hydrated || !mergeParam) return null;
     const ids = mergeParam.split(",").filter((s) => s.length > 0);
     if (ids.length < 2) return { status: "invalid" };
-    if (ids.some((id) => !stagedRules[id] || stagedRules[id].isDeleted)) return { status: "missing" };
+    // Own properties only: an id in the address such as "constructor" must not find something on the object's prototype.
+    if (ids.some((id) => !Object.hasOwn(stagedRules, id) || stagedRules[id].isDeleted)) return { status: "missing" };
     return { status: "ready", ids };
-  }, [isLoading, mergeParam, stagedRules]);
+  }, [hydrated, mergeParam, stagedRules]);
 
   // A valid request opens the dialog once, as it becomes valid. Later changes to the rules do not open it again, and the dialog
   // can be closed while the address still carries the request.
@@ -88,13 +92,15 @@ export function RulesView() {
     setMergeReturnTo(mergeFrom === "diagnostics" ? "/rules/diagnostics" : null);
   }
 
-  // Only the complaint about a request that cannot be honoured is a side effect.
+  // Only the complaint about a request that cannot be honoured is a side effect. A request that has opened the dialog is settled: what
+  // the merge does to the rules afterwards (deleting the originals, say) must not turn it into a complaint, or send the page away
+  // from where the merge was meant to leave it.
   useEffect(() => {
-    if (!mergeIntent || mergeIntent.status === "ready" || mergeReportedRef.current === mergeParam) return;
+    if (!mergeIntent || mergeIntent.status === "ready" || mergeHandled === mergeParam || mergeReportedRef.current === mergeParam) return;
     mergeReportedRef.current = mergeParam;
     if (mergeIntent.status === "missing") toast.error("One of the rules to merge no longer exists in the current working set.");
     router.replace("/rules");
-  }, [mergeIntent, mergeParam, router]);
+  }, [mergeIntent, mergeParam, mergeHandled, router]);
 
   // The generalise dialog is opened by the URL rather than mirrored into state:
   // `?generalise=<id>&from=...`, which is what the Generalise button on a Rule

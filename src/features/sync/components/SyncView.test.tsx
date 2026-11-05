@@ -213,6 +213,18 @@ describe("SyncView", () => {
     expect(screen.getByLabelText("Missing payee policy")).toHaveTextContent("Create payee (default)");
   });
 
+  it("loads a flow again when it is selected again after the selection was cleared", async () => {
+    setup([conn1, conn2]);
+    renderView();
+    fireEvent.click(screen.getByText("Card sync"));
+    // Starting a new flow clears the selection and empties the form.
+    fireEvent.click(screen.getByRole("button", { name: /create sync flow/i }));
+    expect(await screen.findByLabelText("Amount direction")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Card sync")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Card sync"));
+    expect(await screen.findByDisplayValue("Card sync")).toBeInTheDocument();
+  });
+
   it("runs a preview from the top section and renders classified rows", async () => {
     setup([conn1, conn2]);
     renderView();

@@ -66,9 +66,10 @@ export function UnattendedEnrollment({
   const [runResult, setRunResult] = useState<{ status: string; message: string | null } | null>(null);
   const enginePauses = useFlowAutomations();
 
-  // What the vault holds and which budgets are enrolled, read when the panel opens and again after each change. A read that fails
-  // forgets the last answer: stale "ready" and enrolments would still show the flow as armed and offer Run now.
-  const vaultQuery = useQuery({ queryKey: ["sync", "vault-status"], queryFn: getVaultStatus, retry: false, refetchOnWindowFocus: false });
+  // What the vault holds and which budgets are enrolled, read every time the panel opens (the cache otherwise never goes stale, and
+  // credentials can be withdrawn from the Connections page) and again after each change. A read that fails forgets the last answer:
+  // stale "ready" and enrolments would still show the flow as armed and offer Run now.
+  const vaultQuery = useQuery({ queryKey: ["sync", "vault-status"], queryFn: getVaultStatus, retry: false, refetchOnWindowFocus: false, refetchOnMount: "always" });
   const vault: VaultSummary | null = vaultQuery.isSuccess ? vaultQuery.data.vault : null;
   const loadFailed = vaultQuery.isError;
   const credentials = vaultQuery.isSuccess ? vaultQuery.data.credentials : null;
