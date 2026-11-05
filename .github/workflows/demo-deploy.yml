@@ -1,0 +1,126 @@
+name: Deploy demo Space
+
+# Publishes `main` to the Hugging Face Space that backs the public demo. The
+# Space builds its own image from the pushed files; its server-side code does
+# not track GitHub merges on its own.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-demo-space
+  cancel-in-progress: false
+
+env:
+  SPACE_REPO: x-rous/actual-bench-demo
+  SPACE_USER: x-rous
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Clone the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git lfs install
+          git clone "https://${SPACE_USER}:${HF_TOKEN}@huggingface.co/spaces/${SPACE_REPO}" "$RUNNER_TEMP/space"
+
+      # The Space records the commit it was last built from. Compare against it
+      # so changes skipped earlier (docs-only merges) never hide a later,
+      # relevant one. A manual run, or a missing/unknown marker, always deploys.
+      - name: Decide whether the Space needs an update
+        id: changes
+        run: |
+          head="$(git rev-parse HEAD)"
+          marker="$RUNNER_TEMP/space/.deployed-from"
+          deploy=true
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ -f "$marker" ]; then
+            last="$(tr -d '[:space:]' < "$marker")"
+            if git cat-file -e "${last}^{commit}" 2>/dev/null; then
+              if git diff --name-only "$last" "$head" -- \
+                  src public demo scripts package.json package-lock.json next.config.ts \
+                  tsconfig.json postcss.config.mjs jest.setup.ts \
+                  .github/workflows/demo-deploy.yml \
+                  ':(exclude)*.md' ':(exclude)*.test.ts' ':(exclude)*.test.tsx' \
+                  | grep -q .; then
+                deploy=true
+              else
+                deploy=false
+              fi
+            fi
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "Deploy needed: $deploy"
+
+      # Keep the Space's own files: README.md carries the Space front matter,
+      # .gitattributes its LFS rules, and the root Dockerfile is the demo image.
+      - name: Mirror main into the Space
+        if: steps.changes.outputs.deploy == 'true'
+        run: |
+          space="$RUNNER_TEMP/space"
+          rsync -a --delete \
+            --exclude='.git' --exclude='README.md' --exclude='.gitattributes' \
+            --exclude='Dockerfile' --exclude='.deployed-from' \
+            ./ "$space/"
+          cp demo/Dockerfile "$space/Dockerfile"
+          echo "${{ steps.changes.outputs.head }}" > "$space/.deployed-from"
+
+      - name: Push to the Space
+        id: push
+        if: steps.changes.outputs.deploy == 'true'
+        working-directory: ${{ runner.temp }}/space
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Space already up to date."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "chore(demo): deploy combined demo"
+          git push
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # The old container keeps answering while the new image builds, so wait
+      # on the Space's own build state rather than on the demo's health check.
+      - name: Wait for the Space build
+        if: steps.push.outputs.pushed == 'true'
+        run: |
+          sha="${{ steps.push.outputs.sha }}"
+          for _ in $(seq 1 90); do
+            info="$(curl -fsS "https://huggingface.co/api/spaces/${SPACE_REPO}" || true)"
+            stage="$(jq -r '.runtime.stage // empty' <<< "$info")"
+            current="$(jq -r '.sha // empty' <<< "$info")"
+            echo "stage=${stage:-unknown} sha=${current:-unknown}"
+            case "$stage" in
+              BUILD_ERROR|RUNTIME_ERROR|CONFIG_ERROR|NO_APP_FILE)
+                jq -r '.runtime.errorMessage // empty' <<< "$info"
+                exit 1 ;;
+              RUNNING)
+                if [ "$current" = "$sha" ]; then
+                  curl -fsS "https://x-rous-actual-bench-demo.hf.space/api/health" && exit 0
+                fi ;;
+            esac
+            sleep 30
+          done
+          echo "Timed out waiting for the Space to build." >&2
+          exit 1
