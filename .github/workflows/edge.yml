@@ -19,9 +19,49 @@ env:
   IMAGE_DOCKERHUB: docker.io/xrous/actual-bench
 
 jobs:
+  # ── Decide whether this commit changes anything the image contains ───────────
+  # Only pushes to main: a pull request from a fork on a branch named `main`
+  # also reports head_branch `main`. Docs-, test- and demo-only merges leave the
+  # image untouched, so they skip the two-architecture build and the VPS restart.
+  # This inspects the pushed commit against its first parent, which matches the
+  # squash merges this repository uses; the next image-affecting merge ships
+  # anything an unusual multi-commit push would have skipped.
+  changes:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.diff.outputs.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Check for image-affecting changes
+        id: diff
+        run: |
+          image=true
+          if git rev-parse -q --verify HEAD^ > /dev/null; then
+            if git diff --name-only HEAD^ HEAD -- \
+                docker src public scripts package.json package-lock.json next.config.ts \
+                tsconfig.json postcss.config.mjs .dockerignore .github/workflows/edge.yml \
+                ':(exclude)*.md' ':(exclude)*.test.ts' ':(exclude)*.test.tsx' \
+                | grep -q .; then
+              image=true
+            else
+              image=false
+            fi
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Image-affecting changes: $image"
+
   # ── Build each architecture natively (no QEMU), push by digest ───────────────
   build:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.image == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -31,10 +71,13 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
+      # Build the commit CI validated, not whatever `main` has moved on to.
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
 
       - name: Set up Docker Buildx
@@ -84,6 +127,7 @@ jobs:
   merge:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8
@@ -129,15 +173,22 @@ jobs:
   deploy:
     needs: merge
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
+        env:
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          # Stop at the first failing command so a failed pull or `up` fails
+          # the job instead of being hidden by the prune that follows it.
+          script_stop: true
+          envs: VPS_DEPLOY_PATH
           script: |
-            cd ${{ secrets.VPS_DEPLOY_PATH }}
+            cd "$VPS_DEPLOY_PATH"
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
