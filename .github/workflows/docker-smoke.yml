@@ -12,22 +12,28 @@ on:
     branches: [main]
     paths:
       - "docker/Dockerfile.prod"
+      - ".dockerignore"
       - "src/**"
       - "scripts/**"
       - "public/**"
       - "package.json"
       - "package-lock.json"
       - "next.config.ts"
+      - "tsconfig.json"
+      - "postcss.config.mjs"
       - ".github/workflows/docker-smoke.yml"
   pull_request:
     paths:
       - "docker/Dockerfile.prod"
+      - ".dockerignore"
       - "src/**"
       - "scripts/**"
       - "public/**"
       - "package.json"
       - "package-lock.json"
       - "next.config.ts"
+      - "tsconfig.json"
+      - "postcss.config.mjs"
       - ".github/workflows/docker-smoke.yml"
 
 permissions:
@@ -40,6 +46,7 @@ concurrency:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       # Actual Bench asks for a password; the image sets it from the
       # environment at start, the same way an operator can.

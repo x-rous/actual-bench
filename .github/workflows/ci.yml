@@ -28,13 +28,14 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 24.22.2
+          node-version-file: .nvmrc
           cache: "npm"
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --no-fund
@@ -44,13 +45,14 @@ jobs:
   test:
     name: typecheck-and-test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 24.22.2
+          node-version-file: .nvmrc
           cache: "npm"
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --no-fund
@@ -84,13 +86,14 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 24.22.2
+          node-version-file: .nvmrc
           cache: "npm"
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --no-fund
@@ -99,7 +102,10 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.next-build/cache
-          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**') }}
+          # Keyed per commit so each run saves a fresh cache, but restored from
+          # the newest one for the same lockfile. Hashing `src/**` into the key
+          # made every source change a brand-new, never-reused entry.
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
           restore-keys: |
             nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
@@ -115,6 +121,7 @@ jobs:
     if: always()
     needs: [lint, test, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Report aggregate result
         run: |

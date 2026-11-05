@@ -21,9 +21,9 @@ on:
     types: [opened, reopened, edited, synchronize]
   workflow_dispatch:
 
+# Each job asks for what it needs; the workflow default is read-only.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: release-drafter-${{ github.event.pull_request.number || 'main' }}
@@ -37,6 +37,10 @@ jobs:
   label:
     if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: release-drafter/release-drafter/autolabeler@v7
         env:
@@ -48,6 +52,10 @@ jobs:
     # which it refuses to publish from anyway.
     if: github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: release-drafter/release-drafter@v7
         env:
