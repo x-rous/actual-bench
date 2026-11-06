@@ -16,10 +16,10 @@ const ready = (over: Record<string, unknown> = {}) => ({
 });
 beforeEach(() => jest.clearAllMocks());
 
-it("opens Financial Statements without depending on a known budget mode", () => {
-  useFinancialInsights.mockReturnValue({ ...ready(), tab: "statements", tabs: [{ value: "summary", label: "Summary" }, { value: "statements", label: "Financial Statements" }] });
+it("opens Statements without depending on a known budget mode", () => {
+  useFinancialInsights.mockReturnValue({ ...ready(), tab: "statements", tabs: [{ value: "summary", label: "Summary" }, { value: "statements", label: "Statements" }] });
   render(<FinancialInsightsWorkspace />);
-  expect(screen.getByRole("tab", { name: "Financial Statements" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tab", { name: "Statements" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByText("the financial statements")).toBeInTheDocument();
 });
 

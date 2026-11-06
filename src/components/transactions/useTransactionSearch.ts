@@ -5,6 +5,7 @@ import { selectActiveInstance, useConnectionStore } from "@/store/connection";
 import { fetchPickerPage, PICKER_PAGE_SIZE, type PickedTransaction, type PickerConstraints, type PickerFilterState } from "./transactionPickerQuery";
 
 const SETTLE_MS = 250;
+const ID_BATCH_SIZE = 300;
 /**
  * The matches for a filter state, one page of Actual rows at a time (newest first). `rows` are the loaded matches that also
  * pass the exact client-side tests; `hasMore` says Actual has further pages, which `loadMore` fetches. Read-only.
@@ -19,8 +20,13 @@ export function useTransactionSearch(wanted: PickerFilterState, constraints: Pic
     queryKey: ["transactionPicker", key], enabled: !!connection, initialPageParam: 0,
     // Each filter state is a fresh read of up to many pages: do not keep the old ones for the whole session.
     gcTime: 60_000,
-    queryFn: ({ pageParam }) => fetchPickerPage(connection!, state, constraints ?? {}, today, pageParam),
-    getNextPageParam: (last, pages) => last.fetched < PICKER_PAGE_SIZE ? undefined : pages.length * PICKER_PAGE_SIZE,
+    queryFn: ({ pageParam }) => {
+      const ids = constraints?.namedIds;
+      if (!ids) return fetchPickerPage(connection!, state, constraints ?? {}, today, pageParam);
+      const batch = ids.slice(pageParam, pageParam + ID_BATCH_SIZE);
+      return fetchPickerPage(connection!, state, { ...constraints, where: constraints.where ? { $and: [constraints.where, { id: { $oneof: batch.length ? batch : ["-"] } }] } : { id: { $oneof: batch.length ? batch : ["-"] } } }, today, 0);
+    },
+    getNextPageParam: (last, pages) => constraints?.namedIds ? (pages.length * ID_BATCH_SIZE < constraints.namedIds.length ? pages.length * ID_BATCH_SIZE : undefined) : last.fetched < PICKER_PAGE_SIZE ? undefined : pages.length * PICKER_PAGE_SIZE,
   });
   const rows = useMemo<PickedTransaction[]>(() => query.data?.pages.flatMap((p) => p.rows) ?? [], [query.data]);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;

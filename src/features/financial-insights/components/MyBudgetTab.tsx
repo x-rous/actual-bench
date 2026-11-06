@@ -15,6 +15,7 @@ import { compactMoney, money, percent, signedMoney, formatDay } from "../format"
 import { CategoryHeatmap, HiddenMark, whole, type HeatGroupItem, type HeatItem } from "./CategoryHeatmap";
 import { ChartFrame } from "./ChartFrame";
 import { DrillLink } from "./DrillLink";
+import { CategorySortControl, sortCategories, type CategorySort } from "./CategorySort";
 import { CardTitle } from "./InfoTip";
 import { Tile } from "./Tile";
 import { useGranularity } from "../hooks/useGranularity";
@@ -260,8 +261,8 @@ function BudgetByGroup({ plan, onDrill }: PlanProps) {
   const tracking = plan.mode === "tracking";
   const noun = tracking ? "Budgeted" : "Assigned";
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const byMost = <T extends { name: string; spentMinor: number; planMinor: number }>(a: T, b: T) => Math.max(b.spentMinor, b.planMinor) - Math.max(a.spentMinor, a.planMinor) || a.name.localeCompare(b.name);
-  const groups = useMemo(() => [...plan.groups].sort(byMost), [plan.groups]);
+  const [sort, setSort] = useState<CategorySort>("order");
+  const groups = useMemo(() => sortCategories(plan.groups, sort, (group) => group.spentMinor), [plan.groups, sort]);
   const totalSpent = groups.reduce((a, g) => a + g.spentMinor, 0), totalPlan = groups.reduce((a, g) => a + g.planMinor, 0);
   const scale = Math.max(1, ...groups.flatMap((g) => [g.spentMinor, g.planMinor]));
   const title = tracking ? "Budgeted vs spent by group" : "Assigned vs spent by group";
@@ -269,8 +270,8 @@ function BudgetByGroup({ plan, onDrill }: PlanProps) {
   const link = (name: string, ids: string[], spent: number) => <DrillLink label={`${name} ${money(spent)}`} onClick={() => onDrill({ kind: "budgetCell", categoryIds: ids, name, amountMinor: spent, ...wholeRange(plan) })}>{money(spent)}</DrillLink>;
   return (
     <section className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card p-4" aria-label={title}>
-      <CardTitle title={title} hint={`${money(totalPlan)} ${tracking ? "budgeted" : "assigned"} · ${money(totalSpent)} spent`} infoLabel={title.toLowerCase()}
-        info={<><p>Each category group over the completed months: {tracking ? "its saved budget" : "what was assigned to it"}, what was spent, the variance and its share of all the spending shown here.</p><p>The line is one scale for every row: <strong>green</strong> is spending within the {tracking ? "budget" : "assignment"}, the <strong>pale</strong> stretch is {tracking ? "budget" : "assigned money"} not spent, and <strong>red</strong> is spending beyond it, as in the monthly chart. Variance is {tracking ? "budgeted" : "assigned"} less spent: <strong>+</strong> is under, <strong>−</strong> is over. Spending with no budget saved is all red.</p><p>Select a group name to expand its categories, or a spent total to see its transactions.</p></>} />
+      <div className="flex flex-wrap items-start justify-between gap-2"><CardTitle title={title} hint={`${money(totalPlan)} ${tracking ? "budgeted" : "assigned"} · ${money(totalSpent)} spent`} infoLabel={title.toLowerCase()}
+        info={<><p>Each category group over the completed months: {tracking ? "its saved budget" : "what was assigned to it"}, what was spent, the variance and its share of all the spending shown here.</p><p>The line is one scale for every row: <strong>green</strong> is spending within the {tracking ? "budget" : "assignment"}, the <strong>pale</strong> stretch is {tracking ? "budget" : "assigned money"} not spent, and <strong>red</strong> is spending beyond it, as in the monthly chart. Variance is {tracking ? "budgeted" : "assigned"} less spent: <strong>+</strong> is under, <strong>−</strong> is over. Spending with no budget saved is all red.</p><p>Select a group name to expand its categories, or a spent total to see its transactions.</p></>} /><CategorySortControl value={sort} onChange={setSort} /></div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--fi-up)" }} aria-hidden />Spent within {tracking ? "budget" : "assigned"}</span>
         <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm border border-border" style={{ background: BUDGET_TINT }} aria-hidden />{tracking ? "Budget" : "Assigned"} left</span>
@@ -300,7 +301,7 @@ function BudgetByGroup({ plan, onDrill }: PlanProps) {
                       <Variance planMinor={g.planMinor} spentMinor={g.spentMinor} />
                       <span className="text-right tabular-nums text-muted-foreground">{share(g.spentMinor)}</span>
                     </div>
-                    {isOpen && [...g.rows].sort(byMost).map((r) => (
+                    {isOpen && sortCategories(g.rows, sort, (row) => row.spentMinor).map((r) => (
                       <div key={r.id} className={`${BUDGET_ROW} border-t border-border/30 py-0.5 text-xs`}>
                         <span className="min-w-0 truncate pl-5 text-muted-foreground" title={r.name}>{r.name}{r.hidden ? " (hidden)" : ""}</span>
                         <BudgetLine planMinor={r.planMinor} spentMinor={r.spentMinor} scale={scale} thin />

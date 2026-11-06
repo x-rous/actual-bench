@@ -24,6 +24,8 @@ export type PickerConstraints = {
   excludeTransferPayees?: boolean;
   /** Leave out Actual's "Starting Balance" rows. */
   excludeStartingBalance?: boolean;
+  /** Exact transaction membership, fetched in bounded ID batches. */
+  namedIds?: string[];
   /** Transactions that never appear (a few, each becomes a condition). */
   excludeIds?: string[];
 };

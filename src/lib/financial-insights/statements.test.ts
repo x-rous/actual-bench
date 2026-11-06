@@ -123,7 +123,7 @@ describe("recorded financial statements", () => {
     expect(csv).toContainEqual(["Other activity", "Investment activity", "Recorded investment activity", "190.00", 3, model.investmentActivity.detail]);
     expect(csv.some((r) => r[0] === "Review")).toBe(false);
     const scope = drillScope({ kind: "statement", name: model.investmentActivity.label, ids: model.investmentActivity.ids, amountMinor: model.investmentActivity.amountMinor }, { ledger, period, today: "2026-11-06", reclassifiedIds: new Set() });
-    expect(scope.constraints.where).toEqual({ id: { $oneof: ["gain-1", "gain-2", "retirement-loss"] } });
+    expect(scope.constraints.namedIds).toEqual(["gain-1", "gain-2", "retirement-loss"]);
     expect(scope.expectedMinor).toBe(19000);
   });
 
@@ -160,6 +160,31 @@ describe("recorded financial statements", () => {
     expect(model.cash.differenceMinor).toBe(0); expect(model.pnl.basisIssue).toMatch(/differs from the shared/); expect(model.classificationComplete).toBe(false);
   });
 
+  it("keeps unrelated unmatched cash transfers for review even when their amounts cancel", () => {
+    const { model } = fixture([entry("out", "cash", -100, { transferAccountId: "bank", transferId: "missing-a" }), entry("in", "bank", 100, { transferAccountId: "cash", transferId: "missing-b" })]);
+    expect(model.cash.adjustments).toEqual(expect.arrayContaining([expect.objectContaining({ key: "internal", amountMinor: 0, ids: ["out", "in"] })]));
+    expect(model.classificationComplete).toBe(false);
+  });
+
+  it("detects classified transactions swapped between accounts even if aggregate cells agree", () => {
+    const original = [entry("classified", "home", 100, { categoryId: "food" }), entry("ordinary", "car", 100, { categoryId: "food" })];
+    const classified = { id: "classified", date: "2026-09-12", accountId: "home", categoryId: "food", amountMinor: 100, notes: "#revaluation" };
+    const { ledger } = fixture(original);
+    const changed = [entry("classified", "car", 100, { categoryId: "food" }), entry("ordinary", "home", 100, { categoryId: "food" })];
+    const model = buildStatements({ ledger, period, categories, entries: changed, assetEntries: [classified], savedClassifications: [], basisIssue: null });
+    expect(model.pnl.basisIssue).toMatch(/differs from the shared/);
+  });
+
+  it("keeps same-named category groups separate by their IDs", () => {
+    const rows = [entry("first", "bank", -100, { categoryId: "food" }), entry("second", "bank", -200, { categoryId: "interest" })];
+    const separate = new Map(categories);
+    separate.set("food", { ...separate.get("food")!, groupName: "Shared", groupId: "one" });
+    separate.set("interest", { ...separate.get("interest")!, groupName: "Shared", groupId: "two" });
+    const { ledger } = fixture(rows);
+    const model = buildStatements({ ledger, period, categories: separate, entries: rows, assetEntries: [], savedClassifications: [], basisIssue: null });
+    expect(model.pnl.expenses.map((group) => [group.key, group.ids])).toEqual([["two", ["second"]], ["one", ["first"]]]);
+  });
+
   it("leaves differences visible and exports every subtotal, adjustment and provisional status with exact cents", () => {
     const { ledger } = fixture([entry("income", "bank", 10001, { categoryId: "salary" }), entry("new-start", "bank", 123, { startingBalance: true })]);
     const model = buildStatements({ ledger, period, categories, entries: [], assetEntries: null, savedClassifications: [], basisIssue: "Registry unavailable" });
@@ -175,11 +200,10 @@ describe("recorded financial statements", () => {
     const { ledger } = fixture([]);
     const ctx = { ledger, period, today: "2026-11-06", reclassifiedIds: new Set(["classified"]) };
     const scope = drillScope({ kind: "statement", name: "Evidence", ids: ["opening", "classified", "transfer"], amountMinor: -123 }, ctx);
-    expect(scope.constraints.where).toEqual({ id: { $oneof: ["opening", "classified", "transfer"] } });
+    expect(scope.constraints.namedIds).toEqual(["opening", "classified", "transfer"]);
     expect(scope.constraints.excludeStartingBalance).toBeUndefined(); expect(scope.expectedMinor).toBe(-123);
     const long = drillScope({ kind: "statement", name: "Long", ids: Array.from({ length: 301 }, (_, i) => `row-${i}`), amountMinor: 0 }, ctx);
-    expect(long.constraints.where).toBeUndefined();
-    expect(long.rowFilter!({ id: "row-300" } as Parameters<NonNullable<typeof long.rowFilter>>[0])).toBe(true);
-    expect(long.rowFilter!({ id: "unrelated" } as Parameters<NonNullable<typeof long.rowFilter>>[0])).toBe(false);
+    expect(long.constraints.namedIds).toHaveLength(301);
+    expect(long.rowFilter).toBeUndefined();
   });
 });

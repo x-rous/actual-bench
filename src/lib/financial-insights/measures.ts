@@ -43,6 +43,10 @@ export type LoanCostRow = { /** The transaction, so a drilldown can list it. */ 
 export type AccountFact = {
   id: string;
   name: string;
+  /** Actual account group; absent or null means the account is ungrouped. */
+  groupId?: string | null;
+  /** Current group name, or null if the group is unavailable. */
+  groupName?: string | null;
   /** Never "excluded": those accounts are not facts, they are only named in `FinancialFacts.excluded`. */
   accountClass: Exclude<AccountClass, "excluded">;
   treatment: ReportingTreatment | null;

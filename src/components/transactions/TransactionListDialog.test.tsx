@@ -55,3 +55,18 @@ describe("charts in the list", () => {
     expect(screen.queryByRole("region", { name: "Charts" })).not.toBeInTheDocument();
   });
 });
+
+it("loads long named memberships in bounded ID batches and totals only matching evidence", async () => {
+  const ids = Array.from({ length: 301 }, (_, index) => `wanted-${index}`);
+  const database = [...Array.from({ length: 20_001 }, (_, index) => row(`unrelated-${index}`, 1)), row("wanted-300", -3500)];
+  jest.mocked(fetchPickerPage).mockImplementation(async (_connection, _state, constraints) => {
+    const allowed = ((constraints.where as { id: { $oneof: string[] } }).id.$oneof);
+    const rows = database.filter((item) => allowed.includes(item.id));
+    return { rows, fetched: rows.length };
+  });
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TransactionListDialog title="Statement evidence" today="2026-10-24" constraints={{ namedIds: ids }} expectedMinor={-3500} onClose={jest.fn()} /></QueryClientProvider>);
+  expect(await screen.findByText("Payee wanted-300")).toBeVisible();
+  expect(screen.queryByText("Payee unrelated-0")).not.toBeInTheDocument();
+  expect(await screen.findByText(/Matches the figure/)).toBeInTheDocument();
+  expect(jest.mocked(fetchPickerPage)).toHaveBeenCalledTimes(2);
+});

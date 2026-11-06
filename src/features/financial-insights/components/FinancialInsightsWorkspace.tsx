@@ -32,7 +32,7 @@ import { formatDay } from "../format";
 const readTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /**
- * Financial Insights: Summary, Money in & out, Income, Spending, My budget, Investments, Property & assets, Loans & cards and Financial Statements, with a read-only list behind any figure. Nothing
+ * Financial Insights: Summary, Money in & out, Income, Spending, My budget, Investments, Property & assets, Loans & cards and Statements, with a read-only list behind any figure. Nothing
  * is drawn until every account is understood and the data has been read.
  */
 export function FinancialInsightsWorkspace() {

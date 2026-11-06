@@ -108,7 +108,8 @@ export function useFinancialInsightsGate(): Gate {
     // The accounts are checked again every time the page opens: until that check is back, what was cached is not shown as the truth.
     if (!accounts || !accountsFetchedAfterMount || groupsData === undefined || !activityData || !classesAvailable || !reportingAvailable) return { state: "loading" };
 
-    const liveGroups = new Set((groupsData ?? []).map((g) => g.id));
+    const groupNames = new Map((groupsData ?? []).map((g) => [g.id, g.name]));
+    const liveGroups = new Set(groupNames.keys());
     const classOf = new Map<string, AccountClass | null>(
       accounts.map((a) => [a.id, resolveAccountClass(a.id, a.groupId && liveGroups.has(a.groupId) ? a.groupId : null, classMaps).accountClass])
     );
@@ -123,7 +124,7 @@ export function useFinancialInsightsGate(): Gate {
     // An exempt closed account (no history) has no class and nothing to count, so it is left out of every figure.
     const facts: AccountFact[] = accounts.flatMap((a) => {
       const accountClass = classOf.get(a.id);
-      return accountClass && accountClass !== "excluded" ? [{ id: a.id, name: a.name, accountClass, treatment: reportingByAccount.get(a.id) ?? null, offBudget: a.offBudget, closed: a.closed }] : [];
+      return accountClass && accountClass !== "excluded" ? [{ id: a.id, name: a.name, groupId: a.groupId ?? null, groupName: a.groupId ? groupNames.get(a.groupId) ?? null : null, accountClass, treatment: reportingByAccount.get(a.id) ?? null, offBudget: a.offBudget, closed: a.closed }] : [];
     });
     const excluded = accounts.filter((a) => classOf.get(a.id) === "excluded").map((a) => ({ id: a.id, name: a.name }));
     return { state: "ready", accounts: facts, excluded };
@@ -213,7 +214,7 @@ export const TABS = [
   { value: "wealth", label: "Investments" },
   { value: "property", label: "Property & assets" },
   { value: "loans", label: "Loans & cards" },
-  { value: "statements", label: "Financial Statements" },
+  { value: "statements", label: "Statements" },
 ] as const;
 
 /** The tabs that have something to show: My budget once its mode is known and a month was read, Investments once an investment or retirement account exists, Property & assets once a fixed asset account exists (property, vehicle or a fixed other asset), Loans & cards once a loan, credit card or other liability account exists. */
@@ -283,7 +284,7 @@ export function useFinancialInsights(): FinancialInsightsView {
         const within = seen.get(c.groupId) ?? 0;
         seen.set(c.groupId, within + 1);
         return {
-          id: c.id, name: c.name, groupName: groupOf.get(c.groupId)?.name ?? "Other", hidden: c.hidden || !!groupOf.get(c.groupId)?.hidden, isIncome: isIncome(c),
+          id: c.id, name: c.name, groupId: c.groupId, groupName: groupOf.get(c.groupId)?.name ?? "Other", hidden: c.hidden || !!groupOf.get(c.groupId)?.hidden, isIncome: isIncome(c),
           order: (groupIndex.get(c.groupId) ?? 9999) * 100_000 + within,
         };
       });

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { buildLedger, summarize, type FinancialFacts } from "@/lib/financial-insights/measures";
 import { resolvePeriod } from "@/lib/financial-insights/period";
 import { buildStatements, type StatementEntry } from "@/lib/financial-insights/statements";
@@ -29,7 +29,7 @@ it("shows equally sized statements without repeating the global period, and comp
   expect(screen.getByTestId("statements-pair")).toHaveClass("grid-cols-2");
   expect(screen.queryByText(/01 Nov 2026 – 06 Nov 2026/)).not.toBeInTheDocument();
   expect(screen.queryByText(/No estimated accruals/)).not.toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "Financial statements" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Financial statements" })).not.toBeInTheDocument();
   expect(screen.queryByText("Classification needs review")).not.toBeInTheDocument();
   expect(screen.getByText("Balances reconcile")).toBeInTheDocument();
   const pnl = screen.getByRole("region", { name: "Income Statement (P&L)" });
@@ -41,38 +41,27 @@ it("shows equally sized statements without repeating the global period, and comp
   expect(within(pnl).getByRole("rowheader", { name: "Salary" })).toHaveClass("pl-10", "py-1");
   fireEvent.click(within(pnl).getByRole("button", { name: "Salary +123.45. Show the transactions" }));
   expect(onDrill).toHaveBeenCalledWith(expect.objectContaining({ kind: "statement", ids: ["salary-row"], amountMinor: 12345 }));
-  fireEvent.click(screen.getByRole("button", { name: "Expand Which accounts form cash?" }));
-  expect(screen.getByRole("rowheader", { name: "Checking" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /Opening cash: .*Show cash accounts/ }));
+  expect(within(screen.getByRole("dialog", { name: "Which accounts form cash?" })).getByRole("button", { name: "No Group" })).toHaveAttribute("aria-expanded", "false");
 });
 
 it("keeps activity headers, indented contents and their subtotals inside distinct sections", () => {
   render(<StatementsTab data={data} onDrill={jest.fn()} />);
   const section = screen.getByRole("region", { name: "Operating activities" });
-  expect(section).toHaveClass("border", "border-border");
+  expect(section).not.toHaveClass("border", "rounded-md");
   expect(within(section).getByRole("heading", { name: "Operating activities" })).toBeInTheDocument();
   expect(within(section).getByRole("rowheader", { name: "Categorized cash receipts" })).toHaveClass("pl-5", "py-1");
   expect(within(section).getByText("Net cash from operating activities")).toBeInTheDocument();
-  for (const name of ["Investing activities", "Financing activities", "Income", "Expenses"]) expect(screen.getByRole("region", { name })).toHaveClass("border");
+  for (const name of ["Investing activities", "Financing activities", "Total Income", "Total Expenses"]) expect(screen.getByRole("region", { name })).not.toHaveClass("border", "rounded-md");
 });
 
-it("opens classification rules in the shared dialog and restores focus to its trigger", async () => {
+it("shows totals in the section headers and removes the top-level controls", () => {
   render(<StatementsTab data={data} onDrill={jest.fn()} />);
-  const trigger = screen.getByRole("button", { name: "Account classification rules" });
-  trigger.focus(); fireEvent.click(trigger);
-  const dialog = await screen.findByRole("dialog", { name: "Account classification rules" });
-  expect(dialog).toHaveTextContent("Other Liability");
-  expect(within(dialog).getAllByRole("rowheader")).toHaveLength(11);
-  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  await waitFor(() => expect(trigger).toHaveFocus());
-});
-
-it("exports the displayed statement totals and reporting basis using the shared exporter", () => {
-  render(<StatementsTab data={data} onDrill={jest.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
-  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-statements.csv", expect.arrayContaining([
-    ["P&L", "Income", "Total income", "123.45", "", ""], ["Cash flow", "Balances", "Closing cash", "123.45", "", ""],
-  ]));
+  const income = screen.getByRole("region", { name: "Total Income" });
+  expect(within(income).getByRole("heading", { name: /Total Income/ })).toHaveTextContent("+123.45");
+  expect(within(income).getByRole("columnheader", { name: "Group / category" }).parentElement?.parentElement).toHaveClass("sr-only");
+  expect(screen.queryByRole("button", { name: "Account classification rules" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Export CSV" })).not.toBeInTheDocument();
 });
 
 it("keeps a reconciled but unclassified statement distinct from a trusted P&L result", () => {
@@ -80,7 +69,7 @@ it("keeps a reconciled but unclassified statement distinct from a trusted P&L re
   render(<StatementsTab data={data} onDrill={jest.fn()} />);
   expect(screen.getByText("Balances reconcile")).toBeInTheDocument();
   expect(screen.queryByText("Classification needs review")).not.toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "Financial statements" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Financial statements" })).not.toBeInTheDocument();
   expect(screen.getByText("Net surplus / deficit needs review")).toBeInTheDocument();
 });
 
@@ -93,8 +82,9 @@ it("shows investment activity as neutral information with its own exact drill-do
   expect(within(screen.getByRole("region", { name: "Classification exceptions" })).queryByText(/Recorded investment activity/)).not.toBeInTheDocument();
   fireEvent.click(within(activity).getByRole("button", { name: "Recorded investment activity (2 entries) +200.00. Show the transactions" }));
   expect(onDrill).toHaveBeenCalledWith(expect.objectContaining({ kind: "statement", ids: ["gain-1", "gain-2"], amountMinor: 20000 }));
-  fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
-  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-statements.csv", expect.arrayContaining([["Other activity", "Investment activity", "Recorded investment activity", "200.00", 2, investmentActivity.detail]]));
+  expect(activity.parentElement).toHaveClass("[&>section]:h-auto");
+  expect(activity.parentElement?.parentElement).toContainElement(screen.getByRole("region", { name: "Classification exceptions" }));
+  expect(downloadCsv).not.toHaveBeenCalled();
 });
 
 it("offers retry without rendering a partial statement when evidence fails", () => {
@@ -103,4 +93,64 @@ it("offers retry without rendering a partial statement when evidence fails", () 
   render(<StatementsTab data={data} onDrill={jest.fn()} />);
   expect(screen.queryByRole("region", { name: "Cash Flow Statement" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Retry statements" })); expect(retry).toHaveBeenCalled();
+});
+
+it("shows the balance sheet as a period-end snapshot and exports its account balances", () => {
+  render(<StatementsTab data={data} onDrill={jest.fn()} />);
+  const sheet = screen.getByRole("region", { name: "Balance Sheet" });
+  const group = within(sheet).getByRole("button", { name: /Current assets/ });
+  expect(group).toHaveAttribute("aria-expanded", "true");
+  const accountGroup = within(sheet).getByRole("button", { name: /No Group/ });
+  expect(accountGroup).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(within(sheet).getByRole("button", { name: "Expand all" }));
+  expect(accountGroup).toHaveAttribute("aria-expanded", "true");
+  expect(within(sheet).getByRole("rowheader", { name: "Checking" })).toBeVisible();
+  expect(within(sheet).getByText("Cash & cash equivalents")).toBeVisible();
+  fireEvent.click(within(sheet).getByRole("button", { name: "Collapse all" }));
+  expect(accountGroup).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(group);
+  expect(group).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(within(sheet).getByRole("button", { name: "Expand all" }));
+  expect(group).toHaveAttribute("aria-expanded", "true");
+  expect(within(sheet).getByRole("rowheader", { name: "Checking" })).toBeVisible();
+  expect(within(sheet).getByText(/calculated as assets less liabilities/)).toBeInTheDocument();
+  fireEvent.click(within(sheet).getByRole("button", { name: "Export Balance Sheet as CSV" }));
+  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-balance-sheet.csv", expect.arrayContaining([["Current assets", "No Group", "Checking", "Cash & cash equivalents", "123.45"], ["Totals", "", "Net worth", "", "123.45"]]));
+});
+
+it("expands and collapses all P&L category groups without changing the balance sheet", () => {
+  render(<StatementsTab data={data} onDrill={jest.fn()} />);
+  const pnl = screen.getByRole("region", { name: "Income Statement (P&L)" });
+  fireEvent.click(within(pnl).getByRole("button", { name: "Expand all" }));
+  expect(within(pnl).getByRole("rowheader", { name: "Salary" })).toBeVisible();
+  const sheet = screen.getByRole("region", { name: "Balance Sheet" });
+  expect(within(sheet).queryByRole("rowheader", { name: "Checking" })).not.toBeInTheDocument();
+  fireEvent.click(within(pnl).getByRole("button", { name: "Collapse all" }));
+  expect(within(pnl).queryByRole("rowheader", { name: "Salary" })).not.toBeInTheDocument();
+});
+
+it("opens the cash breakdown from either balance, restores focus and exports totals", async () => {
+  render(<StatementsTab data={data} onDrill={jest.fn()} />);
+  const opening = screen.getByRole("button", { name: /Opening cash: .*Show cash accounts/ });
+  opening.focus(); fireEvent.click(opening);
+  const dialog = screen.getByRole("dialog", { name: "Which accounts form cash?" });
+  const group = within(dialog).getByRole("button", { name: "No Group" });
+  expect(group).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Expand all" }));
+  expect(group).toHaveAttribute("aria-expanded", "true");
+  expect(within(dialog).getByRole("rowheader", { name: "Checking" })).toBeVisible();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Collapse all" }));
+  expect(group).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Export CSV" }));
+  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-statement-cash-accounts.csv", expect.arrayContaining([["Checking", "0.00", "123.45"], ["Total cash equivalents", "0.00", "123.45"]]));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(opening).toHaveFocus());
+  fireEvent.click(screen.getByRole("button", { name: /Closing cash: .*Show cash accounts/ }));
+  expect(screen.getByRole("dialog", { name: "Which accounts form cash?" })).toBeVisible();
+});
+
+it("exports statement entry counts without scaling them as money", () => {
+  render(<StatementsTab data={data} onDrill={jest.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Export Cash Flow Statement as CSV" }));
+  expect(downloadCsv).toHaveBeenCalledWith("financial-insights-cash-flow-statement.csv", expect.arrayContaining([["Operating activities", "Categorized cash receipts", "123.45", "1", ""]]));
 });

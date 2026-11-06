@@ -157,13 +157,11 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
     filters: ["search", "amount", "tags", "payees"] as PickerFilterKey[],
   };
   if (target.kind === "statement") {
-    const named = target.ids.length <= MAX_NAMED;
-    const wanted = new Set(target.ids);
     return {
       title: `${target.name} · ${when}`, description: target.description ?? "The recorded transactions behind this statement line. Transfers, split children and refunds retain their recorded signs. Nothing can be changed here.",
-      constraints: { ...base.constraints, ...(named ? { where: { id: { $oneof: target.ids.length ? target.ids : ["-"] } } } : {}) },
+      constraints: { ...base.constraints, namedIds: [...new Set(target.ids)] },
       lockedLabels: { where: target.name }, defaults: base.defaults, filters: base.filters,
-      rowFilter: named ? undefined : (row) => wanted.has(row.id), insights: null, expectedMinor: target.amountMinor,
+      insights: null, expectedMinor: target.amountMinor,
     };
   }
   // Starting balances and registry-classified entries are named in the query, so the charts add up to the list. A very long

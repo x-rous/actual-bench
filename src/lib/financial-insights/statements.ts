@@ -60,14 +60,22 @@ export function buildStatements(input: {
     const value = observed.get(key) ?? { amountMinor: 0, count: 0 };
     value.amountMinor += entry.amountMinor; value.count += 1; observed.set(key, value);
   }
-  const evidenceChanged = expected.size !== observed.size || [...observed].some(([key, value]) => expected.get(key)?.amountMinor !== value.amountMinor || expected.get(key)?.count !== value.count);
+  const detailed = new Map(entries.map((entry) => [entry.id, entry]));
+  const saved = new Map(input.savedClassifications.map((r) => [r.actualTransactionId, r]));
+  const classifiedEvidence = [...ledger.facts.reclassified, ...(input.assetEntries ?? []).filter((entry) => classificationOf(entry, saved) !== null).map((entry) => ({ ...entry, month: entry.date.slice(0, 7) }))];
+  const classifiedChanged = classifiedEvidence.some((row) => {
+    const entry = detailed.get(row.id);
+    if (!ledger.account.has(row.accountId) || (!entry && (row.month < period.startMonth || row.month > period.endMonth))) return false;
+    return !entry || entry.accountId !== row.accountId || entry.date.slice(0, 7) !== row.month || ("date" in row && entry.date !== row.date) || entry.categoryId !== row.categoryId || entry.amountMinor !== row.amountMinor;
+  });
+  const evidenceChanged = classifiedChanged || expected.size !== observed.size || [...observed].some(([key, value]) => expected.get(key)?.amountMinor !== value.amountMinor || expected.get(key)?.count !== value.count);
   const basisIssue = input.basisIssue ?? (evidenceChanged ? "Statement evidence differs from the shared transaction snapshot; Refresh Financial Insights to re-read both" : null);
   const cashIds = new Set(ledger.facts.accounts.filter((a) => isCashEquivalent(a.accountClass, a.treatment)).map((a) => a.id));
   const reclassified = new Map(ledger.facts.reclassified.map((r) => [r.id, r.to]));
-  const saved = new Map(input.savedClassifications.map((r) => [r.actualTransactionId, r]));
   const capitalIds = new Set((input.assetEntries ?? []).filter((r) => ["acquisition", "added-capital"].includes(classificationOf(r, saved) ?? "")).map((r) => r.id));
   const paidCosts = new Set(ledger.facts.loanCosts.filter((r) => r.kind && r.id).map((r) => r.id!));
   // A parent is evidence only when the recorded split has an identified expense alongside its principal transfer.
+  const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
   const expenseParents = new Set(entries.filter((r) => r.parentId && !r.transferAccountId && r.categoryId && categories.has(r.categoryId) && !ledger.facts.incomeCategories.has(r.categoryId)).map((r) => r.parentId));
   const operating = [line("receipts", "Categorized cash receipts"), line("payments", "Categorized cash payments"), line("card", "Credit-card settlements", "Ordinary card settlements are operating payments. Purchase categories remain in P&L; no allocation of a settlement to particular purchases is inferred."), line("interest", "Recorded loan interest and fees paid"), line("uncategorized-in", "Uncategorized cash receipts"), line("uncategorized-out", "Uncategorized cash payments")];
   const investing = [line("invest-out", "Put into investments and retirement"), line("invest-in", "Withdrawn from investments and retirement"), line("fixed-out", "Placed in fixed / restricted deposits"), line("fixed-in", "Released from fixed / restricted deposits"), line("asset-out", "Fixed-asset purchases and capital added"), line("asset-in", "Fixed-asset transfers received"), line("sales", "Asset sale proceeds and selling costs")];
@@ -93,7 +101,12 @@ export function buildStatements(input: {
     if (entry.transferAccountId) {
       if (!cash) continue;
       const other = ledger.account.get(entry.transferAccountId);
-      if (cashIds.has(entry.transferAccountId)) { add(internal, entry); continue; }
+      if (cashIds.has(entry.transferAccountId)) {
+        const otherSide = entry.transferId ? entriesById.get(entry.transferId) : undefined;
+        const matched = otherSide && otherSide.transferId === entry.id && otherSide.accountId === entry.transferAccountId && otherSide.transferAccountId === entry.accountId && otherSide.amountMinor === -entry.amountMinor;
+        if (!matched) add(internal, entry);
+        continue;
+      }
       if (!other) {
         unknown(entry, "scope", "Transfers with excluded or unavailable accounts", "The cash side is recorded, but the counterpart is outside the reporting scope or unavailable. Its purpose is not inferred."); continue;
       }
@@ -104,7 +117,7 @@ export function buildStatements(input: {
       else if (other.accountClass === "loan" && entry.amountMinor > 0) add(financing[0], entry);
       else if (other.accountClass === "loan" && entry.parentId && expenseParents.has(entry.parentId)) add(financing[1], entry);
       else if (other.accountClass === "loan") unknown(entry, "loan-allocation", "Loan payments: allocation unidentified", "The recorded payment does not identify separate principal and interest/fee amounts. A calculated loan schedule is not used to split it.");
-      else unknown(entry, `transfer-${other.accountClass}`, `Transfers with ${other.accountClass === "other-liability" ? "other liabilities" : other.accountClass === "other-asset" ? "other assets" : "credit cards"}: purpose unidentified`, "Account class and current/non-current treatment do not establish the purpose of this cash movement. No activity classification is guessed.");
+      else unknown(entry, `transfer-${other.accountClass}`, `Transfers with ${other.accountClass === "other-liability" ? "other liabilities" : other.accountClass === "other-asset" ? "other assets" : "credit cards"}: purpose unidentified`, "Account class and current/non-current treatment do not establish the purpose of this cash movement.");
       continue;
     }
     const classified = reclassified.get(entry.id);
@@ -143,9 +156,10 @@ export function buildStatements(input: {
     for (const [id, row] of ordered) {
       const info = categories.get(id)!;
       if (info.isIncome !== income) continue;
-      const group = byGroup.get(info.groupName) ?? { ...line(info.groupName, info.groupName), rows: [] };
+      const key = info.groupId ?? info.groupName;
+      const group = byGroup.get(key) ?? { ...line(key, info.groupName), rows: [] };
       group.rows.push({ ...row, label: `${row.label}${info.hidden ? " (hidden)" : ""}` });
-      group.amountMinor += row.amountMinor; group.ids.push(...row.ids); byGroup.set(info.groupName, group);
+      group.amountMinor += row.amountMinor; group.ids.push(...row.ids); byGroup.set(key, group);
     }
     const result = [...byGroup.values()];
     const uncategorized = income ? uncategorizedIncome : uncategorizedExpenses;
@@ -158,7 +172,7 @@ export function buildStatements(input: {
     { key: "investing", label: "Investing activities", rows: investing },
     { key: "financing", label: "Financing activities", rows: financing },
   ].map((s) => ({ ...s, rows: s.rows.filter((r) => r.ids.length > 0), amountMinor: total(s.rows) }));
-  const adjustments = [...cashUnknown.values(), ...(starting.ids.length ? [starting] : []), ...(internal.amountMinor !== 0 ? [internal] : [])];
+  const adjustments = [...cashUnknown.values(), ...(starting.ids.length ? [starting] : []), ...(internal.ids.length ? [internal] : [])];
   const balance = (month: string) => [...cashIds].reduce((sum, id) => sum + ledger.balanceAt(id, month), 0);
   const openingMinor = balance(addMonths(period.startMonth, -1)), closingMinor = balance(period.endMonth);
   const changeMinor = closingMinor - openingMinor;
@@ -177,7 +191,7 @@ export function buildStatements(input: {
     cash: { openingMinor, closingMinor, changeMinor, sections, adjustments, differenceMinor },
     pnl: { income, expenses, incomeMinor, expensesMinor, surplusMinor, basisIssue },
     unresolved: [...cashUnknown.values(), ...unresolved.values()], investmentActivity, bridge,
-    classificationComplete: !basisIssue && cashUnknown.size === 0 && unresolved.size === 0 && internal.amountMinor === 0 && differenceMinor === 0,
+    classificationComplete: !basisIssue && cashUnknown.size === 0 && unresolved.size === 0 && internal.ids.length === 0 && differenceMinor === 0,
   };
 }
 

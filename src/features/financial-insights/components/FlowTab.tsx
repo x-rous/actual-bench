@@ -13,6 +13,7 @@ import { CategoryHeatmap, whole, type HeatGroupItem, type HeatItem } from "./Cat
 import { ChartFrame } from "./ChartFrame";
 import { Delta } from "./Delta";
 import { DrillLink } from "./DrillLink";
+import { CategorySortControl, sortCategories, type CategorySort } from "./CategorySort";
 import { CardTitle } from "./InfoTip";
 import { Tile } from "./Tile";
 import { useGranularity } from "../hooks/useGranularity";
@@ -26,8 +27,6 @@ type Ready = Extract<FinancialInsightsView["data"], { state: "ready" }>;
 type Mode = "spending" | "income";
 const viewOf = (data: Ready, income: boolean) => (income ? { breakdown: data.income.breakdown, facts: data.income.facts, groups: data.income.groups } : { breakdown: data.breakdown, facts: data.spending, groups: data.groups });
 
-/** "Where the money went" lists this many groups; every group is in the category table below. */
-const TOP_GROUPS = 10;
 const groupColour = (slot: number) => `var(--fi-g${slot})`;
 const BELOW = ["", "var(--fi-below1)", "var(--fi-below2)", "var(--fi-below3)", "var(--fi-below4)"];
 const ABOVE = ["", "var(--fi-above1)", "var(--fi-above2)", "var(--fi-above3)", "var(--fi-above4)"];
@@ -41,18 +40,19 @@ function Ranking({ data, onDrill, income }: { data: Ready; onDrill: (target: Dri
   const { groups: { groups }, breakdown } = viewOf(data, income);
   const title = income ? "Where the money came from" : "Where the money went";
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const shown = groups.slice(0, TOP_GROUPS);
+  const [sort, setSort] = useState<CategorySort>("order");
+  const shown = sortCategories(groups, sort, (group) => group.totalMinor);
   const largest = Math.max(1, ...groups.map((g) => g.totalMinor));
   return (
     <section className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card p-4" aria-label={title}>
-      <CardTitle title={title} hint={income ? (groups.length > TOP_GROUPS ? `Top ${TOP_GROUPS} of ${groups.length} categories` : "By income category") : groups.length > TOP_GROUPS ? `Top ${TOP_GROUPS} of ${groups.length} category groups` : "By category group"}
-        info={<><p>By category group, net of refunds{breakdown.hasHidden ? ", hidden categories included" : ""}.</p><p>{income ? "Select a total to see all of its transactions." : "Select a total to see all of its transactions; select a group name to expand its categories."}</p>{groups.length > TOP_GROUPS && <p>The other {groups.length - TOP_GROUPS} groups are in the table below.</p>}</>} infoLabel={title.toLowerCase()} />
+      <div className="flex flex-wrap items-start justify-between gap-2"><CardTitle title={title} hint={income ? "By income category" : "By category group"}
+        info={<><p>By category group, net of refunds{breakdown.hasHidden ? ", hidden categories included" : ""}.</p><p>{income ? "Select a total to see all of its transactions." : "Select a total to see all of its transactions; select a group name to expand its categories."}</p></>} infoLabel={title.toLowerCase()} /><CategorySortControl value={sort} onChange={setSort} income={income} /></div>
       <OverlayScrollArea className="mt-2 flex-1"><div className="divide-y divide-border/40">
         {shown.map((g) => {
           const isOpen = open.has(g.name);
           return (
             <div key={g.name} className="py-1">
-              <div className="grid grid-cols-[minmax(0,1fr)_7rem_3.5rem] items-center gap-3 text-xs">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(3rem,12.25rem)_7rem_3.5rem] items-center gap-3 text-xs">
                 <div className="min-w-0">
                   {income ? (
                     <span className="flex w-full min-w-0 items-center gap-1.5 px-1 py-0.5">
@@ -67,16 +67,17 @@ function Ranking({ data, onDrill, income }: { data: Ready; onDrill: (target: Dri
                     <span className="truncate font-medium">{g.name}</span>
                   </button>
                   )}
-                  <div className={`${income ? "ml-4" : "ml-6"} mt-1 h-1.5 overflow-hidden rounded-full bg-muted`} aria-hidden><div className="h-full rounded-full" style={{ width: `${(g.totalMinor / largest) * 100}%`, background: groupColour(g.slot) }} /></div>
                 </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden><div className="h-full rounded-full" style={{ width: `${Math.max(0, (g.totalMinor / largest) * 100)}%`, background: groupColour(g.slot) }} /></div>
                 <span className="text-right"><DrillLink label={`${g.name} ${money(g.totalMinor)}`} onClick={() => onDrill(groupTarget(g, g.totalMinor, undefined, undefined, income))}>{money(g.totalMinor)}</DrillLink></span>
                 <span className="text-right tabular-nums text-muted-foreground">{breakdown.totalMinor > 0 ? percent((g.totalMinor / breakdown.totalMinor) * 100) : "-"}</span>
               </div>
               {isOpen && !income && (
-                <ul className="ml-6 mt-1 divide-y divide-border/30">
-                  {g.rows.map((r) => (
-                    <li key={r.id ?? "uncategorized"} className="grid grid-cols-[minmax(0,1fr)_7rem_3.5rem] items-center gap-3 py-0.5 text-xs">
-                      <span className="truncate text-muted-foreground" title={r.name}>{r.name}{r.hidden ? " (hidden)" : ""}</span>
+                <ul className="mt-1 divide-y divide-border/30">
+                  {sortCategories(g.rows, sort, (row) => row.totalMinor).map((r) => (
+                    <li key={r.id ?? "uncategorized"} className="grid grid-cols-[minmax(0,1fr)_minmax(3rem,12.25rem)_7rem_3.5rem] items-center gap-3 py-0.5 text-xs">
+                      <span className="truncate pl-6 text-muted-foreground" title={r.name}>{r.name}{r.hidden ? " (hidden)" : ""}</span>
+                      <span aria-hidden />
                       <span className="text-right"><DrillLink label={`${r.name} ${money(r.totalMinor)}`} onClick={() => onDrill(rowTarget(r, r.totalMinor, undefined, undefined, income))}>{money(r.totalMinor)}</DrillLink></span>
                       <span className="text-right tabular-nums text-muted-foreground">{breakdown.totalMinor > 0 ? percent((r.totalMinor / breakdown.totalMinor) * 100) : "-"}</span>
                     </li>
@@ -87,7 +88,6 @@ function Ranking({ data, onDrill, income }: { data: Ready; onDrill: (target: Dri
           );
         })}
       </div></OverlayScrollArea>
-      {groups.length > TOP_GROUPS && <p className="mt-1 border-t border-border/50 pt-1.5 text-center text-xs text-muted-foreground">{groups.length - TOP_GROUPS} more {groups.length - TOP_GROUPS === 1 ? "group is" : "groups are"} in the table below</p>}
     </section>
   );
 }

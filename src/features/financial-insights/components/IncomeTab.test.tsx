@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { buildLedger, summarize, type AccountFact, type FinancialFacts, type MovementRow } from "@/lib/financial-insights/measures";
 import { incomeBreakdown, monthlyFlows, payeeSpending, spendingBreakdown, spendingFacts, spendingGroups, type CategoryInfo, type PayeeRow } from "@/lib/financial-insights/breakdowns";
@@ -95,6 +96,18 @@ describe("the Income tab", () => {
     for (const name of ["Salary", "Rent received", "Bonus", "Uncategorized"]) expect(ranking).toHaveTextContent(name);
     expect(ranking).not.toHaveTextContent("Other income");
     expect(within(ranking).queryByRole("button", { name: /Expand/ })).not.toBeInTheDocument();
+  });
+
+  it("sorts income categories by Actual order, income or name", async () => {
+    show();
+    const ranking = screen.getByRole("region", { name: "Where the money came from" });
+    const select = within(ranking).getByRole("combobox", { name: "Sort groups and categories" });
+    const names = () => [...ranking.querySelectorAll<HTMLElement>("span[title]")].map((element) => element.title);
+    expect(names()).toEqual(["Salary", "Bonus", "Rent received", "Uncategorized"]);
+    await chooseSelectOption(select, "Income");
+    expect(names()).toEqual(["Salary", "Rent received", "Bonus", "Uncategorized"]);
+    await chooseSelectOption(select, "Name");
+    expect(names()).toEqual(["Bonus", "Rent received", "Salary", "Uncategorized"]);
   });
 
   it("opens a category's total as money received", () => {

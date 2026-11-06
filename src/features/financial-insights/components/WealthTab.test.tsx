@@ -79,7 +79,7 @@ describe("offered tabs", () => {
   const names = (accounts: AccountFact[], budget = false) => offeredTabs(accounts, budget).map((t) => t.value);
   it("offers Investments only when the budget holds an investment or retirement account, and My budget only when it can be read", () => {
     expect(names([chk])).toEqual(["summary", "money", "income", "spending", "statements"]);
-    expect(offeredTabs([chk], false).find((tab) => tab.value === "statements")?.label).toBe("Financial Statements");
+    expect(offeredTabs([chk], false).find((tab) => tab.value === "statements")?.label).toBe("Statements");
     expect(names([chk, inv])).toContain("wealth");
     expect(names([chk, house])).not.toContain("wealth");
     expect(names([chk, inv], true)).toEqual(["summary", "money", "income", "spending", "budget", "wealth", "statements"]);
