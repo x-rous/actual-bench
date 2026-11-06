@@ -74,8 +74,8 @@ jobs:
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "Deploy needed: $deploy"
 
-      # Keep the Space's own files: README.md carries the Space front matter,
-      # .gitattributes its LFS rules, and the root Dockerfile is the demo image.
+      # Keep the Space's own files and LFS rules, and track demo user-file
+      # blobs with LFS before committing the mirrored seed files.
       - name: Mirror main into the Space
         if: steps.changes.outputs.deploy == 'true'
         run: |
@@ -84,6 +84,7 @@ jobs:
             --exclude='.git' --exclude='README.md' --exclude='.gitattributes' \
             --exclude='Dockerfile' --exclude='.deployed-from' \
             ./ "$space/"
+          git -C "$space" lfs track 'demo/seed-data/user-files/*.blob'
           cp demo/Dockerfile "$space/Dockerfile"
           echo "${{ steps.changes.outputs.head }}" > "$space/.deployed-from"
 
