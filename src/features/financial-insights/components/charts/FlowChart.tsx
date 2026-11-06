@@ -1,17 +1,22 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { compactAxis } from "../../format";
+import { compactAxis, signedLabelMoney } from "../../format";
 import { scaleY } from "./BarChart";
-import { tickLabel } from "./labels";
+import { LABEL_HALO, tickLabel } from "./labels";
 import { useTip, useWidth } from "./Tip";
 
 /**
  * Money in and money out, month by month, in one picture: what was received rises above the zero line, what was spent hangs
  * below it, and what was kept (received less spent) is a dashed line with a marker per month, above zero when something was saved and below it when
  * more went out than came in. Received and spent are opposite directions, so nothing is stacked or added up twice. The partial
- * month is lighter with a dashed outline and a hollow marker.
+ * month is lighter with a dashed outline and a hollow marker. The figure beside each marker is what was kept, signed: above the
+ * marker when something was saved and below it when not, outlined so it reads over a bar. Received and spent are left to the axis,
+ * the tooltip and the table; the partial month, which is not compared, has no figure.
  */
+/** The narrowest a month's slot may be for the Kept figure beside its marker. */
+const KEPT_LABEL_MIN_SLOT = 44;
+
 export function FlowChart({ labels, partialIndex, received, spent, kept, height = 260, tip, onSelect }: {
   labels: string[];
   partialIndex: number | readonly number[] | null;
@@ -69,6 +74,12 @@ export function FlowChart({ labels, partialIndex, received, spent, kept, height 
           return <line key={`k${i}`} x1={M.l + (i - 0.5) * slot} x2={M.l + (i + 0.5) * slot} y1={y(a)} y2={y(b)} stroke="var(--fi-kept)" strokeWidth={1.75} strokeDasharray="5 4" strokeOpacity={isPartial(i) ? 0.5 : 1} pointerEvents="none" />;
         })}
         {labels.map((label, i) => (kept[i] == null ? null : <circle key={`m${i}`} cx={M.l + (i + 0.5) * slot} cy={y(kept[i] as number)} r={4.5} fill="var(--card)" stroke="var(--fi-kept)" strokeWidth={2} strokeDasharray={isPartial(i) ? "2 1.5" : undefined} pointerEvents="none" />))}
+        {slot >= KEPT_LABEL_MIN_SLOT && labels.map((label, i) => {
+          const k = kept[i];
+          if (k == null || isPartial(i)) return null;
+          const labelY = Math.min(height - M.b - 2, Math.max(M.t + 2, k >= 0 ? y(k) - 10 : y(k) + 19));
+          return <text key={`kl${i}`} x={M.l + (i + 0.5) * slot} y={labelY} textAnchor="middle" className="text-[10.5px] font-semibold" style={{ fill: "var(--fi-kept)", ...LABEL_HALO }} aria-hidden pointerEvents="none">{signedLabelMoney(k)}</text>;
+        })}
       </svg>
     </div>
   );

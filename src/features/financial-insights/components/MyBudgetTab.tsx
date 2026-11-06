@@ -474,26 +474,29 @@ function BudgetHeatmap({ plan, onDrill }: PlanProps) {
 function RoomToSave({ kpis }: { kpis: PlanKpis }) {
   if (kpis.state !== "ready" || kpis.mode !== "tracking") return null;
   const rows = [
-    { label: "Income", planned: kpis.plannedIncomeMinor, actual: kpis.incomeMinor, colour: "var(--fi-income)", strong: false, variance: kpis.incomeVarianceMinor },
-    { label: "Spending", planned: kpis.plannedMinor, actual: kpis.spentMinor, colour: "var(--fi-spend)", strong: false, variance: kpis.varianceMinor },
-    { label: "Surplus", planned: kpis.plannedSavingsMinor, actual: kpis.actualSavingsMinor, colour: kpis.actualSavingsMinor >= 0 ? "var(--fi-up)" : "var(--fi-down)", strong: true, variance: kpis.actualSavingsMinor - kpis.plannedSavingsMinor },
+    { label: "Income", planned: kpis.plannedIncomeMinor, actual: kpis.incomeMinor, strong: false, variance: kpis.incomeVarianceMinor },
+    { label: "Spending", planned: kpis.plannedMinor, actual: kpis.spentMinor, strong: false, variance: kpis.varianceMinor },
+    { label: "Surplus", planned: kpis.plannedSavingsMinor, actual: kpis.actualSavingsMinor, strong: true, variance: kpis.actualSavingsMinor - kpis.plannedSavingsMinor },
   ];
   const max = Math.max(1, ...rows.flatMap((r) => [Math.abs(r.planned), Math.abs(r.actual)]));
+  // The same colours as the monthly chart and the tiles: green when a result is on or better than budgeted (income above, spending
+  // under, surplus above), red when it is worse. The variance already has that sign, whichever way the row is read.
+  const result = (variance: number) => (variance >= 0 ? "var(--fi-up)" : "var(--fi-other-liability)");
   const bar = (v: number, colour: string) => <div className="h-1.5 rounded-full" style={{ width: `${(Math.abs(v) / max) * 100}%`, minWidth: v === 0 ? 0 : 2, background: colour }} aria-hidden />;
   const cols = "grid-cols-[5rem_minmax(0,1fr)_6.5rem_6.5rem_6.5rem]";
   return (
     <section className="min-w-0 rounded-lg border border-border bg-card px-4 py-3" aria-label="Budgeted vs actual surplus">
-      <CardTitle title="Budgeted vs actual surplus" hint="A comparison, not a forecast" info={<p>Budgeted income less budgeted spending, set beside the income received less what was spent, over the same completed months. The bars share one scale. Nothing here is projected.</p>} infoLabel="budgeted vs actual surplus" />
+      <CardTitle title="Budgeted vs actual surplus" hint="A comparison, not a forecast" info={<p>Budgeted income less budgeted spending, set beside the income received less what was spent, over the same completed months. The bars share one scale; an Actual bar is green when the result is on or better than budgeted and red when it is worse. Nothing here is projected.</p>} infoLabel="budgeted vs actual surplus" />
       <div className={`mt-2 grid ${cols} items-center gap-x-3 border-b border-border pb-1 text-xs text-muted-foreground`}>
-        <span /><span className="flex gap-3"><span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--fi-balance)" }} aria-hidden />Budgeted</span><span className="flex items-center gap-1"><i className="size-2 rounded-full bg-foreground/60" aria-hidden />Actual</span></span><span className="text-right">Budgeted</span><span className="text-right">Actual</span><span className="text-right" title="Positive is better than budgeted: income above, spending under, surplus above">Variance</span>
+        <span /><span className="flex flex-wrap gap-x-3 gap-y-0.5"><span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--fi-balance)" }} aria-hidden />Budgeted</span><span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--fi-up)" }} aria-hidden />Actual, on or better</span><span className="flex items-center gap-1"><i className="size-2 rounded-full" style={{ background: "var(--fi-other-liability)" }} aria-hidden />Actual, worse</span></span><span className="text-right">Budgeted</span><span className="text-right">Actual</span><span className="text-right" title="Positive is better than budgeted: income above, spending under, surplus above">Variance</span>
       </div>
       {rows.map((r) => (
         <div key={r.label} className={`grid ${cols} items-center gap-x-3 border-b border-border/40 py-1.5 text-xs last:border-b-0 ${r.strong ? "font-semibold" : ""}`}>
           <span className={r.strong ? "" : "text-muted-foreground"}>{r.label}</span>
-          <div className="space-y-0.5" aria-hidden>{bar(r.planned, "var(--fi-balance)")}{bar(r.actual, r.colour)}</div>
+          <div className="space-y-0.5" aria-hidden>{bar(r.planned, "var(--fi-balance)")}{bar(r.actual, result(r.variance))}</div>
           <span className="text-right tabular-nums">{money(r.planned)}</span>
           <span className="text-right tabular-nums">{money(r.actual)}</span>
-          <span className="text-right tabular-nums" title={r.variance >= 0 ? "Better than budgeted" : "Worse than budgeted"}>{signedMoney(r.variance)}</span>
+          <span className={`text-right tabular-nums ${r.variance > 0 ? "text-green-700 dark:text-green-400" : r.variance < 0 ? "text-red-700 dark:text-red-400" : ""}`} title={r.variance >= 0 ? "Better than budgeted" : "Worse than budgeted"}>{signedMoney(r.variance)}</span>
         </div>
       ))}
       <p className="mt-1 text-xs text-muted-foreground">Variance is positive when the result is better than budgeted: income above, spending under, surplus above.</p>

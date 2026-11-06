@@ -1,8 +1,10 @@
 import { render } from "@testing-library/react";
-import { compactAxis, labelMoney } from "../../format";
+import { compactAxis, labelMoney, signedLabelMoney } from "../../format";
 import { BarChart } from "./BarChart";
+import { CompositionChart } from "./CompositionChart";
+import { FlowChart } from "./FlowChart";
 import { LineChart } from "./LineChart";
-import { spreadLabels } from "./labels";
+import { LABEL_HALO, spreadLabels } from "./labels";
 import { monthTip } from "./monthTip";
 import { TipRow } from "./Tip";
 
@@ -207,5 +209,82 @@ describe("labelMoney", () => {
     expect(labelMoney(850)).toBe("8.5");
     expect(labelMoney(4)).toBe("0");
     expect(labelMoney(-4)).toBe("0");
+  });
+});
+
+describe("signedLabelMoney", () => {
+  it("writes the sign out: + above zero, − below it, and 0 for nothing", () => {
+    expect(signedLabelMoney(240_000)).toBe("+2.4k");
+    expect(signedLabelMoney(-1_400_000)).toBe("−14k");
+    expect(signedLabelMoney(0)).toBe("0");
+    expect(signedLabelMoney(-8_988)).toBe("−90");
+    expect(signedLabelMoney(850)).toBe("+8.5");
+    expect(signedLabelMoney(-32)).toBe("−0.3");
+  });
+});
+
+describe("FlowChart kept labels", () => {
+  const labels = ["Jan", "Feb", "Mar", "Apr"];
+  const props = { labels, received: [500_000, 100_000, 300_000, 20_000], spent: [380_000, 150_000, 300_000, 10_000], tip, onSelect: () => undefined };
+  const written = (container: HTMLElement) => [...container.querySelectorAll("text")].filter((t) => t.getAttribute("aria-hidden") === "true");
+
+  it("writes what was kept beside each marker with its sign, and nothing for a month still being checked", () => {
+    const { container } = render(<FlowChart {...props} partialIndex={null} kept={[120_000, -50_000, null, 10_000]} />);
+    expect(written(container).map((t) => t.textContent)).toEqual(["+1.2k", "−500", "+100"]);
+  });
+
+  it("puts a figure above its marker when something was kept and below it when not", () => {
+    const { container } = render(<FlowChart {...props} partialIndex={null} kept={[120_000, -50_000, 0, 10_000]} />);
+    const markers = container.querySelectorAll("circle");
+    const [saved, overspent] = written(container);
+    expect(Number(saved.getAttribute("y"))).toBeLessThan(Number(markers[0].getAttribute("cy")));
+    expect(Number(overspent.getAttribute("y"))).toBeGreaterThan(Number(markers[1].getAttribute("cy")));
+  });
+
+  it("outlines the figures, so they read over a bar", () => {
+    const { container } = render(<FlowChart {...props} partialIndex={null} kept={[120_000, -50_000, 0, 10_000]} />);
+    // jsdom drops the properties it does not know (paint-order), so the outline is checked by its stroke and by the shared style.
+    expect(written(container)[0].getAttribute("style")).toContain("stroke: var(--card)");
+    expect(LABEL_HALO).toMatchObject({ paintOrder: "stroke", stroke: "var(--card)" });
+  });
+
+  it("leaves the partial month, which is not compared, without a figure", () => {
+    const { container } = render(<FlowChart {...props} partialIndex={3} kept={[120_000, -50_000, 0, 10_000]} />);
+    expect(written(container).map((t) => t.textContent)).toEqual(["+1.2k", "−500", "0"]);
+  });
+
+  it("leaves the figures out when the months are too narrow for them", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `M${i}`);
+    const { container } = render(<FlowChart labels={many} partialIndex={null} received={many.map(() => 100_000)} spent={many.map(() => 60_000)} kept={many.map(() => 40_000)} tip={tip} onSelect={() => undefined} />);
+    expect(written(container)).toHaveLength(0);
+  });
+});
+
+describe("CompositionChart net worth labels", () => {
+  const month = (property: number, loans: number) => ({ cash: 0, fixed: 0, invest: 0, property, vehicle: 0, other: 0, loans, cards: 0, otherLiability: 0 });
+  const months = [month(320_000_000, -15_000_000), month(330_000_000, -15_000_000), month(340_000_000, -16_000_000)];
+  const netWorth = [300_000_000, 320_000_000, 340_000_000];
+  const base = { labels: ["Jan", "Feb", "Mar"], partialIndex: null, months, netWorth, hidden: new Set<never>(), showNetWorth: true };
+  const written = (container: HTMLElement) => [...container.querySelectorAll("text")].filter((t) => t.getAttribute("aria-hidden") === "true").map((t) => t.textContent);
+
+  it("writes net worth beside each marker and no totals of what is owned or owed", () => {
+    const { container } = render(<CompositionChart {...base} />);
+    expect(written(container)).toEqual(["3.0m", "3.2m", "3.4m"]);
+  });
+
+  it("writes nothing when net worth is switched off", () => {
+    const { container } = render(<CompositionChart {...base} showNetWorth={false} />);
+    expect(written(container)).toEqual([]);
+  });
+
+  it("skips a month before the budget has data", () => {
+    const { container } = render(<CompositionChart {...base} hasData={[false, true, true]} />);
+    expect(written(container)).toEqual(["3.2m", "3.4m"]);
+  });
+
+  it("keeps only the first and last when the months are too narrow for every figure", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `M${i}`);
+    const { container } = render(<CompositionChart {...base} labels={many} months={many.map(() => month(320_000_000, -15_000_000))} netWorth={many.map((_, i) => 300_000_000 + i * 1_000_000)} />);
+    expect(written(container)).toEqual(["3.0m", "3.4m"]);
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
-import { compactAxis, labelMoney } from "../../format";
+import { compactAxis, labelMoney, signedLabelMoney } from "../../format";
 import { scaleY } from "./BarChart";
 import { tickLabel } from "./labels";
 import { useTip, useWidth } from "./Tip";
@@ -12,11 +12,6 @@ const FIGURE_MIN_SLOT = 38;
 
 /** The pale tint of a budget: the block behind a month's bar, and the part of a group's line that was not spent. */
 export const BUDGET_TINT = "color-mix(in srgb, var(--fi-balance) 25%, transparent)";
-
-/** `+2.4k` for a month under its budget, `−14k` for one over it, `0` for one exactly on it. */
-export function signedCompact(minor: number): string {
-  return minor === 0 ? "0" : `${minor < 0 ? "−" : "+"}${labelMoney(Math.abs(minor))}`;
-}
 
 /**
  * Spending against a budget, one month at a time. The budget is a wide, pale block, and the spending a narrower bar in front of
@@ -99,7 +94,7 @@ export function BudgetBars({ labels, partialIndex, spent, budget, variance, exce
               <text x={cx} y={height - 24} textAnchor="middle" className="fill-muted-foreground text-[10.5px]">{tickLabel(label, i, slot)}{partial ? "*" : ""}</text>
               {s !== null && b !== null && delta !== null && figures && (partial
                 ? <text x={cx} y={height - 6} textAnchor="middle" className="fill-muted-foreground text-[10.5px]" aria-hidden>–</text>
-                : <text x={cx} y={height - 6} textAnchor="middle" className="text-[10.5px] font-semibold" style={{ fill: beyond ? over : within }} aria-hidden>{signedCompact(delta)}</text>)}
+                : <text x={cx} y={height - 6} textAnchor="middle" className="text-[10.5px] font-semibold" style={{ fill: beyond ? over : within }} aria-hidden>{signedLabelMoney(delta)}</text>)}
             </g>
           );
         })}

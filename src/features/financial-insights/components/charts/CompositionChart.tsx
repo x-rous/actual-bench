@@ -2,10 +2,13 @@
 
 import { useRef } from "react";
 import { ASSET_CLASSES, CLASS_LABEL, LIABILITY_CLASSES, type ClassKey } from "@/lib/financial-insights/breakdowns";
-import { compactMoney as compactLabel, money, signedMoney } from "../../format";
+import { compactAxis, compactMoney as compactLabel, labelMoney, money, signedMoney } from "../../format";
 import { scaleY } from "./BarChart";
-import { tickLabel } from "./labels";
+import { LABEL_HALO, tickLabel } from "./labels";
 import { TipNote, TipRow, TipTitle, useTip, useWidth } from "./Tip";
+
+/** The narrowest a month's slot may be for its net worth to be written beside the marker. */
+const NET_WORTH_LABEL_MIN_SLOT = 44;
 
 export const CLASS_COLOUR: Record<ClassKey, string> = {
   cash: "var(--fi-cash)", fixed: "var(--fi-fixed)", invest: "var(--fi-invest)", property: "var(--fi-property)", vehicle: "var(--fi-vehicle)", other: "var(--fi-other-asset)",
@@ -15,6 +18,8 @@ export const CLASS_COLOUR: Record<ClassKey, string> = {
 /**
  * What you own and owe at each month end: assets stacked above zero, liabilities below, net worth as a line. The classes
  * drawn are the ones the viewer has left switched on in the legend; net worth is always the true figure, whatever is hidden.
+ * The only figure written on the chart is net worth, beside each marker (outlined, so it reads over a stack); months too narrow
+ * for that keep only the first and last. What each class holds is in the tooltip and the table, not drawn as totals.
  */
 export function CompositionChart({ labels, partialIndex, months, netWorth, hasData, hidden, showNetWorth, height = 250, unitName = "month", partialText = "balance today" }: {
   labels: string[];
@@ -46,10 +51,13 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hasDa
   // On a long period the slots are only a few pixels: the gaps shrink with them so a bar keeps a width.
   const pad = Math.min(Math.max(3, slot * 0.14), slot * 0.25);
   const known = (i: number) => (hasData ? hasData[i] : true);
+  const axis = compactAxis(marks);
+  // A label that would fall outside the drawing stays inside it.
+  const inside = (labelY: number) => Math.min(height - M.b - 2, Math.max(M.t + 2, labelY));
   return (
     <div ref={host} className="w-full">
       <svg width={width} height={height} role="group" aria-label={`What you own and owe at each ${unitName} end`}>
-        {marks.map((v) => <g key={v}><line x1={M.l} x2={width - M.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={0.6} /><text x={M.l - 6} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{compactLabel(v)}</text></g>)}
+        {marks.map((v, k) => <g key={v}><line x1={M.l} x2={width - M.r} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeOpacity={0.6} /><text x={M.l - 6} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10.5px]">{axis[k]}</text></g>)}
         <line x1={M.l} x2={width - M.r} y1={y(0)} y2={y(0)} stroke="var(--muted-foreground)" strokeWidth={1.2} />
         {months.map((m, i) => {
           const x0 = M.l + i * slot;
@@ -86,6 +94,15 @@ export function CompositionChart({ labels, partialIndex, months, netWorth, hasDa
             {netWorth.map((v, i) => !known(i) ? null : <circle key={i} cx={M.l + (i + 0.5) * slot} cy={y(v)} r={3.5} fill="var(--card)" stroke="var(--fi-networth)" strokeWidth={2} />)}
           </>
         )}
+        {showNetWorth && (() => {
+          const shown = netWorth.flatMap((_, i) => (known(i) ? [i] : []));
+          // Every month when each has room for its figure, otherwise only where the line starts and where it ends.
+          const written = slot >= NET_WORTH_LABEL_MIN_SLOT ? shown : shown.length === 0 ? [] : [...new Set([shown[0], shown[shown.length - 1]])];
+          return written.map((i) => (
+            <text key={`nw${i}`} x={M.l + (i + 0.5) * slot} y={inside(netWorth[i] >= 0 ? y(netWorth[i]) - 10 : y(netWorth[i]) + 19)} textAnchor="middle" className="text-[10.5px] font-semibold"
+              style={{ fill: "var(--fi-networth)", ...LABEL_HALO }} aria-hidden pointerEvents="none">{labelMoney(netWorth[i])}</text>
+          ));
+        })()}
       </svg>
     </div>
   );

@@ -31,6 +31,11 @@ export function labelMoney(minor: number): string {
   return `${minor < 0 && shown !== 0 ? "-" : ""}${shown}`;
 }
 
+/** A figure on a chart with its sign written out: `+2.4k` above zero, `−14k` below it, and `0` for nothing. */
+export function signedLabelMoney(minor: number): string {
+  return minor === 0 ? "0" : `${minor < 0 ? "−" : "+"}${labelMoney(Math.abs(minor))}`;
+}
+
 /** `compactMoney` with a fixed number of decimals on the thousands and millions. */
 function compactFixed(minor: number, digits: number): string {
   const major = Math.abs(minor) / 100;

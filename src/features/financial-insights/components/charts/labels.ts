@@ -1,4 +1,10 @@
 /**
+ * A thin outline in the card's colour behind a label's letters, so a figure stays readable where it sits over a bar or a line.
+ * `paint-order: stroke` draws the outline first, under the fill.
+ */
+export const LABEL_HALO = { paintOrder: "stroke", stroke: "var(--card)", strokeWidth: 3, strokeLinejoin: "round" } as const;
+
+/**
  * Vertical positions for labels that sit beside points which may be close together: sorted top to bottom, each pushed down
  * until it is `gap` clear of the one above, then back up if the last would pass `max`. Returns them in the order given.
  */

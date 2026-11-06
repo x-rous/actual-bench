@@ -233,6 +233,33 @@ describe("My budget cards follow the length of the period", () => {
   });
 });
 
+describe("My budget: budgeted vs actual surplus", () => {
+  const section = () => screen.getByRole("region", { name: "Budgeted vs actual surplus" });
+  const fills = () => [...section().querySelectorAll<HTMLElement>("div[aria-hidden] > div[style]")].map((d) => d.style.background);
+
+  it("draws the actual bar and the variance red when a result is worse than budgeted", () => {
+    // Two months spending 400 against 300: spending 200 over, and a surplus 200 worse than planned.
+    useBudgetPlan.mockReturnValue(ready([month("2026-09", [expense("food", 30_000, 40_000)]), month("2026-10", [expense("food", 30_000, 40_000)])]));
+    show();
+    expect(fills().filter((f) => f.includes("var(--fi-other-liability)"))).not.toHaveLength(0);
+    expect(fills().filter((f) => f.includes("var(--fi-up)"))).toHaveLength(1); // income, on its (nil) budget
+    const worse = within(section()).getAllByTitle("Worse than budgeted");
+    expect(worse).toHaveLength(2);
+    worse.forEach((v) => expect(v.className).toMatch(/red/));
+    expect(section()).toHaveTextContent("Actual, worse");
+  });
+
+  it("draws the actual bar and the variance green when a result is better than budgeted", () => {
+    useBudgetPlan.mockReturnValue(ready([month("2026-09", [expense("food", 30_000, 20_000)]), month("2026-10", [expense("food", 30_000, 20_000)])]));
+    show();
+    expect(fills().filter((f) => f.includes("var(--fi-other-liability)"))).toHaveLength(0);
+    const better = within(section()).getAllByTitle("Better than budgeted");
+    expect(better.length).toBeGreaterThanOrEqual(2);
+    expect(better.filter((v) => /green/.test(v.className)).length).toBeGreaterThanOrEqual(2);
+    expect(section()).toHaveTextContent("Actual, on or better");
+  });
+});
+
 describe("My budget variance tiles", () => {
   it("show the variance signed, green when under budget and red when over", () => {
     useBudgetPlan.mockReturnValue(ready([month("2026-09", [expense("food", 30_000, 20_000)]), month("2026-10", [expense("food", 30_000, 20_000)])]));

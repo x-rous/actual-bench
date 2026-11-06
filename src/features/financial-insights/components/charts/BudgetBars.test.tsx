@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react";
-import { BudgetBars, signedCompact } from "./BudgetBars";
+import { signedLabelMoney as signedCompact } from "../../format";
+import { BudgetBars } from "./BudgetBars";
 
 const tip = () => null;
 const colours = { within: "#2a8", over: "#c22", block: "#456" };
