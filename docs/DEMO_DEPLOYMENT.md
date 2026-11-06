@@ -77,16 +77,16 @@ budgets can be opened. A restart resets the shared sample. The local backup
 destination and run history also reset; scheduled automations only run while
 the Space is awake.
 
-For a seed or backend-code change, regenerate the paired data as described in
-[`demo/README.md`](../demo/README.md), review the manifest and seed files
-together, then rebuild and update the Space repository. Use Git Xet or Git LFS
-for binary files, tracking them before committing. The refreshed opening
-transactions use the `Starting Balance` payee; verify the matching seed set
-before deployment. A UI-only change does not
-require an HF update because Vercel builds the UI from `main`. If a change adds
-or changes an API route, app-database schema, or other server behavior, update
-the HF Space too; its server-side code does not automatically track GitHub
-merges.
+For a seed change, regenerate the paired data as described in
+[`demo/README.md`](../demo/README.md), then review the manifest and seed files
+together. The refreshed opening transactions use the `Starting Balance` payee;
+verify the matching seed set before deployment. After CI succeeds on `main`,
+the `Deploy demo Space` workflow mirrors the repository to the Space; it can
+also be run manually to retry a deployment. The workflow preserves the
+Space-specific `.gitattributes` and adds Git LFS tracking for demo user-file
+`.blob` seeds before pushing. Keep those files with the matching SQLite seeds.
+Vercel builds the UI from `main`; API routes, app-database schema, and other
+server changes are mirrored to the Space by the same workflow.
 
 ## Validate and cut over
 
