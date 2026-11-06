@@ -56,7 +56,7 @@ function InvestmentsFlow({ monthly, period, scope, onDrill }: FlowProps) {
       actions={<UnitPills value={unit} onChange={setUnit} label="Show investments by" />}
       table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), "Put into investments", "Withdrawn"], rows: buckets.map((b, i) => [labels[i] + (b.partial ? " (partial)" : ""), put[i], taken[i]]) }} csvScope={scope}
       footnote={partialFootnote(labels, partials, unit, period)}>
-      {!moved ? <p className="py-12 text-center text-xs text-muted-foreground">No money moved between your cash accounts and investments in this period.</p> : <BarChart labels={labels} partialIndex={partials.length ? partials : null} height={210} ariaLabel={`Money put into and withdrawn from investments each ${names.one}`}
+      {!moved ? <p className="py-12 text-center text-xs text-muted-foreground">No money moved between your cash accounts and investments in this period.</p> : <BarChart labels={labels} partialIndex={partials.length ? partials : null} height={210} valueLabels ariaLabel={`Money put into and withdrawn from investments each ${names.one}`}
         series={[{ key: "in", label: "Put into investments", colour: "var(--fi-invest)", values: put }, { key: "out", label: "Withdrawn from investments", colour: "var(--fi-income)", values: taken }]}
         tip={(i) => monthTip({ title: labels[i], partial: buckets[i].partial, partialNote: partialNoteOf(unit, period.endDate), rows: [{ colour: "var(--fi-invest)", name: "Put into investments", value: money(put[i] ?? 0) }, { colour: "var(--fi-income)", name: "Withdrawn", value: money(taken[i] ?? 0) }] })}
         onSelect={(i, k) => onDrill({ kind: k === 0 ? "contributed" : "withdrawn", ...drillRange(buckets[i]) })} />}
@@ -75,9 +75,9 @@ function LoanPrincipalFlow({ monthly, period, scope, onDrill }: FlowProps) {
       actions={<UnitPills value={unit} onChange={setUnit} label="Show loan principal by" />}
       table={{ head: [names.one[0].toUpperCase() + names.one.slice(1), "Loan principal repaid", "Borrowed"], rows: buckets.map((b, i) => [labels[i] + (b.partial ? " (partial)" : ""), repaid[i], borrowed[i]]) }} csvScope={scope}
       footnote={partialFootnote(labels, partials, unit, period)}>
-      {monthly.every((m) => !m.repaid) ? <p className="py-12 text-center text-xs text-muted-foreground">No loan principal left your cash accounts in this period.</p> : <BarChart labels={labels} partialIndex={partials.length ? partials : null} height={210} ariaLabel={`Loan principal repaid each ${names.one}`}
+      {monthly.every((m) => !m.repaid) ? <p className="py-12 text-center text-xs text-muted-foreground">No loan principal left your cash accounts in this period.</p> : <BarChart labels={labels} partialIndex={partials.length ? partials : null} height={210} valueLabels ariaLabel={`Loan principal repaid each ${names.one}`}
         series={[{ key: "repaid", label: "Loan principal repaid", colour: "var(--fi-loan)", values: repaid }]}
-        tip={(i) => monthTip({ title: labels[i], partial: buckets[i].partial, partialNote: partialNoteOf(unit, period.endDate), rows: [{ colour: "var(--fi-loan)", name: "Loan principal repaid", value: money(repaid[i] ?? 0) }, ...(borrowed[i] ? [{ name: `◆ Borrowed that ${names.one}`, value: money(borrowed[i] ?? 0) }] : [])], compare: { values: repaid, index: i, label: "repaid" } })}
+        tip={(i) => monthTip({ title: labels[i], partial: buckets[i].partial, partialNote: partialNoteOf(unit, period.endDate), rows: [{ colour: "var(--fi-loan)", name: "Loan principal repaid", value: money(repaid[i] ?? 0), strong: true }, ...(borrowed[i] ? [{ name: `◆ Borrowed that ${names.one}`, value: money(borrowed[i] ?? 0) }] : [])], compare: { values: repaid, index: i, label: "repaid" } })}
         onSelect={(i) => onDrill({ kind: "repaid", ...drillRange(buckets[i]) })} />}
       {borrowedIn.length > 0 && (
         <ul className="mt-1 divide-y divide-border/50 text-xs">
@@ -156,7 +156,7 @@ export function MoneyTab({ data, onDrill }: { data: Ready; onDrill: (target: Dri
 
   const flowTip = (i: number) => monthTip({
     title: unitLabels[i], partial: buckets[i].partial, partialNote: unit === "month" ? partialNote : `Partial ${names.one}: the period covers only part of it, or it includes the month still running.`,
-    rows: [{ colour: "var(--fi-income)", name: "Received", value: money(received[i] ?? 0) }, { colour: "var(--fi-spend)", name: "Spent", value: money(spent[i] ?? 0) }, { colour: "var(--fi-kept)", name: "Kept", value: keptSeries[i] === null ? "Needs review" : signedMoney(keptSeries[i] as number) }],
+    rows: [{ colour: "var(--fi-income)", name: "Received", value: money(received[i] ?? 0) }, { colour: "var(--fi-spend)", name: "Spent", value: money(spent[i] ?? 0) }, { colour: "var(--fi-kept)", name: "Kept", value: keptSeries[i] === null ? "Needs review" : signedMoney(keptSeries[i] as number), strong: true }],
     compare: { values: spent, index: i, label: "spending" },
     share: { part: spent[i] ?? 0, whole: summary.spent, of: "spending in the period" },
   });

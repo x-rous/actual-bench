@@ -32,25 +32,32 @@ export type BudgetPlanLoad =
   | { state: "ready"; plan: BudgetPlan };
 
 /**
+ * Months read at once. The proxy still sends them to actual-http-api one at a time (see `serverQueue.ts`: the backend must
+ * never see two requests together), so this does not add concurrency there. It keeps the next requests already on their way
+ * while one is being served, which is most of the time a month takes: 86 months read in about 40s one after another and in
+ * about 12s four at a time (measured against the demo, 2026-11). Not configurable, on purpose.
+ */
+const MONTHS_AT_ONCE = 4;
+
+/**
  * Reads every budget month of the period when My budget opens, through the same query and cache as Budget Cockpit (a month
- * already open there is not read again), one month at a time like every other read on this page. It adds nothing to the main
- * read, so the other tabs never wait for it.
+ * already open there is not read again), a few months in flight at a time. It adds nothing to the main read, so the other
+ * tabs never wait for it.
  */
 export function useBudgetPlan(data: ReadyData, today: string, mode: PlanMode): BudgetPlanLoad {
   const connection = useConnectionStore(selectActiveInstance);
   const queryClient = useQueryClient();
   const available = useAvailableMonths();
   const [progress, setProgress] = useState({ done: 0, total: 0 });
-  // Every month of the period, however long: a longer period reads more months, one at a time, and says which it is on.
+  // Every month of the period, however long: a longer period reads more months, a few at a time, and says how far it is.
   const months = data.period.months;
   const query = useQuery({
     queryKey: ["financial-insights", "budget-plan", connection?.id, connection?.budgetSyncId, today, months[0], months[months.length - 1]],
     // If the budget's month list cannot be read, every month is tried and a missing one is reported as unreadable.
     enabled: !!connection && !available.isLoading,
     queryFn: async (): Promise<MonthRead[]> => {
-      const reads: MonthRead[] = [];
-      for (const [i, month] of months.entries()) {
-        setProgress({ done: i, total: months.length });
+      let finished = 0;
+      const readMonth = async (month: string): Promise<MonthRead> => {
         const key = budgetMonthDataQueryOptions(connection, month).queryKey;
         // A month marked out of date (Refresh) is read again; one that is merely cached is used as it is.
         let refreshFailed = false;
@@ -61,11 +68,15 @@ export function useBudgetPlan(data: ReadyData, today: string, mode: PlanMode): B
         }
         const result = await ensureMonthsData(queryClient, connection, [month], available.data);
         const state = queryClient.getQueryData<LoadedMonthState>(key);
-        if (result.unavailable.length > 0) reads.push({ month, status: "unavailable" });
-        else if (refreshFailed || result.failed.length > 0 || !state) reads.push({ month, status: "failed" });
-        else reads.push({ month, status: "ok", state });
-      }
-      setProgress({ done: months.length, total: months.length });
+        setProgress({ done: ++finished, total: months.length });
+        if (result.unavailable.length > 0) return { month, status: "unavailable" };
+        if (refreshFailed || result.failed.length > 0 || !state) return { month, status: "failed" };
+        return { month, status: "ok", state };
+      };
+      setProgress({ done: 0, total: months.length });
+      const reads: MonthRead[] = [];
+      // In period order: a batch settles before the next starts, and its results keep the order they were asked in.
+      for (let i = 0; i < months.length; i += MONTHS_AT_ONCE) reads.push(...(await Promise.all(months.slice(i, i + MONTHS_AT_ONCE).map(readMonth))));
       return reads;
     },
   });

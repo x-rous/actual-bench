@@ -150,7 +150,7 @@ function ValueOverTime({ series, data, scope }: { series: AssetSeries; data: Rea
     ] : []),
   ];
   const table = { head: ["Point", ...lines.map((l) => l.label)], rows: labels.map((l, i) => [l, ...lines.map((x) => x.values[i])]) };
-  const tip = (i: number) => monthTip({ title: labels[i], partial: false, partialNote: "", rows: lines.map((l) => ({ colour: l.colour, name: l.label, value: money(l.values[i]) })), compare: { values: lines[0].values, index: i, label: "asset value" } });
+  const tip = (i: number) => monthTip({ title: labels[i], partial: false, partialNote: "", rows: lines.map((l) => ({ colour: l.colour, name: l.label, value: money(l.values[i]), strong: l.key === "equity" || !linked })), compare: { values: lines[0].values, index: i, label: "asset value" } });
   return (
     <ChartFrame
       id="asset-value-over-time" title="Value, debt and equity over time" hint={linked ? "The assets, the loans against them and what is left" : "The value of your assets"}
@@ -160,7 +160,7 @@ function ValueOverTime({ series, data, scope }: { series: AssetSeries; data: Rea
       footnote={[hasOpening ? `The first point is the value before ${formatDay(period.startDate)}.` : "", partial !== null ? `${todayLabel} is the position today: a valid balance, only not a ${names.one}-end one.` : "", early !== null ? `* ${months[early]} is the position at ${formatDay(period.endDate)}, the end of the period, not the end of the ${names.one}.` : "", !linked ? "No loan is linked to an asset in Assets, so debt and equity are not shown." : ""].filter(Boolean).join(" ") || undefined}
     >
       {series.assets === 0 ? <p className="py-12 text-center text-xs text-muted-foreground">None of your assets could be read from the Asset Registry, so there is no history to draw. They are listed under Property and asset values.</p>
-        : <LineChart labels={labels} partialIndex={early === null ? null : early + (hasOpening ? 1 : 0)} series={lines} height={290} ariaLabel={`Value of your assets, the debt against them and the equity at each ${names.one} end`} tip={tip} />}
+        : <LineChart labels={labels} partialIndex={early === null ? null : early + (hasOpening ? 1 : 0)} series={lines} height={290} ariaLabel={`Value of your assets, the debt against them and the equity at each ${names.one} end`} tip={tip} endLabels />}
     </ChartFrame>
   );
 }

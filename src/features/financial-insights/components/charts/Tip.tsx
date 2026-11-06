@@ -41,12 +41,15 @@ export function TipProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** A line of a tooltip: an optional colour key, a name and a value. */
-export function TipRow({ colour, name, value }: { colour?: string; name: ReactNode; value: ReactNode }) {
+/**
+ * A line of a tooltip: an optional colour key, a name and a value. `strong` is for the line that is the answer (the total, the
+ * net, the closing figure), so it reads first among the parts it sums up: both its name and its value are bold and full strength.
+ */
+export function TipRow({ colour, name, value, strong = false }: { colour?: string; name: ReactNode; value: ReactNode; strong?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4 py-0.5">
-      <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">{colour && <span className="size-2 shrink-0 rounded-sm" style={{ background: colour }} aria-hidden />}{name}</span>
-      <span className="shrink-0 whitespace-nowrap font-medium tabular-nums">{value}</span>
+      <span className={strong ? "flex min-w-0 items-center gap-1.5 font-semibold text-foreground" : "flex min-w-0 items-center gap-1.5 text-muted-foreground"}>{colour && <span className="size-2 shrink-0 rounded-sm" style={{ background: colour }} aria-hidden />}{name}</span>
+      <span className={strong ? "shrink-0 whitespace-nowrap font-semibold tabular-nums text-foreground" : "shrink-0 whitespace-nowrap font-medium tabular-nums"}>{value}</span>
     </div>
   );
 }

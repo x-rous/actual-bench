@@ -218,14 +218,14 @@ function PortfolioValueCard({ bridge, series, monthly, lines, hasOpening, period
           if (hasOpening && at === 0) {
             return monthTip({
               title: "Opening balance", partial: false, partialNote: "",
-              rows: [...(bridge.accounts.length > 1 ? bridge.accounts.filter((a) => a.opening !== 0).map((a) => ({ name: a.name, value: money(a.opening) })) : []), { name: <span className="font-semibold">Value at the start</span>, value: <span className="font-semibold">{money(openingValue)}</span> }],
+              rows: [...(bridge.accounts.length > 1 ? bridge.accounts.filter((a) => a.opening !== 0).map((a) => ({ name: a.name, value: money(a.opening) })) : []), { name: "Value at the start", value: money(openingValue), strong: true }],
             });
           }
           const i = at - shift;
           const o = over[i];
           return monthTip({
             title: labels[i], partial: buckets[i].partial, partialNote,
-            rows: [...lines.map((l) => ({ colour: l.colour, name: l.label, value: signedMoney(lineValue(l, i) ?? 0) })), { name: <span className="font-semibold">Change in the {names.one}</span>, value: <span className="font-semibold">{signedMoney(o ? o.closing - o.opening : 0)}</span> }, ...(series.accounts.length > 1 && o ? series.accounts.map((a, k) => ({ colour: colourOf(k), name: `${a.name} at the end`, value: money(a.values[o.last]) })) : []), { name: <span className="font-semibold">Value at the end</span>, value: <span className="font-semibold">{money(o ? o.closing : null)}</span> }],
+            rows: [...lines.map((l) => ({ colour: l.colour, name: l.label, value: signedMoney(lineValue(l, i) ?? 0) })), { name: `Change in the ${names.one}`, value: signedMoney(o ? o.closing - o.opening : 0), strong: true }, ...(series.accounts.length > 1 && o ? series.accounts.map((a, k) => ({ colour: colourOf(k), name: `${a.name} at the end`, value: money(a.values[o.last]) })) : []), { name: <span className="font-semibold">Value at the end</span>, value: <span className="font-semibold">{money(o ? o.closing : null)}</span> }],
           });
         }}
         onSelect={(at, k) => { const i = at - shift; const line = lines[k]; if (i >= 0 && line?.drill) onDrill({ kind: line.drill, portfolio: true, month: buckets[i].first, throughMonth: buckets[i].last !== buckets[i].first ? buckets[i].last : undefined }); }} />
@@ -266,7 +266,7 @@ function WealthOverview({ data, scope }: { data: Ready; scope: [string, string][
   ];
   const tip = (i: number) => monthTip({
     title: shown[i], partial: false, partialNote: "",
-    rows: [...series.map((s) => ({ colour: s.colour, name: s.label, value: money(s.values[i]) })), ...(borrowedBy[i] ? [{ name: `◆ Borrowed that ${names.one}`, value: money(borrowedBy[i]) }] : [])],
+    rows: [...series.map((s) => ({ colour: s.colour, name: s.label, value: money(s.values[i]), strong: s.key === "net" })), ...(borrowedBy[i] ? [{ name: `◆ Borrowed that ${names.one}`, value: money(borrowedBy[i]) }] : [])],
     compare: { values: netWorth, index: i, label: "net worth" },
   });
   const table = { head: [names.one[0].toUpperCase() + names.one.slice(1), "Net worth", "Everything owned", "Debts"], rows: shown.map((l, i) => [l + (i === early ? ` (to ${monthLabel(buckets[i].last)})` : ""), netWorth[i], owned[i], owed[i]]) };
@@ -280,7 +280,7 @@ function WealthOverview({ data, scope }: { data: Ready; scope: [string, string][
         actions={<UnitPills value={unit} onChange={setUnit} label="Show wealth by" />}
         footnote={[partial !== null ? `${todayLabel} is the balance today: a valid balance, only not a ${unitEnd} one.` : "", early !== null ? `* ${labels[early]} is the balance at ${formatDay(period.endDate)}, the end of the period, not the end of the ${names.one}.` : "", ...borrowed.map((b) => `◆ ${labels[b.index]}: ${money(b.amount)} borrowed from loans. Assets and debts rise together, so this is not an increase in wealth.`)].filter(Boolean).join(" ") || undefined}
       >
-        <LineChart labels={shown} partialIndex={early} annotations={borrowed.map((b) => ({ index: b.index, text: `Borrowed ${money(b.amount)}: assets and debts rise together` }))} series={series} height={290} ariaLabel={`Net worth, everything owned and debts at each ${unitEnd}`} tip={tip} />
+        <LineChart labels={shown} partialIndex={early} annotations={borrowed.map((b) => ({ index: b.index, text: `Borrowed ${money(b.amount)}: assets and debts rise together` }))} series={series} height={290} ariaLabel={`Net worth, everything owned and debts at each ${unitEnd}`} tip={tip} endLabels />
       </ChartFrame>
   );
 }

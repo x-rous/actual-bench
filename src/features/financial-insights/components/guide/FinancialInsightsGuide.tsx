@@ -229,7 +229,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         <Para>The tiles add up the <b>completed months only</b>; the current month is shown in charts and tables but never counted. In an Envelope budget the tiles are Budgeted, Expenses spent, Overspent not covered, Months needing adjustment and Ending balance (the sum of category balances, not a bank balance).</Para>
         <Heading>Budgeted against spent</Heading>
         <BudgetLineSketch />
-        <Para>One line per group (and per category when you expand it) on a shared scale: dark is spending within the budget, green is budget not spent, red is spending beyond it. Spending with no budget saved is all red, because Actual returns 0 both for no budget and for a budget of 0.</Para>
+        <Para>Each month is a pale block for the budget with the spending as a bar in front of it: green while it stays inside the block, red once it rises above (in an Envelope budget, red only when earlier money did not cover the overspending), with how far under (+) or over (−) in a row beneath. The same colours are used for the lines: one line per group (and per category when you expand it) on a shared scale, where green is spending within the budget, pale is budget not spent and red is spending beyond it. Spending with no budget saved is all red, because Actual returns 0 both for no budget and for a budget of 0.</Para>
         <Heading>Category by month, in the budget’s own terms</Heading>
         <HeatSketch symbols rows={[{ name: "Groceries", cells: [-1, 0, 1, 2, 0, -2] }, { name: "Dining out", cells: [0, 2, 2, 0, -1, 0] }]} />
         <Grid cols={3}>

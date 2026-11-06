@@ -175,10 +175,10 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
                   payPartialNote,
                 ].filter(Boolean).join(" ") || undefined}
               >
-                <BarChart labels={labels} partialIndex={payPartials.length ? payPartials : null} stacked height={290} ariaLabel={`Principal, interest and fees paid into loans in each ${payNames.one}`} series={series}
+                <BarChart labels={labels} partialIndex={payPartials.length ? payPartials : null} stacked totals height={290} ariaLabel={`Principal, interest and fees paid into loans in each ${payNames.one}`} series={series}
                   tip={(i) => monthTip({
                     title: labels[i], partial: payBuckets[i].partial, partialNote: payUnit === "month" ? `Partial month: it runs to ${formatDay(period.endDate)}.` : `Partial ${payNames.one}: the period covers only part of it, or it includes the month still running.`,
-                    rows: [...series.map((s) => ({ colour: s.colour, name: s.label, value: money(s.values[i]) })), { name: <span className="font-semibold">Paid in the {payNames.one}</span>, value: <span className="font-semibold">{money(payBuckets[i].hasData ? series.reduce((total, s) => total + (s.values[i] ?? 0), 0) : null)}</span> }],
+                    rows: [...series.map((s) => ({ colour: s.colour, name: s.label, value: money(s.values[i]) })), { name: `Paid in the ${payNames.one}`, value: money(payBuckets[i].hasData ? series.reduce((total, s) => total + (s.values[i] ?? 0), 0) : null), strong: true }],
                   })}
                   onSelect={(i, k) => { const s = series[k]; if (s && payBuckets[i]?.hasData) onDrill({ kind: s.drill, ...range(payBuckets[i]) }); }} />
               </ChartFrame>
@@ -200,10 +200,10 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
               footnote={[cardMonths.cards.some((c) => c.values.some((v) => v !== null && v < 0)) ? "A card in credit (paid more than it was charged) is drawn below zero." : "", cardPartialNote].filter(Boolean).join(" ") || undefined}
             >
               <BarChart labels={cardLabels} partialIndex={cardPartial} stacked height={290} ariaLabel={`What you owe on each credit card at every ${balNames.one} end`} series={cardSeries}
-                overlay={{ label: "Total", colour: "var(--fi-networth)", values: cardTotals }}
+                overlay={{ label: "Total", colour: "var(--fi-networth)", values: cardTotals }} overlayLabels
                 tip={(i) => monthTip({
                   title: cardLabels[i], partial: i === cardPartial, partialNote: cardMonths.partial !== null ? `Balance today: it runs to ${formatDay(period.endDate)}.` : `Balance at the end of the period, not the end of the ${balNames.one}.`,
-                  rows: [...cardSeries.map((c) => ({ colour: c.colour, name: c.label, value: money(c.values[i]) })), { name: <span className="font-semibold">Owed on cards</span>, value: <span className="font-semibold">{money(cardTotals[i])}</span> }],
+                  rows: [...cardSeries.map((c) => ({ colour: c.colour, name: c.label, value: money(c.values[i]) })), { name: "Owed on cards", value: money(cardTotals[i]), strong: true }],
                 })} />
             </ChartFrame>
             <ChartFrame
@@ -218,7 +218,7 @@ export function LoansTab({ data, today, onDrill, onOpenAssets }: { data: Ready; 
                 <BarChart labels={costLabels} partialIndex={costPartials.length ? costPartials : null} stacked height={290} ariaLabel={`Interest and fees charged to credit cards in each ${costNames.one}`} series={costParts}
                   tip={(i) => monthTip({
                     title: costLabels[i], partial: costBuckets[i].partial, partialNote: costUnit === "month" ? `Partial month: it runs to ${formatDay(period.endDate)}.` : `Partial ${costNames.one}: the period covers only part of it, or it includes the month still running.`,
-                    rows: [...costParts.map((c) => ({ colour: c.colour, name: c.label, value: money(c.values[i]) })), { name: <span className="font-semibold">Charged in the {costNames.one}</span>, value: <span className="font-semibold">{money(costBuckets[i].hasData ? (costParts[0].values[i] ?? 0) + (costParts[1].values[i] ?? 0) : null)}</span> }],
+                    rows: [...costParts.map((c) => ({ colour: c.colour, name: c.label, value: money(c.values[i]) })), { name: `Charged in the ${costNames.one}`, value: money(costBuckets[i].hasData ? (costParts[0].values[i] ?? 0) + (costParts[1].values[i] ?? 0) : null), strong: true }],
                   })}
                   onSelect={(i, k) => { const c = costParts[k]; const amount = c?.values[i]; if (c && costBuckets[i].hasData && amount != null && c.categoryIds.length > 0) onDrill({ kind: "category", categoryIds: c.categoryIds, pairs: c.pairs, name: c.name, amountMinor: amount, ...range(costBuckets[i]) }); }} />
               ) : (

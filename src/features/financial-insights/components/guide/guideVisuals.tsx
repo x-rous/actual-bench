@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Info } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BUDGET_TINT } from "../charts/BudgetBars";
 
 /**
  * The pictures of the Financial Insights guide: small static sketches that use the page's own colours (the same `--fi-*` tokens the
@@ -184,18 +185,18 @@ export function HeatSketch({ rows, symbols = false }: { rows: { name: string; ce
   );
 }
 
-/** A budget line: spent within the budget, the budget not spent, and what went beyond it. */
+/** A budget line: spent within the budget (green), the budget not spent (pale) and what went beyond it (red), as in the monthly chart. */
 export function BudgetLineSketch() {
   const rows: [string, number, number][] = [["Groceries", 80, 100], ["Dining out", 60, 90], ["Travel", 100, 70]];
   return (
-    <Figure label="Sketch of budgeted against spent by group" caption={<><Key colour="var(--fi-balance)">Spent within budget</Key><Key colour="var(--fi-up)">Savings</Key><Key colour="var(--fi-down)">Extra</Key></>}>
+    <Figure label="Sketch of budgeted against spent by group" caption={<><Key colour="var(--fi-up)">Spent within budget</Key><Key colour={BUDGET_TINT}>Budget left</Key><Key colour="var(--fi-other-liability)">Over budget</Key></>}>
       <ul className="space-y-2.5">
         {rows.map(([name, plan, spent]) => {
           const within = Math.min(plan, spent), saved = Math.max(0, plan - spent), extra = Math.max(0, spent - plan);
           return (
             <li key={name} className="grid grid-cols-[6.5rem_minmax(0,1fr)_4.5rem] items-center gap-3 text-xs">
               <span>{name}</span>
-              <span className="flex h-2 overflow-hidden rounded-full bg-muted" aria-hidden><span style={{ width: `${within}%`, background: "var(--fi-balance)" }} /><span style={{ width: `${saved}%`, background: "var(--fi-up)" }} /><span style={{ width: `${extra}%`, background: "var(--fi-down)" }} /></span>
+              <span className="flex h-2 overflow-hidden rounded-full bg-muted" aria-hidden><span style={{ width: `${within}%`, background: "var(--fi-up)" }} /><span style={{ width: `${saved}%`, background: BUDGET_TINT }} /><span style={{ width: `${extra}%`, background: "var(--fi-other-liability)" }} /></span>
               <span className={cn("text-right tabular-nums", plan - spent >= 0 ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400")}>{plan - spent >= 0 ? "+" : "−"}{Math.abs(plan - spent)}</span>
             </li>
           );
