@@ -90,6 +90,7 @@ self-hosted builds are unaffected.
 
 See `docs/DEMO_DEPLOYMENT.md` in the repository for Vercel configuration,
 Space deployment, and verification instructions. Vercel automatically deploys
-UI changes merged to `main`; backend, seed, or metadata-schema changes also
-require updating this Space. Track binary files with Git Xet or Git LFS before
-publishing them. A Space restart restores both seeds.
+UI changes merged to `main`; backend, seed, or metadata-schema changes are
+published to this Space by the deployment workflow. The workflow tracks demo
+user-file `.blob` seeds with Git LFS in the Space repository; keep those files
+alongside the SQLite seed files. A Space restart restores both seeds.
