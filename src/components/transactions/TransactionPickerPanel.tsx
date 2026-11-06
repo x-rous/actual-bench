@@ -107,9 +107,10 @@ export function TransactionPickerPanel({ constraints, lockedLabels, defaults, mu
   const rows = useMemo(() => {
     const list = [...loaded];
     if (sort && sort.key !== "date") { const dir = sort.direction === "asc" ? 1 : -1; list.sort((a, b) => dir * (sort.key === "amount" ? a.amountMinor - b.amountMinor : String(sort.key === "payee" ? a.payeeName : a.accountName).localeCompare(String(sort.key === "payee" ? b.payeeName : b.accountName)))); }
+    else if (constraints?.namedIds) list.sort((a, b) => (sort?.direction === "asc" ? 1 : -1) * (a.date.localeCompare(b.date) || a.id.localeCompare(b.id)));
     else if (sort?.direction === "asc") list.reverse();
     return list;
-  }, [loaded, sort]);
+  }, [loaded, sort, constraints?.namedIds]);
   const reasonOf = (r: PickedTransaction) => disabledReason?.(r) ?? null;
   // While `auto` holds, every selectable match counts as chosen; the first manual change freezes that choice.
   const selected = useMemo(() => auto ? new Map(rows.filter((r) => !disabledReason?.(r)).map((r) => [r.id, r])) : chosen, [auto, rows, chosen, disabledReason]);
@@ -120,7 +121,7 @@ export function TransactionPickerPanel({ constraints, lockedLabels, defaults, mu
   // Also keep loading while an auto-selection is being built (it must see every match) or while the loaded pages show nothing
   // (client-side tests can empty a page, and an empty table never scrolls to trigger the next one).
   const needsMore = sortAll || auto || loadAll || loaded.length === 0;
-  useEffect(() => { if (needsMore && hasMore && !isFetching && pageCount < SORT_PAGE_CAP) loadMore(); }, [needsMore, hasMore, isFetching, pageCount, loadMore]);
+  useEffect(() => { if (needsMore && hasMore && !isFetching && (constraints?.namedIds || pageCount < SORT_PAGE_CAP)) loadMore(); }, [needsMore, hasMore, isFetching, pageCount, loadMore, constraints?.namedIds]);
   const toggle = (r: PickedTransaction) => { if (reasonOf(r)) return; const current = selected; setAuto(false); setChosen(() => { const next = new Map(multiple ? current : []); if (current.has(r.id)) next.delete(r.id); else next.set(r.id, r); return next; }); };
   const rangeSelect = (r: PickedTransaction) => {
     const to = shownRows.findIndex((x) => x.id === r.id); const from = lastIndex.current ?? to;

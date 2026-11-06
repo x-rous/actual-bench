@@ -152,7 +152,7 @@ describe("offered tabs for debt", () => {
     expect(names([chk, visa])).toContain("loans");
     expect(names([chk, mortgage])).toContain("loans");
     expect(names([chk, { id: "tax", name: "Tax", accountClass: "other-liability", treatment: "current-liability", offBudget: true }])).toContain("loans");
-    expect(names([chk, visa]).slice(-1)).toEqual(["loans"]);
+    expect(names([chk, visa]).slice(-2)).toEqual(["loans", "statements"]);
   });
 });
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Plus } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { getBudgetFileSyncCapabilities } from "@/lib/sync/capabilities";
@@ -180,6 +181,7 @@ export function ReconciliationView() {
 }
 
 function ReconciliationSessionView() {
+  const queryClient = useQueryClient();
   const connection = useConnectionStore(selectActiveInstance);
   useAccounts();
   const accounts = useStagedStore((state) => state.accounts);
@@ -1713,7 +1715,7 @@ function ReconciliationSessionView() {
           }
           setMatchError(error instanceof Error ? error.message : wrote ? "Apply was interrupted. Check Actual before recovering." : "Could not apply changes");
         },
-        onDone: () => { applyRunning.current = false; setIsApplying(false); setIsCheckingDrift(false); setApplyProgress(null); },
+        onDone: () => { if (wrote) { void queryClient.invalidateQueries({ queryKey: ["financial-insights", "statements", connection.id, connection.budgetSyncId], refetchType: "none" }); void queryClient.invalidateQueries({ queryKey: ["financial-insights", "data", connection.id, connection.budgetSyncId], refetchType: "none" }); } applyRunning.current = false; setIsApplying(false); setIsCheckingDrift(false); setApplyProgress(null); },
       });
     }
 

@@ -10,6 +10,9 @@ import type { ActualTransactionSnapshot, ReconciliationItem, StatementRow } from
 import { buildApplyPlan } from "@/lib/reconciliation/session/plan";
 import { DEFAULT_MATCH_CONFIG } from "@/lib/reconciliation/match/config";
 
+const mockInvalidateQueries = jest.fn().mockResolvedValue(undefined);
+jest.mock("@tanstack/react-query", () => ({ ...jest.requireActual("@tanstack/react-query"), useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }) }));
+
 const mockConnection = { id: "connection", mode: "browser-api", budgetSyncId: "budget", baseUrl: "https://example.test" };
 const mockConnectionState = { activeInstanceId: "connection", instances: [mockConnection] };
 jest.mock("@/store/connection", () => ({
@@ -185,6 +188,29 @@ it("waits for saved decisions, claims Apply, then writes and verifies the approv
   expect(mockCommand.mock.calls.map((call) => call[1].action)).toEqual(["claim", "finish"]);
   expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ notes: "Reviewed", transactionId: "t1", date: current.date, amount: current.amount }));
   expect(mockRead.mock.calls.length).toBeGreaterThanOrEqual(3);
+  expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["financial-insights", "statements", "connection", "budget"], refetchType: "none" });
+  expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["financial-insights", "data", "connection", "budget"], refetchType: "none" });
+});
+
+it("invalidates statement evidence after a successful write even when the subsequent sync fails", async () => {
+  mockSession.status = "ready";
+  Object.assign(mockData.items[0], { disposition: "matched", actualSnapshot: { ...current, importedPayee: null, transferId: null, scheduleId: null },
+    stagedChanges: { notes: { original: null, staged: "Reviewed", source: "manual" } } });
+  mockRead.mockResolvedValue([current]);
+  mockUpdate.mockResolvedValue(null);
+  mockSync.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("sync failed"));
+  mockCommand.mockImplementation(async (_id: string, input: { action: string; patch?: Record<string, unknown> }) => {
+    if (input.action === "claim") mockSession.status = "applying";
+    if (input.action === "finish") Object.assign(mockSession, input.patch);
+    return { session: mockSession };
+  });
+  render(<ReconciliationView />);
+  fireEvent.click(screen.getByRole("button", { name: "Open saved session" }));
+  await screen.findByText("Decisions enabled");
+  fireEvent.click(screen.getByRole("button", { name: /^Review/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Apply / }));
+  await waitFor(() => expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["financial-insights", "statements", "connection", "budget"], refetchType: "none" }));
+  expect(mockUpdate).toHaveBeenCalled();
 });
 
 it("holds back a change to a row that has gone from Actual, shows why, and writes nothing", async () => {

@@ -7,7 +7,7 @@ import { resolvePeriod, type ResolvedPeriod } from "./period";
  * whole period there), so the months always add up to the period's figures. Pure: no I/O.
  */
 
-export type CategoryInfo = { id: string; name: string; groupName: string; hidden: boolean; isIncome: boolean; /** Position in the budget: groups in Actual's order, then their categories. */ order?: number };
+export type CategoryInfo = { id: string; name: string; groupName: string; groupId?: string; hidden: boolean; isIncome: boolean; /** Position in the budget: groups in Actual's order, then their categories. */ order?: number };
 
 export type MonthlyPoint = {
   month: string;

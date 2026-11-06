@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/components/ui/select.testing";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { LoadedCategory, LoadedMonthState } from "@/features/budget-management/types";
 import { buildBudgetPlan, type MonthRead } from "@/lib/financial-insights/budget";
@@ -80,6 +81,20 @@ describe("My budget tab states", () => {
     expect(segments("var(--fi-up)")).toHaveLength(2);
     expect(segments("var(--fi-other-liability)")).toHaveLength(1);
     expect(segments("color-mix")).toHaveLength(1);
+  });
+
+  it("sorts expanded budget categories by Actual order, spent or name", async () => {
+    useBudgetPlan.mockReturnValue(ready([month("2026-09", [expense("zebra", 500, 200), expense("alpha", 500, 400), expense("middle", 500, 300)])]));
+    show();
+    const card = screen.getByRole("region", { name: "Budgeted vs spent by group" });
+    fireEvent.click(within(card).getByRole("button", { name: /Expand Daily/ }));
+    const names = () => [...card.querySelectorAll<HTMLElement>("span[title]")].map((element) => element.title).filter((title) => ["zebra", "alpha", "middle"].includes(title));
+    expect(names()).toEqual(["zebra", "alpha", "middle"]);
+    const select = within(card).getByRole("combobox", { name: "Sort groups and categories" });
+    await chooseSelectOption(select, "Spent");
+    expect(names()).toEqual(["alpha", "middle", "zebra"]);
+    await chooseSelectOption(select, "Name");
+    expect(names()).toEqual(["alpha", "middle", "zebra"]);
   });
 
   it("names the colours of the groups' lines as the monthly chart does: green within budget, pale left, red over", () => {

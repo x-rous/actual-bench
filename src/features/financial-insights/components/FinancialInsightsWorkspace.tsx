@@ -26,12 +26,13 @@ import { SpendingTab } from "./SpendingTab";
 import { SummaryTab } from "./SummaryTab";
 import { AssetsTab } from "./AssetsTab";
 import { WealthTab } from "./WealthTab";
+import { StatementsTab } from "./StatementsTab";
 import { formatDay } from "../format";
 
 const readTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /**
- * Financial Insights: Summary, Money in & out, Income, Spending, My budget, Investments, Property & assets and Loans & cards, with a read-only list behind any figure. Nothing
+ * Financial Insights: Summary, Money in & out, Income, Spending, My budget, Investments, Property & assets, Loans & cards and Statements, with a read-only list behind any figure. Nothing
  * is drawn until every account is understood and the data has been read.
  */
 export function FinancialInsightsWorkspace() {
@@ -114,6 +115,7 @@ export function FinancialInsightsWorkspace() {
             </div>
           )}
           {view.tab === "money" ? <MoneyTab data={data} onDrill={openDrill} />
+            : view.tab === "statements" ? <StatementsTab data={data} onDrill={openDrill} />
             : view.tab === "income" ? <IncomeTab data={data} today={view.today} onDrill={openDrill} />
             : view.tab === "spending" ? <SpendingTab data={data} today={view.today} onDrill={openDrill} />
             : view.tab === "wealth" ? <WealthTab data={data} onDrill={openDrill} />

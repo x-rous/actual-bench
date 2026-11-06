@@ -12,8 +12,8 @@ export const TH = "py-1.5 pr-2 text-right font-medium whitespace-nowrap";
 export const TD = "py-1.5 pr-2 text-right tabular-nums whitespace-nowrap";
 
 /** A card around a table: title, hint and (i) beside the title, a CSV of the exact figures, and a note under it. */
-export function TableCard({ id, title, hint, info, head, rows, csvScope, note, children, collapsible = false }: {
-  id: string; title: string; hint?: ReactNode; info: ReactNode; head: string[]; rows: (string | number | null)[][]; csvScope: [string, string][]; note?: ReactNode; children: ReactNode;
+export function TableCard({ id, title, hint, info, head, rows, csvScope, note, footer, children, actions, collapsible = false }: {
+  id: string; title: string; hint?: ReactNode; info: ReactNode; head: string[]; rows: (string | number | null)[][]; csvScope: [string, string][]; note?: ReactNode; footer?: ReactNode; children: ReactNode; actions?: ReactNode;
   /** The table starts closed, with only the title showing, and opens when the title is selected. */
   collapsible?: boolean;
 }) {
@@ -30,9 +30,10 @@ export function TableCard({ id, title, hint, info, head, rows, csvScope, note, c
           )}
           <CardTitle title={title} hint={hint} info={info} infoLabel={title} />
         </div>
-        <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={exportCsv} aria-label={`Export ${title} as CSV`}><Download className="size-3.5" aria-hidden />CSV</Button>
+        <div className="flex shrink-0 items-center gap-1">{actions}<Button size="xs" variant="ghost" className="text-muted-foreground" onClick={exportCsv} aria-label={`Export ${title} as CSV`}><Download className="size-3.5" aria-hidden />CSV</Button></div>
       </header>
       {open && <OverlayScrollArea className="flex-1"><div className="px-4 py-2">{children}</div></OverlayScrollArea>}
+      {open && footer && <div className="px-4 pb-2">{footer}</div>}
       {open && note && <div className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground">{note}</div>}
       {!open && <div className="pb-3" />}
     </section>

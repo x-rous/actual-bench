@@ -7,6 +7,8 @@ Open **Financial Management → Financial Insights** after connecting your Actua
 
 Financial Insights answers one question at a time, using the same definitions everywhere, so the numbers on one chart always agree with the numbers on another. It starts with a **Summary** tab, then **Money in & out**, **Income** and **Spending**, which are always there; the other tabs appear when there is something to show: My budget once Bench can read your budget mode, Investments when you have an investment or retirement account, Property & assets when you have a property, vehicle or fixed other-asset account, and Loans & cards when you have a loan, credit card or other liability account.
 
+**Statements** is always offered too: cash flow beside P&L, using the existing income and spending rules. Uncategorized on-budget receipts and payments count by sign, including card purchases; recorded activity inside off-budget investments is shown separately.
+
 The **Guide** button at the top of the page opens a guide inside Bench: what every tab and card tells you, how each figure is worked out, with pictures of the charts, why this page is more than a report of transactions, and a glossary. **How things are counted** starts with common movements and explains why My budget can differ, with account-specific examples and classification rules available to expand. The Guide opens at the section for the tab you are on.
 
 ## How things are counted
@@ -88,7 +90,7 @@ Income is the other half of Spending: where the money that came in came from. It
 
 - **Total received, Monthly average, Largest source, Highest month and Recent pace.** Total received shows its change against the stretch before and how much of it has no category; Largest source shows its share of income. The average uses complete months only and says how many; Recent pace compares the latest three complete months with the earliest three and appears only with at least six.
 - **Income each month** stacks the month by income category (income is listed by category, not by the group Actual keeps it in), with **Mo**, **Qtr** and **Yr** buttons that open by the length of the period, like every other timeline. Select a segment to see that group's transactions for the month, quarter or year.
-- **Where the money came from** lists each income category with what it brought in and its share of all income. Select a total to see its transactions.
+- **Where the money came from** lists each income category with what it brought in and its share of all income. Select a total to see its transactions. Sort the list by Actual order (the default), income or name.
 - **Category by month** and **Frequent payers** share one place. Category by month is the same heatmap as on Spending, with the categories listed directly, each cell shaded against that row's own average, with the same buttons; Frequent payers ranks who paid you most, with the number of entries and the average. Entries with no payer are shown below the ranking.
 
 When no money was received in the period, the tab says so instead of drawing empty charts.
@@ -97,7 +99,7 @@ When no money was received in the period, the tab says so instead of drawing emp
 
 - **Total spent, Monthly average, Largest group, Highest month and Recent pace.** Total spent shows its change against the stretch before, what it is of what you received and how much of it has no category; Largest group shows its share of spending. The average uses complete months only and says how many; the current month is shown but not counted. Recent pace compares the latest three complete months with the earliest three, and appears only with at least six.
 - **Spending each month** stacks the month by category group. The ten largest groups in the period have a colour of their own and every other group is "Other groups"; the colours are the same everywhere on the tab. A partial month is drawn lighter with a dashed outline. **Mo**, **Qtr** and **Yr** buttons regroup it into calendar quarters or years; a quarter or year the period only partly covers (or that includes the month still running) is marked * and drawn lighter, and selecting a bar opens the transactions of the whole quarter or year.
-- **Where the money went** ranks the ten largest groups (the rest are in the category table below). Select a group's total to see every transaction in that group; expand a group for its categories, each also a link.
+- **Where the money went** lists all groups in Actual order by default; sort by spending or name instead. Select a group's total to see every transaction in that group; expand a group for its categories, each also a link.
 - **Category by month** and **Frequent payees** share one place (Category by month also has Mo, Qtr and Yr buttons: the title and columns follow, a cell is compared with the average of whole quarters or years, and a partial one is not compared); a switch above them chooses which to show. Category by month is a heatmap of category groups that expand into their categories. Each cell is shaded against that row's own average over the complete months: cooler is below its usual, warmer is above, and neither means good or bad. A ▼ or ▲ marks a month 25% or more below or above, and the partial month is outlined and not shaded. Cells show whole amounts; the tooltip and the list behind each cell have the exact figure.
 - **Frequent payees** by amount, with the number of entries and the average. Entries with no payee are shown below the ranking, with how many of them are parts of split transactions.
 
@@ -111,7 +113,7 @@ My budget answers "did I stay on my plan?" from the plan you already keep in Act
 - **Budgeted vs spent, month by month**. **Mo**, **Qtr** and **Yr** buttons regroup it into calendar quarters or years, adding up the months that are in your budget; a quarter or year the period only partly covers is marked * and drawn lighter. Each month has a pale block for what was budgeted (assigned, in an Envelope budget) and a bar in front of it for what was spent: green while the bar stays inside the block, red once it rises above it (in an Envelope budget, red only when the overspending was not covered by earlier money), with the amount spent above the bar. A row under the month names says how far each month was under (**+**, green) or over (**−**, red) its budget; the partial month is drawn lighter and grey, and not compared. A month Actual does not have, or that could not be read, is a gap, never zero. Select a bar to see that month's transactions.
 - **Where the budget was missed** (Tracking, lower on the page) ranks categories, or with the **Groups** switch category groups, by how far they went over their saved plan across the completed months, with "over in N of M months" and the longest run of months in a row. **Where funds ran short** (Envelope) ranks categories or groups by the months they were left uncovered. A group is over in a month when its categories together spent more than their plans together. In Tracking, a line above the ranking shows the **unplanned spending** (the amount, its share of spending and the number of categories) and **Show only unplanned** filters the list to them. Select a total to see its transactions.
 - **Category by month.** The same grid as on Spending (with the same Mo, Qtr and Yr buttons: a quarter or year adds up what was spent and budgeted and is judged like a month; in an Envelope budget it shows the worst state of its months with the last month's balance), with groups that expand into categories. In Tracking each cell is the amount spent, shaded by how it compares with that category's plan for the month: ▼ under, = on, ▲ over, ○ unplanned spending. In Envelope each cell is **covered** (the balance is at or above zero, so earlier money paid for it), **↷ carried** (negative, but the category carries its overspending into the next month) or **! uncovered** (negative and not carried, so Actual takes it from next month). Colour says where spending sits against the plan, not whether that is good or bad; the symbols say the same in words. Select an amount to see its transactions.
-- **Budgeted vs spent by group** (**Assigned vs spent by group** in Envelope) sits beside the monthly chart and lists every category group, each opening into its categories, with one row for each: its name, a single line against its budget, then the amount budgeted, the amount spent, the variance (budgeted less spent: **+** under, **−** over, in green or red) and its share of all the spending shown. The line uses the monthly chart's colours: green is spending within the budget, pale is budget not spent and red is spending beyond it. Spending with no budget saved is all red. Select a total to see its transactions.
+- **Budgeted vs spent by group** (**Assigned vs spent by group** in Envelope) sits beside the monthly chart and lists every category group, each opening into its categories, with one row for each: its name, a single line against its budget, then the amount budgeted, the amount spent, the variance (budgeted less spent: **+** under, **−** over, in green or red) and its share of all the spending shown. The line uses the monthly chart's colours: green is spending within the budget, pale is budget not spent and red is spending beyond it. Spending with no budget saved is all red. Sort groups and their categories by Actual order (the default), spending or name. Select a total to see its transactions.
 - In Tracking, **Budgeted vs actual surplus** (one compact table whose rows carry paired bars) sets planned income less planned spending beside what was received less what was spent. The budgeted bar is slate; the actual bar is green when the result is on or better than budgeted (income above, spending under, surplus above) and red when it is worse, and the Variance figure takes the same colour. It is a comparison of two sets of months, not a forecast. Under it, **Unplanned spending by month** splits each month's category spending into categories with a plan and categories with none saved.
 - **Unplanned spending.** Actual returns 0 both for a category with no saved plan and for a plan of 0, so spending against a plan of 0 is shown as unplanned spending (○) and counts as over plan, for the whole amount spent.
 - **Months and limits.** Bench reads one budget month per month of the period when you open the tab, a few at a time, through the same cache as Budget Cockpit, and shows how far along it is. The server still passes them to Actual one at a time. It reads every month of the period you chose, so a long period such as All available takes longer to open. Hidden categories with a plan or spending are included, although Actual's Tracking totals leave hidden categories out.
@@ -151,6 +153,70 @@ If you have a credit card, two more cards follow:
 
 Property equity and loan-to-value are on [Property & assets](#the-property--assets-tab). An unmatched one-sided transfer to a loan or card shows under **In transit** on the Summary tab, with the reason it is there.
 
+## The Statements tab
+
+The cash flow and income statements use the existing global reporting period in both Tracking and Envelope budgets, including recorded activity through today in a partial month. Plans, category assignments, holds and carryover are outside these statements. The global toolbar shows the period; the statements do not repeat it in another banner.
+
+### Read the statements
+
+Each cash-flow section contains its heading, indented lines and subtotal; income and expense totals appear in their section headers. Cash Flow has **Operating activities**, **Investing activities**, **Financing activities**, and, when needed, **Unclassified movements and adjustments**. P&L has **Income** and **Expenses**, ending with net surplus or deficit. Final net totals appear in gray at the bottom of their cards.
+
+Income and expense category groups start collapsed, in Actual's budget order. The compact rows follow the group table in My budget: select a chevron or group name to expand its indented categories; select an underlined amount to open the transactions behind a group or category. Use **Expand all** or **Collapse all** on the P&L card to change every category group at once. Hidden categories remain included and labelled. Refunds reduce expenses; income reversals reduce income.
+
+### Cash Flow Statement
+
+Opening cash is the balance before the first day of the period; closing cash is the balance at its end. Cash and Bank cash-equivalent accounts form these balances, on or off budget, including closed-account history. Bank accounts marked **Fixed / restricted deposit** are excluded.
+
+| Section | Movements |
+| --- | --- |
+| Operating | Categorized cash receipts and payments, uncategorized on-budget cash receipts and payments by sign, ordinary card settlements, separately identified loan interest and fees paid. |
+| Investing | Cash funding and withdrawals involving Investment and Retirement accounts, fixed / restricted deposits, fixed-asset transfers, registry-linked asset sale proceeds and selling costs. |
+| Financing | Borrowing received from Loan accounts and principal identified in recorded payment splits. |
+| Unclassified movements and adjustments | Uncategorized off-budget cash entries, unsplit loan payments with unidentified allocation, other transfers whose purpose is unknown, starting balances introduced in the period, and cash-to-cash transfer sides without a matching recorded counterpart in the period, even when unrelated entries net to zero. |
+
+An unsplit loan payment can contain interest; a calculated schedule or proposed split is never used to supply missing statement amounts. Current/non-current alone does not distinguish borrowing from payables, or lending from another asset movement. Card receipts are not automatically called borrowing or refunds. Ordinary settlements are operating payments without allocating them to particular purchases, advances or financed assets.
+
+**Balances reconcile** means opening cash plus movements and adjustments equals closing cash. Balances can reconcile while some purposes are unidentified; those entries stay in **Classification exceptions**. Unexplained differences remain visible; Refresh re-reads balances and statement evidence rather than inventing a balancing transaction.
+
+### Income Statement (P&L)
+
+P&L follows recorded categories and the existing Insights treatment of uncategorized entries. On-budget non-transfer money in counts as **Uncategorized income** and money out counts as **Uncategorized expenses**. This includes an uncategorized on-budget card purchase: it is an expense when recorded. Its later repayment is a transfer and never a second expense. Transfers, principal, starting balances, registry-classified capital, value changes and linked sales are excluded. An unlinked asset acquisition or unavailable asset evidence makes the result **Needs review**, with provisional category totals still visible.
+
+Recorded categorized charges count when posted, including in noncash accounts; future schedules and estimated accruals never count. Uncategorized entries in other off-budget accounts and entries with unavailable categories remain in **Classification exceptions**, because their income/expense purpose cannot be established.
+
+### Balance Sheet
+
+The Balance Sheet shows included account balances as of the end of the selected period, grouped into current and non-current assets and liabilities. Each classification starts open, showing Actual account groups and a No Group section for ungrouped accounts. Account groups start collapsed; select one to reveal its accounts and Financial Reporting treatments. Select a classification to collapse or reopen it. The Balance Sheet card’s **Expand all** opens every classification and account group; **Collapse all** hides the accounts. Cash, current investments and current other assets are current; property, vehicles, retirement, non-current investments and fixed or non-current other assets are non-current. Credit cards are current liabilities and loans are shown as non-current; other liabilities use their saved treatment. Fixed / restricted deposits are shown as non-current assets. Closed accounts retain their recorded balances, and excluded accounts are omitted.
+
+Net worth is calculated as total assets less total liabilities. Because it is a calculated residual, the balance sheet equation is an identity, not an independent reconciliation or retained earnings. Negative asset balances and credit balances on liabilities remain signed. The whole loan is shown as non-current without estimating the portion due within a year. Current account classifications apply to historical dates. The card has its own CSV export.
+
+### Investment activity
+
+Uncategorized non-transfer entries in off-budget **Investment** or **Retirement** accounts appear in a neutral **Investment activity** card with their own transaction drill-down and CSV. They can represent recorded gains, losses, dividends, interest or fees. They are ordinary investment activity, not classification exceptions, and Bench does not assume that they are realized profit. They change investment balances, outside both P&L and available-cash movement. Transfers between cash and investments continue to appear in investing cash flow.
+
+### Explain, inspect and export
+
+**From P&L surplus to cash movement** bridges surplus to cash movement using card purchases versus settlements, income/expenses in other noncash accounts, investing, financing and unresolved cash movements. If P&L needs review, the bridge explicitly uses the provisional result.
+
+**Classification exceptions** lists amounts, entry counts and reasons, even when entries net to zero. Cash exceptions also appear in the cash statement; they are the same entries, not additional movements. Underlined figures open exact recorded transactions, including split children, with the usual total check. Balances and unexplained residuals have explanations rather than fabricated lists.
+
+Current saved account classifications also apply to historical periods. Select **Opening cash** or **Closing cash** in the Cash Flow Statement to see opening and closing balances grouped by account class and Actual account group. Account groups start collapsed; expand them individually or use **Expand all**, and export the breakdown as CSV. Individual cards offer CSV exports with the period and reporting basis. Investment activity sits below classification exceptions, alongside the bridge.
+
+| Account class | Statement treatment |
+| --- | --- |
+| Cash | Cash balance; categorized receipts/payments and uncategorized on-budget receipts/payments are operating. |
+| Bank | Cash balance unless fixed / restricted; fixed-deposit transfers are investing. |
+| Vehicle | Cash purchases / capital and transfers received are investing. Value changes stay out of P&L. |
+| Property | Cash purchases / capital and transfers received are investing. Categorized rents and costs enter P&L. |
+| Investment | Cash funding and withdrawals are investing. Uncategorized internal activity stays outside P&L. |
+| Retirement | Cash funding and withdrawals are investing. Uncategorized internal activity stays outside P&L. |
+| Other asset | Fixed-asset cash transfers are investing. Other transfers need an identified purpose. |
+| Credit card | Purchases enter P&L once, including uncategorized on-budget payments. Ordinary settlements are operating; cash receipts need a purpose. |
+| Loan | Borrowing is financing. Recorded split principal is financing; unsplit payment composition needs review. |
+| Other liability | Current / non-current does not identify borrowing versus payables; transfers need review. |
+| Excluded | Activity excluded. Its cash counterpart is a scope exception. |
+
+
 ## See the transactions behind a number
 
 Underlined figures, bars, stacked segments, waterfall steps and heatmap cells open a read-only list of the real transactions behind them, with the usual search and sort. A segment or cell opens exactly that group or category in exactly that month. The footer compares what is listed with the figure you clicked: **Matches the figure**, or **Differs from the figure by …** if they do not add up. Once you narrow the list with a filter it says so instead of comparing. Balances and unattributed amounts have no list. Nothing in the list can be changed.
@@ -189,4 +255,4 @@ Every chart has a **CSV** button that exports its exact figures, with the period
 
 ## Fresh figures
 
-Bench reads your transactions each time you open the page and when you press **Refresh**, which first pulls the latest budget from the server. Changing the period, the tab or a chart mode does not read again.
+Bench reads your transactions each time you open the page and when you press **Refresh**, which first pulls the latest budget from the server. Charts reuse that read. Statements additionally reads detailed evidence when opened for a reporting period, then reuses it until Refresh. A failed evidence read never appears as a partial statement.

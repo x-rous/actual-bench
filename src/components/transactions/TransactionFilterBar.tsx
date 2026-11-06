@@ -21,7 +21,7 @@ export function lockedChipsFor(constraints: PickerConstraints = {}, labels: Part
   if (constraints.transfersOnly) out.push({ key: "transfers", label: labels.transfers ?? "Transfers only", reason: "only transfers can be used here" });
   if (constraints.requireCategory) out.push({ key: "category", label: labels.category ?? "Has a category", reason: "the transaction needs a category" });
   if (constraints.excludeAccountIds?.length) out.push({ key: "accounts", label: labels.accounts ?? "Some accounts excluded", reason: "those accounts cannot be used here" });
-  if (constraints.where) out.push({ key: "where", label: labels.where ?? "Saved filter", reason: "a saved filter limits the list" });
+  if (constraints.where || constraints.namedIds) out.push({ key: "where", label: labels.where ?? "Saved filter", reason: "a saved filter limits the list" });
   return out;
 }
 
