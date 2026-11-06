@@ -84,6 +84,7 @@ jobs:
             --exclude='.git' --exclude='README.md' --exclude='.gitattributes' \
             --exclude='Dockerfile' --exclude='.deployed-from' \
             ./ "$space/"
+          git -C "$space" add -u -- demo/seed-data/user-files
           git -C "$space" lfs track 'demo/seed-data/user-files/*.blob'
           cp demo/Dockerfile "$space/Dockerfile"
           echo "${{ steps.changes.outputs.head }}" > "$space/.deployed-from"
