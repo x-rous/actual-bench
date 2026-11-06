@@ -20,6 +20,8 @@ export type Statements = {
   cash: { openingMinor: number; closingMinor: number; changeMinor: number; sections: StatementSection[]; adjustments: StatementLine[]; differenceMinor: number };
   pnl: { income: StatementGroup[]; expenses: StatementGroup[]; incomeMinor: number; expensesMinor: number; surplusMinor: number; basisIssue: string | null };
   unresolved: StatementLine[];
+  /** Recorded uncategorized activity inside off-budget Investment / Retirement accounts; outside cash flow and P&L. */
+  investmentActivity: StatementLine;
   bridge: { label: string; amountMinor: number }[];
   classificationComplete: boolean;
 };
@@ -30,7 +32,9 @@ const add = (to: StatementLine, entry: StatementEntry) => { to.amountMinor += en
 
 /**
  * A statement projection of the shared ledger, using recorded rows for exact membership and drill-downs.
- * Unlike Received/Spent, P&L requires an identified category. No budget allocations or projected loan amounts enter here.
+ * Follows Received/Spent: categories determine income/expense; uncategorized on-budget rows follow their sign.
+ * Uncategorized off-budget investment rows are investment activity, separately from genuinely unidentified movements.
+ * No budget allocations or projected loan amounts enter here.
  * An unsplit payment to a loan is not proven principal. A recorded split identifies its transfer leg as principal;
  * otherwise its composition remains unresolved, including when a loan model could calculate a proposed split.
  */
@@ -65,7 +69,7 @@ export function buildStatements(input: {
   const paidCosts = new Set(ledger.facts.loanCosts.filter((r) => r.kind && r.id).map((r) => r.id!));
   // A parent is evidence only when the recorded split has an identified expense alongside its principal transfer.
   const expenseParents = new Set(entries.filter((r) => r.parentId && !r.transferAccountId && r.categoryId && categories.has(r.categoryId) && !ledger.facts.incomeCategories.has(r.categoryId)).map((r) => r.parentId));
-  const operating = [line("receipts", "Categorized cash receipts"), line("payments", "Categorized cash payments"), line("card", "Credit-card settlements", "Ordinary card settlements are operating payments. Purchase categories remain in P&L; no allocation of a settlement to particular purchases is inferred."), line("interest", "Recorded loan interest and fees paid")];
+  const operating = [line("receipts", "Categorized cash receipts"), line("payments", "Categorized cash payments"), line("card", "Credit-card settlements", "Ordinary card settlements are operating payments. Purchase categories remain in P&L; no allocation of a settlement to particular purchases is inferred."), line("interest", "Recorded loan interest and fees paid"), line("uncategorized-in", "Uncategorized cash receipts"), line("uncategorized-out", "Uncategorized cash payments")];
   const investing = [line("invest-out", "Put into investments and retirement"), line("invest-in", "Withdrawn from investments and retirement"), line("fixed-out", "Placed in fixed / restricted deposits"), line("fixed-in", "Released from fixed / restricted deposits"), line("asset-out", "Fixed-asset purchases and capital added"), line("asset-in", "Fixed-asset transfers received"), line("sales", "Asset sale proceeds and selling costs")];
   const financing = [line("borrowed", "Borrowing received from loans"), line("principal", "Recorded loan principal repaid")];
   const starting = line("starting", "Starting balances introduced in the period", "Recorded starting balances change the cash population; they are not income or an activity cash flow.");
@@ -78,6 +82,9 @@ export function buildStatements(input: {
     add(existing, entry); rows.set(key, existing);
   };
   const categoryRows = new Map<string, StatementLine>();
+  const uncategorizedIncome = line("uncategorized-income", "Uncategorized income", "Uncategorized non-transfer receipts in on-budget accounts, counted by sign as in the Income tab.");
+  const uncategorizedExpenses = line("uncategorized-expenses", "Uncategorized expenses", "Uncategorized non-transfer payments in on-budget accounts, counted by sign as in the Spending tab. Card purchases count when recorded, not again when settled.");
+  const investmentActivity = line("investment-activity", "Recorded investment activity", "Uncategorized non-transfer entries in off-budget Investment and Retirement accounts. These may be recorded gains, losses, dividends, interest or fees; they are investment activity, not available-cash movements or P&L income/expenses. No return or realized profit is inferred.");
   let cardPnlMinor = 0, otherNoncashPnlMinor = 0;
   for (const entry of entries) {
     const cash = cashIds.has(entry.accountId);
@@ -109,8 +116,19 @@ export function buildStatements(input: {
     if (capitalIds.has(entry.id)) {
       unknown(entry, "capital", "Asset capital without a recorded transfer", "The registry identifies capital added, but no recorded transfer establishes its cash counterpart. P&L needs review; no purchase is guessed."); continue;
     }
-    if (entry.categoryId === null || !categories.has(entry.categoryId)) {
-      unknown(entry, "uncategorized", cash ? "Uncategorized cash movements" : "Unidentified noncash movements", "Excluded from categorized P&L. A sign alone cannot identify income, expense, principal, or a value change. Categorize or classify the entry in its source workflow."); continue;
+    if (entry.categoryId === null) {
+      if (!owner.offBudget) {
+        const income = entry.amountMinor > 0;
+        add(income ? uncategorizedIncome : uncategorizedExpenses, entry);
+        if (cash) add(operating[income ? 4 : 5], entry);
+        else if (owner.accountClass === "credit-card") cardPnlMinor += entry.amountMinor;
+        else otherNoncashPnlMinor += entry.amountMinor;
+      } else if (owner.accountClass === "investment" || owner.accountClass === "retirement") add(investmentActivity, entry);
+      else unknown(entry, "uncategorized", cash ? "Uncategorized cash movements" : "Unidentified noncash movements", "Uncategorized non-transfer entries in off-budget accounts other than Investment or Retirement. Their purpose is not established, so they stay outside income and expenses.");
+      continue;
+    }
+    if (!categories.has(entry.categoryId)) {
+      unknown(entry, "unknown-category", "Entries with unavailable categories", "The recorded category is unavailable in the current category list. Its income or expense classification cannot be verified."); continue;
     }
     const info = categories.get(entry.categoryId)!;
     const row = categoryRows.get(entry.categoryId) ?? line(entry.categoryId, info.name);
@@ -129,7 +147,10 @@ export function buildStatements(input: {
       group.rows.push({ ...row, label: `${row.label}${info.hidden ? " (hidden)" : ""}` });
       group.amountMinor += row.amountMinor; group.ids.push(...row.ids); byGroup.set(info.groupName, group);
     }
-    return [...byGroup.values()];
+    const result = [...byGroup.values()];
+    const uncategorized = income ? uncategorizedIncome : uncategorizedExpenses;
+    if (uncategorized.ids.length) result.push({ ...uncategorized, label: "Uncategorized", rows: [uncategorized] });
+    return result;
   };
   const income = groups(true), expenses = groups(false);
   const sections = [
@@ -144,7 +165,7 @@ export function buildStatements(input: {
   const differenceMinor = changeMinor - total(sections) - total(adjustments);
   const incomeMinor = total(income), expensesMinor = total(expenses), surplusMinor = incomeMinor + expensesMinor;
   const bridge = [
-    { label: "Categorized net surplus / deficit", amountMinor: surplusMinor },
+    { label: "Net surplus / deficit", amountMinor: surplusMinor },
     { label: "Card purchases versus cash settlements", amountMinor: -cardPnlMinor + operating[2].amountMinor },
     { label: "Income / expenses in other noncash accounts", amountMinor: -otherNoncashPnlMinor },
     { label: "Net investing activities", amountMinor: sections[1].amountMinor },
@@ -155,7 +176,7 @@ export function buildStatements(input: {
   return {
     cash: { openingMinor, closingMinor, changeMinor, sections, adjustments, differenceMinor },
     pnl: { income, expenses, incomeMinor, expensesMinor, surplusMinor, basisIssue },
-    unresolved: [...cashUnknown.values(), ...unresolved.values()], bridge,
+    unresolved: [...cashUnknown.values(), ...unresolved.values()], investmentActivity, bridge,
     classificationComplete: !basisIssue && cashUnknown.size === 0 && unresolved.size === 0 && internal.amountMinor === 0 && differenceMinor === 0,
   };
 }
@@ -164,8 +185,8 @@ export function buildStatements(input: {
 export function statementsCsvRows(model: Statements, period: ResolvedPeriod): (string | number)[][] {
   const rows: (string | number)[][] = [
     ["Financial Insights", "Statements"], ["Period", period.label], ["From", period.startDate], ["As of", period.endDate],
-    ["Basis", "Actual recorded transactions; categorized P&L; no estimated accruals"],
-    ["Classification", model.classificationComplete ? "Complete" : "Needs review"], ["P&L status", model.pnl.basisIssue ?? "Categorized result"], [],
+    ["Basis", "Actual recorded transactions; categories and on-budget uncategorized entries by sign; no estimated accruals"],
+    ["Classification", model.classificationComplete ? "Complete" : "Needs review"], ["P&L status", model.pnl.basisIssue ?? "Recorded result"], [],
     ["Statement", "Section", "Line", "Amount", "Entries", "Explanation"],
   ];
   const append = (statement: string, section: string, label: string, amount: number, count: number | "" = "", detail = "") => rows.push([statement, section, label, (amount / 100).toFixed(2), count, detail]);
@@ -185,8 +206,9 @@ export function statementsCsvRows(model: Statements, period: ResolvedPeriod): (s
     }
     append("P&L", label, `Total ${label.toLowerCase()}`, amount);
   }
-  append("P&L", "Result", model.pnl.basisIssue ? "Provisional categorized surplus / deficit — needs review" : "Net surplus / deficit", model.pnl.surplusMinor);
+  append("P&L", "Result", model.pnl.basisIssue ? "Provisional surplus / deficit — needs review" : "Net surplus / deficit", model.pnl.surplusMinor);
   for (const row of model.unresolved) append("Review", "Excluded from P&L", row.label, row.amountMinor, row.ids.length, row.detail);
+  if (model.investmentActivity.ids.length) append("Other activity", "Investment activity", model.investmentActivity.label, model.investmentActivity.amountMinor, model.investmentActivity.ids.length, model.investmentActivity.detail);
   for (const row of model.bridge) append("P&L to cash", "Reconciliation", row.label, row.amountMinor);
   append("P&L to cash", "Reconciliation", "Net cash movement", model.cash.changeMinor);
   return rows;

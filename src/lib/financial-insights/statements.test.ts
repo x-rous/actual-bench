@@ -86,7 +86,9 @@ describe("recorded financial statements", () => {
       ...transfer("payable", "bank", "liability", 300), ...transfer("scope", "bank", "excluded", 400), ...transfer("missing", "bank", "missing", 500),
       ...transfer("card-receipt", "card", "bank", 600), entry("unknown-in", "bank", 700), entry("unknown-out", "bank", -700)]);
     expect(section(model, "financing").amountMinor).toBe(0);
-    expect(model.unresolved.find((r) => r.key === "uncategorized")).toMatchObject({ amountMinor: 0, ids: ["unknown-in", "unknown-out"] });
+    expect(model.unresolved.find((r) => r.key === "uncategorized")).toBeUndefined();
+    expect(model.pnl.income.find((r) => r.key === "uncategorized-income")).toMatchObject({ amountMinor: 700, ids: ["unknown-in"] });
+    expect(model.pnl.expenses.find((r) => r.key === "uncategorized-expenses")).toMatchObject({ amountMinor: -700, ids: ["unknown-out"] });
     expect(model.unresolved.find((r) => r.key === "loan-allocation")?.amountMinor).toBe(-1000);
     expect(model.unresolved.find((r) => r.key === "scope")?.amountMinor).toBe(-900);
     expect(model.pnl.surplusMinor).toBe(0); expect(model.classificationComplete).toBe(false);
@@ -100,7 +102,37 @@ describe("recorded financial statements", () => {
     expect(model.pnl).toMatchObject({ incomeMinor: 9700, expensesMinor: -3500, surplusMinor: 6200 });
     expect(model.pnl.expenses[0].rows[0].label).toBe("Interest (hidden)");
     expect(model.cash.changeMinor).toBe(6000); expect(sumBridge(model)).toBe(6000);
-    expect(model.unresolved[0].amountMinor).toBe(900);
+    expect(model.investmentActivity).toMatchObject({ amountMinor: 900, ids: ["investment-change"] });
+    expect(model.unresolved).toEqual([]);
+  });
+
+  it("follows existing Insights for uncategorized on-budget purchases and receipts, with investment activity outside exceptions and P&L", () => {
+    const { model, ledger } = fixture([
+      entry("purchase", "card", -1234), entry("cash-payment", "bank", -500), entry("cash-receipt", "bank", 800),
+      entry("gain-1", "inv", 6000), entry("gain-2", "inv", 14000), entry("retirement-loss", "ret", -1000),
+    ]);
+    expect(model.pnl).toMatchObject({ incomeMinor: 800, expensesMinor: -1734, surplusMinor: -934, basisIssue: null });
+    expect(model.pnl.expenses.find((g) => g.key === "uncategorized-expenses")?.ids).toEqual(["purchase", "cash-payment"]);
+    expect(model.investmentActivity).toMatchObject({ amountMinor: 19000, ids: ["gain-1", "gain-2", "retirement-loss"] });
+    expect(model.unresolved).toEqual([]); expect(model.classificationComplete).toBe(true);
+    expect(section(model, "operating").amountMinor).toBe(300);
+    expect(model.cash.differenceMinor).toBe(0); expect(sumBridge(model)).toBe(300);
+    const summary = summarize(ledger, period, { unavailableReason: null, rowCount: 0 });
+    expect(model.pnl.surplusMinor).toBe(summary.received - summary.spent);
+    const csv = statementsCsvRows(model, period);
+    expect(csv).toContainEqual(["Other activity", "Investment activity", "Recorded investment activity", "190.00", 3, model.investmentActivity.detail]);
+    expect(csv.some((r) => r[0] === "Review")).toBe(false);
+    const scope = drillScope({ kind: "statement", name: model.investmentActivity.label, ids: model.investmentActivity.ids, amountMinor: model.investmentActivity.amountMinor }, { ledger, period, today: "2026-11-06", reclassifiedIds: new Set() });
+    expect(scope.constraints.where).toEqual({ id: { $oneof: ["gain-1", "gain-2", "retirement-loss"] } });
+    expect(scope.expectedMinor).toBe(19000);
+  });
+
+  it("retains genuinely unidentified off-budget entries and missing categories without treating them as ordinary spending", () => {
+    const { model } = fixture([entry("cash-unknown", "saving", -300), entry("other-unknown", "other", -400), entry("missing-category", "bank", -500, { categoryId: "unavailable" })]);
+    expect(model.pnl.surplusMinor).toBe(0);
+    expect(model.unresolved.flatMap((r) => r.ids)).toEqual(["cash-unknown", "missing-category", "other-unknown"]);
+    expect(model.classificationComplete).toBe(false);
+    expect(model.cash.differenceMinor).toBe(0); expect(sumBridge(model)).toBe(-800);
   });
 
   it("excludes revaluations, depreciation, capital and linked sales from P&L, with cash sale proceeds in investing", () => {
@@ -136,7 +168,7 @@ describe("recorded financial statements", () => {
     expect(csv).toContainEqual(["Cash flow", "Balances", "Closing cash", "101.24", "", ""]);
     expect(csv).toContainEqual(["P&L status", "Registry unavailable"]);
     expect(csv.filter((r) => r[2] === "Subtotal")).toHaveLength(3);
-    expect(csv.some((r) => r[2] === "Provisional categorized surplus / deficit — needs review")).toBe(true);
+    expect(csv.some((r) => r[2] === "Provisional surplus / deficit — needs review")).toBe(true);
   });
 
   it("drills exact statement membership without excluding transfers or starting balances, and handles long memberships", () => {

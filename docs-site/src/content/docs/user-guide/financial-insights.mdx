@@ -7,6 +7,8 @@ Open **Financial Management → Financial Insights** after connecting your Actua
 
 Financial Insights answers one question at a time, using the same definitions everywhere, so the numbers on one chart always agree with the numbers on another. It starts with a **Summary** tab, then **Money in & out**, **Income** and **Spending**, which are always there; the other tabs appear when there is something to show: My budget once Bench can read your budget mode, Investments when you have an investment or retirement account, Property & assets when you have a property, vehicle or fixed other-asset account, and Loans & cards when you have a loan, credit card or other liability account.
 
+**Financial Statements** is always offered too: cash flow beside P&L, using the existing income and spending rules. Uncategorized on-budget receipts and payments count by sign, including card purchases; recorded activity inside off-budget investments is shown separately.
+
 The **Guide** button at the top of the page opens a guide inside Bench: what every tab and card tells you, how each figure is worked out, with pictures of the charts, why this page is more than a report of transactions, and a glossary. **How things are counted** starts with common movements and explains why My budget can differ, with account-specific examples and classification rules available to expand. The Guide opens at the section for the tab you are on.
 
 ## How things are counted
@@ -151,6 +153,49 @@ If you have a credit card, two more cards follow:
 
 Property equity and loan-to-value are on [Property & assets](#the-property--assets-tab). An unmatched one-sided transfer to a loan or card shows under **In transit** on the Summary tab, with the reason it is there.
 
+## The Financial Statements tab
+
+Two equally sized statements use the existing global reporting period in both Tracking and Envelope budgets, including recorded activity through today in a partial month. Plans, category assignments, holds and carryover are outside these statements. The global toolbar shows the period; the statements do not repeat it in another banner.
+
+### Read the statements
+
+Each bordered section contains its heading, indented lines and subtotal. Cash Flow has **Operating activities**, **Investing activities**, **Financing activities**, and, when needed, **Unclassified movements and adjustments**. P&L has **Income** and **Expenses**, ending with net surplus or deficit.
+
+Income and expense category groups start collapsed, in Actual's budget order. The compact rows follow the group table in My budget: select a chevron or group name to expand its indented categories; select an underlined amount to open the transactions behind a group or category. Hidden categories remain included and labelled. Refunds reduce expenses; income reversals reduce income.
+
+### Cash Flow Statement
+
+Opening cash is the balance before the first day of the period; closing cash is the balance at its end. Cash and Bank cash-equivalent accounts form these balances, on or off budget, including closed-account history. Bank accounts marked **Fixed / restricted deposit** are excluded.
+
+| Section | Movements |
+| --- | --- |
+| Operating | Categorized cash receipts and payments, uncategorized on-budget cash receipts and payments by sign, ordinary card settlements, separately identified loan interest and fees paid. |
+| Investing | Cash funding and withdrawals involving Investment and Retirement accounts, fixed / restricted deposits, fixed-asset transfers, registry-linked asset sale proceeds and selling costs. |
+| Financing | Borrowing received from Loan accounts and principal identified in recorded payment splits. |
+| Unclassified movements and adjustments | Uncategorized off-budget cash entries, unsplit loan payments with unidentified allocation, other transfers whose purpose is unknown, starting balances introduced in the period, and cash-to-cash transfers that do not cancel inside the period. |
+
+An unsplit loan payment can contain interest; a calculated schedule or proposed split is never used to supply missing statement amounts. Current/non-current alone does not distinguish borrowing from payables, or lending from another asset movement. Card receipts are not automatically called borrowing or refunds. Ordinary settlements are operating payments without allocating them to particular purchases, advances or financed assets.
+
+**Balances reconcile** means opening cash plus movements and adjustments equals closing cash. Balances can reconcile while some purposes are unidentified; those entries stay in **Classification exceptions**. The page opens with its **Financial statements** title rather than an amber classification status. Unexplained differences remain visible; Refresh re-reads balances and statement evidence rather than inventing a balancing transaction.
+
+### Income Statement (P&L)
+
+P&L follows recorded categories and the existing Insights treatment of uncategorized entries. On-budget non-transfer money in counts as **Uncategorized income** and money out counts as **Uncategorized expenses**. This includes an uncategorized on-budget card purchase: it is an expense when recorded. Its later repayment is a transfer and never a second expense. Transfers, principal, starting balances, registry-classified capital, value changes and linked sales are excluded. An unlinked asset acquisition or unavailable asset evidence makes the result **Needs review**, with provisional category totals still visible.
+
+Recorded categorized charges count when posted, including in noncash accounts; future schedules and estimated accruals never count. Uncategorized entries in other off-budget accounts and entries with unavailable categories remain in **Classification exceptions**, because their income/expense purpose cannot be established.
+
+### Investment activity
+
+Uncategorized non-transfer entries in off-budget **Investment** or **Retirement** accounts appear in a neutral **Investment activity** card with their own transaction drill-down and CSV. They can represent recorded gains, losses, dividends, interest or fees. They are ordinary investment activity, not classification exceptions, and Bench does not assume that they are realized profit. They change investment balances, outside both P&L and available-cash movement. Transfers between cash and investments continue to appear in investing cash flow.
+
+### Explain, inspect and export
+
+**Why the bottom lines differ** bridges surplus to cash movement using card purchases versus settlements, income/expenses in other noncash accounts, investing, financing and unresolved cash movements. If P&L needs review, the bridge explicitly uses the provisional result.
+
+**Classification exceptions** lists amounts, entry counts and reasons, even when entries net to zero. Cash exceptions also appear in the cash statement; they are the same entries, not additional movements. Underlined figures open exact recorded transactions, including split children, with the usual total check. Balances and unexplained residuals have explanations rather than fabricated lists.
+
+**Account classification rules** opens a dialog explaining all eleven classes and the included accounts' saved reporting treatments. Current saved classifications also apply to historical periods. **Which accounts form cash?** shows opening and closing balances by eligible account. **Export CSV** includes both statements, subtotals, adjustments, exceptions, the bridge, period and reporting basis; each statement also has its own export.
+
 ## See the transactions behind a number
 
 Underlined figures, bars, stacked segments, waterfall steps and heatmap cells open a read-only list of the real transactions behind them, with the usual search and sort. A segment or cell opens exactly that group or category in exactly that month. The footer compares what is listed with the figure you clicked: **Matches the figure**, or **Differs from the figure by …** if they do not add up. Once you narrow the list with a filter it says so instead of comparing. Balances and unattributed amounts have no list. Nothing in the list can be changed.
@@ -189,4 +234,4 @@ Every chart has a **CSV** button that exports its exact figures, with the period
 
 ## Fresh figures
 
-Bench reads your transactions each time you open the page and when you press **Refresh**, which first pulls the latest budget from the server. Changing the period, the tab or a chart mode does not read again.
+Bench reads your transactions each time you open the page and when you press **Refresh**, which first pulls the latest budget from the server. Charts reuse that read. Financial Statements additionally reads detailed evidence when opened for a reporting period, then reuses it until Refresh. A failed evidence read never appears as a partial statement.

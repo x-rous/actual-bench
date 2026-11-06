@@ -16,23 +16,23 @@ import {
 
 /** The Financial Insights guide: one dialog, the picture first and the words second, one example household throughout. */
 export type FinancialInsightsGuideSection =
-  | "start" | "different" | "ready" | "summary" | "money" | "income" | "spending" | "budget" | "investments" | "property" | "loans" | "buffer" | "drill" | "counted" | "glossary";
+  | "start" | "different" | "ready" | "summary" | "money" | "income" | "spending" | "budget" | "investments" | "property" | "loans" | "statements" | "buffer" | "drill" | "counted" | "glossary";
 
 export const FINANCIAL_INSIGHTS_GUIDE_SECTIONS: [FinancialInsightsGuideSection, string][] = [
   ["start", "Start here"], ["different", "Why not Actual’s reports?"], ["ready", "Before any number"], ["counted", "How things are counted"], ["summary", "Summary"], ["money", "Money in & out"],
   ["income", "Income"], ["spending", "Spending"], ["budget", "My budget"], ["investments", "Investments"], ["property", "Property & assets"],
-  ["loans", "Loans & cards"], ["buffer", "Cash buffer & scenarios"], ["drill", "The transactions behind a figure"], ["glossary", "Glossary"],
+  ["loans", "Loans & cards"], ["statements", "Financial Statements"], ["buffer", "Cash buffer & scenarios"], ["drill", "The transactions behind a figure"], ["glossary", "Glossary"],
 ];
 
 const SECTION_ICONS: Record<FinancialInsightsGuideSection, LucideIcon> = {
   start: BookOpen, different: GitCompare, ready: ShieldCheck, summary: LayoutDashboard, money: ArrowLeftRight, income: Banknote, spending: ShoppingCart,
-  budget: Target, investments: TrendingUp, property: Home, loans: CreditCard, buffer: Gauge, drill: FileSearch, counted: Scale, glossary: CircleHelp,
+  budget: Target, investments: TrendingUp, property: Home, loans: CreditCard, statements: Scale, buffer: Gauge, drill: FileSearch, counted: Scale, glossary: CircleHelp,
 };
 
 /** The guide section that explains the tab you are on. */
 export const guideSectionForTab = (tab: string): FinancialInsightsGuideSection => (
   tab === "money" ? "money" : tab === "income" ? "income" : tab === "spending" ? "spending" : tab === "budget" ? "budget" : tab === "wealth" ? "investments"
-    : tab === "property" ? "property" : tab === "loans" ? "loans" : tab === "summary" ? "summary" : "start");
+    : tab === "property" ? "property" : tab === "loans" ? "loans" : tab === "statements" ? "statements" : tab === "summary" ? "summary" : "start");
 
 const Grid = ({ cols = 3, children }: { cols?: 2 | 3 | 4 | 5; children: ReactNode }) => (
   <div className={`grid max-w-[64.5rem] gap-3 ${cols === 2 ? "sm:grid-cols-2" : cols === 3 ? "sm:grid-cols-3" : cols === 4 ? "sm:grid-cols-2 xl:grid-cols-4" : "sm:grid-cols-2 xl:grid-cols-5"}`}>{children}</div>
@@ -427,6 +427,32 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
         </Grid>
       </>}
 
+      {section === "statements" && <>
+        <Para>Two equally sized statements use the global reporting period in Tracking and Envelope mode. Budget plans, assignments, holds and carryover do not enter these statements. Each bordered section keeps its heading, indented contents and subtotal together.</Para>
+        <Grid cols={2}>
+          <Card icon={Banknote} tone="income" title="Cash Flow Statement">Operating, investing and financing activities, followed by unclassified movements and adjustments. Opening and closing cash include Cash and Bank cash equivalents, on or off budget; fixed / restricted deposits are excluded.</Card>
+          <Card icon={Scale} tone="value" title="Income Statement (P&L)">Actual categories in budget order, including hidden categories. Category groups start collapsed: select a chevron or group name to expand its indented categories. Select an underlined group or category amount to see the transactions.</Card>
+        </Grid>
+        <Example caption="The same transaction in two statements" head={["Recorded movement", "Cash flow", "P&L"]} rows={[
+          ["Categorized card purchase", "No cash movement", "Expense when recorded"],
+          ["Ordinary cash settlement of a card", "Operating payment", "No second expense"],
+          ["Transfer into investments or a restricted deposit", "Investing", "Excluded"],
+          ["Recorded loan split", "Principal financing; paid interest operating", "Recorded interest expense"],
+          ["Unsplit loan payment", "Allocation unidentified", "Transfer excluded; no estimated interest"],
+          ["Uncategorized on-budget cash entry", "Operating receipt or payment", "Uncategorized income or expense by sign"],
+          ["Uncategorized on-budget card purchase", "No cash movement", "Uncategorized expense when recorded"],
+          ["Uncategorized entry inside off-budget investments", "No available-cash movement", "Investment activity, outside P&L and exceptions"],
+        ]} />
+        <Callout title="Reconciliation and classification are separate">Opening cash plus movements and adjustments equals closing cash. A statement can reconcile while some purposes remain unidentified. Starting balances introduced in the period, unmatched cash transfers and unexplained differences stay visible. Missing evidence never becomes a fabricated balancing entry.</Callout>
+        <Heading>Why the bottom lines differ</Heading>
+        <Para>The bridge adjusts surplus for card purchases versus settlements, income and expenses in other noncash accounts, investing, financing and unresolved cash movements. P&amp;L follows the existing income and spending rules: uncategorized on-budget money counts by sign in its own income or expense group, including card purchases. Transfers, principal, starting balances, registry-classified asset capital, value changes and linked sales stay outside P&amp;L. Recorded categorized charges count when posted; projected schedules and estimated accruals never count.</Para>
+        <Heading>Investment activity</Heading>
+        <Para>Uncategorized non-transfer entries in off-budget Investment and Retirement accounts have their own neutral card, transaction list and CSV. They can be recorded gains, losses, dividends, interest or fees. They are outside P&amp;L and available-cash movements, and are not classification exceptions. No realized profit or calculated return is inferred.</Para>
+        <Para>Other assets and liabilities can need a purpose beyond current/non-current. An unlinked asset acquisition or unavailable asset evidence makes P&amp;L need review, with provisional category totals still visible. Classification exceptions shows the supporting entries and reasons.</Para>
+        <Heading>Rules, accounts and exports</Heading>
+        <Para>Account classification rules opens a dialog explaining all eleven classes and the included accounts&apos; saved treatments. Which accounts form cash? shows opening and closing balances, including closed-account history. CSV exports preserve the reporting period, basis, subtotals and exceptions. The combined export also includes the P&amp;L-to-cash bridge. Underlined figures open exact recorded transactions and check their total against the figure.</Para>
+      </>}
+
       {section === "buffer" && <>
         <Para>The cash buffer on the Summary tab answers “if my income stopped, how many months could I cover?”. It is always as of today, whatever period is selected.</Para>
         <BufferSketch />
@@ -466,7 +492,7 @@ export function FinancialInsightsGuide({ section, onSection, onClose, docsUrl }:
           ["* and a lighter bar", "A partial month or period, not compared with whole ones"],
           ["▲ ▼ vs previous", "The change against the stretch of the same length just before; hover for the exact period"],
         ]} />
-        <Para>A month that has no data is unavailable, never zero. Bench reads your transactions each time you open the page and when you press <b>Refresh</b>, which first pulls the latest budget from the server. Changing the period, the tab or a chart mode does not read again.</Para>
+        <Para>A month that has no data is unavailable, never zero. Bench reads your transactions each time you open the page and when you press <b>Refresh</b>, which first pulls the latest budget from the server. Charts reuse that read. Financial Statements additionally reads detailed evidence when opened for a reporting period, then reuses it until Refresh.</Para>
       </>}
 
       {section === "glossary" && <>

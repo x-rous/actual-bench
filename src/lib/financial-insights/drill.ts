@@ -20,6 +20,8 @@ export type DrillKind =
   | "cashIncome" | "cashSpending" | "cardPaid" | "fixedMoved" | "assetsMoved" | "liabilitiesMoved";
 
 export type DrillTarget =
+  /** Exact recorded statement membership, including starting balances or unresolved movements when appropriate. */
+  | { kind: "statement"; name: string; ids: string[]; amountMinor: number; description?: string }
   | {
     kind: DrillKind; /** `YYYY-MM`; the whole period when absent. */ month?: string; /** With `month`: the range runs through this month. */ throughMonth?: string;
     /**
@@ -134,7 +136,7 @@ const DESCRIPTIONS: Record<DrillKind, string> = {
 export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, ctx: DrillContext): DrillScope {
   const { ledger, today } = ctx;
   const { facts, account, role } = ledger;
-  const range = target.kind !== "payee" && target.kind !== "inTransitRows" && target.month ? { start: target.month, end: ("throughMonth" in target && target.throughMonth) || target.month } : null;
+  const range = target.kind !== "statement" && target.kind !== "payee" && target.kind !== "inTransitRows" && target.month ? { start: target.month, end: ("throughMonth" in target && target.throughMonth) || target.month } : null;
   const window = range ? resolvePeriod({ kind: "custom", startMonth: range.start, endMonth: range.end }, today, ledger.firstMonth) : ctx.period;
   const to = window.endDate < today ? window.endDate : today;
   const when = range ? (range.start === range.end ? monthName(range.start) : `${monthName(range.start)} – ${monthName(range.end)}`) : ctx.period.label;
@@ -154,6 +156,16 @@ export function drillScope(target: Exclude<DrillTarget, { kind: "inTransit" }>, 
     defaults: { date: { preset: "custom", from: window.startDate, to } } as Partial<PickerFilterState>,
     filters: ["search", "amount", "tags", "payees"] as PickerFilterKey[],
   };
+  if (target.kind === "statement") {
+    const named = target.ids.length <= MAX_NAMED;
+    const wanted = new Set(target.ids);
+    return {
+      title: `${target.name} · ${when}`, description: target.description ?? "The recorded transactions behind this statement line. Transfers, split children and refunds retain their recorded signs. Nothing can be changed here.",
+      constraints: { ...base.constraints, ...(named ? { where: { id: { $oneof: target.ids.length ? target.ids : ["-"] } } } : {}) },
+      lockedLabels: { where: target.name }, defaults: base.defaults, filters: base.filters,
+      rowFilter: named ? undefined : (row) => wanted.has(row.id), insights: null, expectedMinor: target.amountMinor,
+    };
+  }
   // Starting balances and registry-classified entries are named in the query, so the charts add up to the list. A very long
   // list of the latter falls back to a check on the loaded rows, and the charts are not offered.
   const leftOut = [...ctx.reclassifiedIds];

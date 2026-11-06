@@ -213,6 +213,7 @@ export const TABS = [
   { value: "wealth", label: "Investments" },
   { value: "property", label: "Property & assets" },
   { value: "loans", label: "Loans & cards" },
+  { value: "statements", label: "Financial Statements" },
 ] as const;
 
 /** The tabs that have something to show: My budget once its mode is known and a month was read, Investments once an investment or retirement account exists, Property & assets once a fixed asset account exists (property, vehicle or a fixed other asset), Loans & cards once a loan, credit card or other liability account exists. */
