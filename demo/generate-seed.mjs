@@ -285,6 +285,8 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
   // ── payees ────────────────────────────────────────────────────────────────
   const payee = {};
   const payeeDefinitions = {
+    // The payee Actual itself gives an account's opening balance.
+    startingBalance: "Starting Balance",
     primaryEmployer: "Northstar Design Studio",
     secondaryEmployer: "Riverside Community College",
     payrollBonus: "Northstar Annual Bonus",
@@ -547,7 +549,9 @@ async function createBudgetDataset(api, apiRuntime, demoBudget, months) {
   for (const [accountKey, amount, notes] of openingBalances) {
     await push(accountKey, [
       {
-        ...transaction(oldest, 1, null, amount, null, { notes }),
+        // Like Actual's own opening balance: the Starting Balance payee, and nothing imported from a bank.
+        ...transaction(oldest, 1, "startingBalance", amount, null, { notes }),
+        imported_payee: undefined,
         ...(["mortgage", "personalLoan", "rentalLoan"].includes(accountKey) ? { date: `${loanOpeningMonth}-01` } : {}),
         ...(accountKey === "carLoan" ? { date: `${loanOpeningMonth}-05` } : {}),
         ...(accountKey === "property" ? { date: homeOpeningDate } : {}),
